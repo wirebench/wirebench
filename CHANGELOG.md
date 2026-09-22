@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Update Definition for a REST API.** A REST API imported from an OpenAPI document can re-read that
+  document instead of being imported a second time — from the API tab, the API row's context menu or
+  **REST: Update Definition…** in the command palette. A preview lists the added, removed and changed
+  operations (each change with its reasons) and what changed API-wide, and **Apply** carries a
+  fingerprint of what the preview read, so a source that changed in between is refused with
+  **Preview again** rather than applied. Nothing is deleted: a request whose operation is gone is kept
+  and badged *orphaned* until that operation returns, and a field — a URL, a parameter row, a body, an
+  auth, the base URL — is rewritten only while it still equals what the old document generated, so
+  edited values, rows you added and requests you made by hand survive. Another file or URL can be
+  chosen as the source; an API imported from pasted text asks for one.
+
 - **AsyncAPI import for WebSocket.** Import… detects AsyncAPI 2.0–2.6 and 3.0.x documents (YAML or JSON,
   from a URL, file or paste) and makes a WebSocket API: a request per WebSocket channel with its URL, query,
   headers, subprotocol and a saved sample for each outgoing message, and the API's auth from the first

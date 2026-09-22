@@ -237,8 +237,8 @@ sizes, the detail per theme, and what a review of the surrounding tools changed 
 6. **Secrets** — resolved from external secret managers at send time; encrypted team secrets in shared workspaces.
 7. **Enterprise authentication** — Kerberos/SPNEGO and WS-Trust for STS-issued SAML tokens.
 8. **REST follow-ups** — resend and diff a REST send from History, a shared cookie jar, an HTML response
-   preview, _Update Definition_ for an API, response validation against the contract, and the token-style
-   auth kinds for SOAP owners. The importers shipped in 2.1.0.
+   preview, and the token-style auth kinds for SOAP owners. The importers shipped in 2.1.0;
+   _Update Definition_ for an API and response validation against the contract are on `main`.
 9. **Contract diff** — two WSDLs or OpenAPI documents compared, breaking changes classified, runnable in CI.
 10. **WS-Security debugger** — why a signature or decryption failed, and configuration proposed from the WSDL's policy.
 11. **Mock services** — generated from the contract, validating requests, recorded from live traffic, stored as files.

@@ -135,6 +135,55 @@ No chip appears when there is nothing to check against — the request's API has
 definition, or no operation matches — or when the response is an event stream or not JSON (XML,
 HTML, text or binary).
 
+## Update Definition
+
+When an API was made by [importing an OpenAPI document](/wirebench/guides/importers/#openapi-and-swagger)
+and that document changes, re-read it instead of importing again: importing always makes a second
+API, updating keeps the one you have been working in.
+
+Open it from the API's tab (**Update definition…**, in the Definition group), from the API row's
+context menu (**Update Definition…**), or from the command palette (**REST: Update Definition…**).
+The entry is offered only for an API that recorded where its definition came from.
+
+The dialog reads the source and previews, before anything changes:
+
+- **Added operations** and **Removed operations**, each as `POST /pets`.
+- **Changed operations**, each with its reasons — `parameters`, `request-body`, `responses`,
+  `security` or `servers`.
+- An **API-wide** line when the document's servers, security or version changed.
+
+Choose **Apply** to take it, or **Cancel** to leave the API as it is. After applying, a toast gives
+the counts: requests added, rewritten, orphaned and restored.
+
+### What follows the new document, and what does not
+
+An operation is identified by its method and path as the document writes them, so a path renamed in
+the document reads as one operation removed and one added rather than a rename.
+
+A field is rewritten only while it still equals what the old document generated. That covers the
+request's URL, its path, query and header parameter rows (row by row, by location and name), its
+body content type and generated sample, and its auth; and, API-wide, the base URL taken from
+`servers`, the API's auth, and the definition's version. Anything you edited is yours and is kept —
+an edited parameter value, a body you changed, an auth you filled in, and rows you added yourself. A
+parameter row the new document no longer declares is removed if it was still as generated, and kept
+if you had edited it. A request with no link to an operation — one you made by hand — is left
+entirely alone.
+
+**Nothing is deleted.** A request whose operation is gone from the document is kept and badged
+*orphaned* in the explorer; if that operation comes back in a later update, the badge is cleared.
+
+### Another source, and a source that moved on
+
+**Choose another file or URL…** updates from somewhere else — a local copy, a next-version URL —
+rather than from the recorded source. An API imported from pasted text has no source to read again,
+so the dialog asks for a file or URL straight away.
+
+Apply carries a fingerprint of every document the preview read. If the source changed again in
+between, nothing is applied: the dialog says so and offers **Preview again**.
+
+Afterwards the cached definition is rewritten, so [response checks](#response-checks) use the new
+schemas, and the project is saved. If that save fails, the API is left exactly as it was.
+
 ## Limits
 
 - The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or
