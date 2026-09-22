@@ -14,6 +14,7 @@ import { migrate } from '../../../src/project/migrate.js';
 import {
   DEFAULT_PROJECT_SETTINGS,
   DEFAULT_REQUEST_PROPERTIES,
+  FORMAT_VERSION,
   createInterface,
   createProject,
   createRequest,
@@ -22,7 +23,7 @@ import {
 import { stringifyYaml, parseYaml } from '../../../src/project/yaml.js';
 
 const validManifest = {
-  formatVersion: 4,
+  formatVersion: FORMAT_VERSION,
   id: 'X',
   name: 'p',
   settings: { ...DEFAULT_PROJECT_SETTINGS },
@@ -127,6 +128,88 @@ describe('loose schemas', () => {
     };
     expect(() => parseFile(interfaceFileSchema, iface, 'i.yaml')).toThrow(ProjectError);
   });
+
+  it('accepts bearer, api-key and oauth2 auth on an interface, an endpoint and a request', () => {
+    const iface = {
+      kind: 'soap',
+      id: 'I',
+      name: 'n',
+      order: 0,
+      definitionUrl: 'u',
+      cacheDefinition: true,
+      endpoints: [
+        {
+          id: 'E1',
+          name: 'prod',
+          url: 'https://x',
+          authMode: 'override',
+          auth: { type: 'api-key', name: 'X-Api-Key', in: 'header', valueRef: 'sec_1' },
+        },
+      ],
+      wsa: { enabled: false, version: '2005/08' },
+      auth: { type: 'bearer', tokenRef: 'sec_2' },
+      operations: [],
+    };
+    expect(() => parseFile(interfaceFileSchema, iface, 'i.yaml')).not.toThrow();
+
+    const request = {
+      kind: 'soap',
+      id: 'R',
+      name: 'n',
+      order: 0,
+      soapVersion: '1.2',
+      headers: [],
+      attachments: [],
+      properties: { ...DEFAULT_REQUEST_PROPERTIES },
+      auth: { type: 'oauth2', grant: 'client-credentials', tokenUrl: 'https://t', clientId: 'c' },
+    };
+    const parsedRequest = parseFile(requestFileSchema, request, 'r.yaml');
+    expect(parsedRequest.auth).toMatchObject({ scopes: [], clientAuth: 'basic', pkce: true });
+  });
+
+  it('refuses inherit at every SOAP auth site', () => {
+    const iface = {
+      kind: 'soap',
+      id: 'I',
+      name: 'n',
+      order: 0,
+      definitionUrl: 'u',
+      cacheDefinition: true,
+      endpoints: [],
+      wsa: { enabled: false, version: '2005/08' },
+      operations: [],
+      auth: { type: 'inherit' },
+    };
+    expect(() => parseFile(interfaceFileSchema, iface, 'i.yaml')).toThrow(ProjectError);
+
+    const request = {
+      kind: 'soap',
+      id: 'R',
+      name: 'n',
+      order: 0,
+      soapVersion: '1.2',
+      headers: [],
+      attachments: [],
+      properties: { ...DEFAULT_REQUEST_PROPERTIES },
+      auth: { type: 'inherit' },
+    };
+    expect(() => parseFile(requestFileSchema, request, 'r.yaml')).toThrow(ProjectError);
+  });
+
+  it('refuses a plaintext token/apiKey/clientSecret at a SOAP auth site', () => {
+    const request = {
+      kind: 'soap',
+      id: 'R',
+      name: 'n',
+      order: 0,
+      soapVersion: '1.2',
+      headers: [],
+      attachments: [],
+      properties: { ...DEFAULT_REQUEST_PROPERTIES },
+      auth: { type: 'bearer', token: 'eyJ...' },
+    };
+    expect(() => parseFile(requestFileSchema, request, 'r.yaml')).toThrow(ProjectError);
+  });
 });
 
 describe('extension-point schemas', () => {
@@ -155,24 +238,24 @@ describe('migrate', () => {
     ['version 1', v1Manifest],
     ['version 2', v2Manifest],
   ])('brings %s up to the current format version, otherwise unchanged', (_label, document) => {
-    expect(migrate(document, 'wirebench.yaml')).toEqual({ ...document, formatVersion: 4 });
+    expect(migrate(document, 'wirebench.yaml')).toEqual({ ...document, formatVersion: FORMAT_VERSION });
   });
 
-  it('passes a version-4 document through with the same formatVersion', () => {
+  it('passes a current-version document through with the same formatVersion', () => {
     expect(migrate(validManifest, 'wirebench.yaml')).toEqual(validManifest);
   });
 
   it('rejects a newer format version', () => {
     const error = (() => {
       try {
-        migrate({ formatVersion: 7 }, 'wirebench.yaml');
+        migrate({ formatVersion: FORMAT_VERSION + 2 }, 'wirebench.yaml');
       } catch (e) {
         return e as ProjectError;
       }
       return undefined;
     })();
     expect(error?.code).toBe('project-format-too-new');
-    expect(error?.details).toMatchObject({ formatVersion: 7, supported: 4 });
+    expect(error?.details).toMatchObject({ formatVersion: FORMAT_VERSION + 2, supported: FORMAT_VERSION });
   });
 
   it.each([[{ formatVersion: 0 }], [{ formatVersion: '1' }], [{}], [{ formatVersion: 1.5 }]])(
@@ -221,7 +304,7 @@ describe('factories', () => {
   it('creates a project with defaults and a ULID id', () => {
     const project = createProject('Demo');
     expect(project).toMatchObject({
-      formatVersion: 4,
+      formatVersion: FORMAT_VERSION,
       name: 'Demo',
       settings: DEFAULT_PROJECT_SETTINGS,
       disabledProperties: [],

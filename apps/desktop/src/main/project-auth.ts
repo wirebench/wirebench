@@ -1,12 +1,12 @@
 /**
- * Picks which `EndpointAuth` applies when sending a request. The precedence rules themselves
- * (endpoint `override` vs `complement`, then the interface fallback) live in the engine's
+ * Picks which auth applies when sending a request. The precedence rules themselves (endpoint
+ * `override` vs `complement`, then the interface fallback) live in the engine's
  * `project/endpoints.ts`; this module is the main process's thin, dependency-free door onto
  * them so the IPC layer does not have to reach into the engine's project internals.
  */
 
 import { effectiveAuth as engineEffectiveAuth } from '@wirebench/engine';
-import type { EndpointAuth } from '@wirebench/engine';
+import type { SoapOwnerAuth } from '@wirebench/engine';
 
 /**
  * Returns the auth that should be used to send a request, given its own auth, the auth of the
@@ -18,10 +18,10 @@ import type { EndpointAuth } from '@wirebench/engine';
  * @param interfaceAuth the interface-wide fallback, if any
  */
 export function effectiveAuth(
-  requestAuth: EndpointAuth | undefined,
-  endpointAuth: EndpointAuth | undefined,
+  requestAuth: SoapOwnerAuth | undefined,
+  endpointAuth: SoapOwnerAuth | undefined,
   authMode: 'override' | 'complement',
-  interfaceAuth?: EndpointAuth,
-): EndpointAuth | undefined {
+  interfaceAuth?: SoapOwnerAuth,
+): SoapOwnerAuth | undefined {
   return engineEffectiveAuth(requestAuth, endpointAuth, authMode, interfaceAuth);
 }

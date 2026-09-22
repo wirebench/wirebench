@@ -175,7 +175,7 @@ import type {
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
-import type { EndpointAuth } from '@wirebench/engine';
+import type { EndpointAuth, SoapOwnerAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -289,6 +289,14 @@ export type UnsavedRestoreOutcome =
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Narrows a {@link SoapOwnerAuth} to the {@link EndpointAuth} arm (Basic/NTLM/none), for the WSDL
+ * import/re-fetch paths that keep Basic regardless of what a SOAP owner's send-time auth is.
+ */
+function asEndpointAuth(auth: SoapOwnerAuth | undefined): EndpointAuth | undefined {
+  return auth === undefined || auth.type === 'none' || auth.type === 'basic' || auth.type === 'ntlm' ? auth : undefined;
 }
 
 /**
@@ -802,9 +810,10 @@ export class ProjectHost {
   /**
    * The auth that should apply when sending `requestId`: request auth overrides its endpoint's,
    * which overrides its interface's (see `effectiveAuth`). `undefined` when the request is
-   * unknown or nothing configures auth at any level.
+   * unknown or nothing configures auth at any level. May now be any non-`inherit` scheme, since a
+   * SOAP owner can hold a token auth; applying a token scheme to a SOAP send is a later task.
    */
-  authFor(requestId: string): EndpointAuth | undefined {
+  authFor(requestId: string): SoapOwnerAuth | undefined {
     if (this.open === undefined) {
       return undefined;
     }
@@ -2691,8 +2700,11 @@ export class ProjectHost {
 
   /** The Basic credentials an interface's own auth resolves to, for re-fetching its WSDL. */
   private async importAuthFor(iface: Interface): Promise<{ username: string; password: string } | undefined> {
+    // WSDL import/re-fetch keeps Basic (the import dialog offers nothing else); an interface
+    // whose own auth is a token scheme resolves to no re-fetch credentials.
+    const basicAuth = asEndpointAuth(iface.auth);
     const resolved =
-      iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
+      basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
     return resolved?.username !== undefined && resolved.password !== undefined
       ? { username: resolved.username, password: resolved.password }
       : undefined;
@@ -3240,9 +3252,11 @@ export class ProjectHost {
       try {
         // The interface's own auth must be resolved for hydration exactly as it is for the
         // first import: a WSDL behind Basic auth is otherwise re-fetched anonymously and the
-        // whole interface fails to hydrate on reopen.
+        // whole interface fails to hydrate on reopen. WSDL import/re-fetch keeps Basic, so a
+        // token-scheme owner resolves to no re-fetch credentials, same as `importAuthFor`.
+        const basicAuth = asEndpointAuth(iface.auth);
         const resolvedAuth =
-          iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
+          basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
         const summary = await this.engine.importForProject({
           interfaceId: iface.id,
           source: { kind: 'url', url: iface.definitionUrl },

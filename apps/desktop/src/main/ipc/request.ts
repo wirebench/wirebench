@@ -512,10 +512,14 @@ async function curl(
   if (live === undefined) {
     throw unknownRequest(request.requestId);
   }
+  // cURL export follows a SOAP send: Basic/NTLM only for now (applying a token scheme to a SOAP
+  // send is a later task), so a Bearer/API-key/OAuth2 owner exports with no auth shown.
   const auth = deps.project.authFor(request.requestId);
+  const basicAuth =
+    auth === undefined || auth.type === 'none' || auth.type === 'basic' || auth.type === 'ntlm' ? auth : undefined;
   const effective = await service.effectiveSendInput(live, {
     scopes: deps.project.scopesFor(request.requestId),
-    ...(auth !== undefined ? { auth } : {}),
+    ...(basicAuth !== undefined ? { auth: basicAuth } : {}),
   });
   const show = deps.showSecrets?.get() ?? false;
   const headers = redactHeaders(effective.headers ?? {}, { show });

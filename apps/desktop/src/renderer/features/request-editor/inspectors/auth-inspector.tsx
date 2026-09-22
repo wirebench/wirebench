@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SecretField } from '../../../components/secret-field.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
-import type { EndpointAuthWire, RequestAuthSourceWire } from '../../../../shared/wire-types.js';
+import type { AuthConfigWire, EndpointAuthWire, RequestAuthSourceWire } from '../../../../shared/wire-types.js';
 
 /** How long a typed username sits before it becomes a project mutation. */
 const COMMIT_DEBOUNCE_MS = 300;
@@ -19,6 +19,27 @@ const INPUT_CLASS =
 
 export interface AuthInspectorProps {
   readonly requestId: string;
+}
+
+/**
+ * Narrows a wire auth row to its Basic/NTLM/none shape — what this inspector's form still edits.
+ * A request whose own auth is a token scheme (Bearer/API-key/OAuth2) is edited here as if it were
+ * unset; offering all six schemes in this inspector is a later task (see the owner-auth design's
+ * D5), which replaces this form with `AuthFields`.
+ */
+function asEndpointAuthWire(auth: AuthConfigWire | undefined): EndpointAuthWire | undefined {
+  if (auth === undefined || (auth.type !== 'none' && auth.type !== 'basic' && auth.type !== 'ntlm')) {
+    return undefined;
+  }
+  return {
+    type: auth.type,
+    ...(auth.username !== undefined ? { username: auth.username } : {}),
+    ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+    ...(auth.passwordEnv !== undefined ? { passwordEnv: auth.passwordEnv } : {}),
+    ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+    ...(auth.workstation !== undefined ? { workstation: auth.workstation } : {}),
+    ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
+  };
 }
 
 /** Human sentence for the level the effective credentials come from. */
@@ -78,7 +99,7 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
 
   const patch = useCallback(
     (next: Partial<EndpointAuthWire>): void => {
-      const base: EndpointAuthWire = auth ?? { type: 'none' };
+      const base: EndpointAuthWire = asEndpointAuthWire(auth) ?? { type: 'none' };
       const merged: EndpointAuthWire = { ...base, ...next };
       updateRequestAuth(requestId, merged);
     },
@@ -190,7 +211,7 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
                       flushPassword.current = flush;
                     }}
                     onChange={(ref) => {
-                      const base: EndpointAuthWire = auth ?? { type: 'none' };
+                      const base: EndpointAuthWire = asEndpointAuthWire(auth) ?? { type: 'none' };
                       const merged: EndpointAuthWire = {
                         type: base.type,
                         ...(base.username !== undefined ? { username: base.username } : {}),

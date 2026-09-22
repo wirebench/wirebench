@@ -26,11 +26,13 @@ export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '.
 /**
  * The on-disk format version written to (and required by) `wirebench.yaml`.
  *
- * 4 added `assertions` on a request and the `…Env` name beside each secret reference. Both are
- * additive, and both still bump the version: this format does not round-trip unknown keys, so an
- * older build would delete them on its next save (see `schema.ts` and ADR-0003).
+ * 4 added `assertions` on a request and the `…Env` name beside each secret reference. 5 let a SOAP
+ * interface, endpoint or request carry `bearer`, `api-key` and `oauth2` auth (previously
+ * REST-only) — new keys and new enum values on an existing field. Both are additive, and both
+ * still bump the version: this format does not round-trip unknown keys, so an older build would
+ * delete them on its next save (see `schema.ts` and ADR-0003).
  */
-export const FORMAT_VERSION = 4;
+export const FORMAT_VERSION = 5;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;
@@ -131,6 +133,13 @@ export interface OAuth2Auth {
  */
 export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth;
 
+/**
+ * What a SOAP interface, endpoint or request may hold: every {@link AuthConfig} arm except
+ * {@link InheritAuth} — a SOAP owner has no interface-like ancestor to inherit from, so the SOAP
+ * chain stays request → endpoint (override/complement) → interface.
+ */
+export type SoapOwnerAuth = Exclude<AuthConfig, InheritAuth>;
+
 /** The OAuth2 fields a freshly configured entry starts with. */
 export const DEFAULT_OAUTH2_AUTH: OAuth2Auth = Object.freeze({
   type: 'oauth2',
@@ -147,7 +156,7 @@ export interface Endpoint {
   readonly id: string;
   readonly name: string;
   readonly url: string;
-  readonly auth?: EndpointAuth;
+  readonly auth?: SoapOwnerAuth;
   /** `override` replaces request credentials, `complement` only fills in blanks. */
   readonly authMode: 'override' | 'complement';
   /**
@@ -269,7 +278,7 @@ export interface SoapRequestDef {
   readonly soapAction?: string;
   readonly headers: readonly HeaderEntry[];
   readonly attachments: readonly Attachment[];
-  readonly auth?: EndpointAuth;
+  readonly auth?: SoapOwnerAuth;
   readonly wsa?: WsaConfig;
   /** Name of a `wss/outgoing/<name>.yaml` configuration. */
   readonly wssOutgoingRef?: string;
@@ -326,7 +335,7 @@ export interface Interface {
   readonly defaultEndpointId?: string;
   readonly wsa: WsaConfig;
   /** Interface-level default credentials, overridable per endpoint and per request. */
-  readonly auth?: EndpointAuth;
+  readonly auth?: SoapOwnerAuth;
   readonly operations: readonly OperationDef[];
 }
 

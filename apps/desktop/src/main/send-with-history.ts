@@ -89,7 +89,13 @@ export async function sendAndRecordHistory(
   // project-scoped proxy rather than being routed to an arbitrary "current" project.
   const requestId = request.requestId;
   const owner = requestId === undefined ? undefined : deps.project.projectId(requestId);
-  const auth = requestId !== undefined ? deps.project.authFor(requestId) : undefined;
+  // A SOAP send applies Basic/NTLM only for now — applying a Bearer/API-key/OAuth2 owner auth
+  // to the send itself (via the engine's OAuth2 token service) is a later task.
+  const ownerAuth = requestId !== undefined ? deps.project.authFor(requestId) : undefined;
+  const auth =
+    ownerAuth === undefined || ownerAuth.type === 'none' || ownerAuth.type === 'basic' || ownerAuth.type === 'ntlm'
+      ? ownerAuth
+      : undefined;
   const attachments = requestId !== undefined ? deps.project.sendAttachmentsFor?.(requestId) : undefined;
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let wss: Awaited<ReturnType<NonNullable<HistorySendProject['wssFor']>>> | undefined;

@@ -141,11 +141,21 @@ export const authConfigSchema = z.union([
   oauth2AuthSchema,
 ]);
 
+/**
+ * What a SOAP interface, endpoint or request may hold: every {@link authConfigSchema} arm except
+ * `inherit` — a SOAP owner has no interface-like ancestor above it to inherit from. The REST
+ * schemas are reused, not copied, so the plaintext-secret rejection applies to SOAP files too.
+ * `endpointAuthSchema` is deliberately not widened in place: it is itself an arm of this union,
+ * and widening its enum would let its looser object shape swallow token configs before the
+ * stricter arms see them.
+ */
+export const soapOwnerAuthSchema = z.union([endpointAuthSchema, bearerAuthSchema, apiKeyAuthSchema, oauth2AuthSchema]);
+
 const endpointSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
   url: z.string(),
-  auth: endpointAuthSchema.optional(),
+  auth: soapOwnerAuthSchema.optional(),
   authMode: z.enum(['override', 'complement']),
   trustInvalid: z.boolean().optional(),
 });
@@ -211,7 +221,7 @@ export const interfaceFileSchema = z.looseObject({
   endpoints: z.array(endpointSchema),
   defaultEndpointId: z.string().optional(),
   wsa: wsaSchema,
-  auth: endpointAuthSchema.optional(),
+  auth: soapOwnerAuthSchema.optional(),
   operations: z.array(operationEntrySchema),
 });
 
@@ -270,7 +280,7 @@ export const requestFileSchema = z.looseObject({
   soapAction: z.string().optional(),
   headers: z.array(z.looseObject({ name: z.string(), value: z.string() })),
   attachments: z.array(attachmentSchema),
-  auth: endpointAuthSchema.optional(),
+  auth: soapOwnerAuthSchema.optional(),
   wsa: wsaSchema.optional(),
   wssOutgoingRef: z.string().optional(),
   wssIncomingRef: z.string().optional(),

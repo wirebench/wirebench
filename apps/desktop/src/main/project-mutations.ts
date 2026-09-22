@@ -22,18 +22,19 @@ import type {
   Attachment,
   AttachmentSource,
   Endpoint,
-  EndpointAuth,
   Interface,
   OperationDef,
   Project,
   ProjectSettings,
   RequestDef,
   RequestProperties,
+  SoapOwnerAuth,
   WsaConfig,
   WsaConfigPatch,
 } from '@wirebench/engine';
 import type {
   AttachmentPatchWire,
+  AuthConfigWire,
   ProjectChange,
   ProjectSettingsPatchWire,
   RequestPatchWire,
@@ -348,26 +349,57 @@ function requireEndpoint(iface: Interface, endpointId: string): Endpoint {
 }
 
 /**
- * Normalises a wire `EndpointAuth` (whose zod-optional fields type as `T | undefined`) into the
- * engine's `EndpointAuth`, which under `exactOptionalPropertyTypes` requires absent keys to be
- * truly absent rather than present-with-`undefined`.
+ * Converts a SOAP auth mutation's wire payload to the engine's {@link SoapOwnerAuth}. The wire
+ * shape is `authConfigWireSchema`'s one flattened row (every scheme's fields, all optional);
+ * `soapOwnerAuthWireSchema` has already refused `type: 'inherit'` by the time this runs, so every
+ * arm below is reachable. Named `toEngineAuth` for the SOAP call sites that pass it.
  */
-function toEngineAuth(auth: {
-  type: EndpointAuth['type'];
-  username?: string | undefined;
-  passwordRef?: string | undefined;
-  passwordEnv?: string | undefined;
-  domain?: string | undefined;
-  preemptive?: boolean | undefined;
-}): EndpointAuth {
-  return {
-    type: auth.type,
-    ...(auth.username !== undefined ? { username: auth.username } : {}),
-    ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
-    ...(auth.passwordEnv !== undefined ? { passwordEnv: auth.passwordEnv } : {}),
-    ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
-    ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
-  };
+function toEngineAuth(auth: AuthConfigWire): SoapOwnerAuth {
+  switch (auth.type) {
+    case 'bearer':
+      return {
+        type: 'bearer',
+        ...(auth.tokenRef !== undefined ? { tokenRef: auth.tokenRef } : {}),
+        ...(auth.tokenEnv !== undefined ? { tokenEnv: auth.tokenEnv } : {}),
+        ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}),
+      };
+    case 'api-key':
+      return {
+        type: 'api-key',
+        name: auth.name ?? '',
+        in: auth.in ?? 'header',
+        ...(auth.valueRef !== undefined ? { valueRef: auth.valueRef } : {}),
+        ...(auth.valueEnv !== undefined ? { valueEnv: auth.valueEnv } : {}),
+      };
+    case 'oauth2':
+      return {
+        type: 'oauth2',
+        grant: auth.grant ?? 'client-credentials',
+        tokenUrl: auth.tokenUrl ?? '',
+        clientId: auth.clientId ?? '',
+        scopes: [...(auth.scopes ?? [])],
+        clientAuth: auth.clientAuth ?? 'basic',
+        pkce: auth.pkce ?? true,
+        ...(auth.authorizationUrl !== undefined ? { authorizationUrl: auth.authorizationUrl } : {}),
+        ...(auth.clientSecretRef !== undefined ? { clientSecretRef: auth.clientSecretRef } : {}),
+        ...(auth.clientSecretEnv !== undefined ? { clientSecretEnv: auth.clientSecretEnv } : {}),
+        ...(auth.audience !== undefined ? { audience: auth.audience } : {}),
+        ...(auth.refreshTokenRef !== undefined ? { refreshTokenRef: auth.refreshTokenRef } : {}),
+      };
+    case 'inherit':
+      // Refused by `soapOwnerAuthWireSchema` before a mutation reaches here; `none` is the
+      // closest engine-representable fallback rather than throwing mid-mutation.
+      return { type: 'none' };
+    default:
+      return {
+        type: auth.type,
+        ...(auth.username !== undefined ? { username: auth.username } : {}),
+        ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+        ...(auth.passwordEnv !== undefined ? { passwordEnv: auth.passwordEnv } : {}),
+        ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+        ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
+      };
+  }
 }
 
 /**
@@ -402,7 +434,7 @@ function omitWsa(request: RequestDef): RequestDef {
 }
 
 /** Sets (or clears, with `auth: null`) one request's own `auth`, leaving every other field alone. */
-function updateRequestAuth(project: Project, requestId: string, auth: EndpointAuth | null): MutationResult {
+function updateRequestAuth(project: Project, requestId: string, auth: SoapOwnerAuth | null): MutationResult {
   const location = findRequest(project, requestId) ?? notFound('request', requestId);
   const { iface, operation, request } = location;
   const next: RequestDef = {
