@@ -90,6 +90,7 @@ import {
   removeApi,
   removeFolder,
   removeRestRequest,
+  toEngineAuthConfig,
   updateApi,
   updateFolder,
   updateRestRequest,
@@ -349,62 +350,22 @@ function requireEndpoint(iface: Interface, endpointId: string): Endpoint {
 }
 
 /**
- * Converts a SOAP auth mutation's wire payload to the engine's {@link SoapOwnerAuth}. The wire
- * shape is `authConfigWireSchema`'s one flattened row (every scheme's fields, all optional);
- * `soapOwnerAuthWireSchema` has already refused `type: 'inherit'` by the time this runs, so every
- * arm below is reachable. Named `toEngineAuth` for the SOAP call sites that pass it.
+ * Converts a SOAP auth mutation's wire payload to the engine's {@link SoapOwnerAuth}.
+ *
+ * The same normaliser REST uses ({@link toEngineAuthConfig}) rather than a SOAP copy: the two
+ * owners hold the same scheme shapes, and two converters would drift on exactly the field a new
+ * scheme adds. The one SOAP difference is `inherit`, which `soapOwnerAuthWireSchema` refuses at
+ * the IPC boundary; a stale renderer or hand-built call that gets past it still fails loudly here
+ * rather than landing on some other scheme — a SOAP owner has nothing above it to inherit from.
  */
 function toEngineAuth(auth: AuthConfigWire): SoapOwnerAuth {
-  switch (auth.type) {
-    case 'bearer':
-      return {
-        type: 'bearer',
-        ...(auth.tokenRef !== undefined ? { tokenRef: auth.tokenRef } : {}),
-        ...(auth.tokenEnv !== undefined ? { tokenEnv: auth.tokenEnv } : {}),
-        ...(auth.scheme !== undefined ? { scheme: auth.scheme } : {}),
-      };
-    case 'api-key':
-      return {
-        type: 'api-key',
-        name: auth.name ?? '',
-        in: auth.in ?? 'header',
-        ...(auth.valueRef !== undefined ? { valueRef: auth.valueRef } : {}),
-        ...(auth.valueEnv !== undefined ? { valueEnv: auth.valueEnv } : {}),
-      };
-    case 'oauth2':
-      return {
-        type: 'oauth2',
-        grant: auth.grant ?? 'client-credentials',
-        tokenUrl: auth.tokenUrl ?? '',
-        clientId: auth.clientId ?? '',
-        scopes: [...(auth.scopes ?? [])],
-        clientAuth: auth.clientAuth ?? 'basic',
-        pkce: auth.pkce ?? true,
-        ...(auth.authorizationUrl !== undefined ? { authorizationUrl: auth.authorizationUrl } : {}),
-        ...(auth.clientSecretRef !== undefined ? { clientSecretRef: auth.clientSecretRef } : {}),
-        ...(auth.clientSecretEnv !== undefined ? { clientSecretEnv: auth.clientSecretEnv } : {}),
-        ...(auth.audience !== undefined ? { audience: auth.audience } : {}),
-        ...(auth.refreshTokenRef !== undefined ? { refreshTokenRef: auth.refreshTokenRef } : {}),
-      };
-    case 'inherit':
-      // `soapOwnerAuthWireSchema` already refuses `type: 'inherit'` at the IPC boundary, so a
-      // renderer built against the current wire types cannot reach this. A stale renderer (or a
-      // hand-crafted IPC call) that gets past that check must still fail loudly here rather than
-      // silently landing on `none` — a SOAP owner has nothing to inherit from either way.
-      throw new ProjectError(
-        'auth-inherit-unsupported',
-        'A SOAP interface, endpoint or request auth cannot be "inherit"',
-      );
-    default:
-      return {
-        type: auth.type,
-        ...(auth.username !== undefined ? { username: auth.username } : {}),
-        ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
-        ...(auth.passwordEnv !== undefined ? { passwordEnv: auth.passwordEnv } : {}),
-        ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
-        ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
-      };
+  if (auth.type === 'inherit') {
+    throw new ProjectError(
+      'auth-inherit-unsupported',
+      'A SOAP interface, endpoint or request auth cannot be "inherit"',
+    );
   }
+  return toEngineAuthConfig(auth) as SoapOwnerAuth;
 }
 
 /**

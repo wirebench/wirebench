@@ -13,6 +13,7 @@ import { TRUST_INVALID_HINT, TrustInvalidBadge } from '../../components/trust-in
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { useProjectStore } from '../../state/project.js';
+import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import type { EndpointWire } from '../../../shared/wire-types.js';
 
 export interface EndpointsDialogProps {
@@ -136,6 +137,11 @@ export function EndpointsDialog({ open, onOpenChange, interfaceId }: EndpointsDi
                       types={SOAP_AUTH_TYPES}
                       scope="Endpoint"
                       auth={endpoint.auth}
+                      oauth2Status={
+                        endpoint.auth?.type === 'oauth2' ? (
+                          <OAuth2StatusPanel ownerId={endpoint.id} grant={endpoint.auth.grant} />
+                        ) : undefined
+                      }
                       onChange={(auth) => {
                         void updateEndpointAuth(interfaceId, endpoint.id, asSoapAuth(auth)).catch((error: unknown) =>
                           report(error, 'Could not update the endpoint credentials'),

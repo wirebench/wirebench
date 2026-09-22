@@ -966,8 +966,9 @@ export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
  * `soapOwnerAuthSchema` on the engine side, which this mirrors).
  */
 export const soapOwnerAuthWireSchema = authConfigWireSchema.refine((auth) => auth.type !== 'inherit', {
-  message: 'a SOAP interface, endpoint or request auth may not be "inherit"',
+  message: 'a SOAP interface, endpoint or request cannot inherit',
 });
+export type SoapOwnerAuthWire = z.infer<typeof soapOwnerAuthWireSchema>;
 
 /** One addressable endpoint of an interface (credentials referenced by `secretRef`, never on the wire). */
 export const endpointWireSchema = z.object({
