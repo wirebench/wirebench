@@ -1978,7 +1978,7 @@ export class ProjectHost {
     return { ...(ca !== undefined ? { ca: [...ca] } : {}), ...(trustInvalid ? { rejectUnauthorized: false } : {}) };
   }
 
-  async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+  async tlsFor(requestId: string, envId?: string): Promise<TlsOptionsWire | undefined> {
     if (this.open === undefined) {
       return undefined;
     }
@@ -1987,7 +1987,8 @@ export class ProjectHost {
     const ca = await this.trustAnchors();
     const trustInvalid =
       location !== undefined &&
-      this.resolveEndpointFor(this.open.project, location.iface, location.request).endpoint?.trustInvalid === true;
+      this.resolveEndpointFor(this.open.project, location.iface, location.request, envId).endpoint?.trustInvalid ===
+        true;
     if (identity === undefined && ca === undefined && !trustInvalid) {
       return undefined;
     }

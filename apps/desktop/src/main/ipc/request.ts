@@ -86,6 +86,7 @@ import type {
   LogEntryWire,
   RestLiveEvent,
 } from '../../shared/wire-types.js';
+import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
 
@@ -259,24 +260,29 @@ function extraTrustAnchors(): readonly string[] {
  * together here rather than duplicating the mapping in the renderer. An ad-hoc send, or one
  * whose request has since been deleted, goes out exactly as the renderer built it.
  */
-async function withRequestProperties(
+export async function withRequestProperties(
   project: RequestChannelProject,
   request: RequestSendRequest,
+  envId?: string,
 ): Promise<ResolvedSendRequest> {
   if (request.requestId === undefined) {
     return withExtraTrustAnchors(request);
   }
-  const mapped = project.sendInputFor(request.requestId, {
-    endpoint: request.input.endpoint,
-    envelopeXml: request.input.envelopeXml,
-    ...(request.input.headers !== undefined ? { headers: { ...request.input.headers } } : {}),
-  });
+  const mapped = project.sendInputFor(
+    request.requestId,
+    {
+      endpoint: request.input.endpoint,
+      envelopeXml: request.input.envelopeXml,
+      ...(request.input.headers !== undefined ? { headers: { ...request.input.headers } } : {}),
+    },
+    envId,
+  );
   // The client identity is resolved separately (and asynchronously): it means reading a file
   // and decrypting a secret, and it must never reach the renderer or the cURL export — which
   // is exactly why `sendInputFor` stays synchronous and material-free. A selected keystore
   // that will not load throws here, failing the send loudly rather than quietly going out
   // without the certificate the user asked for.
-  const tls = await project.tlsFor?.(request.requestId);
+  const tls = await project.tlsFor?.(request.requestId, envId);
   const input = mapped ?? request.input;
   return withExtraTrustAnchors({
     ...request,
@@ -758,8 +764,9 @@ export async function sendRestRequest(
   deps: RequestChannelDeps,
   request: RequestSendRestRequest,
   onLive?: (event: RestLiveEvent) => void,
+  envId?: string,
 ): Promise<RestExchangeSummary> {
-  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+  const resolved = deps.project.restSend?.(request.requestId, request.draft, envId);
   if (resolved === undefined) {
     throw new ProjectError('unknown-entity', `No REST request with id "${request.requestId}"`, {
       details: { requestId: request.requestId },
@@ -1739,7 +1746,11 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.wsClose, (request) => Promise.resolve(closeWsRequest(service, request)));
   registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
 
-  registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
+  registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(service, deps, request));
+
+  registerHandler(channels.request.cancel, (request) =>
+    Promise.resolve(cancelEnvironmentBatch(service, request.sendId) ?? service.cancel(request.sendId)),
+  );
 
   registerHandler(channels.request.preflight, (request) => Promise.resolve(deps.project.preflight(request.requestId)));
 
