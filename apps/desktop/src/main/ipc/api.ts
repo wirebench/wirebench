@@ -384,25 +384,27 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   registerHandler(channels.api.restPlanUpdate, async (request) => {
     const { parsed } = await readRestSource(request.apiId, request.source);
-    const plan = toRestUpdatePlanWire(await router.restPlanUpdate(request.apiId, parsed.document));
-    return { ...plan, fingerprint: fingerprintOf(parsed.documents) };
+    const { plan, cached } = await router.restPlanUpdate(request.apiId, parsed.document);
+    // Both halves of the diff: a cache rewritten since (another update) changes the plan too.
+    return { ...toRestUpdatePlanWire(plan), fingerprint: fingerprintOf([...cached, ...parsed.documents]) };
   });
 
   registerHandler(channels.api.restApplyUpdate, async (request) => {
     const { parsed, label } = await readRestSource(request.apiId, request.source);
-    // The user agreed to the plan they were shown; a source edited since would apply something else.
-    if (fingerprintOf(parsed.documents) !== request.fingerprint) {
-      throw new WirebenchError(
-        'definition-changed',
-        'The definition changed after the update was planned. Plan the update again to see what it does now.',
-        { details: { apiId: request.apiId } },
-      );
-    }
-    const { project, plan, applied } = await router.restApplyUpdate(
-      request.apiId,
-      parsed,
-      request.source !== undefined ? label : undefined,
-    );
+    const { project, plan, applied } = await router.restApplyUpdate(request.apiId, parsed, {
+      ...(request.source !== undefined ? { source: label } : {}),
+      // The user agreed to the plan they were shown; a source or cache changed since would apply
+      // something else.
+      check: (cached) => {
+        if (fingerprintOf([...cached, ...parsed.documents]) !== request.fingerprint) {
+          throw new WirebenchError(
+            'definition-changed',
+            'The definition changed after the update was planned. Plan the update again to see what it does now.',
+            { details: { apiId: request.apiId } },
+          );
+        }
+      },
+    });
     return { project, plan: toRestUpdatePlanWire(plan), applied: { ...applied } };
   });
 

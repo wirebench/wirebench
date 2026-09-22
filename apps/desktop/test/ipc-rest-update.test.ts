@@ -14,6 +14,7 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { OpenApiImportService } from '../src/main/openapi-import.js';
+import { createDefaultFetchDocument, parseOpenApi, writeApiDefinitionCache } from '@wirebench/engine';
 import {
   apiRestApplyUpdateResponseSchema,
   apiRestPlanUpdateResponseSchema,
@@ -143,7 +144,7 @@ beforeEach(async () => {
       asyncApiApplyUpdate: unused,
       restSource: (apiId) => host.restSource(apiId),
       restPlanUpdate: (apiId, next) => host.planRestUpdate(apiId, next),
-      restApplyUpdate: (apiId, next, source) => host.applyRestUpdate(apiId, next, source),
+      restApplyUpdate: (apiId, next, options) => host.applyRestUpdate(apiId, next, options),
       apiDefinitionDocuments: unused,
       apiDefinitionText: unused,
       exportApiDefinitionTo: unused,
@@ -262,5 +263,60 @@ describe('api.restPlanUpdate / api.restApplyUpdate', () => {
     await writeFile(docPath, V2);
     const error = await failure('api.restPlanUpdate', { apiId });
     expect(error.code).toBe('definition-not-cached');
+  });
+
+  it('refuses to apply when the cache changed after the plan was made', async () => {
+    const apiId = await importPets();
+    await writeFile(docPath, V2);
+    const plan = await value<{ fingerprint: string }>('api.restPlanUpdate', { apiId });
+    const slug = (host.snapshot() as ProjectWire).apis.find((a) => a.id === apiId)?.slug ?? '';
+    const other = await parseOpenApi(
+      { kind: 'text', text: V1.replace("version: '1'", "version: '1.1'") },
+      {
+        fetchDocument: createDefaultFetchDocument(),
+      },
+    );
+    await writeApiDefinitionCache(other.documents, join(projectDir, 'project', 'apis', slug, 'definition'), {
+      declaredVersion: '3.0.3',
+    });
+    const error = await failure('api.restApplyUpdate', { apiId, fingerprint: plan.fingerprint });
+    expect(error.code).toBe('definition-changed');
+    expect(requests(apiId).some((r) => r.orphaned === true)).toBe(false);
+  });
+
+  it('applies onto an edit made while the cache was being read', async () => {
+    const apiId = await importPets();
+    await writeFile(docPath, V2);
+    const next = await parseOpenApi({ kind: 'text', text: V2 }, { fetchDocument: createDefaultFetchDocument() });
+    await host.applyRestUpdate(apiId, next, {
+      check: async () => {
+        await host.mutate({ kind: 'update-api', apiId, patch: { name: 'Renamed meanwhile' } });
+      },
+    });
+    const api = (host.snapshot() as ProjectWire).apis.find((a) => a.id === apiId);
+    expect(api?.name).toBe('Renamed meanwhile');
+    expect(requests(apiId).find((r) => r.method === 'DELETE')?.orphaned).toBe(true);
+  });
+
+  it('refuses to apply for an API that did not cache its definition', async () => {
+    const apiId = await importPets(false);
+    const error = await failure('api.restApplyUpdate', { apiId, fingerprint: '0'.repeat(64) });
+    expect(error.code).toBe('definition-not-cached');
+  });
+
+  it('refuses without a source when the API was imported from pasted text', async () => {
+    const imported = await value<{ apiId: string }>('api.importOpenApi', {
+      source: { kind: 'text', text: V1 },
+      target: { projectId: 'p1' },
+      cache: true,
+    });
+    const error = await failure('api.restPlanUpdate', { apiId: imported.apiId });
+    expect(error.code).toBe('definition-source-unavailable');
+  });
+
+  it('rejects a fingerprint that is not 64 hex characters', async () => {
+    const apiId = await importPets();
+    const error = await failure('api.restApplyUpdate', { apiId, fingerprint: 'nope' });
+    expect(error.code).not.toBe('definition-changed');
   });
 });

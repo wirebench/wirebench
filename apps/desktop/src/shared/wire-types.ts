@@ -2829,6 +2829,9 @@ export const restUpdateSourceSchema = z.discriminatedUnion('kind', [
 ]);
 export type RestUpdateSourceWire = z.infer<typeof restUpdateSourceSchema>;
 
+/** An entity id is a short generated string; the cap only keeps a hostile payload small. */
+const MAX_REST_UPDATE_ID_CHARS = 256;
+
 const restOpRefSchema = z.object({ method: z.string(), path: z.string(), summary: z.string().optional() });
 
 /** What updating an OpenAPI-imported REST API would change, per operation and API-wide (`api.restPlanUpdate`). */
@@ -2846,7 +2849,7 @@ export const restUpdatePlanSchema = z.object({
 export type RestUpdatePlanWire = z.infer<typeof restUpdatePlanSchema>;
 
 export const apiRestPlanUpdateRequestSchema = z.object({
-  apiId: z.string(),
+  apiId: z.string().max(MAX_REST_UPDATE_ID_CHARS),
   source: restUpdateSourceSchema.optional(),
 });
 export type ApiRestPlanUpdateRequest = z.infer<typeof apiRestPlanUpdateRequestSchema>;
@@ -2858,7 +2861,10 @@ export type ApiRestPlanUpdateRequest = z.infer<typeof apiRestPlanUpdateRequestSc
 export const apiRestPlanUpdateResponseSchema = restUpdatePlanSchema.extend({ fingerprint: z.string() });
 export type ApiRestPlanUpdateResponse = z.infer<typeof apiRestPlanUpdateResponseSchema>;
 
-export const apiRestApplyUpdateRequestSchema = apiRestPlanUpdateRequestSchema.extend({ fingerprint: z.string() });
+export const apiRestApplyUpdateRequestSchema = apiRestPlanUpdateRequestSchema.extend({
+  /** The plan's SHA-256 fingerprint, 64 lower-case hex characters. */
+  fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+});
 export type ApiRestApplyUpdateRequest = z.infer<typeof apiRestApplyUpdateRequestSchema>;
 
 /** What `api.restApplyUpdate` did: the saved project, the plan it applied, and counts for the toast. */

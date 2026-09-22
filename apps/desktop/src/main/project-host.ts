@@ -3072,9 +3072,41 @@ export class ProjectHost {
   }
 
   /** What updating `apiId` to `next` would change, compared with the cached document. Changes nothing. */
-  async planRestUpdate(apiId: string, next: OpenApiDocument): Promise<RestUpdatePlan> {
-    this.requireCachedRestApi(apiId);
-    return planRestUpdate(await this.openApiDocumentFor(apiId), next);
+  async planRestUpdate(
+    apiId: string,
+    next: OpenApiDocument,
+  ): Promise<{ readonly plan: RestUpdatePlan; readonly cached: readonly ResolvedDocument[] }> {
+    const old = await this.readRestCache(apiId);
+    return { plan: planRestUpdate(old.document, next), cached: old.documents };
+  }
+
+  /**
+   * The cached definition of a REST API, read once from disk: its documents (for a fingerprint) and
+   * the document parsed from exactly those bytes, so what is compared is what was fingerprinted.
+   */
+  private async readRestCache(
+    apiId: string,
+  ): Promise<{ readonly document: OpenApiDocument; readonly documents: readonly ResolvedDocument[] }> {
+    const api = this.requireCachedRestApi(apiId);
+    const cached = await readApiDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
+    const byLocation = new Map<string, ResolvedDocument>();
+    for (const document of cached.documents) {
+      byLocation.set(document.requestedLocation, document);
+      byLocation.set(document.location, document);
+    }
+    const inMemory = (location: string) => {
+      const document = byLocation.get(location);
+      if (document === undefined) {
+        return Promise.reject(
+          new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
+            details: { location },
+          }),
+        );
+      }
+      return Promise.resolve({ location: document.location, bytes: document.bytes, text: document.text });
+    };
+    const parsed = await parseOpenApi({ kind: 'url', url: cached.manifest.rootLocation }, { fetchDocument: inMemory });
+    return { document: parsed.document, documents: cached.documents };
   }
 
   /**
@@ -3082,21 +3114,32 @@ export class ProjectHost {
    * and generated fields the user left alone follow the new document. The project is saved first;
    * if the save fails the in-memory project is put back as it was and the definition cache is never
    * touched. Only a successful save rewrites the cache and drops the parsed-document memo, so the
-   * next response check reads the new definition. `source`, when given, becomes the API's recorded
-   * definition source.
+   * next response check reads the new definition.
    */
   async applyRestUpdate(
     apiId: string,
     next: ParsedOpenApi,
-    source?: string,
+    options: {
+      /** Becomes the API's recorded definition source. */
+      readonly source?: string;
+      /**
+       * Sees the cached documents the update compares against before anything changes; throwing
+       * refuses the update (the IPC layer's fingerprint guard).
+       */
+      readonly check?: (cached: readonly ResolvedDocument[]) => void | Promise<void>;
+    } = {},
   ): Promise<{
     readonly project: ProjectWire;
     readonly plan: RestUpdatePlan;
     readonly applied: Omit<RestApplyResult, 'api'>;
   }> {
+    const { source, check } = options;
+    const cache = await this.readRestCache(apiId);
+    await check?.(cache.documents);
+    // Read after every wait: an edit made meanwhile is the base the update applies to.
     const open = this.require();
     const api = this.requireCachedRestApi(apiId);
-    const old = await this.openApiDocumentFor(apiId);
+    const old = cache.document;
     const plan = planRestUpdate(old, next.document);
     const { api: mapped, ...applied } = applyRestUpdate(api, old, next.document);
     const updated: RestApi = {
@@ -3124,10 +3167,14 @@ export class ProjectHost {
       throw error;
     }
 
-    await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, updated.slug), {
-      declaredVersion: next.document.declaredVersion,
-    });
-    this.openApiDocuments.delete(apiId);
+    try {
+      await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, updated.slug), {
+        declaredVersion: next.document.declaredVersion,
+      });
+    } finally {
+      // Dropped even if the write failed: a half-written cache must be read afresh, not remembered.
+      this.openApiDocuments.delete(apiId);
+    }
     return { project: this.snapshot() as ProjectWire, plan, applied };
   }
 
