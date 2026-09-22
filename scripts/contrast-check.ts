@@ -148,6 +148,10 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-accent-default', bg: '--wb-bg-raised', kind: 'ui', where: 'active tab underline' },
   { fg: '--wb-status-danger', bg: '--wb-bg-raised', kind: 'ui', where: 'error icon' },
   { fg: '--wb-status-warning', bg: '--wb-bg-raised', kind: 'ui', where: 'warning icon' },
+  { fg: '--wb-status-danger', bg: '--wb-bg-base', kind: 'ui', where: 'WebSocket timeline contract violation marker' },
+  { fg: '--wb-status-warning', bg: '--wb-bg-base', kind: 'ui', where: 'WebSocket timeline unmatched-frame marker' },
+  { fg: '--wb-fg-muted', bg: '--wb-bg-base', kind: 'ui', where: 'WebSocket timeline not-checked marker' },
+  { fg: '--wb-fg-default', bg: '--wb-accent-muted', kind: 'ui', where: 'contract markers on a selected timeline row' },
 
   // Panel drag handles: sidebar/console sit on the base surface, the slide-over's handle on it too.
   { fg: '--wb-handle-hover', bg: '--wb-bg-base', kind: 'ui', where: 'panel handle, hovered' },

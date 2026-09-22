@@ -535,6 +535,24 @@ describe('buildExplorerTree with WebSocket APIs', () => {
     expect(nodeProjectId(wsApi?.children?.[1], { 'ws-api-1': 'p1' })).toBe('p1');
   });
 
+  it('badges a WebSocket request whose contract channel is gone, as gRPC does', () => {
+    const orphan = wsRequestWire({ id: 'ws-9', name: 'Gone', order: 2, orphaned: true });
+    const [root] = buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: [] }],
+      {},
+      [],
+      undefined,
+      undefined,
+      undefined,
+      { p1: { apis: [api], requests: [atRoot, orphan] } },
+    );
+    const wsApi = root?.children?.find((child) => child.kind === 'ws-api');
+    const rows = wsApi?.children?.filter((child) => child.kind === 'ws-request');
+    expect(rows?.find((row) => row.id === 'ws:ws-9')?.orphaned).toBe(true);
+    expect(rows?.find((row) => row.id === 'ws:ws-1')?.orphaned).toBeUndefined();
+  });
+
   it('builds the tree it always did when no WebSocket data is given', () => {
     const before = buildExplorerTree(
       [project],

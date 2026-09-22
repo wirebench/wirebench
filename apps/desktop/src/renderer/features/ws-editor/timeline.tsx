@@ -13,10 +13,10 @@
  * scrolls like a short one.
  */
 import { memo, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, CircleSlash, Clock, TriangleAlert } from 'lucide-react';
 import { formatBytes } from '../../lib/format-size.js';
 import type { WsFrameWire } from '../../../shared/wire-types.js';
-import { formatFrameTime, framePreview, isControlFrame } from './ws-format.js';
+import { contractMarkerLabel, formatFrameTime, framePreview, isControlFrame } from './ws-format.js';
 
 /** Past this many rows the timeline renders a window rather than every row. */
 export const WS_TIMELINE_WINDOW = 1000;
@@ -46,6 +46,12 @@ function searchTextOf(frame: WsFrameWire): string {
     searchText.set(frame, text);
   }
   return text;
+}
+
+/** What "Contract problems only" keeps: a frame that broke the contract or that it has no message for. */
+function isContractProblem(frame: WsFrameWire): boolean {
+  const status = frame.contract?.status;
+  return status === 'violation' || status === 'unmatched';
 }
 
 const DIRECTIONS: readonly { readonly id: Direction; readonly label: string }[] = [
@@ -98,12 +104,16 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
   const [direction, setDirection] = useState<Direction>('all');
   const [showControl, setShowControl] = useState(true);
   const [query, setQuery] = useState('');
+  const [contractOnly, setContractOnly] = useState(false);
   const scroller = useRef<HTMLDivElement | null>(null);
 
   // The session's real frame count, not the count still held: past the live cap the oldest frames
   // are let go, and a total that shrank back to the cap would disagree with the status line's
   // running counts, which never forget one.
   const total = frames.length + (droppedFrames ?? 0);
+  // The toggle is only offered on a session some contract checked; elsewhere it would filter to nothing.
+  const checked = useMemo(() => frames.some((frame) => frame.contract !== undefined), [frames]);
+  const onlyMarked = contractOnly && checked;
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -111,9 +121,10 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
       (frame) =>
         (direction === 'all' || frame.direction === direction) &&
         (showControl || !isControlFrame(frame)) &&
+        (!onlyMarked || isContractProblem(frame)) &&
         (needle === '' || searchTextOf(frame).includes(needle)),
     );
-  }, [frames, direction, showControl, query]);
+  }, [frames, direction, showControl, query, onlyMarked]);
 
   const { pinned, scrollTop, onScroll } = useFollowBottom(scroller, visible.length);
 
@@ -174,6 +185,19 @@ export function WsTimeline({ frames, selectedIndex, onSelect, droppedFrames }: W
           />
           Control frames
         </label>
+        {checked && (
+          <label className="flex items-center gap-1 text-fg-muted">
+            <input
+              type="checkbox"
+              data-testid="ws-timeline-contract-only"
+              checked={contractOnly}
+              onChange={(event) => {
+                setContractOnly(event.target.checked);
+              }}
+            />
+            Contract problems only
+          </label>
+        )}
         <input
           type="search"
           aria-label="Filter frames"
@@ -260,6 +284,7 @@ const TimelineRow = memo(function TimelineRow({
         {sent ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />}
       </span>
       <span className="w-20 shrink-0 text-fg-subtle">{formatFrameTime(frame.at)}</span>
+      <ContractMarker frame={frame} selected={selected} />
       {frame.opcode !== 'text' && (
         <span
           data-testid="ws-frame-opcode"
@@ -273,3 +298,36 @@ const TimelineRow = memo(function TimelineRow({
     </li>
   );
 });
+
+/** Per status: the glyph and its colour. Distinct shapes, so the colour is never the only signal. */
+const MARKER_STYLE = {
+  violation: { Icon: TriangleAlert, className: 'text-status-danger' },
+  unmatched: { Icon: CircleSlash, className: 'text-status-warning' },
+  'not-checked': { Icon: Clock, className: 'text-fg-muted' },
+} as const;
+
+/**
+ * A row's contract marker: nothing for a frame that passed, was skipped, or was never checked. On
+ * the selected row it takes the row's text colour — the status colours do not clear contrast on
+ * the selection fill, and the glyph's shape still tells the statuses apart.
+ */
+function ContractMarker({ frame, selected }: { readonly frame: WsFrameWire; readonly selected: boolean }) {
+  const label = contractMarkerLabel(frame.contract);
+  const status = frame.contract?.status;
+  if (label === undefined || (status !== 'violation' && status !== 'unmatched' && status !== 'not-checked')) {
+    return null;
+  }
+  const { Icon, className } = MARKER_STYLE[status];
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="ws-frame-contract-marker"
+      data-status={status}
+      className={`shrink-0 ${selected ? 'text-fg-default' : className}`}
+    >
+      <Icon size={12} aria-hidden="true" />
+    </span>
+  );
+}
