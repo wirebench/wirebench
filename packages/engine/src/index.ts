@@ -424,6 +424,32 @@ export type {
 } from './rest/openapi/cache.js';
 export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/openapi/import.js';
 export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
+export { selectResponse } from './rest/openapi/responses.js';
+export type { ResponseSelection } from './rest/openapi/responses.js';
+export { matchOperation } from './rest/openapi/match.js';
+export type { RestOperationRef } from './rest/openapi/match.js';
+export {
+  checkRestResponse,
+  DEFAULT_REST_CHECK_BUDGET_MS,
+  MAX_CHECKED_BODY_BYTES,
+  MAX_CONTRACT_MESSAGE_LENGTH,
+  MAX_CONTRACT_PROBLEMS,
+} from './rest/contract-check.js';
+export type {
+  RestContractCheckOptions,
+  RestContractInput,
+  RestContractProblem,
+  RestContractResult,
+  RestContractStatus,
+} from './rest/contract-check.js';
+export {
+  createRestContractChecker,
+  DEFAULT_REST_CHECK_DEADLINE_MS,
+  DEFAULT_REST_CHECK_QUEUE,
+} from './rest/contract-check-worker-host.js';
+export type { RestContractChecker, RestContractCheckerOptions } from './rest/contract-check-worker-host.js';
+export { pointerRange } from './json/pointer-range.js';
+export type { PointerTextRange } from './json/pointer-range.js';
 export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
@@ -438,6 +464,7 @@ export type {
   OpenApiMediaType,
   OpenApiOAuthFlow,
   OpenApiOperation,
+  OpenApiResponses,
   OpenApiParameter,
   OpenApiRequestBody,
   OpenApiSecurityRequirement,
@@ -530,6 +557,7 @@ export type {
   RestFolder,
   RestMethod,
   RestRequestDef,
+  RestContractLink,
   RestRequestSettings,
   RestServer,
 } from './rest/model.js';
@@ -671,6 +699,7 @@ export type { DirEntry, FileStat, FsLike } from './project/fs.js';
 export {
   appendHistory,
   generateHistoryId,
+  historyContractOf,
   historySseOf,
   historyWsOf,
   normalizeHistoryEntry,

@@ -191,6 +191,17 @@ export interface RestRequestDef {
    * a re-import; the request survives badged.
    */
   readonly orphaned?: boolean;
+  /**
+   * The operation of the API's definition this request calls: its lower-case method and its path as
+   * the definition spells it (`/pets/{petId}`). Set by an import, kept by edits; absent when unknown.
+   */
+  readonly contract?: RestContractLink;
+}
+
+/** A request's link to an operation of its API's definition. */
+export interface RestContractLink {
+  readonly method: string;
+  readonly path: string;
 }
 
 /** A named node in an API's tree, holding folders and requests. */
@@ -311,6 +322,7 @@ export interface CreateRestRequestInput extends CreateOptions {
   readonly body?: RestBody;
   readonly auth?: AuthConfig;
   readonly settings?: RestRequestSettings;
+  readonly contract?: RestContractLink;
 }
 
 /** Creates a `GET` request with an empty URL, no body and inherited credentials. */
@@ -331,6 +343,7 @@ export function createRestRequest(name: string, input: CreateRestRequestInput = 
     auth: input.auth ?? { type: 'inherit' },
     settings: input.settings ?? {},
     assertions: [],
+    ...(input.contract !== undefined ? { contract: { method: input.contract.method, path: input.contract.path } } : {}),
   };
 }
 

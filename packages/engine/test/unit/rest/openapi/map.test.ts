@@ -76,6 +76,8 @@ describe('apiFromDocument', () => {
     expect(request?.name).toBe('Read one photo');
     expect(request?.method).toBe('GET');
     expect(request?.url).toBe('/pets/{petId}/photos/{photoId}');
+    // The link to the operation, as the document keys it, for checking replies against its responses.
+    expect(request?.contract).toEqual({ method: 'get', path: '/pets/{petId}/photos/{photoId}' });
     // The operation's own `petId` beat the path-level one; every path parameter is enabled.
     expect(request?.pathParams).toEqual([
       { name: 'petId', value: 'p-override', enabled: true },

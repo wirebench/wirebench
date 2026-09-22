@@ -4,9 +4,10 @@ import type { ImportProblemWire, ValidationProblemWire } from '../../shared/wire
 /**
  * Where a problem came from: importing a definition, expanding properties before a send, the
  * send itself failing at the transport level (a timeout, a refused connection, …), or
- * validating a message against its schema set (`validate.message`).
+ * validating a message against its schema set (`validate.message`), or checking a REST response
+ * against its OpenAPI contract (`contract`, whose `location` is a JSON Pointer).
  */
-export type ProblemSource = 'import' | 'expansion' | 'send' | 'validation';
+export type ProblemSource = 'import' | 'expansion' | 'send' | 'validation' | 'contract';
 
 /** How badly a problem matters. Unresolved property references are warnings: the send still goes. */
 export type ProblemSeverity = 'error' | 'warning';

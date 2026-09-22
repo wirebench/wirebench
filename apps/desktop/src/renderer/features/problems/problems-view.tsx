@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import { explorerActions } from '../explorer/explorer-actions.js';
 import { revealProblem } from '../request-editor/validate-actions.js';
+import { revealContractProblem } from '../rest-editor/response/contract.js';
 import type { Problem, ProblemSeverity } from '../../state/problems.js';
 import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
@@ -145,6 +146,10 @@ export function ProblemsView() {
                     type="button"
                     data-testid="problem-row"
                     onClick={() => {
+                      if (source === 'contract') {
+                        revealContractProblem(requestId, problem.location ?? '');
+                        return;
+                      }
                       if (source === 'validation') {
                         revealProblem(requestId, item.direction ?? 'request', problem.line, problem.column);
                         return;

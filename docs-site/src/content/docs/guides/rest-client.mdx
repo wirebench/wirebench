@@ -95,6 +95,46 @@ so far, as one JSON document.
 - Reconnecting with `Last-Event-ID`, honouring a server's `retry:` field, and event streams from
   the CLI are not built.
 
+## Response checks
+
+A request imported from an OpenAPI document remembers the operation it came from, and every JSON
+response it receives is checked against the schema that operation declares for that status — as long
+as the request still calls that operation. A request you made yourself, or one whose method or path
+you have changed since the import, is matched to an operation of its API's imported definition by
+method and path; where a concrete path such as `/pets/mine` and a templated one such as `/pets/{id}`
+both fit, the concrete one wins. The URL may point at another host than the definition's servers
+(a staging copy, a local mock): its path still matches, with a server's own path prefix such as
+`/v1` taken off first.
+
+The media type is taken from the response's `Content-Type`; a JSON body that arrives without one is
+checked against the operation's `application/json` response.
+
+The verdict is a chip on the response status line:
+
+- **Contract ✓** — the body matches.
+- **Contract: N problems** — it does not. Each problem is a marker on the Pretty body view at the
+  property it is about, and a row in the **Problems** panel; choosing the row opens the request and
+  shows that place in the body. At most 50 problems are listed.
+- **Unexpected status** — the operation declares no response for this status. An exact status is
+  used first, then a range such as `4XX`, then `default`.
+- **No schema** — the matching response declares no schema to compare with.
+- **Skipped** — the body is larger than 1 MiB, so it is not parsed for the check.
+- **Not checked** — the check gave up: it ran out of time (the whole wait, looking up the definition
+  included, is held to 1000 ms), the body was too large or too deeply nested to finish (200,000
+  schema steps, nesting 256 deep), the send was cancelled, too many responses were already waiting to
+  be checked, or the checker failed. It is neither a pass nor a failure. When real problems were
+  found before such a stop, the chip lists them and its details say the check was partial.
+
+Hover or focus the chip for the operation, response key and media type it used, and for anything the
+check could not evaluate, such as a schema keyword it does not support. The check runs in a worker thread,
+so a slow schema never holds up the app. History keeps each send's chip. Problems name where they
+are (a JSON Pointer, which contains the body's property names) and what the schema wanted; they do
+not quote the body's values.
+
+No chip appears when there is nothing to check against — the request's API has no imported
+definition, or no operation matches — or when the response is an event stream or not JSON (XML,
+HTML, text or binary).
+
 ## Limits
 
 - The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or

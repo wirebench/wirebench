@@ -537,6 +537,7 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
       headers: parameterRows(operation, 'header', options, skipped),
       body: bodyOf(operation, options, skipped),
       ...(auth !== undefined ? { auth } : {}),
+      contract: { method: operation.method.toLowerCase(), path: operation.path },
     });
   };
 

@@ -149,7 +149,23 @@ export interface OpenApiOperation {
   readonly requestBody?: OpenApiRequestBody;
   /** An operation's own security requirements; an empty array means "explicitly unauthenticated". */
   readonly security?: readonly OpenApiSecurityRequirement[];
+  /** The declared responses, keyed as the document keys them (`'200'`, `'4XX'`, `'default'`). */
+  readonly responses?: OpenApiResponses;
 }
+
+/** One declared response media type. The schema is the `$ref`-resolved node, kept as plain data. */
+export interface OpenApiResponseMediaType {
+  readonly schema?: unknown;
+}
+
+/** One declared response. No `content` means the contract declares no body. */
+export interface OpenApiResponse {
+  readonly description?: string;
+  readonly content?: Readonly<Record<string, OpenApiResponseMediaType>>;
+}
+
+/** An operation's responses, keyed by status (`'200'`), range (`'4XX'`) or `'default'`. */
+export type OpenApiResponses = Readonly<Record<string, OpenApiResponse>>;
 
 /** One security requirement: scheme name to the scopes it needs. */
 export type OpenApiSecurityRequirement = Readonly<Record<string, readonly string[]>>;

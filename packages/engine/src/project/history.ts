@@ -15,6 +15,8 @@ import type { WsExchange, WsFrame } from '../ws/model.js';
 import { capFrames } from '../ws/transcript.js';
 import type { SseRow } from '../rest/sse.js';
 import { capSseRows, SSE_HISTORY_LIMITS } from '../rest/sse-transcript.js';
+import { MAX_CONTRACT_MESSAGE_LENGTH, MAX_CONTRACT_PROBLEMS } from '../rest/contract-check.js';
+import type { RestContractResult } from '../rest/contract-check.js';
 
 /** One HTTP header, in author order. */
 export interface HistoryHeader {
@@ -179,8 +181,36 @@ export interface HistoryEntry {
   readonly ws?: HistoryWs;
   /** The event-stream record of a REST send whose response was `text/event-stream`; absent otherwise. */
   readonly sse?: HistorySse;
+  /** How a REST response compared with its OpenAPI contract; absent when it was not checked. */
+  readonly contract?: RestContractResult;
   readonly sizeBytes: number;
   readonly tags?: readonly string[];
+}
+
+function clipped(text: string): string {
+  return text.length > MAX_CONTRACT_MESSAGE_LENGTH ? text.slice(0, MAX_CONTRACT_MESSAGE_LENGTH) : text;
+}
+
+/**
+ * A contract result as a history entry keeps it: only the fields the result declares, under the
+ * check's own caps (problems, notes, message length), so a line cannot grow past what the live
+ * result could show — whatever produced the value.
+ */
+export function historyContractOf(result: RestContractResult): RestContractResult {
+  return {
+    status: result.status,
+    ...(result.operation !== undefined
+      ? { operation: { method: result.operation.method, path: result.operation.path } }
+      : {}),
+    ...(result.responseKey !== undefined ? { responseKey: result.responseKey } : {}),
+    ...(result.mediaType !== undefined ? { mediaType: result.mediaType } : {}),
+    problems: result.problems.slice(0, MAX_CONTRACT_PROBLEMS).map((problem) => ({
+      path: clipped(problem.path),
+      keyword: problem.keyword,
+      message: clipped(problem.message),
+    })),
+    notes: result.notes.slice(0, MAX_CONTRACT_PROBLEMS).map(clipped),
+  };
 }
 
 /** Options accepted by {@link appendHistory} and {@link openHistory}. */

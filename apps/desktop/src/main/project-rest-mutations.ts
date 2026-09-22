@@ -164,7 +164,7 @@ function extractRequest(api: RestApi, requestId: string): { readonly api: RestAp
 }
 
 /** The API that holds the request, folder or API with this id. */
-function apiOwning(project: Project, nodeId: string): RestApi | undefined {
+export function restApiOwning(project: Project, nodeId: string): RestApi | undefined {
   return project.apis.find((api) => api.id === nodeId || containerHolds(api, nodeId));
 }
 
@@ -382,7 +382,7 @@ export function addFolder(
 
 /** Applies a patch to a folder, renaming its directory when the name changes. */
 export function updateFolder(project: Project, folderId: string, patch: RestFolderPatchWire): RestMutationResult {
-  const api = apiOwning(project, folderId);
+  const api = restApiOwning(project, folderId);
   if (api === undefined) {
     notFound('folder', folderId);
   }
@@ -421,7 +421,7 @@ export function updateFolder(project: Project, folderId: string, patch: RestFold
 
 /** Removes a folder and everything inside it. */
 export function removeFolder(project: Project, folderId: string): RestMutationResult {
-  const api = apiOwning(project, folderId);
+  const api = restApiOwning(project, folderId);
   if (api === undefined) {
     notFound('folder', folderId);
   }
@@ -471,7 +471,7 @@ export function updateRestRequest(
   requestId: string,
   patch: RestRequestPatchWire,
 ): RestMutationResult {
-  const api = apiOwning(project, requestId);
+  const api = restApiOwning(project, requestId);
   if (api === undefined) {
     notFound('request', requestId);
   }
@@ -504,6 +504,8 @@ export function updateRestRequest(
         settings: patch.settings !== undefined ? cleanUndefined<RestRequestSettings>(patch.settings) : request.settings,
         assertions: request.assertions,
         ...(request.orphaned === true ? { orphaned: true } : {}),
+        // The contract link is main's record of what the import generated; a patch cannot set it.
+        ...(request.contract !== undefined ? { contract: request.contract } : {}),
       });
       return next;
     }),
@@ -514,7 +516,7 @@ export function updateRestRequest(
 
 /** Removes a REST request from wherever it is. */
 export function removeRestRequest(project: Project, requestId: string): RestMutationResult {
-  const api = apiOwning(project, requestId);
+  const api = restApiOwning(project, requestId);
   if (api === undefined) {
     notFound('request', requestId);
   }
@@ -527,7 +529,7 @@ export function removeRestRequest(project: Project, requestId: string): RestMuta
 
 /** Duplicates a REST request beside the original, named `<name> copy`. */
 export function cloneRestRequest(project: Project, requestId: string): RestMutationResult {
-  const api = apiOwning(project, requestId);
+  const api = restApiOwning(project, requestId);
   if (api === undefined) {
     notFound('request', requestId);
   }
@@ -549,6 +551,7 @@ export function cloneRestRequest(project: Project, requestId: string): RestMutat
       body: original.body,
       auth: original.auth,
       settings: original.settings,
+      ...(original.contract !== undefined ? { contract: original.contract } : {}),
       ...(original.description !== undefined ? { description: original.description } : {}),
     });
     const withAssertions: RestRequestDef = { ...copy, assertions: original.assertions };
@@ -571,7 +574,7 @@ export function moveNode(
   project: Project,
   input: { readonly nodeId: string; readonly parentId?: string; readonly apiId?: string; readonly index: number },
 ): RestMutationResult {
-  const api = apiOwning(project, input.nodeId);
+  const api = restApiOwning(project, input.nodeId);
   if (api === undefined) {
     notFound('node', input.nodeId);
   }

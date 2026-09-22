@@ -8,7 +8,8 @@
  * *Save response* goes through a channel that takes only the send id: the bytes stay in main and the
  * file is chosen by the user in a native dialog, exactly as a SOAP attachment's save does.
  */
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useContractRevealStore } from './contract.js';
 import { Button } from '../../../components/button.js';
 import { showToast } from '../../../components/toast.js';
 import { Tabs } from '../../../components/tabs.js';
@@ -55,6 +56,13 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
   const live = exchange === undefined ? state?.live : undefined;
   const stream = exchange?.stream;
   const isStream = stream !== undefined || live !== undefined;
+  // A Problems row revealing a contract problem needs the body on screen first.
+  const revealPending = useContractRevealStore((store) => store.pending?.requestId === requestId);
+  useEffect(() => {
+    if (revealPending) {
+      setTab('body');
+    }
+  }, [revealPending]);
   const activeTab: TabId = isStream ? (tab === 'body' ? 'events' : tab) : tab === 'events' ? 'body' : tab;
 
   // Built once per set of rows, not on every render of a pane that re-renders per event.
@@ -138,7 +146,7 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
             {activeTab === 'events' && stream !== undefined && (
               <EventsView rows={stream.rows} droppedRows={stream.droppedRows} omittedRows={stream.omittedRows} />
             )}
-            {activeTab === 'body' && <BodyView exchange={exchange} />}
+            {activeTab === 'body' && <BodyView exchange={exchange} requestId={requestId} />}
             {activeTab === 'headers' && <ResponseHeadersView exchange={exchange} />}
             {activeTab === 'cookies' && <CookiesView exchange={exchange} />}
             {activeTab === 'redirects' && (

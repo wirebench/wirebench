@@ -14,6 +14,7 @@ import {
   redactXml,
 } from './redact.js';
 import type {
+  RestContractResult,
   RestEventStream,
   RestExchange,
   GeneratedRequest,
@@ -34,6 +35,7 @@ import type {
 } from '@wirebench/engine';
 import type {
   RestEventStreamWire,
+  RestContractResultWire,
   RestExchangeSummary,
   ExchangeSummary,
   FaultWire,
@@ -262,6 +264,24 @@ export function toRestEventStreamWire(stream: RestEventStream): RestEventStreamW
     droppedRows: stream.droppedRows,
     truncated: capped.truncated,
     omittedRows: capped.omittedRows,
+  };
+}
+
+/** A REST response's contract result as it crosses IPC: the same fields, in mutable arrays. */
+export function toRestContractWire(result: RestContractResult): RestContractResultWire {
+  return {
+    status: result.status,
+    ...(result.operation !== undefined
+      ? { operation: { method: result.operation.method, path: result.operation.path } }
+      : {}),
+    ...(result.responseKey !== undefined ? { responseKey: result.responseKey } : {}),
+    ...(result.mediaType !== undefined ? { mediaType: result.mediaType } : {}),
+    problems: result.problems.map((problem) => ({
+      path: problem.path,
+      keyword: problem.keyword,
+      message: problem.message,
+    })),
+    notes: [...result.notes],
   };
 }
 

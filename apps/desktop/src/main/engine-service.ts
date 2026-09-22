@@ -44,9 +44,14 @@ import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type Reso
 import { redactHeaders } from './redact.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
 import {
+  createRestContractChecker,
+  DEFAULT_REST_CHECK_DEADLINE_MS,
   createWorkerFrameChecker,
   DEFAULT_FRAME_CHECK_DEADLINE_MS,
   type ChannelMessages,
+  type RestContractChecker,
+  type RestContractInput,
+  type RestContractResult,
   type WorkerFrameChecker,
   type WorkerFrameCheckerOptions,
   type WsFrame,
@@ -78,6 +83,7 @@ import type {
 import {
   toGrpcExchangeSummary,
   toGrpcResponseMessageWire,
+  toRestContractWire,
   toRestExchangeSummary,
   toSseRowWire,
   redactExchangeSummary,
@@ -89,6 +95,7 @@ import {
   toWsFrameWire,
   toWsHandshakeWire,
 } from './engine-wire.js';
+import { restContractOf, type RestContractTarget } from './rest-contract.js';
 import { ExchangeCache } from './exchange-cache.js';
 import type { SendAttachmentInput } from './project-host.js';
 
@@ -290,6 +297,14 @@ export class EngineService {
   private readonly wsSessions = new Map<string, { readonly handle: WsSessionHandle; readonly requestId: string }>();
   /** The contract checker of each session that has one, keyed by `sendId`; ended with the session. */
   private readonly frameCheckers = new Map<string, WorkerFrameChecker>();
+  /**
+   * The one REST response checker of the app, started by the first response that has a contract
+   * to be checked against and ended on quit or when the workspace closes
+   * ({@link disposeRestContractChecker}); the next check after that starts a fresh one.
+   */
+  private restChecker: RestContractChecker | undefined;
+  /** How long a send waits for its contract check, lookup included; tests shorten it. */
+  restContractDeadlineMs = DEFAULT_REST_CHECK_DEADLINE_MS;
 
   /**
    * The unredacted summaries of recent sends, kept in main so the show-secrets toggle can
@@ -656,6 +671,11 @@ export class EngineService {
       /** An OAuth2 access token the host already obtained; never read from the secret store. */
       readonly accessToken?: string;
       readonly onLive?: (event: RestLiveEvent) => void;
+      /**
+       * The operation the request calls and its declared responses (`ProjectHost.restContractFor`);
+       * omitted when the request's API has no cached definition, and then nothing is checked.
+       */
+      readonly contract?: Promise<RestContractTarget | undefined>;
     } = {},
   ): Promise<RestExchangeSummary> {
     const controller = new AbortController();
@@ -703,11 +723,27 @@ export class EngineService {
         method: request.input.request.method,
         ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
       };
-      const full = toRestExchangeSummary(exchange, request.sendId, { ...context, show: true });
-      this.exchanges.putRest(request.sendId, full, exchange.body, (rerenderShow) =>
-        toRestExchangeSummary(exchange, request.sendId, { ...context, show: rerenderShow }),
+      // Awaited, not reported later: the checker's deadline (1 s) bounds it, so the summary — and
+      // the History entry written from it — always carries the result the response pane shows.
+      const contract = await restContractOf(
+        {
+          status: exchange.status,
+          headers: exchange.headers,
+          text: exchange.text,
+          language: exchange.language,
+          streamed: exchange.stream !== undefined,
+        },
+        options.contract,
+        (input) => this.checkRestContract(input),
+        undefined,
+        { deadlineMs: this.restContractDeadlineMs, signal: controller.signal },
       );
-      return toRestExchangeSummary(exchange, request.sendId, { ...context, show: options.showSecrets ?? false });
+      const summaryOf = (rerenderShow: boolean): RestExchangeSummary => {
+        const summary = toRestExchangeSummary(exchange, request.sendId, { ...context, show: rerenderShow });
+        return contract === undefined ? summary : { ...summary, contract: toRestContractWire(contract) };
+      };
+      this.exchanges.putRest(request.sendId, summaryOf(true), exchange.body, summaryOf);
+      return summaryOf(options.showSecrets ?? false);
     } finally {
       this.sends.delete(request.sendId);
       this.restStreams.delete(request.sendId);
@@ -1055,6 +1091,19 @@ export class EngineService {
     // then a harmless no-op.
     this.wsSessions.delete(sendId);
     return { closed: true };
+  }
+
+  /** Checks one response in the app's REST checker worker, starting it on first use. Never rejects. */
+  checkRestContract(input: RestContractInput): Promise<RestContractResult> {
+    this.restChecker ??= createRestContractChecker();
+    return this.restChecker.check(input);
+  }
+
+  /** Ends the REST checker worker, if one is running; a check still waiting reports `not-checked`. */
+  async disposeRestContractChecker(): Promise<void> {
+    const checker = this.restChecker;
+    this.restChecker = undefined;
+    await checker?.dispose();
   }
 
   /**

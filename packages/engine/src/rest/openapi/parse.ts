@@ -24,6 +24,9 @@ import type {
   OpenApiOperation,
   OpenApiParameter,
   OpenApiRequestBody,
+  OpenApiResponse,
+  OpenApiResponseMediaType,
+  OpenApiResponses,
   OpenApiSecurityRequirement,
   OpenApiSecurityScheme,
   OpenApiServer,
@@ -371,6 +374,7 @@ function parseOperation(
   }
   const requestBody = parseRequestBody(operation['requestBody'], where, skipped);
   const security = parseSecurityRequirements(operation['security']);
+  const responses = parseResponses(operation['responses'], false);
 
   return {
     method,
@@ -387,7 +391,46 @@ function parseOperation(
     ...(asBoolean(operation['deprecated']) === true ? { deprecated: true } : {}),
     ...(requestBody !== undefined ? { requestBody } : {}),
     ...(security !== undefined ? { security } : {}),
+    ...(responses !== undefined ? { responses } : {}),
   };
+}
+
+/**
+ * Reads an operation's `responses`, schemas kept as the resolved nodes (response validation needs every
+ * keyword, not the sample generator's subset). Swagger 2.0 declares one `schema` per response and no
+ * media types; it becomes `application/json` content, which is what those documents describe.
+ */
+function parseResponses(value: unknown, swagger2: boolean): OpenApiResponses | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const responses = nullRecord<OpenApiResponse>();
+  for (const [key, entry] of Object.entries(value)) {
+    if (key.startsWith('x-') || !isRecord(entry)) {
+      continue;
+    }
+    const description = asString(entry['description']);
+    let content: Record<string, OpenApiResponseMediaType> | undefined;
+    if (swagger2) {
+      if (entry['schema'] !== undefined) {
+        content = nullRecord<OpenApiResponseMediaType>();
+        content['application/json'] = { schema: entry['schema'] };
+      }
+    } else if (isRecord(entry['content'])) {
+      content = nullRecord<OpenApiResponseMediaType>();
+      for (const [mediaType, media] of Object.entries(entry['content'])) {
+        if (!isRecord(media)) {
+          continue;
+        }
+        content[mediaType] = media['schema'] !== undefined ? { schema: media['schema'] } : {};
+      }
+    }
+    responses[key] = {
+      ...(description !== undefined ? { description } : {}),
+      ...(content !== undefined ? { content } : {}),
+    };
+  }
+  return responses;
 }
 
 function parseParameters(value: unknown, where: string, skipped: OpenApiSkipped[]): readonly OpenApiParameter[] {
@@ -722,9 +765,6 @@ function parseSwagger2Document(document: Record_, declared: string): OpenApiDocu
   }
   if (document['produces'] !== undefined) {
     skipped.push({ kind: 'produces', where: '/produces', reason: 'produces are not imported' });
-  }
-  if (document['responses'] !== undefined) {
-    skipped.push({ kind: 'responses', where: '/responses', reason: 'responses are not imported' });
   }
 
   return {
@@ -1120,14 +1160,13 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
           }
         } else if (opKey === 'produces') {
           skipped.push({ kind: 'produces', where: `${where} produces`, reason: 'produces are not imported' });
-        } else if (opKey === 'responses') {
-          skipped.push({ kind: 'responses', where: `${where} responses`, reason: 'responses are not imported' });
         } else if (opKey === 'example') {
           skipped.push({ kind: 'example', where: `${where} example`, reason: 'examples are not imported' });
         }
       }
 
       const security = parseSecurityRequirements(operation['security']);
+      const responses = parseResponses(operation['responses'], true);
 
       operations.push({
         method: key.toLowerCase(),
@@ -1146,6 +1185,7 @@ function parseSwagger2Operations(document: Record_, skipped: OpenApiSkipped[]): 
         ...(asBoolean(operation['deprecated']) === true ? { deprecated: true } : {}),
         ...(requestBody !== undefined ? { requestBody } : {}),
         ...(security !== undefined ? { security } : {}),
+        ...(responses !== undefined ? { responses } : {}),
       });
     }
   }

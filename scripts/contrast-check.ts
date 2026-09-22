@@ -137,6 +137,8 @@ const PAIRS: readonly Pair[] = [
   { fg: '--wb-status-danger', bg: '--wb-bg-raised', kind: 'text', where: 'problem rows, error copy' },
   { fg: '--wb-status-warning', bg: '--wb-bg-sunken', kind: 'text', where: 'status bar warning count' },
   { fg: '--wb-status-warning', bg: '--wb-bg-raised', kind: 'text', where: 'warning rows, required marks' },
+  { fg: '--wb-status-success', bg: '--wb-bg-base', kind: 'text', where: 'REST response contract chip (Contract ✓)' },
+  { fg: '--wb-status-warning', bg: '--wb-bg-base', kind: 'text', where: 'REST response contract chip (problems)' },
   { fg: '--wb-status-info', bg: '--wb-bg-raised', kind: 'text', where: 'informational copy' },
 
   // Non-text: hairlines, the focus ring, and the severity icons.

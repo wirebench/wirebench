@@ -22,6 +22,7 @@ import {
   updateFolder,
   updateRestRequest,
 } from '../src/main/project-rest-mutations.js';
+import { restRequestPatchSchema } from '../src/shared/wire-types.js';
 
 /** A project with one API: a root request, a `Pets` folder with two, and `Pets/Admin` with one. */
 function seeded(): Project {
@@ -158,6 +159,34 @@ describe('requests', () => {
       query: [{ name: 'page', value: '1', enabled: true }],
       headers: [],
     });
+  });
+
+  it('keeps the contract link through an edit, and a patch cannot set or forge one', () => {
+    const base = seeded();
+    const linked: Project = {
+      ...base,
+      apis: base.apis.map((api) => ({
+        ...api,
+        folders: api.folders.map((folder) => ({
+          ...folder,
+          requests: folder.requests.map((request) =>
+            request.id === 'req-list' ? { ...request, contract: { method: 'get', path: '/pets' } } : request,
+          ),
+        })),
+      })),
+    };
+    const forged = restRequestPatchSchema.parse({ url: '/pets?x=1', contract: { method: 'delete', path: '/x' } });
+    const { project } = updateRestRequest(linked, 'req-list', forged);
+    expect(findRestRequest(project, 'req-list')!.contract).toEqual({ method: 'get', path: '/pets' });
+    const clone = cloneRestRequest(linked, 'req-list');
+    expect(findRestRequest(clone.project, clone.createdId!)!.contract).toEqual({ method: 'get', path: '/pets' });
+
+    const unlinked = updateRestRequest(
+      base,
+      'req-create',
+      restRequestPatchSchema.parse({ contract: { method: 'get', path: '/x' } }),
+    );
+    expect(findRestRequest(unlinked.project, 'req-create')).not.toHaveProperty('contract');
   });
 
   it('replaces settings wholesale, so an override can be turned back off', () => {

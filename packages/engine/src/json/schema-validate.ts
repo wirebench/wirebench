@@ -25,6 +25,12 @@ export interface JsonSchemaProblem {
 export interface ValidateJsonOptions {
   readonly maxNodes?: number;
   readonly maxProblems?: number;
+  /**
+   * Word every message without the checked value's own content (a number, a length, a count), so a
+   * result can be kept where the body must not be: "below the minimum 0" rather than "-3 is less
+   * than 0". The schema's own values (bounds, patterns) and the value's keys still appear.
+   */
+  readonly redactValues?: boolean;
 }
 
 export const MAX_VALIDATE_NODES = 10_000;
@@ -142,7 +148,15 @@ interface Budget {
   stopped: boolean;
   /** Set when the node cap (not the problem cap) is what stopped the walk. */
   outOfNodes: boolean;
+  /** How many `walk` calls are on the stack right now. */
+  depth: number;
+  /** Set when the depth cap (rather than the node cap) is what stopped the walk. */
+  outOfDepth: boolean;
+  readonly redact: boolean;
 }
+
+/** Nested `walk` calls past this stop the walk (as the node cap does) instead of the stack. */
+export const MAX_VALIDATE_DEPTH = 256;
 
 /** A `Budget` that shares the outer walk's node counter but collects into its own problem list —
  *  used to try a combinator's branch without either polluting the caller's problems or letting the
@@ -155,11 +169,19 @@ function branchBudget(outer: Budget, maxProblems: number): Budget {
     set nodes(n: number) {
       outer.nodes = n;
     },
+    get depth() {
+      return outer.depth;
+    },
+    set depth(d: number) {
+      outer.depth = d;
+    },
     maxNodes: outer.maxNodes,
     problems: [],
     maxProblems,
     stopped: false,
     outOfNodes: false,
+    outOfDepth: false,
+    redact: outer.redact,
   };
 }
 
@@ -167,12 +189,22 @@ function branchBudget(outer: Budget, maxProblems: number): Budget {
  * Tries one combinator branch. A branch that ran out of nodes proved nothing either way: the stop
  * is carried to the outer walk (which then gives no combinator verdict) and `undefined` returned.
  */
-function tryBranch(value: unknown, sub: unknown, path: string, budget: Budget): boolean | undefined {
+function tryBranch(
+  value: unknown,
+  sub: unknown,
+  path: string,
+  budget: Budget,
+  applying: Set<unknown>,
+): boolean | undefined {
+  // A branch already being applied to this same value would be skipped by `walk` and so look like a
+  // pass; it proves nothing either way, so it gives no verdict (without stopping the walk).
+  if (isPlainObject(sub) && applying.has(sub)) return undefined;
   const trial = branchBudget(budget, 1);
-  walk(value, sub, path, trial);
+  walk(value, sub, path, trial, applying);
   if (trial.outOfNodes) {
     budget.stopped = true;
     budget.outOfNodes = true;
+    if (trial.outOfDepth) budget.outOfDepth = true;
     return undefined;
   }
   return trial.problems.length === 0;
@@ -191,10 +223,23 @@ export function validateJsonSchema(
     maxProblems: options?.maxProblems ?? MAX_VALIDATE_PROBLEMS,
     stopped: false,
     outOfNodes: false,
+    depth: 0,
+    outOfDepth: false,
+    redact: options?.redactValues === true,
   };
   walk(value, schema, '', budget);
-  if (budget.stopped && budget.problems.at(-1)?.keyword !== 'budget' && budget.problems.length < budget.maxProblems) {
-    budget.problems.push({ path: '', keyword: 'budget', message: 'validation stopped: node budget exhausted' });
+  if (
+    budget.outOfNodes &&
+    budget.problems.at(-1)?.keyword !== 'budget' &&
+    budget.problems.length < budget.maxProblems
+  ) {
+    budget.problems.push({
+      path: '',
+      keyword: 'budget',
+      message: budget.outOfDepth
+        ? `validation stopped at nesting depth ${MAX_VALIDATE_DEPTH}`
+        : `validation stopped after ${budget.maxNodes} nodes`,
+    });
   }
   return budget.problems;
 }
@@ -272,12 +317,42 @@ function jsonEquals(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** Walks one schema node against one value, at `path`, appending problems into the shared budget. */
-function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget): void {
+/**
+ * Walks one schema node against one value, at `path`, appending problems into the shared budget.
+ *
+ * `applying` holds the schema objects already being applied to this same value (through
+ * `allOf`/`anyOf`/`oneOf`/`not`). A resolved document can be cyclic, and a schema that composes
+ * itself would otherwise recurse without ever moving in the value; re-entering one is skipped,
+ * since its constraints are already being checked here. Descending into a child value starts a
+ * fresh set, and the depth cap backs both up.
+ */
+function walk(
+  value: unknown,
+  schemaValue: unknown,
+  path: string,
+  budget: Budget,
+  applying: Set<unknown> = new Set(),
+): void {
   if (!hasRoom(budget)) return;
   if (!isPlainObject(schemaValue)) return; // `true`/`false`/malformed schema: nothing to assert
-  const schema = schemaValue;
+  if (applying.has(schemaValue)) return;
+  if (budget.depth >= MAX_VALIDATE_DEPTH) {
+    budget.stopped = true;
+    budget.outOfNodes = true;
+    budget.outOfDepth = true;
+    return;
+  }
+  applying.add(schemaValue);
+  budget.depth++;
+  try {
+    walkSchema(value, schemaValue, path, budget, applying);
+  } finally {
+    budget.depth--;
+    applying.delete(schemaValue);
+  }
+}
 
+function walkSchema(value: unknown, schema: Schema, path: string, budget: Budget, applying: Set<unknown>): void {
   if (typeof schema.$ref === 'string') return; // unresolved $ref: passes, per scope
 
   const nullable = schema.nullable === true;
@@ -304,7 +379,7 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
   // 3. enum
   if (Array.isArray(schema.enum)) {
     if (!schema.enum.some((v: unknown) => jsonEquals(value, v))) {
-      report(budget, path, 'enum', `value is not one of the allowed values`);
+      report(budget, path, 'enum', 'not one of the allowed values');
       return;
     }
   }
@@ -312,10 +387,24 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
   // 4. string checks
   if (typeof value === 'string') {
     if (typeof schema.minLength === 'number' && value.length < schema.minLength) {
-      report(budget, path, 'minLength', `length ${value.length} is less than ${schema.minLength}`);
+      report(
+        budget,
+        path,
+        'minLength',
+        budget.redact
+          ? `shorter than the minimum length ${schema.minLength}`
+          : `length ${value.length} is less than ${schema.minLength}`,
+      );
     }
     if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) {
-      report(budget, path, 'maxLength', `length ${value.length} is more than ${schema.maxLength}`);
+      report(
+        budget,
+        path,
+        'maxLength',
+        budget.redact
+          ? `longer than the maximum length ${schema.maxLength}`
+          : `length ${value.length} is more than ${schema.maxLength}`,
+      );
     }
     if (typeof schema.pattern === 'string') {
       const compiled = safeCompile(schema.pattern);
@@ -340,27 +429,68 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
   // 5. number checks
   if (typeof value === 'number') {
     if (typeof schema.minimum === 'number' && value < schema.minimum) {
-      report(budget, path, 'minimum', `${value} is less than ${schema.minimum}`);
+      report(
+        budget,
+        path,
+        'minimum',
+        budget.redact ? `below the minimum ${schema.minimum}` : `${value} is less than ${schema.minimum}`,
+      );
     }
     if (typeof schema.maximum === 'number' && value > schema.maximum) {
-      report(budget, path, 'maximum', `${value} is more than ${schema.maximum}`);
+      report(
+        budget,
+        path,
+        'maximum',
+        budget.redact ? `above the maximum ${schema.maximum}` : `${value} is more than ${schema.maximum}`,
+      );
     }
     const exclusiveMin = schema.exclusiveMinimum;
     if (typeof exclusiveMin === 'number' && value <= exclusiveMin) {
-      report(budget, path, 'exclusiveMinimum', `${value} is not more than ${exclusiveMin}`);
+      report(
+        budget,
+        path,
+        'exclusiveMinimum',
+        budget.redact ? `not above the exclusive minimum ${exclusiveMin}` : `${value} is not more than ${exclusiveMin}`,
+      );
     } else if (exclusiveMin === true && typeof schema.minimum === 'number' && value <= schema.minimum) {
-      report(budget, path, 'exclusiveMinimum', `${value} is not more than ${schema.minimum}`);
+      report(
+        budget,
+        path,
+        'exclusiveMinimum',
+        budget.redact
+          ? `not above the exclusive minimum ${schema.minimum}`
+          : `${value} is not more than ${schema.minimum}`,
+      );
     }
     const exclusiveMax = schema.exclusiveMaximum;
     if (typeof exclusiveMax === 'number' && value >= exclusiveMax) {
-      report(budget, path, 'exclusiveMaximum', `${value} is not less than ${exclusiveMax}`);
+      report(
+        budget,
+        path,
+        'exclusiveMaximum',
+        budget.redact ? `not below the exclusive maximum ${exclusiveMax}` : `${value} is not less than ${exclusiveMax}`,
+      );
     } else if (exclusiveMax === true && typeof schema.maximum === 'number' && value >= schema.maximum) {
-      report(budget, path, 'exclusiveMaximum', `${value} is not less than ${schema.maximum}`);
+      report(
+        budget,
+        path,
+        'exclusiveMaximum',
+        budget.redact
+          ? `not below the exclusive maximum ${schema.maximum}`
+          : `${value} is not less than ${schema.maximum}`,
+      );
     }
     if (typeof schema.multipleOf === 'number' && schema.multipleOf > 0) {
       const ratio = value / schema.multipleOf;
       if (Math.abs(ratio - Math.round(ratio)) > 1e-9) {
-        report(budget, path, 'multipleOf', `${value} is not a multiple of ${schema.multipleOf}`);
+        report(
+          budget,
+          path,
+          'multipleOf',
+          budget.redact
+            ? `not a multiple of ${schema.multipleOf}`
+            : `${value} is not a multiple of ${schema.multipleOf}`,
+        );
       }
     }
   }
@@ -368,10 +498,24 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
   // 6. array checks
   if (Array.isArray(value)) {
     if (typeof schema.minItems === 'number' && value.length < schema.minItems) {
-      report(budget, path, 'minItems', `has ${value.length} items, fewer than ${schema.minItems}`);
+      report(
+        budget,
+        path,
+        'minItems',
+        budget.redact
+          ? `fewer items than the minimum ${schema.minItems}`
+          : `has ${value.length} items, fewer than ${schema.minItems}`,
+      );
     }
     if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) {
-      report(budget, path, 'maxItems', `has ${value.length} items, more than ${schema.maxItems}`);
+      report(
+        budget,
+        path,
+        'maxItems',
+        budget.redact
+          ? `more items than the maximum ${schema.maxItems}`
+          : `has ${value.length} items, more than ${schema.maxItems}`,
+      );
     }
     if (schema.uniqueItems === true) {
       const dup = value.some((v, i) => value.slice(0, i).some((prior) => jsonEquals(prior, v)));
@@ -457,36 +601,46 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
   if (Array.isArray(schema.allOf)) {
     for (const sub of schema.allOf) {
       if (budget.stopped) break;
-      walk(value, sub, path, budget);
+      walk(value, sub, path, budget, applying);
     }
   }
   if (Array.isArray(schema.anyOf) && !budget.stopped) {
     let anyPasses = false;
+    let undecided = false;
     for (const sub of schema.anyOf as unknown[]) {
-      const passed = tryBranch(value, sub, path, budget);
-      if (passed === undefined) break;
+      const passed = tryBranch(value, sub, path, budget, applying);
+      if (passed === undefined) {
+        undecided = true;
+        if (budget.stopped) break;
+        continue;
+      }
       if (passed) {
         anyPasses = true;
         break;
       }
     }
-    if (!anyPasses && !budget.stopped) {
+    if (!anyPasses && !undecided && !budget.stopped) {
       report(budget, path, 'anyOf', 'value matches none of the allowed schemas');
     }
   }
   if (Array.isArray(schema.oneOf) && !budget.stopped) {
     let matches = 0;
+    let undecided = false;
     for (const sub of schema.oneOf as unknown[]) {
-      const passed = tryBranch(value, sub, path, budget);
-      if (passed === undefined) break;
+      const passed = tryBranch(value, sub, path, budget, applying);
+      if (passed === undefined) {
+        undecided = true;
+        if (budget.stopped) break;
+        continue;
+      }
       if (passed) matches += 1;
     }
-    if (matches !== 1 && !budget.stopped) {
+    if ((undecided ? matches > 1 : matches !== 1) && !budget.stopped) {
       report(budget, path, 'oneOf', `value matches ${matches} of the allowed schemas, not exactly one`);
     }
   }
   if (isPlainObject(schema.not) && !budget.stopped) {
-    const notPasses = tryBranch(value, schema.not, path, budget);
+    const notPasses = tryBranch(value, schema.not, path, budget, applying);
     if (notPasses === true && !budget.stopped) {
       report(budget, path, 'not', 'value matches the disallowed schema');
     }
