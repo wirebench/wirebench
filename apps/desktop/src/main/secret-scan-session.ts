@@ -79,6 +79,11 @@ export class SecretScanSession {
     return this.unkept().map(toWire);
   }
 
+  /** How many findings {@link scan} would list. */
+  count(): number {
+    return this.unkept().length;
+  }
+
   /** {@link scan}, with a proposed name for each finding and the names already stored. */
   async review(): Promise<SecretScanReview> {
     const findings = this.unkept();
@@ -238,8 +243,39 @@ export interface SecretScanSessionsDeps {
 /** The {@link SecretScanSession} of every open project, made on first use and dropped on close. */
 export class SecretScanSessions {
   private readonly sessions = new Map<string, SecretScanSession>();
+  private readonly listeners = new Set<() => void>();
 
   constructor(private readonly deps: SecretScanSessionsDeps) {}
+
+  /**
+   * How many unkept findings `projectId` has now; 0 for a project that is not open. Makes no
+   * session: a project nobody has reviewed yet has nothing kept.
+   */
+  findings(projectId: string): number {
+    const session = this.sessions.get(projectId);
+    if (session !== undefined) {
+      return session.count();
+    }
+    let host: SecretScanHost;
+    try {
+      host = this.deps.host(projectId);
+    } catch {
+      return 0;
+    }
+    const model = host.model();
+    return model === undefined ? 0 : scanProjectForSecrets(model).length;
+  }
+
+  /**
+   * Called after a Keep or Move in any project — sessions made later included — and when a project
+   * closes (its findings stop counting); returns the unsubscribe. What a held Sync commit waits on.
+   */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
 
   /** The session of `projectId`; throws, making none, when that project is not open. */
   session(projectId: string): SecretScanSession {
@@ -247,6 +283,9 @@ export class SecretScanSessions {
     if (session === undefined) {
       this.deps.host(projectId);
       session = new SecretScanSession(projectId, () => this.deps.host(projectId), this.deps.store);
+      session.onChange(() => {
+        this.emit();
+      });
       this.sessions.set(projectId, session);
     }
     return session;
@@ -266,5 +305,12 @@ export class SecretScanSessions {
   close(projectId: string): void {
     this.sessions.get(projectId)?.dispose();
     this.sessions.delete(projectId);
+    this.emit();
+  }
+
+  private emit(): void {
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
   }
 }

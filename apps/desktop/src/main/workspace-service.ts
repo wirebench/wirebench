@@ -70,6 +70,7 @@ import type { PreferencesService } from './preferences.js';
 import { isWorkspaceManagedPath, ProjectWatcher } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
+import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretStore } from './secrets.js';
 import { createSyncBackend } from './sync/create-backend.js';
 import { assertBranchName, assertRemoteUrl } from './sync/git-cli.js';
@@ -78,6 +79,7 @@ import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
 import { SyncService } from './sync/sync-service.js';
+import type { SyncServiceDeps } from './sync/sync-service.js';
 import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from './sync/types.js';
 import {
   copyProjectPayload,
@@ -219,6 +221,11 @@ export interface WorkspaceServiceDeps {
   readonly dialogs?: WorkspaceDialogs;
   /** rename/cp/rm for moving a tree between folders; `node:fs` unless a test injects its own. */
   readonly files?: WorkspaceFileOps;
+  /**
+   * The open projects' secret scans: a shared workspace holds its automatic commits while they
+   * have unreviewed findings. Omitted in tests that never scan (nothing is held).
+   */
+  readonly secretScans?: Pick<SecretScanSessions, 'findings' | 'onChange'>;
 }
 
 /** One project reference of the open workspace, plus the host that is (or is not) behind it. */
@@ -1204,6 +1211,7 @@ export class WorkspaceService implements ProjectRouter {
           this.deps.hooks?.onGitIdentityNeeded?.(workspaceId);
         }
       },
+      ...this.secretHoldDeps(open),
     });
     open.sync = sync;
     if (initialCommitMessage !== undefined) {
@@ -1213,6 +1221,24 @@ export class WorkspaceService implements ProjectRouter {
       void sync.commit(initialCommitMessage).catch(() => undefined);
     }
     await sync.start();
+  }
+
+  /**
+   * What a share's sync holds automatic commits on: the findings of this workspace's open
+   * projects (a project that is not open has no model to scan, so it does not count), and whether
+   * any of them has edits not yet written.
+   */
+  private secretHoldDeps(open: OpenWorkspace): Pick<SyncServiceDeps, 'scanFindings' | 'onScanChange' | 'unsaved'> {
+    const scans = this.deps.secretScans;
+    if (scans === undefined) {
+      return {};
+    }
+    const openHosts = (): OpenProjectEntry[] => open.entries.filter((entry) => entry.host !== undefined);
+    return {
+      scanFindings: () => openHosts().reduce((sum, entry) => sum + scans.findings(entry.projectId), 0),
+      onScanChange: (listener) => scans.onChange(listener),
+      unsaved: () => openHosts().some((entry) => entry.host?.unsavedFiles() !== undefined),
+    };
   }
 
   /** Holds outside-edit delivery while sync is busy or in conflict; replays what was held once it is neither. */

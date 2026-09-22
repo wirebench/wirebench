@@ -23,6 +23,7 @@ import type {
 } from '../../shared/wire-types.js';
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
+import { reviewSecrets } from './secret-review.js';
 import { useWorkspaceStore } from './workspace.js';
 
 /** What `sync.status` answers for a workspace that is not shared — never thrown for. */
@@ -168,6 +169,11 @@ export const useSyncStore = create<SyncStore>((set, get) => {
     },
 
     commit: async (message) => {
+      // A commit is what leaves the machine, so it is reviewed first, the way a manual save is.
+      // "Commit anyway" goes ahead with the findings; main then takes it in place of a held commit.
+      if ((await reviewSecrets('commit')) !== 'proceed') {
+        return;
+      }
       const result = await ipc().sync.commit({ message });
       if (result.ok) {
         applied(result.value);

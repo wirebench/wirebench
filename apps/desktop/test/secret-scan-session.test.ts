@@ -332,4 +332,45 @@ describe('SecretScanSessions', () => {
     expect(reopened).not.toBe(session);
     expect(reopened.scan()).toHaveLength(1);
   });
+
+  it('counts the unkept findings of a project, and none for a project that is not open', () => {
+    const host = memoryHost(seeded());
+    const store = new SecretStore(dir, fakeCrypto());
+    const registry = new SecretScanSessions({
+      host: (projectId) => {
+        if (projectId !== 'p1') throw new Error(`No open project with id "${projectId}"`);
+        return host;
+      },
+      store,
+    });
+
+    expect(registry.findings('p1')).toBe(1);
+    expect(registry.findings('p2')).toBe(0);
+
+    const session = registry.session('p1');
+    session.keep([session.scan()[0]!.id]);
+    expect(registry.findings('p1')).toBe(0);
+  });
+
+  it('tells onChange about a Keep or Move in any project, and about a project closing', async () => {
+    const { registry } = sessions(memoryHost(seeded()));
+    const listener = vi.fn();
+    const off = registry.onChange(listener);
+
+    const session = registry.session('p1');
+    session.keep([session.scan()[0]!.id]);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    registry.projectChanged('p1', null);
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    // A session made after subscribing is heard too.
+    const reopened = registry.session('p1');
+    await reopened.move([{ id: reopened.scan()[0]!.id, name: 'billing_token' }]);
+    expect(listener).toHaveBeenCalledTimes(3);
+
+    off();
+    registry.close('p1');
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
 });

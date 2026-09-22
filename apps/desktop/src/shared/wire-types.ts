@@ -4095,6 +4095,8 @@ export const syncStatusWireSchema = z.object({
   branch: z.string().optional(),
   lastSyncAt: z.string().optional(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
+  /** An automatic commit waits for the open projects' possible secrets to be reviewed; how many. */
+  held: z.object({ findings: z.number() }).optional(),
 });
 export type SyncStatusWire = z.infer<typeof syncStatusWireSchema>;
 

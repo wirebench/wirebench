@@ -148,6 +148,8 @@ let settle: ((outcome: SecretReviewOutcome) => void) | undefined;
 let active = false;
 /** Bumped per review, so an action still in flight when its review ended changes nothing. */
 let session = 0;
+/** The projects a Move rewrote during the review on screen: a commit writes them before it goes ahead. */
+let moved = new Set<string>();
 
 export const useSecretReviewStore = create<SecretReviewState>((set, get) => {
   const patchRow = (key: string, patch: Partial<SecretReviewRow>): void => {
@@ -236,6 +238,9 @@ export const useSecretReviewStore = create<SecretReviewState>((set, get) => {
             })),
           }),
         );
+        if (result.moved.length > 0) {
+          moved.add(projectId);
+        }
         for (const id of result.nameTaken) {
           nameTaken.add(rowKey(projectId, id));
         }
@@ -293,6 +298,23 @@ export const useSecretReviewStore = create<SecretReviewState>((set, get) => {
 });
 
 /**
+ * A Move rewrites the model, but a commit takes the files: each project a Move rewrote is saved
+ * before the commit goes ahead, or it would carry the value the review just moved out. A failed
+ * save is `cancel`, with a toast, for the same reason.
+ */
+async function writeMoved(projectIds: readonly string[]): Promise<SecretReviewOutcome> {
+  try {
+    for (const projectId of projectIds) {
+      await useProjectStore.getState().save(projectId);
+    }
+    return 'proceed';
+  } catch (error) {
+    showToast(`Could not save before committing: ${messageOf(error)}`);
+    return 'cancel';
+  }
+}
+
+/**
  * Reviews `projectIds` (every open project by default) for plain-text secrets before a manual
  * save or commit, and says whether it should go ahead.
  *
@@ -313,6 +335,7 @@ export async function reviewSecrets(
     return 'cancel';
   }
   active = true;
+  moved = new Set();
   try {
     let scanned: Scanned;
     try {
@@ -324,7 +347,7 @@ export async function reviewSecrets(
     if (scanned.rows.length === 0) {
       return 'proceed';
     }
-    return await new Promise<SecretReviewOutcome>((resolve) => {
+    const outcome = await new Promise<SecretReviewOutcome>((resolve) => {
       settle = resolve;
       useSecretReviewStore.setState({
         review: {
@@ -336,6 +359,7 @@ export async function reviewSecrets(
         },
       });
     });
+    return outcome === 'proceed' && mode === 'commit' ? await writeMoved([...moved]) : outcome;
   } finally {
     active = false;
   }

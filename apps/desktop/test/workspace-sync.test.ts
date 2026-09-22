@@ -28,6 +28,8 @@ import { HistoryService } from '../src/main/history-service.js';
 import { GitBackend } from '../src/main/sync/git-backend.js';
 import type { GitCli } from '../src/main/sync/git-cli.js';
 import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from '../src/main/sync/types.js';
+import { SecretScanSessions } from '../src/main/secret-scan-session.js';
+import { SecretStore } from '../src/main/secrets.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import {
   createBareRemote,
@@ -54,6 +56,8 @@ interface Machine {
   readonly pulled: SyncPulledEvent[];
   readonly conflicts: SyncConflictWire[][];
   readonly statuses: SyncStatusWire[];
+  /** The machine's secret scans, when opened `withScans`. */
+  readonly scans?: SecretScanSessions;
 }
 
 let base: string;
@@ -127,8 +131,20 @@ async function cloneTo(name: string, settings: Partial<GitShareSettings> = {}): 
   return root;
 }
 
-async function openMachine(root: string): Promise<Machine> {
+async function openMachine(root: string, options: { withScans?: boolean } = {}): Promise<Machine> {
+  const scans =
+    options.withScans === true
+      ? new SecretScanSessions({
+          host: (projectId) => machine.service.hostFor(projectId),
+          store: new SecretStore(join(root, 'secrets'), {
+            available: true,
+            encrypt: (text) => Buffer.from(`enc:${text}`, 'utf8'),
+            decrypt: (buffer) => buffer.toString('utf8').replace(/^enc:/, ''),
+          }),
+        })
+      : undefined;
   const machine: Machine = {
+    ...(scans !== undefined ? { scans } : {}),
     root,
     tree: join(workspaceDir(root, workspace.id), 'tree'),
     service: undefined as unknown as WorkspaceService,
@@ -143,7 +159,11 @@ async function openMachine(root: string): Promise<Machine> {
     history: new HistoryService(root),
     watchDebounceMs: WATCH_DEBOUNCE_MS,
     git: () => Promise.resolve(git),
+    ...(scans !== undefined ? { secretScans: scans } : {}),
     hooks: {
+      onProjectChanged: (projectId, project) => {
+        scans?.projectChanged(projectId, project);
+      },
       onProjectChangedOnDisk: (projectId, paths) => machine.projectOnDisk.push({ projectId, paths: [...paths] }),
       onSyncPulled: (event) => machine.pulled.push(event),
       onSyncConflict: (_workspaceId, conflicts) => machine.conflicts.push([...conflicts]),
@@ -298,6 +318,25 @@ describeGit('WorkspaceService — git sync', { timeout: 60_000 }, () => {
 
     await waitForSubject(a, /^Update request AddOne in calc$/);
     await vi.waitFor(() => expect(a.service.sync()?.status()).toMatchObject({ state: 'clean', ahead: 0 }), WAIT);
+  });
+
+  it('holds the save commit while the saved request carries a possible secret, and commits once it is kept', async () => {
+    const a = await openMachine(await seedShared(), { withScans: true });
+    const [before] = (await a.service.sync()?.log(1)) ?? [];
+
+    // Obviously fake, but shaped like a password in a SOAP body.
+    await editRequest(a, '<Add><Password>not-a-real-password</Password></Add>', { save: true });
+
+    await vi.waitFor(() => expect(a.service.sync()?.status().held).toEqual({ findings: 1 }), WAIT);
+    await settle();
+    expect((await a.service.sync()?.log(1))?.[0]?.id).toBe(before?.id);
+    expect(a.statuses.at(-1)?.held).toEqual({ findings: 1 });
+
+    const session = a.scans!.session(PROJECT_ID);
+    session.keep(session.scan().map((finding) => finding.id));
+
+    await waitForSubject(a, /^Update request AddOne in calc$/);
+    expect(a.service.sync()?.status().held).toBeUndefined();
   });
 
   it('a second machine sees behind: 1 after fetch, and pull reloads its clean host without a banner', async () => {

@@ -246,6 +246,11 @@ const workspaceService = new WorkspaceService({
   // "System proxy" means whatever Chromium's own network stack means by it — including any PAC
   // file or OS setting — rather than a second, subtly different guess of our own.
   resolveSystemProxy: async (url) => await session.defaultSession.resolveProxy(url).catch(() => undefined),
+  // Read lazily: the scan sessions are built below, against this very service.
+  secretScans: {
+    findings: (projectId): number => secretScans.findings(projectId),
+    onChange: (listener): (() => void) => secretScans.onChange(listener),
+  },
   hooks: {
     onChanged: (workspace) => {
       broadcast(events.workspace.changed, { workspace });
@@ -283,7 +288,7 @@ const workspaceService = new WorkspaceService({
 });
 
 /** Each open project's secret scan: its findings, its session-only Keep list, Move to secret. */
-const secretScans = new SecretScanSessions({
+const secretScans: SecretScanSessions = new SecretScanSessions({
   host: (projectId) => workspaceService.hostFor(projectId),
   store: secretStore,
 });
