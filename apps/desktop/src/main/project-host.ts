@@ -1263,6 +1263,10 @@ export class ProjectHost {
     if (change.kind === 'remove-grpc-api') {
       this.protoSets.delete(change.apiId);
     }
+    if (change.kind === 'remove-api') {
+      // The parsed definition belongs to the API's cache folder, which the removal takes with it.
+      this.openApiDocuments.delete(change.apiId);
+    }
     // Parsed keystores are decrypted key material keyed by entry id: a removed entry must not
     // leave its key in memory, and a re-entered password must not be shadowed by the previous
     // parse — the cache key cannot see a secret changing *underneath an unchanged ref*.
@@ -2984,6 +2988,8 @@ export class ProjectHost {
     if (request === undefined || api?.definition?.cache !== true) {
       return undefined;
     }
+    // `sent.url` is the expanded URL and may carry a secret: it stays in memory for the match and is
+    // never logged or stored.
     const link = request.contract;
     const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
     return this.openApiDocumentFor(api.id).then((document) => {

@@ -96,6 +96,46 @@ describe('restContractOf', () => {
   });
 });
 
+describe('restContractOf is bounded', () => {
+  const never = <T>(): Promise<T> => new Promise<T>(() => undefined);
+
+  it('a hung definition lookup gives not-checked within the deadline', async () => {
+    const started = Date.now();
+    const result = await restContractOf(response(), never<RestContractTarget>(), vi.fn(), undefined, {
+      deadlineMs: 600,
+    });
+    expect(result).toEqual({ status: 'not-checked', problems: [], notes: ['the check took longer than 600 ms'] });
+    expect(Date.now() - started).toBeLessThan(1_500);
+  });
+
+  it('a saturated checker gives not-checked within the deadline', async () => {
+    const started = Date.now();
+    const result = await restContractOf(
+      response(),
+      Promise.resolve(target),
+      () => never<RestContractResult>(),
+      undefined,
+      {
+        deadlineMs: 600,
+      },
+    );
+    expect(result?.status).toBe('not-checked');
+    expect(Date.now() - started).toBeLessThan(1_500);
+  });
+
+  it('a cancelled send stops waiting for the check at once', async () => {
+    const controller = new AbortController();
+    const pending = restContractOf(response(), Promise.resolve(target), () => never<RestContractResult>(), undefined, {
+      deadlineMs: 60_000,
+      signal: controller.signal,
+    });
+    setTimeout(() => {
+      controller.abort();
+    }, 10);
+    expect(await pending).toEqual({ status: 'not-checked', problems: [], notes: ['the send was cancelled'] });
+  });
+});
+
 describe('the contract on the wire and in History', () => {
   let server: TestRestServer;
   beforeAll(async () => {
@@ -124,6 +164,36 @@ describe('the contract on the wire and in History', () => {
       expect(summary.contract?.problems[0]?.keyword).toBe('required');
       expect(restExchangeSummarySchema.parse(summary).contract).toEqual(summary.contract);
       expect(engine.exchanges.getRestView('c1', false)?.contract).toEqual(summary.contract);
+    } finally {
+      await engine.disposeRestContractChecker();
+    }
+  });
+
+  it('a send with a hung definition lookup still returns within the deadline, not-checked', async () => {
+    const engine = new EngineService();
+    engine.restContractDeadlineMs = 600;
+    const started = Date.now();
+    const summary = await engine.sendRestRequest(
+      { sendId: 'c4', requestId: 'r1', input: input() },
+      { contract: new Promise<RestContractTarget>(() => undefined) },
+    );
+    expect(summary.contract?.status).toBe('not-checked');
+    expect(Date.now() - started).toBeLessThan(2_500);
+  });
+
+  it('a followed 302 is checked against the final 200 response', async () => {
+    const engine = new EngineService();
+    try {
+      const summary = await engine.sendRestRequest(
+        {
+          sendId: 'c5',
+          requestId: 'r1',
+          input: { ...input(), request: { ...input().request, url: '/redirect/302?to=/echo' } },
+        },
+        { contract: Promise.resolve(target) },
+      );
+      expect(summary.http.status).toBe(200);
+      expect(summary.contract?.responseKey).toBe('200');
     } finally {
       await engine.disposeRestContractChecker();
     }

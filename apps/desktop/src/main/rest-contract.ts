@@ -7,6 +7,7 @@
  * checked, only the selected operation's `responses` are posted to the worker, and a definition
  * cache that cannot be read costs one console line and a `no-contract` result — never the send.
  */
+import { DEFAULT_REST_CHECK_DEADLINE_MS } from '@wirebench/engine';
 import type { OpenApiResponses, RestContractInput, RestContractResult, RestOperationRef } from '@wirebench/engine';
 
 /**
@@ -34,10 +35,24 @@ function headerValue(headers: Readonly<Record<string, string>>, name: string): s
   return key === undefined ? undefined : headers[key];
 }
 
+/** How long the whole check may hold a send, and the send's own cancel. */
+export interface RestContractWaitOptions {
+  /** One timer over the definition lookup and the check together. Defaults to the checker's deadline. */
+  readonly deadlineMs?: number;
+  readonly signal?: AbortSignal;
+}
+
+function notChecked(note: string): RestContractResult {
+  return { status: 'not-checked', problems: [], notes: [note] };
+}
+
 /**
  * The response's contract result, or `undefined` when nothing is to be checked: the request's API
  * has no cached definition (`target` is `undefined`), or the response is a stream or not JSON.
- * Never rejects: the checker itself never does, and a failed cache read degrades to `no-contract`.
+ *
+ * Never rejects, and never holds the send longer than one deadline: the definition lookup and the
+ * check race a single timer and the send's abort signal, and whichever of those wins answers
+ * `not-checked`. A lookup or check still running then finishes unobserved.
  */
 export async function restContractOf(
   response: RestContractResponse,
@@ -46,10 +61,43 @@ export async function restContractOf(
   warn: (message: string) => void = (message) => {
     console.warn(message);
   },
+  options: RestContractWaitOptions = {},
 ): Promise<RestContractResult | undefined> {
   if (target === undefined || response.streamed || response.language !== 'json') {
     return undefined;
   }
+  const deadlineMs = options.deadlineMs ?? DEFAULT_REST_CHECK_DEADLINE_MS;
+  const { signal } = options;
+  if (signal?.aborted === true) {
+    return notChecked('the send was cancelled');
+  }
+  let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
+  const bounds = new Promise<RestContractResult>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(notChecked(`the check took longer than ${String(deadlineMs)} ms`));
+    }, deadlineMs);
+    onAbort = () => {
+      resolve(notChecked('the send was cancelled'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([checked(response, target, check, warn), bounds]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort !== undefined) {
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+}
+
+async function checked(
+  response: RestContractResponse,
+  target: Promise<RestContractTarget | undefined>,
+  check: (input: RestContractInput) => Promise<RestContractResult>,
+  warn: (message: string) => void,
+): Promise<RestContractResult | undefined> {
   let resolved: RestContractTarget | undefined;
   try {
     resolved = await target;

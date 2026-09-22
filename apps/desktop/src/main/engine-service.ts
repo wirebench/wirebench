@@ -45,6 +45,7 @@ import { redactHeaders } from './redact.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
 import {
   createRestContractChecker,
+  DEFAULT_REST_CHECK_DEADLINE_MS,
   createWorkerFrameChecker,
   DEFAULT_FRAME_CHECK_DEADLINE_MS,
   type ChannelMessages,
@@ -302,6 +303,8 @@ export class EngineService {
    * ({@link disposeRestContractChecker}); the next check after that starts a fresh one.
    */
   private restChecker: RestContractChecker | undefined;
+  /** How long a send waits for its contract check, lookup included; tests shorten it. */
+  restContractDeadlineMs = DEFAULT_REST_CHECK_DEADLINE_MS;
 
   /**
    * The unredacted summaries of recent sends, kept in main so the show-secrets toggle can
@@ -732,6 +735,8 @@ export class EngineService {
         },
         options.contract,
         (input) => this.checkRestContract(input),
+        undefined,
+        { deadlineMs: this.restContractDeadlineMs, signal: controller.signal },
       );
       const summaryOf = (rerenderShow: boolean): RestExchangeSummary => {
         const summary = toRestExchangeSummary(exchange, request.sendId, { ...context, show: rerenderShow });
@@ -1088,12 +1093,6 @@ export class EngineService {
     return { closed: true };
   }
 
-  /**
-   * Closes every open WebSocket session. An application may not send 1001 on the wire (RFC 6455
-   * §7.4.1), so this always sends `1000 'going away'`; a caller that wants 1001 recorded (e.g. a
-   * History row for "the app is quitting") records it itself alongside this call. Answers how
-   * many sessions were asked to close, so a caller can skip waiting when there were none.
-   */
   /** Checks one response in the app's REST checker worker, starting it on first use. Never rejects. */
   checkRestContract(input: RestContractInput): Promise<RestContractResult> {
     this.restChecker ??= createRestContractChecker();
@@ -1107,6 +1106,12 @@ export class EngineService {
     await checker?.dispose();
   }
 
+  /**
+   * Closes every open WebSocket session. An application may not send 1001 on the wire (RFC 6455
+   * §7.4.1), so this always sends `1000 'going away'`; a caller that wants 1001 recorded (e.g. a
+   * History row for "the app is quitting") records it itself alongside this call. Answers how
+   * many sessions were asked to close, so a caller can skip waiting when there were none.
+   */
   closeAllWs(): number {
     return this.closeWsWhere(() => true);
   }
