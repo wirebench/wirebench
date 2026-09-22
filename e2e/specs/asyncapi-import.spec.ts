@@ -65,7 +65,8 @@ test.describe('AsyncAPI import', () => {
   });
 
   test('imports a 3.0 document, sends its sample clean, and marks a frame that breaks the contract', async () => {
-    ws = await startTestWsServer();
+    // The channel's ws binding asks for the chat.v1 subprotocol; a server that picks none fails the handshake.
+    ws = await startTestWsServer({ subprotocols: ['chat.v1'] });
     docs = await startTestRestServer({ documents: chatDocuments(ws.port) });
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-asyncapi-'));
     launched = await launchApp({ userDataDir, keepUserDataDir: true });

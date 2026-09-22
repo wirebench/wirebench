@@ -84,7 +84,7 @@ function safeCompile(pattern: string): CompiledPattern {
  *  quantifier — the shapes that make a regex engine's backtracking exponential in input length.
  *  This is a heuristic scan, not a parser: it errs toward refusing rather than missing a risk. */
 function isUnsafePattern(pattern: string): boolean {
-  if (/\\[1-9]/.test(pattern) || /\\k<[^>]+>/.test(pattern)) return true; // backreference
+  if (/\\[1-9]/.test(pattern) || pattern.includes('\\k<')) return true; // backreference, numbered or named
   if (/\(\?<?[=!]/.test(pattern)) return true; // lookahead or lookbehind
   return hasNestedUnboundedQuantifier(pattern);
 }
