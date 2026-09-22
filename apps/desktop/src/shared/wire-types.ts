@@ -3318,6 +3318,9 @@ export const historyClearResponseSchema = z.object({ cleared: z.number() });
 /** Request payload for `history.resend`: re-sends a past entry through the normal send path. */
 export const historyResendRequestSchema = z.object({ id: z.string() });
 
+/** Request payload for `history.resendGrpc`: calls a past gRPC entry's saved request with its recorded messages. */
+export const historyResendGrpcRequestSchema = z.object({ id: z.string() });
+
 /** Payload for the `history.appended` event: one new entry, for the History view to prepend. */
 export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });
 export type HistoryAppendedEvent = z.infer<typeof historyAppendedEventSchema>;

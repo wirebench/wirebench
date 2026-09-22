@@ -2,15 +2,13 @@ import { useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { MethodBadge } from '../rest-api/method-badge.js';
 import { Button } from '../../components/button.js';
-import { showToast } from '../../components/toast.js';
 import { formatClockTime, formatDuration } from '../../lib/format-size.js';
 import type { GridRowProps } from '../../lib/grid-navigation.js';
 import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useHistoryStore } from '../../state/history.js';
-import { canResendHistoryEntry } from './history-actions.js';
-import { ipc } from '../../state/ipc-client.js';
+import { canResendHistoryEntry, resendHistoryEntry } from './history-actions.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { HistoryEntryWire, WorkspaceProjectWire } from '../../../shared/wire-types.js';
 
@@ -126,7 +124,7 @@ function Row({
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
-        {/* Only a SOAP send can be replayed from History; the others resend from their request. */}
+        {/* SOAP and gRPC sends replay from History; REST and WebSocket resend from their request. */}
         {canResendHistoryEntry(entry) && (
           <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
             ↻
@@ -189,13 +187,7 @@ export function HistoryView() {
   };
 
   const resend = (entry: HistoryEntryWire) => {
-    void ipc()
-      .history.resend({ id: entry.id })
-      .then((result) => {
-        if (!result.ok) {
-          showToast(result.error.code);
-        }
-      });
+    void resendHistoryEntry(entry);
   };
 
   const openDiff = (a: HistoryEntryWire, b: HistoryEntryWire) => {

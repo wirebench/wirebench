@@ -194,6 +194,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       get: fail('history.get'),
       clear: fail('history.clear'),
       resend: fail('history.resend'),
+      resendGrpc: fail('history.resendGrpc'),
     },
     validate: { message: fail('validate.message') },
     wsi: {
