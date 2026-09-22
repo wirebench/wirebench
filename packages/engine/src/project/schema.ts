@@ -468,6 +468,8 @@ const wsSavedMessageSchema = z.looseObject({
   name: z.string(),
   format: z.enum(['text', 'binary']).default('text'),
   file: nonEmpty,
+  /** The contract message this was generated from, and the sample text it was generated as. */
+  contract: z.looseObject({ message: nonEmpty, generated: z.string() }).optional(),
 });
 
 /**
@@ -487,6 +489,10 @@ export const wsRequestFileSchema = z.looseObject({
   auth: authConfigSchema.default({ type: 'inherit' }),
   settings: wsSettingsSchema.default({}),
   messages: z.array(wsSavedMessageSchema).default([]),
+  /** The channel of the API's contract this request was imported from. */
+  contract: z.looseObject({ channel: nonEmpty }).optional(),
+  /** The contract no longer has that channel. */
+  orphaned: z.boolean().optional(),
 });
 
 /** `apis/<slug>/api.yaml` for a WebSocket API. */

@@ -75,6 +75,23 @@ describe('writeApiDefinitionCache / readApiDefinitionCache', () => {
     }
   });
 
+  it('names the root after rootFile when given, and reads it back under that name', async () => {
+    const dir = await tempDir();
+    const bytes = new TextEncoder().encode('asyncapi: 3.0.0\n');
+    const location = 'https://api.test/v1/spec';
+
+    await writeApiDefinitionCache([{ location, requestedLocation: location, bytes, text: 'asyncapi: 3.0.0\n' }], dir, {
+      rootFile: 'asyncapi.yaml',
+      declaredVersion: '3.0.0',
+    });
+    const cached = await readApiDefinitionCache(dir);
+
+    expect(cached.manifest.documents[0]?.file).toBe('asyncapi.yaml');
+    expect(cached.manifest.declaredVersion).toBe('3.0.0');
+    expect(cached.documents[0]?.bytes).toEqual(bytes);
+    expect(await readdir(dir)).toContain('asyncapi.yaml');
+  });
+
   it('reads back exactly what was written', async () => {
     const dir = await tempDir();
     const documents = await refsDocuments();

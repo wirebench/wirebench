@@ -253,6 +253,10 @@ const writeWsRequest: RequestWriter<WsRequestDef> = (files, dir, request) => {
       name: message.name,
       format: message.format === 'binary' ? 'binary' : undefined,
       file,
+      contract:
+        message.contract === undefined
+          ? undefined
+          : { message: message.contract.message, generated: message.contract.generated },
     });
   });
   files.set(
@@ -271,6 +275,8 @@ const writeWsRequest: RequestWriter<WsRequestDef> = (files, dir, request) => {
         auth: authDocument(request.auth),
         settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
         messages: messages.length > 0 ? messages : undefined,
+        contract: request.contract === undefined ? undefined : { channel: request.contract.channel },
+        orphaned: request.orphaned === true ? true : undefined,
       }),
     ),
   );

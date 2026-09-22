@@ -468,6 +468,9 @@ function wsRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): 
         slug,
         format: entry.format,
         content: text === undefined ? '' : text.toString('utf8'),
+        ...(entry.contract !== undefined
+          ? { contract: { message: entry.contract.message, generated: entry.contract.generated } }
+          : {}),
       });
     }
     return {
@@ -484,6 +487,8 @@ function wsRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): 
       auth: authConfig(parsed.auth),
       settings: exact<WsRequestSettings>(parsed.settings),
       messages,
+      ...(parsed.contract !== undefined ? { contract: { channel: parsed.contract.channel } } : {}),
+      ...(parsed.orphaned === true ? { orphaned: true } : {}),
     };
   };
 }
