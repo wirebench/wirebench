@@ -87,6 +87,49 @@ linked project's own environment override beats a workspace environment's overri
 interface. A request sent under an overridden interface shows a badge next to its endpoint field
 so you can tell, without opening Environments, that something is redirecting it.
 
+## Send to several environments
+
+To check that a request behaves the same on dev, test and prod, send it to all of them at once
+instead of switching the active environment between sends. This works for SOAP and REST requests.
+
+<Steps>
+
+1. In the request's editor, choose **Environments…** next to **Send**, or run
+   **Request: Send to Environments…** from the command palette.
+2. Tick the environments to send to — two or more, up to ten. The active environment starts
+   ticked.
+3. Choose a **Baseline**: the environment the others are compared against. It defaults to the
+   active environment.
+4. Choose **Send**.
+
+</Steps>
+
+The environments offered are the workspace's — the same ones the environment switcher lists and
+that decide where a normal send goes. A project's own environment takes part only through the
+workspace environment it is linked to. With fewer than two workspace environments the action is
+unavailable, and its tooltip says why.
+
+Each environment gets the request exactly as a normal send with that environment active would
+build it — its endpoint override or base URL, its variables, its auth and TLS settings — and your
+unsaved edits go with every one. The sends run in parallel, and **the active environment does not
+change**. One environment failing (an unresolved property, no endpoint, a refused connection)
+does not stop the others; **Cancel** stops the ones still running. The picker remembers your last
+selection for each request until you close the app.
+
+The results open in a **Compare** tab:
+
+- one column per environment, the baseline marked, with the URL it went to, the status, the time,
+  the size and the response body;
+- a line per other environment saying whether it returned the **same body** as the baseline, a
+  body that **differs**, a **different status**, or **failed**, so a wide comparison can be read
+  at a glance;
+- below, the baseline diffed against one other environment, chosen from a list: response headers
+  side by side, then the two bodies in a diff editor. Bodies are pretty-printed first, so a
+  difference in formatting alone is not reported as a change.
+
+Every individual send is also recorded in **History** and the **HTTP Log**, one entry per
+environment, each naming its environment — closing the Compare tab loses nothing.
+
 ## Related
 
 - [Property expansion syntax](/wirebench/reference/property-syntax/) — the full `${...}` grammar
