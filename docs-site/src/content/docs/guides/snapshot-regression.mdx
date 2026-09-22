@@ -1,0 +1,90 @@
+---
+title: Snapshot regression
+description: Keep a known-good response beside a request and see, on every later send, what changed — compared by meaning, with volatile paths ignored.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A snapshot is a known-good ("golden") response you keep beside a SOAP or REST request. Every time
+you send the request again, the **Snapshot** tab in the response pane compares the new response with
+the golden one and lists what changed. The comparison is by meaning, not byte for byte: key order,
+attribute order, namespace prefixes and formatting don't count as differences.
+
+## Save a snapshot
+
+<Steps>
+
+1. Save the project. A snapshot is a file beside the request's own file, so the request has to be on
+   disk first; until then the tab says **Save the project to keep a snapshot beside this request.**
+2. Send the request and open the response pane's **Snapshot** tab.
+3. Choose **Save as snapshot**. The current response body becomes the golden.
+
+</Steps>
+
+A response with no text body can't be kept as a snapshot: an empty one, and for a REST request one
+with an image, a PDF or any other binary body. The tab says **This response has no text body to
+compare.**
+
+For a SOAP request the snapshot is the envelope, as the response pane shows it: the root part of an
+MTOM or SwA response, and the decrypted envelope when WS-Security decrypts one.
+
+## Read the comparison
+
+After each send the tab shows either **Matches the snapshot** or the number of differences, with a
+table of each one: its kind (`added`, `removed` or `changed`), its path, and the expected and actual
+values.
+
+- **JSON** is compared by key and by array index. Numbers are compared by value, so `1.0` equals
+  `1`. Paths are JSON Pointers, such as `/items/0/name`; a change to the whole document is at `/`.
+- **XML** is compared by namespace and local name, so a different prefix for the same namespace is
+  not a difference. Comments, processing instructions, `xmlns` declarations and whitespace-only text
+  are left out, and text is trimmed. Paths are slash paths of local names, such as
+  `/Envelope/Body/GetQuoteResponse/Price`, with `[n]` when a name repeats and `@name` for an
+  attribute. Because a path has no namespace in it, elements with the same local name in different
+  namespaces share a path.
+- **Any other text** is compared exactly, after line endings are normalised. A difference is
+  reported once, at `/`.
+
+If either body fails to parse as the format it claims to be, the two are compared as text and the tab
+says why. When either body is larger than 2 MB, the tab says **Too large to compare semantically**;
+**Update snapshot** and **Delete snapshot** still work.
+
+**Compare side by side** opens both bodies in a diff tab, the same view History uses to compare two
+runs.
+
+## Ignore volatile paths
+
+Timestamps, generated ids and similar fields change on every send. Leave them out of the comparison
+with ignore rules, one per line, in the **Ignore rules** box. The rules are saved when the box loses
+focus, and an **Ignore** button on each difference adds its path for you.
+
+| Rule | Ignores |
+| --- | --- |
+| `/meta/timestamp` | That field, and everything under it |
+| `/items/*/id` | `id` in every item of `items` |
+| `//requestId` | `requestId` at any depth |
+| `/Envelope/Header` | The whole SOAP header |
+
+A segment without `[n]` matches every index, `/` on its own ignores everything, and a line starting
+with `#` is a comment. When differences are ignored, the tab says how many, for example **Matches the
+snapshot (2 ignored)**.
+
+An XML path only has an index while the name repeats, so a rule saved from a difference such as
+`/list/item[1]/ts` stops matching once the response has a single `item` (whose path is then
+`/list/item/ts`). To ignore `ts` in every item, however many there are, write the rule without the
+index: `/list/item/ts`.
+
+## Update or delete the snapshot
+
+When a change is intended, choose **Update snapshot** and confirm to make the current response the
+new golden. The ignore rules are kept. **Delete snapshot** removes the golden file.
+
+## In the project folder
+
+The golden is a file named `<Request>.golden.yaml` beside the request's `<Request>.request.yaml`. It
+holds the body, its content type, when it was saved and the ignore rules, so you can commit it and
+review changes to it in a pull request like any other project file. See
+[Project format](/wirebench/reference/project-format/).
+
+Renaming or moving a request leaves its golden behind: the Snapshot tab then shows **No snapshot
+saved**, and you save it again (or rename the file by hand).

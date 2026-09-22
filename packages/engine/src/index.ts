@@ -463,6 +463,8 @@ export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
 export type { SampleOptions, SampleXmlOptions } from './rest/openapi/sample.js';
+export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
+export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
 export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
 export type {
   JsonSchema,
@@ -688,6 +690,8 @@ export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
 export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from './project/serialize.js';
 export type { ProjectFiles } from './project/serialize.js';
+export { requestFileLocation } from './project/request-location.js';
+export type { RequestFileLocation } from './project/request-location.js';
 export { loadProject } from './project/load.js';
 export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
 export { saveProject } from './project/save.js';

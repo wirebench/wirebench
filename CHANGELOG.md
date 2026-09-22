@@ -22,6 +22,15 @@ All notable changes to this project are documented here. The format follows
   read, whether you chose it or it is the one the import recorded. Another file or URL can be chosen
   as the source; an API imported from pasted text asks for one.
 
+- **Snapshot regression.** A SOAP or REST response can be saved as a snapshot, a golden file
+  (`<Request>.golden.yaml`) beside the request. The response pane's new **Snapshot** tab compares every later
+  response with it by meaning: JSON by key and index with numbers by value, XML by namespace and local name
+  with prefixes, attribute order, comments and whitespace-only text left out, and anything else as exact
+  text. Each difference is listed with its path and expected → actual values, and **Ignore rules** (slash
+  paths, `*` for one segment, a leading `//` for any depth) leave volatile fields out; each difference has an
+  **Ignore** button that adds its path. **Update snapshot**, **Compare side by side** and **Delete snapshot**
+  round it out. Bodies over 2 MB aren't compared, and renaming a request leaves its golden behind.
+
 - **CLI runner: unary gRPC and OAuth2 client credentials.** `wirebench run` now runs unary gRPC
   requests from an API's cached definition, with `status` (gRPC code or name), JSONPath `match` and
   `sla` assertions — streaming requests are skipped, and an API without a cached definition errors
@@ -57,14 +66,16 @@ All notable changes to this project are documented here. The format follows
   for `text/event-stream`. Re-send from the HTTP Log is refused for a row whose response streamed.
   Reconnecting with `Last-Event-ID`, honouring `retry:`, and the CLI runner are out of scope.
 
-## [2.2.1] - 2026-09-21
-
 ### Fixed
 
 - **An API's Base URL field follows a change made under it.** The field kept the value it was opened
   with, so a base URL rewritten while its tab stayed open — as Update Definition rewrites it — showed
   the old one until the tab was closed and opened again. It now follows the project, and still
   commits your own typing on blur or Enter as before.
+
+## [2.2.1] - 2026-09-21
+
+### Fixed
 
 - **The update check no longer offers an older release.** A build newer than the latest published
   release — 2.2.0 while 1.1.0 was still the newest public one — was offered that older release as an

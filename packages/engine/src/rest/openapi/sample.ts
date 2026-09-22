@@ -89,7 +89,7 @@ function isNullable(schema: JsonSchema): boolean {
 }
 
 /** The type to generate for, ignoring `null` — which is an alternative, not a shape. */
-function effectiveType(schema: JsonSchema): string | undefined {
+export function effectiveType(schema: JsonSchema): string | undefined {
   for (const type of typesOf(schema)) {
     if (type !== 'null') {
       return type;
@@ -141,7 +141,7 @@ function without(schema: JsonSchema, ...keys: readonly (keyof JsonSchema)[]): Js
 }
 
 /** The schema an `allOf` amounts to: every branch merged, later branches filling in blanks. */
-function mergeAllOf(schema: JsonSchema): JsonSchema {
+export function mergeAllOf(schema: JsonSchema): JsonSchema {
   if (schema.allOf === undefined || schema.allOf.length === 0) {
     return schema;
   }
