@@ -2,8 +2,8 @@
  * Where a JSON Pointer's value sits in a JSON text, so a problem found on the parsed value can be
  * marked in the text the user sees — pretty-printed or exactly as received.
  *
- * One forward scan: at each container it walks the members, skipping the ones not on the pointer's
- * path, so no character is read twice. A scalar is located as its whole token; an object or array
+ * One forward scan: at each container it walks every member, descending into the ones on the
+ * pointer's path and skipping the rest, so no character is read twice. A scalar is located as its whole token; an object or array
  * as its opening bracket only, which is also where a missing required property belongs (the
  * validator reports that at the parent). Pure and dependency-free, so the renderer can use it.
  */
@@ -69,34 +69,58 @@ function decodeKey(raw: string): string | undefined {
   }
 }
 
-/** Start of the member `segment` inside the container opening at `i`, or -1. */
-function findChild(text: string, i: number, segment: string): number {
+interface Located {
+  /** Where the pointer's value starts, or -1 when it is not in this value. */
+  readonly target: number;
+  /** Index just past this value, or -1 when the text is malformed from here. */
+  readonly end: number;
+}
+
+/**
+ * Locates `segments[k..]` inside the value starting at `i`, and also returns where that value
+ * ends, so the caller carries on scanning from there: every character is read once. An object may
+ * repeat a key; `JSON.parse` keeps the last, so a later match replaces an earlier one.
+ */
+function locate(text: string, i: number, segments: readonly string[], k: number): Located {
+  if (k === segments.length) {
+    const container = text[i] === '{' || text[i] === '[';
+    const end = endOfValue(text, i);
+    return { target: container || end >= 0 ? i : -1, end };
+  }
+  if (text[i] !== '{' && text[i] !== '[') return { target: -1, end: endOfValue(text, i) };
   const isArray = text[i] === '[';
-  let index = 0;
+  const close = isArray ? ']' : '}';
+  const segment = segments[k]!;
   const wanted = isArray && /^(0|[1-9]\d*)$/.test(segment) ? Number(segment) : -1;
-  if (isArray && wanted < 0) return -1;
+  let target = -1;
   let j = skipWs(text, i + 1);
-  if (text[j] === (isArray ? ']' : '}')) return -1;
-  for (;;) {
-    let matched = false;
+  if (text[j] === close) return { target, end: j + 1 };
+  for (let index = 0; ; index++) {
+    let matched: boolean;
     if (isArray) {
       matched = index === wanted;
     } else {
-      if (text[j] !== '"') return -1;
-      const end = endOfString(text, j);
-      if (end < 0) return -1;
-      matched = decodeKey(text.slice(j, end)) === segment;
-      j = skipWs(text, end);
-      if (text[j] !== ':') return -1;
+      if (text[j] !== '"') return { target, end: -1 };
+      const keyEnd = endOfString(text, j);
+      if (keyEnd < 0) return { target, end: -1 };
+      matched = decodeKey(text.slice(j, keyEnd)) === segment;
+      j = skipWs(text, keyEnd);
+      if (text[j] !== ':') return { target, end: -1 };
       j = skipWs(text, j + 1);
     }
-    if (matched) return j < text.length ? j : -1;
-    const end = endOfValue(text, j);
-    if (end < 0) return -1;
+    let end: number;
+    if (matched) {
+      const inner = locate(text, j, segments, k + 1);
+      target = inner.target;
+      end = inner.end;
+    } else {
+      end = endOfValue(text, j);
+    }
+    if (end < 0) return { target, end: -1 };
     j = skipWs(text, end);
-    if (text[j] !== ',') return -1;
+    if (text[j] === close) return { target, end: j + 1 };
+    if (text[j] !== ',') return { target, end: -1 };
     j = skipWs(text, j + 1);
-    index++;
   }
 }
 
@@ -120,16 +144,13 @@ export function pointerRange(text: string, pointer: string): PointerTextRange | 
           .slice(1)
           .split('/')
           .map((s) => s.replace(/~1/g, '/').replace(/~0/g, '~'));
-  let at = skipWs(text, 0);
+  const at = skipWs(text, 0);
   if (at >= text.length) return undefined;
-  for (const segment of segments) {
-    if (text[at] !== '{' && text[at] !== '[') return undefined;
-    at = findChild(text, at, segment);
-    if (at < 0) return undefined;
-  }
-  const container = text[at] === '{' || text[at] === '[';
-  const end = container ? at + 1 : endOfValue(text, at);
+  const found = locate(text, at, segments, 0).target;
+  if (found < 0) return undefined;
+  const container = text[found] === '{' || text[found] === '[';
+  const end = container ? found + 1 : endOfValue(text, found);
   if (end < 0) return undefined;
-  const start = position(text, at);
-  return { line: start.line, column: start.column, endLine: start.line, endColumn: start.column + (end - at) };
+  const start = position(text, found);
+  return { line: start.line, column: start.column, endLine: start.line, endColumn: start.column + (end - found) };
 }

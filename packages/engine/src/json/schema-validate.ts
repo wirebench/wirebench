@@ -142,7 +142,12 @@ interface Budget {
   stopped: boolean;
   /** Set when the node cap (not the problem cap) is what stopped the walk. */
   outOfNodes: boolean;
+  /** How many `walk` calls are on the stack right now. */
+  depth: number;
 }
+
+/** Nested `walk` calls past this stop the walk (as the node cap does) instead of the stack. */
+export const MAX_VALIDATE_DEPTH = 256;
 
 /** A `Budget` that shares the outer walk's node counter but collects into its own problem list —
  *  used to try a combinator's branch without either polluting the caller's problems or letting the
@@ -154,6 +159,12 @@ function branchBudget(outer: Budget, maxProblems: number): Budget {
     },
     set nodes(n: number) {
       outer.nodes = n;
+    },
+    get depth() {
+      return outer.depth;
+    },
+    set depth(d: number) {
+      outer.depth = d;
     },
     maxNodes: outer.maxNodes,
     problems: [],
@@ -167,9 +178,15 @@ function branchBudget(outer: Budget, maxProblems: number): Budget {
  * Tries one combinator branch. A branch that ran out of nodes proved nothing either way: the stop
  * is carried to the outer walk (which then gives no combinator verdict) and `undefined` returned.
  */
-function tryBranch(value: unknown, sub: unknown, path: string, budget: Budget): boolean | undefined {
+function tryBranch(
+  value: unknown,
+  sub: unknown,
+  path: string,
+  budget: Budget,
+  applying: Set<unknown>,
+): boolean | undefined {
   const trial = branchBudget(budget, 1);
-  walk(value, sub, path, trial);
+  walk(value, sub, path, trial, applying);
   if (trial.outOfNodes) {
     budget.stopped = true;
     budget.outOfNodes = true;
@@ -191,6 +208,7 @@ export function validateJsonSchema(
     maxProblems: options?.maxProblems ?? MAX_VALIDATE_PROBLEMS,
     stopped: false,
     outOfNodes: false,
+    depth: 0,
   };
   walk(value, schema, '', budget);
   if (budget.stopped && budget.problems.at(-1)?.keyword !== 'budget' && budget.problems.length < budget.maxProblems) {
@@ -272,12 +290,41 @@ function jsonEquals(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** Walks one schema node against one value, at `path`, appending problems into the shared budget. */
-function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget): void {
+/**
+ * Walks one schema node against one value, at `path`, appending problems into the shared budget.
+ *
+ * `applying` holds the schema objects already being applied to this same value (through
+ * `allOf`/`anyOf`/`oneOf`/`not`). A resolved document can be cyclic, and a schema that composes
+ * itself would otherwise recurse without ever moving in the value; re-entering one is skipped,
+ * since its constraints are already being checked here. Descending into a child value starts a
+ * fresh set, and the depth cap backs both up.
+ */
+function walk(
+  value: unknown,
+  schemaValue: unknown,
+  path: string,
+  budget: Budget,
+  applying: Set<unknown> = new Set(),
+): void {
   if (!hasRoom(budget)) return;
   if (!isPlainObject(schemaValue)) return; // `true`/`false`/malformed schema: nothing to assert
-  const schema = schemaValue;
+  if (applying.has(schemaValue)) return;
+  if (budget.depth >= MAX_VALIDATE_DEPTH) {
+    budget.stopped = true;
+    budget.outOfNodes = true;
+    return;
+  }
+  applying.add(schemaValue);
+  budget.depth++;
+  try {
+    walkSchema(value, schemaValue, path, budget, applying);
+  } finally {
+    budget.depth--;
+    applying.delete(schemaValue);
+  }
+}
 
+function walkSchema(value: unknown, schema: Schema, path: string, budget: Budget, applying: Set<unknown>): void {
   if (typeof schema.$ref === 'string') return; // unresolved $ref: passes, per scope
 
   const nullable = schema.nullable === true;
@@ -457,13 +504,13 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
   if (Array.isArray(schema.allOf)) {
     for (const sub of schema.allOf) {
       if (budget.stopped) break;
-      walk(value, sub, path, budget);
+      walk(value, sub, path, budget, applying);
     }
   }
   if (Array.isArray(schema.anyOf) && !budget.stopped) {
     let anyPasses = false;
     for (const sub of schema.anyOf as unknown[]) {
-      const passed = tryBranch(value, sub, path, budget);
+      const passed = tryBranch(value, sub, path, budget, applying);
       if (passed === undefined) break;
       if (passed) {
         anyPasses = true;
@@ -477,7 +524,7 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
   if (Array.isArray(schema.oneOf) && !budget.stopped) {
     let matches = 0;
     for (const sub of schema.oneOf as unknown[]) {
-      const passed = tryBranch(value, sub, path, budget);
+      const passed = tryBranch(value, sub, path, budget, applying);
       if (passed === undefined) break;
       if (passed) matches += 1;
     }
@@ -486,7 +533,7 @@ function walk(value: unknown, schemaValue: unknown, path: string, budget: Budget
     }
   }
   if (isPlainObject(schema.not) && !budget.stopped) {
-    const notPasses = tryBranch(value, schema.not, path, budget);
+    const notPasses = tryBranch(value, schema.not, path, budget, applying);
     if (notPasses === true && !budget.stopped) {
       report(budget, path, 'not', 'value matches the disallowed schema');
     }

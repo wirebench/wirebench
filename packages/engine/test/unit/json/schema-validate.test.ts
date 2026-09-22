@@ -198,3 +198,30 @@ describe('a combinator branch that runs out of nodes', () => {
     expect(problems.map((p) => p.keyword)).toEqual(['budget']);
   });
 });
+
+describe('validateJsonSchema on self-referencing schemas', () => {
+  it('returns promptly, without throwing, for an allOf that contains itself', () => {
+    const node: Record<string, unknown> = { type: 'object', required: ['a'] };
+    node['allOf'] = [node];
+    node['anyOf'] = [node];
+    const problems = validateJsonSchema({}, node);
+    expect(problems).toEqual([expect.objectContaining({ path: '', keyword: 'required' })]);
+  });
+
+  it('validates a cyclic properties schema over a finite value normally', () => {
+    const tree: Record<string, unknown> = { type: 'object', properties: { n: { type: 'integer' } } };
+    (tree['properties'] as Record<string, unknown>)['child'] = tree;
+    expect(validateJsonSchema({ n: 1, child: { n: 2, child: { n: 3 } } }, tree)).toEqual([]);
+    expect(validateJsonSchema({ child: { child: { n: 'x' } } }, tree)).toEqual([
+      expect.objectContaining({ path: '/child/child/n', keyword: 'type' }),
+    ]);
+  });
+
+  it('stops at the depth cap instead of overflowing on a deep value', () => {
+    const tree: Record<string, unknown> = { type: 'object' };
+    tree['properties'] = { c: tree };
+    let value: Record<string, unknown> = {};
+    for (let i = 0; i < 1000; i++) value = { c: value };
+    expect(validateJsonSchema(value, tree).at(-1)?.keyword).toBe('budget');
+  });
+});

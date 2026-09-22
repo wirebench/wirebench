@@ -77,28 +77,57 @@ function escapeSegment(key: string): string {
   return key.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
+interface WriteOnlyPass {
+  readonly problems: JsonSchemaProblem[];
+  /** The node cap stopped the pass before it saw the whole value. */
+  readonly capped: boolean;
+  /** The time budget ran out during the pass. */
+  readonly expired: boolean;
+}
+
+/** The schema that applies to item `i`: a tuple's own (`prefixItems`, or draft-07 array `items`), then the rest. */
+function itemSchema(sch: SchemaObject, i: number): unknown {
+  const items = sch['items'];
+  const prefix = Array.isArray(sch['prefixItems']) ? sch['prefixItems'] : Array.isArray(items) ? items : undefined;
+  if (prefix !== undefined && i < prefix.length) return (prefix as readonly unknown[])[i];
+  if (Array.isArray(sch['prefixItems'])) return items;
+  return Array.isArray(items) ? sch['additionalItems'] : items;
+}
+
 /**
- * Every present property whose schema says `writeOnly: true`. Composition keywords are followed
- * without moving in the value, so a per-value set of schemas already applied stops a cycle there;
- * everything else descends into the value, which is finite and bounded by the node cap.
+ * Every present property whose schema says `writeOnly: true`. `allOf` is always followed; an
+ * `anyOf`/`oneOf` branch only when the value matches it, so a write-only property of an alternative
+ * the value is not does not count. Composition keywords are followed without moving in the value,
+ * so a per-value set of schemas already applied stops a cycle there; everything else descends into
+ * the value, which is finite and bounded by the node cap.
  */
-function writeOnlyProblems(value: unknown, schema: unknown, max: number): JsonSchemaProblem[] {
+function writeOnlyProblems(value: unknown, schema: unknown, max: number, expired: () => boolean): WriteOnlyPass {
   const problems: JsonSchemaProblem[] = [];
   let nodes = 0;
+  let capped = false;
+  let outOfTime = false;
+  const halted = (): boolean => {
+    if (problems.length >= max || capped || outOfTime) return true;
+    if (nodes >= MAX_WRITE_ONLY_NODES) capped = true;
+    else if (expired()) outOfTime = true;
+    return capped || outOfTime;
+  };
   const visit = (val: unknown, sch: unknown, path: string, applied: Set<unknown>): void => {
-    if (!isObject(sch) || applied.has(sch) || problems.length >= max || nodes >= MAX_WRITE_ONLY_NODES) return;
+    if (!isObject(sch) || applied.has(sch) || halted()) return;
     applied.add(sch);
     nodes++;
-    for (const keyword of ['allOf', 'anyOf', 'oneOf']) {
+    const allOf = sch['allOf'];
+    if (Array.isArray(allOf)) for (const b of allOf) visit(val, b, path, applied);
+    for (const keyword of ['anyOf', 'oneOf']) {
       const branches = sch[keyword];
-      if (Array.isArray(branches)) for (const b of branches) visit(val, b, path, applied);
+      if (!Array.isArray(branches)) continue;
+      for (const b of branches) {
+        if (halted()) return;
+        if (validateJsonSchema(val, b, { maxProblems: 1 }).length === 0) visit(val, b, path, applied);
+      }
     }
     if (Array.isArray(val)) {
-      const items = sch['items'];
-      val.forEach((item, i) => {
-        const itemSchema: unknown = Array.isArray(items) ? (items as readonly unknown[])[i] : items;
-        visit(item, itemSchema, `${path}/${i}`, new Set());
-      });
+      val.forEach((item, i) => visit(item, itemSchema(sch, i), `${path}/${i}`, new Set()));
     } else if (isObject(val)) {
       const properties = isObject(sch['properties']) ? sch['properties'] : {};
       for (const key of Object.keys(val)) {
@@ -117,7 +146,7 @@ function writeOnlyProblems(value: unknown, schema: unknown, max: number): JsonSc
     }
   };
   visit(value, schema, '', new Set());
-  return problems;
+  return { problems, capped, expired: outOfTime };
 }
 
 export function checkRestResponse(input: RestContractInput, options?: RestContractCheckOptions): RestContractResult {
@@ -166,21 +195,25 @@ export function checkRestResponse(input: RestContractInput, options?: RestContra
   const now = options?.now ?? (() => performance.now());
   const budgetMs = options?.budgetMs ?? DEFAULT_REST_CHECK_BUDGET_MS;
   const start = now();
-  const notChecked: RestContractResult = { status: 'not-checked', ...found, problems: [], notes: [] };
+  const notes = unsupportedKeywordsIn(schema).map((k) => `\`${k}\` is not checked`);
+  const notChecked: RestContractResult = { status: 'not-checked', ...found, problems: [], notes };
+  const expired = (): boolean => now() - start > budgetMs;
   let problems: JsonSchemaProblem[];
   try {
     problems = validateJsonSchema(value, schema, { maxProblems: MAX_CONTRACT_PROBLEMS });
-    if (now() - start > budgetMs) return notChecked;
+    if (expired()) return notChecked;
     if (problems.length < MAX_CONTRACT_PROBLEMS) {
-      problems.push(...writeOnlyProblems(value, schema, MAX_CONTRACT_PROBLEMS - problems.length));
+      const pass = writeOnlyProblems(value, schema, MAX_CONTRACT_PROBLEMS - problems.length, expired);
+      if (pass.expired) return notChecked;
+      problems.push(...pass.problems);
+      if (pass.capped) notes.push(`write-only check stopped after ${MAX_WRITE_ONLY_NODES} nodes`);
     }
   } catch (error) {
-    // A schema that composes itself (`allOf: [itself]`) recurses without moving in the value and
-    // can exhaust the stack before the validator's node budget stops it.
+    // The validator stops self-referencing schemas itself; this is the last resort should some
+    // shape still exhaust the stack.
     if (error instanceof RangeError) return notChecked;
     throw error;
   }
-  const notes = unsupportedKeywordsIn(schema).map((k) => `\`${k}\` is not checked`);
-  if (now() - start > budgetMs) return notChecked;
+  if (expired()) return notChecked;
   return { status: problems.length === 0 ? 'ok' : 'violation', ...found, problems: capped(problems), notes };
 }

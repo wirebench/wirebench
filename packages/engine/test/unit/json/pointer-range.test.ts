@@ -43,6 +43,12 @@ describe('pointerRange', () => {
     expect(pointerRange(text, '/y')).toEqual({ line: 1, column: 21, endLine: 1, endColumn: 25 });
   });
 
+  it('resolves a duplicate key to its last occurrence, as JSON.parse does', () => {
+    expect(pointerRange('{"a":1,"a":"x"}', '/a')).toEqual({ line: 1, column: 12, endLine: 1, endColumn: 15 });
+    expect(pointerRange('{"a":{"b":1},"a":{"c":2}}', '/a/c')?.column).toBe(23);
+    expect(pointerRange('{"a":{"b":1},"a":{"c":2}}', '/a/b')).toBeUndefined();
+  });
+
   it('returns undefined for a pointer it cannot locate', () => {
     expect(pointerRange(pretty, '/nope')).toBeUndefined();
     expect(pointerRange(pretty, '/a/c/9')).toBeUndefined();

@@ -66,12 +66,47 @@ describe('checkRestResponse', () => {
     expect(r.problems).toEqual([expect.objectContaining({ path: '/child/child/pw', keyword: 'writeOnly' })]);
   });
 
-  it('reports not-checked, not a crash, for a schema that composes itself', () => {
+  it('checks a schema that composes itself without crashing', () => {
     const node: Record<string, unknown> = { type: 'object' };
     node['allOf'] = [node];
     const cyclic: OpenApiResponses = { '200': { content: { 'application/json': { schema: node } } } };
     const r = checkRestResponse({ ...base, responses: cyclic, bodyText: '{}' });
-    expect(r.status).toBe('not-checked');
+    expect(r.status).toBe('ok');
+  });
+
+  it('follows only the anyOf/oneOf branches the value matches for writeOnly', () => {
+    const schema = {
+      anyOf: [
+        { type: 'object', required: ['kind'], properties: { kind: { const: 'a' }, pw: { writeOnly: true } } },
+        { type: 'object', required: ['kind'], properties: { kind: { const: 'b' }, pw: { type: 'string' } } },
+      ],
+    };
+    const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
+    expect(checkRestResponse({ ...base, responses: res, bodyText: '{"kind":"b","pw":"x"}' }).status).toBe('ok');
+    expect(checkRestResponse({ ...base, responses: res, bodyText: '{"kind":"a","pw":"x"}' }).problems).toEqual([
+      expect.objectContaining({ path: '/pw', keyword: 'writeOnly' }),
+    ]);
+    const one: OpenApiResponses = { '200': { content: { 'application/json': { schema: { oneOf: schema.anyOf } } } } };
+    expect(checkRestResponse({ ...base, responses: one, bodyText: '{"kind":"b","pw":"x"}' }).status).toBe('ok');
+  });
+
+  it('checks writeOnly in prefixItems', () => {
+    const schema = { type: 'array', prefixItems: [{ type: 'object', properties: { pw: { writeOnly: true } } }] };
+    const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
+    expect(checkRestResponse({ ...base, responses: res, bodyText: '[{"pw":1}]' }).problems).toEqual([
+      expect.objectContaining({ path: '/0/pw', keyword: 'writeOnly' }),
+    ]);
+  });
+
+  it('notes when the write-only check stops at its node cap', () => {
+    const schema = { type: 'array', items: { type: 'integer' } };
+    const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
+    const r = checkRestResponse({
+      ...base,
+      responses: res,
+      bodyText: JSON.stringify(Array.from({ length: 10_001 }, () => 1)),
+    });
+    expect(r.notes).toContain('write-only check stopped after 10000 nodes');
   });
 
   it('lists format and other unsupported keywords once each as notes', () => {
@@ -151,5 +186,11 @@ describe('checkRestResponse', () => {
     const r = checkRestResponse({ ...base, bodyText: '{"id":1,"name":"a"}' }, { budgetMs: 5, now: () => (t += 10) });
     expect(r.status).toBe('not-checked');
     expect(r.problems).toEqual([]);
+    const schema = { type: 'string', format: 'uuid' };
+    const res: OpenApiResponses = { '200': { content: { 'application/json': { schema } } } };
+    let u = 0;
+    const r2 = checkRestResponse({ ...base, responses: res, bodyText: '"x"' }, { budgetMs: 5, now: () => (u += 10) });
+    expect(r2.status).toBe('not-checked');
+    expect(r2.notes).toEqual(['`format` is not checked']);
   });
 });
