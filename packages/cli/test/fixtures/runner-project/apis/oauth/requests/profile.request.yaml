@@ -1,0 +1,13 @@
+assertions:
+  - equals: 200
+    type: status
+auth:
+  type: inherit
+body:
+  kind: none
+id: RUNNER0031
+kind: rest
+method: GET
+name: profile
+order: 0
+url: /protected

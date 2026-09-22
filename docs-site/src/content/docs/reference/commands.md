@@ -98,6 +98,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | REST: New API | — | — |
 | REST: New Folder | — | — |
 | REST: New Request | — | — |
+| REST: Update Definition… | — | — |
 | gRPC: New API | — | — |
 | gRPC: New Request | — | — |
 | WebSocket: New API | — | — |
@@ -119,6 +120,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | WebSocket: Copy as Command | — | — |
 | Send Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | Cancel Request | <kbd>⎋</kbd> | <kbd>Esc</kbd> |
+| Request: Send to Environments… | — | — |
 | Request: Recreate (keep values) | — | — |
 | Request: Recreate (discard values) | — | — |
 | Request: Create Empty Envelope | — | — |

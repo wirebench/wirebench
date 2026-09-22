@@ -178,6 +178,18 @@ describe('explorerMenuItems on a REST row', () => {
     ]);
   });
 
+  it('offers Update Definition… only on an API that records a definition', () => {
+    const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
+    expect(imported.map((group) => group.map((item) => item.label))).toEqual([
+      ['Open', 'New folder', 'New request', 'Import cURL…'],
+      ['Update Definition…'],
+      ['Rename…'],
+      ['Delete'],
+    ]);
+    const byHand = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
+    expect(byHand.map((item) => item.label)).not.toContain('Update Definition…');
+  });
+
   it('offers a folder the two creators, a rename, its credentials and a delete', () => {
     const items = explorerMenuItems(node({ kind: 'folder', id: 'folder:f1', apiId: 'a1', folderId: 'f1' }));
 

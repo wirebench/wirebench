@@ -4,17 +4,20 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { prepareSend } from '../../../src/run/prepare.js';
 import type { RunContext } from '../../../src/run/prepare.js';
+import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type {
   AuthConfig,
-  EndpointAuth,
   Environment,
   Interface,
   Project,
+  SoapOwnerAuth,
   SoapRequestDef,
   WssRef,
 } from '../../../src/project/model.js';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
+import type { GrpcRequestDef } from '../../../src/grpc/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestBody } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
@@ -22,7 +25,7 @@ import type { WsaConfigPatch } from '../../../src/wsa/model.js';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
 
 interface ProjectOptions {
-  readonly soapAuth?: EndpointAuth;
+  readonly soapAuth?: SoapOwnerAuth;
   readonly endpoints?: Interface['endpoints'];
   readonly envelopeXml?: string;
   readonly soap?: Partial<SoapRequestDef>;
@@ -126,6 +129,31 @@ afterAll(() => {
 function soapOf(project: Project) {
   return selectRequests(project, []).selected.find((s) => s.kind === 'soap')!;
 }
+function oauth(grant: 'client-credentials' | 'authorization-code'): AuthConfig {
+  return {
+    type: 'oauth2',
+    grant,
+    tokenUrl: 'https://auth.test/token',
+    clientId: 'c',
+    scopes: [],
+    clientAuth: 'basic',
+    pkce: true,
+  };
+}
+
+function tokenExchange(accessToken: string): HttpExchange {
+  const body = new TextEncoder().encode(JSON.stringify({ access_token: accessToken, token_type: 'Bearer' }));
+  return {
+    request: { url: 'https://auth.test/token', method: 'POST', headers: {} },
+    status: 200,
+    statusText: 'OK',
+    headers: { 'content-type': 'application/json' },
+    rawHeaders: [],
+    body,
+    rawBody: body,
+  } as unknown as HttpExchange;
+}
+
 function restOf(project: Project) {
   return selectRequests(project, []).selected.find((s) => s.kind === 'rest')!;
 }
@@ -159,6 +187,45 @@ describe('prepareSend — SOAP', () => {
       code: 'secret-missing',
       details: { ref: 'sec_missing' },
     });
+  });
+
+  it('resolves a bearer owner through the secret getter', async () => {
+    const project = makeProject({ soapAuth: { type: 'bearer', tokenRef: 'sec_1' } });
+    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    expect(prepared.kind === 'soap' && prepared.input.auth).toMatchObject({ type: 'bearer', token: 'pw' });
+  });
+
+  it("refuses a SOAP owner's authorization-code grant the same way a REST one is refused", async () => {
+    const project = makeProject({ soapAuth: oauth('authorization-code') as SoapOwnerAuth });
+    await expect(
+      prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' })),
+    ).rejects.toMatchObject({
+      code: 'auth-grant-unsupported',
+      message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+      details: { path: soapOf(project).path },
+    });
+  });
+
+  it("sends a SOAP owner's client-credentials token, fetched with the run's timeout and masked", async () => {
+    const project = makeProject({ soapAuth: oauth('client-credentials') as SoapOwnerAuth });
+    const sent: HttpRequest[] = [];
+    const seen: string[] = [];
+    const prepared = await prepareSend(
+      soapOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        timeoutMs: 1234,
+        fetchToken: (request) => {
+          sent.push(request);
+          return Promise.resolve(tokenExchange('tok-s'));
+        },
+        onSecretValue: (value) => seen.push(value),
+      }),
+    );
+    expect(prepared.kind === 'soap' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-s' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ url: 'https://auth.test/token', timeoutMs: 1234 });
+    expect(seen).toContain('tok-s');
   });
 
   it('refuses a request with no endpoint anywhere', async () => {
@@ -324,29 +391,38 @@ describe('prepareSend — REST', () => {
     });
   });
 
-  it('refuses OAuth2, naming the browser grant separately', async () => {
-    const oauth = (grant: 'client-credentials' | 'authorization-code'): AuthConfig => ({
-      type: 'oauth2',
-      grant,
-      tokenUrl: 'https://auth.test/token',
-      clientId: 'c',
-      scopes: [],
-      clientAuth: 'basic',
-      pkce: true,
-    });
+  it('refuses the OAuth2 authorization-code grant, which needs a browser', async () => {
     const browser = makeProject({ restAuth: oauth('authorization-code') });
     await expect(
       prepareSend(restOf(browser), contextFor(browser, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({
-      code: 'auth-grant-unsupported',
+    ).rejects.toMatchObject({ code: 'auth-grant-unsupported' });
+  });
+
+  it("sends a client-credentials token as a bearer header, fetched with the request's timeout and proxy", async () => {
+    const project = makeProject({ restAuth: oauth('client-credentials') });
+    const sent: HttpRequest[] = [];
+    const seen: string[] = [];
+    const prepared = await prepareSend(
+      restOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        timeoutMs: 1234,
+        proxyFor: (url) => (url === 'https://auth.test/token' ? { url: 'http://proxy.test:8080' } : undefined),
+        fetchToken: (request) => {
+          sent.push(request);
+          return Promise.resolve(tokenExchange('tok-1'));
+        },
+        onSecretValue: (value) => seen.push(value),
+      }),
+    );
+    expect(prepared.kind === 'rest' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-1' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      url: 'https://auth.test/token',
+      timeoutMs: 1234,
+      proxy: { url: 'http://proxy.test:8080' },
     });
-    const machine = makeProject({ restAuth: oauth('client-credentials') });
-    await expect(
-      prepareSend(restOf(machine), contextFor(machine, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({
-      code: 'auth-grant-unsupported',
-      message: 'OAuth2 is not supported by the runner yet.',
-    });
+    expect(seen).toEqual(['tok-1']);
   });
 
   it('carries --timeout and --insecure, and resolves a bearer token', async () => {
@@ -417,5 +493,109 @@ describe('prepareSend — ${secret:name} tokens', () => {
       message: 'The secret "nope" is not on this machine — set it in Secrets.',
       details: { ref: 'secret:nope' },
     });
+  });
+});
+
+describe('prepareSend — gRPC', () => {
+  function grpcProject(request: Partial<GrpcRequestDef> = {}, folderAuth?: AuthConfig): Project {
+    const api = createGrpcApi('Greeter', {
+      id: 'api-greeter',
+      slug: 'greeter',
+      order: 2,
+      target: 'localhost:1',
+      tls: false,
+      metadata: [{ name: 'x-tenant', value: '${tenant}', enabled: true }],
+      auth: { type: 'bearer', tokenRef: 'sec_1' },
+      folders: [
+        createGrpcFolder('Admin', {
+          id: 'f-admin',
+          ...(folderAuth !== undefined ? { auth: folderAuth } : {}),
+          requests: [
+            {
+              ...createGrpcRequest('Hello', {
+                id: 'g-hello',
+                service: 'wirebench.greet.Greeter',
+                method: 'SayHello',
+                message: '{"name": "${tenant}"}',
+              }),
+              ...request,
+            },
+          ],
+        }),
+      ],
+    });
+    const base = makeProject();
+    return {
+      ...base,
+      environments: [{ ...ENV, endpoints: { ...ENV.endpoints, greeter: 'grpc.env.test:443' } }],
+      grpcApis: [api],
+    };
+  }
+  const grpcOf = (project: Project) => selectRequests(project, []).selected.find((s) => s.kind === 'grpc')!;
+
+  it("targets the environment's override for the API, expands metadata and message, and inherits the API's auth", async () => {
+    const project = grpcProject();
+    const prepared = await prepareSend(grpcOf(project), contextFor(project, { environmentId: 'env-test' }));
+    if (prepared.kind !== 'grpc') throw new Error('expected grpc');
+    expect(prepared.input).toMatchObject({
+      target: 'grpc.env.test:443',
+      tls: false,
+      service: 'wirebench.greet.Greeter',
+      method: 'SayHello',
+      metadata: [{ name: 'x-tenant', value: 'env-tenant', enabled: true }],
+      auth: { type: 'bearer', token: 'pw' },
+    });
+    expect(prepared.messageText).toBe('{"name": "env-tenant"}');
+  });
+
+  it("falls back to the API's target with no environment, and --timeout replaces the deadline", async () => {
+    const project = grpcProject({ settings: { timeoutMs: 99 } });
+    const prepared = await prepareSend(
+      grpcOf(project),
+      contextFor(project, { overrides: { tenant: 't' }, timeoutMs: 1234 }),
+    );
+    expect(prepared).toMatchObject({ kind: 'grpc', input: { target: 'localhost:1', timeoutMs: 1234 } });
+  });
+
+  it("turns verification off under --insecure or the request's trustInvalid", async () => {
+    const project = grpcProject({ settings: { trustInvalid: true } });
+    const own = await prepareSend(grpcOf(project), contextFor(project, { environmentId: 'env-test' }));
+    expect(own.kind === 'grpc' && own.input.tlsOptions?.rejectUnauthorized).toBe(false);
+    const plain = grpcProject();
+    const flagged = await prepareSend(grpcOf(plain), contextFor(plain, { environmentId: 'env-test', insecure: true }));
+    expect(flagged.kind === 'grpc' && flagged.input.tlsOptions?.rejectUnauthorized).toBe(false);
+  });
+
+  it('expands a ${secret:name} token in the message from the getter', async () => {
+    const project = grpcProject({ message: '{"key": "${secret:grpc_key}"}' });
+    const prepared = await prepareSend(
+      grpcOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        getSecret: (ref) => (ref === 'secret:grpc_key' ? Promise.resolve('fake-grpc-key-0000') : Promise.resolve('pw')),
+      }),
+    );
+    expect(prepared.kind === 'grpc' && prepared.messageText).toBe('{"key": "fake-grpc-key-0000"}');
+  });
+
+  it('refuses a call with a property nothing resolves', async () => {
+    const project = grpcProject();
+    await expect(prepareSend(grpcOf(project), contextFor(project))).rejects.toMatchObject({
+      code: 'unresolved-properties',
+      details: { path: 'Greeter/Admin/Hello', unresolved: ['${tenant}', '${tenant}'] },
+    });
+  });
+
+  it("sends a folder's client-credentials token, and refuses the authorization-code grant", async () => {
+    const project = grpcProject({}, oauth('client-credentials'));
+    const prepared = await prepareSend(
+      grpcOf(project),
+      contextFor(project, { environmentId: 'env-test', fetchToken: () => Promise.resolve(tokenExchange('tok-g')) }),
+    );
+    expect(prepared.kind === 'grpc' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-g' });
+    const browser = grpcProject({}, oauth('authorization-code'));
+    await expect(
+      prepareSend(grpcOf(browser), contextFor(browser, { environmentId: 'env-test' })),
+    ).rejects.toMatchObject({ code: 'auth-grant-unsupported', details: { path: 'Greeter/Admin/Hello' } });
   });
 });

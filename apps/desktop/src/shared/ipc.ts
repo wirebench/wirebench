@@ -14,6 +14,10 @@ import {
   apiAsyncApiApplyUpdateResponseSchema,
   apiAsyncApiApplyUpdateRequestSchema,
   apiAsyncApiPlanUpdateResponseSchema,
+  apiRestApplyUpdateRequestSchema,
+  apiRestApplyUpdateResponseSchema,
+  apiRestPlanUpdateRequestSchema,
+  apiRestPlanUpdateResponseSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
@@ -47,6 +51,8 @@ import {
   oauth2StatusSchema,
   requestPreflightRestRequestSchema,
   requestSendRestRequestSchema,
+  requestSendToEnvironmentsRequestSchema,
+  requestSendToEnvironmentsResponseSchema,
   restExchangeSummarySchema,
   restLiveEventSchema,
   definitionCancelImportRequestSchema,
@@ -129,6 +135,13 @@ import {
   historyListRequestSchema,
   historyListResponseSchema,
   historyResendRequestSchema,
+  historyResendGrpcRequestSchema,
+  snapshotReadResponseSchema,
+  snapshotRemoveResponseSchema,
+  snapshotRequestSchema,
+  snapshotSavedResponseSchema,
+  snapshotSetIgnoreRequestSchema,
+  snapshotWriteRequestSchema,
   globalsRemoveRequestSchema,
   globalsSetEnabledRequestSchema,
   globalsSetRequestSchema,
@@ -162,6 +175,8 @@ import {
   logResendResponseSchema,
   requestImportCurlRequestSchema,
   requestImportCurlResponseSchema,
+  requestRestBodySchemaRequestSchema,
+  requestRestBodySchemaResponseSchema,
   requestSendRequestSchema,
   secretsDeleteRequestSchema,
   secretsDeleteResponseSchema,
@@ -379,6 +394,15 @@ export const channels = {
      * reads.
      */
     sendRest: defineChannel('request.sendRest', requestSendRestRequestSchema, restExchangeSummarySchema),
+    /**
+     * One saved request sent under several environments in parallel, each resolved in main as if
+     * it were active. `request.cancel` with the `batchId` stops every send still running.
+     */
+    sendToEnvironments: defineChannel(
+      'request.sendToEnvironments',
+      requestSendToEnvironmentsRequestSchema,
+      requestSendToEnvironmentsResponseSchema,
+    ),
     preflightRest: defineChannel(
       'request.preflightRest',
       requestPreflightRestRequestSchema,
@@ -419,6 +443,12 @@ export const channels = {
     recreate: defineChannel('request.recreate', requestRecreateRequestSchema, requestRecreateResponseSchema),
     curl: defineChannel('request.curl', requestCurlRequestSchema, requestCurlResponseSchema),
     importCurl: defineChannel('request.importCurl', requestImportCurlRequestSchema, requestImportCurlResponseSchema),
+    /** The JSON schema of the body a REST request's operation declares, or `null`; feeds the body form. */
+    restBodySchema: defineChannel(
+      'request.restBodySchema',
+      requestRestBodySchemaRequestSchema,
+      requestRestBodySchemaResponseSchema,
+    ),
   },
   /**
    * Obtaining an OAuth2 token. Every call names the entity whose configuration to use, never the
@@ -459,6 +489,18 @@ export const channels = {
       'api.asyncApiApplyUpdate',
       apiAsyncApiApplyUpdateRequestSchema,
       apiAsyncApiApplyUpdateResponseSchema,
+    ),
+    /** Reads a REST API's source (or a chosen one) and reports what updating to it would change. */
+    restPlanUpdate: defineChannel(
+      'api.restPlanUpdate',
+      apiRestPlanUpdateRequestSchema,
+      apiRestPlanUpdateResponseSchema,
+    ),
+    /** Applies that update: orphans, adds and rewrites requests, rewrites the cache, and saves. */
+    restApplyUpdate: defineChannel(
+      'api.restApplyUpdate',
+      apiRestApplyUpdateRequestSchema,
+      apiRestApplyUpdateResponseSchema,
     ),
     importProto: defineChannel('api.importProto', apiImportProtoRequestSchema, apiImportProtoResponseSchema),
     /** The services and files of a gRPC API's cached `.proto` set, for the method picker. */
@@ -675,6 +717,14 @@ export const channels = {
     get: defineChannel('history.get', historyGetRequestSchema, historyGetResponseSchema),
     clear: defineChannel('history.clear', z.undefined(), historyClearResponseSchema),
     resend: defineChannel('history.resend', historyResendRequestSchema, exchangeSummarySchema),
+    resendGrpc: defineChannel('history.resendGrpc', historyResendGrpcRequestSchema, grpcExchangeSummarySchema),
+  },
+  // A request's golden response, kept beside its files as `<slug>.golden.yaml`.
+  snapshot: {
+    read: defineChannel('snapshot.read', snapshotRequestSchema, snapshotReadResponseSchema),
+    write: defineChannel('snapshot.write', snapshotWriteRequestSchema, snapshotSavedResponseSchema),
+    setIgnore: defineChannel('snapshot.setIgnore', snapshotSetIgnoreRequestSchema, snapshotSavedResponseSchema),
+    remove: defineChannel('snapshot.remove', snapshotRequestSchema, snapshotRemoveResponseSchema),
   },
   xml: {
     completions: defineChannel('xml.completions', xmlCompletionsRequestSchema, xmlCompletionsResponseSchema),

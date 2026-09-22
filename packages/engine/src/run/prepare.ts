@@ -12,26 +12,30 @@ import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { WirebenchError } from '../errors.js';
 import { isInsideRealDir } from '../fs.js';
-import type { ProxyOptions, TlsOptions } from '../http/types.js';
+import { expandGrpcInput } from '../grpc/expand.js';
+import type { GrpcSendInput } from '../grpc/send.js';
+import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
 import { resolveApiBaseUrl, resolveEndpoint, resolveScopes } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
-import type { Attachment, AttachmentSource, Project, PropertyMap } from '../project/model.js';
+import type { Attachment, AttachmentSource, AuthConfig, Project, PropertyMap } from '../project/model.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
 import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
-import { resolveAuthConfig, resolveEndpointAuth, resolveSecretTokens, toSendAuth } from '../secrets/resolve.js';
+import { resolveAuthConfig, resolveSecretTokens, resolveSoapAuth } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
-import { toRestSendInput, toSendInput } from '../send-options.js';
+import { toGrpcSendInput, toRestSendInput, toSendInput } from '../send-options.js';
 import type { AttachmentResolvers } from '../send-options.js';
 import type { SoapSendInput, SoapSendWss } from '../types.js';
 import { effectiveWsa } from '../wsa/model.js';
 import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
 import type { Keystore } from '../wss/keystore/index.js';
 import { createWssContext } from '../wss/model.js';
-import { restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
+import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
+import { createRunTokenSource, requiredSecret } from './oauth2-token.js';
+import type { RunTokenSource } from './oauth2-token.js';
 import { secretNamesInValue } from './secret-needs.js';
 import type { SelectedRequest } from './select.js';
 
@@ -54,19 +58,36 @@ export interface RunContext {
    * an explicit `wsa:Action` or the request's SOAPAction then still applies.
    */
   readonly defaultWsaActionFor?: (selected: Extract<SelectedRequest, { kind: 'soap' }>) => string;
+  /** Told every OAuth2 access token the run obtains, so the host can mask it in all it prints. */
+  readonly onSecretValue?: (value: string) => void;
+  /** Sends an OAuth2 token request; the engine's `sendHttp` by default. A test seam. */
+  readonly fetchToken?: (request: HttpRequest) => Promise<HttpExchange>;
+  /**
+   * The run's OAuth2 token cache. `runRequests` creates one per run so every request behind a
+   * configuration shares a token; a lone `prepareSend` without one gets a fresh source.
+   */
+  readonly tokenSource?: RunTokenSource;
 }
 
 /**
- * One request, ready for `sendSoapRequest` (with `scopes`) or `sendRest`. It carries resolved
+ * One request, ready for `sendSoapRequest` (with `scopes`), `sendRest`, or `callGrpc` (with the
+ * API's proto set, which the caller loads: preparing a call needs no schema). It carries resolved
  * secret values (auth, `scopes.secrets`) but no list of them: the host masks what its `GetSecret`
  * handed out (see `GetSecret`).
  */
 export type PreparedSend =
   | { readonly kind: 'soap'; readonly input: SoapSendInput; readonly scopes: PropertyScopes }
-  | { readonly kind: 'rest'; readonly input: RestSendInput };
+  | { readonly kind: 'rest'; readonly input: RestSendInput }
+  | {
+      readonly kind: 'grpc';
+      // The streaming hooks are left out: a run makes unary calls, and wants only the result.
+      readonly input: Omit<GrpcSendInput, 'messages' | 'onMessage' | 'onOpen'>;
+      readonly messageText: string;
+    };
 
 type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
 type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
+type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
 
 function scopesFor(context: RunContext): PropertyScopes {
   const scopes = resolveScopes(context.project, context.environmentId, {}, process.env);
@@ -89,15 +110,6 @@ function unresolvedError(path: string, unresolved: readonly UnresolvedRef[]): Wi
     `"${path}" has property references nothing resolves: ${exprs.join(', ')}`,
     { details: { path, unresolved: exprs } },
   );
-}
-
-/** A secret the project names but the run was not given: refused, never sent without. */
-async function requiredSecret(ref: string, getSecret: GetSecret): Promise<string> {
-  const value = await getSecret(ref);
-  if (value === undefined) {
-    throw new WirebenchError('secret-missing', `Secret ${ref} was not supplied to this run.`, { details: { ref } });
-  }
-  return value;
 }
 
 /**
@@ -270,7 +282,7 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
       details: { path: selected.path },
     });
   }
-  const auth = await resolveEndpointAuth(soapEffectiveAuth(selected), context.getSecret);
+  const owner = soapEffectiveAuth(selected);
   const base = toSendInput({
     request: {
       properties: request.properties,
@@ -289,7 +301,12 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
   const proxy = context.proxyFor?.(resolved.url);
   const wsa = wsaFor(selected, context);
   const wss = wssFor(selected, context);
-  const sendAuth = toSendAuth(auth);
+  // An owner's OAuth2 gets its token as a REST one does (client credentials; the browser grant is
+  // refused); the endpoint schemes resolve through the SOAP path.
+  const sendAuth =
+    owner !== undefined && owner.type === 'oauth2'
+      ? await authFor(owner, selected.path, context, tls)
+      : await resolveSoapAuth(owner, context.getSecret);
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
   const input: SoapSendInput = {
     ...base,
@@ -311,22 +328,58 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
   return { kind: 'soap', input, scopes: withTokens };
 }
 
-async function prepareRest(selected: RestSelected, context: RunContext): Promise<PreparedSend> {
-  const { api, request } = selected;
-  const configured = restEffectiveAuth(selected);
-  if (configured.type === 'oauth2') {
+/** The run's shared token source, or a fresh one for a `prepareSend` called on its own. */
+function tokenSourceOf(context: RunContext): RunTokenSource {
+  return (
+    context.tokenSource ??
+    createRunTokenSource({
+      getSecret: context.getSecret,
+      ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
+      ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+    })
+  );
+}
+
+/**
+ * A request's effective auth with its secrets resolved. OAuth2 client credentials obtains a token
+ * (the token request uses the request's own TLS, the proxy for the token URL and the run's
+ * timeout); the authorization-code grant needs a browser a pipeline does not have, and is refused.
+ *
+ * @throws WirebenchError `auth-grant-unsupported` | `secret-missing` | `unresolved-properties` |
+ * `oauth2-token-error` | `oauth2-token-malformed`
+ */
+export async function authFor(
+  configured: AuthConfig,
+  path: string,
+  context: RunContext,
+  tls: TlsOptions | undefined,
+): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
+  if (configured.type !== 'oauth2') {
+    return resolveAuthConfig(configured, context.getSecret);
+  }
+  if (configured.grant === 'authorization-code') {
     throw new WirebenchError(
       'auth-grant-unsupported',
-      configured.grant === 'authorization-code'
-        ? 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.'
-        : 'OAuth2 is not supported by the runner yet.',
-      { details: { path: selected.path, grant: configured.grant } },
+      'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+      { details: { path, grant: configured.grant } },
     );
   }
-  const auth = await resolveAuthConfig(configured, context.getSecret);
+  const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
+    scopes: scopesFor(context),
+    ...(tls !== undefined ? { tls } : {}),
+    ...(context.proxyFor !== undefined ? { proxy: context.proxyFor } : {}),
+    ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  });
+  return resolveAuthConfig(configured, context.getSecret, { accessToken });
+}
+
+async function prepareRest(selected: RestSelected, context: RunContext): Promise<PreparedSend> {
+  const { api, request } = selected;
   const scopes = scopesFor(context);
-  const baseUrl = resolveApiBaseUrl(context.project, context.environmentId, api).url;
   const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
+  const auth = await authFor(restEffectiveAuth(selected), selected.path, context, tls);
+  const baseUrl = resolveApiBaseUrl(context.project, context.environmentId, api).url;
   const unexpanded = toRestSendInput({
     request: {
       method: request.method,
@@ -364,9 +417,60 @@ async function prepareRest(selected: RestSelected, context: RunContext): Promise
 }
 
 /**
+ * The app's `resolveGrpcSend` plus what its send handler adds: the target through the
+ * environment's override for the API (the slot a REST base URL uses), the settings ladder, one
+ * expansion pass over target, metadata and message, then the request's own TLS identity and trust
+ * decision and the chain's credentials. There is no proxy: the app sends gRPC direct as well.
+ */
+async function prepareGrpc(selected: GrpcSelected, context: RunContext): Promise<PreparedSend> {
+  const { api, request } = selected;
+  const scopes = scopesFor(context);
+  const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
+  const auth = await authFor(grpcEffectiveAuth(selected), selected.path, context, tls);
+  const target = resolveApiBaseUrl(context.project, context.environmentId, { slug: api.slug, baseUrl: api.target }).url;
+  const unexpanded = toGrpcSendInput({
+    request: {
+      service: request.service,
+      method: request.method,
+      methodKind: request.methodKind,
+      metadata: request.metadata,
+      settings: request.settings,
+    },
+    target,
+    tls: api.tls,
+    apiMetadata: api.metadata,
+    projectSettings: context.project.settings,
+    ...(auth !== undefined ? { auth } : {}),
+    ...(tls !== undefined ? { tlsOptions: tls } : {}),
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  });
+  const withMessage = { ...unexpanded, messageText: request.message };
+  const withTokens = await withSecrets(withMessage, scopes, context.getSecret);
+  const { input, unresolved } = expandGrpcInput(withMessage, withTokens, {
+    escape: request.settings.escapeProperties === true,
+  });
+  if (unresolved.length > 0) {
+    throw unresolvedError(selected.path, unresolved);
+  }
+  const { messageText, ...transport } = input;
+  return {
+    kind: 'grpc',
+    input: { ...transport, ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}) },
+    messageText,
+  };
+}
+
+/**
  * @throws WirebenchError `unresolved-properties` | `endpoint-unresolved` | `secret-missing` |
  * `auth-grant-unsupported` | `wss-config-missing` | `keystore-missing`
  */
 export function prepareSend(selected: SelectedRequest, context: RunContext): Promise<PreparedSend> {
-  return selected.kind === 'soap' ? prepareSoap(selected, context) : prepareRest(selected, context);
+  switch (selected.kind) {
+    case 'soap':
+      return prepareSoap(selected, context);
+    case 'rest':
+      return prepareRest(selected, context);
+    case 'grpc':
+      return prepareGrpc(selected, context);
+  }
 }

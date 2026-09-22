@@ -199,6 +199,16 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
         { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
       ],
+      // Only an API imported from a definition has one to read again.
+      node.hasDefinition === true
+        ? [
+            {
+              key: 'update-definition',
+              label: 'Update Definition…',
+              run: () => explorerActions.updateRestDefinition(apiId),
+            },
+          ]
+        : [],
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeApi(apiId) }],
     );

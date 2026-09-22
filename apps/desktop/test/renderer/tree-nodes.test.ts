@@ -371,6 +371,24 @@ describe('buildExplorerTree with APIs', () => {
     expect(children.map((node) => node.label)).toEqual(['Calculator', 'Second', 'Early', 'Late']);
   });
 
+  it('marks an API that cached its definition, and not one made by hand or imported without a cache', () => {
+    const imported = restApiWire({
+      id: 'api-1',
+      definition: { source: 'https://x.test/o.yaml', cache: true, version: '1' },
+    });
+    const byHand = restApiWire({ id: 'api-2', name: 'Hand', order: 1 });
+    const uncached = restApiWire({
+      id: 'api-3',
+      name: 'Uncached',
+      order: 2,
+      definition: { source: 'https://x.test/o.yaml', cache: false, version: '1' },
+    });
+    const children = treeWith({ apis: [imported, byHand, uncached] });
+    expect(children.find((n) => n.apiId === 'api-1')?.hasDefinition).toBe(true);
+    expect(children.find((n) => n.apiId === 'api-2')?.hasDefinition).toBeUndefined();
+    expect(children.find((n) => n.apiId === 'api-3')?.hasDefinition).toBeUndefined();
+  });
+
   it('badges a REST request whose operation an import dropped', () => {
     const children = treeWith({ apis: [restApiWire()], requests: [restRequestWire({ orphaned: true })] });
     expect(children[0]?.children?.[0]?.orphaned).toBe(true);

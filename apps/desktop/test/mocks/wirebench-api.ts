@@ -60,6 +60,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       generate: fail('request.generate'),
       send: fail('request.send'),
       cancel: fail('request.cancel'),
+      sendToEnvironments: fail('request.sendToEnvironments'),
       preflight: fail('request.preflight'),
       recreate: fail('request.recreate'),
       curl: fail('request.curl'),
@@ -199,6 +200,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       get: fail('history.get'),
       clear: fail('history.clear'),
       resend: fail('history.resend'),
+      resendGrpc: fail('history.resendGrpc'),
     },
     validate: { message: fail('validate.message') },
     wsi: {

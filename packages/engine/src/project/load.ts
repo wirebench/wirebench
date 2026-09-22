@@ -22,6 +22,7 @@ import type {
   Project,
   ProjectSettings,
   RequestProperties,
+  SoapOwnerAuth,
   SoapRequestDef,
   WssRef,
 } from './model.js';
@@ -175,7 +176,7 @@ async function loadRequests(
       ...optional('soapAction', parsed.soapAction),
       headers: parsed.headers,
       attachments: parsed.attachments.map((a) => exact<Attachment>(a)),
-      ...optional('auth', parsed.auth),
+      ...optional('auth', soapOwnerAuth(parsed.auth)),
       ...(parsed.wsa !== undefined ? { wsa: normalizeWsa(parsed.wsa) } : {}),
       ...optional('wssOutgoingRef', parsed.wssOutgoingRef),
       ...optional('wssIncomingRef', parsed.wssIncomingRef),
@@ -239,7 +240,7 @@ async function loadInterface(
     id: e.id,
     name: e.name,
     url: e.url,
-    ...optional('auth', e.auth),
+    ...optional('auth', soapOwnerAuth(e.auth)),
     authMode: e.authMode,
   }));
   return {
@@ -254,7 +255,7 @@ async function loadInterface(
     endpoints,
     ...optional('defaultEndpointId', parsed.defaultEndpointId),
     wsa: normalizeWsa(parsed.wsa),
-    ...optional('auth', parsed.auth),
+    ...optional('auth', soapOwnerAuth(parsed.auth)),
     operations: operations.sort(byOrder),
   };
 }
@@ -273,6 +274,17 @@ function authConfig(parsed: Record<string, unknown>): AuthConfig {
     }
   }
   return out as unknown as AuthConfig;
+}
+
+/**
+ * Authentication at one of the three SOAP owner sites (interface, endpoint, request), loaded
+ * through {@link authConfig} so OAuth2 defaults (`scopes`, `clientAuth`, `pkce`) are filled
+ * exactly as for REST, then narrowed to {@link SoapOwnerAuth}: the schema (`soapOwnerAuthSchema`)
+ * already refuses `inherit` at these sites, so the narrowing cast only restates what parsing
+ * proved.
+ */
+function soapOwnerAuth(parsed: Record<string, unknown> | undefined): SoapOwnerAuth | undefined {
+  return parsed === undefined ? undefined : (authConfig(parsed) as unknown as SoapOwnerAuth);
 }
 
 /** A table row as loaded: `enabled` defaults to true, an absent description stays absent. */
@@ -434,6 +446,7 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       auth: authConfig(parsed.auth),
       settings: exact<GrpcRequestSettings>(parsed.settings),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
+      ...(parsed.assertions.length > 0 ? { assertions: parsed.assertions.map((a) => exact<Assertion>(a)) } : {}),
     };
   };
 }

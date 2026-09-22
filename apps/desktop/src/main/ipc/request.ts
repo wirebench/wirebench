@@ -50,7 +50,7 @@ import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
-import { redactHeaders, redactXml } from '../redact.js';
+import { REDACTED_MARKER, redactHeaders, redactUrl, redactXml } from '../redact.js';
 import { failedExchangeOf } from '../failed-exchange.js';
 import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
 import type { RestSendResolution } from '../rest-send.js';
@@ -90,6 +90,7 @@ import type {
   LogEntryWire,
   RestLiveEvent,
 } from '../../shared/wire-types.js';
+import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
 
@@ -124,11 +125,15 @@ export type RequestChannelProject = Pick<
       | 'restSend'
       // Read to split an imported cURL URL against the API's own base URL.
       | 'projectSnapshot'
+      // Read by *Send to environments…* to name and validate the environments asked for.
+      | 'sendEnvironments'
       | 'restTlsFor'
       | 'rememberRestCookies'
       | 'restMeta'
       // Read after a REST send, to check the response against its OpenAPI operation.
       | 'restContractFor'
+      // Read by the body editor's form view.
+      | 'restBodySchema'
       // The gRPC third, optional for the same reason.
       | 'grpcSend'
       | 'grpcTlsFor'
@@ -199,7 +204,9 @@ export interface RequestChannelDeps {
    * configuration. Omitted in tests that never send one, which then send no token at all rather
    * than quietly obtaining one.
    */
-  readonly oauth2?: Pick<OAuth2Service, 'accessToken'>;
+  readonly oauth2?: Pick<OAuth2Service, 'accessToken'> &
+    // Read by the SOAP cURL export, which uses a cached token but never obtains one.
+    Partial<Pick<OAuth2Service, 'status'>>;
   /**
    * Resolves one keychain reference, for the client secret and the remembered refresh token an
    * OAuth2 token request needs. The engine service resolves every *other* reference itself; this is
@@ -274,24 +281,29 @@ function extraTrustAnchors(): readonly string[] {
  * together here rather than duplicating the mapping in the renderer. An ad-hoc send, or one
  * whose request has since been deleted, goes out exactly as the renderer built it.
  */
-async function withRequestProperties(
+export async function withRequestProperties(
   project: RequestChannelProject,
   request: RequestSendRequest,
+  envId?: string,
 ): Promise<ResolvedSendRequest> {
   if (request.requestId === undefined) {
     return withExtraTrustAnchors(request);
   }
-  const mapped = project.sendInputFor(request.requestId, {
-    endpoint: request.input.endpoint,
-    envelopeXml: request.input.envelopeXml,
-    ...(request.input.headers !== undefined ? { headers: { ...request.input.headers } } : {}),
-  });
+  const mapped = project.sendInputFor(
+    request.requestId,
+    {
+      endpoint: request.input.endpoint,
+      envelopeXml: request.input.envelopeXml,
+      ...(request.input.headers !== undefined ? { headers: { ...request.input.headers } } : {}),
+    },
+    envId,
+  );
   // The client identity is resolved separately (and asynchronously): it means reading a file
   // and decrypting a secret, and it must never reach the renderer or the cURL export — which
   // is exactly why `sendInputFor` stays synchronous and material-free. A selected keystore
   // that will not load throws here, failing the send loudly rather than quietly going out
   // without the certificate the user asked for.
-  const tls = await project.tlsFor?.(request.requestId);
+  const tls = await project.tlsFor?.(request.requestId, envId);
   const input = mapped ?? request.input;
   return withExtraTrustAnchors({
     ...request,
@@ -529,17 +541,30 @@ async function curl(
   if (live === undefined) {
     throw unknownRequest(request.requestId);
   }
+  // The export applies the owner's credentials exactly as a send would (`applySoapAuth`, inside
+  // `effectiveSendInput`). An OAuth2 token is never fetched for it: one already cached is used,
+  // otherwise `Authorization` is left out and a note says so.
   const auth = deps.project.authFor(request.requestId);
+  const accessToken = auth?.type === 'oauth2' ? cachedAccessToken(deps, auth) : undefined;
   const effective = await service.effectiveSendInput(live, {
     scopes: deps.project.scopesFor(request.requestId),
     ...(auth !== undefined ? { auth } : {}),
+    ...(accessToken !== undefined ? { accessToken } : {}),
   });
   const show = deps.showSecrets?.get() ?? false;
-  const headers = redactHeaders(effective.headers ?? {}, { show });
+  const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
+  // A header API key may be called anything, so its header is masked by name as well.
+  const headerKey = auth?.type === 'api-key' && auth.in === 'header' ? auth.name.toLowerCase() : undefined;
+  const headers = Object.fromEntries(
+    Object.entries(redactHeaders(effective.headers ?? {}, { show })).map(([name, value]) => [
+      name,
+      !show && name.toLowerCase() === headerKey ? REDACTED_MARKER : value,
+    ]),
+  );
   const envelopeXml = redactXml(effective.envelopeXml, { show });
   const command = soapToCurl(
     {
-      endpoint: effective.endpoint,
+      endpoint: redactUrl(effective.endpoint, { show, extraParams: keyParams }),
       envelopeXml,
       soapVersion: effective.soapVersion,
       ...(effective.soapAction !== undefined ? { soapAction: effective.soapAction } : {}),
@@ -559,6 +584,9 @@ async function curl(
   const comments: string[] = [];
   if (deps.project.hasOutgoingWss?.(request.requestId) === true) {
     notes.push('WS-Security is not included in the cURL command.');
+  }
+  if (auth?.type === 'oauth2' && accessToken === undefined) {
+    notes.push('No OAuth2 access token is cached, so the Authorization header is not included; press Get new token.');
   }
   if (count > 0) {
     notes.push(`${String(count)} attachment(s) are not included in the cURL command.`);
@@ -775,9 +803,10 @@ export async function sendRestRequest(
   deps: RequestChannelDeps,
   request: RequestSendRestRequest,
   onLive?: (event: RestLiveEvent) => void,
+  envId?: string,
 ): Promise<RestExchangeSummary> {
   const resolved = await resolveWithSecretTokens(
-    () => deps.project.restSend?.(request.requestId, request.draft),
+    () => deps.project.restSend?.(request.requestId, request.draft, envId),
     tokenSecrets(deps, request.requestId),
   );
   if (resolved === undefined) {
@@ -942,6 +971,15 @@ async function recordRest(
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);
   }
+}
+
+/**
+ * The access token already cached for `config`, if one is still valid — never a new one. An export
+ * must not open a browser or call a token endpoint behind the user's back.
+ */
+function cachedAccessToken(deps: RequestChannelDeps, config: OAuth2Auth): string | undefined {
+  const status = deps.oauth2?.status?.(config, { showSecrets: true });
+  return status?.state === 'valid' ? status.token : undefined;
 }
 
 /** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
@@ -1813,7 +1851,11 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.wsClose, (request) => Promise.resolve(closeWsRequest(service, request)));
   registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
 
-  registerHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
+  registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(service, deps, request));
+
+  registerHandler(channels.request.cancel, (request) =>
+    Promise.resolve(cancelEnvironmentBatch(service, request.sendId) ?? service.cancel(request.sendId)),
+  );
 
   registerHandler(channels.request.preflight, (request) => Promise.resolve(deps.project.preflight(request.requestId)));
 
@@ -1822,4 +1864,10 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.curl, (request) => curl(service, deps, request));
 
   registerHandler(channels.request.importCurl, (request) => importCurl(deps, request));
+
+  registerHandler(channels.request.restBodySchema, async (request) => {
+    const found = await deps.project.restBodySchema?.(request.requestId);
+    // The wire keeps the schema as plain JSON data; the renderer reads it back as a `JsonSchema`.
+    return found === undefined ? null : { mediaType: found.mediaType, schema: found.schema as Record<string, unknown> };
+  });
 }

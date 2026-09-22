@@ -14,7 +14,7 @@ import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
 import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
-import { restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
+import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
 
 /**
@@ -139,6 +139,13 @@ function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonl
     return [
       ...tokenNeeds(selected, scopeSets),
       ...secretNeedsOfAuth(restEffectiveAuth(selected)),
+      ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
+    ];
+  }
+  if (selected.kind === 'grpc') {
+    return [
+      ...tokenNeeds(selected, scopeSets),
+      ...secretNeedsOfAuth(grpcEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
   }

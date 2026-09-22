@@ -3,6 +3,7 @@ import { secretNeedsOf } from '../../../src/run/secret-needs.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { EndpointAuth, Interface, Project, SoapRequestDef, WssRef } from '../../../src/project/model.js';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
@@ -209,5 +210,53 @@ describe('secretNeedsOf — ${secret:name} tokens', () => {
       ],
     });
     expect(needsOf(p).map((need) => need.ref)).toEqual(['secret:soap_key', 'sec_iface']);
+  });
+});
+
+describe('secretNeedsOf — gRPC', () => {
+  it('lists a token in a gRPC message', () => {
+    const api = createGrpcApi('Greeter', {
+      id: 'api-g',
+      target: 'localhost:1',
+      requests: [createGrpcRequest('Hello', { id: 'g-1', message: '{"k": "${secret:grpc_key}"}' })],
+    });
+    expect(needsOf({ ...project({}), grpcApis: [api] })).toEqual([
+      { ref: 'secret:grpc_key', envName: 'GRPC_KEY', purpose: 'secret "grpc_key"', usedBy: ['Greeter/Hello'] },
+    ]);
+  });
+
+  it("reads a gRPC request's auth through its folders to the API, and its keystore", () => {
+    const api = createGrpcApi('Greeter', {
+      id: 'api-g',
+      target: 'localhost:1',
+      auth: { type: 'bearer', tokenRef: 'sec_api' },
+      folders: [
+        createGrpcFolder('Admin', {
+          id: 'f-admin',
+          auth: { type: 'basic', username: 'u', passwordRef: 'sec_folder', passwordEnv: 'FOLDER_PW' },
+          requests: [createGrpcRequest('Inherits', { id: 'g-1', settings: { sslKeystoreRef: 'ks-1' } })],
+        }),
+      ],
+      requests: [createGrpcRequest('Top', { id: 'g-2', order: 1 })],
+    });
+    const p = {
+      ...project({
+        wss: {
+          keystores: [
+            {
+              id: 'ks-1',
+              name: 'client',
+              document: { id: 'ks-1', name: 'client', path: 'k.pem', type: 'pem', passwordSecretRef: 'sec_ks' },
+            } satisfies WssRef,
+          ],
+        },
+      }),
+      grpcApis: [api],
+    };
+    expect(needsOf(p)).toEqual([
+      expect.objectContaining({ ref: 'sec_folder', envName: 'FOLDER_PW', usedBy: ['Greeter/Admin/Inherits'] }),
+      expect.objectContaining({ ref: 'sec_ks', usedBy: ['Greeter/Admin/Inherits'] }),
+      expect.objectContaining({ ref: 'sec_api', usedBy: ['Greeter/Top'] }),
+    ]);
   });
 });

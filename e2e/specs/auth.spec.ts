@@ -72,7 +72,7 @@ test.describe('auth', () => {
     await expect(panel.getByLabel('Password')).toHaveText('••••••••');
 
     // --- challenge flow: no preemptive header, so the first attempt is answered with a 401 ---
-    const preemptive = page.getByTestId('auth-preemptive');
+    const preemptive = panel.getByLabel('Request preemptive');
     await expect(preemptive).toBeChecked();
     await preemptive.uncheck();
 

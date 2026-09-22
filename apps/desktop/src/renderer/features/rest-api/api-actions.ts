@@ -4,6 +4,7 @@
  */
 import { useEditorsStore } from '../../state/editors.js';
 import { useProjectStore } from '../../state/project.js';
+import { useRestUpdateStore } from './rest-update-state.js';
 
 /** The editor-tab id for one API. */
 export function apiTabId(apiId: string): string {
@@ -17,4 +18,16 @@ export function openApiTab(apiId: string, fallbackTitle?: string): void {
     return;
   }
   useEditorsStore.getState().open({ id: apiTabId(apiId), kind: 'api', title, apiId });
+}
+
+/**
+ * Opens the API's tab and its Update Definition dialog. Does nothing for an API that did not cache
+ * its definition: there is nothing to compare an update against.
+ */
+export function updateRestDefinition(apiId: string): void {
+  if (useProjectStore.getState().apis[apiId]?.definition?.cache !== true) {
+    return;
+  }
+  openApiTab(apiId);
+  useRestUpdateStore.getState().open(apiId);
 }

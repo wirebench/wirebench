@@ -6,3 +6,5 @@ export { runRequests } from './run.js';
 export type { RequestOutcome, RequestResult, RunOptions, RunResult, RunSummary } from './run.js';
 export { secretNamesInValue, secretNeedsOf } from './secret-needs.js';
 export type { LocatedSecretNeed } from './secret-needs.js';
+export { createRunTokenSource } from './oauth2-token.js';
+export type { RunTokenSource, RunTokenSourceOptions, TokenRequestContext } from './oauth2-token.js';

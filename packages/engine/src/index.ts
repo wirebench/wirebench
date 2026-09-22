@@ -325,6 +325,7 @@ export type {
   PropertyMap,
   RequestDef,
   RequestProperties,
+  SoapOwnerAuth,
   SoapRequestDef,
   WsaConfig,
   WssRef,
@@ -346,6 +347,8 @@ export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawC
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
 export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
 export type { AppliedAuth } from './rest/auth.js';
+export { applySoapAuth } from './soap/auth.js';
+export type { SoapAppliedAuth } from './soap/auth.js';
 export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
 export type { CookieMatchOptions } from './rest/cookies.js';
 export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
@@ -426,6 +429,15 @@ export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/o
 export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
 export { selectResponse } from './rest/openapi/responses.js';
 export type { ResponseSelection } from './rest/openapi/responses.js';
+export { applyRestUpdate, planRestUpdate, sameStructure } from './rest/openapi/update.js';
+export type {
+  ApplyRestUpdateOptions,
+  RestApiChangeReason,
+  RestApplyResult,
+  RestChangeReason,
+  RestOpRef,
+  RestUpdatePlan,
+} from './rest/openapi/update.js';
 export { matchOperation } from './rest/openapi/match.js';
 export type { RestOperationRef } from './rest/openapi/match.js';
 export {
@@ -454,6 +466,8 @@ export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
 export type { SampleOptions, SampleXmlOptions } from './rest/openapi/sample.js';
+export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
+export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
 export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
 export type {
   JsonSchema,
@@ -603,6 +617,7 @@ export {
   environmentFileSchema,
   keyValueEntrySchema,
   interfaceFileSchema,
+  soapOwnerAuthSchema,
   keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,
@@ -679,6 +694,8 @@ export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
 export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from './project/serialize.js';
 export type { ProjectFiles } from './project/serialize.js';
+export { requestFileLocation } from './project/request-location.js';
+export type { RequestFileLocation } from './project/request-location.js';
 export { loadProject } from './project/load.js';
 export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
 export { saveProject } from './project/save.js';
@@ -720,7 +737,7 @@ export type {
 } from './project/history.js';
 export { enabledProperties, expand, expandSendInput, hasExpansions, secretNamesIn } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
-export { effectiveAuth } from './project/endpoints.js';
+export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
 export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './project/wss-configs.js';
 // ---------------------------------------------------------------------------
@@ -1083,6 +1100,7 @@ export {
   resolveAuthConfig,
   resolveEndpointAuth,
   resolveSecretTokens,
+  resolveSoapAuth,
   secretMissingMessage,
   secretTokenMissingMessage,
   toSendAuth,

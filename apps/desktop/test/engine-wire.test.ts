@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { generateRequest, importDefinition, parseFault, parseSoapResponse, parseXml } from '@wirebench/engine';
-import type { HttpExchange, SoapExchange } from '@wirebench/engine';
+import type { HttpExchange, RestExchange, SoapExchange } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
 import {
   toExchangeSummary,
@@ -8,6 +8,7 @@ import {
   toInterfaceSummary,
   toWireFault,
   redactExchangeSummary,
+  toRestExchangeSummary,
 } from '../src/main/engine-wire.js';
 import * as redact from '../src/main/redact.js';
 import type { ExchangeSummary } from '../src/shared/wire-types.js';
@@ -435,5 +436,63 @@ describe('redactExchangeSummary', () => {
 
     const shown = redactExchangeSummary(summary, { show: true });
     expect(shown.response?.fault?.detailXml).toContain('s3cret');
+  });
+});
+
+describe('toRestExchangeSummary — an API key in the query', () => {
+  function restExchange(target: string): RestExchange {
+    const rawRequest = Buffer.from(`GET ${target} HTTP/1.1\r\nHost: example.test\r\n\r\n`, 'latin1');
+    return {
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      rawHeaders: [],
+      body: new Uint8Array(),
+      rawBody: new Uint8Array(),
+      rawRequest,
+      rawResponse: Buffer.from('HTTP/1.1 200 OK\r\n\r\n', 'latin1'),
+      truncated: false,
+      httpVersion: '1.1',
+      timings: {},
+      redirects: [],
+      request: { url: `http://example.test${target}`, method: 'GET', headers: {} },
+      text: '',
+      language: 'text',
+      cookies: [],
+      methodChanged: false,
+    } as unknown as RestExchange;
+  }
+
+  function rawRequestLine(summary: { http: { rawRequestBase64: string } }): string {
+    return Buffer.from(summary.http.rawRequestBase64, 'base64').toString('latin1').split('\r\n')[0] ?? '';
+  }
+
+  it('masks the keyParams parameter on the raw request line', () => {
+    const summary = toRestExchangeSummary(restExchange('/calc?key=secret123&a=1'), 's1', {
+      method: 'GET',
+      keyParams: ['key'],
+    });
+    const line = rawRequestLine(summary);
+    expect(line).not.toContain('secret123');
+    expect(line.startsWith('GET /calc?')).toBe(true);
+    expect(line).toContain('a=1');
+    expect(line.endsWith(' HTTP/1.1')).toBe(true);
+    expect(summary.http.request.url).not.toContain('secret123');
+  });
+
+  it('matches a URL-encoded name with either space encoding', () => {
+    for (const target of ['/calc?api+key=secret123', '/calc?api%20key=secret123', '/calc?%61pi%20key=secret123']) {
+      const summary = toRestExchangeSummary(restExchange(target), 's1', { method: 'GET', keyParams: ['api key'] });
+      expect(rawRequestLine(summary)).not.toContain('secret123');
+    }
+  });
+
+  it('leaves the request line alone when show is set', () => {
+    const summary = toRestExchangeSummary(restExchange('/calc?key=secret123'), 's1', {
+      method: 'GET',
+      show: true,
+      keyParams: ['key'],
+    });
+    expect(rawRequestLine(summary)).toBe('GET /calc?key=secret123 HTTP/1.1');
   });
 });

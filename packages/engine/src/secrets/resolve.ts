@@ -5,7 +5,8 @@
  */
 
 import { WirebenchError } from '../errors.js';
-import type { AuthConfig, EndpointAuth } from '../project/model.js';
+import { isEndpointAuth } from '../project/endpoints.js';
+import type { AuthConfig, SoapOwnerAuth, EndpointAuth } from '../project/model.js';
 import type { SendAuth } from '../types.js';
 import { secretPseudoRef } from './secret-token.js';
 
@@ -155,6 +156,36 @@ export async function resolveAuthConfig(
     default:
       return undefined;
   }
+}
+
+/**
+ * Resolves a SOAP request's owner-level {@link SoapOwnerAuth} into the engine's `SendAuth`.
+ *
+ * Basic and NTLM go through the same `resolveEndpointAuth`/`toSendAuth` pair the endpoint-only
+ * shape has always used, so their semantics (preemptive default, undefined on an incomplete pair)
+ * stay exactly as they were before owner auth grew the other schemes. Bearer, API key and OAuth2
+ * are resolved through {@link resolveAuthConfig}, the same one REST uses — one implementation of
+ * "turn a reference into a value" for every token scheme, SOAP or REST.
+ *
+ * A caller refusing a SOAP owner's OAuth2 (as `prepareSoap` does, matching `prepareRest`) should
+ * do so before calling this — reached with `options.accessToken` unset, an OAuth2 owner simply
+ * resolves to no credentials.
+ *
+ * @throws WirebenchError `secret-missing` — see {@link resolveEndpointAuth} and
+ * {@link resolveAuthConfig}.
+ */
+export async function resolveSoapAuth(
+  auth: SoapOwnerAuth | undefined,
+  getSecret: GetSecret,
+  options: { readonly accessToken?: string } = {},
+): Promise<SendAuth | undefined> {
+  if (auth === undefined) {
+    return undefined;
+  }
+  if (isEndpointAuth(auth)) {
+    return toSendAuth(await resolveEndpointAuth(auth, getSecret));
+  }
+  return resolveAuthConfig(auth, getSecret, options);
 }
 
 /** One reference resolved, or `undefined` when the scheme has none configured yet. */

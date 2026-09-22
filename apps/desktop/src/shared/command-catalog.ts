@@ -296,6 +296,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'REST: New Request',
     category: 'Explorer',
   },
+  'rest.updateDefinition': {
+    id: 'rest.updateDefinition',
+    label: 'REST: Update Definition…',
+    category: 'Explorer',
+  },
   'grpc.send': {
     id: 'grpc.send',
     label: 'Send gRPC Request',
@@ -382,6 +387,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Cancel Request',
     category: 'Request',
     shortcut: 'Escape',
+  },
+  'request.sendToEnvironments': {
+    id: 'request.sendToEnvironments',
+    label: 'Request: Send to Environments…',
+    category: 'Request',
   },
   'request.recreateKeepValues': {
     id: 'request.recreateKeepValues',

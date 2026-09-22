@@ -96,11 +96,14 @@ export interface ExplorerNode {
   /** Set on `project-missing` nodes: why the folder could not be read, when main said. */
   readonly message?: string;
   /**
-   * Set on `request` nodes whose operation an Update Definition dropped from the WSDL. The
+   * Set on a request node whose operation an Update Definition no longer found in the definition
+   * — a WSDL operation, an OpenAPI method and path, a gRPC method or an AsyncAPI channel. The
    * request is still there (nothing is ever deleted); the row is badged so the user can see
    * which ones no longer correspond to anything the service offers.
    */
   readonly orphaned?: boolean;
+  /** Set on `api` nodes whose API records the definition it was imported from (Update Definition). */
+  readonly hasDefinition?: boolean;
   /**
    * Set on `project` and `request` nodes an unresolved sync conflict touches (Task 11):
    * {@link conflictTargets}'s `projectIds`/`requestIds`, joined into the tree so
@@ -282,6 +285,9 @@ function apiNode(
     kind: 'api',
     label: api.name,
     apiId: api.id,
+    // `cache`, not just a source: an update compares against the cached document, so an API
+    // without one cannot be updated and must not offer the menu item.
+    ...(api.definition?.cache === true ? { hasDefinition: true } : {}),
     children: restChildren(api, undefined, folders, requests),
   };
 }

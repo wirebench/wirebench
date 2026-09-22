@@ -417,3 +417,18 @@ describe('RestResponsePane with an event stream', () => {
     expect(screen.getByTestId('rest-response-status').textContent).toContain('socket hang up');
   });
 });
+
+describe('RestResponsePane Snapshot tab', () => {
+  it('offers no save for an empty body', async () => {
+    const write = vi.fn();
+    installWirebenchApi({
+      exchanges: { saveRestBody },
+      snapshot: { read: vi.fn().mockResolvedValue({ ok: true, value: { status: 'none' } }), write },
+    });
+    mount(makeRestExchange({ text: '', http: { ...makeRestExchange().http, status: 204, bodyBase64: '' } }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Snapshot' }));
+    expect(await screen.findByText('This response has no text body to compare.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save as snapshot' })).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+  });
+});

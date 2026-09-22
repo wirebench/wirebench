@@ -97,11 +97,16 @@ export async function importCalculator(page: Page, server: TestSoapServer): Prom
  * Unfolds the whole explorer tree — an imported interface arrives folded shut — and waits for a
  * row reading `rowText` to show. Waits for the import dialog to close first, since the tree it
  * unfolds is only complete once the import has landed.
+ *
+ * Rows are matched by `data-tree-id`, which every row carries, rather than by testid: the explorer
+ * names a row after its kind (`rest-request-row`, `folder-row`, `api-row`, …) and only falls back
+ * to `explorer-tree-row`, so keying on the fallback would silently never match a REST, gRPC or
+ * WebSocket row.
  */
 export async function expandExplorer(page: Page, rowText: string): Promise<void> {
   await expect(page.getByTestId('import-submit')).toBeHidden({ timeout: 20_000 });
   await page.getByRole('button', { name: 'Expand all' }).click();
-  await expect(page.locator('[data-testid="explorer-tree-row"]', { hasText: rowText }).first()).toBeVisible({
+  await expect(page.locator('[data-tree-id]', { hasText: rowText }).first()).toBeVisible({
     timeout: 20_000,
   });
 }

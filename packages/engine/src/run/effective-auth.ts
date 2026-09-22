@@ -5,12 +5,12 @@
  */
 import { effectiveAuth } from '../project/endpoints.js';
 import { resolveAuthEndpoint } from '../project/environments.js';
-import type { AuthConfig, EndpointAuth } from '../project/model.js';
+import type { AuthConfig, SoapOwnerAuth } from '../project/model.js';
 import { resolveAuthChain } from '../rest/auth.js';
 import type { SelectedRequest } from './select.js';
 
 /** A SOAP request's own auth, combined with its endpoint's, falling back to the interface's. */
-export function soapEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'soap' }>): EndpointAuth | undefined {
+export function soapEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'soap' }>): SoapOwnerAuth | undefined {
   const { iface, request } = selected;
   const endpoint = resolveAuthEndpoint(iface, request);
   return effectiveAuth(request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', iface.auth);
@@ -18,6 +18,12 @@ export function soapEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'so
 
 /** Innermost first, as the app's `authChainFor` builds it: request, its folders inside-out, the API. */
 export function restEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'rest' }>): AuthConfig {
+  const { api, chain, request } = selected;
+  return resolveAuthChain([request.auth, ...[...chain].reverse().map((folder) => folder.auth), api.auth]);
+}
+
+/** The same chain for a gRPC request: request, its folders inside-out, the API. */
+export function grpcEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'grpc' }>): AuthConfig {
   const { api, chain, request } = selected;
   return resolveAuthChain([request.auth, ...[...chain].reverse().map((folder) => folder.auth), api.auth]);
 }

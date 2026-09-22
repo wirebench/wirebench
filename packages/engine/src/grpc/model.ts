@@ -14,6 +14,7 @@
  * ever holds a secret — credentials are `secretRef`s resolved from the OS keychain at send time.
  */
 
+import type { Assertion } from '../assert/model.js';
 import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
@@ -76,6 +77,12 @@ export interface GrpcRequestDef {
    * is deleted on a re-import; the request survives badged, as a SOAP request does.
    */
   readonly orphaned?: boolean;
+  /**
+   * What `wirebench run` checks on the unary call's answer: the gRPC status code, the decoded
+   * response message as JSON, the duration. Optional so every place that builds a request without
+   * thinking about runs keeps compiling; absent reads as none.
+   */
+  readonly assertions?: readonly Assertion[];
 }
 
 /** A named node in a gRPC API's tree. An import makes one per service. */

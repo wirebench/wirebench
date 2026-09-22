@@ -205,3 +205,37 @@ describe('redactRawHttp — structured bodies', () => {
     expect(redactRawHttp(raw, { show: true })).toBe(raw);
   });
 });
+
+describe('redactRawHttp — the request line', () => {
+  const firstLine = (raw: string): string => raw.split('\r\n')[0] ?? '';
+
+  it('masks extraParams in the query, whatever the space encoding of the name', () => {
+    for (const target of ['/calc?api+key=s3cr3t&a=1', '/calc?api%20key=s3cr3t&a=1', '/calc?%61pi+key=s3cr3t&a=1']) {
+      const line = firstLine(redactRawHttp(`GET ${target} HTTP/1.1\r\nHost: x\r\n\r\n`, { extraParams: ['api key'] }));
+      expect(line).not.toContain('s3cr3t');
+      expect(line).toMatch(/^GET \/calc\?.*a=1 HTTP\/1\.1$/);
+    }
+  });
+
+  it('masks a well-known parameter in an absolute-form target without extraParams', () => {
+    const line = firstLine(redactRawHttp('GET http://h.test/x?access_token=s3cr3t HTTP/1.1\r\n\r\n'));
+    expect(line).not.toContain('s3cr3t');
+    expect(line.startsWith('GET http://h.test/x?')).toBe(true);
+  });
+
+  it('leaves an unaffected request line byte-for-byte, and a status line alone', () => {
+    const request = 'GET /calc?q=a+b HTTP/1.1\r\n\r\n';
+    expect(redactRawHttp(request, { extraParams: ['key'] })).toBe(request);
+    const response = 'HTTP/1.1 200 OK\r\n\r\n';
+    expect(redactRawHttp(response, { extraParams: ['key'] })).toBe(response);
+  });
+});
+
+describe('redactRawHttp — a hostile request line', () => {
+  it('returns promptly on a line of many `?`s', () => {
+    const line = `! ?${'?'.repeat(100_000)}`;
+    const started = performance.now();
+    expect(redactRawHttp(`${line}\r\n\r\n`, { extraParams: ['key'] })).toBe(`${line}\r\n\r\n`);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});

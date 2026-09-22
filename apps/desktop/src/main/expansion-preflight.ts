@@ -23,11 +23,11 @@ import {
 } from '@wirebench/engine';
 import type {
   Endpoint,
-  EndpointAuth,
   Interface,
   Project,
   PropertyScopes,
   RequestDef,
+  SoapOwnerAuth,
   UnresolvedRef,
 } from '@wirebench/engine';
 import type {
@@ -91,7 +91,10 @@ function wsaSourceFor(
  */
 function authSourceFor(iface: Interface, request: RequestDef, endpoint: Endpoint | undefined): RequestAuthSourceWire {
   const authMode = endpoint?.authMode ?? 'override';
-  const resolved: EndpointAuth | undefined = effectiveAuth(request.auth, endpoint?.auth, authMode, iface.auth);
+  const resolved: SoapOwnerAuth | undefined = effectiveAuth(request.auth, endpoint?.auth, authMode, iface.auth);
+  // `username`/`preemptive` exist only on the Basic/NTLM arm; a token scheme reports its `type`
+  // (below) with neither, same as `none` does today.
+  const basicOrNtlm = resolved?.type === 'basic' || resolved?.type === 'ntlm' ? resolved : undefined;
   // Under `complement`, an explicit `{ type: 'none' }` on the request is exactly like leaving it
   // undefined: `effectiveAuth`'s `combine()` takes the endpoint's *type* too, so the endpoint is
   // where the resolved type actually came from and the source line should say so.
@@ -109,8 +112,8 @@ function authSourceFor(iface: Interface, request: RequestDef, endpoint: Endpoint
   return {
     source,
     type: resolved?.type ?? 'none',
-    ...(resolved?.username !== undefined ? { username: resolved.username } : {}),
-    ...(resolved?.preemptive !== undefined ? { preemptive: resolved.preemptive } : {}),
+    ...(basicOrNtlm?.username !== undefined ? { username: basicOrNtlm.username } : {}),
+    ...(basicOrNtlm?.preemptive !== undefined ? { preemptive: basicOrNtlm.preemptive } : {}),
     ...(source === 'endpoint' && endpoint !== undefined ? { endpointName: endpoint.name, authMode } : {}),
   };
 }

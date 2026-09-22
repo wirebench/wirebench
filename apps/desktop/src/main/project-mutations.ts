@@ -22,18 +22,19 @@ import type {
   Attachment,
   AttachmentSource,
   Endpoint,
-  EndpointAuth,
   Interface,
   OperationDef,
   Project,
   ProjectSettings,
   RequestDef,
   RequestProperties,
+  SoapOwnerAuth,
   WsaConfig,
   WsaConfigPatch,
 } from '@wirebench/engine';
 import type {
   AttachmentPatchWire,
+  AuthConfigWire,
   ProjectChange,
   ProjectSettingsPatchWire,
   RequestPatchWire,
@@ -89,6 +90,7 @@ import {
   removeApi,
   removeFolder,
   removeRestRequest,
+  toEngineAuthConfig,
   updateApi,
   updateFolder,
   updateRestRequest,
@@ -348,26 +350,22 @@ function requireEndpoint(iface: Interface, endpointId: string): Endpoint {
 }
 
 /**
- * Normalises a wire `EndpointAuth` (whose zod-optional fields type as `T | undefined`) into the
- * engine's `EndpointAuth`, which under `exactOptionalPropertyTypes` requires absent keys to be
- * truly absent rather than present-with-`undefined`.
+ * Converts a SOAP auth mutation's wire payload to the engine's {@link SoapOwnerAuth}.
+ *
+ * The same normaliser REST uses ({@link toEngineAuthConfig}) rather than a SOAP copy: the two
+ * owners hold the same scheme shapes, and two converters would drift on exactly the field a new
+ * scheme adds. The one SOAP difference is `inherit`, which `soapOwnerAuthWireSchema` refuses at
+ * the IPC boundary; a stale renderer or hand-built call that gets past it still fails loudly here
+ * rather than landing on some other scheme — a SOAP owner has nothing above it to inherit from.
  */
-function toEngineAuth(auth: {
-  type: EndpointAuth['type'];
-  username?: string | undefined;
-  passwordRef?: string | undefined;
-  passwordEnv?: string | undefined;
-  domain?: string | undefined;
-  preemptive?: boolean | undefined;
-}): EndpointAuth {
-  return {
-    type: auth.type,
-    ...(auth.username !== undefined ? { username: auth.username } : {}),
-    ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
-    ...(auth.passwordEnv !== undefined ? { passwordEnv: auth.passwordEnv } : {}),
-    ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
-    ...(auth.preemptive !== undefined ? { preemptive: auth.preemptive } : {}),
-  };
+function toEngineAuth(auth: AuthConfigWire): SoapOwnerAuth {
+  if (auth.type === 'inherit') {
+    throw new ProjectError(
+      'auth-inherit-unsupported',
+      'A SOAP interface, endpoint or request auth cannot be "inherit"',
+    );
+  }
+  return toEngineAuthConfig(auth) as SoapOwnerAuth;
 }
 
 /**
@@ -402,7 +400,7 @@ function omitWsa(request: RequestDef): RequestDef {
 }
 
 /** Sets (or clears, with `auth: null`) one request's own `auth`, leaving every other field alone. */
-function updateRequestAuth(project: Project, requestId: string, auth: EndpointAuth | null): MutationResult {
+function updateRequestAuth(project: Project, requestId: string, auth: SoapOwnerAuth | null): MutationResult {
   const location = findRequest(project, requestId) ?? notFound('request', requestId);
   const { iface, operation, request } = location;
   const next: RequestDef = {

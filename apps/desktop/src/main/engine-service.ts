@@ -8,6 +8,7 @@
 import {
   callGrpc,
   sendRest,
+  applySoapAuth,
   applyWsaHeaders,
   expandSendInput,
   generateEmptyRequest,
@@ -15,6 +16,7 @@ import {
   importDefinition as engineImportDefinition,
   normalizeWsa,
   openWsSession,
+  resolveSoapAuth,
   sendSoapRequest,
   toSendAuth,
   WirebenchError,
@@ -26,7 +28,7 @@ import type {
   GrpcSendInput,
   ProtoSet,
   RestSendInput,
-  EndpointAuth,
+  SoapOwnerAuth,
   GenerateOptions,
   ImportProgress,
   ImportResult,
@@ -40,7 +42,7 @@ import type {
   WsSessionHandle,
   WsSessionOptions,
 } from '@wirebench/engine';
-import { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
+import { resolveAuthConfig, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
 import { redactHeaders } from './redact.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
 import {
@@ -170,7 +172,7 @@ function toEngineTls(tls: TlsOptionsWire): TlsOptions {
  * auth (a real password, never a ref) — so it is trivially unit-testable without IPC or a
  * secret store.
  */
-export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth): SoapSendInputWire {
+export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth | SendAuth): SoapSendInputWire {
   if (auth === undefined || auth.type !== 'basic' || auth.preemptive === false) {
     return input;
   }
@@ -190,6 +192,11 @@ export function withResolvedAuth(input: SoapSendInputWire, auth?: ResolvedAuth):
  * (`toSendAuth`) so the CLI runner authenticates exactly as the app does; this is its old name.
  */
 export const toEngineAuth = toSendAuth;
+
+/** Basic and NTLM: the schemes the transport applies itself, rather than `applySoapAuth`'s headers. */
+function isTransportAuth(auth: SendAuth): boolean {
+  return auth.type === 'basic' || auth.type === 'ntlm';
+}
 
 /**
  * Drops the explicitly-`undefined` keys a zod-parsed optional leaves behind, so the result is
@@ -482,24 +489,37 @@ export class EngineService {
    */
   async effectiveSendInput(
     input: SoapSendInputWire,
-    options: { scopes?: PropertyScopes; auth?: EndpointAuth } = {},
+    options: { scopes?: PropertyScopes; auth?: SoapOwnerAuth; accessToken?: string } = {},
   ): Promise<SoapSendInputWire> {
-    const resolvedAuth =
-      options.auth !== undefined
-        ? await resolveEndpointAuth(options.auth, (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined))
-        : undefined;
+    const resolvedAuth = await resolveSoapAuth(
+      options.auth,
+      (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined),
+      options.accessToken !== undefined ? { accessToken: options.accessToken } : {},
+    );
+    // Basic is baked into a header as before; the token schemes go through `applySoapAuth`, the
+    // function the send itself uses, and only after WS-Addressing so `wsa:To` is the endpoint as
+    // configured rather than the one carrying an API key — exactly the send's order.
     const withAuth = withResolvedAuth(input, resolvedAuth);
+    const withTokens = (wire: SoapSendInputWire): SoapSendInputWire => {
+      if (resolvedAuth === undefined || isTransportAuth(resolvedAuth)) {
+        return wire;
+      }
+      const applied = applySoapAuth(wire.endpoint, wire.headers, resolvedAuth);
+      return { ...wire, endpoint: applied.endpoint, headers: { ...applied.headers } };
+    };
     if (options.scopes === undefined) {
-      return this.applyWsaForPreview(withAuth);
+      return withTokens(this.applyWsaForPreview(withAuth));
     }
     const expanded = expandSendInput(toEngineSendInput(withAuth, new AbortController().signal), options.scopes).input;
-    return this.applyWsaForPreview({
-      ...withAuth,
-      endpoint: expanded.endpoint,
-      envelopeXml: expanded.envelopeXml,
-      ...(expanded.soapAction !== undefined ? { soapAction: expanded.soapAction } : {}),
-      ...(expanded.headers !== undefined ? { headers: { ...expanded.headers } } : {}),
-    });
+    return withTokens(
+      this.applyWsaForPreview({
+        ...withAuth,
+        endpoint: expanded.endpoint,
+        envelopeXml: expanded.envelopeXml,
+        ...(expanded.soapAction !== undefined ? { soapAction: expanded.soapAction } : {}),
+        ...(expanded.headers !== undefined ? { headers: { ...expanded.headers } } : {}),
+      }),
+    );
   }
 
   /**
@@ -594,7 +614,14 @@ export class EngineService {
     request: ResolvedSendRequest,
     options: {
       scopes?: PropertyScopes;
-      auth?: EndpointAuth;
+      auth?: SoapOwnerAuth;
+      /** An OAuth2 access token the host already obtained (`OAuth2Service`); never read from the secret store. */
+      accessToken?: string;
+      /**
+       * The query parameter an API key travels in, masked in the summary's URL (and on a later
+       * `exchanges.get`) whatever it is called — the same rule a REST send follows.
+       */
+      keyParams?: readonly string[];
       showSecrets?: boolean;
       /** The saved request's attachments and MTOM options; absent for an ad-hoc send. */
       attachments?: SendAttachmentInput;
@@ -612,21 +639,16 @@ export class EngineService {
     const controller = new AbortController();
     this.sends.set(request.sendId, controller);
     try {
-      const resolvedAuth =
-        options.auth !== undefined
-          ? await resolveEndpointAuth(options.auth, (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined))
-          : undefined;
+      const sendAuth = await resolveSoapAuth(
+        options.auth,
+        (ref) => this.getSecret?.(ref) ?? Promise.resolve(undefined),
+        options.accessToken !== undefined ? { accessToken: options.accessToken } : {},
+      );
       // The credentials go to the engine rather than being baked into a header here, so the
-      // engine can run the 401-challenge retry when they are not preemptive.
+      // engine can run the 401-challenge retry when they are not preemptive, and apply a token
+      // scheme after property expansion (`applySoapAuth`).
       const exchange = await sendSoapRequest(
-        toEngineSendInput(
-          request.input,
-          controller.signal,
-          options.attachments,
-          toEngineAuth(resolvedAuth),
-          options.wss,
-          options.proxy,
-        ),
+        toEngineSendInput(request.input, controller.signal, options.attachments, sendAuth, options.wss, options.proxy),
         {
           ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
         },
@@ -640,8 +662,12 @@ export class EngineService {
         exchange,
         ...(request.requestId !== undefined ? { requestId: request.requestId } : {}),
         requestEnvelopeXml: request.input.envelopeXml,
+        ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
       });
-      return redactExchangeSummary(full, { show: options.showSecrets ?? false });
+      return redactExchangeSummary(full, {
+        show: options.showSecrets ?? false,
+        ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
+      });
     } finally {
       this.sends.delete(request.sendId);
     }

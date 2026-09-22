@@ -1,6 +1,6 @@
 # Spec: CLI runner — `wirebench run` with assertions, reports and exit codes
 
-- Status: **S1–S6 shipped (feat/cli-runner); S7 (gRPC unary, OAuth2 client credentials) pending**
+- Status: **S1–S7 shipped (feat/cli-runner); S7 (gRPC unary, OAuth2 client credentials) per `2026-09-22-cli-runner-design.md`**
 - Date: 2026-09-18
 - Issue: [#30](https://github.com/wirebench/wirebench/issues/30) (roadmap item 3, milestone 2.3)
 - Builds on: `docs/adr/0001-electron-stack.md` (the engine stays Electron-free so the CLI can run on

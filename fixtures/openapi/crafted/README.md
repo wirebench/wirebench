@@ -24,3 +24,6 @@ tiny but valid, and each is a golden input for `packages/engine/test/unit/rest/o
   terminate.
 - **v31/** — OpenAPI 3.1: a `type: [string, 'null']`, a `const`, `webhooks`, `callbacks` and two
   `x-` extensions, all of which are counted as skipped.
+- **update/** — two versions of one small API for Update Definition: a parameter made required, a
+  request body pointed at a new schema, a response added, an operation removed, a tagged operation
+  added, the server URL moved and `info.version` bumped. Both keep a self-referencing schema.

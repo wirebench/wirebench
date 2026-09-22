@@ -96,6 +96,8 @@ export interface ProjectRouter {
   ): ReturnType<ProjectHost['sendAttachmentsFor']>;
   dumpFileFor(...args: Parameters<ProjectHost['dumpFileFor']>): ReturnType<ProjectHost['dumpFileFor']>;
   tlsFor(...args: Parameters<ProjectHost['tlsFor']>): ReturnType<ProjectHost['tlsFor']>;
+  /** The environments a request can be sent under: its workspace's, else its project's. */
+  sendEnvironments(requestId: string): ReturnType<ProjectHost['sendEnvironments']>;
 
   /** Resolves one REST send: base URL, expansion, credentials as refs, settings. */
   restSend(...args: Parameters<ProjectHost['restSend']>): ReturnType<ProjectHost['restSend']>;
@@ -106,9 +108,14 @@ export interface ProjectRouter {
   /** The credentials configured on one API, folder or REST request — its own, not its chain's. */
   restAuthOf(...args: Parameters<ProjectHost['restAuthOf']>): ReturnType<ProjectHost['restAuthOf']>;
 
+  /** The credentials configured on one SOAP interface, endpoint or request — its own, not its effective ones. */
+  soapAuthOf(...args: Parameters<ProjectHost['soapAuthOf']>): ReturnType<ProjectHost['soapAuthOf']>;
+
   /** What History names a REST send by: the request, its API, and its folder path. */
   restMeta(...args: Parameters<ProjectHost['restMeta']>): ReturnType<ProjectHost['restMeta']>;
   restContractFor(...args: Parameters<ProjectHost['restContractFor']>): ReturnType<ProjectHost['restContractFor']>;
+  /** The JSON schema of the body a REST request's operation declares, for the body editor's form. */
+  restBodySchema(...args: Parameters<ProjectHost['restBodySchema']>): ReturnType<ProjectHost['restBodySchema']>;
 
   /** Remembers what a REST response set, for the next send of that same request. */
   rememberRestCookies(
@@ -198,6 +205,10 @@ export interface ProjectRouter {
   asyncApiApplyUpdate(
     ...args: Parameters<ProjectHost['applyAsyncApiUpdate']>
   ): ReturnType<ProjectHost['applyAsyncApiUpdate']>;
+  /** Where a REST API's definition came from, for an update to re-read. */
+  restSource(...args: Parameters<ProjectHost['restSource']>): ReturnType<ProjectHost['restSource']>;
+  restPlanUpdate(...args: Parameters<ProjectHost['planRestUpdate']>): ReturnType<ProjectHost['planRestUpdate']>;
+  restApplyUpdate(...args: Parameters<ProjectHost['applyRestUpdate']>): ReturnType<ProjectHost['applyRestUpdate']>;
 
   // — routed by keystore id ———————————————————————————————————————————————————————————————
 

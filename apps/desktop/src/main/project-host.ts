@@ -65,12 +65,15 @@ import {
   uniqueSlug,
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
+  applyRestUpdate,
   asyncApiChannelMessages,
   createCachedApiFetch,
   matchOperation,
+  toWireSchema,
   parseAsyncApi,
   parseOpenApi,
   planAsyncApiUpdate,
+  planRestUpdate,
   writeDefinitionCache,
   writeDescriptorDefinitionCache,
   writeFileAtomic,
@@ -101,6 +104,9 @@ import type {
   AsyncApiDocument,
   OpenApiDocument,
   AsyncApiUpdatePlan,
+  ParsedOpenApi,
+  RestApplyResult,
+  RestUpdatePlan,
   ChannelMessages,
   ParsedAsyncApi,
   RestApi,
@@ -175,7 +181,8 @@ import type {
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
-import type { EndpointAuth } from '@wirebench/engine';
+import { isEndpointAuth } from '@wirebench/engine';
+import type { EndpointAuth, JsonSchema, SoapOwnerAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -483,10 +490,11 @@ export class ProjectHost {
     project: Project,
     iface: Interface,
     request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+    envId?: string,
   ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
-    const context = this.workspaceContext?.();
+    const context = this.workspaceContextFor(envId);
     if (context === undefined) {
-      return resolveEndpoint(project, project.activeEnvironmentId, iface, request);
+      return resolveEndpoint(project, envId ?? project.activeEnvironmentId, iface, request);
     }
     return resolveWorkspaceEndpoint({
       workspace: context.workspace,
@@ -495,6 +503,76 @@ export class ProjectHost {
       iface,
       request,
     });
+  }
+
+  /**
+   * Whether `envId` is absent (meaning the active environment) or names one of the open
+   * project's environments. A named environment the project lacks resolves nothing rather than
+   * silently falling back to the active one.
+   */
+  private knowsEnvironment(project: Project, envId: string | undefined): boolean {
+    if (envId === undefined) {
+      return true;
+    }
+    const context = this.workspaceContext?.();
+    const environments = context === undefined ? project.environments : context.workspace.environments;
+    return environments.some((environment) => environment.id === envId);
+  }
+
+  /**
+   * The workspace context resolution reads under `envId`. With no `envId` it is the context as
+   * it stands, so every existing caller is untouched. Inside a workspace the environments that
+   * apply are the *workspace's*, so a named `envId` is a workspace environment id: the returned
+   * context is a copy of the workspace with that environment active — the real workspace, and
+   * its active environment, are never changed. `undefined` outside a workspace.
+   */
+  private workspaceContextFor(
+    envId: string | undefined,
+  ): { readonly workspace: Workspace; readonly projectSlug: string } | undefined {
+    const context = this.workspaceContext?.();
+    if (context === undefined || envId === undefined) {
+      return context;
+    }
+    return { ...context, workspace: { ...context.workspace, activeEnvironmentId: envId } };
+  }
+
+  /**
+   * The environments a request of this project can be sent under, in order, and the active
+   * one: the workspace's when the project is open inside one (its own environments' ids mean
+   * nothing to resolution there), else the project's. What *Send to environments…* names and
+   * validates its environment ids against.
+   */
+  sendEnvironments(): { environments: { id: string; name: string }[]; activeId: string | undefined } {
+    if (this.open === undefined) {
+      return { environments: [], activeId: undefined };
+    }
+    const context = this.workspaceContext?.();
+    const source =
+      context === undefined
+        ? { environments: this.open.project.environments, activeId: this.open.project.activeEnvironmentId }
+        : { environments: context.workspace.environments, activeId: context.workspace.activeEnvironmentId };
+    return {
+      environments: [...source.environments]
+        .sort((a, b) => a.order - b.order)
+        .map((environment) => ({ id: environment.id, name: environment.name })),
+      activeId: source.activeId,
+    };
+  }
+
+  /**
+   * The URL a send of `requestId` goes to under `envId` (the active environment when absent),
+   * without changing which environment is active. `undefined` when no project is open, the
+   * request or the environment is unknown, or no endpoint resolves.
+   */
+  endpointFor(requestId: string, envId?: string): string | undefined {
+    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
+      return undefined;
+    }
+    const location = findRequest(this.open.project, requestId);
+    if (location === undefined) {
+      return undefined;
+    }
+    return this.resolveEndpointFor(this.open.project, location.iface, location.request, envId).url;
   }
 
   /**
@@ -537,8 +615,9 @@ export class ProjectHost {
       readonly envelopeXml?: string;
       readonly headers?: Record<string, string>;
     },
+    envId?: string,
   ): SoapSendInputWire | undefined {
-    if (this.open === undefined) {
+    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
       return undefined;
     }
     const location = findRequest(this.open.project, requestId);
@@ -546,7 +625,7 @@ export class ProjectHost {
       return undefined;
     }
     const { iface, request } = location;
-    const endpoint = overrides?.endpoint ?? this.resolveEndpointFor(this.open.project, iface, request).url;
+    const endpoint = overrides?.endpoint ?? this.resolveEndpointFor(this.open.project, iface, request, envId).url;
     if (endpoint === undefined) {
       return undefined;
     }
@@ -760,11 +839,11 @@ export class ProjectHost {
     if (this.open === undefined) {
       return { project: {}, global: globals, system: process.env };
     }
-    const context = this.workspaceContext?.();
+    const context = this.workspaceContextFor(envId);
     if (context !== undefined) {
       // Inside a workspace the active environment is the *workspace's*, and the project
-      // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`,
-      // which only ever names a project environment, has nothing to select here.
+      // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`
+      // names a workspace environment here, resolved without changing the active one.
       return resolveWorkspaceScopes({
         workspace: context.workspace,
         project: this.open.project,
@@ -802,9 +881,10 @@ export class ProjectHost {
   /**
    * The auth that should apply when sending `requestId`: request auth overrides its endpoint's,
    * which overrides its interface's (see `effectiveAuth`). `undefined` when the request is
-   * unknown or nothing configures auth at any level.
+   * unknown or nothing configures auth at any level. Any non-`inherit` scheme: a SOAP owner may
+   * hold a Bearer, API-key or OAuth2 configuration as well as Basic/NTLM.
    */
-  authFor(requestId: string): EndpointAuth | undefined {
+  authFor(requestId: string): SoapOwnerAuth | undefined {
     if (this.open === undefined) {
       return undefined;
     }
@@ -814,6 +894,29 @@ export class ProjectHost {
     }
     const endpoint = resolveAuthEndpoint(location.iface, location.request);
     return effectiveAuth(location.request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', location.iface.auth);
+  }
+
+  /**
+   * The credentials configured on one SOAP interface, endpoint or request — its own, not its
+   * effective ones.
+   *
+   * The SOAP counterpart of {@link restAuthOf}, for the OAuth2 channels: a token is obtained for
+   * the owner that configures it, not for whichever request happened to inherit it.
+   */
+  soapAuthOf(ownerId: string): SoapOwnerAuth | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    for (const iface of this.open.project.interfaces) {
+      if (iface.id === ownerId) {
+        return iface.auth;
+      }
+      const endpoint = iface.endpoints.find((candidate) => candidate.id === ownerId);
+      if (endpoint !== undefined) {
+        return endpoint.auth;
+      }
+    }
+    return findRequest(this.open.project, ownerId)?.request.auth;
   }
 
   /** The open project's id, or `undefined` when no project is open. Used to key its history file. */
@@ -935,6 +1038,11 @@ export class ProjectHost {
    */
   model(): Project | undefined {
     return this.open?.project;
+  }
+
+  /** The open project's model and the folder it is saved in, or `undefined` when none is open. */
+  savedProject(): { readonly project: Project; readonly dir: string } | undefined {
+    return this.open === undefined ? undefined : { project: this.open.project, dir: this.open.dir };
   }
 
   private require(): OpenProject {
@@ -1426,22 +1534,22 @@ export class ProjectHost {
    * and the TLS identity is resolved separately, so the same result can feed the cURL export and
    * the preflight badge without touching the keychain.
    */
-  restSend(requestId: string, draft?: RestRequestPatchWire): RestSendResolution | undefined {
-    if (this.open === undefined) {
+  restSend(requestId: string, draft?: RestRequestPatchWire, envId?: string): RestSendResolution | undefined {
+    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
       return undefined;
     }
     const project = this.open.project;
-    const context = this.workspaceContext?.();
+    const context = this.workspaceContextFor(envId);
     const preferences = this.prefs();
     return resolveRestSend({
       project,
       requestId,
       ...(draft !== undefined ? { draft } : {}),
-      scopes: this.scopesFor(),
+      scopes: this.scopesFor(envId),
       ...(preferences !== undefined ? { preferences } : {}),
       resolveBaseUrl: (api) =>
         context === undefined
-          ? resolveApiBaseUrl(project, project.activeEnvironmentId, api)
+          ? resolveApiBaseUrl(project, envId ?? project.activeEnvironmentId, api)
           : resolveWorkspaceApiBaseUrl({
               workspace: context.workspace,
               project,
@@ -1971,7 +2079,7 @@ export class ProjectHost {
     return { ...(ca !== undefined ? { ca: [...ca] } : {}), ...(trustInvalid ? { rejectUnauthorized: false } : {}) };
   }
 
-  async tlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
+  async tlsFor(requestId: string, envId?: string): Promise<TlsOptionsWire | undefined> {
     if (this.open === undefined) {
       return undefined;
     }
@@ -1980,7 +2088,8 @@ export class ProjectHost {
     const ca = await this.trustAnchors();
     const trustInvalid =
       location !== undefined &&
-      this.resolveEndpointFor(this.open.project, location.iface, location.request).endpoint?.trustInvalid === true;
+      this.resolveEndpointFor(this.open.project, location.iface, location.request, envId).endpoint?.trustInvalid ===
+        true;
     if (identity === undefined && ca === undefined && !trustInvalid) {
       return undefined;
     }
@@ -2711,8 +2820,11 @@ export class ProjectHost {
 
   /** The Basic credentials an interface's own auth resolves to, for re-fetching its WSDL. */
   private async importAuthFor(iface: Interface): Promise<{ username: string; password: string } | undefined> {
+    // WSDL import/re-fetch keeps Basic (the import dialog offers nothing else); an interface
+    // whose own auth is a token scheme resolves to no re-fetch credentials.
+    const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
     const resolved =
-      iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
+      basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
     return resolved?.username !== undefined && resolved.password !== undefined
       ? { username: resolved.username, password: resolved.password }
       : undefined;
@@ -3034,6 +3146,49 @@ export class ProjectHost {
     });
   }
 
+  /**
+   * The schema of the JSON body a REST request's operation declares, for the body editor's form: the
+   * operation found as `restContractFor` finds it (the import link while the request still calls it,
+   * else a match on the saved method and URL), and its first JSON media type (`application/json` or
+   * `*+json`). The schema is an acyclic copy (`toWireSchema`), because a cyclic graph cannot cross
+   * IPC. `undefined` when there is no cached definition, no matching operation, or no JSON body.
+   */
+  async restBodySchema(requestId: string): Promise<{ mediaType: string; schema: JsonSchema } | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findRestRequest(this.open.project, requestId);
+    const api = restApiOwning(this.open.project, requestId);
+    if (request === undefined || api?.definition?.cache !== true) {
+      return undefined;
+    }
+    const link = request.contract;
+    const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
+    const document = await this.openApiDocumentFor(api.id);
+    const linked =
+      link !== undefined &&
+      link.method.toLowerCase() === request.method.toLowerCase() &&
+      matchOperation([link], request.method, request.url, baseUrls) !== undefined;
+    const operation = linked
+      ? { method: link.method, path: link.path }
+      : matchOperation(document.operations, request.method, request.url, baseUrls);
+    if (operation === undefined) {
+      return undefined;
+    }
+    const declared = document.operations.find(
+      (candidate) =>
+        candidate.method.toLowerCase() === operation.method.toLowerCase() && candidate.path === operation.path,
+    );
+    const content = declared?.requestBody?.content ?? {};
+    for (const [mediaType, media] of Object.entries(content)) {
+      const bare = mediaType.split(';')[0]?.trim().toLowerCase() ?? '';
+      if ((bare === 'application/json' || bare.endsWith('+json')) && media.schema !== undefined) {
+        return { mediaType, schema: toWireSchema(media.schema) };
+      }
+    }
+    return undefined;
+  }
+
   /** Where an AsyncAPI-imported API's definition came from, as the user gave it, for an update to re-read. */
   asyncApiSource(apiId: string): string {
     return this.requireAsyncApi(apiId).definition.source;
@@ -3079,6 +3234,159 @@ export class ProjectHost {
     open.dirty = true;
     await this.save({ reason: 'update-definition' });
     return { project: this.snapshot() as ProjectWire, plan, applied };
+  }
+
+  /** Where a REST API's definition came from, as the user gave it, for an update to re-read. */
+  restSource(apiId: string): string {
+    return this.requireCachedRestApi(apiId).definition.source;
+  }
+
+  /** What updating `apiId` to `next` would change, compared with the cached document. Changes nothing. */
+  async planRestUpdate(
+    apiId: string,
+    next: OpenApiDocument,
+  ): Promise<{ readonly plan: RestUpdatePlan; readonly cached: readonly ResolvedDocument[] }> {
+    const old = await this.readRestCache(apiId);
+    return { plan: planRestUpdate(old.document, next), cached: old.documents };
+  }
+
+  /**
+   * The cached definition of a REST API, read once from disk: its documents (for a fingerprint) and
+   * the document parsed from exactly those bytes, so what is compared is what was fingerprinted.
+   */
+  private async readRestCache(
+    apiId: string,
+  ): Promise<{ readonly document: OpenApiDocument; readonly documents: readonly ResolvedDocument[] }> {
+    const api = this.requireCachedRestApi(apiId);
+    const cached = await readApiDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
+    const byLocation = new Map<string, ResolvedDocument>();
+    for (const document of cached.documents) {
+      byLocation.set(document.requestedLocation, document);
+      byLocation.set(document.location, document);
+    }
+    const inMemory = (location: string) => {
+      const document = byLocation.get(location);
+      if (document === undefined) {
+        return Promise.reject(
+          new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
+            details: { location },
+          }),
+        );
+      }
+      return Promise.resolve({ location: document.location, bytes: document.bytes, text: document.text });
+    };
+    const parsed = await parseOpenApi({ kind: 'url', url: cached.manifest.rootLocation }, { fetchDocument: inMemory });
+    return { document: parsed.document, documents: cached.documents };
+  }
+
+  /**
+   * Applies `next` to `apiId`: nothing is deleted (an operation that went away orphans its request)
+   * and generated fields the user left alone follow the new document. The project is saved first;
+   * if the save fails the in-memory project is put back as it was and the definition cache is never
+   * touched. Only a successful save rewrites the cache and drops the parsed-document memo, so the
+   * next response check reads the new definition.
+   */
+  async applyRestUpdate(
+    apiId: string,
+    next: ParsedOpenApi,
+    options: {
+      /** Becomes the API's recorded definition source. */
+      readonly source?: string;
+      /**
+       * Sees the cached documents the update compares against before anything changes; throwing
+       * refuses the update (the IPC layer's fingerprint guard).
+       */
+      readonly check?: (cached: readonly ResolvedDocument[]) => void | Promise<void>;
+    } = {},
+  ): Promise<{
+    readonly project: ProjectWire;
+    readonly plan: RestUpdatePlan;
+    readonly applied: Omit<RestApplyResult, 'api'>;
+    /** Set when the update was saved but the definition cache could not be rewritten afterwards. */
+    readonly warning?: string;
+  }> {
+    const { source, check } = options;
+    const cache = await this.readRestCache(apiId);
+    await check?.(cache.documents);
+    // Read after every wait: an edit made meanwhile is the base the update applies to.
+    const open = this.require();
+    const api = this.requireCachedRestApi(apiId);
+    const old = cache.document;
+    const plan = planRestUpdate(old, next.document);
+    const { api: mapped, ...applied } = applyRestUpdate(api, old, next.document);
+    const updated: RestApi = {
+      ...mapped,
+      definition: {
+        // `requireCachedRestApi` proved this is there; the engine only ever rewrites its `version`,
+        // which this sets itself.
+        ...api.definition,
+        version: next.document.declaredVersion,
+        ...(source !== undefined ? { source } : {}),
+      },
+    };
+
+    const priorProject = open.project;
+    const priorDirty = open.dirty;
+    open.project = {
+      ...open.project,
+      apis: open.project.apis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
+    };
+    open.dirty = true;
+    try {
+      await this.save({ reason: 'update-definition' });
+    } catch (error) {
+      // Nothing else was touched yet: undoing the model leaves everything as it was.
+      open.project = priorProject;
+      open.dirty = priorDirty;
+      throw error;
+    }
+
+    let warning: string | undefined;
+    const file = `apis/${updated.slug}/definition`;
+    try {
+      await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, updated.slug), {
+        declaredVersion: next.document.declaredVersion,
+      });
+      // A retry that worked clears the last failure's problem rather than leaving it to mislead.
+      open.problems = open.problems.filter(
+        (problem) => !(problem.code === 'definition-cache-write-failed' && problem.file === file),
+      );
+    } catch (error) {
+      // Reported, not thrown: the project is already saved, so telling the caller the update failed
+      // would be untrue. The stale cache only means the next update re-runs this one idempotently.
+      warning =
+        'The update was saved, but the stored copy of the definition could not be refreshed, so the next preview may be wrong: ' +
+        errorMessage(error);
+      // One entry per API, replaced: repeated failures must not grow the list without bound.
+      open.problems = [
+        ...open.problems.filter(
+          (problem) => !(problem.code === 'definition-cache-write-failed' && problem.file === file),
+        ),
+        { code: 'definition-cache-write-failed', message: warning, file },
+      ];
+    } finally {
+      // Dropped even if the write failed: a half-written cache must be read afresh, not remembered.
+      this.openApiDocuments.delete(apiId);
+    }
+    return {
+      project: this.snapshot() as ProjectWire,
+      plan,
+      applied,
+      ...(warning !== undefined ? { warning } : {}),
+    };
+  }
+
+  /** A REST API that cached its definition, or `definition-not-cached`: without it there is nothing to compare. */
+  private requireCachedRestApi(apiId: string): RestApi & { readonly definition: NonNullable<RestApi['definition']> } {
+    const api = this.requireApi(apiId);
+    if (api.definition?.cache !== true) {
+      throw new ProjectError(
+        'definition-not-cached',
+        'This API did not cache its definition, so there is nothing to compare an update against. Import it again instead.',
+        { details: { apiId } },
+      );
+    }
+    return api as RestApi & { readonly definition: NonNullable<RestApi['definition']> };
   }
 
   /** Keeps what the Definition card shows of a cached document: its version and WebSocket servers. */
@@ -3260,9 +3568,11 @@ export class ProjectHost {
       try {
         // The interface's own auth must be resolved for hydration exactly as it is for the
         // first import: a WSDL behind Basic auth is otherwise re-fetched anonymously and the
-        // whole interface fails to hydrate on reopen.
+        // whole interface fails to hydrate on reopen. WSDL import/re-fetch keeps Basic, so a
+        // token-scheme owner resolves to no re-fetch credentials, same as `importAuthFor`.
+        const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
         const resolvedAuth =
-          iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
+          basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
         const summary = await this.engine.importForProject({
           interfaceId: iface.id,
           source: { kind: 'url', url: iface.definitionUrl },

@@ -201,8 +201,13 @@ function toTlsWire(tls: SslInfo): SslInfoWire {
  * set (the session "show secrets" toggle). Nothing crossing IPC carries a real secret by
  * default: the engine's own in-memory state is never touched by this.
  */
-function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): HttpExchangeWire {
+function toHttpExchangeWire(
+  http: HttpExchange,
+  opts?: { show?: boolean; keyParams?: readonly string[] },
+): HttpExchangeWire {
   const show = opts?.show ?? false;
+  // The request line carries the query, so an API key sent in it is masked there as in `url`.
+  const urlOpts = { show, ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}) };
   return {
     status: http.status,
     statusText: http.statusText,
@@ -210,7 +215,7 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
     rawHeaders: redactHeaderPairs(http.rawHeaders, { show }),
     bodyBase64: toBase64(http.body),
     rawBodyBase64: toBase64(http.rawBody),
-    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { show, encoding: 'base64' }),
+    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { ...urlOpts, encoding: 'base64' }),
     rawResponseBase64: redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
     truncated: http.truncated,
     httpVersion: http.httpVersion,
@@ -219,7 +224,7 @@ function toHttpExchangeWire(http: HttpExchange, opts?: { show?: boolean }): Http
     redirects: http.redirects.map((redirect) => ({ ...redirect })),
     ...(http.tls !== undefined ? { tls: toTlsWire(http.tls) } : {}),
     request: {
-      url: http.request.url,
+      url: redactUrl(http.request.url, urlOpts),
       method: http.request.method,
       headers: redactHeaders(http.request.headers, { show }),
     },
@@ -305,7 +310,10 @@ export function toRestExchangeSummary(
     durationMs: exchange.durationMs,
     // A `RestExchange` *is* an `HttpExchange` with the decoded body added, so the same projection
     // the SOAP path uses applies to it directly.
-    http: toHttpExchangeWire(exchange, { show }),
+    http: toHttpExchangeWire(exchange, {
+      show,
+      ...(context.keyParams !== undefined ? { keyParams: context.keyParams } : {}),
+    }),
     url: redactUrl(exchange.request.url, {
       show,
       ...(context.keyParams !== undefined ? { extraParams: context.keyParams } : {}),
@@ -615,11 +623,59 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
 }
 
 /**
+ * Masks `keyParams` in the request line of raw request bytes (`POST /calc?key=… HTTP/1.1`), which
+ * `redactRawHttp` leaves alone because it reads headers, not the target. A no-op without
+ * `keyParams`, so an exchange with no query API key keeps its bytes exactly as sent.
+ */
+function redactRequestTarget(rawBase64: string, keyParams: readonly string[]): string {
+  if (keyParams.length === 0) {
+    return rawBase64;
+  }
+  const raw = Buffer.from(rawBase64, 'base64');
+  const end = raw.indexOf('\r\n');
+  if (end < 0) {
+    return rawBase64;
+  }
+  const line = raw.subarray(0, end).toString('latin1');
+  const match = /^(\S+) (\S+) (\S+)$/.exec(line);
+  if (match === null || !match[2]!.includes('?')) {
+    return rawBase64;
+  }
+  const target = maskTarget(match[2]!, keyParams);
+  return Buffer.concat([Buffer.from(`${match[1]!} ${target} ${match[3]!}`, 'latin1'), raw.subarray(end)]).toString(
+    'base64',
+  );
+}
+
+/**
+ * One request target with `keyParams` masked. An origin-form target (`/calc?key=…`) is parsed
+ * under a placeholder origin and rebuilt from the parsed path and query, never by trimming a
+ * string prefix; an absolute-form one is a URL already. Returned as sent when nothing is masked.
+ */
+function maskTarget(target: string, keyParams: readonly string[]): string {
+  const options = { show: false, extraParams: keyParams };
+  if (!target.startsWith('/')) {
+    return redactUrl(target, options);
+  }
+  // Prefixed rather than resolved, so a path that starts `//` stays a path, not a host.
+  const placed = `http://request.invalid${target}`;
+  const redacted = redactUrl(placed, options);
+  if (redacted === placed) {
+    return target;
+  }
+  const parsed = new URL(redacted);
+  return `${parsed.pathname}${parsed.search}`;
+}
+
+/**
  * Re-applies redaction to an already-built `ExchangeSummary` (the unredacted one kept by
  * `ExchangeCache`), so `exchanges.get` can answer with whatever the show-secrets flag says
  * *now* rather than what it said at send time.
  */
-export function redactExchangeSummary(summary: ExchangeSummary, opts?: { show?: boolean }): ExchangeSummary {
+export function redactExchangeSummary(
+  summary: ExchangeSummary,
+  opts?: { show?: boolean; readonly keyParams?: readonly string[] },
+): ExchangeSummary {
   const show = opts?.show ?? false;
   if (show) {
     return summary;
@@ -630,9 +686,23 @@ export function redactExchangeSummary(summary: ExchangeSummary, opts?: { show?: 
       ...summary.http,
       headers: redactHeaders(summary.http.headers, { show }),
       rawHeaders: redactHeaderPairs(summary.http.rawHeaders, { show }),
-      rawRequestBase64: redactRawHttp(summary.http.rawRequestBase64, { show, encoding: 'base64' }),
+      rawRequestBase64: redactRequestTarget(
+        redactRawHttp(summary.http.rawRequestBase64, { show, encoding: 'base64' }),
+        opts?.keyParams ?? [],
+      ),
       rawResponseBase64: redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
-      request: { ...summary.http.request, headers: redactHeaders(summary.http.request.headers, { show }) },
+      // The first hop is the wire URL, which carries a query API key as the request URL does.
+      redirects: summary.http.redirects.map((redirect) => ({
+        ...redirect,
+        url: redactUrl(redirect.url, { show, extraParams: opts?.keyParams ?? [] }),
+      })),
+      request: {
+        ...summary.http.request,
+        // A SOAP owner's API key may travel in the query string; `keyParams` names it whatever it is
+        // called, as on a REST send.
+        url: redactUrl(summary.http.request.url, { show, extraParams: opts?.keyParams ?? [] }),
+        headers: redactHeaders(summary.http.request.headers, { show }),
+      },
     },
     ...(summary.response !== undefined
       ? {

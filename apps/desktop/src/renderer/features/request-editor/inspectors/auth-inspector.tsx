@@ -1,18 +1,21 @@
 /**
  * The request pane's Auth inspector: how this request authenticates, and — when it defines
  * nothing itself — where the credentials it will actually send come from (its endpoint, or its
- * interface). A password never lives here: {@link SecretField} stores what is typed in the
- * main-process secret store and this component only ever holds the resulting `passwordRef`.
+ * interface).
+ *
+ * The request's own credentials are the shared {@link AuthFields} form, offering every scheme a SOAP
+ * owner can hold ({@link SOAP_AUTH_TYPES}). One form rather than an inspector-specific one because a
+ * narrower copy is how a Bearer request came to open as Basic and lose its token on the first edit:
+ * a form must be able to show whatever the request already holds. No secret lives here — each is a
+ * `secretRef` into the main-process store.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { SecretField } from '../../../components/secret-field.js';
+import { useEffect, useState } from 'react';
+import { AuthFields, asSoapAuth, SOAP_AUTH_TYPES } from '../../../components/auth-fields.js';
 import { ipc } from '../../../state/ipc-client.js';
 import { useProjectStore } from '../../../state/project.js';
-import type { EndpointAuthWire, RequestAuthSourceWire } from '../../../../shared/wire-types.js';
-
-/** How long a typed username sits before it becomes a project mutation. */
-const COMMIT_DEBOUNCE_MS = 300;
+import { OAuth2StatusPanel } from '../../rest-editor/oauth2-status.js';
+import type { RequestAuthSourceWire } from '../../../../shared/wire-types.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 text-xs text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
@@ -44,17 +47,6 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
   const exists = useProjectStore((state) => state.requests[requestId] !== undefined);
   const updateRequestAuth = useProjectStore((state) => state.updateRequestAuth);
   const [effective, setEffective] = useState<RequestAuthSourceWire | undefined>(undefined);
-  const [username, setUsername] = useState(auth?.username ?? '');
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // The username debounce commits through this ref rather than closing over `patch` directly,
-  // so the unmount cleanup below (registered once) always calls the *current* patch/pending
-  // value instead of a stale one from whichever render first mounted the timer.
-  const pendingUsername = useRef<string | undefined>(undefined);
-  const patchRef = useRef<(next: Partial<EndpointAuthWire>) => void>(() => undefined);
-  // The password's `secretRef` as last reported by `auth`, so the unmount flush below can tell
-  // a fresh ref (something was typed but never saved) from the value SecretField already had.
-  const passwordRefSnapshot = useRef<string | undefined>(auth?.passwordRef);
-  const flushPassword = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
 
   // The inherited-source line comes from the main process's preflight, which is the one place
   // that knows the endpoint/interface fallbacks — and it answers without any secret in it.
@@ -72,48 +64,11 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
     };
   }, [requestId, auth]);
 
-  useEffect(() => {
-    setUsername(auth?.username ?? '');
-  }, [auth?.username]);
-
-  const patch = useCallback(
-    (next: Partial<EndpointAuthWire>): void => {
-      const base: EndpointAuthWire = auth ?? { type: 'none' };
-      const merged: EndpointAuthWire = { ...base, ...next };
-      updateRequestAuth(requestId, merged);
-    },
-    [auth, requestId, updateRequestAuth],
-  );
-  patchRef.current = patch;
-  passwordRefSnapshot.current = auth?.passwordRef;
-
-  useEffect(
-    () => () => {
-      // A username edit still sitting in the debounce timer would otherwise vanish silently:
-      // cancel the timer and commit it immediately instead of dropping it on the floor.
-      if (timer.current !== undefined) {
-        clearTimeout(timer.current);
-        if (pendingUsername.current !== undefined) {
-          patchRef.current({ username: pendingUsername.current });
-        }
-      }
-      // A password typed into SecretField but never explicitly saved is still just a local
-      // draft there; flush it so it is stored (and its ref committed) rather than lost.
-      void flushPassword.current?.().then((ref) => {
-        if (ref !== undefined && ref !== passwordRefSnapshot.current) {
-          patchRef.current({ passwordRef: ref });
-        }
-      });
-    },
-    [],
-  );
-
   if (!exists) {
     return <p className="p-3 text-sm text-fg-subtle">This request no longer exists.</p>;
   }
 
   const inherit = auth === undefined;
-  const type = auth?.type ?? 'none';
 
   return (
     <div className="flex flex-col gap-2 p-3 text-sm">
@@ -134,123 +89,24 @@ export function AuthInspector({ requestId }: AuthInspectorProps) {
           {effective !== undefined ? sourceLabel(effective) : 'Resolving credentials…'}
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2">
-            <span className="w-24 shrink-0 text-xs text-fg-subtle">Type</span>
-            <select
-              aria-label="Authentication type"
-              className={INPUT_CLASS}
-              value={type}
-              onChange={(event) => {
-                patch({ type: event.target.value as EndpointAuthWire['type'] });
-              }}
-            >
-              <option value="none">None</option>
-              <option value="basic">Basic</option>
-              <option value="ntlm">NTLM</option>
-            </select>
-          </label>
-
-          {type !== 'none' && (
-            <>
-              <label className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-xs text-fg-subtle">Username</span>
-                <input
-                  aria-label="Username"
-                  className={INPUT_CLASS}
-                  value={username}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setUsername(next);
-                    pendingUsername.current = next;
-                    if (timer.current !== undefined) clearTimeout(timer.current);
-                    timer.current = setTimeout(() => {
-                      pendingUsername.current = undefined;
-                      patch({ username: next });
-                    }, COMMIT_DEBOUNCE_MS);
-                  }}
-                  onBlur={() => {
-                    if (timer.current !== undefined) clearTimeout(timer.current);
-                    pendingUsername.current = undefined;
-                    patch({ username });
-                  }}
-                />
-              </label>
-              <p className="pl-26 text-xs text-fg-faint">
-                Property expansions such as <code>{'${#Env#user}'}</code> work here.
-              </p>
-
-              <div className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-xs text-fg-subtle">Password</span>
-                <div className="min-w-0 flex-1">
-                  <SecretField
-                    label="Password"
-                    {...(auth?.passwordRef !== undefined ? { value: auth.passwordRef } : {})}
-                    registerFlush={(flush) => {
-                      flushPassword.current = flush;
-                    }}
-                    onChange={(ref) => {
-                      const base: EndpointAuthWire = auth ?? { type: 'none' };
-                      const merged: EndpointAuthWire = {
-                        type: base.type,
-                        ...(base.username !== undefined ? { username: base.username } : {}),
-                        // A conditional spread (not `passwordRef: undefined`) so clearing the
-                        // password drops the field entirely rather than setting it to `undefined`.
-                        ...(ref !== undefined ? { passwordRef: ref } : {}),
-                        ...(base.domain !== undefined ? { domain: base.domain } : {}),
-                        ...(base.workstation !== undefined ? { workstation: base.workstation } : {}),
-                        ...(base.preemptive !== undefined ? { preemptive: base.preemptive } : {}),
-                      };
-                      updateRequestAuth(requestId, merged);
-                    }}
-                  />
-                </div>
-              </div>
-
-              {type === 'ntlm' && (
-                <label className="flex items-center gap-2">
-                  <span className="w-24 shrink-0 text-xs text-fg-subtle">Domain</span>
-                  <input
-                    aria-label="Domain"
-                    className={INPUT_CLASS}
-                    value={auth?.domain ?? ''}
-                    onChange={(event) => {
-                      patch({ domain: event.target.value });
-                    }}
-                  />
-                </label>
-              )}
-
-              {type === 'ntlm' && (
-                <label className="flex items-center gap-2">
-                  <span className="w-24 shrink-0 text-xs text-fg-subtle">Workstation</span>
-                  <input
-                    aria-label="Workstation"
-                    className={INPUT_CLASS}
-                    value={auth?.workstation ?? ''}
-                    onChange={(event) => {
-                      patch({ workstation: event.target.value });
-                    }}
-                  />
-                </label>
-              )}
-
-              {type === 'basic' && (
-                <label className="flex items-center gap-2 text-fg-default">
-                  <input
-                    type="checkbox"
-                    data-testid="auth-preemptive"
-                    checked={auth?.preemptive !== false}
-                    onChange={(event) => {
-                      patch({ preemptive: event.target.checked });
-                    }}
-                  />
-                  <span className="text-xs">Send credentials preemptively (do not wait for a 401)</span>
-                </label>
-              )}
-            </>
+        <>
+          <AuthFields
+            scope="Request"
+            types={SOAP_AUTH_TYPES}
+            auth={auth}
+            oauth2Status={
+              auth.type === 'oauth2' ? <OAuth2StatusPanel ownerId={requestId} grant={auth.grant} /> : undefined
+            }
+            onChange={(next) => {
+              updateRequestAuth(requestId, asSoapAuth(next));
+            }}
+          />
+          {(auth.type === 'basic' || auth.type === 'ntlm') && (
+            <p className="text-xs text-fg-faint">
+              Property expansions such as <code>{'${#Env#user}'}</code> work in the username.
+            </p>
           )}
-        </div>
+        </>
       )}
 
       <WssSelectors requestId={requestId} />

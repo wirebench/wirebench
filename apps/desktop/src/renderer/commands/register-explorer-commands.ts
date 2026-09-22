@@ -164,6 +164,14 @@ export function registerExplorerCommands(): void {
       explorerActions.newRestRequest(ctx.selection?.apiId, folderOf(ctx.selection));
     },
   });
+  registerCommand({
+    ...catalogEntry('rest.updateDefinition'),
+    when: (ctx) => insideApi(ctx.selection?.kind, ctx.selection?.apiId) && hasRestDefinition(ctx.selection?.apiId),
+    whenScope: 'selection.api',
+    run: (ctx) => {
+      explorerActions.updateRestDefinition(ctx.selection?.apiId);
+    },
+  });
 
   // The gRPC creators, gated the same way on their own container.
   registerCommand({
@@ -225,6 +233,14 @@ function insideWsApi(selection: { readonly kind: string; readonly apiId?: string
 function insideApi(kind: string | undefined, apiId?: string): boolean {
   if (kind === 'folder') return apiId === undefined || (!(apiId in grpcApis()) && !(apiId in wsApis()));
   return kind === 'api' || kind === 'rest-request';
+}
+
+/**
+ * Whether the REST API cached its definition. A recorded source is not enough: main refuses an
+ * update without the cached document to compare against, so an uncached API would dead-end.
+ */
+function hasRestDefinition(apiId: string | undefined): boolean {
+  return apiId !== undefined && useProjectStore.getState().apis[apiId]?.definition?.cache === true;
 }
 
 function grpcApis(): Readonly<Record<string, unknown>> {

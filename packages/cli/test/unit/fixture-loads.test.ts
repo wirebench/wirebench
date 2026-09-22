@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const FIXTURE = join(import.meta.dirname, '..', 'fixtures', 'runner-project');
 
 describe('runner-project fixture', () => {
-  it('loads cleanly and has seven runnable requests', async () => {
+  it('loads cleanly and has ten runnable requests', async () => {
     const { project, problems } = await loadProject(FIXTURE);
     expect(problems).toEqual([]);
     expect(selectRequests(project, []).selected.map((s) => s.path)).toEqual([
@@ -16,6 +16,9 @@ describe('runner-project fixture', () => {
       'demo/broken',
       'demo/secure',
       'demo/echo',
+      'greeter/hello',
+      'greeter/missing',
+      'oauth/profile',
     ]);
   });
 });

@@ -1,19 +1,32 @@
 /**
- * Endpoint-level credential precedence: how a request's own `EndpointAuth` combines with the
- * auth configured on the endpoint it is sent to (and, as a last resort, on its interface).
- * Pure — the desktop app resolves the resulting `passwordRef` afterwards.
+ * Endpoint-level credential precedence: how a request's own auth combines with the auth
+ * configured on the endpoint it is sent to (and, as a last resort, on its interface). Pure — the
+ * desktop app resolves the resulting `passwordRef`/`tokenRef`/etc. afterwards.
  */
 
-import type { EndpointAuth } from './model.js';
+import type { EndpointAuth, SoapOwnerAuth } from './model.js';
+
+/**
+ * Narrows a {@link SoapOwnerAuth} to the {@link EndpointAuth} arm (Basic/NTLM/none) — the arms
+ * with username/password fields to merge, and the ones the transport authenticates itself.
+ * Exported so every site that has to tell them from the token schemes shares one definition.
+ */
+export function isEndpointAuth(auth: SoapOwnerAuth): auth is EndpointAuth {
+  return auth.type === 'none' || auth.type === 'basic' || auth.type === 'ntlm';
+}
 
 /**
  * Combines request, endpoint and interface credentials for one send.
  *
  * `override` (the endpoint wins): a defined endpoint auth replaces the request's entirely —
  * including an explicit `{ type: 'none' }`, which deliberately turns authentication off.
- * `complement` (the endpoint only fills blanks): start from the request's auth and take
- * `username`, `passwordRef`, `domain` and `preemptive` from the endpoint wherever the request
- * left them undefined, plus `type` when the request has no type or asks for `none`.
+ * `complement` (the endpoint only fills blanks): when both sides are Basic/NTLM/none — the only
+ * arms with fields to share — start from the request's auth and take `username`, `passwordRef`,
+ * `domain` and `preemptive` from the endpoint wherever the request left them undefined, plus
+ * `type` when the request has no type or asks for `none`. For any other combination (a token
+ * scheme on either side) `complement` means the request's own auth, unless it is absent or
+ * `none`, then the endpoint's — field-merging a Bearer/API-key/OAuth2 config has no shared shape
+ * to merge into.
  *
  * When nothing is configured at either level, the interface's auth applies unchanged.
  *
@@ -23,19 +36,19 @@ import type { EndpointAuth } from './model.js';
  * @param interfaceAuth the interface-wide fallback, if any
  */
 export function effectiveAuth(
-  requestAuth: EndpointAuth | undefined,
-  endpointAuth: EndpointAuth | undefined,
+  requestAuth: SoapOwnerAuth | undefined,
+  endpointAuth: SoapOwnerAuth | undefined,
   authMode: 'override' | 'complement',
-  interfaceAuth?: EndpointAuth,
-): EndpointAuth | undefined {
+  interfaceAuth?: SoapOwnerAuth,
+): SoapOwnerAuth | undefined {
   return combine(requestAuth, endpointAuth, authMode) ?? interfaceAuth;
 }
 
 function combine(
-  requestAuth: EndpointAuth | undefined,
-  endpointAuth: EndpointAuth | undefined,
+  requestAuth: SoapOwnerAuth | undefined,
+  endpointAuth: SoapOwnerAuth | undefined,
   authMode: 'override' | 'complement',
-): EndpointAuth | undefined {
+): SoapOwnerAuth | undefined {
   if (authMode === 'override') {
     return endpointAuth ?? requestAuth;
   }
@@ -44,6 +57,9 @@ function combine(
   }
   if (requestAuth === undefined) {
     return endpointAuth;
+  }
+  if (!isEndpointAuth(requestAuth) || !isEndpointAuth(endpointAuth)) {
+    return requestAuth.type === 'none' ? endpointAuth : requestAuth;
   }
   const type = requestAuth.type === 'none' ? endpointAuth.type : requestAuth.type;
   const username = requestAuth.username ?? endpointAuth.username;

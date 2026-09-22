@@ -11,6 +11,7 @@ import { validateAndReport } from '../features/request-editor/validate-actions.j
 import { addWsaHeadersToEditor, removeWsaHeadersFromEditor } from '../features/request-editor/wsa-actions.js';
 import { checkWsiForRequest, lastSendId } from '../features/request-editor/wsi-actions.js';
 import { applyOutgoingWssToEditor, removeOutgoingWssFromEditor } from '../features/request-editor/wss-actions.js';
+import { currentBlocker, openEnvPicker } from '../features/multi-env/multi-env-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
@@ -40,6 +41,27 @@ export function registerRequestCommands(): void {
       const requestId = activeRequestId();
       if (requestId !== undefined) {
         void useExchangesStore.getState().send(requestId);
+      }
+    },
+  });
+  // Either request kind's fan-out to several environments; opens the picker the editor mounts.
+  registerCommand({
+    ...catalogEntry('request.sendToEnvironments'),
+    when: () => {
+      const requestId = activeRequestId() ?? activeRestRequestId();
+      return requestId !== undefined && currentBlocker(requestId) === undefined;
+    },
+    // `editor.request` covers a REST tab too, as `request.cancel` does.
+    whenScope: 'editor.request',
+    run: () => {
+      const soapId = activeRequestId();
+      if (soapId !== undefined) {
+        openEnvPicker(soapId, 'soap');
+        return;
+      }
+      const restId = activeRestRequestId();
+      if (restId !== undefined) {
+        openEnvPicker(restId, 'rest');
       }
     },
   });

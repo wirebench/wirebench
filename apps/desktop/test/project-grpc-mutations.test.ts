@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest, createProject, ProjectError } from '@wirebench/engine';
-import type { GrpcApi, Project } from '@wirebench/engine';
+import type { GrpcApi, GrpcRequestDef, Project } from '@wirebench/engine';
 import {
   addGrpcApi,
   addGrpcFolder,
@@ -151,6 +151,15 @@ describe('requests', () => {
     expect(api(removed).folders[0]?.requests.map((request) => [request.id, request.order])).toEqual([['q-chat', 0]]);
   });
 
+  it("carries the original's assertions into its copy", () => {
+    const assertions = [{ type: 'status' as const, equals: 'OK' }];
+    const withChecks = updateGrpcRequestAssertions(seeded(), assertions);
+    const cloned = cloneGrpcRequest(withChecks, 'q-root');
+    expect(findGrpcRequest(cloned.project, cloned.createdId!)?.assertions).toEqual(assertions);
+    const plain = cloneGrpcRequest(seeded(), 'q-root');
+    expect(findGrpcRequest(plain.project, plain.createdId!)).not.toHaveProperty('assertions');
+  });
+
   it('answers the auth chain and the location of a request', () => {
     expect(grpcAuthChainFor(seeded(), 'q-hello')).toEqual([
       { type: 'inherit' },
@@ -214,3 +223,15 @@ describe('applyChange dispatch', () => {
     expect(() => removeGrpcApi(seeded(), 'nope')).toThrow(ProjectError);
   });
 });
+
+/** The seeded project with its root request given `assertions`: there is no mutation that sets them. */
+function updateGrpcRequestAssertions(project: Project, assertions: NonNullable<GrpcRequestDef['assertions']>): Project {
+  const [first, ...rest] = project.grpcApis;
+  return {
+    ...project,
+    grpcApis: [
+      { ...first!, requests: first!.requests.map((r) => (r.id === 'q-root' ? { ...r, assertions } : r)) },
+      ...rest,
+    ],
+  };
+}

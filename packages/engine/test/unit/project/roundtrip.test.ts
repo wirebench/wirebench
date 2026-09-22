@@ -73,7 +73,7 @@ describe('saveProject', () => {
       "description: Round-trip fixture
       disabled:
         - tier
-      formatVersion: 4
+      formatVersion: 5
       id: ID0001
       name: Demo Project
       properties:
@@ -424,11 +424,11 @@ describe('loadProject', () => {
     const dir = await tempProjectDir();
     await saveProject(sampleProject(), dir);
     const text = (await readBytes(dir, 'wirebench.yaml')).toString('utf8');
-    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 4', 'formatVersion: 5'));
+    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 5', 'formatVersion: 6'));
 
     const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
     expect(error.code).toBe('project-format-too-new');
-    expect(error.details).toMatchObject({ formatVersion: 5, supported: 4 });
+    expect(error.details).toMatchObject({ formatVersion: 6, supported: 5 });
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -437,7 +437,7 @@ describe('loadProject', () => {
     const dir = await tempProjectDir();
     await saveProject(sampleProject(), dir);
     const text = (await readBytes(dir, 'wirebench.yaml')).toString('utf8');
-    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 4', 'formatVersion: "1"'));
+    await writeFile(join(dir, 'wirebench.yaml'), text.replace('formatVersion: 5', 'formatVersion: "1"'));
 
     const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
     expect(error.code).toBe('project-file-invalid');
@@ -495,6 +495,81 @@ describe('loadProject', () => {
 
     const { project: loaded } = await loadProject(dir);
     expect(loaded.wss).toEqual({ outgoing: [], incoming: [], keystores: [] });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe('SOAP owners with a token auth scheme', () => {
+  it('round-trips bearer, api-key and oauth2 on an interface, endpoint and request', async () => {
+    const dir = await tempProjectDir();
+    const project = sampleProject();
+    const [countryIface, ...restIfaces] = project.interfaces;
+    if (countryIface === undefined) {
+      throw new Error('sampleProject must have at least one interface');
+    }
+    const [countryEndpoint, ...restEndpoints] = countryIface.endpoints;
+    if (countryEndpoint === undefined) {
+      throw new Error('sampleProject must have at least one endpoint');
+    }
+    const [op, ...restOps] = countryIface.operations;
+    if (op === undefined) {
+      throw new Error('sampleProject must have at least one operation');
+    }
+    const [firstRequest, ...restRequests] = op.requests;
+    if (firstRequest === undefined) {
+      throw new Error('sampleProject must have at least one request');
+    }
+
+    const withTokenAuth: Project = {
+      ...project,
+      interfaces: [
+        {
+          ...countryIface,
+          auth: { type: 'bearer', tokenRef: 'secret://country/iface-bearer', scheme: 'Bearer' },
+          endpoints: [
+            {
+              ...countryEndpoint,
+              auth: { type: 'api-key', name: 'X-Api-Key', in: 'query', valueRef: 'secret://country/key' },
+            },
+            ...restEndpoints,
+          ],
+          operations: [
+            {
+              ...op,
+              requests: [
+                {
+                  ...firstRequest,
+                  auth: {
+                    type: 'oauth2',
+                    grant: 'client-credentials',
+                    tokenUrl: 'https://id.example.test/token',
+                    clientId: 'app',
+                    clientSecretRef: 'secret://country/client-secret',
+                    scopes: [],
+                    clientAuth: 'basic',
+                    pkce: true,
+                  },
+                },
+                ...restRequests,
+              ],
+            },
+            ...restOps,
+          ],
+        },
+        ...restIfaces,
+      ],
+    };
+
+    await saveProject(withTokenAuth, dir);
+    const { project: loaded, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    expect(loaded).toEqual(withTokenAuth);
+
+    // A second load → save must be a no-op: the round trip is stable, not just one-way lossless.
+    await saveProject(loaded, dir);
+    const { project: reloaded } = await loadProject(dir);
+    expect(reloaded).toEqual(withTokenAuth);
 
     await rm(dir, { recursive: true, force: true });
   });
