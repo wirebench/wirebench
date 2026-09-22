@@ -2165,8 +2165,14 @@ export const requestCurlResponseSchema = z.object({
 });
 export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 
-/** Request payload for `request.restBodySchema`: which saved REST request. */
-export const requestRestBodySchemaRequestSchema = z.object({ requestId: z.string() });
+/**
+ * Request payload for `request.restBodySchema`: which REST request, and the editor's unsaved edits,
+ * so the operation is looked up by the method and URL the tab shows rather than the saved ones.
+ */
+export const requestRestBodySchemaRequestSchema = z.object({
+  requestId: z.string(),
+  draft: restRequestPatchSchema.optional(),
+});
 export type RequestRestBodySchemaRequest = z.infer<typeof requestRestBodySchemaRequestSchema>;
 
 /**

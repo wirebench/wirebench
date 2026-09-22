@@ -15,11 +15,16 @@ vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() })
 
 import type { JsonSchema } from '@wirebench/engine/rest';
 import { JsonFormView } from '../../src/renderer/features/rest-editor/json-form-view.js';
-import { BodyTab, type BodySchemaSource } from '../../src/renderer/features/rest-editor/body-tab.js';
+import {
+  BodyTab,
+  type BodySchemaSource,
+  type BodySchemaTarget,
+} from '../../src/renderer/features/rest-editor/body-tab.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
-import type { RestBodyWire, RestRequestPatchWire } from '../../src/shared/wire-types.js';
+import type { ProjectWire, RestBodyWire, RestRequestPatchWire } from '../../src/shared/wire-types.js';
 
 const PET: JsonSchema = {
   type: 'object',
@@ -41,6 +46,7 @@ const PET: JsonSchema = {
 afterEach(() => {
   cleanup();
   useEditorsStore.getState().reset();
+  useProjectStore.getState().reset();
   usePreferencesStore.setState({ preferences: DEFAULT_PREFERENCES_WIRE });
 });
 
@@ -368,5 +374,150 @@ describe('BodyTab Text / Form switch', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Back to Text' }));
     expect(useEditorsStore.getState().restBodyViewFor('r1')).toBe('text');
     expect(screen.getByTestId('rest-body-editor')).toBeTruthy();
+  });
+});
+
+/** A source that answers from `answer(target)`, each answer held until `release` is called on it. */
+function heldSource(
+  answer: (target: BodySchemaTarget | undefined) => { mediaType: string; schema: JsonSchema } | null,
+) {
+  const asks: { target: BodySchemaTarget | undefined; release: () => void }[] = [];
+  const schemaSource: BodySchemaSource = {
+    load: (_requestId, target) =>
+      new Promise((resolve) => {
+        asks.push({ target, release: () => resolve(answer(target)) });
+      }),
+  };
+  return { asks, schemaSource };
+}
+
+/** A Body tab whose method and URL a test can change, as the URL bar does. */
+function TargetHost({
+  method,
+  url,
+  schemaSource,
+}: {
+  readonly method: string;
+  readonly url: string;
+  readonly schemaSource: BodySchemaSource;
+}) {
+  return (
+    <BodyTab
+      requestId="r1"
+      method={method}
+      url={url}
+      body={{ kind: 'raw', language: 'json', text: '{"name":"a"}' }}
+      settings={{}}
+      schemaSource={schemaSource}
+      onChange={() => undefined}
+    />
+  );
+}
+
+const TAGGED: JsonSchema = { type: 'object', properties: { tag: { type: 'string' } } };
+
+describe('BodyTab schema follows the request', () => {
+  it('asks by the method and URL the editor holds, and again when they change', async () => {
+    useEditorsStore.getState().setRestBodyView('r1', 'form');
+    const schemaSource = source({ mediaType: 'application/json', schema: PET });
+    const loads = vi.spyOn(schemaSource, 'load');
+    const { rerender } = render(<TargetHost method="POST" url="/pets" schemaSource={schemaSource} />);
+    expect(await screen.findByRole('textbox', { name: 'name' })).toBeTruthy();
+    expect(loads).toHaveBeenLastCalledWith('r1', { method: 'POST', url: '/pets' });
+
+    rerender(<TargetHost method="PATCH" url="/pets/7" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(loads).toHaveBeenLastCalledWith('r1', { method: 'PATCH', url: '/pets/7' });
+    });
+  });
+
+  it('waits for typing to pause before asking again', async () => {
+    const schemaSource = source({ mediaType: 'application/json', schema: PET });
+    const loads = vi.spyOn(schemaSource, 'load');
+    const { rerender } = render(<TargetHost method="POST" url="/p" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(loads).toHaveBeenCalledTimes(1);
+    });
+    rerender(<TargetHost method="POST" url="/pe" schemaSource={schemaSource} />);
+    rerender(<TargetHost method="POST" url="/pet" schemaSource={schemaSource} />);
+    rerender(<TargetHost method="POST" url="/pets" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(loads).toHaveBeenCalledTimes(2);
+    });
+    expect(loads).toHaveBeenLastCalledWith('r1', { method: 'POST', url: '/pets' });
+  });
+
+  it('swaps the form for the new operation, and drops it for one with no JSON body', async () => {
+    useEditorsStore.getState().setRestBodyView('r1', 'form');
+    const { asks, schemaSource } = heldSource((target) =>
+      target?.method === 'POST'
+        ? { mediaType: 'application/json', schema: PET }
+        : target?.method === 'PATCH'
+          ? { mediaType: 'application/json', schema: TAGGED }
+          : null,
+    );
+    const { rerender } = render(<TargetHost method="POST" url="/pets" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(asks).toHaveLength(1);
+    });
+    asks[0]!.release();
+    expect(await screen.findByRole('button', { name: 'Add age' })).toBeTruthy();
+
+    rerender(<TargetHost method="PATCH" url="/pets/7" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(asks).toHaveLength(2);
+    });
+    // The old form stays up while the lookup runs.
+    expect(screen.getByRole('button', { name: 'Add age' })).toBeTruthy();
+    asks[1]!.release();
+    expect(await screen.findByRole('button', { name: 'Add tag' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add age' })).toBeNull();
+
+    rerender(<TargetHost method="PUT" url="/pets/7" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(asks).toHaveLength(3);
+    });
+    asks[2]!.release();
+    // No schema: back to the text editor, with no switch to offer an empty form.
+    expect(await screen.findByTestId('rest-body-editor')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Form' })).toBeNull();
+  });
+
+  it('drops an answer that a later lookup overtook', async () => {
+    useEditorsStore.getState().setRestBodyView('r1', 'form');
+    const { asks, schemaSource } = heldSource((target) =>
+      target?.method === 'POST'
+        ? { mediaType: 'application/json', schema: PET }
+        : { mediaType: 'application/json', schema: TAGGED },
+    );
+    const { rerender } = render(<TargetHost method="POST" url="/pets" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(asks).toHaveLength(1);
+    });
+    rerender(<TargetHost method="PATCH" url="/pets/7" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(asks).toHaveLength(2);
+    });
+    asks[1]!.release();
+    expect(await screen.findByRole('button', { name: 'Add tag' })).toBeTruthy();
+    // The first, slower answer arrives last and must not replace the newer one.
+    asks[0]!.release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('button', { name: 'Add tag' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add age' })).toBeNull();
+  });
+
+  it('asks again when main sends a new snapshot of the project, as after a relink', async () => {
+    useProjectStore.setState({ projectOf: { r1: 'p1' }, projects: { p1: { id: 'p1' } as ProjectWire } });
+    const schemaSource = source({ mediaType: 'application/json', schema: PET });
+    const loads = vi.spyOn(schemaSource, 'load');
+    render(<TargetHost method="POST" url="/pets" schemaSource={schemaSource} />);
+    await waitFor(() => {
+      expect(loads).toHaveBeenCalledTimes(1);
+    });
+    useProjectStore.setState({ projects: { p1: { id: 'p1' } as ProjectWire } });
+    await waitFor(() => {
+      expect(loads).toHaveBeenCalledTimes(2);
+    });
   });
 });

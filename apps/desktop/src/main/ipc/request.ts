@@ -1752,7 +1752,13 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.importCurl, (request) => importCurl(deps, request));
 
   registerHandler(channels.request.restBodySchema, async (request) => {
-    const found = await deps.project.restBodySchema?.(request.requestId);
+    // The operation is found from what a send would call — the draft laid over the saved request and
+    // its properties expanded — the same method and URL the contract check matches after a send, so
+    // the form and the check never disagree about the operation.
+    const resolved = deps.project.restSend?.(request.requestId, request.draft);
+    const sent =
+      resolved === undefined ? undefined : { method: resolved.input.request.method, url: resolved.input.request.url };
+    const found = await deps.project.restBodySchema?.(request.requestId, sent);
     // The wire keeps the schema as plain JSON data; the renderer reads it back as a `JsonSchema`.
     return found === undefined ? null : { mediaType: found.mediaType, schema: found.schema as Record<string, unknown> };
   });
