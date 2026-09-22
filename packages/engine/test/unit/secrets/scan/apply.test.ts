@@ -7,6 +7,7 @@ import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../../
 import { projectFiles } from '../../../../src/project/serialize.js';
 import { scanProjectForSecrets } from '../../../../src/secrets/scan/scan.js';
 import { applySecretMoves, proposeSecretName } from '../../../../src/secrets/scan/apply.js';
+import { expand } from '../../../../src/project/properties.js';
 import type { SecretFinding } from '../../../../src/secrets/scan/walk.js';
 
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';
@@ -62,14 +63,14 @@ describe('applySecretMoves', () => {
     expect(body).toMatchObject({ text: '{"password":"${secret:s0}","token":"${secret:s1}"}' });
   });
 
-  it('decodes a JSON-escaped body value', () => {
+  it('stores a JSON-escaped body value raw', () => {
     const text = '{"password":"a\\"b\\u0041c"}';
     const r = moveAll(restProject({ body: { kind: 'raw', language: 'json', text } }));
     expect(r.findings[0]!.value).toBe('a\\"b\\u0041c');
-    expect(Object.values(r.values)).toEqual(['a"bAc']);
+    expect(Object.values(r.values)).toEqual(['a\\"b\\u0041c']);
   });
 
-  it('decodes an XML-escaped envelope value', () => {
+  it('stores an XML-escaped envelope value raw', () => {
     const envelope = '<E><password>p&amp;w&#33;</password></E>';
     const req = createRequest('R', { id: 's1', soapVersion: '1.1', envelopeXml: envelope });
     const iface = createInterface('I', {
@@ -80,10 +81,10 @@ describe('applySecretMoves', () => {
     expect(r.project.interfaces[0]!.operations[0]!.requests[0]!.envelopeXml).toBe(
       '<E><password>${secret:s0}</password></E>',
     );
-    expect(Object.values(r.values)).toEqual(['p&w!']);
+    expect(Object.values(r.values)).toEqual(['p&amp;w&#33;']);
   });
 
-  it('rewrites a URL parameter and a query-table entry each in its own place, decoding the URL', () => {
+  it('rewrites a URL parameter and a query-table entry each in its own place, storing the URL text raw', () => {
     const r = moveAll(
       restProject({ url: 'https://h/x?api_key=FAKE%2Bkey+1&p=2', query: [kv('access_token', 'FAKEtok')] }),
     );
@@ -91,7 +92,7 @@ describe('applySecretMoves', () => {
     const req = r.project.apis[0]!.requests[0]!;
     expect(req.url).toBe('https://h/x?api_key=${secret:s0}&p=2');
     expect(req.query[0]!.value).toBe('${secret:s1}');
-    expect(r.values[r.findings[0]!.id]).toBe('FAKE+key 1');
+    expect(r.values[r.findings[0]!.id]).toBe('FAKE%2Bkey+1');
     expect(r.values[r.findings[1]!.id]).toBe('FAKEtok');
   });
 
@@ -149,6 +150,25 @@ describe('applySecretMoves', () => {
     const [finding] = scanProjectForSecrets(p);
     expect(applySecretMoves(project({}), [{ finding: finding!, name: 'n' }]).stale).toEqual([finding!.id]);
     expect(applySecretMoves(p, [{ finding: finding!, name: '1bad' }]).stale).toEqual([finding!.id]);
+  });
+
+  it('expanding the tokens with the stored values restores the original text byte for byte', () => {
+    const json = '{"password":"p\\"w\\u0041","k":"x"}';
+    const envelope = '<E><password>a&amp;b</password></E>';
+    const req = createRequest('R', { id: 's1', soapVersion: '1.1', envelopeXml: envelope });
+    const iface = createInterface('I', {
+      definitionUrl: 'x.wsdl',
+      operations: [{ name: 'O', bindingName: 'B', slug: 'o', order: 0, requests: [req] }],
+    });
+    const p = { ...restProject({ body: { kind: 'raw', language: 'json', text: json } }), interfaces: [iface] };
+    const r = moveAll(p);
+    expect(r.findings).toHaveLength(2);
+    const secrets = Object.fromEntries(r.findings.map((f, i) => [`s${i}`, r.values[f.id]!]));
+    const body = r.project.apis[0]!.requests[0]!.body as { text: string };
+    const env = r.project.interfaces[0]!.operations[0]!.requests[0]!.envelopeXml;
+    expect(body.text).not.toBe(json);
+    expect(expand(body.text, { project: {}, global: {}, system: {}, secrets }).text).toBe(json);
+    expect(expand(env, { project: {}, global: {}, system: {}, secrets }).text).toBe(envelope);
   });
 
   it('leaves no moved value in any written file', () => {

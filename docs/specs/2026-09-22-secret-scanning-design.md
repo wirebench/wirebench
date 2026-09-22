@@ -79,7 +79,9 @@ rules that decide what a secret looks like are the ones the redaction helpers al
   (`set` with the label, or `replace` when the name exists and the person ticks "Replace the stored
   value"), then applies `applySecretMoves(project, moves)` — pure, engine — which replaces
   only the credential part (`Bearer eyJ…` → `Bearer ${secret:billing_token}`) and returns the new
-  project. The host applies it as one undoable mutation; the save or commit then continues.
+  project, any stale finding ids, and `values` (finding id → value to store). The stored value is the
+  replaced text exactly as found — still JSON-, XML- or URL-escaped when the text around it was —
+  because expansion substitutes a secret verbatim, so the send is byte-for-byte the original. The host applies it as one undoable mutation; the save or commit then continues.
 - **Dialog:** the `ConfirmDialog` modal pattern; one row per finding (label, rule, preview, name
   field, Move to secret / Keep). Footer: "Move all", "Save anyway" (or "Commit anyway"), Cancel.
   "Save anyway" writes with the findings still there and does not add them to the ignore set.

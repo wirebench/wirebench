@@ -25,78 +25,18 @@ export interface SecretMovesResult {
    */
   readonly stale: string[];
   /**
-   * For each applied move, by finding id, the secret value to store. `finding.value` is the text as
-   * stored; in a JSON, XML or URL-encoded text that is the escaped form, so this is it decoded
-   * (JSON string unescape, XML entity decode, percent and `+` decode). For keyed entries, form
-   * fields and properties it equals `finding.value`.
+   * For each applied move, by finding id, the secret value to store: exactly the text replaced
+   * (`finding.value`), still escaped as the surrounding JSON, XML or URL had it. Expansion puts a
+   * `${secret:…}` value back verbatim, so storing the raw text restores the original bytes.
    */
   readonly values: Record<string, string>;
-}
-
-type Format = 'json' | 'xml' | 'url' | 'plain';
-
-function jsonDecode(raw: string): string {
-  try {
-    const decoded: unknown = JSON.parse(`"${raw}"`);
-    return typeof decoded === 'string' ? decoded : raw;
-  } catch {
-    return raw;
-  }
-}
-
-const XML_NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
-
-function xmlDecode(raw: string): string {
-  return raw.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (whole, ref: string) => {
-    if (ref.startsWith('#x') || ref.startsWith('#X')) return safeCodePoint(parseInt(ref.slice(2), 16), whole);
-    if (ref.startsWith('#')) return safeCodePoint(parseInt(ref.slice(1), 10), whole);
-    return XML_NAMED[ref] ?? whole;
-  });
-}
-
-function safeCodePoint(code: number, fallback: string): string {
-  try {
-    return String.fromCodePoint(code);
-  } catch {
-    return fallback;
-  }
-}
-
-function urlDecode(raw: string): string {
-  const spaced = raw.replace(/\+/g, ' ');
-  try {
-    return decodeURIComponent(spaced);
-  } catch {
-    return spaced;
-  }
-}
-
-function decode(raw: string, format: Format): string {
-  if (format === 'json') return jsonDecode(raw);
-  if (format === 'xml') return xmlDecode(raw);
-  if (format === 'url') return urlDecode(raw);
-  return raw;
-}
-
-function rawBodyFormat(body: Extract<RestBody, { kind: 'raw' }>): Format {
-  const type = (body.contentType ?? '').toLowerCase();
-  if (body.language === 'json' || type.includes('json')) return 'json';
-  if (body.language === 'xml' || type.includes('xml')) return 'xml';
-  if (type.includes('x-www-form-urlencoded')) return 'url';
-  return 'plain';
-}
-
-/** A ws message has no declared format: treat it as JSON when it looks like JSON. */
-function looseFormat(text: string): Format {
-  const head = text.trimStart()[0];
-  return head === '{' || head === '[' ? 'json' : 'plain';
 }
 
 function locationKey(location: SecretLocation): string {
   return JSON.stringify(location);
 }
 
-/** Rewrites stored texts; records which moves applied and their decoded values. */
+/** Rewrites stored texts; records which moves applied and the raw values they replaced. */
 class Rewriter {
   readonly applied = new Map<string, string>();
   private readonly byKey = new Map<string, SecretMove[]>();
@@ -112,19 +52,19 @@ class Rewriter {
   }
 
   /** `text` with every move at `location` applied right to left; the same string when none apply. */
-  text(location: SecretLocation, text: string, format: Format | ((text: string) => Format)): string {
+  text(location: SecretLocation, text: string): string {
     const moves = this.byKey.get(locationKey(location));
     if (moves === undefined) return text;
-    const fmt = typeof format === 'function' ? format(text) : format;
     const sorted = [...moves].sort((a, b) => b.finding.valueStart - a.finding.valueStart);
     let out = text;
     let limit = Infinity;
     for (const { finding, name } of sorted) {
       const { valueStart: start, valueEnd: end, value, id } = finding;
+      // Compare against the original `text`: ranges index into it, and moves to the right only change `out` past `limit`.
       if (this.applied.has(id) || end > limit || start >= end || text.slice(start, end) !== value) continue;
       out = out.slice(0, start) + secretToken(name) + out.slice(end);
       limit = start;
-      this.applied.set(id, decode(value, fmt));
+      this.applied.set(id, value);
     }
     return out;
   }
@@ -170,7 +110,7 @@ function keyedEntries<E extends { readonly name: string; readonly value: string 
 ): readonly E[] {
   return mapShared(entries, (entry, index) => {
     const location = { kind, ...owner, name: entry.name, index } as SecretLocation;
-    return patch(entry, { value: rw.text(location, entry.value, 'plain') } as Partial<E>);
+    return patch(entry, { value: rw.text(location, entry.value) } as Partial<E>);
   });
 }
 
@@ -181,7 +121,7 @@ function properties(
 ): Readonly<Record<string, string>> {
   let out: Record<string, string> | undefined;
   for (const [name, value] of Object.entries(props)) {
-    const next = rw.text(location(name), value, 'plain');
+    const next = rw.text(location(name), value);
     if (next !== value) (out ??= { ...props })[name] = next;
   }
   return out ?? props;
@@ -189,12 +129,12 @@ function properties(
 
 function restBody(rw: Rewriter, requestId: string, body: RestBody): RestBody {
   if (body.kind === 'raw') {
-    return patch(body, { text: rw.text({ kind: 'rest-body', requestId }, body.text, rawBodyFormat(body)) });
+    return patch(body, { text: rw.text({ kind: 'rest-body', requestId }, body.text) });
   }
   const field = <E extends KeyValueEntry | { readonly kind: 'file' }>(entry: E, index: number): E =>
     'value' in entry
       ? (patch<KeyValueEntry>(entry, {
-          value: rw.text({ kind: 'rest-body', requestId, field: index }, entry.value, 'plain'),
+          value: rw.text({ kind: 'rest-body', requestId, field: index }, entry.value),
         }) as E)
       : entry;
   if (body.kind === 'form') return patch(body, { fields: mapShared(body.fields, field) });
@@ -205,7 +145,7 @@ function restBody(rw: Rewriter, requestId: string, body: RestBody): RestBody {
 function restRequest(rw: Rewriter, request: RestRequestDef): RestRequestDef {
   const requestId = request.id;
   return patch(request, {
-    url: rw.text({ kind: 'rest-url', requestId }, request.url, 'url'),
+    url: rw.text({ kind: 'rest-url', requestId }, request.url),
     query: keyedEntries(rw, 'rest-query', { requestId }, request.query),
     headers: keyedEntries(rw, 'rest-header', { requestId }, request.headers),
     body: restBody(rw, requestId, request.body),
@@ -238,7 +178,7 @@ export function applySecretMoves(project: Project, moves: readonly SecretMove[])
             requests: mapShared(operation.requests, (request) =>
               patch(request, {
                 headers: keyedEntries(rw, 'soap-header', { requestId: request.id }, request.headers),
-                envelopeXml: rw.text({ kind: 'soap-body', requestId: request.id }, request.envelopeXml, 'xml'),
+                envelopeXml: rw.text({ kind: 'soap-body', requestId: request.id }, request.envelopeXml),
               }),
             ),
           }),
@@ -252,7 +192,7 @@ export function applySecretMoves(project: Project, moves: readonly SecretMove[])
         (request: (typeof api.requests)[number]) =>
           patch(request, {
             metadata: keyedEntries(rw, 'grpc-metadata', { requestId: request.id }, request.metadata),
-            message: rw.text({ kind: 'grpc-message', requestId: request.id }, request.message, 'json'),
+            message: rw.text({ kind: 'grpc-message', requestId: request.id }, request.message),
           }),
       ),
     ),
@@ -269,7 +209,6 @@ export function applySecretMoves(project: Project, moves: readonly SecretMove[])
                     content: rw.text(
                       { kind: 'ws-message', requestId: request.id, messageId: message.id },
                       message.content,
-                      looseFormat,
                     ),
                   }),
             ),
