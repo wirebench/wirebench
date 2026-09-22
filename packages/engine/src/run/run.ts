@@ -229,8 +229,9 @@ async function loadProtoSetFor(projectDir: string, api: GrpcSelected['api']): Pr
 /**
  * A unary call's answer as assertions see it: the gRPC status code (0 = OK), and the one response
  * message as JSON. No message, or one that did not decode, leaves nothing a `match` can read.
+ * Exported for its unit test; not part of the run module's public surface.
  */
-function grpcSubject(result: GrpcCallResult): AssertionSubject {
+export function grpcSubject(result: GrpcCallResult): AssertionSubject {
   const first = result.responseMessages[0];
   const decoded = first !== undefined && first.json !== undefined;
   return {

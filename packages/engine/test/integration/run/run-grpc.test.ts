@@ -54,11 +54,14 @@ function call(
   };
 }
 
-function makeProject(requests: readonly GrpcRequestDef[], extra: { slug?: string; auth?: AuthConfig } = {}): Project {
+function makeProject(
+  requests: readonly GrpcRequestDef[],
+  extra: { slug?: string; auth?: AuthConfig; target?: string } = {},
+): Project {
   const api: GrpcApi = createGrpcApi('Greeter', {
     id: 'api-greeter',
     slug: extra.slug ?? 'greeter',
-    target: server.target,
+    target: extra.target ?? server.target,
     tls: false,
     ...(extra.auth !== undefined ? { auth: extra.auth } : {}),
     requests: [...requests],
@@ -130,6 +133,20 @@ describe('runRequests — gRPC', () => {
     expect(result.requests.map((r) => r.error?.code)).toEqual(['grpc-definition-missing', 'grpc-definition-missing']);
     expect(result.requests[0]?.error?.details).toEqual({ api: 'Greeter' });
     expect(server.calls.length).toBe(before);
+  });
+
+  it('errors a call whose server refuses the connection, with the transport error code', async () => {
+    const closed = await startTestGrpcServer();
+    const deadTarget = closed.target;
+    await closed.close();
+    const project = makeProject([call('dead', 0, 'SayHello', { name: 'Ada' }, [{ type: 'status', equals: 0 }])], {
+      target: deadTarget,
+    });
+    const [dead] = (await runRequests(all(project), contextFor(project))).requests;
+    expect(dead).toMatchObject({ protocol: 'grpc', outcome: 'errored', assertions: [] });
+    expect(dead?.error?.code).toBeDefined();
+    expect(dead?.error?.code).not.toBe('internal-error');
+    expect(dead?.status).toBeUndefined();
   });
 
   it('holds a call to --timeout rather than its own deadline', async () => {
