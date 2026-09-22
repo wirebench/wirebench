@@ -69,9 +69,9 @@ export class SnapshotStore {
     if (current === undefined) {
       throw new WirebenchError('snapshot-missing', 'No snapshot is saved for this request', { details: { requestId } });
     }
-    const savedAt = new Date().toISOString();
-    await writeSidecar(sidecar.file, { ...current, savedAt, ignore: [...ignore] });
-    return { savedAt };
+    // `savedAt` records when the body was captured; changing the ignore rules does not recapture it.
+    await writeSidecar(sidecar.file, { ...current, ignore: [...ignore] });
+    return { savedAt: current.savedAt };
   }
 
   async remove({ requestId }: { requestId: string }): Promise<{ removed: boolean }> {

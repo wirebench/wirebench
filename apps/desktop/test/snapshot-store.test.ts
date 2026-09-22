@@ -93,10 +93,16 @@ describe('SnapshotStore', () => {
 
   it('setIgnore keeps the body', async () => {
     const store = await savedStore();
-    await store.write({ requestId: 'req-1', body: 'hello\n', ignore: [] });
-    await store.setIgnore({ requestId: 'req-1', ignore: ['//requestId'] });
+    const written = await store.write({ requestId: 'req-1', body: 'hello\n', ignore: [] });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const updated = await store.setIgnore({ requestId: 'req-1', ignore: ['//requestId'] });
+    expect(updated.savedAt).toBe(written.savedAt);
     const read = await store.read({ requestId: 'req-1' });
-    expect(read.status === 'present' && read.snapshot).toMatchObject({ body: 'hello\n', ignore: ['//requestId'] });
+    expect(read.status === 'present' && read.snapshot).toMatchObject({
+      body: 'hello\n',
+      ignore: ['//requestId'],
+      savedAt: written.savedAt,
+    });
   });
 
   it('setIgnore without a snapshot fails', async () => {

@@ -448,7 +448,15 @@ void app.whenReady().then(() => {
   registerSnapshotChannels(
     new SnapshotStore((requestId) => {
       const projectId = workspaceService.projectId(requestId);
-      return projectId === undefined ? undefined : workspaceService.hostFor(projectId).savedProject();
+      if (projectId === undefined) {
+        return undefined;
+      }
+      // `projectId` never throws; a stale index entry (no host for it) reads as unsaved, not an error.
+      try {
+        return workspaceService.hostFor(projectId).savedProject();
+      } catch {
+        return undefined;
+      }
     }),
   );
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
