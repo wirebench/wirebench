@@ -27,13 +27,17 @@ OpenAPI document, whether the body matches the declared response schema, and whe
    (optional, omitted when unset, so existing projects save byte-identical). A request without a link
    that belongs to an API with a definition is matched once per check by method and path template
    (the request URL's path after the API's base URL, `{name}` and `{{var}}` segments treated as
-   parameters); an ambiguous or failed match is `no-contract`.
+   parameters); an ambiguous or failed match is `no-contract`. A linked request is only checked against
+   its link while the sent method is the link's (any case) and the sent URL fits the link's path;
+   otherwise (method edited, clone pointed elsewhere) it is matched like an unlinked one. When no base
+   URL matches the URL whole (another host), a base's path part after its origin (`/v1`; server
+   variables opaque) is still stripped from the URL's path before matching.
 
 ## Behaviour
 
 - **Response selection:** exact status (`404`) → range (`4XX`, case-insensitive) → `default`. Then media
   type: exact (parameters ignored) → `+json` suffix match to `application/json` → `application/*` →
-  `*/*`. No match → `no-schema` (a declared status with no content, e.g. `204`, and an empty body is
+  `*/*`; a JSON body with no `Content-Type` is treated as `application/json`. No match → `no-schema` (a declared status with no content, e.g. `204`, and an empty body is
   `ok`; a declared empty response with a body is a violation "the contract declares no body").
   An undeclared status is `unmatched` ("the contract declares no 503 response").
 - **Checked only when** the body language is `json` and the response is not a stream (SSE rows are not
@@ -43,7 +47,12 @@ OpenAPI document, whether the body matches the declared response schema, and whe
   `format` is not asserted and is listed once as a note, like the other unsupported keywords.
 - **Result** `RestContractResult`:
   `{ status: 'ok'|'violation'|'unmatched'|'no-schema'|'no-contract'|'skipped'|'not-checked', operation?: {method, path}, responseKey?: string, mediaType?: string, problems: {path, keyword, message}[], notes: string[] }`
-  — problems capped at 50, messages at 300 characters.
+  — problems capped at 50, messages and paths at 300 characters. The validator walks at most 200,000
+  schema nodes (256 deep; the worker deadline bounds time): a stop with nothing wrong found is
+  `not-checked` with the note "validation stopped after N nodes" (or "at nesting depth 256"); real
+  problems found before a stop are a `violation` with a "partial check" note. A `writeOnly`
+  `anyOf`/`oneOf` branch whose own check stopped is not followed, and a note says so. Messages name
+  the schema's bound ("below the minimum 0"), never the body's value.
 - **Where it shows:**
   - a chip on the response status line (`Contract ✓`, `Contract: 3 problems`, `Not checked`, …), with a
     tooltip naming the operation and the response key used;
@@ -72,5 +81,7 @@ OpenAPI document, whether the body matches the declared response schema, and whe
 ## Boundaries
 
 - No new dependency; no project format version bump.
-- Secrets never enter results (bodies are not copied into results; only pointers and messages).
+- Secrets never enter results: body values are not copied into results. Pointers do contain the
+  body's property names — keys are structure, values are not copied — and messages carry only the
+  schema's own bounds and patterns.
 - Never name another product in code or docs (`pnpm check:banned-terms`).

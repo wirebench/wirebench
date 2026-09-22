@@ -63,6 +63,10 @@ components:
       properties:
         id: { type: integer }
         name: { type: string }
+        owner:
+          type: object
+          properties:
+            age: { type: integer }
 `;
 }
 
@@ -123,7 +127,7 @@ test.describe('REST response validation', () => {
     server = await startTestRestServer({ documents });
     documents['/openapi.yaml'] = { body: contract(server.url), contentType: 'application/yaml' };
     documents['/items/good'] = { body: '{"id":1,"name":"widget"}', contentType: 'application/json' };
-    documents['/items/broken'] = { body: '{"id":2}', contentType: 'application/json' };
+    documents['/items/broken'] = { body: '{"id":2,"owner":{"age":"old"}}', contentType: 'application/json' };
 
     userDataDir = mkdtempSync(join(tmpdir(), 'wirebench-contract-'));
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
@@ -145,19 +149,24 @@ test.describe('REST response validation', () => {
     await expect(chip).toHaveAttribute('data-tone', 'success');
     await expect.poll(async () => (await contractMarkers(page)).length, { timeout: 20_000 }).toBe(0);
 
-    // A 200 without `name`: one problem on the chip, a marker in the Pretty body, a Problems row.
+    // A 200 without `name` and with a nested field of the wrong type: two problems on the chip,
+    // markers in the Pretty body, a Problems row each.
     await openImported(page, 'items', 'Broken item');
     await sendRest(page);
-    await expect(chip).toHaveText('Contract: 1 problem', { timeout: 20_000 });
+    await expect(chip).toHaveText('Contract: 2 problems', { timeout: 20_000 });
     await expect(chip).toHaveAttribute('data-tone', 'warning');
     await expect
       .poll(async () => (await contractMarkers(page)).map((marker) => marker.message).join('\n'), { timeout: 20_000 })
       .toContain('missing required property "name"');
 
     await page.getByTestId('status-bar-problems').click();
-    const row = page.getByTestId('problem-row').filter({ hasText: 'missing required property "name"' });
+    await expect(page.getByTestId('problem-row').filter({ hasText: 'missing required property "name"' })).toBeVisible({
+      timeout: 20_000,
+    });
+    // The wrong-typed `owner.age` sits below the first line of the pretty-printed body, so revealing
+    // it proves the row lands on the property rather than on the fallback line 1.
+    const row = page.getByTestId('problem-row').filter({ hasText: 'expected integer, got string' });
     await expect(row).toBeVisible({ timeout: 20_000 });
-    // The missing property is reported on the object that lacks it: the document root, line 1.
     await row.click();
     await expect
       .poll(
@@ -173,7 +182,7 @@ test.describe('REST response validation', () => {
           }),
         { timeout: 15_000 },
       )
-      .toBe(1);
+      .toBeGreaterThan(1);
 
     // A 503 the operation never declared: `Unexpected status`, and nothing filed as a problem.
     await openImported(page, 'status', 'Busy');

@@ -1774,7 +1774,9 @@ export type RestEventStreamWire = z.infer<typeof restEventStreamWireSchema>;
  */
 /**
  * How a REST response compared with the OpenAPI contract of the operation it answered — the engine's
- * `RestContractResult`. Problems carry a JSON Pointer and a message, never the body's values.
+ * `RestContractResult`. Problems carry a JSON Pointer and a message. A pointer does contain the body's
+ * property names (keys are structure); the body's values are never copied — messages name only the
+ * schema's side ("below the minimum 0").
  */
 export const restContractResultSchema = z.object({
   status: z.enum(['ok', 'violation', 'unmatched', 'no-schema', 'no-contract', 'skipped', 'not-checked']),
