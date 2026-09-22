@@ -40,7 +40,8 @@ changes. It completes the pattern the WSDL and AsyncAPI imports already have.
   New operations get one request each, placed in the folder of their first tag (created if missing)
   or the API root, named as the importer names them.
 - **Entry points:** the REST API's context menu and overview get "Update Definition…", enabled when the
-  API has a `definition` source. The dialog mirrors the AsyncAPI one: Added / Removed / Changed lists
+  API cached its definition (`definition.cache`) — a recorded source alone is not enough, because the
+  update compares against the cached document and would otherwise dead-end. The dialog mirrors the AsyncAPI one: Added / Removed / Changed lists
   with reasons, an "already matches its source" empty state, Apply disabled and "Preview again" shown
   on `definition-changed`, a toast with counts after apply.
 - A source may be the original URL/file or a new one chosen in the dialog (same path-access check as

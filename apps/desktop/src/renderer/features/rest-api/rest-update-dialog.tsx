@@ -82,6 +82,9 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
   const urlId = useId();
   // A plan or apply can land after the dialog is gone; it must not drive a dialog that no longer exists.
   const mounted = useRef(true);
+  // Previews overlap: only the newest may set anything, or a slow answer pairs its plan with a
+  // header naming the source the user asked for afterwards.
+  const generation = useRef(0);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -91,6 +94,8 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
 
   const runPlan = useCallback(
     async (from: RestUpdateSourceWire | undefined): Promise<void> => {
+      const mine = ++generation.current;
+      const current = (): boolean => mounted.current && generation.current === mine;
       setBusy(true);
       setError(undefined);
       setStale(false);
@@ -100,12 +105,12 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
       try {
         result = await ipc().api.restPlanUpdate(from === undefined ? { apiId } : { apiId, source: from });
       } catch (failure: unknown) {
-        if (!mounted.current) return;
+        if (!current()) return;
         setBusy(false);
         setError(failureMessage(failure));
         return;
       }
-      if (!mounted.current) return;
+      if (!current()) return;
       setBusy(false);
       if (!result.ok) {
         if (result.error.code === 'definition-source-unavailable') {
@@ -181,11 +186,14 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
       setBusy(false);
       onOpenChange(false);
     }
-    const { requestsAdded, requestsRewritten, requestsOrphaned, requestsRestored } = result.value.applied;
+    const { requestsAdded, requestsAlreadyPresent, requestsRewritten, requestsOrphaned, requestsRestored } =
+      result.value.applied;
     showToast(
       `Definition updated — ${String(requestsAdded)} added, ${String(requestsRewritten)} rewritten, ${String(
         requestsOrphaned,
-      )} orphaned, ${String(requestsRestored)} restored`,
+      )} orphaned, ${String(requestsRestored)} restored` +
+        // Says why Added listed more than were made, rather than leaving the count short of the list.
+        (requestsAlreadyPresent > 0 ? `, ${String(requestsAlreadyPresent)} already covered by your requests` : ''),
     );
   }
 

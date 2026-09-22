@@ -146,6 +146,11 @@ export function planRestUpdate(old: OpenApiDocument, next: OpenApiDocument): Res
 export interface RestApplyResult {
   readonly api: RestApi;
   readonly requestsAdded: number;
+  /**
+   * Operations the plan lists under Added that a request already claims by contract, so no request
+   * was made for them. The plan compares documents alone and cannot see them; this is the difference.
+   */
+  readonly requestsAlreadyPresent: number;
   readonly requestsOrphaned: number;
   readonly requestsRestored: number;
   /** Requests where at least one generated field followed the new document. */
@@ -309,8 +314,14 @@ export function applyRestUpdate(
   // Operations the API has no request for yet: into the folder the importer names, else the root.
   const have = byContract(result);
   let requestsAdded = 0;
+  let requestsAlreadyPresent = 0;
   for (const [key, fresh] of nextReqs) {
-    if (have.has(key)) continue;
+    if (have.has(key)) {
+      // A request the user made by hand already claims this contract; the plan still lists it as
+      // added, so it is counted here rather than silently dropped.
+      if (!oldReqs.has(key)) requestsAlreadyPresent += 1;
+      continue;
+    }
     const home = nextMapped.folders.find((folder) => folder.requests.some((r) => r.id === fresh.id));
     const place = (siblings: readonly RestRequestDef[]): RestRequestDef => ({
       ...fresh,
@@ -318,17 +329,17 @@ export function applyRestUpdate(
       order: siblings.reduce((n, r) => Math.max(n, r.order + 1), 0),
     });
     requestsAdded += 1;
+    // Which existing folder is this tag's? The one already holding a request for another of the
+    // tag's operations — that survives a rename. Only then fall back to the tag's name.
+    const existing = home === undefined ? undefined : folderFor(result, home);
     if (home === undefined) {
       result = { ...result, requests: [...result.requests, place(result.requests)] };
-    } else if (result.folders.some((folder) => folder.name === home.name)) {
-      let placed = false;
+    } else if (existing !== undefined) {
       result = {
         ...result,
-        folders: result.folders.map((folder) => {
-          if (placed || folder.name !== home.name) return folder;
-          placed = true;
-          return { ...folder, requests: [...folder.requests, place(folder.requests)] };
-        }),
+        folders: result.folders.map((folder) =>
+          folder.id === existing.id ? { ...folder, requests: [...folder.requests, place(folder.requests)] } : folder,
+        ),
       };
     } else {
       const folder = createFolder(home.name, {
@@ -362,5 +373,30 @@ export function applyRestUpdate(
     result = { ...result, definition: { ...result.definition, version: next.declaredVersion } };
   }
 
-  return { api: result, requestsAdded, requestsOrphaned, requestsRestored, requestsRewritten, rowsAdded, rowsRemoved };
+  return {
+    api: result,
+    requestsAdded,
+    requestsAlreadyPresent,
+    requestsOrphaned,
+    requestsRestored,
+    requestsRewritten,
+    rowsAdded,
+    rowsRemoved,
+  };
+}
+
+/**
+ * The folder in `api` that stands for the new document's tag folder `home`: the one that already
+ * holds a request for one of the tag's other operations, else the one with the tag's name. Matching
+ * by the contracts inside survives a folder the user renamed, which a name match alone would twin.
+ */
+function folderFor(api: RestApi, home: RestFolder): RestFolder | undefined {
+  const keys = new Set(home.requests.map(contractKey).filter((key): key is string => key !== undefined));
+  const byRequest = api.folders.find((folder) =>
+    folder.requests.some((request) => {
+      const key = contractKey(request);
+      return key !== undefined && keys.has(key);
+    }),
+  );
+  return byRequest ?? api.folders.find((folder) => folder.name === home.name);
 }

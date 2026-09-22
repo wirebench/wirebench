@@ -361,6 +361,12 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    * Reads a REST API's new definition: the source the user chose, or else the one the API records,
    * either way through the same path check an import makes. Answers the checked location too, so
    * an apply can record a chosen source as the API's own.
+   *
+   * TODO: carry credentials, so a definition behind basic auth can be updated. Not done here because
+   * `api.importOpenApi` has no auth either — `OpenApiImportService.readOpenApi` and `run` both build
+   * their fetcher without any — so it is not a small change to this handler but a new option through
+   * the import service, the fetcher and the schema, plus somewhere to keep the API's `secretRef`.
+   * Until then the chooser lets the user point at a local copy.
    */
   const readRestSource = async (apiId: string, chosen: RestUpdateSourceWire | undefined) => {
     let wire: OpenApiSourceWire;

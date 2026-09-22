@@ -3145,7 +3145,9 @@ export class ProjectHost {
     const updated: RestApi = {
       ...mapped,
       definition: {
-        ...(mapped.definition ?? api.definition),
+        // `requireCachedRestApi` proved this is there; the engine only ever rewrites its `version`,
+        // which this sets itself.
+        ...api.definition,
         version: next.document.declaredVersion,
         ...(source !== undefined ? { source } : {}),
       },
@@ -3171,6 +3173,17 @@ export class ProjectHost {
       await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, updated.slug), {
         declaredVersion: next.document.declaredVersion,
       });
+    } catch (error) {
+      // Reported, not thrown: the project is already saved, so telling the caller the update failed
+      // would be untrue. The stale cache only means the next update re-runs this one idempotently.
+      open.problems = [
+        ...open.problems,
+        {
+          code: 'definition-cache-write-failed',
+          message: `The definition cache could not be rewritten after the update: ${errorMessage(error)}`,
+          file: `apis/${updated.slug}/definition`,
+        },
+      ];
     } finally {
       // Dropped even if the write failed: a half-written cache must be read afresh, not remembered.
       this.openApiDocuments.delete(apiId);

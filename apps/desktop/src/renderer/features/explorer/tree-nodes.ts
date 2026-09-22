@@ -285,7 +285,9 @@ function apiNode(
     kind: 'api',
     label: api.name,
     apiId: api.id,
-    ...(api.definition !== undefined ? { hasDefinition: true } : {}),
+    // `cache`, not just a source: an update compares against the cached document, so an API
+    // without one cannot be updated and must not offer the menu item.
+    ...(api.definition?.cache === true ? { hasDefinition: true } : {}),
     children: restChildren(api, undefined, folders, requests),
   };
 }

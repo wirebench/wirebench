@@ -41,6 +41,7 @@ const APPLIED = {
   plan: PLAN,
   applied: {
     requestsAdded: 1,
+    requestsAlreadyPresent: 0,
     requestsOrphaned: 1,
     requestsRestored: 0,
     requestsRewritten: 2,
@@ -50,6 +51,11 @@ const APPLIED = {
 };
 
 const DEFINED = restApiWire({ definition: { source: 'https://api.test/openapi.yaml', cache: true, version: '1.0.0' } });
+/** Imported with definition caching off: a source, but no cached document to compare against. */
+const UNCACHED = restApiWire({
+  id: 'uncached',
+  definition: { source: 'https://api.test/openapi.yaml', cache: false, version: '1.0.0' },
+});
 
 function seed(api: RestApiWire, applySnapshot = vi.fn()): void {
   useProjectStore.setState({
@@ -183,6 +189,34 @@ describe('RestUpdateDialog', () => {
 
     fireEvent.click(await screen.findByTestId('rest-update-apply'));
     await waitFor(() => expect(apply).toHaveBeenCalledWith({ apiId: DEFINED.id, source, fingerprint: FP1 }));
+  });
+
+  it('lets only the newest preview set the plan, so a slow answer cannot pair with a later header', async () => {
+    let answerA: (value: unknown) => void = () => undefined;
+    let answerB: (value: unknown) => void = () => undefined;
+    const plan = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'definition-source-unavailable', message: 'no source' } })
+      .mockReturnValueOnce(new Promise((resolve) => (answerA = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (answerB = resolve)));
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    await screen.findByTestId('rest-update-error');
+
+    const input = screen.getByLabelText('URL');
+    fireEvent.change(input, { target: { value: 'https://a.test/o.yaml' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.change(input, { target: { value: 'https://b.test/o.yaml' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // B answers first, then the slower A: A must not overwrite what B showed.
+    answerB({ ok: true, value: { ...PLAN, added: [{ method: 'post', path: '/from-b' }], fingerprint: FP2 } });
+    await waitFor(() => expect(screen.getByTestId('rest-update-added').textContent).toContain('POST /from-b'));
+    answerA({ ok: true, value: { ...PLAN, added: [{ method: 'post', path: '/from-a' }] } });
+    await Promise.resolve();
+    expect(screen.getByTestId('rest-update-added').textContent).toContain('POST /from-b');
+    expect(screen.getByTestId('rest-update-source').textContent).toContain('https://b.test/o.yaml');
   });
 
   it('offers another file on request, and previews the file picked', async () => {
@@ -347,6 +381,30 @@ describe('REST Update Definition entry points', () => {
     installWirebenchApi();
     mountTab(restApiWire());
     expect(screen.queryByTestId('rest-definition-update')).toBeNull();
+  });
+
+  it('every entry point stays shut for an API that did not cache its definition', () => {
+    installWirebenchApi();
+    mountTab(UNCACHED);
+    expect(screen.queryByTestId('rest-definition-update')).toBeNull();
+    cleanup();
+
+    seed(UNCACHED);
+    updateRestDefinition(UNCACHED.id);
+    expect(useRestUpdateStore.getState().apiId).toBeUndefined();
+    expect(useEditorsStore.getState().tabs).toHaveLength(0);
+
+    useProjectStore.setState({
+      apis: { [UNCACHED.id]: UNCACHED },
+      projectOf: { [UNCACHED.id]: 'p1' },
+      grpcApis: {},
+      wsApis: {},
+    } as never);
+    const command = getCommand('rest.updateDefinition');
+    const ctx = {
+      selection: { kind: 'api', id: `api:${UNCACHED.id}`, apiId: UNCACHED.id },
+    } as unknown as CommandContext;
+    expect(command?.when?.(ctx)).toBe(false);
   });
 
   it('the action opens the API tab and the dialog, and ignores an API with no definition', () => {

@@ -23,6 +23,18 @@ import {
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
+/** Lets one test make the definition-cache rewrite fail *after* the project has been saved. */
+const cacheState = vi.hoisted(() => ({ fails: false }));
+
+vi.mock('@wirebench/engine', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@wirebench/engine')>();
+  return {
+    ...actual,
+    writeApiDefinitionCache: (...args: Parameters<typeof actual.writeApiDefinitionCache>) =>
+      cacheState.fails ? Promise.reject(new Error('disk full')) : actual.writeApiDefinitionCache(...args),
+  };
+});
+
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
@@ -123,6 +135,7 @@ let host: ProjectHost;
 
 beforeEach(async () => {
   handlers.clear();
+  cacheState.fails = false;
   root = mkdtempSync(join(tmpdir(), 'wirebench-rest-update-'));
   projectDir = join(root, 'Pets');
   await mkdir(projectDir, { recursive: true });
@@ -312,6 +325,36 @@ describe('api.restPlanUpdate / api.restApplyUpdate', () => {
     });
     const error = await failure('api.restPlanUpdate', { apiId: imported.apiId });
     expect(error.code).toBe('definition-source-unavailable');
+  });
+
+  it('refuses a file: URL, which would read off disk without the path check', async () => {
+    const apiId = await importPets();
+    const outside = join(root, 'elsewhere.yaml');
+    await writeFile(outside, V2);
+    const error = await failure('api.restPlanUpdate', {
+      apiId,
+      source: { kind: 'url', url: `file://${outside}` },
+    });
+    expect(error.code).toBe('ipc-invalid-request');
+    expect(requests(apiId)).toHaveLength(2);
+  });
+
+  it('still answers with the updated project when the cache rewrite fails after the save', async () => {
+    const apiId = await importPets();
+    await writeFile(docPath, V2);
+    const plan = await value<{ fingerprint: string }>('api.restPlanUpdate', { apiId });
+    const slug = (host.snapshot() as ProjectWire).apis.find((a) => a.id === apiId)?.slug ?? '';
+    cacheState.fails = true;
+    const applied = apiRestApplyUpdateResponseSchema.parse(
+      await value('api.restApplyUpdate', { apiId, fingerprint: plan.fingerprint }),
+    );
+    expect(applied.applied.requestsOrphaned).toBe(1);
+    expect(applied.project.apis.find((a) => a.id === apiId)?.definition?.version).toBe('3.0.3');
+    // The failure is reported on the project rather than told to the user as a failed update.
+    expect(applied.project.problems.map((p) => p.code)).toContain('definition-cache-write-failed');
+    // The cache is untouched, so the next update simply re-runs this one.
+    const cached = await readFile(join(projectDir, 'project', 'apis', slug, 'definition', 'openapi.yaml'), 'utf8');
+    expect(cached).toBe(V1);
   });
 
   it('rejects a fingerprint that is not 64 hex characters', async () => {

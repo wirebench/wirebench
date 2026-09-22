@@ -2824,7 +2824,15 @@ export type ApiAsyncApiApplyUpdateResponse = z.infer<typeof apiAsyncApiApplyUpda
  * an import does. Absent, the API's recorded `definition.source` is read again.
  */
 export const restUpdateSourceSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('url'), url: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({
+    kind: z.literal('url'),
+    // Only http(s): a `file:` location would be read straight off disk by the fetcher, skipping the
+    // path check that guards `kind: 'file'`.
+    url: z
+      .string()
+      .max(MAX_IMPORT_LOCATION_CHARS)
+      .regex(/^https?:\/\//i, 'Only http and https URLs can be read'),
+  }),
   z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
 ]);
 export type RestUpdateSourceWire = z.infer<typeof restUpdateSourceSchema>;
@@ -2873,6 +2881,8 @@ export const apiRestApplyUpdateResponseSchema = z.object({
   plan: restUpdatePlanSchema,
   applied: z.object({
     requestsAdded: z.number(),
+    /** Operations the plan lists as added that a hand-made request already claims, so apply skipped them. */
+    requestsAlreadyPresent: z.number(),
     requestsOrphaned: z.number(),
     requestsRestored: z.number(),
     requestsRewritten: z.number(),

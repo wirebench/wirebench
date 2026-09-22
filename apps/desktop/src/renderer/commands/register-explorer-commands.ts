@@ -235,9 +235,12 @@ function insideApi(kind: string | undefined, apiId?: string): boolean {
   return kind === 'api' || kind === 'rest-request';
 }
 
-/** Whether the REST API records a definition, which is what Update Definition reads again. */
+/**
+ * Whether the REST API cached its definition. A recorded source is not enough: main refuses an
+ * update without the cached document to compare against, so an uncached API would dead-end.
+ */
 function hasRestDefinition(apiId: string | undefined): boolean {
-  return apiId !== undefined && useProjectStore.getState().apis[apiId]?.definition !== undefined;
+  return apiId !== undefined && useProjectStore.getState().apis[apiId]?.definition?.cache === true;
 }
 
 function grpcApis(): Readonly<Record<string, unknown>> {

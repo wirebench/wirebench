@@ -21,11 +21,11 @@ export function openApiTab(apiId: string, fallbackTitle?: string): void {
 }
 
 /**
- * Opens the API's tab and its Update Definition dialog. Does nothing for an API that has no
- * recorded definition: there is nothing to read again.
+ * Opens the API's tab and its Update Definition dialog. Does nothing for an API that did not cache
+ * its definition: there is nothing to compare an update against.
  */
 export function updateRestDefinition(apiId: string): void {
-  if (useProjectStore.getState().apis[apiId]?.definition === undefined) {
+  if (useProjectStore.getState().apis[apiId]?.definition?.cache !== true) {
     return;
   }
   openApiTab(apiId);

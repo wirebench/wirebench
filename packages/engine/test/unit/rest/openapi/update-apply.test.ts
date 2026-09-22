@@ -283,6 +283,47 @@ describe('applyRestUpdate', () => {
     expect(pets[0]!.requests.map((r) => r.order)).toEqual([0, 1]);
   });
 
+  it('counts an operation a hand-made request already covers instead of adding a second', () => {
+    const old = doc([op({ summary: 'List' })]);
+    const next = doc([op({ summary: 'List' }), op({ method: 'post', summary: 'Add' })]);
+    const api = imported(old);
+    // The user made the POST themselves before the update arrived.
+    const mine: RestRequestDef = {
+      ...find(api, 'get', '/pets'),
+      id: ids(),
+      slug: 'mine',
+      name: 'Mine',
+      method: 'POST',
+      contract: { method: 'post', path: '/pets' },
+    };
+    const withMine: RestApi = { ...api, requests: [...api.requests, mine] };
+
+    const plan = planRestUpdate(old, next);
+    expect(plan.added.map((a) => `${a.method} ${a.path}`)).toEqual(['post /pets']);
+    const result = applyRestUpdate(withMine, old, next, { newId: ids });
+    expect(result.requestsAdded).toBe(0);
+    // What the plan listed under Added and apply did not make: the toast can say so.
+    expect(result.requestsAlreadyPresent).toBe(1);
+    expect(all(result.api).filter((r) => r.contract?.method === 'post')).toHaveLength(1);
+  });
+
+  it('puts a new operation into a renamed tag folder instead of making a twin', () => {
+    const old = doc([op({ path: '/owners', summary: 'List owners', tags: ['owners'] })]);
+    const next = doc([
+      op({ path: '/owners', summary: 'List owners', tags: ['owners'] }),
+      op({ method: 'post', path: '/owners', summary: 'Add owner', tags: ['owners'] }),
+    ]);
+    const api = imported(old);
+    // The user renamed the tag folder; nothing on it still says "owners".
+    const renamed: RestApi = {
+      ...api,
+      folders: api.folders.map((folder) => ({ ...folder, name: 'Pet owners', slug: 'Pet-owners' })),
+    };
+    const result = applyRestUpdate(renamed, old, next, { newId: ids });
+    expect(result.api.folders.map((f) => f.name)).toEqual(['Pet owners']);
+    expect(result.api.folders[0]!.requests.map((r) => r.name)).toEqual(['List owners', 'Add owner']);
+  });
+
   it('API level: base URL, servers and auth follow while untouched; version is updated', () => {
     const scheme = { name: 'k', type: 'apiKey' as const, in: 'header' as const, keyName: 'X-Key' };
     const old = doc([op()], { securitySchemes: [scheme], security: [{ k: [] }] });

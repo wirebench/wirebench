@@ -178,24 +178,30 @@ export function ApiTab({ apiId }: ApiTabProps) {
       {api.definition !== undefined && (
         <SettingsGroup title="Definition">
           <ApiDefinitionCard apiId={apiId} definition={api.definition} />
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <Button
-              variant="secondary"
-              data-testid="rest-definition-update"
-              onClick={() => {
-                updateRestDefinition(apiId);
-              }}
-            >
-              Update definition…
-            </Button>
-          </div>
-          <p className="text-xs text-fg-subtle">
-            The source is read again and the change is shown before it is applied. Nothing is deleted: a request whose
-            operation is gone is kept, badged orphaned.
-          </p>
+          {/* Only with the cached document an update compares against; without it the dialog dead-ends. */}
+          {api.definition.cache === true && (
+            <>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  variant="secondary"
+                  data-testid="rest-definition-update"
+                  onClick={() => {
+                    updateRestDefinition(apiId);
+                  }}
+                >
+                  Update definition…
+                </Button>
+              </div>
+              <p className="text-xs text-fg-subtle">
+                The source is read again and the change is shown before it is applied. Nothing is deleted: a request
+                whose operation is gone is kept, badged orphaned. An operation a request of yours already covers is
+                listed as added but left alone.
+              </p>
+            </>
+          )}
         </SettingsGroup>
       )}
-      {updating && api.definition !== undefined && (
+      {updating && api.definition?.cache === true && (
         <RestUpdateDialog
           apiId={apiId}
           open
