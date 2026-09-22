@@ -518,9 +518,13 @@ app.on('before-quit', (event) => {
   // failure to close a socket must never be the reason the app fails to quit.
   try {
     engineService.closeAllWs();
-    engineService.abortRestStreamsWhere(() => true);
   } catch (error) {
     console.warn('[ws] closeAllWs on quit failed', error instanceof Error ? error.message : String(error));
+  }
+  try {
+    engineService.abortRestStreamsWhere(() => true);
+  } catch (error) {
+    console.warn('[rest] aborting streams on quit failed', error instanceof Error ? error.message : String(error));
   }
   void stashed
     .then(async () => {
