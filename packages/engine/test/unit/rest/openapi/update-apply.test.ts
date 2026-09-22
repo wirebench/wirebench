@@ -187,6 +187,50 @@ describe('applyRestUpdate', () => {
     expect(req.auth).toEqual({ type: 'bearer' });
   });
 
+  it('SC-2: an edited row still follows the document from optional to required', () => {
+    const old = doc([op({ parameters: [{ name: 'limit', in: 'query', example: 1 }] })]);
+    const next = doc([op({ parameters: [{ name: 'limit', in: 'query', required: true, example: 1 }] })]);
+    let api = imported(old);
+    const id = find(api, 'get', '/pets').id;
+    api = edit(api, id, (r) => ({ ...r, query: [{ ...r.query[0]!, value: '99' }] }));
+    const result = applyRestUpdate(api, old, next);
+    // The user's value is kept; only the box follows, so the request is sendable as the document asks.
+    expect(find(result.api, 'get', '/pets').query).toEqual([{ name: 'limit', value: '99', enabled: true }]);
+    expect(result.requestsRewritten).toBe(1);
+  });
+
+  it('turning a row on is the only thing an edited row follows: a row switched off by the user stays off', () => {
+    const old = doc([op({ parameters: [{ name: 'limit', in: 'query', required: true, example: 1 }] })]);
+    const next = doc([op({ parameters: [{ name: 'limit', in: 'query', required: true, example: 5 }] })]);
+    let api = imported(old);
+    const id = find(api, 'get', '/pets').id;
+    api = edit(api, id, (r) => ({ ...r, query: [{ ...r.query[0]!, enabled: false }] }));
+    const result = applyRestUpdate(api, old, next);
+    // Required on both sides is no crossing, so the user's off stands and the value is not rewritten.
+    expect(find(result.api, 'get', '/pets').query).toEqual([{ name: 'limit', value: '1', enabled: false }]);
+  });
+
+  it('a row the user added by hand is not turned on by a same-named parameter becoming required', () => {
+    const old = doc([op()]);
+    const next = doc([op({ parameters: [{ name: 'mine', in: 'query', required: true, example: '1' }] })]);
+    let api = imported(old);
+    const id = find(api, 'get', '/pets').id;
+    api = edit(api, id, (r) => ({ ...r, query: [{ name: 'mine', value: 'x', enabled: false }] }));
+    const result = applyRestUpdate(api, old, next);
+    // The document never generated this row, so it never claims it.
+    expect(find(result.api, 'get', '/pets').query).toEqual([{ name: 'mine', value: 'x', enabled: false }]);
+  });
+
+  it('a header the document requires is still not turned on: a header row is never enabled on import', () => {
+    const old = doc([op({ parameters: [{ name: 'X-Key', in: 'header', example: 'a' }] })]);
+    const next = doc([op({ parameters: [{ name: 'X-Key', in: 'header', required: true, example: 'a' }] })]);
+    let api = imported(old);
+    const id = find(api, 'get', '/pets').id;
+    api = edit(api, id, (r) => ({ ...r, headers: [{ ...r.headers[0]!, value: 'mine' }] }));
+    const result = applyRestUpdate(api, old, next);
+    expect(find(result.api, 'get', '/pets').headers).toEqual([{ name: 'X-Key', value: 'mine', enabled: false }]);
+  });
+
   it('auth follows when untouched, including from absent to explicit none', () => {
     const old = doc([op()]);
     const next = doc([op({ security: [] })]);

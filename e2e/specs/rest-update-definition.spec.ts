@@ -81,6 +81,9 @@ test.describe('REST Update Definition', () => {
     await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
     await openRequestTab(page, 'Params');
     const limit = page.getByTestId('rest-query-value').first();
+    // Optional in the old document, so the importer left the row off. This is the before half of the
+    // assertion at the end: the new document makes it required, and that turns it on.
+    await expect(page.getByTestId('rest-query-enabled').first()).not.toBeChecked();
     await limit.fill('42');
     await limit.press('Tab');
     // The edit reaches main over IPC after the editor's own debounce; the update reads the project
@@ -131,5 +134,8 @@ test.describe('REST Update Definition', () => {
     await expect(page.getByTestId('rest-editor')).toBeVisible({ timeout: 20_000 });
     await openRequestTab(page, 'Params');
     await expect(page.getByTestId('rest-query-value').first()).toHaveValue('42', { timeout: 20_000 });
+    // …and the one thing an edited row still follows: `limit` is required in the new document, so
+    // the row is on and the request is sendable as the document now asks, carrying the user's value.
+    await expect(page.getByTestId('rest-query-enabled').first()).toBeChecked();
   });
 });

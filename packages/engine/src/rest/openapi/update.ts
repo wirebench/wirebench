@@ -189,6 +189,9 @@ const sameRow = (a: KeyValueEntry, b: KeyValueEntry): boolean => a.value === b.v
  * One parameter table under the per-row rule: an untouched generated row follows (or goes, when the
  * new document dropped it), an edited or user-added row stays, and a row new to the document is
  * appended.
+ *
+ * With one exception, {@link promoteRequired}: a row the user edited still follows the document from
+ * optional to required.
  */
 function mergeRows(
   current: readonly KeyValueEntry[],
@@ -206,13 +209,26 @@ function mergeRows(
   const rows: KeyValueEntry[] = [];
   let removed = 0;
   let changed = false;
+  /**
+   * The one thing a kept row still follows: a parameter the new document made required turns its
+   * row on, so the request stays sendable as the document now demands. Only the box changes — the
+   * user's value is kept — and a row the user added by hand has no generated counterpart and is
+   * left alone, since the document never claimed it. In practice this is a query parameter: a path
+   * row is always on and a header row never is, so neither can make this crossing.
+   */
+  const promoteRequired = (row: KeyValueEntry, generated: KeyValueEntry | undefined): KeyValueEntry => {
+    if (generated === undefined || generated.enabled || row.enabled) return row;
+    return newRows.get(rowKey(row, caseless))?.enabled === true ? { ...row, enabled: true } : row;
+  };
   // Only the first untouched row of a name follows; a duplicate of it is the user's and stays.
   const replaced = new Set<string>();
   for (const row of current) {
     const key = rowKey(row, caseless);
     const generated = oldRows.get(key);
     if (generated === undefined || !sameRow(row, generated) || replaced.has(key)) {
-      rows.push(row);
+      const kept = promoteRequired(row, generated);
+      if (kept !== row) changed = true;
+      rows.push(kept);
       continue;
     }
     replaced.add(key);
@@ -329,8 +345,8 @@ export function applyRestUpdate(
       order: siblings.reduce((n, r) => Math.max(n, r.order + 1), 0),
     });
     requestsAdded += 1;
-    // Which existing folder is this tag's? The one already holding a request for another of the
-    // tag's operations — that survives a rename. Only then fall back to the tag's name.
+    // Which existing folder is this tag's? The one with the tag's name, else — for a folder the
+    // user renamed — the one already holding a request for another of the tag's operations.
     const existing = home === undefined ? undefined : folderFor(result, home);
     if (home === undefined) {
       result = { ...result, requests: [...result.requests, place(result.requests)] };

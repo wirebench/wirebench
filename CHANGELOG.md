@@ -16,7 +16,9 @@ All notable changes to this project are documented here. The format follows
   **Preview again** rather than applied. Nothing is deleted: a request whose operation is gone is kept
   and badged *orphaned* until that operation returns, and a field — a URL, a parameter row, a body, an
   auth, the base URL — is rewritten only while it still equals what the old document generated, so
-  edited values, rows you added and requests you made by hand survive. Another file or URL can be
+  edited values, rows you added and requests you made by hand survive. One exception, so a request
+  stays sendable: a query parameter the new document makes **required** has its row switched on, even
+  when you edited it — your value is kept, only the tick box changes. Another file or URL can be
   chosen as the source; an API imported from pasted text asks for one.
 
 - **CLI runner: unary gRPC and OAuth2 client credentials.** `wirebench run` now runs unary gRPC

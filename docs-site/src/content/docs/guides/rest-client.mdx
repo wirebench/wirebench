@@ -169,6 +169,10 @@ parameter row the new document no longer declares is removed if it was still as 
 if you had edited it. A request with no link to an operation — one you made by hand — is left
 entirely alone.
 
+One thing an edited row still follows: if the new document makes a query parameter **required**, its
+row is switched on, so the request is still sendable as the document now asks. Your value is kept —
+only the tick box changes. Rows you added yourself are never switched on this way.
+
 **Nothing is deleted.** A request whose operation is gone from the document is kept and badged
 *orphaned* in the explorer; if that operation comes back in a later update, the badge is cleared.
 

@@ -24,6 +24,11 @@ changes. It completes the pattern the WSDL and AsyncAPI imports already have.
    rows (per row, keyed by `in + name`: a row still at its old generated value follows; a new row is
    appended; a row the new document dropped is kept only if edited, else removed; user-added rows are
    untouched), body (content type and sample, only while untouched), auth (only while untouched).
+   One thing an **edited** row still follows: a parameter the new document made required turns its
+   row on, so the request stays sendable as the document now demands. Only the box changes — the
+   user's value is kept — and a row the user added by hand is left alone, since the document never
+   generated it. In practice this is a query parameter: a path row is always on and a header row
+   never is, so neither can make that crossing.
    API level: base URL / servers and API auth follow while untouched; the API's `definition.version`
    is updated.
 6. **After apply:** the definition cache is rewritten (when the API caches its definition), the #45
@@ -50,7 +55,8 @@ changes. It completes the pattern the WSDL and AsyncAPI imports already have.
 ## Success criteria
 
 - SC-1: an untouched request follows a changed parameter, body sample and path template.
-- SC-2: an edited parameter value, body and auth are kept; user-added parameter rows are kept.
+- SC-2: an edited parameter value, body and auth are kept; user-added parameter rows are kept; an
+  edited row whose parameter became required is turned on, keeping its value.
 - SC-3: a removed operation's request is orphaned and kept; restoring the operation clears the flag.
 - SC-4: a new operation gets one request in its tag folder.
 - SC-5: the plan lists exactly what apply does (same added/removed/changed sets).
