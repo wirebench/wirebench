@@ -152,6 +152,19 @@ export function EnvCompareView({ results, baselineId }: EnvCompareViewProps) {
               data-testid="env-compare-headers"
               className="w-full table-fixed border-collapse font-mono text-xs"
             >
+              <thead>
+                <tr className="text-fg-muted">
+                  <th scope="col" className="w-1/4 py-0.5 pr-2 text-left font-medium">
+                    Header
+                  </th>
+                  <th scope="col" className="py-0.5 pr-2 text-left font-medium break-words">
+                    {baseColumn.environmentName}
+                  </th>
+                  <th scope="col" className="py-0.5 text-left font-medium break-words">
+                    {otherColumn.environmentName}
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 {headerRows.map((row) => (
                   <tr key={row.name.toLowerCase()} data-change={row.change} className={CHANGE_TONE[row.change]}>

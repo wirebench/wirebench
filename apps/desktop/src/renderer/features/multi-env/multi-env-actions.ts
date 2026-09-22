@@ -69,8 +69,14 @@ function environmentsOf(requestId: string): {
   return { environments: ordered(project), activeId: project?.activeEnvironmentId, inWorkspace: false };
 }
 
-/** The blocker for `requestId` right now, read outside React (the command's `when`). */
+/**
+ * The blocker for `requestId` right now, read outside React (the command's `when`): the
+ * environment count, or a fan-out already running for the request — a second one would orphan it.
+ */
 export function currentBlocker(requestId: string): string | undefined {
+  if (useMultiEnvStore.getState().running[requestId] !== undefined) {
+    return 'Already comparing environments';
+  }
   const { environments, inWorkspace } = environmentsOf(requestId);
   return sendToEnvironmentsBlocker(environments.length, inWorkspace);
 }
@@ -129,11 +135,16 @@ export async function sendToEnvironments(
   if (selection.ticked.length < 2 || selection.ticked.length > MAX_SEND_ENVIRONMENTS) {
     return;
   }
+  // A fan-out already running for the request is replaced, never orphaned: nothing could cancel it.
+  const previous = useMultiEnvStore.getState().running[requestId];
   const batchId = crypto.randomUUID();
   useMultiEnvStore.setState((state) => ({
     remembered: { ...state.remembered, [requestId]: selection },
     running: { ...state.running, [requestId]: batchId },
   }));
+  if (previous !== undefined) {
+    void ipc().request.cancel({ sendId: previous });
+  }
 
   let payload: Parameters<ReturnType<typeof ipc>['request']['sendToEnvironments']>[0] = {
     batchId,
@@ -186,10 +197,19 @@ export async function sendToEnvironments(
   }
 }
 
-/** Aborts every send still running in the request's fan-out. */
+/**
+ * Aborts every send still running in the request's fan-out. The batch stops being the running
+ * one first, so its send, when it settles, opens no compare tab with the aborted results.
+ */
 export async function cancelSendToEnvironments(requestId: string): Promise<void> {
   const batchId = useMultiEnvStore.getState().running[requestId];
-  if (batchId !== undefined) {
-    await ipc().request.cancel({ sendId: batchId });
+  if (batchId === undefined) {
+    return;
   }
+  useMultiEnvStore.setState((state) => {
+    const running = { ...state.running };
+    delete running[requestId];
+    return { running };
+  });
+  await ipc().request.cancel({ sendId: batchId });
 }

@@ -67,6 +67,11 @@ describe('EnvCompareView', () => {
     expect(screen.getByLabelText<HTMLTextAreaElement>('Original').value).toContain('"a": 1');
     expect(screen.getByLabelText<HTMLTextAreaElement>('Modified').value).toContain('"a": 2');
     const headers = screen.getByRole('table', { name: 'Response headers' });
+    expect(
+      within(headers)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Header', 'DEV', 'TEST']);
     expect(within(headers).getByText('X-Env').closest('tr')?.getAttribute('data-change')).toBe('changed');
 
     await userEvent.selectOptions(screen.getByLabelText('Compare the baseline with'), 'prod');
