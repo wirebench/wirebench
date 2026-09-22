@@ -681,6 +681,8 @@ export type { FormatXmlOptions, FormatXmlResult } from './xml/pretty.js';
 export { migrate } from './project/migrate.js';
 export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from './project/serialize.js';
 export type { ProjectFiles } from './project/serialize.js';
+export { requestFileLocation } from './project/request-location.js';
+export type { RequestFileLocation } from './project/request-location.js';
 export { loadProject } from './project/load.js';
 export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
 export { saveProject } from './project/save.js';

@@ -17,7 +17,7 @@ const DEFAULT_REQUEST_VIEW_TYPE: RequestViewType = 'xml';
 
 /** Which response tab is showing. Owned here for the same reason as {@link FormViewType}: it
  * must survive a remount, but it is editor state, never saved to the project file. */
-export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault';
+export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault' | 'snapshot';
 
 const DEFAULT_RESPONSE_VIEW_TYPE: ResponseViewType = 'xml';
 

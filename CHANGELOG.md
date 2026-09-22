@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Snapshot regression.** A SOAP or REST response can be saved as a snapshot, a golden file
+  (`<Request>.golden.yaml`) beside the request. The response pane's new **Snapshot** tab compares every later
+  response with it by meaning: JSON by key and index with numbers by value, XML by namespace and local name
+  with prefixes, attribute order, comments and whitespace-only text left out, and anything else as exact
+  text. Each difference is listed with its path and expected → actual values, and **Ignore rules** (slash
+  paths, `*` for one segment, a leading `//` for any depth) leave volatile fields out; each difference has an
+  **Ignore** button that adds its path. **Update snapshot**, **Compare side by side** and **Delete snapshot**
+  round it out. Bodies over 2 MB aren't compared, and renaming a request leaves its golden behind.
+
 - **CLI runner: unary gRPC and OAuth2 client credentials.** `wirebench run` now runs unary gRPC
   requests from an API's cached definition, with `status` (gRPC code or name), JSONPath `match` and
   `sla` assertions — streaming requests are skipped, and an API without a cached definition errors

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ResponsePane } from '../../src/renderer/features/request-editor/response-pane.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useSnapshotsStore } from '../../src/renderer/state/snapshots.js';
 import { b64, makeExchange } from '../mocks/exchange-fixtures.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
 vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mocks/monaco-runtime.js'));
@@ -77,5 +81,68 @@ describe('ResponsePane', () => {
 
     expect(screen.getByText('no such endpoint')).toBeDefined();
     expect(screen.queryByLabelText('Response envelope XML')).toBeNull();
+  });
+
+  describe('Snapshot tab', () => {
+    /** Opens the Snapshot tab for `requestId` with no golden saved yet; returns the write spy. */
+    function openSnapshotTab(requestId: string) {
+      useSnapshotsStore.setState({ entries: {}, failed: {} });
+      useEditorsStore.getState().setResponseView(requestId, 'snapshot');
+      const write = vi.fn().mockResolvedValue({ ok: true, value: { savedAt: '2026-09-22T11:00:00.000Z' } });
+      installWirebenchApi({
+        snapshot: { read: vi.fn().mockResolvedValue({ ok: true, value: { status: 'none' } }), write },
+      });
+      return write;
+    }
+
+    it('saves the unpacked envelope of a multipart reply, typed by its SOAP version', async () => {
+      const write = openSnapshotTab('r7');
+      const envelope = '<Envelope xmlns="http://www.w3.org/2003/05/soap-envelope"><Body><Ok/></Body></Envelope>';
+      const base = makeExchange();
+      const mtom = makeExchange({
+        http: {
+          ...base.http,
+          headers: { 'content-type': 'multipart/related; type="application/xop+xml"; boundary=b' },
+          bodyBase64: b64(`--b\r\nContent-Type: application/xop+xml\r\n\r\n${envelope}\r\n--b--`),
+        },
+        response: { envelopeXml: envelope, version: '1.2', isSoap: true, attachments: [] },
+      });
+      render(<ResponsePane state={{ status: 'done', exchange: mtom }} requestId="r7" />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Save as snapshot' }));
+      expect(write).toHaveBeenCalledWith({
+        requestId: 'r7',
+        body: envelope,
+        contentType: 'application/soap+xml',
+        ignore: [],
+      });
+    });
+
+    it('saves the decoded HTTP body when there is no SOAP envelope', async () => {
+      const write = openSnapshotTab('r8');
+      const base = makeExchange();
+      const plain = makeExchange({
+        http: { ...base.http, headers: { 'content-type': 'text/plain' }, bodyBase64: b64('no such endpoint') },
+        response: { envelopeXml: '', isSoap: false, attachments: [] },
+      });
+      render(<ResponsePane state={{ status: 'done', exchange: plain }} requestId="r8" />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Save as snapshot' }));
+      expect(write).toHaveBeenCalledWith({
+        requestId: 'r8',
+        body: 'no such endpoint',
+        contentType: 'text/plain',
+        ignore: [],
+      });
+    });
+
+    it('offers no save for a reply with no text body', async () => {
+      const write = openSnapshotTab('r9');
+      const base = makeExchange();
+      const empty = makeExchange({ http: { ...base.http, status: 202, bodyBase64: '' } });
+      delete (empty as { response?: unknown }).response;
+      render(<ResponsePane state={{ status: 'done', exchange: empty }} requestId="r9" />);
+      expect(await screen.findByText('This response has no text body to compare.')).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Save as snapshot' })).toBeNull();
+      expect(write).not.toHaveBeenCalled();
+    });
   });
 });
