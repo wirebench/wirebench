@@ -24,3 +24,9 @@
 - `WIREBENCH_SKIP_PERF=1 pnpm check` before every commit; `pnpm test:perf` unskipped before a push.
 - e2e needs a build first: `pnpm build && xvfb-run -a pnpm test:e2e` (this container has no display).
 - Never state in docs or code which product inspired a feature; `pnpm check:banned-terms` enforces it.
+
+## Merging
+
+- Before merging a pull request on GitHub, resolve its CI failures first: never merge with red checks.
+  Fix the failures (or confirm they are red on the base branch too and port the fix), wait for CI to
+  go green on the latest head, then merge.

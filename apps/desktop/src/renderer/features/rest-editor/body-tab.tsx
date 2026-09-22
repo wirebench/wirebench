@@ -9,7 +9,7 @@
  * A file is chosen through the same native picker attachments use. The renderer never names a path
  * of its own — the pick is what makes the file legal for main to read.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { JsonSchema } from '@wirebench/engine/rest';
 import { formatXml } from '@wirebench/engine/xml';
 import { Button } from '../../components/button.js';
@@ -20,6 +20,7 @@ import { SAVE_KEYBINDING, SEND_KEYBINDING } from '../../editor/monaco.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
+import { useProjectStore } from '../../state/project.js';
 import { JsonFormView } from './json-form-view.js';
 import type { KeyValueWire, RestBodyWire, RestRequestPatchWire, RestSettingsWire } from '../../../shared/wire-types.js';
 
@@ -82,15 +83,33 @@ export function formatRawBody(
   return { text };
 }
 
-/** Where the body's schema comes from; injectable so tests need no IPC. */
-export interface BodySchemaSource {
-  /** The JSON body schema of the request's operation, or `null` when it declares none. */
-  load(requestId: string): Promise<{ readonly mediaType: string; readonly schema: JsonSchema } | null>;
+/** The method and URL the editor holds now, saved or not: what the operation is looked up by. */
+export interface BodySchemaTarget {
+  readonly method: string;
+  readonly url: string;
 }
 
+/** Where the body's schema comes from; injectable so tests need no IPC. */
+export interface BodySchemaSource {
+  /**
+   * The JSON body schema of the operation the request calls with `target` (its saved method and URL
+   * when absent), or `null` when that operation declares none.
+   */
+  load(
+    requestId: string,
+    target?: BodySchemaTarget,
+  ): Promise<{ readonly mediaType: string; readonly schema: JsonSchema } | null>;
+}
+
+/** How long to wait after a method or URL edit before asking main for the schema again. */
+const SCHEMA_DEBOUNCE_MS = 250;
+
 const IPC_SCHEMA_SOURCE: BodySchemaSource = {
-  async load(requestId) {
-    const result = await ipc().request.restBodySchema({ requestId });
+  async load(requestId, target) {
+    const result = await ipc().request.restBodySchema({
+      requestId,
+      ...(target !== undefined ? { draft: { method: target.method, url: target.url } } : {}),
+    });
     // No schema is the quiet outcome: the switch simply does not appear.
     return result.ok && result.value !== null
       ? { mediaType: result.value.mediaType, schema: result.value.schema }
@@ -101,6 +120,13 @@ const IPC_SCHEMA_SOURCE: BodySchemaSource = {
 export interface BodyTabProps {
   /** The REST request this body belongs to: what the schema is looked up by and the Text/Form choice is kept for. */
   readonly requestId: string;
+  /**
+   * The method and URL the editor holds now, saved or not. The schema follows them, so editing the
+   * URL bar re-points the form at the operation the request would now call. Absent, the saved ones
+   * are used.
+   */
+  readonly method?: string;
+  readonly url?: string;
   readonly body: RestBodyWire;
   readonly settings: RestSettingsWire;
   readonly onChange: (patch: RestRequestPatchWire) => void;
@@ -115,7 +141,17 @@ export interface BodyTabProps {
 }
 
 /** The Body tab. */
-export function BodyTab({ requestId, body, settings, onChange, onSend, onSave, schemaSource }: BodyTabProps) {
+export function BodyTab({
+  requestId,
+  method,
+  url,
+  body,
+  settings,
+  onChange,
+  onSend,
+  onSave,
+  schemaSource,
+}: BodyTabProps) {
   // One remembered draft per kind, seeded with the saved body's own kind.
   const [drafts, setDrafts] = useState<Partial<Record<BodyKind, RestBodyWire>>>({ [body.kind]: body });
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
@@ -123,24 +159,48 @@ export function BodyTab({ requestId, body, settings, onChange, onSend, onSave, s
   const [schema, setSchema] = useState<JsonSchema | null>(null);
   const view = useEditorsStore((state) => state.restBodyViews[requestId] ?? 'text');
   const setView = useEditorsStore((state) => state.setRestBodyView);
+  // The project as main last sent it. It is replaced by every snapshot and by nothing typed here, so
+  // it changes exactly when something the lookup reads may have: a save, a relinked operation, or a
+  // re-imported or updated definition.
+  const saved = useProjectStore((state) => {
+    const projectId = state.projectOf[requestId];
+    return projectId === undefined ? undefined : state.projects[projectId];
+  });
+  // Which lookup is the newest, so an answer overtaken by a later one is dropped.
+  const latest = useRef(0);
+  // The request the shown schema was looked up for.
+  const answeredFor = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    let current = true;
-    setSchema(null);
-    source.load(requestId).then(
-      (found) => {
-        if (current) {
-          setSchema(found?.schema ?? null);
-        }
-      },
+    // A request not yet answered for starts with no form and asks at once. After that the current
+    // form stays up while the next lookup runs, and a method or URL edit waits for typing to pause.
+    const fresh = answeredFor.current !== requestId;
+    if (fresh) {
+      setSchema(null);
+    }
+    const ask = ++latest.current;
+    const target = method !== undefined && url !== undefined ? { method, url } : undefined;
+    const timer = setTimeout(
       () => {
-        // A failed lookup only means no form; the text editor is always there.
+        source.load(requestId, target).then(
+          (found) => {
+            if (ask !== latest.current) {
+              return;
+            }
+            answeredFor.current = requestId;
+            setSchema(found?.schema ?? null);
+          },
+          () => {
+            // A failed lookup only means no form; the text editor is always there.
+          },
+        );
       },
+      fresh ? 0 : SCHEMA_DEBOUNCE_MS,
     );
     return () => {
-      current = false;
+      clearTimeout(timer);
     };
-  }, [source, requestId]);
+  }, [source, requestId, method, url, saved]);
 
   const formAvailable = body.kind === 'raw' && body.language === 'json' && schema !== null;
   const showForm = formAvailable && view === 'form';

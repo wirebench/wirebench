@@ -69,12 +69,19 @@ type JsonFormEdit =
 
 ## Getting the schema to the renderer
 
-- `ProjectHost.restBodySchema(requestId): Promise<{ mediaType: string; schema: JsonSchema } | undefined>`
-  uses the same lookup as `restContractFor` (contract link first, else `matchOperation`) and picks the
+- `ProjectHost.restBodySchema(requestId, sent?): Promise<{ mediaType: string; schema: JsonSchema } | undefined>`
+  uses the same lookup as `restContractFor` (contract link first, else `matchOperation`, one shared
+  `operationCalled` helper) on `sent`'s method and URL, the saved ones when absent, and picks the
   first JSON media type (`application/json` or `*+json`). The schema passes through `toWireSchema`
   because a cyclic graph cannot cross IPC.
-- New channel `request.restBodySchema` (`{ requestId }` → `{ mediaType, schema } | null`), wired through
-  `project-router.ts` / `workspace-service.ts` the way `restContractFor` is.
+- New channel `request.restBodySchema` (`{ requestId, draft? }` → `{ mediaType, schema } | null`), wired
+  through `project-router.ts` / `workspace-service.ts` the way `restContractFor` is. The handler lays
+  the draft over the saved request through `restSend`, as preflight and send do, and looks up the
+  resulting expanded method and URL, so the form and the post-send contract check agree on the
+  operation (#127).
+- The Body tab asks again, debounced, when the editor's method or URL changes, and at once when main
+  sends a new snapshot of the project (a save, a relink, a re-imported definition) (#126). An answer
+  overtaken by a later lookup is dropped, and the current form stays up while a lookup runs.
 - Additive only: nothing in `rest/openapi/update.ts` or the REST update-definition code changes.
 
 ## View (desktop)

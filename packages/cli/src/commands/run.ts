@@ -220,7 +220,9 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
       },
     );
   } catch (error) {
-    // An unexpected failure is printed by `main`; its message must not carry a value either.
+    // An unexpected failure is printed by `main`; its message must not carry a value either. Only
+    // the message is masked: `main` never prints `error.stack`, which still holds the raw text. A
+    // flag that prints stacks (a `--debug`) must mask them too.
     if (error instanceof Error) {
       error.message = maskNow()(error.message);
     }

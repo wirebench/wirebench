@@ -3123,37 +3123,28 @@ export class ProjectHost {
     }
     // `sent.url` is the expanded URL and may carry a secret: it stays in memory for the match and is
     // never logged or stored.
-    const link = request.contract;
     const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
     return this.openApiDocumentFor(api.id).then((document) => {
-      // The import link names the operation only while the request still calls it: a request whose
-      // method or URL was edited since (or a clone pointed elsewhere) is matched afresh.
-      const linked =
-        link !== undefined &&
-        link.method.toLowerCase() === sent.method.toLowerCase() &&
-        matchOperation([link], sent.method, sent.url, baseUrls) !== undefined;
-      const operation = linked
-        ? { method: link.method, path: link.path }
-        : matchOperation(document.operations, sent.method, sent.url, baseUrls);
-      if (operation === undefined) {
+      const called = operationCalled(document, request.contract, sent, baseUrls);
+      if (called === undefined) {
         return {};
       }
-      const declared = document.operations.find(
-        (candidate) =>
-          candidate.method.toLowerCase() === operation.method.toLowerCase() && candidate.path === operation.path,
-      );
+      const { operation, declared } = called;
       return declared?.responses === undefined ? { operation } : { operation, responses: declared.responses };
     });
   }
 
   /**
    * The schema of the JSON body a REST request's operation declares, for the body editor's form: the
-   * operation found as `restContractFor` finds it (the import link while the request still calls it,
-   * else a match on the saved method and URL), and its first JSON media type (`application/json` or
+   * operation found as `restContractFor` finds it — from `sent`, the method and URL the editor holds
+   * now (saved or not), else the saved ones — and its first JSON media type (`application/json` or
    * `*+json`). The schema is an acyclic copy (`toWireSchema`), because a cyclic graph cannot cross
    * IPC. `undefined` when there is no cached definition, no matching operation, or no JSON body.
    */
-  async restBodySchema(requestId: string): Promise<{ mediaType: string; schema: JsonSchema } | undefined> {
+  async restBodySchema(
+    requestId: string,
+    sent?: { readonly method: string; readonly url: string },
+  ): Promise<{ mediaType: string; schema: JsonSchema } | undefined> {
     if (this.open === undefined) {
       return undefined;
     }
@@ -3162,24 +3153,10 @@ export class ProjectHost {
     if (request === undefined || api?.definition?.cache !== true) {
       return undefined;
     }
-    const link = request.contract;
     const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
     const document = await this.openApiDocumentFor(api.id);
-    const linked =
-      link !== undefined &&
-      link.method.toLowerCase() === request.method.toLowerCase() &&
-      matchOperation([link], request.method, request.url, baseUrls) !== undefined;
-    const operation = linked
-      ? { method: link.method, path: link.path }
-      : matchOperation(document.operations, request.method, request.url, baseUrls);
-    if (operation === undefined) {
-      return undefined;
-    }
-    const declared = document.operations.find(
-      (candidate) =>
-        candidate.method.toLowerCase() === operation.method.toLowerCase() && candidate.path === operation.path,
-    );
-    const content = declared?.requestBody?.content ?? {};
+    const called = operationCalled(document, request.contract, sent ?? request, baseUrls);
+    const content = called?.declared?.requestBody?.content ?? {};
     for (const [mediaType, media] of Object.entries(content)) {
       const bare = mediaType.split(';')[0]?.trim().toLowerCase() ?? '';
       if ((bare === 'application/json' || bare.endsWith('+json')) && media.schema !== undefined) {
@@ -3603,6 +3580,39 @@ export class ProjectHost {
       }
     }
   }
+}
+
+/**
+ * The operation a REST request calls with `sent`'s method and URL, and its declaration in `document`.
+ * The import link names the operation only while the request still calls it: a request whose method
+ * or URL was edited since (or a clone pointed elsewhere) is matched afresh.
+ */
+function operationCalled(
+  document: OpenApiDocument,
+  link: { readonly method: string; readonly path: string } | undefined,
+  sent: { readonly method: string; readonly url: string },
+  baseUrls: readonly string[],
+):
+  | {
+      readonly operation: { readonly method: string; readonly path: string };
+      readonly declared: OpenApiDocument['operations'][number] | undefined;
+    }
+  | undefined {
+  const linked =
+    link !== undefined &&
+    link.method.toLowerCase() === sent.method.toLowerCase() &&
+    matchOperation([link], sent.method, sent.url, baseUrls) !== undefined;
+  const operation = linked
+    ? { method: link.method, path: link.path }
+    : matchOperation(document.operations, sent.method, sent.url, baseUrls);
+  if (operation === undefined) {
+    return undefined;
+  }
+  const declared = document.operations.find(
+    (candidate) =>
+      candidate.method.toLowerCase() === operation.method.toLowerCase() && candidate.path === operation.path,
+  );
+  return { operation, declared };
 }
 
 /** The request with this id inside `container`, and the names of the folders enclosing it. */
