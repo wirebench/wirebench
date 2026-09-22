@@ -96,7 +96,8 @@ export interface ExplorerNode {
   /** Set on `project-missing` nodes: why the folder could not be read, when main said. */
   readonly message?: string;
   /**
-   * Set on `request` nodes whose operation an Update Definition dropped from the WSDL. The
+   * Set on a request node whose operation an Update Definition no longer found in the definition
+   * — a WSDL operation, an OpenAPI method and path, a gRPC method or an AsyncAPI channel. The
    * request is still there (nothing is ever deleted); the row is badged so the user can see
    * which ones no longer correspond to anything the service offers.
    */

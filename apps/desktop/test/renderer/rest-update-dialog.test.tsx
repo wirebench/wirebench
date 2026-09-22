@@ -200,6 +200,86 @@ describe('RestUpdateDialog', () => {
     );
   });
 
+  it('shows an error and lets the user try again when the plan call itself fails', async () => {
+    const plan = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('bridge is gone'))
+      .mockResolvedValueOnce({ ok: true, value: PLAN });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+
+    expect((await screen.findByTestId('rest-update-error')).textContent).toContain('bridge is gone');
+    expect(screen.queryByRole('status')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('rest-update-choose'));
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://new.test/o.yaml' } });
+    fireEvent.click(screen.getByTestId('rest-update-url-preview'));
+    expect(await screen.findByTestId('rest-update-added')).toBeTruthy();
+  });
+
+  it('shows an error and leaves Apply usable when the apply call itself fails', async () => {
+    const apply = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('bridge is gone'))
+      .mockResolvedValueOnce({ ok: true, value: APPLIED });
+    installWirebenchApi({
+      api: { restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN }), restApplyUpdate: apply },
+    });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('rest-update-apply'));
+
+    expect((await screen.findByTestId('rest-update-error')).textContent).toContain('bridge is gone');
+    await waitFor(() => expect(screen.getByTestId<HTMLButtonElement>('rest-update-apply').disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('rest-update-apply'));
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
+  });
+
+  it('previews again against the source the user chose, not the recorded one', async () => {
+    const plan = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: PLAN })
+      .mockResolvedValueOnce({ ok: true, value: PLAN })
+      .mockResolvedValueOnce({ ok: true, value: { ...PLAN, fingerprint: FP2 } });
+    const apply = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'definition-changed', message: 'changed' } });
+    installWirebenchApi({ api: { restPlanUpdate: plan, restApplyUpdate: apply } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    await screen.findByTestId('rest-update-added');
+
+    const source = { kind: 'url', url: 'https://new.test/o.yaml' };
+    fireEvent.click(screen.getByTestId('rest-update-choose'));
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: source.url } });
+    fireEvent.click(screen.getByTestId('rest-update-url-preview'));
+    await waitFor(() => expect(plan).toHaveBeenLastCalledWith({ apiId: DEFINED.id, source }));
+
+    fireEvent.click(await screen.findByTestId('rest-update-apply'));
+    fireEvent.click(await screen.findByTestId('rest-update-replan'));
+    await waitFor(() => expect(plan).toHaveBeenCalledTimes(3));
+    expect(plan).toHaveBeenLastCalledWith({ apiId: DEFINED.id, source });
+  });
+
+  it('applies once however often Apply is clicked', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    const apply = vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    installWirebenchApi({
+      api: { restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN }), restApplyUpdate: apply },
+    });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    const button = await screen.findByTestId('rest-update-apply');
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(screen.getByTestId<HTMLButtonElement>('rest-update-apply').disabled).toBe(true));
+    expect(apply).toHaveBeenCalledTimes(1);
+    answer({ ok: true, value: APPLIED });
+  });
+
   it('still records an apply that lands after the dialog unmounted, but no longer drives the dialog', async () => {
     let answer: (value: unknown) => void = () => undefined;
     const apply = vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve)));
@@ -248,6 +328,19 @@ describe('REST Update Definition entry points', () => {
     fireEvent.click(screen.getByTestId('rest-update-cancel'));
     await waitFor(() => expect(screen.queryByTestId('rest-update-dialog')).toBeNull());
     expect(useRestUpdateStore.getState().apiId).toBeUndefined();
+  });
+
+  it('a tab that goes away forgets the request to open the dialog', async () => {
+    installWirebenchApi({ api: { restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN }) } });
+    mountTab(DEFINED);
+    fireEvent.click(screen.getByTestId('rest-definition-update'));
+    expect(await screen.findByTestId('rest-update-dialog')).toBeTruthy();
+
+    cleanup();
+    expect(useRestUpdateStore.getState().apiId).toBeUndefined();
+
+    mountTab(DEFINED);
+    expect(screen.queryByTestId('rest-update-dialog')).toBeNull();
   });
 
   it('the API tab has no Update definition… for an API made by hand', () => {

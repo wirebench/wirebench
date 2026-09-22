@@ -9,6 +9,7 @@
  * The servers an import recorded are offered as a datalist rather than a select: the list is a
  * suggestion from the definition, and a user may point an API anywhere.
  */
+import { useEffect } from 'react';
 import { AuthFields } from '../../components/auth-fields.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
@@ -66,6 +67,16 @@ export function ApiTab({ apiId }: ApiTabProps) {
   const activeWorkspaceEnvironmentId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
   const updating = useRestUpdateStore((state) => state.apiId === apiId);
   const closeUpdate = useRestUpdateStore((state) => state.close);
+  // The dialog lives in this tab, so a tab that goes away takes the request to open it with it —
+  // otherwise coming back to the API would open the dialog again on its own.
+  useEffect(
+    () => () => {
+      if (useRestUpdateStore.getState().apiId === apiId) {
+        useRestUpdateStore.getState().close();
+      }
+    },
+    [apiId],
+  );
 
   if (api === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This API is no longer in the project.</p>;

@@ -10,7 +10,7 @@
  * (`definition-source-unavailable`), so the dialog then asks for a file or URL; the same chooser is
  * offered for any API, to update from somewhere else.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -25,6 +25,11 @@ export interface RestUpdateDialogProps {
 }
 
 type OpRef = ApiRestPlanUpdateResponse['added'][number];
+
+/** What to say when a call never got as far as an answer — a crashed handler, a closed window. */
+function failureMessage(error: unknown): string {
+  return error instanceof Error && error.message.length > 0 ? error.message : 'The definition could not be read.';
+}
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none';
@@ -74,6 +79,7 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
   const [source, setSource] = useState<RestUpdateSourceWire | undefined>(undefined);
   const [choosing, setChoosing] = useState(false);
   const [url, setUrl] = useState('');
+  const urlId = useId();
   // A plan or apply can land after the dialog is gone; it must not drive a dialog that no longer exists.
   const mounted = useRef(true);
   useEffect(() => {
@@ -90,7 +96,15 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
       setStale(false);
       setPlan(undefined);
       setSource(from);
-      const result = await ipc().api.restPlanUpdate(from === undefined ? { apiId } : { apiId, source: from });
+      let result;
+      try {
+        result = await ipc().api.restPlanUpdate(from === undefined ? { apiId } : { apiId, source: from });
+      } catch (failure: unknown) {
+        if (!mounted.current) return;
+        setBusy(false);
+        setError(failureMessage(failure));
+        return;
+      }
       if (!mounted.current) return;
       setBusy(false);
       if (!result.ok) {
@@ -114,10 +128,16 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
   }, [open, runPlan]);
 
   async function browse(): Promise<void> {
-    const result = await ipc().dialogs.openFile({
-      title: 'Update definition from file',
-      filters: [{ name: 'OpenAPI', extensions: ['json', 'yaml', 'yml'] }],
-    });
+    let result;
+    try {
+      result = await ipc().dialogs.openFile({
+        title: 'Update definition from file',
+        filters: [{ name: 'OpenAPI', extensions: ['json', 'yaml', 'yml'] }],
+      });
+    } catch (failure: unknown) {
+      if (mounted.current) setError(failureMessage(failure));
+      return;
+    }
     if (!mounted.current) return;
     if (result.ok && result.value.path !== undefined) {
       await runPlan({ kind: 'file', path: result.value.path });
@@ -132,7 +152,15 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
       source === undefined
         ? { apiId, fingerprint: plan.fingerprint }
         : { apiId, source, fingerprint: plan.fingerprint };
-    const result = await ipc().api.restApplyUpdate(request);
+    let result;
+    try {
+      result = await ipc().api.restApplyUpdate(request);
+    } catch (failure: unknown) {
+      if (!mounted.current) return;
+      setBusy(false);
+      setError(failureMessage(failure));
+      return;
+    }
     if (!result.ok) {
       if (!mounted.current) return;
       setBusy(false);
@@ -229,11 +257,11 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
             <fieldset data-testid="rest-update-chooser" className="mt-3 flex flex-col gap-2">
               <legend className="text-xs font-medium text-fg-muted">Another source</legend>
               <div className="flex items-center gap-2">
-                <label htmlFor="rest-update-url" className="shrink-0 text-xs text-fg-muted">
+                <label htmlFor={urlId} className="shrink-0 text-xs text-fg-muted">
                   URL
                 </label>
                 <input
-                  id="rest-update-url"
+                  id={urlId}
                   data-testid="rest-update-url"
                   value={url}
                   placeholder="https://example.com/openapi.yaml"
