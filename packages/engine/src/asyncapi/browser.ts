@@ -15,3 +15,4 @@ export type {
   AsyncApiSkip,
   AsyncApiVersion,
 } from './model.js';
+export type { AsyncApiImportSummary } from './map.js';

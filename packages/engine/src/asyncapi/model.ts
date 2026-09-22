@@ -21,6 +21,13 @@ export interface AsyncApiSecurityScheme {
   readonly in?: string;
   /** `httpApiKey`: the parameter's name. */
   readonly name?: string;
+  /** `oauth2` / `openIdConnect`: the first flow's endpoints and scope names. */
+  readonly grant?: 'client-credentials' | 'authorization-code' | 'implicit' | 'password';
+  readonly tokenUrl?: string;
+  readonly authorizationUrl?: string;
+  readonly scopes?: readonly string[];
+  /** `openIdConnect`: the discovery document. */
+  readonly openIdConnectUrl?: string;
 }
 
 export interface AsyncApiServer {

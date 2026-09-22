@@ -40,6 +40,18 @@ export interface WsRequestSettings {
   readonly escapeProperties?: boolean;
 }
 
+/** Which channel of the API's contract a request was imported from: the channel key in the document. */
+export interface WsContractLink {
+  readonly channel: string;
+}
+
+/** Which contract message a saved message was generated from, and the text it was generated as. */
+export interface WsMessageContractLink {
+  readonly message: string;
+  /** The sample as imported — what Update Definition compares against to tell an untouched message. */
+  readonly generated: string;
+}
+
 /** A message saved under a request, ready to send without retyping it. */
 export interface WsSavedMessage {
   readonly id: string;
@@ -48,6 +60,7 @@ export interface WsSavedMessage {
   readonly format: 'text' | 'binary';
   /** The text as edited; for `binary`, base64. Stored in `<request-slug>.msg-<slug>.<ext>`. */
   readonly content: string;
+  readonly contract?: WsMessageContractLink;
 }
 
 /** A saved WebSocket request: a URL to dial, headers and query to send, and saved messages. */
@@ -66,6 +79,10 @@ export interface WsRequestDef {
   readonly auth: AuthConfig;
   readonly settings: WsRequestSettings;
   readonly messages: readonly WsSavedMessage[];
+  /** Set when the request was imported from the API's contract. */
+  readonly contract?: WsContractLink;
+  /** The contract no longer has the channel this request was imported from. */
+  readonly orphaned?: boolean;
 }
 
 /** A named node in a WebSocket API's tree. */
@@ -224,6 +241,7 @@ export interface CreateWsRequestInput extends CreateOptions {
   readonly auth?: AuthConfig;
   readonly settings?: WsRequestSettings;
   readonly messages?: readonly WsSavedMessage[];
+  readonly contract?: WsContractLink;
 }
 
 /** Creates a request with an empty URL and inherited credentials, and nothing saved. */
@@ -242,13 +260,19 @@ export function createWsRequest(name: string, input: CreateWsRequestInput = {}):
     auth: input.auth ?? { type: 'inherit' },
     settings: input.settings ?? {},
     messages: input.messages ?? [],
+    ...(input.contract !== undefined ? { contract: input.contract } : {}),
   };
 }
 
 /** Creates a saved message, text and empty by default. */
 export function createWsSavedMessage(
   name: string,
-  input?: CreateOptions & { readonly slug?: string; readonly format?: 'text' | 'binary'; readonly content?: string },
+  input?: CreateOptions & {
+    readonly slug?: string;
+    readonly format?: 'text' | 'binary';
+    readonly content?: string;
+    readonly contract?: WsMessageContractLink;
+  },
 ): WsSavedMessage {
   return {
     id: idOf(input),
@@ -256,6 +280,7 @@ export function createWsSavedMessage(
     slug: input?.slug ?? slugify(name),
     format: input?.format ?? 'text',
     content: input?.content ?? '',
+    ...(input?.contract !== undefined ? { contract: input.contract } : {}),
   };
 }
 

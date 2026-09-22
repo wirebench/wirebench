@@ -116,6 +116,8 @@ export function securityScheme(key: string, scheme: Json): AsyncApiSecuritySchem
   const bearerFormat = str(scheme['bearerFormat']);
   const where = str(scheme['in']);
   const name = str(scheme['name']);
+  const flow = firstFlow(scheme['flows']);
+  const openIdConnectUrl = str(scheme['openIdConnectUrl']);
   return {
     key,
     type,
@@ -124,6 +126,31 @@ export function securityScheme(key: string, scheme: Json): AsyncApiSecuritySchem
     ...(bearerFormat !== undefined ? { bearerFormat } : {}),
     ...(where !== undefined ? { in: where } : {}),
     ...(name !== undefined ? { name } : {}),
+    ...flow,
+    ...(openIdConnectUrl !== undefined ? { openIdConnectUrl } : {}),
+  };
+}
+
+const FLOW_GRANTS = {
+  clientCredentials: 'client-credentials',
+  authorizationCode: 'authorization-code',
+  implicit: 'implicit',
+  password: 'password',
+} as const;
+
+/** The first OAuth2 flow a scheme lists: its grant, endpoints and scope names (2.x `scopes`, 3.0 `availableScopes`). */
+function firstFlow(flows: unknown): Pick<AsyncApiSecurityScheme, 'grant' | 'tokenUrl' | 'authorizationUrl' | 'scopes'> {
+  const first = entries(flows).find(([key]) => key in FLOW_GRANTS);
+  if (first === undefined) return {};
+  const [key, flow] = first;
+  const tokenUrl = str(flow['tokenUrl']);
+  const authorizationUrl = str(flow['authorizationUrl']);
+  const scopes = Object.keys(record(flow['availableScopes'] ?? flow['scopes']));
+  return {
+    grant: FLOW_GRANTS[key as keyof typeof FLOW_GRANTS],
+    ...(tokenUrl !== undefined ? { tokenUrl } : {}),
+    ...(authorizationUrl !== undefined ? { authorizationUrl } : {}),
+    scopes,
   };
 }
 

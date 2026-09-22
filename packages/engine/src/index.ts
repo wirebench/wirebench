@@ -383,6 +383,12 @@ export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuer
 export { parseAsyncApi } from './asyncapi/parse.js';
 export type { ParseAsyncApiOptions, ParsedAsyncApi } from './asyncapi/parse.js';
 export type * from './asyncapi/model.js';
+export { mapAsyncApi } from './asyncapi/map.js';
+export type { AsyncApiImportSummary, MapAsyncApiOptions, MappedAsyncApi } from './asyncapi/map.js';
+export { authFromScheme as asyncApiAuthFromScheme } from './asyncapi/security.js';
+export type { AsyncApiSchemeInput } from './asyncapi/security.js';
+export { importAsyncApi } from './asyncapi/import.js';
+export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
 export { apiFromDocument, authFromScheme, mapScheme } from './rest/openapi/map.js';
@@ -1057,7 +1063,9 @@ export type {
   CreateWsFolderInput,
   CreateWsRequestInput,
   WsApi,
+  WsContractLink,
   WsDefinitionRef,
+  WsMessageContractLink,
   WsExchange,
   WsFolder,
   WsFrame,
