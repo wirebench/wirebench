@@ -425,6 +425,7 @@ export const grpcRequestFileSchema = z.looseObject({
   auth: authConfigSchema.default({ type: 'inherit' }),
   settings: grpcSettingsSchema.default({}),
   orphaned: z.boolean().optional(),
+  assertions: assertionsSchema.default([]),
 });
 
 /** `apis/<slug>/api.yaml` for a gRPC API. */

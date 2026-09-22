@@ -28,14 +28,21 @@ function greeter(): GrpcApi {
     auth: { type: 'bearer', tokenRef: 'sec_tok' },
     definition: { kind: 'proto', source: '/home/me/protos', cache: true, roots: ['greeter.proto'] },
     requests: [
-      createGrpcRequest('Health', {
-        id: 'Q0',
-        order: 0,
-        service: 'wirebench.greet.Greeter',
-        method: 'SayHello',
-        message: '{\n  "name": "health"\n}\n',
-        settings: { timeoutMs: 1_000 },
-      }),
+      {
+        ...createGrpcRequest('Health', {
+          id: 'Q0',
+          order: 0,
+          service: 'wirebench.greet.Greeter',
+          method: 'SayHello',
+          message: '{\n  "name": "health"\n}\n',
+          settings: { timeoutMs: 1_000 },
+        }),
+        // What `wirebench run` checks; carried through a save and a load like a REST request's.
+        assertions: [
+          { type: 'status', equals: 'OK' },
+          { type: 'match', language: 'jsonpath', expression: '$.message', equals: 'Hello, health' },
+        ],
+      },
     ],
     folders: [
       createGrpcFolder('Greeter', {

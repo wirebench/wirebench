@@ -1,0 +1,13 @@
+assertions:
+  - equals: OK
+    type: status
+auth:
+  type: inherit
+id: RUNNER0022
+kind: grpc
+message: missing.body.json
+method: Fail
+methodKind: unary
+name: missing
+order: 1
+service: wirebench.greet.Greeter
