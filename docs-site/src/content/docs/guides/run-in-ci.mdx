@@ -111,6 +111,21 @@ the hood, with no other setup.
 </TabItem>
 </Tabs>
 
+## Secret tokens
+
+A `${secret:name}` token in a request reads `WIREBENCH_SECRET_<NAME>`, with the name upper-cased:
+`${secret:billing_key}` reads `WIREBENCH_SECRET_BILLING_KEY`, and nothing else. A token reached
+through a property counts too. `wirebench secrets list` names the variable for each token the
+selected requests use, with `secret "billing_key"` as its purpose and whether it's set:
+
+```bash
+npx --yes @wirebench/cli@2.3.0 secrets list ./project --env staging
+```
+
+A token with no variable set fails that request with `secret-missing` — *Set
+WIREBENCH_SECRET_BILLING_KEY to run "…"* — rather than sending an empty value. See [Secret tokens and scanning](/wirebench/guides/secrets/#secret-tokens-and-scanning) for
+how a value ends up behind a token.
+
 ## What comes back
 
 Every recipe above is the same CLI underneath, so the outcome is identical whichever one runs it:
