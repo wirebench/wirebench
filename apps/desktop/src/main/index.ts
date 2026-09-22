@@ -340,6 +340,8 @@ void app.whenReady().then(() => {
     showSecrets: showSecretsFlag,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
+    oauth2: oauth2Service,
+    getSecret: (ref) => secretStore.get(ref),
   });
   registerProjectChannels({
     router: workspaceService,

@@ -175,6 +175,7 @@ import type {
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
+import { isEndpointAuth } from '@wirebench/engine';
 import type { EndpointAuth, SoapOwnerAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
@@ -289,14 +290,6 @@ export type UnsavedRestoreOutcome =
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Narrows a {@link SoapOwnerAuth} to the {@link EndpointAuth} arm (Basic/NTLM/none), for the WSDL
- * import/re-fetch paths that keep Basic regardless of what a SOAP owner's send-time auth is.
- */
-function asEndpointAuth(auth: SoapOwnerAuth | undefined): EndpointAuth | undefined {
-  return auth === undefined || auth.type === 'none' || auth.type === 'basic' || auth.type === 'ntlm' ? auth : undefined;
 }
 
 /**
@@ -810,8 +803,8 @@ export class ProjectHost {
   /**
    * The auth that should apply when sending `requestId`: request auth overrides its endpoint's,
    * which overrides its interface's (see `effectiveAuth`). `undefined` when the request is
-   * unknown or nothing configures auth at any level. May now be any non-`inherit` scheme, since a
-   * SOAP owner can hold a token auth; applying a token scheme to a SOAP send is a later task.
+   * unknown or nothing configures auth at any level. Any non-`inherit` scheme: a SOAP owner may
+   * hold a Bearer, API-key or OAuth2 configuration as well as Basic/NTLM.
    */
   authFor(requestId: string): SoapOwnerAuth | undefined {
     if (this.open === undefined) {
@@ -823,6 +816,29 @@ export class ProjectHost {
     }
     const endpoint = resolveAuthEndpoint(location.iface, location.request);
     return effectiveAuth(location.request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', location.iface.auth);
+  }
+
+  /**
+   * The credentials configured on one SOAP interface, endpoint or request — its own, not its
+   * effective ones.
+   *
+   * The SOAP counterpart of {@link restAuthOf}, for the OAuth2 channels: a token is obtained for
+   * the owner that configures it, not for whichever request happened to inherit it.
+   */
+  soapAuthOf(ownerId: string): SoapOwnerAuth | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    for (const iface of this.open.project.interfaces) {
+      if (iface.id === ownerId) {
+        return iface.auth;
+      }
+      const endpoint = iface.endpoints.find((candidate) => candidate.id === ownerId);
+      if (endpoint !== undefined) {
+        return endpoint.auth;
+      }
+    }
+    return findRequest(this.open.project, ownerId)?.request.auth;
   }
 
   /** The open project's id, or `undefined` when no project is open. Used to key its history file. */
@@ -2702,7 +2718,7 @@ export class ProjectHost {
   private async importAuthFor(iface: Interface): Promise<{ username: string; password: string } | undefined> {
     // WSDL import/re-fetch keeps Basic (the import dialog offers nothing else); an interface
     // whose own auth is a token scheme resolves to no re-fetch credentials.
-    const basicAuth = asEndpointAuth(iface.auth);
+    const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
     const resolved =
       basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
     return resolved?.username !== undefined && resolved.password !== undefined
@@ -3254,7 +3270,7 @@ export class ProjectHost {
         // first import: a WSDL behind Basic auth is otherwise re-fetched anonymously and the
         // whole interface fails to hydrate on reopen. WSDL import/re-fetch keeps Basic, so a
         // token-scheme owner resolves to no re-fetch credentials, same as `importAuthFor`.
-        const basicAuth = asEndpointAuth(iface.auth);
+        const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
         const resolvedAuth =
           basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
         const summary = await this.engine.importForProject({

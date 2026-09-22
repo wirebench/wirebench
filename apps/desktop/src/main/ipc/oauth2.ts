@@ -18,9 +18,12 @@ import { registerHandler } from './register.js';
 /** What the OAuth2 channels need: the model to read a configuration from, and the token service. */
 export interface OAuth2ChannelDeps {
   readonly oauth2: OAuth2Service;
-  /** Finds the API, folder or request the call names, and its credentials. */
+  /**
+   * Finds the owner the call names, and its credentials: an API, folder or REST request, or — when
+   * `soapAuthOf` is wired — a SOAP interface, endpoint or request.
+   */
   readonly project: Pick<ProjectRouter, 'restAuthOf' | 'projectId'> &
-    Partial<Pick<ProjectRouter, 'restTlsFor' | 'proxyFor'>>;
+    Partial<Pick<ProjectRouter, 'soapAuthOf' | 'restTlsFor' | 'proxyFor'>>;
   /** Resolves one keychain reference; the store in the app, a stub in tests. */
   readonly getSecret?: (ref: string) => Promise<string | undefined>;
   /** Stores a refresh token the user asked to be remembered. */
@@ -30,9 +33,10 @@ export interface OAuth2ChannelDeps {
 
 /** The OAuth2 configuration of the named owner, or a clear error saying it has none. */
 function configOf(deps: OAuth2ChannelDeps, ownerId: string): OAuth2Auth {
-  const auth: AuthConfig | undefined = deps.project.restAuthOf(ownerId);
+  // REST first, then SOAP: ids are unique across a project, so at most one of them knows the owner.
+  const auth: AuthConfig | undefined = deps.project.restAuthOf(ownerId) ?? deps.project.soapAuthOf?.(ownerId);
   if (auth === undefined) {
-    throw new WirebenchError('unknown-entity', `No API, folder or request with id "${ownerId}"`, {
+    throw new WirebenchError('unknown-entity', `No API, folder, interface, endpoint or request with id "${ownerId}"`, {
       details: { ownerId },
     });
   }
