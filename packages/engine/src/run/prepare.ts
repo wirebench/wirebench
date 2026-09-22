@@ -24,7 +24,7 @@ import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
 import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
-import { resolveAuthConfig, resolveEndpointAuth, toSendAuth } from '../secrets/resolve.js';
+import { resolveAuthConfig, resolveSoapAuth } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import { toGrpcSendInput, toRestSendInput, toSendInput } from '../send-options.js';
 import type { AttachmentResolvers } from '../send-options.js';
@@ -270,7 +270,7 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
       details: { path: selected.path },
     });
   }
-  const auth = await resolveEndpointAuth(soapEffectiveAuth(selected), context.getSecret);
+  const owner = soapEffectiveAuth(selected);
   const base = toSendInput({
     request: {
       properties: request.properties,
@@ -289,7 +289,12 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
   const proxy = context.proxyFor?.(resolved.url);
   const wsa = wsaFor(selected, context);
   const wss = wssFor(selected, context);
-  const sendAuth = toSendAuth(auth);
+  // An owner's OAuth2 gets its token as a REST one does (client credentials; the browser grant is
+  // refused); the endpoint schemes resolve through the SOAP path.
+  const sendAuth =
+    owner !== undefined && owner.type === 'oauth2'
+      ? await authFor(owner, selected.path, context, tls)
+      : await resolveSoapAuth(owner, context.getSecret);
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
   const input: SoapSendInput = {
     ...base,

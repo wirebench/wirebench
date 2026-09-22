@@ -17,9 +17,15 @@ const DEFAULT_REQUEST_VIEW_TYPE: RequestViewType = 'xml';
 
 /** Which response tab is showing. Owned here for the same reason as {@link FormViewType}: it
  * must survive a remount, but it is editor state, never saved to the project file. */
-export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault';
+export type ResponseViewType = 'xml' | 'outline' | 'raw' | 'query' | 'fault' | 'snapshot';
 
 const DEFAULT_RESPONSE_VIEW_TYPE: ResponseViewType = 'xml';
+
+/** Whether a REST request's raw JSON body shows as text or as a schema form. Editor state, never
+ * saved to the project file. */
+export type RestBodyViewType = 'text' | 'form';
+
+const DEFAULT_REST_BODY_VIEW: RestBodyViewType = 'text';
 
 /** Which inspector is showing in a pane's bottom strip. Editor state, never saved to disk. */
 export type InspectorId = 'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details' | 'properties';
@@ -101,6 +107,8 @@ export interface EditorsStore {
   /** Per-request layout override, set by the layout toggles. Session state, never persisted —
    * the persisted default lives in the `ui` store (see `request-editor/layout.ts`). */
   readonly editorLayouts: Readonly<Record<string, EditorLayout>>;
+  /** Text or Form for a REST request's JSON body, per REST request id. Editor state, not project data. */
+  readonly restBodyViews: Readonly<Record<string, RestBodyViewType>>;
   /** Selected inspector per `${requestId}:${pane}`. Editor state, not project data. */
   readonly inspectorTabs: Readonly<Record<string, InspectorId>>;
   /** Whether a pane's inspector panel is collapsed, per `${requestId}:${pane}`. */
@@ -143,6 +151,10 @@ export interface EditorsStore {
   /** Records this request's layout override. */
   readonly setEditorLayout: (requestId: string, layout: EditorLayout) => void;
 
+  /** Text or Form for `requestId`'s JSON body, defaulting to `'text'`. */
+  readonly restBodyViewFor: (requestId: string) => RestBodyViewType;
+  readonly setRestBodyView: (requestId: string, view: RestBodyViewType) => void;
+
   /** The selected inspector for one pane of one request, defaulting to `'headers'`. */
   readonly inspectorFor: (requestId: string, pane: InspectorPane) => InspectorId;
   /** Selects an inspector — which also expands the panel, since picking a tab means "show me it". */
@@ -172,6 +184,7 @@ const EMPTY_EDITORS = {
   responseViewTypes: {},
   responseViewPinned: {},
   editorLayouts: {},
+  restBodyViews: {},
   inspectorTabs: {},
   inspectorCollapsed: {},
   selectedAttachments: {},
@@ -273,6 +286,12 @@ export const useEditorsStore = create<EditorsStore>((set, get) => ({
 
   setEditorLayout: (requestId, layout) => {
     set({ editorLayouts: { ...get().editorLayouts, [requestId]: layout } });
+  },
+
+  restBodyViewFor: (requestId) => get().restBodyViews[requestId] ?? DEFAULT_REST_BODY_VIEW,
+
+  setRestBodyView: (requestId, view) => {
+    set({ restBodyViews: { ...get().restBodyViews, [requestId]: view } });
   },
 
   inspectorFor: (requestId, pane) => get().inspectorTabs[inspectorKey(requestId, pane)] ?? DEFAULT_INSPECTOR,

@@ -68,6 +68,7 @@ import {
   asyncApiChannelMessages,
   createCachedApiFetch,
   matchOperation,
+  toWireSchema,
   parseAsyncApi,
   parseOpenApi,
   planAsyncApiUpdate,
@@ -175,7 +176,8 @@ import type {
   TlsOptionsWire,
   UpdatePlanWire,
 } from '../shared/wire-types.js';
-import type { EndpointAuth } from '@wirebench/engine';
+import { isEndpointAuth } from '@wirebench/engine';
+import type { EndpointAuth, JsonSchema, SoapOwnerAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -802,9 +804,10 @@ export class ProjectHost {
   /**
    * The auth that should apply when sending `requestId`: request auth overrides its endpoint's,
    * which overrides its interface's (see `effectiveAuth`). `undefined` when the request is
-   * unknown or nothing configures auth at any level.
+   * unknown or nothing configures auth at any level. Any non-`inherit` scheme: a SOAP owner may
+   * hold a Bearer, API-key or OAuth2 configuration as well as Basic/NTLM.
    */
-  authFor(requestId: string): EndpointAuth | undefined {
+  authFor(requestId: string): SoapOwnerAuth | undefined {
     if (this.open === undefined) {
       return undefined;
     }
@@ -814,6 +817,29 @@ export class ProjectHost {
     }
     const endpoint = resolveAuthEndpoint(location.iface, location.request);
     return effectiveAuth(location.request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', location.iface.auth);
+  }
+
+  /**
+   * The credentials configured on one SOAP interface, endpoint or request — its own, not its
+   * effective ones.
+   *
+   * The SOAP counterpart of {@link restAuthOf}, for the OAuth2 channels: a token is obtained for
+   * the owner that configures it, not for whichever request happened to inherit it.
+   */
+  soapAuthOf(ownerId: string): SoapOwnerAuth | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    for (const iface of this.open.project.interfaces) {
+      if (iface.id === ownerId) {
+        return iface.auth;
+      }
+      const endpoint = iface.endpoints.find((candidate) => candidate.id === ownerId);
+      if (endpoint !== undefined) {
+        return endpoint.auth;
+      }
+    }
+    return findRequest(this.open.project, ownerId)?.request.auth;
   }
 
   /** The open project's id, or `undefined` when no project is open. Used to key its history file. */
@@ -935,6 +961,11 @@ export class ProjectHost {
    */
   model(): Project | undefined {
     return this.open?.project;
+  }
+
+  /** The open project's model and the folder it is saved in, or `undefined` when none is open. */
+  savedProject(): { readonly project: Project; readonly dir: string } | undefined {
+    return this.open === undefined ? undefined : { project: this.open.project, dir: this.open.dir };
   }
 
   private require(): OpenProject {
@@ -2691,8 +2722,11 @@ export class ProjectHost {
 
   /** The Basic credentials an interface's own auth resolves to, for re-fetching its WSDL. */
   private async importAuthFor(iface: Interface): Promise<{ username: string; password: string } | undefined> {
+    // WSDL import/re-fetch keeps Basic (the import dialog offers nothing else); an interface
+    // whose own auth is a token scheme resolves to no re-fetch credentials.
+    const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
     const resolved =
-      iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
+      basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
     return resolved?.username !== undefined && resolved.password !== undefined
       ? { username: resolved.username, password: resolved.password }
       : undefined;
@@ -3014,6 +3048,49 @@ export class ProjectHost {
     });
   }
 
+  /**
+   * The schema of the JSON body a REST request's operation declares, for the body editor's form: the
+   * operation found as `restContractFor` finds it (the import link while the request still calls it,
+   * else a match on the saved method and URL), and its first JSON media type (`application/json` or
+   * `*+json`). The schema is an acyclic copy (`toWireSchema`), because a cyclic graph cannot cross
+   * IPC. `undefined` when there is no cached definition, no matching operation, or no JSON body.
+   */
+  async restBodySchema(requestId: string): Promise<{ mediaType: string; schema: JsonSchema } | undefined> {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findRestRequest(this.open.project, requestId);
+    const api = restApiOwning(this.open.project, requestId);
+    if (request === undefined || api?.definition?.cache !== true) {
+      return undefined;
+    }
+    const link = request.contract;
+    const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
+    const document = await this.openApiDocumentFor(api.id);
+    const linked =
+      link !== undefined &&
+      link.method.toLowerCase() === request.method.toLowerCase() &&
+      matchOperation([link], request.method, request.url, baseUrls) !== undefined;
+    const operation = linked
+      ? { method: link.method, path: link.path }
+      : matchOperation(document.operations, request.method, request.url, baseUrls);
+    if (operation === undefined) {
+      return undefined;
+    }
+    const declared = document.operations.find(
+      (candidate) =>
+        candidate.method.toLowerCase() === operation.method.toLowerCase() && candidate.path === operation.path,
+    );
+    const content = declared?.requestBody?.content ?? {};
+    for (const [mediaType, media] of Object.entries(content)) {
+      const bare = mediaType.split(';')[0]?.trim().toLowerCase() ?? '';
+      if ((bare === 'application/json' || bare.endsWith('+json')) && media.schema !== undefined) {
+        return { mediaType, schema: toWireSchema(media.schema) };
+      }
+    }
+    return undefined;
+  }
+
   /** Where an AsyncAPI-imported API's definition came from, as the user gave it, for an update to re-read. */
   asyncApiSource(apiId: string): string {
     return this.requireAsyncApi(apiId).definition.source;
@@ -3240,9 +3317,11 @@ export class ProjectHost {
       try {
         // The interface's own auth must be resolved for hydration exactly as it is for the
         // first import: a WSDL behind Basic auth is otherwise re-fetched anonymously and the
-        // whole interface fails to hydrate on reopen.
+        // whole interface fails to hydrate on reopen. WSDL import/re-fetch keeps Basic, so a
+        // token-scheme owner resolves to no re-fetch credentials, same as `importAuthFor`.
+        const basicAuth = iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined;
         const resolvedAuth =
-          iface.auth !== undefined ? await resolveEndpointAuth(iface.auth, (ref) => this.getSecret(ref)) : undefined;
+          basicAuth !== undefined ? await resolveEndpointAuth(basicAuth, (ref) => this.getSecret(ref)) : undefined;
         const summary = await this.engine.importForProject({
           interfaceId: iface.id,
           source: { kind: 'url', url: iface.definitionUrl },

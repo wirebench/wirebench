@@ -24,6 +24,7 @@ import { CookiesView } from './cookies-view.js';
 import { RedirectsView } from './redirects-view.js';
 import { ResponseHeadersView } from './headers-view.js';
 import { StatusLine } from './status-line.js';
+import { SnapshotPanel } from '../../snapshot/snapshot-panel.js';
 
 /** The response tabs, in order. An event stream swaps Body for Events, first. */
 const TABS = [
@@ -36,6 +37,7 @@ const TABS = [
   { id: 'tls', label: 'TLS' },
   { id: 'raw', label: 'Raw' },
   { id: 'query', label: 'Query' },
+  { id: 'snapshot', label: 'Snapshot' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -165,6 +167,16 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
               </div>
             )}
             {activeTab === 'raw' && <RawExchange exchange={exchange} />}
+            {activeTab === 'snapshot' && (
+              <SnapshotPanel
+                requestId={requestId}
+                body={exchange.text}
+                binary={exchange.text === '' || exchange.language === 'image' || exchange.language === 'binary'}
+                {...(exchange.http.headers['content-type'] !== undefined
+                  ? { contentType: exchange.http.headers['content-type'] }
+                  : {})}
+              />
+            )}
             {activeTab === 'query' && (
               <div data-testid="rest-response-query" className="min-h-0 flex-1">
                 {/* The same view the SOAP response uses, over whichever document this response is:

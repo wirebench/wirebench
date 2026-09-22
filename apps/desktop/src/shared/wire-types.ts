@@ -925,12 +925,57 @@ export const endpointAuthSchema = z.object({
 });
 export type EndpointAuthWire = z.infer<typeof endpointAuthSchema>;
 
+/**
+ * Authentication as it crosses the bridge: the same seven schemes the engine models, with every
+ * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
+ * renderer can configure a token it can never read back.
+ */
+export const authConfigWireSchema = z.object({
+  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  username: z.string().optional(),
+  passwordRef: z.string().optional(),
+  /** The committed name CI reads this secret under; the desktop never edits it, only preserves it. */
+  passwordEnv: z.string().optional(),
+  domain: z.string().optional(),
+  workstation: z.string().optional(),
+  preemptive: z.boolean().optional(),
+  tokenRef: z.string().optional(),
+  tokenEnv: z.string().optional(),
+  scheme: z.string().optional(),
+  name: z.string().optional(),
+  valueRef: z.string().optional(),
+  valueEnv: z.string().optional(),
+  in: z.enum(['header', 'query']).optional(),
+  grant: z.enum(['client-credentials', 'authorization-code']).optional(),
+  tokenUrl: z.string().optional(),
+  authorizationUrl: z.string().optional(),
+  clientId: z.string().optional(),
+  clientSecretRef: z.string().optional(),
+  clientSecretEnv: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  audience: z.string().optional(),
+  clientAuth: z.enum(['basic', 'body']).optional(),
+  pkce: z.boolean().optional(),
+  refreshTokenRef: z.string().optional(),
+});
+export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
+
+/**
+ * What a SOAP interface, endpoint or request may hold on the wire: every {@link authConfigWireSchema}
+ * scheme except `inherit` — a SOAP owner has nothing above it to inherit from (see
+ * `soapOwnerAuthSchema` on the engine side, which this mirrors).
+ */
+export const soapOwnerAuthWireSchema = authConfigWireSchema.refine((auth) => auth.type !== 'inherit', {
+  message: 'a SOAP interface, endpoint or request cannot inherit',
+});
+export type SoapOwnerAuthWire = z.infer<typeof soapOwnerAuthWireSchema>;
+
 /** One addressable endpoint of an interface (credentials referenced by `secretRef`, never on the wire). */
 export const endpointWireSchema = z.object({
   id: z.string(),
   name: z.string(),
   url: z.string(),
-  auth: endpointAuthSchema.optional(),
+  auth: soapOwnerAuthWireSchema.optional(),
   /** `override` replaces request credentials, `complement` only fills in blanks. */
   authMode: z.enum(['override', 'complement']),
   /** Send even when this endpoint's certificate does not verify. Badged in red wherever it shows. */
@@ -953,7 +998,7 @@ export const interfaceWireSchema = interfaceSummarySchema.extend({
   endpoints: z.array(endpointWireSchema),
   defaultEndpointId: z.string().optional(),
   hydration: hydrationStatusSchema,
-  auth: endpointAuthSchema.optional(),
+  auth: soapOwnerAuthWireSchema.optional(),
   /** The interface-level WS-Addressing defaults every request of it inherits. */
   wsaConfig: wsaConfigWireSchema.optional(),
 });
@@ -1103,7 +1148,7 @@ export const requestWireSchema = z.object({
   endpointUrl: z.string().optional(),
   headers: z.array(headerEntrySchema),
   order: z.number(),
-  auth: endpointAuthSchema.optional(),
+  auth: soapOwnerAuthWireSchema.optional(),
   description: z.string().optional(),
   /** This request's own WS-Addressing overrides; absent means "inherit from the interface". */
   wsa: wsaConfigWireSchema.optional(),
@@ -1295,41 +1340,6 @@ export const keystoreWireSchema = z.object({
   defaultAlias: z.string().optional(),
 });
 export type KeystoreWire = z.infer<typeof keystoreWireSchema>;
-
-/**
- * Authentication as it crosses the bridge: the same seven schemes the engine models, with every
- * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
- * renderer can configure a token it can never read back.
- */
-export const authConfigWireSchema = z.object({
-  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
-  username: z.string().optional(),
-  passwordRef: z.string().optional(),
-  /** The committed name CI reads this secret under; the desktop never edits it, only preserves it. */
-  passwordEnv: z.string().optional(),
-  domain: z.string().optional(),
-  workstation: z.string().optional(),
-  preemptive: z.boolean().optional(),
-  tokenRef: z.string().optional(),
-  tokenEnv: z.string().optional(),
-  scheme: z.string().optional(),
-  name: z.string().optional(),
-  valueRef: z.string().optional(),
-  valueEnv: z.string().optional(),
-  in: z.enum(['header', 'query']).optional(),
-  grant: z.enum(['client-credentials', 'authorization-code']).optional(),
-  tokenUrl: z.string().optional(),
-  authorizationUrl: z.string().optional(),
-  clientId: z.string().optional(),
-  clientSecretRef: z.string().optional(),
-  clientSecretEnv: z.string().optional(),
-  scopes: z.array(z.string()).optional(),
-  audience: z.string().optional(),
-  clientAuth: z.enum(['basic', 'body']).optional(),
-  pkce: z.boolean().optional(),
-  refreshTokenRef: z.string().optional(),
-});
-export type AuthConfigWire = z.infer<typeof authConfigWireSchema>;
 
 /** One params, query, header or form row. */
 export const keyValueWireSchema = z.object({
@@ -2165,6 +2175,20 @@ export const requestCurlResponseSchema = z.object({
 });
 export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 
+/** Request payload for `request.restBodySchema`: which saved REST request. */
+export const requestRestBodySchemaRequestSchema = z.object({ requestId: z.string() });
+export type RequestRestBodySchemaRequest = z.infer<typeof requestRestBodySchemaRequestSchema>;
+
+/**
+ * Response payload for `request.restBodySchema`: the JSON media type and the (acyclic) schema of the
+ * body the request's operation declares, or `null` when there is none. The schema is kept as plain
+ * JSON data; the engine's `JsonSchema` type is what the renderer reads it as.
+ */
+export const requestRestBodySchemaResponseSchema = z
+  .object({ mediaType: z.string(), schema: z.record(z.string(), z.unknown()) })
+  .nullable();
+export type RequestRestBodySchemaResponse = z.infer<typeof requestRestBodySchemaResponseSchema>;
+
 /** One HTTP Log row as the renderer holds it — what `log.curl` (and later `log.exportHar`) receive. */
 export const logEntryWireSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -2349,20 +2373,20 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     }),
   }),
   z.object({ kind: z.literal('remove-endpoint'), interfaceId: z.string(), endpointId: z.string() }),
-  z.object({ kind: z.literal('update-request-auth'), requestId: z.string(), auth: endpointAuthSchema.nullable() }),
+  z.object({ kind: z.literal('update-request-auth'), requestId: z.string(), auth: soapOwnerAuthWireSchema.nullable() }),
   /** `wsa: null` clears the request's own overrides, putting it back on "inherit". */
   z.object({ kind: z.literal('update-request-wsa'), requestId: z.string(), wsa: wsaConfigWireSchema.nullable() }),
   z.object({ kind: z.literal('update-interface-wsa'), interfaceId: z.string(), wsa: wsaConfigWireSchema }),
   z.object({
     kind: z.literal('update-interface-auth'),
     interfaceId: z.string(),
-    auth: endpointAuthSchema.nullable(),
+    auth: soapOwnerAuthWireSchema.nullable(),
   }),
   z.object({
     kind: z.literal('update-endpoint-auth'),
     interfaceId: z.string(),
     endpointId: z.string(),
-    auth: endpointAuthSchema.nullable(),
+    auth: soapOwnerAuthWireSchema.nullable(),
   }),
   z.object({ kind: z.literal('add-api'), name: z.string(), baseUrl: z.string() }),
   z.object({ kind: z.literal('update-api'), apiId: z.string(), patch: apiPatchSchema }),
@@ -3278,6 +3302,50 @@ export const historyResendGrpcRequestSchema = z.object({ id: z.string() });
 /** Payload for the `history.appended` event: one new entry, for the History view to prepend. */
 export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });
 export type HistoryAppendedEvent = z.infer<typeof historyAppendedEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Snapshot regression: a golden response kept beside a saved request as `<slug>.golden.yaml`.
+// ---------------------------------------------------------------------------
+
+/** A saved golden response, as `snapshot.read` returns it and the sidecar file stores it. */
+export const snapshotSchema = z.object({
+  contentType: z.string().optional(),
+  savedAt: z.string(),
+  ignore: z.array(z.string()),
+  body: z.string(),
+});
+export type SnapshotWire = z.infer<typeof snapshotSchema>;
+
+/** Request for `snapshot.read` and `snapshot.remove`. */
+export const snapshotRequestSchema = z.object({ requestId: z.string() });
+
+/**
+ * Response for `snapshot.read`: `unsaved` when the request has no file on disk yet (so there is
+ * nowhere to keep a snapshot), `none` when nothing is saved or the sidecar is unreadable.
+ */
+export const snapshotReadResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('unsaved') }),
+  z.object({ status: z.literal('none') }),
+  z.object({ status: z.literal('present'), snapshot: snapshotSchema }),
+]);
+export type SnapshotReadResponse = z.infer<typeof snapshotReadResponseSchema>;
+
+/** Request for `snapshot.write`: saves `body` as the request's golden response. */
+export const snapshotWriteRequestSchema = z.object({
+  requestId: z.string(),
+  body: z.string(),
+  contentType: z.string().optional(),
+  ignore: z.array(z.string()),
+});
+
+/** Request for `snapshot.setIgnore`: replaces the ignore rules and keeps the body. */
+export const snapshotSetIgnoreRequestSchema = z.object({ requestId: z.string(), ignore: z.array(z.string()) });
+
+/** Response for `snapshot.write` and `snapshot.setIgnore`. */
+export const snapshotSavedResponseSchema = z.object({ savedAt: z.string() });
+
+/** Response for `snapshot.remove`: whether a sidecar was there to delete. */
+export const snapshotRemoveResponseSchema = z.object({ removed: z.boolean() });
 
 // ---------------------------------------------------------------------------
 // XML editor (Task 25): schema-driven completion and "go to declaration",

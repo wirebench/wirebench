@@ -20,7 +20,7 @@ import type {
   WsRequestWire,
   ProtoImportSummaryWire,
   AttachmentPatchWire,
-  EndpointAuthWire,
+  SoapOwnerAuthWire,
   OpenApiImportSummaryWire,
   EnvironmentPatchWire,
   EnvironmentWire,
@@ -330,15 +330,15 @@ export interface ProjectStore extends ProjectSnapshot {
     },
   ) => Promise<void>;
   /** Sets (or, with `null`, clears so it inherits) one request's own credentials. */
-  readonly updateRequestAuth: (requestId: string, auth: EndpointAuthWire | null) => void;
+  readonly updateRequestAuth: (requestId: string, auth: SoapOwnerAuthWire | null) => void;
   /** Sets (or clears) one endpoint's credentials. */
   readonly updateEndpointAuth: (
     interfaceId: string,
     endpointId: string,
-    auth: EndpointAuthWire | null,
+    auth: SoapOwnerAuthWire | null,
   ) => Promise<void>;
   /** Sets (or clears) one interface's fallback credentials. */
-  readonly updateInterfaceAuth: (interfaceId: string, auth: EndpointAuthWire | null) => Promise<void>;
+  readonly updateInterfaceAuth: (interfaceId: string, auth: SoapOwnerAuthWire | null) => Promise<void>;
   /** Sets (`null` clears, back to "inherit") one request's own WS-Addressing overrides. */
   readonly updateRequestWsa: (requestId: string, wsa: WsaConfigWire | null) => void;
   /** Sets the interface-level WS-Addressing defaults every request of it inherits. */

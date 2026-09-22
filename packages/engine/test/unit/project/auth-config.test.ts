@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiKeyAuth, AuthConfig, BearerAuth, OAuth2Auth } from '../../../src/project/model.js';
 import { DEFAULT_OAUTH2_AUTH } from '../../../src/project/model.js';
-import { authConfigSchema, endpointAuthSchema } from '../../../src/project/schema.js';
+import { authConfigSchema, endpointAuthSchema, soapOwnerAuthSchema } from '../../../src/project/schema.js';
 import { authDocument } from '../../../src/project/serialize.js';
 
 /** Parses a document the way the loader does, failing the test on a schema error. */
@@ -87,6 +87,53 @@ describe('authConfigSchema', () => {
   it('accepts inherit where an interface would not', () => {
     expect(authConfigSchema.safeParse({ type: 'inherit' }).success).toBe(true);
     expect(endpointAuthSchema.safeParse({ type: 'inherit' }).success).toBe(false);
+  });
+});
+
+describe('soapOwnerAuthSchema', () => {
+  it.each([
+    ['bearer', { type: 'bearer', tokenRef: 'sec_2' }],
+    ['api-key', { type: 'api-key', name: 'X-Api-Key', in: 'query', valueRef: 'sec_3' }],
+    ['oauth2', { type: 'oauth2', grant: 'client-credentials', tokenUrl: 'https://t', clientId: 'c' }],
+  ])('accepts %s at a SOAP auth site', (_label, document) => {
+    const result = soapOwnerAuthSchema.safeParse(document);
+    expect(result.error?.issues).toBeUndefined();
+    expect(result.success).toBe(true);
+  });
+
+  it('fills the oauth2 defaults for a SOAP owner exactly as for a REST one', () => {
+    const result = soapOwnerAuthSchema.safeParse({
+      type: 'oauth2',
+      grant: 'client-credentials',
+      tokenUrl: 'https://t',
+      clientId: 'c',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ scopes: [], clientAuth: 'basic', pkce: true });
+  });
+
+  it.each([
+    ['a Basic document', { type: 'basic', username: 'u', passwordRef: 'sec_1' }],
+    ['an NTLM document', { type: 'ntlm', username: 'u', passwordRef: 'sec_1', domain: 'CORP' }],
+  ])('still accepts %s, parsed the same as endpointAuthSchema would', (_label, document) => {
+    const result = soapOwnerAuthSchema.safeParse(document);
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(endpointAuthSchema.parse(document));
+  });
+
+  it('refuses inherit — a SOAP owner has nothing to inherit from', () => {
+    expect(soapOwnerAuthSchema.safeParse({ type: 'inherit' }).success).toBe(false);
+  });
+
+  it.each([
+    [{ type: 'bearer', token: 'eyJ...' }, 'token'],
+    [{ type: 'api-key', name: 'k', in: 'header', apiKey: 'abc' }, 'apiKey'],
+    [{ type: 'oauth2', grant: 'client-credentials', tokenUrl: 't', clientId: 'c', clientSecret: 's' }, 'clientSecret'],
+    [{ type: 'basic', username: 'u', password: 'hunter2' }, 'password'],
+  ])('refuses a plaintext %# credential value at a SOAP auth site', (document, key) => {
+    const result = soapOwnerAuthSchema.safeParse(document);
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).toContain(key);
   });
 });
 

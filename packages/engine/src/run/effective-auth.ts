@@ -5,12 +5,12 @@
  */
 import { effectiveAuth } from '../project/endpoints.js';
 import { resolveAuthEndpoint } from '../project/environments.js';
-import type { AuthConfig, EndpointAuth } from '../project/model.js';
+import type { AuthConfig, SoapOwnerAuth } from '../project/model.js';
 import { resolveAuthChain } from '../rest/auth.js';
 import type { SelectedRequest } from './select.js';
 
 /** A SOAP request's own auth, combined with its endpoint's, falling back to the interface's. */
-export function soapEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'soap' }>): EndpointAuth | undefined {
+export function soapEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'soap' }>): SoapOwnerAuth | undefined {
   const { iface, request } = selected;
   const endpoint = resolveAuthEndpoint(iface, request);
   return effectiveAuth(request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', iface.auth);

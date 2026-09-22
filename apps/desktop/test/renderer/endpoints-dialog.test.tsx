@@ -88,6 +88,22 @@ describe('EndpointsDialog', () => {
     });
   });
 
+  it('offers an endpoint all six SOAP schemes, and commits a Bearer choice', async () => {
+    const mutate = stubMutate();
+    render(<EndpointsDialog open onOpenChange={vi.fn()} interfaceId="if-1" />);
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
+    const select = screen.getByLabelText('Endpoint authentication type');
+    const options = [...select.querySelectorAll('option')].map((option) => option.value);
+    expect(options).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']);
+
+    await userEvent.selectOptions(select, 'bearer');
+    expect(mutate).toHaveBeenCalledWith({
+      projectId: 'p1',
+      change: { kind: 'update-endpoint-auth', interfaceId: 'if-1', endpointId: 'ep-1', auth: { type: 'bearer' } },
+    });
+  });
+
   it('deletes only after the confirmation step', async () => {
     const mutate = stubMutate();
     render(<EndpointsDialog open onOpenChange={vi.fn()} interfaceId="if-1" />);

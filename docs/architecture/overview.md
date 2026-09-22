@@ -219,11 +219,13 @@ existing "created by a newer version of Wirebench" error.
 The project format has kept moving the same way since: APIs beside interfaces took it to
 `formatVersion: 3` (ADR-0007), and the CLI runner's `assertions:` and named secret references
 (`…Env` beside a `passwordRef`/`tokenRef`/`valueRef`/`clientSecretRef`) take it to
-`formatVersion: 4` (`FORMAT_VERSION` in `packages/engine/src/project/model.ts`) — each step adds
+`formatVersion: 4`, and Bearer, API-key and OAuth2 auth on a SOAP interface, endpoint or request
+(`soapOwnerAuthSchema`) takes it to `formatVersion: 5` (`FORMAT_VERSION` in
+`packages/engine/src/project/model.ts`) — each step adds
 fields an older file simply lacks, which the loader defaults, and each still bumps the version
-because this format drops unknown keys on save. A version-3 project migrates to 4 in memory with no
-data moved; the CLI never writes a project (it only writes report files), so it can run a
-version-3 project unmigrated on disk. A build older than the one that wrote `formatVersion: 4`
+because this format drops unknown keys on save. An older project migrates to 5 in memory with no
+data moved; the CLI never writes a project (it only writes report files), so it can run an older
+project unmigrated on disk. A build older than the one that wrote `formatVersion: 5`
 refuses it with the same "created by a newer version of Wirebench" error `formatVersion: 2`
 introduced.
 

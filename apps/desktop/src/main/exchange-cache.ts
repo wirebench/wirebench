@@ -39,6 +39,8 @@ export interface CachedEngineExchange {
   readonly requestId?: string;
   /** The request envelope as sent — `SoapExchange` keeps the request only as raw bytes. */
   readonly requestEnvelopeXml?: string;
+  /** The query parameter an API key travelled in, so a later re-render masks it as the send did. */
+  readonly keyParams?: readonly string[];
 }
 
 /**

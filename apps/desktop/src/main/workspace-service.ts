@@ -2255,6 +2255,10 @@ export class WorkspaceService implements ProjectRouter {
       add(project.id);
       for (const iface of project.interfaces) {
         add(iface.id);
+        // An endpoint can own an OAuth2 configuration, so `oauth2.*` channels address it by id.
+        for (const endpoint of iface.endpoints) {
+          add(endpoint.id);
+        }
       }
       for (const request of project.requests) {
         add(request.id);
@@ -2444,6 +2448,10 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostOfEntity(args[0]).restAuthOf(...args);
   }
 
+  soapAuthOf(...args: Parameters<ProjectRouter['soapAuthOf']>): ReturnType<ProjectRouter['soapAuthOf']> {
+    return this.hostOfEntity(args[0]).soapAuthOf(...args);
+  }
+
   /** @inheritdoc */
   restMeta(...args: Parameters<ProjectRouter['restMeta']>): ReturnType<ProjectRouter['restMeta']> {
     return this.hostOfEntity(args[0]).restMeta(...args);
@@ -2452,6 +2460,10 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   restContractFor(...args: Parameters<ProjectRouter['restContractFor']>): ReturnType<ProjectRouter['restContractFor']> {
     return this.hostOfEntity(args[0]).restContractFor(...args);
+  }
+
+  restBodySchema(...args: Parameters<ProjectRouter['restBodySchema']>): ReturnType<ProjectRouter['restBodySchema']> {
+    return this.hostOfEntity(args[0]).restBodySchema(...args);
   }
 
   /** @inheritdoc */
