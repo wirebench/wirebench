@@ -2819,6 +2819,63 @@ export const apiAsyncApiApplyUpdateResponseSchema = z.object({
 });
 export type ApiAsyncApiApplyUpdateResponse = z.infer<typeof apiAsyncApiApplyUpdateResponseSchema>;
 
+/**
+ * Where a REST update reads the new definition from: a URL, or a file that passes the same path check
+ * an import does. Absent, the API's recorded `definition.source` is read again.
+ */
+export const restUpdateSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('url'), url: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+  z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
+]);
+export type RestUpdateSourceWire = z.infer<typeof restUpdateSourceSchema>;
+
+const restOpRefSchema = z.object({ method: z.string(), path: z.string(), summary: z.string().optional() });
+
+/** What updating an OpenAPI-imported REST API would change, per operation and API-wide (`api.restPlanUpdate`). */
+export const restUpdatePlanSchema = z.object({
+  added: z.array(restOpRefSchema),
+  removed: z.array(restOpRefSchema),
+  changed: z.array(
+    z.object({
+      op: restOpRefSchema,
+      reasons: z.array(z.enum(['parameters', 'request-body', 'responses', 'security', 'servers'])),
+    }),
+  ),
+  api: z.array(z.enum(['servers', 'security', 'version'])),
+});
+export type RestUpdatePlanWire = z.infer<typeof restUpdatePlanSchema>;
+
+export const apiRestPlanUpdateRequestSchema = z.object({
+  apiId: z.string(),
+  source: restUpdateSourceSchema.optional(),
+});
+export type ApiRestPlanUpdateRequest = z.infer<typeof apiRestPlanUpdateRequestSchema>;
+
+/**
+ * `api.restPlanUpdate`'s answer: the plan, and a sha256 of the documents it was made from, which
+ * `api.restApplyUpdate` must be handed back so it never applies a source that changed since.
+ */
+export const apiRestPlanUpdateResponseSchema = restUpdatePlanSchema.extend({ fingerprint: z.string() });
+export type ApiRestPlanUpdateResponse = z.infer<typeof apiRestPlanUpdateResponseSchema>;
+
+export const apiRestApplyUpdateRequestSchema = apiRestPlanUpdateRequestSchema.extend({ fingerprint: z.string() });
+export type ApiRestApplyUpdateRequest = z.infer<typeof apiRestApplyUpdateRequestSchema>;
+
+/** What `api.restApplyUpdate` did: the saved project, the plan it applied, and counts for the toast. */
+export const apiRestApplyUpdateResponseSchema = z.object({
+  project: projectWireSchema,
+  plan: restUpdatePlanSchema,
+  applied: z.object({
+    requestsAdded: z.number(),
+    requestsOrphaned: z.number(),
+    requestsRestored: z.number(),
+    requestsRewritten: z.number(),
+    rowsAdded: z.number(),
+    rowsRemoved: z.number(),
+  }),
+});
+export type ApiRestApplyUpdateResponse = z.infer<typeof apiRestApplyUpdateResponseSchema>;
+
 /** Source for Postman collection import: file path or pasted JSON text. */
 export const postmanSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),

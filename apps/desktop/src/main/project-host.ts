@@ -65,12 +65,14 @@ import {
   uniqueSlug,
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
+  applyRestUpdate,
   asyncApiChannelMessages,
   createCachedApiFetch,
   matchOperation,
   parseAsyncApi,
   parseOpenApi,
   planAsyncApiUpdate,
+  planRestUpdate,
   writeDefinitionCache,
   writeDescriptorDefinitionCache,
   writeFileAtomic,
@@ -101,6 +103,9 @@ import type {
   AsyncApiDocument,
   OpenApiDocument,
   AsyncApiUpdatePlan,
+  ParsedOpenApi,
+  RestApplyResult,
+  RestUpdatePlan,
   ChannelMessages,
   ParsedAsyncApi,
   RestApi,
@@ -3059,6 +3064,84 @@ export class ProjectHost {
     open.dirty = true;
     await this.save({ reason: 'update-definition' });
     return { project: this.snapshot() as ProjectWire, plan, applied };
+  }
+
+  /** Where a REST API's definition came from, as the user gave it, for an update to re-read. */
+  restSource(apiId: string): string {
+    return this.requireCachedRestApi(apiId).definition.source;
+  }
+
+  /** What updating `apiId` to `next` would change, compared with the cached document. Changes nothing. */
+  async planRestUpdate(apiId: string, next: OpenApiDocument): Promise<RestUpdatePlan> {
+    this.requireCachedRestApi(apiId);
+    return planRestUpdate(await this.openApiDocumentFor(apiId), next);
+  }
+
+  /**
+   * Applies `next` to `apiId`: nothing is deleted (an operation that went away orphans its request)
+   * and generated fields the user left alone follow the new document. The project is saved first;
+   * if the save fails the in-memory project is put back as it was and the definition cache is never
+   * touched. Only a successful save rewrites the cache and drops the parsed-document memo, so the
+   * next response check reads the new definition. `source`, when given, becomes the API's recorded
+   * definition source.
+   */
+  async applyRestUpdate(
+    apiId: string,
+    next: ParsedOpenApi,
+    source?: string,
+  ): Promise<{
+    readonly project: ProjectWire;
+    readonly plan: RestUpdatePlan;
+    readonly applied: Omit<RestApplyResult, 'api'>;
+  }> {
+    const open = this.require();
+    const api = this.requireCachedRestApi(apiId);
+    const old = await this.openApiDocumentFor(apiId);
+    const plan = planRestUpdate(old, next.document);
+    const { api: mapped, ...applied } = applyRestUpdate(api, old, next.document);
+    const updated: RestApi = {
+      ...mapped,
+      definition: {
+        ...(mapped.definition ?? api.definition),
+        version: next.document.declaredVersion,
+        ...(source !== undefined ? { source } : {}),
+      },
+    };
+
+    const priorProject = open.project;
+    const priorDirty = open.dirty;
+    open.project = {
+      ...open.project,
+      apis: open.project.apis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
+    };
+    open.dirty = true;
+    try {
+      await this.save({ reason: 'update-definition' });
+    } catch (error) {
+      // Nothing else was touched yet: undoing the model leaves everything as it was.
+      open.project = priorProject;
+      open.dirty = priorDirty;
+      throw error;
+    }
+
+    await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, updated.slug), {
+      declaredVersion: next.document.declaredVersion,
+    });
+    this.openApiDocuments.delete(apiId);
+    return { project: this.snapshot() as ProjectWire, plan, applied };
+  }
+
+  /** A REST API that cached its definition, or `definition-not-cached`: without it there is nothing to compare. */
+  private requireCachedRestApi(apiId: string): RestApi & { readonly definition: NonNullable<RestApi['definition']> } {
+    const api = this.requireApi(apiId);
+    if (api.definition?.cache !== true) {
+      throw new ProjectError(
+        'definition-not-cached',
+        'This API did not cache its definition, so there is nothing to compare an update against. Import it again instead.',
+        { details: { apiId } },
+      );
+    }
+    return api as RestApi & { readonly definition: NonNullable<RestApi['definition']> };
   }
 
   /** Keeps what the Definition card shows of a cached document: its version and WebSocket servers. */

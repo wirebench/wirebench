@@ -198,6 +198,10 @@ export interface ProjectRouter {
   asyncApiApplyUpdate(
     ...args: Parameters<ProjectHost['applyAsyncApiUpdate']>
   ): ReturnType<ProjectHost['applyAsyncApiUpdate']>;
+  /** Where a REST API's definition came from, for an update to re-read. */
+  restSource(...args: Parameters<ProjectHost['restSource']>): ReturnType<ProjectHost['restSource']>;
+  restPlanUpdate(...args: Parameters<ProjectHost['planRestUpdate']>): ReturnType<ProjectHost['planRestUpdate']>;
+  restApplyUpdate(...args: Parameters<ProjectHost['applyRestUpdate']>): ReturnType<ProjectHost['applyRestUpdate']>;
 
   // — routed by keystore id ———————————————————————————————————————————————————————————————
 

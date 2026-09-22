@@ -2531,6 +2531,21 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  restSource(...args: Parameters<ProjectRouter['restSource']>): ReturnType<ProjectRouter['restSource']> {
+    return this.hostOfEntity(args[0]).restSource(...args);
+  }
+
+  /** @inheritdoc */
+  restPlanUpdate(...args: Parameters<ProjectRouter['restPlanUpdate']>): ReturnType<ProjectRouter['restPlanUpdate']> {
+    return this.hostOfEntity(args[0]).planRestUpdate(...args);
+  }
+
+  /** @inheritdoc */
+  restApplyUpdate(...args: Parameters<ProjectRouter['restApplyUpdate']>): ReturnType<ProjectRouter['restApplyUpdate']> {
+    return this.hostOfEntity(args[0]).applyRestUpdate(...args);
+  }
+
+  /** @inheritdoc */
   wsTlsFor(...args: Parameters<ProjectRouter['wsTlsFor']>): ReturnType<ProjectRouter['wsTlsFor']> {
     return this.hostOfEntity(args[0]).wsTlsFor(...args);
   }

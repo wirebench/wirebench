@@ -10,9 +10,14 @@
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
-import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource } from '@wirebench/engine';
+import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource, RestOpRef, RestUpdatePlan } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
-import type { AsyncApiUpdatePlanWire, OpenApiSourceWire } from '../../shared/wire-types.js';
+import type {
+  AsyncApiUpdatePlanWire,
+  OpenApiSourceWire,
+  RestUpdatePlanWire,
+  RestUpdateSourceWire,
+} from '../../shared/wire-types.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
@@ -36,6 +41,9 @@ export interface ApiChannelDeps {
     | 'asyncApiSource'
     | 'asyncApiPlanUpdate'
     | 'asyncApiApplyUpdate'
+    | 'restSource'
+    | 'restPlanUpdate'
+    | 'restApplyUpdate'
     | 'apiDefinitionDocuments'
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
@@ -44,7 +52,7 @@ export interface ApiChannelDeps {
     | 'grpcRefresh'
     | 'grpcSample'
   >;
-  readonly imports: Pick<OpenApiImportService, 'run' | 'cancel'>;
+  readonly imports: Pick<OpenApiImportService, 'run' | 'cancel' | 'readOpenApi'>;
   /**
    * The AsyncAPI import runner — the OpenAPI service's `runAsyncApi`, so `api.cancelImport` reaches
    * it through `imports.cancel`. Optional so the OpenAPI-only tests need not build one.
@@ -89,6 +97,21 @@ function toAsyncApiUpdatePlanWire(plan: AsyncApiUpdatePlan): AsyncApiUpdatePlanW
     added: plan.added.map(ref),
     removed: plan.removed.map(ref),
     changed: plan.changed.map((change) => ({ op: ref(change.op), reasons: [...change.reasons] })),
+  };
+}
+
+/** A REST update plan onto the wire: the engine's read-only arrays copied into the schema's own. */
+function toRestUpdatePlanWire(plan: RestUpdatePlan): RestUpdatePlanWire {
+  const ref = (op: RestOpRef) => ({
+    method: op.method,
+    path: op.path,
+    ...(op.summary !== undefined ? { summary: op.summary } : {}),
+  });
+  return {
+    added: plan.added.map(ref),
+    removed: plan.removed.map(ref),
+    changed: plan.changed.map((change) => ({ op: ref(change.op), reasons: [...change.reasons] })),
+    api: [...plan.api],
   };
 }
 
@@ -332,6 +355,55 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
         messagesAdded: [...applied.messagesAdded],
       },
     };
+  });
+
+  /**
+   * Reads a REST API's new definition: the source the user chose, or else the one the API records,
+   * either way through the same path check an import makes. Answers the checked location too, so
+   * an apply can record a chosen source as the API's own.
+   */
+  const readRestSource = async (apiId: string, chosen: RestUpdateSourceWire | undefined) => {
+    let wire: OpenApiSourceWire;
+    if (chosen !== undefined) {
+      wire = chosen;
+    } else {
+      const recorded = router.restSource(apiId);
+      if (recorded.startsWith('inline:')) {
+        throw new WirebenchError(
+          'definition-source-unavailable',
+          'This API was imported from pasted text, so there is no source to read again',
+          { details: { apiId } },
+        );
+      }
+      wire = /^https?:\/\//i.test(recorded) ? { kind: 'url', url: recorded } : { kind: 'file', path: recorded };
+    }
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, wire);
+    const parsed = await deps.imports.readOpenApi(toEngineSource(checked));
+    return { parsed, label: sourceLabel(checked) };
+  };
+
+  registerHandler(channels.api.restPlanUpdate, async (request) => {
+    const { parsed } = await readRestSource(request.apiId, request.source);
+    const plan = toRestUpdatePlanWire(await router.restPlanUpdate(request.apiId, parsed.document));
+    return { ...plan, fingerprint: fingerprintOf(parsed.documents) };
+  });
+
+  registerHandler(channels.api.restApplyUpdate, async (request) => {
+    const { parsed, label } = await readRestSource(request.apiId, request.source);
+    // The user agreed to the plan they were shown; a source edited since would apply something else.
+    if (fingerprintOf(parsed.documents) !== request.fingerprint) {
+      throw new WirebenchError(
+        'definition-changed',
+        'The definition changed after the update was planned. Plan the update again to see what it does now.',
+        { details: { apiId: request.apiId } },
+      );
+    }
+    const { project, plan, applied } = await router.restApplyUpdate(
+      request.apiId,
+      parsed,
+      request.source !== undefined ? label : undefined,
+    );
+    return { project, plan: toRestUpdatePlanWire(plan), applied: { ...applied } };
   });
 
   registerHandler(channels.api.importPostman, async (request) => {
