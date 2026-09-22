@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **AsyncAPI import for WebSocket.** Import… detects AsyncAPI 2.0–2.6 and 3.0.x documents (YAML or JSON,
+  from a URL, file or paste) and makes a WebSocket API: a request per WebSocket channel with its URL, query,
+  headers, subprotocol and a saved sample for each outgoing message, and the API's auth from the first
+  security scheme it can map (secrets are never taken from the document or stored in project files). With
+  more than one `ws`/`wss` server the dialog asks which to dial; Kafka, MQTT, AMQP and other non-WebSocket
+  servers, channels and bindings, non-JSON-Schema messages and unmappable schemes are listed as skipped.
+  The document and its `$ref` files are cached with the project. Every text frame of a linked session is
+  checked against the channel's messages for its direction, off the main thread with a 1 000 ms deadline
+  per frame; a violation, a frame the contract has no message for, and a check that ran too long are marked
+  on the timeline, the detail lists each problem with its path, and *Contract problems only* filters to
+  the first two. **Update definition…** previews added, removed and changed operations and applies them without
+  deleting anything: a request whose channel is gone is badged orphaned, and only values still equal to
+  what the old contract generated are rewritten.
+
 - **Server-Sent Events responses.** A REST response of type `text/event-stream` renders event by event —
   name, id, data and arrival time — while the connection is open, rather than showing nothing until it
   closes. *Stop* (the same button as Cancel, relabelled) ends it as a normal completion, not an error, and

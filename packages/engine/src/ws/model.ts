@@ -99,7 +99,7 @@ export interface WsFolder {
   readonly requests: readonly WsRequestDef[];
 }
 
-/** Reserved for the contract import (#100); nothing in this plan reads it. */
+/** Where an AsyncAPI-imported API's contract came from, and whether a copy is cached under `definition/`. */
 export interface WsDefinitionRef {
   readonly kind: 'asyncapi';
   readonly source: string;

@@ -7,7 +7,8 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 A WebSocket API is a fourth container beside SOAP, REST and gRPC, in the same project, workspace,
 environments, history and search. Requests under it connect, show every frame on a live timeline,
-and send messages while the connection is open.
+and send messages while the connection is open. An API imported from an AsyncAPI document also
+checks every frame against its contract — see [AsyncAPI contracts](/wirebench/guides/asyncapi/).
 
 ## Create a WebSocket API and request
 
@@ -66,6 +67,7 @@ command-line call.
 
 ## Related
 
+- [AsyncAPI contracts](/wirebench/guides/asyncapi/) — import a document, check frames against it
 - [Environments](/wirebench/guides/environments/)
 - [Authentication](/wirebench/guides/auth/)
 - [HTTP Log](/wirebench/guides/http-log/)

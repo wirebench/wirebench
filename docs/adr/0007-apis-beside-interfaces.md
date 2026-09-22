@@ -146,3 +146,19 @@ survive. What it kept, the deviation it repeats, and what is new:
 - **New: the transport is container-agnostic on purpose.** Nothing in `packages/engine/src/ws/` reads from
   `project/` — the seam the plan's §6 left for whatever comes after WebSocket (a request/response protocol that
   wants the same session machinery) to reuse the transport without reusing the project model.
+
+## Update (2026-09-22): the WebSocket `definition` slot is filled
+
+`docs/specs/2026-09-22-asyncapi-import-design.md` (#100) filled the slot the WebSocket update reserved, without
+changing the container's shape:
+
+- **`WsApi.definition` now carries an AsyncAPI contract** — `{ kind: 'asyncapi', source, cache }` — and the
+  document with every `$ref` file it pulled in is cached byte-exact under the API's `definition/` directory,
+  by the same cache writer and manifest an OpenAPI import uses. A WebSocket API without one is unchanged.
+- **Two optional link fields**, each written only when set: a request's `contract: { channel }` names the channel
+  it was imported from, and a saved message's `contract: { message, generated }` names its contract message and
+  the text it was generated as — the baseline Update Definition compares against, so a user's edit is never
+  overwritten. A request whose channel has gone is flagged `orphaned: true` rather than deleted, the never-delete
+  rule the gRPC update established.
+- **No format bump.** `formatVersion` stays at 3: every new field is optional, and a project saved without them is
+  byte-identical to one saved before this change.

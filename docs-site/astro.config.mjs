@@ -38,6 +38,7 @@ export default defineConfig({
             { label: 'REST', slug: 'guides/rest-client' },
             { label: 'gRPC', slug: 'guides/grpc' },
             { label: 'WebSocket', slug: 'guides/websocket' },
+            { label: 'AsyncAPI contracts', slug: 'guides/asyncapi' },
             { label: 'Importing APIs', slug: 'guides/importers' },
             { label: 'Environments and properties', slug: 'guides/environments' },
             { label: 'Authentication', slug: 'guides/auth' },
