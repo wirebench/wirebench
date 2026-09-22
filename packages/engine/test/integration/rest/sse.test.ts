@@ -48,6 +48,15 @@ describe('sendRest streaming', () => {
     expect(seen.filter((row) => row.kind === 'event')[0]).toMatchObject({ id: '1', data: '{"tick":1}' });
   });
 
+  it('the test server bounds a tick interval asked for past its limit, and ignores one that is not a number', async () => {
+    const started = Date.now();
+    const huge = await fetch(`${server.url}/sse/ticks?n=1&every=600000`);
+    expect(await huge.text()).toContain('"tick":1');
+    const junk = await fetch(`${server.url}/sse/ticks?n=1&every=soon`);
+    expect(await junk.text()).toContain('"tick":1');
+    expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
   it('reports a method changed by a redirect on a streamed exchange too', async () => {
     const to = encodeURIComponent('/sse/ticks?n=1&every=1');
     const exchange = await sendRest(

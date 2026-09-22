@@ -18,6 +18,21 @@ import type { Socket } from 'node:net';
 /** Upper bound for `/slow?ms=`; the suite asks for hundreds of milliseconds at most. */
 const MAX_SLOW_MS = 10_000;
 
+/** The longest gap an event-stream route waits between writes; a test needs milliseconds, not more. */
+const MAX_TICK_MS = 1_000;
+
+/**
+ * A query parameter read as a whole number of milliseconds in `[min, MAX_TICK_MS]`, or `fallback`
+ * when it is absent or not a number — so no request can make the server hold a timer for long.
+ */
+function tickMs(raw: string | null, fallback: number, min: number): number {
+  const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  if (parsed < min) return min;
+  if (parsed > MAX_TICK_MS) return MAX_TICK_MS;
+  return parsed;
+}
+
 /** Upper bound for `/large?bytes=`; the suite asks for a few megabytes at most. */
 const MAX_LARGE_BYTES = 64 * 1024 * 1024;
 
@@ -130,7 +145,7 @@ function headerMap(request: IncomingMessage): Record<string, string> {
  * - `/big-json/<megabytes>` — a well-formed JSON body of about that size
  * - `/oauth2/authorize` — redirects to `redirect_uri` with a code, validating `state` and PKCE
  * - `/oauth2/token` — the token endpoint: client credentials, code exchange and refresh
- * - `/sse/ticks?n=&every=` — `n` events (default 3), one every `every` ms (default 20), then the end
+ * - `/sse/ticks?n=&every=` — `n` events (default 3), one every `every` ms (default 20, held to 1–1000), then the end
  * - `/sse/forever` — a comment every 50 ms, never ending; `?events=1` sends an `id`/`data` event
  *   every 50 ms instead, for a spec that needs real events from a stream it then stops
  * - `/sse/drop` — two events, then the socket torn down mid-stream
@@ -565,7 +580,7 @@ function handleEventStream(path: string, url: URL, request: IncomingMessage, res
 
   if (path === '/sse/ticks' || path === '/sse/gzip') {
     const n = Math.min(Math.max(Number(url.searchParams.get('n') ?? '3'), 0), 1000);
-    const every = Math.min(Math.max(Number(url.searchParams.get('every') ?? '20'), 1), MAX_SLOW_MS);
+    const every = tickMs(url.searchParams.get('every'), 20, 1);
     const gzip = path === '/sse/gzip' ? createGzip() : undefined;
     if (gzip !== undefined) response.on('close', () => gzip.destroy());
     response.writeHead(200, { ...EVENT_STREAM_HEADERS, ...(gzip !== undefined ? { 'content-encoding': 'gzip' } : {}) });
