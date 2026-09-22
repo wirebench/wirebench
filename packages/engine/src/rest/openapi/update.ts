@@ -386,17 +386,19 @@ export function applyRestUpdate(
 }
 
 /**
- * The folder in `api` that stands for the new document's tag folder `home`: the one that already
- * holds a request for one of the tag's other operations, else the one with the tag's name. Matching
- * by the contracts inside survives a folder the user renamed, which a name match alone would twin.
+ * The folder in `api` that stands for the new document's tag folder `home`: the one with the tag's
+ * name, else — for a folder the user renamed — the one already holding a request for another of the
+ * tag's operations. Name first: a request the user *moved* out of the tag folder would otherwise
+ * make its new home look like the tag's, and put the new operation somewhere the user did not mean.
  */
 function folderFor(api: RestApi, home: RestFolder): RestFolder | undefined {
+  const byName = api.folders.find((folder) => folder.name === home.name);
+  if (byName !== undefined) return byName;
   const keys = new Set(home.requests.map(contractKey).filter((key): key is string => key !== undefined));
-  const byRequest = api.folders.find((folder) =>
+  return api.folders.find((folder) =>
     folder.requests.some((request) => {
       const key = contractKey(request);
       return key !== undefined && keys.has(key);
     }),
   );
-  return byRequest ?? api.folders.find((folder) => folder.name === home.name);
 }

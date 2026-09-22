@@ -397,7 +397,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   registerHandler(channels.api.restApplyUpdate, async (request) => {
     const { parsed, label } = await readRestSource(request.apiId, request.source);
-    const { project, plan, applied } = await router.restApplyUpdate(request.apiId, parsed, {
+    const { project, plan, applied, warning } = await router.restApplyUpdate(request.apiId, parsed, {
       ...(request.source !== undefined ? { source: label } : {}),
       // The user agreed to the plan they were shown; a source or cache changed since would apply
       // something else.
@@ -411,7 +411,12 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
         }
       },
     });
-    return { project, plan: toRestUpdatePlanWire(plan), applied: { ...applied } };
+    return {
+      project,
+      plan: toRestUpdatePlanWire(plan),
+      applied: { ...applied },
+      ...(warning !== undefined ? { warning } : {}),
+    };
   });
 
   registerHandler(channels.api.importPostman, async (request) => {

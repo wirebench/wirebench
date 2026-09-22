@@ -79,7 +79,9 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
   const [source, setSource] = useState<RestUpdateSourceWire | undefined>(undefined);
   const [choosing, setChoosing] = useState(false);
   const [url, setUrl] = useState('');
+  const [urlError, setUrlError] = useState<string | undefined>(undefined);
   const urlId = useId();
+  const urlErrorId = useId();
   // A plan or apply can land after the dialog is gone; it must not drive a dialog that no longer exists.
   const mounted = useRef(true);
   // Previews overlap: only the newest may set anything, or a slow answer pairs its plan with a
@@ -131,6 +133,19 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
   useEffect(() => {
     if (open) void runPlan(undefined);
   }, [open, runPlan]);
+
+  /**
+   * Previews the typed URL, unless it is not http(s) — main refuses those (a `file:` location would
+   * be read straight off disk), and a raw validation failure says nothing useful about the field.
+   */
+  function previewUrl(value: string): void {
+    if (!/^https?:\/\//i.test(value)) {
+      setUrlError('Only http and https URLs can be read.');
+      return;
+    }
+    setUrlError(undefined);
+    void runPlan({ kind: 'url', url: value });
+  }
 
   async function browse(): Promise<void> {
     let result;
@@ -193,7 +208,9 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
         requestsOrphaned,
       )} orphaned, ${String(requestsRestored)} restored` +
         // Says why Added listed more than were made, rather than leaving the count short of the list.
-        (requestsAlreadyPresent > 0 ? `, ${String(requestsAlreadyPresent)} already covered by your requests` : ''),
+        (requestsAlreadyPresent > 0 ? `, ${String(requestsAlreadyPresent)} already covered by your requests` : '') +
+        // The update stands, but something after the save did not: the toast must not read as a clean success.
+        (result.value.warning !== undefined ? `. ${result.value.warning}` : ''),
     );
   }
 
@@ -273,23 +290,38 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                   data-testid="rest-update-url"
                   value={url}
                   placeholder="https://example.com/openapi.yaml"
-                  onChange={(event) => setUrl(event.target.value)}
+                  onChange={(event) => {
+                    setUrl(event.target.value);
+                    setUrlError(undefined);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && trimmedUrl.length > 0) {
                       event.preventDefault();
-                      void runPlan({ kind: 'url', url: trimmedUrl });
+                      previewUrl(trimmedUrl);
                     }
                   }}
+                  aria-invalid={urlError !== undefined}
+                  {...(urlError !== undefined ? { 'aria-describedby': urlErrorId } : {})}
                   className={INPUT_CLASS}
                 />
                 <Button
                   data-testid="rest-update-url-preview"
                   disabled={busy || trimmedUrl.length === 0}
-                  onClick={() => void runPlan({ kind: 'url', url: trimmedUrl })}
+                  onClick={() => previewUrl(trimmedUrl)}
                 >
                   Preview
                 </Button>
               </div>
+              {urlError !== undefined && (
+                <p
+                  id={urlErrorId}
+                  role="alert"
+                  data-testid="rest-update-url-error"
+                  className="text-xs text-status-danger"
+                >
+                  {urlError}
+                </p>
+              )}
               <div>
                 <Button data-testid="rest-update-browse" disabled={busy} onClick={() => void browse()}>
                   Choose file…

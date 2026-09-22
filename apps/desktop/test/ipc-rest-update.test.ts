@@ -350,11 +350,33 @@ describe('api.restPlanUpdate / api.restApplyUpdate', () => {
     );
     expect(applied.applied.requestsOrphaned).toBe(1);
     expect(applied.project.apis.find((a) => a.id === apiId)?.definition?.version).toBe('3.0.3');
-    // The failure is reported on the project rather than told to the user as a failed update.
+    // Told to the user on the response — a project problem alone is never shown — and recorded.
+    expect(applied.warning).toContain('could not be refreshed');
     expect(applied.project.problems.map((p) => p.code)).toContain('definition-cache-write-failed');
     // The cache is untouched, so the next update simply re-runs this one.
     const cached = await readFile(join(projectDir, 'project', 'apis', slug, 'definition', 'openapi.yaml'), 'utf8');
     expect(cached).toBe(V1);
+  });
+
+  it('keeps one cache-failure problem however often the write fails, and clears it when it works', async () => {
+    const apiId = await importPets();
+    const failed = async (): Promise<ProjectWire> => {
+      await writeFile(docPath, V2.replace("version: '2'", `version: '${String(Math.random())}'`));
+      const plan = await value<{ fingerprint: string }>('api.restPlanUpdate', { apiId });
+      const applied = await value<{ project: ProjectWire }>('api.restApplyUpdate', {
+        apiId,
+        fingerprint: plan.fingerprint,
+      });
+      return applied.project;
+    };
+    cacheState.fails = true;
+    await failed();
+    const twice = await failed();
+    expect(twice.problems.filter((p) => p.code === 'definition-cache-write-failed')).toHaveLength(1);
+
+    cacheState.fails = false;
+    const worked = await failed();
+    expect(worked.problems.some((p) => p.code === 'definition-cache-write-failed')).toBe(false);
   });
 
   it('rejects a fingerprint that is not 64 hex characters', async () => {

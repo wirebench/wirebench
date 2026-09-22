@@ -3132,6 +3132,8 @@ export class ProjectHost {
     readonly project: ProjectWire;
     readonly plan: RestUpdatePlan;
     readonly applied: Omit<RestApplyResult, 'api'>;
+    /** Set when the update was saved but the definition cache could not be rewritten afterwards. */
+    readonly warning?: string;
   }> {
     const { source, check } = options;
     const cache = await this.readRestCache(apiId);
@@ -3169,26 +3171,39 @@ export class ProjectHost {
       throw error;
     }
 
+    let warning: string | undefined;
+    const file = `apis/${updated.slug}/definition`;
     try {
       await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, updated.slug), {
         declaredVersion: next.document.declaredVersion,
       });
+      // A retry that worked clears the last failure's problem rather than leaving it to mislead.
+      open.problems = open.problems.filter(
+        (problem) => !(problem.code === 'definition-cache-write-failed' && problem.file === file),
+      );
     } catch (error) {
       // Reported, not thrown: the project is already saved, so telling the caller the update failed
       // would be untrue. The stale cache only means the next update re-runs this one idempotently.
+      warning =
+        'The update was saved, but the stored copy of the definition could not be refreshed, so the next preview may be wrong: ' +
+        errorMessage(error);
+      // One entry per API, replaced: repeated failures must not grow the list without bound.
       open.problems = [
-        ...open.problems,
-        {
-          code: 'definition-cache-write-failed',
-          message: `The definition cache could not be rewritten after the update: ${errorMessage(error)}`,
-          file: `apis/${updated.slug}/definition`,
-        },
+        ...open.problems.filter(
+          (problem) => !(problem.code === 'definition-cache-write-failed' && problem.file === file),
+        ),
+        { code: 'definition-cache-write-failed', message: warning, file },
       ];
     } finally {
       // Dropped even if the write failed: a half-written cache must be read afresh, not remembered.
       this.openApiDocuments.delete(apiId);
     }
-    return { project: this.snapshot() as ProjectWire, plan, applied };
+    return {
+      project: this.snapshot() as ProjectWire,
+      plan,
+      applied,
+      ...(warning !== undefined ? { warning } : {}),
+    };
   }
 
   /** A REST API that cached its definition, or `definition-not-cached`: without it there is nothing to compare. */

@@ -191,6 +191,40 @@ describe('RestUpdateDialog', () => {
     await waitFor(() => expect(apply).toHaveBeenCalledWith({ apiId: DEFINED.id, source, fingerprint: FP1 }));
   });
 
+  it('says in the toast when the update was saved but the stored definition could not be refreshed', async () => {
+    const warning = 'The update was saved, but the stored copy of the definition could not be refreshed: disk full';
+    const apply = vi.fn().mockResolvedValue({ ok: true, value: { ...APPLIED, warning } });
+    installWirebenchApi({
+      api: { restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN }), restApplyUpdate: apply },
+    });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('rest-update-apply'));
+    await waitFor(() => expect(showToast).toHaveBeenCalled());
+    expect(showToast.mock.calls[0]![0]).toContain('Definition updated — 1 added');
+    expect(showToast.mock.calls[0]![0]).toContain(warning);
+  });
+
+  it('refuses a file: URL in the field itself rather than showing a raw validation failure', async () => {
+    const plan = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'definition-source-unavailable', message: 'no source' } });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    await screen.findByTestId('rest-update-error');
+
+    const input = screen.getByLabelText('URL');
+    fireEvent.change(input, { target: { value: 'file:///Users/me/.ssh/id_rsa' } });
+    fireEvent.click(screen.getByTestId('rest-update-url-preview'));
+    expect(screen.getByTestId('rest-update-url-error').textContent).toContain('Only http and https URLs');
+    // Never sent: the first call was the automatic preview, and no second one followed.
+    expect(plan).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(input, { target: { value: 'https://ok.test/o.yaml' } });
+    expect(screen.queryByTestId('rest-update-url-error')).toBeNull();
+  });
+
   it('lets only the newest preview set the plan, so a slow answer cannot pair with a later header', async () => {
     let answerA: (value: unknown) => void = () => undefined;
     let answerB: (value: unknown) => void = () => undefined;

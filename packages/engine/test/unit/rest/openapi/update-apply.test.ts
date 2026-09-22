@@ -324,6 +324,33 @@ describe('applyRestUpdate', () => {
     expect(result.api.folders[0]!.requests.map((r) => r.name)).toEqual(['List owners', 'Add owner']);
   });
 
+  it('prefers the tag folder by name over one the user moved a request into', () => {
+    const old = doc([
+      op({ path: '/owners', summary: 'List owners', tags: ['owners'] }),
+      op({ path: '/owners/{id}', summary: 'One owner', tags: ['owners'] }),
+    ]);
+    const next = doc([
+      ...old.operations,
+      op({ method: 'post', path: '/owners', summary: 'Add owner', tags: ['owners'] }),
+    ]);
+    const api = imported(old);
+    const moved = find(api, 'get', '/owners/{id}');
+    // The user dragged one of the tag's requests into a folder of their own.
+    const rearranged: RestApi = {
+      ...api,
+      folders: [
+        ...api.folders.map((folder) => ({ ...folder, requests: folder.requests.filter((r) => r.id !== moved.id) })),
+        { id: 'mine', name: 'Favourites', slug: 'Favourites', order: 9, folders: [], requests: [moved] },
+      ],
+    };
+    const result = applyRestUpdate(rearranged, old, next, { newId: ids });
+    expect(result.api.folders.find((f) => f.name === 'Favourites')!.requests.map((r) => r.name)).toEqual(['One owner']);
+    expect(result.api.folders.find((f) => f.name === 'owners')!.requests.map((r) => r.name)).toEqual([
+      'List owners',
+      'Add owner',
+    ]);
+  });
+
   it('API level: base URL, servers and auth follow while untouched; version is updated', () => {
     const scheme = { name: 'k', type: 'apiKey' as const, in: 'header' as const, keyName: 'X-Key' };
     const old = doc([op()], { securitySchemes: [scheme], security: [{ k: [] }] });

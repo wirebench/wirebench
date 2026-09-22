@@ -2879,6 +2879,11 @@ export type ApiRestApplyUpdateRequest = z.infer<typeof apiRestApplyUpdateRequest
 export const apiRestApplyUpdateResponseSchema = z.object({
   project: projectWireSchema,
   plan: restUpdatePlanSchema,
+  /**
+   * Present when the update was saved but something after the save went wrong — today, the stored
+   * definition could not be refreshed. The toast must say so: the update itself stands.
+   */
+  warning: z.string().optional(),
   applied: z.object({
     requestsAdded: z.number(),
     /** Operations the plan lists as added that a hand-made request already claims, so apply skipped them. */
