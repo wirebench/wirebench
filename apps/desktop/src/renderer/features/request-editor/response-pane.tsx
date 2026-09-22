@@ -18,6 +18,7 @@ import { WssInspector, wssTabLabel } from './inspectors/wss-inspector.js';
 import { ResponseAttachmentsInspector } from './inspectors/response-attachments-inspector.js';
 import { ResponseHeadersInspector } from './inspectors/response-headers-inspector.js';
 import { SslInspector } from './inspectors/ssl-inspector.js';
+import { SnapshotPanel } from '../snapshot/snapshot-panel.js';
 import { ResponseStatus } from './response-status.js';
 import { ViewTabs } from './view-tabs.js';
 import type { ViewTabItem } from './view-tabs.js';
@@ -55,6 +56,31 @@ function responseInspectors(attachmentCount: number, wssLabel: string): readonly
   ];
 }
 
+/**
+ * What the Snapshot tab compares for one exchange. For a SOAP reply that is the envelope the send
+ * produced — after MTOM/SwA unpacking and WS-Security decryption — typed by its SOAP version; with
+ * no parsed envelope it is the HTTP body as it arrived, which is also what the pane shows then.
+ */
+function snapshotInput(
+  exchange: ExchangeState['exchange'],
+): { readonly body: string; readonly contentType?: string } | undefined {
+  if (exchange === undefined) {
+    return undefined;
+  }
+  const response = exchange.response;
+  if (response?.isSoap === true) {
+    return {
+      body: response.envelopeXml,
+      contentType: response.version === '1.2' ? 'application/soap+xml' : 'text/xml',
+    };
+  }
+  const header = exchange.http.headers['content-type'];
+  return {
+    body: decodeBase64Text(exchange.http.bodyBase64) ?? '',
+    ...(header !== undefined ? { contentType: header } : {}),
+  };
+}
+
 export interface ResponsePaneProps {
   readonly state: ExchangeState | undefined;
   /** Which interface's schema to resolve the Outline's Type column against. */
@@ -90,6 +116,9 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
     }
     return decodeBase64Text(exchange.http.bodyBase64) ?? '';
   }, [exchange, response, autoFormat, tabSize]);
+  // The Snapshot tab compares the envelope as the send produced it, never the pretty-printed copy.
+  // For an MTOM or SwA multipart, or a WS-Security-decrypted reply, that is not the HTTP body.
+  const snapshot = useMemo(() => snapshotInput(exchange), [exchange]);
 
   // Warm the view chunks as soon as the pane exists, so the first click on Raw, Outline, Query
   // or Fault renders synchronously instead of suspending. Idempotent; the request pane does the
@@ -157,6 +186,7 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
     { id: 'outline', label: 'Outline' },
     { id: 'raw', label: 'Raw' },
     { id: 'query', label: 'Query' },
+    { id: 'snapshot', label: 'Snapshot' },
     ...(fault !== undefined ? [{ id: 'fault', label: 'Fault' }] : []),
   ];
 
@@ -190,6 +220,13 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
             />
           ) : view === 'query' ? (
             <QueryView requestId={requestId} xml={body} onReveal={handleReveal} />
+          ) : view === 'snapshot' ? (
+            <SnapshotPanel
+              requestId={requestId}
+              body={snapshot?.body}
+              binary={snapshot?.body === ''}
+              {...(snapshot?.contentType !== undefined ? { contentType: snapshot.contentType } : {})}
+            />
           ) : view === 'fault' && fault !== undefined ? (
             <FaultOverview fault={fault} />
           ) : exchange === undefined ? (

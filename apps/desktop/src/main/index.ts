@@ -57,6 +57,8 @@ import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
+import { registerSnapshotChannels } from './ipc/snapshot.js';
+import { SnapshotStore } from './snapshot-store.js';
 import { registerSslChannels } from './ipc/ssl.js';
 import { registerGitChannels } from './ipc/git.js';
 import { registerSyncChannels } from './ipc/sync.js';
@@ -447,6 +449,20 @@ void app.whenReady().then(() => {
   });
   registerSearchChannels(engineService, workspaceService);
   registerSecretsChannels(secretStore, showSecretsFlag);
+  registerSnapshotChannels(
+    new SnapshotStore((requestId) => {
+      const projectId = workspaceService.projectId(requestId);
+      if (projectId === undefined) {
+        return undefined;
+      }
+      // `projectId` never throws; a stale index entry (no host for it) reads as unsaved, not an error.
+      try {
+        return workspaceService.hostFor(projectId).savedProject();
+      } catch {
+        return undefined;
+      }
+    }),
+  );
   registerExchangeChannels(engineService.exchanges, showSecretsFlag);
   registerLogChannels({
     showSecrets: showSecretsFlag,

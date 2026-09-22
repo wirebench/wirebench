@@ -2175,6 +2175,20 @@ export const requestCurlResponseSchema = z.object({
 });
 export type RequestCurlResponse = z.infer<typeof requestCurlResponseSchema>;
 
+/** Request payload for `request.restBodySchema`: which saved REST request. */
+export const requestRestBodySchemaRequestSchema = z.object({ requestId: z.string() });
+export type RequestRestBodySchemaRequest = z.infer<typeof requestRestBodySchemaRequestSchema>;
+
+/**
+ * Response payload for `request.restBodySchema`: the JSON media type and the (acyclic) schema of the
+ * body the request's operation declares, or `null` when there is none. The schema is kept as plain
+ * JSON data; the engine's `JsonSchema` type is what the renderer reads it as.
+ */
+export const requestRestBodySchemaResponseSchema = z
+  .object({ mediaType: z.string(), schema: z.record(z.string(), z.unknown()) })
+  .nullable();
+export type RequestRestBodySchemaResponse = z.infer<typeof requestRestBodySchemaResponseSchema>;
+
 /** One HTTP Log row as the renderer holds it — what `log.curl` (and later `log.exportHar`) receive. */
 export const logEntryWireSchema = z.discriminatedUnion('kind', [
   z.object({
@@ -3288,6 +3302,50 @@ export const historyResendGrpcRequestSchema = z.object({ id: z.string() });
 /** Payload for the `history.appended` event: one new entry, for the History view to prepend. */
 export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });
 export type HistoryAppendedEvent = z.infer<typeof historyAppendedEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Snapshot regression: a golden response kept beside a saved request as `<slug>.golden.yaml`.
+// ---------------------------------------------------------------------------
+
+/** A saved golden response, as `snapshot.read` returns it and the sidecar file stores it. */
+export const snapshotSchema = z.object({
+  contentType: z.string().optional(),
+  savedAt: z.string(),
+  ignore: z.array(z.string()),
+  body: z.string(),
+});
+export type SnapshotWire = z.infer<typeof snapshotSchema>;
+
+/** Request for `snapshot.read` and `snapshot.remove`. */
+export const snapshotRequestSchema = z.object({ requestId: z.string() });
+
+/**
+ * Response for `snapshot.read`: `unsaved` when the request has no file on disk yet (so there is
+ * nowhere to keep a snapshot), `none` when nothing is saved or the sidecar is unreadable.
+ */
+export const snapshotReadResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('unsaved') }),
+  z.object({ status: z.literal('none') }),
+  z.object({ status: z.literal('present'), snapshot: snapshotSchema }),
+]);
+export type SnapshotReadResponse = z.infer<typeof snapshotReadResponseSchema>;
+
+/** Request for `snapshot.write`: saves `body` as the request's golden response. */
+export const snapshotWriteRequestSchema = z.object({
+  requestId: z.string(),
+  body: z.string(),
+  contentType: z.string().optional(),
+  ignore: z.array(z.string()),
+});
+
+/** Request for `snapshot.setIgnore`: replaces the ignore rules and keeps the body. */
+export const snapshotSetIgnoreRequestSchema = z.object({ requestId: z.string(), ignore: z.array(z.string()) });
+
+/** Response for `snapshot.write` and `snapshot.setIgnore`. */
+export const snapshotSavedResponseSchema = z.object({ savedAt: z.string() });
+
+/** Response for `snapshot.remove`: whether a sidecar was there to delete. */
+export const snapshotRemoveResponseSchema = z.object({ removed: z.boolean() });
 
 // ---------------------------------------------------------------------------
 // XML editor (Task 25): schema-driven completion and "go to declaration",

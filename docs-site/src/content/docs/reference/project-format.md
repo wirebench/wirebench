@@ -27,6 +27,7 @@ my-service/
     requests/
       <Request>.request.yaml  # kind: rest, method, url, path params, query, headers, body, auth
       <Request>.body.json     # a raw body, in a file of its own language (.json/.xml/.txt/…)
+      <Request>.golden.yaml   # the request's snapshot, when one is saved (SOAP requests have one too)
       <Folder>/folder.yaml    # a folder's own name, order and inherited auth
   wss/…                       # outgoing/incoming WS-Security configs and keystore entries (no secrets)
   attachments/                 # content-addressed by sha256
@@ -49,6 +50,7 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `interfaces/<Interface>/interface.yaml` | A SOAP interface: its WSDL/XSD reference, endpoints, WS-Addressing policy and auth (a reference, never a credential) |
 | `apis/<Api>/api.yaml` | A REST API: its OpenAPI reference, base URL, settings and auth reference |
 | `<Request>.request.yaml` + `<Request>.xml` (SOAP) or `<Request>.body.json` (REST) | One saved request: metadata in YAML, the payload in a file of its own kind |
+| `<Request>.golden.yaml` | A request's snapshot: the golden response body, its content type, when it was saved and the ignore rules. It sits beside the request's own file, outside the project model, so an older build leaves it alone and it needs no format-version change. Renaming or moving the request leaves it behind. See [Snapshot regression](/wirebench/guides/snapshot-regression/) |
 | `definition/` | The fetched or imported API definition (WSDL, XSD, OpenAPI), kept byte-exact, plus a manifest mapping each URL to its cached file and checksum |
 | `wss/` | WS-Security configuration and keystore entries — no secret values |
 | `attachments/` | Files attached to a request, stored by content hash |

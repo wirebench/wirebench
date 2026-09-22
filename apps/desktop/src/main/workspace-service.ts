@@ -2462,6 +2462,10 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostOfEntity(args[0]).restContractFor(...args);
   }
 
+  restBodySchema(...args: Parameters<ProjectRouter['restBodySchema']>): ReturnType<ProjectRouter['restBodySchema']> {
+    return this.hostOfEntity(args[0]).restBodySchema(...args);
+  }
+
   /** @inheritdoc */
   rememberRestCookies(
     ...args: Parameters<ProjectRouter['rememberRestCookies']>
