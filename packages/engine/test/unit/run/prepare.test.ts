@@ -8,10 +8,10 @@ import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type {
   AuthConfig,
-  EndpointAuth,
   Environment,
   Interface,
   Project,
+  SoapOwnerAuth,
   SoapRequestDef,
   WssRef,
 } from '../../../src/project/model.js';
@@ -22,7 +22,7 @@ import type { WsaConfigPatch } from '../../../src/wsa/model.js';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
 
 interface ProjectOptions {
-  readonly soapAuth?: EndpointAuth;
+  readonly soapAuth?: SoapOwnerAuth;
   readonly endpoints?: Interface['endpoints'];
   readonly envelopeXml?: string;
   readonly soap?: Partial<SoapRequestDef>;
@@ -158,6 +158,38 @@ describe('prepareSend — SOAP', () => {
     await expect(prepareSend(soapOf(project), contextFor(project))).rejects.toMatchObject({
       code: 'secret-missing',
       details: { ref: 'sec_missing' },
+    });
+  });
+
+  it('resolves a bearer owner through the secret getter', async () => {
+    const project = makeProject({ soapAuth: { type: 'bearer', tokenRef: 'sec_1' } });
+    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    expect(prepared.kind === 'soap' && prepared.input.auth).toMatchObject({ type: 'bearer', token: 'pw' });
+  });
+
+  it("refuses a SOAP owner's OAuth2 the same way a REST one is refused", async () => {
+    const oauth = {
+      type: 'oauth2' as const,
+      grant: 'authorization-code' as const,
+      tokenUrl: 'https://auth.test/token',
+      clientId: 'c',
+      scopes: [],
+      clientAuth: 'basic' as const,
+      pkce: true,
+    };
+    const project = makeProject({ soapAuth: oauth });
+    await expect(
+      prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' })),
+    ).rejects.toMatchObject({
+      code: 'auth-grant-unsupported',
+      message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+    });
+    const machine = makeProject({ soapAuth: { ...oauth, grant: 'client-credentials' } });
+    await expect(
+      prepareSend(soapOf(machine), contextFor(machine, { environmentId: 'env-test' })),
+    ).rejects.toMatchObject({
+      code: 'auth-grant-unsupported',
+      message: 'OAuth2 is not supported by the runner yet.',
     });
   });
 

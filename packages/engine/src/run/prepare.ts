@@ -14,7 +14,6 @@ import { WirebenchError } from '../errors.js';
 import { isInsideRealDir } from '../fs.js';
 import type { ProxyOptions, TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
-import { isEndpointAuth } from '../project/endpoints.js';
 import { resolveApiBaseUrl, resolveEndpoint, resolveScopes } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
 import type { Attachment, AttachmentSource, Project, PropertyMap } from '../project/model.js';
@@ -23,7 +22,7 @@ import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
 import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
-import { resolveAuthConfig, resolveEndpointAuth, toSendAuth } from '../secrets/resolve.js';
+import { resolveAuthConfig, resolveSoapAuth } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import { toRestSendInput, toSendInput } from '../send-options.js';
 import type { AttachmentResolvers } from '../send-options.js';
@@ -257,13 +256,19 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
       details: { path: selected.path },
     });
   }
-  // Basic/NTLM only for now: a SOAP send applying a token scheme lands in a later task (see the
-  // owner-auth design's D3/D4); a Bearer/API-key/OAuth2 owner resolves to no credentials here.
   const owner = soapEffectiveAuth(selected);
-  const auth = await resolveEndpointAuth(
-    owner !== undefined && isEndpointAuth(owner) ? owner : undefined,
-    context.getSecret,
-  );
+  // OAuth2 needs a browser (authorization-code) or is not supported by the runner yet
+  // (client-credentials): refused here, before any secret lookup — the same refusal `prepareRest`
+  // gives a REST owner's OAuth2, since a SOAP owner can carry it too.
+  if (owner !== undefined && owner.type === 'oauth2') {
+    throw new WirebenchError(
+      'auth-grant-unsupported',
+      owner.grant === 'authorization-code'
+        ? 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.'
+        : 'OAuth2 is not supported by the runner yet.',
+      { details: { path: selected.path, grant: owner.grant } },
+    );
+  }
   const base = toSendInput({
     request: {
       properties: request.properties,
@@ -282,7 +287,7 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
   const proxy = context.proxyFor?.(resolved.url);
   const wsa = wsaFor(selected, context);
   const wss = wssFor(selected, context);
-  const sendAuth = toSendAuth(auth);
+  const sendAuth = await resolveSoapAuth(owner, context.getSecret);
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
   const input: SoapSendInput = {
     ...base,
