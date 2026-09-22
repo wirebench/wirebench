@@ -114,11 +114,25 @@ describe('the contract chip', () => {
     expect(screen.queryByTestId('rest-contract-chip')).toBeNull();
   });
 
-  it('names the operation, response key and media type, and lists the notes, in its tooltip', () => {
+  it('is focusable, describes its details to assistive technology, and shows them on focus', async () => {
     mount(result());
-    expect(screen.getByTestId('rest-contract-chip').getAttribute('title')).toBe(
-      'GET /pet/{id} → 200 (application/json)\nreadOnly properties were not required',
-    );
+    const chip = screen.getByTestId('rest-contract-chip');
+    expect(chip.tabIndex).toBe(0);
+    const describedBy = chip.getAttribute('aria-describedby') ?? '';
+    const description = describedBy
+      .split(' ')
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(' ');
+    expect(description).toContain('GET /pet/{id} → 200 (application/json)');
+    expect(description).toContain('readOnly properties were not required');
+    expect(chip.getAttribute('title')).toBeNull();
+
+    act(() => {
+      chip.focus();
+    });
+    const tooltip = await screen.findByTestId('rest-contract-tooltip');
+    expect(tooltip.textContent).toContain('GET /pet/{id} → 200 (application/json)');
+    expect(tooltip.querySelectorAll('li')).toHaveLength(1);
   });
 });
 
@@ -233,7 +247,11 @@ describe('the contract chip in History', () => {
       contract: result(),
     };
     useHistoryStore.setState({ entries: [entry], total: 1 });
-    render(<HistoryEntryView historyId="h-1" />);
+    render(
+      <TooltipPrimitive.Provider>
+        <HistoryEntryView historyId="h-1" />
+      </TooltipPrimitive.Provider>,
+    );
     expect(screen.getByTestId('rest-contract-chip').textContent).toBe('Contract: 1 problem');
   });
 });
