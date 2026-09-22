@@ -52,6 +52,10 @@ without editing changes nothing. An edit in the form reformats the whole body wi
 size: numbers are written in their plain form, and very large integers can lose precision. If the text doesn't parse as JSON, Form shows a message and
 a way back to Text instead of fields.
 
+The form follows the method and URL in the URL bar, saved or not. Point the request at another
+operation and the fields change to that operation's body, or the switch goes away if it has no JSON
+body.
+
 ## Headers and auth
 
 The **Headers** tab adds request headers as key/value rows. The **Auth** tab sets this request's

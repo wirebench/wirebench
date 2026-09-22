@@ -116,6 +116,24 @@ describe('ProjectHost.restBodySchema', () => {
     expect(found?.schema.required).toEqual(['name']);
   });
 
+  it('follows the method and URL it is given over the saved ones, link or not', async () => {
+    const { api } = await importPets(true);
+    const post = requestNamed(api, 'POST');
+    // The POST request is linked to `POST /pets`; an unsaved switch to PATCH leaves the link behind.
+    const patched = await host.restBodySchema(post.id, {
+      method: 'PATCH',
+      url: 'https://pets.example.test/v1/pets/7',
+    });
+    expect(patched?.mediaType).toBe('application/vnd.x+json');
+    expect(patched?.schema.properties?.['tag']).toEqual({ type: 'string' });
+    expect(
+      await host.restBodySchema(post.id, { method: 'PUT', url: 'https://pets.example.test/v1/pets/7' }),
+    ).toBeUndefined();
+    // And back to what was saved: the link again.
+    const saved = await host.restBodySchema(post.id, { method: 'POST', url: post.url });
+    expect(saved?.schema.required).toEqual(['name']);
+  });
+
   it('has nothing for an operation whose only body is XML', async () => {
     const { api } = await importPets(true);
     expect(await host.restBodySchema(requestNamed(api, 'PUT').id)).toBeUndefined();
