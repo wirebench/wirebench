@@ -1,0 +1,19 @@
+assertions:
+  - equals: OK
+    type: status
+  - equals: Hello, Ada
+    expression: $.message
+    language: jsonpath
+    type: match
+  - maxMs: 10000
+    type: sla
+auth:
+  type: inherit
+id: RUNNER0021
+kind: grpc
+message: hello.body.json
+method: SayHello
+methodKind: unary
+name: hello
+order: 0
+service: wirebench.greet.Greeter

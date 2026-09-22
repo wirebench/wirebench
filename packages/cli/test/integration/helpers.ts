@@ -40,12 +40,18 @@ export function runCli(
   });
 }
 
+/** The OAuth2 client secret the fixture's `OAUTH_SECRET` stands for, and the token it buys. */
+export const CLIENT_SECRET = 'client-secret-long-7c1d';
+export const ACCESS_TOKEN = 'access-token-long-4b9e';
+
 export interface DemoServer {
   readonly url: string;
   /** Paths of every request received, in order. */
   readonly requests: string[];
   /** The `Authorization` header of every request to `/secure`, in order. */
   readonly secureAuth: (string | undefined)[];
+  /** How many token requests `/token` answered with a token. */
+  readonly tokensIssued: () => number;
   close(): Promise<void>;
 }
 
@@ -53,13 +59,17 @@ export interface DemoServer {
  * The fixture's REST API: `/ok`, `/slow` (200 ms late), `/broken` (500), `/secure` (Basic
  * `svc:hunter2-long`, else 401) and `/echo`, which answers 401 with the Basic password it was sent
  * written back JSON-string-escaped, entity-escaped and form-encoded — the way a careless service
- * echoes a credential into an error body. The engine's test
+ * echoes a credential into an error body. `/token` is an OAuth2 token endpoint that issues
+ * {@link ACCESS_TOKEN} for Basic `runner:`{@link CLIENT_SECRET} (else 401), and `/protected`
+ * answers 200 only to that token as a Bearer. The engine's test
  * server has no per-route delay, and this is small enough not to be worth adding one there.
  */
 export async function startDemoServer(): Promise<DemoServer> {
   const requests: string[] = [];
   const secureAuth: (string | undefined)[] = [];
   const expected = `Basic ${Buffer.from('svc:hunter2-long').toString('base64')}`;
+  const client = `Basic ${Buffer.from(`runner:${CLIENT_SECRET}`).toString('base64')}`;
+  let issued = 0;
   const server = createServer((req, res) => {
     const path = req.url ?? '/';
     requests.push(path);
@@ -91,6 +101,15 @@ export async function startDemoServer(): Promise<DemoServer> {
           `form: ${new URLSearchParams({ password }).toString()}`,
         ].join('\n'),
       );
+    } else if (path === '/token') {
+      if (req.method === 'POST' && req.headers.authorization === client) {
+        issued += 1;
+        json(200, { access_token: ACCESS_TOKEN, token_type: 'Bearer', expires_in: 3600 });
+      } else {
+        json(401, { error: 'invalid_client' });
+      }
+    } else if (path === '/protected') {
+      json(req.headers.authorization === `Bearer ${ACCESS_TOKEN}` ? 200 : 401, {});
     } else if (path === '/secure') {
       secureAuth.push(req.headers.authorization);
       json(req.headers.authorization === expected ? 200 : 401, {});
@@ -104,6 +123,7 @@ export async function startDemoServer(): Promise<DemoServer> {
     url: `http://127.0.0.1:${port}`,
     requests,
     secureAuth,
+    tokensIssued: () => issued,
     close: () =>
       new Promise((resolve, reject) => {
         server.closeAllConnections();

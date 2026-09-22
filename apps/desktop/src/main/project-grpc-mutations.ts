@@ -430,7 +430,7 @@ export function cloneGrpcRequest(project: Project, requestId: string): GrpcMutat
     }
     const original = container.requests[index]!;
     const name = `${original.name} copy`;
-    const copy = createGrpcRequest(name, {
+    const created = createGrpcRequest(name, {
       slug: uniqueSlug(name, takenSlugs(container)),
       service: original.service,
       method: original.method,
@@ -441,6 +441,8 @@ export function cloneGrpcRequest(project: Project, requestId: string): GrpcMutat
       settings: original.settings,
       ...(original.description !== undefined ? { description: original.description } : {}),
     });
+    // The checks a run makes travel with the copy, as a REST request's do.
+    const copy = original.assertions !== undefined ? { ...created, assertions: original.assertions } : created;
     createdId = copy.id;
     const requests = [...container.requests];
     requests.splice(index + 1, 0, copy);
