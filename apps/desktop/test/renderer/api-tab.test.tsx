@@ -6,7 +6,7 @@
  * ignore. The rest pins that each edit sends one `update-api` patch.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ApiTab, effectiveBaseUrl } from '../../src/renderer/features/rest-api/api-tab.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
@@ -128,6 +128,22 @@ describe('ApiTab', () => {
     mount();
 
     expect(screen.getByTestId('api-base-url-source').textContent).toContain('the workspace environment');
+  });
+
+  it('follows a base URL rewritten under an open tab, as Update Definition rewrites it', () => {
+    const api = restApiWire();
+    mount(api);
+    expect(screen.getByTestId<HTMLInputElement>('api-base-url').value).toBe('https://api.test');
+
+    // What applying an update does: the store's API is replaced while this tab stays mounted. An
+    // uncontrolled input kept the value it mounted with, so the tab disagreed with the project.
+    act(() => {
+      useProjectStore.setState({ apis: { [api.id]: { ...api, baseUrl: 'https://v2.api.test' } } });
+    });
+
+    expect(screen.getByTestId<HTMLInputElement>('api-base-url').value).toBe('https://v2.api.test');
+    // Following is not editing: nothing is written back.
+    expect(updateApi).not.toHaveBeenCalled();
   });
 
   it('sends one update-api patch per committed edit', () => {

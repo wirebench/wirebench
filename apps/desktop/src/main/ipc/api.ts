@@ -10,9 +10,14 @@
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
-import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource } from '@wirebench/engine';
+import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource, RestOpRef, RestUpdatePlan } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
-import type { AsyncApiUpdatePlanWire, OpenApiSourceWire } from '../../shared/wire-types.js';
+import type {
+  AsyncApiUpdatePlanWire,
+  OpenApiSourceWire,
+  RestUpdatePlanWire,
+  RestUpdateSourceWire,
+} from '../../shared/wire-types.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
@@ -36,6 +41,9 @@ export interface ApiChannelDeps {
     | 'asyncApiSource'
     | 'asyncApiPlanUpdate'
     | 'asyncApiApplyUpdate'
+    | 'restSource'
+    | 'restPlanUpdate'
+    | 'restApplyUpdate'
     | 'apiDefinitionDocuments'
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
@@ -44,7 +52,7 @@ export interface ApiChannelDeps {
     | 'grpcRefresh'
     | 'grpcSample'
   >;
-  readonly imports: Pick<OpenApiImportService, 'run' | 'cancel'>;
+  readonly imports: Pick<OpenApiImportService, 'run' | 'cancel' | 'readOpenApi'>;
   /**
    * The AsyncAPI import runner — the OpenAPI service's `runAsyncApi`, so `api.cancelImport` reaches
    * it through `imports.cancel`. Optional so the OpenAPI-only tests need not build one.
@@ -89,6 +97,21 @@ function toAsyncApiUpdatePlanWire(plan: AsyncApiUpdatePlan): AsyncApiUpdatePlanW
     added: plan.added.map(ref),
     removed: plan.removed.map(ref),
     changed: plan.changed.map((change) => ({ op: ref(change.op), reasons: [...change.reasons] })),
+  };
+}
+
+/** A REST update plan onto the wire: the engine's read-only arrays copied into the schema's own. */
+function toRestUpdatePlanWire(plan: RestUpdatePlan): RestUpdatePlanWire {
+  const ref = (op: RestOpRef) => ({
+    method: op.method,
+    path: op.path,
+    ...(op.summary !== undefined ? { summary: op.summary } : {}),
+  });
+  return {
+    added: plan.added.map(ref),
+    removed: plan.removed.map(ref),
+    changed: plan.changed.map((change) => ({ op: ref(change.op), reasons: [...change.reasons] })),
+    api: [...plan.api],
   };
 }
 
@@ -331,6 +354,74 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
         messagesReplaced: [...applied.messagesReplaced],
         messagesAdded: [...applied.messagesAdded],
       },
+    };
+  });
+
+  /**
+   * Reads a REST API's new definition: the source the user chose, or else the one the API records,
+   * either way through the same path check an import makes. Answers the checked location too, so
+   * an apply can record a chosen source as the API's own.
+   *
+   * TODO: carry credentials, so a definition behind basic auth can be updated. Not done here because
+   * `api.importOpenApi` has no auth either — `OpenApiImportService.readOpenApi` and `run` both build
+   * their fetcher without any — so it is not a small change to this handler but a new option through
+   * the import service, the fetcher and the schema, plus somewhere to keep the API's `secretRef`.
+   * Until then the chooser lets the user point at a local copy.
+   */
+  const readRestSource = async (apiId: string, chosen: RestUpdateSourceWire | undefined) => {
+    let wire: OpenApiSourceWire;
+    if (chosen !== undefined) {
+      wire = chosen;
+    } else {
+      const recorded = router.restSource(apiId);
+      if (recorded.startsWith('inline:')) {
+        throw new WirebenchError(
+          'definition-source-unavailable',
+          'This API was imported from pasted text, so there is no source to read again',
+          { details: { apiId } },
+        );
+      }
+      wire = /^https?:\/\//i.test(recorded) ? { kind: 'url', url: recorded } : { kind: 'file', path: recorded };
+    }
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, wire);
+    const parsed = await deps.imports.readOpenApi(toEngineSource(checked));
+    return { parsed, label: sourceLabel(checked) };
+  };
+
+  registerHandler(channels.api.restPlanUpdate, async (request) => {
+    const { parsed, label } = await readRestSource(request.apiId, request.source);
+    const { plan, cached } = await router.restPlanUpdate(request.apiId, parsed.document);
+    // Both halves of the diff: a cache rewritten since (another update) changes the plan too.
+    // The label says what was actually read, so the dialog can name the recorded source it planned
+    // against — which the renderer does not otherwise know, having passed no source at all.
+    return {
+      ...toRestUpdatePlanWire(plan),
+      source: label,
+      fingerprint: fingerprintOf([...cached, ...parsed.documents]),
+    };
+  });
+
+  registerHandler(channels.api.restApplyUpdate, async (request) => {
+    const { parsed, label } = await readRestSource(request.apiId, request.source);
+    const { project, plan, applied, warning } = await router.restApplyUpdate(request.apiId, parsed, {
+      ...(request.source !== undefined ? { source: label } : {}),
+      // The user agreed to the plan they were shown; a source or cache changed since would apply
+      // something else.
+      check: (cached) => {
+        if (fingerprintOf([...cached, ...parsed.documents]) !== request.fingerprint) {
+          throw new WirebenchError(
+            'definition-changed',
+            'The definition changed after the update was planned. Plan the update again to see what it does now.',
+            { details: { apiId: request.apiId } },
+          );
+        }
+      },
+    });
+    return {
+      project,
+      plan: toRestUpdatePlanWire(plan),
+      applied: { ...applied },
+      ...(warning !== undefined ? { warning } : {}),
     };
   });
 

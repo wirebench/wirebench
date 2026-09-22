@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Update Definition for a REST API.** A REST API imported from an OpenAPI document can re-read that
+  document instead of being imported a second time — from the API tab, the API row's context menu or
+  **REST: Update Definition…** in the command palette. A preview lists the added, removed and changed
+  operations (each change with its reasons) and what changed API-wide, and **Apply** carries a
+  fingerprint of what the preview read, so a source that changed in between is refused with
+  **Preview again** rather than applied. Nothing is deleted: a request whose operation is gone is kept
+  and badged *orphaned* until that operation returns, and a field — a URL, a parameter row, a body, an
+  auth, the base URL — is rewritten only while it still equals what the old document generated, so
+  edited values, rows you added and requests you made by hand survive. One exception, so a request
+  stays sendable: a query parameter the new document makes **required** has its row switched on, even
+  when you edited it — your value is kept, only the tick box changes. The dialog names the source it
+  read, whether you chose it or it is the one the import recorded. Another file or URL can be chosen
+  as the source; an API imported from pasted text asks for one.
+
 - **Bearer, API-key and OAuth2 auth for SOAP.** A SOAP interface, endpoint or request can now use any
   of the auth schemes a REST owner can: Basic, NTLM, a Bearer token, an API key in a header or the
   query string, or OAuth2 (client credentials, or authorization code with PKCE), with the token
@@ -66,6 +80,13 @@ All notable changes to this project are documented here. The format follows
   search matches event names and data. *Copy as cURL* adds `-N` when the request's enabled `Accept` asks
   for `text/event-stream`. Re-send from the HTTP Log is refused for a row whose response streamed.
   Reconnecting with `Last-Event-ID`, honouring `retry:`, and the CLI runner are out of scope.
+
+### Fixed
+
+- **An API's Base URL field follows a change made under it.** The field kept the value it was opened
+  with, so a base URL rewritten while its tab stayed open — as Update Definition rewrites it — showed
+  the old one until the tab was closed and opened again. It now follows the project, and still
+  commits your own typing on blur or Enter as before.
 
 ## [2.2.1] - 2026-09-21
 

@@ -274,6 +274,10 @@ Swagger 2.0 is refused with a message naming the version (§15).
     the import summary lists the counts and the operations affected.
 - **Re-import** of the same document (same `definition.source`) into an existing API is not offered in this spec.
   _Import_ always creates a new API; a preserving _Update Definition_ is roadmap (§15).
+  — _Shipped 2026-09-22_ ([#47](https://github.com/wirebench/wirebench/issues/47)), to its own design:
+  [Update Definition for a REST API](2026-09-22-rest-update-definition-design.md). Preview then apply, guarded by a
+  fingerprint; a field follows the new document only while it still equals what the old one generated; nothing is
+  deleted (a gone operation's request is badged orphaned).
 
 ### 3.7 cURL both ways
 
@@ -819,6 +823,9 @@ untouched).
 6. OpenAPI 2.0: **refused with a clear message**; a converter step is a follow-up if asked for.
 7. OpenAPI _Update Definition_ with preserved edits, like the WSDL one: **follow-up**, on the roadmap under the REST
    theme.
+   — _Shipped 2026-09-22 (#47)_, designed in `docs/specs/2026-09-22-rest-update-definition-design.md`: it mirrors the
+   AsyncAPI update rather than the WSDL one, re-mapping the cached and the new document and rewriting a field only
+   while it still equals what the old document generated. Operation identity is `method + path`.
 8. Response validation against the OpenAPI response schema: **functional-testing phase**, with the `ajv` ask.
 9. `Mod+Shift+I` for _Import OpenAPI…_: **yes**; no other new default shortcut.
 10. Where an OpenAPI import's folders come from: **first tag, else first path segment**; a _by path_ option in the

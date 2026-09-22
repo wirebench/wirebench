@@ -98,6 +98,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | REST: New API | — | — |
 | REST: New Folder | — | — |
 | REST: New Request | — | — |
+| REST: Update Definition… | — | — |
 | gRPC: New API | — | — |
 | gRPC: New Request | — | — |
 | WebSocket: New API | — | — |

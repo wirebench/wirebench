@@ -14,6 +14,10 @@ import {
   apiAsyncApiApplyUpdateResponseSchema,
   apiAsyncApiApplyUpdateRequestSchema,
   apiAsyncApiPlanUpdateResponseSchema,
+  apiRestApplyUpdateRequestSchema,
+  apiRestApplyUpdateResponseSchema,
+  apiRestPlanUpdateRequestSchema,
+  apiRestPlanUpdateResponseSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
@@ -468,6 +472,18 @@ export const channels = {
       'api.asyncApiApplyUpdate',
       apiAsyncApiApplyUpdateRequestSchema,
       apiAsyncApiApplyUpdateResponseSchema,
+    ),
+    /** Reads a REST API's source (or a chosen one) and reports what updating to it would change. */
+    restPlanUpdate: defineChannel(
+      'api.restPlanUpdate',
+      apiRestPlanUpdateRequestSchema,
+      apiRestPlanUpdateResponseSchema,
+    ),
+    /** Applies that update: orphans, adds and rewrites requests, rewrites the cache, and saves. */
+    restApplyUpdate: defineChannel(
+      'api.restApplyUpdate',
+      apiRestApplyUpdateRequestSchema,
+      apiRestApplyUpdateResponseSchema,
     ),
     importProto: defineChannel('api.importProto', apiImportProtoRequestSchema, apiImportProtoResponseSchema),
     /** The services and files of a gRPC API's cached `.proto` set, for the method picker. */

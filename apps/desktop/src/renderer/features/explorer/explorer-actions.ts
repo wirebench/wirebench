@@ -5,7 +5,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useUiStore } from '../../state/ui.js';
 import { startRenamingNode, startRenamingRequest, type RenamableNodeKind } from './explorer-api.js';
 import { openRestRequestTab } from '../rest-editor/rest-actions.js';
-import { openApiTab } from '../rest-api/api-actions.js';
+import { openApiTab, updateRestDefinition } from '../rest-api/api-actions.js';
 import { openGrpcRequestTab } from '../grpc-editor/grpc-actions.js';
 import { openGrpcApiTab } from '../grpc-api/grpc-api-actions.js';
 import { openWsRequestTab } from '../ws-editor/ws-actions.js';
@@ -55,6 +55,13 @@ export const explorerActions = {
   updateDefinition(interfaceId: string | undefined): void {
     if (interfaceId !== undefined) {
       updateDefinition(interfaceId);
+    }
+  },
+
+  /** Opens the Update Definition dialog on a REST API's tab; ignored for an API with no definition. */
+  updateRestDefinition(apiId: string | undefined): void {
+    if (apiId !== undefined) {
+      updateRestDefinition(apiId);
     }
   },
 

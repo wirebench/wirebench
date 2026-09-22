@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Petstore Update
+  version: 1.0.0
+servers:
+  - url: https://v1.pets.test
+paths:
+  /pets:
+    get:
+      summary: List pets
+      parameters:
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Pet' } }
+    post:
+      summary: Add a pet
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Pet' }
+      responses: { '201': { description: created } }
+  /pets/{id}:
+    get:
+      summary: Get a pet
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pet' }
+    delete:
+      summary: Delete a pet
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '204': { description: gone } }
+  /health:
+    get:
+      summary: Health
+      responses: { '200': { description: ok } }
+components:
+  schemas:
+    Pet:
+      type: object
+      properties:
+        name: { type: string }
+        parent: { $ref: '#/components/schemas/Pet' }

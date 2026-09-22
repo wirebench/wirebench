@@ -65,6 +65,7 @@ import {
   uniqueSlug,
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
+  applyRestUpdate,
   asyncApiChannelMessages,
   createCachedApiFetch,
   matchOperation,
@@ -72,6 +73,7 @@ import {
   parseAsyncApi,
   parseOpenApi,
   planAsyncApiUpdate,
+  planRestUpdate,
   writeDefinitionCache,
   writeDescriptorDefinitionCache,
   writeFileAtomic,
@@ -102,6 +104,9 @@ import type {
   AsyncApiDocument,
   OpenApiDocument,
   AsyncApiUpdatePlan,
+  ParsedOpenApi,
+  RestApplyResult,
+  RestUpdatePlan,
   ChannelMessages,
   ParsedAsyncApi,
   RestApi,
@@ -3136,6 +3141,159 @@ export class ProjectHost {
     open.dirty = true;
     await this.save({ reason: 'update-definition' });
     return { project: this.snapshot() as ProjectWire, plan, applied };
+  }
+
+  /** Where a REST API's definition came from, as the user gave it, for an update to re-read. */
+  restSource(apiId: string): string {
+    return this.requireCachedRestApi(apiId).definition.source;
+  }
+
+  /** What updating `apiId` to `next` would change, compared with the cached document. Changes nothing. */
+  async planRestUpdate(
+    apiId: string,
+    next: OpenApiDocument,
+  ): Promise<{ readonly plan: RestUpdatePlan; readonly cached: readonly ResolvedDocument[] }> {
+    const old = await this.readRestCache(apiId);
+    return { plan: planRestUpdate(old.document, next), cached: old.documents };
+  }
+
+  /**
+   * The cached definition of a REST API, read once from disk: its documents (for a fingerprint) and
+   * the document parsed from exactly those bytes, so what is compared is what was fingerprinted.
+   */
+  private async readRestCache(
+    apiId: string,
+  ): Promise<{ readonly document: OpenApiDocument; readonly documents: readonly ResolvedDocument[] }> {
+    const api = this.requireCachedRestApi(apiId);
+    const cached = await readApiDefinitionCache(apiDefinitionDir(this.require().dir, api.slug));
+    const byLocation = new Map<string, ResolvedDocument>();
+    for (const document of cached.documents) {
+      byLocation.set(document.requestedLocation, document);
+      byLocation.set(document.location, document);
+    }
+    const inMemory = (location: string) => {
+      const document = byLocation.get(location);
+      if (document === undefined) {
+        return Promise.reject(
+          new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
+            details: { location },
+          }),
+        );
+      }
+      return Promise.resolve({ location: document.location, bytes: document.bytes, text: document.text });
+    };
+    const parsed = await parseOpenApi({ kind: 'url', url: cached.manifest.rootLocation }, { fetchDocument: inMemory });
+    return { document: parsed.document, documents: cached.documents };
+  }
+
+  /**
+   * Applies `next` to `apiId`: nothing is deleted (an operation that went away orphans its request)
+   * and generated fields the user left alone follow the new document. The project is saved first;
+   * if the save fails the in-memory project is put back as it was and the definition cache is never
+   * touched. Only a successful save rewrites the cache and drops the parsed-document memo, so the
+   * next response check reads the new definition.
+   */
+  async applyRestUpdate(
+    apiId: string,
+    next: ParsedOpenApi,
+    options: {
+      /** Becomes the API's recorded definition source. */
+      readonly source?: string;
+      /**
+       * Sees the cached documents the update compares against before anything changes; throwing
+       * refuses the update (the IPC layer's fingerprint guard).
+       */
+      readonly check?: (cached: readonly ResolvedDocument[]) => void | Promise<void>;
+    } = {},
+  ): Promise<{
+    readonly project: ProjectWire;
+    readonly plan: RestUpdatePlan;
+    readonly applied: Omit<RestApplyResult, 'api'>;
+    /** Set when the update was saved but the definition cache could not be rewritten afterwards. */
+    readonly warning?: string;
+  }> {
+    const { source, check } = options;
+    const cache = await this.readRestCache(apiId);
+    await check?.(cache.documents);
+    // Read after every wait: an edit made meanwhile is the base the update applies to.
+    const open = this.require();
+    const api = this.requireCachedRestApi(apiId);
+    const old = cache.document;
+    const plan = planRestUpdate(old, next.document);
+    const { api: mapped, ...applied } = applyRestUpdate(api, old, next.document);
+    const updated: RestApi = {
+      ...mapped,
+      definition: {
+        // `requireCachedRestApi` proved this is there; the engine only ever rewrites its `version`,
+        // which this sets itself.
+        ...api.definition,
+        version: next.document.declaredVersion,
+        ...(source !== undefined ? { source } : {}),
+      },
+    };
+
+    const priorProject = open.project;
+    const priorDirty = open.dirty;
+    open.project = {
+      ...open.project,
+      apis: open.project.apis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
+    };
+    open.dirty = true;
+    try {
+      await this.save({ reason: 'update-definition' });
+    } catch (error) {
+      // Nothing else was touched yet: undoing the model leaves everything as it was.
+      open.project = priorProject;
+      open.dirty = priorDirty;
+      throw error;
+    }
+
+    let warning: string | undefined;
+    const file = `apis/${updated.slug}/definition`;
+    try {
+      await writeApiDefinitionCache(next.documents, apiDefinitionDir(open.dir, updated.slug), {
+        declaredVersion: next.document.declaredVersion,
+      });
+      // A retry that worked clears the last failure's problem rather than leaving it to mislead.
+      open.problems = open.problems.filter(
+        (problem) => !(problem.code === 'definition-cache-write-failed' && problem.file === file),
+      );
+    } catch (error) {
+      // Reported, not thrown: the project is already saved, so telling the caller the update failed
+      // would be untrue. The stale cache only means the next update re-runs this one idempotently.
+      warning =
+        'The update was saved, but the stored copy of the definition could not be refreshed, so the next preview may be wrong: ' +
+        errorMessage(error);
+      // One entry per API, replaced: repeated failures must not grow the list without bound.
+      open.problems = [
+        ...open.problems.filter(
+          (problem) => !(problem.code === 'definition-cache-write-failed' && problem.file === file),
+        ),
+        { code: 'definition-cache-write-failed', message: warning, file },
+      ];
+    } finally {
+      // Dropped even if the write failed: a half-written cache must be read afresh, not remembered.
+      this.openApiDocuments.delete(apiId);
+    }
+    return {
+      project: this.snapshot() as ProjectWire,
+      plan,
+      applied,
+      ...(warning !== undefined ? { warning } : {}),
+    };
+  }
+
+  /** A REST API that cached its definition, or `definition-not-cached`: without it there is nothing to compare. */
+  private requireCachedRestApi(apiId: string): RestApi & { readonly definition: NonNullable<RestApi['definition']> } {
+    const api = this.requireApi(apiId);
+    if (api.definition?.cache !== true) {
+      throw new ProjectError(
+        'definition-not-cached',
+        'This API did not cache its definition, so there is nothing to compare an update against. Import it again instead.',
+        { details: { apiId } },
+      );
+    }
+    return api as RestApi & { readonly definition: NonNullable<RestApi['definition']> };
   }
 
   /** Keeps what the Definition card shows of a cached document: its version and WebSocket servers. */

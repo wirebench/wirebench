@@ -9,10 +9,15 @@
  * The servers an import recorded are offered as a datalist rather than a select: the list is a
  * suggestion from the definition, and a user may point an API anywhere.
  */
+import { useEffect, useState } from 'react';
 import { AuthFields } from '../../components/auth-fields.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
+import { Button } from '../../components/button.js';
 import { ApiDefinitionCard } from './api-definition-card.js';
+import { updateRestDefinition } from './api-actions.js';
+import { RestUpdateDialog } from './rest-update-dialog.js';
+import { useRestUpdateStore } from './rest-update-state.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { AuthConfigWire, RestApiWire } from '../../../shared/wire-types.js';
@@ -60,6 +65,26 @@ export function ApiTab({ apiId }: ApiTabProps) {
   const updateApi = useProjectStore((state) => state.updateApi);
   const workspaceEnvironments = useWorkspaceStore((state) => state.workspace?.environments);
   const activeWorkspaceEnvironmentId = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const updating = useRestUpdateStore((state) => state.apiId === apiId);
+  const closeUpdate = useRestUpdateStore((state) => state.close);
+  // The dialog lives in this tab, so a tab that goes away takes the request to open it with it —
+  // otherwise coming back to the API would open the dialog again on its own.
+  useEffect(
+    () => () => {
+      if (useRestUpdateStore.getState().apiId === apiId) {
+        useRestUpdateStore.getState().close();
+      }
+    },
+    [apiId],
+  );
+
+  // The base URL is a draft committed on blur or Enter, like every other text setting here, rather
+  // than an uncontrolled input: Update Definition can rewrite it under an open tab, and an
+  // uncontrolled one would keep showing the value it mounted with.
+  const [baseUrlDraft, setBaseUrlDraft] = useState(api?.baseUrl ?? '');
+  useEffect(() => {
+    setBaseUrlDraft(api?.baseUrl ?? '');
+  }, [api?.baseUrl]);
 
   if (api === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This API is no longer in the project.</p>;
@@ -110,12 +135,15 @@ export function ApiTab({ apiId }: ApiTabProps) {
               aria-label="Base URL"
               data-testid="api-base-url"
               list={api.servers.length > 0 ? 'api-servers' : undefined}
-              defaultValue={api.baseUrl}
+              value={baseUrlDraft}
               placeholder="https://api.example.com"
               className="h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none"
-              onBlur={(event) => {
-                if (event.currentTarget.value !== api.baseUrl) {
-                  patch({ baseUrl: event.currentTarget.value });
+              onChange={(event) => {
+                setBaseUrlDraft(event.target.value);
+              }}
+              onBlur={() => {
+                if (baseUrlDraft !== api.baseUrl) {
+                  patch({ baseUrl: baseUrlDraft });
                 }
               }}
               onKeyDown={(event) => {
@@ -161,7 +189,37 @@ export function ApiTab({ apiId }: ApiTabProps) {
       {api.definition !== undefined && (
         <SettingsGroup title="Definition">
           <ApiDefinitionCard apiId={apiId} definition={api.definition} />
+          {/* Only with the cached document an update compares against; without it the dialog dead-ends. */}
+          {api.definition.cache === true && (
+            <>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  variant="secondary"
+                  data-testid="rest-definition-update"
+                  onClick={() => {
+                    updateRestDefinition(apiId);
+                  }}
+                >
+                  Update definition…
+                </Button>
+              </div>
+              <p className="text-xs text-fg-subtle">
+                The source is read again and the change is shown before it is applied. Nothing is deleted: a request
+                whose operation is gone is kept, badged orphaned. An operation a request of yours already covers is
+                listed as added but left alone.
+              </p>
+            </>
+          )}
         </SettingsGroup>
+      )}
+      {updating && api.definition?.cache === true && (
+        <RestUpdateDialog
+          apiId={apiId}
+          open
+          onOpenChange={(open) => {
+            if (!open) closeUpdate();
+          }}
+        />
       )}
     </section>
   );

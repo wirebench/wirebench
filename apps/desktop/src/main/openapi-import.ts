@@ -13,6 +13,7 @@ import {
   importAsyncApi,
   importOpenApi,
   parseAsyncApi,
+  parseOpenApi,
   WirebenchError,
 } from '@wirebench/engine';
 import type {
@@ -21,6 +22,7 @@ import type {
   ImportedOpenApi,
   OpenApiSource,
   ParsedAsyncApi,
+  ParsedOpenApi,
 } from '@wirebench/engine';
 import type { EngineProgressEvent } from '../shared/wire-types.js';
 
@@ -108,6 +110,14 @@ export class OpenApiImportService {
    */
   async readAsyncApi(source: OpenApiSource): Promise<ParsedAsyncApi> {
     return this.track(undefined, {}, (fetchDocument, signal) => parseAsyncApi(source, { fetchDocument, signal }));
+  }
+
+  /**
+   * Reads and resolves an OpenAPI document without mapping it — what a REST Update Definition
+   * compares against the cached one. Fetched through the same fetcher an import uses.
+   */
+  async readOpenApi(source: OpenApiSource): Promise<ParsedOpenApi> {
+    return this.track(undefined, {}, (fetchDocument, signal) => parseOpenApi(source, { fetchDocument, signal }));
   }
 
   /** Runs one import under `token`'s controller, naming every document fetched as progress. */

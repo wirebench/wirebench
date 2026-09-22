@@ -88,6 +88,10 @@ with **Use** buttons to apply one to the API — credentials are yours to fill i
 API tab. Anything the import could not carry across is listed under "things not imported," with the
 reason next to each. See [From OpenAPI and Swagger](/wirebench/switching/openapi/) for every mapping.
 
+When the document later changes, don't import it again — that would make a second API. Use
+[Update Definition](/wirebench/guides/rest-client/#update-definition) on the API you already have:
+it previews the added, removed and changed operations, keeps what you edited, and deletes nothing.
+
 ## Postman collections
 
 Wirebench imports Postman Collection format v2.0 and v2.1 JSON — the app labels this format

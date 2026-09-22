@@ -443,6 +443,21 @@ describe('ExplorerView with APIs', () => {
     );
   }
 
+  it('badges an orphaned REST request, and only that one', () => {
+    seedRest();
+    const orphan = restRequestWire({ id: 'rest-root', name: 'At root', method: 'POST', order: 1, orphaned: true });
+    const state = useProjectStore.getState();
+    useProjectStore.setState({
+      rest: { p1: { ...state.rest['p1']!, requests: [orphan, state.restRequests['rest-deep']!] } },
+      restRequests: { ...state.restRequests, 'rest-root': orphan },
+    });
+    mount();
+
+    const badges = screen.getAllByTestId('explorer-orphaned-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.closest('[data-testid="rest-request-row"]')?.textContent).toContain('At root');
+  });
+
   it('renders an API row with a REST badge, a folder row and method-badged request rows', () => {
     seedRest();
     mount();

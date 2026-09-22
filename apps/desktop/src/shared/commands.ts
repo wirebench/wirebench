@@ -60,6 +60,7 @@ export const COMMAND_IDS = [
   'rest.newApi',
   'rest.newFolder',
   'rest.newRequest',
+  'rest.updateDefinition',
   'grpc.send',
   'grpc.copyAsCommand',
   'grpc.importProto',
