@@ -366,6 +366,8 @@ export const restRequestFileSchema = z.looseObject({
   settings: restSettingsSchema.default({}),
   assertions: assertionsSchema.default([]),
   orphaned: z.boolean().optional(),
+  /** The operation of the API's definition this request calls. */
+  contract: z.looseObject({ method: nonEmpty, path: nonEmpty }).optional(),
 });
 
 /** `apis/<slug>/requests/[<folder>/…]folder.yaml`. */

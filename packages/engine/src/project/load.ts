@@ -386,6 +386,9 @@ function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       settings: exact<RestRequestSettings>(parsed.settings),
       assertions: parsed.assertions.map((a) => exact<Assertion>(a)),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
+      ...(parsed.contract !== undefined
+        ? { contract: { method: parsed.contract.method, path: parsed.contract.path } }
+        : {}),
     };
   };
 }

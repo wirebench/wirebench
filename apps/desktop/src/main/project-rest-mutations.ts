@@ -504,6 +504,8 @@ export function updateRestRequest(
         settings: patch.settings !== undefined ? cleanUndefined<RestRequestSettings>(patch.settings) : request.settings,
         assertions: request.assertions,
         ...(request.orphaned === true ? { orphaned: true } : {}),
+        // The contract link is main's record of what the import generated; a patch cannot set it.
+        ...(request.contract !== undefined ? { contract: request.contract } : {}),
       });
       return next;
     }),
@@ -549,6 +551,7 @@ export function cloneRestRequest(project: Project, requestId: string): RestMutat
       body: original.body,
       auth: original.auth,
       settings: original.settings,
+      ...(original.contract !== undefined ? { contract: original.contract } : {}),
       ...(original.description !== undefined ? { description: original.description } : {}),
     });
     const withAssertions: RestRequestDef = { ...copy, assertions: original.assertions };

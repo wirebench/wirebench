@@ -426,6 +426,8 @@ export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/o
 export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
 export { selectResponse } from './rest/openapi/responses.js';
 export type { ResponseSelection } from './rest/openapi/responses.js';
+export { matchOperation } from './rest/openapi/match.js';
+export type { RestOperationRef } from './rest/openapi/match.js';
 export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
@@ -532,6 +534,7 @@ export type {
   RestFolder,
   RestMethod,
   RestRequestDef,
+  RestContractLink,
   RestRequestSettings,
   RestServer,
 } from './rest/model.js';
