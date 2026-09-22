@@ -33,8 +33,20 @@ describe('matchOperation', () => {
     expect(matchOperation(operations, 'GET', '/pets?limit=10#top', [])).toEqual({ method: 'get', path: '/pets' });
   });
 
-  it('gives no answer when more than one operation matches', () => {
-    expect(matchOperation(operations, 'GET', '/stores/open', [])).toBeUndefined();
+  it('prefers the more concrete path, and gives no answer on a tie', () => {
+    expect(matchOperation(operations, 'GET', '/stores/open', [])).toEqual({ method: 'get', path: '/stores/open' });
+    expect(matchOperation(operations, 'GET', '/stores/42', [])).toEqual({ method: 'get', path: '/stores/{storeId}' });
+    const tie = [
+      { method: 'get', path: '/a/{x}/c' },
+      { method: 'get', path: '/a/b/{y}' },
+    ];
+    expect(matchOperation(tie, 'GET', '/a/b/c', [])).toBeUndefined();
+  });
+
+  it('compares literal segments percent-decoded', () => {
+    const spaced = [{ method: 'get', path: '/pets/foo bar' }];
+    expect(matchOperation(spaced, 'GET', '/pets/foo%20bar', [])).toEqual({ method: 'get', path: '/pets/foo bar' });
+    expect(matchOperation(spaced, 'GET', '/pets/%E0%A4%A', [])).toBeUndefined();
   });
 
   it('strips a matching base URL first', () => {

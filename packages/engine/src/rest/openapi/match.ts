@@ -48,18 +48,37 @@ function segments(path: string): string[] {
   return path.split('/').filter((segment) => segment.length > 0);
 }
 
-function segmentsMatch(declared: readonly string[], actual: readonly string[]): boolean {
-  return (
-    declared.length === actual.length &&
-    declared.every((segment, index) => {
-      const other = actual[index] as string;
-      return segment === other || VARIABLE.test(segment) || VARIABLE.test(other);
-    })
-  );
+function decoded(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/** How many of `declared`'s segments are literal when it matches `actual`, or -1 when it does not. */
+function literalMatch(declared: readonly string[], actual: readonly string[]): number {
+  if (declared.length !== actual.length) {
+    return -1;
+  }
+  let literals = 0;
+  for (const [index, segment] of declared.entries()) {
+    const other = actual[index] as string;
+    if (VARIABLE.test(segment) || VARIABLE.test(other)) {
+      continue;
+    }
+    if (decoded(segment) !== decoded(other)) {
+      return -1;
+    }
+    literals += 1;
+  }
+  return literals;
 }
 
 /**
- * The one operation `method` and `url` call, or `undefined` when none does or more than one could.
+ * The one operation `method` and `url` call. As in OpenAPI, a concrete path wins over a templated
+ * one: of several matches, the one with the most literal segments; `undefined` on a tie or no match.
+ * A URL whose host matches no server still matches by path, once its origin is dropped.
  * `baseUrls` are the API's servers and base URL; the longest one the URL starts with is stripped.
  */
 export function matchOperation(
@@ -70,9 +89,21 @@ export function matchOperation(
 ): RestOperationRef | undefined {
   const actual = segments(withoutQuery(relativePath(url.trim(), baseUrls)));
   const wanted = method.toLowerCase();
-  const found = operations.filter(
-    (operation) => operation.method.toLowerCase() === wanted && segmentsMatch(segments(operation.path), actual),
-  );
-  const only = found.length === 1 ? found[0] : undefined;
-  return only === undefined ? undefined : { method: only.method, path: only.path };
+  let best: RestOperationRef | undefined;
+  let bestLiterals = -1;
+  let tied = false;
+  for (const operation of operations) {
+    if (operation.method.toLowerCase() !== wanted) {
+      continue;
+    }
+    const literals = literalMatch(segments(operation.path), actual);
+    if (literals > bestLiterals) {
+      best = operation;
+      bestLiterals = literals;
+      tied = false;
+    } else if (literals >= 0 && literals === bestLiterals) {
+      tied = true;
+    }
+  }
+  return best === undefined || tied ? undefined : { method: best.method, path: best.path };
 }
