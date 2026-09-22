@@ -6,9 +6,13 @@ function escapeToken(token: string): string {
   return token.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
-/** Builds a JSON Pointer from path segments (already unescaped). */
+/**
+ * Builds a JSON Pointer from path segments (already unescaped). The root is
+ * `/` rather than RFC 6901's empty string, so every path a diff reports can
+ * be shown and saved as an ignore rule as it is.
+ */
 function pointer(segments: readonly string[]): string {
-  return segments.map((segment) => `/${escapeToken(segment)}`).join('');
+  return segments.length === 0 ? '/' : segments.map((segment) => `/${escapeToken(segment)}`).join('');
 }
 
 type JsonKind = 'null' | 'array' | 'object' | 'string' | 'number' | 'boolean' | 'undefined';

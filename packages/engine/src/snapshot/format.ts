@@ -4,15 +4,16 @@ import type { SnapshotFormat } from './diff.js';
 export const MAX_VALUE_LENGTH = 200;
 
 /**
- * Truncates `value` to {@link MAX_VALUE_LENGTH} characters, appending an
- * ellipsis when it was cut. Used for every `expected`/`actual` value a
- * snapshot diff reports, so a large body never balloons the diff output.
+ * Truncates `value` to at most {@link MAX_VALUE_LENGTH} characters, the
+ * ellipsis that marks a cut included. Used for every `expected`/`actual`
+ * value a snapshot diff reports, so a large body never balloons the diff
+ * output.
  */
 export function truncateValue(value: string): string {
   if (value.length <= MAX_VALUE_LENGTH) {
     return value;
   }
-  return `${value.slice(0, MAX_VALUE_LENGTH)}…`;
+  return `${value.slice(0, MAX_VALUE_LENGTH - 1)}…`;
 }
 
 /**
@@ -23,10 +24,12 @@ export function truncateValue(value: string): string {
  */
 export function detectSnapshotFormat(body: string, contentType?: string): SnapshotFormat {
   if (contentType !== undefined) {
-    if (contentType.includes('json')) {
+    // Media types are case-insensitive (RFC 9110 §8.3.1).
+    const type = contentType.toLowerCase();
+    if (type.includes('json')) {
       return 'json';
     }
-    if (contentType.includes('xml')) {
+    if (type.includes('xml')) {
       return 'xml';
     }
   }

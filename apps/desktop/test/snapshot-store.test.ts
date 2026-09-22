@@ -8,13 +8,34 @@ import {
   existsSync,
   symlinkSync,
   mkdirSync,
+  lstatSync,
 } from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInterface, createProject, createRequest, saveProject } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
 import { SnapshotStore } from '../src/main/snapshot-store.js';
+
+// Passes through to the real `writeFile` unless a test overrides one call.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, writeFile: vi.fn(actual.writeFile) };
+});
+
+/** Whether this platform lets the test create a symlink (Windows without the privilege does not). */
+const canSymlink = ((): boolean => {
+  const probe = mkdtempSync(join(tmpdir(), 'wirebench-symlink-probe-'));
+  try {
+    symlinkSync(join(probe, 'target'), join(probe, 'link'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
 const SIDECAR = ['interfaces', 'Calculator', 'operations', 'Add', 'Request-1.golden.yaml'];
@@ -151,14 +172,20 @@ describe('SnapshotStore', () => {
   });
 
   it('refuses a path that leaves the project folder', async () => {
-    const project = build('../../../../../escape');
-    const store = new SnapshotStore(() => ({ project, dir: root }));
-    writeFileSync(join(root, '..', 'escape.request.yaml'), 'x');
+    // The project sits one level down in its own temp folder, so the escaping slug lands beside
+    // it there rather than in the shared system temp folder.
+    const base = mkdtempSync(join(tmpdir(), 'wirebench-escape-'));
     try {
+      const dir = join(base, 'project');
+      mkdirSync(dir);
+      const project = build('../../../../../escape');
+      const store = new SnapshotStore(() => ({ project, dir }));
+      writeFileSync(join(base, 'escape.request.yaml'), 'x');
       expect(await store.read({ requestId: 'req-1' })).toEqual({ status: 'unsaved' });
       await expect(store.write({ requestId: 'req-1', body: 'x', ignore: [] })).rejects.toThrow();
+      expect(existsSync(join(base, 'escape.golden.yaml'))).toBe(false);
     } finally {
-      rmSync(join(root, '..', 'escape.request.yaml'), { force: true });
+      rmSync(base, { recursive: true, force: true });
     }
   });
 
@@ -175,5 +202,97 @@ describe('SnapshotStore', () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it('round-trips bodies a block scalar cannot hold as they are', async () => {
+    const store = await savedStore();
+    const bodies = ['', ' ', '\n', '\n\n', '  \n', '  \n\t', 'a\n', 'a', 'a  ', 'a  \nb  \n', ' a\n', '\n a', 'a\n '];
+    for (const body of bodies) {
+      await store.write({ requestId: 'req-1', body, ignore: [] });
+      const read = await store.read({ requestId: 'req-1' });
+      expect(read.status === 'present' && read.snapshot.body, JSON.stringify(body)).toBe(body);
+    }
+  });
+
+  it('cleans up the temp file when writing it fails, and names each one uniquely', async () => {
+    const store = await savedStore();
+    const writeFile = vi.mocked(fsPromises.writeFile);
+    const temps: string[] = [];
+    writeFile.mockImplementationOnce((path, data) => {
+      // A partial temp file is left behind by the failed write, as a full disk would.
+      writeFileSync(path as string, (data as string).slice(0, 3));
+      temps.push(path as string);
+      return Promise.reject(new Error('disk full'));
+    });
+    await expect(store.write({ requestId: 'req-1', body: 'x', ignore: [] })).rejects.toThrow('disk full');
+    expect(readdirSync(join(root, ...SIDECAR.slice(0, -1))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+    expect(await store.read({ requestId: 'req-1' })).toEqual({ status: 'none' });
+
+    await store.write({ requestId: 'req-1', body: 'x', ignore: [] });
+    temps.push(writeFile.mock.calls.at(-1)?.[0] as string);
+    expect(temps[0]).not.toBe(temps[1]);
+    expect(temps[0]).not.toContain(`.${String(process.pid)}.tmp`);
+  });
+
+  it.skipIf(!canSymlink)('does not follow a sidecar symlinked at another file in the project', async () => {
+    const store = await savedStore();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const target = join(root, 'interfaces', 'Calculator', 'operations', 'Add', 'Request-1.request.yaml');
+    const before = readFileSync(target, 'utf8');
+    symlinkSync(target, join(root, ...SIDECAR));
+
+    expect(await store.read({ requestId: 'req-1' })).toEqual({ status: 'none' });
+    expect(warn).toHaveBeenCalledTimes(1);
+    await expect(store.write({ requestId: 'req-1', body: 'x', ignore: [] })).rejects.toMatchObject({
+      code: 'snapshot-not-a-file',
+    });
+    await expect(store.setIgnore({ requestId: 'req-1', ignore: ['/a'] })).rejects.toMatchObject({
+      code: 'snapshot-not-a-file',
+    });
+    await expect(store.remove({ requestId: 'req-1' })).rejects.toMatchObject({ code: 'snapshot-not-a-file' });
+
+    expect(readFileSync(target, 'utf8')).toBe(before);
+    expect(lstatSync(join(root, ...SIDECAR)).isSymbolicLink()).toBe(true);
+  });
+
+  it('refuses a sidecar path that is a folder', async () => {
+    const store = await savedStore();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mkdirSync(join(root, ...SIDECAR));
+    expect(await store.read({ requestId: 'req-1' })).toEqual({ status: 'none' });
+    await expect(store.write({ requestId: 'req-1', body: 'x', ignore: [] })).rejects.toMatchObject({
+      code: 'snapshot-not-a-file',
+    });
+    await expect(store.remove({ requestId: 'req-1' })).rejects.toMatchObject({ code: 'snapshot-not-a-file' });
+  });
+
+  it('applies mutations for one request in the order they were issued', async () => {
+    const store = await savedStore();
+    const results = await Promise.allSettled([
+      store.write({ requestId: 'req-1', body: 'one', ignore: [] }),
+      store.setIgnore({ requestId: 'req-1', ignore: ['/a'] }),
+      store.write({ requestId: 'req-1', body: 'two', ignore: ['/b'] }),
+      store.setIgnore({ requestId: 'req-1', ignore: ['/c'] }),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled', 'fulfilled']);
+    const read = await store.read({ requestId: 'req-1' });
+    expect(read.status === 'present' && read.snapshot).toMatchObject({ body: 'two', ignore: ['/c'] });
+
+    const [, removed] = await Promise.all([
+      store.write({ requestId: 'req-1', body: 'three', ignore: [] }),
+      store.remove({ requestId: 'req-1' }),
+    ]);
+    expect(removed).toEqual({ removed: true });
+    expect(await store.read({ requestId: 'req-1' })).toEqual({ status: 'none' });
+  });
+
+  it('keeps going after a failed mutation', async () => {
+    const store = await savedStore();
+    const [failed, written] = await Promise.allSettled([
+      store.setIgnore({ requestId: 'req-1', ignore: ['/a'] }),
+      store.write({ requestId: 'req-1', body: 'x', ignore: [] }),
+    ]);
+    expect(failed?.status).toBe('rejected');
+    expect(written?.status).toBe('fulfilled');
   });
 });

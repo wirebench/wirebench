@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SnapshotPanel } from '../../src/renderer/features/snapshot/snapshot-panel.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSnapshotsStore } from '../../src/renderer/state/snapshots.js';
 import type { SnapshotReadResponse } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -75,11 +76,33 @@ describe('SnapshotPanel', () => {
     expect(await screen.findByText('1 difference (1 ignored)')).toBeTruthy();
   });
 
-  it('shows an empty path as the root', async () => {
-    install(present('1'));
+  it('shows a root change at "/", and Ignore saves "/"', async () => {
+    const api = install(present('1'));
     render(<SnapshotPanel requestId="r1" body="2" contentType="application/json" />);
     const table = await screen.findByRole('table', { name: 'Snapshot differences' });
     expect(within(table).getByText('/')).toBeTruthy();
+    await userEvent.click(within(table).getByRole('button', { name: 'Ignore /' }));
+    expect(api.setIgnore).toHaveBeenCalledWith({ requestId: 'r1', ignore: ['/'] });
+    expect(await screen.findByText('Matches the snapshot (1 ignored)')).toBeTruthy();
+  });
+
+  it('reads again once the project is saved', async () => {
+    const api = install({ status: 'unsaved' });
+    useProjectStore.setState({ projectOf: { r1: 'p1' }, projects: {} });
+    try {
+      render(<SnapshotPanel requestId="r1" body="{}" contentType="application/json" />);
+      expect(await screen.findByText('Save the project to keep a snapshot beside this request.')).toBeTruthy();
+      api.read.mockResolvedValue(ok({ status: 'none' }));
+      act(() => {
+        useProjectStore.setState({
+          projects: { p1: { id: 'p1', lastSavedAt: '2026-09-22T12:00:00.000Z' } as never },
+        });
+      });
+      expect(await screen.findByText('No snapshot saved.')).toBeTruthy();
+      expect(api.read).toHaveBeenCalledTimes(2);
+    } finally {
+      useProjectStore.getState().reset();
+    }
   });
 
   it('saves the ignore rules on blur', async () => {
@@ -176,6 +199,46 @@ describe('SnapshotPanel', () => {
     resolveRead(ok(present('{"a":1}')));
     await loading;
     expect(useSnapshotsStore.getState().entries['r1']).toEqual({ status: 'none' });
+  });
+
+  it("drops a save's answer that lands after a newer remove", async () => {
+    let resolveWrite: (value: unknown) => void = () => undefined;
+    const write = vi.fn().mockReturnValue(new Promise((resolve) => (resolveWrite = resolve)));
+    const remove = vi.fn().mockResolvedValue(ok({ removed: true }));
+    installWirebenchApi({ snapshot: { write, remove } });
+    const saving = useSnapshotsStore.getState().save('r1', '{"a":1}', 'application/json', []);
+    await useSnapshotsStore.getState().remove('r1');
+    resolveWrite(ok({ savedAt: '2026-09-22T11:00:00.000Z' }));
+    await saving;
+    expect(useSnapshotsStore.getState().entries['r1']).toEqual({ status: 'none' });
+  });
+
+  it('does not roll a failed setIgnore back over a newer save', async () => {
+    useSnapshotsStore.setState({ entries: { r1: present('{"a":1}', ['/old']) }, failed: {} });
+    let rejectSetIgnore: (reason: unknown) => void = () => undefined;
+    const setIgnore = vi.fn().mockReturnValue(new Promise((_, reject) => (rejectSetIgnore = reject)));
+    const write = vi.fn().mockResolvedValue(ok({ savedAt: '2026-09-22T11:00:00.000Z' }));
+    installWirebenchApi({ snapshot: { setIgnore, write } });
+    const ignoring = useSnapshotsStore.getState().setIgnore('r1', ['/new']);
+    await useSnapshotsStore.getState().save('r1', '{"a":2}', 'application/json', ['/new']);
+    rejectSetIgnore(new Error('disk full'));
+    await ignoring;
+    expect(useSnapshotsStore.getState().entries['r1']).toEqual({
+      status: 'present',
+      snapshot: {
+        body: '{"a":2}',
+        ignore: ['/new'],
+        contentType: 'application/json',
+        savedAt: '2026-09-22T11:00:00.000Z',
+      },
+    });
+  });
+
+  it('rolls a failed setIgnore back when nothing newer happened', async () => {
+    useSnapshotsStore.setState({ entries: { r1: present('{"a":1}', ['/old']) }, failed: {} });
+    installWirebenchApi({ snapshot: { setIgnore: vi.fn().mockRejectedValue(new Error('disk full')) } });
+    await useSnapshotsStore.getState().setIgnore('r1', ['/new']);
+    expect(useSnapshotsStore.getState().entries['r1']).toEqual(present('{"a":1}', ['/old']));
   });
 
   it('says so when the read is rejected instead of loading forever', async () => {

@@ -44,4 +44,16 @@ describe('diffXml', () => {
     );
     expect(changes).toHaveLength(2);
   });
+
+  it('trims each run of mixed content on its own', () => {
+    const golden = '<root>Hello <b>big</b> world</root>';
+    const actual = '<root>\n  Hello\n  <b>big</b>\n  world\n</root>';
+    expect(diffXml(golden, actual)).toEqual([]);
+  });
+
+  it('still sees text move across a child element', () => {
+    const golden = '<root>ab<b/>c</root>';
+    const actual = '<root>a<b/>bc</root>';
+    expect(diffXml(golden, actual)).toEqual([{ kind: 'changed', path: '/root', expected: 'ab c', actual: 'a bc' }]);
+  });
 });

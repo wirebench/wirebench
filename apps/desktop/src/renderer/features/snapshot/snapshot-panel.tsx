@@ -3,8 +3,8 @@
  * golden response saved beside the request, semantically for JSON and XML.
  *
  * The comparison runs here, in the renderer — the engine's snapshot diff is pure — and the tab
- * re-reads the golden whenever it mounts or a new response arrives, which is also how it notices
- * that a project saved since the last look can now keep a snapshot.
+ * re-reads the golden whenever it mounts, a new response arrives or the request's project is
+ * saved, which is how it notices that the project can now keep a snapshot.
  */
 import { useEffect, useMemo, useState } from 'react';
 // The snapshot subpath is as browser-safe as /xml (it depends only on it and @xmldom/xmldom), but
@@ -14,6 +14,7 @@ import { detectSnapshotFormat, diffSnapshot, parseIgnoreRules, type SnapshotChan
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useEditorsStore } from '../../state/editors.js';
+import { useProjectStore } from '../../state/project.js';
 import { useSnapshotsStore } from '../../state/snapshots.js';
 import type { SnapshotWire } from '../../../shared/wire-types.js';
 
@@ -60,12 +61,18 @@ export function SnapshotPanel({ requestId, body, contentType, binary = false }: 
   const failed = useSnapshotsStore((store) => store.failed[requestId] === true);
   const load = useSnapshotsStore((store) => store.load);
   const save = useSnapshotsStore((store) => store.save);
+  // Changes on every save of the request's project, so a tab that said "Save the project…" reads
+  // again once it has been.
+  const lastSavedAt = useProjectStore((store) => {
+    const projectId = store.projectOf[requestId];
+    return projectId === undefined ? undefined : store.projects[projectId]?.lastSavedAt;
+  });
 
   useEffect(() => {
     if (body !== undefined) {
       void load(requestId);
     }
-  }, [requestId, body, load]);
+  }, [requestId, body, load, lastSavedAt]);
 
   if (body === undefined) {
     return <Message>Send the request to compare its response.</Message>;
@@ -137,7 +144,7 @@ function SnapshotComparison({ requestId, body, contentType, binary, golden }: Co
   function ignorePath(path: string): void {
     // Read from the store at click time, not from this render, so it composes with a rule the
     // textarea's blur has just saved or an Ignore clicked a moment ago.
-    void addIgnoreRule(requestId, path === '' ? '/' : path);
+    void addIgnoreRule(requestId, path);
   }
 
   function compareSideBySide(): void {
@@ -248,23 +255,20 @@ function ChangesTable({
         </tr>
       </thead>
       <tbody>
-        {changes.map((change, index) => {
-          const path = change.path === '' ? '/' : change.path;
-          return (
-            <tr key={`${path}:${String(index)}`} className="border-t border-hairline align-top">
-              <td className="px-2 py-1 text-fg-muted">{change.kind}</td>
-              <td className="px-2 py-1 break-all text-fg-default">{path}</td>
-              <td className="px-2 py-1 break-all text-fg-default">
-                {`${change.expected ?? '—'} → ${change.actual ?? '—'}`}
-              </td>
-              <td className="px-2 py-1 text-right">
-                <Button variant="ghost" aria-label={`Ignore ${path}`} onClick={() => onIgnore(change.path)}>
-                  Ignore
-                </Button>
-              </td>
-            </tr>
-          );
-        })}
+        {changes.map((change, index) => (
+          <tr key={`${change.path}:${String(index)}`} className="border-t border-hairline align-top">
+            <td className="px-2 py-1 text-fg-muted">{change.kind}</td>
+            <td className="px-2 py-1 break-all text-fg-default">{change.path}</td>
+            <td className="px-2 py-1 break-all text-fg-default">
+              {`${change.expected ?? '—'} → ${change.actual ?? '—'}`}
+            </td>
+            <td className="px-2 py-1 text-right">
+              <Button variant="ghost" aria-label={`Ignore ${change.path}`} onClick={() => onIgnore(change.path)}>
+                Ignore
+              </Button>
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );

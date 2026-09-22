@@ -21,8 +21,12 @@ attribute order, namespace prefixes and formatting don't count as differences.
 
 </Steps>
 
-A response with no text body — an image, a PDF, any other binary — can't be kept as a snapshot; the
-tab says **This response has no text body to compare.**
+A response with no text body can't be kept as a snapshot: an empty one, and for a REST request one
+with an image, a PDF or any other binary body. The tab says **This response has no text body to
+compare.**
+
+For a SOAP request the snapshot is the envelope, as the response pane shows it: the root part of an
+MTOM or SwA response, and the decrypted envelope when WS-Security decrypts one.
 
 ## Read the comparison
 
@@ -31,12 +35,13 @@ table of each one: its kind (`added`, `removed` or `changed`), its path, and the
 values.
 
 - **JSON** is compared by key and by array index. Numbers are compared by value, so `1.0` equals
-  `1`. Paths are JSON Pointers, such as `/items/0/name`.
+  `1`. Paths are JSON Pointers, such as `/items/0/name`; a change to the whole document is at `/`.
 - **XML** is compared by namespace and local name, so a different prefix for the same namespace is
   not a difference. Comments, processing instructions, `xmlns` declarations and whitespace-only text
   are left out, and text is trimmed. Paths are slash paths of local names, such as
   `/Envelope/Body/GetQuoteResponse/Price`, with `[n]` when a name repeats and `@name` for an
-  attribute.
+  attribute. Because a path has no namespace in it, elements with the same local name in different
+  namespaces share a path.
 - **Any other text** is compared exactly, after line endings are normalised. A difference is
   reported once, at `/`.
 
@@ -60,8 +65,14 @@ focus, and an **Ignore** button on each difference adds its path for you.
 | `//requestId` | `requestId` at any depth |
 | `/Envelope/Header` | The whole SOAP header |
 
-A segment without `[n]` matches every index, and a line starting with `#` is a comment. When
-differences are ignored, the tab says how many, for example **Matches the snapshot (2 ignored)**.
+A segment without `[n]` matches every index, `/` on its own ignores everything, and a line starting
+with `#` is a comment. When differences are ignored, the tab says how many, for example **Matches the
+snapshot (2 ignored)**.
+
+An XML path only has an index while the name repeats, so a rule saved from a difference such as
+`/list/item[1]/ts` stops matching once the response has a single `item` (whose path is then
+`/list/item/ts`). To ignore `ts` in every item, however many there are, write the rule without the
+index: `/list/item/ts`.
 
 ## Update or delete the snapshot
 

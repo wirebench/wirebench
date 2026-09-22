@@ -1,7 +1,8 @@
 /**
- * Splits ignore-rule text into individual rules: one per line, blank lines
- * and `#`-comment lines skipped. The textarea in the Snapshot tab saves its
- * raw text through this before it's stored as the sidecar's `ignore` array.
+ * Splits ignore-rule text into the rules a diff applies: one per line,
+ * trimmed, with blank lines and `#`-comment lines skipped. The sidecar's
+ * `ignore` array keeps comment lines as the user typed them, so the
+ * Snapshot tab runs the stored lines through this only when it diffs.
  */
 export function parseIgnoreRules(text: string): string[] {
   return text
@@ -47,14 +48,15 @@ function segmentMatches(pathSegment: string, ruleSegment: string): boolean {
  * Tests whether `rule` covers `path`, either directly or because `path` is a
  * descendant of the path the rule names. A rule's `*` segment matches any
  * one segment; a leading `//` means "at any depth"; a segment with no
- * `[n]` matches every index of that name.
+ * `[n]` matches every index of that name; `/` alone matches every path.
  */
 export function matchesIgnoreRule(path: string, rule: string): boolean {
   const anyDepth = rule.startsWith('//');
   const ruleSegments = segments(rule);
   const pathSegments = segments(path);
   if (ruleSegments.length === 0) {
-    return false;
+    // `/` names the root, which every path descends from.
+    return rule.startsWith('/');
   }
 
   const matchesFrom = (start: number): boolean => {

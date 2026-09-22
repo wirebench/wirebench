@@ -28,16 +28,34 @@ function childElements(node: Element): Element[] {
   return result;
 }
 
-/** Direct text (and CDATA) children, trimmed and concatenated — comments, PIs and whitespace-only text are ignored. */
+/**
+ * Direct text (and CDATA) children — comments, PIs and whitespace-only text ignored. In mixed
+ * content each run of text between child elements is trimmed on its own and the runs joined by
+ * one space, so indentation around a child element never reads as a text change.
+ */
 function ownText(node: Element): string {
-  let text = '';
+  const runs: string[] = [];
+  let run = '';
+  const flush = (): void => {
+    const trimmed = run.trim();
+    if (trimmed.length > 0) {
+      runs.push(trimmed);
+    }
+    run = '';
+  };
   for (let i = 0; i < node.childNodes.length; i += 1) {
     const child = node.childNodes.item(i);
-    if (child !== null && (child.nodeType === TEXT_NODE || child.nodeType === CDATA_SECTION_NODE)) {
-      text += child.nodeValue ?? '';
+    if (child === null) {
+      continue;
+    }
+    if (child.nodeType === TEXT_NODE || child.nodeType === CDATA_SECTION_NODE) {
+      run += child.nodeValue ?? '';
+    } else if (child.nodeType === ELEMENT_NODE) {
+      flush();
     }
   }
-  return text.trim();
+  flush();
+  return runs.join(' ');
 }
 
 /** An element's non-`xmlns` attributes, keyed by (namespace, local name). */

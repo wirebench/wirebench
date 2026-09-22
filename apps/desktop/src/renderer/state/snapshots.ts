@@ -7,8 +7,8 @@ import { ipc } from './ipc-client.js';
 /**
  * The golden response kept beside each saved request, cached per request id and read through
  * `ipc().snapshot.*`. Main owns the sidecar file; this store only mirrors what it last said, so
- * the Snapshot tab re-reads it whenever it is shown or a new response arrives (the project may
- * have been saved in between, turning `unsaved` into `none`).
+ * the Snapshot tab re-reads it whenever it is shown, a new response arrives or the project is
+ * saved (which can turn `unsaved` into `none`).
  *
  * `ignore` holds the user's rule lines as typed (trimmed, blanks dropped, `#` comments kept);
  * comments are skipped only when diffing.
@@ -34,9 +34,9 @@ export interface SnapshotsStore {
 }
 
 /**
- * Bumped per request id by every read and every mutation. A read's answer is applied only while
- * its own number is still the latest, so a slow read can never restore state a later write
- * replaced.
+ * Bumped per request id by every read and every mutation. An answer — a read's, a write's, or a
+ * failed `setIgnore`'s rollback — is applied only while its own number is still the latest, so a
+ * slow call can never restore state that a later one replaced.
  */
 const generations = new Map<string, number>();
 
@@ -83,7 +83,7 @@ export const useSnapshotsStore = create<SnapshotsStore>((set, get) => {
     },
 
     save: async (requestId, body, contentType, ignore) => {
-      bump(requestId);
+      const generation = bump(requestId);
       const value = await call(() =>
         ipc().snapshot.write({
           requestId,
@@ -92,7 +92,7 @@ export const useSnapshotsStore = create<SnapshotsStore>((set, get) => {
           ignore: [...ignore],
         }),
       );
-      if (value === undefined) {
+      if (value === undefined || generations.get(requestId) !== generation) {
         return;
       }
       put(requestId, {
@@ -107,14 +107,14 @@ export const useSnapshotsStore = create<SnapshotsStore>((set, get) => {
     },
 
     setIgnore: async (requestId, ignore) => {
-      bump(requestId);
+      const generation = bump(requestId);
       // Applied before the round trip so a following edit composes with this one.
       const before = get().entries[requestId];
       if (before?.status === 'present') {
         put(requestId, { status: 'present', snapshot: { ...before.snapshot, ignore: [...ignore] } });
       }
       const value = await call(() => ipc().snapshot.setIgnore({ requestId, ignore: [...ignore] }));
-      if (value === undefined && before !== undefined) {
+      if (value === undefined && before !== undefined && generations.get(requestId) === generation) {
         put(requestId, before);
       }
     },
@@ -128,9 +128,9 @@ export const useSnapshotsStore = create<SnapshotsStore>((set, get) => {
     },
 
     remove: async (requestId) => {
-      bump(requestId);
+      const generation = bump(requestId);
       const value = await call(() => ipc().snapshot.remove({ requestId }));
-      if (value !== undefined) {
+      if (value !== undefined && generations.get(requestId) === generation) {
         put(requestId, { status: 'none' });
       }
     },

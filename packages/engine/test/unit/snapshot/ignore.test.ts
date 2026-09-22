@@ -40,4 +40,10 @@ describe('matchesIgnoreRule', () => {
   it('does not match a shorter path than the rule', () => {
     expect(matchesIgnoreRule('/meta', '/meta/timestamp')).toBe(false);
   });
+
+  it('matches every path with "/"', () => {
+    expect(matchesIgnoreRule('/', '/')).toBe(true);
+    expect(matchesIgnoreRule('/a/b[2]/@id', '/')).toBe(true);
+    expect(matchesIgnoreRule('/Envelope', '/')).toBe(true);
+  });
 });

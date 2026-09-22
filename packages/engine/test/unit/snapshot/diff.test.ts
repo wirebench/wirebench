@@ -58,6 +58,31 @@ describe('diffSnapshot', () => {
     const long = 'x'.repeat(250);
     const result = diffSnapshot(`{"a":"${long}"}`, '{"a":"short"}', { format: 'json', ignore: [] });
     const change = result.changes[0];
-    expect(change?.expected).toHaveLength(201); // 200 chars, then a 1-char ellipsis appended
+    expect(change?.expected).toHaveLength(200); // 199 chars, then the 1-char ellipsis
+    expect(change?.expected?.endsWith('…')).toBe(true);
+  });
+
+  it('leaves a value of exactly 200 characters whole', () => {
+    const exact = 'y'.repeat(200);
+    const result = diffSnapshot(exact, 'short', { format: 'text', ignore: [] });
+    expect(result.changes[0]?.expected).toBe(exact);
+  });
+
+  it('falls back to text diffing and sets error on an empty XML body', () => {
+    const result = diffSnapshot('<root/>', '', { format: 'xml', ignore: [] });
+    expect(result.format).toBe('text');
+    expect(result.error).toBeDefined();
+    expect(result.changes).toEqual([{ kind: 'changed', path: '/', expected: '<root/>', actual: '' }]);
+  });
+
+  it('reports a root JSON change at "/", which a "/" rule ignores', () => {
+    expect(diffSnapshot('1', '2', { format: 'json', ignore: [] }).changes).toEqual([
+      { kind: 'changed', path: '/', expected: '1', actual: '2' },
+    ]);
+    expect(diffSnapshot('{"a":1}', '[]', { format: 'json', ignore: ['/'] })).toEqual({
+      format: 'json',
+      changes: [],
+      ignored: 1,
+    });
   });
 });

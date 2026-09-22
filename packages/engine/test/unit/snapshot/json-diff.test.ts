@@ -44,4 +44,9 @@ describe('diffJson', () => {
     );
     expect(changes).toHaveLength(2);
   });
+
+  it('reports a change at the root as "/"', () => {
+    expect(diffJson({ a: 1 }, [1])).toEqual([{ kind: 'changed', path: '/', expected: '{"a":1}', actual: '[1]' }]);
+    expect(diffJson('a', 'b')).toEqual([{ kind: 'changed', path: '/', expected: '"a"', actual: '"b"' }]);
+  });
 });

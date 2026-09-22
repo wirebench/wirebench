@@ -58,13 +58,13 @@ function parseIgnoreRules(text: string): string[]; // one per line; skips blanks
 - Arrays are compared by index. Extra tail items are `added`; missing ones are `removed`.
 - Numbers are compared by value, so `1.0` equals `1`.
 - A type change is one `changed`.
-- Paths are JSON Pointers, with `~0`/`~1` escaping.
+- Paths are JSON Pointers, with `~0`/`~1` escaping. A change at the root is reported at `/`.
 
 **XML**
 - Both sides are parsed with `parseXml`.
 - Elements and attributes are compared by namespace URI plus local name, so prefixes don't matter.
 - These are ignored: `xmlns` declarations, attribute order, comments, processing instructions, and whitespace-only text.
-- Text is trimmed before comparing.
+- Text is trimmed before comparing. In mixed content, each run of text between child elements is trimmed on its own.
 - Children are paired in order within each (namespace, local name) group. An earlier inserted sibling with a different name therefore doesn't shift the rest.
 - Path segments are local names. `[n]` (1-based) is added when a name repeats among siblings. Attributes are written `@name`.
 
@@ -75,11 +75,11 @@ function parseIgnoreRules(text: string): string[]; // one per line; skips blanks
 **Parse failure.** If either side fails to parse, the diff falls back to text and sets `error`.
 
 **Format detection**
-- A content type containing `json` means JSON; one containing `xml` means XML.
+- A content type containing `json` means JSON; one containing `xml` means XML. Case doesn't matter.
 - Otherwise the trimmed body decides: `{` or `[` means JSON, `<` means XML, anything else is text.
 - The content type recorded with the golden takes priority.
 
-The `expected` and `actual` values are truncated to 200 characters. An element value is shown as `<name>`.
+The `expected` and `actual` values are truncated to 200 characters, the ellipsis included. An element value is shown as `<name>`.
 
 ## Ignore rules
 
@@ -88,6 +88,7 @@ A rule is a slash path made of the same segments as diff paths:
 - A leading `//` means "at any depth".
 - A rule also matches every descendant of the path it names.
 - A segment without `[n]` matches any index.
+- `/` alone matches every path.
 
 ## User interface
 
@@ -119,9 +120,11 @@ When either body is larger than 2 MB, the tab shows "Too large to compare semant
 | `snapshot.remove` | `{ requestId }` | `{ removed: boolean }` |
 
 **Snapshot store.** A new `main/snapshot-store.ts` resolves each sidecar path with a new engine helper, `requestFileLocation(project, requestId): { dir: string; slug: string } | undefined`. The helper returns a path relative to the project root, for SOAP and REST requests. The store then:
-- checks that the path stays inside the project folder;
+- checks that the path stays inside the project folder, resolving symlinks in the folder only;
 - checks that the request's `*.request.yaml` exists on disk;
-- writes atomically: to a temp file, then rename;
+- never follows a sidecar that is a symlink or anything but a regular file: it reads as `none` with a warning, and writing or removing it fails;
+- writes atomically: to a uniquely named temp file, then rename;
+- runs the mutations for one request one after another, in the order they were issued;
 - validates reads with zod. A malformed sidecar reads as `none` and logs a warning.
 
 **Shared files.** Changes here are additive only:

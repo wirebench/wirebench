@@ -33,4 +33,9 @@ describe('detectSnapshotFormat', () => {
   it('prefers the content type over the body', () => {
     expect(detectSnapshotFormat('<root/>', 'application/json')).toBe('json');
   });
+
+  it('matches the content type case-insensitively', () => {
+    expect(detectSnapshotFormat('irrelevant', 'Application/JSON')).toBe('json');
+    expect(detectSnapshotFormat('irrelevant', 'TEXT/XML; charset=UTF-8')).toBe('xml');
+  });
 });
