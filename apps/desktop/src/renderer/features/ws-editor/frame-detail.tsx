@@ -13,8 +13,8 @@ import { prettyFrameText } from '@wirebench/engine/ws';
 import { Button } from '../../components/button.js';
 import { CodeEditor } from '../../editor/code-editor.js';
 import { formatBytes } from '../../lib/format-size.js';
-import type { WsFrameWire } from '../../../shared/wire-types.js';
-import { closeCodeMeaning, formatFrameTime, hexDump } from './ws-format.js';
+import type { WsFrameContractWire, WsFrameWire } from '../../../shared/wire-types.js';
+import { closeCodeMeaning, contractProblemText, formatFrameTime, hexDump } from './ws-format.js';
 
 export interface WsFrameDetailProps {
   readonly frame: WsFrameWire;
@@ -110,7 +110,47 @@ export function WsFrameDetail({ frame }: WsFrameDetailProps) {
       className="flex h-full min-h-0 flex-col border-t border-hairline"
     >
       {header}
+      {frame.contract !== undefined && <ContractSection contract={frame.contract} />}
       {body}
+    </section>
+  );
+}
+
+/** The one-line verdict the Contract section opens with. */
+function verdict(contract: WsFrameContractWire): string {
+  const name = contract.message;
+  switch (contract.status) {
+    case 'ok':
+      return name === undefined ? 'Matches the contract.' : `Matches ${name}.`;
+    case 'violation':
+      return name === undefined ? 'Does not match the contract.' : `Does not match ${name}.`;
+    case 'unmatched':
+      return `Not in the contract: ${contract.reason ?? 'no message matches this frame'}.`;
+    case 'skipped':
+      return `Not checked: ${contract.reason ?? 'skipped'}.`;
+    case 'not-checked':
+      return 'Not checked — check took too long.';
+  }
+}
+
+/** How the frame fared against its channel's contract: the matched message, then each problem. */
+function ContractSection({ contract }: { readonly contract: WsFrameContractWire }) {
+  const problems = contract.problems ?? [];
+  return (
+    <section
+      aria-label="Contract"
+      data-testid="ws-frame-contract"
+      className="max-h-32 shrink-0 overflow-auto border-b border-hairline px-2 py-1 text-xs"
+    >
+      <h3 className="font-medium text-fg-muted">Contract</h3>
+      <p className={contract.status === 'violation' ? 'text-status-danger' : 'text-fg-default'}>{verdict(contract)}</p>
+      {problems.length > 0 && (
+        <ul className="mt-0.5 list-disc pl-4 font-mono text-fg-default">
+          {problems.map((problem, index) => (
+            <li key={`${String(index)}:${problem.path}`}>{contractProblemText(problem)}</li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

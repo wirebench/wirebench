@@ -14,6 +14,7 @@ import { effectiveBaseUrl } from '../rest-api/api-tab.js';
 import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { AuthConfigWire } from '../../../shared/wire-types.js';
+import { AsyncApiDefinitionCard } from './asyncapi-definition-card.js';
 
 export interface WsApiTabProps {
   readonly apiId: string;
@@ -104,6 +105,12 @@ export function WsApiTab({ apiId }: WsApiTabProps) {
           </div>
         </div>
       </SettingsGroup>
+
+      {api.definition !== undefined && (
+        <SettingsGroup title="Definition" hint="The AsyncAPI document this API was imported from.">
+          <AsyncApiDefinitionCard apiId={apiId} definition={api.definition} />
+        </SettingsGroup>
+      )}
 
       <SettingsGroup title="Headers" hint="Sent with every request in this API, before the request’s own.">
         <KvTable

@@ -2359,6 +2359,13 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  importAsyncApi(
+    ...[projectId, input]: Parameters<ProjectRouter['importAsyncApi']>
+  ): ReturnType<ProjectRouter['importAsyncApi']> {
+    return this.hostFor(projectId).importAsyncApi(input);
+  }
+
+  /** @inheritdoc */
   addGrpcApi(...[projectId, input]: Parameters<ProjectRouter['addGrpcApi']>): ReturnType<ProjectRouter['addGrpcApi']> {
     return this.hostFor(projectId).addGrpcApi(input);
   }
@@ -2492,6 +2499,30 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   grpcRefresh(...args: Parameters<ProjectRouter['grpcRefresh']>): ReturnType<ProjectRouter['grpcRefresh']> {
     return this.hostOfEntity(args[0]).refreshGrpcDefinition(...args);
+  }
+
+  /** @inheritdoc */
+  wsContractFor(...args: Parameters<ProjectRouter['wsContractFor']>): ReturnType<ProjectRouter['wsContractFor']> {
+    return this.hostOfEntity(args[0]).wsContractFor(...args);
+  }
+
+  /** @inheritdoc */
+  asyncApiSource(...args: Parameters<ProjectRouter['asyncApiSource']>): ReturnType<ProjectRouter['asyncApiSource']> {
+    return this.hostOfEntity(args[0]).asyncApiSource(...args);
+  }
+
+  /** @inheritdoc */
+  asyncApiPlanUpdate(
+    ...args: Parameters<ProjectRouter['asyncApiPlanUpdate']>
+  ): ReturnType<ProjectRouter['asyncApiPlanUpdate']> {
+    return this.hostOfEntity(args[0]).planAsyncApiUpdate(...args);
+  }
+
+  /** @inheritdoc */
+  asyncApiApplyUpdate(
+    ...args: Parameters<ProjectRouter['asyncApiApplyUpdate']>
+  ): ReturnType<ProjectRouter['asyncApiApplyUpdate']> {
+    return this.hostOfEntity(args[0]).applyAsyncApiUpdate(...args);
   }
 
   /** @inheritdoc */

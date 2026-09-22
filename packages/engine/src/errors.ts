@@ -91,6 +91,18 @@ export class OpenApiError extends WirebenchError {
   }
 }
 
+/**
+ * Thrown when an AsyncAPI document cannot be read at all: `asyncapi-malformed` (not JSON/YAML, or
+ * not a document with an `asyncapi` version) or `asyncapi-version-unsupported` (a version other
+ * than 2.x or 3.0). Anything parseable but unmappable is a note on the document, not this.
+ */
+export class AsyncApiError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'AsyncApiError';
+  }
+}
+
 /** Thrown when a Postman collection cannot be read, or is structurally invalid. */
 export class PostmanError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

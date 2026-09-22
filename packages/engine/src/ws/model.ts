@@ -18,6 +18,7 @@
 import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
+import type { JsonSchemaProblem } from '../json/schema-validate.js';
 import type { KeyValueEntry } from '../rest/model.js';
 import type { SslInfo } from '../http/tls.js';
 
@@ -40,6 +41,18 @@ export interface WsRequestSettings {
   readonly escapeProperties?: boolean;
 }
 
+/** Which channel of the API's contract a request was imported from: the channel key in the document. */
+export interface WsContractLink {
+  readonly channel: string;
+}
+
+/** Which contract message a saved message was generated from, and the text it was generated as. */
+export interface WsMessageContractLink {
+  readonly message: string;
+  /** The sample as imported — what Update Definition compares against to tell an untouched message. */
+  readonly generated: string;
+}
+
 /** A message saved under a request, ready to send without retyping it. */
 export interface WsSavedMessage {
   readonly id: string;
@@ -48,6 +61,7 @@ export interface WsSavedMessage {
   readonly format: 'text' | 'binary';
   /** The text as edited; for `binary`, base64. Stored in `<request-slug>.msg-<slug>.<ext>`. */
   readonly content: string;
+  readonly contract?: WsMessageContractLink;
 }
 
 /** A saved WebSocket request: a URL to dial, headers and query to send, and saved messages. */
@@ -66,6 +80,10 @@ export interface WsRequestDef {
   readonly auth: AuthConfig;
   readonly settings: WsRequestSettings;
   readonly messages: readonly WsSavedMessage[];
+  /** Set when the request was imported from the API's contract. */
+  readonly contract?: WsContractLink;
+  /** The contract no longer has the channel this request was imported from. */
+  readonly orphaned?: boolean;
 }
 
 /** A named node in a WebSocket API's tree. */
@@ -81,11 +99,14 @@ export interface WsFolder {
   readonly requests: readonly WsRequestDef[];
 }
 
-/** Reserved for the contract import (#100); nothing in this plan reads it. */
+/** Where an AsyncAPI-imported API's contract came from, and whether a copy is cached under `definition/`. */
 export interface WsDefinitionRef {
   readonly kind: 'asyncapi';
   readonly source: string;
   readonly cache: boolean;
+  /** The server key the API was mapped against, so an update maps the new document against the same one.
+   *  Absent means the first WebSocket server. */
+  readonly server?: string;
 }
 
 /** A WebSocket API: a server URL and a tree of folders and requests. */
@@ -105,6 +126,20 @@ export interface WsApi {
   readonly requests: readonly WsRequestDef[];
 }
 
+/** How a frame fared against its channel's contract. `not-checked` means the check ran out of
+ *  time and stopped: it says nothing either way about the frame. */
+export type WsFrameContractStatus = 'ok' | 'violation' | 'unmatched' | 'skipped' | 'not-checked';
+
+/** One frame's contract check result: plain data, so it can cross a worker boundary. */
+export interface WsFrameContract {
+  readonly status: WsFrameContractStatus;
+  /** The matched message's name, or the closest one's on a violation. */
+  readonly message?: string;
+  readonly problems?: readonly JsonSchemaProblem[];
+  /** Why a frame is a violation without schema problems, unmatched, skipped or not checked. */
+  readonly reason?: string;
+}
+
 export type WsOpcode = 'text' | 'binary' | 'ping' | 'pong' | 'close';
 
 /** One frame sent or received during a WebSocket session, as shown in the log. */
@@ -120,6 +155,8 @@ export interface WsFrame {
   readonly base64?: string;
   readonly close?: { readonly code: number; readonly reason: string };
   readonly payloadTruncated?: boolean;
+  /** Set when the session's request is linked to a contract channel. */
+  readonly contract?: WsFrameContract;
 }
 
 /** The handshake that opened (or failed to open) a WebSocket session. */
@@ -224,6 +261,7 @@ export interface CreateWsRequestInput extends CreateOptions {
   readonly auth?: AuthConfig;
   readonly settings?: WsRequestSettings;
   readonly messages?: readonly WsSavedMessage[];
+  readonly contract?: WsContractLink;
 }
 
 /** Creates a request with an empty URL and inherited credentials, and nothing saved. */
@@ -242,13 +280,19 @@ export function createWsRequest(name: string, input: CreateWsRequestInput = {}):
     auth: input.auth ?? { type: 'inherit' },
     settings: input.settings ?? {},
     messages: input.messages ?? [],
+    ...(input.contract !== undefined ? { contract: input.contract } : {}),
   };
 }
 
 /** Creates a saved message, text and empty by default. */
 export function createWsSavedMessage(
   name: string,
-  input?: CreateOptions & { readonly slug?: string; readonly format?: 'text' | 'binary'; readonly content?: string },
+  input?: CreateOptions & {
+    readonly slug?: string;
+    readonly format?: 'text' | 'binary';
+    readonly content?: string;
+    readonly contract?: WsMessageContractLink;
+  },
 ): WsSavedMessage {
   return {
     id: idOf(input),
@@ -256,6 +300,7 @@ export function createWsSavedMessage(
     slug: input?.slug ?? slugify(name),
     format: input?.format ?? 'text',
     content: input?.content ?? '',
+    ...(input?.contract !== undefined ? { contract: input.contract } : {}),
   };
 }
 

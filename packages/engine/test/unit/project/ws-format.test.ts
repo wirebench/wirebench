@@ -4,7 +4,7 @@
  * sibling file named by `wsMessageFileName`; and loading back produces the same model,
  * byte-stably.
  */
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { assertSupportedKind } from '../../../src/project/schema.js';
@@ -193,5 +193,122 @@ describe('assertSupportedKind', () => {
       'apis/x/api.yaml is a "graphql" document, which this build cannot open',
     );
     expect(() => assertSupportedKind({ kind: 'websocket' }, 'apis/x/api.yaml')).not.toThrow();
+  });
+});
+
+describe('a WebSocket request linked to its contract', () => {
+  it('round-trips the channel link, the orphaned flag and a message link', async () => {
+    const generated = '{\n  "text": "hello",\n  "room": "general"\n}';
+    const request = createWsRequest('User chat', {
+      id: 'r1',
+      url: '/chat',
+      contract: { channel: 'userChat' },
+      messages: [
+        createWsSavedMessage('Send chat', {
+          id: 'm1',
+          content: generated,
+          contract: { message: 'sendChat', generated },
+        }),
+      ],
+    });
+    const project = {
+      ...emptyProject(),
+      wsApis: [
+        createWsApi('Chat', {
+          id: 'a1',
+          url: 'wss://chat.example.test',
+          requests: [{ ...request, orphaned: true }],
+        }),
+      ],
+    };
+    const first = serializeProject(project);
+    const yaml = first.get('apis/Chat/requests/User chat.request.yaml') ?? '';
+    expect(yaml).toContain('contract:\n  channel: userChat\n');
+    expect(yaml).toContain('orphaned: true\n');
+    expect(yaml).toContain('message: sendChat');
+    expect(yaml).toContain('generated: |');
+
+    const reloaded = await loadFrom(first);
+    expect(reloaded.problems).toEqual([]);
+    const loaded = reloaded.project.wsApis[0]?.requests[0];
+    expect(loaded?.contract).toEqual({ channel: 'userChat' });
+    expect(loaded?.orphaned).toBe(true);
+    expect(loaded?.messages[0]?.contract).toEqual({ message: 'sendChat', generated });
+    expect(serializeProject(reloaded.project)).toEqual(first);
+  });
+
+  it('writes neither field for a request with no link, and loads it without them', async () => {
+    const request = createWsRequest('Plain', {
+      id: 'r1',
+      url: '/p',
+      messages: [createWsSavedMessage('M', { id: 'm1' })],
+    });
+    const project = {
+      ...emptyProject(),
+      wsApis: [createWsApi('Live', { id: 'a1', url: 'wss://x.test', requests: [request] })],
+    };
+    const first = serializeProject(project);
+    const yaml = first.get('apis/Live/requests/Plain.request.yaml') ?? '';
+    expect(yaml).not.toContain('contract');
+    expect(yaml).not.toContain('orphaned');
+    const loaded = (await loadFrom(first)).project.wsApis[0]?.requests[0];
+    expect(loaded !== undefined && 'contract' in loaded).toBe(false);
+    expect(loaded !== undefined && 'orphaned' in loaded).toBe(false);
+    expect(loaded?.messages[0] !== undefined && 'contract' in loaded.messages[0]).toBe(false);
+  });
+
+  it('leaves the committed format-v3 fixture byte-identical but for its formatVersion line', async () => {
+    const v3 = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v3', 'project');
+    const { project, problems } = await loadProject(v3);
+    expect(problems).toEqual([]);
+    for (const [relative, content] of serializeProject(project)) {
+      const onDisk = await readFile(join(v3, ...relative.split('/')), 'utf8');
+      if (relative === 'wirebench.yaml') {
+        expect(content.replace(/^formatVersion: \d+\n/m, '')).toBe(onDisk.replace(/^formatVersion: \d+\n/m, ''));
+      } else {
+        expect(content, relative).toBe(onDisk);
+      }
+    }
+  });
+});
+
+describe('the server an AsyncAPI-imported API was mapped against', () => {
+  it('round-trips a chosen server and writes no server key when none was chosen', async () => {
+    const withServer = {
+      ...emptyProject(),
+      wsApis: [
+        {
+          ...createWsApi('Chat', { id: 'a1', url: 'wss://staging.example.test' }),
+          definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true, server: 'staging' },
+        },
+      ],
+    };
+    const files = serializeProject(withServer);
+    expect(files.get('apis/Chat/api.yaml')).toContain('server: staging\n');
+    const reloaded = await loadFrom(files);
+    expect(reloaded.project.wsApis[0]?.definition).toEqual({
+      kind: 'asyncapi',
+      source: 'https://x.test/a.yaml',
+      cache: true,
+      server: 'staging',
+    });
+    expect(serializeProject(reloaded.project)).toEqual(files);
+
+    const without = {
+      ...emptyProject(),
+      wsApis: [
+        {
+          ...createWsApi('Chat', { id: 'a1', url: 'wss://x.test' }),
+          definition: { kind: 'asyncapi' as const, source: 'https://x.test/a.yaml', cache: true },
+        },
+      ],
+    };
+    const plain = serializeProject(without);
+    expect(plain.get('apis/Chat/api.yaml')).not.toContain('server');
+    expect((await loadFrom(plain)).project.wsApis[0]?.definition).toEqual({
+      kind: 'asyncapi',
+      source: 'https://x.test/a.yaml',
+      cache: true,
+    });
   });
 });

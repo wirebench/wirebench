@@ -76,7 +76,7 @@ function cleanUndefined<T extends object>(value: { readonly [K in keyof T]: T[K]
 }
 
 /** Every slug an API or interface already uses at the project's top level. */
-function takenApiSlugs(project: Project, exceptId?: string): Set<string> {
+export function takenApiSlugs(project: Project, exceptId?: string): Set<string> {
   return new Set([
     ...project.apis.map((api) => api.slug),
     ...project.grpcApis.map((api) => api.slug),
@@ -399,6 +399,8 @@ export function withWsPatch(request: WsRequestDef, patch?: WsRequestPatchWire): 
  */
 function slugMessages(request: WsRequestDef, incoming: NonNullable<WsRequestPatchWire['messages']>): WsSavedMessage[] {
   const existing = new Map(request.messages.map((message) => [message.id, message.slug]));
+  // The contract link is main's record of what the import generated; the renderer cannot set it.
+  const contracts = new Map(request.messages.map((message) => [message.id, message.contract]));
   const taken = new Set<string>();
   for (const message of incoming) {
     const kept = existing.get(message.id);
@@ -408,7 +410,8 @@ function slugMessages(request: WsRequestDef, incoming: NonNullable<WsRequestPatc
     const kept = existing.get(message.id);
     const slug = kept ?? uniqueSlug(message.name, taken);
     taken.add(slug);
-    return { ...toEngineMessage(message), slug };
+    const contract = contracts.get(message.id);
+    return { ...toEngineMessage(message), slug, ...(contract !== undefined ? { contract } : {}) };
   });
 }
 

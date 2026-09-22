@@ -1,0 +1,140 @@
+asyncapi: 3.0.0
+info:
+  title: Chat service
+  version: 1.0.0
+defaultContentType: application/json
+servers:
+  public:
+    host: '{region}.chat.example.test'
+    pathname: /ws
+    protocol: wss
+    variables:
+      region:
+        default: eu
+        enum: [eu, us]
+    security:
+      - $ref: '#/components/securitySchemes/bearerAuth'
+  broker:
+    host: broker.chat.example.test:9092
+    protocol: kafka
+  telemetry:
+    host: mqtt.chat.example.test:1883
+    protocol: mqtt
+channels:
+  userChat:
+    address: /chat/{roomId}
+    servers:
+      - $ref: '#/servers/public'
+    parameters:
+      roomId:
+        default: lobby
+        examples: [lobby, general]
+    bindings:
+      ws:
+        query:
+          type: object
+          properties:
+            token:
+              type: string
+        headers:
+          type: object
+          properties:
+            Sec-WebSocket-Protocol:
+              type: string
+              const: chat.v1
+    tags:
+      - name: chat
+    messages:
+      sendChat:
+        $ref: '#/components/messages/sendChat'
+      chatMessage:
+        $ref: '#/components/messages/chatMessage'
+      presence:
+        $ref: '#/components/messages/presence'
+      ack:
+        $ref: '#/components/messages/ack'
+  typing:
+    address: /typing
+    servers:
+      - $ref: '#/servers/public'
+    messages:
+      typing:
+        name: typing
+        payload:
+          type: object
+          required: [type]
+          properties:
+            type:
+              const: typing
+  audit:
+    address: chat-audit
+    servers:
+      - $ref: '#/servers/broker'
+    bindings:
+      kafka:
+        topic: chat-audit
+    messages:
+      auditRecord:
+        name: auditRecord
+        payload:
+          type: object
+operations:
+  sendChat:
+    action: receive
+    channel:
+      $ref: '#/channels/userChat'
+    messages:
+      - $ref: '#/channels/userChat/messages/sendChat'
+    reply:
+      channel:
+        $ref: '#/channels/userChat'
+      messages:
+        - $ref: '#/channels/userChat/messages/ack'
+  onTyping:
+    action: receive
+    channel:
+      $ref: '#/channels/typing'
+  auditTrail:
+    action: send
+    channel:
+      $ref: '#/channels/audit'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  messages:
+    sendChat:
+      name: sendChat
+      payload:
+        type: object
+        required: [type, text, room]
+        properties:
+          type:
+            const: message
+          text:
+            type: string
+          room:
+            type: string
+      examples:
+        - payload:
+            type: message
+            text: Hello
+            room: lobby
+    chatMessage:
+      name: chatMessage
+      payload:
+        $ref: 'schemas.yaml#/ChatMessage'
+    presence:
+      name: presence
+      payload:
+        $ref: 'schemas.yaml#/Presence'
+    ack:
+      name: ack
+      payload:
+        type: object
+        required: [type]
+        properties:
+          type:
+            const: ack

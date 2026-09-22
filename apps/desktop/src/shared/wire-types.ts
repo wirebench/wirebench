@@ -1599,6 +1599,11 @@ export const wsSavedMessageWireSchema = z.object({
   slug: z.string(),
   format: z.enum(['text', 'binary']),
   content: z.string(),
+  /**
+   * The contract message it was generated from, and the text it was generated as. Main keeps the
+   * one it already has on a patch: the renderer can carry it back, never invent it.
+   */
+  contract: z.object({ message: z.string(), generated: z.string() }).optional(),
 });
 export type WsSavedMessageWire = z.infer<typeof wsSavedMessageWireSchema>;
 
@@ -1620,6 +1625,9 @@ export const wsRequestWireSchema = z.object({
   auth: authConfigWireSchema,
   settings: wsSettingsWireSchema,
   messages: z.array(wsSavedMessageWireSchema),
+  /** The contract channel it was imported from, by its key in the document. */
+  contract: z.object({ channel: z.string() }).optional(),
+  /** The contract no longer has that channel. */
   orphaned: z.boolean().optional(),
 });
 export type WsRequestWire = z.infer<typeof wsRequestWireSchema>;
@@ -1635,7 +1643,19 @@ export const wsApiWireSchema = z.object({
   url: z.string(),
   headers: z.array(keyValueWireSchema),
   auth: authConfigWireSchema.optional(),
-  definition: z.object({ kind: z.literal('asyncapi'), source: z.string(), cache: z.boolean() }).optional(),
+  definition: z
+    .object({
+      kind: z.literal('asyncapi'),
+      source: z.string(),
+      cache: z.boolean(),
+      /** The server key the API was mapped against; absent means the first WebSocket one. */
+      server: z.string().optional(),
+      /** The `asyncapi` version the cached document declares, once main has read the cache. */
+      version: z.string().optional(),
+      /** The cached document's WebSocket (`ws`/`wss`) server keys, in document order. */
+      servers: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 export type WsApiWire = z.infer<typeof wsApiWireSchema>;
 
@@ -1939,6 +1959,18 @@ export const requestPreflightGrpcRequestSchema = z.object({
 
 // ——— WebSocket session channels ————————————————————————————————————————————————————————————
 
+/**
+ * How a frame fared against its channel's contract. `not-checked` means the check ran out of time:
+ * it says nothing either way about the frame.
+ */
+export const wsFrameContractWireSchema = z.object({
+  status: z.enum(['ok', 'violation', 'unmatched', 'skipped', 'not-checked']),
+  message: z.string().optional(),
+  problems: z.array(z.object({ path: z.string(), keyword: z.string(), message: z.string() })).optional(),
+  reason: z.string().optional(),
+});
+export type WsFrameContractWire = z.infer<typeof wsFrameContractWireSchema>;
+
 /** One frame sent or received during a WebSocket session, as the log/live pane shows it. */
 export const wsFrameWireSchema = z.object({
   index: z.number(),
@@ -1951,6 +1983,8 @@ export const wsFrameWireSchema = z.object({
   base64: z.string().optional(),
   close: z.object({ code: z.number(), reason: z.string() }).optional(),
   payloadTruncated: z.boolean().optional(),
+  /** Set when the session's request is linked to a contract channel. */
+  contract: wsFrameContractWireSchema.optional(),
 });
 export type WsFrameWire = z.infer<typeof wsFrameWireSchema>;
 
@@ -2023,6 +2057,16 @@ export type WsHandshakeExchangeSummary = z.infer<typeof wsHandshakeExchangeSumma
 export const wsLiveEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('handshake'), sendId: z.string(), handshake: wsHandshakeWireSchema }),
   z.object({ kind: z.literal('frame'), sendId: z.string(), frame: wsFrameWireSchema }),
+  /**
+   * A frame's contract check, which follows its `frame` event: the check runs on a worker thread,
+   * so the frame is never held back waiting for it. `index` names the frame.
+   */
+  z.object({
+    kind: z.literal('contract'),
+    sendId: z.string(),
+    index: z.number(),
+    contract: wsFrameContractWireSchema,
+  }),
   z.object({ kind: z.literal('closed'), sendId: z.string() }),
 ]);
 export type WsLiveEvent = z.infer<typeof wsLiveEventSchema>;
@@ -2654,6 +2698,105 @@ export const apiImportOpenApiResponseSchema = z.object({
   summary: openApiImportSummarySchema,
 });
 export type ApiImportOpenApiResponse = z.infer<typeof apiImportOpenApiResponseSchema>;
+
+/** What an AsyncAPI import made, for the summary the dialog shows when it finishes. */
+export const asyncApiImportSummarySchema = z.object({
+  name: z.string(),
+  title: z.string(),
+  /** The `asyncapi` string the document declared. */
+  declaredVersion: z.string(),
+  /** The server the API's URL came from, when there was a WebSocket one. */
+  server: z.string().optional(),
+  /** Every server key the document lists, WebSocket or not: what the server picker offers. */
+  servers: z.array(z.string()),
+  requests: z.number(),
+  messages: z.number(),
+  /** Channels, operations and schemes the import left out, each with the reason. */
+  skipped: z.array(z.object({ where: z.string(), reason: z.string() })),
+  unresolved: z.array(z.string()),
+  unsupportedKeywords: z.array(z.string()),
+});
+export type AsyncApiImportSummaryWire = z.infer<typeof asyncApiImportSummarySchema>;
+
+/** Request/response for `api.importAsyncApi`. The target is the union an OpenAPI import takes. */
+export const apiImportAsyncApiRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: openApiSourceSchema,
+  /** The `ws`/`wss` server to dial, by its key in the document; absent picks the first one. */
+  server: z.string().max(200).optional(),
+  /** Overrides `info.title` as the API's name; empty or whitespace-only falls back to the title. */
+  name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
+  /** Write the definition cache. Defaults to the definition-caching preference. */
+  cache: z.boolean().optional(),
+  /** Echoed back on `engine.progress` events raised while this import is in flight. */
+  token: z.string().optional(),
+});
+export type ApiImportAsyncApiRequest = z.infer<typeof apiImportAsyncApiRequestSchema>;
+
+export const apiImportAsyncApiResponseSchema = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  apiId: z.string(),
+  summary: asyncApiImportSummarySchema,
+});
+export type ApiImportAsyncApiResponse = z.infer<typeof apiImportAsyncApiResponseSchema>;
+
+/**
+ * Request/response for `api.asyncApiServers`: the document's `ws`/`wss` servers, read before an
+ * import so the dialog can offer a choice of server when there is more than one.
+ */
+export const apiAsyncApiServersRequestSchema = z.object({ source: openApiSourceSchema });
+export type ApiAsyncApiServersRequest = z.infer<typeof apiAsyncApiServersRequestSchema>;
+
+export const apiAsyncApiServersResponseSchema = z.object({
+  /** In document order; the first is the one an import picks when none is named. */
+  servers: z.array(z.object({ key: z.string(), url: z.string() })),
+});
+export type ApiAsyncApiServersResponse = z.infer<typeof apiAsyncApiServersResponseSchema>;
+
+const asyncApiOpRefSchema = z.object({
+  key: z.string(),
+  channel: z.string(),
+  direction: z.enum(['sent', 'received']),
+});
+
+/** What updating an AsyncAPI-imported API would change, per operation (`api.asyncApiPlanUpdate`). */
+export const asyncApiUpdatePlanSchema = z.object({
+  added: z.array(asyncApiOpRefSchema),
+  removed: z.array(asyncApiOpRefSchema),
+  changed: z.array(
+    z.object({
+      op: asyncApiOpRefSchema,
+      reasons: z.array(z.enum(['address', 'payload', 'bindings', 'security', 'messages'])),
+    }),
+  ),
+});
+export type AsyncApiUpdatePlanWire = z.infer<typeof asyncApiUpdatePlanSchema>;
+
+/**
+ * `api.asyncApiPlanUpdate`'s answer: the plan, and a sha256 of the documents it was made from, which
+ * `api.asyncApiApplyUpdate` must be handed back so it never applies a source that changed since.
+ */
+export const apiAsyncApiPlanUpdateResponseSchema = asyncApiUpdatePlanSchema.extend({ fingerprint: z.string() });
+export type ApiAsyncApiPlanUpdateResponse = z.infer<typeof apiAsyncApiPlanUpdateResponseSchema>;
+
+export const apiAsyncApiApplyUpdateRequestSchema = z.object({ apiId: z.string(), fingerprint: z.string() });
+export type ApiAsyncApiApplyUpdateRequest = z.infer<typeof apiAsyncApiApplyUpdateRequestSchema>;
+
+/** What `api.asyncApiApplyUpdate` did: the saved project, the plan it applied, and the ids it touched. */
+export const apiAsyncApiApplyUpdateResponseSchema = z.object({
+  project: projectWireSchema,
+  plan: asyncApiUpdatePlanSchema,
+  applied: z.object({
+    requestsAdded: z.array(z.string()),
+    requestsOrphaned: z.array(z.string()),
+    requestsRestored: z.array(z.string()),
+    requestsRewritten: z.array(z.string()),
+    messagesReplaced: z.array(z.string()),
+    messagesAdded: z.array(z.string()),
+  }),
+});
+export type ApiAsyncApiApplyUpdateResponse = z.infer<typeof apiAsyncApiApplyUpdateResponseSchema>;
 
 /** Source for Postman collection import: file path or pasted JSON text. */
 export const postmanSourceSchema = z.discriminatedUnion('kind', [

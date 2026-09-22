@@ -78,6 +78,14 @@ export interface ProjectWireContext {
   readonly problems: readonly ProjectProblemWire[];
   /** Per-interface runtime state, keyed by interface id. */
   readonly runtime: ReadonlyMap<string, InterfaceRuntime>;
+  /** What main has read from each AsyncAPI-imported API's cached document, keyed by API id. */
+  readonly asyncApiInfo?: ReadonlyMap<string, AsyncApiDefinitionInfo>;
+}
+
+/** The facts the Definition card shows that live in the cached document rather than the project. */
+export interface AsyncApiDefinitionInfo {
+  readonly version: string;
+  readonly servers: readonly string[];
 }
 
 /** The local part of a Clark-notation QName (`{ns}local`); the input itself when it has none. */
@@ -524,7 +532,7 @@ function toGrpcTreeWires(apis: readonly GrpcApi[]): {
 }
 
 /** A WebSocket API's own row; its folders and requests travel flat beside it like a gRPC API's. */
-function toWsApiWire(api: WsApi): WsApiWire {
+function toWsApiWire(api: WsApi, info?: AsyncApiDefinitionInfo): WsApiWire {
   return {
     kind: 'websocket',
     id: api.id,
@@ -536,13 +544,30 @@ function toWsApiWire(api: WsApi): WsApiWire {
     headers: toKeyValueWires(api.headers),
     ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
     ...(api.definition !== undefined
-      ? { definition: { kind: api.definition.kind, source: api.definition.source, cache: api.definition.cache } }
+      ? {
+          definition: {
+            kind: api.definition.kind,
+            source: api.definition.source,
+            cache: api.definition.cache,
+            ...(api.definition.server !== undefined ? { server: api.definition.server } : {}),
+            ...(info !== undefined ? { version: info.version, servers: [...info.servers] } : {}),
+          },
+        }
       : {}),
   };
 }
 
 function toWsMessageWire(message: WsRequestDef['messages'][number]): WsRequestWire['messages'][number] {
-  return { id: message.id, name: message.name, slug: message.slug, format: message.format, content: message.content };
+  return {
+    id: message.id,
+    name: message.name,
+    slug: message.slug,
+    format: message.format,
+    content: message.content,
+    ...(message.contract !== undefined
+      ? { contract: { message: message.contract.message, generated: message.contract.generated } }
+      : {}),
+  };
 }
 
 function toWsRequestWire(request: WsRequestDef, apiId: string, folderId: string | undefined): WsRequestWire {
@@ -562,6 +587,8 @@ function toWsRequestWire(request: WsRequestDef, apiId: string, folderId: string 
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
     messages: request.messages.map(toWsMessageWire),
+    ...(request.contract !== undefined ? { contract: { channel: request.contract.channel } } : {}),
+    ...(request.orphaned === true ? { orphaned: true } : {}),
   };
 }
 
@@ -614,7 +641,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     restRequests: restTree.requests,
     grpcApis: project.grpcApis.map(toGrpcApiWire),
     grpcRequests: grpcTree.requests,
-    wsApis: project.wsApis.map(toWsApiWire),
+    wsApis: project.wsApis.map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
     wsRequests: wsTree.requests,
     properties: { ...project.properties },
     disabledProperties: [...project.disabledProperties],

@@ -136,18 +136,17 @@ describe('request.sendRest streaming an event-stream response', () => {
     );
     const { sender, events } = fakeSender();
 
-    let resolved = false;
+    // How many rows had been emitted at the moment the invoke resolved: every one must already be
+    // out, which proves they went live rather than only in the final summary. Counting at resolve time
+    // (not polling for three rows, then asking whether it resolved) cannot race a fast stream.
+    let rowsAtResolve = -1;
     const sendPromise = invoke('request.sendRest', { sendId: 'r1', requestId: 'rest-1' }, sender).then((result) => {
-      resolved = true;
+      rowsAtResolve = events.filter((e) => e.kind === 'row').length;
       return result;
     });
 
-    await waitFor(() => events.filter((e) => e.kind === 'row').length === 3, 'all three rows to arrive live');
-    // Not resolved yet: the assertion above raced the invoke and won.
-    expect(resolved).toBe(false);
-
     const summary = unwrap<RestExchangeSummary>(await sendPromise);
-    expect(resolved).toBe(true);
+    expect(rowsAtResolve).toBe(3);
 
     expect(events.filter((e) => e.kind === 'open')).toHaveLength(1);
     const openEvent = events.find((e) => e.kind === 'open');

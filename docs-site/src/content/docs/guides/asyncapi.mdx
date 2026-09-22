@@ -1,0 +1,97 @@
+---
+title: AsyncAPI contracts
+description: Import an AsyncAPI document into a WebSocket API, check every frame against it, and update it when the document changes.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An AsyncAPI document describes a message-driven service: its servers, its channels, and the
+messages each side sends. Wirebench imports one into a [WebSocket API](/wirebench/guides/websocket/),
+fills in a request per channel, and then checks every text frame of a live session against the
+messages the document declares. A WebSocket API without a contract works exactly as before; the
+contract only adds to it.
+
+## Import a document
+
+<Steps>
+
+1. Right-click a project in the explorer and choose **Import…**.
+2. Give the dialog a URL, a file or pasted text. AsyncAPI 2.0–2.6 and 3.0.x documents, in YAML or
+   JSON, are detected on their own; **AsyncAPI (WebSocket)** in the format list picks it by hand.
+   Other versions are refused by name.
+3. Optionally set a **Name** — by default the API is named after the document's title.
+4. When the document declares more than one `ws` or `wss` server, pick one under
+   **WebSocket server**. Its URL becomes the API's URL.
+5. Choose **Import**.
+
+</Steps>
+
+The summary counts the requests and messages it made, names any `{parameter}` or server variable
+it had no default for — those are left as `${name}` properties to define in an environment — and
+lists schema keywords the contract check does not assert. Everything it did not map is under
+**Skipped**, one line each: Kafka, MQTT, AMQP and every other non-WebSocket server, channel or
+binding; message formats other than JSON Schema (an Avro message, for instance); and security
+schemes it cannot carry on a WebSocket handshake.
+
+The document, and every file it references by `$ref`, is cached with the project byte for byte,
+so the contract is still there offline and on a teammate's machine.
+
+## What an import makes
+
+- **One request per WebSocket channel**, named after the channel and grouped in a folder by its
+  first tag. The request's URL is the channel address, with each parameter's default filled in;
+  the channel's `ws` binding gives its query parameters and headers, and a
+  `Sec-WebSocket-Protocol` header in the binding becomes the request's subprotocol.
+- **A saved message per outgoing message**, on the request's **Messages** tab. Its text is the
+  message's example when it has one, otherwise a sample generated from the payload schema.
+- **Auth from the first security scheme** Wirebench can map: HTTP Basic, a bearer token, an API
+  key, or OAuth2 client credentials and authorization code. An `openIdConnect` scheme is reported
+  under **Skipped** rather than mapped. The fields are left empty — secrets never come from the
+  document and are never stored in the project files; fill them in as described in
+  [Authentication](/wirebench/guides/auth/).
+
+## Checking frames against the contract
+
+Once a request is linked to a channel, every text frame of its sessions, sent and received, is
+checked against the messages the channel declares for that direction. The check runs in a
+background worker, so a busy session never stalls the window. Each frame ends up with one of
+these results:
+
+| Result | Meaning | Marker |
+|---|---|---|
+| Matches | The frame is valid against one of the direction's messages. | none |
+| Does not match | JSON that no message accepts, or text that is not JSON; the detail lists each problem with its path. | warning triangle |
+| Not in the contract | The channel declares no messages for that direction. | slashed circle |
+| Not checked (skipped) | Larger than 256 KiB, or the direction has no JSON Schema message to check against. | none |
+| Not checked — check took too long | One frame's check ran past its 1 000 ms deadline. | clock |
+
+Select a frame to see its **Contract** section in the detail: the message it matched or came
+closest to, and each problem as `/path — keyword: message`. The **Contract problems only** toggle
+above the timeline keeps just the frames that do not match or are not in the contract; a frame
+that was not checked is not a contract problem and is not kept by it.
+
+<Aside>
+Checks queue behind one another. When more than 1 000 frames or 8 MiB of frame text are waiting, the
+newly arriving frames are marked *not checked* rather than holding the session back.
+</Aside>
+
+## Update Definition
+
+When the document changes, open the API's tab and choose **Update definition…** in its
+definition card. The source is read again and a preview lists **Added operations**, **Removed
+operations** and **Changed operations**, each changed one with its reasons. Choose **Apply** to
+take it.
+
+Nothing is deleted. A request whose channel is gone is kept and badged *orphaned*; if the channel
+comes back in a later update, the badge is cleared. A request field or saved message is rewritten
+only where it still equals what the old contract generated, so your own edits survive. A channel
+renamed in the document reads as one removed and one added.
+
+If the source changed again between the preview and **Apply**, nothing is applied: the dialog
+says so and offers **Preview again**.
+
+## Related
+
+- [WebSocket](/wirebench/guides/websocket/)
+- [Importing APIs](/wirebench/guides/importers/)
+- [Authentication](/wirebench/guides/auth/)

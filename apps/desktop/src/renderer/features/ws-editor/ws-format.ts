@@ -3,7 +3,7 @@
  * means, whether a composed binary payload parses, and which subprotocol tokens and close codes are
  * legal. Kept apart from the components so each rule is tested on its own.
  */
-import type { WsFrameWire } from '../../../shared/wire-types.js';
+import type { WsFrameContractWire, WsFrameWire } from '../../../shared/wire-types.js';
 
 /** `mm:ss.mmm` for a frame's offset from the start of the session. */
 export function formatFrameTime(ms: number): string {
@@ -182,4 +182,30 @@ export function base64Problem(text: string): string | undefined {
   const compact = text.replace(/\s/g, '');
   if (compact === '') return undefined;
   return /^[A-Za-z0-9+/]+={0,2}$/.test(compact) && compact.length % 4 === 0 ? undefined : 'Not valid base64.';
+}
+
+/** One contract problem as the timeline and the detail spell it: `/text — type: expected string`. */
+export function contractProblemText(problem: NonNullable<WsFrameContractWire['problems']>[number]): string {
+  return `${problem.path === '' ? '/' : problem.path} — ${problem.keyword}: ${problem.message}`;
+}
+
+/**
+ * What a frame's timeline marker says, or `undefined` when it gets none. Only a frame that broke
+ * the contract, one the contract has no message for, and one whose check ran out of time are
+ * marked: an `ok` frame (and a `skipped` one) looks as it would with no contract at all.
+ */
+export function contractMarkerLabel(contract: WsFrameContractWire | undefined): string | undefined {
+  if (contract === undefined) return undefined;
+  switch (contract.status) {
+    case 'violation': {
+      const first = contract.problems?.[0];
+      return `Contract problem: ${first === undefined ? (contract.reason ?? 'does not match') : contractProblemText(first)}`;
+    }
+    case 'unmatched':
+      return `Not in the contract: ${contract.reason ?? 'no message matches this frame'}`;
+    case 'not-checked':
+      return 'Not checked — check took too long';
+    default:
+      return undefined;
+  }
 }

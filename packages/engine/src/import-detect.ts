@@ -1,6 +1,6 @@
 /**
  * Format detection for API definition imports: WSDL, OpenAPI / Swagger, Postman Collections,
- * Protocol Buffers (`.proto`) and legacy single-XML SOAP projects.
+ * AsyncAPI, Protocol Buffers (`.proto`) and legacy single-XML SOAP projects.
  *
  * Inspects document text, file names, or URLs to classify definition formats before or during import.
  */
@@ -9,7 +9,8 @@ import { parse as parseYamlDocument } from 'yaml';
 import { isPostmanCollection } from './rest/postman/parse.js';
 import { looksLikeLegacyProject } from './soap/legacy-project/format.js';
 
-export type ImportFormatKind = 'openapi' | 'postman' | 'wsdl' | 'proto' | 'legacy-soap-project' | 'unknown';
+export type ImportFormatKind =
+  'openapi' | 'asyncapi' | 'postman' | 'wsdl' | 'proto' | 'legacy-soap-project' | 'unknown';
 
 export interface DetectedImportFormat {
   readonly kind: ImportFormatKind;
@@ -125,6 +126,9 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
         };
       }
 
+      if (typeof parsed['asyncapi'] === 'string') {
+        return { kind: 'asyncapi', label: `AsyncAPI ${parsed['asyncapi']}`, confidence: 'definite' };
+      }
       if (typeof parsed['openapi'] === 'string') {
         return {
           kind: 'openapi',
@@ -149,6 +153,9 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     }
 
     // 4. Pattern matching fallback on raw text
+    if (/^asyncapi\s*:\s*['"]?[23]\./m.test(text)) {
+      return { kind: 'asyncapi', label: 'AsyncAPI', confidence: 'probable' };
+    }
     if (/^\s*openapi\s*:\s*['"]?3\.[012]/m.test(text)) {
       return { kind: 'openapi', label: 'OpenAPI 3.x', confidence: 'probable' };
     }
@@ -186,6 +193,9 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     }
     if (target.includes('postman_collection') || target.endsWith('.postman.json')) {
       return { kind: 'postman', label: 'Postman Collection', confidence: 'probable' };
+    }
+    if (target.includes('asyncapi')) {
+      return { kind: 'asyncapi', label: 'AsyncAPI', confidence: 'probable' };
     }
     if (
       target.includes('openapi') ||

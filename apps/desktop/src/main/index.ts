@@ -345,6 +345,7 @@ void app.whenReady().then(() => {
   registerApiChannels({
     router: workspaceService,
     imports: openApiImports,
+    asyncApiImports: openApiImports,
     protoImports,
     addProject: async (name) => await workspaceService.addProject(name),
     removeProject: async (projectId, options) => await workspaceService.removeProject(projectId, options),

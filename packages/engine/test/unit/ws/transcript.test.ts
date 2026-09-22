@@ -45,3 +45,17 @@ describe('capFrames', () => {
     expect(result.truncated).toBe(true);
   });
 });
+
+describe('capFrames and contract results', () => {
+  it('keeps the status and message, drops the problems', () => {
+    const frame: WsFrame = {
+      ...text(0),
+      contract: { status: 'violation', message: 'chat', problems: [{ path: '/a', keyword: 'type', message: 'x' }] },
+    };
+    expect(capFrames([frame]).frames[0]?.contract).toEqual({ status: 'violation', message: 'chat' });
+    const big: WsFrame = { ...text(1, 2_000_000), contract: { status: 'ok', message: 'chat' } };
+    const r = capFrames([big]);
+    expect(r.frames[0]?.payloadTruncated).toBe(true);
+    expect(r.frames[0]?.contract).toEqual({ status: 'ok', message: 'chat' });
+  });
+});

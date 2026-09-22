@@ -25,6 +25,7 @@ export {
   ValidationError,
   WorkspaceError,
   OpenApiError,
+  AsyncApiError,
   PostmanError,
   LegacyProjectError,
   ProtoError,
@@ -379,6 +380,38 @@ export { capSseRows, createSseRowStore, SSE_HISTORY_LIMITS, SSE_SUMMARY_LIMITS }
 export type { SseRowStore, SseTranscript } from './rest/sse-transcript.js';
 export { composeUrl, encodeValue, joinBase, joinQuery, parseUrlParams, splitQuery } from './rest/url.js';
 // OpenAPI: reading a description into the model an import maps onto an API.
+export { parseAsyncApi } from './asyncapi/parse.js';
+export type { ParseAsyncApiOptions, ParsedAsyncApi } from './asyncapi/parse.js';
+export type * from './asyncapi/model.js';
+export { mapAsyncApi } from './asyncapi/map.js';
+export type { AsyncApiImportSummary, MapAsyncApiOptions, MappedAsyncApi } from './asyncapi/map.js';
+export { authFromScheme as asyncApiAuthFromScheme } from './asyncapi/security.js';
+export type { AsyncApiSchemeInput } from './asyncapi/security.js';
+export { importAsyncApi } from './asyncapi/import.js';
+export { applyAsyncApiUpdate, planAsyncApiUpdate } from './asyncapi/update.js';
+export type {
+  ApplyAsyncApiUpdateOptions,
+  AsyncApiApplyResult,
+  AsyncApiChangeReason,
+  AsyncApiOpRef,
+  AsyncApiUpdatePlan,
+} from './asyncapi/update.js';
+export {
+  channelMessages as asyncApiChannelMessages,
+  checkFrame as checkAsyncApiFrame,
+  createFrameChecker,
+  DEFAULT_FRAME_CHECK_BUDGET_MS,
+  MAX_CHECKED_FRAME_BYTES,
+} from './asyncapi/frame-check.js';
+export type { ChannelMessages, FrameChecker, FrameCheckOptions } from './asyncapi/frame-check.js';
+export {
+  createWorkerFrameChecker,
+  DEFAULT_FRAME_CHECK_DEADLINE_MS,
+  DEFAULT_FRAME_CHECK_QUEUE,
+  DEFAULT_FRAME_CHECK_QUEUE_BYTES,
+} from './asyncapi/frame-check-worker-host.js';
+export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/frame-check-worker-host.js';
+export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
 export { apiFromDocument, authFromScheme, mapScheme } from './rest/openapi/map.js';
@@ -1053,10 +1086,14 @@ export type {
   CreateWsFolderInput,
   CreateWsRequestInput,
   WsApi,
+  WsContractLink,
   WsDefinitionRef,
+  WsMessageContractLink,
   WsExchange,
   WsFolder,
   WsFrame,
+  WsFrameContract,
+  WsFrameContractStatus,
   WsHandshake,
   WsOpcode,
   WsRequestDef,

@@ -86,6 +86,26 @@ describe('applyWsLive', () => {
     expect(state?.live?.frames.map((one) => one.text)).toEqual(['one', 'two']);
   });
 
+  it('a contract event sets the check on the frame it names, which arrived unchecked', () => {
+    void startConnect();
+    const sendId = sendIdOf();
+    live({ kind: 'handshake', sendId, handshake: handshake() });
+    live({ kind: 'frame', sendId, frame: frame({ index: 0, text: 'one' }) });
+    live({ kind: 'frame', sendId, frame: frame({ index: 1, text: 'two' }) });
+    live({
+      kind: 'contract',
+      sendId,
+      index: 0,
+      contract: { status: 'violation', message: 'chat', reason: 'not JSON' },
+    });
+    // A check for a frame the live cap already dropped lands nowhere.
+    live({ kind: 'contract', sendId, index: 99, contract: { status: 'ok' } });
+
+    const frames = useExchangesStore.getState().wsByRequest['ws-1']?.live?.frames;
+    expect(frames?.[0]?.contract).toEqual({ status: 'violation', message: 'chat', reason: 'not JSON' });
+    expect(frames?.[1]?.contract).toBeUndefined();
+  });
+
   it('drops an event for a send this request has already replaced', async () => {
     openWs.mockResolvedValue({ ok: true, value: makeWsExchange({ sendId: 'first' }) });
     await useExchangesStore.getState().connectWs('ws-1');

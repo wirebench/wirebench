@@ -7,6 +7,13 @@ import {
   apiDefinitionTextResponseSchema,
   apiExportDefinitionResponseSchema,
   apiIdRequestSchema,
+  apiAsyncApiServersRequestSchema,
+  apiAsyncApiServersResponseSchema,
+  apiImportAsyncApiRequestSchema,
+  apiImportAsyncApiResponseSchema,
+  apiAsyncApiApplyUpdateResponseSchema,
+  apiAsyncApiApplyUpdateRequestSchema,
+  apiAsyncApiPlanUpdateResponseSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
@@ -424,6 +431,29 @@ export const channels = {
   api: {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
     importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
+    importAsyncApi: defineChannel(
+      'api.importAsyncApi',
+      apiImportAsyncApiRequestSchema,
+      apiImportAsyncApiResponseSchema,
+    ),
+    /** Reads an AsyncAPI document's WebSocket servers, for the Import dialog's server picker. */
+    asyncApiServers: defineChannel(
+      'api.asyncApiServers',
+      apiAsyncApiServersRequestSchema,
+      apiAsyncApiServersResponseSchema,
+    ),
+    /** Re-reads an AsyncAPI-imported API's source and reports what updating to it would change. */
+    asyncApiPlanUpdate: defineChannel(
+      'api.asyncApiPlanUpdate',
+      apiIdRequestSchema,
+      apiAsyncApiPlanUpdateResponseSchema,
+    ),
+    /** Applies that update: orphans, adds and rewrites requests, rewrites the cache, and saves. */
+    asyncApiApplyUpdate: defineChannel(
+      'api.asyncApiApplyUpdate',
+      apiAsyncApiApplyUpdateRequestSchema,
+      apiAsyncApiApplyUpdateResponseSchema,
+    ),
     importProto: defineChannel('api.importProto', apiImportProtoRequestSchema, apiImportProtoResponseSchema),
     /** The services and files of a gRPC API's cached `.proto` set, for the method picker. */
     grpcDefinition: defineChannel('api.grpcDefinition', apiIdRequestSchema, apiGrpcDefinitionResponseSchema),

@@ -7,11 +7,12 @@
  * has no documents to show rather than silently re-fetching them.
  */
 
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
-import type { OpenApiSource } from '@wirebench/engine';
+import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
-import type { OpenApiSourceWire } from '../../shared/wire-types.js';
+import type { AsyncApiUpdatePlanWire, OpenApiSourceWire } from '../../shared/wire-types.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
@@ -31,6 +32,10 @@ export interface ApiChannelDeps {
     ProjectRouter,
     | 'addApi'
     | 'addGrpcApi'
+    | 'importAsyncApi'
+    | 'asyncApiSource'
+    | 'asyncApiPlanUpdate'
+    | 'asyncApiApplyUpdate'
     | 'apiDefinitionDocuments'
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
@@ -40,6 +45,11 @@ export interface ApiChannelDeps {
     | 'grpcSample'
   >;
   readonly imports: Pick<OpenApiImportService, 'run' | 'cancel'>;
+  /**
+   * The AsyncAPI import runner — the OpenAPI service's `runAsyncApi`, so `api.cancelImport` reaches
+   * it through `imports.cancel`. Optional so the OpenAPI-only tests need not build one.
+   */
+  readonly asyncApiImports?: Pick<OpenApiImportService, 'runAsyncApi' | 'readAsyncApi'>;
   /** The `.proto` import service; optional so the OpenAPI-only tests need not build one. */
   readonly protoImports?: Pick<ProtoImportService, 'run' | 'cancel'>;
   /** Creates a project inside the open workspace; used only by an import that asks for one. */
@@ -61,6 +71,25 @@ function toEngineSource(source: OpenApiSourceWire): OpenApiSource {
     return { kind: 'text', text: source.text, ...(source.location !== undefined ? { location: source.location } : {}) };
   }
   return source;
+}
+
+/** A sha256 over every document an update read, location and bytes, in the order they were read. */
+function fingerprintOf(documents: readonly { readonly location: string; readonly bytes: Uint8Array }[]): string {
+  const hash = createHash('sha256');
+  for (const document of documents) {
+    hash.update(document.location).update('\0').update(document.bytes).update('\0');
+  }
+  return hash.digest('hex');
+}
+
+/** An update plan onto the wire: the engine's read-only arrays copied into the schema's own. */
+function toAsyncApiUpdatePlanWire(plan: AsyncApiUpdatePlan): AsyncApiUpdatePlanWire {
+  const ref = (op: AsyncApiOpRef) => ({ key: op.key, channel: op.channel, direction: op.direction });
+  return {
+    added: plan.added.map(ref),
+    removed: plan.removed.map(ref),
+    changed: plan.changed.map((change) => ({ op: ref(change.op), reasons: [...change.reasons] })),
+  };
 }
 
 /** What the API records as where its definition came from: the location as the user gave it. */
@@ -173,6 +202,136 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
+  });
+
+  registerHandler(channels.api.importAsyncApi, async (request, sender) => {
+    const asyncApiImports = deps.asyncApiImports;
+    if (asyncApiImports === undefined) {
+      throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
+    }
+    // Checked before anything is read or created, as `api.importOpenApi` does.
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    const imported = await asyncApiImports.runAsyncApi(
+      {
+        source: toEngineSource(checked),
+        ...(request.token !== undefined ? { token: request.token } : {}),
+        ...(request.server !== undefined ? { server: request.server } : {}),
+      },
+      {
+        onProgress: (progress) => {
+          emitEvent(sender, events.engine.progress, progress);
+        },
+      },
+    );
+    const api =
+      request.name !== undefined && request.name.trim() !== '' ? { ...imported.api, name: request.name } : imported.api;
+    const summary = {
+      name: api.name,
+      title: imported.summary.title,
+      declaredVersion: imported.summary.declaredVersion,
+      ...(imported.summary.server !== undefined ? { server: imported.summary.server } : {}),
+      servers: [...imported.summary.servers],
+      requests: imported.summary.requests,
+      messages: imported.summary.messages,
+      skipped: imported.summary.skipped.map((entry) => ({ where: entry.where, reason: entry.reason })),
+      unresolved: [...imported.summary.unresolved],
+      unsupportedKeywords: [...imported.summary.unsupportedKeywords],
+    };
+    const place = {
+      api,
+      documents: imported.documents,
+      source: checked.kind === 'text' ? (checked.location ?? 'inline:asyncapi') : sourceLabel(checked),
+      declaredVersion: imported.declaredVersion,
+      ...(imported.summary.server !== undefined ? { server: imported.summary.server } : {}),
+      ...(request.cache !== undefined ? { cache: request.cache } : {}),
+    };
+
+    if ('projectId' in request.target) {
+      const added = await router.importAsyncApi(request.target.projectId, place);
+      return { ...added, projectId: request.target.projectId, summary };
+    }
+    // As for OpenAPI: the project is created only once the document has been read and mapped, and
+    // is taken back if placing the API fails.
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      const added = await router.importAsyncApi(projectId, place);
+      return { ...added, projectId, summary };
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  registerHandler(channels.api.asyncApiServers, async (request) => {
+    const asyncApiImports = deps.asyncApiImports;
+    if (asyncApiImports === undefined) {
+      throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
+    }
+    // The same path check an import makes: a preview must not read what an import could not.
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    const { document } = await asyncApiImports.readAsyncApi(toEngineSource(checked));
+    return {
+      servers: document.servers
+        .filter((server) => ['ws', 'wss'].includes(server.protocol.toLowerCase()))
+        .map((server) => ({ key: server.key, url: server.url })),
+    };
+  });
+
+  /**
+   * Reads an AsyncAPI-imported API's source again, the way the import read it: a URL as written, a
+   * file only when it passes the same path check an import does.
+   */
+  const readAsyncApiSource = async (apiId: string) => {
+    const asyncApiImports = deps.asyncApiImports;
+    if (asyncApiImports === undefined) {
+      throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
+    }
+    const recorded = router.asyncApiSource(apiId);
+    if (recorded.startsWith('inline:')) {
+      throw new WirebenchError(
+        'definition-source-unavailable',
+        'This API was imported from pasted text, so there is no source to read again',
+        {
+          details: { apiId },
+        },
+      );
+    }
+    const wire: OpenApiSourceWire = /^https?:\/\//i.test(recorded)
+      ? { kind: 'url', url: recorded }
+      : { kind: 'file', path: recorded };
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, wire);
+    return asyncApiImports.readAsyncApi(toEngineSource(checked));
+  };
+
+  registerHandler(channels.api.asyncApiPlanUpdate, async (request) => {
+    const next = await readAsyncApiSource(request.apiId);
+    const plan = toAsyncApiUpdatePlanWire(await router.asyncApiPlanUpdate(request.apiId, next.document));
+    return { ...plan, fingerprint: fingerprintOf(next.documents) };
+  });
+
+  registerHandler(channels.api.asyncApiApplyUpdate, async (request) => {
+    const next = await readAsyncApiSource(request.apiId);
+    // The user agreed to the plan they were shown; a source edited since would apply something else.
+    if (fingerprintOf(next.documents) !== request.fingerprint) {
+      throw new WirebenchError(
+        'definition-changed',
+        'The definition changed after the update was planned. Plan the update again to see what it does now.',
+        { details: { apiId: request.apiId } },
+      );
+    }
+    const { project, plan, applied } = await router.asyncApiApplyUpdate(request.apiId, next);
+    return {
+      project,
+      plan: toAsyncApiUpdatePlanWire(plan),
+      applied: {
+        requestsAdded: [...applied.requestsAdded],
+        requestsOrphaned: [...applied.requestsOrphaned],
+        requestsRestored: [...applied.requestsRestored],
+        requestsRewritten: [...applied.requestsRewritten],
+        messagesReplaced: [...applied.messagesReplaced],
+        messagesAdded: [...applied.messagesAdded],
+      },
+    };
   });
 
   registerHandler(channels.api.importPostman, async (request) => {

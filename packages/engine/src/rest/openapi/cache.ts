@@ -34,6 +34,11 @@ export interface WriteApiDefinitionCacheOptions extends ApiDefinitionCacheOption
   readonly now?: () => string;
   /** The `openapi` string the root document declared, recorded for the definition card. */
   readonly declaredVersion?: string;
+  /**
+   * The name the root document is cached under when its own location gives none. Defaults to
+   * `openapi.yaml`; an AsyncAPI import passes `asyncapi.yaml`.
+   */
+  readonly rootFile?: string;
 }
 
 function sha256Hex(bytes: Uint8Array): string {
@@ -71,7 +76,7 @@ export async function writeApiDefinitionCache(
   const existing: readonly DirEntry[] = await readdirIfExists(fs, dir);
   const named = assignFileNames(
     documents.map((document) => ({ ...document, kind: kindOf(document.text) })),
-    { rootFile: 'openapi.yaml' },
+    { rootFile: options?.rootFile ?? 'openapi.yaml' },
   );
 
   const entries: ApiDefinitionCacheDocument[] = named.map(({ document, file }) => ({

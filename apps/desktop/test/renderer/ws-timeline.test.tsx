@@ -246,3 +246,86 @@ describe('the live frame cap', () => {
     expect(counts).toEqual({ sent: 0, received: WS_LIVE_FRAME_LIMIT + 25, bytes: (WS_LIVE_FRAME_LIMIT + 25) * 2 });
   }, 30_000);
 });
+
+describe('contract markers', () => {
+  const violation = frame({
+    index: 0,
+    text: '{"text":1}',
+    contract: {
+      status: 'violation',
+      message: 'chatMessage',
+      problems: [{ path: '/text', keyword: 'type', message: 'expected string' }],
+    },
+  });
+  const ok = frame({ index: 1, text: '{"text":"hi"}', contract: { status: 'ok', message: 'chatMessage' } });
+  const unmatched = frame({
+    index: 2,
+    contract: { status: 'unmatched', reason: 'the contract declares no incoming messages on this channel' },
+  });
+  const notChecked = frame({ index: 3, contract: { status: 'not-checked' } });
+  const plain = frame({ index: 4 });
+
+  it('marks a violation with its first problem, and leaves an ok frame as it always looked', () => {
+    render(<WsTimeline frames={[violation, ok]} />);
+    const rows = screen.getAllByTestId('ws-frame-row');
+    const marker = within(rows[0]!).getByTestId('ws-frame-contract-marker');
+    expect(marker.getAttribute('aria-label')).toContain('/text — type: expected string');
+    expect(within(rows[1]!).queryByTestId('ws-frame-contract-marker')).toBeNull();
+  });
+
+  it('marks an unmatched frame with its reason, and a not-checked one distinctly', () => {
+    render(<WsTimeline frames={[unmatched, notChecked]} />);
+    const [first, second] = screen.getAllByTestId('ws-frame-contract-marker');
+    expect(first!.getAttribute('aria-label')).toContain('no incoming messages');
+    expect(first!.getAttribute('data-status')).toBe('unmatched');
+    expect(second!.getAttribute('aria-label')).toBe('Not checked — check took too long');
+    expect(second!.getAttribute('data-status')).toBe('not-checked');
+  });
+
+  it('filters to the marked rows only when asked', () => {
+    render(<WsTimeline frames={[violation, ok, unmatched, notChecked, plain]} />);
+    expect(screen.getAllByTestId('ws-frame-row')).toHaveLength(5);
+    fireEvent.click(screen.getByTestId('ws-timeline-contract-only'));
+    expect(screen.getAllByTestId('ws-frame-row')).toHaveLength(2);
+    expect(screen.getByTestId('ws-timeline-count').textContent).toBe('2 of 5 frames');
+  });
+
+  it('offers the toggle only when a frame was checked against a contract', () => {
+    render(<WsTimeline frames={[plain]} />);
+    expect(screen.queryByTestId('ws-timeline-contract-only')).toBeNull();
+  });
+});
+
+describe('the frame detail’s Contract section', () => {
+  it('names the matched message and lists each problem with its path', () => {
+    render(
+      <WsFrameDetail
+        frame={frame({
+          text: '{"text":1}',
+          contract: {
+            status: 'violation',
+            message: 'chatMessage',
+            problems: [
+              { path: '/text', keyword: 'type', message: 'expected string' },
+              { path: '/user', keyword: 'required', message: 'is required' },
+            ],
+          },
+        })}
+      />,
+    );
+    const section = screen.getByTestId('ws-frame-contract');
+    expect(section.textContent).toContain('chatMessage');
+    const items = within(section)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+    expect(items).toEqual(['/text — type: expected string', '/user — required: is required']);
+  });
+
+  it('says a frame passed, and says nothing for a frame no contract checked', () => {
+    const { unmount } = render(<WsFrameDetail frame={frame({ contract: { status: 'ok', message: 'chatMessage' } })} />);
+    expect(screen.getByTestId('ws-frame-contract').textContent).toContain('Matches chatMessage');
+    unmount();
+    render(<WsFrameDetail frame={frame()} />);
+    expect(screen.queryByTestId('ws-frame-contract')).toBeNull();
+  });
+});
