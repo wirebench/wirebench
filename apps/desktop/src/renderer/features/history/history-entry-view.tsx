@@ -15,6 +15,7 @@ import { WsSummaryLine, WsTimelineWithDetail } from '../ws-editor/response-pane.
 import { wsTabId } from '../ws-editor/ws-actions.js';
 import { EventsView } from '../rest-editor/response/events-view.js';
 import { streamCountsText } from '../rest-editor/response/status-line.js';
+import { ContractChip } from '../rest-editor/response/contract-chip.js';
 
 export interface HistoryEntryViewProps {
   readonly historyId: string;
@@ -114,6 +115,7 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
             )}
             {entry.requestName}
             {entry.operationName.length > 0 ? ` · ${entry.operationName}` : ''}
+            {entry.kind === 'rest' && <ContractChip result={entry.contract} />}
           </p>
           <p className="truncate text-xs text-fg-subtle" title={entry.endpoint}>
             {new Date(entry.at).toLocaleString()} · {entry.endpoint} · {formatDuration(entry.durationMs)} ·{' '}

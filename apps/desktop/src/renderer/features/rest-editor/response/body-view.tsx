@@ -19,6 +19,9 @@ import { InspectorIconButton } from '../../request-editor/inspectors/inspector-s
 import { formatBytes } from '../../../lib/format-size.js';
 import { usePreferencesStore } from '../../../state/preferences.js';
 import { formatRawBody } from '../body-tab.js';
+import { contractRange, setContractMarkers } from '../../../editor/markers.js';
+import { useContractRevealStore } from './contract.js';
+import type * as Monaco from 'monaco-editor';
 import type { RestExchangeSummary } from '../../../../shared/wire-types.js';
 
 /** Which of the three views is showing. */
@@ -81,10 +84,12 @@ export interface BodyViewProps {
   readonly exchange: RestExchangeSummary;
   /** Called with a JSONPath-style path when the user copies one, so the Query tab can take it. */
   readonly onCopyPath?: (path: string) => void;
+  /** The request this response answered: a Problems reveal addressed to it is taken here. */
+  readonly requestId?: string;
 }
 
 /** The body tab, with its own Pretty/Raw/Preview strip. */
-export function BodyView({ exchange, onCopyPath }: BodyViewProps) {
+export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
   const maxPretty = usePreferencesStore((state) => state.preferences.rest.prettyPrintMaxBytes);
   const indent = usePreferencesStore((state) => state.preferences.editor.tabSize);
   const tooLargeToPretty = exchange.text.length > maxPretty;
@@ -101,6 +106,52 @@ export function BodyView({ exchange, onCopyPath }: BodyViewProps) {
     // what came back, not to make it look valid.
     return 'text' in result ? result.text : exchange.text;
   }, [exchange.text, exchange.language, indent, tooLargeToPretty]);
+
+  const [editor, setEditor] = useState<Monaco.editor.IStandaloneCodeEditor | undefined>(undefined);
+  const problems = exchange.contract?.problems;
+
+  // Markers follow the text the editor shows: a pointer lands on other lines once the body is
+  // pretty-printed, so they are re-placed whenever that text (or the result) changes.
+  useEffect(() => {
+    if (mode !== 'pretty') {
+      // The editor unmounts with the view; the next one to mount registers itself afresh.
+      setEditor(undefined);
+      return;
+    }
+    if (editor === undefined) {
+      return;
+    }
+    setContractMarkers(editor.getModel(), problems ?? [], pretty);
+  }, [editor, mode, pretty, problems]);
+
+  const pending = useContractRevealStore((state) =>
+    requestId !== undefined && state.pending?.requestId === requestId ? state.pending : undefined,
+  );
+  const [rawReveal, setRawReveal] = useState<{ readonly line: number; readonly nonce: number } | undefined>(undefined);
+
+  useEffect(() => {
+    if (pending === undefined) {
+      return;
+    }
+    if (mode === 'preview' || (mode === 'raw' && !tooLargeToPretty)) {
+      // The marker lives in the Pretty view; Raw keeps only a body too large to reformat.
+      setMode(tooLargeToPretty ? 'raw' : 'pretty');
+      return;
+    }
+    if (mode === 'raw') {
+      setRawReveal({ line: contractRange(exchange.text, pending.pointer).startLineNumber, nonce: pending.nonce });
+      useContractRevealStore.getState().settle(pending.nonce);
+      return;
+    }
+    if (editor === undefined) {
+      return;
+    }
+    const range = contractRange(pretty, pending.pointer);
+    editor.revealRangeInCenter(range);
+    editor.setSelection(range);
+    editor.focus();
+    useContractRevealStore.getState().settle(pending.nonce);
+  }, [pending, mode, editor, pretty, exchange.text, tooLargeToPretty]);
 
   return (
     <div data-testid="rest-response-body" className="flex min-h-0 flex-1 flex-col">
@@ -163,9 +214,17 @@ export function BodyView({ exchange, onCopyPath }: BodyViewProps) {
         {mode === 'preview' ? (
           <PreviewView exchange={exchange} />
         ) : mode === 'raw' ? (
-          <RawBody text={exchange.text} />
+          <RawBody text={exchange.text} reveal={rawReveal} />
         ) : (
-          <CodeEditor value={pretty} language={editorLanguage(exchange.language)} readOnly ariaLabel="Response body" />
+          <CodeEditor
+            value={pretty}
+            language={editorLanguage(exchange.language)}
+            readOnly
+            ariaLabel="Response body"
+            onMount={(mounted) => {
+              setEditor(mounted);
+            }}
+          />
         )}
       </div>
 
@@ -177,7 +236,13 @@ export function BodyView({ exchange, onCopyPath }: BodyViewProps) {
 }
 
 /** The raw body, line by line, virtualised so a large one costs only what is on screen. */
-function RawBody({ text }: { readonly text: string }) {
+function RawBody({
+  text,
+  reveal,
+}: {
+  readonly text: string;
+  readonly reveal?: { readonly line: number; readonly nonce: number } | undefined;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lines = useMemo(() => text.split('\n'), [text]);
   const virtualizer = useVirtualizer({
@@ -186,6 +251,12 @@ function RawBody({ text }: { readonly text: string }) {
     estimateSize: () => RAW_LINE_HEIGHT,
     overscan: 20,
   });
+
+  useEffect(() => {
+    if (reveal !== undefined) {
+      virtualizer.scrollToIndex(Math.max(reveal.line - 1, 0), { align: 'center' });
+    }
+  }, [reveal, virtualizer]);
 
   if (text.length === 0) {
     return <p className="p-3 text-sm text-fg-subtle">This response had an empty body.</p>;

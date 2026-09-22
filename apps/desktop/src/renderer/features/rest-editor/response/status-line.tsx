@@ -9,6 +9,7 @@ import type { IpcError } from '../../../../shared/ipc.js';
 import type { RestExchangeSummary } from '../../../../shared/wire-types.js';
 import { base64ByteLength, formatBytes } from '../../../lib/format-size.js';
 import type { RestLiveState } from '../../../state/exchanges.js';
+import { ContractChip } from './contract-chip.js';
 
 /** The colour class for a status code, by its class. */
 export function statusToneClass(status: number): string {
@@ -114,6 +115,12 @@ export function StatusLine({ exchange, error, sending = false, live }: StatusLin
       {exchange.stream?.endedBy === 'client' && ' · stopped'}
       {exchange.stream?.endedBy === 'error' && (
         <span className="text-status-danger">{` · ended: ${exchange.stream.error ?? 'connection lost'}`}</span>
+      )}
+      {exchange.contract !== undefined && exchange.contract.status !== 'no-contract' && (
+        <>
+          {' · '}
+          <ContractChip result={exchange.contract} />
+        </>
       )}
     </p>
   );

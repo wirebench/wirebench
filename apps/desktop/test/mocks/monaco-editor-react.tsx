@@ -51,6 +51,9 @@ type Handler = () => void;
 /** Lines the read-only viewers asked to reveal, newest last; reset it in a test's `beforeEach`. */
 export const revealedLines: number[] = [];
 
+/** Ranges the editors were asked to reveal (`revealRangeInCenter`), newest last. */
+export const revealedRanges: unknown[] = [];
+
 /** The model URI of each editor mounted so far, newest last — how a test addresses one's model. */
 export const mountedModelUris: string[] = [];
 
@@ -92,6 +95,11 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
       revealLineInCenter: (line: number) => {
         revealedLines.push(line);
       },
+      revealRangeInCenter: (range: unknown) => {
+        revealedRanges.push(range);
+      },
+      setSelection: () => undefined,
+      focus: () => undefined,
     };
     mountedModelUris.push(uri.current);
     mountRef.current?.(mockEditor, fakeMonaco);

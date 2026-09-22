@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
+import { recordContractProblems } from '../features/rest-editor/response/contract.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
 import type {
   ExchangeFailedEvent,
@@ -844,6 +845,8 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       // Last send's unresolved references say nothing about the request as it stands now.
       useProblemsStore.getState().clearSource('expansion', requestId);
       useProblemsStore.getState().clearSource('send', requestId);
+      // Nor does the last response's contract result say anything about the one on its way.
+      recordContractProblems(requestId, undefined);
 
       // A send this one replaces must not keep streaming unseen: its state is about to be dropped.
       void get()
@@ -895,6 +898,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       if (unresolved.length > 0) {
         useProblemsStore.getState().add(expansionProblems(requestId, unresolved));
       }
+      recordContractProblems(requestId, result.value.contract);
       update((draft) => {
         draft.restByRequest[requestId] = { status: 'done', sendId, exchange: result.value };
         // The same push the SOAP path does: the HTTP Log is one list across every protocol.
@@ -935,6 +939,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
       void get()
         .cancelOpenRestSends([requestId])
         .catch(() => undefined);
+      recordContractProblems(requestId, undefined);
       update((draft) => {
         delete draft.restByRequest[requestId];
       });

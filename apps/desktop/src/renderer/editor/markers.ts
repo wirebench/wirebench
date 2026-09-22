@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor';
-import type { ValidationProblemWire } from '../../shared/wire-types.js';
+import { pointerRange } from '@wirebench/engine/json';
+import type { RestContractResultWire, ValidationProblemWire } from '../../shared/wire-types.js';
 
 /**
  * The `setModelMarkers` owner every validation marker is filed under. Owning a namespace of
@@ -119,4 +120,62 @@ export function setValidationMarkers(
     return;
   }
   monaco.editor.setModelMarkers(model, VALIDATION_MARKER_OWNER, toMarkerData(problems, model));
+}
+
+/**
+ * The owner a REST response's contract markers are filed under — apart from
+ * {@link VALIDATION_MARKER_OWNER} so a contract result and a message validation never clear each
+ * other's markers.
+ */
+export const CONTRACT_MARKER_OWNER = 'wirebench-contract';
+
+/** The 1-based range a pointer covers in `text`, or line 1 whole when it cannot be located. */
+export function contractRange(
+  text: string,
+  pointer: string,
+): { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number } {
+  const found = pointerRange(text, pointer);
+  if (found !== undefined) {
+    return {
+      startLineNumber: found.line,
+      startColumn: found.column,
+      endLineNumber: found.endLine,
+      endColumn: found.endColumn,
+    };
+  }
+  const firstLine = text.split('\n', 1)[0] ?? '';
+  return { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: Math.max(firstLine.length + 1, 2) };
+}
+
+/**
+ * Converts contract problems into warning markers against `text` — the text the editor is showing,
+ * pretty-printed or not, since a pointer lands on different lines in each.
+ */
+export function contractMarkerData(
+  problems: RestContractResultWire['problems'],
+  text: string,
+): Monaco.editor.IMarkerData[] {
+  return problems.map((problem) => ({
+    severity: SEVERITY.warning,
+    message: problem.message,
+    code: problem.keyword,
+    source: 'openapi',
+    ...contractRange(text, problem.path),
+  }));
+}
+
+/**
+ * Replaces the contract markers on `model` with those for `problems` located in `text`; an empty
+ * list clears them.
+ */
+export function setContractMarkers(
+  model: Monaco.editor.ITextModel | null | undefined,
+  problems: RestContractResultWire['problems'],
+  text: string,
+  monaco: MarkerApi | undefined = markerApi,
+): void {
+  if (model === null || model === undefined || typeof monaco?.editor?.setModelMarkers !== 'function') {
+    return;
+  }
+  monaco.editor.setModelMarkers(model, CONTRACT_MARKER_OWNER, contractMarkerData(problems, text));
 }
