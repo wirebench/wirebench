@@ -14,7 +14,8 @@ All notable changes to this project are documented here. The format follows
   with `grpc-definition-missing`. A REST or gRPC request behind OAuth2 client credentials fetches its
   token headlessly, once per configuration per run, with the client secret from
   `WIREBENCH_SECRET_<NAME>`; the token is masked in every report and output like any other secret.
-  The authorization-code grant is still refused. The JSON report's `protocol` can be `"grpc"`. gRPC
+  A token a server refuses (a `401`, or gRPC `UNAUTHENTICATED`) is dropped so the next request fetches
+  a new one; the refused request is not sent again. The authorization-code grant is still refused. The JSON report's `protocol` can be `"grpc"`. gRPC
   requests may now carry `assertions:` in their file. See [`docs/cli.md`](docs/cli.md).
 
 - **AsyncAPI import for WebSocket.** Import… detects AsyncAPI 2.0–2.6 and 3.0.x documents (YAML or JSON,

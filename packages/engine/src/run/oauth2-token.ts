@@ -4,8 +4,9 @@
  * authorization-code before it gets here.
  *
  * One token per configuration per run: two requests behind the same configuration share one token
- * request, and a token is fetched again only when `needsRefresh` says it is about to lapse. A
- * failed fetch is never cached, so the next request behind the configuration tries again.
+ * request, and a token is fetched again when `needsRefresh` says it is about to lapse, or after a
+ * server rejected it (`reject`). A failed fetch is never cached, so the next request behind the
+ * configuration tries again.
  */
 import { WirebenchError } from '../errors.js';
 import { sendHttp } from '../http/client.js';
@@ -39,14 +40,20 @@ export interface TokenRequestContext {
 
 export interface RunTokenSource {
   /**
-   * A token the server later rejects mid-run (e.g. a 401 on the request that carried it) is not
-   * re-fetched here: only `needsRefresh` against the cached expiry triggers a new fetch, on the
-   * next call for the same configuration.
+   * The cached token for the configuration, or a new one when there is none, it is about to lapse,
+   * or it was rejected.
    *
    * @throws WirebenchError `unresolved-properties` | `secret-missing` | `oauth2-no-token-url` |
    * `oauth2-token-error` | `oauth2-token-malformed`, or the send's own error
    */
   accessTokenFor(config: OAuth2Auth, request: TokenRequestContext): Promise<string>;
+  /**
+   * Drops `accessToken` from the cache after a server refused it (a REST `401`, a gRPC
+   * `UNAUTHENTICATED`), so the next request behind its configuration fetches a new one. It never
+   * re-sends the refused request: that one may already have done something. A token the cache no
+   * longer holds is ignored.
+   */
+  reject(accessToken: string): void;
 }
 
 /** The configuration with its property references expanded; unresolved ones refuse the fetch. */
@@ -112,6 +119,13 @@ export function createRunTokenSource(options: RunTokenSourceOptions): RunTokenSo
       options.onSecretValue?.(token.accessToken);
       tokens.set(key, token);
       return token.accessToken;
+    },
+    reject(accessToken) {
+      for (const [key, token] of tokens) {
+        if (token.accessToken === accessToken) {
+          tokens.delete(key);
+        }
+      }
     },
   };
 }

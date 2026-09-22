@@ -18,7 +18,7 @@ import { apiDefinitionDir, definitionCacheDir } from '../project/paths.js';
 import { sendRest } from '../rest/send.js';
 import type { RestExchange } from '../rest/send.js';
 import { sendSoapRequest } from '../send.js';
-import type { SoapExchange } from '../types.js';
+import type { SendAuth, SoapExchange } from '../types.js';
 import { bindingContextFor, validateMessage } from '../validate/index.js';
 import { summarizeWsa } from '../wsa/policy-detect.js';
 import { parseWsdlBundle } from '../wsdl/merge.js';
@@ -243,6 +243,20 @@ export function grpcSubject(result: GrpcCallResult): AssertionSubject {
   };
 }
 
+/** gRPC's `UNAUTHENTICATED`: the server's word for a credential it will not accept. */
+const GRPC_UNAUTHENTICATED = 16;
+
+/**
+ * After a server refused the credentials a send carried, drops the run's OAuth2 token among them,
+ * so the next request behind that configuration fetches a new one instead of repeating the refusal.
+ * The refused request itself is never sent again.
+ */
+function dropRefusedToken(context: RunContext, auth: SendAuth | undefined, refused: boolean): void {
+  if (refused && auth?.type === 'oauth2') {
+    context.tokenSource?.reject(auth.accessToken);
+  }
+}
+
 function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
   if (assertions.some((a) => a.outcome === 'errored')) return 'errored';
   if (assertions.some((a) => a.outcome === 'failed')) return 'failed';
@@ -278,10 +292,12 @@ async function runOne(
       raw = exchange.http;
     } else if (prepared.kind === 'rest') {
       const exchange = await sendRest(prepared.input);
+      dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
       subject = restSubject(exchange);
       raw = exchange;
     } else if (prepared.kind === 'grpc' && protoSet !== undefined) {
       const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
+      dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
       subject = grpcSubject(result);
       raw = result.exchange;
     } else {

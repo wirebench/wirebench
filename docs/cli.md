@@ -168,8 +168,10 @@ A request, folder or API whose auth is OAuth2 with the **client-credentials** gr
 at run time: the runner posts to the token URL (property expansion applies to it, the client ID,
 the scopes and the audience) with the client secret from `clientSecretEnv` / `clientSecretRef` as
 above, and sends the token as a Bearer — REST and gRPC alike. One token is fetched per
-configuration per run and reused until it is due for refresh; a failed fetch is not cached. The
-token request honours `--timeout`, `--insecure` and the proxy variables. The access token is masked
+configuration per run and reused until it is due for refresh; a failed fetch is not cached. When a
+server refuses the token — a REST `401` or a gRPC `UNAUTHENTICATED` (16) — the run drops it, and the
+next request behind the same configuration fetches a new one. The refused request is reported as it
+came back and is **not** sent again: it may already have had an effect. The token request honours `--timeout`, `--insecure` and the proxy variables. The access token is masked
 in every report and in stdout/stderr exactly like a secret from the environment. The
 **authorization-code** grant needs a browser and a person, so a request that uses it is errored with
 `auth-grant-unsupported`.
