@@ -18,11 +18,19 @@ import type { DetectContext, SecretRule } from './rules.js';
  * Beyond the spec's fields, `index` pins a keyed entry by its position in its list (names may
  * repeat), `field` names the form field or multipart text part a `rest-body` finding sits in
  * (absent for a raw body), and `messageId` names the saved message of a `ws-message` finding.
+ * `grpc-api-metadata` and `ws-api-header` are the entries set on the API itself, sent by every
+ * request in it.
  */
 export type SecretLocation =
   | {
       readonly kind: 'soap-header' | 'rest-header' | 'rest-query' | 'grpc-metadata' | 'ws-header';
       readonly requestId: string;
+      readonly name: string;
+      readonly index: number;
+    }
+  | {
+      readonly kind: 'grpc-api-metadata' | 'ws-api-header';
+      readonly apiId: string;
       readonly name: string;
       readonly index: number;
     }
@@ -56,8 +64,15 @@ export interface ScanTarget {
 const SEP = ' › ';
 
 function* keyed(
-  kind: 'soap-header' | 'rest-header' | 'rest-query' | 'grpc-metadata' | 'ws-header',
-  requestId: string,
+  kind:
+    | 'soap-header'
+    | 'rest-header'
+    | 'rest-query'
+    | 'grpc-metadata'
+    | 'ws-header'
+    | 'grpc-api-metadata'
+    | 'ws-api-header',
+  ownerId: string,
   path: string,
   noun: string,
   nameKind: NonNullable<DetectContext['nameKind']>,
@@ -67,7 +82,10 @@ function* keyed(
     const { name, value } = entries[index]!;
     if (value === '') continue;
     yield {
-      location: { kind, requestId, name, index },
+      location:
+        kind === 'grpc-api-metadata' || kind === 'ws-api-header'
+          ? { kind, apiId: ownerId, name, index }
+          : { kind, requestId: ownerId, name, index },
       label: `${path}${SEP}${noun} ${name}`,
       text: value,
       context: { fieldName: name, nameKind },
@@ -205,6 +223,12 @@ export function* scanTargets(project: Project): Generator<ScanTarget> {
     }
   }
   for (const api of project.apis) yield* tree(api, api.name, restRequest);
-  for (const api of project.grpcApis) yield* tree(api, api.name, grpcRequest);
-  for (const api of project.wsApis) yield* tree(api, api.name, wsRequest);
+  for (const api of project.grpcApis) {
+    yield* keyed('grpc-api-metadata', api.id, api.name, 'metadata', 'header', api.metadata);
+    yield* tree(api, api.name, grpcRequest);
+  }
+  for (const api of project.wsApis) {
+    yield* keyed('ws-api-header', api.id, api.name, 'header', 'header', api.headers);
+    yield* tree(api, api.name, wsRequest);
+  }
 }

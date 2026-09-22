@@ -35,7 +35,10 @@ export interface DetectContext {
 export const SECRET_TEXT_SCAN_LIMIT = 1024 * 1024;
 
 const BODY_KEY_SET = new Set(SECRET_BODY_KEYS);
-const HIGH_ENTROPY_NAME = /secret|token|password|passwd|key|credential/i;
+/** Name parts that make a name credential-like on their own (`dbPassword`, `client_secret`). */
+const CREDENTIAL_PARTS = new Set(['secret', 'token', 'password', 'passwd', 'credential', 'credentials']);
+/** Parts that make a following `key` credential-like (`apiKey`, `secret_key`); `cacheKey` is not. */
+const KEY_QUALIFIERS = new Set(['api', 'secret', 'access', 'private', 'signing', 'client', 'auth', 'master']);
 const HIGH_ENTROPY_MIN_LENGTH = 20;
 const HIGH_ENTROPY_MIN_BITS = 3.5;
 
@@ -101,11 +104,30 @@ function expansionRanges(text: string): [number, number][] {
   }
 }
 
+/** `dbPassword`, `api_key`, `X-Client-Secret` → lower-case word parts. */
+function nameParts(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((part) => part !== '');
+}
+
+/** True when a word part of `name` says it holds a credential. */
+function isCredentialLikeName(name: string): boolean {
+  const parts = nameParts(name);
+  return parts.some(
+    (part, i) => CREDENTIAL_PARTS.has(part) || (part === 'key' && i > 0 && KEY_QUALIFIERS.has(parts[i - 1]!)),
+  );
+}
+
 function isSensitiveName(name: string, kind: DetectContext['nameKind']): boolean {
   const lower = name.trim().toLowerCase();
+  if (kind === 'property') return BODY_KEY_SET.has(lower) || isCredentialLikeName(name);
   if (kind === 'header') return isSensitiveHeaderName(lower) || BODY_KEY_SET.has(lower);
   if (kind === 'query') return isSensitiveQueryParam(lower) || BODY_KEY_SET.has(lower);
-  if (kind === 'field' || kind === 'property') return BODY_KEY_SET.has(lower);
+  if (kind === 'field') return BODY_KEY_SET.has(lower);
   return isSensitiveHeaderName(lower) || isSensitiveQueryParam(lower) || BODY_KEY_SET.has(lower);
 }
 
@@ -126,8 +148,8 @@ function pushAll(out: SecretMatch[], re: RegExp, text: string, rule: SecretRule,
     }
     const part = m[group]!;
     const start = m.index + m[0].length - part.length;
-    if (rule === 'bearer' && !/[0-9._~+/-]/.test(part) && part.length < 16) continue;
-    if (rule === 'bearer' && part.length < 8) continue;
+    // A token-shaped run: 16+ characters with a digit, so prose ("Bearer tokens/credentials") is not one.
+    if (rule === 'bearer' && (part.length < 16 || !/[0-9]/.test(part))) continue;
     if (rule === 'basic' && !basicLooksReal(part)) continue;
     out.push({ rule, start, end: start + part.length });
   }
@@ -166,7 +188,9 @@ function nameMatch(
   if (isSensitiveName(name, kind)) return { rule: 'sensitive-name', start: offset + start, end: offset + end };
   const core = value.slice(start, end);
   if (
-    HIGH_ENTROPY_NAME.test(name) &&
+    isCredentialLikeName(name) &&
+    !/\s/.test(core) &&
+    !/^(?:[a-z][a-z0-9+.-]*:\/\/|[~.]?[/\\]|[A-Za-z]:[/\\])/i.test(core) &&
     core.length >= HIGH_ENTROPY_MIN_LENGTH &&
     shannonEntropy(core) >= HIGH_ENTROPY_MIN_BITS
   ) {

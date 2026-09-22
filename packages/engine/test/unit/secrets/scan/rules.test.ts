@@ -27,7 +27,7 @@ describe('shape rules', () => {
     expect(found('value eyJhbGciOiJIUzI1NiJ9 only')).toEqual([]);
   });
   it('bearer: the credential part only', () => {
-    expect(found('Authorization: Bearer abc123def456ghi')).toEqual([['bearer', 'abc123def456ghi']]);
+    expect(found('Authorization: Bearer abc123def456ghi789')).toEqual([['bearer', 'abc123def456ghi789']]);
   });
   it('bearer carrying a JWT reports the JWT', () => {
     expect(found(`Bearer ${JWT}`)).toEqual([['jwt', JWT]]);
@@ -95,10 +95,10 @@ describe('name rules on a stored value', () => {
   it('high-entropy only under a secret-sounding name', () => {
     const random = 'q8Zr2LmX0vNf7TkPw3Yh9sBd';
     expect(shannonEntropy(random)).toBeGreaterThanOrEqual(3.5);
-    expect(found(random, { fieldName: 'stripeKey', nameKind: 'property' })).toEqual([['high-entropy', random]]);
-    expect(found(random, { fieldName: 'customerRef', nameKind: 'property' })).toEqual([]);
-    expect(found('aaaaaaaaaaaaaaaaaaaaaaaa', { fieldName: 'stripeKey', nameKind: 'property' })).toEqual([]);
-    expect(found('q8Zr2LmX', { fieldName: 'stripeKey', nameKind: 'property' })).toEqual([]);
+    expect(found(random, { fieldName: 'stripeApiKey', nameKind: 'field' })).toEqual([['high-entropy', random]]);
+    expect(found(random, { fieldName: 'customerRef', nameKind: 'field' })).toEqual([]);
+    expect(found('aaaaaaaaaaaaaaaaaaaaaaaa', { fieldName: 'stripeApiKey', nameKind: 'field' })).toEqual([]);
+    expect(found('q8Zr2LmX', { fieldName: 'stripeApiKey', nameKind: 'field' })).toEqual([]);
   });
 });
 
@@ -123,5 +123,39 @@ describe('name rules in a body', () => {
     const pad = 'x'.repeat(SECRET_TEXT_SCAN_LIMIT);
     expect(found(`${pad} ${GH}`)).toEqual([]);
     expect(found(`${GH} ${pad}`)).toEqual([['vendor-token', GH]]);
+  });
+});
+
+describe('fix round 1: name parts and false positives', () => {
+  const json = { contentType: 'application/json' };
+  it('plain English and non-credential names are not high-entropy findings', () => {
+    expect(found('{"keywords": "wireless noise cancelling headphones"}', json)).toEqual([]);
+    expect(found('<secretaryName>Jane Q Example Person</secretaryName>', { contentType: 'text/xml' })).toEqual([]);
+    expect(found('{"passwordPolicy": "At least 8 characters, one digit"}', json)).toEqual([]);
+    expect(found('{"idempotencyKey": "3f2b8c1e-9a4d-4e7f-b6a2-1c5d8e9f0a3b"}', json)).toEqual([]);
+    expect(found('{"cacheKey": "3f2b8c1e-9a4d-4e7f-b6a2-1c5d8e9f0a3b"}', json)).toEqual([]);
+    expect(found('{"publicKeyPath": "/etc/ssl/certs/FakeExampleCert9.pem"}', json)).toEqual([]);
+    expect(found('{"privateKeyFile": "C:\\\\keys\\\\FakeExample9Key.pem"}', json)).toEqual([]);
+    expect(found('{"clientSecretUrl": "https://example.test/Fake9Path/x"}', json)).toEqual([]);
+  });
+  it('credential-like name parts are high-entropy findings', () => {
+    const random = 'q8Zr2LmX0vNf7TkPw3Yh9sBd';
+    expect(found(`{"dbPassword": "${random}"}`, json)).toEqual([['high-entropy', random]]);
+    expect(found(`{"clientSecret": "${random}"}`, json)).toEqual([['high-entropy', random]]);
+    expect(found('{"accessKey": "3f2b8c1e-9a4d-4e7f-b6a2-1c5d8e9f0a3b"}', json)).toEqual([
+      ['high-entropy', '3f2b8c1e-9a4d-4e7f-b6a2-1c5d8e9f0a3b'],
+    ]);
+  });
+  it('properties match sensitive names by word part', () => {
+    expect(found('changeme', { fieldName: 'dbPassword', nameKind: 'property' })).toEqual([
+      ['sensitive-name', 'changeme'],
+    ]);
+    expect(found('changeme', { fieldName: 'api_key', nameKind: 'property' })).toEqual([['sensitive-name', 'changeme']]);
+    expect(found('x', { fieldName: 'keywords', nameKind: 'property' })).toEqual([]);
+    expect(found('Jane', { fieldName: 'secretaryName', nameKind: 'property' })).toEqual([]);
+  });
+  it('Bearer in prose is not a credential', () => {
+    expect(found('Send Bearer tokens/credentials here')).toEqual([]);
+    expect(found('Bearer credentials')).toEqual([]);
   });
 });

@@ -17,7 +17,7 @@ describe.skipIf(SKIP_PERF)('secret scan', () => {
         query: [kv('page', String(i))],
         headers: [
           kv('Accept', 'application/json'),
-          kv('Authorization', i % 50 === 0 ? 'Bearer abc123def456ghi' : 'Bearer ${secret:t}'),
+          kv('Authorization', i % 50 === 0 ? 'Bearer abc123def456ghi789' : 'Bearer ${secret:t}'),
         ],
         body: { kind: 'raw', language: 'json', text: body },
       }),

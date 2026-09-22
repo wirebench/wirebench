@@ -55,7 +55,7 @@ describe('scanProjectForSecrets locations', () => {
       id: 's1',
       soapVersion: '1.1',
       envelopeXml: envelope,
-      headers: [{ name: 'Authorization', value: 'Bearer abc123def456ghi' }],
+      headers: [{ name: 'Authorization', value: 'Bearer abc123def456ghi789' }],
     });
     const iface = createInterface('Billing', {
       definitionUrl: 'x.wsdl',
@@ -63,7 +63,7 @@ describe('scanProjectForSecrets locations', () => {
     });
     const findings = scanProjectForSecrets(project({ interfaces: [iface] }));
     expect(findings.map((f) => [f.location, f.rule, f.value])).toEqual([
-      [{ kind: 'soap-header', requestId: 's1', name: 'Authorization', index: 0 }, 'bearer', 'abc123def456ghi'],
+      [{ kind: 'soap-header', requestId: 's1', name: 'Authorization', index: 0 }, 'bearer', 'abc123def456ghi789'],
       [{ kind: 'soap-body', requestId: 's1' }, 'sensitive-name', 'FAKEpw'],
     ]);
     expect(findings[0]!.label).toBe('Billing › Login › Login 1 › header Authorization');
@@ -113,7 +113,7 @@ describe('scanProjectForSecrets locations', () => {
   it('grpc metadata and message', () => {
     const g = createGrpcRequest('Get', {
       id: 'g1',
-      metadata: [kv('authorization', 'Bearer abc123def456ghi')],
+      metadata: [kv('authorization', 'Bearer abc123def456ghi789')],
       message: `{"token": "${GH}"}`,
     });
     const findings = scanProjectForSecrets(project({ grpcApis: [createGrpcApi('Svc', { requests: [g] })] }));
@@ -136,6 +136,31 @@ describe('scanProjectForSecrets locations', () => {
     expect(findings.map((f) => [f.location, f.rule, f.value])).toEqual([
       [{ kind: 'ws-header', requestId: 'w1', name: 'Cookie', index: 0 }, 'sensitive-name', 'sid=FAKE'],
       [{ kind: 'ws-message', requestId: 'w1', messageId: 'm1' }, 'sensitive-name', 'changeme'],
+    ]);
+  });
+
+  it('api-level gRPC metadata and WS headers', () => {
+    const g = createGrpcApi('Svc', { id: 'ga' });
+    const w = createWsApi('Chat API', { id: 'wa' });
+    const findings = scanProjectForSecrets(
+      project({
+        grpcApis: [{ ...g, metadata: [kv('x-trace', '1'), kv('x-api-key', 'FAKEkey')] }],
+        wsApis: [{ ...w, headers: [kv('Authorization', `Token ${GH}`)] }],
+      }),
+    );
+    expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
+      [
+        { kind: 'grpc-api-metadata', apiId: 'ga', name: 'x-api-key', index: 1 },
+        'sensitive-name',
+        'FAKEkey',
+        'Svc › metadata x-api-key',
+      ],
+      [
+        { kind: 'ws-api-header', apiId: 'wa', name: 'Authorization', index: 0 },
+        'vendor-token',
+        GH,
+        'Chat API › header Authorization',
+      ],
     ]);
   });
 
