@@ -230,3 +230,12 @@ describe('redactRawHttp — the request line', () => {
     expect(redactRawHttp(response, { extraParams: ['key'] })).toBe(response);
   });
 });
+
+describe('redactRawHttp — a hostile request line', () => {
+  it('returns promptly on a line of many `?`s', () => {
+    const line = `! ?${'?'.repeat(100_000)}`;
+    const started = performance.now();
+    expect(redactRawHttp(`${line}\r\n\r\n`, { extraParams: ['key'] })).toBe(`${line}\r\n\r\n`);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});

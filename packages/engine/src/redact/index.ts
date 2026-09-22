@@ -107,11 +107,15 @@ export function redactUrl(url: string, opts?: { show?: boolean; extraParams?: re
  * request line — a response's status line, a header — is returned unchanged.
  */
 function redactRequestLine(line: string, extraParams?: readonly string[]): string {
-  const match = /^(\S+) (\S*\?\S*) (HTTP\/\d(?:\.\d)?)$/.exec(line);
-  if (match === null) {
+  // Split rather than matched with one pattern: `\S*\?\S*` backtracks polynomially on a line of `?`s.
+  const parts = line.split(' ');
+  if (parts.length !== 3) {
     return line;
   }
-  const [, method, target = '', version] = match;
+  const [method = '', target = '', version = ''] = parts;
+  if (method === '' || !target.includes('?') || !/^HTTP\/\d(?:\.\d)?$/.test(version)) {
+    return line;
+  }
   const originForm = target.startsWith('/');
   const base = 'http://request-line.invalid';
   const url = originForm ? `${base}${target}` : target;
