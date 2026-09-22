@@ -388,6 +388,14 @@ export type { AsyncApiImportSummary, MapAsyncApiOptions, MappedAsyncApi } from '
 export { authFromScheme as asyncApiAuthFromScheme } from './asyncapi/security.js';
 export type { AsyncApiSchemeInput } from './asyncapi/security.js';
 export { importAsyncApi } from './asyncapi/import.js';
+export {
+  channelMessages as asyncApiChannelMessages,
+  checkFrame as checkAsyncApiFrame,
+  createFrameChecker,
+  DEFAULT_FRAME_CHECK_BUDGET_MS,
+  MAX_CHECKED_FRAME_BYTES,
+} from './asyncapi/frame-check.js';
+export type { ChannelMessages, FrameChecker, FrameCheckOptions } from './asyncapi/frame-check.js';
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
@@ -1069,6 +1077,8 @@ export type {
   WsExchange,
   WsFolder,
   WsFrame,
+  WsFrameContract,
+  WsFrameContractStatus,
   WsHandshake,
   WsOpcode,
   WsRequestDef,

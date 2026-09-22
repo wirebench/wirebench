@@ -18,6 +18,7 @@
 import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
+import type { JsonSchemaProblem } from '../json/schema-validate.js';
 import type { KeyValueEntry } from '../rest/model.js';
 import type { SslInfo } from '../http/tls.js';
 
@@ -122,6 +123,20 @@ export interface WsApi {
   readonly requests: readonly WsRequestDef[];
 }
 
+/** How a frame fared against its channel's contract. `not-checked` means the check ran out of
+ *  time and stopped: it says nothing either way about the frame. */
+export type WsFrameContractStatus = 'ok' | 'violation' | 'unmatched' | 'skipped' | 'not-checked';
+
+/** One frame's contract check result: plain data, so it can cross a worker boundary. */
+export interface WsFrameContract {
+  readonly status: WsFrameContractStatus;
+  /** The matched message's name, or the closest one's on a violation. */
+  readonly message?: string;
+  readonly problems?: readonly JsonSchemaProblem[];
+  /** Why a frame is a violation without schema problems, unmatched, skipped or not checked. */
+  readonly reason?: string;
+}
+
 export type WsOpcode = 'text' | 'binary' | 'ping' | 'pong' | 'close';
 
 /** One frame sent or received during a WebSocket session, as shown in the log. */
@@ -137,6 +152,8 @@ export interface WsFrame {
   readonly base64?: string;
   readonly close?: { readonly code: number; readonly reason: string };
   readonly payloadTruncated?: boolean;
+  /** Set when the session's request is linked to a contract channel. */
+  readonly contract?: WsFrameContract;
 }
 
 /** The handshake that opened (or failed to open) a WebSocket session. */

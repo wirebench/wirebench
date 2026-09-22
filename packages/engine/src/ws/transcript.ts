@@ -51,7 +51,21 @@ export function capByEnds<T>(
   return { items: capped, truncated: omitted > 0 || stripped, omitted };
 }
 
-export function capFrames(frames: readonly WsFrame[]): WsTranscript {
+/** History keeps a frame's contract verdict but not its problem list: the list is for the live
+ *  view, and re-checking a saved frame recomputes it. */
+function withoutProblems(frame: WsFrame): WsFrame {
+  if (frame.contract?.problems === undefined) return frame;
+  const { status, message, reason } = frame.contract;
+  const contract = {
+    status,
+    ...(message !== undefined ? { message } : {}),
+    ...(reason !== undefined ? { reason } : {}),
+  };
+  return { ...frame, contract };
+}
+
+export function capFrames(input: readonly WsFrame[]): WsTranscript {
+  const frames = input.map(withoutProblems);
   const limits: CapLimits = { head: WS_HISTORY_HEAD, tail: WS_HISTORY_TAIL, maxBytes: WS_HISTORY_MAX_BYTES };
   const r = capByEnds(
     frames,
@@ -66,6 +80,7 @@ export function capFrames(frames: readonly WsFrame[]): WsTranscript {
         at: frame.at,
         size: frame.size,
         ...(frame.close !== undefined ? { close: frame.close } : {}),
+        ...(frame.contract !== undefined ? { contract: frame.contract } : {}),
         payloadTruncated: true,
       };
     },
