@@ -195,30 +195,37 @@ describe('prepareSend — SOAP', () => {
     expect(prepared.kind === 'soap' && prepared.input.auth).toMatchObject({ type: 'bearer', token: 'pw' });
   });
 
-  it("refuses a SOAP owner's OAuth2 the same way a REST one is refused", async () => {
-    const oauth = {
-      type: 'oauth2' as const,
-      grant: 'authorization-code' as const,
-      tokenUrl: 'https://auth.test/token',
-      clientId: 'c',
-      scopes: [],
-      clientAuth: 'basic' as const,
-      pkce: true,
-    };
-    const project = makeProject({ soapAuth: oauth });
+  it("refuses a SOAP owner's authorization-code grant the same way a REST one is refused", async () => {
+    const project = makeProject({ soapAuth: oauth('authorization-code') as SoapOwnerAuth });
     await expect(
       prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' })),
     ).rejects.toMatchObject({
       code: 'auth-grant-unsupported',
       message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+      details: { path: soapOf(project).path },
     });
-    const machine = makeProject({ soapAuth: { ...oauth, grant: 'client-credentials' } });
-    await expect(
-      prepareSend(soapOf(machine), contextFor(machine, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({
-      code: 'auth-grant-unsupported',
-      message: 'OAuth2 is not supported by the runner yet.',
-    });
+  });
+
+  it("sends a SOAP owner's client-credentials token, fetched with the run's timeout and masked", async () => {
+    const project = makeProject({ soapAuth: oauth('client-credentials') as SoapOwnerAuth });
+    const sent: HttpRequest[] = [];
+    const seen: string[] = [];
+    const prepared = await prepareSend(
+      soapOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        timeoutMs: 1234,
+        fetchToken: (request) => {
+          sent.push(request);
+          return Promise.resolve(tokenExchange('tok-s'));
+        },
+        onSecretValue: (value) => seen.push(value),
+      }),
+    );
+    expect(prepared.kind === 'soap' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-s' });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ url: 'https://auth.test/token', timeoutMs: 1234 });
+    expect(seen).toContain('tok-s');
   });
 
   it('refuses a request with no endpoint anywhere', async () => {

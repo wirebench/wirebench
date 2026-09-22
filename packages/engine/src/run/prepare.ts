@@ -271,18 +271,6 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
     });
   }
   const owner = soapEffectiveAuth(selected);
-  // OAuth2 needs a browser (authorization-code) or is not supported by the runner yet
-  // (client-credentials): refused here, before any secret lookup — the same refusal `prepareRest`
-  // gives a REST owner's OAuth2, since a SOAP owner can carry it too.
-  if (owner !== undefined && owner.type === 'oauth2') {
-    throw new WirebenchError(
-      'auth-grant-unsupported',
-      owner.grant === 'authorization-code'
-        ? 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.'
-        : 'OAuth2 is not supported by the runner yet.',
-      { details: { path: selected.path, grant: owner.grant } },
-    );
-  }
   const base = toSendInput({
     request: {
       properties: request.properties,
@@ -301,7 +289,12 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
   const proxy = context.proxyFor?.(resolved.url);
   const wsa = wsaFor(selected, context);
   const wss = wssFor(selected, context);
-  const sendAuth = await resolveSoapAuth(owner, context.getSecret);
+  // An owner's OAuth2 gets its token as a REST one does (client credentials; the browser grant is
+  // refused); the endpoint schemes resolve through the SOAP path.
+  const sendAuth =
+    owner !== undefined && owner.type === 'oauth2'
+      ? await authFor(owner, selected.path, context, tls)
+      : await resolveSoapAuth(owner, context.getSecret);
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
   const input: SoapSendInput = {
     ...base,

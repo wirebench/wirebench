@@ -38,8 +38,9 @@ for SOAP. This design closes each of those four gaps and nothing else.
 - Changing the REST auth model's shape, `rest/auth.ts`'s behaviour, or any REST/OpenAPI code
   (`packages/engine/src/rest/openapi/**` is being edited elsewhere and is not touched).
 - `inherit` for SOAP owners. The SOAP chain stays request → endpoint (override/complement) → interface.
-- OAuth2 in the CLI runner. It refuses a SOAP owner's OAuth2 with the same `auth-grant-unsupported` error it
-  already raises for REST.
+- The browser grant in the CLI runner. A SOAP owner's OAuth2 goes through the runner's `authFor`, as a REST
+  one does since the runner's slice S7: client credentials gets its token once per run, and the
+  authorization-code grant is refused with the same `auth-grant-unsupported` error.
 - Token auth for WSDL import (the import dialog keeps Basic).
 - WS-Security token profiles; WS-Security is unchanged and orthogonal (it can be combined with any HTTP auth).
 
