@@ -2702,7 +2702,7 @@ export const apiImportAsyncApiRequestSchema = z.object({
   source: openApiSourceSchema,
   /** The `ws`/`wss` server to dial, by its key in the document; absent picks the first one. */
   server: z.string().max(200).optional(),
-  /** Overrides `info.title` as the API's name. */
+  /** Overrides `info.title` as the API's name; empty or whitespace-only falls back to the title. */
   name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
   /** Write the definition cache. Defaults to the definition-caching preference. */
   cache: z.boolean().optional(),

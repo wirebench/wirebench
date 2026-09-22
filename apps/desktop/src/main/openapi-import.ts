@@ -8,7 +8,7 @@
  * makes a cancelled import trivially leave nothing behind.
  */
 
-import { createDefaultFetchDocument, importAsyncApi, importOpenApi } from '@wirebench/engine';
+import { createDefaultFetchDocument, importAsyncApi, importOpenApi, WirebenchError } from '@wirebench/engine';
 import type { FetchDocument, ImportedAsyncApi, ImportedOpenApi, OpenApiSource } from '@wirebench/engine';
 import type { EngineProgressEvent } from '../shared/wire-types.js';
 
@@ -123,6 +123,12 @@ export class OpenApiImportService {
     try {
       progress('fetch', 'Starting');
       return await body(fetchDocument, controller.signal, progress);
+    } catch (error) {
+      // A cancel is named as one over IPC; otherwise the envelope would call it an internal error.
+      if (controller.signal.aborted) {
+        throw new WirebenchError('aborted', 'The import was cancelled');
+      }
+      throw error;
     } finally {
       if (token !== undefined && this.inFlight.get(token) === controller) {
         this.inFlight.delete(token);

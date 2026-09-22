@@ -20,7 +20,8 @@ Grounded in the code on 2026-09-22; each is decided here, none waits on the owne
 2. **The closest model is the OpenAPI cache, not gRPC's.** An AsyncAPI document is JSON or YAML with `$ref`s to
    sibling files, exactly what `resolveRefs` and `writeApiDefinitionCache` already handle byte-exact with a
    SHA-256 manifest. The only change there: `writeApiDefinitionCache` gains a `rootFile` option (default
-   `openapi.yaml`, AsyncAPI passes `asyncapi.yaml`); the manifest's `declaredVersion` records the `asyncapi`
+   `openapi.yaml`, AsyncAPI passes `asyncapi.yaml`) — the name the root is cached under only when its location
+   gives no file name; a root read from `chat.yaml` is cached as `chat.yaml`. The manifest's `declaredVersion` records the `asyncapi`
    string. The manifest schema (`apiDefinitionCacheManifestSchema`) is unchanged.
 3. **Two new optional fields, both safe for older builds.** `WsRequestDef.contract?: { channel }` plus
    `orphaned?: boolean`, and `WsSavedMessage.contract?: { message, generated }`. Every project schema is a
@@ -157,7 +158,8 @@ e2e (CI only):  pnpm build && xvfb-run -a pnpm test:e2e
 apis/<slug>/
   api.yaml                       kind: websocket, …, definition: { kind: asyncapi, source, cache: true }
   definition/manifest.yaml       apiDefinitionCacheManifestSchema; declaredVersion: "3.0.0"
-  definition/asyncapi.yaml       the root, byte-exact; siblings under cache-naming's names
+  definition/asyncapi.yaml       the root, byte-exact (its own file name when its location has one);
+                                 siblings under cache-naming's names
   requests/<slug>.request.yaml   …, contract: { channel: userChat }, orphaned?: true,
                                  messages: [{ id, name, format, file, contract: { message: sendChat, generated: "<sample text>" } }]
 ```

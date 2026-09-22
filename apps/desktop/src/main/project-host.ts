@@ -2801,6 +2801,7 @@ export class ProjectHost {
   }): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
     const slug = uniqueSlug(input.api.name, takenApiSlugs(open.project));
+    // One definition-caching preference covers every import kind; it lives under `wsdl` for history.
     const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
 
     if (cache) {

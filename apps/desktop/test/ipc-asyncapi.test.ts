@@ -7,12 +7,12 @@
  * contract link or a frame's check result crosses the IPC boundary is proved to survive the parse.
  */
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { copyFile, mkdir, readdir, readFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WsFrame } from '@wirebench/engine';
+import { createDefaultFetchDocument, type FetchDocument, type WsFrame } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { toWsFrameWire } from '../src/main/engine-wire.js';
@@ -85,14 +85,38 @@ beforeEach(async () => {
   // The document and the schema file it references sit inside the project, so the path check passes.
   // The cache keeps a document's own file name, so the root is copied as `asyncapi.yaml`.
   docPath = join(projectDir, 'asyncapi.yaml');
-  await copyFile(join(fixtures, 'chat-3.0.yaml'), docPath);
+  // A second WebSocket server, `staging`, that the channel is also served on, so a non-default
+  // server choice has something to pick.
+  const fixture = await readFile(join(fixtures, 'chat-3.0.yaml'), 'utf8');
+  await writeFile(
+    docPath,
+    fixture
+      .replace(
+        '  broker:\n',
+        "  staging:\n    host: staging.chat.example.test\n    pathname: /live\n    protocol: wss\n    security:\n      - $ref: '#/components/securitySchemes/bearerAuth'\n  broker:\n",
+      )
+      .replace(
+        "      - $ref: '#/servers/public'\n",
+        "      - $ref: '#/servers/public'\n      - $ref: '#/servers/staging'\n",
+      ),
+  );
   await copyFile(join(fixtures, 'schemas.yaml'), join(projectDir, 'schemas.yaml'));
 
   const host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
   await host.create({ dir: join(projectDir, 'project'), name: 'Chat' });
   hosts.set('p1', host);
 
-  const imports = new OpenApiImportService();
+  // `https://slow.test/` never answers until the import is aborted, so a cancel has something to stop.
+  const real = createDefaultFetchDocument();
+  const fetchDocument: FetchDocument = (location, signal) =>
+    location.startsWith('https://slow.test/')
+      ? new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('The import was cancelled', 'AbortError'));
+          });
+        })
+      : real(location, signal);
+  const imports = new OpenApiImportService({ fetchDocument });
   const unused = vi.fn();
   const deps: ApiChannelDeps = {
     router: {
@@ -178,20 +202,54 @@ describe('api.importAsyncApi', () => {
     expect(sender.send).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ token: 'tok-1' }));
   });
 
-  it('never writes a credential into the project files', async () => {
-    await value<Imported>('api.importAsyncApi', {
+  it("keeps the scheme's auth block with no secret in it, and no secret in any project file", async () => {
+    const response = await value<Imported>('api.importAsyncApi', {
       target: { projectId: 'p1' },
       source: { kind: 'file', path: docPath },
     });
-    const files = await readdir(join(projectDir, 'project'), { recursive: true });
-    const texts = await Promise.all(
-      files
-        .filter((file) => !file.includes('definition') && /\.(ya?ml|json)$/.test(file))
-        .map((file) => readFile(join(projectDir, 'project', file), 'utf8')),
+    const api = (hostFor('p1').snapshot() as ProjectWire).wsApis.find((one) => one.id === response.apiId);
+    // The bearer scheme becomes the API's auth, with the token left for the user to fill in.
+    expect(api?.auth).toMatchObject({ type: 'bearer' });
+    const token = (api?.auth as { token?: string } | undefined)?.token;
+    expect(token === undefined || token === '').toBe(true);
+
+    const dir = join(projectDir, 'project');
+    const files = (await readdir(dir, { recursive: true })).filter(
+      (file) => !file.includes('definition') && /\.(ya?ml|json)$/.test(file),
     );
-    for (const text of texts) {
-      expect(text).not.toMatch(/token:\s*\S+|password:\s*\S+/i);
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const text = await readFile(join(dir, file), 'utf8');
+      expect(text).not.toMatch(/\b(token|password|secret|clientSecret):\s*['"]?[^\s'"{}]+/i);
     }
+  });
+
+  it('dials a non-default WebSocket server when one is chosen', async () => {
+    const response = await value<Imported & { summary: { server?: string } }>('api.importAsyncApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: docPath },
+      server: 'staging',
+    });
+    expect(response.summary.server).toBe('staging');
+    const api = (hostFor('p1').snapshot() as ProjectWire).wsApis.find((one) => one.id === response.apiId);
+    expect(api?.url).toContain('staging.chat.example.test');
+    expect(api?.url).not.toContain('{region}');
+  });
+
+  it('stops on api.cancelImport, failing as aborted and adding nothing', async () => {
+    const pending = failure('api.importAsyncApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'url', url: 'https://slow.test/asyncapi.yaml' },
+      token: 'tok-cancel',
+    });
+    await vi.waitFor(() => {
+      expect(sender.send).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ token: 'tok-cancel' }));
+    });
+    const cancelled = await value<{ cancelled: boolean }>('api.cancelImport', { token: 'tok-cancel' });
+    expect(cancelled.cancelled).toBe(true);
+    const error = await pending;
+    expect(error.code).toBe('aborted');
+    expect((hostFor('p1').snapshot() as ProjectWire).wsApis).toHaveLength(0);
   });
 
   it('passes the server choice to the mapping, and refuses one the document does not have', async () => {
