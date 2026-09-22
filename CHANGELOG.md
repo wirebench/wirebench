@@ -18,8 +18,9 @@ All notable changes to this project are documented here. The format follows
   auth, the base URL — is rewritten only while it still equals what the old document generated, so
   edited values, rows you added and requests you made by hand survive. One exception, so a request
   stays sendable: a query parameter the new document makes **required** has its row switched on, even
-  when you edited it — your value is kept, only the tick box changes. Another file or URL can be
-  chosen as the source; an API imported from pasted text asks for one.
+  when you edited it — your value is kept, only the tick box changes. The dialog names the source it
+  read, whether you chose it or it is the one the import recorded. Another file or URL can be chosen
+  as the source; an API imported from pasted text asks for one.
 
 - **CLI runner: unary gRPC and OAuth2 client credentials.** `wirebench run` now runs unary gRPC
   requests from an API's cached definition, with `status` (gRPC code or name), JSONPath `match` and
@@ -59,6 +60,11 @@ All notable changes to this project are documented here. The format follows
 ## [2.2.1] - 2026-09-21
 
 ### Fixed
+
+- **An API's Base URL field follows a change made under it.** The field kept the value it was opened
+  with, so a base URL rewritten while its tab stayed open — as Update Definition rewrites it — showed
+  the old one until the tab was closed and opened again. It now follows the project, and still
+  commits your own typing on blur or Enter as before.
 
 - **The update check no longer offers an older release.** A build newer than the latest published
   release — 2.2.0 while 1.1.0 was still the newest public one — was offered that older release as an

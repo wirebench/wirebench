@@ -2866,7 +2866,11 @@ export type ApiRestPlanUpdateRequest = z.infer<typeof apiRestPlanUpdateRequestSc
  * `api.restPlanUpdate`'s answer: the plan, and a sha256 of the documents it was made from, which
  * `api.restApplyUpdate` must be handed back so it never applies a source that changed since.
  */
-export const apiRestPlanUpdateResponseSchema = restUpdatePlanSchema.extend({ fingerprint: z.string() });
+export const apiRestPlanUpdateResponseSchema = restUpdatePlanSchema.extend({
+  /** What the preview actually read, so the dialog can name a recorded source it never chose. */
+  source: z.string(),
+  fingerprint: z.string(),
+});
 export type ApiRestPlanUpdateResponse = z.infer<typeof apiRestPlanUpdateResponseSchema>;
 
 export const apiRestApplyUpdateRequestSchema = apiRestPlanUpdateRequestSchema.extend({

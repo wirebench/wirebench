@@ -389,10 +389,16 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   };
 
   registerHandler(channels.api.restPlanUpdate, async (request) => {
-    const { parsed } = await readRestSource(request.apiId, request.source);
+    const { parsed, label } = await readRestSource(request.apiId, request.source);
     const { plan, cached } = await router.restPlanUpdate(request.apiId, parsed.document);
     // Both halves of the diff: a cache rewritten since (another update) changes the plan too.
-    return { ...toRestUpdatePlanWire(plan), fingerprint: fingerprintOf([...cached, ...parsed.documents]) };
+    // The label says what was actually read, so the dialog can name the recorded source it planned
+    // against — which the renderer does not otherwise know, having passed no source at all.
+    return {
+      ...toRestUpdatePlanWire(plan),
+      source: label,
+      fingerprint: fingerprintOf([...cached, ...parsed.documents]),
+    };
   });
 
   registerHandler(channels.api.restApplyUpdate, async (request) => {

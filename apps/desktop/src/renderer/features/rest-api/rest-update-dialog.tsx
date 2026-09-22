@@ -228,9 +228,10 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
           className="fixed top-1/2 left-1/2 max-h-[85vh] w-[36rem] max-w-[95vw] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-md bg-surface-raised p-4 shadow-lg"
         >
           <Dialog.Title className="text-md font-medium text-fg-default">Update definition</Dialog.Title>
-          {source !== undefined && (
+          {/* The source the user chose, else the recorded one the preview reported reading. */}
+          {(source !== undefined || plan !== undefined) && (
             <p data-testid="rest-update-source" className="mt-1 truncate text-xs text-fg-muted">
-              {`From ${sourceLabel(source)}`}
+              {`From ${source !== undefined ? sourceLabel(source) : (plan?.source ?? '')}`}
             </p>
           )}
           {busy && (

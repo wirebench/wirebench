@@ -28,11 +28,14 @@ import type { RestApiWire } from '../../src/shared/wire-types.js';
 const FP1 = 'a'.repeat(64);
 const FP2 = 'b'.repeat(64);
 
+const RECORDED_SOURCE = 'https://pets.example.test/openapi.yaml';
+
 const PLAN = {
   added: [{ method: 'post', path: '/pets' }],
   removed: [{ method: 'delete', path: '/pets/{id}' }],
   changed: [{ op: { method: 'get', path: '/pets/{id}' }, reasons: ['parameters' as const, 'responses' as const] }],
   api: ['version' as const],
+  source: RECORDED_SOURCE,
   fingerprint: FP1,
 };
 
@@ -94,6 +97,8 @@ describe('RestUpdateDialog', () => {
     const changed = within(screen.getByTestId('rest-update-changed')).getAllByRole('listitem');
     expect(changed[0]!.textContent).toBe('GET /pets/{id}: parameters, responses');
     expect(screen.getByTestId('rest-update-api').textContent).toContain('version');
+    // Nothing was chosen here, so the header names the recorded source the preview reported.
+    expect(screen.getByTestId('rest-update-source').textContent).toContain(RECORDED_SOURCE);
 
     fireEvent.click(screen.getByTestId('rest-update-apply'));
     await waitFor(() => expect(apply).toHaveBeenCalledWith({ apiId: DEFINED.id, fingerprint: FP1 }));
@@ -118,9 +123,10 @@ describe('RestUpdateDialog', () => {
   it('says nothing would change when the plan is empty', async () => {
     installWirebenchApi({
       api: {
-        restPlanUpdate: vi
-          .fn()
-          .mockResolvedValue({ ok: true, value: { added: [], removed: [], changed: [], api: [], fingerprint: FP1 } }),
+        restPlanUpdate: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { added: [], removed: [], changed: [], api: [], source: RECORDED_SOURCE, fingerprint: FP1 },
+        }),
       },
     });
     seed(DEFINED);

@@ -202,6 +202,9 @@ describe('api.restPlanUpdate / api.restApplyUpdate', () => {
     await writeFile(docPath, V2);
     const plan = apiRestPlanUpdateResponseSchema.parse(await value('api.restPlanUpdate', { apiId }));
     expect(plan.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    // The caller passed no source, so the plan names the recorded one it read: the dialog has no
+    // other way to say what it planned against.
+    expect(plan.source).toContain(docPath);
     expect(plan.added.map((op) => `${op.method} ${op.path}`)).toEqual(['post /pets']);
     expect(plan.removed.map((op) => `${op.method} ${op.path}`)).toEqual(['delete /pets/{id}']);
     expect(plan.changed.find((c) => c.op.path === '/pets')?.reasons).toContain('responses');
@@ -215,7 +218,8 @@ describe('api.restPlanUpdate / api.restApplyUpdate', () => {
     expect(save).toHaveBeenCalledWith({ reason: 'update-definition' });
     expect(applied.applied.requestsOrphaned).toBe(1);
     expect(applied.applied.requestsAdded).toBe(1);
-    expect({ ...applied.plan, fingerprint: plan.fingerprint }).toEqual(plan);
+    // `source` and `fingerprint` are the preview envelope's, not the plan's: apply carries neither.
+    expect({ ...applied.plan, source: plan.source, fingerprint: plan.fingerprint }).toEqual(plan);
     expect(requests(apiId).find((r) => r.method === 'DELETE')?.orphaned).toBe(true);
 
     const slug = applied.project.apis.find((a) => a.id === apiId)?.slug ?? '';

@@ -9,7 +9,7 @@
  * The servers an import recorded are offered as a datalist rather than a select: the list is a
  * suggestion from the definition, and a user may point an API anywhere.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthFields } from '../../components/auth-fields.js';
 import { SettingsGroup, TextSetting } from '../../components/settings-grid.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
@@ -78,6 +78,14 @@ export function ApiTab({ apiId }: ApiTabProps) {
     [apiId],
   );
 
+  // The base URL is a draft committed on blur or Enter, like every other text setting here, rather
+  // than an uncontrolled input: Update Definition can rewrite it under an open tab, and an
+  // uncontrolled one would keep showing the value it mounted with.
+  const [baseUrlDraft, setBaseUrlDraft] = useState(api?.baseUrl ?? '');
+  useEffect(() => {
+    setBaseUrlDraft(api?.baseUrl ?? '');
+  }, [api?.baseUrl]);
+
   if (api === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This API is no longer in the project.</p>;
   }
@@ -127,12 +135,15 @@ export function ApiTab({ apiId }: ApiTabProps) {
               aria-label="Base URL"
               data-testid="api-base-url"
               list={api.servers.length > 0 ? 'api-servers' : undefined}
-              defaultValue={api.baseUrl}
+              value={baseUrlDraft}
               placeholder="https://api.example.com"
               className="h-row w-full min-w-0 rounded-md border border-hairline-strong bg-surface-raised px-2 font-mono text-sm text-fg-default focus:ring-1 focus:ring-accent focus:outline-none"
-              onBlur={(event) => {
-                if (event.currentTarget.value !== api.baseUrl) {
-                  patch({ baseUrl: event.currentTarget.value });
+              onChange={(event) => {
+                setBaseUrlDraft(event.target.value);
+              }}
+              onBlur={() => {
+                if (baseUrlDraft !== api.baseUrl) {
+                  patch({ baseUrl: baseUrlDraft });
                 }
               }}
               onKeyDown={(event) => {
