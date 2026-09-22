@@ -426,6 +426,8 @@ export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/o
 export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
 export { selectResponse } from './rest/openapi/responses.js';
 export type { ResponseSelection } from './rest/openapi/responses.js';
+export { planRestUpdate, sameStructure } from './rest/openapi/update.js';
+export type { RestApiChangeReason, RestChangeReason, RestOpRef, RestUpdatePlan } from './rest/openapi/update.js';
 export { matchOperation } from './rest/openapi/match.js';
 export type { RestOperationRef } from './rest/openapi/match.js';
 export {
