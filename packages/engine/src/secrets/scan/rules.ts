@@ -148,8 +148,8 @@ function pushAll(out: SecretMatch[], re: RegExp, text: string, rule: SecretRule,
     }
     const part = m[group]!;
     const start = m.index + m[0].length - part.length;
-    // A token-shaped run: 16+ characters with a digit, so prose ("Bearer tokens/credentials") is not one.
-    if (rule === 'bearer' && (part.length < 16 || !/[0-9]/.test(part))) continue;
+    // A token-shaped run of 16+ characters; words joined by `/` ("Bearer tokens/credentials") are prose.
+    if (rule === 'bearer' && (part.length < 16 || /^[A-Za-z]+(?:\/[A-Za-z]+)+$/.test(part))) continue;
     if (rule === 'basic' && !basicLooksReal(part)) continue;
     out.push({ rule, start, end: start + part.length });
   }

@@ -154,6 +154,9 @@ describe('fix round 1: name parts and false positives', () => {
     expect(found('x', { fieldName: 'keywords', nameKind: 'property' })).toEqual([]);
     expect(found('Jane', { fieldName: 'secretaryName', nameKind: 'property' })).toEqual([]);
   });
+  it('a long alphabetic-only bearer token is a credential', () => {
+    expect(found('Bearer xyzKQPabcdefghijklmnop')).toEqual([['bearer', 'xyzKQPabcdefghijklmnop']]);
+  });
   it('Bearer in prose is not a credential', () => {
     expect(found('Send Bearer tokens/credentials here')).toEqual([]);
     expect(found('Bearer credentials')).toEqual([]);
