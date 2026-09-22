@@ -108,6 +108,7 @@ export interface ProjectRouter {
 
   /** What History names a REST send by: the request, its API, and its folder path. */
   restMeta(...args: Parameters<ProjectHost['restMeta']>): ReturnType<ProjectHost['restMeta']>;
+  restContractFor(...args: Parameters<ProjectHost['restContractFor']>): ReturnType<ProjectHost['restContractFor']>;
 
   /** Remembers what a REST response set, for the next send of that same request. */
   rememberRestCookies(

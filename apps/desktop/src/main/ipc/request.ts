@@ -123,6 +123,8 @@ export type RequestChannelProject = Pick<
       | 'restTlsFor'
       | 'rememberRestCookies'
       | 'restMeta'
+      // Read after a REST send, to check the response against its OpenAPI operation.
+      | 'restContractFor'
       // The gRPC third, optional for the same reason.
       | 'grpcSend'
       | 'grpcTlsFor'
@@ -822,6 +824,13 @@ export async function sendRestRequest(
     throw error;
   }
 
+  // Asked before the send, so the definition cache is read while the request is on the wire.
+  const contract = deps.project.restContractFor?.(request.requestId, {
+    method: resolved.input.request.method,
+    url: resolved.input.request.url,
+  });
+  // Handled here too: a cache that fails to read while the send itself fails is never awaited.
+  contract?.catch(() => undefined);
   const startedAt = Date.now();
   try {
     const summary = await service.sendRestRequest(
@@ -832,6 +841,7 @@ export async function sendRestRequest(
         ...(accessToken !== undefined ? { accessToken } : {}),
         ...(keyParams !== undefined ? { keyParams } : {}),
         ...(onLive !== undefined ? { onLive } : {}),
+        ...(contract !== undefined ? { contract } : {}),
       },
     );
     deps.project.rememberRestCookies?.(

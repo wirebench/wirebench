@@ -67,7 +67,9 @@ import {
   applyAsyncApiUpdate,
   asyncApiChannelMessages,
   createCachedApiFetch,
+  matchOperation,
   parseAsyncApi,
+  parseOpenApi,
   planAsyncApiUpdate,
   writeDefinitionCache,
   writeDescriptorDefinitionCache,
@@ -97,6 +99,7 @@ import type {
   ResolvedDocument,
   AsyncApiApplyResult,
   AsyncApiDocument,
+  OpenApiDocument,
   AsyncApiUpdatePlan,
   ChannelMessages,
   ParsedAsyncApi,
@@ -180,7 +183,8 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
-import { findRestFolder, findRestRequest } from './project-rest-mutations.js';
+import { findRestFolder, findRestRequest, restApiOwning } from './project-rest-mutations.js';
+import type { RestContractTarget } from './rest-contract.js';
 import { resolveRestSend } from './rest-send.js';
 import type { RestSendResolution } from './rest-send.js';
 import { resolveGrpcSend } from './grpc-send.js';
@@ -404,6 +408,11 @@ export class ProjectHost {
   private readonly asyncApiContracts = new Map<string, Promise<AsyncApiDocument | undefined>>();
   /** The version and WebSocket servers of each cached AsyncAPI document read so far, for the Definition card. */
   private readonly asyncApiInfo = new Map<string, AsyncApiDefinitionInfo>();
+  /**
+   * Each OpenAPI-imported API's parsed document, read from its definition cache once per session
+   * and API, for checking responses against it. Dropped on close and when the API is imported.
+   */
+  private readonly openApiDocuments = new Map<string, Promise<OpenApiDocument>>();
   private autosave: NodeJS.Timeout | undefined;
   private hydrating: Promise<void> | undefined;
   /** What the last `openProject` did with an unsaved-changes record, if it was given one. */
@@ -1098,6 +1107,7 @@ export class ProjectHost {
     // A contract memo belongs to this project's cache folder; a reopen reads it again.
     this.asyncApiContracts.clear();
     this.asyncApiInfo.clear();
+    this.openApiDocuments.clear();
     for (const iface of this.open.project.interfaces) {
       this.engine.close(iface.id);
     }
@@ -2794,6 +2804,7 @@ export class ProjectHost {
     };
     open.project = { ...open.project, apis: [...open.project.apis, api] };
     open.dirty = true;
+    this.openApiDocuments.delete(api.id);
     await this.save({ reason: 'import' });
     return { project: this.snapshot() as ProjectWire, apiId: api.id };
   }
@@ -2919,6 +2930,76 @@ export class ProjectHost {
     return this.asyncApiContractFor(api.id).then((document) =>
       document === undefined ? undefined : asyncApiChannelMessages(document, channel),
     );
+  }
+
+  /**
+   * The OpenAPI document a REST API was imported from, parsed from its definition cache — never the
+   * network — and kept for the session. A failed read is not remembered, so a fixed cache is read
+   * again on the next ask.
+   *
+   * @throws ProjectError `not-found` when `apiId` is not a REST API of this project.
+   */
+  openApiDocumentFor(apiId: string): Promise<OpenApiDocument> {
+    const known = this.openApiDocuments.get(apiId);
+    if (known !== undefined) {
+      return known;
+    }
+    const api = this.requireApi(apiId);
+    const dir = apiDefinitionDir(this.require().dir, api.slug);
+    const loading = readApiDefinitionCache(dir).then(async (cached) => {
+      const offline = createCachedApiFetch(cached.manifest, dir, (location) =>
+        Promise.reject(
+          new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
+            details: { location },
+          }),
+        ),
+      );
+      const parsed = await parseOpenApi({ kind: 'url', url: cached.manifest.rootLocation }, { fetchDocument: offline });
+      return parsed.document;
+    });
+    loading.catch(() => {
+      if (this.openApiDocuments.get(apiId) === loading) {
+        this.openApiDocuments.delete(apiId);
+      }
+    });
+    this.openApiDocuments.set(apiId, loading);
+    return loading;
+  }
+
+  /**
+   * What a REST request's response is checked against: the operation it calls — its import link,
+   * or else the one operation `sent`'s method and URL match — and that operation's declared
+   * responses. `undefined` (not a promise) when the request's API has no cached definition, so such
+   * a send never touches the checker; the promise rejects when the cache cannot be read.
+   */
+  restContractFor(
+    requestId: string,
+    sent: { readonly method: string; readonly url: string },
+  ): Promise<RestContractTarget> | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const request = findRestRequest(this.open.project, requestId);
+    const api = restApiOwning(this.open.project, requestId);
+    if (request === undefined || api?.definition?.cache !== true) {
+      return undefined;
+    }
+    const link = request.contract;
+    const baseUrls = [api.baseUrl, ...api.servers.map((server) => server.url)];
+    return this.openApiDocumentFor(api.id).then((document) => {
+      const operation =
+        link !== undefined
+          ? { method: link.method, path: link.path }
+          : matchOperation(document.operations, sent.method, sent.url, baseUrls);
+      if (operation === undefined) {
+        return {};
+      }
+      const declared = document.operations.find(
+        (candidate) =>
+          candidate.method.toLowerCase() === operation.method.toLowerCase() && candidate.path === operation.path,
+      );
+      return declared?.responses === undefined ? { operation } : { operation, responses: declared.responses };
+    });
   }
 
   /** Where an AsyncAPI-imported API's definition came from, as the user gave it, for an update to re-read. */

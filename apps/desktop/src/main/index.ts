@@ -208,6 +208,13 @@ const workspaceService = new WorkspaceService({
     const matches = projectId === undefined ? undefined : (id: string) => workspaceService.projectId(id) === projectId;
     if (matches === undefined) {
       engineService.closeAllWs();
+      // The whole workspace is going: its REST checker worker goes with it (the next check starts one).
+      void engineService.disposeRestContractChecker().catch((error: unknown) => {
+        console.warn(
+          '[rest] ending the contract checker failed',
+          error instanceof Error ? error.message : String(error),
+        );
+      });
     } else {
       engineService.closeWsWhere(matches);
     }
@@ -527,6 +534,13 @@ app.on('before-quit', (event) => {
   } catch (error) {
     console.warn('[rest] aborting streams on quit failed', error instanceof Error ? error.message : String(error));
   }
+  // The REST contract checker's worker thread must not keep the process alive past quit.
+  void engineService.disposeRestContractChecker().catch((error: unknown) => {
+    console.warn(
+      '[rest] ending the contract checker on quit failed',
+      error instanceof Error ? error.message : String(error),
+    );
+  });
   void stashed
     .then(async () => {
       await workspaceService.close();

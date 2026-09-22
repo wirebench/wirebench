@@ -464,6 +464,7 @@ export type {
   OpenApiMediaType,
   OpenApiOAuthFlow,
   OpenApiOperation,
+  OpenApiResponses,
   OpenApiParameter,
   OpenApiRequestBody,
   OpenApiSecurityRequirement,
@@ -698,6 +699,7 @@ export type { DirEntry, FileStat, FsLike } from './project/fs.js';
 export {
   appendHistory,
   generateHistoryId,
+  historyContractOf,
   historySseOf,
   historyWsOf,
   normalizeHistoryEntry,

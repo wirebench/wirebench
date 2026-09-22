@@ -1772,6 +1772,20 @@ export type RestEventStreamWire = z.infer<typeof restEventStreamWireSchema>;
  * log, the raw view and the timing waterfall are one implementation — plus what the body turned out
  * to be.
  */
+/**
+ * How a REST response compared with the OpenAPI contract of the operation it answered — the engine's
+ * `RestContractResult`. Problems carry a JSON Pointer and a message, never the body's values.
+ */
+export const restContractResultSchema = z.object({
+  status: z.enum(['ok', 'violation', 'unmatched', 'no-schema', 'no-contract', 'skipped', 'not-checked']),
+  operation: z.object({ method: z.string(), path: z.string() }).optional(),
+  responseKey: z.string().optional(),
+  mediaType: z.string().optional(),
+  problems: z.array(z.object({ path: z.string(), keyword: z.string(), message: z.string() })),
+  notes: z.array(z.string()),
+});
+export type RestContractResultWire = z.infer<typeof restContractResultSchema>;
+
 export const restExchangeSummarySchema = z.object({
   sendId: z.string(),
   durationMs: z.number(),
@@ -1792,6 +1806,11 @@ export const restExchangeSummarySchema = z.object({
   unresolved: z.array(unresolvedRefWireSchema).optional(),
   /** Present only when the response was a `text/event-stream` and the send asked to parse it as one. */
   stream: restEventStreamWireSchema.optional(),
+  /**
+   * The response checked against its operation's contract. Absent when nothing could be checked:
+   * a stream, a non-JSON body, or a request whose API has no cached definition.
+   */
+  contract: restContractResultSchema.optional(),
 });
 export type RestExchangeSummary = z.infer<typeof restExchangeSummarySchema>;
 
@@ -3224,6 +3243,8 @@ export const historyEntrySchema = z.object({
       omittedRows: z.number().optional(),
     })
     .optional(),
+  /** A REST response's contract result, capped as the live one is (`historyContractOf`). */
+  contract: restContractResultSchema.optional(),
   sizeBytes: z.number(),
   tags: z.array(z.string()).optional(),
 });
