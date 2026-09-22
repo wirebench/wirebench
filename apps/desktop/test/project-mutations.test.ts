@@ -75,6 +75,26 @@ describe('applyChange', () => {
     expect(found?.request.auth).toMatchObject({ passwordEnv: 'BILLING_PASSWORD' });
   });
 
+  it('update-request-auth throws rather than silently falling back to none for an inherit payload', async () => {
+    await expect(
+      applyChange(build(), { kind: 'update-request-auth', requestId: 'req-1', auth: { type: 'inherit' } }, deps),
+    ).rejects.toSatisfy((error: unknown) => isWirebenchError(error) && error.code === 'auth-inherit-unsupported');
+  });
+
+  it('update-interface-auth and update-endpoint-auth also throw for an inherit payload', async () => {
+    await expect(
+      applyChange(build(), { kind: 'update-interface-auth', interfaceId: 'iface-1', auth: { type: 'inherit' } }, deps),
+    ).rejects.toSatisfy((error: unknown) => isWirebenchError(error) && error.code === 'auth-inherit-unsupported');
+
+    await expect(
+      applyChange(
+        build(),
+        { kind: 'update-endpoint-auth', interfaceId: 'iface-1', endpointId: 'ep-1', auth: { type: 'inherit' } },
+        deps,
+      ),
+    ).rejects.toSatisfy((error: unknown) => isWirebenchError(error) && error.code === 'auth-inherit-unsupported');
+  });
+
   it('add-request creates the operation when the interface does not declare it yet', async () => {
     const result = await applyChange(
       build(),

@@ -99,7 +99,7 @@ function toEndpointWire(endpoint: Endpoint): EndpointWire {
     id: endpoint.id,
     name: endpoint.name,
     url: endpoint.url,
-    ...(endpoint.auth !== undefined ? { auth: endpoint.auth } : {}),
+    ...(endpoint.auth !== undefined ? { auth: toAuthConfigWire(endpoint.auth) } : {}),
     authMode: endpoint.authMode,
     ...(endpoint.trustInvalid === true ? { trustInvalid: true } : {}),
   };
@@ -159,7 +159,7 @@ export function toInterfaceWire(iface: Interface, runtime: InterfaceRuntime | un
     ...(iface.defaultEndpointId !== undefined ? { defaultEndpointId: iface.defaultEndpointId } : {}),
     hydration: runtime?.hydration ?? 'pending',
     // `EndpointAuth` only ever carries a `passwordRef`, never a password — safe on the wire.
-    ...(iface.auth !== undefined ? { auth: iface.auth } : {}),
+    ...(iface.auth !== undefined ? { auth: toAuthConfigWire(iface.auth) } : {}),
   };
 }
 
@@ -201,7 +201,7 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     ...(request.endpointUrl !== undefined ? { endpointUrl: request.endpointUrl } : {}),
     headers: request.headers.map((header) => ({ name: header.name, value: header.value })),
     order: request.order,
-    ...(request.auth !== undefined ? { auth: request.auth } : {}),
+    ...(request.auth !== undefined ? { auth: toAuthConfigWire(request.auth) } : {}),
     ...(request.description !== undefined ? { description: request.description } : {}),
     ...(request.wsa !== undefined ? { wsa: request.wsa } : {}),
     ...(request.wssOutgoingRef !== undefined ? { wssOutgoingRef: request.wssOutgoingRef } : {}),

@@ -85,6 +85,8 @@ function harness(
     readonly secrets?: Record<string, string>;
     readonly showSecrets?: boolean;
     readonly stored?: Record<string, string>;
+    /** SOAP interfaces, endpoints and requests, answered by `soapAuthOf`. */
+    readonly soapOwners?: Record<string, AuthConfig>;
   } = {},
 ): { readonly oauth2: InstanceType<typeof OAuth2Service>; readonly stored: Record<string, string> } {
   const stored = options.stored ?? {};
@@ -97,6 +99,7 @@ function harness(
     oauth2,
     project: {
       restAuthOf: (id: string) => owners[id],
+      ...(options.soapOwners !== undefined ? { soapAuthOf: (id: string) => options.soapOwners![id] as never } : {}),
       projectId: () => 'p1',
     },
     getSecret: (ref) => Promise.resolve((options.secrets ?? { sec_client: 's3cret' })[ref]),
@@ -126,6 +129,14 @@ describe('oauth2.fetchToken', () => {
     const status = await value<{ token?: string }>('oauth2.fetchToken', { ownerId: 'api-1' });
 
     expect(status.token).toMatch(/^access-/);
+  });
+
+  it('falls back to a SOAP interface, endpoint or request when no REST owner has the id', async () => {
+    harness({}, { soapOwners: { 'ep-1': config() } });
+
+    const status = await value<{ token?: string }>('oauth2.fetchToken', { ownerId: 'ep-1' });
+
+    expect(status).toMatchObject({ state: 'valid' });
   });
 
   it('refuses an owner nobody knows, and one that does not use OAuth2', async () => {

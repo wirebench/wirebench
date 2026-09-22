@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SecretField } from './secret-field.js';
 import { ipc } from '../state/ipc-client.js';
-import type { AuthConfigWire, EndpointAuthWire } from '../../shared/wire-types.js';
+import type { AuthConfigWire, SoapOwnerAuthWire } from '../../shared/wire-types.js';
 
 const INPUT_CLASS =
   'h-row w-full min-w-0 rounded-md border border-hairline bg-surface-base px-2 text-sm text-fg-default focus:outline-none focus:ring-1 focus:ring-accent';
@@ -34,23 +34,28 @@ const TYPES: readonly { readonly value: AuthConfigWire['type']; readonly label: 
 ];
 
 /**
- * The schemes a SOAP interface, endpoint or request may hold.
+ * The schemes a SOAP interface, endpoint or request may hold: all six, but never *Inherit*.
  *
- * Narrower than the rest because that is what the project format persists for them
- * (`endpointAuthSchema`): §3.5 of the design wants Bearer, API key and OAuth2 available to SOAP
- * owners too, which needs the format, the send path and this list widened together.
+ * A SOAP owner has nothing above it to inherit from (the project format refuses `inherit` there),
+ * so the form offers every real scheme and leaves "configures nothing" to *Not configured*.
  */
-export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = ['none', 'basic', 'ntlm'];
+export const SOAP_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
+  'none',
+  'basic',
+  'ntlm',
+  'bearer',
+  'api-key',
+  'oauth2',
+];
 
 /**
  * What the form produced, narrowed to what a SOAP owner can persist.
  *
- * Safe because a SOAP site passes {@link SOAP_AUTH_TYPES}, so the form never offers anything else;
- * the impossible branch clears the credentials rather than writing a shape the schema would refuse,
- * which is the direction that cannot corrupt a project file.
+ * A SOAP site passes {@link SOAP_AUTH_TYPES}, so the form never produces `inherit` there; should it
+ * ever, clearing the credentials is the direction that cannot write a shape the schema would refuse.
  */
-export function asSoapAuth(auth: AuthConfigWire | null): EndpointAuthWire | null {
-  return auth === null || !SOAP_AUTH_TYPES.includes(auth.type) ? null : (auth as EndpointAuthWire);
+export function asSoapAuth(auth: AuthConfigWire | null): SoapOwnerAuthWire | null {
+  return auth === null || auth.type === 'inherit' ? null : auth;
 }
 
 /** Which secret field is which, so each can register its own flush. */
@@ -68,8 +73,7 @@ export interface AuthFieldsProps {
   /**
    * The schemes this owner may be given, when it cannot hold all of them.
    *
-   * A SOAP interface, endpoint or request is persisted under a narrower schema than a REST owner, so
-   * it passes the three it can actually store. The restriction is on the *offer* rather than on what
+   * A SOAP interface, endpoint or request cannot inherit, so it passes {@link SOAP_AUTH_TYPES}. The restriction is on the *offer* rather than on what
    * is saved: a form that offered Bearer and then dropped it would lose a token silently.
    */
   readonly types?: readonly AuthConfigWire['type'][];

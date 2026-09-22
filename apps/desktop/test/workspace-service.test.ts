@@ -433,6 +433,11 @@ describe('WorkspaceService routing', () => {
 
     expect(service.hostOfEntity(requestId!)).toBe(host);
     expect(service.hostOfEntity(interfaceId!)).toBe(host);
+    // An endpoint can own an OAuth2 configuration, so the `oauth2.*` channels route by its id too.
+    const endpointId = snapshot?.interfaces[0]?.endpoints[0]?.id;
+    expect(endpointId).toEqual(expect.any(String));
+    expect(service.hostOfEntity(endpointId!)).toBe(host);
+    expect(service.soapAuthOf(endpointId!)).toBeUndefined();
     expect(service.hostOfEntity(calculator.id)).toBe(host);
     expect(service.projectId(requestId!)).toBe(calculator.id);
     // The other project's host holds none of those ids.

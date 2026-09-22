@@ -307,6 +307,15 @@ describe('InterfaceEditor', () => {
     });
   });
 
+  it('offers the interface all six SOAP schemes on Overview', () => {
+    render(<InterfaceEditor interfaceId="if-1" />);
+
+    const options = [...screen.getByLabelText('Interface authentication type').querySelectorAll('option')].map(
+      (option) => option.value,
+    );
+    expect(options).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']);
+  });
+
   it('edits the interface default WS-Addressing on Overview', async () => {
     const mutate = vi.fn().mockImplementation(() =>
       Promise.resolve({

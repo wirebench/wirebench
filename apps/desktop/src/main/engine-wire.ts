@@ -606,11 +606,59 @@ export function toExchangeSummary(exchange: SoapExchange, sendId: string, opts?:
 }
 
 /**
+ * Masks `keyParams` in the request line of raw request bytes (`POST /calc?key=… HTTP/1.1`), which
+ * `redactRawHttp` leaves alone because it reads headers, not the target. A no-op without
+ * `keyParams`, so an exchange with no query API key keeps its bytes exactly as sent.
+ */
+function redactRequestTarget(rawBase64: string, keyParams: readonly string[]): string {
+  if (keyParams.length === 0) {
+    return rawBase64;
+  }
+  const raw = Buffer.from(rawBase64, 'base64');
+  const end = raw.indexOf('\r\n');
+  if (end < 0) {
+    return rawBase64;
+  }
+  const line = raw.subarray(0, end).toString('latin1');
+  const match = /^(\S+) (\S+) (\S+)$/.exec(line);
+  if (match === null || !match[2]!.includes('?')) {
+    return rawBase64;
+  }
+  const target = maskTarget(match[2]!, keyParams);
+  return Buffer.concat([Buffer.from(`${match[1]!} ${target} ${match[3]!}`, 'latin1'), raw.subarray(end)]).toString(
+    'base64',
+  );
+}
+
+/**
+ * One request target with `keyParams` masked. An origin-form target (`/calc?key=…`) is parsed
+ * under a placeholder origin and rebuilt from the parsed path and query, never by trimming a
+ * string prefix; an absolute-form one is a URL already. Returned as sent when nothing is masked.
+ */
+function maskTarget(target: string, keyParams: readonly string[]): string {
+  const options = { show: false, extraParams: keyParams };
+  if (!target.startsWith('/')) {
+    return redactUrl(target, options);
+  }
+  // Prefixed rather than resolved, so a path that starts `//` stays a path, not a host.
+  const placed = `http://request.invalid${target}`;
+  const redacted = redactUrl(placed, options);
+  if (redacted === placed) {
+    return target;
+  }
+  const parsed = new URL(redacted);
+  return `${parsed.pathname}${parsed.search}`;
+}
+
+/**
  * Re-applies redaction to an already-built `ExchangeSummary` (the unredacted one kept by
  * `ExchangeCache`), so `exchanges.get` can answer with whatever the show-secrets flag says
  * *now* rather than what it said at send time.
  */
-export function redactExchangeSummary(summary: ExchangeSummary, opts?: { show?: boolean }): ExchangeSummary {
+export function redactExchangeSummary(
+  summary: ExchangeSummary,
+  opts?: { show?: boolean; readonly keyParams?: readonly string[] },
+): ExchangeSummary {
   const show = opts?.show ?? false;
   if (show) {
     return summary;
@@ -621,9 +669,23 @@ export function redactExchangeSummary(summary: ExchangeSummary, opts?: { show?: 
       ...summary.http,
       headers: redactHeaders(summary.http.headers, { show }),
       rawHeaders: redactHeaderPairs(summary.http.rawHeaders, { show }),
-      rawRequestBase64: redactRawHttp(summary.http.rawRequestBase64, { show, encoding: 'base64' }),
+      rawRequestBase64: redactRequestTarget(
+        redactRawHttp(summary.http.rawRequestBase64, { show, encoding: 'base64' }),
+        opts?.keyParams ?? [],
+      ),
       rawResponseBase64: redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
-      request: { ...summary.http.request, headers: redactHeaders(summary.http.request.headers, { show }) },
+      // The first hop is the wire URL, which carries a query API key as the request URL does.
+      redirects: summary.http.redirects.map((redirect) => ({
+        ...redirect,
+        url: redactUrl(redirect.url, { show, extraParams: opts?.keyParams ?? [] }),
+      })),
+      request: {
+        ...summary.http.request,
+        // A SOAP owner's API key may travel in the query string; `keyParams` names it whatever it is
+        // called, as on a REST send.
+        url: redactUrl(summary.http.request.url, { show, extraParams: opts?.keyParams ?? [] }),
+        headers: redactHeaders(summary.http.request.headers, { show }),
+      },
     },
     ...(summary.response !== undefined
       ? {

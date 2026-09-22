@@ -9,6 +9,7 @@ import { AuthFields, asSoapAuth, SOAP_AUTH_TYPES } from '../../components/auth-f
 import { Button } from '../../components/button.js';
 import { ReadOnlySetting, SettingsGroup } from '../../components/settings-grid.js';
 import { WsaFields } from '../../components/wsa-fields.js';
+import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { useProjectStore } from '../../state/project.js';
 import { exportDefinition, generateDocumentation, updateDefinition } from './interface-actions.js';
 import { useInterfaceEditorStore } from './interface-editor-state.js';
@@ -94,6 +95,11 @@ export function OverviewTab({ interfaceId }: OverviewTabProps) {
             types={SOAP_AUTH_TYPES}
             scope="Interface"
             auth={iface.auth}
+            oauth2Status={
+              iface.auth?.type === 'oauth2' ? (
+                <OAuth2StatusPanel ownerId={interfaceId} grant={iface.auth.grant} />
+              ) : undefined
+            }
             onChange={(auth) => {
               void updateInterfaceAuth(interfaceId, asSoapAuth(auth));
             }}
