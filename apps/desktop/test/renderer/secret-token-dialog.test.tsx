@@ -84,9 +84,11 @@ describe('SecretTokenDialog', () => {
     await screen.findByText('billing_key');
     expect(tokens).toHaveBeenCalledWith({ projectId: 'p1' });
     expect(within(row('billing_key')).getByText('Set')).toBeTruthy();
-    expect(within(row('billing_key')).getByRole('button', { name: 'Replace…' })).toBeTruthy();
+    const replace = within(row('billing_key')).getByRole('button', { name: 'Replace value for billing_key' });
+    expect(replace.textContent).toBe('Replace…');
     expect(within(row('orders_key')).getByText('Not on this machine')).toBeTruthy();
-    expect(within(row('orders_key')).getByRole('button', { name: 'Set…' })).toBeTruthy();
+    const set = within(row('orders_key')).getByRole('button', { name: 'Set value for orders_key' });
+    expect(set.textContent).toBe('Set…');
   });
 
   it('saves a value with exactly the project, the name and the value, then refreshes and says so', async () => {
@@ -94,7 +96,7 @@ describe('SecretTokenDialog', () => {
     open();
     await screen.findByText('orders_key');
 
-    await userEvent.click(within(row('orders_key')).getByRole('button', { name: 'Set…' }));
+    await userEvent.click(within(row('orders_key')).getByRole('button', { name: 'Set value for orders_key' }));
     const input = within(row('orders_key')).getByLabelText('Value for orders_key');
     expect(input.getAttribute('type')).toBe('password');
     await userEvent.type(input, FAKE_VALUE);
@@ -113,8 +115,14 @@ describe('SecretTokenDialog', () => {
     expect(setValue.mock.calls[0]?.[0]).toEqual({ projectId: 'p1', name: 'orders_key', value: FAKE_VALUE });
     await waitFor(() => expect(within(row('orders_key')).getByText('Set')).toBeTruthy());
     expect(tokens).toHaveBeenCalledTimes(2);
-    expect(screen.getByTestId('secret-token-announce').textContent).toBe('Saved');
+    expect(screen.getByTestId('secret-token-announce').textContent).toBe('Saved orders_key');
     expect(within(row('orders_key')).queryByLabelText('Value for orders_key')).toBeNull();
+    // Focus lands on the row it came from, not on the dialog.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(row('orders_key')).getByRole('button', { name: 'Replace value for orders_key' }),
+      ),
+    );
     // The value went to main and nowhere else.
     expect(JSON.stringify(useUiStore.getState())).not.toContain(FAKE_VALUE);
     expect(document.body.innerHTML).not.toContain(FAKE_VALUE);
@@ -125,7 +133,7 @@ describe('SecretTokenDialog', () => {
     open();
     await screen.findByText('billing_key');
 
-    await userEvent.click(within(row('billing_key')).getByRole('button', { name: 'Replace…' }));
+    await userEvent.click(within(row('billing_key')).getByRole('button', { name: 'Replace value for billing_key' }));
     await userEvent.type(within(row('billing_key')).getByLabelText('Value for billing_key'), `${FAKE_VALUE}{Enter}`);
 
     await waitFor(() =>
@@ -138,7 +146,7 @@ describe('SecretTokenDialog', () => {
     open();
     await screen.findByText('billing_key');
 
-    await userEvent.click(within(row('billing_key')).getByRole('button', { name: 'Replace…' }));
+    await userEvent.click(within(row('billing_key')).getByRole('button', { name: 'Replace value for billing_key' }));
     await userEvent.type(within(row('billing_key')).getByLabelText('Value for billing_key'), `${FAKE_VALUE}{Escape}`);
 
     expect(within(row('billing_key')).queryByLabelText('Value for billing_key')).toBeNull();
@@ -158,6 +166,67 @@ describe('SecretTokenDialog', () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(within(row('orders_key')).getByLabelText('Value for orders_key')),
     );
+  });
+
+  it('opens on a name the project does not list yet as a row of its own, value field focused', async () => {
+    // A token only in unsaved edits: main lists the saved project, so the name is not there.
+    render(<SecretTokenDialog />);
+    open({ projectId: 'p1', name: 'draft_key' });
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(row('draft_key')).getByLabelText('Value for draft_key')),
+    );
+    const names = screen.getAllByTestId('secret-token-row').map((element) => element.dataset['name']);
+    expect(names).toEqual(['draft_key', 'billing_key', 'orders_key']);
+    expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe('');
+
+    await userEvent.type(within(row('draft_key')).getByLabelText('Value for draft_key'), `${FAKE_VALUE}{Enter}`);
+    expect(setValue).toHaveBeenCalledWith({ projectId: 'p1', name: 'draft_key', value: FAKE_VALUE });
+  });
+
+  it('keeps the named row, not a second one, once main lists it', async () => {
+    render(<SecretTokenDialog />);
+    open({ projectId: 'p1', name: 'draft_key' });
+    await screen.findByLabelText('Value for draft_key');
+    tokens.mockResolvedValue({
+      ok: true,
+      value: {
+        tokens: [
+          { name: 'billing_key', stored: true },
+          { name: 'orders_key', stored: false },
+          { name: 'draft_key', stored: true },
+        ],
+      },
+    });
+
+    await userEvent.type(screen.getByLabelText('Value for draft_key'), `${FAKE_VALUE}{Enter}`);
+
+    await waitFor(() => expect(within(row('draft_key')).getByText('Set')).toBeTruthy());
+    expect(
+      screen.getAllByTestId('secret-token-row').filter((element) => element.dataset['name'] === 'draft_key'),
+    ).toHaveLength(1);
+  });
+
+  it('shows nothing from a save for a project the person has since moved off', async () => {
+    openProjects('p1', 'p2');
+    let finish: (value: unknown) => void = () => undefined;
+    setValue.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<SecretTokenDialog />);
+    open();
+    await userEvent.click(await screen.findByRole('button', { name: 'Replace value for billing_key' }));
+    await userEvent.type(screen.getByLabelText('Value for billing_key'), `${FAKE_VALUE}{Enter}`);
+    expect(screen.getByLabelText<HTMLInputElement>('Name').disabled).toBe(true);
+
+    await userEvent.selectOptions(screen.getByLabelText('Project'), 'p2');
+    await waitFor(() => expect(tokens).toHaveBeenLastCalledWith({ projectId: 'p2' }));
+    await act(async () => {
+      finish({ ok: false, error: { code: 'x', message: 'The store for Billing is locked.' } });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('secret-token-announce').textContent).toBe('');
+    expect(screen.getByLabelText<HTMLInputElement>('Name').disabled).toBe(false);
   });
 
   it('sets a name not in the list, and refuses one a token cannot carry', async () => {
@@ -182,7 +251,8 @@ describe('SecretTokenDialog', () => {
     expect(setValue.mock.calls[0]?.[0]).toEqual({ projectId: 'p1', name: 'new_key', value: FAKE_VALUE });
     await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>('Value').value).toBe(''));
     expect(screen.getByLabelText<HTMLInputElement>('Name').value).toBe('');
-    expect(screen.getByTestId('secret-token-announce').textContent).toBe('Saved');
+    expect(screen.getByTestId('secret-token-announce').textContent).toBe('Saved new_key');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Name')));
   });
 
   it('says when the project uses no tokens, and still offers a name to set', async () => {

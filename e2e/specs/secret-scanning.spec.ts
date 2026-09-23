@@ -105,10 +105,10 @@ test.describe('secret scanning on save', () => {
     await expect(input).toBeFocused();
     await input.fill(FAKE_VALUE);
     await input.press('Enter');
-    await expect(dialog.getByTestId('secret-token-announce')).toHaveText('Saved');
+    await expect(dialog.getByTestId('secret-token-announce')).toHaveText('Saved billing_key');
     const row = dialog.getByTestId('secret-token-row').filter({ hasText: 'billing_key' });
     await expect(row).toContainText('Set');
-    await expect(row.getByRole('button', { name: 'Replace…' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Replace value for billing_key' })).toBeVisible();
     await expect(dialog).not.toContainText(FAKE_VALUE);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();

@@ -105,4 +105,29 @@ describe('the secret-missing toast', () => {
 
     expect(showToast).not.toHaveBeenCalled();
   });
+
+  it('offers Set value… when a message on an open WebSocket session is refused for a token', async () => {
+    const refused = vi.fn().mockResolvedValue({ ok: false, error: TOKEN_MISSING });
+    installWirebenchApi({ request: { wsSend: refused } });
+    useExchangesStore.setState({ wsByRequest: { 'ws-1': { status: 'open', sendId: 'send-1' } } });
+
+    await useExchangesStore
+      .getState()
+      .sendWsMessage('ws-1', { format: 'text', content: '${secret:billing_key}', expand: true });
+
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledTimes(1);
+    const [message, action] = showToast.mock.calls[0] as [string, ToastAction];
+    expect(message).toBe(TOKEN_MISSING.message);
+    action.onClick();
+    expect(useUiStore.getState().secretTokenDialog).toEqual({ projectId: 'p2', name: 'billing_key' });
+  });
+
+  it('offers nothing when the request belongs to no known project', async () => {
+    useProjectStore.setState({ projectOf: { p1: 'p1', p2: 'p2' } });
+
+    await failSend('rest', TOKEN_MISSING);
+
+    expect(showToast).not.toHaveBeenCalled();
+  });
 });

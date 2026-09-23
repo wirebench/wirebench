@@ -68,7 +68,12 @@ function offerSecretValue(requestId: string, error: IpcError): void {
   if (error.code !== 'secret-missing' || typeof name !== 'string') {
     return;
   }
+  // No known project, no offer: guessing (the active tab's, say) could store the value under
+  // another project's label, where the send that asked would still not find it.
   const projectId = useProjectStore.getState().projectOf[requestId];
+  if (projectId === undefined) {
+    return;
+  }
   showToast(error.message, {
     label: 'Set value…',
     onClick: () => {
@@ -735,6 +740,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
           }
           draft.wsByRequest[requestId] = { ...state, error: result.error };
         });
+        offerSecretValue(requestId, result.error);
         return;
       }
       // The frame itself is *not* pushed here. The engine fires `onFrame` for a sent frame as it

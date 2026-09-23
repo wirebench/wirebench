@@ -23,6 +23,10 @@ const INPUT_CLASS =
  * A value lives in this component's state only while it is typed: it goes to main through
  * `secretScan.setValue` and is cleared as soon as that call returns. Nothing sends one back.
  *
+ * Opened on a name (a send refused for it), that name's row is open for its value even when main
+ * does not list it: `secretScan.tokens` reads the saved project, and a token typed into a request
+ * and sent without saving is only in the renderer's draft.
+ *
  * Escape while a row is being edited cancels that edit and leaves the dialog open; with no edit
  * open it closes the dialog, as anywhere else.
  */
@@ -41,10 +45,15 @@ export function SecretTokenDialog() {
   const [saving, setSaving] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
+  /** The name the dialog was opened on, when main does not list it (it is only in unsaved edits). */
+  const [unlisted, setUnlisted] = useState<string | undefined>(undefined);
   /** The project the latest load is for, so a reply for one the person has moved off is dropped. */
   const current = useRef<string | undefined>(undefined);
-  const newValueRef = useRef<HTMLInputElement>(null);
+  /** Where focus goes once a save's refresh has rendered: a row's button, or the add form's Name. */
+  const focusAfterSave = useRef<string | undefined>(undefined);
   const baseId = useId();
+  const nameId = `${baseId}-name`;
+  const rowButtonId = (name: string): string => `${baseId}-row-${name}`;
 
   const choices = order.map((entry) => entry.projectId).filter((id) => projects[id] !== undefined);
 
@@ -70,21 +79,36 @@ export function SecretTokenDialog() {
     setAnnouncement('');
     setError(undefined);
     setEditing(target?.name);
+    setUnlisted(target?.name);
+    focusAfterSave.current = undefined;
     if (projectId === undefined) {
       return;
     }
-    const name = target?.name;
-    void load(projectId).then((listed) => {
-      // A name the project does not list (edited away since the send that asked): offer it below.
-      if (name !== undefined && listed !== undefined && !listed.some((token) => token.name === name)) {
-        setEditing(undefined);
-        setNewName(name);
-        newValueRef.current?.focus();
-      }
-    });
+    void load(projectId);
   }, [projectId, target?.name]);
 
-  /** Stores `value` for `name`; `clear` runs the moment the call returns, success or not. */
+  useEffect(() => {
+    const id = focusAfterSave.current;
+    if (id === undefined || saving) {
+      return;
+    }
+    const element = document.getElementById(id);
+    if (element !== null) {
+      focusAfterSave.current = undefined;
+      element.focus();
+    }
+  });
+
+  /** The listed tokens, with the name the dialog was opened on first when main does not list it. */
+  const rows: readonly TokenStatus[] | undefined =
+    tokens === undefined || unlisted === undefined || tokens.some((token) => token.name === unlisted)
+      ? tokens
+      : [{ name: unlisted, stored: false }, ...tokens];
+
+  /**
+   * Stores `value` for `name`; `clear` runs the moment the call returns, success or not. A reply
+   * for a project the person has since moved off changes nothing on the one now shown.
+   */
   const save = async (name: string, value: string, clear: () => void): Promise<boolean> => {
     if (projectId === undefined || value.length === 0 || saving) {
       return false;
@@ -94,14 +118,17 @@ export function SecretTokenDialog() {
     const result = await ipc().secretScan.setValue({ projectId, name, value });
     clear();
     setSaving(false);
+    if (current.current !== projectId) {
+      return false;
+    }
     if (!result.ok) {
       setError(result.error.message);
       return false;
     }
     setError(undefined);
-    setAnnouncement('Saved');
+    setAnnouncement(`Saved ${name}`);
     await load(projectId);
-    return true;
+    return current.current === projectId;
   };
 
   const cancelEdit = (): void => {
@@ -111,6 +138,7 @@ export function SecretTokenDialog() {
 
   const saveRow = async (name: string): Promise<void> => {
     if (await save(name, draft, () => setDraft(''))) {
+      focusAfterSave.current = rowButtonId(name);
       setEditing(undefined);
     }
   };
@@ -122,6 +150,7 @@ export function SecretTokenDialog() {
       return;
     }
     if (await save(newName, newValue, () => setNewValue(''))) {
+      focusAfterSave.current = nameId;
       setNewName('');
     }
   };
@@ -174,13 +203,13 @@ export function SecretTokenDialog() {
           )}
 
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
-            {tokens === undefined ? (
+            {rows === undefined ? (
               error === undefined && <p className="text-sm text-fg-subtle">Loading…</p>
-            ) : tokens.length === 0 ? (
+            ) : rows.length === 0 ? (
               <p className="text-sm text-fg-subtle">This project uses no secret tokens.</p>
             ) : (
               <ul>
-                {tokens.map((token) => (
+                {rows.map((token) => (
                   <li
                     key={token.name}
                     data-testid="secret-token-row"
@@ -219,6 +248,8 @@ export function SecretTokenDialog() {
                           {token.stored ? 'Set' : 'Not on this machine'}
                         </span>
                         <Button
+                          id={rowButtonId(token.name)}
+                          aria-label={`${token.stored ? 'Replace' : 'Set'} value for ${token.name}`}
                           disabled={saving}
                           onClick={() => {
                             setDraft('');
@@ -240,13 +271,14 @@ export function SecretTokenDialog() {
             <p className="text-sm text-fg-default">Set a value for another name</p>
             <div className="mt-1.5 flex items-start gap-2">
               <div className="min-w-0 flex-1">
-                <label className="sr-only" htmlFor={`${baseId}-name`}>
+                <label className="sr-only" htmlFor={nameId}>
                   Name
                 </label>
                 <input
-                  id={`${baseId}-name`}
+                  id={nameId}
                   value={newName}
                   placeholder="Name"
+                  disabled={saving}
                   aria-invalid={newNameError !== undefined}
                   {...(newNameError === undefined ? {} : { 'aria-describedby': `${baseId}-name-error` })}
                   onChange={(event) => setNewName(event.target.value)}
@@ -258,7 +290,6 @@ export function SecretTokenDialog() {
               </label>
               <input
                 id={`${baseId}-value`}
-                ref={newValueRef}
                 type="password"
                 value={newValue}
                 placeholder="Value"
