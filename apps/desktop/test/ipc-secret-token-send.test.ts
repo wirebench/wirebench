@@ -28,8 +28,10 @@ import type { GetSecret, HistoryEntry, Project, PropertyScopes } from '@wirebenc
 import { EngineService } from '../src/main/engine-service.js';
 import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import {
+  buildGrpcHistoryEntry,
   buildHistoryEntry,
   buildWsHistoryEntry,
+  type RecordGrpcSendInput,
   type RecordSendInput,
   type RecordWsSessionInput,
 } from '../src/main/history-service.js';
@@ -39,7 +41,12 @@ import { recordSecretValue } from '../src/main/redact.js';
 import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import { resolveWsSend } from '../src/main/ws-send.js';
-import type { HistoryEntryWire, WsFrameWire } from '../src/shared/wire-types.js';
+import type {
+  GrpcExchangeSummary,
+  GrpcResponseMessageWire,
+  HistoryEntryWire,
+  WsFrameWire,
+} from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -256,6 +263,87 @@ describe('a WebSocket session with tokens', () => {
     expect(written[0]!.ws?.frames.map((f) => f.text)).toContain('t=<redacted>');
   });
 
+  /** Opens a session, records `${secret:name}` with a text send, then echoes the binary payloads. */
+  async function echoBinary(sendId: string, name: string, show: boolean, payloads: readonly Buffer[]) {
+    const { written } = registerWs({ show });
+    const { sender, events } = fakeSender();
+    const open = invoke('request.openWs', { sendId, requestId: 'ws-1' }, sender);
+    await waitFor(() => events.some((e) => (e as { kind?: string }).kind === 'handshake'), 'the handshake');
+    unwrap(
+      await invoke('request.wsSend', {
+        sendId,
+        requestId: 'ws-1',
+        format: 'text',
+        content: `\${secret:${name}}`,
+        expand: true,
+      }),
+    );
+    const replies: WsFrameWire[] = [];
+    for (const payload of payloads) {
+      replies.push(
+        unwrap<WsFrameWire>(
+          await invoke('request.wsSend', {
+            sendId,
+            requestId: 'ws-1',
+            format: 'binary',
+            content: payload.toString('base64'),
+            expand: false,
+          }),
+        ),
+      );
+    }
+    const received = () => frameEvents(events).filter((f) => f.direction === 'received' && f.opcode === 'binary');
+    await waitFor(() => received().length === payloads.length, 'the binary echoes');
+    unwrap(await invoke('request.wsClose', { sendId }));
+    const summary = unwrap<{ frames: WsFrameWire[] }>(await open);
+    const binary = (frames: readonly { opcode: string; base64?: string | undefined }[]) =>
+      frames.filter((f) => f.opcode === 'binary').map((f) => Buffer.from(f.base64 ?? '', 'base64'));
+    return { replies, received: received(), summary, written, binary };
+  }
+
+  it('masks a token value in a binary frame that is UTF-8 text, on the wire and in History', async () => {
+    const value = 'fake-ws-binary-token-001';
+    await store.set(value, { label: secretStoreLabel('p1', 'ws_bin') });
+    const text = Buffer.from(`{"k":"${value}","é":1}`, 'utf8');
+    const { replies, received, summary, written, binary } = await echoBinary('b1', 'ws_bin', false, [text]);
+
+    const masked = '{"k":"<redacted>","é":1}';
+    expect(Buffer.from(replies[0]!.base64 ?? '', 'base64').toString('utf8')).toBe(masked);
+    expect(received.map((f) => Buffer.from(f.base64 ?? '', 'base64').toString('utf8'))).toEqual([masked]);
+    // `size` is the payload as it went over the wire, as a text frame's is.
+    expect(received[0]!.size).toBe(text.length);
+    expect(binary(summary.frames).map((b) => b.toString('utf8'))).toEqual([masked, masked]);
+    expect(written).toHaveLength(1);
+    expect(binary(written[0]!.ws?.frames ?? []).map((b) => b.toString('utf8'))).toEqual([masked, masked]);
+  });
+
+  it('shows a binary frame as it was while secrets are shown, but History masks it all the same', async () => {
+    const value = 'fake-ws-binary-shown-001';
+    await store.set(value, { label: secretStoreLabel('p1', 'ws_bin_shown') });
+    const text = Buffer.from(`k=${value}`, 'utf8');
+    const { replies, received, summary, written, binary } = await echoBinary('b2', 'ws_bin_shown', true, [text]);
+
+    expect(Buffer.from(replies[0]!.base64 ?? '', 'base64')).toEqual(text);
+    expect(Buffer.from(received[0]!.base64 ?? '', 'base64')).toEqual(text);
+    expect(binary(summary.frames)).toEqual([text, text]);
+    expect(binary(written[0]!.ws?.frames ?? []).map((b) => b.toString('utf8'))).toEqual([
+      'k=<redacted>',
+      'k=<redacted>',
+    ]);
+  });
+
+  it('passes a binary frame that is not UTF-8 through byte for byte', async () => {
+    const value = 'fake-ws-binary-bytes-001';
+    await store.set(value, { label: secretStoreLabel('p1', 'ws_bin_bytes') });
+    const bytes = Buffer.concat([Buffer.from([0xff, 0xfe, 0x00]), Buffer.from(value, 'utf8')]);
+    const { replies, received, summary, written, binary } = await echoBinary('b3', 'ws_bin_bytes', false, [bytes]);
+
+    expect(replies[0]!.base64).toBe(bytes.toString('base64'));
+    expect(received[0]!.base64).toBe(bytes.toString('base64'));
+    expect(binary(summary.frames)).toEqual([bytes, bytes]);
+    expect(binary(written[0]!.ws?.frames ?? [])).toEqual([bytes, bytes]);
+  });
+
   it('keeps messages in the order they were sent while a token waits on the keychain', async () => {
     await store.set('fake-ws-slow-token-00001', { label: secretStoreLabel('p1', 'slow') });
     let release: () => void = () => undefined;
@@ -347,13 +435,19 @@ describe('a gRPC call with tokens', () => {
               message: '{"name": "${secret:grpc_name}"}',
               metadata: [entry('x-token', '${secret:grpc_token}')],
             }),
+            createGrpcRequest('Fail', {
+              id: 'q-2',
+              service: 'wirebench.greet.Greeter',
+              method: 'Fail',
+              message: '{"code": 5, "message": "no such ${secret:grpc_name}"}',
+            }),
           ],
         }),
       ],
     };
   }
 
-  function grpcDeps(show: boolean): RequestChannelDeps {
+  function grpcDeps(show: boolean, written: HistoryEntry[] = []): RequestChannelDeps {
     const project = grpcProject();
     return {
       project: {
@@ -371,7 +465,27 @@ describe('a gRPC call with tokens', () => {
       } as unknown as RequestChannelDeps['project'],
       secretsFor: getterFor,
       ...(show ? { showSecrets: { get: () => true } } : {}),
+      history: {
+        recordGrpcSend: (projectId: string, record: RecordGrpcSendInput) => {
+          written.push(buildGrpcHistoryEntry(projectId, record));
+          return Promise.resolve(undefined);
+        },
+      } as never,
     };
+  }
+
+  /** Every base64 field of a summary's `http`, decoded, so a value in raw bytes is seen too. */
+  function decodedHttp(summary: GrpcExchangeSummary): string {
+    const { bodyBase64, rawBodyBase64, rawRequestBase64, rawResponseBase64 } = summary.http;
+    return [bodyBase64, rawBodyBase64, rawRequestBase64, rawResponseBase64]
+      .map((base64) => Buffer.from(base64, 'base64').toString('latin1'))
+      .join('\n');
+  }
+
+  function messageEvents(events: readonly unknown[]): GrpcResponseMessageWire[] {
+    return events
+      .filter((e) => (e as { kind?: string }).kind === 'message')
+      .map((e) => (e as { message: GrpcResponseMessageWire }).message);
   }
 
   it('resolves tokens through the store, and masks them in the request messages it returns', async () => {
@@ -399,6 +513,85 @@ describe('a gRPC call with tokens', () => {
       fakeSender().sender as never,
     );
     expect(shown.requestMessages.join('')).toContain('fake-grpc-name-00000001');
+  });
+
+  it('masks a value the server echoes in its response messages, live and in the summary', async () => {
+    const value = 'fake-grpc-echo-00000001';
+    await store.set(value, { label: secretStoreLabel('p1', 'grpc_name') });
+    await store.set('fake-grpc-token-0000002', { label: secretStoreLabel('p1', 'grpc_token') });
+    const written: HistoryEntry[] = [];
+    const { sender, events } = fakeSender();
+
+    const summary = await sendGrpcRequest(
+      new EngineService(),
+      grpcDeps(false, written),
+      { sendId: 'g3', requestId: 'q-1' },
+      sender as never,
+    );
+
+    expect(JSON.stringify(grpcServer.calls.at(-1))).toContain(value);
+    const live = messageEvents(events);
+    expect(live).toHaveLength(1);
+    expect(live[0]!.json).toContain('"message": "Hello, <redacted>"');
+    expect(JSON.stringify(events)).not.toContain(value);
+    expect(summary.responseMessages[0]!.json).toContain('"message": "Hello, <redacted>"');
+    expect(JSON.stringify(summary)).not.toContain(value);
+    expect(decodedHttp(summary)).not.toContain(value);
+    // The message's size is the one the server sent, as a WebSocket frame's is.
+    expect(summary.responseMessages[0]!.bytes).toBe(live[0]!.bytes);
+    expect(JSON.stringify(written)).not.toContain(value);
+  });
+
+  it('shows an echoed value while secrets are shown, but History masks it all the same', async () => {
+    const value = 'fake-grpc-echo-shown-01';
+    await store.set(value, { label: secretStoreLabel('p1', 'grpc_name') });
+    await store.set('fake-grpc-token-0000003', { label: secretStoreLabel('p1', 'grpc_token') });
+    const written: HistoryEntry[] = [];
+    const { sender, events } = fakeSender();
+
+    const summary = await sendGrpcRequest(
+      new EngineService(),
+      grpcDeps(true, written),
+      { sendId: 'g4', requestId: 'q-1' },
+      sender as never,
+    );
+
+    expect(messageEvents(events)[0]!.json).toContain(`"message": "Hello, ${value}"`);
+    expect(summary.responseMessages[0]!.json).toContain(`"message": "Hello, ${value}"`);
+    expect(written).toHaveLength(1);
+    expect(JSON.stringify(written[0])).not.toContain(value);
+    expect(written[0]!.grpc?.responseMessages.join('')).toContain('Hello, <redacted>');
+  });
+
+  it('masks a value the server echoes in its status message and trailers', async () => {
+    const value = 'fake-grpc-status-000001';
+    await store.set(value, { label: secretStoreLabel('p1', 'grpc_name') });
+    const written: HistoryEntry[] = [];
+    const { sender, events } = fakeSender();
+
+    const summary = await sendGrpcRequest(
+      new EngineService(),
+      grpcDeps(false, written),
+      { sendId: 'g5', requestId: 'q-2' },
+      sender as never,
+    );
+
+    expect(summary.status).toBe(5);
+    expect(summary.statusMessage).toBe('no such <redacted>');
+    expect(JSON.stringify(summary)).not.toContain(value);
+    expect(decodedHttp(summary)).not.toContain(value);
+    expect(JSON.stringify(events)).not.toContain(value);
+
+    const shown = await sendGrpcRequest(
+      new EngineService(),
+      grpcDeps(true, written),
+      { sendId: 'g6', requestId: 'q-2' },
+      fakeSender().sender as never,
+    );
+    expect(shown.statusMessage).toBe(`no such ${value}`);
+    expect(written).toHaveLength(2);
+    expect(JSON.stringify(written)).not.toContain(value);
+    expect(written.map((entry) => entry.grpc?.statusMessage)).toEqual(['no such <redacted>', 'no such <redacted>']);
   });
 });
 

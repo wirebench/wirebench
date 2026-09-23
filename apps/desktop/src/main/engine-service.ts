@@ -808,6 +808,7 @@ export class EngineService {
     this.sends.set(request.sendId, controller);
     const { sendId } = request;
     const onLive = options.onLive;
+    const show = options.showSecrets ?? false;
     try {
       const auth = await resolveAuthConfig(
         options.auth,
@@ -823,10 +824,11 @@ export class EngineService {
         ...(onLive !== undefined
           ? {
               onHeaders: (headers: Readonly<Record<string, string>>, httpStatus: number): void => {
-                onLive({ kind: 'headers', sendId, httpStatus, headers: { ...headers } });
+                // Redacted as the summary's `headers` are, so metadata looks the same live or after.
+                onLive({ kind: 'headers', sendId, httpStatus, headers: redactHeaders(headers, { show }) });
               },
               onMessage: (message: GrpcResponseMessage, index: number): void => {
-                onLive({ kind: 'message', sendId, index, message: toGrpcResponseMessageWire(message) });
+                onLive({ kind: 'message', sendId, index, message: toGrpcResponseMessageWire(message, { show }) });
               },
             }
           : {}),
@@ -839,7 +841,7 @@ export class EngineService {
             }
           : {}),
       });
-      return toGrpcExchangeSummary(result, sendId, { show: options.showSecrets ?? false });
+      return toGrpcExchangeSummary(result, sendId, { show });
     } finally {
       this.sends.delete(sendId);
       this.grpcStreams.delete(sendId);

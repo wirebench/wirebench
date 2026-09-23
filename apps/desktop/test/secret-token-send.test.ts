@@ -25,7 +25,15 @@ import { EngineService } from '../src/main/engine-service.js';
 import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
 import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { recordSecretValue, redactHeaders, redactRawHttp, redactUrl, redactXml } from '../src/main/redact.js';
+import {
+  recordSecretValue,
+  redactHeaders,
+  redactRawHttp,
+  redactSecretBase64,
+  redactSecretBytes,
+  redactUrl,
+  redactXml,
+} from '../src/main/redact.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
 import { projectSecretGetter, resolveWithStoredValues, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
@@ -138,6 +146,37 @@ describe('projectSecretGetter', () => {
     });
     expect(JSON.stringify(history)).not.toContain('fake-recorded-not-real');
     expect(history.request.envelopeXml).toBe('{"key":"<redacted>"}');
+  });
+
+  it('masks recorded values in a base64 payload that is UTF-8 text, and leaves any other alone', () => {
+    recordSecretValue('fake-base64-not-real-01');
+    const b64 = (text: string | Buffer) => Buffer.from(text).toString('base64');
+    const text = b64('{"k":"fake-base64-not-real-01","é":"ü"}');
+
+    expect(Buffer.from(redactSecretBase64(text), 'base64').toString('utf8')).toBe('{"k":"<redacted>","é":"ü"}');
+    expect(redactSecretBase64(text, { show: true })).toBe(text);
+    // Nothing to mask: the very same string back, not a re-encoding of it.
+    expect(redactSecretBase64(b64('plain'))).toBe(b64('plain'));
+    expect(redactSecretBase64('')).toBe('');
+    const bytes = b64(Buffer.concat([Buffer.from([0xc3, 0x28]), Buffer.from('fake-base64-not-real-01')]));
+    expect(redactSecretBase64(bytes)).toBe(bytes);
+  });
+
+  it('masks recorded values in raw bytes whether or not they are UTF-8', () => {
+    recordSecretValue('fake-bytes-not-real-001');
+    const raw = Buffer.concat([
+      Buffer.from([0x0a, 0x97, 0xff]),
+      Buffer.from('fake-bytes-not-real-001', 'utf8'),
+      Buffer.from([0x80]),
+    ]);
+
+    const masked = Buffer.from(redactSecretBytes(raw.toString('base64')), 'base64');
+    expect(masked).toEqual(
+      Buffer.concat([Buffer.from([0x0a, 0x97, 0xff]), Buffer.from('<redacted>'), Buffer.from([0x80])]),
+    );
+    expect(redactSecretBytes(raw.toString('base64'), { show: true })).toBe(raw.toString('base64'));
+    const other = Buffer.from([0x00, 0xff, 0x10]).toString('base64');
+    expect(redactSecretBytes(other)).toBe(other);
   });
 
   it('does not record an auth value, which its header, password and body-key rules already mask', async () => {

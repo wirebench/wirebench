@@ -49,10 +49,13 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
         : {}),
     },
     // A frame's text may carry a `${secret:name}` value (sent, or echoed back); the summary shows
-    // it while secrets are shown, and History, written to disk, never does.
-    frames: exchange.frames.map((frame) =>
-      frame.text === undefined ? frame : { ...frame, text: redactSecretValues(frame.text) },
-    ),
+    // it while secrets are shown, and History, written to disk, never does. A binary payload that
+    // is UTF-8 text is masked the same way; `size` stays the size on the wire, as the summary's.
+    frames: exchange.frames.map((frame) => ({
+      ...frame,
+      ...(frame.text !== undefined ? { text: redactSecretValues(frame.text) } : {}),
+      ...(frame.base64 !== undefined ? { base64: redactSecretBase64(frame.base64, { show: false }) } : {}),
+    })),
     closed: exchange.closed,
     counts: exchange.counts,
     durationMs: exchange.durationMs,
@@ -122,7 +125,14 @@ import type {
   RestEventStreamLike,
   WsExchange,
 } from '@wirebench/engine';
-import { redactHeaderPairs, redactHeaders, redactSecretValues, redactUrl, redactXml } from './redact.js';
+import {
+  redactHeaderPairs,
+  redactHeaders,
+  redactSecretBase64,
+  redactSecretValues,
+  redactUrl,
+  redactXml,
+} from './redact.js';
 import type {
   GrpcExchangeSummary,
   RestExchangeSummary,
@@ -407,7 +417,9 @@ export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendI
         ? {
             status: exchange.status,
             statusName: exchange.statusName,
-            ...(exchange.statusMessage !== undefined ? { statusMessage: exchange.statusMessage } : {}),
+            ...(exchange.statusMessage !== undefined
+              ? { statusMessage: redactSecretValues(exchange.statusMessage) }
+              : {}),
           }
         : {}),
       requestMessages: exchange?.requestMessages.map(storedBody) ?? [storedBody(record.requestMessage)],

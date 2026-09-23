@@ -11,6 +11,8 @@ import {
   redactUrl,
   redactRawHttp,
   redactResponseAttachments,
+  redactSecretBase64,
+  redactSecretBytes,
   redactSecretText,
   redactXml,
 } from './redact.js';
@@ -349,11 +351,19 @@ export function toRestExchangeSummary(
 /**
  * One decoded response message on the wire. Shared by the finished exchange and by the live
  * events a call in flight emits, so a message looks the same whichever way the pane met it.
+ *
+ * A server may echo a request field back, so every secret value main handed out is masked unless
+ * `show` — in the JSON and in the raw bytes alike. `bytes` stays the size the server sent, as a
+ * WebSocket frame's `size` does.
  */
-export function toGrpcResponseMessageWire(message: GrpcResponseMessage): GrpcResponseMessageWire {
+export function toGrpcResponseMessageWire(
+  message: GrpcResponseMessage,
+  opts?: { readonly show?: boolean },
+): GrpcResponseMessageWire {
+  const show = opts?.show ?? false;
   return {
-    ...(message.json !== undefined ? { json: JSON.stringify(message.json, null, 2) } : {}),
-    base64: message.base64,
+    ...(message.json !== undefined ? { json: redactSecretText(JSON.stringify(message.json, null, 2), { show }) } : {}),
+    base64: redactSecretBytes(message.base64, { show }),
     bytes: message.bytes,
     ...(message.problem !== undefined ? { problem: message.problem } : {}),
   };
@@ -366,17 +376,17 @@ export function toGrpcExchangeSummary(
 ): GrpcExchangeSummary {
   const show = context.show ?? false;
   const exchange = result.exchange;
-  const bodyText = result.responseMessages
-    .map((message) => (message.json !== undefined ? JSON.stringify(message.json, null, 2) : message.base64))
-    .join('\n');
+  const responseMessages = result.responseMessages.map((message) => toGrpcResponseMessageWire(message, { show }));
+  const bodyText = responseMessages.map((message) => message.json ?? message.base64).join('\n');
   const http: HttpExchangeWire = {
     status: exchange.httpStatus,
     statusText: exchange.statusName,
     headers: redactHeaders(exchange.headers, { show }),
     rawHeaders: redactHeaderPairs(Object.entries(exchange.headers), { show }),
     bodyBase64: toBase64(Buffer.from(bodyText, 'utf8')),
-    rawBodyBase64: toBase64(
-      exchange.messages.reduce<Uint8Array>((all, one) => Buffer.concat([all, one]), new Uint8Array()),
+    rawBodyBase64: redactSecretBytes(
+      toBase64(exchange.messages.reduce<Uint8Array>((all, one) => Buffer.concat([all, one]), new Uint8Array())),
+      { show },
     ),
     rawRequestBase64: redactRawHttp(toBase64(exchange.rawRequest), { show, encoding: 'base64' }),
     rawResponseBase64: redactRawHttp(toBase64(exchange.rawResponse), { show, encoding: 'base64' }),
@@ -404,7 +414,10 @@ export function toGrpcExchangeSummary(
     methodKind: result.methodKind,
     status: exchange.status,
     statusName: exchange.statusName,
-    ...(exchange.statusMessage !== undefined ? { statusMessage: exchange.statusMessage } : {}),
+    // The server's own text, which may echo a request field as a message can.
+    ...(exchange.statusMessage !== undefined
+      ? { statusMessage: redactSecretText(exchange.statusMessage, { show }) }
+      : {}),
     statusSource: exchange.statusSource,
     headers: redactHeaders(exchange.headers, { show }),
     trailers: redactHeaders(exchange.trailers, { show }),
@@ -412,7 +425,7 @@ export function toGrpcExchangeSummary(
     requestMessages: result.requestMessages.map((message) =>
       redactSecretText(JSON.stringify(message, null, 2), { show }),
     ),
-    responseMessages: result.responseMessages.map(toGrpcResponseMessageWire),
+    responseMessages,
     ...(exchange.encoding !== undefined ? { encoding: exchange.encoding } : {}),
     truncated: exchange.truncated,
     problems: [],
@@ -432,7 +445,8 @@ export function toWsFrameContractWire(contract: WsFrameContract): WsFrameContrac
 /**
  * Converts one engine `WsFrame` to its wire form. No pattern rule applies to a payload, but a text
  * payload has every secret value main handed out masked unless `show` — a message's own
- * `${secret:name}` token, and the same value echoed back.
+ * `${secret:name}` token, and the same value echoed back. So does a binary payload whose bytes are
+ * UTF-8 text; any other is passed through as it came. `size` stays the payload's size on the wire.
  */
 export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }): WsFrameWire {
   const show = opts?.show ?? false;
@@ -443,7 +457,7 @@ export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }
     at: frame.at,
     size: frame.size,
     ...(frame.text !== undefined ? { text: redactSecretText(frame.text, { show }) } : {}),
-    ...(frame.base64 !== undefined ? { base64: frame.base64 } : {}),
+    ...(frame.base64 !== undefined ? { base64: redactSecretBase64(frame.base64, { show }) } : {}),
     ...(frame.close !== undefined ? { close: { ...frame.close } } : {}),
     ...(frame.payloadTruncated !== undefined ? { payloadTruncated: frame.payloadTruncated } : {}),
     ...(frame.contract !== undefined ? { contract: toWsFrameContractWire(frame.contract) } : {}),
