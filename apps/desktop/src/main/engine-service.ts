@@ -622,6 +622,8 @@ export class EngineService {
        * `exchanges.get`) whatever it is called — the same rule a REST send follows.
        */
       keyParams?: readonly string[];
+      /** The header an API key travels in, masked by name in the summary's request headers, as `keyParams`. */
+      keyHeaders?: readonly string[];
       showSecrets?: boolean;
       /** The saved request's attachments and MTOM options; absent for an ad-hoc send. */
       attachments?: SendAttachmentInput;
@@ -663,10 +665,12 @@ export class EngineService {
         ...(request.requestId !== undefined ? { requestId: request.requestId } : {}),
         requestEnvelopeXml: request.input.envelopeXml,
         ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
+        ...(options.keyHeaders !== undefined ? { keyHeaders: options.keyHeaders } : {}),
       });
       return redactExchangeSummary(full, {
         show: options.showSecrets ?? false,
         ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
+        ...(options.keyHeaders !== undefined ? { keyHeaders: options.keyHeaders } : {}),
       });
     } finally {
       this.sends.delete(request.sendId);
@@ -692,6 +696,7 @@ export class EngineService {
     options: {
       readonly showSecrets?: boolean;
       readonly keyParams?: readonly string[];
+      readonly keyHeaders?: readonly string[];
       /** The credentials as configured, still references; resolved here, as a SOAP send's are. */
       readonly auth?: AuthConfig;
       /** An OAuth2 access token the host already obtained; never read from the secret store. */
@@ -748,6 +753,7 @@ export class EngineService {
       const context = {
         method: request.input.request.method,
         ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
+        ...(options.keyHeaders !== undefined ? { keyHeaders: options.keyHeaders } : {}),
       };
       // Awaited, not reported later: the checker's deadline (1 s) bounds it, so the summary — and
       // the History entry written from it — always carries the result the response pane shows.

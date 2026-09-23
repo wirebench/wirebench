@@ -204,11 +204,13 @@ function toTlsWire(tls: SslInfo): SslInfoWire {
  */
 function toHttpExchangeWire(
   http: HttpExchange,
-  opts?: { show?: boolean; keyParams?: readonly string[] },
+  opts?: { show?: boolean; keyParams?: readonly string[]; keyHeaders?: readonly string[] },
 ): HttpExchangeWire {
   const show = opts?.show ?? false;
   // The request line carries the query, so an API key sent in it is masked there as in `url`.
   const urlOpts = { show, ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}) };
+  // A header API key may be called anything; its name is masked in the request's headers and raw bytes.
+  const headerOpts = { show, ...(opts?.keyHeaders !== undefined ? { extraHeaders: opts.keyHeaders } : {}) };
   return {
     status: http.status,
     statusText: http.statusText,
@@ -216,20 +218,35 @@ function toHttpExchangeWire(
     rawHeaders: redactHeaderPairs(http.rawHeaders, { show }),
     bodyBase64: toBase64(http.body),
     rawBodyBase64: toBase64(http.rawBody),
-    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { ...urlOpts, encoding: 'base64' }),
+    rawRequestBase64: redactRawHttp(toBase64(http.rawRequest), { ...urlOpts, ...headerOpts, encoding: 'base64' }),
     rawResponseBase64: redactRawHttp(toBase64(http.rawResponse), { show, encoding: 'base64' }),
     truncated: http.truncated,
     httpVersion: http.httpVersion,
     ...(http.decodeError !== undefined ? { decodeError: http.decodeError } : {}),
     timings: { ...http.timings },
-    redirects: http.redirects.map((redirect) => ({ ...redirect })),
+    // The first hop is the URL that went on the wire, so it carries a query API key too.
+    redirects: http.redirects.map((redirect) => ({ ...redirect, url: redactUrl(redirect.url, urlOpts) })),
     ...(http.tls !== undefined ? { tls: toTlsWire(http.tls) } : {}),
     request: {
       url: redactUrl(http.request.url, urlOpts),
       method: http.request.method,
-      headers: redactHeaders(http.request.headers, { show }),
+      headers: redactHeaders(http.request.headers, headerOpts),
     },
+    ...keyNamesOf(opts),
   };
+}
+
+/**
+ * The `keyNames` a wire exchange carries: the query parameter and header names its API key travelled
+ * under, so a later redaction of it (HAR, a log row's cURL) masks them too. Absent without a key.
+ */
+function keyNamesOf(opts?: {
+  readonly keyParams?: readonly string[];
+  readonly keyHeaders?: readonly string[];
+}): Pick<HttpExchangeWire, 'keyNames'> {
+  const params = [...(opts?.keyParams ?? [])];
+  const headers = [...(opts?.keyHeaders ?? [])];
+  return params.length > 0 || headers.length > 0 ? { keyNames: { params, headers } } : {};
 }
 
 /**
@@ -317,7 +334,12 @@ export function toRestContractWire(result: RestContractResult): RestContractResu
 export function toRestExchangeSummary(
   exchange: RestExchange,
   sendId: string,
-  context: { readonly method: string; readonly show?: boolean; readonly keyParams?: readonly string[] },
+  context: {
+    readonly method: string;
+    readonly show?: boolean;
+    readonly keyParams?: readonly string[];
+    readonly keyHeaders?: readonly string[];
+  },
 ): RestExchangeSummary {
   const show = context.show ?? false;
   return {
@@ -328,6 +350,7 @@ export function toRestExchangeSummary(
     http: toHttpExchangeWire(exchange, {
       show,
       ...(context.keyParams !== undefined ? { keyParams: context.keyParams } : {}),
+      ...(context.keyHeaders !== undefined ? { keyHeaders: context.keyHeaders } : {}),
     }),
     url: redactUrl(exchange.request.url, {
       show,
@@ -711,20 +734,24 @@ function maskTarget(target: string, keyParams: readonly string[]): string {
  */
 export function redactExchangeSummary(
   summary: ExchangeSummary,
-  opts?: { show?: boolean; readonly keyParams?: readonly string[] },
+  opts?: { show?: boolean; readonly keyParams?: readonly string[]; readonly keyHeaders?: readonly string[] },
 ): ExchangeSummary {
   const show = opts?.show ?? false;
+  // Carried whatever `show` says: a row shown with secrets on is the one a later HAR must re-mask.
+  const keyNames = keyNamesOf(opts);
   if (show) {
-    return summary;
+    return { ...summary, http: { ...summary.http, ...keyNames } };
   }
+  const extraHeaders = opts?.keyHeaders ?? [];
   return {
     ...summary,
     http: {
       ...summary.http,
+      ...keyNames,
       headers: redactHeaders(summary.http.headers, { show }),
       rawHeaders: redactHeaderPairs(summary.http.rawHeaders, { show }),
       rawRequestBase64: redactRequestTarget(
-        redactRawHttp(summary.http.rawRequestBase64, { show, encoding: 'base64' }),
+        redactRawHttp(summary.http.rawRequestBase64, { show, extraHeaders, encoding: 'base64' }),
         opts?.keyParams ?? [],
       ),
       rawResponseBase64: redactRawHttp(summary.http.rawResponseBase64, { show, encoding: 'base64' }),
@@ -738,7 +765,7 @@ export function redactExchangeSummary(
         // A SOAP owner's API key may travel in the query string; `keyParams` names it whatever it is
         // called, as on a REST send.
         url: redactUrl(summary.http.request.url, { show, extraParams: opts?.keyParams ?? [] }),
-        headers: redactHeaders(summary.http.request.headers, { show }),
+        headers: redactHeaders(summary.http.request.headers, { show, extraHeaders }),
       },
     },
     ...(summary.response !== undefined

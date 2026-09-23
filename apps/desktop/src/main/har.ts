@@ -11,7 +11,7 @@ import type {
   SseRowWire,
   WsHandshakeExchangeSummary,
 } from '../shared/wire-types.js';
-import { loggedRequestOf } from './log-curl.js';
+import { keyNamesOf, loggedRequestOf } from './log-curl.js';
 import { redactHeaderPairs, redactStructuredBody, redactUrl, redactXml } from './redact.js';
 
 export interface HarCreator {
@@ -89,11 +89,19 @@ export interface Har {
 /** Headers whose value is a URL, so a secret query parameter can ride in them. */
 const URL_HEADERS = new Set(['location', 'content-location', 'referer']);
 
-/** Sensitive headers masked, and a URL-valued header's secret parameters masked too. */
-function harHeaders(pairs: readonly (readonly [string, string])[]): HarNameValue[] {
-  return redactHeaderPairs(pairs, { show: false }).map(([name, value]) => ({
+/**
+ * Sensitive headers masked, and a URL-valued header's secret parameters masked too. `keyNames` are
+ * the names the row's API key travelled under, masked in a header and in a URL-valued header alike.
+ */
+function harHeaders(
+  pairs: readonly (readonly [string, string])[],
+  keyNames: { readonly params: readonly string[]; readonly headers: readonly string[] } = { params: [], headers: [] },
+): HarNameValue[] {
+  return redactHeaderPairs(pairs, { show: false, extraHeaders: keyNames.headers }).map(([name, value]) => ({
     name,
-    value: URL_HEADERS.has(name.toLowerCase()) ? redactUrl(value, { show: false }) : value,
+    value: URL_HEADERS.has(name.toLowerCase())
+      ? redactUrl(value, { show: false, extraParams: keyNames.params })
+      : value,
   }));
 }
 
@@ -134,9 +142,10 @@ function harVersion(version: '1.1' | '2'): string {
 
 function requestOf(entry: LogEntryWire, httpVersion: string, isGrpc: boolean): HarRequest {
   const logged = loggedRequestOf(entry);
-  const url = redactUrl(logged.url, { show: false });
+  const keyNames = keyNamesOf(entry);
+  const url = redactUrl(logged.url, { show: false, extraParams: keyNames.params });
   const contentType = headerValue(logged.headers, 'content-type');
-  const headers = harHeaders(Object.entries(logged.headers));
+  const headers = harHeaders(Object.entries(logged.headers), keyNames);
   // gRPC bodies are binary-framed: no text to give, as with the cURL export.
   const body = isGrpc ? undefined : logged.body;
   return {

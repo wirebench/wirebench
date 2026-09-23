@@ -3,6 +3,7 @@ import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   containsRedaction,
+  redactHeaderPairs,
   redactHeaders,
   REDACTED_MARKER,
   redactRawHttp,
@@ -41,6 +42,41 @@ describe('redactHeaders', () => {
   it('bypasses redaction when show is true', () => {
     const result = redactHeaders({ Authorization: 'Basic xyz' }, { show: true });
     expect(result['Authorization']).toBe('Basic xyz');
+  });
+});
+
+describe('extraHeaders', () => {
+  const extraHeaders = ['Ocp-Apim-Subscription-Key'];
+
+  it('masks a header under any name it is given, case-insensitively, in a map and in pairs', () => {
+    const map = redactHeaders({ 'ocp-apim-subscription-key': 'k1', Accept: 'text/xml' }, { extraHeaders });
+    expect(map).toEqual({ 'ocp-apim-subscription-key': '<redacted>', Accept: 'text/xml' });
+    const pairs = redactHeaderPairs(
+      [
+        ['OCP-APIM-SUBSCRIPTION-KEY', 'k1'],
+        ['Accept', 'text/xml'],
+      ],
+      { extraHeaders },
+    );
+    expect(pairs).toEqual([
+      ['OCP-APIM-SUBSCRIPTION-KEY', '<redacted>'],
+      ['Accept', 'text/xml'],
+    ]);
+  });
+
+  it('masks it on a raw message header line, leaving the request line and body alone', () => {
+    const raw =
+      'POST /svc HTTP/1.1\r\nOcp-Apim-Subscription-Key: k1\r\nContent-Type: text/plain\r\n\r\nOcp-Apim-Subscription-Key: body';
+    expect(redactRawHttp(raw, { extraHeaders })).toBe(
+      'POST /svc HTTP/1.1\r\nOcp-Apim-Subscription-Key: <redacted>\r\nContent-Type: text/plain\r\n\r\nOcp-Apim-Subscription-Key: body',
+    );
+  });
+
+  it('masks nothing more without it, and nothing at all with show', () => {
+    expect(redactHeaders({ 'Ocp-Apim-Subscription-Key': 'k1' })).toEqual({ 'Ocp-Apim-Subscription-Key': 'k1' });
+    expect(redactHeaders({ 'Ocp-Apim-Subscription-Key': 'k1' }, { show: true, extraHeaders })).toEqual({
+      'Ocp-Apim-Subscription-Key': 'k1',
+    });
   });
 });
 

@@ -82,7 +82,7 @@ export function redactSecretBytes(base64: string, opts?: { show?: boolean }): st
 /** See the engine's `redactHeaders`; recorded values are masked in every other header too. */
 export function redactHeaders(
   headers: Readonly<Record<string, string>>,
-  opts?: { show?: boolean },
+  opts?: { show?: boolean; extraHeaders?: readonly string[] },
 ): Record<string, string> {
   const out = redactHeadersByName(headers, opts);
   if (opts?.show === true) {
@@ -97,7 +97,7 @@ export function redactHeaders(
 /** See the engine's `redactHeaderPairs`; recorded values are masked in every other header too. */
 export function redactHeaderPairs(
   pairs: readonly (readonly [string, string])[],
-  opts?: { show?: boolean },
+  opts?: { show?: boolean; extraHeaders?: readonly string[] },
 ): [string, string][] {
   const out = redactHeaderPairsByName(pairs, opts);
   return opts?.show === true ? out : out.map(([name, value]) => [name, maskRecorded(value)]);
@@ -122,7 +122,15 @@ export function redactStructuredBody(text: string, contentType: string | undefin
 }
 
 /** See the engine's `redactRawHttp`; recorded values are masked anywhere in the message too. */
-export function redactRawHttp(input: string, opts?: { show?: boolean; encoding?: 'text' | 'base64' }): string {
+export function redactRawHttp(
+  input: string,
+  opts?: {
+    show?: boolean;
+    encoding?: 'text' | 'base64';
+    extraParams?: readonly string[];
+    extraHeaders?: readonly string[];
+  },
+): string {
   const out = redactRawHttpByPattern(input, opts);
   if (opts?.show === true || recorded.size === 0) {
     return out;
