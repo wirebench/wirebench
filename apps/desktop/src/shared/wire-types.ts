@@ -635,6 +635,12 @@ const httpExchangeWireSchema = z.object({
   redirects: z.array(redirectWireSchema),
   tls: tlsInfoWireSchema.optional(),
   request: httpRequestSummarySchema,
+  /**
+   * The query parameter and header names an API key travelled under, whatever they are called, so
+   * a later redaction of this exchange (a HAR export, a log row's cURL) masks them as the send did.
+   * Names only, never values; absent when the send carried no API key.
+   */
+  keyNames: z.object({ params: z.array(z.string()), headers: z.array(z.string()) }).optional(),
 });
 export type HttpExchangeWire = z.infer<typeof httpExchangeWireSchema>;
 

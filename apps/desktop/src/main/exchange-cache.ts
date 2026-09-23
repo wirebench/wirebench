@@ -41,6 +41,8 @@ export interface CachedEngineExchange {
   readonly requestEnvelopeXml?: string;
   /** The query parameter an API key travelled in, so a later re-render masks it as the send did. */
   readonly keyParams?: readonly string[];
+  /** The header an API key travelled in, for the same reason. */
+  readonly keyHeaders?: readonly string[];
 }
 
 /**

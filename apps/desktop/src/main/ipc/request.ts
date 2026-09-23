@@ -50,7 +50,7 @@ import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
-import { REDACTED_MARKER, redactHeaders, redactUrl, redactXml } from '../redact.js';
+import { redactHeaders, redactUrl, redactXml } from '../redact.js';
 import { failedExchangeOf } from '../failed-exchange.js';
 import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
 import type { RestSendResolution } from '../rest-send.js';
@@ -554,13 +554,8 @@ async function curl(
   const show = deps.showSecrets?.get() ?? false;
   const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
   // A header API key may be called anything, so its header is masked by name as well.
-  const headerKey = auth?.type === 'api-key' && auth.in === 'header' ? auth.name.toLowerCase() : undefined;
-  const headers = Object.fromEntries(
-    Object.entries(redactHeaders(effective.headers ?? {}, { show })).map(([name, value]) => [
-      name,
-      !show && name.toLowerCase() === headerKey ? REDACTED_MARKER : value,
-    ]),
-  );
+  const keyHeaders = auth?.type === 'api-key' && auth.in === 'header' ? [auth.name] : [];
+  const headers = redactHeaders(effective.headers ?? {}, { show, extraHeaders: keyHeaders });
   const envelopeXml = redactXml(effective.envelopeXml, { show });
   const command = soapToCurl(
     {
@@ -823,6 +818,9 @@ export async function sendRestRequest(
   // The one query parameter an API key may be configured to travel in, so the URL is masked
   // wherever it is logged even when the key is called something this build has never heard of.
   const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
+  // And the header one may travel in, masked by name wherever the request's headers are shown.
+  const keyHeaders =
+    resolved.auth.type === 'api-key' && resolved.auth.in === 'header' ? [resolved.auth.name] : undefined;
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let input: typeof resolved.input;
   let accessToken: string | undefined;
@@ -868,6 +866,7 @@ export async function sendRestRequest(
         error,
         stage: 'prepare',
         keyParams,
+        keyHeaders,
       }),
     );
     throw error;
@@ -889,6 +888,7 @@ export async function sendRestRequest(
         auth: resolved.auth,
         ...(accessToken !== undefined ? { accessToken } : {}),
         ...(keyParams !== undefined ? { keyParams } : {}),
+        ...(keyHeaders !== undefined ? { keyHeaders } : {}),
         ...(onLive !== undefined ? { onLive } : {}),
         ...(contract !== undefined ? { contract } : {}),
       },
@@ -923,6 +923,7 @@ export async function sendRestRequest(
         error,
         captured: failedRequestOf(error),
         keyParams,
+        keyHeaders,
       }),
     );
     throw error;

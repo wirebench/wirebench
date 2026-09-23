@@ -2,7 +2,7 @@
 /**
  * A SOAP send with a token owner auth (Bearer, API key, OAuth2): main resolves the reference or
  * the access token before the wire, a failure there is a `prepare` row with no History entry, and
- * an API key in the query string is masked on every surface a URL reaches.
+ * an API key in the query string, or in a header under any name, is masked on every surface it reaches.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,7 @@ import { WirebenchError, type SoapOwnerAuth } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { redactExchangeSummary } from '../src/main/engine-wire.js';
 import { harOf } from '../src/main/har.js';
+import { curlForLogEntry } from '../src/main/log-curl.js';
 import { buildHistoryEntry, type RecordSendInput } from '../src/main/history-service.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import type { FailedExchangeWire, LogEntryWire } from '../src/shared/wire-types.js';
@@ -187,6 +188,72 @@ describe('SOAP send with a token owner auth', () => {
     // HAR is built from the log row, which carries the already-masked summary.
     const entry = { kind: 'exchange', protocol: 'soap', exchange: summary } as unknown as LogEntryWire;
     expect(JSON.stringify(harOf([entry], { name: 'Wirebench', version: '0' }))).not.toMatch(KEY);
+  });
+
+  it('a header API key under a custom name is masked on every surface, and shown with show-secrets', async () => {
+    const recordSend = vi.fn<(projectId: string, record: RecordSendInput) => Promise<undefined>>(() =>
+      Promise.resolve(undefined),
+    );
+    const service = new EngineService(getSecret);
+    const auth: SoapOwnerAuth = {
+      type: 'api-key',
+      name: 'Ocp-Apim-Subscription-Key',
+      valueRef: 'ref-key',
+      in: 'header',
+    };
+    const summary = await sendAndRecordHistory(
+      service,
+      { project: projectWith(auth), getSecret, history: { recordSend } as never },
+      request('s-hkey'),
+    );
+    expect(server.seen[0]!.headers['ocp-apim-subscription-key']).toBe('my key');
+    const raw = (base64: string): string => Buffer.from(base64, 'base64').toString('latin1');
+    // The summary: its request headers and its raw request, by the header's own name.
+    const sent = Object.entries(summary.http.request.headers).find(
+      ([name]) => name.toLowerCase() === 'ocp-apim-subscription-key',
+    );
+    expect(sent?.[1]).toBe('<redacted>');
+    expect(raw(summary.http.rawRequestBase64)).toMatch(/Ocp-Apim-Subscription-Key: <redacted>/i);
+    expect(JSON.stringify(summary) + raw(summary.http.rawRequestBase64)).not.toContain('my key');
+    expect(summary.http.keyNames).toEqual({ params: [], headers: ['Ocp-Apim-Subscription-Key'] });
+    // `exchanges.get` re-renders from the cache with the same names: masked, or shown with show-secrets.
+    const full = service.exchanges.get('s-hkey')!;
+    const keyHeaders = service.exchanges.getExchange('s-hkey')?.keyHeaders;
+    expect(keyHeaders).toEqual(['Ocp-Apim-Subscription-Key']);
+    const hidden = redactExchangeSummary(full, { show: false, keyHeaders: keyHeaders! });
+    expect(JSON.stringify(hidden) + raw(hidden.http.rawRequestBase64)).not.toContain('my key');
+    const shown = redactExchangeSummary(full, { show: true, keyHeaders: keyHeaders! });
+    expect(raw(shown.http.rawRequestBase64)).toContain('my key');
+    // History keeps the headers as authored, before the key was applied.
+    const [projectId, record] = recordSend.mock.calls[0]!;
+    expect(JSON.stringify(buildHistoryEntry(projectId, record))).not.toContain('my key');
+    // A row the renderer holds unmasked (shown with secrets on) is masked again by its names when it
+    // leaves: in a HAR, and in the row's cURL with show-secrets off.
+    const row = { kind: 'exchange', protocol: 'soap', exchange: shown } as unknown as LogEntryWire;
+    expect(JSON.stringify(harOf([row], { name: 'Wirebench', version: '0' }))).not.toContain('my key');
+    expect(curlForLogEntry(row, { shell: 'posix', show: false }).command).not.toContain('my key');
+    expect(curlForLogEntry(row, { shell: 'posix', show: true }).command).toContain('my key');
+  });
+
+  it('a header API key under a custom name is masked in the failed row', async () => {
+    const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
+    const auth: SoapOwnerAuth = {
+      type: 'api-key',
+      name: 'Ocp-Apim-Subscription-Key',
+      valueRef: 'ref-key',
+      in: 'header',
+    };
+    await expect(
+      sendAndRecordHistory(
+        new EngineService(getSecret),
+        { project: projectWith(auth), getSecret, onSendFailed },
+        { ...request('s-hkey-fail'), input: { ...request('s-hkey-fail').input, endpoint: 'http://127.0.0.1:1/nope' } },
+      ),
+    ).rejects.toMatchObject({ code: 'connection-refused' });
+    const failure = onSendFailed.mock.calls[0]![0];
+    expect(failure.rawRequestBase64).toBeDefined();
+    const json = JSON.stringify(failure) + Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('latin1');
+    expect(json).not.toContain('my key');
   });
 
   it('a query API key is masked in the failed row, in both encodings', async () => {

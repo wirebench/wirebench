@@ -23,17 +23,30 @@ export function isSensitiveHeaderName(name: string): boolean {
   return SENSITIVE_HEADERS.has(name.toLowerCase());
 }
 
-/** Masks the values of sensitive headers in a plain header map, case-insensitively. */
+/**
+ * The test every header redactor applies: a well-known credential header, or one of `extraHeaders`
+ * — the name an API key was configured under, which may be anything (`Ocp-Apim-Subscription-Key`).
+ * Both compared case-insensitively.
+ */
+function headerIsMasked(name: string, extraHeaders: readonly string[] | undefined): boolean {
+  const lower = name.toLowerCase();
+  return SENSITIVE_HEADERS.has(lower) || (extraHeaders?.some((extra) => extra.toLowerCase() === lower) ?? false);
+}
+
+/**
+ * Masks the values of sensitive headers in a plain header map, case-insensitively. `extraHeaders`
+ * names more headers to mask, as `redactUrl`'s `extraParams` does for query parameters.
+ */
 export function redactHeaders(
   headers: Readonly<Record<string, string>>,
-  opts?: { show?: boolean },
+  opts?: { show?: boolean; extraHeaders?: readonly string[] },
 ): Record<string, string> {
   if (opts?.show) {
     return { ...headers };
   }
   const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers)) {
-    result[name] = SENSITIVE_HEADERS.has(name.toLowerCase()) ? REDACTED : value;
+    result[name] = headerIsMasked(name, opts?.extraHeaders) ? REDACTED : value;
   }
   return result;
 }
@@ -45,10 +58,10 @@ export function redactHeaders(
  */
 export function redactHeaderPairs(
   pairs: readonly (readonly [string, string])[],
-  opts?: { show?: boolean },
+  opts?: { show?: boolean; extraHeaders?: readonly string[] },
 ): [string, string][] {
   const show = opts?.show ?? false;
-  return pairs.map(([name, value]) => [name, !show && SENSITIVE_HEADERS.has(name.toLowerCase()) ? REDACTED : value]);
+  return pairs.map(([name, value]) => [name, !show && headerIsMasked(name, opts?.extraHeaders) ? REDACTED : value]);
 }
 
 /**
@@ -298,13 +311,12 @@ export function redactStructuredBody(text: string, contentType: string | undefin
 }
 
 /** Masks a single raw `name: value` header line (no terminator), case-insensitively. */
-function redactHeaderLine(line: string): string {
+function redactHeaderLine(line: string, extraHeaders: readonly string[] | undefined): string {
   const idx = line.indexOf(':');
   if (idx < 0) {
     return line;
   }
-  const name = line.slice(0, idx).trim().toLowerCase();
-  if (!SENSITIVE_HEADERS.has(name)) {
+  if (!headerIsMasked(line.slice(0, idx).trim(), extraHeaders)) {
     return line;
   }
   return `${line.slice(0, idx + 1)} ${REDACTED}`;
@@ -357,7 +369,12 @@ function bodyIsMaskableText(headerBlock: string): boolean {
  */
 export function redactRawHttp(
   input: string,
-  opts?: { show?: boolean; encoding?: 'text' | 'base64'; extraParams?: readonly string[] },
+  opts?: {
+    show?: boolean;
+    encoding?: 'text' | 'base64';
+    extraParams?: readonly string[];
+    extraHeaders?: readonly string[];
+  },
 ): string {
   if (opts?.show) {
     return input;
@@ -379,7 +396,11 @@ export function redactRawHttp(
   const redactedHeaderBlock = headerBlock
     .split(/(\r\n|\n)/)
     .map((part, index) =>
-      index === 0 ? redactRequestLine(part, opts?.extraParams) : index % 2 === 0 ? redactHeaderLine(part) : part,
+      index === 0
+        ? redactRequestLine(part, opts?.extraParams)
+        : index % 2 === 0
+          ? redactHeaderLine(part, opts?.extraHeaders)
+          : part,
     )
     .join('');
 

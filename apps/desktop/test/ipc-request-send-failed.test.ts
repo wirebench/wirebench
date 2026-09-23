@@ -30,7 +30,7 @@ function invoke(channel: string, payload: unknown): Promise<unknown> {
 }
 
 /** A resolved REST send aimed at port 1, where nothing listens. */
-function resolution() {
+function resolution(auth: Record<string, unknown> = { type: 'none' }) {
   const input: RestSendInput = {
     baseUrl: 'http://127.0.0.1:1',
     request: {
@@ -50,10 +50,10 @@ function resolution() {
     },
     settings: { timeoutMs: 2_000, followRedirects: true },
   };
-  return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth: { type: 'none' } };
+  return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth };
 }
 
-function project() {
+function project(auth?: Record<string, unknown>) {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     preflight: () => undefined as never,
@@ -64,7 +64,7 @@ function project() {
     buildLiveSendInput: () => undefined,
     sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
-    restSend: (requestId: string) => (requestId.startsWith('rest-') ? resolution() : undefined),
+    restSend: (requestId: string) => (requestId.startsWith('rest-') ? resolution(auth) : undefined),
   } as unknown as RequestChannelDeps['project'];
 }
 
@@ -105,5 +105,23 @@ describe('request.sendRest → onSendFailed', () => {
     expect(raw).toContain('GET /nope/42?page=2 HTTP/1.1');
     expect(raw).not.toContain('plain-token');
     expect(onSendFailed.mock.calls[0]?.[0].request.headers).not.toHaveProperty('X-Off');
+  });
+
+  it("masks a header API key by the name the request's auth gives it, whatever that is", async () => {
+    const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
+    const auth = { type: 'api-key', name: 'Ocp-Apim-Subscription-Key', in: 'header', valueRef: 'sec_key' };
+    registerRequestChannels(new EngineService((ref) => Promise.resolve(ref === 'sec_key' ? 'hdr-key' : undefined)), {
+      project: project(auth),
+      adHocScopes: () => ({ project: {}, global: {}, system: {} }),
+      showSecrets: { get: () => true },
+      onSendFailed,
+    });
+
+    await invoke('request.sendRest', { sendId: 's-fail-key', requestId: 'rest-1' });
+
+    const failure = onSendFailed.mock.calls[0]![0];
+    const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
+    expect(raw).toMatch(/Ocp-Apim-Subscription-Key: <redacted>/i);
+    expect(JSON.stringify(failure) + raw).not.toContain('hdr-key');
   });
 });
