@@ -735,7 +735,7 @@ export type {
   HistoryWs,
   RestEventStreamLike,
 } from './project/history.js';
-export { enabledProperties, expand, expandSendInput, hasExpansions } from './project/properties.js';
+export { enabledProperties, expand, expandSendInput, hasExpansions, secretNamesIn } from './project/properties.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
@@ -1099,18 +1099,35 @@ export type { GrpcToCommandOptions } from './grpc/command.js';
 export {
   resolveAuthConfig,
   resolveEndpointAuth,
+  resolveSecretTokens,
   resolveSoapAuth,
   secretMissingMessage,
+  secretTokenMissingMessage,
   toSendAuth,
 } from './secrets/resolve.js';
 export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
 export { envVariablesFor, secretNeedsOfAuth, SECRET_ENV_PREFIX } from './secrets/env-names.js';
 export type { SecretNeed } from './secrets/env-names.js';
+export {
+  SECRET_NAME_PATTERN,
+  secretEnvName,
+  secretPseudoRef,
+  secretToken,
+  parseSecretPseudoRef,
+} from './secrets/secret-token.js';
+export { detectInText, SECRET_TEXT_SCAN_LIMIT } from './secrets/scan/rules.js';
+export type { DetectContext, SecretMatch, SecretRule } from './secrets/scan/rules.js';
+export { maskedPreview, scanProjectForSecrets } from './secrets/scan/scan.js';
+export { applySecretMoves, proposeSecretName } from './secrets/scan/apply.js';
+export type { SecretMove, SecretMovesResult } from './secrets/scan/apply.js';
+export type { SecretFinding, SecretLocation } from './secrets/scan/walk.js';
 
 export {
   REDACTED_MARKER,
   SECRET_BODY_KEYS,
   containsRedaction,
+  isSensitiveHeaderName,
+  isSensitiveQueryParam,
   redactHeaderPairs,
   redactHeaders,
   redactRawHttp,

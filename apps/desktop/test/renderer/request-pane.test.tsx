@@ -90,7 +90,9 @@ describe('RequestPane save shortcut', () => {
   // re-renders this pane with a new `requestId` rather than mounting a new Monaco editor. The
   // ⌘S command is bound once, on mount — it must still save the tab now in front.
   it('saves the request now in front after switching tabs, not the one the editor mounted with', async () => {
-    const saveRequest = vi.fn<(requestId: string) => Promise<void>>(() => Promise.resolve());
+    const saveRequest = vi.fn<(requestId: string, options?: { manual?: boolean }) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
     useProjectStore.setState({ saveRequest });
     const { rerender } = render(
       <RequestPane {...PANE_PROPS} envelopeXml="<first/>" onEnvelopeChange={vi.fn()} onSend={vi.fn()} />,
@@ -110,6 +112,7 @@ describe('RequestPane save shortcut', () => {
     await userEvent.keyboard('{Meta>}s{/Meta}');
 
     expect(saveRequest).toHaveBeenCalledTimes(1);
-    expect(saveRequest).toHaveBeenCalledWith('req-2');
+    // A manual save: the project is reviewed for secrets before it is written.
+    expect(saveRequest).toHaveBeenCalledWith('req-2', { manual: true });
   });
 });

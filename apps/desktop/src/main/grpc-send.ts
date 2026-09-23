@@ -25,6 +25,7 @@ import type {
 } from '@wirebench/engine';
 import type { GrpcRequestPatchWire } from '../shared/wire-types.js';
 import { grpcAuthChainFor, locateGrpcRequest, withGrpcPatch } from './project-grpc-mutations.js';
+import { withSecretTokenScope } from './secret-resolver.js';
 
 /** What one resolved gRPC call knows about itself, beyond the transport input the engine consumes. */
 export interface GrpcSendResolution {
@@ -56,7 +57,8 @@ export interface ResolveGrpcSendArgs {
 
 /**
  * Resolves one gRPC call: draft first, then the target, then the settings ladder, then one
- * expansion pass over target, metadata and message together.
+ * expansion pass over target, metadata and message together — `${secret:name}` tokens included
+ * when `resolveWithStoredValues` runs it.
  *
  * Returns `undefined` when no such gRPC request exists.
  */
@@ -87,7 +89,8 @@ export function resolveGrpcSend(args: ResolveGrpcSendArgs): GrpcSendResolution |
     projectSettings: args.project.settings,
   });
 
-  const { input, unresolved } = expandGrpcInput({ ...unexpanded, messageText: request.message }, args.scopes, {
+  const scopes = withSecretTokenScope(args.scopes);
+  const { input, unresolved } = expandGrpcInput({ ...unexpanded, messageText: request.message }, scopes, {
     escape: request.settings.escapeProperties === true,
   });
   const { messageText, ...transport } = input;

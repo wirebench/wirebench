@@ -11,6 +11,7 @@ import {
   redactUrl,
   redactRawHttp,
   redactResponseAttachments,
+  redactSecretText,
   redactXml,
 } from './redact.js';
 import type {
@@ -407,7 +408,10 @@ export function toGrpcExchangeSummary(
     statusSource: exchange.statusSource,
     headers: redactHeaders(exchange.headers, { show }),
     trailers: redactHeaders(exchange.trailers, { show }),
-    requestMessages: result.requestMessages.map((message) => JSON.stringify(message, null, 2)),
+    // A request message may carry a `${secret:name}` value the send resolved into it.
+    requestMessages: result.requestMessages.map((message) =>
+      redactSecretText(JSON.stringify(message, null, 2), { show }),
+    ),
     responseMessages: result.responseMessages.map(toGrpcResponseMessageWire),
     ...(exchange.encoding !== undefined ? { encoding: exchange.encoding } : {}),
     truncated: exchange.truncated,
@@ -425,15 +429,20 @@ export function toWsFrameContractWire(contract: WsFrameContract): WsFrameContrac
   };
 }
 
-/** Converts one engine `WsFrame` to its wire form. Payloads are never redacted — only headers are. */
-export function toWsFrameWire(frame: WsFrame): WsFrameWire {
+/**
+ * Converts one engine `WsFrame` to its wire form. No pattern rule applies to a payload, but a text
+ * payload has every secret value main handed out masked unless `show` — a message's own
+ * `${secret:name}` token, and the same value echoed back.
+ */
+export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }): WsFrameWire {
+  const show = opts?.show ?? false;
   return {
     index: frame.index,
     direction: frame.direction,
     opcode: frame.opcode,
     at: frame.at,
     size: frame.size,
-    ...(frame.text !== undefined ? { text: frame.text } : {}),
+    ...(frame.text !== undefined ? { text: redactSecretText(frame.text, { show }) } : {}),
     ...(frame.base64 !== undefined ? { base64: frame.base64 } : {}),
     ...(frame.close !== undefined ? { close: { ...frame.close } } : {}),
     ...(frame.payloadTruncated !== undefined ? { payloadTruncated: frame.payloadTruncated } : {}),
@@ -496,7 +505,7 @@ export function toWsExchangeSummary(
       ...(opts?.keyParams !== undefined ? { extraParams: opts.keyParams } : {}),
     }),
     handshake: toWsHandshakeWire(exchange.handshake, opts),
-    frames: exchange.frames.map(toWsFrameWire),
+    frames: exchange.frames.map((frame) => toWsFrameWire(frame, opts)),
     closed: { ...exchange.closed },
     counts: { ...exchange.counts },
     durationMs: exchange.durationMs,

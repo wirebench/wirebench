@@ -56,6 +56,7 @@ import { useInterfaceEditorStore } from '../features/interface-editor/interface-
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
 import { ipc } from './ipc-client.js';
+import { reviewSecrets } from './secret-review.js';
 import { useUiStore } from './ui.js';
 
 /**
@@ -66,6 +67,18 @@ export type RequestDraft = RequestWire;
 
 /** Whether an explicit or automatic save is currently running. */
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+/** How a save was asked for. */
+export interface SaveOptions {
+  /**
+   * The person asked for this save — a Save command, or `Mod+S` in an editor — so the project is
+   * reviewed for plain-text secrets first and written only if they go ahead
+   * (docs/specs/2026-09-22-secret-scanning-design.md, decision 8). Everything else writes without
+   * asking: autosave and the write on close happen in main, and quitting or leaving a workspace
+   * stashes drafts rather than saving.
+   */
+  readonly manual?: boolean;
+}
 
 /** One keystore (or WS-Security configuration) tagged with the project it belongs to. */
 export type OfProject<T> = T & { readonly projectId: string };
@@ -140,8 +153,16 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly reloadProject: (projectId: string) => Promise<void>;
   /** Re-pulls one project's snapshot from main. */
   readonly refresh: (projectId: string) => Promise<void>;
-  /** Saves one project, or — with no id — every open project. */
-  readonly save: (projectId?: string) => Promise<void>;
+  /**
+   * Saves one project, or — with no id — every open project. False when a manual save's secret
+   * review was cancelled and nothing was written.
+   */
+  readonly save: (projectId?: string, options?: SaveOptions) => Promise<boolean>;
+  /**
+   * Writes main's model of one project as it stands, leaving staged request edits staged: what a
+   * commit's secret review uses after a Move, since those edits were never reviewed.
+   */
+  readonly saveModel: (projectId: string) => Promise<void>;
   readonly noteChangedOnDisk: (projectId: string, paths: readonly string[]) => void;
   readonly dismissChangedOnDisk: (projectId: string) => void;
   /**
@@ -177,7 +198,7 @@ export interface ProjectStore extends ProjectSnapshot {
    */
   readonly commitRequest: (requestId: string) => Promise<boolean>;
   /** Writes one request's staged edits and saves its project. A no-op when it is clean. */
-  readonly saveRequest: (requestId: string) => Promise<void>;
+  readonly saveRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
   /**
    * Merges a patch into one request's §6.3 properties. Applied optimistically (so a checkbox
    * does not lag the click) and then confirmed by main's snapshot. A `null` clears an optional
@@ -242,7 +263,7 @@ export interface ProjectStore extends ProjectSnapshot {
    */
   readonly commitRestRequest: (requestId: string) => Promise<boolean>;
   /** Writes one REST request's staged edits and saves its project. A no-op when it is clean. */
-  readonly saveRestRequest: (requestId: string) => Promise<void>;
+  readonly saveRestRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
   readonly removeRestRequest: (requestId: string) => Promise<void>;
   /** Copies a REST request beside the original; returns the copy's id. */
   readonly cloneRestRequest: (requestId: string) => Promise<string>;
@@ -276,7 +297,7 @@ export interface ProjectStore extends ProjectSnapshot {
   /** Stages an edit made in the gRPC editor, as {@link editRestRequest} does for REST. */
   readonly editGrpcRequest: (requestId: string, patch: GrpcRequestPatchWire) => void;
   readonly commitGrpcRequest: (requestId: string) => Promise<boolean>;
-  readonly saveGrpcRequest: (requestId: string) => Promise<void>;
+  readonly saveGrpcRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
   readonly removeGrpcRequest: (requestId: string) => Promise<void>;
   readonly cloneGrpcRequest: (requestId: string) => Promise<string>;
   /** Adds a WebSocket API to a project and returns its id. */
@@ -289,7 +310,7 @@ export interface ProjectStore extends ProjectSnapshot {
   /** Stages an edit made in the WebSocket editor, as {@link editGrpcRequest} does for gRPC. */
   readonly editWsRequest: (requestId: string, patch: WsRequestPatchWire) => void;
   readonly commitWsRequest: (requestId: string) => Promise<boolean>;
-  readonly saveWsRequest: (requestId: string) => Promise<void>;
+  readonly saveWsRequest: (requestId: string, options?: SaveOptions) => Promise<void>;
   readonly removeWsRequest: (requestId: string) => Promise<void>;
   readonly cloneWsRequest: (requestId: string) => Promise<string>;
   /** Appends an empty environment to one project and returns its id. */
@@ -964,6 +985,44 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     });
   };
 
+  /**
+   * Runs `prepare` — committing the staged edits the save is about to write — and says whether the
+   * save may go ahead: when `prepare` did, unless the save is manual; then only once the secret
+   * review says so. A manual save hands `prepare` to the review, which runs it only once the review
+   * is sure to run: after it has taken main's autosave hold, so the committed edit is not
+   * autosaved behind the dialog, and not at all when another review is open and this one is
+   * refused — the edit then stays staged, its tab still marked unsaved. It is committed before
+   * the scan because main scans its own model and the edit being saved is exactly what must be
+   * in it.
+   */
+  const reviewed = async (
+    projectIds: readonly string[],
+    options: SaveOptions | undefined,
+    prepare: () => Promise<boolean>,
+  ): Promise<boolean> =>
+    options?.manual === true ? (await reviewSecrets('save', projectIds, prepare)) === 'proceed' : await prepare();
+
+  /**
+   * The shared shape of the per-request saves: commit the request's staged edit (when it has
+   * one), review if manual, then write its project. A clean request in a dirty project still
+   * writes — a rename from the tree or the breadcrumb reaches main without being staged here, and
+   * "Save" means "write what is pending".
+   */
+  const saveItem = async (
+    requestId: string,
+    staged: boolean,
+    commit: () => Promise<boolean>,
+    options: SaveOptions | undefined,
+  ): Promise<void> => {
+    const projectId = ownerOf(requestId);
+    if (!staged && get().projects[projectId]?.dirty !== true) {
+      return;
+    }
+    if (await reviewed([projectId], options, staged ? commit : () => Promise.resolve(true))) {
+      await saveOne(projectId);
+    }
+  };
+
   return {
     ...EMPTY,
 
@@ -995,16 +1054,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
     },
 
-    save: async (projectId) => {
+    save: async (projectId, options) => {
       const ids = projectId === undefined ? Object.keys(get().projects) : [projectId];
       // Staged edits are part of this save. Without committing them first, "Save All" writes
       // main's model — which has never seen them — and every unsaved request edit is silently
       // left behind with its tab still marked. Sequentially, because each commit mutates main
       // and applies the snapshot it returns.
-      for (const requestId of useDraftsStore.getState().dirtyRequestIds()) {
-        if (ids.includes(get().projectOf[requestId] ?? '')) {
-          await get().commitRequest(requestId);
+      const commitDrafts = async (): Promise<boolean> => {
+        for (const requestId of useDraftsStore.getState().dirtyRequestIds()) {
+          if (ids.includes(get().projectOf[requestId] ?? '')) {
+            await get().commitRequest(requestId);
+          }
         }
+        return true;
+      };
+      if (!(await reviewed(ids, options, commitDrafts))) {
+        return false;
       }
       // Every project is saved even when one fails, and the first failure is what the caller
       // hears about: a failed save on one project must not leave the others unwritten.
@@ -1013,7 +1078,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       if (failed !== undefined && failed.status === 'rejected') {
         throw failed.reason instanceof Error ? failed.reason : new Error(String(failed.reason));
       }
+      return true;
     },
+
+    saveModel: saveOne,
 
     noteChangedOnDisk: (projectId, paths) => {
       update((draft) => {
@@ -1138,20 +1206,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       return true;
     },
 
-    saveRequest: async (requestId) => {
-      const projectId = ownerOf(requestId);
-      if (useDraftsStore.getState().peekRequest(requestId) === undefined) {
-        // Nothing staged, but the project may still be dirty from a write-through edit — a rename
-        // from the breadcrumb or the tree. "Save" means "write what is pending", so it writes.
-        if (get().projects[projectId]?.dirty === true) {
-          await saveOne(projectId);
-        }
-        return;
-      }
-      if (!(await get().commitRequest(requestId))) {
-        return;
-      }
-      await saveOne(projectId);
+    saveRequest: async (requestId, options) => {
+      await saveItem(
+        requestId,
+        useDraftsStore.getState().peekRequest(requestId) !== undefined,
+        async () => await get().commitRequest(requestId),
+        options,
+      );
     },
 
     applyEnvelope: (requestId, envelopeXml) => {
@@ -1428,18 +1489,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       return true;
     },
 
-    saveGrpcRequest: async (requestId) => {
-      const projectId = ownerOf(requestId);
-      if (useDraftsStore.getState().peekGrpcRequest(requestId) === undefined) {
-        if (get().projects[projectId]?.dirty === true) {
-          await saveOne(projectId);
-        }
-        return;
-      }
-      if (!(await get().commitGrpcRequest(requestId))) {
-        return;
-      }
-      await saveOne(projectId);
+    saveGrpcRequest: async (requestId, options) => {
+      await saveItem(
+        requestId,
+        useDraftsStore.getState().peekGrpcRequest(requestId) !== undefined,
+        async () => await get().commitGrpcRequest(requestId),
+        options,
+      );
     },
 
     removeGrpcRequest: async (requestId) => {
@@ -1527,18 +1583,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       return true;
     },
 
-    saveWsRequest: async (requestId) => {
-      const projectId = ownerOf(requestId);
-      if (useDraftsStore.getState().peekWsRequest(requestId) === undefined) {
-        if (get().projects[projectId]?.dirty === true) {
-          await saveOne(projectId);
-        }
-        return;
-      }
-      if (!(await get().commitWsRequest(requestId))) {
-        return;
-      }
-      await saveOne(projectId);
+    saveWsRequest: async (requestId, options) => {
+      await saveItem(
+        requestId,
+        useDraftsStore.getState().peekWsRequest(requestId) !== undefined,
+        async () => await get().commitWsRequest(requestId),
+        options,
+      );
     },
 
     removeWsRequest: async (requestId) => {
@@ -1613,20 +1664,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       return true;
     },
 
-    saveRestRequest: async (requestId) => {
-      const projectId = ownerOf(requestId);
-      if (useDraftsStore.getState().peekRestRequest(requestId) === undefined) {
-        // As on the SOAP side: a rename reaches main without being staged here, so a clean request
-        // in a dirty project still has something to write.
-        if (get().projects[projectId]?.dirty === true) {
-          await saveOne(projectId);
-        }
-        return;
-      }
-      if (!(await get().commitRestRequest(requestId))) {
-        return;
-      }
-      await saveOne(projectId);
+    saveRestRequest: async (requestId, options) => {
+      await saveItem(
+        requestId,
+        useDraftsStore.getState().peekRestRequest(requestId) !== undefined,
+        async () => await get().commitRestRequest(requestId),
+        options,
+      );
     },
 
     removeRestRequest: async (requestId) => {

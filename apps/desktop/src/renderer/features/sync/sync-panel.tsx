@@ -228,6 +228,24 @@ export function SyncPanel() {
               )}
             </div>
 
+            {status.held !== undefined && (
+              <div
+                role="status"
+                data-testid="sync-held-banner"
+                className="mt-3 flex items-center gap-3 rounded-md border border-hairline bg-surface-sunken px-3 py-1.5 text-sm text-fg-default"
+              >
+                <span className="min-w-0 flex-1">
+                  Commit held — {status.held.findings}{' '}
+                  {status.held.findings === 1 ? 'possible secret' : 'possible secrets'}
+                </span>
+                {/* The manual commit's own review: once every finding is moved or kept main runs the
+                    held commit, and "Commit anyway" commits in its place. */}
+                <Button data-testid="sync-held-review" disabled={busy !== undefined} onClick={submitCommit}>
+                  Review
+                </Button>
+              </div>
+            )}
+
             {conflicts.length > 0 && (
               <SettingsGroup title="Conflicts">
                 <ul data-testid="sync-panel-conflicts" className="flex flex-col gap-1">

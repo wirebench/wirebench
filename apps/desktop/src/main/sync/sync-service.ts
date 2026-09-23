@@ -42,6 +42,15 @@ export interface SyncServiceDeps {
   onConflict(conflicts: readonly SyncConflictWire[]): void;
   /** A commit needs a name and email first; `setIdentity` retries the commit that asked. */
   onIdentityNeeded(): void;
+  /**
+   * Unreviewed possible secrets across the workspace's open projects. An automatic commit (after
+   * a save, or the catch-up on start) is held while this is above 0; omitted, nothing is held.
+   */
+  scanFindings?: () => number;
+  /** Tells `listener` whenever those findings may have changed (a Keep, a Move, a project closing). */
+  onScanChange?: (listener: () => void) => () => void;
+  /** True while an open project has edits not yet written; a released hold then waits for the save. */
+  unsaved?: () => boolean;
   /** Stamps `lastSyncAt` when a backend does not report its own. */
   now?: () => Date;
   setTimer?: typeof setTimeout;
@@ -55,6 +64,12 @@ interface PendingCommit {
   readonly message: string | undefined;
   readonly autosave: boolean;
   readonly push: boolean;
+}
+
+/** An automatic commit held while the open projects carry `findings` unreviewed possible secrets. */
+interface SecretHold {
+  readonly findings: number;
+  readonly commit: PendingCommit;
 }
 
 function hasCode(error: unknown, code: string): boolean {
@@ -90,6 +105,9 @@ export class SyncService {
   /** A save commit was skipped because the workspace was in `conflict`; rescheduled once it is not. */
   private saveDeferredByConflict = false;
   private identityPending: PendingCommit | undefined;
+  /** The automatic commit held for possible secrets, run once they are reviewed (`status.held`). */
+  private secretHold: SecretHold | undefined;
+  private readonly offScanChange: (() => void) | undefined;
 
   constructor(deps: SyncServiceDeps) {
     this.deps = deps;
@@ -109,6 +127,9 @@ export class SyncService {
       behind: 0,
       uncommitted: 0,
     };
+    this.offScanChange = deps.onScanChange?.(() => {
+      this.recheckSecretHold();
+    });
   }
 
   /** The last known status — `syncing` (over the last known counts) while an operation runs. */
@@ -132,7 +153,12 @@ export class SyncService {
         this.deps.onConflict(await this.backend.conflicts());
         return;
       }
-      if (this.last.uncommitted > 0 && this.deps.settings().commitOnSave && this.identityPending === undefined) {
+      if (
+        this.last.uncommitted > 0 &&
+        this.deps.settings().commitOnSave &&
+        this.identityPending === undefined &&
+        !(await this.holdForSecrets({ message: undefined, autosave: false, push: true }))
+      ) {
         try {
           await this.commitNow(undefined, { autosave: false, push: false });
           await this.probeNow();
@@ -163,6 +189,7 @@ export class SyncService {
       this.saveTimer = undefined;
     }
     this.saveIsAutosave = undefined;
+    this.offScanChange?.();
   }
 
   /**
@@ -196,6 +223,13 @@ export class SyncService {
   /** Commits every change in the tree; `message` wins over the generated one. */
   commit(message?: string): Promise<SyncStatusWire> {
     return this.run(async () => {
+      // Made with the findings still there (the person was shown them and went ahead): it stands
+      // in for the held commit, push included, and the hold is over.
+      if (this.secretHold !== undefined) {
+        this.setSecretHold(undefined);
+        await this.commitThenMaybePush({ message, autosave: false, push: true });
+        return this.last;
+      }
       await this.commitNow(message, { autosave: false, push: false });
       return await this.probeNow();
     });
@@ -241,6 +275,10 @@ export class SyncService {
       const pending = this.identityPending;
       this.identityPending = undefined;
       if (pending === undefined) {
+        return;
+      }
+      // An automatic commit is held like any other; a manual one (its own message) goes ahead.
+      if (pending.message === undefined && (await this.holdForSecrets(pending))) {
         return;
       }
       try {
@@ -301,9 +339,87 @@ export class SyncService {
   }
 
   private setStatus(next: SyncStatusWire): SyncStatusWire {
-    this.last =
-      this.offline && next.state !== 'conflict' && next.state !== 'error' ? { ...next, state: 'offline' } : next;
+    this.last = this.withSecretHold(
+      this.offline && next.state !== 'conflict' && next.state !== 'error' ? { ...next, state: 'offline' } : next,
+    );
     return this.last;
+  }
+
+  // ——— commits held for possible secrets (docs/specs/2026-09-22-secret-scanning-design.md, 8) ———
+
+  /** `status` carrying the hold as it stands; a backend's own status never has one. */
+  private withSecretHold(status: SyncStatusWire): SyncStatusWire {
+    if (this.secretHold !== undefined) {
+      return { ...status, held: { findings: this.secretHold.findings } };
+    }
+    if (status.held === undefined) {
+      return status;
+    }
+    const next = { ...status };
+    delete next.held;
+    return next;
+  }
+
+  private setSecretHold(hold: SecretHold | undefined): void {
+    const before = this.last.held?.findings;
+    this.secretHold = hold;
+    this.last = this.withSecretHold(this.last);
+    if (this.last.held?.findings !== before) {
+      this.emit();
+    }
+  }
+
+  /**
+   * Before an automatic commit: holds `commit` (true) while the open projects carry unreviewed
+   * findings and there is something to commit; otherwise ends any hold (false) so the caller commits.
+   */
+  private async holdForSecrets(commit: PendingCommit): Promise<boolean> {
+    const findings = this.deps.scanFindings?.() ?? 0;
+    if (findings > 0 && (await this.backend.changedPaths()).length > 0) {
+      this.setSecretHold({ findings, commit: this.secretHold?.commit ?? commit });
+      return true;
+    }
+    this.setSecretHold(undefined);
+    return false;
+  }
+
+  /**
+   * The findings changed: a new count while some remain, or — at 0 — the held commit runs, once.
+   * When a project still has unsaved edits (a Move rewrote the model, not yet the file) the hold
+   * just ends: the commit would take the file as it was, so the save that follows commits instead.
+   */
+  private recheckSecretHold(): void {
+    const hold = this.secretHold;
+    if (this.stopped || hold === undefined) {
+      return;
+    }
+    const findings = this.deps.scanFindings?.() ?? 0;
+    if (findings > 0) {
+      this.setSecretHold({ ...hold, findings });
+      return;
+    }
+    void this.run(async () => {
+      // Every change queues one of these; only the first still finds the hold (as does a manual
+      // commit, which releases it itself).
+      const current = this.secretHold;
+      if (current === undefined) {
+        return;
+      }
+      const now = this.deps.scanFindings?.() ?? 0;
+      if (now > 0) {
+        this.setSecretHold({ ...current, findings: now });
+        return;
+      }
+      this.setSecretHold(undefined);
+      if (this.deps.unsaved?.() === true) {
+        return;
+      }
+      if (this.last.state === 'conflict') {
+        this.saveDeferredByConflict = true;
+        return;
+      }
+      await this.commitThenMaybePush(current.commit);
+    }).catch(() => undefined);
   }
 
   private recordError(error: unknown): void {
@@ -423,6 +539,10 @@ export class SyncService {
       if (!this.deps.settings().commitOnSave) {
         throw new WirebenchError('sync-uncommitted', 'Commit or discard your local changes before pulling.');
       }
+      // The commit a pull makes first is automatic too: it must not carry held secrets.
+      if (await this.holdForSecrets({ message: undefined, autosave: false, push: true })) {
+        throw new WirebenchError('sync-uncommitted', 'Review the possible secrets in the Sync panel before pulling.');
+      }
       await this.commitNow(undefined, { autosave: false, push: false });
     }
     const { conflicts, changedPaths } = await this.backend.merge();
@@ -453,7 +573,11 @@ export class SyncService {
           this.saveDeferredByConflict = true;
           return;
         }
-        await this.commitThenMaybePush({ message: undefined, autosave, push: true });
+        const commit: PendingCommit = { message: undefined, autosave, push: true };
+        if (await this.holdForSecrets(commit)) {
+          return;
+        }
+        await this.commitThenMaybePush(commit);
       }).catch(() => undefined);
     }, SAVE_COMMIT_DEBOUNCE_MS);
     unref(this.saveTimer);

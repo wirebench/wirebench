@@ -13,7 +13,8 @@
  * must never depend on the real OS keychain, so they pass a fake `CryptoBackend`.
  *
  * No `secrets.get` IPC channel exists — the renderer can set/replace/exists/delete/list, but
- * can never read a value back. Resolution happens only in main (see `secret-resolver.ts`).
+ * can never read a value back. Resolution happens only in main (see `secret-resolver.ts`), which
+ * also finds a `${secret:name}` token's value by its label (`wirebench-secret:<projectId>:<name>`).
  */
 
 import { randomBytes } from 'node:crypto';
@@ -270,6 +271,21 @@ export class SecretStore {
       await this.persist();
       return true;
     });
+  }
+
+  /**
+   * The ref of the entry stored under `label`, or `undefined` when none is. Labels are not unique
+   * by construction; should two entries share one, the newest wins.
+   */
+  async findByLabel(label: string): Promise<string | undefined> {
+    await this.ensureLoaded();
+    let found: { ref: string; createdAt: string } | undefined;
+    for (const [ref, entry] of Object.entries(this.data.entries)) {
+      if (entry.label === label && (found === undefined || entry.createdAt > found.createdAt)) {
+        found = { ref, createdAt: entry.createdAt };
+      }
+    }
+    return found?.ref;
   }
 
   async list(): Promise<SecretListEntry[]> {

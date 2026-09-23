@@ -18,6 +18,11 @@ export function containsRedaction(text: string): boolean {
 /** Header names (case-insensitive) whose value is always masked. */
 const SENSITIVE_HEADERS = new Set(['authorization', 'proxy-authorization', 'cookie', 'set-cookie', 'x-api-key']);
 
+/** True when a header named `name` (any case) always carries a credential; see {@link redactHeaders}. */
+export function isSensitiveHeaderName(name: string): boolean {
+  return SENSITIVE_HEADERS.has(name.toLowerCase());
+}
+
 /** Masks the values of sensitive headers in a plain header map, case-insensitively. */
 export function redactHeaders(
   headers: Readonly<Record<string, string>>,
@@ -63,6 +68,11 @@ const SENSITIVE_QUERY_PARAMS = new Set([
   'signature',
   'sig',
 ]);
+
+/** True when a query parameter named `name` (any case) carries a credential; see {@link redactUrl}. */
+export function isSensitiveQueryParam(name: string): boolean {
+  return SENSITIVE_QUERY_PARAMS.has(name.toLowerCase());
+}
 
 /**
  * Masks the value of every sensitive query parameter in `url`, plus any parameter named in

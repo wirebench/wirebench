@@ -76,6 +76,24 @@ describe('preflightRequest', () => {
     expect(result.unresolved.map((ref) => ref.field)).toEqual(['envelopeXml', 'soapAction']);
   });
 
+  it('does not report a ${secret:name} token as unresolved: it resolves at send', () => {
+    const project = build();
+    const operation = project.interfaces[0]!.operations[0]!;
+    const request = {
+      ...operation.requests[0]!,
+      envelopeXml: '<Add><pw>${secret:soap_pw}</pw><who>${#Env#missing}</who></Add>',
+      headers: [{ name: 'X-Key', value: 'Key ${secret:api_key}' }],
+    };
+    const withTokens: Project = {
+      ...project,
+      interfaces: [{ ...project.interfaces[0]!, operations: [{ ...operation, requests: [request] }] }],
+    };
+
+    const result = preflightRequest(withTokens, 'req-1', resolveScopes(withTokens, undefined, {}, {}));
+
+    expect(result.unresolved.map((ref) => ref.expr)).toEqual(['${#Env#missing}', '${#Global#nope}']);
+  });
+
   it('reports an unresolved reference in the endpoint itself', () => {
     const project = build();
     const scopes = resolveScopes(project, undefined, {}, {});

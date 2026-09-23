@@ -421,6 +421,8 @@ export class ProjectHost {
    */
   private readonly openApiDocuments = new Map<string, Promise<OpenApiDocument>>();
   private autosave: NodeJS.Timeout | undefined;
+  /** Open {@link holdAutosave} holds: while any is, an edit marks the project dirty but schedules no write. */
+  private autosaveHolds = 0;
   private hydrating: Promise<void> | undefined;
   /** What the last `openProject` did with an unsaved-changes record, if it was given one. */
   private restore: UnsavedRestoreOutcome | undefined;
@@ -1313,7 +1315,7 @@ export class ProjectHost {
       clearTimeout(this.autosave);
       this.autosave = undefined;
     }
-    if (!this.autosaveEnabled()) {
+    if (!this.autosaveEnabled() || this.autosaveHolds > 0) {
       return;
     }
     this.autosave = setTimeout(() => {
@@ -1331,6 +1333,32 @@ export class ProjectHost {
     if (this.open?.dirty === true && this.autosave === undefined && this.autosaveEnabled()) {
       this.markDirty();
     }
+  }
+
+  /**
+   * Suspends autosave until the returned release is called: an edit still marks the project dirty,
+   * but no timer is scheduled, and one already running is stopped. A manual save's secret review
+   * holds it while the person decides, so the edit under review is not written behind the dialog.
+   * An explicit {@link save} is not held. On the last release a dirty project schedules its
+   * autosave as usual; releasing twice is harmless.
+   */
+  holdAutosave(): () => void {
+    this.autosaveHolds += 1;
+    if (this.autosave !== undefined) {
+      clearTimeout(this.autosave);
+      this.autosave = undefined;
+    }
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      this.autosaveHolds -= 1;
+      if (this.autosaveHolds === 0) {
+        this.onAutosaveEnabled();
+      }
+    };
   }
 
   /** Applies one change to the model, marks the project dirty and schedules an autosave. */
@@ -1396,6 +1424,26 @@ export class ProjectHost {
       ...(result.createdWssOutgoingId !== undefined ? { createdWssOutgoingId: result.createdWssOutgoingId } : {}),
       ...(result.createdWssIncomingId !== undefined ? { createdWssIncomingId: result.createdWssIncomingId } : {}),
     };
+  }
+
+  /**
+   * Replaces the model with `update(model)` as one change — dirty, autosave scheduled, `changed`
+   * raised — for a rewrite main computes itself rather than one `ProjectChange` (moving found
+   * secrets behind `${secret:…}` tokens). `false`, changing nothing, when no project is open or
+   * `update` returns the model it was given.
+   */
+  applyModelUpdate(update: (project: Project) => Project): boolean {
+    if (this.open === undefined) {
+      return false;
+    }
+    const next = update(this.open.project);
+    if (next === this.open.project) {
+      return false;
+    }
+    this.open.project = next;
+    this.markDirty();
+    this.emitChanged();
+    return true;
   }
 
   /** The keystore registry entry with this id, or `undefined` when no project has one. */

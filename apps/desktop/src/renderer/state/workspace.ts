@@ -22,6 +22,7 @@ import { useDraftsStore } from './drafts.js';
 import { useEditorsStore } from './editors.js';
 import { useExchangesStore } from './exchanges.js';
 import { useProjectStore } from './project.js';
+import { reviewSecrets } from './secret-review.js';
 import { restoreWorkspaceTabs, saveWorkspaceTabs } from './workspace-tabs.js';
 import { ipc } from './ipc-client.js';
 import { restoreUnsaved, stashDrafts, subscribeToDraftStash } from './unsaved-drafts.js';
@@ -98,8 +99,11 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
    * environment serialise rather than race — see `environment-queue.ts`.
    */
   readonly updateEnvironment: (environmentId: string, patch: WorkspaceEnvironmentPatchWire) => Promise<void>;
-  /** Shares the open local workspace as a git repository (remote/branch validated and trimmed in main). */
-  readonly share: (remote?: string, branch?: string) => Promise<void>;
+  /**
+   * Shares the open local workspace as a git repository (remote/branch validated and trimmed in
+   * main), once the open projects are reviewed for secrets. `false` when that review was cancelled.
+   */
+  readonly share: (remote?: string, branch?: string) => Promise<boolean>;
   /** Shares the open local workspace to an empty folder the user picks. `false` when cancelled. */
   readonly shareToFolder: () => Promise<boolean>;
   /** Clones a shared workspace from `remote` and opens it. */
@@ -415,8 +419,13 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
     },
 
     share: async (remote, branch) => {
+      // Sharing commits and pushes every file, so it is reviewed the way a manual commit is.
+      if ((await reviewSecrets('commit')) !== 'proceed') {
+        return false;
+      }
       const sentIn = generation;
       applyReply(sentIn, unwrap(await ipc().workspace.share({ remote, branch })).workspace);
+      return true;
     },
 
     shareToFolder: async () => {

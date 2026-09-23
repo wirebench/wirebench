@@ -779,3 +779,309 @@ describe('SyncService — pull, push, conflicts', () => {
     await expect(h.service.conflicts()).resolves.toEqual([{ path: 'workspace.yaml' }]);
   });
 });
+
+/**
+ * A stand-in for the open projects' secret scans: how many unreviewed findings there are, whether
+ * a project has edits not yet written, and the change notification a Keep or Move sends.
+ */
+class FakeScans {
+  findings = 0;
+  unsaved = false;
+  readonly listeners = new Set<() => void>();
+
+  deps(): Partial<SyncServiceDeps> {
+    return {
+      scanFindings: () => this.findings,
+      unsaved: () => this.unsaved,
+      onScanChange: (listener) => {
+        this.listeners.add(listener);
+        return () => {
+          this.listeners.delete(listener);
+        };
+      },
+    };
+  }
+
+  change(): void {
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
+  }
+}
+
+describe('SyncService — commits held for secrets', () => {
+  const commitsOf = (backend: ScriptedBackend): number => backend.calls.filter((call) => call === 'commit').length;
+
+  it('holds a save commit while a finding exists: no commit, and the status says how many', async () => {
+    const scans = new FakeScans();
+    scans.findings = 2;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1 });
+
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls).not.toContain('push');
+    expect(h.service.status().held).toEqual({ findings: 2 });
+    expect(h.statuses.at(-1)?.held).toEqual({ findings: 2 });
+  });
+
+  it('releases once the findings are kept or moved, and runs the held commit exactly once', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1 });
+    h.service.afterSave('autosave');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(h.service.status().held).toEqual({ findings: 1 });
+
+    scans.findings = 0;
+    scans.change();
+    scans.change();
+    await h.service.log(1);
+
+    expect(commitsOf(h.backend)).toBe(1);
+    expect(h.backend.commits).toEqual([commitMessage([requestChange], { autosave: true })]);
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+    expect(h.service.status().held).toBeUndefined();
+    expect(h.statuses.at(-1)?.held).toBeUndefined();
+
+    scans.change();
+    await h.service.log(1);
+    expect(commitsOf(h.backend)).toBe(1);
+  });
+
+  it('updates the count while some findings remain, without committing', async () => {
+    const scans = new FakeScans();
+    scans.findings = 3;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+
+    scans.findings = 1;
+    scans.change();
+    await h.service.log(1);
+
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.service.status().held).toEqual({ findings: 1 });
+  });
+
+  it('a release while a project is unsaved waits for the save that writes the review, then commits once', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+
+    // A Move rewrote the model; the file on disk still holds the value until it is saved.
+    scans.findings = 0;
+    scans.unsaved = true;
+    scans.change();
+    await h.service.log(1);
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.service.status().held).toBeUndefined();
+
+    scans.unsaved = false;
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(commitsOf(h.backend)).toBe(1);
+  });
+
+  it('repeated saves while held do not commit; a save that removes the finding releases it', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    for (let i = 0; i < 3; i += 1) {
+      h.service.afterSave('manual');
+      await vi.advanceTimersByTimeAsync(500);
+      await h.service.log(1);
+    }
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.service.status().held).toEqual({ findings: 1 });
+
+    // The value was edited out by hand and saved: no Keep or Move, only the save.
+    scans.findings = 0;
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(commitsOf(h.backend)).toBe(1);
+    expect(h.service.status().held).toBeUndefined();
+  });
+
+  it('holds the startup catch-up commit too, and still fetches', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.current = status({ uncommitted: 1 });
+    h.backend.changes = [requestChange];
+
+    await h.service.start();
+
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls).toContain('fetch');
+    expect(h.service.status().held).toEqual({ findings: 1 });
+
+    scans.findings = 0;
+    scans.change();
+    await h.service.log(1);
+    expect(h.backend.commits).toEqual([commitMessage([requestChange])]);
+  });
+
+  it('does not hold when there is nothing to commit', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+
+    expect(h.service.status().held).toBeUndefined();
+  });
+
+  it('a manual commit while held commits with the findings, releases the hold and pushes as the held commit would', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1 });
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+
+    const after = await h.service.commit();
+
+    expect(commitsOf(h.backend)).toBe(1);
+    expect(h.backend.calls).toContain('push');
+    expect(after.held).toBeUndefined();
+    expect(h.service.status().held).toBeUndefined();
+
+    // The findings are still there; a later change to them has nothing held to release.
+    scans.change();
+    await h.service.log(1);
+    expect(commitsOf(h.backend)).toBe(1);
+  });
+
+  it('a manual commit with nothing held neither pushes nor holds', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+
+    await h.service.commit();
+
+    expect(commitsOf(h.backend)).toBe(1);
+    expect(h.backend.calls).not.toContain('push');
+    expect(h.service.status().held).toBeUndefined();
+  });
+
+  it('keeps the hold across status refreshes (fetch, probe)', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+
+    await expect(h.service.fetch()).resolves.toMatchObject({ held: { findings: 1 } });
+  });
+
+  it('a pull while held refuses to commit the held changes, and neither merges nor releases the hold', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1 });
+
+    const error = await rejectionOf(h.service.pull());
+
+    expect(isWirebenchError(error) && error.code).toBe('sync-uncommitted');
+    expect(isWirebenchError(error) && error.message).toBe(
+      'Review the possible secrets in the Sync panel before pulling.',
+    );
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls).not.toContain('merge');
+    expect(h.service.status().held).toEqual({ findings: 1 });
+  });
+
+  it('a push rejected while held does not commit the held changes to pull', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1, ahead: 1 });
+    h.backend.pushScript.push(() =>
+      Promise.reject(
+        new WirebenchError('git-failed', 'git push failed.', {
+          details: { stderr: ' ! [rejected]        HEAD -> main (fetch first)' },
+        }),
+      ),
+    );
+
+    const error = await rejectionOf(h.service.push());
+
+    expect(isWirebenchError(error) && error.code).toBe('sync-uncommitted');
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+    expect(h.backend.calls).not.toContain('merge');
+  });
+
+  it('setIdentity holds the automatic commit it retries while findings exist, then commits it on release', async () => {
+    const scans = new FakeScans();
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.current = status({ uncommitted: 1 });
+    h.backend.identityValue = undefined;
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+    expect(h.identityNeeded).toBe(1);
+
+    // A secret was pasted and saved while the identity dialog was open.
+    scans.findings = 1;
+    await h.service.setIdentity('Ada', 'ada@example.test');
+
+    expect(commitsOf(h.backend)).toBe(0);
+    expect(h.backend.calls).not.toContain('push');
+    expect(h.service.status().held).toEqual({ findings: 1 });
+
+    scans.findings = 0;
+    scans.change();
+    await h.service.log(1);
+    expect(commitsOf(h.backend)).toBe(1);
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+  });
+
+  it('setIdentity still retries a manual commit with its own message while findings exist', async () => {
+    const scans = new FakeScans();
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    h.backend.changes = [requestChange];
+    h.backend.identityValue = undefined;
+    await rejectionOf(h.service.commit('Tidy the calculator'));
+
+    scans.findings = 1;
+    await h.service.setIdentity('Ada', 'ada@example.test');
+
+    expect(h.backend.commits).toEqual(['Tidy the calculator']);
+  });
+
+  it('stop() unsubscribes from scan changes', async () => {
+    const scans = new FakeScans();
+    const h = harness({ autoFetchSeconds: 0 }, scans.deps());
+    expect(scans.listeners.size).toBe(1);
+    h.service.stop();
+    expect(scans.listeners.size).toBe(0);
+    await Promise.resolve();
+  });
+});

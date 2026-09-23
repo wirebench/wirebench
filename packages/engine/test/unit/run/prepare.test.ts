@@ -452,6 +452,51 @@ describe('prepareSend — REST', () => {
   });
 });
 
+describe('prepareSend — ${secret:name} tokens', () => {
+  const tokenSecrets = (ref: string): Promise<string | undefined> =>
+    Promise.resolve(ref === 'secret:billing_key' ? 'ghp_FAKEvalue' : undefined);
+
+  it('expands a REST token from the getter, asking for it by pseudo-ref', async () => {
+    const project = makeProject({ restUrl: '${baseUrl}/invoices/{id}?key=${secret:billing_key}' });
+    const seen: string[] = [];
+    const prepared = await prepareSend(
+      restOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        getSecret: (ref) => {
+          seen.push(ref);
+          return tokenSecrets(ref);
+        },
+      }),
+    );
+    expect(prepared.kind === 'rest' && prepared.input.request.url).toContain('key=ghp_FAKEvalue');
+    expect(seen).toEqual(['secret:billing_key']);
+  });
+
+  it('expands a SOAP token reached through a property, and returns it in the scopes', async () => {
+    const project = makeProject({ envelopeXml: '<Envelope>${key}</Envelope>' });
+    const prepared = await prepareSend(
+      soapOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        overrides: { key: '${secret:billing_key}' },
+        getSecret: tokenSecrets,
+      }),
+    );
+    expect(prepared.kind === 'soap' && prepared.scopes.secrets).toEqual({ billing_key: 'ghp_FAKEvalue' });
+  });
+
+  it('refuses a token with no value as secret-missing, naming the secret', async () => {
+    const project = makeProject({ restUrl: '${baseUrl}/x?key=${secret:nope}' });
+    await expect(prepareSend(restOf(project), contextFor(project, { getSecret: tokenSecrets }))).rejects.toMatchObject({
+      code: 'secret-missing',
+      message:
+        'The secret "nope" is not on this machine — put its value where the token is and choose Move to secret when you save.',
+      details: { ref: 'secret:nope' },
+    });
+  });
+});
+
 describe('prepareSend — gRPC', () => {
   function grpcProject(request: Partial<GrpcRequestDef> = {}, folderAuth?: AuthConfig): Project {
     const api = createGrpcApi('Greeter', {
@@ -520,6 +565,18 @@ describe('prepareSend — gRPC', () => {
     const plain = grpcProject();
     const flagged = await prepareSend(grpcOf(plain), contextFor(plain, { environmentId: 'env-test', insecure: true }));
     expect(flagged.kind === 'grpc' && flagged.input.tlsOptions?.rejectUnauthorized).toBe(false);
+  });
+
+  it('expands a ${secret:name} token in the message from the getter', async () => {
+    const project = grpcProject({ message: '{"key": "${secret:grpc_key}"}' });
+    const prepared = await prepareSend(
+      grpcOf(project),
+      contextFor(project, {
+        environmentId: 'env-test',
+        getSecret: (ref) => (ref === 'secret:grpc_key' ? Promise.resolve('fake-grpc-key-0000') : Promise.resolve('pw')),
+      }),
+    );
+    expect(prepared.kind === 'grpc' && prepared.messageText).toBe('{"key": "fake-grpc-key-0000"}');
   });
 
   it('refuses a call with a property nothing resolves', async () => {

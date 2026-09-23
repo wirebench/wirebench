@@ -36,6 +36,7 @@ import {
   toEngineBody,
   toEngineRows,
 } from './project-rest-mutations.js';
+import { withSecretTokenScope } from './secret-resolver.js';
 import type { RestRequestPatchWire } from '../shared/wire-types.js';
 
 /** What one resolved REST send knows about itself, beyond the input the engine will consume. */
@@ -110,7 +111,8 @@ function cleanSettings(settings: NonNullable<RestRequestPatchWire['settings']>):
  * Order matters: the draft is applied first (it is what the user is looking at), then the base URL
  * is resolved, then the settings ladder is climbed, then properties are expanded across the whole
  * input at once — so a base URL that is itself a property, and a path parameter that is another,
- * both resolve against the same scopes in one pass.
+ * both resolve against the same scopes in one pass. `${secret:name}` tokens expand only inside
+ * `resolveWithStoredValues`, which puts their values in scope; anywhere else they stay unresolved.
  *
  * Returns `undefined` when no such REST request exists, which is what a send of a request that has
  * since been deleted means.
@@ -148,7 +150,7 @@ export function resolveRestSend(args: ResolveRestSendArgs): RestSendResolution |
     ...(args.proxy !== undefined ? { proxy: args.proxy } : {}),
   });
 
-  const { input, unresolved } = expandRestSendInput(unexpanded, args.scopes, {
+  const { input, unresolved } = expandRestSendInput(unexpanded, withSecretTokenScope(args.scopes), {
     escape: request.settings.escapeProperties === true,
   });
 

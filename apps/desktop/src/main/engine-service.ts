@@ -975,7 +975,7 @@ export class EngineService {
             safeOnLive({ kind: 'handshake', sendId, handshake: toWsHandshakeWire(handshake, wireOpts) });
           },
           onFrame: (frame) => {
-            safeOnLive({ kind: 'frame', sendId, frame: toWsFrameWire(frame) });
+            safeOnLive({ kind: 'frame', sendId, frame: toWsFrameWire(frame, { show }) });
             checks?.check(frame);
           },
           onClosed: () => {
@@ -1091,17 +1091,22 @@ export class EngineService {
   }
 
   /**
-   * Writes one more message on the open WebSocket session `sendId`, returning the frame as it went.
+   * Writes one more message on the open WebSocket session `sendId`, returning the frame as it went —
+   * its text with secret values masked unless `options.showSecrets`.
    *
    * @throws WirebenchError `ws-session-unknown` when no session with that id is open
    */
-  sendWsMessage(sendId: string, message: { readonly text: string } | { readonly base64: string }): WsFrameWire {
+  sendWsMessage(
+    sendId: string,
+    message: { readonly text: string } | { readonly base64: string },
+    options: { readonly showSecrets?: boolean } = {},
+  ): WsFrameWire {
     const session = this.wsSessions.get(sendId);
     if (session === undefined) {
       throw new WirebenchError('ws-session-unknown', 'That connection is no longer open.', { details: { sendId } });
     }
     const data = 'text' in message ? message.text : Buffer.from(message.base64, 'base64');
-    return toWsFrameWire(session.handle.send(data));
+    return toWsFrameWire(session.handle.send(data), { show: options.showSecrets ?? false });
   }
 
   /** Closes the WebSocket session `sendId`. `false` when no such session is open. */

@@ -3288,6 +3288,109 @@ export type SecretListEntryWire = z.infer<typeof secretListEntrySchema>;
 export const secretsSetShowSecretsRequestSchema = z.object({ show: z.boolean() });
 export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });
 
+// ---------------------------------------------------------------------------
+// Secret scanning (`secretScan.*`): credentials found in plain text in a project, and moving them
+// into the store behind a `${secret:name}` token. A finding crosses the bridge as a masked
+// `preview` only — every schema here is `.strict()`, so a finding that carried its `value` (or a
+// response that grew one) fails validation instead of reaching the renderer.
+// ---------------------------------------------------------------------------
+
+/** Where a finding sits: the engine's `SecretLocation`, field for field. */
+export const secretLocationWireSchema = z.union([
+  z
+    .object({
+      kind: z.enum(['soap-header', 'rest-header', 'rest-query', 'grpc-metadata', 'ws-header']),
+      requestId: z.string(),
+      name: z.string(),
+      index: z.number().int(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.enum(['grpc-api-metadata', 'ws-api-header']),
+      apiId: z.string(),
+      name: z.string(),
+      index: z.number().int(),
+    })
+    .strict(),
+  z.object({ kind: z.literal('rest-body'), requestId: z.string(), field: z.number().int().optional() }).strict(),
+  z.object({ kind: z.enum(['soap-body', 'rest-url', 'grpc-message']), requestId: z.string() }).strict(),
+  z.object({ kind: z.literal('ws-message'), requestId: z.string(), messageId: z.string() }).strict(),
+  z.object({ kind: z.literal('project-property'), name: z.string() }).strict(),
+  z.object({ kind: z.literal('env-property'), environmentId: z.string(), name: z.string() }).strict(),
+]);
+
+/** One possible secret, as the review dialog shows it: never the value, only its `preview`. */
+export const secretFindingWireSchema = z
+  .object({
+    id: z.string(),
+    location: secretLocationWireSchema,
+    rule: z.enum([
+      'sensitive-name',
+      'jwt',
+      'bearer',
+      'basic',
+      'aws-key',
+      'private-key',
+      'vendor-token',
+      'high-entropy',
+    ]),
+    label: z.string(),
+    /** The first few characters and the length (`eyJ… (36 chars)`). */
+    preview: z.string(),
+  })
+  .strict();
+export type SecretFindingWire = z.infer<typeof secretFindingWireSchema>;
+
+/** Request payload for `secretScan.scan`. */
+export const secretScanScanRequestSchema = z.object({ projectId: z.string() });
+/**
+ * Response for `secretScan.scan`: the findings not kept this session, a proposed secret name for
+ * each (by finding id, unique against the stored names and each other), and the names this
+ * project already has a stored value for — Move to one of those needs `replace`.
+ */
+export const secretScanScanResponseSchema = z
+  .object({
+    findings: z.array(secretFindingWireSchema),
+    proposedNames: z.record(z.string(), z.string()),
+    storedNames: z.array(z.string()),
+  })
+  .strict();
+
+/** Request payload for `secretScan.keep`: findings to leave in place until the project closes. */
+export const secretScanKeepRequestSchema = z.object({ projectId: z.string(), ids: z.array(z.string()) });
+export const secretScanKeepResponseSchema = z.object({});
+
+/** One finding to move, and the `${secret:name}` name it moves to (the engine's `SECRET_NAME_PATTERN`). */
+export const secretScanMoveItemSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+    /** Overwrite the value already stored under `name`; without it a taken name is not moved. */
+    replace: z.boolean().optional(),
+  })
+  .strict();
+/** Request payload for `secretScan.move`. */
+export const secretScanMoveRequestSchema = z.object({
+  projectId: z.string(),
+  items: z.array(secretScanMoveItemSchema),
+});
+/** Response for `secretScan.move`, as finding ids: moved, no longer found as scanned, or name taken. */
+export const secretScanMoveResponseSchema = z
+  .object({ moved: z.array(z.string()), stale: z.array(z.string()), nameTaken: z.array(z.string()) })
+  .strict();
+
+/**
+ * Request payload for `secretScan.hold`: suspend autosave for these projects while their review is
+ * open, so a manual save's edit is not written before the person answers. Released by
+ * `secretScan.release`, or by main when the window that asked goes away.
+ */
+export const secretScanHoldRequestSchema = z.object({ projectIds: z.array(z.string()) });
+export const secretScanHoldResponseSchema = z.object({ holdId: z.string() }).strict();
+/** Request payload for `secretScan.release`: autosave resumes for the held projects. */
+export const secretScanReleaseRequestSchema = z.object({ holdId: z.string() });
+export const secretScanReleaseResponseSchema = z.object({});
+
 /** Request payload for `exchanges.get`: the send whose cached exchange to re-read. */
 export const exchangesGetRequestSchema = z.object({ sendId: z.string() });
 
@@ -4208,6 +4311,8 @@ export const syncStatusWireSchema = z.object({
   branch: z.string().optional(),
   lastSyncAt: z.string().optional(),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
+  /** An automatic commit waits for the open projects' possible secrets to be reviewed; how many. */
+  held: z.object({ findings: z.number() }).optional(),
 });
 export type SyncStatusWire = z.infer<typeof syncStatusWireSchema>;
 

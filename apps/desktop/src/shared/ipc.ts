@@ -188,6 +188,16 @@ import {
   secretsSetRequestSchema,
   secretsSetShowSecretsRequestSchema,
   secretsShowSecretsResponseSchema,
+  secretScanHoldRequestSchema,
+  secretScanHoldResponseSchema,
+  secretScanKeepRequestSchema,
+  secretScanKeepResponseSchema,
+  secretScanMoveRequestSchema,
+  secretScanMoveResponseSchema,
+  secretScanReleaseRequestSchema,
+  secretScanReleaseResponseSchema,
+  secretScanScanRequestSchema,
+  secretScanScanResponseSchema,
   xmlCompletionsRequestSchema,
   xmlCompletionsResponseSchema,
   xmlPathRequestSchema,
@@ -680,6 +690,15 @@ export const channels = {
       secretsShowSecretsResponseSchema,
     ),
     getShowSecrets: defineChannel('secrets.getShowSecrets', z.undefined(), secretsShowSecretsResponseSchema),
+  },
+  // Plain-text credentials in one project: found and moved in main. A finding crosses the bridge as
+  // a masked preview; the value itself never does, in either direction.
+  secretScan: {
+    scan: defineChannel('secretScan.scan', secretScanScanRequestSchema, secretScanScanResponseSchema),
+    keep: defineChannel('secretScan.keep', secretScanKeepRequestSchema, secretScanKeepResponseSchema),
+    move: defineChannel('secretScan.move', secretScanMoveRequestSchema, secretScanMoveResponseSchema),
+    hold: defineChannel('secretScan.hold', secretScanHoldRequestSchema, secretScanHoldResponseSchema),
+    release: defineChannel('secretScan.release', secretScanReleaseRequestSchema, secretScanReleaseResponseSchema),
   },
   // Re-reads one cached exchange, redacted per the show-secrets flag as it stands *now*, so a
   // toggle can reveal (or re-hide) an entry the HTTP log already holds.

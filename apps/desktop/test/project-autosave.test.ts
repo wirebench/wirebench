@@ -148,6 +148,81 @@ describe('autosave is opt-in', () => {
   });
 });
 
+/**
+ * Secret scanning reviews a *manual* save only (the renderer asks before writing). The saves main
+ * makes by itself — autosave, and the write on close — go ahead with a plain-text credential in
+ * the project: the files are local, and nothing here is waiting on a person to answer.
+ */
+describe('the saves main makes by itself never wait for a secret review', () => {
+  /** Obviously fake, under a name the scanner flags. */
+  const FAKE_PASSWORD = 'fake-password-for-tests';
+
+  it('autosave writes a project holding a possible secret', async () => {
+    const dir = join(root!, 'AutoSecret');
+    const { host } = hostWith(true);
+    await host.create({ dir, name: 'AutoSecret' });
+
+    await host.mutate({ kind: 'set-project-property', name: 'api_password', value: FAKE_PASSWORD });
+    await waitForAutosave(host);
+
+    expect(host.snapshot()?.dirty).toBe(false);
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain(FAKE_PASSWORD);
+    await host.close();
+  });
+
+  it('a secret review holds autosave while it is open; after it settles autosave writes as usual', async () => {
+    const dir = join(root!, 'HeldSecret');
+    const { host } = hostWith(true);
+    await host.create({ dir, name: 'HeldSecret' });
+    // A manual save takes the hold, then commits the staged edit — which marks the project dirty.
+    const release = host.holdAutosave();
+    await host.mutate({ kind: 'set-project-property', name: 'api_password', value: FAKE_PASSWORD });
+
+    // The dialog is open: well past the debounce, nothing has been written behind it.
+    await delay(AUTOSAVE_DEBOUNCE_MS * 3);
+    expect(host.snapshot()?.dirty).toBe(true);
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).not.toContain(FAKE_PASSWORD);
+
+    // Cancel: the edit stays in the model, the project stays dirty, and autosave — which writes
+    // without asking (spec decision 8) — picks it up once the review is over.
+    release();
+    await waitForAutosave(host);
+    expect(host.snapshot()?.dirty).toBe(false);
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain(FAKE_PASSWORD);
+    await host.close();
+  });
+
+  it('a hold stops an autosave already scheduled, and only the last release resumes it', async () => {
+    const dir = join(root!, 'HeldTwice');
+    const { host } = hostWith(true);
+    await host.create({ dir, name: 'HeldTwice' });
+    await host.mutate({ kind: 'rename-project', name: 'Renamed' });
+    const first = host.holdAutosave();
+    const second = host.holdAutosave();
+
+    first();
+    first();
+    await delay(AUTOSAVE_DEBOUNCE_MS * 3);
+    expect(await nameOnDisk(dir)).toBe('HeldTwice');
+
+    second();
+    await waitForAutosave(host);
+    expect(await nameOnDisk(dir)).toBe('Renamed');
+    await host.close();
+  });
+
+  it('closing writes a held edit holding a possible secret', async () => {
+    const dir = join(root!, 'CloseSecret');
+    const { host } = hostWith(false);
+    await host.create({ dir, name: 'CloseSecret' });
+    await host.mutate({ kind: 'set-project-property', name: 'api_password', value: FAKE_PASSWORD });
+
+    await host.close();
+
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain(FAKE_PASSWORD);
+  });
+});
+
 describe('the project manifest does not record why it was saved', () => {
   it('a manual save followed by an autosave of the same model leaves wirebench.yaml byte-identical', async () => {
     const dir = join(root!, 'Stable');

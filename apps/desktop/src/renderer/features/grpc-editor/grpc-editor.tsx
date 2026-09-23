@@ -157,7 +157,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
   }, [halfCloseGrpc, requestId]);
 
   const onSave = useCallback(() => {
-    void useProjectStore.getState().saveGrpcRequest(requestId);
+    void useProjectStore.getState().saveGrpcRequest(requestId, { manual: true });
   }, [requestId]);
 
   if (request === undefined) {

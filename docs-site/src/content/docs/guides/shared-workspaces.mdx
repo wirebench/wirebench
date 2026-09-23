@@ -79,6 +79,29 @@ non-fast-forward triggers a fetch, merge and retry automatically.
 the ahead/behind counts. **Pull** is fetch plus merge — it's refused if you have uncommitted
 changes and *Commit on save* is off.
 
+## Commits held for possible secrets
+
+A **Commit** you make from the Sync panel first checks every open project for credentials in
+plain text, and lists anything it finds in the same review a manual save uses — see
+[Secret tokens and scanning](/wirebench/guides/secrets/#secret-tokens-and-scanning).
+
+An automatic commit — *Commit on save*, or the catch-up commit when the workspace opens — can't
+ask, so it waits instead. While an open project has a possible secret you haven't moved or kept,
+the commit is held and the Sync panel shows **Commit held — N possible secrets** with a **Review**
+button. Review opens the list:
+
+- Once every finding is moved to the secret store or kept, the hold ends and the held commit runs,
+  pushing too when *Push on save* is on. A moved value is saved to the file before it's committed.
+- **Commit anyway** commits with the findings still there, in place of the held commit.
+- **Cancel** leaves the commit held.
+
+**Save anyway** on a manual save doesn't keep what it found, so with *Commit on save* on, the
+commit that follows it is held.
+
+A **Pull** commits your changes first, so while they carry a possible secret it's refused with
+*Review the possible secrets in the Sync panel before pulling* — as is the pull a rejected push
+makes. Sharing a workspace commits and pushes every file, so **Share** runs the same review first.
+
 ## Conflicts
 
 When a merge leaves conflicted files, the sync banner offers **Resolve…**, which opens the
@@ -110,6 +133,11 @@ they stay in each member's OS keychain. Open a request whose secret ref has no v
 machine and the field shows **Not on this machine** with an **Enter…** button; typing a value
 there stores it locally under the same ref, so the shared files are untouched and your teammates'
 files never change.
+
+A `${secret:name}` token works the same way: the name travels in the file, and each member sets
+their own value for it on their own machine. Until you do, a send that uses it fails with *The
+secret "name" is not on this machine*. See
+[Secret tokens and scanning](/wirebench/guides/secrets/#the-secretname-token).
 
 ## Without git
 
