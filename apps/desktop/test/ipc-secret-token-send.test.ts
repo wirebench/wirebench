@@ -636,6 +636,10 @@ describe('a gRPC call with tokens', () => {
     expect(summary.responseMessages[0]!.json).toContain('"message": "Hello, <redacted>"');
     expect(JSON.stringify(summary)).not.toContain(value);
     expect(decodedHttp(summary)).not.toContain(value);
+    // A decoded message's raw bytes are masked too: nothing crossing IPC carries the value.
+    for (const message of [...live, ...summary.responseMessages]) {
+      expect(decoded(message.base64)).not.toContain(value);
+    }
     // The message's size is the one the server sent, as a WebSocket frame's is.
     expect(summary.responseMessages[0]!.bytes).toBe(live[0]!.bytes);
     expect(JSON.stringify(written)).not.toContain(value);

@@ -380,7 +380,7 @@ export function toGrpcResponseMessageWire(
   return {
     ...(json !== undefined ? { json } : {}),
     // Masking can change the length: `bytes` stays the size the server sent, these are for display.
-    base64: json === undefined ? redactSecretBytes(message.base64, { show }) : message.base64,
+    base64: redactSecretBytes(message.base64, { show }),
     bytes: message.bytes,
     ...(message.problem !== undefined ? { problem: message.problem } : {}),
   };
