@@ -25,7 +25,14 @@ import { EngineService } from '../src/main/engine-service.js';
 import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
 import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { recordSecretValue, redactHeaders, redactRawHttp, redactUrl, redactXml } from '../src/main/redact.js';
+import {
+  recordSecretValue,
+  redactHeaders,
+  redactRawHttp,
+  redactSecretBytes,
+  redactUrl,
+  redactXml,
+} from '../src/main/redact.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
 import { projectSecretGetter, resolveWithStoredValues, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
@@ -138,6 +145,28 @@ describe('projectSecretGetter', () => {
     });
     expect(JSON.stringify(history)).not.toContain('fake-recorded-not-real');
     expect(history.request.envelopeXml).toBe('{"key":"<redacted>"}');
+  });
+
+  it('masks recorded values in raw bytes whether or not they are UTF-8', () => {
+    recordSecretValue('fake-bytes-not-real-001');
+    const raw = Buffer.concat([
+      Buffer.from([0x0a, 0x97, 0xff]),
+      Buffer.from('fake-bytes-not-real-001', 'utf8'),
+      Buffer.from([0x80]),
+    ]);
+
+    const masked = Buffer.from(redactSecretBytes(raw.toString('base64')), 'base64');
+    expect(masked).toEqual(
+      Buffer.concat([Buffer.from([0x0a, 0x97, 0xff]), Buffer.from('<redacted>'), Buffer.from([0x80])]),
+    );
+    expect(redactSecretBytes(raw.toString('base64'), { show: true })).toBe(raw.toString('base64'));
+    const other = Buffer.from([0x00, 0xff, 0x10]).toString('base64');
+    expect(redactSecretBytes(other)).toBe(other);
+    expect(redactSecretBytes('')).toBe('');
+
+    // UTF-8 text is bytes too: the characters around the value come back as they were.
+    const text = Buffer.from('{"k":"fake-bytes-not-real-001","é":"ü"}', 'utf8').toString('base64');
+    expect(Buffer.from(redactSecretBytes(text), 'base64').toString('utf8')).toBe('{"k":"<redacted>","é":"ü"}');
   });
 
   it('does not record an auth value, which its header, password and body-key rules already mask', async () => {

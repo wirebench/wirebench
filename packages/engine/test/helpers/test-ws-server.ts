@@ -95,7 +95,8 @@ function closePayload(code: number, reason: string): Buffer {
  * Starts a WebSocket test server on an ephemeral port. Paths: `/echo` echoes every text and binary
  * frame; `/refuse` answers `401` with `www-authenticate: Basic realm="ws"` and body `no`; `/ping`
  * sends a ping with payload `hi` right after the upgrade, then behaves as echo; `/close` answers the
- * first message by closing with `4000` `bye`; `/drop` destroys the socket on the first message;
+ * first message by closing with `4000` `bye`; `/close-echo` answers it by closing with `4000` and
+ * the message's own payload as the reason; `/drop` destroys the socket on the first message;
  * `/hang` never answers the upgrade.
  *
  * @param options TLS material for `wss://` and the subprotocols the server accepts
@@ -159,6 +160,8 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
           socket.write(encodeFrame(OP.pong, frame.payload));
         } else if (frame.opcode === OP.text || frame.opcode === OP.binary) {
           if (path === '/close') socket.write(encodeFrame(OP.close, closePayload(4000, 'bye')));
+          else if (path === '/close-echo')
+            socket.write(encodeFrame(OP.close, closePayload(4000, frame.payload.toString())));
           else if (path === '/drop') socket.destroy();
           else socket.write(encodeFrame(frame.opcode, frame.payload));
         }

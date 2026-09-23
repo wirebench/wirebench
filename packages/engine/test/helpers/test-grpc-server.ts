@@ -146,8 +146,11 @@ export async function startTestGrpcServer(options: TestGrpcServerOptions = {}): 
   // Node sends trailers only from a `wantTrailers` handler on a stream that responded with
   // `waitForTrailers`, so the status is parked here until the stream asks for it.
   const pendingTrailers = new WeakMap<ServerHttp2Stream, Record<string, string>>();
-  /** The response headers, sent once per stream however many messages follow. */
-  const responder = (stream: ServerHttp2Stream): (() => void) => {
+  /**
+   * The response headers, sent once per stream however many messages follow. `echo`, the request's
+   * `x-echo` metadata, comes back as initial metadata of the same name.
+   */
+  const responder = (stream: ServerHttp2Stream, echo?: string): (() => void) => {
     let responded = false;
     return () => {
       if (responded) return;
@@ -157,6 +160,7 @@ export async function startTestGrpcServer(options: TestGrpcServerOptions = {}): 
           ':status': 200,
           'content-type': 'application/grpc+proto',
           'x-served-by': 'test-grpc-server',
+          ...(echo !== undefined ? { 'x-echo': echo } : {}),
           ...(compress ? { 'grpc-encoding': 'gzip' } : {}),
         },
         { waitForTrailers: true },
@@ -282,7 +286,7 @@ export async function startTestGrpcServer(options: TestGrpcServerOptions = {}): 
     // except Chat, which answers as messages arrive.
     const parser = new GrpcFrameParser();
     const messages: unknown[] = [];
-    const respondHeaders = responder(stream);
+    const respondHeaders = responder(stream, flat['x-echo']);
     const xMetadata = Object.fromEntries(
       Object.entries(flat).filter(([name]) => name.startsWith('x-') && name !== 'x-served-by'),
     );
