@@ -13,8 +13,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
 import { entry } from '@wirebench/engine';
 import type { RestSendInput } from '@wirebench/engine';
+import type { LogEntryWire } from '../src/shared/wire-types.js';
 import { EngineService } from '../src/main/engine-service.js';
+import { harOf } from '../src/main/har.js';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
+import { curlForLogEntry } from '../src/main/log-curl.js';
 import { redactUrl } from '../src/main/redact.js';
 
 let server: TestRestServer;
@@ -118,6 +121,37 @@ describe('EngineService.sendRestRequest', () => {
     // `exchanges.get` re-renders from the cache: masked with show-secrets off, as sent with it on.
     expect(engine.exchanges.getRestView('s4r', false)?.http.redirects[0]!.url).not.toMatch(key);
     expect(engine.exchanges.getRestView('s4r', true)?.http.redirects[0]!.url).toMatch(key);
+  });
+
+  it('masks a header API key under a custom name, on the send, a re-render, a HAR and a row cURL', async () => {
+    const engine = service({ sec_key: 'good-key' });
+    const auth = { type: 'api-key', name: 'Ocp-Apim-Subscription-Key', in: 'header', valueRef: 'sec_key' } as const;
+    const raw = (base64: string): string => Buffer.from(base64, 'base64').toString('latin1');
+
+    const summary = await engine.sendRestRequest(
+      { sendId: 's4h', requestId: 'r1', input: input() },
+      { auth, keyHeaders: ['Ocp-Apim-Subscription-Key'] },
+    );
+
+    // The server got the key; the report masks it by the header's own name.
+    expect(summary.text).toContain('good-key');
+    const sent = Object.entries(summary.http.request.headers).find(
+      ([name]) => name.toLowerCase() === 'ocp-apim-subscription-key',
+    );
+    expect(sent?.[1]).toBe('<redacted>');
+    expect(raw(summary.http.rawRequestBase64)).toMatch(/ocp-apim-subscription-key: <redacted>/i);
+    expect(JSON.stringify(summary.http) + raw(summary.http.rawRequestBase64)).not.toContain('good-key');
+    expect(summary.http.keyNames).toEqual({ params: [], headers: ['Ocp-Apim-Subscription-Key'] });
+    // `exchanges.get` re-renders with the same names.
+    const hidden = engine.exchanges.getRestView('s4h', false)!;
+    expect(raw(hidden.http.rawRequestBase64)).not.toContain('good-key');
+    const shown = engine.exchanges.getRestView('s4h', true)!;
+    expect(raw(shown.http.rawRequestBase64)).toContain('good-key');
+    // A row held unmasked is masked again by its names on the way out.
+    const row = { kind: 'exchange', protocol: 'rest', exchange: shown } as unknown as LogEntryWire;
+    const har = harOf([row], { name: 'Wirebench', version: '0' });
+    expect(JSON.stringify(har.log.entries[0]!.request)).not.toContain('good-key');
+    expect(curlForLogEntry(row, { shell: 'posix', show: false }).command).not.toContain('good-key');
   });
 
   it('fails loudly when a reference has no secret behind it', async () => {

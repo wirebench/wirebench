@@ -30,6 +30,8 @@ export interface FailedExchangeInput {
   readonly error: unknown;
   /** Query parameters an API key travels in, masked in the URL whatever they are called. */
   readonly keyParams?: readonly string[] | undefined;
+  /** Headers an API key travels in, masked in the headers and the raw request whatever they are called. */
+  readonly keyHeaders?: readonly string[] | undefined;
   /**
    * The request the transport was about to put on the wire (`failedRequestOf(error)`), when the
    * failure came after it was built. It overrides `url`, `method` and `headers`, and is the only
@@ -62,7 +64,7 @@ export function prepareFailureCode(error: unknown): string {
  * is written from the already-redacted URL, since `redactRawHttp` does not look at it. A truncated
  * body is left out: masking a cut-off XML body could miss a password whose closing tag was cut.
  */
-function rawRequestOf(captured: FailedRequest, redactedUrl: string): string {
+function rawRequestOf(captured: FailedRequest, redactedUrl: string, keyHeaders: readonly string[]): string {
   let target: string;
   try {
     const parsed = new URL(redactedUrl);
@@ -79,7 +81,11 @@ function rawRequestOf(captured: FailedRequest, redactedUrl: string): string {
     captured.bodyBase64 !== undefined && !captured.bodyTruncated
       ? Buffer.from(captured.bodyBase64, 'base64')
       : Buffer.alloc(0);
-  return redactRawHttp(Buffer.concat([head, body]).toString('base64'), { show: false, encoding: 'base64' });
+  return redactRawHttp(Buffer.concat([head, body]).toString('base64'), {
+    show: false,
+    extraHeaders: keyHeaders,
+    encoding: 'base64',
+  });
 }
 
 /** Engine codes for a URL refused before the request was built. */
@@ -96,6 +102,7 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
       ? 'prepare'
       : undefined);
   const url = redactUrl(captured?.url ?? input.url, { show: false, extraParams: input.keyParams ?? [] });
+  const keyHeaders = input.keyHeaders ?? [];
   return {
     sendId: input.sendId,
     protocol: input.protocol,
@@ -103,9 +110,9 @@ export function failedExchangeOf(input: FailedExchangeInput): FailedExchangeWire
     request: {
       url,
       method: captured?.method ?? input.method,
-      headers: redactHeaders(captured?.headers ?? input.headers, { show: false }),
+      headers: redactHeaders(captured?.headers ?? input.headers, { show: false, extraHeaders: keyHeaders }),
     },
-    ...(captured !== undefined ? { rawRequestBase64: rawRequestOf(captured, url) } : {}),
+    ...(captured !== undefined ? { rawRequestBase64: rawRequestOf(captured, url, keyHeaders) } : {}),
     startedAt: new Date(input.startedAt).toISOString(),
     durationMs: input.durationMs,
     error:

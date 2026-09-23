@@ -69,6 +69,12 @@ show-secrets is off (`SECRET_BODY_KEYS` in `apps/desktop/src/main/redact.ts`). A
 object or array under such a key is masked whole; a body that is not valid JSON, or is compressed,
 is left as it is.
 
+An API key may be configured under any header or query-parameter name, not only the ones above. A
+REST or SOAP send whose auth is an API key masks it by the name it was configured under: in the
+URL, the request headers and the raw request of the summary and its failure row, and on a later
+re-render. The summary carries those names (`http.keyNames`, never the value), so a row shown with
+show-secrets on is masked by them again when it is exported as HAR or copied as cURL.
+
 Copying an HTTP Log row as cURL builds the command in main from the row the renderer holds. For a
 finished exchange it follows the show-secrets toggle; for a failure row it is always masked, since
 that row was redacted when it was recorded and has no unredacted copy. Resending a row never sends

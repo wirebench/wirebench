@@ -132,6 +132,18 @@ describe('failedExchangeOf', () => {
       expect(raw).not.toContain('Envelope');
     });
 
+    it('masks a header API key under the name it is told about, in the headers and the raw request', () => {
+      const keyed = { ...captured, headers: { ...captured.headers, 'X-Gravitee-Api-Key': 'gk-secret' } };
+      const failure = failedExchangeOf(input({ captured: keyed, keyHeaders: ['x-gravitee-api-key'] }));
+      const raw = Buffer.from(failure.rawRequestBase64 ?? '', 'base64').toString('utf8');
+
+      expect(failure.request.headers['X-Gravitee-Api-Key']).toBe('<redacted>');
+      expect(raw).toContain('X-Gravitee-Api-Key: <redacted>');
+      expect(JSON.stringify(failure) + raw).not.toContain('gk-secret');
+      // Without the name it is an ordinary header, as it always was.
+      expect(failedExchangeOf(input({ captured: keyed })).request.headers['X-Gravitee-Api-Key']).toBe('gk-secret');
+    });
+
     it('carries no raw request without a captured one', () => {
       expect(failedExchangeOf(input())).not.toHaveProperty('rawRequestBase64');
     });

@@ -116,6 +116,8 @@ export async function sendAndRecordHistory(
   // The one query parameter an API key may travel in, so the URL is masked wherever it is shown
   // or stored even when the key is called something the redactor has never heard of.
   const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : undefined;
+  // And the header one may travel in, masked by name for the same reason.
+  const keyHeaders = auth?.type === 'api-key' && auth.in === 'header' ? [auth.name] : undefined;
   const attachments = requestId !== undefined ? deps.project.sendAttachmentsFor?.(requestId) : undefined;
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let wss: Awaited<ReturnType<NonNullable<HistorySendProject['wssFor']>>> | undefined;
@@ -169,6 +171,7 @@ export async function sendAndRecordHistory(
         error,
         stage: 'prepare',
         keyParams,
+        keyHeaders,
       }),
     );
     throw error;
@@ -181,6 +184,7 @@ export async function sendAndRecordHistory(
       ...(auth !== undefined ? { auth } : {}),
       ...(accessToken !== undefined ? { accessToken } : {}),
       ...(keyParams !== undefined ? { keyParams } : {}),
+      ...(keyHeaders !== undefined ? { keyHeaders } : {}),
       ...(attachments !== undefined ? { attachments } : {}),
       ...(wss !== undefined ? { wss } : {}),
       ...(proxy !== undefined ? { proxy } : {}),
@@ -206,6 +210,7 @@ export async function sendAndRecordHistory(
         error,
         captured: failedRequestOf(error),
         keyParams,
+        keyHeaders,
       }),
     );
     throw error;

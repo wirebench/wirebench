@@ -43,6 +43,25 @@ export function isWsExchange(entry: LogEntryWire): boolean {
   return entry.kind === 'exchange' && 'protocol' in entry.exchange && entry.exchange.protocol === 'websocket';
 }
 
+/** The query parameter and header names an API key travelled under, as {@link keyNamesOf} returns them. */
+export interface LoggedKeyNames {
+  readonly params: readonly string[];
+  readonly headers: readonly string[];
+}
+
+/**
+ * The names a row's API key travelled under (`http.keyNames`), so a row the renderer holds unmasked
+ * (shown with secrets on) is masked again here by the same names as the send. A failure row was
+ * masked for good when it was emitted, and a WebSocket row carries none, so both have no names.
+ */
+export function keyNamesOf(entry: LogEntryWire): LoggedKeyNames {
+  if (entry.kind !== 'exchange' || isWsExchange(entry)) {
+    return { params: [], headers: [] };
+  }
+  const http = (entry.exchange as Exclude<typeof entry.exchange, WsHandshakeExchangeSummary>).http;
+  return http.keyNames ?? { params: [], headers: [] };
+}
+
 /** The request a row records: from its raw request when it has one (body included), else its summary. */
 export function loggedRequestOf(entry: LogEntryWire): LoggedRequest {
   if (isWsExchange(entry)) {
@@ -131,8 +150,11 @@ export function curlForLogEntry(
     return { command };
   }
   const logged = loggedRequestOf(entry);
+  const keyNames = keyNamesOf(entry);
   const isGrpc = entry.kind === 'exchange' ? 'statusName' in entry.exchange : entry.failure.protocol === 'grpc';
-  const headers = show ? logged.headers : redactHeaders(logged.headers, { show: false });
+  const headers = show
+    ? logged.headers
+    : redactHeaders(logged.headers, { show: false, extraHeaders: keyNames.headers });
   const contentType = contentTypeOf(logged.headers);
   const body =
     logged.body === undefined || isGrpc
@@ -147,7 +169,7 @@ export function curlForLogEntry(
   const command = toCurl(
     {
       method: logged.method,
-      url: show ? logged.url : redactUrl(logged.url, { show: false }),
+      url: show ? logged.url : redactUrl(logged.url, { show: false, extraParams: keyNames.params }),
       headers: curlHeaders,
       ...(body !== undefined ? { body: { kind: 'raw' as const, text: body } } : {}),
       ...(acceptsEventStream ? { noBuffer: true } : {}),
