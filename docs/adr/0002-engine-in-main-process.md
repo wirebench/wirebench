@@ -31,7 +31,8 @@ imports `/rest` for shared URL escaping and query-param helpers; and the unified
 imports `/detect` for zero-latency client-side format classification (WSDL vs. OpenAPI/Swagger vs.
 Postman) as the user types, pastes, or drops files. All three subpaths are pure text algorithms with
 no Node, Electron, or file-system dependencies, ensuring the renderer sandbox is never compromised.
-ESLint strictly enforces this boundary (`no-restricted-imports` in `eslint.config.js`, keyed to this ADR).
+The Snapshot tab likewise imports `@wirebench/engine/snapshot`,
+the semantic JSON/XML diff it reruns on every response; it depends only on `/xml`. ESLint strictly enforces this boundary (`no-restricted-imports` in `eslint.config.js`, keyed to this ADR).
 
 The interface is the point: every entry point is `async` and takes an `AbortSignal`, and no
 caller depends on the engine being in-process. Moving it into a `utilityProcess` later is an
