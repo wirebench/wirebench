@@ -10,12 +10,19 @@ import { detectInText } from './rules.js';
 import { scanTargets } from './walk.js';
 import type { SecretFinding, SecretLocation } from './walk.js';
 
+/**
+ * The id of the `occurrence`-th (from 0) match of `value` in the text at `location`. Counting equal
+ * values rather than taking the offset keeps an id when text before it is edited. The value goes
+ * last, after two NUL-ended fields (a location's JSON holds no raw NUL), so no value can be read as
+ * another value's occurrence.
+ */
 function findingId(location: SecretLocation, value: string, occurrence: number): string {
   return createHash('sha256')
     .update(JSON.stringify(location))
     .update('\0')
+    .update(String(occurrence))
+    .update('\0')
     .update(value)
-    .update(occurrence === 0 ? '' : `\0${occurrence}`)
     .digest('hex')
     .slice(0, 16);
 }

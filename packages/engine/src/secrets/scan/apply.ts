@@ -131,10 +131,11 @@ function restBody(rw: Rewriter, requestId: string, body: RestBody): RestBody {
   if (body.kind === 'raw') {
     return patch(body, { text: rw.text({ kind: 'rest-body', requestId }, body.text) });
   }
+  // Built in the key order `walk.ts` uses: the location's JSON is the rewriter's key.
   const field = <E extends KeyValueEntry | { readonly kind: 'file' }>(entry: E, index: number): E =>
     'value' in entry
       ? (patch<KeyValueEntry>(entry, {
-          value: rw.text({ kind: 'rest-body', requestId, field: index }, entry.value),
+          value: rw.text({ kind: 'rest-body', requestId, field: index, name: entry.name }, entry.value),
         }) as E)
       : entry;
   if (body.kind === 'form') return patch(body, { fields: mapShared(body.fields, field) });
@@ -154,7 +155,7 @@ function restRequest(rw: Rewriter, request: RestRequestDef): RestRequestDef {
 
 /**
  * Replace each move's finding range with `${secret:name}`. Moves in the same text apply right to
- * left, so earlier ranges stay valid; a REST URL and its query table are separate texts. A move
+ * left, so earlier ranges stay valid; a REST or WS URL and its query table are separate texts. A move
  * whose text no longer holds `finding.value` at `[valueStart, valueEnd)` is skipped and listed in
  * `stale`. See {@link SecretMovesResult.values} for the value main stores.
  */
@@ -201,6 +202,8 @@ export function applySecretMoves(project: Project, moves: readonly SecretMove[])
         patch(api, { headers: keyedEntries(rw, 'ws-api-header', { apiId: api.id }, api.headers) }),
         (request: (typeof api.requests)[number]) =>
           patch(request, {
+            url: rw.text({ kind: 'ws-url', requestId: request.id }, request.url),
+            query: keyedEntries(rw, 'ws-query', { requestId: request.id }, request.query),
             headers: keyedEntries(rw, 'ws-header', { requestId: request.id }, request.headers),
             messages: mapShared(request.messages, (message) =>
               message.format !== 'text'
@@ -225,6 +228,7 @@ const RULE_NAMES: Record<SecretFinding['rule'], string> = {
   jwt: 'jwt',
   bearer: 'bearer_token',
   basic: 'basic_auth',
+  'url-credentials': 'url_password',
   'aws-key': 'aws_access_key',
   'private-key': 'private_key',
   'vendor-token': 'api_token',
@@ -242,8 +246,6 @@ function sanitize(raw: string): string {
   return /^[0-9]/.test(name) ? `_${name}` : name;
 }
 
-const BODY_FIELD = 'body field ';
-
 /**
  * The name offered for `finding`: its header, query, metadata, field or property name, sanitised
  * to `snake_case` (else a name from its rule), made unique against `taken` ignoring case with a
@@ -251,13 +253,7 @@ const BODY_FIELD = 'body field ';
  */
 export function proposeSecretName(finding: SecretFinding, taken: ReadonlySet<string>): string {
   const { location } = finding;
-  let source = 'name' in location ? location.name : '';
-  if (source === '' && location.kind === 'rest-body' && location.field !== undefined) {
-    // The field name ends the label (`… › body field <name>`); sliced rather than matched, so a
-    // label the project's own names make long cannot make this slow.
-    const at = finding.label.indexOf(BODY_FIELD);
-    source = at === -1 ? '' : finding.label.slice(at + BODY_FIELD.length);
-  }
+  const source = 'name' in location ? (location.name ?? '') : '';
   const base = sanitize(source) || RULE_NAMES[finding.rule];
   const lower = new Set([...taken].map((t) => t.toLowerCase()));
   if (!lower.has(base)) return base;

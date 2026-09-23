@@ -16,14 +16,16 @@ import type { DetectContext, SecretRule } from './rules.js';
  * text: the entry's value for the keyed kinds and the properties, the text itself for the others.
  *
  * Beyond the spec's fields, `index` pins a keyed entry by its position in its list (names may
- * repeat), `field` names the form field or multipart text part a `rest-body` finding sits in
- * (absent for a raw body), and `messageId` names the saved message of a `ws-message` finding.
+ * repeat), `field` is the position of the form field or multipart text part a `rest-body` finding
+ * sits in and `name` that field's name (both absent for a raw body), and `messageId` names the
+ * saved message of a `ws-message` finding. `rest-url` and `ws-url` are the request's URL text,
+ * `rest-query` and `ws-query` its query table.
  * `grpc-api-metadata` and `ws-api-header` are the entries set on the API itself, sent by every
  * request in it.
  */
 export type SecretLocation =
   | {
-      readonly kind: 'soap-header' | 'rest-header' | 'rest-query' | 'grpc-metadata' | 'ws-header';
+      readonly kind: 'soap-header' | 'rest-header' | 'rest-query' | 'grpc-metadata' | 'ws-header' | 'ws-query';
       readonly requestId: string;
       readonly name: string;
       readonly index: number;
@@ -34,8 +36,8 @@ export type SecretLocation =
       readonly name: string;
       readonly index: number;
     }
-  | { readonly kind: 'rest-body'; readonly requestId: string; readonly field?: number }
-  | { readonly kind: 'soap-body' | 'rest-url' | 'grpc-message'; readonly requestId: string }
+  | { readonly kind: 'rest-body'; readonly requestId: string; readonly field?: number; readonly name?: string }
+  | { readonly kind: 'soap-body' | 'rest-url' | 'grpc-message' | 'ws-url'; readonly requestId: string }
   | { readonly kind: 'ws-message'; readonly requestId: string; readonly messageId: string }
   | { readonly kind: 'project-property'; readonly name: string }
   | { readonly kind: 'env-property'; readonly environmentId: string; readonly name: string };
@@ -70,6 +72,7 @@ function* keyed(
     | 'rest-query'
     | 'grpc-metadata'
     | 'ws-header'
+    | 'ws-query'
     | 'grpc-api-metadata'
     | 'ws-api-header',
   ownerId: string,
@@ -119,7 +122,7 @@ function* restBody(request: RestRequestDef, path: string): Generator<ScanTarget>
     const entry = fields[field]!;
     if (!('value' in entry) || entry.value === '') continue;
     yield {
-      location: { kind: 'rest-body', requestId: request.id, field },
+      location: { kind: 'rest-body', requestId: request.id, field, name: entry.name },
       label: `${path}${SEP}body field ${entry.name}`,
       text: entry.value,
       context: { fieldName: entry.name, nameKind: 'field' },
@@ -127,16 +130,19 @@ function* restBody(request: RestRequestDef, path: string): Generator<ScanTarget>
   }
 }
 
+/** A request's URL, scanned for its query parameters as form pairs and for any shape. */
+function url(kind: 'rest-url' | 'ws-url', requestId: string, path: string, text: string): ScanTarget {
+  return {
+    location: { kind, requestId },
+    label: `${path}${SEP}URL`,
+    text,
+    context: { contentType: 'application/x-www-form-urlencoded', nameKind: 'query' },
+  };
+}
+
 function* restRequest(request: RestRequestDef, prefix: string): Generator<ScanTarget> {
   const path = `${prefix}${SEP}${request.name}`;
-  if (request.url !== '') {
-    yield {
-      location: { kind: 'rest-url', requestId: request.id },
-      label: `${path}${SEP}URL`,
-      text: request.url,
-      context: { contentType: 'application/x-www-form-urlencoded', nameKind: 'query' },
-    };
-  }
+  if (request.url !== '') yield url('rest-url', request.id, path, request.url);
   yield* keyed('rest-query', request.id, path, 'query', 'query', request.query);
   yield* keyed('rest-header', request.id, path, 'header', 'header', request.headers);
   yield* restBody(request, path);
@@ -157,6 +163,8 @@ function* grpcRequest(request: GrpcRequestDef, prefix: string): Generator<ScanTa
 
 function* wsRequest(request: WsRequestDef, prefix: string): Generator<ScanTarget> {
   const path = `${prefix}${SEP}${request.name}`;
+  if (request.url !== '') yield url('ws-url', request.id, path, request.url);
+  yield* keyed('ws-query', request.id, path, 'query', 'query', request.query);
   yield* keyed('ws-header', request.id, path, 'header', 'header', request.headers);
   for (const message of request.messages) {
     if (message.format !== 'text' || message.content === '') continue;

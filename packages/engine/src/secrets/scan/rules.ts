@@ -5,12 +5,25 @@
  * `${secret:name}` token leaves the rest of the text as it was. A match that touches a `${…}`
  * expansion is dropped: that value is already a reference, not a secret.
  *
+ * `url-credentials` (the password of a `scheme://user:password@host` URL) is a shape rule, like
+ * `basic`: the credential is recognisable by where it sits in the text, not by a name it is stored
+ * under, so it applies to every scanned text — a URL, a property holding a connection string, a
+ * body.
+ *
  * Pure module: no I/O.
  */
 import { isSensitiveHeaderName, isSensitiveQueryParam, SECRET_BODY_KEYS } from '../../redact/index.js';
 
 export type SecretRule =
-  'sensitive-name' | 'jwt' | 'bearer' | 'basic' | 'aws-key' | 'private-key' | 'vendor-token' | 'high-entropy';
+  | 'sensitive-name'
+  | 'jwt'
+  | 'bearer'
+  | 'basic'
+  | 'url-credentials'
+  | 'aws-key'
+  | 'private-key'
+  | 'vendor-token'
+  | 'high-entropy';
 
 /** One detected credential: its rule and its `[start, end)` range in the scanned text. */
 export interface SecretMatch {
@@ -50,6 +63,7 @@ const RULE_PRIORITY: readonly SecretRule[] = [
   'aws-key',
   'bearer',
   'basic',
+  'url-credentials',
   'sensitive-name',
   'high-entropy',
 ];
@@ -61,11 +75,25 @@ const VENDOR_RE =
 const AWS_RE = /(?<![A-Za-z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])/g;
 const BEARER_RE = /\bBearer[ \t]+([A-Za-z0-9._~+/-]+=*)/g;
 const BASIC_RE = /\bBasic[ \t]+([A-Za-z0-9+/]{8,}={0,2})(?![A-Za-z0-9+/=])/g;
+/**
+ * `scheme://user:password@`: group 1 is the password, which may be empty-user (`redis://:pw@`).
+ * Neither part crosses a delimiter, whitespace or a quote, so `host:8080/a@b` is a port, not a pair.
+ */
+const URL_CREDENTIALS_RE = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/?#@:"'<>]*:([^\s/?#@"'<>]+)(?=@)/g;
 /** A scheme prefix on a sensitive header's value, left in place when the credential is replaced. */
 const SCHEME_PREFIX_RE = /^(?:Bearer|Basic|Token|Digest|Negotiate|NTLM)[ \t]+/i;
 
-const JSON_PAIR_RE = /"((?:[^"\\\n]|\\.){1,128})"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+/**
+ * A key and its string value (group 2) or number value (group 3); `true`, `false`, `null` and the
+ * other kinds are not matched. The lookahead refuses a number that runs on (`12ab`).
+ */
+const JSON_PAIR_RE =
+  /"((?:[^"\\\n]|\\.){1,128})"\s*:\s*(?:"((?:[^"\\]|\\.)*)"|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?![\w.+-]))/g;
 const XML_ELEMENT_RE = /<((?:[\w.-]+:)?([\w.-]+))((?:\s[^<>]*)?)>([^<]*)<\/\1>/g;
+/** An element's start tag, matched where it starts (sticky). */
+const XML_START_TAG_RE = /<((?:[\w.-]+:)?([\w.-]+))((?:\s[^<>]*)?)>/y;
+const CDATA_OPEN = '<![CDATA[';
+const CDATA_CLOSE = ']]>';
 const FORM_PAIR_RE = /(?:^|[&?])([^=&?#]+)=([^&#]*)/g;
 
 /** Shannon entropy of `text`, in bits per character. */
@@ -164,6 +192,7 @@ function shapeMatches(text: string): SecretMatch[] {
   if (text.includes('AKIA') || text.includes('ASIA')) pushAll(out, AWS_RE, text, 'aws-key');
   if (text.includes('Bearer')) pushAll(out, BEARER_RE, text, 'bearer', 1);
   if (text.includes('Basic')) pushAll(out, BASIC_RE, text, 'basic', 1);
+  if (text.includes('://')) pushAll(out, URL_CREDENTIALS_RE, text, 'url-credentials', 1);
   return out;
 }
 
@@ -199,6 +228,41 @@ function nameMatch(
   return undefined;
 }
 
+function isWhitespaceCode(code: number): boolean {
+  return code === 32 || code === 9 || code === 10 || code === 13;
+}
+
+/**
+ * Name matches for elements whose whole content is one CDATA section, whitespace around it
+ * allowed (`<Password><![CDATA[x]]></Password>`); the range is inside the section, so a Move keeps
+ * the wrapper. Each section is found with `indexOf`, and the start tag before it by walking back
+ * over whitespace to one `<…>`, so unclosed sections cannot make this quadratic.
+ */
+function cdataMatches(text: string, add: (m: SecretMatch | undefined) => void): void {
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf(CDATA_OPEN, from);
+    if (open < 0) return;
+    const valueStart = open + CDATA_OPEN.length;
+    const close = text.indexOf(CDATA_CLOSE, valueStart);
+    if (close < 0) return;
+    from = close + CDATA_CLOSE.length;
+    let gt = open - 1;
+    while (gt >= 0 && isWhitespaceCode(text.charCodeAt(gt))) gt--;
+    if (gt < 0 || text[gt] !== '>') continue;
+    const lt = text.lastIndexOf('<', gt);
+    if (lt < 0) continue;
+    XML_START_TAG_RE.lastIndex = lt;
+    const tag = XML_START_TAG_RE.exec(text);
+    if (tag === null || lt + tag[0].length !== gt + 1) continue;
+    if (/PasswordDigest/.test(tag[3]!)) continue;
+    let after = from;
+    while (after < text.length && isWhitespaceCode(text.charCodeAt(after))) after++;
+    if (!text.startsWith(`</${tag[1]!}>`, after)) continue;
+    add(nameMatch(text.slice(valueStart, close), valueStart, tag[2]!, 'field'));
+  }
+}
+
 function isFormType(contentType: string | undefined): boolean {
   return (contentType ?? '').split(';')[0]!.trim().toLowerCase() === 'application/x-www-form-urlencoded';
 }
@@ -215,8 +279,16 @@ function structuredMatches(
   if (text.includes('":')) {
     JSON_PAIR_RE.lastIndex = 0;
     for (let m = JSON_PAIR_RE.exec(text); m !== null; m = JSON_PAIR_RE.exec(text)) {
-      const value = m[2]!;
-      add(nameMatch(value, m.index + m[0].length - 1 - value.length, m[1]!, 'field'));
+      const value = m[2];
+      if (value !== undefined) {
+        add(nameMatch(value, m.index + m[0].length - 1 - value.length, m[1]!, 'field'));
+      } else if (isSensitiveName(m[1]!, 'field')) {
+        // A number under a sensitive key is a credential too (`"password": 123456`); its range is
+        // the digits alone, so a Move leaves a bare token that expands back to the same number.
+        // Digits alone never reach the high-entropy threshold, so only the name is checked.
+        const number = m[3]!;
+        add({ rule: 'sensitive-name', start: m.index + m[0].length - number.length, end: m.index + m[0].length });
+      }
     }
   }
   if (text.includes('</')) {
@@ -228,6 +300,7 @@ function structuredMatches(
       const closeLength = m[1]!.length + 3;
       add(nameMatch(value, m.index + m[0].length - closeLength - value.length, m[2]!, 'field'));
     }
+    if (text.includes(CDATA_OPEN)) cdataMatches(text, add);
   }
   if (isFormType(contentType)) {
     FORM_PAIR_RE.lastIndex = 0;
@@ -267,8 +340,9 @@ function settle(matches: SecretMatch[], text: string): SecretMatch[] {
 
 /**
  * Every credential in `text`. With `context.fieldName` the text is one stored value (a header, a
- * query parameter, a form field, a property); without it, a body, where JSON keys, form fields and
- * XML element local names in `SECRET_BODY_KEYS` count as sensitive names. Only the first
+ * query parameter, a form field, a property); without it, a body, where JSON keys (a string or a
+ * number value), form fields and XML element local names (text content, or one CDATA section) in
+ * `SECRET_BODY_KEYS` count as sensitive names. Only the first
  * {@link SECRET_TEXT_SCAN_LIMIT} characters are scanned.
  */
 export function detectInText(text: string, context: DetectContext = {}): SecretMatch[] {

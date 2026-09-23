@@ -12,6 +12,7 @@ const RULE_LABELS: Readonly<Record<SecretFindingWire['rule'], string>> = {
   jwt: 'JSON web token',
   bearer: 'Bearer token',
   basic: 'Basic credentials',
+  'url-credentials': 'Password in a URL',
   'aws-key': 'AWS access key',
   'private-key': 'Private key',
   'vendor-token': 'Access token',
