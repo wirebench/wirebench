@@ -141,6 +141,31 @@ describe('${secret:name} tokens', () => {
     expect(stdout).toMatch(/WIREBENCH_SECRET_DEMO_BASIC\s+missing\s+secret "demo_basic"\s+demo\/secure/);
   });
 
+  it('secrets list names a variable only a --var property reaches', async () => {
+    const viaVar = join(dir, '..', `${dir.split(/[\\/]/).pop()!}-var`);
+    await cp(dir, viaVar, { recursive: true });
+    try {
+      const file = join(viaVar, 'apis', 'demo', 'requests', 'secure.request.yaml');
+      await writeFile(file, (await readFile(file, 'utf8')).replace('${secret:demo_basic}', '${credential}'));
+      const without = await runCli(['secrets', 'list', viaVar, '-e', 'local', 'demo/secure']);
+      expect(without.stdout).not.toContain('WIREBENCH_SECRET_VIA_VAR');
+      const { code, stdout } = await runCli([
+        'secrets',
+        'list',
+        viaVar,
+        '-e',
+        'local',
+        '--var',
+        'credential=${secret:via_var}',
+        'demo/secure',
+      ]);
+      expect(code).toBe(3);
+      expect(stdout).toMatch(/WIREBENCH_SECRET_VIA_VAR\s+missing\s+secret "via_var"\s+demo\/secure/);
+    } finally {
+      await rm(viaVar, { recursive: true, force: true });
+    }
+  });
+
   it('secrets list does not count a variable the run never reads as set', async () => {
     // WIREBENCH_SECRET_SECRET_DEMO_BASIC is what the pseudo-ref would map to by the ref rule.
     const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'local', 'demo/secure'], {

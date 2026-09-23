@@ -8,7 +8,7 @@ import { resolveScopes } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
 import { secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes } from '../project/properties.js';
-import type { Project } from '../project/model.js';
+import type { Project, PropertyMap } from '../project/model.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
@@ -163,16 +163,25 @@ function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonl
 
 /**
  * The secrets `selected` needs, one entry per ref in first-use order, each with every request
- * that uses it. The first declaration of a ref supplies its name and purpose.
+ * that uses it. The first declaration of a ref supplies its name and purpose. `overrides` are the
+ * run's `--var` properties, laid over the environment's as a send lays them.
  */
-export function secretNeedsOf(selected: readonly SelectedRequest[], project: Project): LocatedSecretNeed[] {
+export function secretNeedsOf(
+  selected: readonly SelectedRequest[],
+  project: Project,
+  overrides: PropertyMap = {},
+): LocatedSecretNeed[] {
   const byRef = new Map<string, { need: SecretNeed; usedBy: string[] }>();
   // A token a property holds counts whichever environment a run picks: project properties alone,
   // then each environment laid over them. No process environment, so this stays pure.
+  const withOverrides = (scopes: PropertyScopes): PropertyScopes => ({
+    ...scopes,
+    env: { ...(scopes.env ?? {}), ...overrides },
+  });
   const scopeSets = [
     resolveScopes(project, undefined, {}, {}),
     ...project.environments.map((environment) => resolveScopes(project, environment.id, {}, {})),
-  ];
+  ].map(withOverrides);
   for (const item of selected) {
     for (const need of needsOf(item, project, scopeSets)) {
       const known = byRef.get(need.ref);

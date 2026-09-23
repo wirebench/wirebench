@@ -45,10 +45,10 @@ wirebench run <path> [selector…] [options]
     --no-color
 -q, --quiet | -v, --verbose
 
-wirebench secrets list <path> [selector…] [-e <name>]
+wirebench secrets list <path> [selector…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
-                       prints a value.
+                       prints a value. --var as for run, so a token only a --var holds is listed.
 
 wirebench --version | --help
 ```
@@ -160,7 +160,8 @@ missing.
 without sending anything, so it cannot know which ones a particular run will actually ask for. A
 WS-Security incoming configuration's decryption-key password, for example, is only needed when a
 response arrives encrypted. So `secrets list` can exit 3 for a selection that `run` passes; treat
-its list as what a run *may* need.
+its list as what a run *may* need. Pass it the same `--var` flags as the run: a `${secret:name}`
+token that only a `--var` property holds is listed only then.
 
 ### OAuth2 client credentials
 
