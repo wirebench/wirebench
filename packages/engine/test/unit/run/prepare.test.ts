@@ -490,8 +490,7 @@ describe('prepareSend — ${secret:name} tokens', () => {
     const project = makeProject({ restUrl: '${baseUrl}/x?key=${secret:nope}' });
     await expect(prepareSend(restOf(project), contextFor(project, { getSecret: tokenSecrets }))).rejects.toMatchObject({
       code: 'secret-missing',
-      message:
-        'The secret "nope" is not on this machine — put its value where the token is and choose Move to secret when you save.',
+      message: 'The secret "nope" is not on this machine — set it with Set Secret Token Value… (Secrets).',
       details: { ref: 'secret:nope' },
     });
   });

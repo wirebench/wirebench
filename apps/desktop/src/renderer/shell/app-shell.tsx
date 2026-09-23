@@ -34,6 +34,7 @@ import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog
 import { ShareDialog } from '../features/workspace/share-dialog.js';
 import { JoinDialog } from '../features/workspace/join-dialog.js';
 import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
+import { SecretTokenDialog } from '../features/secrets/secret-token-dialog.js';
 import { SyncPanel } from '../features/sync/sync-panel.js';
 import { ConflictResolver } from '../features/sync/conflict-resolver.js';
 import { IdentityDialog } from '../features/sync/identity-dialog.js';
@@ -435,6 +436,7 @@ export function AppShell() {
       <ConflictResolver />
       <IdentityDialog />
       <SecretReviewDialog />
+      <SecretTokenDialog />
       <ToastViewport />
     </TooltipPrimitive.Provider>
   );

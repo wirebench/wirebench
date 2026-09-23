@@ -3,6 +3,7 @@ import { checkForUpdates } from '../lib/update-status.js';
 import { getActiveRequestPaneHandle } from '../editor/active-request-editor.js';
 import { cycleEnvironment } from '../features/environments/env-switcher.js';
 import { projectActions } from '../features/project/project-actions.js';
+import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { useProjectStore } from '../state/project.js';
 import { useWorkspaceStore } from '../state/workspace.js';
@@ -122,6 +123,17 @@ export function registerProjectCommands(): void {
     ...catalogEntry('secrets.toggleShowSecrets'),
     run: () => {
       void useSecretsVisibilityStore.getState().toggle();
+    },
+  });
+
+  // The one place a `${secret:name}` token's value is typed in directly (a save's review is the
+  // other way in). No shortcut: it opens a dialog, and the palette finds it by name.
+  registerCommand({
+    ...catalogEntry('secrets.setTokenValue'),
+    when: () => Object.keys(useProjectStore.getState().projects).length > 0,
+    whenScope: 'project',
+    run: () => {
+      openSecretTokenDialog();
     },
   });
 }

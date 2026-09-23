@@ -154,6 +154,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Command | macOS | Windows and Linux |
 | --- | --- | --- |
 | Toggle Show Secrets in HTTP Log | — | — |
+| Set Secret Token Value… | — | — |
 
 ## Editor
 

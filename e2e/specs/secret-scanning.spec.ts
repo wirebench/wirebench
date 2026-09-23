@@ -2,11 +2,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
+import { runCommand } from '../helpers/palette.js';
 import { createProject, createWorkspace, workspaceProjectDir } from '../helpers/project.js';
 import { addHeader, createApi, createRestRequest, setMethodAndUrl } from '../helpers/rest.js';
 
 /** A JWT in shape only: `{"fake":1}` twice and the text `fake-signature`, base64url-encoded. */
 const FAKE_JWT = 'eyJmYWtlIjoxfQ.eyJmYWtlIjoxfQ.ZmFrZS1zaWduYXR1cmU';
+
+/** Obviously fake, and shaped like nothing the scanner looks for. */
+const FAKE_VALUE = 'fake-value-not-real-0001';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -76,5 +80,42 @@ test.describe('secret scanning on save', () => {
     const saved = projectText(dir);
     expect(saved).toContain('Bearer ${secret:authorization}');
     expect(saved).not.toContain(FAKE_JWT);
+  });
+
+  test('a send missing a token offers Set value…, and the dialog stores one without showing it', async () => {
+    launched = await launchApp();
+    const page = launched.window;
+
+    await createWorkspace(page, 'Secrets');
+    await createProject(page, 'Billing');
+    await createApi(page, 'Billing API', 'http://127.0.0.1:9');
+    await createRestRequest(page, 'Billing API', 'Invoices');
+    await setMethodAndUrl(page, 'GET', '/invoices');
+    await addHeader(page, 'X-Api-Key', '${secret:billing_key}');
+
+    // Nothing stored for the token on this machine: the send is refused, and the toast offers the fix.
+    await page.getByTestId('rest-send').click();
+    const toast = page.getByTestId('toast-viewport');
+    await expect(toast).toContainText('The secret "billing_key" is not on this machine', { timeout: 20_000 });
+    await toast.getByRole('button', { name: 'Set value…' }).click();
+
+    const dialog = page.getByTestId('secret-token-dialog');
+    await expect(dialog).toBeVisible({ timeout: 20_000 });
+    const input = dialog.getByLabel('Value for billing_key');
+    await expect(input).toBeFocused();
+    await input.fill(FAKE_VALUE);
+    await input.press('Enter');
+    await expect(dialog.getByTestId('secret-token-announce')).toHaveText('Saved');
+    const row = dialog.getByTestId('secret-token-row').filter({ hasText: 'billing_key' });
+    await expect(row).toContainText('Set');
+    await expect(row.getByRole('button', { name: 'Replace…' })).toBeVisible();
+    await expect(dialog).not.toContainText(FAKE_VALUE);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    // The palette opens the same list on the active tab's project; the value is set there now.
+    await runCommand(page, 'Set Secret Token Value');
+    await expect(dialog).toBeVisible({ timeout: 20_000 });
+    await expect(row).toContainText('Set');
   });
 });

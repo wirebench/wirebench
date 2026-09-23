@@ -376,6 +376,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Toggle Show Secrets in HTTP Log',
     category: 'Secrets',
   },
+  'secrets.setTokenValue': {
+    id: 'secrets.setTokenValue',
+    label: 'Set Secret Token Value…',
+    category: 'Secrets',
+  },
   'request.send': {
     id: 'request.send',
     label: 'Send Request',

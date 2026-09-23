@@ -6,7 +6,7 @@
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerSecretScanChannels } from '../src/main/ipc/secret-scan.js';
-import type { SecretScanSession, SecretScanSessions } from '../src/main/secret-scan-session.js';
+import type { SecretScanSession, SecretScanSessions, SecretTokenStatus } from '../src/main/secret-scan-session.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -113,6 +113,58 @@ describe('secretScan channels', () => {
 
     expect(result.ok).toBe(false);
     expect(move).not.toHaveBeenCalled();
+  });
+
+  it('routes tokens and setValue to the named project, and answers setValue without the value', async () => {
+    const tokens = vi.fn().mockResolvedValue([{ name: 'billing_token', stored: true }]);
+    const setValue = vi.fn().mockResolvedValue({ replaced: true });
+    const { projects } = register({ tokens, setValue });
+
+    expect(await invoke('secretScan.tokens', { projectId: 'p1' })).toEqual({
+      ok: true,
+      value: { tokens: [{ name: 'billing_token', stored: true }] },
+    });
+    const reply = await invoke('secretScan.setValue', {
+      projectId: 'p2',
+      name: 'billing_token',
+      value: 'fake-value-not-real-0001',
+    });
+    expect(reply).toEqual({ ok: true, value: { replaced: true } });
+    expect(JSON.stringify(reply)).not.toContain('fake-value-not-real-0001');
+    expect(setValue).toHaveBeenCalledWith('billing_token', 'fake-value-not-real-0001');
+    expect(projects).toEqual(['p1', 'p2']);
+  });
+
+  it('refuses a token list that carries a value', async () => {
+    register({
+      // A faulty session: the cast is the bug the strict response schema is there to catch.
+      tokens: () =>
+        Promise.resolve([
+          { name: 'billing_token', stored: true, value: 'fake-value-not-real-0001' },
+        ] as unknown as SecretTokenStatus[]),
+    });
+
+    const result = (await invoke('secretScan.tokens', { projectId: 'p1' })) as {
+      ok: boolean;
+      error?: { code: string };
+    };
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('ipc-invalid-response');
+    expect(JSON.stringify(result)).not.toContain('fake-value-not-real-0001');
+  });
+
+  it.each([
+    ['a name a token cannot carry', { name: 'not a name', value: 'fake-value-not-real-0001' }],
+    ['an empty value', { name: 'billing_token', value: '' }],
+  ])('rejects setValue with %s', async (_label, request) => {
+    const setValue = vi.fn();
+    register({ setValue });
+
+    const result = (await invoke('secretScan.setValue', { projectId: 'p1', ...request })) as { ok: boolean };
+
+    expect(result.ok).toBe(false);
+    expect(setValue).not.toHaveBeenCalled();
   });
 
   it('holds autosave for the named projects on behalf of the renderer that asked, and releases by id', async () => {

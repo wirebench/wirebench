@@ -135,8 +135,9 @@ there stores it locally under the same ref, so the shared files are untouched an
 files never change.
 
 A `${secret:name}` token works the same way: the name travels in the file, and each member sets
-their own value for it on their own machine. Until you do, a send that uses it fails with *The
-secret "name" is not on this machine*. See
+their own value for it on their own machine, with **Set Secret Token Value…** from the command
+palette. Until you do, a send that uses it fails with *The secret "name" is not on this machine*, and
+the toast's **Set value…** button opens that same dialog on the missing token. See
 [Secret tokens and scanning](/wirebench/guides/secrets/#the-secretname-token).
 
 ## Without git

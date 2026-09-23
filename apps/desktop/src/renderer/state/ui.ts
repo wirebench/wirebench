@@ -46,6 +46,12 @@ export interface PendingNodeDeletion {
   readonly requestCount: number;
 }
 
+/** Which project's tokens the Secret token values dialog shows, and which one it starts editing. */
+export interface SecretTokenDialogTarget {
+  readonly projectId: string;
+  readonly name?: string;
+}
+
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
 export type ImportDialogFormat = 'auto' | 'openapi' | 'asyncapi' | 'postman' | 'wsdl' | 'proto' | 'legacy-soap-project';
 
@@ -95,6 +101,11 @@ export interface UiStore extends UiSnapshot {
   readonly joinDialogOpen: boolean;
   /** The project id the Move to Workspace dialog is open for, or `null` when it is closed. */
   readonly moveProjectDialog: string | null;
+  /**
+   * The project the Secret token values dialog is open for, and the token to start editing, or
+   * `null` when it is closed. Names only: a value typed there stays in the dialog's own state.
+   */
+  readonly secretTokenDialog: SecretTokenDialogTarget | null;
   /** Whether the Settings dialog is open, and which section it should land on. Transient. */
   readonly preferences: { readonly open: boolean; readonly section: PreferencesSectionWire | undefined };
   /** Project id pending a "remove from workspace" confirmation, from a command or a menu. */
@@ -120,6 +131,7 @@ export interface UiStore extends UiSnapshot {
   readonly setShareDialogOpen: (open: boolean) => void;
   readonly setJoinDialogOpen: (open: boolean) => void;
   readonly setMoveProjectDialog: (projectId: string | null) => void;
+  readonly setSecretTokenDialog: (target: SecretTokenDialogTarget | null) => void;
   /** Opens the Settings dialog, optionally on one section. Every route into Settings goes here. */
   readonly openPreferences: (section?: PreferencesSectionWire) => void;
   readonly setPreferencesOpen: (open: boolean) => void;
@@ -211,6 +223,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     shareDialogOpen: false,
     joinDialogOpen: false,
     moveProjectDialog: null,
+    secretTokenDialog: null,
     confirmRemoveProjectId: undefined,
 
     setSelection: (selection) => {
@@ -292,6 +305,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setMoveProjectDialog: (projectId) => {
       set({ moveProjectDialog: projectId });
+    },
+    setSecretTokenDialog: (target) => {
+      set({ secretTokenDialog: target });
     },
     openPreferences: (section) => {
       set({ preferences: { open: true, section } });

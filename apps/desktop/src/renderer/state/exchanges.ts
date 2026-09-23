@@ -3,6 +3,7 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
 import { showToast } from '../components/toast.js';
+import { openSecretTokenDialog } from '../features/secrets/secret-token-actions.js';
 import { runValidation } from '../features/request-editor/validate-actions.js';
 import { recordContractProblems } from '../features/rest-editor/response/contract.js';
 import type { AnyExchangeSummary } from '../features/request-editor/response-status.js';
@@ -56,6 +57,25 @@ export type LogEntry =
       readonly requestId?: string;
     }
   | { readonly kind: 'failure'; readonly failure: FailedExchangeWire };
+
+/**
+ * A send refused for a `${secret:name}` token with no value on this machine: says so, with a way
+ * straight to typing one in. An auth password's `secret-missing` names no token (its value is set
+ * in the authentication settings), and any other failure is left to Problems, so neither gets one.
+ */
+function offerSecretValue(requestId: string, error: IpcError): void {
+  const name = error.details?.['name'];
+  if (error.code !== 'secret-missing' || typeof name !== 'string') {
+    return;
+  }
+  const projectId = useProjectStore.getState().projectOf[requestId];
+  showToast(error.message, {
+    label: 'Set value…',
+    onClick: () => {
+      openSecretTokenDialog(projectId, name);
+    },
+  });
+}
 
 /** The HTTP status classes the filter bar offers, plus `failed` for a send that produced none. */
 export type StatusClass = '2xx' | '3xx' | '4xx' | '5xx' | 'failed';
@@ -521,6 +541,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.grpcByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
+        offerSecretValue(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -659,6 +680,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.wsByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
+        offerSecretValue(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -882,6 +904,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.restByRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
+        offerSecretValue(requestId, result.error);
         useProblemsStore.getState().add([
           {
             groupId: `send:${requestId}`,
@@ -1058,6 +1081,7 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
         update((draft) => {
           draft.byRequest[requestId] = { status: 'error', sendId, error: result.error };
         });
+        offerSecretValue(requestId, result.error);
         // A failed send is not just a red status line that the next send erases: it belongs in
         // Problems alongside everything else that went wrong with this request.
         useProblemsStore.getState().add([
