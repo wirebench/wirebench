@@ -45,7 +45,7 @@ import type {
   WsSessionOptions,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
-import { isSecretTokenRef, resolveAuthConfig, resolveWithSecretTokens } from '../secret-resolver.js';
+import { isSecretTokenRef, resolveAuthConfig, resolveWithStoredValues } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
@@ -805,7 +805,7 @@ export async function sendRestRequest(
   onLive?: (event: RestLiveEvent) => void,
   envId?: string,
 ): Promise<RestExchangeSummary> {
-  const resolved = await resolveWithSecretTokens(
+  const resolved = await resolveWithStoredValues(
     () => deps.project.restSend?.(request.requestId, request.draft, envId),
     tokenSecrets(deps, request.requestId),
   );
@@ -1127,7 +1127,7 @@ export async function sendGrpcRequest(
   request: RequestSendGrpcRequest,
   sender: WebContents,
 ): Promise<GrpcExchangeSummary> {
-  const resolved = await resolveWithSecretTokens(
+  const resolved = await resolveWithStoredValues(
     () => deps.project.grpcSend?.(request.requestId, request.draft),
     tokenSecrets(deps, request.requestId),
   );
@@ -1558,7 +1558,7 @@ export async function openWsRequest(
   request: RequestOpenWsRequest,
   sender: WebContents,
 ): Promise<WsExchangeSummary> {
-  const resolved = await resolveWithSecretTokens(
+  const resolved = await resolveWithStoredValues(
     () => deps.project.wsSend?.(request.requestId, request.draft),
     tokenSecrets(deps, request.requestId),
   );

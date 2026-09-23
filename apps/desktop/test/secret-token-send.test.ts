@@ -27,7 +27,7 @@ import { buildRestHistoryEntry } from '../src/main/history-service.js';
 import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { recordSecretValue, redactHeaders, redactRawHttp, redactUrl, redactXml } from '../src/main/redact.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
-import { projectSecretGetter, resolveWithSecretTokens, secretStoreLabel } from '../src/main/secret-resolver.js';
+import { projectSecretGetter, resolveWithStoredValues, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { resolveWsSend } from '../src/main/ws-send.js';
@@ -289,7 +289,7 @@ describe('gRPC and WebSocket resolution', () => {
       ],
     };
 
-    const resolved = await resolveWithSecretTokens(
+    const resolved = await resolveWithStoredValues(
       () =>
         resolveGrpcSend({
           project,
@@ -324,10 +324,10 @@ describe('gRPC and WebSocket resolution', () => {
         resolveTarget: (api) => ({ url: api.url, source: 'api' }),
       });
 
-    const resolved = await resolveWithSecretTokens(resolve('${secret:ws_token}'), getterFor('p1'));
+    const resolved = await resolveWithStoredValues(resolve('${secret:ws_token}'), getterFor('p1'));
     expect(resolved?.input.request.headers).toEqual([entry('x-token', 'fake-ws-token-000001')]);
 
-    await expect(resolveWithSecretTokens(resolve('${secret:gone}'), getterFor('p1'))).rejects.toMatchObject({
+    await expect(resolveWithStoredValues(resolve('${secret:gone}'), getterFor('p1'))).rejects.toMatchObject({
       code: 'secret-missing',
     });
   });

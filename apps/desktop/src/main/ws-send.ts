@@ -83,7 +83,7 @@ function effectiveWsSettings(
 /**
  * Resolves one WebSocket call: draft first, then the target, then the settings ladder, then one
  * expansion pass over the URL, query, headers and subprotocols — `${secret:name}` tokens included
- * when `resolveWithSecretTokens` runs it.
+ * when `resolveWithStoredValues` runs it.
  *
  * Returns `undefined` when no such WebSocket request exists.
  */

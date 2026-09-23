@@ -74,7 +74,7 @@ export function missingSecretNames(unresolved: readonly UnresolvedRef[]): string
 let tokenValues: Readonly<Record<string, string>> | undefined;
 
 /**
- * `scopes` with the token values of the resolution {@link resolveWithSecretTokens} is running, if
+ * `scopes` with the token values of the resolution {@link resolveWithStoredValues} is running, if
  * any. The send resolvers pass their scopes through this, so the host's synchronous `restSend`
  * (and its gRPC and WebSocket twins) expand tokens without a keychain lookup of their own.
  */
@@ -92,7 +92,7 @@ export function withSecretTokenScope(scopes: PropertyScopes): PropertyScopes {
  *
  * @throws WirebenchError `secret-missing`
  */
-export async function resolveWithSecretTokens<R extends { readonly unresolved: readonly UnresolvedRef[] }>(
+export async function resolveWithStoredValues<R extends { readonly unresolved: readonly UnresolvedRef[] }>(
   resolve: () => R | undefined,
   getSecret: GetSecret,
 ): Promise<R | undefined> {

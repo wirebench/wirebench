@@ -58,7 +58,7 @@ export interface ResolveGrpcSendArgs {
 /**
  * Resolves one gRPC call: draft first, then the target, then the settings ladder, then one
  * expansion pass over target, metadata and message together — `${secret:name}` tokens included
- * when `resolveWithSecretTokens` runs it.
+ * when `resolveWithStoredValues` runs it.
  *
  * Returns `undefined` when no such gRPC request exists.
  */

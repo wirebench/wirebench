@@ -112,7 +112,7 @@ function cleanSettings(settings: NonNullable<RestRequestPatchWire['settings']>):
  * is resolved, then the settings ladder is climbed, then properties are expanded across the whole
  * input at once — so a base URL that is itself a property, and a path parameter that is another,
  * both resolve against the same scopes in one pass. `${secret:name}` tokens expand only inside
- * `resolveWithSecretTokens`, which puts their values in scope; anywhere else they stay unresolved.
+ * `resolveWithStoredValues`, which puts their values in scope; anywhere else they stay unresolved.
  *
  * Returns `undefined` when no such REST request exists, which is what a send of a request that has
  * since been deleted means.
