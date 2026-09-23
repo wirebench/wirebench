@@ -5,7 +5,9 @@
  * token in its place.
  *
  * Values stay here. A finding leaves main as {@link SecretFindingWire} — a masked preview — and
- * Move is addressed by finding id, so the renderer never holds a value in either direction.
+ * Move is addressed by finding id, so the renderer never holds a finding's value in either
+ * direction. Beside them, the project's tokens by name ({@link SecretScanSession.tokens}) and a
+ * value typed for one ({@link SecretScanSession.setValue}), which goes in and never comes back.
  */
 import {
   applySecretMoves,
@@ -13,6 +15,8 @@ import {
   proposeSecretName,
   scanProjectForSecrets,
   SECRET_NAME_PATTERN,
+  secretNamesInValue,
+  WirebenchError,
 } from '@wirebench/engine';
 import type { SecretFinding, SecretMove } from '@wirebench/engine';
 import type { SecretFindingWire } from '../shared/wire-types.js';
@@ -41,6 +45,12 @@ export interface SecretMoveResult {
   readonly stale: string[];
   /** Its name already has a stored value and `replace` was not set. */
   readonly nameTaken: string[];
+}
+
+/** One `${secret:name}` token of a project, and whether this machine has a value stored for it. */
+export interface SecretTokenStatus {
+  readonly name: string;
+  readonly stored: boolean;
 }
 
 /** What the review dialog opens with; see `secretScanScanResponseSchema`. */
@@ -190,6 +200,43 @@ export class SecretScanSession {
       this.emit();
     }
     return { moved, stale, nameTaken };
+  }
+
+  /**
+   * The project's tokens: the names its model uses, in first-use order, then the names stored for
+   * it that nothing uses (yet, or any more), alphabetically. Names and presence only, never a value.
+   */
+  async tokens(): Promise<SecretTokenStatus[]> {
+    const model = this.host().model();
+    const used = model === undefined ? [] : secretNamesInValue(model);
+    const stored = new Set(await this.storedNames());
+    const storedOnly = [...stored].filter((name) => !used.includes(name)).sort((a, b) => a.localeCompare(b));
+    return [
+      ...used.map((name) => ({ name, stored: stored.has(name) })),
+      ...storedOnly.map((name) => ({ name, stored: true })),
+    ];
+  }
+
+  /**
+   * Stores `value` for the token `name` on this machine: `replace` on the entry under the project's
+   * label when there is one (so a name never gets two entries), `set` under that label otherwise.
+   *
+   * Nothing is emitted: a value changes no finding, and nothing that listens here shows values.
+   *
+   * @throws WirebenchError `invalid-argument` for a name a token cannot carry, or an empty value
+   */
+  async setValue(name: string, value: string): Promise<{ replaced: boolean }> {
+    if (!SECRET_NAME_PATTERN.test(name) || value.length === 0) {
+      throw new WirebenchError('invalid-argument', 'A secret needs a token name and a value');
+    }
+    const label = secretStoreLabel(this.projectId, name);
+    const ref = await this.store.findByLabel(label);
+    if (ref === undefined) {
+      await this.store.set(value, { label });
+      return { replaced: false };
+    }
+    await this.store.replace(ref, value);
+    return { replaced: true };
   }
 
   /** True while `move` would still rewrite the model as it stands now. */

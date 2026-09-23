@@ -22,8 +22,9 @@ rules that decide what a secret looks like are the ones the redaction helpers al
    what CI needs anyway (`WIREBENCH_SECRET_<NAME>`). The name → ref mapping stays machine-local, in the
    store itself: the entry's `label` is `wirebench-secret:<projectId>:<name>`. No new file, no project
    format change, no ref in the project. A teammate without the value gets the standard
-   `secret-missing` error naming the secret (`The secret "billing_key" is not on this machine — put its
-   value where the token is and choose Move to secret when you save.`).
+   `secret-missing` error naming the secret (`The secret "billing_key" is not on this machine — set it
+   with Set Secret Token Value… (Secrets).`). #143 added that command: a dialog listing the project's
+   tokens and setting a value by name (`secretScan.tokens` / `secretScan.setValue`).
 3. **Resolution.** Expansion stays synchronous: `PropertyScopes` gains an optional
    `secrets?: Readonly<Record<string, string>>`. Before expanding, `prepare` collects the names the
    request uses (`secretNamesIn(text)` over every expandable field, following `${name}` property values

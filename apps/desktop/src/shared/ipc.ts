@@ -198,6 +198,10 @@ import {
   secretScanReleaseResponseSchema,
   secretScanScanRequestSchema,
   secretScanScanResponseSchema,
+  secretScanSetValueRequestSchema,
+  secretScanSetValueResponseSchema,
+  secretScanTokensRequestSchema,
+  secretScanTokensResponseSchema,
   xmlCompletionsRequestSchema,
   xmlCompletionsResponseSchema,
   xmlPathRequestSchema,
@@ -692,13 +696,16 @@ export const channels = {
     getShowSecrets: defineChannel('secrets.getShowSecrets', z.undefined(), secretsShowSecretsResponseSchema),
   },
   // Plain-text credentials in one project: found and moved in main. A finding crosses the bridge as
-  // a masked preview; the value itself never does, in either direction.
+  // a masked preview; its value never does, in either direction. `setValue` is the one call that
+  // carries a value — typed by the user, renderer to main — and nothing answers with one.
   secretScan: {
     scan: defineChannel('secretScan.scan', secretScanScanRequestSchema, secretScanScanResponseSchema),
     keep: defineChannel('secretScan.keep', secretScanKeepRequestSchema, secretScanKeepResponseSchema),
     move: defineChannel('secretScan.move', secretScanMoveRequestSchema, secretScanMoveResponseSchema),
     hold: defineChannel('secretScan.hold', secretScanHoldRequestSchema, secretScanHoldResponseSchema),
     release: defineChannel('secretScan.release', secretScanReleaseRequestSchema, secretScanReleaseResponseSchema),
+    tokens: defineChannel('secretScan.tokens', secretScanTokensRequestSchema, secretScanTokensResponseSchema),
+    setValue: defineChannel('secretScan.setValue', secretScanSetValueRequestSchema, secretScanSetValueResponseSchema),
   },
   // Re-reads one cached exchange, redacted per the show-secrets flag as it stands *now*, so a
   // toggle can reveal (or re-hide) an entry the HTTP log already holds.

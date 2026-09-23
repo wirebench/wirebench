@@ -19,7 +19,7 @@ describe('resolveSecretTokens', () => {
       details: { ref: 'secret:billing_key', name: 'billing_key' },
     });
     expect(secretTokenMissingMessage('billing_key')).toBe(
-      'The secret "billing_key" is not on this machine — put its value where the token is and choose Move to secret when you save.',
+      'The secret "billing_key" is not on this machine — set it with Set Secret Token Value… (Secrets).',
     );
   });
 });

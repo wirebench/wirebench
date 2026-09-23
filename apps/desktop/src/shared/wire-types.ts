@@ -3391,6 +3391,25 @@ export const secretScanHoldResponseSchema = z.object({ holdId: z.string() }).str
 export const secretScanReleaseRequestSchema = z.object({ holdId: z.string() });
 export const secretScanReleaseResponseSchema = z.object({});
 
+/** Request payload for `secretScan.tokens`. */
+export const secretScanTokensRequestSchema = z.object({ projectId: z.string() });
+/**
+ * Response for `secretScan.tokens`: the `${secret:name}` names the project uses (first-use order),
+ * then the names only stored for it (alphabetical), each with whether this machine has its value.
+ * Names only — never a value.
+ */
+export const secretScanTokensResponseSchema = z
+  .object({ tokens: z.array(z.object({ name: z.string(), stored: z.boolean() }).strict()) })
+  .strict();
+/** Request payload for `secretScan.setValue`: store `value` under the project's label for `name`. */
+export const secretScanSetValueRequestSchema = z.object({
+  projectId: z.string(),
+  name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  value: z.string().min(1),
+});
+/** Response for `secretScan.setValue`: whether a value was already stored and was replaced. */
+export const secretScanSetValueResponseSchema = z.object({ replaced: z.boolean() }).strict();
+
 /** Request payload for `exchanges.get`: the send whose cached exchange to re-read. */
 export const exchangesGetRequestSchema = z.object({ sendId: z.string() });
 

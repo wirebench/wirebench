@@ -14,7 +14,12 @@ import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import { SecretScanSessions, type SecretScanHost, type SecretScanStore } from '../src/main/secret-scan-session.js';
-import { secretFindingWireSchema, secretScanScanResponseSchema } from '../src/shared/wire-types.js';
+import {
+  secretFindingWireSchema,
+  secretScanScanResponseSchema,
+  secretScanSetValueResponseSchema,
+  secretScanTokensResponseSchema,
+} from '../src/shared/wire-types.js';
 
 /** Obviously fake: three base64url segments decoding to `{"fake":1}`, `{"fake":1}` and `fake`. */
 const FAKE_JWT = 'eyJmYWtlIjoxfQ.eyJmYWtlIjoxfQ.ZmFrZQ';
@@ -264,6 +269,99 @@ describe('SecretScanSession.move', () => {
     expect(host.snapshot()?.dirty).toBe(true);
     expect(changed).toHaveBeenCalledTimes(1);
     await host.close();
+  });
+});
+
+describe('SecretScanSession.tokens', () => {
+  /** A project using `second_key` before `first_key`, the second one twice. */
+  function tokened(): Project {
+    return seeded('Bearer ${secret:second_key} ${secret:first_key} ${secret:second_key}');
+  }
+
+  it('lists the used names in first-use order, then the stored-only ones alphabetically, never a value', async () => {
+    const { registry, store } = sessions(memoryHost(tokened()));
+    await store.set('fake-value-not-real-0001', { label: 'wirebench-secret:p1:first_key' });
+    await store.set('fake-value-not-real-0002', { label: 'wirebench-secret:p1:zeta_key' });
+    await store.set('fake-value-not-real-0003', { label: 'wirebench-secret:p1:alpha_key' });
+    // Another project's entry, and an entry with no label: neither is this project's token.
+    await store.set('fake-value-not-real-0004', { label: 'wirebench-secret:p2:other_key' });
+    await store.set('fake-value-not-real-0005');
+
+    const tokens = await registry.session('p1').tokens();
+
+    expect(tokens).toEqual([
+      { name: 'second_key', stored: false },
+      { name: 'first_key', stored: true },
+      { name: 'alpha_key', stored: true },
+      { name: 'zeta_key', stored: true },
+    ]);
+    expect(JSON.stringify(tokens)).not.toContain('fake-value-not-real');
+    expect(() => secretScanTokensResponseSchema.parse({ tokens })).not.toThrow();
+  });
+
+  it('lists nothing for a project with no tokens and nothing stored', async () => {
+    const { registry } = sessions(memoryHost(seeded()));
+
+    expect(await registry.session('p1').tokens()).toEqual([]);
+  });
+});
+
+describe('SecretScanSession.setValue', () => {
+  it('stores a new value under the project label', async () => {
+    const { registry, store } = sessions(memoryHost(seeded()));
+
+    const result = await registry.session('p1').setValue('billing_token', 'fake-value-not-real-0001');
+
+    expect(result).toEqual({ replaced: false });
+    const ref = await store.findByLabel('wirebench-secret:p1:billing_token');
+    expect(await store.get(ref!)).toBe('fake-value-not-real-0001');
+  });
+
+  it('replaces the value of a name already stored, keeping one entry under its label', async () => {
+    const { registry, store } = sessions(memoryHost(seeded()));
+    const ref = await store.set('fake-value-not-real-0001', { label: 'wirebench-secret:p1:billing_token' });
+
+    const result = await registry.session('p1').setValue('billing_token', 'fake-value-not-real-0002');
+
+    expect(result).toEqual({ replaced: true });
+    expect(await store.get(ref)).toBe('fake-value-not-real-0002');
+    expect((await store.list()).filter((e) => e.label === 'wirebench-secret:p1:billing_token')).toHaveLength(1);
+    expect(await registry.session('p1').tokens()).toEqual([{ name: 'billing_token', stored: true }]);
+  });
+
+  it('refuses a name a token cannot carry, and an empty value, storing nothing', async () => {
+    const { registry, store } = sessions(memoryHost(seeded()));
+    const session = registry.session('p1');
+
+    await expect(session.setValue('not a name', 'fake-value-not-real-0001')).rejects.toMatchObject({
+      code: 'invalid-argument',
+    });
+    await expect(session.setValue('billing_token', '')).rejects.toMatchObject({ code: 'invalid-argument' });
+    expect(await store.list()).toEqual([]);
+  });
+
+  it('does not change what a review finds, so it tells no listener', async () => {
+    const { registry } = sessions(memoryHost(seeded()));
+    const listener = vi.fn();
+    registry.onChange(listener);
+
+    await registry.session('p1').setValue('billing_token', 'fake-value-not-real-0001');
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe('secretScan token schemas', () => {
+  it('reject a response that carries a value', () => {
+    expect(
+      secretScanTokensResponseSchema.safeParse({
+        tokens: [{ name: 'billing_token', stored: true, value: 'fake-value-not-real-0001' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      secretScanSetValueResponseSchema.safeParse({ replaced: false, value: 'fake-value-not-real-0001' }).success,
+    ).toBe(false);
+    expect(secretScanSetValueResponseSchema.safeParse({ replaced: false }).success).toBe(true);
   });
 });
 

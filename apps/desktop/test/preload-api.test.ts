@@ -76,10 +76,18 @@ describe('buildApi', () => {
     expect('get' in api.secrets).toBe(false);
   });
 
-  it('exposes secretScan.scan/keep/move and the autosave hold/release, none of which carries a value', () => {
+  it('exposes secretScan.scan/keep/move, the autosave hold/release and tokens/setValue, none of which answers with a value', () => {
     const api = buildApi(vi.fn(), vi.fn());
 
-    expect(Object.keys(api.secretScan).sort()).toEqual(['hold', 'keep', 'move', 'release', 'scan']);
+    expect(Object.keys(api.secretScan).sort()).toEqual([
+      'hold',
+      'keep',
+      'move',
+      'release',
+      'scan',
+      'setValue',
+      'tokens',
+    ]);
   });
 
   it('registers event listeners via the injected on() and returns its unsubscribe', () => {
