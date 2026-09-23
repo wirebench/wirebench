@@ -221,7 +221,8 @@ function toHttpExchangeWire(
     httpVersion: http.httpVersion,
     ...(http.decodeError !== undefined ? { decodeError: http.decodeError } : {}),
     timings: { ...http.timings },
-    redirects: http.redirects.map((redirect) => ({ ...redirect })),
+    // The first hop is the URL that went on the wire, so it carries a query API key too.
+    redirects: http.redirects.map((redirect) => ({ ...redirect, url: redactUrl(redirect.url, urlOpts) })),
     ...(http.tls !== undefined ? { tls: toTlsWire(http.tls) } : {}),
     request: {
       url: redactUrl(http.request.url, urlOpts),
