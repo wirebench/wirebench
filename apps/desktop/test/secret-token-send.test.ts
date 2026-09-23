@@ -29,7 +29,6 @@ import {
   recordSecretValue,
   redactHeaders,
   redactRawHttp,
-  redactSecretBase64,
   redactSecretBytes,
   redactUrl,
   redactXml,
@@ -148,20 +147,6 @@ describe('projectSecretGetter', () => {
     expect(history.request.envelopeXml).toBe('{"key":"<redacted>"}');
   });
 
-  it('masks recorded values in a base64 payload that is UTF-8 text, and leaves any other alone', () => {
-    recordSecretValue('fake-base64-not-real-01');
-    const b64 = (text: string | Buffer) => Buffer.from(text).toString('base64');
-    const text = b64('{"k":"fake-base64-not-real-01","é":"ü"}');
-
-    expect(Buffer.from(redactSecretBase64(text), 'base64').toString('utf8')).toBe('{"k":"<redacted>","é":"ü"}');
-    expect(redactSecretBase64(text, { show: true })).toBe(text);
-    // Nothing to mask: the very same string back, not a re-encoding of it.
-    expect(redactSecretBase64(b64('plain'))).toBe(b64('plain'));
-    expect(redactSecretBase64('')).toBe('');
-    const bytes = b64(Buffer.concat([Buffer.from([0xc3, 0x28]), Buffer.from('fake-base64-not-real-01')]));
-    expect(redactSecretBase64(bytes)).toBe(bytes);
-  });
-
   it('masks recorded values in raw bytes whether or not they are UTF-8', () => {
     recordSecretValue('fake-bytes-not-real-001');
     const raw = Buffer.concat([
@@ -177,6 +162,11 @@ describe('projectSecretGetter', () => {
     expect(redactSecretBytes(raw.toString('base64'), { show: true })).toBe(raw.toString('base64'));
     const other = Buffer.from([0x00, 0xff, 0x10]).toString('base64');
     expect(redactSecretBytes(other)).toBe(other);
+    expect(redactSecretBytes('')).toBe('');
+
+    // UTF-8 text is bytes too: the characters around the value come back as they were.
+    const text = Buffer.from('{"k":"fake-bytes-not-real-001","é":"ü"}', 'utf8').toString('base64');
+    expect(Buffer.from(redactSecretBytes(text), 'base64').toString('utf8')).toBe('{"k":"<redacted>","é":"ü"}');
   });
 
   it('does not record an auth value, which its header, password and body-key rules already mask', async () => {

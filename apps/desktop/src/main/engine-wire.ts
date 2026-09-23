@@ -11,7 +11,6 @@ import {
   redactUrl,
   redactRawHttp,
   redactResponseAttachments,
-  redactSecretBase64,
   redactSecretBytes,
   redactSecretText,
   redactXml,
@@ -233,8 +232,13 @@ function toHttpExchangeWire(
   };
 }
 
-/** Converts one engine `SseRow` to its wire form. Rows are already plain JSON; this copies field by field. */
-export function toSseRowWire(row: SseRow): SseRowWire {
+/**
+ * Converts one engine `SseRow` to its wire form. Rows are already plain JSON; this copies field by
+ * field. A server may echo a request field back, as over a WebSocket, so an event's data and a
+ * comment's text have every secret value main handed out masked unless `show`.
+ */
+export function toSseRowWire(row: SseRow, opts?: { readonly show?: boolean }): SseRowWire {
+  const show = opts?.show ?? false;
   if (row.kind === 'event') {
     return {
       kind: 'event',
@@ -242,14 +246,20 @@ export function toSseRowWire(row: SseRow): SseRowWire {
       at: row.at,
       size: row.size,
       event: row.event,
-      data: row.data,
+      data: redactSecretText(row.data, { show }),
       ...(row.id !== undefined ? { id: row.id } : {}),
       lastEventId: row.lastEventId,
       ...(row.payloadTruncated !== undefined ? { payloadTruncated: row.payloadTruncated } : {}),
     };
   }
   if (row.kind === 'comment') {
-    return { kind: 'comment', index: row.index, at: row.at, size: row.size, text: row.text };
+    return {
+      kind: 'comment',
+      index: row.index,
+      at: row.at,
+      size: row.size,
+      text: redactSecretText(row.text, { show }),
+    };
   }
   return { kind: 'retry', index: row.index, at: row.at, size: row.size, ms: row.ms };
 }
@@ -260,10 +270,13 @@ export function toSseRowWire(row: SseRow): SseRowWire {
  * long-running stream's summary never puts every row on the wire at once. The rows this drops were
  * already reported live, one `rest.live` `row` event each, as they arrived.
  */
-export function toRestEventStreamWire(stream: RestEventStream): RestEventStreamWire {
+export function toRestEventStreamWire(
+  stream: RestEventStream,
+  opts?: { readonly show?: boolean },
+): RestEventStreamWire {
   const capped = capSseRows(stream.rows, SSE_SUMMARY_LIMITS);
   return {
-    rows: capped.rows.map(toSseRowWire),
+    rows: capped.rows.map((row) => toSseRowWire(row, opts)),
     counts: { ...stream.counts },
     lastEventId: stream.lastEventId,
     ...(stream.retryMs !== undefined ? { retryMs: stream.retryMs } : {}),
@@ -336,7 +349,7 @@ export function toRestExchangeSummary(
           },
         }
       : {}),
-    ...(exchange.stream !== undefined ? { stream: toRestEventStreamWire(exchange.stream) } : {}),
+    ...(exchange.stream !== undefined ? { stream: toRestEventStreamWire(exchange.stream, { show }) } : {}),
   };
 }
 
@@ -353,17 +366,21 @@ export function toRestExchangeSummary(
  * events a call in flight emits, so a message looks the same whichever way the pane met it.
  *
  * A server may echo a request field back, so every secret value main handed out is masked unless
- * `show` — in the JSON and in the raw bytes alike. `bytes` stays the size the server sent, as a
- * WebSocket frame's `size` does.
+ * `show`: in the JSON, or in the raw bytes when there is no JSON. The pane shows the bytes only for
+ * a message that did not decode, so a decoded message's are left as they are rather than scanned
+ * for nothing. `bytes` stays the size the server sent, as a WebSocket frame's `size` does.
  */
 export function toGrpcResponseMessageWire(
   message: GrpcResponseMessage,
   opts?: { readonly show?: boolean },
 ): GrpcResponseMessageWire {
   const show = opts?.show ?? false;
+  const json =
+    message.json !== undefined ? redactSecretText(JSON.stringify(message.json, null, 2), { show }) : undefined;
   return {
-    ...(message.json !== undefined ? { json: redactSecretText(JSON.stringify(message.json, null, 2), { show }) } : {}),
-    base64: redactSecretBytes(message.base64, { show }),
+    ...(json !== undefined ? { json } : {}),
+    // Masking can change the length: `bytes` stays the size the server sent, these are for display.
+    base64: json === undefined ? redactSecretBytes(message.base64, { show }) : message.base64,
     bytes: message.bytes,
     ...(message.problem !== undefined ? { problem: message.problem } : {}),
   };
@@ -384,6 +401,8 @@ export function toGrpcExchangeSummary(
     headers: redactHeaders(exchange.headers, { show }),
     rawHeaders: redactHeaderPairs(Object.entries(exchange.headers), { show }),
     bodyBase64: toBase64(Buffer.from(bodyText, 'utf8')),
+    // Masked for display, so its length can differ from the sum of the messages' `bytes`, which stay
+    // the sizes the server sent.
     rawBodyBase64: redactSecretBytes(
       toBase64(exchange.messages.reduce<Uint8Array>((all, one) => Buffer.concat([all, one]), new Uint8Array())),
       { show },
@@ -445,8 +464,8 @@ export function toWsFrameContractWire(contract: WsFrameContract): WsFrameContrac
 /**
  * Converts one engine `WsFrame` to its wire form. No pattern rule applies to a payload, but a text
  * payload has every secret value main handed out masked unless `show` — a message's own
- * `${secret:name}` token, and the same value echoed back. So does a binary payload whose bytes are
- * UTF-8 text; any other is passed through as it came. `size` stays the payload's size on the wire.
+ * `${secret:name}` token, and the same value echoed back. So do a binary payload's bytes, whatever
+ * encoding surrounds the value, and a close frame's reason.
  */
 export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }): WsFrameWire {
   const show = opts?.show ?? false;
@@ -457,8 +476,11 @@ export function toWsFrameWire(frame: WsFrame, opts?: { readonly show?: boolean }
     at: frame.at,
     size: frame.size,
     ...(frame.text !== undefined ? { text: redactSecretText(frame.text, { show }) } : {}),
-    ...(frame.base64 !== undefined ? { base64: redactSecretBase64(frame.base64, { show }) } : {}),
-    ...(frame.close !== undefined ? { close: { ...frame.close } } : {}),
+    // Masking can change a payload's length; `size` stays its size on the wire.
+    ...(frame.base64 !== undefined ? { base64: redactSecretBytes(frame.base64, { show }) } : {}),
+    ...(frame.close !== undefined
+      ? { close: { code: frame.close.code, reason: redactSecretText(frame.close.reason, { show }) } }
+      : {}),
     ...(frame.payloadTruncated !== undefined ? { payloadTruncated: frame.payloadTruncated } : {}),
     ...(frame.contract !== undefined ? { contract: toWsFrameContractWire(frame.contract) } : {}),
   };
@@ -520,7 +542,8 @@ export function toWsExchangeSummary(
     }),
     handshake: toWsHandshakeWire(exchange.handshake, opts),
     frames: exchange.frames.map((frame) => toWsFrameWire(frame, opts)),
-    closed: { ...exchange.closed },
+    // The server's close reason may echo a request field, as a frame's payload may.
+    closed: { ...exchange.closed, reason: redactSecretText(exchange.closed.reason, { show: opts?.show ?? false }) },
     counts: { ...exchange.counts },
     durationMs: exchange.durationMs,
   };

@@ -739,7 +739,7 @@ export class EngineService {
                   safeOnLive({ kind: 'open', sendId, status, headers: redactHeaders(headers, { show }) });
                 },
                 onRow: (row) => {
-                  safeOnLive({ kind: 'row', sendId, row: toSseRowWire(row) });
+                  safeOnLive({ kind: 'row', sendId, row: toSseRowWire(row, { show }) });
                 },
               },
             }

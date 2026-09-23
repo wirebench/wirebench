@@ -62,31 +62,11 @@ export function redactSecretText(text: string, opts?: { show?: boolean }): strin
   return opts?.show === true ? text : maskRecorded(text);
 }
 
-/** Decodes UTF-8 strictly, so a payload that is not text is told apart rather than mangled. */
-const strictUtf8 = new TextDecoder('utf-8', { fatal: true });
-
-/**
- * A base64 payload with every recorded value masked unless `show`, when its bytes are UTF-8 text
- * (a binary WebSocket frame that carries JSON, say). Bytes that are not UTF-8 come back untouched,
- * and so does a payload with nothing to mask — the same string, not a re-encoding of it.
- */
-export function redactSecretBase64(base64: string, opts?: { show?: boolean }): string {
-  if (opts?.show === true || recorded.size === 0) {
-    return base64;
-  }
-  let text: string;
-  try {
-    text = strictUtf8.decode(Buffer.from(base64, 'base64'));
-  } catch {
-    return base64;
-  }
-  const masked = maskRecorded(text);
-  return masked === text ? base64 : Buffer.from(masked, 'utf8').toString('base64');
-}
-
 /**
  * A base64 run of raw bytes with every recorded value's UTF-8 bytes masked unless `show`, whatever
- * the bytes around them are (a protobuf message, where a string field sits between binary tags).
+ * the bytes around them are: a protobuf message, where a string field sits between binary tags, or
+ * a binary WebSocket frame, whether it carries JSON, MessagePack or CBOR. A run with nothing to
+ * mask comes back as the same string, not a re-encoding of it.
  */
 export function redactSecretBytes(base64: string, opts?: { show?: boolean }): string {
   if (opts?.show === true || recorded.size === 0) {

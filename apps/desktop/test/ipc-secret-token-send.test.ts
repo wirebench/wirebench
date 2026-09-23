@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  readProtoFixture,
   startTestGrpcServer,
   startTestWsServer,
   type TestGrpcServer,
@@ -23,15 +24,18 @@ import {
   createWsApi,
   createWsRequest,
   entry,
+  loadProtoSet,
 } from '@wirebench/engine';
-import type { GetSecret, HistoryEntry, Project, PropertyScopes } from '@wirebench/engine';
+import type { GetSecret, HistoryEntry, Project, PropertyScopes, ProtoSet, RestSendInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import {
   buildGrpcHistoryEntry,
   buildHistoryEntry,
+  buildRestHistoryEntry,
   buildWsHistoryEntry,
   type RecordGrpcSendInput,
+  type RecordRestSendInput,
   type RecordSendInput,
   type RecordWsSessionInput,
 } from '../src/main/history-service.js';
@@ -45,8 +49,11 @@ import type {
   GrpcExchangeSummary,
   GrpcResponseMessageWire,
   HistoryEntryWire,
+  RestExchangeSummary,
+  RestLiveEvent,
   WsFrameWire,
 } from '../src/shared/wire-types.js';
+import { restApiWire } from './helpers/wire-defaults.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -142,7 +149,10 @@ function wsProject(header: string): Project {
       createWsApi('Chat', {
         id: 'w-1',
         url: wsServer.url,
-        requests: [createWsRequest('Echo', { id: 'ws-1', url: '/echo', headers: [entry('x-token', header)] })],
+        requests: [
+          createWsRequest('Echo', { id: 'ws-1', url: '/echo', headers: [entry('x-token', header)] }),
+          createWsRequest('Close', { id: 'ws-2', url: '/close-echo' }),
+        ],
       }),
     ],
   };
@@ -332,16 +342,75 @@ describe('a WebSocket session with tokens', () => {
     ]);
   });
 
-  it('passes a binary frame that is not UTF-8 through byte for byte', async () => {
+  it('masks a token value in a binary frame that is not UTF-8, and passes one without it through', async () => {
     const value = 'fake-ws-binary-bytes-001';
     await store.set(value, { label: secretStoreLabel('p1', 'ws_bin_bytes') });
+    // A MessagePack-style payload: binary framing around the value's UTF-8 bytes.
     const bytes = Buffer.concat([Buffer.from([0xff, 0xfe, 0x00]), Buffer.from(value, 'utf8')]);
-    const { replies, received, summary, written, binary } = await echoBinary('b3', 'ws_bin_bytes', false, [bytes]);
+    const other = Buffer.from([0xff, 0xfe, 0x00, 0x70, 0x6c, 0x61, 0x69, 0x6e]);
+    const { replies, received, summary, written, binary } = await echoBinary('b3', 'ws_bin_bytes', false, [
+      bytes,
+      other,
+    ]);
 
-    expect(replies[0]!.base64).toBe(bytes.toString('base64'));
-    expect(received[0]!.base64).toBe(bytes.toString('base64'));
-    expect(binary(summary.frames)).toEqual([bytes, bytes]);
-    expect(binary(written[0]!.ws?.frames ?? [])).toEqual([bytes, bytes]);
+    const masked = Buffer.concat([Buffer.from([0xff, 0xfe, 0x00]), Buffer.from('<redacted>', 'utf8')]);
+    expect(replies.map((f) => Buffer.from(f.base64 ?? '', 'base64'))).toEqual([masked, other]);
+    // Nothing to mask: the very same base64 back.
+    expect(replies[1]!.base64).toBe(other.toString('base64'));
+    expect(received.map((f) => Buffer.from(f.base64 ?? '', 'base64'))).toEqual([masked, other]);
+    expect(received[0]!.size).toBe(bytes.length);
+    const sorted = (buffers: readonly Buffer[]) => [...buffers].sort((a, b) => Buffer.compare(a, b));
+    expect(sorted(binary(summary.frames))).toEqual(sorted([masked, masked, other, other]));
+    expect(sorted(binary(written[0]!.ws?.frames ?? []))).toEqual(sorted([masked, masked, other, other]));
+  });
+
+  /** Sends `${secret:name}` to `/close-echo`, whose server closes with the value as the reason. */
+  async function closeWithEcho(sendId: string, name: string, show: boolean) {
+    const { written } = registerWs({ show });
+    const { sender, events } = fakeSender();
+    const open = invoke('request.openWs', { sendId, requestId: 'ws-2' }, sender);
+    await waitFor(() => events.some((e) => (e as { kind?: string }).kind === 'handshake'), 'the handshake');
+    unwrap(
+      await invoke('request.wsSend', {
+        sendId,
+        requestId: 'ws-2',
+        format: 'text',
+        content: `\${secret:${name}}`,
+        expand: true,
+      }),
+    );
+    const summary = unwrap<{ frames: WsFrameWire[]; closed: { reason: string } }>(await open);
+    const closes = (frames: readonly { opcode: string; close?: { reason: string } | undefined }[]) =>
+      frames.filter((f) => f.opcode === 'close').map((f) => f.close?.reason);
+    return { events, summary, written, closes };
+  }
+
+  it('masks a token value the server echoes in its close reason, live, in the summary and in History', async () => {
+    const value = 'fake-ws-close-token-0001';
+    await store.set(value, { label: secretStoreLabel('p1', 'ws_close') });
+    const { events, summary, written, closes } = await closeWithEcho('c1', 'ws_close', false);
+
+    expect(wsServer.received.some((f) => f.opcode === 0x1 && f.payload.toString('utf8') === value)).toBe(true);
+    expect(closes(frameEvents(events))).toContain('<redacted>');
+    expect(JSON.stringify(events)).not.toContain(value);
+    expect(summary.closed.reason).toBe('<redacted>');
+    expect(closes(summary.frames)).toContain('<redacted>');
+    expect(JSON.stringify(summary)).not.toContain(value);
+    expect(written).toHaveLength(1);
+    expect(written[0]!.ws?.closeReason).toBe('<redacted>');
+    expect(JSON.stringify(written[0])).not.toContain(value);
+  });
+
+  it('shows an echoed close reason while secrets are shown, but History masks it all the same', async () => {
+    const value = 'fake-ws-close-shown-0001';
+    await store.set(value, { label: secretStoreLabel('p1', 'ws_close_shown') });
+    const { events, summary, written, closes } = await closeWithEcho('c2', 'ws_close_shown', true);
+
+    expect(closes(frameEvents(events))).toContain(value);
+    expect(summary.closed.reason).toBe(value);
+    expect(written[0]!.ws?.closeReason).toBe('<redacted>');
+    expect(closes(written[0]!.ws?.frames ?? [])).toContain('<redacted>');
+    expect(JSON.stringify(written[0])).not.toContain(value);
   });
 
   it('keeps messages in the order they were sent while a token waits on the keychain', async () => {
@@ -433,7 +502,8 @@ describe('a gRPC call with tokens', () => {
               service: 'wirebench.greet.Greeter',
               method: 'SayHello',
               message: '{"name": "${secret:grpc_name}"}',
-              metadata: [entry('x-token', '${secret:grpc_token}')],
+              // The test server sends `x-echo` back as initial metadata.
+              metadata: [entry('x-token', '${secret:grpc_token}'), entry('x-echo', 'hi ${secret:grpc_name}')],
             }),
             createGrpcRequest('Fail', {
               id: 'q-2',
@@ -447,7 +517,23 @@ describe('a gRPC call with tokens', () => {
     };
   }
 
-  function grpcDeps(show: boolean, written: HistoryEntry[] = []): RequestChannelDeps {
+  /**
+   * The greeter set with `HelloReply.message` retyped as a message, so the client cannot decode the
+   * server's reply (its greeting text is not a valid `Garbled`) and falls back to the raw bytes.
+   */
+  function garbledSet(): ProtoSet {
+    const files = readProtoFixture('greeter');
+    const greeter = files.get('greeter.proto') ?? '';
+    const retyped = greeter.replace(
+      'message HelloReply {\n  string message = 1;',
+      'message Garbled {\n  int32 x = 1;\n}\n\nmessage HelloReply {\n  Garbled message = 1;',
+    );
+    expect(retyped).not.toBe(greeter);
+    files.set('greeter.proto', retyped);
+    return loadProtoSet(files, { roots: ['greeter.proto'] });
+  }
+
+  function grpcDeps(show: boolean, written: HistoryEntry[] = [], set: ProtoSet = grpcServer.set): RequestChannelDeps {
     const project = grpcProject();
     return {
       project: {
@@ -460,7 +546,7 @@ describe('a gRPC call with tokens', () => {
             scopes: SCOPES,
             resolveTarget: (api) => ({ url: api.target, source: 'api' }),
           }),
-        grpcProtoSetFor: () => Promise.resolve(grpcServer.set),
+        grpcProtoSetFor: () => Promise.resolve(set),
         grpcTlsFor: () => Promise.resolve(undefined),
       } as unknown as RequestChannelDeps['project'],
       secretsFor: getterFor,
@@ -486,6 +572,17 @@ describe('a gRPC call with tokens', () => {
     return events
       .filter((e) => (e as { kind?: string }).kind === 'message')
       .map((e) => (e as { message: GrpcResponseMessageWire }).message);
+  }
+
+  function headerEvents(events: readonly unknown[]): Record<string, string>[] {
+    return events
+      .filter((e) => (e as { kind?: string }).kind === 'headers')
+      .map((e) => (e as { headers: Record<string, string> }).headers);
+  }
+
+  /** A base64 run decoded as latin1, so a value's UTF-8 bytes read as they would in the text. */
+  function decoded(base64: string): string {
+    return Buffer.from(base64, 'base64').toString('latin1');
   }
 
   it('resolves tokens through the store, and masks them in the request messages it returns', async () => {
@@ -530,6 +627,8 @@ describe('a gRPC call with tokens', () => {
     );
 
     expect(JSON.stringify(grpcServer.calls.at(-1))).toContain(value);
+    expect(headerEvents(events).map((headers) => headers['x-echo'])).toEqual(['hi <redacted>']);
+    expect(summary.headers['x-echo']).toBe('hi <redacted>');
     const live = messageEvents(events);
     expect(live).toHaveLength(1);
     expect(live[0]!.json).toContain('"message": "Hello, <redacted>"');
@@ -556,11 +655,64 @@ describe('a gRPC call with tokens', () => {
       sender as never,
     );
 
+    expect(headerEvents(events).map((headers) => headers['x-echo'])).toEqual([`hi ${value}`]);
     expect(messageEvents(events)[0]!.json).toContain(`"message": "Hello, ${value}"`);
     expect(summary.responseMessages[0]!.json).toContain(`"message": "Hello, ${value}"`);
     expect(written).toHaveLength(1);
     expect(JSON.stringify(written[0])).not.toContain(value);
     expect(written[0]!.grpc?.responseMessages.join('')).toContain('Hello, <redacted>');
+  });
+
+  it('masks a value the server echoes in a message that does not decode, live and in the summary', async () => {
+    const value = 'fake-grpc-raw-echo-0001';
+    await store.set(value, { label: secretStoreLabel('p1', 'grpc_name') });
+    await store.set('fake-grpc-token-0000004', { label: secretStoreLabel('p1', 'grpc_token') });
+    const written: HistoryEntry[] = [];
+    const { sender, events } = fakeSender();
+
+    const summary = await sendGrpcRequest(
+      new EngineService(),
+      grpcDeps(false, written, garbledSet()),
+      { sendId: 'g7', requestId: 'q-1' },
+      sender as never,
+    );
+
+    const live = messageEvents(events);
+    expect(live).toHaveLength(1);
+    expect(live[0]!.json).toBeUndefined();
+    expect(live[0]!.problem).toBeDefined();
+    for (const message of [...live, ...summary.responseMessages]) {
+      expect(decoded(message.base64)).not.toContain(value);
+      expect(decoded(message.base64)).toContain('<redacted>');
+    }
+    expect(decodedHttp(summary)).not.toContain(value);
+    expect(written).toHaveLength(1);
+    expect(decoded(written[0]!.response?.envelopeXml ?? '')).not.toContain(value);
+  });
+
+  it('keeps a message that does not decode masked in History while secrets are shown', async () => {
+    const value = 'fake-grpc-raw-shown-001';
+    await store.set(value, { label: secretStoreLabel('p1', 'grpc_name') });
+    await store.set('fake-grpc-token-0000005', { label: secretStoreLabel('p1', 'grpc_token') });
+    const written: HistoryEntry[] = [];
+    const { sender, events } = fakeSender();
+
+    const summary = await sendGrpcRequest(
+      new EngineService(),
+      grpcDeps(true, written, garbledSet()),
+      { sendId: 'g8', requestId: 'q-1' },
+      sender as never,
+    );
+
+    expect(decoded(messageEvents(events)[0]!.base64)).toContain(value);
+    expect(decoded(summary.responseMessages[0]!.base64)).toContain(value);
+    expect(written).toHaveLength(1);
+    const stored = [written[0]!.response?.envelopeXml ?? '', ...(written[0]!.grpc?.responseMessages ?? [])];
+    expect(stored).toHaveLength(2);
+    for (const base64 of stored) {
+      expect(decoded(base64)).not.toContain(value);
+      expect(decoded(base64)).toContain('<redacted>');
+    }
   });
 
   it('masks a value the server echoes in its status message and trailers', async () => {
@@ -592,6 +744,92 @@ describe('a gRPC call with tokens', () => {
     expect(written).toHaveLength(2);
     expect(JSON.stringify(written)).not.toContain(value);
     expect(written.map((entry) => entry.grpc?.statusMessage)).toEqual(['no such <redacted>', 'no such <redacted>']);
+  });
+});
+
+describe('an event stream that echoes a token value', () => {
+  const value = 'fake-sse-echo-token-0001';
+  let server: Server;
+  let url: string;
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(`: seen ${value}\n\nid: 1\ndata: {"token":"${value}"}\n\n`);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    url = `http://127.0.0.1:${String(typeof address === 'object' && address !== null ? address.port : 0)}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  /** Streams from the server through `request.sendRest`, recording History through the real builder. */
+  async function stream(sendId: string, show: boolean) {
+    // As the getter records a value it hands out for `${secret:name}`.
+    recordSecretValue(value);
+    const input: RestSendInput = {
+      baseUrl: url,
+      request: { method: 'GET', url: '/', pathParams: [], query: [], headers: [], body: { kind: 'none' } },
+      settings: { timeoutMs: 5_000, followRedirects: true },
+    };
+    const resolution = {
+      input,
+      unresolved: [],
+      api: restApiWire(),
+      request: {},
+      baseUrlSource: 'api',
+      auth: { type: 'none' },
+    };
+    const written: HistoryEntry[] = [];
+    registerRequestChannels(new EngineService(), {
+      project: {
+        scopesFor: () => SCOPES,
+        authFor: () => undefined,
+        requestMeta: () => undefined,
+        projectId: () => 'p1',
+        restSend: (requestId: string) => (requestId === 'rest-1' ? resolution : undefined),
+      } as unknown as RequestChannelDeps['project'],
+      ...(show ? { showSecrets: { get: () => true } } : {}),
+      history: {
+        recordRestSend: (projectId: string, record: RecordRestSendInput) => {
+          written.push(buildRestHistoryEntry(projectId, record));
+          return Promise.resolve(undefined);
+        },
+      } as never,
+    });
+    const { sender, events } = fakeSender();
+    const summary = unwrap<RestExchangeSummary>(
+      await invoke('request.sendRest', { sendId, requestId: 'rest-1' }, sender),
+    );
+    const rows = (events as RestLiveEvent[]).flatMap((e) => (e.kind === 'row' ? [e.row] : []));
+    return { summary, rows, written };
+  }
+
+  it('masks the value in the rows, live and in the summary, and in History', async () => {
+    const { summary, rows, written } = await stream('e1', false);
+
+    expect(rows.map((row) => (row.kind === 'event' ? row.data : row.kind === 'comment' ? row.text : ''))).toEqual([
+      ' seen <redacted>',
+      '{"token":"<redacted>"}',
+    ]);
+    expect(summary.stream?.rows).toEqual(rows);
+    expect(JSON.stringify(rows)).not.toContain(value);
+    expect(JSON.stringify(summary)).not.toContain(value);
+    expect(written).toHaveLength(1);
+    expect(JSON.stringify(written[0])).not.toContain(value);
+  });
+
+  it('shows the value while secrets are shown, but History masks it all the same', async () => {
+    const { summary, rows, written } = await stream('e2', true);
+
+    expect(JSON.stringify(rows)).toContain(value);
+    expect(JSON.stringify(summary.stream?.rows)).toContain(value);
+    expect(written).toHaveLength(1);
+    expect(written[0]!.sse?.rows).toHaveLength(2);
+    expect(JSON.stringify(written[0])).not.toContain(value);
   });
 });
 

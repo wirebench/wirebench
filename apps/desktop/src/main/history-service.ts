@@ -49,14 +49,19 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
         : {}),
     },
     // A frame's text may carry a `${secret:name}` value (sent, or echoed back); the summary shows
-    // it while secrets are shown, and History, written to disk, never does. A binary payload that
-    // is UTF-8 text is masked the same way; `size` stays the size on the wire, as the summary's.
+    // it while secrets are shown, and History, written to disk, never does. A binary payload's
+    // bytes and a close reason are masked the same way; `size` stays the size on the wire, as the
+    // summary's, though a masked payload's own length can differ from it.
     frames: exchange.frames.map((frame) => ({
       ...frame,
       ...(frame.text !== undefined ? { text: redactSecretValues(frame.text) } : {}),
-      ...(frame.base64 !== undefined ? { base64: redactSecretBase64(frame.base64, { show: false }) } : {}),
+      ...(frame.base64 !== undefined ? { base64: redactSecretBytes(frame.base64) } : {}),
+      ...(frame.close !== undefined
+        ? { close: { code: frame.close.code, reason: redactSecretValues(frame.close.reason) } }
+        : {}),
     })),
-    closed: exchange.closed,
+    // `historyWsOf` copies the reason into the entry's `closeReason`.
+    closed: { ...exchange.closed, reason: redactSecretValues(exchange.closed.reason) },
     counts: exchange.counts,
     durationMs: exchange.durationMs,
   } as unknown as WsExchange;
@@ -119,16 +124,18 @@ import {
 } from '@wirebench/engine';
 import type {
   HistoryEntry,
+  HistorySse,
   HistoryFile,
   HistoryListQuery,
   RestContractResult,
   RestEventStreamLike,
+  SseRow,
   WsExchange,
 } from '@wirebench/engine';
 import {
   redactHeaderPairs,
   redactHeaders,
-  redactSecretBase64,
+  redactSecretBytes,
   redactSecretValues,
   redactUrl,
   redactXml,
@@ -287,6 +294,23 @@ function storedBody(body: string): string {
   return `${kept}\n… truncated, ${String(text.length - MAX_HISTORY_BODY_CHARS)} more characters`;
 }
 
+/** An event-stream row as stored: its data or text masked, whatever the summary showed. */
+function storedSseRow(row: SseRow): SseRow {
+  if (row.kind === 'event') {
+    return { ...row, data: redactSecretValues(row.data) };
+  }
+  return row.kind === 'comment' ? { ...row, text: redactSecretValues(row.text) } : row;
+}
+
+/**
+ * The event stream as stored, capped by `historySseOf` and then masked, so only the rows kept are
+ * scanned.
+ */
+function storedSse(stream: RestEventStreamLike): HistorySse {
+  const sse = historySseOf(stream);
+  return { ...sse, rows: sse.rows.map(storedSseRow) };
+}
+
 /**
  * Builds one (already redacted) REST `HistoryEntry`.
  *
@@ -333,7 +357,7 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
     // Cast for the same `exactOptionalPropertyTypes` gap `buildWsHistoryEntry` papers over above: the
     // wire's zod-inferred `id?: string | undefined` vs. the engine's plain `id?: string`. The shapes
     // agree field for field; only that strictness setting disagrees.
-    ...(exchange?.stream !== undefined ? { sse: historySseOf(exchange.stream as unknown as RestEventStreamLike) } : {}),
+    ...(exchange?.stream !== undefined ? { sse: storedSse(exchange.stream as unknown as RestEventStreamLike) } : {}),
     // Cast for the same `exactOptionalPropertyTypes` gap as `sse` above; the shapes agree field for field.
     ...(exchange?.contract !== undefined
       ? { contract: historyContractOf(exchange.contract as RestContractResult) }
@@ -400,7 +424,7 @@ export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendI
       ? {
           response: {
             envelopeXml: storedBody(
-              exchange.responseMessages.map((message) => message.json ?? message.base64).join('\n'),
+              exchange.responseMessages.map((message) => message.json ?? redactSecretBytes(message.base64)).join('\n'),
             ),
             rawHeaders: redactHeaderPairs(exchange.http.rawHeaders, { show: false }),
             status: exchange.http.status,
@@ -423,7 +447,10 @@ export function buildGrpcHistoryEntry(projectId: string, record: RecordGrpcSendI
           }
         : {}),
       requestMessages: exchange?.requestMessages.map(storedBody) ?? [storedBody(record.requestMessage)],
-      responseMessages: exchange?.responseMessages.map((message) => storedBody(message.json ?? message.base64)) ?? [],
+      // `storedBody` masks text; a message that did not decode is base64, masked as bytes first.
+      responseMessages:
+        exchange?.responseMessages.map((message) => storedBody(message.json ?? redactSecretBytes(message.base64))) ??
+        [],
       trailers: Object.entries(redactHeaders(exchange?.trailers ?? {}, { show: false })).map(([name, value]) => ({
         name,
         value,
