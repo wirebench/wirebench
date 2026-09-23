@@ -100,6 +100,26 @@ describe('EngineService.sendRestRequest', () => {
     expect(JSON.parse(summary.text)).toMatchObject({ in: 'query' });
   });
 
+  it('masks the key in a redirect hop too, on the send and on a later re-render', async () => {
+    const engine = service({ sec_key: 'good key' });
+    const auth = { type: 'api-key', name: 'api key', in: 'query', valueRef: 'sec_key' } as const;
+    const key = /good(%20|\+| )key/;
+
+    const summary = await engine.sendRestRequest(
+      { sendId: 's4r', requestId: 'r1', input: input({ url: '/redirect/302?to=/echo' }) },
+      { auth, keyParams: ['api key'] },
+    );
+
+    expect(summary.http.redirects).toHaveLength(1);
+    const [hop] = summary.http.redirects;
+    expect(hop!.url).toContain('/redirect/302');
+    expect(hop!.url).toContain('redacted');
+    expect(hop!.url).not.toMatch(key);
+    // `exchanges.get` re-renders from the cache: masked with show-secrets off, as sent with it on.
+    expect(engine.exchanges.getRestView('s4r', false)?.http.redirects[0]!.url).not.toMatch(key);
+    expect(engine.exchanges.getRestView('s4r', true)?.http.redirects[0]!.url).toMatch(key);
+  });
+
   it('fails loudly when a reference has no secret behind it', async () => {
     await expect(
       service().sendRestRequest(
