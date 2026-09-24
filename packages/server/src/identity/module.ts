@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { identitySettings, type IdentityEnv } from './env.js';
+import { authenticate } from './guard.js';
 import type { OidcProvider } from './oidc.js';
 import { RateLimiter } from './rate-limit.js';
 
@@ -42,7 +43,8 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
         ...(settings.oidc !== undefined ? { oidcDisplayName: settings.oidc.displayName } : {}),
       });
       ctx.meta.addCapability('identity');
-      void env; // Tasks 4–7 add the hook, the routes, discovery and the sweep here.
+      app.addHook('onRequest', authenticate(env));
+      // Tasks 5–7 register the route groups and the sweep after this line.
       await Promise.resolve();
     },
   };
