@@ -4,6 +4,9 @@ export type ServerCommand =
   | { readonly command: 'serve' }
   | { readonly command: 'migrate'; readonly check: boolean }
   | { readonly command: 'config-check' }
+  | { readonly command: 'admin-invite'; readonly email: string; readonly serverAdmin: boolean }
+  | { readonly command: 'admin-list-invitations' }
+  | { readonly command: 'admin-revoke-invitation'; readonly id: string }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -18,6 +21,10 @@ Usage:
   wirebench-server migrate          Apply pending database migrations and exit
   wirebench-server migrate --check  Exit 1 when migrations are pending
   wirebench-server config check     Report each WIREBENCH_SERVER_* variable as set, defaulted or missing
+  wirebench-server admin invite <email> [--no-admin]
+                                    Create an invitation link (a server admin unless --no-admin)
+  wirebench-server admin list-invitations
+  wirebench-server admin revoke-invitation <id>
   wirebench-server --version
   wirebench-server --help
 
@@ -28,6 +35,7 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean' },
   check: { type: 'boolean' },
+  'no-admin': { type: 'boolean' },
 } as const;
 
 export function parseServerArgs(argv: readonly string[]): ServerCommand {
@@ -39,7 +47,10 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   }
   if (parsed.values.help) return { command: 'help' };
   if (parsed.values.version) return { command: 'version' };
-  const [word, second] = parsed.positionals;
+  const [word, second, third] = parsed.positionals;
+  if (parsed.values['no-admin'] && !(word === 'admin' && second === 'invite')) {
+    throw new UsageError('--no-admin only applies to admin invite');
+  }
   switch (word) {
     case undefined:
     case 'serve':
@@ -50,6 +61,19 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
     case 'config':
       if (second !== 'check') throw new UsageError('usage: wirebench-server config check');
       return { command: 'config-check' };
+    case 'admin':
+      switch (second) {
+        case 'invite':
+          if (third === undefined) throw new UsageError('usage: wirebench-server admin invite <email> [--no-admin]');
+          return { command: 'admin-invite', email: third, serverAdmin: parsed.values['no-admin'] !== true };
+        case 'list-invitations':
+          return { command: 'admin-list-invitations' };
+        case 'revoke-invitation':
+          if (third === undefined) throw new UsageError('usage: wirebench-server admin revoke-invitation <id>');
+          return { command: 'admin-revoke-invitation', id: third };
+        default:
+          throw new UsageError(`unknown admin command "${second ?? ''}"; try --help`);
+      }
     default:
       throw new UsageError(`unknown command "${word}"`);
   }

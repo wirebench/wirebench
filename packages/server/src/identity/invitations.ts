@@ -12,14 +12,14 @@ import {
   type PasswordResetCreated,
   type SignInResponse,
 } from '@wirebench/engine';
-import type { IdentityEnv } from './env.js';
+import type { IdentityEnv, InvitationEnv } from './env.js';
 import { invitationExists, invitationInvalid, methodDisabled, passwordTooShort, userExists } from './errors.js';
 import { hashPassword } from './passwords.js';
 import * as repo from './repo.js';
 import { emailLower, issueToken } from './sessions.js';
 import { hashSecret, mintSecret, newId } from './tokens.js';
 
-export const inviteUrl = (env: IdentityEnv, secret: string): string => `${env.ctx.config.publicUrl}/invite/${secret}`;
+export const inviteUrl = (env: InvitationEnv, secret: string): string => `${env.ctx.config.publicUrl}/invite/${secret}`;
 
 export interface CreateInvitationInput {
   readonly email: string;
@@ -28,7 +28,7 @@ export interface CreateInvitationInput {
   readonly createdBy: string | null;
 }
 
-export async function createInvitation(env: IdentityEnv, input: CreateInvitationInput): Promise<InvitationCreated> {
+export async function createInvitation(env: InvitationEnv, input: CreateInvitationInput): Promise<InvitationCreated> {
   const lower = emailLower(input.email);
   const now = env.now();
   if ((await repo.findUserByEmail(env.ctx.db, lower)) !== undefined) throw userExists();
@@ -50,7 +50,7 @@ export async function createInvitation(env: IdentityEnv, input: CreateInvitation
 
 /** A `reset` row for an existing user; any earlier open reset for them is closed first. */
 export async function createPasswordReset(
-  env: IdentityEnv,
+  env: InvitationEnv,
   user: repo.UserRow,
   createdBy: string,
 ): Promise<PasswordResetCreated> {
@@ -79,14 +79,14 @@ export function isOpen(row: repo.InvitationRow, now: Date): boolean {
 
 /** The row behind a secret while it is still usable; `undefined` for unknown, used, revoked or expired. */
 export async function openInvitationBySecret(
-  env: IdentityEnv,
+  env: InvitationEnv,
   secret: string,
 ): Promise<repo.InvitationRow | undefined> {
   const row = await repo.invitationBySecretHash(env.ctx.db, hashSecret(secret));
   return row !== undefined && isOpen(row, env.now()) ? row : undefined;
 }
 
-export async function lookupInvitation(env: IdentityEnv, secret: string): Promise<InvitationLookupResponse> {
+export async function lookupInvitation(env: InvitationEnv, secret: string): Promise<InvitationLookupResponse> {
   const row = await openInvitationBySecret(env, secret);
   if (row === undefined) throw invitationInvalid();
   return { email: row.email, methods: { local: env.settings.local, oidc: env.settings.oidc !== undefined } };
@@ -135,7 +135,7 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
 }
 
 /** Revokes an open `invite`; `false` when there is no such open invitation. */
-export async function revokeOpenInvitation(env: IdentityEnv, id: string): Promise<boolean> {
+export async function revokeOpenInvitation(env: InvitationEnv, id: string): Promise<boolean> {
   const row = await repo.invitationById(env.ctx.db, id);
   if (row === undefined || row.kind !== 'invite' || !isOpen(row, env.now())) return false;
   await repo.revokeInvitation(env.ctx.db, id, env.now());

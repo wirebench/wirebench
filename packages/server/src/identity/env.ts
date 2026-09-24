@@ -35,3 +35,10 @@ export interface IdentityEnv {
   readonly limiter: RateLimiter;
   readonly provider: OidcProvider | undefined;
 }
+
+/** What the invitation functions need: the CLI builds one without a Fastify app or a provider. */
+export interface InvitationEnv {
+  readonly ctx: Pick<ServerContext, 'db' | 'config' | 'events'>;
+  readonly settings: Pick<IdentitySettings, 'invitationMs' | 'local' | 'oidc'>;
+  readonly now: () => Date;
+}

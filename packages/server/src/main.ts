@@ -1,5 +1,6 @@
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
 import { ConfigError, describeConfig, loadConfig } from './config.js';
+import { runAdmin } from './identity/cli.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { BUILTIN_MODULES } from './modules.js';
 import { runMigrate, startServer, StartupError, type StartOptions } from './serve.js';
@@ -42,6 +43,10 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
     }
     case 'migrate':
       return runMigrate(io.env, io, command.check, serveOptions.modules ?? BUILTIN_MODULES);
+    case 'admin-invite':
+    case 'admin-list-invitations':
+    case 'admin-revoke-invitation':
+      return runAdmin(command, io);
     case 'serve': {
       try {
         const server = await startServer(io.env, io, { modules: BUILTIN_MODULES, ...serveOptions });
