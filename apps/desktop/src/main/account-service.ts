@@ -69,7 +69,13 @@ export class AccountService {
   private readonly file: string;
   private accounts: AccountsFile = { version: ACCOUNTS_FILE_VERSION, servers: [] };
   private pending: LoopbackCallback | undefined;
+  /** Set synchronously before the loopback binds, so a second `startOidc` in the same tick sees it. */
+  private starting = false;
+  /** `cancelSignIn` called while {@link starting}: cancel the loopback as soon as it binds. */
+  private cancelRequested = false;
   private readonly listeners = new Set<(servers: readonly ServerAccount[]) => void>();
+  /** Every write chains onto this so renames can never land out of order (§4.3). */
+  private writing: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: AccountServiceDeps) {
     this.file = join(deps.userDataDir, ACCOUNTS_FILE);
@@ -146,25 +152,37 @@ export class AccountService {
    * device token. One flow at a time, as the OAuth2 request flow behaves.
    */
   async startOidc(input: { readonly url: string; readonly deviceName?: string }): Promise<ServerAccount> {
-    if (this.pending !== undefined)
+    if (this.pending !== undefined || this.starting)
       throw new WirebenchError('account-sign-in-pending', 'A sign-in is already waiting for the browser');
+    // Guards the window between this check and the loopback binding below, which is async: two
+    // calls in the same tick must not both pass the check above.
+    this.starting = true;
+    this.cancelRequested = false;
     const origin = normalizeServerUrl(input.url);
     const deviceName = this.deviceName(input.deviceName);
     const pair = pkce();
     let flowId: string | undefined;
-    const listener = await (this.deps.loopback ?? startLoopbackCallback)({
-      expected: { name: 'flow', value: () => flowId },
-      timeoutMs: SIGN_IN_TIMEOUT_MS,
-      describe: (params) =>
-        params.get('grant') !== null
-          ? { ok: true, message: 'Signed in. You can close this tab and go back to Wirebench.' }
-          : {
-              ok: false,
-              message: `Wirebench could not sign you in (${params.get('error') ?? 'no grant'}). You can close this tab.`,
-            },
-    });
+    let listener: LoopbackCallback;
+    try {
+      listener = await (this.deps.loopback ?? startLoopbackCallback)({
+        expected: { name: 'flow', value: () => flowId },
+        timeoutMs: SIGN_IN_TIMEOUT_MS,
+        describe: (params) =>
+          params.get('grant') !== null
+            ? { ok: true, message: 'Signed in. You can close this tab and go back to Wirebench.' }
+            : {
+                ok: false,
+                message: `Wirebench could not sign you in (${params.get('error') ?? 'no grant'}). You can close this tab.`,
+              },
+      });
+    } catch (error) {
+      this.starting = false;
+      throw error;
+    }
+    this.starting = false;
     this.pending = listener;
     void listener.result.catch(() => undefined);
+    if (this.cancelRequested) listener.cancel();
     try {
       const started = await this.deps.client.startOidc(origin, {
         device: { name: deviceName },
@@ -197,9 +215,17 @@ export class AccountService {
   }
 
   cancelSignIn(): { readonly cancelled: boolean } {
-    if (this.pending === undefined) return { cancelled: false };
-    this.pending.cancel();
-    return { cancelled: true };
+    if (this.pending !== undefined) {
+      this.pending.cancel();
+      return { cancelled: true };
+    }
+    // Between the synchronous `starting` guard and the loopback actually binding: nothing to
+    // cancel yet, but the request is remembered and honoured as soon as it does.
+    if (this.starting) {
+      this.cancelRequested = true;
+      return { cancelled: true };
+    }
+    return { cancelled: false };
   }
 
   /** Best effort on the server; the token is gone locally either way (§3.8). */
@@ -231,11 +257,16 @@ export class AccountService {
     return this.deps.secrets.get(account.tokenRef);
   }
 
-  /** The server said `identity-unauthenticated`: the account shows as signed out, nothing retries. */
+  /**
+   * The server said `identity-unauthenticated`: the account shows as signed out, nothing retries.
+   * Fire-and-forget by design (callers are synchronous IPC handlers); a failed write is not
+   * surfaced here, but memory already reflects the intent and the next successful write persists
+   * it (see {@link persist}), so this never becomes an unhandled rejection.
+   */
   markSignedOut(url: string): void {
     const account = this.find(normalizeServerUrl(url));
     if (account === undefined || account.signedOut === true) return;
-    void this.replace(account.url, { ...account, signedOut: true });
+    this.replace(account.url, { ...account, signedOut: true }).catch(() => undefined);
   }
 
   /**
@@ -306,9 +337,23 @@ export class AccountService {
   private async persist(next: AccountsFile): Promise<void> {
     // Updated in memory before the write lands, so a synchronous caller of `markSignedOut`
     // (fire-and-forget) sees `list()` reflect the change immediately, not after the disk I/O.
+    // Memory always reflects the latest intent; if the write below fails, the caller that
+    // awaited this call sees the rejection, and the next successful write persists the state
+    // memory already holds — nothing here is ever logged, this snapshot carries no token.
     this.accounts = next;
     for (const listener of this.listeners) listener(next.servers);
-    await mkdir(this.deps.userDataDir, { recursive: true });
-    await writeAtomic(this.file, stringifyYaml(next, { lineWidth: 0 }));
+    // Chained on the previous write (not raced against it): two persist() calls in flight — an
+    // un-awaited markSignedOut followed by remove/signOut, or refreshAll's parallel refreshes —
+    // must land on disk in call order, or an older snapshot's rename could finish last and
+    // resurrect state a later call already removed. Each link captures its own `next` at call
+    // time, so the file always ends up holding the last snapshot taken.
+    const write = this.writing.then(async () => {
+      await mkdir(this.deps.userDataDir, { recursive: true });
+      await writeAtomic(this.file, stringifyYaml(next, { lineWidth: 0 }));
+    });
+    // The chain itself must never reject (or every later write would stay stuck on a rejected
+    // link); each caller still observes its own failure through `write` below.
+    this.writing = write.catch(() => undefined);
+    await write;
   }
 }

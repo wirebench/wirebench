@@ -151,6 +151,17 @@ describe('AccountService', () => {
     expect(secrets.entries.size).toBe(1);
   });
 
+  it('serialises accounts.yaml writes: an un-awaited markSignedOut before remove does not resurrect the account on reload', async () => {
+    const client = fakeClient();
+    const s = service(client);
+    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    s.markSignedOut(URL_A); // fire-and-forget write
+    await s.remove(URL_A); // a second write, which must land on disk after the first
+    const reloaded = service();
+    await reloaded.load();
+    expect(reloaded.list()).toEqual([]);
+  });
+
   it('OIDC: starts the flow with the loopback port, opens the browser at the server’s URL, completes with the grant', async () => {
     const client = fakeClient();
     const loopback = fakeLoopback();
@@ -192,6 +203,17 @@ describe('AccountService', () => {
     expect(s2.cancelSignIn()).toEqual({ cancelled: true });
     await expect(pending2).rejects.toMatchObject({ code: 'account-sign-in-cancelled' });
     expect(s2.cancelSignIn()).toEqual({ cancelled: false });
+  });
+
+  it('OIDC: two startOidc calls in the same tick — the second rejects account-sign-in-pending and the loopback starts once', async () => {
+    const loopback = fakeLoopback();
+    const s = service(fakeClient(), fakeSecrets(), loopback);
+    const first = s.startOidc({ url: URL_A });
+    const second = s.startOidc({ url: URL_A });
+    await expect(second).rejects.toMatchObject({ code: 'account-sign-in-pending' });
+    expect(loopback.start).toHaveBeenCalledTimes(1);
+    loopback.answer({ flow: 'flow-1', grant: 'G'.repeat(43) });
+    await first;
   });
 
   it('sign out revokes on the server, deletes the secret and keeps the entry as signed out; a failed server call still clears', async () => {
