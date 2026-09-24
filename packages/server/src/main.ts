@@ -1,10 +1,8 @@
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
 import { ConfigError, describeConfig, loadConfig } from './config.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
+import { runMigrate, startServer, StartupError } from './serve.js';
 
-// `serve`/`migrate` await real work from Task 7 onward; the signature is async now so callers
-// don't change later.
-// eslint-disable-next-line @typescript-eslint/require-await
 export async function main(argv: readonly string[], io: ServerIo): Promise<number> {
   let command;
   try {
@@ -35,9 +33,21 @@ export async function main(argv: readonly string[], io: ServerIo): Promise<numbe
         throw error;
       }
     }
-    case 'serve':
     case 'migrate':
-      io.stderr.write(`${command.command} is not available yet\n`);
-      return ExitCode.Config;
+      return runMigrate(io.env, io, command.check);
+    case 'serve': {
+      try {
+        const server = await startServer(io.env, io);
+        await new Promise<void>((resolve) => server.app.server.once('close', resolve));
+        await server.close(); // the same promise the signal started: resolves once the pool is closed
+        return ExitCode.Ok;
+      } catch (error) {
+        if (error instanceof StartupError) {
+          io.stderr.write(`${error.message}\n`);
+          return error.exitCode;
+        }
+        throw error;
+      }
+    }
   }
 }

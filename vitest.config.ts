@@ -98,6 +98,7 @@ export default defineConfig({
           include: ['packages/server/test/integration/**/*.test.ts'],
           // Each file boots the server against a real PostgreSQL schema; see test/helpers/database.ts.
           testTimeout: 30_000,
+          globalSetup: ['packages/server/test/integration/global-setup.ts'],
         },
       },
       {
