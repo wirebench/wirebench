@@ -443,6 +443,15 @@ export async function deleteFlow(db: Querier, id: string): Promise<void> {
   await db.query('delete from oidc_flows where id = $1', [id]);
 }
 
+/**
+ * Redeems a granted flow: `true` only for the one request whose `DELETE` removed the row, so two
+ * concurrent completes with the same grant cannot both get a token.
+ */
+export async function claimGrantedFlow(db: Querier, id: string, grantHash: string): Promise<boolean> {
+  const result = await db.query('delete from oidc_flows where id = $1 and grant_hash = $2', [id, grantHash]);
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function deleteExpiredFlows(db: Querier, now: Date): Promise<number> {
   return (await db.query('delete from oidc_flows where expires_at < $1', [now])).rowCount ?? 0;
 }

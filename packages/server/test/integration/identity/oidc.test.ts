@@ -188,6 +188,31 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
     expect(loopback(res).searchParams.get('error')).toBe('identity-oidc-refused');
   });
 
+  it('redeems a grant once when two completes race', async () => {
+    await createInvitation(env(), { email: 'alice@example.com', serverAdmin: false, createdBy: null });
+    idp.nextUser({ sub: 'sub-alice', email: 'alice@example.com', email_verified: true });
+    const { flowId, cb } = await signInUpToGrant();
+    const grant = loopback(cb).searchParams.get('grant')!;
+    const results = await Promise.all([complete(flowId, grant), complete(flowId, grant)]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([201, 400]);
+    expect(results.find((r) => r.statusCode === 400)!.json<{ code: string }>().code).toBe('identity-flow-invalid');
+  });
+
+  it('rate-limits the callback per address', async () => {
+    for (let i = 0; i < 10; i += 1)
+      await h.app.inject({
+        method: 'GET',
+        url: `/api/v1/auth/oidc/callback?code=x&state=${mintSecret().secret}`,
+        remoteAddress: '10.0.0.9',
+      });
+    const res = await h.app.inject({
+      method: 'GET',
+      url: `/api/v1/auth/oidc/callback?code=x&state=${mintSecret().secret}`,
+      remoteAddress: '10.0.0.9',
+    });
+    expect(res.statusCode).toBe(429);
+  });
+
   it('rate-limits complete per address', async () => {
     const { flowId } = (await start()).json<{ flowId: string }>();
     for (let i = 0; i < 10; i += 1) await complete(flowId, mintSecret().secret);

@@ -104,7 +104,11 @@ export const authOidcRoutes =
 
     app.get(
       '/auth/oidc/callback',
-      { schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) } },
+      {
+        // The state is a secret an unauthenticated caller presents (§12).
+        preHandler: [rateLimit(env, (request) => [ipKey(request)])],
+        schema: { querystring: jsonSchema(oidcCallbackQuerySchema, { io: 'input' }) },
+      },
       async (request, reply) => {
         const provider = env.provider;
         if (provider === undefined) throw methodDisabled();
@@ -173,7 +177,8 @@ export const authOidcRoutes =
           pkceChallenge(body.codeVerifier) !== flow.codeChallenge
         )
           throw flowInvalid();
-        await repo.deleteFlow(env.ctx.db, flow.id); // single use, whatever happens next
+        // Single use, whatever happens next: only the request that removed the row goes on.
+        if (!(await repo.claimGrantedFlow(env.ctx.db, flow.id, flow.grantHash))) throw flowInvalid();
         const user = await repo.findUserById(env.ctx.db, flow.userId);
         if (user === undefined || user.disabledAt !== null) throw flowInvalid();
         return reply.code(201).send(await issueToken(env, user, flow.deviceName));
