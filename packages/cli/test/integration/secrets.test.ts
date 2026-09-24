@@ -166,6 +166,45 @@ describe('${secret:name} tokens', () => {
     }
   });
 
+  it('run resolves a token only a --var property reaches, and names its variable when unset', async () => {
+    const viaVar = join(dir, '..', `${dir.split(/[\\/]/).pop()!}-run-var`);
+    await cp(dir, viaVar, { recursive: true });
+    try {
+      const file = join(viaVar, 'apis', 'demo', 'requests', 'secure.request.yaml');
+      await writeFile(file, (await readFile(file, 'utf8')).replace('${secret:demo_basic}', '${credential}'));
+      const varRun = (env: Record<string, string>): ReturnType<typeof runCli> =>
+        runCli(
+          [
+            'run',
+            viaVar,
+            '-e',
+            'local',
+            '--var',
+            `baseUrl=${demo.url}`,
+            '--var',
+            'credential=${secret:via_var}',
+            '-v',
+            'demo/secure',
+          ],
+          env,
+        );
+
+      const sent = await varRun({ WIREBENCH_SECRET_VIA_VAR: credential });
+      expect(sent.code).toBe(0);
+      expect(demo.secureAuth).toEqual([`Basic ${credential}`]);
+      expect(sent.stdout + sent.stderr).not.toContain(credential);
+
+      demo.requests.length = 0;
+      const missing = await varRun({});
+      expect(missing.code).toBe(3);
+      expect(missing.stdout + missing.stderr).toContain('secret-missing');
+      expect(missing.stdout + missing.stderr).toContain('Set WIREBENCH_SECRET_VIA_VAR to run "demo/secure".');
+      expect(demo.requests).toEqual([]);
+    } finally {
+      await rm(viaVar, { recursive: true, force: true });
+    }
+  });
+
   it('secrets list does not count a variable the run never reads as set', async () => {
     // WIREBENCH_SECRET_SECRET_DEMO_BASIC is what the pseudo-ref would map to by the ref rule.
     const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'local', 'demo/secure'], {

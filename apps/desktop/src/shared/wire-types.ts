@@ -3327,7 +3327,8 @@ export const secretLocationWireSchema = z.union([
       name: z.string().optional(),
     })
     .strict(),
-  z.object({ kind: z.enum(['soap-body', 'rest-url', 'grpc-message', 'ws-url']), requestId: z.string() }).strict(),
+  z.object({ kind: z.enum(['soap-body', 'grpc-message']), requestId: z.string() }).strict(),
+  z.object({ kind: z.enum(['rest-url', 'ws-url']), requestId: z.string(), name: z.string().optional() }).strict(),
   z.object({ kind: z.literal('ws-message'), requestId: z.string(), messageId: z.string() }).strict(),
   z.object({ kind: z.literal('project-property'), name: z.string() }).strict(),
   z.object({ kind: z.literal('env-property'), environmentId: z.string(), name: z.string() }).strict(),

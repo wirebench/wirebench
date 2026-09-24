@@ -32,7 +32,11 @@ export interface SecretMovesResult {
   readonly values: Record<string, string>;
 }
 
+/** The stored text a location is in: a URL finding's query key is left out, as the URL is one text. */
 function locationKey(location: SecretLocation): string {
+  if (location.kind === 'rest-url' || location.kind === 'ws-url') {
+    return JSON.stringify({ kind: location.kind, requestId: location.requestId });
+  }
   return JSON.stringify(location);
 }
 
@@ -247,9 +251,10 @@ function sanitize(raw: string): string {
 }
 
 /**
- * The name offered for `finding`: its header, query, metadata, field or property name, sanitised
- * to `snake_case` (else a name from its rule), made unique against `taken` ignoring case with a
- * `_2`, `_3`, … suffix. Always matches `SECRET_NAME_PATTERN`.
+ * The name offered for `finding`: its header, query (in the table or the URL), metadata, field or
+ * property name, sanitised to `snake_case` (else a name from its rule: `url_password` for a URL's
+ * password), made unique against `taken` ignoring case with a `_2`, `_3`, … suffix. Always matches
+ * `SECRET_NAME_PATTERN`.
  */
 export function proposeSecretName(finding: SecretFinding, taken: ReadonlySet<string>): string {
   const { location } = finding;

@@ -143,6 +143,20 @@ describe('applySecretMoves', () => {
     expect(expand(req.url, { project: {}, global: {}, system: {}, secrets }).text).toBe(url);
   });
 
+  it('rewrites a URL password and two URL parameters in one URL, whatever key each finding names', () => {
+    const url = 'https://alice:FAKEpw@h/x?token=FAKEtok&page=1&api_key=FAKEkey';
+    const r = moveAll(restProject({ url }));
+    expect(r.findings.map((f) => f.location)).toEqual([
+      { kind: 'rest-url', requestId: 'r1' },
+      { kind: 'rest-url', requestId: 'r1', name: 'token' },
+      { kind: 'rest-url', requestId: 'r1', name: 'api_key' },
+    ]);
+    expect(r.stale).toEqual([]);
+    expect(r.project.apis[0]!.requests[0]!.url).toBe(
+      'https://alice:${secret:s0}@h/x?token=${secret:s1}&page=1&api_key=${secret:s2}',
+    );
+  });
+
   it('replaces only the password of a URL userinfo', () => {
     const url = 'https://alice:FAKE%40pass@h/x?page=1';
     const r = moveAll(restProject({ url }), () => 'url_pw');
@@ -259,6 +273,16 @@ describe('proposeSecretName', () => {
 
   it('names a URL password finding after its rule', () => {
     expect(proposeSecretName(find(restProject({ url: 'https://a:FAKEpw@h/' })), new Set())).toBe('url_password');
+  });
+
+  it('names a URL query parameter finding after its key, and a URL password after its rule', () => {
+    const url = 'https://a:FAKEpw@h/x?page=1&token=FAKEtok';
+    const [password, token] = scanProjectForSecrets(restProject({ url }));
+    expect(proposeSecretName(password!, new Set())).toBe('url_password');
+    expect(proposeSecretName(token!, new Set())).toBe('token');
+    const w = createWsRequest('W', { id: 'w1', url: 'wss://h/socket?access_token=FAKEtok' });
+    const ws = find(project({ wsApis: [createWsApi('W', { requests: [w] })] }));
+    expect(proposeSecretName(ws, new Set())).toBe('access_token');
   });
 
   it('de-duplicates against taken names ignoring case', () => {

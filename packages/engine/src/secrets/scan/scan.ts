@@ -33,13 +33,17 @@ export function scanProjectForSecrets(project: Project): SecretFinding[] {
   for (const target of scanTargets(project)) {
     const matches = detectInText(target.text, target.context);
     const seen = new Map<string, number>();
+    const { location } = target;
+    const inUrl = location.kind === 'rest-url' || location.kind === 'ws-url';
     for (const match of matches) {
       const value = target.text.slice(match.start, match.end);
       const occurrence = seen.get(value) ?? 0;
       seen.set(value, occurrence + 1);
+      // A URL finding under a query parameter carries its key, for the name the dialog proposes.
+      const at: SecretLocation = inUrl && match.name !== undefined ? { ...location, name: match.name } : location;
       findings.push({
-        id: findingId(target.location, value, occurrence),
-        location: target.location,
+        id: findingId(at, value, occurrence),
+        location: at,
         rule: match.rule,
         label: target.label,
         valueStart: match.start,

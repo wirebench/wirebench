@@ -136,7 +136,7 @@ describe('SecretScanSession.scan: WS URL and query, URL passwords, form fields',
     ]);
     for (const f of review.findings) expect(() => secretFindingWireSchema.parse(f)).not.toThrow();
     expect(JSON.stringify(review)).not.toMatch(/fake-(url-pass|form-secret|ws-token|ws-query)/);
-    expect(Object.values(review.proposedNames)).toEqual(['url_password', 'client_secret', 'secret', 'access_token']);
+    expect(Object.values(review.proposedNames)).toEqual(['url_password', 'client_secret', 'token', 'access_token']);
 
     const ws = review.findings.find((f) => f.location.kind === 'ws-url')!;
     const result = await session.move([{ id: ws.id, name: 'chat_token' }]);

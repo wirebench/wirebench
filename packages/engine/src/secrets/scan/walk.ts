@@ -18,8 +18,9 @@ import type { DetectContext, SecretRule } from './rules.js';
  * Beyond the spec's fields, `index` pins a keyed entry by its position in its list (names may
  * repeat), `field` is the position of the form field or multipart text part a `rest-body` finding
  * sits in and `name` that field's name (both absent for a raw body), and `messageId` names the
- * saved message of a `ws-message` finding. `rest-url` and `ws-url` are the request's URL text,
- * `rest-query` and `ws-query` its query table.
+ * saved message of a `ws-message` finding. `rest-url` and `ws-url` are the request's URL text, with
+ * `name` the query parameter a finding in it sits under (absent for any other finding in the URL,
+ * a userinfo password included); `rest-query` and `ws-query` are its query table.
  * `grpc-api-metadata` and `ws-api-header` are the entries set on the API itself, sent by every
  * request in it.
  */
@@ -37,7 +38,8 @@ export type SecretLocation =
       readonly index: number;
     }
   | { readonly kind: 'rest-body'; readonly requestId: string; readonly field?: number; readonly name?: string }
-  | { readonly kind: 'soap-body' | 'rest-url' | 'grpc-message' | 'ws-url'; readonly requestId: string }
+  | { readonly kind: 'soap-body' | 'grpc-message'; readonly requestId: string }
+  | { readonly kind: 'rest-url' | 'ws-url'; readonly requestId: string; readonly name?: string }
   | { readonly kind: 'ws-message'; readonly requestId: string; readonly messageId: string }
   | { readonly kind: 'project-property'; readonly name: string }
   | { readonly kind: 'env-property'; readonly environmentId: string; readonly name: string };

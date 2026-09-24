@@ -86,7 +86,12 @@ describe('scanProjectForSecrets locations', () => {
     const api = createApi('Billing API', { requests: [r], folders: [createFolder('Auth', { requests: [r2] })] });
     const findings = scanProjectForSecrets(project({ apis: [api] }));
     expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
-      [{ kind: 'rest-url', requestId: 'r1' }, 'sensitive-name', 'FAKEkey', 'Billing API › GET /invoices › URL'],
+      [
+        { kind: 'rest-url', requestId: 'r1', name: 'api_key' },
+        'sensitive-name',
+        'FAKEkey',
+        'Billing API › GET /invoices › URL',
+      ],
       [
         { kind: 'rest-query', requestId: 'r1', name: 'access_token', index: 1 },
         'sensitive-name',
@@ -144,7 +149,7 @@ describe('scanProjectForSecrets locations', () => {
     const w = createWsRequest('Chat', { id: 'w1', url, query: [kv('page', '2'), kv('access_token', 'FAKEq')] });
     const findings = scanProjectForSecrets(project({ wsApis: [createWsApi('Chat API', { requests: [w] })] }));
     expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
-      [{ kind: 'ws-url', requestId: 'w1' }, 'sensitive-name', 'FAKEtok1', 'Chat API › Chat › URL'],
+      [{ kind: 'ws-url', requestId: 'w1', name: 'token' }, 'sensitive-name', 'FAKEtok1', 'Chat API › Chat › URL'],
       [
         { kind: 'ws-query', requestId: 'w1', name: 'access_token', index: 1 },
         'sensitive-name',

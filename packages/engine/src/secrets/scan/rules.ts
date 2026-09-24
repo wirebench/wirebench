@@ -30,6 +30,8 @@ export interface SecretMatch {
   readonly rule: SecretRule;
   readonly start: number;
   readonly end: number;
+  /** The decoded key of the form pair (a URL's query parameter) the value was found under. */
+  readonly name?: string;
 }
 
 export interface DetectContext {
@@ -78,8 +80,14 @@ const BASIC_RE = /\bBasic[ \t]+([A-Za-z0-9+/]{8,}={0,2})(?![A-Za-z0-9+/=])/g;
 /**
  * `scheme://user:password@`: group 1 is the password, which may be empty-user (`redis://:pw@`).
  * Neither part crosses a delimiter, whitespace or a quote, so `host:8080/a@b` is a port, not a pair.
+ * The user may hold whole `${…}` expansions (`${env:user}`), colons inside them included. The
+ * scheme starts only where a run of scheme-like characters does (not after a letter, digit, `_`,
+ * `+`, `.` or `-`), so a long `a-a-a…` run is walked once, not once per letter.
  */
-const URL_CREDENTIALS_RE = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/?#@:"'<>]*:([^\s/?#@"'<>]+)(?=@)/g;
+const URL_CREDENTIALS_RE =
+  /(?<![\w+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:\$\{[^{}]*\}|\$(?!\{)|[^\s/?#@:"'<>$])*:([^\s/?#@"'<>]+)(?=@)/g;
+/** URL passwords that stand for one rather than being one (`user:password@`, `u:****@`). */
+const PLACEHOLDER_PASSWORDS = new Set(['password', 'pass', 'passwd', 'secret']);
 /** A scheme prefix on a sensitive header's value, left in place when the credential is replaced. */
 const SCHEME_PREFIX_RE = /^(?:Bearer|Basic|Token|Digest|Negotiate|NTLM)[ \t]+/i;
 
@@ -167,6 +175,10 @@ function basicLooksReal(encoded: string): boolean {
   }
 }
 
+function isPlaceholderPassword(password: string): boolean {
+  return /^(?:\*+|[xX]+)$/.test(password) || PLACEHOLDER_PASSWORDS.has(password.toLowerCase());
+}
+
 function pushAll(out: SecretMatch[], re: RegExp, text: string, rule: SecretRule, group?: number): void {
   re.lastIndex = 0;
   for (let m = re.exec(text); m !== null; m = re.exec(text)) {
@@ -179,6 +191,7 @@ function pushAll(out: SecretMatch[], re: RegExp, text: string, rule: SecretRule,
     // A token-shaped run of 16+ characters; words joined by `/` ("Bearer tokens/credentials") are prose.
     if (rule === 'bearer' && (part.length < 16 || /^[A-Za-z]+(?:\/[A-Za-z]+)+$/.test(part))) continue;
     if (rule === 'basic' && !basicLooksReal(part)) continue;
+    if (rule === 'url-credentials' && isPlaceholderPassword(part)) continue;
     out.push({ rule, start, end: start + part.length });
   }
 }
@@ -312,7 +325,8 @@ function structuredMatches(
         // keep the raw key
       }
       const value = m[2]!;
-      add(nameMatch(value, m.index + m[0].length - value.length, key, formNames));
+      const match = nameMatch(value, m.index + m[0].length - value.length, key, formNames);
+      if (match !== undefined) out.push({ ...match, name: key });
     }
   }
   return out;
