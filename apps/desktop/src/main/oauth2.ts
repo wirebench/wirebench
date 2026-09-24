@@ -14,9 +14,7 @@
  * asked for it to be remembered (ADR-0004).
  */
 
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
-import type { AddressInfo } from 'node:net';
 import {
   WirebenchError,
   authorizationUrl,
@@ -28,6 +26,7 @@ import {
 } from '@wirebench/engine';
 import { sendHttp } from '@wirebench/engine';
 import type { HttpExchange, HttpRequest, OAuth2Auth, ProxyOptions, TlsOptions, TokenSet } from '@wirebench/engine';
+import { startLoopbackCallback, type LoopbackCallback } from './loopback-callback.js';
 
 /** How long a browser flow may stay pending before it is abandoned. */
 export const FLOW_TIMEOUT_MS = 5 * 60 * 1000;
@@ -85,50 +84,10 @@ export function tokenCacheKey(config: OAuth2Auth): string {
   return createHash('sha256').update(identity).digest('hex').slice(0, 32);
 }
 
-/** The page the browser lands on after the callback. Plain, self-contained, no network of its own. */
-/** The five characters that can break out of HTML text or an attribute. */
-const HTML_ESCAPES: Readonly<Record<string, string>> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-};
-
-/** Escapes `text` for interpolation into HTML element content. */
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] ?? character);
-}
-
-/**
- * The one-page response the loopback listener returns to the browser.
- *
- * `message` is **escaped**, not trusted. One caller interpolates the provider's own `error` query
- * parameter into it, and that string is chosen by whoever the user pointed the flow at: an
- * authorization server (or anyone who can drive the redirect, since it carries the matching
- * `state`) could otherwise close the paragraph and run script on the `http://127.0.0.1:<port>`
- * origin in the user's own browser. Escaping here rather than at the call site keeps a later caller
- * from reintroducing it.
- */
-function callbackPage(message: string): string {
-  return [
-    '<!doctype html><html lang="en"><head><meta charset="utf-8">',
-    '<title>Wirebench</title>',
-    '<style>body{font:14px system-ui;margin:3rem;color:#222}</style>',
-    '</head><body><h1>Wirebench</h1><p>',
-    escapeHtml(message),
-    '</p></body></html>',
-  ].join('');
-}
-
 /** One pending authorization-code flow. */
 interface PendingFlow {
-  readonly server: Server;
+  readonly listener: LoopbackCallback;
   readonly state: string;
-  readonly verifier?: string;
-  readonly timer: NodeJS.Timeout;
-  resolve: (code: string) => void;
-  reject: (error: Error) => void;
 }
 
 /**
@@ -168,10 +127,8 @@ export class OAuth2Service {
 
   /** Abandons a pending browser flow, if there is one. */
   cancel(): { readonly cancelled: boolean } {
-    if (this.pending === undefined) {
-      return { cancelled: false };
-    }
-    this.abandon(new WirebenchError('oauth2-cancelled', 'The sign-in was cancelled'));
+    if (this.pending === undefined) return { cancelled: false };
+    this.pending.listener.cancel();
     return { cancelled: true };
   }
 
@@ -271,117 +228,62 @@ export class OAuth2Service {
     const pair = config.pkce ? pkce() : undefined;
     const state = newState();
     const port = this.deps.callbackPort?.();
-
-    const server = createServer();
-    const code = new Promise<string>((resolve, reject) => {
-      server.on('request', (request: IncomingMessage, response: ServerResponse) => {
-        this.handleCallback(request, response);
-      });
-      const timer = setTimeout(() => {
-        this.abandon(new WirebenchError('oauth2-timeout', 'The sign-in was not completed in time'));
-      }, FLOW_TIMEOUT_MS);
-      timer.unref?.();
-      this.pending = {
-        server,
-        state,
-        timer,
-        resolve,
-        reject,
-        ...(pair !== undefined ? { verifier: pair.verifier } : {}),
-      };
+    const listener = await startLoopbackCallback({
+      expected: { name: 'state', value: () => state },
+      ...(port !== undefined ? { port } : {}),
+      timeoutMs: FLOW_TIMEOUT_MS,
+      describe: (params) => {
+        const error = params.get('error');
+        return error === null && params.get('code') !== null
+          ? { ok: true, message: 'Signed in. You can close this tab and go back to Wirebench.' }
+          : { ok: false, message: `The provider refused the sign-in (${error ?? 'no code'}). You can close this tab.` };
+      },
     });
-
-    // Nothing awaits this promise until the browser has been opened, and a provider that refuses
-    // immediately can answer the callback first: a no-op handler keeps that early rejection from
-    // surfacing as an unhandled one. `await code` below still throws it.
-    void code.catch(() => undefined);
-
-    // 127.0.0.1 and nothing else: a callback listener reachable from the network is a way to hand
-    // someone else's authorization code to this app (RFC 8252 §8.3).
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(port ?? 0, '127.0.0.1', resolve);
-    });
-    const address = server.address() as AddressInfo | null;
-    const redirectUri = `http://127.0.0.1:${String(address?.port ?? 0)}/callback`;
-
-    await this.deps.openExternal(
-      authorizationUrl({
-        config,
-        redirectUri,
-        state,
-        ...(pair !== undefined ? { challenge: pair.challenge } : {}),
-      }),
-    );
-
-    const received = await code;
-    return { code: received, redirectUri, ...(pair !== undefined ? { verifier: pair.verifier } : {}) };
-  }
-
-  /** Answers the one callback this flow accepts, then closes the listener. */
-  private handleCallback(request: IncomingMessage, response: ServerResponse): void {
-    const flow = this.pending;
-    if (flow === undefined) {
-      response.writeHead(410).end();
-      return;
-    }
-    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-    const state = url.searchParams.get('state');
-    const code = url.searchParams.get('code');
-    const error = url.searchParams.get('error');
-
-    if (state !== flow.state) {
-      // Not this flow's callback: answered, but neither accepted nor allowed to end the flow, which
-      // stays pending until the real one arrives or the timeout fires.
-      response.writeHead(400, { 'content-type': 'text/html; charset=utf-8' });
-      response.end(callbackPage('This sign-in response did not match the request. You can close this tab.'));
-      return;
-    }
-    response.writeHead(error === null && code !== null ? 200 : 400, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(
-      callbackPage(
-        error === null && code !== null
-          ? 'Signed in. You can close this tab and go back to Wirebench.'
-          : `The provider refused the sign-in (${error ?? 'no code'}). You can close this tab.`,
-      ),
-    );
-
-    if (error !== null || code === null) {
-      this.abandon(
-        new WirebenchError('oauth2-authorization-failed', `The provider refused the sign-in: ${error ?? 'no code'}`),
+    this.pending = { listener, state };
+    // Nothing awaits the result until the browser has been opened, and a provider that refuses
+    // immediately can answer first: the no-op handler keeps that from surfacing as unhandled.
+    void listener.result.catch(() => undefined);
+    try {
+      await this.deps.openExternal(
+        authorizationUrl({
+          config,
+          redirectUri: listener.redirectUri,
+          state,
+          ...(pair !== undefined ? { challenge: pair.challenge } : {}),
+        }),
       );
-      return;
+      const params = await listener.result;
+      const code = params.get('code');
+      const error = params.get('error');
+      if (error !== null || code === null) {
+        throw new WirebenchError(
+          'oauth2-authorization-failed',
+          `The provider refused the sign-in: ${error ?? 'no code'}`,
+        );
+      }
+      return { code, redirectUri: listener.redirectUri, ...(pair !== undefined ? { verifier: pair.verifier } : {}) };
+    } catch (error) {
+      listener.cancel(); // a no-op once the listener has settled; frees the port when openExternal threw
+      throw translateLoopbackError(error);
+    } finally {
+      this.pending = undefined;
     }
-    this.finish(code);
-  }
-
-  /** Ends the pending flow successfully. */
-  private finish(code: string): void {
-    const flow = this.pending;
-    if (flow === undefined) {
-      return;
-    }
-    this.pending = undefined;
-    clearTimeout(flow.timer);
-    flow.server.close();
-    flow.resolve(code);
-  }
-
-  /** Ends the pending flow with an error, closing the listener either way. */
-  private abandon(error: Error): void {
-    const flow = this.pending;
-    if (flow === undefined) {
-      return;
-    }
-    this.pending = undefined;
-    clearTimeout(flow.timer);
-    flow.server.close();
-    flow.reject(error);
   }
 
   private now(): Date {
     return this.deps.now?.() ?? new Date();
   }
+}
+
+/** The helper's codes, in this service's vocabulary — the renderer and its tests know only these. */
+function translateLoopbackError(error: unknown): unknown {
+  if (error instanceof WirebenchError && error.code === 'loopback-timeout') {
+    return new WirebenchError('oauth2-timeout', 'The sign-in was not completed in time');
+  }
+  if (error instanceof WirebenchError && error.code === 'loopback-cancelled') {
+    return new WirebenchError('oauth2-cancelled', 'The sign-in was cancelled');
+  }
+  return error;
 }
 
 /** The error a send raises rather than opening a browser window behind the user's back. */

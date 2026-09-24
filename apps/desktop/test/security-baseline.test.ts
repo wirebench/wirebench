@@ -61,7 +61,7 @@ describe('security baseline', () => {
  * left open for the session, and one that skips `state` accepts a code the user never asked for.
  */
 describe('the OAuth2 loopback listener', () => {
-  const source = readFileSync(join(REPO_ROOT, 'apps/desktop/src/main/oauth2.ts'), 'utf8');
+  const source = readFileSync(join(REPO_ROOT, 'apps/desktop/src/main/loopback-callback.ts'), 'utf8');
 
   it('binds the loopback address and nothing else', () => {
     const listens = source.match(/\.listen\([^)]*\)/g) ?? [];
@@ -82,6 +82,6 @@ describe('the OAuth2 loopback listener', () => {
   });
 
   it('requires the state it issued before it accepts a code', () => {
-    expect(source).toContain('state !== flow.state');
+    expect(source).toContain('params.get(options.expected.name) !== expected');
   });
 });
