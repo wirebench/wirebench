@@ -64,6 +64,37 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
 
+  # The server's integration suite needs a real PostgreSQL. `check` runs the same files with the
+  # database unset (they skip, saying so); this job runs them for real, once, on Linux.
+  server-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: wirebench
+          POSTGRES_PASSWORD: wirebench
+          POSTGRES_DB: wirebench_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wirebench" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      WIREBENCH_REQUIRE_GIT: '1'
+      WIREBENCH_SERVER_TEST_DATABASE_URL: postgres://wirebench:wirebench@127.0.0.1:5432/wirebench_test
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @wirebench/engine build
+      - run: pnpm --filter @wirebench/server test
+
   wss-xmlsec:
     strategy:
       # One OS's toolchain failing must not hide the other's result.

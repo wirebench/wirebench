@@ -154,8 +154,12 @@ export interface ConfigProblem {
 
 export class ConfigError extends Error {
   readonly code = 'server-config-invalid';
-  constructor(readonly problems: readonly ConfigProblem[]) {
+  // A plain field rather than a constructor parameter property: `scripts/docs-server-config.ts`
+  // loads this file straight from source, and Node's type stripping rejects parameter properties.
+  readonly problems: readonly ConfigProblem[];
+  constructor(problems: readonly ConfigProblem[]) {
     super(problems.map((p) => `${p.variable}: ${p.message}`).join('\n'));
+    this.problems = problems;
     this.name = 'ConfigError';
   }
 }
