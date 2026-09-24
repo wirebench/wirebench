@@ -13,8 +13,15 @@ import { EngineService } from '../src/main/engine-service.js';
 import { GlobalProperties } from '../src/main/global-properties.js';
 import type { PreferencesService } from '../src/main/preferences.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { moveDir } from '../src/main/rename-dir.js';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../src/shared/wire-types.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+
+// The real `moveDir`, wrapped so one test can make the move of an import's definition cache fail.
+vi.mock('../src/main/rename-dir.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/rename-dir.js')>();
+  return { ...actual, moveDir: vi.fn(actual.moveDir) };
+});
 
 let server: TestSoapServer | undefined;
 let root: string | undefined;
@@ -266,6 +273,23 @@ describe('ProjectHost', () => {
 
     expect(stagedCache).toBeDefined();
     expect(existsSync(join(stagedCache!, '..'))).toBe(false);
+    expect(existsSync(join(dir, 'interfaces')) ? await readdir(join(dir, 'interfaces')) : []).toEqual([]);
+
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('removes the interface folder it created when moving the definition cache into it fails', async () => {
+    const dir = join(tempDir('project'), 'Failed Move');
+    const service = new ProjectHost(new EngineService(), {});
+    await service.create({ dir, name: 'Failed Move' });
+    vi.mocked(moveDir).mockRejectedValueOnce(
+      Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }),
+    );
+
+    await expect(service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } })).rejects.toThrow('ENOSPC');
+
+    expect(vi.mocked(moveDir)).toHaveBeenCalled();
     expect(existsSync(join(dir, 'interfaces')) ? await readdir(join(dir, 'interfaces')) : []).toEqual([]);
 
     await service.close();

@@ -18,13 +18,17 @@
  *    Linux the watcher walks the tree itself: one non-recursive watch per managed directory,
  *    new subdirectories discovered with an async `readdir` when their parent reports a rename,
  *    and a directory that has vanished simply dropped. A platform whose `fs.watch` refuses
- *    `recursive: true` outright falls back to the same walk.
+ *    `recursive: true` outright falls back to the same walk. Each directory is remembered by its
+ *    identity (device, inode, creation time), so one deleted and created again under the same
+ *    name — which its now-dead watch never reports — is watched afresh.
  * Every underlying watch has an `'error'` listener, so a watch whose directory disappears is
- * closed and forgotten rather than crashing the process.
+ * closed and forgotten rather than crashing the process; the native recursive watch is restarted
+ * a few times after one. A listing that fails for any reason but the directory being gone is
+ * retried a few times rather than giving up on the directory.
  */
 
-import { readdirSync as nodeReaddirSync, realpathSync, watch as nodeWatch } from 'node:fs';
-import { readdir as nodeReaddir } from 'node:fs/promises';
+import { readdirSync as nodeReaddirSync, realpathSync, statSync as nodeStatSync, watch as nodeWatch } from 'node:fs';
+import { readdir as nodeReaddir, stat as nodeStat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { MAX_FOLDER_DEPTH } from '@wirebench/engine';
 
@@ -46,6 +50,18 @@ export interface WatchDirEntry {
   isDirectory(): boolean;
 }
 
+/**
+ * The part of `fs.Stats` the watcher relies on: what tells one directory from another of the same
+ * name. The inode alone does not — ext4 hands a directory deleted a moment ago's inode straight to
+ * the next one created — so the creation time goes with it (`0` where the filesystem keeps none,
+ * leaving device and inode to tell them apart).
+ */
+export interface WatchDirIdentity {
+  readonly dev: number | bigint;
+  readonly ino: number | bigint;
+  readonly birthtimeNs?: number | bigint;
+}
+
 /** The filesystem calls the watcher makes — injectable so tests can stage a race deterministically. */
 export interface WatchFs {
   watch(
@@ -55,13 +71,40 @@ export interface WatchFs {
   ): WatchHandle;
   readdirSync(dir: string): readonly WatchDirEntry[];
   readdir(dir: string): Promise<readonly WatchDirEntry[]>;
+  statSync(dir: string): WatchDirIdentity;
+  stat(dir: string): Promise<WatchDirIdentity>;
 }
 
 const nodeWatchFs: WatchFs = {
   watch: (dir, options, listener) => nodeWatch(dir, options, listener),
   readdirSync: (dir) => nodeReaddirSync(dir, { withFileTypes: true }),
   readdir: (dir) => nodeReaddir(dir, { withFileTypes: true }),
+  // `bigint`, so an inode past 2^53 (large XFS/Btrfs volumes) still compares exactly, and the
+  // creation time is to the nanosecond.
+  statSync: (dir) => nodeStatSync(dir, { bigint: true }),
+  stat: (dir) => nodeStat(dir, { bigint: true }),
 };
+
+/** How many times a failed listing is retried, and a failed native recursive watch restarted. */
+const MAX_RETRIES = 3;
+
+/** The first retry's delay; each further one waits that much longer again. */
+const DEFAULT_RETRY_DELAY_MS = 500;
+
+/** Error codes that mean the directory is simply not there (any more): nothing to retry. */
+const GONE_CODES = new Set(['ENOENT', 'ENOTDIR']);
+
+function codeOf(error: unknown): string | undefined {
+  return typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : undefined;
+}
+
+function isGone(error: unknown): boolean {
+  return GONE_CODES.has(codeOf(error) ?? '');
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /** Options for {@link ProjectWatcher}. */
 export interface ProjectWatcherOptions {
@@ -89,6 +132,10 @@ export interface ProjectWatcherOptions {
   readonly platform?: NodeJS.Platform;
   /** The filesystem calls to use; defaults to `node:fs`. */
   readonly fs?: WatchFs;
+  /** Where a watch that could not be added or kept is reported; defaults to `console.warn`. */
+  readonly log?: (message: string) => void;
+  /** The first delay before a failed listing is retried or a failed recursive watch restarted. */
+  readonly retryDelayMs?: number;
 }
 
 /**
@@ -98,14 +145,25 @@ export interface ProjectWatcherOptions {
  */
 const MAX_WATCH_DEPTH = 3 + MAX_FOLDER_DEPTH;
 
+/** The top-level folders under which {@link isManagedPath} reports files at all. */
+const MANAGED_TOP_DIRS = new Set(['interfaces', 'apis', 'environments', 'wss']);
+
 /**
- * True when the per-directory watch should cover `dir` (relative, `/`-separated): anything but a
- * dot-folder (`.git`, a sync client's own state) or an interface's definition cache, neither of
- * which holds a file {@link isManagedPath} would report — and a big cache or a busy `.git` would
- * otherwise mean thousands of watches and a steady stream of directories appearing and vanishing.
+ * True when the per-directory watch should cover `dir` (relative, `/`-separated): a folder that can
+ * hold a file {@link isManagedPath} would report — so under `interfaces/`, `apis/`, `environments/`
+ * or `wss/`, and never inside an interface's or API's definition cache — and not a dot-folder (a
+ * sync client's own state). Everything else (`.git`, `attachments/`, `node_modules/`, a big cache)
+ * would otherwise mean thousands of watches, each against the OS's per-user watch limit, and a
+ * steady stream of directories appearing and vanishing for nothing.
  */
 export function isManagedDir(dir: string): boolean {
-  return dir.split('/').every((segment) => !segment.startsWith('.') && segment !== 'definition');
+  const segments = dir.split('/');
+  const top = segments[0] ?? '';
+  if (!MANAGED_TOP_DIRS.has(top) || segments.some((segment) => segment.startsWith('.'))) {
+    return false;
+  }
+  // `isManagedPath` skips `/definition/` only under `interfaces/` and `apis/`.
+  return (top !== 'interfaces' && top !== 'apis') || !segments.includes('definition');
 }
 
 /** The workspace-level counterpart of {@link isManagedDir}: only `environments/` holds its files. */
@@ -124,6 +182,14 @@ function childOf(dir: string, name: string): string {
 function parentOf(dir: string): string {
   const slash = dir.lastIndexOf('/');
   return slash === -1 ? '' : dir.slice(0, slash);
+}
+
+function nameOf(dir: string): string {
+  return dir.slice(dir.lastIndexOf('/') + 1);
+}
+
+function sameIdentity(a: WatchDirIdentity, b: WatchDirIdentity): boolean {
+  return a.dev === b.dev && a.ino === b.ino && a.birthtimeNs === b.birthtimeNs;
 }
 
 /**
@@ -199,6 +265,16 @@ export class ProjectWatcher {
    * root — which is also the key of the single recursive watch on macOS and Windows).
    */
   private readonly watchers = new Map<string, WatchHandle>();
+  /** The identity each per-directory watch was attached to, keyed like {@link watchers}. */
+  private readonly identities = new Map<string, WatchDirIdentity>();
+  /** How many times in a row each directory's listing has failed and been retried. */
+  private readonly retries = new Map<string, number>();
+  /** How many times the native recursive watch has been restarted since `start()`. */
+  private restarts = 0;
+  /** Pending retry and restart timers, all cancelled by `stop()`. */
+  private readonly retryTimers = new Set<NodeJS.Timeout>();
+  /** Set once a failure to add a watch has been logged, so a watch limit is reported once, not per directory. */
+  private watchFailureLogged = false;
   /** Directories with an async scan in flight, and those that asked for another once it ends. */
   private readonly scanning = new Set<string>();
   private readonly rescans = new Set<string>();
@@ -229,6 +305,8 @@ export class ProjectWatcher {
       isWatchedDir: options.isWatchedDir ?? isManagedDir,
       platform: options.platform ?? process.platform,
       fs: options.fs ?? nodeWatchFs,
+      log: options.log ?? console.warn,
+      retryDelayMs: options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS,
     };
   }
 
@@ -238,21 +316,69 @@ export class ProjectWatcher {
       return;
     }
     this.generation += 1;
+    this.restarts = 0;
     if (this.options.platform !== 'linux') {
       try {
-        const handle = this.options.fs.watch(this.options.dir, { recursive: true }, (_event, filename) => {
-          this.record(filename);
-        });
-        handle.on('error', () => {
-          this.drop('');
-        });
-        this.watchers.set('', handle);
+        this.watchRecursive();
         return;
       } catch {
         // No native recursive watching here; fall through to the per-directory walk.
       }
     }
     this.watchTree('');
+  }
+
+  /** Adds the single native recursive watch; throws when the platform cannot provide one. */
+  private watchRecursive(): void {
+    const handle = this.options.fs.watch(this.options.dir, { recursive: true }, (_event, filename) => {
+      this.record(filename);
+    });
+    handle.on('error', (error) => {
+      if (this.watchers.get('') !== handle) {
+        return;
+      }
+      this.drop('');
+      this.restartRecursive(error, this.generation);
+    });
+    this.watchers.set('', handle);
+  }
+
+  /**
+   * Brings the native recursive watch back after it failed — it is the only one there is, so
+   * without this the project would silently stop being watched — waiting a little longer before
+   * each attempt, and giving up (with a log line) after {@link MAX_RETRIES}.
+   */
+  private restartRecursive(error: unknown, generation: number): void {
+    if (this.restarts >= MAX_RETRIES) {
+      this.options.log(`[watch] stopped watching ${this.options.dir}: ${describeError(error)}`);
+      return;
+    }
+    this.restarts += 1;
+    this.options.log(
+      `[watch] watching ${this.options.dir} failed (${describeError(error)}); restarting (${this.restarts}/${MAX_RETRIES})`,
+    );
+    this.later(this.options.retryDelayMs * this.restarts, generation, () => {
+      if (this.watchers.size > 0) {
+        return;
+      }
+      try {
+        this.watchRecursive();
+      } catch (restartError) {
+        this.restartRecursive(restartError, generation);
+      }
+    });
+  }
+
+  /** Runs `task` after `ms`, unless `stop()` (or a new `start()`) comes first. */
+  private later(ms: number, generation: number, task: () => void): void {
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(timer);
+      if (generation === this.generation) {
+        task();
+      }
+    }, ms);
+    timer.unref?.();
+    this.retryTimers.add(timer);
   }
 
   /** Stops watching and drops any pending batch. */
@@ -262,6 +388,12 @@ export class ProjectWatcher {
       watcher.close();
     }
     this.watchers.clear();
+    this.identities.clear();
+    this.retries.clear();
+    for (const timer of this.retryTimers) {
+      clearTimeout(timer);
+    }
+    this.retryTimers.clear();
     this.scanning.clear();
     this.rescans.clear();
     if (this.timer !== undefined) {
@@ -282,10 +414,13 @@ export class ProjectWatcher {
   }
 
   /**
-   * Watches `dir` on its own (no-op when it already is). False when it cannot be watched — most
-   * often because it vanished a moment ago, which is not an error.
+   * Watches `dir` on its own (no-op when it already is), remembering `identity` — taken *before*
+   * the watch is added, so a directory replaced in between reads as changed on the next scan rather
+   * than as the one being watched. False when it cannot be watched — most often because it vanished
+   * a moment ago, which is not an error; any other failure (a watch limit: `ENOSPC`, `EMFILE`) is
+   * logged, once per watcher.
    */
-  private watchDir(dir: string): boolean {
+  private watchDir(dir: string, identity: WatchDirIdentity): boolean {
     if (this.watchers.has(dir)) {
       return true;
     }
@@ -294,7 +429,13 @@ export class ProjectWatcher {
       handle = this.options.fs.watch(this.absolute(dir), { recursive: false }, (event, filename) => {
         this.onDirEvent(dir, event, filename);
       });
-    } catch {
+    } catch (error) {
+      if (!isGone(error) && !this.watchFailureLogged) {
+        this.watchFailureLogged = true;
+        this.options.log(
+          `[watch] could not watch ${this.absolute(dir)}; changes under it go unnoticed: ${describeError(error)}`,
+        );
+      }
       return false;
     }
     // Emitted when the watched directory goes away underneath the watch (`EPERM` on Windows,
@@ -305,12 +446,29 @@ export class ProjectWatcher {
       }
     });
     this.watchers.set(dir, handle);
+    this.identities.set(dir, identity);
     return true;
+  }
+
+  /** `dir`'s identity, or `undefined` when it cannot be read (gone, most likely). */
+  private async identify(dir: string): Promise<WatchDirIdentity | undefined> {
+    try {
+      return await this.options.fs.stat(this.absolute(dir));
+    } catch {
+      return undefined;
+    }
   }
 
   /** The synchronous walk `start()` does, so every existing directory is covered once it returns. */
   private watchTree(dir: string): void {
-    if (!this.watchDir(dir)) {
+    let identity: WatchDirIdentity;
+    try {
+      identity = this.options.fs.statSync(this.absolute(dir));
+    } catch {
+      // The folder may not exist yet, or just vanished.
+      return;
+    }
+    if (!this.watchDir(dir, identity)) {
       return;
     }
     let entries: readonly WatchDirEntry[];
@@ -337,6 +495,12 @@ export class ProjectWatcher {
     // disappears; look again at what `dir` now holds.
     if (event === 'rename' || filename === null) {
       this.scan(dir);
+      // All a watch says when its own directory is deleted (or renamed away) is a `rename` naming
+      // itself, and it then goes quiet for good: have the parent look again, and re-watch the
+      // directory if one of that name is back.
+      if (dir !== '' && filename !== null && this.normalise(String(filename)) === nameOf(dir)) {
+        this.scan(parentOf(dir));
+      }
     }
   }
 
@@ -348,13 +512,45 @@ export class ProjectWatcher {
     }
     this.scanning.add(dir);
     const generation = this.generation;
-    void this.rescan(dir, generation).finally(() => {
-      if (generation !== this.generation) {
-        return;
-      }
-      this.scanning.delete(dir);
-      if (this.rescans.delete(dir)) {
-        this.scan(dir);
+    void this.rescan(dir, generation)
+      .catch((error: unknown) => {
+        this.options.log(`[watch] rescanning ${this.absolute(dir)} failed: ${describeError(error)}`);
+      })
+      .finally(() => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.scanning.delete(dir);
+        if (this.rescans.delete(dir)) {
+          this.scan(dir);
+        }
+      });
+  }
+
+  /**
+   * After a listing of `dir` failed: a directory that is gone is dropped with everything below it;
+   * any other failure (`EMFILE`, `EACCES`, `EBUSY`…) is likely transient, so the watch stays and
+   * `retry` runs again after a growing delay, up to {@link MAX_RETRIES} times in a row.
+   */
+  private listingFailed(dir: string, generation: number, error: unknown, retry: () => void): void {
+    if (generation !== this.generation) {
+      return;
+    }
+    if (isGone(error)) {
+      this.retries.delete(dir);
+      this.drop(dir);
+      return;
+    }
+    const attempt = (this.retries.get(dir) ?? 0) + 1;
+    if (attempt > MAX_RETRIES) {
+      this.retries.delete(dir);
+      this.options.log(`[watch] gave up listing ${this.absolute(dir)}: ${describeError(error)}`);
+      return;
+    }
+    this.retries.set(dir, attempt);
+    this.later(this.options.retryDelayMs * attempt, generation, () => {
+      if (this.watchers.has(dir)) {
+        retry();
       }
     });
   }
@@ -363,16 +559,14 @@ export class ProjectWatcher {
     let entries: readonly WatchDirEntry[];
     try {
       entries = await this.options.fs.readdir(this.absolute(dir));
-    } catch {
-      // `dir` itself is gone (or unreadable): nothing under it can be watched any more.
-      if (generation === this.generation) {
-        this.drop(dir);
-      }
+    } catch (error) {
+      this.listingFailed(dir, generation, error, () => this.scan(dir));
       return;
     }
     if (generation !== this.generation || !this.watchers.has(dir)) {
       return;
     }
+    this.retries.delete(dir);
     const present = new Set<string>();
     for (const entry of entries) {
       const child = childOf(dir, entry.name);
@@ -385,6 +579,20 @@ export class ProjectWatcher {
         this.drop(watched);
       }
     }
+    // A child that is still there by name may be a different directory: deleted and created again
+    // since its watch was added, which leaves that watch dead without a word.
+    const watchedChildren = [...present].filter((child) => this.watchers.has(child));
+    const identities = await Promise.all(watchedChildren.map((child) => this.identify(child)));
+    if (generation !== this.generation) {
+      return;
+    }
+    watchedChildren.forEach((child, index) => {
+      const identity = identities[index];
+      const known = this.identities.get(child);
+      if (identity !== undefined && known !== undefined && !sameIdentity(identity, known)) {
+        this.drop(child);
+      }
+    });
     for (const child of present) {
       if (!this.watchers.has(child)) {
         await this.discover(child, generation);
@@ -397,22 +605,37 @@ export class ProjectWatcher {
    * it: they may well have landed before its watch did (a `git checkout` creating a whole folder).
    */
   private async discover(dir: string, generation: number): Promise<void> {
-    if (generation !== this.generation || !this.watchDir(dir)) {
+    if (generation !== this.generation) {
       return;
+    }
+    if (!this.watchers.has(dir)) {
+      let identity: WatchDirIdentity;
+      try {
+        identity = await this.options.fs.stat(this.absolute(dir));
+      } catch (error) {
+        // Gone already is nothing to watch; anything else, the parent's listing is tried again.
+        if (!isGone(error)) {
+          const parent = parentOf(dir);
+          this.listingFailed(parent, generation, error, () => this.scan(parent));
+        }
+        return;
+      }
+      if (generation !== this.generation || !this.watchDir(dir, identity)) {
+        return;
+      }
     }
     let entries: readonly WatchDirEntry[];
     try {
       entries = await this.options.fs.readdir(this.absolute(dir));
-    } catch {
-      // Gone again between being listed and being scanned: not an error, just nothing to watch.
-      if (generation === this.generation) {
-        this.drop(dir);
-      }
+    } catch (error) {
+      // Gone again between being listed and being scanned is not an error, just nothing to watch.
+      this.listingFailed(dir, generation, error, () => void this.discover(dir, generation));
       return;
     }
     if (generation !== this.generation || !this.watchers.has(dir)) {
       return;
     }
+    this.retries.delete(dir);
     for (const entry of entries) {
       const child = childOf(dir, entry.name);
       if (!entry.isDirectory()) {
@@ -428,6 +651,8 @@ export class ProjectWatcher {
     for (const [watched, handle] of [...this.watchers]) {
       if (dir === '' || watched === dir || watched.startsWith(`${dir}/`)) {
         this.watchers.delete(watched);
+        this.identities.delete(watched);
+        this.retries.delete(watched);
         try {
           handle.close();
         } catch {

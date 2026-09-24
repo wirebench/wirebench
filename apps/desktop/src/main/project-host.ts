@@ -2623,8 +2623,16 @@ export class ProjectHost {
       );
       slug = uniqueSlug(summary.name, taken);
       if (existsSync(stagedCache)) {
-        await mkdir(interfaceDir(open.dir, slug), { recursive: true });
-        await moveDir(stagedCache, definitionCacheDir(open.dir, slug));
+        // `mkdir` returns the first folder it had to create, if any: what a failed move removes again.
+        const created = await mkdir(interfaceDir(open.dir, slug), { recursive: true });
+        try {
+          await moveDir(stagedCache, definitionCacheDir(open.dir, slug));
+        } catch (error) {
+          if (created !== undefined) {
+            await rm(created, { recursive: true, force: true }).catch(() => undefined);
+          }
+          throw error;
+        }
       }
     } finally {
       await rm(staging, { recursive: true, force: true }).catch(() => undefined);
