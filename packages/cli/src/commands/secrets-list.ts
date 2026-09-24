@@ -16,7 +16,7 @@ export async function secretsListCommand(args: SecretsListArgs, io: CliIo): Prom
   if (typeof loaded === 'number') {
     return loaded;
   }
-  const needs = secretNeedsOf(loaded.selected, loaded.project);
+  const needs = secretNeedsOf(loaded.selected, loaded.project, args.vars);
   if (needs.length === 0) {
     io.stdout.write('No secrets needed.\n');
     return ExitCode.Ok;

@@ -199,6 +199,20 @@ describe('secretNeedsOf — ${secret:name} tokens', () => {
     ]);
   });
 
+  it('lists a token only a --var property holds, and not one a --var overrides', () => {
+    const api = createApi('demo', {
+      id: 'api-1',
+      slug: 'demo',
+      requests: [createRestRequest('a', { id: 'r-a', url: '/a?k=${key}&o=${other}' })],
+    });
+    const p = { ...project({ apis: [api] }), properties: { other: '${secret:project_other}' } };
+    const selected = selectRequests(p, []).selected;
+    expect(secretNeedsOf(selected, p).map((need) => need.ref)).toEqual(['secret:project_other']);
+    expect(secretNeedsOf(selected, p, { key: '${secret:var_key}', other: 'plain' }).map((need) => need.ref)).toEqual([
+      'secret:var_key',
+    ]);
+  });
+
   it('lists a SOAP envelope token beside the auth need', () => {
     const p = project({
       interfaces: [

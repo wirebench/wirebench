@@ -180,7 +180,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     return loaded;
   }
   const { project, environment, selected } = loaded;
-  const needs = secretNeedsOf(selected, project);
+  const needs = secretNeedsOf(selected, project, args.vars);
   const secrets = createEnvSecrets(needs, io.env);
   // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
   // one as it arrives, and every mask built after that — they are built per result — hides it.

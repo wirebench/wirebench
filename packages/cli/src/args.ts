@@ -21,10 +21,10 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --no-color
 -q, --quiet | -v, --verbose
 
-wirebench secrets list <path> [selector…] [-e <name>]
+wirebench secrets list <path> [selector…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
-                       prints a value.
+                       prints a value. --var as for run, so a token only a --var holds is listed.
 
 wirebench --version | --help`;
 
@@ -58,6 +58,8 @@ export interface SecretsListArgs {
   readonly path: string;
   readonly selectors: readonly string[];
   readonly env?: string;
+  /** `--var` overrides, as `run` takes them: a token only one of them holds is listed too. */
+  readonly vars: Readonly<Record<string, string>>;
 }
 
 export type ParsedArgs = RunArgs | SecretsListArgs | { readonly command: 'help' } | { readonly command: 'version' };
@@ -88,6 +90,16 @@ function parseVar(spec: string): readonly [string, string] {
     throw new UsageError(`--var must be "<key>=<value>", got "${spec}"`);
   }
   return [spec.slice(0, eq), spec.slice(eq + 1)];
+}
+
+/** Every `--var <key>=<value>`, later ones winning. */
+function parseVars(specs: readonly string[] | undefined): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const spec of specs ?? []) {
+    const [key, value] = parseVar(spec);
+    vars[key] = value;
+  }
+  return vars;
 }
 
 /** Parses a positive-integer millisecond flag, naming the flag in any error. */
@@ -150,11 +162,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     if (path === undefined) {
       throw new UsageError('wirebench run <path> [selector…] [options]: <path> is required');
     }
-    const vars: Record<string, string> = {};
-    for (const spec of values.var ?? []) {
-      const [key, value] = parseVar(spec);
-      vars[key] = value;
-    }
+    const vars = parseVars(values.var);
     const reporterSpecs = values.reporter ?? [];
     const reporters: readonly ReporterSpec[] =
       reporterSpecs.length > 0 ? reporterSpecs.map(parseReporter) : [{ kind: 'cli' }];
@@ -189,6 +197,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       path,
       selectors,
       ...(values.env !== undefined ? { env: values.env } : {}),
+      vars: parseVars(values.var),
     };
   }
 

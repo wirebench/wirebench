@@ -122,6 +122,9 @@ selected requests use, with `secret "billing_key"` as its purpose and whether it
 npx --yes @wirebench/cli@2.3.0 secrets list ./project --env staging
 ```
 
+It takes `--var` like `run` does. Pass it the same ones: a token that only a `--var` property
+holds is listed only when that `--var` is given.
+
 A token with no variable set fails that request with `secret-missing` — *Set
 WIREBENCH_SECRET_BILLING_KEY to run "…"* — rather than sending an empty value. See [Secret tokens and scanning](/wirebench/guides/secrets/#secret-tokens-and-scanning) for
 how a value ends up behind a token.

@@ -50,6 +50,11 @@ describe('parseCliArgs', () => {
       path: './p',
       env: 'x',
     });
+    expect(parseCliArgs(['secrets', 'list', './p', '--var', 'k=${secret:x}', '--var', 'a=b'])).toMatchObject({
+      command: 'secrets-list',
+      vars: { k: '${secret:x}', a: 'b' },
+    });
+    expect(parseCliArgs(['secrets', 'list', './p'])).toMatchObject({ vars: {} });
     expect(parseCliArgs(['--help'])).toEqual({ command: 'help' });
     expect(parseCliArgs(['--version'])).toEqual({ command: 'version' });
     expect(parseCliArgs([])).toEqual({ command: 'help' });
@@ -60,6 +65,7 @@ describe('parseCliArgs', () => {
     [['run', './p', '--reporter', 'junit']],
     [['run', './p', '--reporter', 'xml=a']],
     [['run', './p', '--var', 'novalue']],
+    [['secrets', 'list', './p', '--var', 'novalue']],
     [['run', './p', '--sla', 'abc']],
     [['run', './p', '--timeout', '0']],
     [['run', './p', '--nope']],

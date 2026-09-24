@@ -130,6 +130,68 @@ describe('applySecretMoves', () => {
     expect(Object.keys(r.values)).toHaveLength(r.findings.length);
   });
 
+  it('rewrites a WS URL parameter and a WS query entry, and expanding restores both', () => {
+    const url = 'wss://h/socket?token=FAKE%2Btok&page=2';
+    const w = createWsRequest('W', { id: 'w1', url, query: [kv('access_token', 'FAKEq')] });
+    const r = moveAll(project({ wsApis: [createWsApi('W', { id: 'wa', requests: [w] })] }));
+    expect(r.stale).toEqual([]);
+    const req = r.project.wsApis[0]!.requests[0]!;
+    expect(req.url).toBe('wss://h/socket?token=${secret:s0}&page=2');
+    expect(req.query[0]!.value).toBe('${secret:s1}');
+    expect(scanProjectForSecrets(r.project)).toEqual([]);
+    const secrets = Object.fromEntries(r.findings.map((f, i) => [`s${i}`, r.values[f.id]!]));
+    expect(expand(req.url, { project: {}, global: {}, system: {}, secrets }).text).toBe(url);
+  });
+
+  it('rewrites a URL password and two URL parameters in one URL, whatever key each finding names', () => {
+    const url = 'https://alice:FAKEpw@h/x?token=FAKEtok&page=1&api_key=FAKEkey';
+    const r = moveAll(restProject({ url }));
+    expect(r.findings.map((f) => f.location)).toEqual([
+      { kind: 'rest-url', requestId: 'r1' },
+      { kind: 'rest-url', requestId: 'r1', name: 'token' },
+      { kind: 'rest-url', requestId: 'r1', name: 'api_key' },
+    ]);
+    expect(r.stale).toEqual([]);
+    expect(r.project.apis[0]!.requests[0]!.url).toBe(
+      'https://alice:${secret:s0}@h/x?token=${secret:s1}&page=1&api_key=${secret:s2}',
+    );
+  });
+
+  it('replaces only the password of a URL userinfo', () => {
+    const url = 'https://alice:FAKE%40pass@h/x?page=1';
+    const r = moveAll(restProject({ url }), () => 'url_pw');
+    expect(r.stale).toEqual([]);
+    const moved = r.project.apis[0]!.requests[0]!.url;
+    expect(moved).toBe('https://alice:${secret:url_pw}@h/x?page=1');
+    expect(scanProjectForSecrets(r.project)).toEqual([]);
+    const secrets = { url_pw: r.values[r.findings[0]!.id]! };
+    expect(expand(moved, { project: {}, global: {}, system: {}, secrets }).text).toBe(url);
+  });
+
+  it('keeps the CDATA wrapper around a moved value', () => {
+    const envelope = '<E><wsse:Password><![CDATA[FAKE<pw>&x]]></wsse:Password></E>';
+    const req = createRequest('R', { id: 's1', soapVersion: '1.1', envelopeXml: envelope });
+    const iface = createInterface('I', {
+      definitionUrl: 'x.wsdl',
+      operations: [{ name: 'O', bindingName: 'B', slug: 'o', order: 0, requests: [req] }],
+    });
+    const r = moveAll(project({ interfaces: [iface] }));
+    const moved = r.project.interfaces[0]!.operations[0]!.requests[0]!.envelopeXml;
+    expect(moved).toBe('<E><wsse:Password><![CDATA[${secret:s0}]]></wsse:Password></E>');
+    const secrets = { s0: r.values[r.findings[0]!.id]! };
+    expect(expand(moved, { project: {}, global: {}, system: {}, secrets }).text).toBe(envelope);
+  });
+
+  it('replaces a JSON number with a bare token, so the body sent is unchanged', () => {
+    const text = '{"password": 123456, "page": 2}';
+    const r = moveAll(restProject({ body: { kind: 'raw', language: 'json', text } }));
+    expect(r.findings.map((f) => f.value)).toEqual(['123456']);
+    const body = r.project.apis[0]!.requests[0]!.body as { text: string };
+    expect(body.text).toBe('{"password": ${secret:s0}, "page": 2}');
+    expect(scanProjectForSecrets(r.project)).toEqual([]);
+    expect(expand(body.text, { project: {}, global: {}, system: {}, secrets: { s0: '123456' } }).text).toBe(text);
+  });
+
   it('skips a finding whose value changed and reports it stale', () => {
     const p = project({ properties: { password: 'changeme', token: GH } });
     const findings = scanProjectForSecrets(p);
@@ -203,13 +265,24 @@ describe('proposeSecretName', () => {
     ).toBe('aws_access_key');
   });
 
-  it('reads a form field name from a long label in linear time', () => {
+  it('takes a form field name from the location, not the label', () => {
     const form = restProject({ body: { kind: 'form', fields: [kv('client_secret', 'FAKEs')] } });
     const f = find(form);
-    const label = `body field ${'body field a'.repeat(50_000)}`;
-    const started = performance.now();
-    expect(proposeSecretName({ ...f, label }, new Set())).toMatch(/^body_field_a/);
-    expect(performance.now() - started).toBeLessThan(200);
+    expect(proposeSecretName({ ...f, label: 'renamed › body field other' }, new Set())).toBe('client_secret');
+  });
+
+  it('names a URL password finding after its rule', () => {
+    expect(proposeSecretName(find(restProject({ url: 'https://a:FAKEpw@h/' })), new Set())).toBe('url_password');
+  });
+
+  it('names a URL query parameter finding after its key, and a URL password after its rule', () => {
+    const url = 'https://a:FAKEpw@h/x?page=1&token=FAKEtok';
+    const [password, token] = scanProjectForSecrets(restProject({ url }));
+    expect(proposeSecretName(password!, new Set())).toBe('url_password');
+    expect(proposeSecretName(token!, new Set())).toBe('token');
+    const w = createWsRequest('W', { id: 'w1', url: 'wss://h/socket?access_token=FAKEtok' });
+    const ws = find(project({ wsApis: [createWsApi('W', { requests: [w] })] }));
+    expect(proposeSecretName(ws, new Set())).toBe('access_token');
   });
 
   it('de-duplicates against taken names ignoring case', () => {

@@ -162,3 +162,86 @@ describe('fix round 1: name parts and false positives', () => {
     expect(found('Bearer credentials')).toEqual([]);
   });
 });
+
+describe('issue 145: URL userinfo, CDATA, JSON numbers', () => {
+  const json = { contentType: 'application/json' };
+  const xml = { contentType: 'text/xml' };
+  it('url-credentials: the password of a URL userinfo, anywhere', () => {
+    expect(found('https://alice:FAKEpass@h.example/x?y=1')).toEqual([['url-credentials', 'FAKEpass']]);
+    expect(found('{"dsn": "postgres://svc:FAKEpw%21@db:5432/app"}', json)).toEqual([['url-credentials', 'FAKEpw%21']]);
+    expect(found('redis://:FAKEredis@cache:6379')).toEqual([['url-credentials', 'FAKEredis']]);
+  });
+  it('url-credentials near misses: no password, a port, a reference', () => {
+    expect(found('https://alice@h.example/x')).toEqual([]);
+    expect(found('https://alice:@h.example/x')).toEqual([]);
+    expect(found('http://h.example:8080/a@b')).toEqual([]);
+    expect(found('https://alice:${secret:pw}@h.example/x')).toEqual([]);
+    expect(found('git@github.com:org/repo.git')).toEqual([]);
+  });
+  it('a sensitive element holding one CDATA section: the value inside it', () => {
+    const text = '<wsse:Password Type="#PasswordText">\n  <![CDATA[ FAKE<pw> ]]>\n</wsse:Password>';
+    const [m] = detectInText(text, xml);
+    expect(m).toMatchObject({ rule: 'sensitive-name' });
+    expect(text.slice(m!.start, m!.end)).toBe('FAKE<pw>');
+    expect(found('<password><![CDATA[FAKEpw]]></password>', xml)).toEqual([['sensitive-name', 'FAKEpw']]);
+  });
+  it('CDATA near misses: a non-sensitive element, a digest, an empty section, a different close tag', () => {
+    expect(found('<note><![CDATA[FAKEpw]]></note>', xml)).toEqual([]);
+    expect(found('<Password Type="x#PasswordDigest"><![CDATA[abc=]]></Password>', xml)).toEqual([]);
+    expect(found('<password><![CDATA[]]></password>', xml)).toEqual([]);
+    expect(found('<password><![CDATA[FAKEpw]]></other>', xml)).toEqual([]);
+    expect(found('<password>x<![CDATA[FAKEpw]]></password>', xml)).toEqual([]);
+  });
+  it('a sensitive element nested in a non-sensitive one is found; a sensitive parent of other elements is not', () => {
+    expect(found('<Credentials><User>a</User><Password>FAKEpw</Password></Credentials>', xml)).toEqual([
+      ['sensitive-name', 'FAKEpw'],
+    ]);
+    expect(found('<token><value>FAKEtok</value></token>', xml)).toEqual([]);
+  });
+  it('scans unclosed CDATA sections in linear time', () => {
+    const text = '<password><![CDATA['.repeat(60_000);
+    const started = performance.now();
+    expect(found(text, xml)).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+  it('scans a long run of scheme-like characters before a URL in linear time', () => {
+    for (const run of ['a-', 'a.', 'a+']) {
+      const text = `${run.repeat(150_000)} see https://example.com`;
+      const started = performance.now();
+      expect(found(text)).toEqual([]);
+      expect(performance.now() - started).toBeLessThan(200);
+    }
+  });
+  it('url-credentials: an empty user, a scheme with a dash, a scheme after another scheme', () => {
+    expect(found('redis://:FAKEpw@cache')).toEqual([['url-credentials', 'FAKEpw']]);
+    expect(found('x-postgres://u:FAKEpw@h/db')).toEqual([['url-credentials', 'FAKEpw']]);
+    expect(found('jdbc:mysql://u:FAKEpw@h/db')).toEqual([['url-credentials', 'FAKEpw']]);
+  });
+  it('url-credentials: the password after a user that is a ${…} expansion', () => {
+    expect(found('https://${env:user}:FAKEpw@h.example/x')).toEqual([['url-credentials', 'FAKEpw']]);
+    expect(found('https://pre${user}post:FAKEpw@h.example/x')).toEqual([['url-credentials', 'FAKEpw']]);
+    expect(found('https://${env:user}:${secret:pw}@h.example/x')).toEqual([]);
+  });
+  it('url-credentials near miss: an obvious placeholder password', () => {
+    for (const pw of ['password', 'PASSWORD', 'Pass', 'passwd', 'secret', '****', 'x', 'xxxx', 'XXXXXX']) {
+      expect(found(`postgres://user:${pw}@localhost/db`)).toEqual([]);
+    }
+    expect(found('https://u:****@h')).toEqual([]);
+    expect(found('postgres://user:FAKEpassword1@localhost/db')).toEqual([['url-credentials', 'FAKEpassword1']]);
+    expect(found('postgres://user:xX*x@localhost/db')).toEqual([['url-credentials', 'xX*x']]);
+  });
+  it('a query pair in a URL carries its key as the match name', () => {
+    const text = 'wss://h/socket?page=2&access%5Ftoken=FAKEtok';
+    const matches = detectInText(text, { contentType: 'application/x-www-form-urlencoded', nameKind: 'query' });
+    expect(matches).toEqual([
+      { rule: 'sensitive-name', start: text.length - 7, end: text.length, name: 'access_token' },
+    ]);
+  });
+  it('a number under a sensitive JSON key; booleans, null and other keys are not', () => {
+    expect(found('{"password": 123456, "page": 2, "token": true, "secret": null}', json)).toEqual([
+      ['sensitive-name', '123456'],
+    ]);
+    expect(found('{"token":-1.5e3}', json)).toEqual([['sensitive-name', '-1.5e3']]);
+    expect(found('{"password": 12ab}', json)).toEqual([]);
+  });
+});

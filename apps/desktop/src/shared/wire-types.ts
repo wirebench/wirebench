@@ -3305,7 +3305,7 @@ export const secretsShowSecretsResponseSchema = z.object({ show: z.boolean() });
 export const secretLocationWireSchema = z.union([
   z
     .object({
-      kind: z.enum(['soap-header', 'rest-header', 'rest-query', 'grpc-metadata', 'ws-header']),
+      kind: z.enum(['soap-header', 'rest-header', 'rest-query', 'grpc-metadata', 'ws-header', 'ws-query']),
       requestId: z.string(),
       name: z.string(),
       index: z.number().int(),
@@ -3319,8 +3319,16 @@ export const secretLocationWireSchema = z.union([
       index: z.number().int(),
     })
     .strict(),
-  z.object({ kind: z.literal('rest-body'), requestId: z.string(), field: z.number().int().optional() }).strict(),
-  z.object({ kind: z.enum(['soap-body', 'rest-url', 'grpc-message']), requestId: z.string() }).strict(),
+  z
+    .object({
+      kind: z.literal('rest-body'),
+      requestId: z.string(),
+      field: z.number().int().optional(),
+      name: z.string().optional(),
+    })
+    .strict(),
+  z.object({ kind: z.enum(['soap-body', 'grpc-message']), requestId: z.string() }).strict(),
+  z.object({ kind: z.enum(['rest-url', 'ws-url']), requestId: z.string(), name: z.string().optional() }).strict(),
   z.object({ kind: z.literal('ws-message'), requestId: z.string(), messageId: z.string() }).strict(),
   z.object({ kind: z.literal('project-property'), name: z.string() }).strict(),
   z.object({ kind: z.literal('env-property'), environmentId: z.string(), name: z.string() }).strict(),
@@ -3336,6 +3344,7 @@ export const secretFindingWireSchema = z
       'jwt',
       'bearer',
       'basic',
+      'url-credentials',
       'aws-key',
       'private-key',
       'vendor-token',

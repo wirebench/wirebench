@@ -86,7 +86,12 @@ describe('scanProjectForSecrets locations', () => {
     const api = createApi('Billing API', { requests: [r], folders: [createFolder('Auth', { requests: [r2] })] });
     const findings = scanProjectForSecrets(project({ apis: [api] }));
     expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
-      [{ kind: 'rest-url', requestId: 'r1' }, 'sensitive-name', 'FAKEkey', 'Billing API › GET /invoices › URL'],
+      [
+        { kind: 'rest-url', requestId: 'r1', name: 'api_key' },
+        'sensitive-name',
+        'FAKEkey',
+        'Billing API › GET /invoices › URL',
+      ],
       [
         { kind: 'rest-query', requestId: 'r1', name: 'access_token', index: 1 },
         'sensitive-name',
@@ -101,7 +106,7 @@ describe('scanProjectForSecrets locations', () => {
       ],
       [{ kind: 'rest-body', requestId: 'r1' }, 'sensitive-name', 'changeme', 'Billing API › GET /invoices › body'],
       [
-        { kind: 'rest-body', requestId: 'r2', field: 1 },
+        { kind: 'rest-body', requestId: 'r2', field: 1, name: 'client_secret' },
         'sensitive-name',
         'FAKEsecret',
         'Billing API › Auth › Token › body field client_secret',
@@ -137,6 +142,57 @@ describe('scanProjectForSecrets locations', () => {
       [{ kind: 'ws-header', requestId: 'w1', name: 'Cookie', index: 0 }, 'sensitive-name', 'sid=FAKE'],
       [{ kind: 'ws-message', requestId: 'w1', messageId: 'm1' }, 'sensitive-name', 'changeme'],
     ]);
+  });
+
+  it('ws request URL and query table', () => {
+    const url = 'wss://h/socket?token=FAKEtok1&page=2';
+    const w = createWsRequest('Chat', { id: 'w1', url, query: [kv('page', '2'), kv('access_token', 'FAKEq')] });
+    const findings = scanProjectForSecrets(project({ wsApis: [createWsApi('Chat API', { requests: [w] })] }));
+    expect(findings.map((f) => [f.location, f.rule, f.value, f.label])).toEqual([
+      [{ kind: 'ws-url', requestId: 'w1', name: 'token' }, 'sensitive-name', 'FAKEtok1', 'Chat API › Chat › URL'],
+      [
+        { kind: 'ws-query', requestId: 'w1', name: 'access_token', index: 1 },
+        'sensitive-name',
+        'FAKEq',
+        'Chat API › Chat › query access_token',
+      ],
+    ]);
+    expect(url.slice(findings[0]!.valueStart, findings[0]!.valueEnd)).toBe('FAKEtok1');
+  });
+
+  it('ws request URL near miss: an ordinary parameter', () => {
+    const w = createWsRequest('Chat', { id: 'w1', url: 'ws://h/?page=2', query: [kv('page', '3')] });
+    expect(scanProjectForSecrets(project({ wsApis: [createWsApi('Chat API', { requests: [w] })] }))).toEqual([]);
+  });
+
+  it('the password of a URL userinfo, in a REST and a WS URL', () => {
+    const r = createRestRequest('R', { id: 'r1', url: 'https://alice:FAKEpass@h/x' });
+    const w = createWsRequest('W', { id: 'w1', url: 'wss://bob:FAKEwspw@h/socket' });
+    const findings = scanProjectForSecrets(
+      project({
+        apis: [createApi('A', { requests: [r, createRestRequest('R2', { id: 'r2', url: 'https://alice@h/x' })] })],
+        wsApis: [createWsApi('W', { requests: [w] })],
+      }),
+    );
+    expect(findings.map((f) => [f.location, f.rule, f.value])).toEqual([
+      [{ kind: 'rest-url', requestId: 'r1' }, 'url-credentials', 'FAKEpass'],
+      [{ kind: 'ws-url', requestId: 'w1' }, 'url-credentials', 'FAKEwspw'],
+    ]);
+  });
+
+  it('a form field finding carries the field name on its location', () => {
+    const r = createRestRequest('Token', {
+      id: 'r2',
+      body: {
+        kind: 'multipart',
+        parts: [
+          { kind: 'text', ...kv('grant_type', 'x') },
+          { kind: 'text', ...kv('client_secret', 'FAKEsecret') },
+        ],
+      },
+    });
+    const f = only(project({ apis: [createApi('A', { requests: [r] })] }));
+    expect(f.location).toEqual({ kind: 'rest-body', requestId: 'r2', field: 1, name: 'client_secret' });
   });
 
   it('api-level gRPC metadata and WS headers', () => {
@@ -177,6 +233,17 @@ describe('finding ids', () => {
     expect(a.id).toMatch(/^[0-9a-f]{16}$/);
     expect(a.id).toBe(b.id);
     expect(c.id).not.toBe(a.id);
+  });
+  it('are stable across two scans with repeats, and unique across a project', () => {
+    const p = project({
+      properties: { p: `${GH} x ${GH} y ${GH}`, token: GH },
+      apis: [createApi('A', { requests: [createRestRequest('R', { id: 'r1', url: `https://h/?token=${GH}` })] })],
+    });
+    const a = scanProjectForSecrets(p).map((f) => f.id);
+    const b = scanProjectForSecrets(p).map((f) => f.id);
+    expect(a).toEqual(b);
+    expect(new Set(a).size).toBe(a.length);
+    expect(a).toHaveLength(5);
   });
   it('differ for the same value twice in one text', () => {
     const findings = scanProjectForSecrets(project({ properties: { p: `${GH} ${GH}` } }));

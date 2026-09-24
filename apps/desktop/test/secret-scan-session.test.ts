@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createApi, createProject, createRestRequest, entry } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, createWsApi, createWsRequest, entry } from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
@@ -92,6 +92,57 @@ describe('SecretScanSession.scan', () => {
     expect(Object.keys(findings[0]!).sort()).toEqual(['id', 'label', 'location', 'preview', 'rule']);
     expect(JSON.stringify(findings)).not.toContain(FAKE_JWT);
     expect(() => secretFindingWireSchema.parse(findings[0])).not.toThrow();
+  });
+});
+
+describe('SecretScanSession.scan: WS URL and query, URL passwords, form fields', () => {
+  it('hands every new location and rule over the strict schema with no value, and moves one', async () => {
+    const project: Project = {
+      ...createProject('Chat', { id: 'p1' }),
+      apis: [
+        createApi('Auth API', {
+          requests: [
+            createRestRequest('Token', {
+              id: 'r1',
+              url: 'https://svc:fake-url-pass@h.example/token',
+              body: { kind: 'form', fields: [entry('client_secret', 'fake-form-secret')] },
+            }),
+          ],
+        }),
+      ],
+      wsApis: [
+        createWsApi('Chat API', {
+          requests: [
+            createWsRequest('Room', {
+              id: 'w1',
+              url: 'wss://h.example/socket?token=fake-ws-token',
+              query: [entry('access_token', 'fake-ws-query')],
+            }),
+          ],
+        }),
+      ],
+    };
+    const host = memoryHost(project);
+    const { registry, store } = sessions(host);
+    const session = registry.session('p1');
+
+    const review = await session.review();
+
+    expect(review.findings.map((f) => [f.location.kind, f.rule])).toEqual([
+      ['rest-url', 'url-credentials'],
+      ['rest-body', 'sensitive-name'],
+      ['ws-url', 'sensitive-name'],
+      ['ws-query', 'sensitive-name'],
+    ]);
+    for (const f of review.findings) expect(() => secretFindingWireSchema.parse(f)).not.toThrow();
+    expect(JSON.stringify(review)).not.toMatch(/fake-(url-pass|form-secret|ws-token|ws-query)/);
+    expect(Object.values(review.proposedNames)).toEqual(['url_password', 'client_secret', 'token', 'access_token']);
+
+    const ws = review.findings.find((f) => f.location.kind === 'ws-url')!;
+    const result = await session.move([{ id: ws.id, name: 'chat_token' }]);
+    expect(result.moved).toEqual([ws.id]);
+    expect(host.current().wsApis[0]!.requests[0]!.url).toBe('wss://h.example/socket?token=${secret:chat_token}');
+    expect(await store.list()).toHaveLength(1);
   });
 });
 
