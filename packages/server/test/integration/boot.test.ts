@@ -87,21 +87,55 @@ describeDb('startServer', () => {
     expect(signals.listenerCount('SIGTERM') + signals.listenerCount('SIGINT')).toBe(0);
   });
 
-  it('exits 130 at once on a second signal, and when draining outlasts drainMs', async () => {
+  it('exits 130 at once on a second signal', async () => {
     const signals = new EventEmitter();
     const exit = vi.fn();
-    const server = await startServer(env(), io(), { signals, exit, drainMs: 50, modules: [slowModule(400)] });
+    const server = await startServer(env(), io(), { signals, exit, modules: [slowModule(300)] });
     const inFlight = fetch(`http://127.0.0.1:${server.port}/api/v1/slow`);
     await new Promise((resolve) => setTimeout(resolve, 50));
     signals.emit('SIGTERM');
+    expect(exit).not.toHaveBeenCalled();
     signals.emit('SIGTERM');
     expect(exit).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenLastCalledWith(130);
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(exit).toHaveBeenCalledTimes(2);
-    expect(exit).toHaveBeenLastCalledWith(130);
     await inFlight;
     await server.close();
+  });
+
+  it('when draining outlasts drainMs, drops the remaining connections, closes the pool and does not exit', async () => {
+    const signals = new EventEmitter();
+    const exit = vi.fn();
+    const server = await startServer(env(), io(), { signals, exit, drainMs: 100, modules: [slowModule(2_000)] });
+    const inFlight = fetch(`http://127.0.0.1:${server.port}/api/v1/slow`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const started = Date.now();
+    signals.emit('SIGTERM');
+    await expect(inFlight).rejects.toThrow(); // its connection was dropped at the deadline
+    await server.close();
+    expect(Date.now() - started).toBeLessThan(1_500);
+    expect(exit).not.toHaveBeenCalled();
+    await expect(server.ctx.db.query('select 1')).rejects.toThrow(); // the pool is closed
+  });
+
+  it('main serve returns 0 after a SIGTERM whose drain timed out', async () => {
+    const signals = new EventEmitter();
+    const exit = vi.fn();
+    const running = main(['serve'], io(), { signals, exit, drainMs: 100, modules: [slowModule(2_000)] });
+    let reachable = false;
+    for (let attempt = 0; attempt < 100 && !reachable; attempt += 1) {
+      reachable = await fetch(`http://127.0.0.1:${port}/healthz`).then(
+        () => true,
+        () => false,
+      );
+      if (!reachable) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(reachable).toBe(true);
+    const inFlight = fetch(`http://127.0.0.1:${port}/api/v1/slow`).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    signals.emit('SIGTERM');
+    expect(await running).toBe(0);
+    await inFlight;
+    expect(exit).not.toHaveBeenCalled();
   });
 
   it('refuses to start when the port is taken, naming the address, and releases the pool', async () => {

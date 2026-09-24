@@ -1,9 +1,10 @@
 import { HELP_TEXT, parseServerArgs, UsageError } from './args.js';
 import { ConfigError, describeConfig, loadConfig } from './config.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
-import { runMigrate, startServer, StartupError } from './serve.js';
+import { runMigrate, startServer, StartupError, type StartOptions } from './serve.js';
 
-export async function main(argv: readonly string[], io: ServerIo): Promise<number> {
+/** `serveOptions` exists for tests (signals, exit, drain time, modules); the bin passes none. */
+export async function main(argv: readonly string[], io: ServerIo, serveOptions: StartOptions = {}): Promise<number> {
   let command;
   try {
     command = parseServerArgs(argv);
@@ -37,7 +38,7 @@ export async function main(argv: readonly string[], io: ServerIo): Promise<numbe
       return runMigrate(io.env, io, command.check);
     case 'serve': {
       try {
-        const server = await startServer(io.env, io);
+        const server = await startServer(io.env, io, serveOptions);
         await new Promise<void>((resolve) => server.app.server.once('close', resolve));
         await server.close(); // the same promise the signal started: resolves once the pool is closed
         return ExitCode.Ok;

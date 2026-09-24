@@ -16,7 +16,7 @@ import { ExitCode, packageVersion, type ServerIo } from './io.js';
 import { NO_HOOKS_DIR, RepoStore } from './repos/repo-store.js';
 import { buildServer } from './server.js';
 
-/** The exit code of an interrupted shutdown: a second signal, or draining that outlasts `drainMs`. */
+/** The exit code of an interrupted shutdown: a second signal while the first is still draining. */
 const EXIT_INTERRUPTED = 130;
 const SIGNALS = ['SIGTERM', 'SIGINT'] as const;
 
@@ -42,8 +42,9 @@ export interface StartOptions {
   readonly modules?: readonly ServerModule[];
   /** Where SIGTERM/SIGINT come from: `process` in production, an EventEmitter in tests. */
   readonly signals?: EventEmitter;
+  /** How long a shutdown waits for in-flight requests before dropping their connections. */
   readonly drainMs?: number;
-  /** How an interrupted shutdown ends the process: `process.exit` in production, a spy in tests. */
+  /** How a second signal ends the process: `process.exit` in production, a spy in tests. */
   readonly exit?: (code: number) => void;
 }
 
@@ -204,7 +205,10 @@ export async function startServer(
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {
     closing ??= (async () => {
-      const timer = setTimeout(() => exit(EXIT_INTERRUPTED), options.drainMs ?? 10_000);
+      // Spec §3.7: wait up to drainMs for in-flight requests, then close the pool and exit 0. At
+      // the deadline the remaining connections are dropped so app.close() resolves. The shutdown
+      // stays a normal one: only a second signal ends it with 130.
+      const timer = setTimeout(() => app.server.closeAllConnections(), options.drainMs ?? 10_000);
       timer.unref();
       // Node's server.close() drops only the connections idle at that moment; a keep-alive
       // connection whose request was in flight turns idle afterwards and would hold the close
