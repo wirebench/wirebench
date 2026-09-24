@@ -94,8 +94,12 @@ export async function lookupInvitation(env: IdentityEnv, secret: string): Promis
 
 /**
  * The local path in (§3.1): an `invite` creates the user and credential; a `reset` replaces the
- * credential of its user and revokes every device. Both mark the row accepted in the same
- * transaction, so a second use finds it closed.
+ * credential of its user and revokes every device. The row is claimed — `repo.acceptInvitation`'s
+ * conditional `UPDATE ... WHERE accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now` —
+ * first inside the transaction, before either branch touches a user or credential: two concurrent
+ * accepts of the same secret race on that single `UPDATE`, so at most one can claim it, and the
+ * loser throws `invitationInvalid()` and rolls back before it can create a duplicate user or a
+ * second token.
  */
 export async function acceptInvitation(env: IdentityEnv, input: InvitationAcceptRequest): Promise<SignInResponse> {
   if (!env.settings.local) throw methodDisabled();
@@ -105,12 +109,12 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
   const hash = await hashPassword(input.password);
   const now = env.now();
   const outcome = await env.ctx.db.transaction(async (tx) => {
+    if (!(await repo.acceptInvitation(tx, invitation.id, now))) throw invitationInvalid();
     if (invitation.kind === 'reset') {
       const user = invitation.userId === null ? undefined : await repo.findUserById(tx, invitation.userId);
       if (user === undefined || user.disabledAt !== null) throw invitationInvalid();
       await repo.upsertCredential(tx, user.id, hash, now);
       await repo.revokeTokensOfUser(tx, user.id, now);
-      await repo.acceptInvitation(tx, invitation.id, now);
       return { user, created: false };
     }
     if ((await repo.findUserByEmail(tx, invitation.emailLower)) !== undefined) throw userExists();
@@ -123,7 +127,6 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
       at: now,
     });
     await repo.upsertCredential(tx, user.id, hash, now);
-    await repo.acceptInvitation(tx, invitation.id, now);
     return { user, created: true };
   });
   if (outcome.created)

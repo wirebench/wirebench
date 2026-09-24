@@ -131,6 +131,34 @@ describeDb('invitations (§3.1, §3.7)', () => {
     ).toBe('identity-method-disabled');
   });
 
+  it('a secret is spent exactly once under concurrent accepts, for both an invite and a reset', async () => {
+    const inviteSecret = secretOf(
+      (await create({ email: 'concurrent-invite@example.com' })).json<{ url: string }>().url,
+    );
+    const invitePayload = { secret: inviteSecret, displayName: 'Race', password: PASSWORD, device: { name: 'x' } };
+    const [inviteA, inviteB] = await Promise.all([accept(invitePayload), accept(invitePayload)]);
+    const inviteOutcomes = [inviteA, inviteB].map((res) => res.statusCode).sort();
+    expect(inviteOutcomes).toEqual([201, 404]);
+    const inviteLoser = inviteA.statusCode === 404 ? inviteA : inviteB;
+    expect(inviteLoser.json<{ code: string }>().code).toBe('identity-invitation-invalid');
+
+    const bob = await signedInUser(h, { email: 'concurrent-reset@example.com', password: 'old password 123' });
+    const resetUrl = (
+      await h.app.inject({
+        method: 'POST',
+        url: `/api/v1/users/${bob.user.id}/password-reset`,
+        headers: admin.headers,
+      })
+    ).json<{ url: string }>().url;
+    const resetSecret = secretOf(resetUrl);
+    const resetPayload = { secret: resetSecret, displayName: 'Bob', password: PASSWORD, device: { name: 'y' } };
+    const [resetA, resetB] = await Promise.all([accept(resetPayload), accept(resetPayload)]);
+    const resetOutcomes = [resetA, resetB].map((res) => res.statusCode).sort();
+    expect(resetOutcomes).toEqual([201, 404]);
+    const resetLoser = resetA.statusCode === 404 ? resetA : resetB;
+    expect(resetLoser.json<{ code: string }>().code).toBe('identity-invitation-invalid');
+  });
+
   it('rate-limits lookups per address', async () => {
     for (let i = 0; i < 10; i += 1) await lookup(mintSecret().secret);
     expect((await lookup(mintSecret().secret)).statusCode).toBe(429);

@@ -26,6 +26,8 @@ async function summaries(env: IdentityEnv, users: readonly repo.UserRow[]): Prom
     displayName: user.displayName,
     serverAdmin: user.serverAdmin,
     ...(user.disabledAt !== null ? { disabledAt: user.disabledAt } : {}),
+    // Spread into a plain mutable array: repo.SignInMethods.oidc is `readonly`, but the wire
+    // schema's inferred UserSummary.oidc is not, so this array is copied rather than aliased.
     methods: { local: methods.get(user.id)!.local, oidc: [...methods.get(user.id)!.oidc] },
   }));
 }

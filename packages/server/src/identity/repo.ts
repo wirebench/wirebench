@@ -287,8 +287,18 @@ export async function listInvitations(db: Querier): Promise<readonly InvitationR
   ).rows.map((row) => withDates<InvitationRow>(row, INVITATION_DATES));
 }
 
-export async function acceptInvitation(db: Querier, id: string, at: Date): Promise<void> {
-  await db.query('update invitations set accepted_at = $2 where id = $1', [id, at]);
+/**
+ * Claims the single use of an open row: `false` when another accept already claimed, revoked or
+ * outran it (the caller rolls its transaction back on that). The `where` clause repeats the
+ * open-ness check `isOpen` makes in application code, so two concurrent accepts of the same
+ * secret can never both flip `accepted_at`.
+ */
+export async function acceptInvitation(db: Querier, id: string, at: Date): Promise<boolean> {
+  const result = await db.query(
+    'update invitations set accepted_at = $2 where id = $1 and accepted_at is null and revoked_at is null and expires_at > $2',
+    [id, at],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function revokeInvitation(db: Querier, id: string, at: Date): Promise<void> {
