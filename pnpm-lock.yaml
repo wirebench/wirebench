@@ -230,6 +230,15 @@ importers:
         specifier: ^4.6.1
         version: 4.6.1
 
+  packages/server:
+    dependencies:
+      '@wirebench/engine':
+        specifier: workspace:*
+        version: link:../engine
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
+
 packages:
 
   '@asamuzakjp/css-color@6.0.7':

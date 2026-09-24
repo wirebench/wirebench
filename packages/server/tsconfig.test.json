@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist-test",
+    "types": ["node"]
+  },
+  "include": ["test"],
+  "references": [{ "path": "./tsconfig.json" }]
+}
