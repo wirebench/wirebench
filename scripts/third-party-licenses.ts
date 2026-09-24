@@ -11,6 +11,7 @@
  * What counts as "ships":
  *   * `apps/desktop`'s `dependencies` and `packages/engine`'s `dependencies`, transitively —
  *     these are resolved at runtime from `node_modules` inside the asar.
+ *   * `packages/server`'s `dependencies`, transitively — the container image ships them.
  *   * {@link BUNDLED_DEV_DEPENDENCIES}, transitively. They sit in `devDependencies` because
  *     electron-vite bundles them rather than resolving them at runtime, but their code (React,
  *     Monaco, Radix, Tailwind's preflight CSS) is inside the shipped renderer bundle all the
@@ -56,7 +57,7 @@ const BUNDLED_DEV_DEPENDENCIES = [
 ] as const;
 
 /** Workspace packages: Wirebench's own code, covered by the repository's own LICENSE. */
-const OWN_PACKAGES = new Set(['@wirebench/engine', '@wirebench/desktop', '@wirebench/cli']);
+const OWN_PACKAGES = new Set(['@wirebench/engine', '@wirebench/desktop', '@wirebench/cli', '@wirebench/server']);
 
 /** File names that may carry a license or notice, in the order they are looked for. */
 const LICENSE_FILE_PATTERN = /^(licen[cs]e|notice|copying)(\.(md|txt|markdown))?$/i;
@@ -236,14 +237,17 @@ function render(packages: readonly LicensedPackage[]): string {
 export async function renderThirdPartyLicenses(): Promise<string> {
   const desktopDir = join(repoRoot, 'apps', 'desktop');
   const engineDir = join(repoRoot, 'packages', 'engine');
+  const serverDir = join(repoRoot, 'packages', 'server');
   const desktop = await readManifest(desktopDir);
   const engine = await readManifest(engineDir);
-  if (desktop === undefined || engine === undefined) {
+  const server = await readManifest(serverDir);
+  if (desktop === undefined || engine === undefined || server === undefined) {
     throw new Error('Cannot read the workspace manifests');
   }
   const roots = [
     ...Object.keys(desktop.dependencies ?? {}).map((name) => ({ name, from: desktopDir })),
     ...Object.keys(engine.dependencies ?? {}).map((name) => ({ name, from: engineDir })),
+    ...Object.keys(server.dependencies ?? {}).map((name) => ({ name, from: serverDir })),
     ...BUNDLED_DEV_DEPENDENCIES.map((name) => ({ name, from: desktopDir })),
   ];
   return render(await collect(roots));

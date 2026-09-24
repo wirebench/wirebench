@@ -139,6 +139,13 @@ describe('THIRD-PARTY-LICENSES.md', () => {
     expect(committed).not.toContain('| UNKNOWN |');
   });
 
+  it('attributes the server image dependencies', async () => {
+    const rendered = await renderThirdPartyLicenses();
+    for (const name of ['fastify', 'pg']) {
+      expect(rendered).toMatch(new RegExp(`^## ${name}@|\\| ${name} \\|`, 'm'));
+    }
+  });
+
   it('attributes every third-party package the renderer bundle imports', async () => {
     const committed = await readFile(target, 'utf-8');
     const files = await sourceFiles(rendererDir);

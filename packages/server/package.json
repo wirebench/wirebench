@@ -24,6 +24,11 @@
   },
   "dependencies": {
     "@wirebench/engine": "workspace:*",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.0",
     "zod": "^4.6.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
   }
 }
