@@ -20,7 +20,7 @@ export const metaRoutes =
       version: ctx.config.version,
       apiVersion: 1,
       publicUrl: ctx.config.publicUrl,
-      auth: ctx.meta.auth(),
+      auth: ctx.meta.signInMethods(),
       capabilities: ctx.meta.capabilities(),
     }));
   };

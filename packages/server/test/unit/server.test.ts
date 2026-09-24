@@ -68,7 +68,7 @@ describe('buildServer', () => {
           name: 'identity',
           // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
           register: async (instance, context) => {
-            context.meta.setAuth({ local: true });
+            context.meta.setSignInMethods({ local: true });
             context.meta.addCapability('probe');
             // eslint-disable-next-line @typescript-eslint/require-await -- route handler has no await, just returns
             instance.get('/probe', async () => ({ ok: true }));

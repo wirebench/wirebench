@@ -27,20 +27,21 @@ export class ServerEvents extends EventEmitter<ServerEventMap> {}
 
 /** What `/api/v1/meta` reports; modules fill it at registration. */
 export class MetaRegistry {
-  private readonly authModes = { local: false, oidc: false };
+  private readonly methods = { local: false, oidc: false };
   private readonly capabilityNames = new Set<string>();
   private oidcName: string | undefined;
 
-  setAuth(update: { local?: boolean; oidc?: boolean; oidcDisplayName?: string }): void {
-    if (update.local !== undefined) this.authModes.local = update.local;
-    if (update.oidc !== undefined) this.authModes.oidc = update.oidc;
+  /** Which sign-in methods the server offers; identity sets them when it registers. Reporting them authorises nothing. */
+  setSignInMethods(update: { local?: boolean; oidc?: boolean; oidcDisplayName?: string }): void {
+    if (update.local !== undefined) this.methods.local = update.local;
+    if (update.oidc !== undefined) this.methods.oidc = update.oidc;
     if (update.oidcDisplayName !== undefined) this.oidcName = update.oidcDisplayName;
   }
   addCapability(name: string): void {
     this.capabilityNames.add(name);
   }
-  auth(): { local: boolean; oidc: boolean; oidcDisplayName?: string } {
-    return { ...this.authModes, ...(this.oidcName !== undefined ? { oidcDisplayName: this.oidcName } : {}) };
+  signInMethods(): { local: boolean; oidc: boolean; oidcDisplayName?: string } {
+    return { ...this.methods, ...(this.oidcName !== undefined ? { oidcDisplayName: this.oidcName } : {}) };
   }
   capabilities(): string[] {
     return [...this.capabilityNames].sort();
