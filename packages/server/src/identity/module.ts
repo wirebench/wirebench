@@ -11,8 +11,13 @@ import { identitySettings, type IdentityEnv } from './env.js';
 import { authenticate } from './guard.js';
 import type { OidcProvider } from './oidc.js';
 import { RateLimiter } from './rate-limit.js';
+import { authLocalRoutes } from './routes/auth-local.js';
+import { meRoutes } from './routes/me.js';
+import { sweepExpired } from './sessions.js';
 
 export const IDENTITY_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/identity/', import.meta.url));
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface IdentityOptions {
   /** Injected clock for expiry tests. */
@@ -28,7 +33,7 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
   return {
     name: 'identity',
     migrationsDir: IDENTITY_MIGRATIONS_DIR,
-    async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
+    register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const settings = identitySettings(ctx.config);
       const env: IdentityEnv = {
         ctx,
@@ -44,8 +49,21 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       });
       ctx.meta.addCapability('identity');
       app.addHook('onRequest', authenticate(env));
-      // Tasks 5–7 register the route groups and the sweep after this line.
-      await Promise.resolve();
+      authLocalRoutes(env)(app);
+      meRoutes(env)(app);
+      // Tasks 6–7 register invitations, users, the invite page and OIDC here.
+
+      const interval = options.sweepIntervalMs ?? DAY_MS;
+      if (interval > 0) {
+        const timer = setInterval(() => {
+          sweepExpired(env).catch((error: unknown) => ctx.log.warn({ err: error }, 'identity sweep failed'));
+        }, interval);
+        timer.unref();
+        app.addHook('onClose', () => {
+          clearInterval(timer);
+        });
+      }
+      return Promise.resolve();
     },
   };
 }
