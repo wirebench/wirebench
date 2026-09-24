@@ -19,6 +19,24 @@ afterEach(() => {
 });
 
 describe('buildServer', () => {
+  it('serves a module’s public routes at the root, outside /api/v1', async () => {
+    const app = await buildServer(await testContext({ dataDir }), {
+      modules: [
+        {
+          name: 'identity',
+          register: () => Promise.resolve(),
+          // eslint-disable-next-line @typescript-eslint/require-await -- registerPublic is async; this one has no await
+          registerPublic: async (root) => {
+            root.get('/page', async (_request, reply) => reply.type('text/html').send('<p>hi</p>'));
+          },
+        },
+      ],
+    });
+    expect((await app.inject({ method: 'GET', url: '/page' })).body).toBe('<p>hi</p>');
+    expect((await app.inject({ method: 'GET', url: '/api/v1/page' })).statusCode).toBe(404);
+    await app.close();
+  });
+
   it('serves a green /healthz when every check passes', async () => {
     const app = await buildServer(await testContext({ dataDir }), { modules: [] });
     const res = await app.inject({ method: 'GET', url: '/healthz' });
@@ -216,7 +234,7 @@ describe('buildServer', () => {
           name: 'identity',
           // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
           register: async (instance) => {
-            instance.decorateRequest('caller', null);
+            instance.decorateRequest('caller', undefined);
             instance.addHook('onRequest', async (request, reply) => {
               (request as unknown as { caller: string | null }).caller = 'ada';
               void reply.header('x-probe-hook', 'seen');

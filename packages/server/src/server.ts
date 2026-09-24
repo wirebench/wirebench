@@ -141,6 +141,13 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
     },
     { prefix: '/api/v1' },
   );
+  for (const module of options.modules) {
+    if (module.registerPublic !== undefined) {
+      await app.register(async (root) => {
+        await module.registerPublic!(root, context);
+      });
+    }
+  }
   await app.ready();
   return app;
 }

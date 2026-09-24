@@ -12,7 +12,10 @@ import { authenticate } from './guard.js';
 import type { OidcProvider } from './oidc.js';
 import { RateLimiter } from './rate-limit.js';
 import { authLocalRoutes } from './routes/auth-local.js';
+import { invitationRoutes } from './routes/invitations.js';
+import { invitePageRoutes } from './routes/invite-page.js';
 import { meRoutes } from './routes/me.js';
+import { userRoutes } from './routes/users.js';
 import { sweepExpired } from './sessions.js';
 
 export const IDENTITY_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/identity/', import.meta.url));
@@ -30,33 +33,39 @@ export interface IdentityOptions {
 
 export function identityModule(options: IdentityOptions = {}): ServerModule {
   const now = options.now ?? (() => new Date());
+  // `register` and `registerPublic` need the same `IdentityEnv`; built once, on first use, from
+  // whichever hook runs first (registration order between the two is not guaranteed).
+  let env: IdentityEnv | undefined;
+  const envFor = (ctx: ServerContext): IdentityEnv =>
+    (env ??= {
+      ctx,
+      settings: identitySettings(ctx.config),
+      now,
+      limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
+      provider: options.provider,
+    });
   return {
     name: 'identity',
     migrationsDir: IDENTITY_MIGRATIONS_DIR,
     register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      const settings = identitySettings(ctx.config);
-      const env: IdentityEnv = {
-        ctx,
-        settings,
-        now,
-        limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
-        provider: options.provider,
-      };
+      const identityEnv = envFor(ctx);
       ctx.meta.setSignInMethods({
-        local: settings.local,
-        oidc: settings.oidc !== undefined,
-        ...(settings.oidc !== undefined ? { oidcDisplayName: settings.oidc.displayName } : {}),
+        local: identityEnv.settings.local,
+        oidc: identityEnv.settings.oidc !== undefined,
+        ...(identityEnv.settings.oidc !== undefined ? { oidcDisplayName: identityEnv.settings.oidc.displayName } : {}),
       });
       ctx.meta.addCapability('identity');
-      app.addHook('onRequest', authenticate(env));
-      authLocalRoutes(env)(app);
-      meRoutes(env)(app);
-      // Tasks 6–7 register invitations, users, the invite page and OIDC here.
+      app.addHook('onRequest', authenticate(identityEnv));
+      authLocalRoutes(identityEnv)(app);
+      meRoutes(identityEnv)(app);
+      invitationRoutes(identityEnv)(app);
+      userRoutes(identityEnv)(app);
+      // Task 7 registers the OIDC routes here.
 
       const interval = options.sweepIntervalMs ?? DAY_MS;
       if (interval > 0) {
         const timer = setInterval(() => {
-          sweepExpired(env).catch((error: unknown) => ctx.log.warn({ err: error }, 'identity sweep failed'));
+          sweepExpired(identityEnv).catch((error: unknown) => ctx.log.warn({ err: error }, 'identity sweep failed'));
         }, interval);
         timer.unref();
         app.addHook('onClose', () => {
@@ -64,6 +73,10 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
         });
       }
       return Promise.resolve();
+    },
+    async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {
+      invitePageRoutes(envFor(ctx))(root);
+      await Promise.resolve();
     },
   };
 }
