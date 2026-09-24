@@ -10,7 +10,7 @@
  * handles, so there the first attempt always wins and this is a no-op wrapper.
  */
 
-import { rename } from 'node:fs/promises';
+import { cp, rename, rm } from 'node:fs/promises';
 
 /** Errors that mean "something else has it open right now", not "this can never work". */
 const TRANSIENT_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
@@ -67,4 +67,33 @@ export async function renameWithRetry(from: string, to: string, options: RenameW
       await delay(retryDelayMs);
     }
   }
+}
+
+/**
+ * Moves the directory `from` to `to` (which must not exist yet): a {@link renameWithRetry} where
+ * both sit on one filesystem, otherwise (`EXDEV` — a staging folder under the OS temp directory,
+ * a project on another volume) a recursive copy followed by removing the source. A copy that
+ * fails part-way is removed again, so `to` is either complete or absent; removing the source
+ * once the copy is complete is best-effort, since the move itself has already succeeded.
+ *
+ * @param from the existing directory
+ * @param to where it should end up
+ * @param options injection points for the tests
+ */
+export async function moveDir(from: string, to: string, options: RenameWithRetryOptions = {}): Promise<void> {
+  try {
+    await renameWithRetry(from, to, options);
+    return;
+  } catch (error) {
+    if (codeOf(error) !== 'EXDEV') {
+      throw error;
+    }
+  }
+  try {
+    await cp(from, to, { recursive: true, errorOnExist: true, force: false });
+  } catch (error) {
+    await rm(to, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  await rm(from, { recursive: true, force: true }).catch(() => undefined);
 }

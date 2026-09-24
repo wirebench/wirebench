@@ -225,6 +225,53 @@ describe('ProjectHost', () => {
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
 
+  it('stages the definition cache of an import outside the project, then moves it into place', async () => {
+    const dir = join(tempDir('project'), 'Staged');
+    const engine = new EngineService();
+    const importSpy = vi.spyOn(engine, 'importForProject');
+    const service = new ProjectHost(engine, {});
+    await service.create({ dir, name: 'Staged' });
+
+    const { project } = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    const slug = project.interfaces[0]!.slug;
+
+    // The engine wrote the cache somewhere the project watcher never sees, never under a
+    // provisional `interfaces/importing-*` folder.
+    const stagedCache = importSpy.mock.calls[0]![0].cache.dir;
+    expect(stagedCache.startsWith(dir)).toBe(false);
+    expect(existsSync(join(stagedCache, '..'))).toBe(false);
+    expect(await readdir(join(dir, 'interfaces'))).toEqual([slug]);
+    expect((await readdir(join(dir, 'interfaces', slug, 'definition'))).length).toBeGreaterThan(0);
+
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('leaves no staging folder behind, in the project or outside it, when an import fails', async () => {
+    const dir = join(tempDir('project'), 'Failed Import');
+    const engine = new EngineService();
+    let stagedCache: string | undefined;
+    vi.spyOn(engine, 'importForProject').mockImplementationOnce(async (input) => {
+      stagedCache = input.cache.dir;
+      await mkdir(stagedCache, { recursive: true });
+      await writeFile(join(stagedCache, 'partial.wsdl'), '<definitions/>', 'utf8');
+      throw new Error('the WSDL could not be parsed');
+    });
+    const service = new ProjectHost(engine, {});
+    await service.create({ dir, name: 'Failed Import' });
+
+    await expect(service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } })).rejects.toThrow(
+      'could not be parsed',
+    );
+
+    expect(stagedCache).toBeDefined();
+    expect(existsSync(join(stagedCache!, '..'))).toBe(false);
+    expect(existsSync(join(dir, 'interfaces')) ? await readdir(join(dir, 'interfaces')) : []).toEqual([]);
+
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('does not lose an edit that lands while a save is still writing to disk', async () => {
     const dir = join(tempDir('project'), 'Race Project');
     const { fs, arm, release } = deferredWriteFs();
