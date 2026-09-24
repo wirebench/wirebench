@@ -37,10 +37,15 @@ rules that decide what a secret looks like are the ones the redaction helpers al
    `secrets` value for a name, still reports it as an unresolved ref.
 4. **Masking.** Every resolved secret value joins the send's `createSecretMasker` list, so it shows as
    `<redacted>` in the HTTP log, History, run reports and CLI output like any auth secret. Editors keep
-   showing the token.
+   showing the token. On desktop the getter records each `${secret:name}` value it hands out (auth
+   values are already masked by the header, Basic, password and body-key rules), and a recorded value
+   is masked wherever it comes back too (#144): gRPC response messages, status message and metadata,
+   WebSocket text and binary frames and close reasons, and event-stream rows. On the wire it is shown
+   while show-secrets is on; History masks it regardless.
 5. **Needs.** `secretNeedsOf` reports each token a selected request reaches as
    `{ ref: 'secret:<name>', envName: NAME, purpose: 'secret "name"' }`, so `wirebench secrets list` and
-   `run` name the variable.
+   `run` name the variable. It lays `--var` overrides over each environment as a send does, so a token
+   reached only through a `--var` property is listed too (#145).
 6. **Scanner in the engine, pure.** `scanProjectForSecrets(project): SecretFinding[]`. Values never
    leave main: the wire shape carries a masked preview only (first 3 characters, `…`, length). A value
    whose credential part is already a `${…}` expansion is not a finding.
@@ -50,8 +55,12 @@ rules that decide what a secret looks like are the ones the redaction helpers al
    under a sensitive name is a finding. Shape rules apply anywhere (body text, header and property
    values): JWT (three base64url segments starting `eyJ`), `Bearer <token>` / `Basic <base64>`, AWS
    access key ids (`AKIA`/`ASIA` + 16), PEM private key blocks, GitHub (`ghp_`, `gho_`, `ghs_`,
-   `github_pat_`) and Slack (`xox[abpr]-`) tokens, and high-entropy strings (≥ 20 characters, Shannon
-   entropy ≥ 3.5 bits/char) only under a name matching `secret|token|password|passwd|key|credential`.
+   `github_pat_`) and Slack (`xox[abpr]-`) tokens, the password in a URL's user-info
+   (`scheme://user:pass@host`, the password part only; placeholders such as `password` or `****` are
+   skipped), and high-entropy strings (≥ 20 characters, Shannon entropy ≥ 3.5 bits/char) only under a
+   name matching `secret|token|password|passwd|key|credential`. A sensitive XML element whose content
+   is a single CDATA section, and a JSON number under a sensitive key, count as values under that name
+   (#145).
 8. **When scanning runs (owner B).**
    - Manual save (command, Ctrl+S) and a manual Sync commit scan first; findings open a review dialog.
    - Autosave, save-on-close and save-on-quit write without asking (the files are local).
@@ -69,12 +78,15 @@ rules that decide what a secret looks like are the ones the redaction helpers al
   `{ id; location: SecretLocation; rule: SecretRule; label; valueStart; valueEnd; value }`;
   the wire shape `SecretFindingWire` is `{ id; location; rule; label; preview }`.
   `SecretLocation` is one of
-  `{ kind: 'soap-header' | 'rest-header' | 'rest-query' | 'grpc-metadata' | 'ws-header'; requestId; name }`,
-  `{ kind: 'soap-body' | 'rest-body' | 'rest-url' | 'grpc-message' | 'ws-message'; requestId }`
+  `{ kind: 'soap-header' | 'rest-header' | 'rest-query' | 'grpc-metadata' | 'ws-header' | 'ws-query'; requestId; name; index }`,
+  `{ kind: 'grpc-api-metadata' | 'ws-api-header'; apiId; name; index }` (set on the API),
+  `{ kind: 'rest-body'; requestId; field?; name? }` (`field`/`name` for a form or multipart field),
+  `{ kind: 'rest-url' | 'ws-url'; requestId; name? }` (`name` is the query key a value sat under),
+  `{ kind: 'soap-body' | 'grpc-message'; requestId }`, `{ kind: 'ws-message'; requestId; messageId }`
   (value range in the stored text), `{ kind: 'project-property'; name }`,
   `{ kind: 'env-property'; environmentId; name }`. `label` is the display path
   (`Billing API › GET /invoices › header Authorization`). `SecretRule` is
-  `sensitive-name | jwt | bearer | basic | aws-key | private-key | vendor-token | high-entropy`.
+  `sensitive-name | jwt | bearer | basic | url-credentials | aws-key | private-key | vendor-token | high-entropy`.
 - **Move to secret:** the dialog proposes a name (from the header, key or property name, sanitised and
   de-duplicated against the project's stored names) that the person can edit. Main stores the value
   (`set` with the label, or `replace` when the name exists and the person ticks "Replace the stored
@@ -83,11 +95,19 @@ rules that decide what a secret looks like are the ones the redaction helpers al
   project, any stale finding ids, and `values` (finding id → value to store). The stored value is the
   replaced text exactly as found — still JSON-, XML- or URL-escaped when the text around it was —
   because expansion substitutes a secret verbatim, so the send is byte-for-byte the original. The host applies it as one undoable mutation; the save or commit then continues.
+  A value inside a CDATA section is replaced inside it, keeping the wrapper. A JSON number is replaced
+  by an unquoted token (`"pin": ${secret:pin}`) so the sent bytes stay the same; the saved body is not
+  strict JSON until expanded, as with any unquoted `${prop}`.
+- **Setting a value directly (#143):** the command *Set Secret Token Value…* lists the project's tokens
+  (set or not on this machine) and stores a value under the same label (`secretScan.tokens`,
+  `secretScan.setValue`, values renderer → main only). A send refused as `secret-missing` for a token
+  offers *Set value…* in a toast.
 - **Dialog:** the `ConfirmDialog` modal pattern; one row per finding (label, rule, preview, name
   field, Move to secret / Keep). Footer: "Move all", "Save anyway" (or "Commit anyway"), Cancel.
   "Save anyway" writes with the findings still there and does not add them to the ignore set.
-- **Scale:** bodies over 1 MiB are shape-scanned on their first 1 MiB only; a 2,000-request project
-  scans in under 100 ms.
+- **Scale:** each scanned value or body is read up to its first 1 MiB (`SECRET_TEXT_SCAN_LIMIT`,
+  characters), for name and shape rules alike; a 2,000-request project scans within the perf budget
+  (100 ms, gated at the median × the CI gate factor).
 
 ## Success criteria
 
@@ -103,7 +123,8 @@ rules that decide what a secret looks like are the ones the redaction helpers al
 - SC-5: values already `${…}` are never findings; Keep suppresses a finding until its value changes or
   the project is reopened.
 - SC-6: no value crosses IPC to the renderer (the wire schema has `preview` only; a test asserts it).
-- SC-7: `pnpm test:perf` — scanning a generated 2,000-request project takes < 100 ms.
+- SC-7: `pnpm test:perf` — scanning a generated 2,000-request project stays within its 100 ms budget
+  (median of the gate samples, × the CI gate factor, like the other engine budgets).
 
 ## Boundaries
 
