@@ -51,7 +51,9 @@ shield icon). It has three sections: **Keystores**, **Outgoing** and **Incoming*
 3. A Username Token takes a username and a **Password type** (**Digest**, **Text** or **None**).
    The password itself goes in through the masked **Set…** field, never typed in the clear.
 4. A Signature or Encryption entry needs a keystore. Choose **+** next to **Keystores**, pick a
-   `.p12`/`.pfx` or `.jks` file, and set its password the same masked way.
+   PKCS#12 file (`.p12`/`.pfx`) or a PEM bundle (`.pem`/`.crt`/`.cer`/`.key`), and set its password
+   the same masked way. Java keystores (`.jks`) aren't read; convert one to PKCS#12 first with
+   `keytool -importkeystore -srckeystore in.jks -destkeystore out.p12 -deststoretype PKCS12`.
 
 ![An expanded outgoing WS-Security configuration with a Timestamp entry and a Username Token entry for user bob, password type Digest](/wirebench/images/soap-wsdl/wss-outgoing.png)
 
