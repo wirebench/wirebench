@@ -38,3 +38,10 @@ export function renderInvitePage(input: InvitePageInput): string {
 <style>body{font:15px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:36rem;padding:0 1rem;color:#222}code{word-break:break-all}</style>
 </head><body><h1>Wirebench Server</h1>${body}</body></html>`;
 }
+
+/** What the browser sees after the IdP redirect: one line, then it is the desktop's turn. */
+export function renderReturnPage(message: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Wirebench Server</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;margin:3rem auto;max-width:36rem;padding:0 1rem;color:#222}</style>
+</head><body><h1>Wirebench Server</h1><p>${escapeHtml(message)}</p></body></html>`;
+}
