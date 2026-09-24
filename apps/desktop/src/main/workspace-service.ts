@@ -67,7 +67,7 @@ import type { EngineService } from './engine-service.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
-import { isWorkspaceManagedPath, ProjectWatcher } from './project-watch.js';
+import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
@@ -671,6 +671,7 @@ export class WorkspaceService implements ProjectRouter {
       open.watcher = new ProjectWatcher({
         dir: tree,
         isManaged: isWorkspaceManagedPath,
+        isWatchedDir: isWorkspaceManagedDir,
         ...(this.deps.watchDebounceMs !== undefined ? { debounceMs: this.deps.watchDebounceMs } : {}),
         onChange: (paths) => {
           if (open.held.offerWorkspace(paths)) {

@@ -13,9 +13,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
@@ -215,7 +216,7 @@ import { findRequest, toProjectWire, toUpdatePlanWire } from './project-wire.js'
 import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { mergeUnsaved, overlayFs } from './unsaved-store.js';
 import type { UnsavedProjectFiles } from './unsaved-store.js';
-import { renameWithRetry } from './rename-dir.js';
+import { moveDir } from './rename-dir.js';
 
 /**
  * What a send needs to carry a request's attachments: the attachments themselves plus the
@@ -2599,25 +2600,42 @@ export class ProjectHost {
         : undefined;
 
     // The interface's name (and therefore its slug) comes from the WSDL, which is only known
-    // once the import has run — so the cache is written under a provisional folder that is
-    // renamed into place afterwards.
-    const provisionalSlug = uniqueSlug(`importing-${interfaceId}`, taken);
-    const summary = await this.engine.importForProject(
-      {
-        interfaceId,
-        source: input.source,
-        cache: { dir: definitionCacheDir(open.dir, provisionalSlug), mode: 'refresh' },
-        ...(resolvedAuth?.username !== undefined && resolvedAuth.password !== undefined
-          ? { auth: { username: resolvedAuth.username, password: resolvedAuth.password } }
-          : {}),
-        ...(input.token !== undefined ? { token: input.token } : {}),
-      },
-      { onProgress: (event) => this.hooks.onProgress?.(event) },
-    );
-
-    const slug = uniqueSlug(summary.name, taken);
-    if (slug !== provisionalSlug) {
-      await renameWithRetry(interfaceDir(open.dir, provisionalSlug), interfaceDir(open.dir, slug));
+    // once the import has run — so the cache is written to a staging folder outside the project
+    // and moved into place afterwards. Staged inside the project, a provisional folder that is
+    // renamed a moment after it appears races the project watcher's scan of it (issue #150), and
+    // is left behind in the user's folder (and their sync) by an import that fails.
+    const staging = await mkdtemp(join(tmpdir(), 'wirebench-import-'));
+    let summary: InterfaceSummary;
+    let slug: string;
+    try {
+      const stagedCache = join(staging, 'definition');
+      summary = await this.engine.importForProject(
+        {
+          interfaceId,
+          source: input.source,
+          cache: { dir: stagedCache, mode: 'refresh' },
+          ...(resolvedAuth?.username !== undefined && resolvedAuth.password !== undefined
+            ? { auth: { username: resolvedAuth.username, password: resolvedAuth.password } }
+            : {}),
+          ...(input.token !== undefined ? { token: input.token } : {}),
+        },
+        { onProgress: (event) => this.hooks.onProgress?.(event) },
+      );
+      slug = uniqueSlug(summary.name, taken);
+      if (existsSync(stagedCache)) {
+        // `mkdir` returns the first folder it had to create, if any: what a failed move removes again.
+        const created = await mkdir(interfaceDir(open.dir, slug), { recursive: true });
+        try {
+          await moveDir(stagedCache, definitionCacheDir(open.dir, slug));
+        } catch (error) {
+          if (created !== undefined) {
+            await rm(created, { recursive: true, force: true }).catch(() => undefined);
+          }
+          throw error;
+        }
+      }
+    } finally {
+      await rm(staging, { recursive: true, force: true }).catch(() => undefined);
     }
 
     const endpoints = endpointsFrom(summary);

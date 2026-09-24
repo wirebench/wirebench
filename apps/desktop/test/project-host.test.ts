@@ -13,8 +13,15 @@ import { EngineService } from '../src/main/engine-service.js';
 import { GlobalProperties } from '../src/main/global-properties.js';
 import type { PreferencesService } from '../src/main/preferences.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { moveDir } from '../src/main/rename-dir.js';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../src/shared/wire-types.js';
 import type { ProjectWire } from '../src/shared/wire-types.js';
+
+// The real `moveDir`, wrapped so one test can make the move of an import's definition cache fail.
+vi.mock('../src/main/rename-dir.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/rename-dir.js')>();
+  return { ...actual, moveDir: vi.fn(actual.moveDir) };
+});
 
 let server: TestSoapServer | undefined;
 let root: string | undefined;
@@ -224,6 +231,70 @@ describe('ProjectHost', () => {
     await reopened.close();
     rmSync(dir, { recursive: true, force: true });
   }, 60_000);
+
+  it('stages the definition cache of an import outside the project, then moves it into place', async () => {
+    const dir = join(tempDir('project'), 'Staged');
+    const engine = new EngineService();
+    const importSpy = vi.spyOn(engine, 'importForProject');
+    const service = new ProjectHost(engine, {});
+    await service.create({ dir, name: 'Staged' });
+
+    const { project } = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    const slug = project.interfaces[0]!.slug;
+
+    // The engine wrote the cache somewhere the project watcher never sees, never under a
+    // provisional `interfaces/importing-*` folder.
+    const stagedCache = importSpy.mock.calls[0]![0].cache.dir;
+    expect(stagedCache.startsWith(dir)).toBe(false);
+    expect(existsSync(join(stagedCache, '..'))).toBe(false);
+    expect(await readdir(join(dir, 'interfaces'))).toEqual([slug]);
+    expect((await readdir(join(dir, 'interfaces', slug, 'definition'))).length).toBeGreaterThan(0);
+
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('leaves no staging folder behind, in the project or outside it, when an import fails', async () => {
+    const dir = join(tempDir('project'), 'Failed Import');
+    const engine = new EngineService();
+    let stagedCache: string | undefined;
+    vi.spyOn(engine, 'importForProject').mockImplementationOnce(async (input) => {
+      stagedCache = input.cache.dir;
+      await mkdir(stagedCache, { recursive: true });
+      await writeFile(join(stagedCache, 'partial.wsdl'), '<definitions/>', 'utf8');
+      throw new Error('the WSDL could not be parsed');
+    });
+    const service = new ProjectHost(engine, {});
+    await service.create({ dir, name: 'Failed Import' });
+
+    await expect(service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } })).rejects.toThrow(
+      'could not be parsed',
+    );
+
+    expect(stagedCache).toBeDefined();
+    expect(existsSync(join(stagedCache!, '..'))).toBe(false);
+    expect(existsSync(join(dir, 'interfaces')) ? await readdir(join(dir, 'interfaces')) : []).toEqual([]);
+
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('removes the interface folder it created when moving the definition cache into it fails', async () => {
+    const dir = join(tempDir('project'), 'Failed Move');
+    const service = new ProjectHost(new EngineService(), {});
+    await service.create({ dir, name: 'Failed Move' });
+    vi.mocked(moveDir).mockRejectedValueOnce(
+      Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }),
+    );
+
+    await expect(service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } })).rejects.toThrow('ENOSPC');
+
+    expect(vi.mocked(moveDir)).toHaveBeenCalled();
+    expect(existsSync(join(dir, 'interfaces')) ? await readdir(join(dir, 'interfaces')) : []).toEqual([]);
+
+    await service.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('does not lose an edit that lands while a save is still writing to disk', async () => {
     const dir = join(tempDir('project'), 'Race Project');
