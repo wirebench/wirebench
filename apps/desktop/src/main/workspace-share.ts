@@ -42,13 +42,15 @@ import {
   WORKSPACES_DIR,
   workspaceDir,
   workspaceProjectDir,
+  assertBranchName,
+  assertRemoteUrl,
+  assertSafeLocalConfig,
 } from '@wirebench/engine';
-import type { FsLike, Project, Workspace, WorkspaceShare } from '@wirebench/engine';
+import type { FsLike, GitCli, Project, Workspace, WorkspaceShare } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
 import { GIT_NOT_FOUND_ERROR } from './sync/create-backend.js';
 import { GitBackend } from './sync/git-backend.js';
-import { assertBranchName, assertRemoteUrl, assertSafeLocalConfig, type GitCli } from './sync/git-cli.js';
 import { copyProjectPayload, isEmptyDir, requireWorkspaceId, resolveWorkspaceTree } from './workspace-files.js';
 import type { WorkspaceWire } from '../shared/wire-types.js';
 

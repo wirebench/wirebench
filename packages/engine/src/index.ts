@@ -1181,3 +1181,15 @@ export type { WsCallInput } from './ws/expand.js';
 export { toWsSessionOptions } from './ws/call.js';
 export type { WsSessionMaterial } from './ws/call.js';
 export { wsToCommand } from './ws/command.js';
+
+export {
+  GIT_SUBCOMMANDS,
+  GitCli,
+  assertBranchName,
+  assertRemoteUrl,
+  assertSafeLocalConfig,
+  findGit,
+  parseGitVersion,
+  refusedLocalConfigKeys,
+} from './sync/git-cli.js';
+export type { GitLocation, GitSubcommand, Runner } from './sync/git-cli.js';

@@ -1,12 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GIT_SHARE_SETTINGS } from '@wirebench/engine';
-import type { WorkspaceShare } from '@wirebench/engine';
+import { DEFAULT_GIT_SHARE_SETTINGS, GitCli } from '@wirebench/engine';
+import type { Runner, WorkspaceShare } from '@wirebench/engine';
 import { createSyncBackend } from '../../src/main/sync/create-backend.js';
 import { FolderBackend } from '../../src/main/sync/folder-backend.js';
 import { GitBackend } from '../../src/main/sync/git-backend.js';
-import { GitCli } from '../../src/main/sync/git-cli.js';
-import type { Runner } from '../../src/main/sync/git-cli.js';
 
 /**
  * A `GitCli` whose local-config listing answers `names` (newline-separated here, NUL-terminated on

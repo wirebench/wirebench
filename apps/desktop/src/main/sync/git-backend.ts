@@ -7,16 +7,17 @@
 
 import { access, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { GitShareSettings, TreeChange } from '@wirebench/engine';
+import type { GitCli, GitShareSettings, TreeChange } from '@wirebench/engine';
 import {
   GIT_ATTRIBUTES,
   GIT_ATTRIBUTES_FILE,
   WirebenchError,
+  assertBranchName,
+  assertRemoteUrl,
   describeTreePath,
   isWirebenchError,
 } from '@wirebench/engine';
 import type { SyncBackend } from './backend.js';
-import { assertBranchName, assertRemoteUrl, type GitCli } from './git-cli.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncState, SyncStatusWire } from './types.js';
 
 /** Dependencies a `GitBackend` needs — never Electron, per the file-level rule. */

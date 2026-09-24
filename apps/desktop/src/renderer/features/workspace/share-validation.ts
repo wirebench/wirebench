@@ -1,6 +1,6 @@
 /**
  * Client-side mirrors of main's `assertRemoteUrl` and `assertBranchName`
- * (`apps/desktop/src/main/sync/git-cli.ts`), for inline feedback in the Share and Join dialogs
+ * (`packages/engine/src/sync/git-cli.ts`), for inline feedback in the Share and Join dialogs
  * only — main still validates and is the actual authority. Never echoes the checked value back
  * in a message: a bad remote or branch name could itself carry something the user should not
  * see repeated at them.

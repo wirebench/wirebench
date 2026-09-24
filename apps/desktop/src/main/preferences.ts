@@ -17,10 +17,9 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { DEFAULT_PREFERENCES, mergePreferences, resetPreferences } from '@wirebench/engine';
-import type { Preferences, PreferencesPatch, PreferencesSection } from '@wirebench/engine';
+import type { findGit, Preferences, PreferencesPatch, PreferencesSection } from '@wirebench/engine';
 
 import type { PreferencesWire } from '../shared/wire-types.js';
-import type { findGit } from './sync/git-cli.js';
 
 /**
  * The JSON-plain, mutable mirror of a {@link Preferences} document. A structural clone rather

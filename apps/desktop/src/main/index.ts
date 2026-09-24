@@ -3,7 +3,7 @@ import { mkdir, rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { appVersion } from './app-version.js';
-import { WirebenchError, enabledProperties } from '@wirebench/engine';
+import { findGit, GitCli, WirebenchError, enabledProperties } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
@@ -19,7 +19,6 @@ import {
   rememberPickedGit,
   toPreferencesWire,
 } from './preferences.js';
-import { findGit, GitCli } from './sync/git-cli.js';
 import { readLeftoverProjectFolders, WorkspaceService } from './workspace-service.js';
 import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue } from './redact.js';

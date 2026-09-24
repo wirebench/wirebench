@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe } from 'vitest';
-import { findGit, GitCli, type GitLocation } from '../../src/main/sync/git-cli.js';
+import { findGit, GitCli, type GitLocation } from '@wirebench/engine';
 
 const REQUIRE_GIT = process.env['WIREBENCH_REQUIRE_GIT'] === '1';
 

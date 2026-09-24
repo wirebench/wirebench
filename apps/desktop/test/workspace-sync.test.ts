@@ -22,11 +22,10 @@ import {
   workspaceDir,
   workspaceProjectDir,
 } from '@wirebench/engine';
-import type { GitShareSettings, Project, Workspace } from '@wirebench/engine';
+import type { GitCli, GitShareSettings, Project, Workspace } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { GitBackend } from '../src/main/sync/git-backend.js';
-import type { GitCli } from '../src/main/sync/git-cli.js';
 import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from '../src/main/sync/types.js';
 import { SecretScanSessions } from '../src/main/secret-scan-session.js';
 import { SecretStore } from '../src/main/secrets.js';

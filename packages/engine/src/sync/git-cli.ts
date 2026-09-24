@@ -13,7 +13,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { WirebenchError } from '@wirebench/engine';
+import { WirebenchError } from '../errors.js';
 
 /**
  * The only git subcommands `GitCli.run` will spawn. A `-`-prefixed first argument, or any
