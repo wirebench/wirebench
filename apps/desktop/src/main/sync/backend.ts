@@ -4,7 +4,7 @@
  * in-memory stand-in the contract suite runs the same assertions against). `SyncService` (T7) is
  * the only caller; it never branches on `kind` beyond what the wire needs.
  *
- * Electron-free by construction — same rule as `git-cli.ts`.
+ * Electron-free by construction — same rule as `packages/engine/src/sync/git-cli.ts`.
  */
 
 import type { TreeChange } from '@wirebench/engine';

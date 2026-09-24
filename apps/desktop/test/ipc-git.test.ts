@@ -11,7 +11,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_PREFERENCES, mergePreferences } from '@wirebench/engine';
+import { DEFAULT_PREFERENCES, findGit, mergePreferences } from '@wirebench/engine';
+import type { GitLocation, Runner } from '@wirebench/engine';
 import {
   configuredGitPath,
   gitLocatorOptions,
@@ -20,8 +21,6 @@ import {
 } from '../src/main/preferences.js';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerGitChannels } from '../src/main/ipc/git.js';
-import { findGit } from '../src/main/sync/git-cli.js';
-import type { GitLocation, Runner } from '../src/main/sync/git-cli.js';
 import type { PreferencesWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();

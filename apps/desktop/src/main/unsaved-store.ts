@@ -16,8 +16,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import { z } from 'zod';
-import { MANIFEST_PATH, nodeFs } from '@wirebench/engine';
-import type { DirEntry, FileStat, FsLike, ProjectFiles } from '@wirebench/engine';
+import { mergeFiles, nodeFs } from '@wirebench/engine';
+import type { DirEntry, FileStat, FileMerge, FsLike, ProjectFiles } from '@wirebench/engine';
 import {
   grpcRequestPatchSchema,
   requestPatchSchema,
@@ -82,84 +82,9 @@ export function recordToFiles(record: Readonly<Record<string, string>>): Project
 
 // ——— merge ———————————————————————————————————————————————————————————————————————————————
 
-/** The outcome of laying unsaved files back over the files on disk. */
-export interface UnsavedMerge {
-  /** The files the restored project should be read from. */
-  readonly files: ProjectFiles;
-  /** Changed both on disk and in the unsaved record; the unsaved version was kept (or, for an
-   * unsaved deletion of a file that changed on disk, the disk version was). */
-  readonly conflicts: readonly string[];
-  /** Changed in the unsaved record but deleted on disk; the unsaved change was dropped. */
-  readonly dropped: readonly string[];
-  /** Whether the merged files differ from disk at all. */
-  readonly changed: boolean;
-}
-
-/**
- * The manifest records which save wrote it (`writtenBy: wirebench (manual)`), so two otherwise
- * identical manifests differ after every save. That line is not a change anyone made.
- */
-function comparable(path: string, content: string | undefined): string | undefined {
-  if (content === undefined || path !== MANIFEST_PATH) {
-    return content;
-  }
-  return content
-    .split('\n')
-    .filter((line) => !/^writtenBy:/.test(line))
-    .join('\n');
-}
-
-function same(path: string, a: string | undefined, b: string | undefined): boolean {
-  return comparable(path, a) === comparable(path, b);
-}
-
-/**
- * Three-way merge, one file at a time, of the `baseline` (B) an unsaved record was taken
- * against, the files now on `disk` (D) and the `unsaved` files (U):
- *
- * - U = B → D (only disk changed, or nothing did);
- * - D = B → U (only the unsaved side changed — including an unsaved deletion);
- * - both changed:
- *   - D = U → U (the same change on both sides);
- *   - deleted on disk → dropped (the file, e.g. a request, no longer exists);
- *   - deleted in the unsaved record → D, flagged (a change on disk beats an unsaved deletion);
- *   - otherwise → U, flagged (unsaved changes are restored on top).
- */
-export function mergeUnsaved(baseline: ProjectFiles, disk: ProjectFiles, unsaved: ProjectFiles): UnsavedMerge {
-  const files = new Map<string, string>();
-  const conflicts: string[] = [];
-  const dropped: string[] = [];
-  const paths = [...new Set([...baseline.keys(), ...disk.keys(), ...unsaved.keys()])].sort();
-  for (const path of paths) {
-    const b = baseline.get(path);
-    const d = disk.get(path);
-    const u = unsaved.get(path);
-    let take: string | undefined;
-    if (same(path, u, b)) {
-      take = d;
-    } else if (same(path, d, b)) {
-      take = u;
-    } else if (same(path, d, u)) {
-      take = u;
-    } else if (d === undefined) {
-      dropped.push(path);
-      take = undefined;
-    } else if (u === undefined) {
-      conflicts.push(path);
-      take = d;
-    } else {
-      conflicts.push(path);
-      take = u;
-    }
-    if (take !== undefined) {
-      files.set(path, take);
-    }
-  }
-  const changed = [...new Set([...files.keys(), ...disk.keys()])].some(
-    (path) => !same(path, files.get(path), disk.get(path)),
-  );
-  return { files, conflicts, dropped, changed };
-}
+/** @deprecated alias kept for the two call sites; new code imports `mergeFiles` from the engine. */
+export const mergeUnsaved = mergeFiles;
+export type UnsavedMerge = FileMerge;
 
 // ——— overlay file system ——————————————————————————————————————————————————————————————————
 

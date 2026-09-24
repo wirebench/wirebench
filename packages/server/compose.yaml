@@ -1,0 +1,35 @@
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: packages/server/Dockerfile
+    image: ghcr.io/wirebench/wirebench-server:local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WIREBENCH_SERVER_DATABASE_URL: postgres://wirebench:wirebench@db:5432/wirebench
+      WIREBENCH_SERVER_PUBLIC_URL: http://localhost:${WIREBENCH_HTTP_PORT:-8080}
+      WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true'
+    ports:
+      - '127.0.0.1:${WIREBENCH_HTTP_PORT:-8080}:8080'
+    volumes:
+      - wirebench-data:/data
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: wirebench
+      POSTGRES_PASSWORD: wirebench
+      POSTGRES_DB: wirebench
+    ports:
+      - '127.0.0.1:${WIREBENCH_DB_PORT:-5432}:5432'
+    volumes:
+      - wirebench-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wirebench']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  wirebench-db:
+  wirebench-data:

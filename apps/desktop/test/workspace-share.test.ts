@@ -19,11 +19,11 @@ import {
   workspaceDir,
   workspaceProjectDir,
 } from '@wirebench/engine';
+import type { GitCli } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
-import type { GitCli } from '../src/main/sync/git-cli.js';
 import { SyncService } from '../src/main/sync/sync-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';

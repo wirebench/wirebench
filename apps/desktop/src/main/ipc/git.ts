@@ -13,15 +13,14 @@
  */
 
 import type { WebContents } from 'electron';
-import { WirebenchError } from '@wirebench/engine';
+import { findGit as defaultFindGit, WirebenchError } from '@wirebench/engine';
+import type { GitLocation } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import { pickFile } from '../native-dialogs.js';
 import type { RecordsReadPicks } from '../dialog-picks.js';
 import { toPreferencesWire } from '../preferences.js';
 import type { PreferencesService } from '../preferences.js';
 import type { PreferencesWire } from '../../shared/wire-types.js';
-import { findGit as defaultFindGit } from '../sync/git-cli.js';
-import type { GitLocation } from '../sync/git-cli.js';
 import { registerHandler } from './register.js';
 
 /** What the `git.*` channels need; a stub stands in for each of these in tests. */

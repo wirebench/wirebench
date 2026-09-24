@@ -15,13 +15,11 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GitShareSettings, WorkspaceShare } from '@wirebench/engine';
-import { WirebenchError } from '@wirebench/engine';
+import type { GitCli, GitShareSettings, WorkspaceShare } from '@wirebench/engine';
+import { WirebenchError, assertSafeLocalConfig } from '@wirebench/engine';
 import type { SyncBackend } from './backend.js';
 import { FolderBackend } from './folder-backend.js';
 import { GitBackend } from './git-backend.js';
-import { assertSafeLocalConfig } from './git-cli.js';
-import type { GitCli } from './git-cli.js';
 
 export interface CreateSyncBackendOptions {
   readonly share: WorkspaceShare;

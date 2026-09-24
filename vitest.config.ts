@@ -88,6 +88,21 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'server-unit',
+          include: ['packages/server/test/unit/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'server-integration',
+          include: ['packages/server/test/integration/**/*.test.ts'],
+          // Each file boots the server against a real PostgreSQL schema; see test/helpers/database.ts.
+          testTimeout: 30_000,
+          globalSetup: ['packages/server/test/integration/global-setup.ts'],
+        },
+      },
+      {
+        test: {
           name: 'desktop',
           include: ['apps/desktop/test/**/*.test.{ts,tsx}'],
           environment: 'jsdom',

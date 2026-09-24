@@ -11,10 +11,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { GitShareSettings } from '@wirebench/engine';
-import { DEFAULT_GIT_SHARE_SETTINGS } from '@wirebench/engine';
+import type { GitShareSettings, Runner } from '@wirebench/engine';
+import { DEFAULT_GIT_SHARE_SETTINGS, GitCli } from '@wirebench/engine';
 import { GitBackend } from '../../src/main/sync/git-backend.js';
-import { GitCli, type Runner } from '../../src/main/sync/git-cli.js';
 import {
   createBareRemote,
   describeGit,

@@ -48,9 +48,12 @@ import {
   workspaceDir,
   workspaceManifestFile,
   workspaceProjectDir,
+  assertBranchName,
+  assertRemoteUrl,
 } from '@wirebench/engine';
 import type {
   FsLike,
+  GitCli,
   GitShareSettings,
   Project,
   SaveResult,
@@ -73,8 +76,6 @@ import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretStore } from './secrets.js';
 import { createSyncBackend } from './sync/create-backend.js';
-import { assertBranchName, assertRemoteUrl } from './sync/git-cli.js';
-import type { GitCli } from './sync/git-cli.js';
 import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';

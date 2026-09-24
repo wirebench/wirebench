@@ -264,5 +264,9 @@ introduced.
 - [ADR-0005](../adr/0005-renderer-path-safety.md) — path safety
 - [ADR-0006](../adr/0006-workspaces-in-app-data.md) — workspaces live in app data
 - [ADR-0007](../adr/0007-apis-beside-interfaces.md) — a REST API is a sibling to a SOAP interface
+- [ADR-0008](../adr/0008-shared-workspaces-are-git-repositories.md) — shared workspaces are git
+  repositories, synced by system git
+- [ADR-0009](../adr/0009-wirebench-server-is-a-fastify-postgres-process.md) — Wirebench Server
+  is one Fastify process over PostgreSQL
 - [Security model](../security.md)
 - [Success criteria and their evidence](../success-criteria.md)
