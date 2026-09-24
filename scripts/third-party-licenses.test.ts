@@ -141,7 +141,7 @@ describe('THIRD-PARTY-LICENSES.md', () => {
 
   it('attributes the server image dependencies', async () => {
     const rendered = await renderThirdPartyLicenses();
-    for (const name of ['fastify', 'pg']) {
+    for (const name of ['fastify', 'pg', 'openid-client', 'jose', 'oauth4webapi']) {
       expect(rendered).toMatch(new RegExp(`^## ${name}@|\\| ${name} \\|`, 'm'));
     }
   });

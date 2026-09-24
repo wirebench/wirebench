@@ -20,6 +20,15 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_GIT_PATH` | no | — | Explicit git binary; otherwise `PATH` is searched. |
 | `WIREBENCH_SERVER_BODY_LIMIT_MB` | no | `32` | Maximum request body in MiB. |
 | `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` | no | `false` | Permit an `http://` public URL (development only). |
+| `WIREBENCH_SERVER_LOCAL_AUTH` | no | `true` | Offer local accounts (email and password). |
+| `WIREBENCH_SERVER_OIDC_ISSUER` | no | — | OIDC issuer URL; setting it turns OIDC sign-in on. Discovery runs at start-up. |
+| `WIREBENCH_SERVER_OIDC_CLIENT_ID` | no | — | Client id registered at the issuer. Required with the issuer. |
+| `WIREBENCH_SERVER_OIDC_CLIENT_SECRET` | no | — | Client secret registered at the issuer. Required with the issuer. Never logged. |
+| `WIREBENCH_SERVER_OIDC_SCOPES` | no | `openid email profile` | Scopes requested from the issuer, space-separated. |
+| `WIREBENCH_SERVER_OIDC_DISPLAY_NAME` | no | `OIDC` | The label of the *Continue with …* button in the app. |
+| `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` | no | `30` | A device token unused for this long expires. |
+| `WIREBENCH_SERVER_TOKEN_MAX_DAYS` | no | `180` | A device token older than this expires whatever its use. |
+| `WIREBENCH_SERVER_INVITATION_DAYS` | no | `7` | How long an invitation or password-reset link stays valid. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 

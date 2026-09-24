@@ -129,11 +129,81 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_DATA_DIR',
         'WIREBENCH_SERVER_GIT_PATH',
         'WIREBENCH_SERVER_HOST',
+        'WIREBENCH_SERVER_INVITATION_DAYS',
+        'WIREBENCH_SERVER_LOCAL_AUTH',
         'WIREBENCH_SERVER_LOG_LEVEL',
+        'WIREBENCH_SERVER_OIDC_CLIENT_ID',
+        'WIREBENCH_SERVER_OIDC_CLIENT_SECRET',
+        'WIREBENCH_SERVER_OIDC_DISPLAY_NAME',
+        'WIREBENCH_SERVER_OIDC_ISSUER',
+        'WIREBENCH_SERVER_OIDC_SCOPES',
         'WIREBENCH_SERVER_PORT',
         'WIREBENCH_SERVER_PUBLIC_URL',
+        'WIREBENCH_SERVER_TOKEN_IDLE_DAYS',
+        'WIREBENCH_SERVER_TOKEN_MAX_DAYS',
         'WIREBENCH_SERVER_TRUST_PROXY',
       ].sort(),
     );
+  });
+});
+
+describe('identity configuration (§4.1)', () => {
+  const base = { WIREBENCH_SERVER_DATABASE_URL: 'postgres://x', WIREBENCH_SERVER_PUBLIC_URL: 'https://w.test' };
+  const problemsOf = (env: NodeJS.ProcessEnv): string[] => {
+    try {
+      loadConfig(env, '1');
+      return [];
+    } catch (error) {
+      return (error as ConfigError).problems.map((p) => `${p.variable}: ${p.message}`);
+    }
+  };
+
+  it('defaults to local auth on, OIDC off, 30/180-day tokens, 7-day invitations, the documented scopes', () => {
+    const config = loadConfig(base, '1');
+    expect(config).toMatchObject({
+      localAuth: true,
+      tokenIdleDays: 30,
+      tokenMaxDays: 180,
+      invitationDays: 7,
+      oidcDisplayName: 'OIDC',
+    });
+    expect(config.oidcIssuer).toBeUndefined();
+    expect(config.oidcScopes).toEqual(['openid', 'email', 'profile']);
+  });
+
+  it('requires the client id and secret once an issuer is set, naming both at once', () => {
+    const problems = problemsOf({ ...base, WIREBENCH_SERVER_OIDC_ISSUER: 'https://idp.test' });
+    expect(problems).toEqual([
+      'WIREBENCH_SERVER_OIDC_CLIENT_ID: is required when WIREBENCH_SERVER_OIDC_ISSUER is set',
+      'WIREBENCH_SERVER_OIDC_CLIENT_SECRET: is required when WIREBENCH_SERVER_OIDC_ISSUER is set',
+    ]);
+  });
+
+  it('refuses both methods off with identity-no-method', () => {
+    expect(problemsOf({ ...base, WIREBENCH_SERVER_LOCAL_AUTH: 'false' })[0]).toContain('identity-no-method');
+  });
+
+  it('accepts an http issuer only with the insecure flag, and splits the scopes on whitespace', () => {
+    const oidc = {
+      WIREBENCH_SERVER_OIDC_ISSUER: 'http://127.0.0.1:9',
+      WIREBENCH_SERVER_OIDC_CLIENT_ID: 'c',
+      WIREBENCH_SERVER_OIDC_CLIENT_SECRET: 's',
+    };
+    expect(problemsOf({ ...base, ...oidc })[0]).toContain('WIREBENCH_SERVER_OIDC_ISSUER');
+    const config = loadConfig(
+      {
+        ...base,
+        ...oidc,
+        WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true',
+        WIREBENCH_SERVER_OIDC_SCOPES: ' openid  email ',
+      },
+      '1',
+    );
+    expect(config.oidcScopes).toEqual(['openid', 'email']);
+    expect(config.oidcClientSecret).toBe('s');
+  });
+
+  it('marks the client secret as a secret so config check and the README never print it', () => {
+    expect(CONFIG_VARIABLES.find((v) => v.env === 'WIREBENCH_SERVER_OIDC_CLIENT_SECRET')?.secret).toBe(true);
   });
 });

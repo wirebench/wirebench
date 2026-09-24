@@ -1,27 +1,11 @@
 import { EventEmitter } from 'node:events';
-import { createServer } from 'node:net';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ServerModule } from '../../src/context.js';
 import { main } from '../../src/main.js';
 import { startServer, StartupError } from '../../src/serve.js';
 import { describeDb, testDatabase } from '../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../helpers/git.js';
-
-/**
- * A port nothing is listening on. The configuration only accepts 1–65535 (port 0 is not a
- * sensible production setting), so the test asks the OS for a free port and passes it explicitly.
- */
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const address = probe.address();
-      const port = typeof address === 'object' && address !== null ? address.port : 0;
-      probe.close(() => resolve(port));
-    });
-  });
-}
+import { freePort } from '../helpers/net.js';
 
 /** One module with a route that takes `ms` to answer, to have a request in flight at shutdown. */
 const slowModule = (ms: number): ServerModule => ({

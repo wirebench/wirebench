@@ -46,6 +46,19 @@ const inputSchema = z.object({
   gitPath: z.string().min(1).optional(),
   bodyLimitMb: integerText(1, 1024, '32'),
   allowInsecurePublicUrl: booleanText('false'),
+  localAuth: booleanText('true'),
+  oidcIssuer: z.string().url().optional(),
+  oidcClientId: z.string().min(1).optional(),
+  oidcClientSecret: z.string().min(1).optional(),
+  oidcScopes: z
+    .string()
+    .min(1)
+    .default('openid email profile')
+    .transform((value) => value.split(/\s+/).filter((scope) => scope.length > 0)),
+  oidcDisplayName: z.string().min(1).max(60).default('OIDC'),
+  tokenIdleDays: integerText(1, 3650, '30'),
+  tokenMaxDays: integerText(1, 3650, '180'),
+  invitationDays: integerText(1, 365, '7'),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -145,6 +158,75 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     secret: false,
     description: 'Permit an `http://` public URL (development only).',
   },
+  {
+    env: 'WIREBENCH_SERVER_LOCAL_AUTH',
+    key: 'localAuth',
+    required: false,
+    defaultText: 'true',
+    secret: false,
+    description: 'Offer local accounts (email and password).',
+  },
+  {
+    env: 'WIREBENCH_SERVER_OIDC_ISSUER',
+    key: 'oidcIssuer',
+    required: false,
+    secret: false,
+    description: 'OIDC issuer URL; setting it turns OIDC sign-in on. Discovery runs at start-up.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_OIDC_CLIENT_ID',
+    key: 'oidcClientId',
+    required: false,
+    secret: false,
+    description: 'Client id registered at the issuer. Required with the issuer.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_OIDC_CLIENT_SECRET',
+    key: 'oidcClientSecret',
+    required: false,
+    secret: true,
+    description: 'Client secret registered at the issuer. Required with the issuer.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_OIDC_SCOPES',
+    key: 'oidcScopes',
+    required: false,
+    defaultText: 'openid email profile',
+    secret: false,
+    description: 'Scopes requested from the issuer, space-separated.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_OIDC_DISPLAY_NAME',
+    key: 'oidcDisplayName',
+    required: false,
+    defaultText: 'OIDC',
+    secret: false,
+    description: 'The label of the *Continue with …* button in the app.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_TOKEN_IDLE_DAYS',
+    key: 'tokenIdleDays',
+    required: false,
+    defaultText: '30',
+    secret: false,
+    description: 'A device token unused for this long expires.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_TOKEN_MAX_DAYS',
+    key: 'tokenMaxDays',
+    required: false,
+    defaultText: '180',
+    secret: false,
+    description: 'A device token older than this expires whatever its use.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_INVITATION_DAYS',
+    key: 'invitationDays',
+    required: false,
+    defaultText: '7',
+    secret: false,
+    description: 'How long an invitation or password-reset link stays valid.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -209,6 +291,35 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
       },
     ]);
   }
+  // Cross-field rules zod cannot express per key: the two IdP credentials travel with the issuer,
+  // an http:// issuer is a development-only choice like an http:// public URL, and a server with
+  // no way to sign in at all is a misconfiguration, not a quiet server (identity spec §4.1).
+  const problems: ConfigProblem[] = [];
+  if (config.oidcIssuer !== undefined) {
+    for (const [key, variable] of [
+      ['oidcClientId', 'WIREBENCH_SERVER_OIDC_CLIENT_ID'],
+      ['oidcClientSecret', 'WIREBENCH_SERVER_OIDC_CLIENT_SECRET'],
+    ] as const) {
+      if (config[key] === undefined)
+        problems.push({ variable, message: 'is required when WIREBENCH_SERVER_OIDC_ISSUER is set' });
+    }
+    const issuer = new URL(config.oidcIssuer);
+    if (!(issuer.protocol === 'https:' || (issuer.protocol === 'http:' && config.allowInsecurePublicUrl))) {
+      problems.push({
+        variable: 'WIREBENCH_SERVER_OIDC_ISSUER',
+        message:
+          'must be https://; set WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL=true for an http:// development issuer',
+      });
+    }
+  }
+  if (!config.localAuth && config.oidcIssuer === undefined) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_LOCAL_AUTH',
+      message:
+        'identity-no-method: at least one sign-in method must be on; set it to true or set WIREBENCH_SERVER_OIDC_ISSUER',
+    });
+  }
+  if (problems.length > 0) throw new ConfigError(problems);
   return {
     ...config,
     publicUrl: publicUrl.origin,

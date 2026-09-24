@@ -197,7 +197,13 @@ export async function startServer(
     app = await buildServer(ctx, { modules });
   } catch (error) {
     await db.close(); // a module that fails to register must not leave the pool holding the process open
-    throw error;
+    if (error instanceof StartupError) throw error;
+    // Discovery against the IdP, a duplicate decorator, a bad route: all configuration-shaped
+    // failures of a module's register(), reported as exit 2 with the module's own message.
+    throw new StartupError(
+      ExitCode.Config,
+      `a module failed to register: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   try {
     await app.listen({ host: config.host, port: config.port });
