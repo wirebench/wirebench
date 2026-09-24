@@ -159,6 +159,14 @@ describeDb('startServer', () => {
     await expect(startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() })).rejects.toMatchObject({
       exitCode: 3,
     });
+    for (const command of [['serve'], ['migrate'], ['migrate', '--check']]) {
+      const stderr = { write: vi.fn() };
+      const code = await main(command, { stdout: { write: vi.fn() }, stderr, env: env() }, { exit: vi.fn() });
+      expect(code).toBe(3);
+      const text = stderr.write.mock.calls.map((call) => String(call[0])).join('');
+      expect(text).toContain('server-schema-too-new: ');
+      expect(text).not.toContain('migration failed');
+    }
   });
 
   it('exits 2 naming the variable when configuration is missing, without values', async () => {

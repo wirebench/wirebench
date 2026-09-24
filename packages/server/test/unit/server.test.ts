@@ -1,6 +1,7 @@
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { problem } from '../../src/problem.js';
@@ -35,7 +36,9 @@ describe('buildServer', () => {
     await app.close();
   });
 
-  it('reports an unwritable data dir', async () => {
+  // On Windows a directory's read-only attribute does not stop writes into it and access(W_OK)
+  // always succeeds for directories, so there is no unwritable data dir to report.
+  it.skipIf(process.platform === 'win32')('reports an unwritable data dir', async () => {
     chmodSync(dataDir, 0o500);
     const app = await buildServer(await testContext({ dataDir }), { modules: [] });
     const res = await app.inject({ method: 'GET', url: '/healthz' });
@@ -100,7 +103,7 @@ describe('buildServer', () => {
         },
       ],
     });
-    const missing = await app.inject({ method: 'GET', url: '/nope' });
+    const missing = await app.inject({ method: 'GET', url: '/nope?secret=qs-s3cret' });
     expect(missing.statusCode).toBe(404);
     expect(missing.json()).toEqual({ code: 'not-found', message: 'No route for GET /nope' });
     const boom = await app.inject({ method: 'GET', url: '/api/v1/boom' });
@@ -204,5 +207,85 @@ describe('buildServer', () => {
     expect(badMediaType.json()).toEqual({ code: 'bad-request', message: 'The request could not be processed.' });
 
     await app.close();
+  });
+
+  it('lets a hook one module adds reach the routes of modules registered after it, inside /api/v1 only', async () => {
+    const app = await buildServer(await testContext({ dataDir }), {
+      modules: [
+        {
+          name: 'identity',
+          // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
+          register: async (instance) => {
+            instance.decorateRequest('caller', null);
+            instance.addHook('onRequest', async (request, reply) => {
+              (request as unknown as { caller: string | null }).caller = 'ada';
+              void reply.header('x-probe-hook', 'seen');
+            });
+          },
+        },
+        {
+          name: 'teams-access',
+          // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
+          register: async (instance) => {
+            // eslint-disable-next-line @typescript-eslint/require-await -- route handler has no await, just returns
+            instance.get('/who', async (request) => ({
+              caller: (request as unknown as { caller?: string | null }).caller ?? null,
+            }));
+          },
+        },
+      ],
+    });
+    const who = await app.inject({ method: 'GET', url: '/api/v1/who' });
+    expect(who.json()).toEqual({ caller: 'ada' });
+    expect(who.headers['x-probe-hook']).toBe('seen');
+    const health = await app.inject({ method: 'GET', url: '/healthz' });
+    expect(health.statusCode).toBe(200);
+    expect(health.headers['x-probe-hook']).toBeUndefined();
+    await app.close();
+  });
+
+  it('never logs a top-level password, a nested token or a query-string secret', async () => {
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        lines.push(chunk.toString('utf-8'));
+        callback();
+      },
+    });
+    const ctx = await testContext({ dataDir });
+    const app = await buildServer(
+      { ...ctx, config: { ...ctx.config, logLevel: 'info' } },
+      {
+        logStream,
+        modules: [
+          {
+            name: 'identity',
+            // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
+            register: async (i) => {
+              // eslint-disable-next-line @typescript-eslint/require-await -- route handler has no await, just logs
+              i.get('/lookup', async (request) => {
+                request.log.info({ password: 'hunter2', nested: { token: 'tok-n3sted' } }, 'probe');
+                return { ok: true };
+              });
+            },
+          },
+        ],
+      },
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/lookup?secret=qs-s3cret',
+      headers: { authorization: 'Bearer hdr-t0ken' },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.inject({ method: 'GET', url: '/nope?token=qs-t0ken' });
+    await app.close();
+    const text = lines.join('');
+    expect(text).toContain('"msg":"probe"');
+    expect(text).toContain('"url":"/api/v1/lookup"');
+    expect(text).toContain('[redacted]');
+    for (const secret of ['hunter2', 'tok-n3sted', 'qs-s3cret', 'qs-t0ken', 'hdr-t0ken']) {
+      expect(text).not.toContain(secret);
+    }
   });
 });

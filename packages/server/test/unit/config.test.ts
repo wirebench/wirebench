@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CONFIG_VARIABLES, ConfigError, describeConfig, loadConfig } from '../../src/config.js';
 
@@ -50,6 +51,44 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...insecure, WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true' }, '2.1.1').publicUrl).toBe(
       'http://localhost:8080',
     );
+  });
+
+  it('refuses any scheme but https, and http without the flag, whatever its case', () => {
+    for (const bad of ['HTTP://example.com', 'ftp://example.com', 'Http://localhost:8080']) {
+      expect(() => loadConfig({ ...required, WIREBENCH_SERVER_PUBLIC_URL: bad }, '2.1.1')).toThrow(ConfigError);
+    }
+    expect(() =>
+      loadConfig(
+        {
+          ...required,
+          WIREBENCH_SERVER_PUBLIC_URL: 'ftp://example.com',
+          WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true',
+        },
+        '2.1.1',
+      ),
+    ).toThrow(ConfigError);
+  });
+
+  it('stores the public URL as its normalised origin', () => {
+    expect(
+      loadConfig({ ...required, WIREBENCH_SERVER_PUBLIC_URL: 'HTTPS://WireBench.Example.com:443' }, '2.1.1').publicUrl,
+    ).toBe('https://wirebench.example.com');
+    expect(
+      loadConfig(
+        {
+          ...required,
+          WIREBENCH_SERVER_PUBLIC_URL: 'HTTP://LocalHost:8080',
+          WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL: 'true',
+        },
+        '2.1.1',
+      ).publicUrl,
+    ).toBe('http://localhost:8080');
+  });
+
+  it('resolves a relative data directory to an absolute path', () => {
+    const config = loadConfig({ ...required, WIREBENCH_SERVER_DATA_DIR: 'relative/data' }, '2.1.1');
+    expect(isAbsolute(config.dataDir)).toBe(true);
+    expect(config.dataDir).toBe(resolve('relative/data'));
   });
 
   it('parses booleans and numbers from their string forms', () => {

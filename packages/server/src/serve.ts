@@ -7,7 +7,7 @@ import type { EventEmitter } from 'node:events';
 import { access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { GitCli, findGit } from '@wirebench/engine';
+import { GitCli, WirebenchError, findGit } from '@wirebench/engine';
 import { ConfigError, loadConfig, type ServerConfig } from './config.js';
 import { MetaRegistry, ServerEvents, type ServerContext, type ServerModule } from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
@@ -48,9 +48,16 @@ export interface StartOptions {
   readonly exit?: (code: number) => void;
 }
 
+/**
+ * Loads the configuration, then deletes the database URL from `process.env`: `GitCli` always
+ * spreads `process.env` into git's environment (an `env` option can only add to it), so leaving
+ * the variable there would hand the connection string to every git child process.
+ */
 function configFrom(env: NodeJS.ProcessEnv, io: ServerIo): ServerConfig {
   try {
-    return loadConfig(env, packageVersion());
+    const config = loadConfig(env, packageVersion());
+    delete process.env.WIREBENCH_SERVER_DATABASE_URL;
+    return config;
   } catch (error) {
     if (error instanceof ConfigError) {
       for (const problem of error.problems) io.stderr.write(`${problem.variable}: ${problem.message}\n`);
@@ -68,17 +75,26 @@ async function locateGit(config: ServerConfig): Promise<GitCli> {
   return new GitCli(location, { hooksDir: join(config.dataDir, NO_HOOKS_DIR) });
 }
 
+/** How a failed migration reads on stderr: a WirebenchError (e.g. `server-schema-too-new`) keeps its code. */
+function migrationFailure(error: unknown): string {
+  if (error instanceof WirebenchError) return `${error.code}: ${error.message}`;
+  return `migration failed: ${error instanceof Error ? error.message : String(error)}`;
+}
+
 /**
- * The host's migrations followed by each module's. The host folder must run from 0001 on its own;
- * a module folder starts wherever its numbers fall, so contiguity (and uniqueness) is checked on
- * the combined, sorted list.
+ * The host's migrations and each module's, merged in version order. No single folder has to be
+ * contiguous — once identity takes 0002, a later host migration is 0005 — so contiguity from 0001
+ * (and uniqueness) is checked on the combined, sorted list. `hostDir` exists for tests.
  */
-export async function allMigrations(modules: readonly ServerModule[]): Promise<readonly Migration[]> {
+export async function allMigrations(
+  modules: readonly ServerModule[],
+  hostDir: string = MIGRATIONS_DIR,
+): Promise<readonly Migration[]> {
   const moduleDirs = modules.flatMap((m) => (m.migrationsDir !== undefined ? [m.migrationsDir] : []));
   let perFolder: (readonly Migration[])[];
   try {
     perFolder = await Promise.all([
-      loadMigrations(MIGRATIONS_DIR),
+      loadMigrations(hostDir, { contiguous: false }),
       ...moduleDirs.map((dir) => loadMigrations(dir, { contiguous: false })),
     ]);
   } catch (error) {
@@ -133,7 +149,7 @@ export async function runMigrate(
     );
     return ExitCode.Ok;
   } catch (error) {
-    io.stderr.write(`migration failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    io.stderr.write(`${error instanceof StartupError ? error.message : migrationFailure(error)}\n`);
     return ExitCode.Migration;
   } finally {
     await db.close();
@@ -155,10 +171,7 @@ export async function startServer(
   } catch (error) {
     await db.close();
     if (error instanceof StartupError) throw error;
-    throw new StartupError(
-      ExitCode.Migration,
-      `migration failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new StartupError(ExitCode.Migration, migrationFailure(error));
   }
   try {
     await RepoStore.prepare(config.dataDir);

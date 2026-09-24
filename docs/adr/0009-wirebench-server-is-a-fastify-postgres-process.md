@@ -41,9 +41,14 @@ Specifically:
 - **Configuration is environment only.** `CONFIG_VARIABLES` in `packages/server/src/config.ts` is
   the single table behind the zod schema, `wirebench-server config check` and the README's
   generated variable table (`scripts/docs-server-config.ts`, checked by `pnpm check`). Values are
-  never echoed; the database URL is never logged or returned.
+  never echoed; the database URL is never logged or returned. Log redaction covers the listed
+  secret keys at the top level and one level down (pino has no any-depth wildcard), and request
+  URLs are logged without their query strings.
 - **Migrations are forward-only numbered SQL files** shipped in the image beside `dist/`, applied
-  at start-up or ahead of a restart with `wirebench-server migrate`.
+  at start-up or ahead of a restart with `wirebench-server migrate`. A module's migrations live
+  under `packages/server/migrations/<module>/` (e.g. `migrations/identity/0002_identity.sql`), which
+  the package already ships, and its `ServerModule.migrationsDir` points there; `tsc` copies no
+  `.sql` files, so nothing under `src/` would reach the image.
 - **Git is the system git**, installed in the image and driven through the engine's `GitCli` with
   argument arrays and hooks disabled, exactly as the desktop does (ADR-0008).
 - **The image** mirrors the CLI's: a build stage and `pnpm deploy --prod`, then

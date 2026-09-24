@@ -8,6 +8,11 @@ Issue: #74 · Date: 2026-09-24 · Status: approved by the owner on 2026-09-24 ·
   server socket, §6 path safety, §12 boundaries), `docs/specs/2026-09-19-ci-recipes-design.md` §2.2 (the
   CLI container image this copies), ADR-0004 (secrets never reach a server), ADR-0008 (a shared workspace
   is a git repository whether the client or the server runs git).
+- Status note (implementation): `fastify-type-provider-zod`, named below in §5.1, §6, §7, §10, §12
+  and §15, was dropped per ADR-0009 (its required peers would ship in the image unused). Routes
+  convert zod schemas to JSON Schema with the `jsonSchema` helper in `packages/server/src/schema.ts`
+  and Fastify validates them; the runtime dependencies are `@wirebench/engine`, `fastify`, `pg` and
+  `zod`.
 - Decisions taken with the owner on 2026-09-24: the HTTP layer is **Fastify**; the store is
   **PostgreSQL**; `GitCli` and the per-file three-way merge **move into `@wirebench/engine`**; the
   deploy artifact is **a container image configured by environment variables**, data in one mounted
@@ -316,6 +321,9 @@ docs/adr/0009-wirebench-server-is-a-fastify-postgres-process.md
 ```
 
 ## 10. Code style
+
+> The example below predates ADR-0009: `fastify-type-provider-zod` was dropped, so a route passes
+> `jsonSchema(schema)` from `packages/server/src/schema.ts` instead of a zod type provider.
 
 As the v1 spec §10 and the shared-workspaces spec §10. A module is one plugin file whose routes declare
 zod schemas and whose handlers throw `WirebenchError`s; nothing formats a response by hand:

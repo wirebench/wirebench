@@ -14,21 +14,49 @@ import { metaRoutes } from './routes/meta.js';
 
 export interface BuildServerOptions {
   readonly modules: readonly ServerModule[];
+  /** Where log lines go instead of stdout; tests pass a stream to read what was logged. */
+  readonly logStream?: NodeJS.WritableStream;
 }
 
+/**
+ * Pino redaction has no any-depth wildcard: each key is listed bare (a top-level field such as
+ * `log.info({ password })`) and as `*.key` (one level down). Deeper nesting is not covered; log
+ * credentials at neither depth.
+ */
+const SECRET_KEYS = ['password', 'token', 'secret', 'clientSecret'] as const;
 const REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers.cookie',
   'res.headers["set-cookie"]',
-  '*.password',
-  '*.token',
-  '*.secret',
-  '*.clientSecret',
+  ...SECRET_KEYS,
+  ...SECRET_KEYS.map((key) => `*.${key}`),
 ];
+
+/** The request path without its query string: `?secret=` and `?token=` values must never be logged or echoed. */
+function pathOf(url: string): string {
+  const query = url.indexOf('?');
+  return query === -1 ? url : url.slice(0, query);
+}
+
+/** Symbol Fastify reads to register a plugin into its parent's scope instead of a child one. */
+const SKIP_OVERRIDE = Symbol.for('skip-override');
 
 export async function buildServer(ctx: ServerContext, options: BuildServerOptions): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: ctx.config.logLevel, redact: { paths: REDACT_PATHS, censor: '[redacted]' } },
+    logger: {
+      level: ctx.config.logLevel,
+      redact: { paths: REDACT_PATHS, censor: '[redacted]' },
+      // Fastify's default request serializer logs the full URL (query string included) and the
+      // remote address; only the method, the bare path and the request id are logged.
+      serializers: {
+        req: (request: { readonly method: string; readonly url: string; readonly id: string }) => ({
+          method: request.method,
+          url: pathOf(request.url),
+          requestId: request.id,
+        }),
+      },
+      ...(options.logStream !== undefined ? { stream: options.logStream } : {}),
+    },
     trustProxy: ctx.config.trustProxy,
     requestIdHeader: ctx.config.trustProxy ? 'x-request-id' : false,
     bodyLimit: ctx.config.bodyLimitMb * 1024 * 1024,
@@ -41,7 +69,7 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   });
 
   app.setNotFoundHandler((request, reply) => {
-    void reply.code(404).send({ code: 'not-found', message: `No route for ${request.method} ${request.url}` });
+    void reply.code(404).send({ code: 'not-found', message: `No route for ${request.method} ${pathOf(request.url)}` });
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -102,7 +130,13 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
     async (api) => {
       await api.register(metaRoutes(context));
       for (const module of options.modules) {
-        await api.register(async (scope) => module.register(scope, context));
+        // Registered straight into the /api/v1 scope rather than a child of it (the flag is what
+        // fastify-plugin sets): a hook or decorator one module adds, such as identity's
+        // `request.caller`, must reach the routes of every module registered after it. /healthz
+        // sits outside /api/v1 and never sees them.
+        const mount = (scope: FastifyInstance): Promise<void> => module.register(scope, context);
+        Object.assign(mount, { [SKIP_OVERRIDE]: true, [Symbol.for('fastify.display-name')]: module.name });
+        await api.register(mount);
       }
     },
     { prefix: '/api/v1' },

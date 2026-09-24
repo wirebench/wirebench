@@ -59,7 +59,12 @@ export interface ServerContext {
 
 export interface ServerModule {
   readonly name: 'identity' | 'teams-access' | 'server-sync';
-  /** Applied after the host's own migrations, in module order (`db/migrate.ts`). */
+  /**
+   * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
+   * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.
+   * `migrations/identity/0002_identity.sql`): the package ships `migrations/` beside `dist/`, and
+   * `tsc` copies no `.sql` files, so a folder under `src/` would be missing from the image.
+   */
   readonly migrationsDir?: string;
   register(app: FastifyInstance, ctx: ServerContext): Promise<void>;
 }

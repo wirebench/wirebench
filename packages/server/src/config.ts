@@ -4,6 +4,7 @@
  * `scripts/docs-server-config.ts` (the README's table) and for the zod schema, so the three can
  * never disagree. Values are never echoed: a problem names the variable and the rule it broke.
  */
+import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
@@ -196,15 +197,26 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
     throw new ConfigError(problems);
   }
   const config = parsed.data;
-  if (config.publicUrl.startsWith('http://') && !config.allowInsecurePublicUrl) {
+  // Judged on the parsed protocol, which URL lower-cases: a prefix test on the raw text let
+  // `HTTP://…` and `ftp://…` through without the insecure flag.
+  const publicUrl = new URL(config.publicUrl);
+  const allowed = publicUrl.protocol === 'https:' || (publicUrl.protocol === 'http:' && config.allowInsecurePublicUrl);
+  if (!allowed) {
     throw new ConfigError([
       {
         variable: 'WIREBENCH_SERVER_PUBLIC_URL',
-        message: 'must be https://; set WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL=true for development',
+        message: 'must be https://; set WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL=true for an http:// development URL',
       },
     ]);
   }
-  return { ...config, version };
+  return {
+    ...config,
+    publicUrl: publicUrl.origin,
+    // Absolute for every consumer: git reads a relative core.hooksPath from the worktree root, not
+    // from the directory the server started in.
+    dataDir: isAbsolute(config.dataDir) ? config.dataDir : resolve(config.dataDir),
+    version,
+  };
 }
 
 export type ConfigStatus = 'set' | 'defaulted' | 'missing' | 'invalid';
