@@ -45,10 +45,50 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
   });
 
   app.setErrorHandler((error, request, reply) => {
-    if ((error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+    const fastifyError = error as {
+      readonly code?: string;
+      readonly statusCode?: number;
+      readonly validation?: readonly {
+        readonly instancePath: string;
+        readonly message?: string;
+        readonly params?: { readonly missingProperty?: string };
+      }[];
+    };
+    if (fastifyError.code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
       return reply
         .code(413)
         .send({ code: 'request-too-large', message: `Request bodies are limited to ${ctx.config.bodyLimitMb} MiB.` });
+    }
+    // Fastify's own schema validation (FST_ERR_VALIDATION) attaches `validation`, the raw Ajv
+    // errors; map it to the same { code, message, issues } shape toProblem gives a zod error, so
+    // clients never see two different invalid-request shapes.
+    if (fastifyError.validation !== undefined) {
+      return reply.code(400).send({
+        code: 'invalid-request',
+        message: 'The request did not match the expected shape.',
+        issues: fastifyError.validation.map((issue) => ({
+          // Ajv's "required" errors point `instancePath` at the parent, not the missing field
+          // itself, and carry the field name in `params.missingProperty` instead.
+          path:
+            issue.instancePath === '' && issue.params?.missingProperty !== undefined
+              ? issue.params.missingProperty
+              : issue.instancePath.replace(/^\//, '').split('/').join('.'),
+          message: issue.message ?? 'is invalid',
+        })),
+      });
+    }
+    // Every other Fastify-raised client error (malformed JSON, wrong content type, and so on)
+    // carries its own `statusCode` but a message that can describe internals (header syntax,
+    // parser detail); per host spec §3.3 the client only ever sees { code, message }, so the
+    // status is kept and the text is replaced with a fixed, generic problem.
+    if (
+      typeof fastifyError.statusCode === 'number' &&
+      fastifyError.statusCode >= 400 &&
+      fastifyError.statusCode < 500
+    ) {
+      return reply
+        .code(fastifyError.statusCode)
+        .send({ code: 'bad-request', message: 'The request could not be processed.' });
     }
     const mapped = toProblem(error);
     if (mapped.status >= 500) {

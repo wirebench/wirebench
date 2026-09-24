@@ -2,7 +2,9 @@ import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { problem } from '../../src/problem.js';
+import { jsonSchema } from '../../src/schema.js';
 import { buildServer } from '../../src/server.js';
 import { fakeDatabase, testContext } from '../helpers/context.js';
 
@@ -133,6 +135,74 @@ describe('buildServer', () => {
     const small = await app.inject({ method: 'GET', url: '/healthz', headers: { 'x-request-id': 'abc' } });
     expect(small.headers['x-request-id']).toBeDefined();
     expect(small.headers['x-request-id']).not.toBe('abc'); // trustProxy is off, so incoming ids are ignored
+    await app.close();
+  });
+
+  it('compiles a request body schema and rejects a body that fails it as invalid-request', async () => {
+    const bodySchema = z.object({ name: z.string() });
+    const app = await buildServer(await testContext({ dataDir }), {
+      modules: [
+        {
+          name: 'identity',
+          // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
+          register: async (i) => {
+            // registering this route is the regression check: a draft 2020-12 schema makes
+            // app.ready() (inside buildServer) throw before this test body ever runs.
+            i.post(
+              '/greet',
+              { schema: { body: jsonSchema(bodySchema, { io: 'input' }) } },
+              // eslint-disable-next-line @typescript-eslint/require-await -- route handler has no await, just returns
+              async (req) => ({ hello: (req.body as { name: string }).name }),
+            );
+          },
+        },
+      ],
+    });
+    const ok = await app.inject({ method: 'POST', url: '/api/v1/greet', payload: { name: 'Ada' } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ hello: 'Ada' });
+
+    const bad = await app.inject({ method: 'POST', url: '/api/v1/greet', payload: {} });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json<{ code: string; message: string; issues: { path: string; message: string }[] }>()).toMatchObject({
+      code: 'invalid-request',
+      issues: [{ path: 'name' }],
+    });
+    await app.close();
+  });
+
+  it('maps malformed JSON and an unsupported content type to problems, not internal errors', async () => {
+    const app = await buildServer(await testContext({ dataDir }), {
+      modules: [
+        {
+          name: 'identity',
+          // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
+          register: async (i) => {
+            // eslint-disable-next-line @typescript-eslint/require-await -- route handler has no await, just echoes
+            i.post('/echo', async (req) => req.body);
+          },
+        },
+      ],
+    });
+
+    const badJson = await app.inject({
+      method: 'POST',
+      url: '/api/v1/echo',
+      headers: { 'content-type': 'application/json' },
+      payload: '{not json',
+    });
+    expect(badJson.statusCode).toBe(400);
+    expect(badJson.json()).toEqual({ code: 'bad-request', message: 'The request could not be processed.' });
+
+    const badMediaType = await app.inject({
+      method: 'POST',
+      url: '/api/v1/echo',
+      headers: { 'content-type': 'application/x-not-a-real-type' },
+      payload: 'whatever',
+    });
+    expect(badMediaType.statusCode).toBe(415);
+    expect(badMediaType.json()).toEqual({ code: 'bad-request', message: 'The request could not be processed.' });
+
     await app.close();
   });
 });
