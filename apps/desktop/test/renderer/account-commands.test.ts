@@ -82,7 +82,7 @@ describe('account.* commands', () => {
   it('workspace.openTeamWorkspace is gated on a signed-in server and opens its dialog', () => {
     useUiStore.setState({ teamWorkspaceDialogOpen: false });
     const command = getCommand('workspace.openTeamWorkspace')!;
-    expect(command.label).toBe('Workspace: Open a team workspace…');
+    expect(command.label).toBe('Open Team Workspace…');
     expect(command.category).toBe('Workspace');
     expect(command.when?.(context)).toBe(false);
     useAccountStore.setState({ servers: [account('https://wb.test', true)] });

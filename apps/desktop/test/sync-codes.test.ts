@@ -19,9 +19,10 @@ describe('the renderer copy of the server-sync codes (spec §3.4, §3.5)', () =>
     }
   });
 
-  it('sends a history mismatch and a corrupt state back to Open a team workspace…', () => {
-    expect(syncCodeInfo('sync-history-mismatch')?.action).toBe('open-team-workspace');
-    expect(syncCodeInfo('sync-state-corrupt')?.action).toBe('open-team-workspace');
+  it('sends a history mismatch and a corrupt state to Stop sharing first, Open a team workspace… second (I4)', () => {
+    for (const code of ['sync-history-mismatch', 'sync-state-corrupt']) {
+      expect(syncCodeInfo(code), code).toEqual({ action: 'stop-sharing', secondaryAction: 'open-team-workspace' });
+    }
   });
 
   it('knows nothing about a git code or an inherited property name, so a git share looks as it did', () => {

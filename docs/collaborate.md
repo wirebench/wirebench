@@ -297,15 +297,15 @@ Sharing moves the workspace's files into its managed tree, makes the first commi
 and pushes on the next sync.
 
 **Open a team workspace.** On the workspace picker (once a server is known) or from the palette
-(**Workspace: Open a team workspace…**), the dialog lists every workspace your teams share on every
+(**Open Team Workspace…**), the dialog lists every workspace your teams share on every
 server you are signed in to, with its team and your role. An empty workspace is not listed until someone
 shares into it. Choosing one downloads it and opens it. If it is already on this machine, the dialog
 offers to open that copy instead.
 
 **Viewers.** With the *viewer* role, the badge reads *Viewer*. You can still edit, send and save, and
 *Commit on save* keeps a local history. **Push** and **Push on save** are disabled with the reason, and
-your commits stay on this machine. When an admin makes you an editor, the next fetch picks it up, and a
-push sends what was waiting.
+your commits stay on this machine. When an admin makes you an editor, the next fetch picks it up and
+pushes what was waiting (with *Push on save* on).
 
 **How it syncs.** A pull asks the server what changed since your last sync and merges on your machine
 with the same three-way merge a git share uses ([ADR-0012](adr/0012-server-sync-merges-on-the-client.md)).
@@ -356,10 +356,11 @@ sharing a data directory could interleave them.
 | `sync-signed-out` | The badge says *Sign in*: this server has no session for you, or it stopped accepting it | Click **Sign in…** in the Sync panel and sign in; sync resumes by itself |
 | `sync-account-disabled` | The badge says *Account disabled*: an admin disabled your account on the server | Ask a server admin; sign in again once it is enabled |
 | `sync-access-removed` | The badge says *No access*: you left the team, or the workspace was deleted or its access changed | Ask a team admin for access, then **Sign in…** or **Fetch** again; the files stay on this machine |
-| `sync-forbidden` | *You have viewer access in this workspace; changes stay on this machine.* | Ask a workspace admin for the *editor* role; the next fetch picks it up and **Push** sends what waited |
+| `sync-forbidden` | *You have viewer access in this workspace; changes stay on this machine.* | Ask a workspace admin for the *editor* role; the next fetch picks it up and pushes what waited |
+| `sync-push-rejected` | *Someone else pushed first.* — the push was refused twice in a row, because a teammate pushed again while Wirebench pulled and merged | Nothing is lost: the commits stay *ahead*. **Pull**, then **Push**, or save again; it retries by itself |
 | `sync-too-large` | The push or download is larger than the server's body limit | Remove large attachments, or ask the operator to raise `WIREBENCH_SERVER_BODY_LIMIT_MB` |
-| `sync-history-mismatch` | This copy's history no longer matches the server's | Stop sharing, remove the local copy, and open it again with **Open a team workspace…** |
-| `sync-state-corrupt` | The local sync state in the workspace's `server/` folder cannot be read | As for `sync-history-mismatch`: open the workspace again from the server |
+| `sync-history-mismatch` | This copy's history no longer matches the server's | Click **Stop sharing…** in the Sync panel, then share the workspace again: it reconnects to the server copy through a merge and keeps your files, unpushed edits included. **Open a team workspace…** works too, but only after this copy is removed, which throws those edits away |
+| `sync-state-corrupt` | The local sync state in the workspace's `server/` folder cannot be read | As for `sync-history-mismatch`: **Stop sharing…**, then share again (stopping does not read that folder) |
 | `sync-not-supported-by-server` | *This server is too old to sync workspaces.* | Ask the operator to upgrade Wirebench Server |
 | `sync-reconnect-viewer` | You shared a workspace again, but you are only a viewer of the server copy | Remove this local copy, then open the server's with **Open a team workspace…** |
 | `sync-workspace-exists-elsewhere` | A workspace with this id is on the server and you have no access to it | Ask its team's admin for access, or share into a new workspace from a fresh local copy |

@@ -233,6 +233,20 @@ describe('ShareDialog → Wirebench Server (server-sync §3.4)', () => {
     expect(screen.getByTestId('share-confirm').hasAttribute('disabled')).toBe(true);
   });
 
+  it('with no team to choose, an existing target shows the team state rather than Loading… for ever', async () => {
+    const serverTargets = ok({ workspaces: [] });
+    installWirebenchApi({ team: { list: ok({ teams: [], serverAdmin: false }) }, workspace: { serverTargets } });
+    await openShareDialog();
+    await userEvent.click(screen.getByTestId('share-kind-server'));
+    expect(await screen.findByTestId('share-team-none')).toBeTruthy();
+
+    await userEvent.click(screen.getByTestId('share-target-existing'));
+
+    expect(screen.getByTestId('workspace-share-dialog').textContent).not.toContain('Loading…');
+    expect(serverTargets).not.toHaveBeenCalled();
+    expect(screen.getByTestId('share-confirm').hasAttribute('disabled')).toBe(true);
+  });
+
   it.each([
     [
       'teams-workspace-name-taken',

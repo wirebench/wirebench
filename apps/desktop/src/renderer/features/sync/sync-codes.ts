@@ -8,13 +8,15 @@
  */
 
 /** What the Sync panel offers beside a code's message. */
-export type SyncCodeAction = 'sign-in' | 'open-team-workspace';
+export type SyncCodeAction = 'sign-in' | 'stop-sharing' | 'open-team-workspace';
 
 export interface SyncCodeInfo {
   /** The badge's word while the status is `error` with this code; absent keeps *Error*. */
   readonly badge?: string;
-  /** The one action the Sync panel shows beside the message; absent shows the message alone. */
+  /** The action the Sync panel shows beside the message; absent shows the message alone. */
   readonly action?: SyncCodeAction;
+  /** A second, less preferred action, shown after the first. */
+  readonly secondaryAction?: SyncCodeAction;
 }
 
 /** After these, main does not re-arm the fetch timer until an account changes (§3.4). */
@@ -32,9 +34,11 @@ const SYNC_CODES: Readonly<Record<string, SyncCodeInfo>> = {
   // State-keeping codes: the reason is the whole message, and there is nothing to click.
   'sync-forbidden': {},
   'sync-too-large': {},
-  // The local copy and the server's history no longer line up; opening it again is the fix (§3.5, §4.2).
-  'sync-history-mismatch': { action: 'open-team-workspace' },
-  'sync-state-corrupt': { action: 'open-team-workspace' },
+  // The local copy and the server's history no longer line up (§3.5, §4.2). Stop sharing keeps the
+  // files and sharing again reconnects through a merge (O2), so unpushed edits survive; opening the
+  // server copy instead needs this copy removed first, which would throw them away.
+  'sync-history-mismatch': { action: 'stop-sharing', secondaryAction: 'open-team-workspace' },
+  'sync-state-corrupt': { action: 'stop-sharing', secondaryAction: 'open-team-workspace' },
 };
 
 /** The entry for `code`, or `undefined` for a code this module does not describe (every git one). */
@@ -44,6 +48,7 @@ export function syncCodeInfo(code: string | undefined): SyncCodeInfo | undefined
 
 export const SYNC_ACTION_LABELS: Readonly<Record<SyncCodeAction, string>> = {
   'sign-in': 'Sign in…',
+  'stop-sharing': 'Stop sharing…',
   'open-team-workspace': 'Open a team workspace…',
 };
 

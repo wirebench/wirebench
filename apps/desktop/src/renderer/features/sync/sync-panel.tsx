@@ -266,7 +266,17 @@ export function SyncPanel() {
                     {SYNC_ACTION_LABELS['sign-in']}
                   </Button>
                 )}
-                {notice.action === 'open-team-workspace' && (
+                {notice.action === 'stop-sharing' && (
+                  <Button
+                    data-testid="sync-notice-stop-sharing"
+                    onClick={() => {
+                      setStopSharingOpen(true);
+                    }}
+                  >
+                    {SYNC_ACTION_LABELS['stop-sharing']}
+                  </Button>
+                )}
+                {(notice.action === 'open-team-workspace' || notice.secondaryAction === 'open-team-workspace') && (
                   <Button
                     data-testid="sync-open-team-workspace"
                     onClick={() => {

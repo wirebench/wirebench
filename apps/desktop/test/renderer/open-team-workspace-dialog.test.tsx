@@ -127,6 +127,40 @@ describe('OpenTeamWorkspaceDialog (server-sync §3.4)', () => {
     expect(useWorkspaceStore.getState().workspace?.id).toBe(STAGING.id);
   });
 
+  it('keeps focus on the chosen row while it opens, and a second click does nothing (Task 14 minor)', async () => {
+    let answer!: (value: { ok: false; error: { code: string; message: string } }) => void;
+    const joinFromServer = vi.fn(
+      () =>
+        new Promise<{ ok: false; error: { code: string; message: string } }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    installWirebenchApi({
+      workspace: {
+        teamWorkspaces: ok({
+          workspaces: [
+            { url: SERVER, workspace: INTEGRATION },
+            { url: SERVER, workspace: STAGING },
+          ],
+        }),
+        joinFromServer,
+      },
+    });
+    await openDialog();
+    const [row, other] = await screen.findAllByTestId('team-workspace-row');
+
+    await userEvent.click(row!);
+
+    await waitFor(() => expect(row!.textContent).toContain('Opening…'));
+    expect(document.activeElement).toBe(row);
+    expect(row!.getAttribute('aria-disabled')).toBe('true');
+    expect(other!.getAttribute('aria-disabled')).toBe('true');
+    await userEvent.click(other!);
+    expect(joinFromServer).toHaveBeenCalledTimes(1);
+    answer({ ok: false, error: { code: 'sync-offline', message: 'Offline.' } });
+    expect(await screen.findByTestId('open-team-workspace-error')).toBeTruthy();
+  });
+
   it('offers the copy already on this machine instead, without a toast', async () => {
     const joinFromServer = vi.fn().mockResolvedValue({
       ok: false,

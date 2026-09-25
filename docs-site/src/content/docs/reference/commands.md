@@ -73,7 +73,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Remove Project from Workspace… | — | — |
 | Share Workspace… | — | — |
 | Join Shared Workspace… | — | — |
-| Workspace: Open a team workspace… | — | — |
+| Open Team Workspace… | — | — |
 | Stop Sharing | — | — |
 
 ## Explorer

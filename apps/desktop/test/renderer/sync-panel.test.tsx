@@ -360,7 +360,22 @@ describe('SyncPanel on a Wirebench Server share (server-sync §3.4, §5.4)', () 
     },
   );
 
-  it('a history mismatch offers Open a team workspace…', async () => {
+  it.each(['sync-history-mismatch', 'sync-state-corrupt'])(
+    '%s offers Stop sharing… first, which asks to confirm, and Open a team workspace… second (I4)',
+    async (code) => {
+      openServerShared({ state: 'error', error: { code, message: 'Stop sharing, then share it again.' } });
+      await showPanel();
+
+      const notice = await screen.findByTestId('sync-error-notice');
+      const buttons = [...notice.querySelectorAll('button')].map((button) => button.getAttribute('data-testid'));
+      expect(buttons).toEqual(['sync-notice-stop-sharing', 'sync-open-team-workspace']);
+
+      await userEvent.click(screen.getByTestId('sync-notice-stop-sharing'));
+      expect(await screen.findByTestId('sync-stop-sharing-confirm')).toBeTruthy();
+    },
+  );
+
+  it('a history mismatch still offers Open a team workspace…', async () => {
     openServerShared({ state: 'error', error: { code: 'sync-history-mismatch', message: 'Open it again.' } });
     await showPanel();
 

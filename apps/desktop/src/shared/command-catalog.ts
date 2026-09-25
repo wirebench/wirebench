@@ -687,7 +687,7 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
   },
   'workspace.openTeamWorkspace': {
     id: 'workspace.openTeamWorkspace',
-    label: 'Workspace: Open a team workspace…',
+    label: 'Open Team Workspace…',
     category: 'Workspace',
   },
   'workspace.stopSharing': {

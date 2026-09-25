@@ -228,13 +228,13 @@ Wirebench talks to the server over HTTP, so nobody needs git installed.
 
 </Steps>
 
-Teammates open it from the workspace picker's **Open a team workspace…**, or with **Workspace: Open a
-team workspace…** from the palette. The list shows every workspace your teams share on the servers you
+Teammates open it from the workspace picker's **Open a team workspace…**, or with **Open Team
+Workspace…** from the palette. The list shows every workspace your teams share on the servers you
 are signed in to, with its team and your role; an empty workspace appears once someone shares into it.
 
 - **Viewers** see *Viewer* on the badge. They can edit, send and save, and their commits stay on their
   machine: **Push** and **Push on save** are disabled with the reason. When an admin makes them an
-  editor, the next fetch picks it up and a push sends what was waiting.
+  editor, the next fetch picks it up and pushes what was waiting.
 - **Merging** runs on your machine with the same three-way merge as a git share. If someone pushed first,
   Wirebench pulls, merges and pushes again, and conflicts open the same resolver.
 - **Signed out, disabled or no access:** the badge says *Sign in*, *Account disabled* or *No access*,
@@ -246,8 +246,9 @@ are signed in to, with its team and your role; an empty workspace appears once s
   file at most 8 MiB. Run one server instance per data directory.
 
 <Aside type="tip">
-  If the Sync panel suggests **Open a team workspace…**, this copy's history no longer matches the
-  server's: stop sharing, remove the local copy, and open it again from the server.
+  If the Sync panel suggests **Stop sharing…**, this copy's history no longer matches the server's, or
+  its sync state is damaged: stop sharing, then share it again. It reconnects to the server copy
+  through a merge and keeps your files, including edits that were not pushed yet.
 </Aside>
 
 ## Related

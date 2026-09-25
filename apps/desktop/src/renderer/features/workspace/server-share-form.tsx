@@ -250,6 +250,11 @@ export function ServerShareForm({ workspaceName, onShared }: ServerShareFormProp
             ))}
           </select>
         </>
+      ) : teamId === undefined ? (
+        // No team to list targets for: the Team field above already says why (none, or an error).
+        teams.state === 'loading' ? (
+          <p className="mt-3 text-sm text-fg-subtle">Loading…</p>
+        ) : null
       ) : targets.state === 'loading' ? (
         <p className="mt-3 text-sm text-fg-subtle">Loading…</p>
       ) : targets.state === 'failed' ? (

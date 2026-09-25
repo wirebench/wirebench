@@ -176,13 +176,14 @@ test.describe('server sync', () => {
   test.afterEach(async () => {
     const current = profiles;
     profiles = new SyncProfiles();
+    const servers = [soap, fake];
+    soap = undefined;
+    fake = undefined;
     try {
       await current.dispose();
     } finally {
-      await soap?.close();
-      soap = undefined;
-      await fake?.close();
-      fake = undefined;
+      // Each closes even when the one before it fails, so no fake server outlives its test.
+      await Promise.allSettled(servers.map((server) => server?.close() ?? Promise.resolve()));
     }
   });
 
@@ -236,12 +237,10 @@ test.describe('server sync', () => {
     expect(pushCalls(server, bobToken)).toBe(0);
     expect(server.headContains(workspaceId, intA(edited))).toBe(false);
 
-    // --- Promoted to editor: the next fetch drops Viewer, and the waiting commit pushes ---------
+    // --- Promoted to editor: the next fetch drops Viewer and pushes the waiting commit by itself --
     server.setRole(workspaceId, BOB.email, 'editor');
     await runCommand(bob.window, 'Sync: Fetch');
     await expect(syncBadge(bob.window)).not.toContainText('Viewer', { timeout: SYNC_TIMEOUT });
-    await expect(syncBadge(bob.window)).toContainText(/\d+ to push/);
-    await pushNow(bob.window);
     await waitForSync(bob.window, 'clean');
     await expect.poll(() => server.headContains(workspaceId, intA(edited)), { timeout: SYNC_TIMEOUT }).toBe(true);
     expect(pushCalls(server, bobToken)).toBeGreaterThan(0);
@@ -307,7 +306,7 @@ test.describe('server sync', () => {
     expect(await envelopeText(page)).not.toContain('<<<<<<<');
     await pushNow(page);
     await waitForSync(page, 'clean');
-    expect(server.headContains(workspaceId, intA('3333'))).toBe(true);
+    await expect.poll(() => server.headContains(workspaceId, intA('3333')), { timeout: SYNC_TIMEOUT }).toBe(true);
     expect(server.headContains(workspaceId, intA('4444'))).toBe(false);
     expect(anyFileContains(sharedTreeDir(alice.userDataDir), '<<<<<<<')).toBe(false);
     expect(server.subjects(workspaceId)).toContain('Set intA to 3333');

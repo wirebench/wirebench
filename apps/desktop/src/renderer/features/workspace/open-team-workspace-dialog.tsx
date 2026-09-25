@@ -150,11 +150,13 @@ export function OpenTeamWorkspaceDialog() {
                     type="button"
                     data-testid="team-workspace-row"
                     data-workspace-id={row.workspace.id}
-                    disabled={opening !== undefined}
+                    // aria-disabled, not disabled: disabling the button just clicked would drop
+                    // focus out of the dialog. `choose` ignores a click while one is opening.
+                    aria-disabled={opening !== undefined}
                     onClick={() => {
                       void choose(row);
                     }}
-                    className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left hover:bg-surface-hover aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   >
                     <span className="shrink-0 text-sm text-fg-default">{row.workspace.name}</span>
                     <span className="min-w-0 flex-1 truncate text-xs text-fg-subtle">
@@ -180,7 +182,7 @@ export function OpenTeamWorkspaceDialog() {
               <span>{existing.message}</span>
               <Button
                 data-testid="open-team-workspace-open-existing"
-                disabled={opening !== undefined}
+                aria-disabled={opening !== undefined}
                 onClick={() => {
                   void openExisting();
                 }}
