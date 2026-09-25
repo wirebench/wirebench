@@ -1,6 +1,7 @@
 import { WorkspaceError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { WorkspaceService } from '../workspace-service.js';
+import type { ServerShareTarget } from '../workspace-share.js';
 import { registerHandler } from './register.js';
 
 /**
@@ -33,6 +34,10 @@ export type WorkspaceChannelService = Pick<
   | 'join'
   | 'joinFromFolder'
   | 'stopSharing'
+  | 'shareToServer'
+  | 'joinFromServer'
+  | 'serverShareTargets'
+  | 'openableTeamWorkspaces'
   | 'moveProjectToWorkspace'
 >;
 
@@ -209,6 +214,39 @@ export function registerWorkspaceChannels(deps: WorkspaceChannelDeps): void {
   }));
 
   registerHandler(channels.workspace.stopSharing, async () => ({ workspace: await service.stopSharing() }));
+
+  registerHandler(channels.workspace.shareToServer, async (request) => {
+    // Rebuilt, not forwarded: an absent default role must reach main absent (exactOptionalPropertyTypes).
+    const { target } = request;
+    const shaped: ServerShareTarget =
+      target.kind === 'new'
+        ? {
+            kind: 'new',
+            name: target.name,
+            ...(target.defaultRole !== undefined ? { defaultRole: target.defaultRole } : {}),
+          }
+        : { kind: 'existing', workspaceId: target.workspaceId };
+    return {
+      workspace: await service.shareToServer({
+        url: request.url,
+        teamId: request.teamId,
+        teamName: request.teamName,
+        target: shaped,
+      }),
+    };
+  });
+
+  registerHandler(channels.workspace.joinFromServer, async (request) => ({
+    workspace: await service.joinFromServer({ url: request.url, workspaceId: request.workspaceId }),
+  }));
+
+  registerHandler(channels.workspace.serverTargets, async (request) => ({
+    workspaces: await service.serverShareTargets({ url: request.url, teamId: request.teamId }),
+  }));
+
+  registerHandler(channels.workspace.teamWorkspaces, async () => ({
+    workspaces: await service.openableTeamWorkspaces(),
+  }));
 
   registerHandler(channels.project.moveToWorkspace, async (request) => ({
     workspace: await service.moveProjectToWorkspace(request.projectId, request.workspaceId),

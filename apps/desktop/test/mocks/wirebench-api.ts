@@ -148,6 +148,10 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       join: fail('workspace.join'),
       joinFromFolder: fail('workspace.joinFromFolder'),
       stopSharing: fail('workspace.stopSharing'),
+      shareToServer: fail('workspace.shareToServer'),
+      joinFromServer: fail('workspace.joinFromServer'),
+      serverTargets: fail('workspace.serverTargets'),
+      teamWorkspaces: fail('workspace.teamWorkspaces'),
     },
     // `status` resolves rather than fails: the badge and the sync store's `workspace.changed`
     // handler call it unconditionally, so every renderer test would otherwise have to stub it.

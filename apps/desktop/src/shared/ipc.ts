@@ -117,6 +117,11 @@ import {
   syncPulledEventSchema,
   workspaceShareRequestSchema,
   workspaceJoinRequestSchema,
+  workspaceShareToServerRequestWireSchema,
+  workspaceJoinFromServerRequestWireSchema,
+  workspaceServerTargetsRequestWireSchema,
+  workspaceServerTargetsResponseWireSchema,
+  workspaceTeamWorkspacesResponseWireSchema,
   workspaceChangedOnDiskEventSchema,
   projectMoveToWorkspaceRequestSchema,
   engineProgressEventSchema,
@@ -726,6 +731,25 @@ export const channels = {
     join: defineChannel('workspace.join', workspaceJoinRequestSchema, workspaceResponseSchema),
     joinFromFolder: defineChannel('workspace.joinFromFolder', z.undefined(), workspaceSnapshotResponseSchema),
     stopSharing: defineChannel('workspace.stopSharing', z.undefined(), workspaceResponseSchema),
+    // Wirebench Server (server-sync §3.4). No path here either: main checks the url and every id,
+    // and a workspace id only becomes a folder after it has matched a ULID there.
+    shareToServer: defineChannel(
+      'workspace.shareToServer',
+      workspaceShareToServerRequestWireSchema,
+      workspaceResponseSchema,
+    ),
+    joinFromServer: defineChannel(
+      'workspace.joinFromServer',
+      workspaceJoinFromServerRequestWireSchema,
+      workspaceResponseSchema,
+    ),
+    // The share dialog's *existing empty workspace* list (O1), and *Open a team workspace…*'s rows.
+    serverTargets: defineChannel(
+      'workspace.serverTargets',
+      workspaceServerTargetsRequestWireSchema,
+      workspaceServerTargetsResponseWireSchema,
+    ),
+    teamWorkspaces: defineChannel('workspace.teamWorkspaces', z.undefined(), workspaceTeamWorkspacesResponseWireSchema),
   },
   globals: {
     get: defineChannel('globals.get', z.undefined(), globalsStateSchema),

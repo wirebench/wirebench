@@ -10,11 +10,13 @@
  */
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { WirebenchError } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { registerProjectChannels } from '../src/main/ipc/project.js';
 import { registerWorkspaceChannels } from '../src/main/ipc/workspace.js';
+import type { ServerShareRequest } from '../src/main/workspace-share.js';
 import { channels } from '../src/shared/ipc.js';
-import type { ProjectWire, WorkspaceSummaryWire, WorkspaceWire } from '../src/shared/wire-types.js';
+import type { ProjectWire, TeamWorkspaceWire, WorkspaceSummaryWire, WorkspaceWire } from '../src/shared/wire-types.js';
 import { NO_REST, PROJECT_SETTINGS } from './helpers/wire-defaults.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -68,6 +70,19 @@ const SUMMARY: WorkspaceSummaryWire = {
   createdAt: '2026-09-11T00:00:00.000Z',
 };
 
+const SERVER_URL = 'https://wirebench.example.test';
+
+const TEAM_WORKSPACE: TeamWorkspaceWire = {
+  id: '01J8Z3Q5W6X7Y8Z9A0B1C2D3E4',
+  name: 'Staging',
+  teamId: '01J8Z3Q5W6X7Y8Z9A0B1C2D3E5',
+  teamName: 'Payments QA',
+  defaultRole: 'viewer',
+  myRole: 'editor',
+  source: 'default',
+  createdAt: '2026-09-25T00:00:00.000Z',
+};
+
 const PROJECT: ProjectWire = {
   ...NO_REST,
   settings: PROJECT_SETTINGS,
@@ -118,6 +133,10 @@ function fakeService() {
     join: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'git', managed: true } }),
     joinFromFolder: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'folder', managed: false } }),
     stopSharing: vi.fn().mockResolvedValue(WORKSPACE),
+    shareToServer: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'server', managed: true } }),
+    joinFromServer: vi.fn().mockResolvedValue({ ...WORKSPACE, share: { kind: 'server', managed: true } }),
+    serverShareTargets: vi.fn().mockResolvedValue([TEAM_WORKSPACE]),
+    openableTeamWorkspaces: vi.fn().mockResolvedValue([{ url: SERVER_URL, workspace: TEAM_WORKSPACE }]),
     moveProjectToWorkspace: vi.fn().mockResolvedValue(WORKSPACE),
   };
 }
@@ -175,7 +194,7 @@ describe('workspace.* channels', () => {
       channels.project.moveToWorkspace.name,
     ];
     expect([...handlers.keys()].sort()).toEqual([...declared].sort());
-    expect(declared).toHaveLength(26);
+    expect(declared).toHaveLength(30);
   });
 
   it('share/shareToFolder/join/joinFromFolder/stopSharing route to the service', async () => {
@@ -205,6 +224,73 @@ describe('workspace.* channels', () => {
 
     await expect(invoke('workspace.stopSharing')).resolves.toEqual({ ok: true, value: { workspace: WORKSPACE } });
     expect(service.stopSharing).toHaveBeenCalled();
+  });
+
+  it('workspace.shareToServer hands a new or an existing target to the service, an absent default role left absent', async () => {
+    const shared = { ...WORKSPACE, share: { kind: 'server', managed: true } };
+    const withRole = {
+      url: SERVER_URL,
+      teamId: TEAM_WORKSPACE.teamId,
+      teamName: 'Payments QA',
+      target: { kind: 'new', name: 'Team', defaultRole: 'editor' },
+    };
+    await expect(invoke('workspace.shareToServer', withRole)).resolves.toEqual({
+      ok: true,
+      value: { workspace: shared },
+    });
+
+    await invoke('workspace.shareToServer', { ...withRole, target: { kind: 'new', name: 'Team' } });
+    await invoke('workspace.shareToServer', {
+      ...withRole,
+      target: { kind: 'existing', workspaceId: TEAM_WORKSPACE.id },
+    });
+
+    const forwarded = service.shareToServer.mock.calls.map(([request]) => request as ServerShareRequest);
+    expect(forwarded[0]).toStrictEqual(withRole);
+    expect(forwarded[1]?.target).toStrictEqual({ kind: 'new', name: 'Team' });
+    expect(forwarded[2]?.target).toStrictEqual({ kind: 'existing', workspaceId: TEAM_WORKSPACE.id });
+  });
+
+  it('workspace.joinFromServer, workspace.serverTargets and workspace.teamWorkspaces route to the service', async () => {
+    await expect(
+      invoke('workspace.joinFromServer', { url: SERVER_URL, workspaceId: TEAM_WORKSPACE.id }),
+    ).resolves.toEqual({ ok: true, value: { workspace: { ...WORKSPACE, share: { kind: 'server', managed: true } } } });
+    expect(service.joinFromServer).toHaveBeenCalledWith({ url: SERVER_URL, workspaceId: TEAM_WORKSPACE.id });
+
+    await expect(
+      invoke('workspace.serverTargets', { url: SERVER_URL, teamId: TEAM_WORKSPACE.teamId }),
+    ).resolves.toEqual({ ok: true, value: { workspaces: [TEAM_WORKSPACE] } });
+    expect(service.serverShareTargets).toHaveBeenCalledWith({ url: SERVER_URL, teamId: TEAM_WORKSPACE.teamId });
+
+    await expect(invoke('workspace.teamWorkspaces')).resolves.toEqual({
+      ok: true,
+      value: { workspaces: [{ url: SERVER_URL, workspace: TEAM_WORKSPACE }] },
+    });
+    expect(service.openableTeamWorkspaces).toHaveBeenCalledWith();
+  });
+
+  it('a share target without its fields is refused before the service, and an unknown kind too', async () => {
+    const base = { url: SERVER_URL, teamId: TEAM_WORKSPACE.teamId, teamName: 'Payments QA' };
+    for (const target of [{ kind: 'existing' }, { kind: 'new' }, { kind: 'folder', path: '/etc' }]) {
+      await expect(invoke('workspace.shareToServer', { ...base, target })).resolves.toMatchObject({
+        ok: false,
+        error: { code: 'ipc-invalid-request' },
+      });
+    }
+    expect(service.shareToServer).not.toHaveBeenCalled();
+  });
+
+  it('a refusal from main crosses as its own code and message', async () => {
+    const message = 'You have viewer access to the server copy. Remove this local copy, then open it again.';
+    service.shareToServer.mockRejectedValueOnce(new WirebenchError('sync-reconnect-viewer', message));
+    await expect(
+      invoke('workspace.shareToServer', {
+        url: SERVER_URL,
+        teamId: TEAM_WORKSPACE.teamId,
+        teamName: 'Payments QA',
+        target: { kind: 'new', name: 'Team' },
+      }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'sync-reconnect-viewer', message } });
   });
 
   it('project.moveToWorkspace routes projectId and workspaceId to the service', async () => {
