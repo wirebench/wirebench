@@ -159,7 +159,8 @@ export class FakeServerBackend implements SyncBackend {
             : behind > 0
               ? 'behind'
               : 'clean';
-    return Promise.resolve({ kind: 'server', gitAvailable: false, state, ahead, behind, uncommitted });
+    // `gitAvailable` means "sync works" for a server share (server-sync assumption 6), as ServerBackend reports it.
+    return Promise.resolve({ kind: 'server', gitAvailable: true, state, ahead, behind, uncommitted });
   }
 
   fetch(): Promise<SyncStatusWire> {
