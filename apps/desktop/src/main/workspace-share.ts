@@ -2,6 +2,8 @@
  * The operations that change *where a workspace's tree lives* or *which workspace a project
  * belongs to*: share as a git repository, share to a synced folder, join from a remote or an
  * existing folder, stop sharing, and copy a project into another (closed) workspace.
+ * Wirebench Server adds a fourth kind of each: share to a team (adopting the server's id when
+ * needed), open a team workspace from its snapshot, and stop sharing — none of which runs git.
  *
  * Each is a plain function over an explicit {@link ShareDeps} handed in by `WorkspaceService`,
  * which keeps only the thin, serialised entry points (every one of these runs inside its
@@ -17,24 +19,28 @@
  */
 
 import { existsSync } from 'node:fs';
-import { cp as nodeCp, mkdir, readdir, realpath, rename as nodeRename, rm as nodeRm } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { cp as nodeCp, mkdir, readdir, readFile, realpath, rename as nodeRename, rm as nodeRm } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import {
   DEFAULT_GIT_SHARE_SETTINGS,
+  DEFAULT_SYNC_SETTINGS,
   deleteShare,
   generateId,
   isWirebenchError,
   GIT_ATTRIBUTES_FILE,
   loadLocalState,
   loadWorkspace,
+  nodeFs,
   reidentifyProject,
   saveLocalState,
   saveProject,
   saveShare,
   saveWorkspace,
+  TEAMS_ID_PATTERN,
   TREE_ITEMS,
   uniqueSlug,
   WirebenchError,
+  WorkspaceError,
   WORKSPACE_JOINING_DIR,
   WORKSPACE_MANIFEST,
   WORKSPACE_PROJECTS_DIR,
@@ -42,16 +48,35 @@ import {
   WORKSPACES_DIR,
   workspaceDir,
   workspaceProjectDir,
+  writeFileAtomic,
   assertBranchName,
   assertRemoteUrl,
   assertSafeLocalConfig,
 } from '@wirebench/engine';
-import type { FsLike, GitCli, Project, Workspace, WorkspaceShare } from '@wirebench/engine';
+import type {
+  DefaultRole,
+  FsLike,
+  GitCli,
+  Project,
+  SyncHeadResponse,
+  SyncSnapshotResponse,
+  TeamWorkspace,
+  Workspace,
+  WorkspaceShare,
+} from '@wirebench/engine';
 import type { WebContents } from 'electron';
+import type { AccountService } from './account-service.js';
 import type { RecordsReadPicks, RecordsWritePicks } from './dialog-picks.js';
+import { normalizeServerUrl } from './server-client.js';
+import type { ServerClient } from './server-client.js';
+import { withToken } from './server-token.js';
+import type { TokenSource } from './server-token.js';
 import { GIT_NOT_FOUND_ERROR } from './sync/create-backend.js';
 import { GitBackend } from './sync/git-backend.js';
+import { SERVER_STATE_DIR, ServerState, writeTreeFiles } from './sync/server-state.js';
+import type { TreeFile } from './sync/server-state.js';
 import { copyProjectPayload, isEmptyDir, requireWorkspaceId, resolveWorkspaceTree } from './workspace-files.js';
+import type { WorkspaceState } from './workspace-state.js';
 import type { WorkspaceWire } from '../shared/wire-types.js';
 
 /** The folder pickers these operations run (`native-dialogs.ts` in the app; injected in tests). */
@@ -94,6 +119,8 @@ export interface ShareDeps {
   readonly close: () => Promise<unknown>;
   /** Opens a workspace; `initialCommitMessage` is committed before sync's own first commit. */
   readonly open: (id: string, options?: { readonly initialCommitMessage?: string }) => Promise<WorkspaceWire>;
+  /** Wirebench Server's client, tokens and the workspace state; absent where no server flow can run. */
+  readonly server?: ServerShareServices;
 }
 
 /** The open workspace as these operations see it. */
@@ -235,6 +262,21 @@ function refuseLinked(workspace: Workspace): void {
   }
 }
 
+/**
+ * Stopping a git share leaves `tree/.git` behind for the user. Sharing on top of it would inherit
+ * that repository's branch, origin and history (git), or fail the first push (server, R12), so it
+ * is refused while nothing has moved yet.
+ */
+function refuseGitLeftover(tree: string, workspaceId: string): void {
+  if (existsSync(join(tree, '.git'))) {
+    throw new WirebenchError(
+      'workspace-git-leftover',
+      'This workspace still has the git folder from when it was last shared. Delete tree/.git to share it again.',
+      { details: { workspaceId } },
+    );
+  }
+}
+
 async function requireGit(deps: ShareDeps): Promise<GitCli> {
   const git = await deps.git();
   if (git === undefined) {
@@ -243,7 +285,7 @@ async function requireGit(deps: ShareDeps): Promise<GitCli> {
   return git;
 }
 
-function alreadyPresent(workspace: Workspace): WirebenchError {
+function alreadyPresent(workspace: Pick<Workspace, 'id' | 'name'>): WirebenchError {
   return new WirebenchError('workspace-already-present', `"${workspace.name}" is already on this machine.`, {
     details: { workspaceId: workspace.id },
   });
@@ -321,15 +363,7 @@ export async function shareAsGit(
   const { dir } = info;
   const { id, name } = info.workspace;
   const tree = join(dir, WORKSPACE_TREE_DIR);
-  // Stopping a share leaves `tree/.git` behind for the user. Sharing on top of it would inherit
-  // that repository's branch, origin and history, so it is refused while nothing has moved yet.
-  if (existsSync(join(tree, '.git'))) {
-    throw new WirebenchError(
-      'workspace-git-leftover',
-      'This workspace still has the git folder from when it was last shared. Delete tree/.git to share it again.',
-      { details: { workspaceId: id } },
-    );
-  }
+  refuseGitLeftover(tree, id);
   const treeExisted = existsSync(tree);
   const attributesExisted = existsSync(join(tree, GIT_ATTRIBUTES_FILE));
 
@@ -533,7 +567,8 @@ export async function joinFromFolder(
  * Makes the open shared workspace local again. A managed tree (`<dir>/tree`) moves back up to
  * `<dir>`, leaving `tree/.git` for the user to delete; an external tree is *copied* back and the
  * external folder (and its `.git`) is left exactly as it was. `share.yaml` is deleted last, and
- * everything before that is undone on failure.
+ * everything before that is undone on failure. A server share also loses its `server/` state (base
+ * and pending commits); the server copy is never touched (server-sync §3.4).
  */
 export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Promise<WorkspaceWire> {
   const { share, dir, tree } = info;
@@ -583,6 +618,12 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
     }
     await deleteShare(dir, deps.fsOption);
     shareDeleted = true;
+    if (share.kind === 'server') {
+      // The base and pending commits belonged to the share that just ended; the server copy is
+      // untouched (§3.4) and sharing again starts from a fresh, empty base (O2). The workspace is
+      // already local here, so a `server/` that will not go is inert rather than a failure.
+      await deps.files.rm(join(dir, SERVER_STATE_DIR), { recursive: true, force: true }).catch(() => undefined);
+    }
     return await deps.open(id);
   } catch (error) {
     // Without `share.yaml` and with the manifest gone back, `<id>` would vanish from the list and
@@ -604,6 +645,527 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
     await deps.open(id).catch(() => undefined);
     throw error;
   }
+}
+
+// ——— Wirebench Server ———————————————————————————————————————————————————————————————————
+
+/** What the server flows need besides {@link ShareDeps}' filesystem half (server-sync §3.4, §5.3). */
+export interface ServerShareServices {
+  readonly client: Pick<ServerClient, 'meta' | 'createWorkspace' | 'listWorkspaces' | 'syncHead' | 'syncSnapshot'>;
+  /** Tokens for `withToken`; `list` finds the account whose name and email seed the local identity. */
+  readonly accounts: TokenSource & Pick<AccountService, 'list'>;
+  /** Adoption moves the old id's last-opened entries to the new id. */
+  readonly state: Pick<WorkspaceState, 'rename'>;
+}
+
+/** Where *Share this workspace… → Wirebench Server* puts the workspace (§3.4 step 2, O1, O3). */
+export type ServerShareTarget =
+  | { readonly kind: 'new'; readonly name: string; readonly defaultRole?: DefaultRole }
+  | { readonly kind: 'existing'; readonly workspaceId: string };
+
+/** {@link shareToServer}'s request: the dialog's server, team and target. */
+export interface ServerShareRequest {
+  readonly url: string;
+  readonly teamId: string;
+  /** Display only, kept in `share.yaml`; an existing target's own team name wins. */
+  readonly teamName: string;
+  readonly target: ServerShareTarget;
+}
+
+/** A row of *Open a team workspace…*: the server it lives on, and the workspace. */
+export interface OpenableTeamWorkspace {
+  readonly url: string;
+  readonly workspace: TeamWorkspace;
+}
+
+/** What `GET /api/v1/meta` lists when the server runs the `server-sync` module (§3.2). */
+const SYNC_CAPABILITY = 'sync';
+
+function hasCode(error: unknown, code: string): boolean {
+  return isWirebenchError(error) && error.code === code;
+}
+
+function requireServer(deps: ShareDeps): ServerShareServices {
+  if (deps.server === undefined) {
+    throw new WirebenchError('internal', 'Sharing with Wirebench Server is not available here.');
+  }
+  return deps.server;
+}
+
+/**
+ * Server workspace ids are ULIDs (`TEAMS_ID_PATTERN`), and one becomes a folder name here, so an id
+ * from the renderer is checked before it reaches `join`.
+ *
+ * @throws WorkspaceError `workspace-path-invalid`.
+ */
+function requireServerWorkspaceId(id: string): string {
+  requireWorkspaceId(id);
+  if (!TEAMS_ID_PATTERN.test(id)) {
+    throw new WorkspaceError('workspace-path-invalid', `Not a server workspace id: ${JSON.stringify(id)}`, {
+      details: { workspaceId: id },
+    });
+  }
+  return id;
+}
+
+/**
+ * Refuses before anything moves when there is no token for `url`. `withToken` would refuse too, but
+ * only at the first call, after the tree had moved.
+ */
+async function requireSignedIn(server: ServerShareServices, url: string): Promise<void> {
+  if ((await server.accounts.tokenFor(url)) === undefined) {
+    throw new WirebenchError('account-signed-out', `Sign in to ${url} first.`);
+  }
+}
+
+/**
+ * The signed-in account's name and email, for the local commit identity. Per §3.1 it defaults to
+ * the account's. The server ignores it: commits are attributed to the token's user.
+ */
+function accountIdentity(
+  server: ServerShareServices,
+  url: string,
+): { readonly identity?: { readonly name: string; readonly email: string } } {
+  const account = server.accounts.list().find((candidate) => normalizeServerUrl(candidate.url) === url);
+  return account !== undefined ? { identity: { name: account.displayName, email: account.email } } : {};
+}
+
+/**
+ * Throws `sync-not-supported-by-server` unless `GET /meta` lists `sync` (R12). An older server
+ * would otherwise answer the first sync call with a bare `404`.
+ */
+export async function requireSyncCapability(deps: ShareDeps, url: string): Promise<void> {
+  const server = requireServer(deps);
+  const meta = await server.client.meta(normalizeServerUrl(url));
+  if (!meta.capabilities.includes(SYNC_CAPABILITY)) {
+    throw new WirebenchError('sync-not-supported-by-server', 'This server is too old to sync workspaces.', {
+      details: { url },
+    });
+  }
+}
+
+/** `workspaceId` as the caller's `GET /workspaces` lists it. @throws `teams-workspace-not-found`. */
+async function findTeamWorkspace(
+  server: ServerShareServices,
+  url: string,
+  workspaceId: string,
+): Promise<TeamWorkspace> {
+  const rows = await withToken(server, url, (origin, token) => server.client.listWorkspaces(origin, token));
+  const row = rows.find((candidate) => candidate.id === workspaceId);
+  if (row === undefined) {
+    throw new WirebenchError(
+      'teams-workspace-not-found',
+      'That workspace no longer exists, or you no longer have access to it.',
+      { details: { workspaceId } },
+    );
+  }
+  return row;
+}
+
+/** A row's head, or `undefined` when the row vanished (or access went) between the list and this call. */
+async function headOrGone(
+  client: ServerShareServices['client'],
+  origin: string,
+  token: string,
+  workspaceId: string,
+): Promise<SyncHeadResponse | undefined> {
+  try {
+    return await client.syncHead(origin, token, workspaceId);
+  } catch (error) {
+    if (hasCode(error, 'teams-workspace-not-found')) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The existing target of an O1 share, checked again at share time. It must still be empty (the
+ * dialog listed it as empty), and the caller must still be able to edit it.
+ */
+async function requireEmptyTarget(
+  server: ServerShareServices,
+  url: string,
+  workspaceId: string,
+): Promise<TeamWorkspace> {
+  const row = await findTeamWorkspace(server, url, workspaceId);
+  if (row.myRole === 'viewer') {
+    throw new WirebenchError(
+      'sync-forbidden',
+      'You have viewer access in that workspace, so you cannot share into it.',
+      { details: { workspaceId } },
+    );
+  }
+  const { head } = await withToken(server, url, (origin, token) => server.client.syncHead(origin, token, workspaceId));
+  if (head !== null) {
+    throw new WirebenchError(
+      'sync-target-not-empty',
+      'Someone shared into that workspace a moment ago. Choose another one, or open it with Open a team workspace…',
+      { details: { workspaceId } },
+    );
+  }
+  return row;
+}
+
+/**
+ * Creates the server workspace for a new share (§3.4 step 6), or finds that this id is already
+ * there and decides the reconnect (O2):
+ * - editor or admin → go on without creating, with any head (a `null` one is a plain share);
+ * - viewer → `sync-reconnect-viewer`;
+ * - no access (the head answers `404`) → `sync-workspace-exists-elsewhere`.
+ */
+async function createOrReconnect(
+  server: ServerShareServices,
+  url: string,
+  teamId: string,
+  body: { readonly id: string; readonly name: string; readonly defaultRole?: DefaultRole },
+): Promise<void> {
+  try {
+    await withToken(server, url, (origin, token) => server.client.createWorkspace(origin, token, teamId, body));
+    return;
+  } catch (error) {
+    if (hasCode(error, 'teams-workspace-name-taken')) {
+      throw new WirebenchError(
+        'teams-workspace-name-taken',
+        'A workspace with that name already exists in this team.',
+        { details: { teamId } },
+      );
+    }
+    if (!hasCode(error, 'teams-workspace-exists')) {
+      throw error;
+    }
+  }
+  let found: SyncHeadResponse;
+  try {
+    found = await withToken(server, url, (origin, token) => server.client.syncHead(origin, token, body.id));
+  } catch (error) {
+    if (hasCode(error, 'teams-workspace-not-found')) {
+      throw new WirebenchError(
+        'sync-workspace-exists-elsewhere',
+        'A workspace with this id exists on the server and you have no access to it.',
+        { details: { workspaceId: body.id } },
+      );
+    }
+    throw error;
+  }
+  if (found.role === 'viewer') {
+    throw new WirebenchError(
+      'sync-reconnect-viewer',
+      'You have viewer access to the server copy. Remove this local copy, then open it with Open a team workspace…',
+      { details: { workspaceId: body.id } },
+    );
+  }
+}
+
+/**
+ * Adoption (§3.4 step 4, O1, R10):
+ * - `<workspaces>/<from>` becomes `<workspaces>/<to>`;
+ * - the manifest's `id` is rewritten, and its `name` too when given;
+ * - the workspace state's entries move to the new id.
+ *
+ * Secrets and history are keyed by project id, so nothing else follows. `undo` puts every one of
+ * those back, restoring the manifest byte for byte. Call it once whatever the caller put inside the
+ * renamed folder has been moved back out.
+ */
+async function adopt(
+  deps: ShareDeps,
+  server: ServerShareServices,
+  dir: string,
+  target: { readonly id: string; readonly name?: string },
+): Promise<{ readonly dir: string; readonly undo: () => Promise<void> }> {
+  const toId = requireWorkspaceId(target.id);
+  const fromId = basename(dir);
+  const { share } = await resolveWorkspaceTree(dir, deps.fsOption);
+  if (share !== undefined) {
+    throw new WirebenchError('workspace-already-shared', 'Only a local workspace can take a server workspace’s id.', {
+      details: { workspaceId: fromId },
+    });
+  }
+  const { workspace, legacy } = await loadWorkspace(dir, deps.fsOption);
+  const toDir = workspaceDir(deps.userDataDir, toId);
+  if (existsSync(toDir)) {
+    throw alreadyPresent({ id: toId, name: target.name ?? workspace.name });
+  }
+  const manifest = await readFile(join(dir, WORKSPACE_MANIFEST));
+  await deps.files.rename(dir, toDir);
+  const undo = async (): Promise<void> => {
+    await writeFileAtomic(deps.fsOption?.fs ?? nodeFs, join(toDir, WORKSPACE_MANIFEST), manifest);
+    await deps.files.rename(toDir, dir);
+    await server.state.rename(toId, fromId);
+  };
+  try {
+    await keepLegacyActiveEnvironment(toDir, workspace, legacy, deps.fsOption);
+    await saveWorkspace(
+      { ...workspace, id: toId, ...(target.name !== undefined ? { name: target.name } : {}) },
+      toDir,
+      deps.fsOption,
+    );
+    await server.state.rename(fromId, toId);
+  } catch (error) {
+    await undo().catch(() => undefined);
+    throw error;
+  }
+  return { dir: toDir, undo };
+}
+
+/**
+ * Renames `<userData>/workspaces/<old>` to `<new>`, rewrites `workspace.yaml`'s id (and name) and
+ * moves the workspace state's entries (§3.4 step 4). The workspace must be closed and local.
+ *
+ * @returns the new workspace folder.
+ */
+export async function adoptWorkspaceId(
+  deps: ShareDeps,
+  dir: string,
+  target: { readonly id: string; readonly name?: string },
+): Promise<string> {
+  return (await adopt(deps, requireServer(deps), dir, target)).dir;
+}
+
+async function rollBackServerShare(
+  deps: ShareDeps,
+  state: {
+    readonly dir: string;
+    readonly moved: readonly string[];
+    readonly treeExisted: boolean;
+    readonly undoAdoption: (() => Promise<void>) | undefined;
+  },
+): Promise<void> {
+  const { dir } = state;
+  const tree = join(dir, WORKSPACE_TREE_DIR);
+  await deleteShare(dir, deps.fsOption).catch(() => undefined);
+  // Stopping a share deletes `server/`, so any here is this call's (or an ended share's inert leftover).
+  await deps.files.rm(join(dir, SERVER_STATE_DIR), { recursive: true, force: true });
+  await moveTreeItemsBack(deps.files, dir, tree, state.moved);
+  if (!state.treeExisted) {
+    await deps.files.rm(tree, { recursive: true, force: true });
+  }
+  await state.undoAdoption?.();
+}
+
+/**
+ * Shares the open local workspace to a Wirebench Server team (server-sync §3.4). In order, it:
+ * 1. refuses early;
+ * 2. adopts an id: the target's id and name for an existing empty workspace (O1), or a fresh ULID
+ *    when the manifest id is not one (R10);
+ * 3. moves the tree into `<id>/tree`, and writes an empty base and `share.yaml`;
+ * 4. creates the server workspace for a new target, or reconnects to it (O2);
+ * 5. reopens with `Share workspace <name>` as the first commit.
+ *
+ * The catch-up push is the caller's, after the queued operation (as for {@link shareAsGit}).
+ * Every step before the reopen is undone on failure, adoption included, and the workspace reopens
+ * as it was.
+ */
+export async function shareToServer(
+  deps: ShareDeps,
+  info: OpenWorkspaceInfo,
+  request: ServerShareRequest,
+): Promise<WorkspaceWire> {
+  const server = requireServer(deps);
+  requireLocal(info);
+  refuseLinked(info.workspace);
+  refuseGitLeftover(join(info.dir, WORKSPACE_TREE_DIR), info.workspace.id);
+  const url = normalizeServerUrl(request.url);
+  await requireSyncCapability(deps, url);
+  await requireSignedIn(server, url);
+
+  const { target } = request;
+  let adoption: { readonly id: string; readonly name?: string } | undefined;
+  let create: { readonly name: string; readonly defaultRole?: DefaultRole } | undefined;
+  let teamName = request.teamName;
+  if (target.kind === 'existing') {
+    const row = await requireEmptyTarget(server, url, requireServerWorkspaceId(target.workspaceId));
+    teamName = row.teamName;
+    if (row.id !== info.workspace.id) {
+      adoption = { id: row.id, name: row.name };
+    }
+  } else {
+    const name = target.name.trim();
+    if (name.length === 0) {
+      throw new WirebenchError('teams-name-invalid', 'Enter a name for the team workspace.');
+    }
+    create = { name, ...(target.defaultRole !== undefined ? { defaultRole: target.defaultRole } : {}) };
+    if (!TEAMS_ID_PATTERN.test(info.workspace.id)) {
+      adoption = { id: generateId() };
+    }
+  }
+  if (adoption !== undefined && existsSync(workspaceDir(deps.userDataDir, adoption.id))) {
+    throw alreadyPresent({ id: adoption.id, name: adoption.name ?? info.workspace.name });
+  }
+  const id = adoption?.id ?? info.workspace.id;
+  const name = adoption?.name ?? info.workspace.name;
+
+  await deps.close();
+  let dir = info.dir;
+  let undoAdoption: (() => Promise<void>) | undefined;
+  const moved: string[] = [];
+  let treeExisted = true;
+  try {
+    if (adoption !== undefined) {
+      ({ dir, undo: undoAdoption } = await adopt(deps, server, info.dir, adoption));
+    }
+    const tree = join(dir, WORKSPACE_TREE_DIR);
+    treeExisted = existsSync(tree);
+    await mkdir(tree, { recursive: true });
+    await moveTreeItems(deps.files, dir, tree, moved);
+    const state = await ServerState.initialize(join(dir, SERVER_STATE_DIR), null, new Map<string, TreeFile>());
+    await state.update(accountIdentity(server, url));
+    await saveShare(
+      dir,
+      { version: 1, kind: 'server', server: { ...DEFAULT_SYNC_SETTINGS, url, workspaceId: id, teamName } },
+      deps.fsOption,
+    );
+    if (create !== undefined) {
+      await createOrReconnect(server, url, request.teamId, { id, ...create });
+    }
+  } catch (error) {
+    await rollBackServerShare(deps, { dir, moved, treeExisted, undoAdoption }).catch(() => undefined);
+    await deps.open(info.workspace.id).catch(() => undefined);
+    throw error;
+  }
+  return await deps.open(id, { initialCommitMessage: `Share workspace ${name}` });
+}
+
+/**
+ * *Open a team workspace…* (§3.4). It downloads the snapshot into `<workspaces>/.joining/<ulid>`
+ * (the staging directory the git join uses, swept at launch), and checks that the manifest id is
+ * the server's. It then renames the snapshot to `<id>/tree`, and writes the base at the head, the
+ * caller's role and `share.yaml`. A refusal or a failure leaves nothing behind.
+ */
+export async function joinFromServer(
+  deps: ShareDeps,
+  request: { readonly url: string; readonly workspaceId: string },
+): Promise<WorkspaceWire> {
+  const server = requireServer(deps);
+  const url = normalizeServerUrl(request.url);
+  const workspaceId = requireServerWorkspaceId(request.workspaceId);
+  await requireSyncCapability(deps, url);
+  const row = await findTeamWorkspace(server, url, workspaceId);
+  await deps.ready;
+  const joiningRoot = join(deps.userDataDir, WORKSPACES_DIR, WORKSPACE_JOINING_DIR);
+  await mkdir(joiningRoot, { recursive: true });
+  const joining = join(joiningRoot, generateId());
+
+  let snapshot: SyncSnapshotResponse;
+  let files: Map<string, TreeFile>;
+  try {
+    snapshot = await withToken(server, url, (origin, token) => server.client.syncSnapshot(origin, token, workspaceId));
+    if (snapshot.head === null) {
+      throw new WirebenchError(
+        'workspace-not-found',
+        'This team workspace is still empty. Once an editor shares a workspace into it, it can be opened.',
+        { details: { workspaceId } },
+      );
+    }
+    files = new Map(
+      snapshot.files.map((file): [string, TreeFile] => [file.path, { encoding: file.encoding, content: file.content }]),
+    );
+    await mkdir(joining, { recursive: true });
+    // Validates every path (assertTreePath) before writing: the snapshot is the server's word.
+    await writeTreeFiles(joining, files);
+    const { workspace } = await loadWorkspace(joining, deps.fsOption);
+    if (requireWorkspaceId(workspace.id) !== workspaceId) {
+      throw new WirebenchError(
+        'sync-workspace-id-mismatch',
+        'The workspace on the server carries a different id in its workspace.yaml, so it cannot be opened here.',
+        { details: { workspaceId, manifestId: workspace.id } },
+      );
+    }
+    if (existsSync(workspaceDir(deps.userDataDir, workspaceId))) {
+      throw alreadyPresent(workspace);
+    }
+  } catch (error) {
+    await deps.files.rm(joining, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+
+  const dir = workspaceDir(deps.userDataDir, workspaceId);
+  try {
+    await mkdir(dir, { recursive: true });
+    await deps.files.rename(joining, join(dir, WORKSPACE_TREE_DIR));
+    const state = await ServerState.initialize(join(dir, SERVER_STATE_DIR), snapshot.head, files);
+    await state.update({ role: row.myRole, ...accountIdentity(server, url) });
+    await saveShare(
+      dir,
+      {
+        version: 1,
+        kind: 'server',
+        server: { ...DEFAULT_SYNC_SETTINGS, url, workspaceId, teamName: row.teamName },
+      },
+      deps.fsOption,
+    );
+  } catch (error) {
+    // `dir` did not exist a moment ago: everything in it is this call's.
+    await deps.files.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    await deps.files.rm(joining, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  return await deps.open(workspaceId);
+}
+
+/**
+ * The share dialog's *existing empty workspace* choices (O1): the team's workspaces the caller can
+ * edit whose head is `null`, one `GET /sync/head` per row, in parallel. A row that vanishes between
+ * the list and its head is dropped.
+ */
+export async function serverShareTargets(
+  deps: ShareDeps,
+  request: { readonly url: string; readonly teamId: string },
+): Promise<TeamWorkspace[]> {
+  const server = requireServer(deps);
+  const url = normalizeServerUrl(request.url);
+  await requireSyncCapability(deps, url);
+  return await withToken(server, url, async (origin, token) => {
+    const rows = (await server.client.listWorkspaces(origin, token)).filter(
+      (row) => row.teamId === request.teamId && row.myRole !== 'viewer',
+    );
+    const heads = await Promise.all(rows.map((row) => headOrGone(server.client, origin, token, row.id)));
+    return rows.filter((_row, index) => heads[index]?.head === null);
+  });
+}
+
+/**
+ * *Open a team workspace…*'s rows: the workspaces that have a head, on every server in `servers`
+ * (empty ones stay hidden, O1). They are sorted by team, then by name.
+ *
+ * Failures are handled per server:
+ * - a server that fails (unreachable, signed out, too old) is skipped while another one answers;
+ * - when nothing was found and a server failed, that failure is the answer.
+ */
+export async function openableTeamWorkspaces(
+  deps: ShareDeps,
+  servers: readonly string[],
+): Promise<OpenableTeamWorkspace[]> {
+  if (servers.length === 0) {
+    return [];
+  }
+  const server = requireServer(deps);
+  const settled = await Promise.allSettled(
+    servers.map(async (raw) => {
+      const url = normalizeServerUrl(raw);
+      await requireSyncCapability(deps, url);
+      return await withToken(server, url, async (origin, token) => {
+        const rows = await server.client.listWorkspaces(origin, token);
+        const heads = await Promise.all(rows.map((row) => headOrGone(server.client, origin, token, row.id)));
+        return rows
+          .filter((_row, index) => {
+            const found = heads[index];
+            return found !== undefined && found.head !== null;
+          })
+          .map((workspace): OpenableTeamWorkspace => ({ url, workspace }));
+      });
+    }),
+  );
+  const found = settled.flatMap((result) => (result.status === 'fulfilled' ? result.value : []));
+  const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (found.length === 0 && failed !== undefined) {
+    throw failed.reason;
+  }
+  return found.sort(
+    (left, right) =>
+      left.workspace.teamName.localeCompare(right.workspace.teamName) ||
+      left.workspace.name.localeCompare(right.workspace.name),
+  );
 }
 
 // ——— move project to workspace ——————————————————————————————————————————————————————————

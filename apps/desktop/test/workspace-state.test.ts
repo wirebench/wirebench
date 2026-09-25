@@ -80,4 +80,31 @@ describe('WorkspaceState', () => {
     expect((await readdir(root)).filter((name) => name.includes('.tmp-'))).toEqual([]);
     expect(JSON.parse(await readFile(stateFile(), 'utf8'))).toMatchObject({ lastOpenedWorkspaceId: 'ws-a' });
   });
+
+  it('renames a workspace: its stamp and its place as the last opened one move to the new id', async () => {
+    const state = new WorkspaceState(root);
+    await state.remember('ws-a', '2026-09-11T10:00:00.000Z');
+    await state.remember('ws-b', '2026-09-11T11:00:00.000Z');
+
+    await state.rename('ws-b', 'ws-c');
+
+    expect(await state.read()).toEqual({
+      version: 1,
+      lastOpenedWorkspaceId: 'ws-c',
+      lastOpenedAt: { 'ws-a': '2026-09-11T10:00:00.000Z', 'ws-c': '2026-09-11T11:00:00.000Z' },
+    });
+  });
+
+  it('renaming an id it never saw changes nothing', async () => {
+    const state = new WorkspaceState(root);
+    await state.remember('ws-a', '2026-09-11T10:00:00.000Z');
+
+    await state.rename('ws-x', 'ws-y');
+
+    expect(await state.read()).toEqual({
+      version: 1,
+      lastOpenedWorkspaceId: 'ws-a',
+      lastOpenedAt: { 'ws-a': '2026-09-11T10:00:00.000Z' },
+    });
+  });
 });

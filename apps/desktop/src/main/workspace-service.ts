@@ -61,6 +61,7 @@ import type {
   SaveResult,
   ServerAccount,
   SyncSettings,
+  TeamWorkspace,
   TlsOptions,
   Workspace,
   WorkspaceEnvironment,
@@ -99,14 +100,24 @@ import {
 import {
   copyProjectIntoWorkspace,
   joinFromFolder,
+  joinFromServer,
   joinRemote,
   keepLegacyActiveEnvironment,
   nodeFileOps,
+  openableTeamWorkspaces,
+  serverShareTargets,
   shareAsGit,
   shareToFolder,
+  shareToServer,
   stopSharing,
 } from './workspace-share.js';
-import type { ShareDeps, WorkspaceDialogs, WorkspaceFileOps } from './workspace-share.js';
+import type {
+  OpenableTeamWorkspace,
+  ServerShareRequest,
+  ShareDeps,
+  WorkspaceDialogs,
+  WorkspaceFileOps,
+} from './workspace-share.js';
 import { WorkspaceState } from './workspace-state.js';
 import { recordToFiles, UnsavedStore } from './unsaved-store.js';
 import type {
@@ -1564,6 +1575,51 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /**
+   * Shares the open local workspace to a Wirebench Server team (`workspace-share.ts`
+   * `shareToServer`, server-sync §3.4). Adoption may give the workspace a new id, so the push
+   * that follows is for the workspace the answer names.
+   *
+   * The catch-up push runs here, after the queued operation, as for a git share. A reconnect (O2)
+   * is rejected with `parent: null`, so `pushNow` pulls, merges over the empty base and retries.
+   * Any failure is already in the sync status.
+   */
+  async shareToServer(request: ServerShareRequest): Promise<WorkspaceWire> {
+    const open = this.requireOpen();
+    const wire = await this.enqueueWorkspaceOp(async () => {
+      this.requireStillOpen(open);
+      return await shareToServer(this.shareDeps(), open, request);
+    });
+    const reopened = this.current;
+    if (reopened === undefined || reopened.workspace.id !== wire.id) {
+      return wire;
+    }
+    await reopened.syncReady;
+    if (this.stale(reopened) || reopened.workspace.id !== wire.id) {
+      return wire;
+    }
+    await reopened.sync?.push().catch(() => undefined);
+    return this.current === reopened ? (this.snapshot() ?? wire) : wire;
+  }
+
+  /** Opens a team workspace from its server snapshot (`workspace-share.ts` `joinFromServer`). */
+  async joinFromServer(request: { readonly url: string; readonly workspaceId: string }): Promise<WorkspaceWire> {
+    return await this.enqueueWorkspaceOp(() => joinFromServer(this.shareDeps(), request));
+  }
+
+  /** The share dialog's *existing empty workspace* choices for one team (O1). Read-only, so not queued. */
+  async serverShareTargets(request: { readonly url: string; readonly teamId: string }): Promise<TeamWorkspace[]> {
+    return await serverShareTargets(this.shareDeps(), request);
+  }
+
+  /** *Open a team workspace…*'s rows across every signed-in server (O1). Read-only, so not queued. */
+  async openableTeamWorkspaces(): Promise<OpenableTeamWorkspace[]> {
+    const servers = (this.deps.server?.accounts.list() ?? [])
+      .filter((account) => account.signedOut !== true)
+      .map((account) => account.url);
+    return await openableTeamWorkspaces(this.shareDeps(), servers);
+  }
+
+  /**
    * Copies an open project (its current model, unsaved edits included, plus attachments and
    * definition caches) into the closed workspace `targetWorkspaceId`, then removes it from this
    * one — trashing its folder when it was internal. Ids are kept unless the target already has
@@ -1601,6 +1657,7 @@ export class WorkspaceService implements ProjectRouter {
 
   private shareDeps(): ShareDeps {
     const git = this.deps.git;
+    const server = this.deps.server;
     return {
       userDataDir: this.deps.userDataDir,
       files: this.deps.files ?? nodeFileOps,
@@ -1609,6 +1666,9 @@ export class WorkspaceService implements ProjectRouter {
       ready: this.startup,
       close: () => this.close(),
       open: (id, options) => this.openWorkspace(id, options ?? {}),
+      ...(server !== undefined
+        ? { server: { client: server.client, accounts: server.accounts, state: this.state } }
+        : {}),
     };
   }
 
