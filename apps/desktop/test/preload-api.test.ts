@@ -42,6 +42,7 @@ describe('buildApi', () => {
       'snapshot',
       'ssl',
       'sync',
+      'team',
       'theme',
       'validate',
       'workspace',

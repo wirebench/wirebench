@@ -57,6 +57,7 @@ import {
 import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
+import { registerTeamChannels } from './ipc/team.js';
 import { AccountService } from './account-service.js';
 import { ServerClient } from './server-client.js';
 import { mainHttpOptions } from './network-options.js';
@@ -388,6 +389,7 @@ void app.whenReady().then(() => {
     showSecrets: showSecretsFlag,
   });
   registerAccountChannels({ accounts: accountService });
+  registerTeamChannels({ client: serverClient, accounts: accountService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed
   // shows as signed out now rather than on the first action; no account, no call (§3.8).
