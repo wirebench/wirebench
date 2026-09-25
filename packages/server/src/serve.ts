@@ -34,7 +34,7 @@ export interface RunningServer {
   readonly app: FastifyInstance;
   readonly ctx: ServerContext;
   readonly port: number;
-  /** Stops accepting, drains in-flight requests, closes the pool. Idempotent. */
+  /** Stops accepting, drains in-flight requests and queued repository work, closes the pool. Idempotent. */
   close(): Promise<void>;
 }
 
@@ -242,6 +242,10 @@ export async function startServer(
         clearTimeout(timer);
         for (const name of SIGNALS) signals.off(name, onSignal);
       }
+      // Sync spec R11: a handler whose connection the deadline dropped still finishes its repository
+      // work (a push looks up its author and writes commits), so the pool outlives that work. From
+      // here on, new repository work is refused with server-shutting-down.
+      await repos.drain();
       await db.close();
     })();
     return closing;

@@ -8,7 +8,9 @@
  *   (`<tree>/.git` exists) and git is found.
  * - Before either becomes a `GitBackend`, the repository's local config is checked
  *   (`assertSafeLocalConfig`); a refused key leaves a `FolderBackend` reporting `git-config-refused`.
- * - `server` → a `FolderBackend` placeholder reporting `kind: 'server'` until spec 2's backend.
+ * - `server` → a `ServerBackend` (server-sync §3.1) over the app's `ServerClient` and accounts,
+ *   keeping its state in `<dir>/server`. It runs no git. Without those services a `FolderBackend`
+ *   reports `kind: 'server'` with `sync-not-supported`, and the workspace still opens on its files.
  *
  * Electron-free, like everything under `sync/`.
  */
@@ -17,9 +19,24 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GitCli, GitShareSettings, WorkspaceShare } from '@wirebench/engine';
 import { WirebenchError, assertSafeLocalConfig } from '@wirebench/engine';
+import type { ServerClient } from '../server-client.js';
+import type { AccountService } from '../account-service.js';
+import type { TokenSource } from '../server-token.js';
 import type { SyncBackend } from './backend.js';
 import { FolderBackend } from './folder-backend.js';
 import { GitBackend } from './git-backend.js';
+import { ServerBackend } from './server-backend.js';
+import { SERVER_STATE_DIR, ServerState } from './server-state.js';
+
+/**
+ * What a server share's backend talks through: the app's one client, and the accounts' tokens (§5.3).
+ * `list` finds the signed-in account for the share's URL, whose name and email are the default commit
+ * identity (§3.1), so a signed-in user is never asked for one.
+ */
+export interface ServerSyncServices {
+  readonly client: ServerClient;
+  readonly accounts: TokenSource & Pick<AccountService, 'list'>;
+}
 
 export interface CreateSyncBackendOptions {
   readonly share: WorkspaceShare;
@@ -27,9 +44,14 @@ export interface CreateSyncBackendOptions {
   readonly tree: string;
   /** Finds git; `undefined` (or a rejection) means none is available. */
   readonly git: (() => Promise<GitCli | undefined>) | undefined;
+  /** A git share's settings, read by `GitBackend` (branch and remote). */
   readonly settings: () => GitShareSettings;
   /** Test seam for the `<tree>/.git` check. */
   readonly exists?: (path: string) => boolean;
+  /** The client and accounts a `server` share syncs through; omitted where no server share can sync. */
+  readonly server?: ServerSyncServices;
+  /** `<userData>/workspaces/<id>`: a `server` share keeps its state in `<dir>/server`. Required for kind `server`. */
+  readonly dir?: string;
 }
 
 /** The status error a git share reports when no git executable could be found. */
@@ -38,11 +60,36 @@ export const GIT_NOT_FOUND_ERROR = {
   message: 'git was not found on this machine. Install git, or choose it in Settings.',
 } as const;
 
+/** The status error a server share reports when it was opened without the server services to sync it. */
+export const SERVER_SYNC_UNAVAILABLE_ERROR = {
+  code: 'sync-not-supported',
+  message: 'Syncing with Wirebench Server is not available here.',
+} as const;
+
 export async function createSyncBackend(options: CreateSyncBackendOptions): Promise<SyncBackend> {
   const { share, tree, settings } = options;
   switch (share.kind) {
-    case 'server':
-      return new FolderBackend({ statusKind: 'server' });
+    case 'server': {
+      const { server, dir } = options;
+      if (server === undefined || dir === undefined || share.server === undefined) {
+        return new FolderBackend({ statusKind: 'server', error: SERVER_SYNC_UNAVAILABLE_ERROR });
+      }
+      const { url, workspaceId } = share.server;
+      return new ServerBackend({
+        client: server.client,
+        accounts: server.accounts,
+        url,
+        workspaceId,
+        tree,
+        state: new ServerState(join(dir, SERVER_STATE_DIR)),
+        defaultIdentity: () => {
+          const account = server.accounts
+            .list()
+            .find((candidate) => candidate.url === url && candidate.signedOut !== true);
+          return account === undefined ? undefined : { name: account.displayName, email: account.email };
+        },
+      });
+    }
     case 'folder': {
       const exists = options.exists ?? existsSync;
       if (!exists(join(tree, '.git'))) {

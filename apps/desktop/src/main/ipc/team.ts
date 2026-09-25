@@ -4,10 +4,9 @@
  * server that answers `identity-unauthenticated` marks the account signed out, the rule
  * `AccountService.refresh` applies at launch; the token never crosses the bridge.
  */
-import { WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
-import type { AccountService } from '../account-service.js';
-import { normalizeServerUrl, type ServerClient } from '../server-client.js';
+import type { ServerClient } from '../server-client.js';
+import { withToken, type TokenSource } from '../server-token.js';
 import { registerHandler } from './register.js';
 
 export interface TeamChannelDeps {
@@ -33,25 +32,7 @@ export interface TeamChannelDeps {
     | 'setAccess'
     | 'clearAccess'
   >;
-  readonly accounts: Pick<AccountService, 'tokenFor' | 'markSignedOut'>;
-}
-
-/** Runs `call` with the token for `url`'s origin. No token, or one the server rejects, reads as signed out. */
-export async function withToken<T>(
-  deps: TeamChannelDeps,
-  url: string,
-  call: (origin: string, token: string) => Promise<T>,
-): Promise<T> {
-  const origin = normalizeServerUrl(url);
-  const token = await deps.accounts.tokenFor(origin);
-  if (token === undefined) throw new WirebenchError('account-signed-out', `Sign in to ${origin} first.`);
-  try {
-    return await call(origin, token);
-  } catch (error) {
-    if (error instanceof WirebenchError && error.code === 'identity-unauthenticated')
-      deps.accounts.markSignedOut(origin);
-    throw error;
-  }
+  readonly accounts: TokenSource;
 }
 
 const DONE = { done: true } as const;

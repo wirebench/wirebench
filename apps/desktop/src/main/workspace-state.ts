@@ -122,4 +122,22 @@ export class WorkspaceState {
       };
     });
   }
+
+  /**
+   * Moves `oldId`'s traces to `newId`. Adoption (server-sync §3.4) renames a workspace's folder,
+   * and the picker's sort order and `openLast()` must follow it. An id this file never saw changes
+   * nothing.
+   */
+  async rename(oldId: string, newId: string): Promise<void> {
+    await this.update((state) => {
+      const stamp = state.lastOpenedAt[oldId];
+      const rest = Object.fromEntries(Object.entries(state.lastOpenedAt).filter(([id]) => id !== oldId));
+      const last = state.lastOpenedWorkspaceId === oldId ? newId : state.lastOpenedWorkspaceId;
+      return {
+        version: WORKSPACE_STATE_VERSION,
+        ...(last !== undefined ? { lastOpenedWorkspaceId: last } : {}),
+        lastOpenedAt: stamp !== undefined ? { ...rest, [newId]: stamp } : rest,
+      };
+    });
+  }
 }

@@ -1,10 +1,16 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_GIT_SHARE_SETTINGS, GitCli } from '@wirebench/engine';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_GIT_SHARE_SETTINGS, DEFAULT_SYNC_SETTINGS, GitCli } from '@wirebench/engine';
 import type { Runner, WorkspaceShare } from '@wirebench/engine';
+import { ServerClient } from '../../src/main/server-client.js';
 import { createSyncBackend } from '../../src/main/sync/create-backend.js';
 import { FolderBackend } from '../../src/main/sync/folder-backend.js';
 import { GitBackend } from '../../src/main/sync/git-backend.js';
+import { ServerBackend } from '../../src/main/sync/server-backend.js';
+import { SERVER_STATE_DIR, ServerState } from '../../src/main/sync/server-state.js';
 
 /**
  * A `GitCli` whose local-config listing answers `names` (newline-separated here, NUL-terminated on
@@ -41,6 +47,12 @@ const git = gitWithLocalConfig('core.bare\ncore.filemode\nremote.origin.url\n');
 const settings = (): typeof DEFAULT_GIT_SHARE_SETTINGS => DEFAULT_GIT_SHARE_SETTINGS;
 const gitShare: WorkspaceShare = { version: 1, kind: 'git', git: DEFAULT_GIT_SHARE_SETTINGS };
 const folderShare: WorkspaceShare = { version: 1, kind: 'folder', path: '/shared/team' };
+
+const serverShare: WorkspaceShare = {
+  version: 1,
+  kind: 'server',
+  server: { ...DEFAULT_SYNC_SETTINGS, url: 'https://sync.example.test', workspaceId: '01J8Z0000000000000000000AB' },
+};
 
 describe('createSyncBackend', () => {
   it('a git share with git found is a GitBackend', async () => {
@@ -144,14 +156,97 @@ describe('createSyncBackend', () => {
     });
   });
 
-  it('a server share is a FolderBackend placeholder reporting kind server', async () => {
-    const backend = await createSyncBackend({
-      share: { version: 1, kind: 'server', server: { url: 'https://sync.example.test', workspaceId: 'w1' } },
-      tree: '/t',
-      git: undefined,
-      settings,
-    });
-    expect(backend).toBeInstanceOf(FolderBackend);
-    await expect(backend.probe()).resolves.toMatchObject({ kind: 'server', gitAvailable: false, state: 'clean' });
+  it('a server share without the server services, or without its dir, reports sync-not-supported', async () => {
+    const services = {
+      client: new ServerClient({ send: () => Promise.reject(new Error('no network here')) }),
+      accounts: { tokenFor: () => Promise.resolve('t0k'), markSignedOut: () => undefined, list: () => [] },
+    };
+    for (const extra of [{}, { server: services }, { dir: '/w' }]) {
+      const backend = await createSyncBackend({ share: serverShare, tree: '/t', git: undefined, settings, ...extra });
+      expect(backend).toBeInstanceOf(FolderBackend);
+      await expect(backend.probe()).resolves.toMatchObject({
+        kind: 'server',
+        gitAvailable: false,
+        state: 'error',
+        error: { code: 'sync-not-supported' },
+      });
+    }
+  });
+
+  it('a server share is a ServerBackend keeping its state in <dir>/server, built without a network call', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wirebench-create-backend-'));
+    try {
+      const tree = join(dir, 'tree');
+      await mkdir(tree, { recursive: true });
+      await ServerState.initialize(join(dir, SERVER_STATE_DIR), null, new Map());
+      const send = vi.fn(() => Promise.reject(new Error('no network in this test')));
+      const tokenFor = vi.fn(() => Promise.resolve('t0k'));
+
+      const backend = await createSyncBackend({
+        share: serverShare,
+        tree,
+        git: undefined,
+        settings,
+        dir,
+        server: {
+          client: new ServerClient({ send }),
+          accounts: { tokenFor, markSignedOut: () => undefined, list: () => [] },
+        },
+      });
+
+      expect(backend).toBeInstanceOf(ServerBackend);
+      expect(backend.kind).toBe('server');
+      // `probe` is local (§3.1): it reads the state initialised above, so this also proves the dir.
+      await expect(backend.probe()).resolves.toMatchObject({
+        kind: 'server',
+        gitAvailable: true,
+        state: 'clean',
+        ahead: 0,
+        uncommitted: 0,
+        remote: 'https://sync.example.test',
+      });
+      expect(send).not.toHaveBeenCalled();
+      expect(tokenFor).not.toHaveBeenCalled();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the default identity is the signed-in account for the URL, never one marked signed out', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wirebench-create-backend-'));
+    try {
+      await mkdir(join(dir, 'tree'), { recursive: true });
+      await ServerState.initialize(join(dir, SERVER_STATE_DIR), null, new Map());
+      const account = {
+        url: 'https://sync.example.test',
+        userId: '01J8Z0000000000000000000AC',
+        email: 'ada@example.test',
+        displayName: 'Ada',
+        deviceName: 'laptop',
+        tokenRef: `sec_${'0'.repeat(26)}`,
+        addedAt: '2026-09-25T00:00:00.000Z',
+      };
+      let accounts: (typeof account & { signedOut?: true })[] = [{ ...account, signedOut: true }];
+      const backend = await createSyncBackend({
+        share: serverShare,
+        tree: join(dir, 'tree'),
+        git: undefined,
+        settings,
+        dir,
+        server: {
+          client: new ServerClient({ send: () => Promise.reject(new Error('no network here')) }),
+          accounts: {
+            tokenFor: () => Promise.resolve(undefined),
+            markSignedOut: () => undefined,
+            list: () => accounts,
+          },
+        },
+      });
+      expect(await backend.identity()).toBeUndefined();
+      accounts = [account];
+      expect(await backend.identity()).toEqual({ name: 'Ada', email: 'ada@example.test' });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

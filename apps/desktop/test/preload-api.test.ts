@@ -13,6 +13,31 @@ describe('buildApi', () => {
     expect(invoke).toHaveBeenCalledWith('app.version', undefined);
   });
 
+  it('wires the Wirebench Server workspace channels to invoke with their names', async () => {
+    const invoke = vi.fn<(name: string, request: unknown) => Promise<unknown>>().mockResolvedValue({
+      ok: true,
+      value: { workspaces: [] },
+    });
+    const api = buildApi(invoke, vi.fn());
+
+    await api.workspace.serverTargets({ url: 'https://wirebench.example.test', teamId: 'T1' });
+    await api.workspace.teamWorkspaces(undefined);
+    await api.workspace.joinFromServer({ url: 'https://wirebench.example.test', workspaceId: 'W1' });
+    await api.workspace.shareToServer({
+      url: 'https://wirebench.example.test',
+      teamId: 'T1',
+      teamName: 'Payments QA',
+      target: { kind: 'new', name: 'Team', defaultRole: 'viewer' },
+    });
+
+    expect(invoke.mock.calls.map(([name]) => name)).toEqual([
+      'workspace.serverTargets',
+      'workspace.teamWorkspaces',
+      'workspace.joinFromServer',
+      'workspace.shareToServer',
+    ]);
+  });
+
   it('exposes only the channel/event surface, never ipcRenderer itself', () => {
     const api = buildApi(vi.fn(), vi.fn());
 

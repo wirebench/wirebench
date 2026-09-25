@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { overlayFs, UnsavedStore } from '../src/main/unsaved-store.js';
+import { mergeUnsaved, overlayFs, UnsavedStore } from '../src/main/unsaved-store.js';
 
 const files = (entries: Record<string, string>): Map<string, string> => new Map(Object.entries(entries));
 
@@ -134,5 +134,13 @@ describe('UnsavedStore', () => {
     await store.setAsideProject('p1');
     expect(await store.readProject('p1')).toBeUndefined();
     expect(await readFile(join(dir, 'unsaved', 'p1.failed.json'), 'utf8')).toContain('"a":"1"');
+  });
+});
+
+describe('mergeUnsaved', () => {
+  it("still drops an unsaved change to a file deleted on disk: sync's conflict mode is opt-in", () => {
+    const merged = mergeUnsaved(files({ a: '1', b: '1' }), files({ b: '1' }), files({ a: 'mine', b: '1' }));
+    expect(merged.files.has('a')).toBe(false);
+    expect(merged).toMatchObject({ conflicts: [], dropped: ['a'] });
   });
 });

@@ -4389,13 +4389,16 @@ export const syncSettingsPatchWireSchema = z.object({
 export type SyncSettingsPatchWire = z.infer<typeof syncSettingsPatchWireSchema>;
 
 /** How the open workspace (or a picker row) is shared; `managed` means its tree lives in app data.
- * `autoFetchSeconds`/`commitOnSave`/`pushOnSave` are present only for `kind === 'git'` — the
- * persisted `GitShareSettings`, so the Sync panel can show them without guessing a default. */
+ * `autoFetchSeconds`/`commitOnSave`/`pushOnSave` are present for a git or server share — the
+ * persisted settings, so the Sync panel can show them without guessing a default. `server` names a
+ * Wirebench Server share's server, workspace and team (display only), which the panel shows instead
+ * of a remote and branch (server-sync §3.4). */
 export const workspaceShareWireSchema = z.object({
   kind: z.enum(['folder', 'git', 'server']),
   managed: z.boolean(),
   remote: z.string().optional(),
   branch: z.string().optional(),
+  server: z.object({ url: z.string(), workspaceId: z.string(), teamName: z.string().optional() }).optional(),
   autoFetchSeconds: z.number().int().min(0).max(86_400).optional(),
   commitOnSave: z.boolean().optional(),
   pushOnSave: z.boolean().optional(),
@@ -5093,3 +5096,35 @@ export const teamWorkspacesResponseWireSchema = z.object({ workspaces: z.array(t
 export const teamWorkspaceResponseWireSchema = z.object({ workspace: teamWorkspaceWireSchema });
 export const teamAccessResponseWireSchema = z.object({ entries: z.array(accessEntryWireSchema) });
 export const teamDoneResponseWireSchema = z.object({ done: z.literal(true) });
+
+// ---------------------------------------------------------------------------
+// Workspaces on Wirebench Server (server-sync §3.4, §5.3). Share to a team, open a team workspace,
+// and the two lists the dialogs show. Ids and the url are checked again in main: a workspace id only
+// becomes a folder name there, after it has matched a ULID.
+// ---------------------------------------------------------------------------
+
+/** `workspace.shareToServer`: a new team workspace (O3's default roles) or an existing empty one (O1). */
+export const workspaceShareToServerRequestWireSchema = z.object({
+  url: z.string(),
+  teamId: z.string(),
+  /** Display only; kept in `share.yaml`. */
+  teamName: z.string(),
+  target: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('new'), name: z.string(), defaultRole: defaultRoleWireSchema.optional() }),
+    z.object({ kind: z.literal('existing'), workspaceId: z.string() }),
+  ]),
+});
+export type WorkspaceShareToServerRequestWire = z.infer<typeof workspaceShareToServerRequestWireSchema>;
+/** `workspace.joinFromServer`: *Open a team workspace…*'s choice. */
+export const workspaceJoinFromServerRequestWireSchema = z.object({ url: z.string(), workspaceId: z.string() });
+export type WorkspaceJoinFromServerRequestWire = z.infer<typeof workspaceJoinFromServerRequestWireSchema>;
+/** `workspace.serverTargets`: one team's empty workspaces the caller can edit. */
+export const workspaceServerTargetsRequestWireSchema = z.object({ url: z.string(), teamId: z.string() });
+export type WorkspaceServerTargetsRequestWire = z.infer<typeof workspaceServerTargetsRequestWireSchema>;
+export const workspaceServerTargetsResponseWireSchema = z.object({ workspaces: z.array(teamWorkspaceWireSchema) });
+export type WorkspaceServerTargetsResponseWire = z.infer<typeof workspaceServerTargetsResponseWireSchema>;
+/** `workspace.teamWorkspaces`: every signed-in server's workspaces that have a head (empty ones stay hidden). */
+export const workspaceTeamWorkspacesResponseWireSchema = z.object({
+  workspaces: z.array(z.object({ url: z.string(), workspace: teamWorkspaceWireSchema })),
+});
+export type WorkspaceTeamWorkspacesResponseWire = z.infer<typeof workspaceTeamWorkspacesResponseWireSchema>;

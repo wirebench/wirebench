@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Folder, GitBranch } from 'lucide-react';
+import { Check, ChevronDown, Folder, GitBranch, Server } from 'lucide-react';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { WorkspaceSummaryWire } from '../../../shared/wire-types.js';
@@ -62,6 +62,8 @@ export function WorkspaceSwitcher() {
           {workspace.share !== undefined &&
             (workspace.share.kind === 'folder' ? (
               <Folder data-testid="workspace-switcher-share" size={12} aria-hidden="true" />
+            ) : workspace.share.kind === 'server' ? (
+              <Server data-testid="workspace-switcher-share" size={12} aria-hidden="true" />
             ) : (
               <GitBranch data-testid="workspace-switcher-share" size={12} aria-hidden="true" />
             ))}

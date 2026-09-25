@@ -89,3 +89,22 @@ the rest, from the app's **Account: Manage teams…** dialog or the API:
 Team admins and server admins are admins of every workspace of their teams. To anyone without a role,
 a workspace (or a team) does not exist: the API answers `404`, never `403`. Deleting a workspace moves
 its repository under `<data dir>/tmp/`; nothing is deleted from disk.
+
+## Sync
+
+The app's _Share this workspace… → Wirebench Server_ and _Open a team workspace…_ talk to five endpoints
+under `/api/v1/workspaces/:workspaceId/sync`: `head`, `snapshot`, `changes` and `log` (viewers and up)
+and `POST commits` (editors and admins). `/api/v1/meta` lists `sync` among its capabilities.
+
+- The app merges. The server stores each push as ordinary git commits on `main` in the workspace's bare
+  repository, authored by the signed-in user. Nothing in a request can name the author.
+- A push whose parent is not the current head is refused with `409 sync-push-rejected`. The app pulls,
+  merges and pushes again. Two pushes to one workspace never interleave.
+- Paths are checked before git runs. `.git`, `share.yaml`, `local.yaml`, `unsaved/` and anything outside
+  the workspace's own files are refused, and a file is at most 8 MiB.
+- `WIREBENCH_SERVER_BODY_LIMIT_MB` bounds both a push (`413 request-too-large`) and a snapshot or change
+  set (`413 sync-too-large`). Raise it for workspaces with large attachments.
+- Repository hooks never run. A push builds its commits in a private index file under
+  `<data dir>/tmp/`. Leftovers from a crash are removed at start-up.
+- On shutdown the server finishes the repository work already queued before it closes the database.
+  Run **one** replica: the per-workspace lock is in-process.

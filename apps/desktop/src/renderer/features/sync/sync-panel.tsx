@@ -11,6 +11,7 @@ import type { SyncLogEntryWire, WorkspaceShareWire } from '../../../shared/wire-
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { formatRelative } from './relative-time.js';
 import { syncBadgeLabel } from './sync-badge.js';
+import { SYNC_ACTION_LABELS, syncCodeInfo, VIEWER_PUSH_REASON } from './sync-codes.js';
 import { useNow } from './use-now.js';
 
 /**
@@ -28,16 +29,16 @@ const LOG_LIMIT = 20;
 const RELATIVE_TIME_REFRESH_MS = 30_000;
 
 /**
- * Fallbacks for a `git` share whose `WorkspaceShareWire` predates these fields (or, in
- * principle, omits them) — mirrors `DEFAULT_GIT_SHARE_SETTINGS` in `@wirebench/engine`. Real
- * values always come from `workspace.share` once main fills them in; these are never shown in
- * place of a persisted value, only in place of a genuinely missing one.
+ * Fallbacks for a share whose `WorkspaceShareWire` predates these fields (or, in principle,
+ * omits them) — mirrors `DEFAULT_SYNC_SETTINGS` in `@wirebench/engine`. Real values always come
+ * from `workspace.share` once main fills them in; these are never shown in place of a persisted
+ * value, only in place of a genuinely missing one.
  */
 const DEFAULT_COMMIT_ON_SAVE = true;
 const DEFAULT_PUSH_ON_SAVE = true;
 const DEFAULT_AUTO_FETCH_SECONDS = 60;
 
-/** Reads a `git` share's settings, falling back only for a field main genuinely never sent. */
+/** Reads a git or server share's settings, falling back only for a field main genuinely never sent. */
 function settingsOf(share: WorkspaceShareWire | undefined): {
   commitOnSave: boolean;
   pushOnSave: boolean;
@@ -58,6 +59,10 @@ function settingsOf(share: WorkspaceShareWire | undefined): {
  * The Sync panel: pull/push/fetch/commit, the unresolved conflicts, recent commits, the share's
  * settings, and the door out (reveal the shared folder, stop sharing). A Radix `Dialog`, opened
  * from the badge or `sync.openPanel`.
+ *
+ * A Wirebench Server share (server-sync §3.4) shows its server and team instead of a remote and a
+ * branch; a viewer sees Push and Push on save disabled with the reason; and a server-sync code in
+ * the status shows its message with the one action that ends it.
  */
 export function SyncPanel() {
   const open = useUiStore((state) => state.syncPanelOpen);
@@ -90,6 +95,12 @@ export function SyncPanel() {
   const [autoFetchSeconds, setAutoFetchSeconds] = useState(String(initial.autoFetchSeconds));
   const [autoFetchError, setAutoFetchError] = useState<string | undefined>(undefined);
   const [stopSharingOpen, setStopSharingOpen] = useState(false);
+
+  const server = share?.server;
+  // A viewer's push is refused on this machine and by the server regardless, so the controls that
+  // start one are disabled with the reason rather than left to fail (§3.4).
+  const viewer = status.role === 'viewer';
+  const notice = status.error === undefined ? undefined : syncCodeInfo(status.error.code);
 
   // Re-syncs the settings controls whenever a new workspace snapshot arrives (a settings save —
   // this panel's own or another window's — always broadcasts one). Deliberately does *not*
@@ -170,9 +181,11 @@ export function SyncPanel() {
           >
             <Dialog.Title className="text-md font-medium text-fg-default">Sync</Dialog.Title>
             <Dialog.Description className="mt-1 text-xs text-fg-subtle">
-              {status.remote === undefined
-                ? `${syncBadgeLabel(status)} — no remote set yet.`
-                : `${status.remote} on ${status.branch ?? 'main'}`}
+              {server !== undefined
+                ? `${server.url}${server.teamName === undefined ? '' : ` · ${server.teamName}`}`
+                : status.remote === undefined
+                  ? `${syncBadgeLabel(status)} — no remote set yet.`
+                  : `${status.remote} on ${status.branch ?? 'main'}`}
             </Dialog.Description>
 
             <div className="mt-3 flex gap-2">
@@ -187,7 +200,8 @@ export function SyncPanel() {
               </Button>
               <Button
                 data-testid="sync-push"
-                disabled={busy !== undefined}
+                disabled={busy !== undefined || viewer}
+                title={viewer ? VIEWER_PUSH_REASON : undefined}
                 onClick={() => {
                   run('push', push);
                 }}
@@ -227,6 +241,54 @@ export function SyncPanel() {
                 </>
               )}
             </div>
+
+            {viewer && (
+              <p data-testid="sync-viewer-note" className="mt-2 text-xs text-fg-subtle">
+                {VIEWER_PUSH_REASON}
+              </p>
+            )}
+
+            {status.error !== undefined && notice !== undefined && (
+              <div
+                role="alert"
+                data-testid="sync-error-notice"
+                className="mt-3 flex items-center gap-3 rounded-md border border-status-danger px-3 py-1.5 text-sm text-fg-default"
+              >
+                <span className="min-w-0 flex-1">{status.error.message}</span>
+                {notice.action === 'sign-in' && (
+                  <Button
+                    data-testid="sync-sign-in"
+                    onClick={() => {
+                      setOpen(false);
+                      useUiStore.getState().openSignInDialog(server?.url ?? status.remote);
+                    }}
+                  >
+                    {SYNC_ACTION_LABELS['sign-in']}
+                  </Button>
+                )}
+                {notice.action === 'stop-sharing' && (
+                  <Button
+                    data-testid="sync-notice-stop-sharing"
+                    onClick={() => {
+                      setStopSharingOpen(true);
+                    }}
+                  >
+                    {SYNC_ACTION_LABELS['stop-sharing']}
+                  </Button>
+                )}
+                {(notice.action === 'open-team-workspace' || notice.secondaryAction === 'open-team-workspace') && (
+                  <Button
+                    data-testid="sync-open-team-workspace"
+                    onClick={() => {
+                      setOpen(false);
+                      useUiStore.getState().setTeamWorkspaceDialogOpen(true);
+                    }}
+                  >
+                    {SYNC_ACTION_LABELS['open-team-workspace']}
+                  </Button>
+                )}
+              </div>
+            )}
 
             {status.held !== undefined && (
               <div
@@ -300,6 +362,8 @@ export function SyncPanel() {
               <BooleanSetting
                 label="Push on save"
                 value={pushOnSave}
+                disabled={viewer}
+                {...(viewer ? { hint: VIEWER_PUSH_REASON } : {})}
                 onChange={(value) => {
                   setPushOnSave(value);
                   void updateSettings({ pushOnSave: value });
@@ -307,22 +371,44 @@ export function SyncPanel() {
               />
               <TextSetting label="Auto-fetch every N seconds" value={autoFetchSeconds} onCommit={commitAutoFetch} />
               {autoFetchError !== undefined && <p className="mt-1 text-xs text-status-danger">{autoFetchError}</p>}
-              <TextSetting
-                label="Remote"
-                value={remote}
-                onCommit={(value) => {
-                  setRemote(value);
-                  void updateSettings({ remote: value.trim() });
-                }}
-              />
-              <TextSetting
-                label="Branch"
-                value={branch}
-                onCommit={(value) => {
-                  setBranch(value);
-                  void updateSettings({ branch: value.trim() });
-                }}
-              />
+              {server !== undefined ? (
+                <>
+                  {/* A server share's address and team are fixed for its lifetime (§3.4 Settings). */}
+                  <TextSetting
+                    label="Server"
+                    value={server.url}
+                    readOnly
+                    testId="sync-setting-server"
+                    onCommit={() => undefined}
+                  />
+                  <TextSetting
+                    label="Team"
+                    value={server.teamName ?? ''}
+                    readOnly
+                    testId="sync-setting-team"
+                    onCommit={() => undefined}
+                  />
+                </>
+              ) : (
+                <>
+                  <TextSetting
+                    label="Remote"
+                    value={remote}
+                    onCommit={(value) => {
+                      setRemote(value);
+                      void updateSettings({ remote: value.trim() });
+                    }}
+                  />
+                  <TextSetting
+                    label="Branch"
+                    value={branch}
+                    onCommit={(value) => {
+                      setBranch(value);
+                      void updateSettings({ branch: value.trim() });
+                    }}
+                  />
+                </>
+              )}
             </SettingsGroup>
 
             <div className="mt-4 flex justify-between gap-2">
@@ -357,7 +443,11 @@ export function SyncPanel() {
         open={stopSharingOpen}
         onOpenChange={setStopSharingOpen}
         title="Stop sharing?"
-        description="This workspace becomes local-only again. Its history stays on disk; other members keep their own copies."
+        description={
+          server !== undefined
+            ? 'This workspace becomes local-only again. The server copy stays for your team; a team admin can delete it from Manage teams.'
+            : 'This workspace becomes local-only again. Its history stays on disk; other members keep their own copies.'
+        }
         confirmLabel="Stop sharing"
         destructive
         confirmTestId="sync-stop-sharing-confirm"

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { HttpExchange, HttpRequest } from '@wirebench/engine';
-import { normalizeServerUrl, ServerClient } from '../src/main/server-client.js';
+import type { HttpExchange, HttpRequest, SyncPushRequest } from '@wirebench/engine';
+import { normalizeServerUrl, ServerClient, SYNC_TRANSFER_TIMEOUT_MS } from '../src/main/server-client.js';
 
 const META = {
   name: 'wirebench-server',
@@ -255,5 +255,105 @@ describe('ServerClient — teams (teams-access §3.2)', () => {
       details: { status: 400 },
     });
     await expect(c.listWorkspaces('https://wb.test', TOKEN)).rejects.toMatchObject({ code: 'server-bad-response' });
+  });
+});
+
+describe('ServerClient — sync (server-sync §3.2)', () => {
+  const SERVER = 'https://wb.test';
+  const WS_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QC';
+  const A = 'a'.repeat(40);
+  const B = 'b'.repeat(40);
+  const ROUTE = `${SERVER}/api/v1/workspaces/${WS_ID}/sync`;
+  const FILE = { path: 'workspace.yaml', encoding: 'utf8', content: 'name: W\n' };
+  const PUSH = {
+    parent: A,
+    commits: [
+      {
+        subject: 'Update QA',
+        at: '2026-09-25T10:00:00.000Z',
+        changes: [
+          { path: 'environments/qa.yaml', encoding: 'utf8', content: 'name: QA\n' },
+          { path: 'environments/old.yaml', encoding: 'utf8', content: null },
+        ],
+      },
+    ],
+  } satisfies SyncPushRequest;
+  const body = (request: HttpRequest | undefined): unknown =>
+    request?.body === undefined ? undefined : JSON.parse(new TextDecoder().decode(request.body));
+
+  it('builds head and log queries from the defined values only, with the short timeout', async () => {
+    const { client: c, sent } = client(
+      exchange(200, { head: null, commits: 0, role: 'editor' }),
+      exchange(200, { head: B, commits: 2, behind: 1, role: 'viewer' }),
+      exchange(200, { head: B, commits: 2, role: 'viewer' }),
+      exchange(200, [{ id: B, subject: 'Add QA', author: 'Ada <ada@example.com>', at: '2026-09-25T10:00:00.000Z' }]),
+    );
+    expect(await c.syncHead(SERVER, TOKEN, WS_ID)).toEqual({ head: null, commits: 0, role: 'editor' });
+    expect(await c.syncHead(SERVER, TOKEN, WS_ID, A)).toEqual({ head: B, commits: 2, behind: 1, role: 'viewer' });
+    await c.syncHead(SERVER, TOKEN, WS_ID, null);
+    expect((await c.syncLog(SERVER, TOKEN, WS_ID, 50))[0]?.subject).toBe('Add QA');
+    expect(sent.map((r) => [r.method, r.url, r.timeoutMs])).toEqual([
+      ['GET', `${ROUTE}/head`, 15_000],
+      ['GET', `${ROUTE}/head?from=${A}`, 15_000],
+      ['GET', `${ROUTE}/head`, 15_000],
+      ['GET', `${ROUTE}/log?limit=50`, 15_000],
+    ]);
+    expect(sent.every((r) => r.headers['authorization'] === `Bearer ${TOKEN}`)).toBe(true);
+  });
+
+  it('gives snapshot, changes and push the transfer timeout and posts the push as JSON', async () => {
+    const { client: c, sent } = client(
+      exchange(200, { head: A, files: [FILE] }),
+      exchange(200, { head: A, files: [] }),
+      exchange(200, { from: null, to: A, files: [FILE] }),
+      exchange(200, { from: A, to: B, files: [{ path: 'environments/qa.yaml', encoding: 'utf8', content: null }] }),
+      exchange(201, { head: B, ids: [B] }),
+    );
+    expect(SYNC_TRANSFER_TIMEOUT_MS).toBe(120_000);
+    expect(await c.syncSnapshot(SERVER, TOKEN, WS_ID)).toEqual({ head: A, files: [FILE] });
+    await c.syncSnapshot(SERVER, TOKEN, WS_ID, A);
+    expect(await c.syncChanges(SERVER, TOKEN, WS_ID, null, A)).toEqual({ from: null, to: A, files: [FILE] });
+    expect((await c.syncChanges(SERVER, TOKEN, WS_ID, A, B)).files[0]?.content).toBeNull();
+    expect(await c.pushCommits(SERVER, TOKEN, WS_ID, PUSH)).toEqual({ head: B, ids: [B] });
+    expect(sent.map((r) => [r.method, r.url, r.timeoutMs])).toEqual([
+      ['GET', `${ROUTE}/snapshot`, SYNC_TRANSFER_TIMEOUT_MS],
+      ['GET', `${ROUTE}/snapshot?at=${A}`, SYNC_TRANSFER_TIMEOUT_MS],
+      ['GET', `${ROUTE}/changes?to=${A}`, SYNC_TRANSFER_TIMEOUT_MS],
+      ['GET', `${ROUTE}/changes?from=${A}&to=${B}`, SYNC_TRANSFER_TIMEOUT_MS],
+      ['POST', `${ROUTE}/commits`, SYNC_TRANSFER_TIMEOUT_MS],
+    ]);
+    expect(body(sent[4])).toEqual(PUSH);
+    expect(sent[4]?.headers['content-type']).toBe('application/json');
+    expect(sent.slice(0, 4).every((r) => r.body === undefined)).toBe(true);
+  });
+
+  it('passes a rejected push through with its status, and refuses a head that is not a commit id', async () => {
+    const { client: c } = client(
+      exchange(409, { code: 'sync-push-rejected', message: 'The workspace has moved on; pull first.' }),
+      exchange(200, { head: '--upload-pack=x', commits: 1, role: 'editor' }),
+    );
+    await expect(c.pushCommits(SERVER, TOKEN, WS_ID, PUSH)).rejects.toMatchObject({
+      code: 'sync-push-rejected',
+      details: { status: 409 },
+    });
+    await expect(c.syncHead(SERVER, TOKEN, WS_ID)).rejects.toMatchObject({ code: 'server-bad-response' });
+  });
+
+  it('a per-call timeout wins over the client-wide one', async () => {
+    const sent: HttpRequest[] = [];
+    const answers = [
+      exchange(200, { head: null, commits: 0, role: 'admin' }),
+      exchange(200, { head: null, files: [] }),
+    ];
+    const c = new ServerClient({
+      timeoutMs: 5_000,
+      send: (request) => {
+        sent.push(request);
+        return Promise.resolve(answers.shift() ?? exchange(500, {}));
+      },
+    });
+    await c.syncHead(SERVER, TOKEN, WS_ID);
+    await c.syncSnapshot(SERVER, TOKEN, WS_ID);
+    expect(sent.map((r) => r.timeoutMs)).toEqual([5_000, SYNC_TRANSFER_TIMEOUT_MS]);
   });
 });

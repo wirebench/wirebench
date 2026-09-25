@@ -1,6 +1,6 @@
 import { showToast } from '../../components/toast.js';
 import { useUiStore } from '../../state/ui.js';
-import { useWorkspaceStore } from '../../state/workspace.js';
+import { useWorkspaceStore, type ShareToServerRequest } from '../../state/workspace.js';
 
 function report(error: unknown, fallback: string): void {
   showToast(error instanceof Error ? error.message : fallback);
@@ -10,6 +10,23 @@ function report(error: unknown, fallback: string): void {
 export interface AlreadyPresent {
   readonly workspaceId: string;
   readonly message: string;
+}
+
+/**
+ * A refusal a dialog shows in place rather than as a toast: the user reads it to choose again
+ * (another name, another target, removing a local copy first).
+ */
+export interface ActionRefusal {
+  readonly code: string;
+  readonly message: string;
+}
+
+function refusalOf(error: unknown, fallback: string): ActionRefusal {
+  const code = error instanceof Error ? (error as Error & { code?: unknown }).code : undefined;
+  return {
+    code: typeof code === 'string' ? code : 'unknown',
+    message: error instanceof Error ? error.message : fallback,
+  };
 }
 
 /** The `workspace-already-present` refusal (with the id main puts in its details), if that is what `error` is. */
@@ -222,6 +239,31 @@ export const workspaceActions = {
       return await useWorkspaceStore.getState().joinFromFolder();
     } catch (error) {
       return alreadyPresent(error) ?? (report(error, 'Could not join the shared workspace'), false);
+    }
+  },
+
+  /**
+   * Shares the open local workspace to Wirebench Server. `false` when the secret review was
+   * cancelled; the refusal, unreported, when main refused — the Share dialog shows it in place.
+   */
+  async shareToServer(request: ShareToServerRequest): Promise<boolean | ActionRefusal> {
+    try {
+      return await useWorkspaceStore.getState().shareToServer(request);
+    } catch (error) {
+      return refusalOf(error, 'Could not share the workspace');
+    }
+  },
+
+  /**
+   * Opens a team workspace from Wirebench Server. The workspace to offer instead when it is already
+   * on this machine; the refusal otherwise — both unreported, for the dialog to show in place.
+   */
+  async joinFromServer(url: string, workspaceId: string): Promise<true | AlreadyPresent | ActionRefusal> {
+    try {
+      await useWorkspaceStore.getState().joinFromServer(url, workspaceId);
+      return true;
+    } catch (error) {
+      return alreadyPresent(error) ?? refusalOf(error, 'Could not open the team workspace');
     }
   },
 

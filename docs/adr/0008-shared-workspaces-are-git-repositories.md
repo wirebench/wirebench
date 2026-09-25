@@ -1,6 +1,6 @@
 # ADR-0008: Shared workspaces are git repositories, synced by system git
 
-- Status: accepted
+- Status: accepted; amended by [ADR-0012](0012-server-sync-merges-on-the-client.md) (server sync merges on the client)
 - Date: 2026-09-13
 - Context: `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md`; builds on ADR-0003
   (project folder format), ADR-0004 (secrets outside project files), ADR-0005 (renderer path
@@ -42,12 +42,11 @@ Wirebench Server does.** Concretely:
   `push`, `conflicts`, `resolve`, `finishMerge`, `abortMerge`, `log`, `changedPaths`, `identity`,
   `subscribeRemote` are implemented today by `GitBackend` (over system git) and `FolderBackend`
   (a synced folder with no sync control of its own, rejecting most calls with
-  `sync-not-supported`). Wirebench Server (a later spec) implements the same interface as
-  `ServerBackend`: `fetch`/`merge`/`push` become one round trip that posts changed files and
-  receives either the new head or a conflict list for the *same* resolver UI, and
-  `subscribeRemote` becomes a WebSocket instead of a no-op. The engine's merge, the conflict
-  model, the UI, and the contract test suite are written once, against the interface, and are
-  reused as-is by the server.
+  `sync-not-supported`). Wirebench Server implements the same interface as `ServerBackend`
+  ([ADR-0012](0012-server-sync-merges-on-the-client.md)): `fetch` and `push` talk HTTP to a server
+  that stores commits, and `merge` runs the engine's three-way merge on the client, so conflicts
+  reach the *same* resolver UI. The engine's merge, the conflict model, the UI, and the contract
+  test suite are written once, against the interface, and are reused as-is by the server backend.
 - **The whole workspace is the shared unit**, not one project at a time. Environments — the one
   thing that never left a machine before this — travel with the workspace because they are just
   more files in the same tree.

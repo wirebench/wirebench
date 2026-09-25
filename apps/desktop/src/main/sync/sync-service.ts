@@ -4,13 +4,20 @@
  * auto-fetch timer with an offline back-off, a debounced commit (and push) after saves, and the
  * pull → merge → reload/conflict hand-off to its consumer (`WorkspaceService`).
  *
+ * Transport-agnostic: it keys on error codes and on `status.role`, never on the backend's kind. A
+ * Wirebench Server share adds a few codes of its own (server-sync spec §3.5). `sync-push-rejected` is
+ * answered like git's rejection, and `sync-offline` like `git-offline`. The signed-out,
+ * disabled-account and access-removed codes stop the fetch timer until {@link SyncService.resume}. A
+ * viewer's commits never leave the machine (§3.4).
+ *
  * Electron-free and clock-injectable: timers only ever go through `deps.setTimer`/`clearTimer`,
- * so the whole service runs under fake timers in tests and in plain Node (spec 2's server).
+ * so the whole service runs under fake timers in tests and in plain Node.
  */
 
-import type { GitShareSettings } from '@wirebench/engine';
+import type { SyncSettings } from '@wirebench/engine';
 import { commitMessage, isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { SyncBackend } from './backend.js';
+import { STOP_POLLING_CODES } from './server-backend.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from './types.js';
 
 /** Saves landing within this window (a Save All across hosts) become one commit. */
@@ -21,19 +28,36 @@ export const OFFLINE_FETCH_SECONDS = 300;
 /** git's refusal of a push that is behind the remote — answered by pulling and pushing once more. */
 const PUSH_REJECTED_PATTERN = /rejected|non-fast-forward|fetch first/i;
 
-/** Failures that describe something the user must do, not a broken sync — the state is kept. */
+/**
+ * Failures that describe something the user must do, not a broken sync — the state is kept. The
+ * server's `sync-push-rejected` (the retry was rejected too), `sync-forbidden` (the role changed; the
+ * next fetch refreshes it) and `sync-too-large` (the operator's limit) are among them (§3.5).
+ */
 const STATE_KEEPING_CODES: ReadonlySet<string> = new Set([
   'git-identity-needed',
   'sync-uncommitted',
   'sync-conflict',
   'sync-not-supported',
   'sync-no-remote',
+  'sync-push-rejected',
+  'sync-forbidden',
+  'sync-too-large',
 ]);
+
+/** The remote could not be reached: `offline`, and the fetch timer backs off (git and server alike). */
+const OFFLINE_CODES: ReadonlySet<string> = new Set(['git-offline', 'sync-offline']);
+
+/** Why a viewer's push stays local (server-sync §3.4); the Sync popover shows it. */
+const VIEWER_PUSH_MESSAGE = 'You have viewer access in this workspace; changes stay on this machine.';
 
 export interface SyncServiceDeps {
   backend: SyncBackend;
-  /** The share's current git settings, re-read on every use (they can be patched while open). */
-  settings: () => GitShareSettings;
+  /**
+   * The share's sync settings (`share.server ?? share.git`), re-read on every use (they can be
+   * patched while open). Only the three fields every share kind has: this service never reads a
+   * remote or a branch.
+   */
+  settings: () => SyncSettings;
   /** Every status change, including the `syncing` one each operation starts with. */
   onStatus(status: SyncStatusWire): void;
   /** A merge brought in `changedPaths` (tree-relative); awaited before the pull resolves. */
@@ -76,7 +100,11 @@ function hasCode(error: unknown, code: string): boolean {
   return isWirebenchError(error) && error.code === code;
 }
 
+/** The remote moved on since our base: git's non-fast-forward refusal, or the server's `sync-push-rejected`. */
 function isPushRejected(error: unknown): boolean {
+  if (hasCode(error, 'sync-push-rejected')) {
+    return true;
+  }
   if (!hasCode(error, 'git-failed')) {
     return false;
   }
@@ -98,6 +126,16 @@ export class SyncService {
   private stopped = false;
   /** Set by a `git-offline` failure, cleared by the next successful fetch. */
   private offline = false;
+  /**
+   * Set by a stop-polling failure (signed out, account disabled, access removed; server-sync §3.4):
+   * the fetch timer stays off until {@link resume}, or until a fetch succeeds.
+   */
+  private pollingStopped = false;
+  /**
+   * A fetch saw the role go from viewer to editor or admin (§1, §13.3): the commits that waited on
+   * this machine push at the end of that operation, once nothing needs pulling first.
+   */
+  private promoted = false;
   private fetchTimer: Timer | undefined;
   private saveTimer: Timer | undefined;
   /** While a debounced save is pending: whether every save folded into it was an autosave. */
@@ -177,6 +215,15 @@ export class SyncService {
     this.armFetchTimer();
   }
 
+  /**
+   * Settles once every operation queued so far has finished; never rejects. After {@link stop}, that
+   * is the one already running: `WorkspaceService.close()` waits on it, so a push or a merge still in
+   * flight cannot write into the sync state or the tree of a workspace that reopened meanwhile.
+   */
+  idle(): Promise<void> {
+    return this.queue;
+  }
+
   /** Stops the timers; operations already queued still finish. */
   stop(): void {
     this.stopped = true;
@@ -206,18 +253,33 @@ export class SyncService {
   }
 
   fetch(): Promise<SyncStatusWire> {
-    return this.run(() => this.fetchNow());
+    return this.run(async () => {
+      await this.fetchNow();
+      await this.pushAfterPromotion();
+      return this.last;
+    });
   }
 
   pull(): Promise<SyncStatusWire> {
     return this.run(async () => {
       await this.pullNow();
+      await this.pushAfterPromotion();
       return this.last;
     });
   }
 
+  /**
+   * Pushes, pulling and pushing once more when the remote moved on. A viewer's push is refused here
+   * with `sync-forbidden` and never reaches the backend (server-sync §3.4). The server would refuse it
+   * too. The code keeps the state, so the popover shows the reason over the same counts.
+   */
   push(): Promise<SyncStatusWire> {
-    return this.run(() => this.pushNow());
+    return this.run(async () => {
+      if (this.last.role === 'viewer') {
+        throw new WirebenchError('sync-forbidden', VIEWER_PUSH_MESSAGE);
+      }
+      return await this.pushNow();
+    });
   }
 
   /** Commits every change in the tree; `message` wins over the generated one. */
@@ -294,6 +356,23 @@ export class SyncService {
   /** Re-reads the settings for the timer (an `autoFetchSeconds` change takes effect now). */
   applySettings(): void {
     this.armFetchTimer();
+  }
+
+  /**
+   * After a stop-polling failure (server-sync §3.4, R6): fetches now, then re-arms the fetch timer
+   * behind it, as each timer fetch does. `WorkspaceService` calls it when the share's account is
+   * signed in again. A no-op unless such a failure stopped the timer, and once {@link stop} ran.
+   */
+  resume(): void {
+    if (this.stopped || !this.pollingStopped) {
+      return;
+    }
+    this.pollingStopped = false;
+    void this.fetch()
+      .catch(() => undefined)
+      .finally(() => {
+        this.armFetchTimer();
+      });
   }
 
   // ——— internals: each runs inside an operation already holding the queue ———————————————
@@ -428,7 +507,10 @@ export class SyncService {
     // An open merge stays `conflict` whatever failed meanwhile, as `setStatus` keeps it: going
     // offline or hitting an error does not close the merge, and the resolver must stay reachable.
     const inConflict = this.last.state === 'conflict';
-    if (code === 'git-offline') {
+    if (STOP_POLLING_CODES.has(code)) {
+      this.stopPolling();
+    }
+    if (OFFLINE_CODES.has(code)) {
       this.offline = true;
       this.last = { ...this.last, state: inConflict ? 'conflict' : 'offline', error: { code, message } };
       return;
@@ -445,11 +527,21 @@ export class SyncService {
   }
 
   private async fetchNow(): Promise<SyncStatusWire> {
+    const before = this.last.role;
     const fetched = await this.backend.fetch();
+    if (before === 'viewer' && fetched.role !== undefined && fetched.role !== 'viewer') {
+      this.promoted = true;
+    }
     this.offline = false;
-    return this.setStatus(
+    const status = this.setStatus(
       fetched.lastSyncAt !== undefined ? fetched : { ...fetched, lastSyncAt: this.now().toISOString() },
     );
+    if (this.pollingStopped) {
+      // A fetch that works (the popover's Fetch after signing in) means the account is usable again.
+      this.pollingStopped = false;
+      this.armFetchTimer();
+    }
+    return status;
   }
 
   /**
@@ -457,11 +549,11 @@ export class SyncService {
    * push an earlier session never made) when the fetch found nothing new on the remote. Unlike a
    * save's push it never merges — a rejected push just stays ahead for the next pull or save —
    * because start runs while the workspace is still opening, and a merge's reload would queue
-   * behind that very open.
+   * behind that very open. Never for a viewer, whose commits stay on this machine (§3.4).
    */
   private async pushWaitingCommits(): Promise<void> {
-    const { state, ahead, behind } = this.last;
-    if (!this.deps.settings().pushOnSave || state === 'conflict' || ahead === 0 || behind > 0) {
+    const { state, ahead, behind, role } = this.last;
+    if (!this.deps.settings().pushOnSave || role === 'viewer' || state === 'conflict' || ahead === 0 || behind > 0) {
       return;
     }
     try {
@@ -471,6 +563,23 @@ export class SyncService {
         throw error;
       }
       await this.probeNow();
+    }
+  }
+
+  /**
+   * After a promotion (see {@link promoted}): pushes what waited, as the start-up catch-up does.
+   * While the remote is ahead the flag stays for the pull that must come first. A failure is a
+   * status, not a failure of the fetch or pull that noticed the promotion.
+   */
+  private async pushAfterPromotion(): Promise<void> {
+    if (!this.promoted || this.last.behind > 0) {
+      return;
+    }
+    this.promoted = false;
+    try {
+      await this.pushWaitingCommits();
+    } catch (error) {
+      this.recordError(error);
     }
   }
 
@@ -504,11 +613,13 @@ export class SyncService {
     const committed = await this.commitNow(commit.message, commit);
     const current = await this.probeNow();
     // `status.remote` undefined means there is nowhere to push; the backend would throw
-    // `sync-no-remote`, which is not something a save should surface.
+    // `sync-no-remote`, which is not something a save should surface. A viewer's commit stays
+    // local without a word: the badge already says *Viewer* (§3.4).
     if (
       commit.push &&
       this.deps.settings().pushOnSave &&
       current.remote !== undefined &&
+      current.role !== 'viewer' &&
       (committed || current.ahead > 0)
     ) {
       await this.pushNow();
@@ -588,7 +699,7 @@ export class SyncService {
       this.clearTimer(this.fetchTimer);
       this.fetchTimer = undefined;
     }
-    if (this.stopped || !this.canSync() || !this.last.gitAvailable) {
+    if (this.stopped || this.pollingStopped || !this.canSync() || !this.last.gitAvailable) {
       return;
     }
     const seconds = this.deps.settings().autoFetchSeconds;
@@ -605,6 +716,15 @@ export class SyncService {
         });
     }, delaySeconds * 1000);
     unref(this.fetchTimer);
+  }
+
+  /** Signed out, disabled or removed: nothing polls until {@link resume} (server-sync §3.4, §15). */
+  private stopPolling(): void {
+    this.pollingStopped = true;
+    if (this.fetchTimer !== undefined) {
+      this.clearTimer(this.fetchTimer);
+      this.fetchTimer = undefined;
+    }
   }
 }
 

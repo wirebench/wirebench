@@ -15,6 +15,11 @@ import {
   SERVER_NAME,
   sendHttp,
   signInResponseSchema,
+  syncChangesResponseSchema,
+  syncHeadResponseSchema,
+  syncLogResponseSchema,
+  syncPushResponseSchema,
+  syncSnapshotResponseSchema,
   teamInvitationCreatedSchema,
   teamInvitationsResponseSchema,
   teamMemberSchema,
@@ -38,6 +43,12 @@ import {
   type OidcStartResponse,
   type ProxyOptions,
   type SignInResponse,
+  type SyncChangesResponse,
+  type SyncHeadResponse,
+  type SyncLogEntry,
+  type SyncPushRequest,
+  type SyncPushResponse,
+  type SyncSnapshotResponse,
   type Team,
   type TeamInvitation,
   type TeamInvitationCreated,
@@ -61,9 +72,27 @@ export interface ServerClientDeps {
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+/**
+ * Snapshot, changes and push carry up to the server's `bodyLimitMb` (32 MiB by default) in one
+ * body (server-sync R5), which the 15 s every other call gets cannot cover on an ordinary uplink.
+ */
+export const SYNC_TRANSFER_TIMEOUT_MS = 120_000;
 
 const teamPath = (teamId: string): string => `/api/v1/teams/${encodeURIComponent(teamId)}`;
 const workspacePath = (workspaceId: string): string => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`;
+
+/**
+ * `path` plus a query string built from the defined values only. `URLSearchParams` encodes every
+ * value, and an absent one is left out rather than sent as `undefined` or an empty string.
+ */
+function withQuery(path: string, query: Readonly<Record<string, string | number | undefined>>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  const text = params.toString();
+  return text.length > 0 ? `${path}?${text}` : path;
+}
 
 /** The origin of what the user typed: scheme, host, port. Anything that is not http(s) is refused. */
 export function normalizeServerUrl(text: string): string {
@@ -88,6 +117,8 @@ interface Call<T> {
   readonly schema?: z.ZodType<T>;
   readonly body?: unknown;
   readonly token?: string;
+  /** This call's deadline; wins over the client-wide `timeoutMs`. Set only by the large sync transfers. */
+  readonly timeoutMs?: number;
 }
 
 export class ServerClient {
@@ -299,6 +330,68 @@ export class ServerClient {
     });
   }
 
+  // ---- server-sync (spec §3.2): one method per route -------------------------------------------
+
+  /** `from` is the client's base; absent or `null` (an empty base) asks for the totals only. */
+  syncHead(url: string, token: string, workspaceId: string, from?: string | null): Promise<SyncHeadResponse> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${workspacePath(workspaceId)}/sync/head`, { from: from ?? undefined }),
+      token,
+      schema: syncHeadResponseSchema,
+    });
+  }
+
+  /** The whole tree at `at`, or at the head when `at` is absent. */
+  syncSnapshot(url: string, token: string, workspaceId: string, at?: string): Promise<SyncSnapshotResponse> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${workspacePath(workspaceId)}/sync/snapshot`, { at }),
+      token,
+      schema: syncSnapshotResponseSchema,
+      timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  /** Every path that differs between `from` (`null`: the empty tree) and `to`. */
+  syncChanges(
+    url: string,
+    token: string,
+    workspaceId: string,
+    from: string | null,
+    to: string,
+  ): Promise<SyncChangesResponse> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${workspacePath(workspaceId)}/sync/changes`, { from: from ?? undefined, to }),
+      token,
+      schema: syncChangesResponseSchema,
+      timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  /** `409 sync-push-rejected` when `body.parent` is not the head; the caller pulls and retries. */
+  pushCommits(url: string, token: string, workspaceId: string, body: SyncPushRequest): Promise<SyncPushResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/sync/commits`,
+      token,
+      body,
+      schema: syncPushResponseSchema,
+      timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  /** The `limit` newest commits on the server's head, newest first. */
+  syncLog(url: string, token: string, workspaceId: string, limit: number): Promise<SyncLogEntry[]> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${workspacePath(workspaceId)}/sync/log`, { limit }),
+      token,
+      schema: syncLogResponseSchema,
+    });
+  }
+
   private async call<T>(url: string, call: Call<T>): Promise<T> {
     const origin = normalizeServerUrl(url);
     const options = (await this.deps.options?.(origin)) ?? {};
@@ -314,7 +407,7 @@ export class ServerClient {
           ...(call.token !== undefined ? { authorization: `Bearer ${call.token}` } : {}),
         },
         ...(payload !== undefined ? { body: payload } : {}),
-        timeoutMs: this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        timeoutMs: call.timeoutMs ?? this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         followRedirects: false,
         ...(options.tls !== undefined ? { tls: options.tls } : {}),
         ...(options.proxy !== undefined ? { proxy: options.proxy } : {}),

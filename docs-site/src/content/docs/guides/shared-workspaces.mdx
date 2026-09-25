@@ -1,6 +1,6 @@
 ---
 title: Shared workspaces
-description: Share a workspace with a team over git or a synced folder, sync with pull and push, and resolve conflicts.
+description: Share a workspace with a team over git, a synced folder or Wirebench Server, sync with pull and push, and resolve conflicts.
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -13,7 +13,9 @@ either:
 
 - **a git repository**, synced by Wirebench's own Sync control over the system `git`, or
 - **a synced folder**, replicated by whatever tool you already point at that folder (Dropbox,
-  OneDrive, Syncthing, a network share) — Wirebench just reads and writes the files there.
+  OneDrive, Syncthing, a network share) — Wirebench just reads and writes the files there, or
+- **a team workspace on Wirebench Server**, synced over HTTP with no git needed on your machine — see
+  [Share with Wirebench Server](#share-with-wirebench-server).
 
 Everything that must never leave your machine — which environment is active, unsaved edits,
 secret values, history, preferences — stays out of the tree. See [Secrets](#secrets) below.
@@ -207,6 +209,47 @@ signed-in server under Settings → Accounts.
 
 If you have no role in a workspace, the server does not show it to you at all. Members who are not admins see the
 same dialog read-only, so everyone can check their own access.
+
+## Share with Wirebench Server
+
+Once you are signed in to a server and on a team, a workspace can live on the server instead of a git
+remote. Sync works as it does for git — the same badge, panel, conflict resolver and settings — but
+Wirebench talks to the server over HTTP, so nobody needs git installed.
+
+<Steps>
+
+1. From **Manage workspaces…**, choose **Share this workspace…**, then **Wirebench Server** (offered
+   once you are signed in).
+2. Pick the server, when you are signed in to more than one, and the team.
+3. Choose **A new workspace** — named after yours unless you change it, with the team's default role
+   *No access*, *Viewer* (the default) or *Editor* — or **An existing empty workspace** that a team admin
+   created and you can edit. Your workspace then takes that one's name.
+4. Click **Share**. Wirebench makes the first commit and pushes it.
+
+</Steps>
+
+Teammates open it from the workspace picker's **Open a team workspace…**, or with **Open Team
+Workspace…** from the palette. The list shows every workspace your teams share on the servers you
+are signed in to, with its team and your role; an empty workspace appears once someone shares into it.
+
+- **Viewers** see *Viewer* on the badge. They can edit, send and save, and their commits stay on their
+  machine: **Push** and **Push on save** are disabled with the reason. When an admin makes them an
+  editor, the next fetch picks it up and pushes what was waiting.
+- **Merging** runs on your machine with the same three-way merge as a git share. If someone pushed first,
+  Wirebench pulls, merges and pushes again, and conflicts open the same resolver.
+- **Signed out, disabled or no access:** the badge says *Sign in*, *Account disabled* or *No access*,
+  and automatic fetching stops. **Sign in…** in the Sync panel opens the Sign in dialog for that server,
+  and sync resumes once you are signed in.
+- **Stop sharing** keeps the server copy for the team. Sharing the same workspace again reconnects to it
+  and merges; a viewer is asked to open the server copy instead.
+- **Limits:** a push or download carries at most the server's body limit (32 MiB by default) and each
+  file at most 8 MiB. Run one server instance per data directory.
+
+<Aside type="tip">
+  If the Sync panel suggests **Stop sharing…**, this copy's history no longer matches the server's, or
+  its sync state is damaged: stop sharing, then share it again. It reconnects to the server copy
+  through a merge and keeps your files, including edits that were not pushed yet.
+</Aside>
 
 ## Related
 

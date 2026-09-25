@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -326,5 +326,34 @@ describe('AccountService', () => {
     const broken = service();
     await broken.load();
     expect(broken.list()).toEqual([]);
+  });
+
+  it('ready settles once load has finished, over a missing, a malformed or an unreadable file, and not before', async () => {
+    const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+    const file = join(dir, ACCOUNTS_FILE);
+    const cases: readonly (() => Promise<unknown>)[] = [
+      () => Promise.resolve(),
+      () => writeFile(file, 'nonsense: ['),
+      // A directory where the file should be: readFile fails with EISDIR.
+      () => mkdir(file, { recursive: true }),
+    ];
+    for (const prepare of cases) {
+      await rm(file, { recursive: true, force: true });
+      await prepare();
+      const s = service();
+      let settled = false;
+      void s.ready.then(() => {
+        settled = true;
+      });
+      await tick();
+      expect(settled).toBe(false);
+      await s.load();
+      await tick();
+      expect(settled).toBe(true);
+      expect(s.list()).toEqual([]);
+      // A later load (nothing calls one today) finds it already settled.
+      await s.load();
+      await expect(s.ready).resolves.toBeUndefined();
+    }
   });
 });

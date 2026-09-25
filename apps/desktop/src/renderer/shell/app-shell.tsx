@@ -36,6 +36,7 @@ import { WorkspaceManageDialog } from '../features/workspace/manage-dialog.js';
 import { RemoveProjectDialog } from '../features/workspace/remove-project-dialog.js';
 import { ShareDialog } from '../features/workspace/share-dialog.js';
 import { JoinDialog } from '../features/workspace/join-dialog.js';
+import { OpenTeamWorkspaceDialog } from '../features/workspace/open-team-workspace-dialog.js';
 import { MoveProjectDialog } from '../features/explorer/move-project-dialog.js';
 import { SecretTokenDialog } from '../features/secrets/secret-token-dialog.js';
 import { SyncPanel } from '../features/sync/sync-panel.js';
@@ -438,6 +439,7 @@ export function AppShell() {
       <RemoveProjectDialog />
       <ShareDialog />
       <JoinDialog />
+      <OpenTeamWorkspaceDialog />
       <SignInDialog />
       <TeamDialog />
       <MoveProjectDialog />

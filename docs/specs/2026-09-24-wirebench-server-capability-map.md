@@ -13,7 +13,7 @@ stable; plans, branches and commits select work by them.
 | `server-host` | The `wirebench-server` package: HTTP + WebSocket host, configuration, SQLite store, bare-repository store, Docker image, health endpoint | — | `2026-09-24-wirebench-server-host-design.md` |
 | `identity` | Local accounts (invite by email, password), OIDC provider login, sessions and tokens; the desktop sign-in flow (system browser + PKCE, token in `safeStorage`) and the no-account path | `server-host` | `2026-09-24-wirebench-server-identity-design.md` |
 | `teams-access` | Teams, membership, per-workspace roles (viewer / editor / admin), invitations, the admin UI in the app | `identity` | `2026-09-24-wirebench-server-teams-access-design.md` |
-| `server-sync` | `ServerBackend implements SyncBackend`: `share.yaml` `kind: server`, one-round-trip fetch/merge/push, server-side three-way merge with the engine and git on a bare repository, role enforcement (a viewer's push is refused), join by URL | `server-host`, `identity`, `teams-access` | `2026-09-24-wirebench-server-sync-design.md` |
+| `server-sync` | `ServerBackend implements SyncBackend`: `share.yaml` `kind: server`, fetch/merge/push over HTTP, the engine's three-way merge on the client and commits stored with git on a bare repository (ADR-0012), role enforcement (a viewer's push is refused), *Open a team workspace…* | `server-host`, `identity`, `teams-access` | `2026-09-24-wirebench-server-sync-design.md` |
 
 Build order: `server-host` → `identity` → `teams-access` → `server-sync`.
 
