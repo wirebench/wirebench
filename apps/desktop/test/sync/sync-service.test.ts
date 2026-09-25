@@ -7,7 +7,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitShareSettings, TreeChange } from '@wirebench/engine';
-import { commitMessage, DEFAULT_GIT_SHARE_SETTINGS, isWirebenchError, WirebenchError } from '@wirebench/engine';
+import {
+  commitMessage,
+  DEFAULT_GIT_SHARE_SETTINGS,
+  DEFAULT_SYNC_SETTINGS,
+  isWirebenchError,
+  WirebenchError,
+} from '@wirebench/engine';
 import type { SyncBackend } from '../../src/main/sync/backend.js';
 import { SyncService } from '../../src/main/sync/sync-service.js';
 import type { SyncServiceDeps } from '../../src/main/sync/sync-service.js';
@@ -1083,5 +1089,222 @@ describe('SyncService — commits held for secrets', () => {
     h.service.stop();
     expect(scans.listeners.size).toBe(0);
     await Promise.resolve();
+  });
+});
+
+describe('SyncService — server codes (server-sync §3.5)', () => {
+  const rejectedByServer = (): WirebenchError =>
+    new WirebenchError('sync-push-rejected', 'Someone pushed to this workspace first.');
+
+  it("a sync-push-rejected pulls, then pushes exactly once more, as git's rejection does", async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    h.backend.pushScript.push(() => Promise.reject(rejectedByServer()));
+
+    await h.service.push();
+
+    const relevant = h.backend.calls.filter((call) => ['push', 'fetch', 'merge'].includes(call));
+    expect(relevant).toEqual(['push', 'fetch', 'merge', 'push']);
+  });
+
+  it('a sync-push-rejected on start keeps the commits ahead, without merging or an error', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    h.backend.current = status({ state: 'ahead', ahead: 1 });
+    h.backend.pushScript.push(() => Promise.reject(rejectedByServer()));
+
+    await h.service.start();
+
+    expect(h.backend.calls).not.toContain('merge');
+    expect(h.service.status()).toMatchObject({ state: 'ahead', ahead: 1 });
+    expect(h.service.status().error).toBeUndefined();
+  });
+
+  it('sync-offline is offline, with the same 300 s back-off as git-offline', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    const fetches = (): number => h.backend.calls.filter((call) => call === 'fetch').length;
+
+    h.backend.fetchScript.push(() => Promise.reject(new WirebenchError('sync-offline', 'Could not reach wb.test')));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetches()).toBe(2);
+    expect(h.service.status()).toMatchObject({ state: 'offline', error: { code: 'sync-offline' } });
+
+    await vi.advanceTimersByTimeAsync(299_999);
+    expect(fetches()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetches()).toBe(3);
+    expect(h.service.status().state).toBe('clean');
+    h.service.stop();
+  });
+
+  it.each(['sync-push-rejected', 'sync-forbidden', 'sync-too-large'])('%s keeps the state it found', async (code) => {
+    const h = harness({ autoFetchSeconds: 0 });
+    h.backend.current = status({ state: 'ahead', ahead: 1 });
+    await h.service.fetch();
+    h.backend.fetchScript.push(() => Promise.reject(new WirebenchError(code, 'Not this time.')));
+
+    await rejectionOf(h.service.fetch());
+
+    expect(h.service.status()).toMatchObject({ state: 'ahead', ahead: 1, error: { code } });
+  });
+
+  it('any other server code is an error state', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    h.backend.current = status({ state: 'ahead', ahead: 1 });
+    await h.service.fetch();
+    h.backend.fetchScript.push(() =>
+      Promise.reject(new WirebenchError('sync-history-mismatch', 'Open the workspace again.')),
+    );
+
+    await rejectionOf(h.service.fetch());
+
+    expect(h.service.status()).toMatchObject({ state: 'error', error: { code: 'sync-history-mismatch' } });
+  });
+});
+
+describe('SyncService — a viewer never pushes (server-sync §3.4)', () => {
+  const viewer = (overrides: Partial<SyncStatusWire> = {}): SyncStatusWire =>
+    status({ kind: 'server', remote: 'https://wb.test', branch: 'main', role: 'viewer', ...overrides });
+
+  /** Settings as a server share has them: the three shared fields, no remote or branch. */
+  function serverHarness(): Harness {
+    return harness({}, { settings: () => ({ ...DEFAULT_SYNC_SETTINGS, autoFetchSeconds: 0 }) });
+  }
+
+  it('a manual push is refused with sync-forbidden; the backend is not asked and the state stays', async () => {
+    const h = serverHarness();
+    h.backend.current = viewer({ state: 'ahead', ahead: 1 });
+    await h.service.fetch();
+
+    const error = await rejectionOf(h.service.push());
+
+    expect(isWirebenchError(error) && error.code).toBe('sync-forbidden');
+    expect(h.backend.calls).not.toContain('push');
+    expect(h.service.status()).toMatchObject({
+      state: 'ahead',
+      ahead: 1,
+      error: {
+        code: 'sync-forbidden',
+        message: 'You have viewer access in this workspace; changes stay on this machine.',
+      },
+    });
+  });
+
+  it('a save still commits, and its push is skipped', async () => {
+    const h = serverHarness();
+    h.backend.current = viewer({ uncommitted: 1 });
+    h.backend.changes = [requestChange];
+
+    h.service.afterSave('manual');
+    await vi.advanceTimersByTimeAsync(500);
+    await h.service.log(1);
+
+    expect(h.backend.calls).toContain('commit');
+    expect(h.backend.calls).not.toContain('push');
+    expect(h.service.status()).toMatchObject({ ahead: 1 });
+    expect(h.service.status().error).toBeUndefined();
+  });
+
+  it('start makes the catch-up commit but pushes nothing that is waiting', async () => {
+    const h = serverHarness();
+    h.backend.current = viewer({ state: 'ahead', ahead: 1, uncommitted: 1 });
+    h.backend.changes = [requestChange];
+
+    await h.service.start();
+
+    expect(h.backend.calls).toContain('commit');
+    expect(h.backend.calls).toContain('fetch');
+    expect(h.backend.calls).not.toContain('push');
+    expect(h.service.status().ahead).toBe(2);
+  });
+
+  it('promoted to editor by a fetch, the next push goes out', async () => {
+    const h = serverHarness();
+    h.backend.current = viewer({ state: 'ahead', ahead: 1 });
+    await h.service.fetch();
+    await rejectionOf(h.service.push());
+
+    h.backend.current = { ...h.backend.current, role: 'editor' };
+    await h.service.fetch();
+    await h.service.push();
+
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+    expect(h.service.status()).toMatchObject({ ahead: 0, role: 'editor' });
+    expect(h.service.status().error).toBeUndefined();
+  });
+});
+
+describe('SyncService — stop polling and resume (server-sync §3.4, R6)', () => {
+  const fetchesOf = (h: Harness): number => h.backend.calls.filter((call) => call === 'fetch').length;
+
+  it.each(['sync-signed-out', 'sync-account-disabled', 'sync-access-removed'])(
+    'stops the fetch timer on %s until resume(), which fetches now and re-arms it',
+    async (code) => {
+      const h = harness({ autoFetchSeconds: 60 });
+      await h.service.start();
+      expect(fetchesOf(h)).toBe(1);
+
+      h.backend.fetchScript.push(() => Promise.reject(new WirebenchError(code, 'Sign in to wb.test again.')));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetchesOf(h)).toBe(2);
+      expect(h.service.status()).toMatchObject({ state: 'error', error: { code } });
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(fetchesOf(h)).toBe(2);
+
+      h.service.resume();
+      await h.service.log(1);
+      expect(fetchesOf(h)).toBe(3);
+      expect(h.service.status().state).toBe('clean');
+      expect(h.service.status().error).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetchesOf(h)).toBe(4);
+      h.service.stop();
+    },
+  );
+
+  it('resume() does nothing unless a stop-polling failure stopped the timer, nor after stop()', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    h.service.resume();
+    await h.service.log(1);
+    expect(fetchesOf(h)).toBe(1);
+
+    h.backend.fetchScript.push(() => Promise.reject(new WirebenchError('sync-signed-out', 'Sign in first.')));
+    await rejectionOf(h.service.fetch());
+    h.service.stop();
+    h.service.resume();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(fetchesOf(h)).toBe(2);
+  });
+
+  it('a stop-polling failure from a push cancels the timer already armed', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    h.backend.current = status({ state: 'ahead', ahead: 1 });
+    h.backend.pushScript.push(() =>
+      Promise.reject(new WirebenchError('sync-access-removed', 'You no longer have access.')),
+    );
+
+    await rejectionOf(h.service.push());
+    await vi.advanceTimersByTimeAsync(600_000);
+
+    expect(fetchesOf(h)).toBe(1);
+    expect(h.service.status()).toMatchObject({ state: 'error', error: { code: 'sync-access-removed' } });
+    h.service.stop();
+  });
+
+  it('a fetch that succeeds after a stop resumes polling on its own', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    h.backend.fetchScript.push(() => Promise.reject(new WirebenchError('sync-signed-out', 'Sign in first.')));
+    await rejectionOf(h.service.fetch());
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(fetchesOf(h)).toBe(2);
+
+    await h.service.fetch();
+    expect(fetchesOf(h)).toBe(3);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchesOf(h)).toBe(4);
+    h.service.stop();
   });
 });

@@ -3,10 +3,10 @@
  * straight into the folder, there is nothing to fetch/merge/push, and every operation beyond the
  * always-clean `probe()` (and the no-op `log`/`changedPaths`/`subscribeRemote`) is unsupported.
  *
- * It also stands in where no real backend can run yet (see `create-backend.ts`): a git share on a
- * machine without git (reported as `kind: 'git'` with `git-not-found`) and a server share until
- * spec 2 (reported as `kind: 'server'`). Only what `probe()` reports changes; `kind` stays
- * `'folder'` so `SyncService` never tries to commit, fetch or push through it.
+ * It also stands in where no real backend can run (see `create-backend.ts`): a git share on a
+ * machine without git (reported as `kind: 'git'` with `git-not-found`), and a server share opened
+ * without the server services (reported as `kind: 'server'` with `sync-not-supported`). Only what
+ * `probe()` reports changes; `kind` stays `'folder'` so `SyncService` never tries to commit, fetch or push through it.
  *
  * None of these methods need to be `async`: `syncNotSupported` already returns a rejected
  * promise, and the other three just wrap a plain value in `Promise.resolve`.

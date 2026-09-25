@@ -238,6 +238,9 @@ const workspaceService = new WorkspaceService({
     return location === undefined ? undefined : new GitCli(location, { hooksDir });
   },
   hooksDir,
+  // A server share syncs through the same client and accounts as sign-in and the Team dialog; the
+  // accounts' `ready` and `onChange` gate and resume its polling (server-sync §3.4, §5.3).
+  server: { client: serverClient, accounts: accountService },
   engine: engineService,
   globals: globalProperties,
   secrets: secretStore,

@@ -4389,13 +4389,16 @@ export const syncSettingsPatchWireSchema = z.object({
 export type SyncSettingsPatchWire = z.infer<typeof syncSettingsPatchWireSchema>;
 
 /** How the open workspace (or a picker row) is shared; `managed` means its tree lives in app data.
- * `autoFetchSeconds`/`commitOnSave`/`pushOnSave` are present only for `kind === 'git'` — the
- * persisted `GitShareSettings`, so the Sync panel can show them without guessing a default. */
+ * `autoFetchSeconds`/`commitOnSave`/`pushOnSave` are present for a git or server share — the
+ * persisted settings, so the Sync panel can show them without guessing a default. `server` names a
+ * Wirebench Server share's server, workspace and team (display only), which the panel shows instead
+ * of a remote and branch (server-sync §3.4). */
 export const workspaceShareWireSchema = z.object({
   kind: z.enum(['folder', 'git', 'server']),
   managed: z.boolean(),
   remote: z.string().optional(),
   branch: z.string().optional(),
+  server: z.object({ url: z.string(), workspaceId: z.string(), teamName: z.string().optional() }).optional(),
   autoFetchSeconds: z.number().int().min(0).max(86_400).optional(),
   commitOnSave: z.boolean().optional(),
   pushOnSave: z.boolean().optional(),

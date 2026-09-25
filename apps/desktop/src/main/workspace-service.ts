@@ -25,6 +25,8 @@ import {
   createWorkspace,
   createWorkspaceEnvironment,
   DEFAULT_GIT_SHARE_SETTINGS,
+  DEFAULT_SYNC_SETTINGS,
+  shareSyncSettings,
   EMPTY_LOCAL_STATE,
   loadLocalState,
   loadProject,
@@ -57,6 +59,8 @@ import type {
   GitShareSettings,
   Project,
   SaveResult,
+  ServerAccount,
+  SyncSettings,
   TlsOptions,
   Workspace,
   WorkspaceEnvironment,
@@ -75,7 +79,9 @@ import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretStore } from './secrets.js';
-import { createSyncBackend } from './sync/create-backend.js';
+import type { AccountService } from './account-service.js';
+import type { TokenSource } from './server-token.js';
+import { createSyncBackend, type ServerSyncServices } from './sync/create-backend.js';
 import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
@@ -227,6 +233,15 @@ export interface WorkspaceServiceDeps {
    * have unreviewed findings. Omitted in tests that never scan (nothing is held).
    */
   readonly secretScans?: Pick<SecretScanSessions, 'findings' | 'onChange'>;
+  /**
+   * The Wirebench Server client and accounts a server share syncs through (server-sync §5.3). The
+   * accounts also say when they have loaded (`ready`: a server workspace's first call waits for
+   * it) and when a sign-in should resume a stopped sync (`onChange`). Omitted in tests that never
+   * open a server share, which then opens with `sync-not-supported`.
+   */
+  readonly server?: ServerSyncServices & {
+    readonly accounts: TokenSource & Pick<AccountService, 'onChange' | 'ready' | 'list'>;
+  };
 }
 
 /** One project reference of the open workspace, plus the host that is (or is not) behind it. */
@@ -252,7 +267,7 @@ interface OpenWorkspace {
   readonly tree: string;
   /**
    * `undefined` for a local workspace (tree === dir); set once `share.yaml` exists. Mutable:
-   * `updateSyncSettings` patches its `.git` settings in place after persisting them.
+   * `updateSyncSettings` patches its `.git` or `.server` settings in place after persisting them.
    */
   share: WorkspaceShare | undefined;
   readonly entries: OpenProjectEntry[];
@@ -413,26 +428,77 @@ function withoutActiveEnvironment(workspace: Workspace): Workspace {
 
 /**
  * `WorkspaceWire.share`/`WorkspaceSummaryWire.share` from `resolveTree`'s result. `managed` is
- * true when the tree lives inside app data — a git share never sets `share.path` (its tree is
- * the managed `<dir>/tree` clone); a folder share always does (an external, user-picked folder).
+ * true when the tree lives inside app data — a git or server share never sets `share.path` (its
+ * tree is the managed `<dir>/tree`); a folder share always does (an external, user-picked folder).
  */
 function shareWire(share: WorkspaceShare | undefined): WorkspaceShareWire | undefined {
   if (share === undefined) {
     return undefined;
   }
+  const settings = shareSyncSettings(share);
+  const server = share.server;
   return {
     kind: share.kind,
     managed: share.path === undefined,
     ...(share.git?.remote !== undefined ? { remote: share.git.remote } : {}),
     ...(share.git?.branch !== undefined ? { branch: share.git.branch } : {}),
-    ...(share.git !== undefined
+    ...(server !== undefined
       ? {
-          autoFetchSeconds: share.git.autoFetchSeconds,
-          commitOnSave: share.git.commitOnSave,
-          pushOnSave: share.git.pushOnSave,
+          server: {
+            url: server.url,
+            workspaceId: server.workspaceId,
+            ...(server.teamName !== undefined ? { teamName: server.teamName } : {}),
+          },
+        }
+      : {}),
+    ...(settings !== undefined
+      ? {
+          autoFetchSeconds: settings.autoFetchSeconds,
+          commitOnSave: settings.commitOnSave,
+          pushOnSave: settings.pushOnSave,
         }
       : {}),
   };
+}
+
+/** What `SyncService` reads: the share's own settings (`share.server ?? share.git`, §3.4), else the defaults. */
+function syncSettingsOf(share: WorkspaceShare | undefined): SyncSettings {
+  return (share === undefined ? undefined : shareSyncSettings(share)) ?? DEFAULT_SYNC_SETTINGS;
+}
+
+/**
+ * `share` with `patch` applied. A git share takes all five fields, `branch` and `remote` validated and
+ * trimmed first. A server share takes the three shared ones: its URL and workspace are fixed when it
+ * is shared, so a `remote` or `branch` is refused (server-sync §3.4).
+ *
+ * @throws WirebenchError `sync-not-supported` for a local or folder workspace, or for a `remote` or
+ * `branch` on a server share.
+ */
+function patchedSyncShare(share: WorkspaceShare | undefined, patch: SyncSettingsPatchWire): WorkspaceShare {
+  const common = {
+    ...(patch.autoFetchSeconds !== undefined ? { autoFetchSeconds: patch.autoFetchSeconds } : {}),
+    ...(patch.commitOnSave !== undefined ? { commitOnSave: patch.commitOnSave } : {}),
+    ...(patch.pushOnSave !== undefined ? { pushOnSave: patch.pushOnSave } : {}),
+  };
+  if (share?.kind === 'git') {
+    const git: GitShareSettings = {
+      ...(share.git ?? DEFAULT_GIT_SHARE_SETTINGS),
+      ...common,
+      ...(patch.branch !== undefined ? { branch: assertBranchName(patch.branch) } : {}),
+      ...(patch.remote !== undefined ? { remote: assertRemoteUrl(patch.remote) } : {}),
+    };
+    return { ...share, git };
+  }
+  if (share?.kind === 'server' && share.server !== undefined) {
+    if (patch.remote !== undefined || patch.branch !== undefined) {
+      throw new WirebenchError(
+        'sync-not-supported',
+        'A workspace shared through Wirebench Server has no remote or branch to change.',
+      );
+    }
+    return { ...share, server: { ...share.server, ...common } };
+  }
+  throw new WirebenchError('sync-not-supported', 'This workspace is not shared as a git repository or to a server.');
 }
 
 export class WorkspaceService implements ProjectRouter {
@@ -481,6 +547,11 @@ export class WorkspaceService implements ProjectRouter {
     this.state = new WorkspaceState(deps.userDataDir);
     this.now = deps.now ?? ((): Date => new Date());
     this.startup = this.clearJoining();
+    // A sign-in (or any account change) may restart a server workspace's sync that a sign-out, a
+    // disabled account or removed access stopped (server-sync §3.4, R6). Lives as long as the service.
+    deps.server?.accounts.onChange((servers) => {
+      this.resumeServerSync(servers);
+    });
   }
 
   /** Empties `.joining/` once per service; a failure is kept for {@link lastError}, never thrown. */
@@ -492,6 +563,20 @@ export class WorkspaceService implements ProjectRouter {
       });
     } catch (error) {
       this.failure = errorMessage(error);
+    }
+  }
+  /**
+   * Resumes the open server workspace's sync when `servers` shows its account signed in. Both URLs
+   * are stored normalised. `SyncService.resume` is itself a no-op unless polling was stopped.
+   */
+  private resumeServerSync(servers: readonly ServerAccount[]): void {
+    const open = this.current;
+    const server = open?.share?.kind === 'server' ? open.share.server : undefined;
+    if (open?.sync === undefined || server === undefined) {
+      return;
+    }
+    if (servers.some((account) => account.url === server.url && account.signedOut !== true)) {
+      open.sync.resume();
     }
   }
 
@@ -1147,28 +1232,18 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /**
-   * Patches the open workspace's git share settings (`branch`/`remote` validated and trimmed
-   * first) and applies them to the running `SyncService` (picks up a new `autoFetchSeconds`).
+   * Patches the open workspace's sync settings and applies them to the running `SyncService` (picks
+   * up a new `autoFetchSeconds`): all five for a git share (`branch`/`remote` validated and trimmed
+   * first), the three shared ones for a server share (server-sync §3.4).
    *
-   * @throws WirebenchError `sync-not-supported` when the workspace is not a git share.
+   * @throws WirebenchError `sync-not-supported` when the workspace is neither a git nor a server
+   * share, or for a `remote`/`branch` on a server share.
    */
   async updateSyncSettings(patch: SyncSettingsPatchWire): Promise<SyncStatusWire> {
     const open = this.requireOpen();
     return await this.enqueueWorkspaceOp(async () => {
       this.requireStillOpen(open);
-      if (open.share === undefined || open.share.kind !== 'git') {
-        throw new WirebenchError('sync-not-supported', 'This workspace is not shared as a git repository.');
-      }
-      const current = open.share.git ?? DEFAULT_GIT_SHARE_SETTINGS;
-      const next: GitShareSettings = {
-        ...current,
-        ...(patch.autoFetchSeconds !== undefined ? { autoFetchSeconds: patch.autoFetchSeconds } : {}),
-        ...(patch.commitOnSave !== undefined ? { commitOnSave: patch.commitOnSave } : {}),
-        ...(patch.pushOnSave !== undefined ? { pushOnSave: patch.pushOnSave } : {}),
-        ...(patch.branch !== undefined ? { branch: assertBranchName(patch.branch) } : {}),
-        ...(patch.remote !== undefined ? { remote: assertRemoteUrl(patch.remote) } : {}),
-      };
-      const nextShare: WorkspaceShare = { ...open.share, git: next };
+      const nextShare = patchedSyncShare(open.share, patch);
       // Persisted before anything in memory changes: a failed write must leave the live
       // settings (and what a concurrent read sees) exactly as they were.
       await saveShare(open.dir, nextShare, this.fsOption());
@@ -1188,15 +1263,30 @@ export class WorkspaceService implements ProjectRouter {
     if (share === undefined) {
       return;
     }
-    const settings = (): GitShareSettings => open.share?.git ?? DEFAULT_GIT_SHARE_SETTINGS;
-    const backend = await createSyncBackend({ share, tree: open.tree, git: this.deps.git, settings });
+    if (share.kind === 'server' && this.deps.server !== undefined) {
+      // The launch reopens the last workspace while the accounts are still loading. Before they
+      // have, there is no token, and the first fetch would show *Sign in* by mistake (§3.4, R6).
+      await this.deps.server.accounts.ready;
+      if (this.stale(open)) {
+        return;
+      }
+    }
+    const gitSettings = (): GitShareSettings => open.share?.git ?? DEFAULT_GIT_SHARE_SETTINGS;
+    const backend = await createSyncBackend({
+      share,
+      tree: open.tree,
+      git: this.deps.git,
+      settings: gitSettings,
+      dir: open.dir,
+      ...(this.deps.server !== undefined ? { server: this.deps.server } : {}),
+    });
     if (this.stale(open)) {
       return;
     }
     const workspaceId = open.workspace.id;
     const sync = new SyncService({
       backend,
-      settings,
+      settings: () => syncSettingsOf(open.share),
       onStatus: (status) => {
         this.onSyncStatus(open, status);
       },
