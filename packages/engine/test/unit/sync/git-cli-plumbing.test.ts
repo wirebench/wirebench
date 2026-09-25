@@ -368,4 +368,17 @@ describeRealGit('GitCli plumbing against the real system git', () => {
     });
     expect((await git.run(repo, ['cat-file', 'blob', id], { stdout: 'buffer' })).stdout).toHaveLength(64 * 1024);
   });
+
+  it('an early git exit while stdin is still being written does not crash the process (EPIPE)', async () => {
+    // `cat-file -s <object-id>` never reads stdin at all; git exits (128: unknown object) as soon
+    // as it has resolved the id. Writing several MiB of `input` after that means the write to the
+    // closed pipe fails with EPIPE — the case the runner's stdin 'error' listener exists to catch.
+    // Without that listener this rejects the *test process*, not just the assertion below.
+    const input = Buffer.alloc(4 * 1024 * 1024, 0x61);
+
+    await expect(git.run(repo, ['cat-file', '-s', '0'.repeat(40)], { input })).rejects.toMatchObject({
+      code: 'git-failed',
+      details: { exitCode: 128 },
+    });
+  });
 });
