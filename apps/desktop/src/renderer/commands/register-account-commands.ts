@@ -31,7 +31,7 @@ export function registerAccountCommands(): void {
       if (only !== undefined) {
         void useAccountStore.getState().signOut(only.url);
       } else {
-        useUiStore.getState().openPreferences('accounts' as never);
+        useUiStore.getState().openPreferences('accounts');
       }
     },
   });

@@ -4215,6 +4215,7 @@ export const preferencesWireSchema = z.object({
     logSize: z.number(),
   }),
   updates: z.object({ checkOnLaunch: z.boolean() }),
+  accounts: z.object({ showInStatusBar: z.boolean() }),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;
@@ -4231,6 +4232,7 @@ export const preferencesSectionSchema = z.enum([
   'editor',
   'ui',
   'updates',
+  'accounts',
   'shortcuts',
 ]);
 export type PreferencesSectionWire = z.infer<typeof preferencesSectionSchema>;
@@ -4251,6 +4253,7 @@ export const preferencesPatchWireSchema = z.object({
   editor: z.record(z.string(), z.unknown()).optional(),
   ui: z.record(z.string(), z.unknown()).optional(),
   updates: z.record(z.string(), z.unknown()).optional(),
+  accounts: z.record(z.string(), z.unknown()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;

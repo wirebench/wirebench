@@ -27,6 +27,7 @@ section's defaults without touching any other.
 | **Editor** | Monaco's font, tab size, line numbers, word wrap, validate-before-send, auto-format responses, and autosave |
 | **UI** | Theme, the default request layout (side-by-side/stacked, split/tabs), delete confirmations, and how many history entries and HTTP Log rows to keep |
 | **Updates** | Whether Wirebench checks GitHub Releases for a new version at launch |
+| **Accounts** | Every server you're known to, sign out or remove one, add another, and whether the status bar shows who you're signed in as |
 | **Shortcuts** | Every command's keybinding, and a way to change it |
 
 <Aside type="tip" title="A request's own settings win">
@@ -46,6 +47,19 @@ runs a native file picker, since Wirebench never trusts a path the interface alo
 Preferences → Git only ever asks Wirebench to detect, locate, or clear the git executable — it
 never lets you type a path directly. **Detect** looks for `git` where it would normally be found;
 if that fails, or you want a different one, **Browse…** opens a native picker.
+
+### Accounts
+
+Preferences → Accounts lists every server Wirebench knows about, each with its email, display
+name, device name, and whether it's currently signed in. Per row, **Sign out** ends that session
+without forgetting the server, and **Remove** signs out and forgets it; **Add server…** opens the
+same sign-in dialog as the status bar item, to add another. See
+[Sign in to a server](/wirebench/guides/shared-workspaces/#sign-in-to-a-server) for what signing
+in does and when Wirebench asks for it.
+
+**Show sign-in in the status bar** (on by default) controls only whether the status bar's account
+item appears once a server is known — the list of servers itself isn't a preference; it lives
+wherever Wirebench keeps accounts, not in this preferences document.
 
 ## Theme
 

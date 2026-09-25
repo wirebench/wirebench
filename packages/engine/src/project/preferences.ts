@@ -191,6 +191,12 @@ export interface UpdatePreferences {
   readonly checkOnLaunch: boolean;
 }
 
+/** Account-related preferences. The account list itself lives elsewhere; this is display-only. */
+export interface AccountPreferences {
+  /** Whether the status bar shows the account item once a server is known. */
+  readonly showInStatusBar: boolean;
+}
+
 /** The whole preferences document. */
 export interface Preferences {
   readonly http: HttpPreferences;
@@ -203,6 +209,7 @@ export interface Preferences {
   readonly editor: EditorPreferences;
   readonly ui: UiPreferences;
   readonly updates: UpdatePreferences;
+  readonly accounts: AccountPreferences;
   /**
    * Keybinding overrides, keyed by command id: the chord that runs it, or `''` when the user
    * unbound it. Empty by default — a command with no entry uses its registered chord. Written
@@ -261,6 +268,7 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
     logSize: 500,
   }),
   updates: Object.freeze({ checkOnLaunch: false }),
+  accounts: Object.freeze({ showInStatusBar: true }),
   shortcuts: Object.freeze({}),
 });
 
@@ -352,6 +360,7 @@ export const preferencesSchema = z.object({
     })
     .optional(),
   updates: z.object({ checkOnLaunch: z.boolean().optional() }).optional(),
+  accounts: z.object({ showInStatusBar: z.boolean().optional() }).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 
@@ -411,6 +420,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
     editor: parseSection(shape.editor, root['editor']),
     ui: parseSection(shape.ui, root['ui']),
     updates: parseSection(shape.updates, root['updates']),
+    accounts: parseSection(shape.accounts, root['accounts']),
     shortcuts: parseSection(shape.shortcuts, root['shortcuts']),
   };
   return {
@@ -428,6 +438,7 @@ export function mergePreferences(patch: unknown, base: Preferences = DEFAULT_PRE
       defaultLayout: mergeSection(base.ui.defaultLayout, value.ui?.defaultLayout),
     },
     updates: mergeSection(base.updates, value.updates),
+    accounts: mergeSection(base.accounts, value.accounts),
     shortcuts: { ...base.shortcuts, ...(value.shortcuts ?? {}) },
   };
 }
