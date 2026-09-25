@@ -13,11 +13,12 @@ import {
   type MemberRoleRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { isForeignKeyViolation } from '../../db/errors.js';
 import { findUserByEmail } from '../../identity/repo.js';
 import { emailLower } from '../../identity/sessions.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
-import { alreadyMember, forbidden, lastAdmin, memberNotFound, userUnknown } from '../errors.js';
+import { alreadyMember, forbidden, lastAdmin, memberNotFound, teamNotFound, userUnknown } from '../errors.js';
 import * as repo from '../repo.js';
 import { requireTeamRole } from '../roles.js';
 
@@ -57,8 +58,15 @@ export const memberRoutes =
         const body = request.body as MemberAddRequest;
         const user = await findUserByEmail(db, emailLower(body.email));
         if (user === undefined) throw userUnknown();
-        if (!(await repo.insertMember(db, { teamId, userId: user.id, role: body.role, at: env.now() }))) {
-          throw alreadyMember();
+        try {
+          if (!(await repo.insertMember(db, { teamId, userId: user.id, role: body.role, at: env.now() }))) {
+            throw alreadyMember();
+          }
+        } catch (error) {
+          // A racing team delete: the guard passed, but the team was gone by the time this insert
+          // ran. Answer like the guard would have (§3.1: not found, never forbidden).
+          if (isForeignKeyViolation(error, 'team_members_team_id_fkey')) throw teamNotFound();
+          throw error;
         }
         return reply.code(201).send(await repo.memberOf(db, teamId, user.id));
       },

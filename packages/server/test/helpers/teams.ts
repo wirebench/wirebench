@@ -1,4 +1,4 @@
-import type { DefaultRole } from '@wirebench/engine';
+import type { DefaultRole, GitCli } from '@wirebench/engine';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { newId } from '../../src/identity/tokens.js';
 import { teamsModule } from '../../src/teams/module.js';
@@ -7,7 +7,12 @@ import { identityHarness, type IdentityHarness, type SignedInUser } from './iden
 
 /** Identity plus teams-access over a fresh schema, both on the harness clock. */
 export function teamsHarness(
-  options: { readonly env?: Record<string, string>; readonly provider?: OidcProvider } = {},
+  options: {
+    readonly env?: Record<string, string>;
+    readonly provider?: OidcProvider;
+    /** Overrides the repository store's git client — a test forcing `RepoStore.create` to fail. */
+    readonly git?: GitCli;
+  } = {},
 ): Promise<IdentityHarness> {
   return identityHarness({ ...options, modules: (clock) => [teamsModule({ now: () => clock.now })] });
 }

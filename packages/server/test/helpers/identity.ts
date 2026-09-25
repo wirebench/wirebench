@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
+import type { GitCli } from '@wirebench/engine';
 import { loadConfig } from '../../src/config.js';
 import type { ServerHooks, ServerModule } from '../../src/context.js';
 import { migrate } from '../../src/db/migrate.js';
@@ -49,6 +50,8 @@ export async function identityHarness(
     readonly env?: Record<string, string>;
     readonly provider?: OidcProvider;
     readonly modules?: readonly ServerModule[] | ((clock: TestClock) => readonly ServerModule[]);
+    /** Overrides the repository store's git client — a test forcing `RepoStore.create` to fail. */
+    readonly git?: GitCli;
   } = {},
 ): Promise<IdentityHarness> {
   const db = await testDatabase();
@@ -81,7 +84,7 @@ export async function identityHarness(
   const modules = [identity, ...extra];
   await migrate(db, await allMigrations(modules));
   await RepoStore.prepare(dataDir);
-  const repos = new RepoStore({ git: testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
+  const repos = new RepoStore({ git: options.git ?? testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
   const ctx = await testContext({ dataDir, db, config, repos });
   const app = await buildServer(ctx, { modules });
   return {

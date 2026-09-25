@@ -18,12 +18,12 @@ import {
   type WorkspaceRole,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { isUniqueViolation } from '../../db/errors.js';
+import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireUser } from '../../identity/guard.js';
 import { newId } from '../../identity/tokens.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
-import { workspaceExists, workspaceNameTaken, workspaceNotFound } from '../errors.js';
+import { teamNotFound, workspaceExists, workspaceNameTaken, workspaceNotFound } from '../errors.js';
 import { cleanName } from '../names.js';
 import * as repo from '../repo.js';
 import { effectiveRole, factsOf, requireTeamRole, requireWorkspaceRole, resolveRole } from '../roles.js';
@@ -121,6 +121,9 @@ export const workspaceRoutes =
                 );
               });
           }
+          // A racing team delete: the guard passed, but the team was gone by the time this insert
+          // ran. Answer like the guard would have (§3.1: not found, never forbidden).
+          if (isForeignKeyViolation(error, 'workspaces_team_id_fkey')) throw teamNotFound();
           conflictOr(error);
         }
         const row = (await repo.workspaceById(db, id))!;
@@ -163,14 +166,18 @@ export const workspaceRoutes =
       { preHandler: requireWorkspaceRole(db, 'admin'), schema: { params } },
       async (request, reply) => {
         const { workspaceId } = request.workspaceAccess!;
-        await repo.deleteWorkspace(db, workspaceId); // grants go by cascade
-        // §3.7: the row is the source of truth; the repository moves under tmp/, never deleted.
-        await repos
-          .withLock(workspaceId, () => repos.remove(workspaceId))
-          .catch((error: unknown) => {
+        // The row delete and the repository move run inside the same per-workspace lock as
+        // `create`, so a re-create of this id cannot interleave between them — otherwise it could
+        // either see a spurious 409 (the old repository still on disk when it tries to build) or
+        // have its brand-new repository moved away by this delete's cleanup.
+        await repos.withLock(workspaceId, async () => {
+          await repo.deleteWorkspace(db, workspaceId); // grants go by cascade
+          // §3.7: the row is the source of truth; the repository moves under tmp/, never deleted.
+          await repos.remove(workspaceId).catch((error: unknown) => {
             if (!isMissing(error)) throw error;
             request.log.warn({ workspaceId }, 'deleted a workspace whose repository was already gone');
           });
+        });
         return reply.code(204).send();
       },
     );

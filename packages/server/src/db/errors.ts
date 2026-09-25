@@ -17,6 +17,13 @@ export function isUniqueViolation(error: unknown, constraint: string): boolean {
   return e?.code === '23505' && e.constraint === constraint;
 }
 
-export function isForeignKeyViolation(error: unknown): boolean {
-  return shape(error)?.code === '23503';
+/**
+ * `23503` (a foreign-key violation) — the row a racing delete removed out from under a write that
+ * checked access first. `constraint`, when given, narrows to the specific foreign key so a route
+ * with more than one only maps the one it means.
+ */
+export function isForeignKeyViolation(error: unknown, constraint?: string): boolean {
+  const e = shape(error);
+  if (e?.code !== '23503') return false;
+  return constraint === undefined || e.constraint === constraint;
 }

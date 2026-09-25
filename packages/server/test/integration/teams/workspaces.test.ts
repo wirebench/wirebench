@@ -1,10 +1,12 @@
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
+import { GitCli } from '@wirebench/engine';
 import type { TeamWorkspace } from '@wirebench/engine';
 import { newId } from '../../../src/identity/tokens.js';
 import * as repo from '../../../src/teams/repo.js';
 import { describeDb } from '../../helpers/database.js';
+import { gitLocation } from '../../helpers/git.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
 import { call, seedTeam, seedWorkspace, teamsHarness } from '../../helpers/teams.js';
 
@@ -66,6 +68,31 @@ describeDb('/workspaces (§3.2, §3.6, §3.7)', () => {
       body: { code: 'teams-workspace-exists' },
     });
     expect(await repo.workspaceById(h.db, orphan)).toBeUndefined();
+  });
+
+  it('a failing repository build leaves no row and no repository (§11)', async () => {
+    // `run` rejects for every git invocation, so `RepoStore.create`'s first `git init` throws a
+    // plain `git-failed` — not `server-repo-exists` — and `conflictOr` must let it through as a
+    // 5xx rather than swallowing it.
+    const failingGit = new GitCli(gitLocation!, {
+      hooksDir: h.dataDir,
+      run: () => Promise.reject(new Error('simulated git failure')),
+    });
+    const broken = await teamsHarness({ git: failingGit });
+    try {
+      const owner = await signedInUser(broken, { email: 'owner@example.com' });
+      const brokenTeam = await seedTeam(broken, { name: 'Broken', admins: [owner] });
+      const id = newId();
+      const res = await call<{ code?: string }>(broken, owner, 'POST', `/teams/${brokenTeam.id}/workspaces`, {
+        id,
+        name: 'Boom',
+      });
+      expect(res.status).toBeGreaterThanOrEqual(500);
+      expect(await repo.workspaceById(broken.db, id)).toBeUndefined();
+      expect(await broken.repos.exists(id)).toBe(false);
+    } finally {
+      await broken.close();
+    }
   });
 
   it('default none hides it from members without a grant, as a 404', async () => {

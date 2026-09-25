@@ -69,6 +69,32 @@ describeDb('teams repository (§4.1)', () => {
     expect(isForeignKeyViolation(inUse)).toBe(true);
   });
 
+  it('a team deleted between an access guard and the write surfaces the exact FK the routes map to teams-team-not-found', async () => {
+    // Stands in for the race a concurrent team delete creates: the guard that checked the team
+    // exists has already passed, and the insert that follows is the one that now hits the gone
+    // row. `isForeignKeyViolation(error, <constraint>)` is what `workspaces.ts` and `members.ts`
+    // use to turn this into `teamNotFound()` instead of a bare 500.
+    const team = await seedTeam(h, { name: 'Doomed' });
+    await repo.deleteTeam(h.db, team.id); // no workspaces yet, so this one succeeds
+    const workspaceError: unknown = await repo
+      .insertWorkspace(h.db, {
+        id: newId(),
+        name: 'Orphaned',
+        teamId: team.id,
+        defaultRole: 'viewer',
+        createdBy: null,
+        at: h.clock.now,
+      })
+      .catch((e: unknown) => e);
+    expect(isForeignKeyViolation(workspaceError, 'workspaces_team_id_fkey')).toBe(true);
+    expect(isForeignKeyViolation(workspaceError, 'some-other-constraint')).toBe(false);
+
+    const memberError: unknown = await repo
+      .insertMember(h.db, { teamId: team.id, userId: alice.user.id, role: 'member', at: h.clock.now })
+      .catch((e: unknown) => e);
+    expect(isForeignKeyViolation(memberError, 'team_members_team_id_fkey')).toBe(true);
+  });
+
   it('visibleWorkspaces: members see their teams’ workspaces, server admins see every one', async () => {
     const root = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     const team = await seedTeam(h, { name: 'T', members: [alice] });
