@@ -512,6 +512,21 @@ function patchedSyncShare(share: WorkspaceShare | undefined, patch: SyncSettings
   throw new WirebenchError('sync-not-supported', 'This workspace is not shared as a git repository or to a server.');
 }
 
+/** How long `close()` waits for a sync operation in flight before closing anyway. */
+export const SYNC_CLOSE_WAIT_MS = 15_000;
+
+/** `promise`, or nothing after `ms`; never rejects. */
+async function waitAtMost(promise: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    promise.catch(() => undefined),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+  ]);
+  clearTimeout(timer);
+}
+
 export class WorkspaceService implements ProjectRouter {
   /** The open workspace, or `undefined` when the user is at the picker. */
   private current: OpenWorkspace | undefined;
@@ -1007,6 +1022,13 @@ export class WorkspaceService implements ProjectRouter {
     // nothing held for a conflict is replayed into a closing workspace.
     open.sync?.stop();
     open.held.clear();
+    // The operation already running (a push or a merge, up to SYNC_TRANSFER_TIMEOUT_MS) finishes
+    // before anything can reopen this workspace: a second backend on the same `server/` folder
+    // would otherwise race it (I1, m2). Its callbacks see `closing` and do nothing. Bounded, so a
+    // hung request cannot keep the app from switching workspaces.
+    if (open.sync !== undefined) {
+      await waitAtMost(open.sync.idle(), SYNC_CLOSE_WAIT_MS);
+    }
     try {
       // Nothing is written to a project on close: unsaved changes stay unsaved and come back
       // the next time this workspace opens (see `unsaved-store.ts`).
@@ -1380,6 +1402,11 @@ export class WorkspaceService implements ProjectRouter {
    * is announced to its watcher first, so the pull's own writes are not reported back.
    */
   private applyPulled(open: OpenWorkspace, changedPaths: readonly string[]): Promise<void> {
+    // Closing: nothing to reload, and `close()` may be waiting on the sync operation that called
+    // this from inside a queued workspace operation, so queuing behind it would never run.
+    if (this.stale(open)) {
+      return Promise.resolve();
+    }
     return this.enqueueWorkspaceOp(async () => {
       if (this.stale(open)) {
         return;

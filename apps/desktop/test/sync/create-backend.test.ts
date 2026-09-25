@@ -211,4 +211,42 @@ describe('createSyncBackend', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('the default identity is the signed-in account for the URL, never one marked signed out', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wirebench-create-backend-'));
+    try {
+      await mkdir(join(dir, 'tree'), { recursive: true });
+      await ServerState.initialize(join(dir, SERVER_STATE_DIR), null, new Map());
+      const account = {
+        url: 'https://sync.example.test',
+        userId: '01J8Z0000000000000000000AC',
+        email: 'ada@example.test',
+        displayName: 'Ada',
+        deviceName: 'laptop',
+        tokenRef: `sec_${'0'.repeat(26)}`,
+        addedAt: '2026-09-25T00:00:00.000Z',
+      };
+      let accounts: (typeof account & { signedOut?: true })[] = [{ ...account, signedOut: true }];
+      const backend = await createSyncBackend({
+        share: serverShare,
+        tree: join(dir, 'tree'),
+        git: undefined,
+        settings,
+        dir,
+        server: {
+          client: new ServerClient({ send: () => Promise.reject(new Error('no network here')) }),
+          accounts: {
+            tokenFor: () => Promise.resolve(undefined),
+            markSignedOut: () => undefined,
+            list: () => accounts,
+          },
+        },
+      });
+      expect(await backend.identity()).toBeUndefined();
+      accounts = [account];
+      expect(await backend.identity()).toEqual({ name: 'Ada', email: 'ada@example.test' });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

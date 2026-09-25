@@ -155,27 +155,52 @@ function mapRecord(
 /** The file operations `ServerState` lets a test replace. */
 export interface ServerStateIo {
   readonly rename: (from: string, to: string) => Promise<void>;
+  /** Reads a pending commit file; a test counts the calls. */
+  readonly readFile?: (path: string) => Promise<string>;
 }
 
-const advanceSchema = z.object({ head: syncCommitIdSchema, clearPending: z.boolean() });
+/** `pushed` names the pending files the push published: only those leave `pending/`. */
+const advanceSchema = z.object({
+  head: syncCommitIdSchema,
+  pushed: z.array(z.string().regex(PENDING_NAME)),
+});
+
+/** A pending file's identity on disk: a file rewritten under a reused name never matches. */
+type FileSignature = string;
+
+function signatureOf(info: Stats): FileSignature {
+  return `${info.ino}:${info.size}:${info.mtimeMs}`;
+}
 
 function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
 }
 
+/**
+ * How to recover from a damaged state or a history the server no longer has (I4). *Stop sharing*
+ * does not read `server/` and keeps the files; sharing again reconnects through a merge (O2), so
+ * unpushed edits survive. Removing the copy to open it again would throw them away.
+ */
+export const RECONNECT_GUIDANCE = 'Stop sharing, then share it again to reconnect; your files are kept.';
+
 function corrupt(file: string, cause?: unknown): WirebenchError {
   return new WirebenchError(
     'sync-state-corrupt',
-    `This workspace's sync state is damaged (${file}). Remove this copy, then open it again with Open a team workspace….`,
+    `This workspace's sync state is damaged (${file}). ${RECONNECT_GUIDANCE}`,
     { details: { file }, ...(cause !== undefined ? { cause } : {}) },
   );
 }
 
 /** A YAML file checked against `schema`; `undefined` when absent; `sync-state-corrupt` when unreadable or invalid. */
-async function readYaml<T>(path: string, schema: z.ZodType<T>, file: string): Promise<T | undefined> {
+async function readYaml<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  file: string,
+  read: (path: string) => Promise<string> = (at) => readFile(at, 'utf8'),
+): Promise<T | undefined> {
   let text: string;
   try {
-    text = await readFile(path, 'utf8');
+    text = await read(path);
   } catch (error) {
     if (isMissing(error)) return undefined;
     throw error;
@@ -227,6 +252,14 @@ function toDoc(parsed: z.infer<typeof stateDocSchema>): ServerStateDoc {
 export class ServerState {
   /** The roll-forward of an interrupted `advanceBase`, run once per instance before its first use. */
   private recovery: Promise<void> | undefined;
+  /**
+   * Each pending file as last read, by name, with its signature: every probe replays the pending
+   * commits, and re-reading and decoding each one every time grows with the queue (I5).
+   */
+  private readonly pendingCache = new Map<
+    string,
+    { readonly signature: FileSignature; readonly record: PendingCommitRecord }
+  >();
 
   /**
    * `dir` is `<workspaceDir>/server` ({@link SERVER_STATE_DIR}). `io.rename` is the folder swap of
@@ -273,19 +306,7 @@ export class ServerState {
 
   async pending(): Promise<PendingCommitRecord[]> {
     await this.recover();
-    const records: PendingCommitRecord[] = [];
-    for (const name of await this.pendingNames()) {
-      const file = `${PENDING_DIR}/${name}`;
-      const record = await readYaml(join(this.dir, PENDING_DIR, name), pendingSchema, file);
-      if (record === undefined) throw corrupt(file);
-      records.push({
-        id: record.id,
-        subject: record.subject,
-        at: record.at,
-        changes: record.changes.map(canonicalChange),
-      });
-    }
-    return records;
+    return (await this.pendingEntries()).map((entry) => entry.record);
   }
 
   async appendPending(commit: Omit<PendingCommitRecord, 'id'>): Promise<PendingCommitRecord> {
@@ -315,17 +336,24 @@ export class ServerState {
 
   /**
    * Replaces `base/` with `files` at `head`, sets `knownHead` to `head` and `behind` to 0 (the
-   * client stands on `head`, so it knows at least that far), and with `clearPending` drops
-   * `pending/` (after a push). Journaled: once `advance.yaml` is written the advance completes, now
-   * or on the next use after a crash.
+   * client stands on `head`, so it knows at least that far), and drops the pending commits whose
+   * ids are in `pushed` (after a push; `[]` after a merge). Only those: a commit appended while the
+   * push was in flight, even by another `ServerState` on the same folder after a reopen, was not
+   * sent and must stay pending (I1). Journaled: once `advance.yaml` is written the advance
+   * completes, now or on the next use after a crash.
    */
-  async advanceBase(head: string, files: TreeFiles, options: { readonly clearPending: boolean }): Promise<void> {
+  async advanceBase(head: string, files: TreeFiles, options: { readonly pushed: readonly string[] }): Promise<void> {
     await this.recover();
+    const wanted = new Set(options.pushed);
+    const pushed =
+      wanted.size === 0
+        ? []
+        : (await this.pendingEntries()).filter((entry) => wanted.has(entry.record.id)).map((entry) => entry.name);
     const next = join(this.dir, BASE_NEXT_DIR);
     await rm(next, { recursive: true, force: true });
     await mkdir(next, { recursive: true });
     await writeTreeFiles(next, files);
-    await writeYaml(join(this.dir, ADVANCE_FILE), { head, clearPending: options.clearPending });
+    await writeYaml(join(this.dir, ADVANCE_FILE), { head, pushed });
     try {
       await this.applyAdvance();
     } catch (error) {
@@ -389,7 +417,11 @@ export class ServerState {
       await rm(join(this.dir, BASE_DIR), { recursive: true, force: true });
       await this.io.rename(next, join(this.dir, BASE_DIR));
     }
-    if (journal.clearPending) await rm(join(this.dir, PENDING_DIR), { recursive: true, force: true });
+    for (const name of journal.pushed) await rm(join(this.dir, PENDING_DIR, name), { force: true });
+    if (journal.pushed.length > 0) {
+      // Gone once empty, as before; still holding a commit made meanwhile, it stays.
+      await rmdir(join(this.dir, PENDING_DIR)).catch(() => undefined);
+    }
     const doc = await this.readDoc();
     await this.writeDoc({ ...doc, base: { head: journal.head }, knownHead: journal.head, behind: 0 });
     await rm(join(this.dir, ADVANCE_FILE), { force: true });
@@ -403,6 +435,41 @@ export class ServerState {
 
   private async writeDoc(doc: ServerStateDoc): Promise<void> {
     await writeYaml(join(this.dir, STATE_FILE), doc);
+  }
+
+  /** Every pending commit with its file name, oldest first; unchanged files come from the cache. */
+  private async pendingEntries(): Promise<{ readonly name: string; readonly record: PendingCommitRecord }[]> {
+    const names = await this.pendingNames();
+    const entries: { readonly name: string; readonly record: PendingCommitRecord }[] = [];
+    for (const name of names) {
+      const file = `${PENDING_DIR}/${name}`;
+      const path = join(this.dir, PENDING_DIR, name);
+      let signature: FileSignature;
+      try {
+        signature = signatureOf(await stat(path));
+      } catch (error) {
+        // Pushed and removed by another instance on the same folder since the listing.
+        if (isMissing(error)) continue;
+        throw error;
+      }
+      const cached = this.pendingCache.get(name);
+      if (cached !== undefined && cached.signature === signature) {
+        entries.push({ name, record: cached.record });
+        continue;
+      }
+      const stored = await readYaml(path, pendingSchema, file, this.io.readFile);
+      if (stored === undefined) throw corrupt(file);
+      const record: PendingCommitRecord = {
+        id: stored.id,
+        subject: stored.subject,
+        at: stored.at,
+        changes: stored.changes.map(canonicalChange),
+      };
+      this.pendingCache.set(name, { signature, record });
+      entries.push({ name, record });
+    }
+    for (const name of [...this.pendingCache.keys()]) if (!names.includes(name)) this.pendingCache.delete(name);
+    return entries;
   }
 
   private async pendingNames(): Promise<string[]> {

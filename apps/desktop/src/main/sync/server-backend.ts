@@ -19,7 +19,7 @@
  *
  * Electron-free: the server package's contract run imports this file (O4).
  */
-import type { SyncEncoding, SyncLogEntry, SyncPushRequest, SyncPushResponse, TreeChange } from '@wirebench/engine';
+import type { SyncEncoding, SyncLogEntry, SyncPushResponse, TreeChange } from '@wirebench/engine';
 import {
   describeTreePath,
   isWirebenchError,
@@ -33,10 +33,12 @@ import { withToken, type TokenSource } from '../server-token.js';
 import type { SyncBackend } from './backend.js';
 import {
   applyChanges,
+  RECONNECT_GUIDANCE,
   diffTreeFiles,
   readTreeFiles,
   sameTreeFile,
   writeTreeFiles,
+  type PendingCommitRecord,
   type ServerState,
   type ServerStateDoc,
   type TreeFile,
@@ -56,7 +58,16 @@ export interface ServerBackendDeps {
   readonly now?: () => Date;
   /** The signed-in account's name and email: the identity until one is set (§3.1). */
   readonly defaultIdentity?: () => { readonly name: string; readonly email: string } | undefined;
+  /** The most one push request carries before it is split; a test lowers it. Default {@link PUSH_BATCH_BYTES}. */
+  readonly pushBatchBytes?: number;
 }
+
+/**
+ * One push request's size before the pending commits are split over several (I5). The server's
+ * `bodyLimitMb` is 32 MiB by default and at least 1; a server with a lower limit answers `413`, and
+ * the batch is halved until it fits or holds a single commit.
+ */
+export const PUSH_BATCH_BYTES = 8 * 1024 * 1024;
 
 /** A server workspace has one branch (assumption 2); shown where the git backend shows its branch. */
 const BRANCH = 'main';
@@ -72,14 +83,42 @@ export const STOP_POLLING_CODES: ReadonlySet<string> = new Set([
   'sync-access-removed',
 ]);
 
-const HISTORY_MISMATCH_MESSAGE =
-  "This copy's history no longer matches the server's. Remove it, then open the workspace again with Open a team workspace….";
+const HISTORY_MISMATCH_MESSAGE = `This copy's history no longer matches the server's. ${RECONNECT_GUIDANCE}`;
+
+/** A pending commit as one push request carries it. */
+function wireCommit({ subject, at, changes }: PendingCommitRecord): {
+  subject: string;
+  at: string;
+  changes: PendingCommitRecord['changes'][number][];
+} {
+  return { subject, at, changes: [...changes] };
+}
+
+/** Its share of a push body, in bytes. */
+function wireSize(commit: PendingCommitRecord): number {
+  return Buffer.byteLength(JSON.stringify(wireCommit(commit)));
+}
+
+/** The commits from `start` that fit in `budget` bytes; always at least one. */
+function takeBatch(pending: readonly PendingCommitRecord[], start: number, budget: number): PendingCommitRecord[] {
+  const batch: PendingCommitRecord[] = [];
+  let size = 0;
+  for (let index = start; index < pending.length; index += 1) {
+    const commit = pending[index]!;
+    const next = size + wireSize(commit);
+    if (batch.length > 0 && next > budget) break;
+    batch.push(commit);
+    size = next;
+  }
+  return batch;
+}
 
 /**
  * §3.5's table: maps any error from a `ServerClient` call (or `withToken`) to the backend's code.
  * The original error is kept as the `cause`, with its `details` (the HTTP status). Codes the table
- * keeps (`sync-push-rejected`, `invalid-request`, `sync-path-refused`) and anything it does not list
- * pass through unchanged.
+ * keeps (`sync-push-rejected`, `invalid-request`, `sync-path-refused`) pass through unchanged, and
+ * so does any other code below 500. Any other 5xx (`server-shutting-down` during a restart, too) is
+ * the server not answering properly: *offline*, with the back-off, rather than a red error.
  */
 export function mapServerError(error: unknown): WirebenchError {
   if (!isWirebenchError(error)) {
@@ -122,7 +161,12 @@ export function mapServerError(error: unknown): WirebenchError {
     case 'sync-unknown-commit':
       return mapped('sync-history-mismatch', HISTORY_MISMATCH_MESSAGE);
     default:
-      return error;
+      return typeof status === 'number' && status >= 500
+        ? mapped(
+            'sync-offline',
+            'Wirebench Server is not answering properly. Changes stay on this machine until it does.',
+          )
+        : error;
   }
 }
 
@@ -178,6 +222,10 @@ function subjectOf(message: string): string {
   return (line ?? FALLBACK_SUBJECT).slice(0, MAX_SYNC_SUBJECT_LENGTH).trimEnd();
 }
 
+function uncommittedChanges(): WirebenchError {
+  return new WirebenchError('sync-uncommitted', 'Commit or discard your local changes before pulling.');
+}
+
 function conflictOpen(): WirebenchError {
   return new WirebenchError('sync-conflict', 'Resolve the merge conflicts before pulling again.');
 }
@@ -195,6 +243,7 @@ export class ServerBackend implements SyncBackend {
   private readonly deps: ServerBackendDeps;
   private readonly state: ServerState;
   private readonly now: () => Date;
+  private readonly pushBatchBytes: number;
   /** The server's history from a base backwards. It never changes, so keyed by the base it never goes stale. */
   private logCache: LogCache | undefined;
 
@@ -202,6 +251,7 @@ export class ServerBackend implements SyncBackend {
     this.deps = deps;
     this.state = deps.state;
     this.now = deps.now ?? (() => new Date());
+    this.pushBatchBytes = deps.pushBatchBytes ?? PUSH_BATCH_BYTES;
   }
 
   async probe(): Promise<SyncStatusWire> {
@@ -258,12 +308,16 @@ export class ServerBackend implements SyncBackend {
     const known = doc.knownHead;
     if (known === undefined || known === null || known === doc.base.head) return { conflicts: [], changedPaths: [] };
     const committed = await this.state.committedFiles();
-    if (changesBetween(committed, await readTreeFiles(this.deps.tree)).size > 0) {
-      throw new WirebenchError('sync-uncommitted', 'Commit or discard your local changes before pulling.');
-    }
+    const uncommitted = async (): Promise<boolean> =>
+      changesBetween(committed, await readTreeFiles(this.deps.tree)).size > 0;
+    if (await uncommitted()) throw uncommittedChanges();
     const answer = await this.call((url, token) =>
       this.deps.client.syncChanges(url, token, this.deps.workspaceId, doc.base.head, known),
     );
+    // Saves are not held while the download runs (up to SYNC_TRANSFER_TIMEOUT_MS): one made
+    // meanwhile would be overwritten below by a merge computed without it (I2). Nothing has
+    // changed yet, so the state stays as it was and the next save pulls again.
+    if (await uncommitted()) throw uncommittedChanges();
     const base = await this.state.baseFiles();
     const theirs = applyChanges(base, answer.files);
     const result = mergeFiles(toText(base), toText(theirs), toText(committed), { modifyDelete: 'conflict' });
@@ -287,7 +341,7 @@ export class ServerBackend implements SyncBackend {
     }
 
     const hadPending = (await this.state.pending()).length > 0;
-    await this.state.advanceBase(known, theirs, { clearPending: false });
+    await this.state.advanceBase(known, theirs, { pushed: [] });
     if (hadPending) await this.recordMerge(merged);
     return { conflicts: [], changedPaths: [...written.keys()] };
   }
@@ -299,26 +353,45 @@ export class ServerBackend implements SyncBackend {
     return { committed: true };
   }
 
+  /**
+   * Sends the pending commits as they stand now, oldest first, in as many requests as the server's
+   * body limit needs (I5): each request stands on the head the previous one made, so the history
+   * is kept commit for commit. After each request the base moves on by exactly the commits it
+   * carried, and only their files leave `pending/`: a commit made meanwhile (another session after
+   * a reopen, I1) stays pending and out of the base. A failure keeps what already landed.
+   */
   async push(): Promise<SyncStatusWire> {
     const pending = await this.state.pending();
     if (pending.length === 0) return this.probe();
-    const doc = await this.state.read();
-    const request: SyncPushRequest = {
-      parent: doc.base.head,
-      commits: pending.map(({ subject, at, changes }) => ({ subject, at, changes: [...changes] })),
-    };
-    let result: SyncPushResponse;
-    try {
-      result = await this.call((url, token) =>
-        this.deps.client.pushCommits(url, token, this.deps.workspaceId, request),
+    let parent = (await this.state.read()).base.head;
+    let base = await this.state.baseFiles();
+    let budget = this.pushBatchBytes;
+    for (let next = 0; next < pending.length;) {
+      const batch = takeBatch(pending, next, budget);
+      let result: SyncPushResponse;
+      try {
+        result = await this.call((url, token) =>
+          this.deps.client.pushCommits(url, token, this.deps.workspaceId, { parent, commits: batch.map(wireCommit) }),
+        );
+      } catch (error) {
+        if (isWirebenchError(error) && error.code === 'sync-too-large' && batch.length > 1) {
+          // The server's limit is lower than the budget: halve the batch and keep going.
+          budget = Math.floor(batch.reduce((sum, commit) => sum + wireSize(commit), 0) / 2);
+          continue;
+        }
+        // The role changed since the last fetch (§3.1): refresh it so the badge and SyncService agree.
+        if (isWirebenchError(error) && error.code === 'sync-forbidden') await this.state.update({ role: 'viewer' });
+        throw error;
+      }
+      base = applyChanges(
+        base,
+        batch.flatMap((commit) => commit.changes),
       );
-    } catch (error) {
-      // The role changed since the last fetch (§3.1): refresh it so the badge and SyncService agree.
-      if (isWirebenchError(error) && error.code === 'sync-forbidden') await this.state.update({ role: 'viewer' });
-      throw error;
+      await this.state.advanceBase(result.head, base, { pushed: batch.map((commit) => commit.id) });
+      await this.state.update({ lastSyncAt: this.now().toISOString() });
+      parent = result.head;
+      next += batch.length;
     }
-    await this.state.advanceBase(result.head, await this.state.committedFiles(), { clearPending: true });
-    await this.state.update({ lastSyncAt: this.now().toISOString() });
     return this.probe();
   }
 
@@ -344,7 +417,7 @@ export class ServerBackend implements SyncBackend {
     if (head === undefined || head === null) {
       throw new WirebenchError(
         'sync-state-corrupt',
-        "This workspace's sync state is damaged (a merge with no known head). Remove this copy, then open it again with Open a team workspace….",
+        `This workspace's sync state is damaged (a merge with no known head). ${RECONNECT_GUIDANCE}`,
         { details: { file: 'state.yaml' } },
       );
     }
@@ -360,7 +433,7 @@ export class ServerBackend implements SyncBackend {
     // Cleared first: an interruption after this leaves the resolution as uncommitted changes, which
     // the next commit takes, never a merge that SyncService could no longer finish.
     await this.state.clearMerge();
-    await this.state.advanceBase(head, new Map(Object.entries(record.theirs)), { clearPending: false });
+    await this.state.advanceBase(head, new Map(Object.entries(record.theirs)), { pushed: [] });
     await this.recordMerge(committed);
     return { changedPaths: [...changesBetween(before, committed).keys()] };
   }

@@ -270,6 +270,27 @@ describe('SyncService — queue', () => {
     expect(statuses.length).toBe(emittedBeforeRelease + 1);
   });
 
+  it('idle() settles once the operation running at stop() has finished, and never rejects', async () => {
+    const { backend, service } = harness({ autoFetchSeconds: 0 });
+    const gate = deferred();
+    backend.pushScript.push(() => gate.promise.then(() => Promise.reject(offline())));
+    const pushing = rejectionOf(service.push());
+    await vi.advanceTimersByTimeAsync(0);
+
+    service.stop();
+    let idle = false;
+    void service.idle().then(() => {
+      idle = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(idle).toBe(false);
+
+    gate.resolve();
+    await pushing;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(idle).toBe(true);
+  });
+
   it('returns the post-op status and emits it', async () => {
     const { backend, service, statuses } = harness({ autoFetchSeconds: 0 });
     backend.current = status({ behind: 2, state: 'behind' });
@@ -1217,19 +1238,43 @@ describe('SyncService — a viewer never pushes (server-sync §3.4)', () => {
     expect(h.service.status().ahead).toBe(2);
   });
 
-  it('promoted to editor by a fetch, the next push goes out', async () => {
+  it('promoted to editor by a fetch, the waiting commits push on their own (§1, §13.3)', async () => {
     const h = serverHarness();
     h.backend.current = viewer({ state: 'ahead', ahead: 1 });
     await h.service.fetch();
     await rejectionOf(h.service.push());
+    expect(h.backend.calls).not.toContain('push');
 
     h.backend.current = { ...h.backend.current, role: 'editor' };
     await h.service.fetch();
-    await h.service.push();
 
     expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
     expect(h.service.status()).toMatchObject({ ahead: 0, role: 'editor' });
     expect(h.service.status().error).toBeUndefined();
+
+    // Only the change of role pushes: the next fetch as an editor does not.
+    h.backend.current = { ...h.backend.current, ahead: 1 };
+    await h.service.fetch();
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+  });
+
+  it('promoted during a pull, the waiting commits push once the pull merged', async () => {
+    const h = serverHarness();
+    h.backend.current = viewer({ state: 'ahead', ahead: 1 });
+    await h.service.fetch();
+    h.backend.current = { ...h.backend.current, role: 'editor' };
+    await h.service.pull();
+    expect(h.backend.calls.slice(-3)).toEqual(['merge', 'probe', 'push']);
+    expect(h.service.status()).toMatchObject({ ahead: 0, role: 'editor' });
+  });
+
+  it('promoted with Push on save off, nothing pushes by itself', async () => {
+    const h = harness({}, { settings: () => ({ ...DEFAULT_SYNC_SETTINGS, autoFetchSeconds: 0, pushOnSave: false }) });
+    h.backend.current = viewer({ state: 'ahead', ahead: 1 });
+    await h.service.fetch();
+    h.backend.current = { ...h.backend.current, role: 'editor' };
+    await h.service.fetch();
+    expect(h.backend.calls).not.toContain('push');
   });
 });
 

@@ -83,7 +83,9 @@ export async function createSyncBackend(options: CreateSyncBackendOptions): Prom
         tree,
         state: new ServerState(join(dir, SERVER_STATE_DIR)),
         defaultIdentity: () => {
-          const account = server.accounts.list().find((candidate) => candidate.url === url);
+          const account = server.accounts
+            .list()
+            .find((candidate) => candidate.url === url && candidate.signedOut !== true);
           return account === undefined ? undefined : { name: account.displayName, email: account.email };
         },
       });

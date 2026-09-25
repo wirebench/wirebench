@@ -254,7 +254,7 @@ describe('ServerState (§4.2)', () => {
     ).rejects.toMatchObject({ code: 'sync-path-refused' });
   });
 
-  it('advanceBase replaces base/, moves the base and known heads, and clears pending only when asked', async () => {
+  it('advanceBase replaces base/, moves the base and known heads, and drops only the pending commits it names', async () => {
     const state = await ServerState.initialize(
       dir,
       HEAD_A,
@@ -270,13 +270,14 @@ describe('ServerState (§4.2)', () => {
       changes: [{ path: 'environments/qa.yaml', encoding: 'utf8', content: 'QA' }],
     });
 
-    await state.advanceBase(HEAD_B, new Map([['workspace.yaml', text('v2')]]), { clearPending: false });
+    await state.advanceBase(HEAD_B, new Map([['workspace.yaml', text('v2')]]), { pushed: [] });
     expect(await state.read()).toMatchObject({ base: { head: HEAD_B }, knownHead: HEAD_B, behind: 0 });
     expect(await state.baseFiles()).toEqual(new Map([['workspace.yaml', text('v2')]]));
     expect(await state.pending()).toHaveLength(1);
     expect((await state.committedFiles()).get('environments/qa.yaml')).toEqual(text('QA'));
 
-    await state.advanceBase(HEAD_C, await state.committedFiles(), { clearPending: true });
+    const pushed = (await state.pending()).map((commit) => commit.id);
+    await state.advanceBase(HEAD_C, await state.committedFiles(), { pushed });
     expect(await state.read()).toMatchObject({ base: { head: HEAD_C }, knownHead: HEAD_C, behind: 0 });
     expect(await state.pending()).toEqual([]);
     expect((await state.baseFiles()).get('environments/qa.yaml')).toEqual(text('QA'));
@@ -292,7 +293,7 @@ describe('ServerState (§4.2)', () => {
     });
     // What advanceBase leaves when the process dies right after writing the journal:
     await put(`${SERVER_STATE_DIR}/base.next/workspace.yaml`, 'v2');
-    await writeFile(join(dir, 'advance.yaml'), `head: ${HEAD_B}\nclearPending: true\n`);
+    await writeFile(join(dir, 'advance.yaml'), `head: ${HEAD_B}\npushed:\n  - 0001.yaml\n`);
 
     const reopened = new ServerState(dir);
     expect(await reopened.read()).toMatchObject({ base: { head: HEAD_B }, knownHead: HEAD_B, behind: 0 });
@@ -345,6 +346,51 @@ describe('ServerState (§4.2)', () => {
     expect(await new ServerState(dir).readMerge()).toEqual(merge);
   });
 
+  it('advanceBase keeps a pending commit it was not told about, even one another instance appended (I1)', async () => {
+    await ServerState.initialize(dir, HEAD_A, new Map([['workspace.yaml', text('v1')]]));
+    const first = new ServerState(dir);
+    const sent = await first.appendPending({
+      subject: 'Sent',
+      at: AT,
+      changes: [{ path: 'environments/a.yaml', encoding: 'utf8', content: 'a' }],
+    });
+    const later = await new ServerState(dir).appendPending({
+      subject: 'Later',
+      at: AT,
+      changes: [{ path: 'environments/b.yaml', encoding: 'utf8', content: 'b' }],
+    });
+    await first.advanceBase(HEAD_B, applyChanges(await first.baseFiles(), sent.changes), { pushed: [sent.id] });
+    expect((await first.pending()).map((commit) => commit.id)).toEqual([later.id]);
+    expect([...(await first.baseFiles()).keys()].sort()).toEqual(['environments/a.yaml', 'workspace.yaml']);
+    expect((await new ServerState(dir).committedFiles()).get('environments/b.yaml')).toEqual(text('b'));
+  });
+
+  it('reads each pending commit file once while it is unchanged, so a probe does not replay every body (I5)', async () => {
+    await ServerState.initialize(dir, HEAD_A, new Map([['workspace.yaml', text('v1')]]));
+    const reads: string[] = [];
+    const state = new ServerState(dir, {
+      rename,
+      readFile: (path) => {
+        reads.push(path);
+        return readFile(path, 'utf8');
+      },
+    });
+    for (const name of ['a', 'b', 'c']) {
+      await state.appendPending({
+        subject: name,
+        at: AT,
+        changes: [{ path: `environments/${name}.yaml`, encoding: 'utf8', content: name }],
+      });
+    }
+    const pendingReads = (): number => reads.filter((path) => path.includes('pending')).length;
+    await state.pending();
+    const first = pendingReads();
+    await state.pending();
+    await state.committedFiles();
+    expect(pendingReads()).toBe(first);
+    expect(first).toBeLessThanOrEqual(3);
+  });
+
   it('a swap that fails in a running process is finished by the next use', async () => {
     let failures = 1;
     const state = new ServerState(dir, {
@@ -356,7 +402,7 @@ describe('ServerState (§4.2)', () => {
     await ServerState.initialize(dir, HEAD_A, new Map([['workspace.yaml', text('v1')]]));
 
     await expect(
-      state.advanceBase(HEAD_B, new Map([['workspace.yaml', text('v2')]]), { clearPending: false }),
+      state.advanceBase(HEAD_B, new Map([['workspace.yaml', text('v2')]]), { pushed: [] }),
     ).rejects.toMatchObject({
       code: 'EPERM',
     });

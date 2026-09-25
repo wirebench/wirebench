@@ -728,7 +728,9 @@ function accountIdentity(
   server: ServerShareServices,
   url: string,
 ): { readonly identity?: { readonly name: string; readonly email: string } } {
-  const account = server.accounts.list().find((candidate) => normalizeServerUrl(candidate.url) === url);
+  const account = server.accounts
+    .list()
+    .find((candidate) => normalizeServerUrl(candidate.url) === url && candidate.signedOut !== true);
   return account !== undefined ? { identity: { name: account.displayName, email: account.email } } : {};
 }
 

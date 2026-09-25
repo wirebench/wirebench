@@ -48,6 +48,8 @@ interface StubCommit {
 class StubServer {
   readonly history: StubCommit[] = [];
   role: WorkspaceRole = 'editor';
+  /** Like the server's `bodyLimitMb`: a push body longer than this is `413 request-too-large`. */
+  limitBytes = Number.POSITIVE_INFINITY;
 
   head(): string | null {
     return this.history.at(-1)?.id ?? null;
@@ -101,6 +103,8 @@ class StubServer {
     ),
     pushCommits: vi.fn(
       (_url: string, _token: string, _id: string, body: SyncPushRequest): Promise<SyncPushResponse> => {
+        if (Buffer.byteLength(JSON.stringify(body)) > this.limitBytes)
+          return Promise.reject(problem('request-too-large', 413));
         if (this.role === 'viewer') return Promise.reject(problem('teams-forbidden', 403));
         if (body.parent !== this.head()) return Promise.reject(problem('sync-push-rejected', 409));
         const ids = body.commits.map((commit) =>
@@ -209,6 +213,7 @@ describe('mapServerError (§3.5)', () => {
       'sync-offline',
     ],
     ['internal → offline', problem('internal', 500), 'sync-offline'],
+    ['any other 5xx problem (a restart) → offline', problem('server-shutting-down', 503), 'sync-offline'],
     ['a bad response of 500 or more → offline', problem('server-bad-response', 502), 'sync-offline'],
     [
       'a 2xx of the wrong shape stays itself',
@@ -634,6 +639,116 @@ describe('ServerBackend over a stub server (§3.1)', () => {
     expect(await f.reopen(account).identity()).toEqual({ name: 'Ada', email: 'ada@example.com' });
     await f.backend.setIdentity('Bea', 'bea@example.com');
     expect(await f.reopen(account).identity()).toEqual({ name: 'Bea', email: 'bea@example.com' });
+  });
+
+  it('a push answered after another session committed keeps that commit pending, and out of the base (I1)', async () => {
+    const server = seeded();
+    const f = await joined(server);
+    await f.write('environments/a.yaml', 'a');
+    await f.backend.commit('Add a');
+    let answer!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const push = server.client.pushCommits.getMockImplementation()!;
+    server.client.pushCommits.mockImplementationOnce(async (...args) => {
+      const result = await push(...args);
+      await gate;
+      return result;
+    });
+    const pushing = f.backend.push();
+    await vi.waitFor(() => expect(server.client.pushCommits).toHaveBeenCalledTimes(1));
+
+    // The workspace was closed and reopened meanwhile: a second session commits a save.
+    const second = f.reopen();
+    await f.write('environments/qa.yaml', 'name: QA v2\n');
+    expect(await second.commit('Edit QA')).toEqual({ committed: true });
+    answer();
+    await pushing;
+
+    expect((await f.state.pending()).map((commit) => commit.subject)).toEqual(['Edit QA']);
+    expect((await f.state.baseFiles()).get('environments/qa.yaml')).toEqual(text('name: QA\n'));
+    expect(await second.probe()).toMatchObject({ state: 'ahead', ahead: 1, uncommitted: 0 });
+    await second.push();
+    expect(server.filesAt(server.head()).get('environments/qa.yaml')).toEqual(text('name: QA v2\n'));
+    expect(await second.probe()).toMatchObject({ state: 'clean', ahead: 0 });
+  });
+
+  it('a save made while the changes download is not overwritten: the merge stops with sync-uncommitted (I2)', async () => {
+    const server = seeded();
+    const f = await joined(server);
+    const base = server.head();
+    server.commit({ 'environments/qa.yaml': 'name: QA theirs\n' });
+    await f.backend.fetch();
+    const changes = server.client.syncChanges.getMockImplementation()!;
+    server.client.syncChanges.mockImplementationOnce(async (...args) => {
+      const answer = await changes(...args);
+      await f.write('environments/qa.yaml', 'name: QA mine\n'); // an autosave lands meanwhile
+      return answer;
+    });
+
+    await expect(f.backend.merge()).rejects.toMatchObject({ code: 'sync-uncommitted' });
+
+    expect(await f.read('environments/qa.yaml')).toBe('name: QA mine\n');
+    expect(await f.state.readMerge()).toBeUndefined();
+    expect((await f.state.read()).base.head).toBe(base);
+    expect(await f.backend.probe()).toMatchObject({ state: 'behind', uncommitted: 1 });
+  });
+
+  it("pushes waiting commits in batches under the server's body limit, each on the last head, keeping every commit (I5)", async () => {
+    const server = seeded();
+    const f = await joined(server);
+    for (let i = 0; i < 6; i += 1) {
+      await f.write(`environments/e${i}.yaml`, `name: ${String(i).repeat(400)}\n`);
+      await f.backend.commit(`Add e${i}`);
+    }
+    server.limitBytes = 1200; // two of these commits fit in one request, three do not
+
+    expect(await f.backend.push()).toMatchObject({ state: 'clean', ahead: 0 });
+
+    expect(server.history.map((commit) => commit.subject)).toEqual([
+      'Share workspace W',
+      ...[0, 1, 2, 3, 4, 5].map((i) => `Add e${i}`),
+    ]);
+    const landed = server.client.pushCommits.mock.calls
+      .map(([, , , body]) => body)
+      .filter((body) => Buffer.byteLength(JSON.stringify(body)) <= server.limitBytes);
+    expect(landed.length).toBeGreaterThan(1);
+    // Each request stands on the head the one before it made: the history stays linear.
+    let sent = 0;
+    for (const body of landed) {
+      expect(body.parent).toBe(server.history[sent]!.id);
+      sent += body.commits.length;
+    }
+    expect(sent).toBe(6);
+    expect(await f.state.pending()).toEqual([]);
+    expect((await f.state.read()).base.head).toBe(server.head());
+  });
+
+  it('a batch that lands before a later one fails stays pushed; one commit over the limit is sync-too-large and waits (I5)', async () => {
+    const server = seeded();
+    const f = await joined(server);
+    await f.write('environments/small.yaml', 'name: Small\n');
+    await f.backend.commit('Add small');
+    await f.write('environments/big.yaml', `name: ${'b'.repeat(2000)}\n`);
+    await f.backend.commit('Add big');
+    server.limitBytes = 1000;
+
+    await expect(f.backend.push()).rejects.toMatchObject({ code: 'sync-too-large' });
+
+    expect(server.history.map((commit) => commit.subject)).toEqual(['Share workspace W', 'Add small']);
+    expect((await f.state.pending()).map((commit) => commit.subject)).toEqual(['Add big']);
+    expect((await f.state.read()).base.head).toBe(server.head());
+    expect(await f.backend.probe()).toMatchObject({ state: 'ahead', ahead: 1, uncommitted: 0 });
+  });
+
+  it('a history mismatch and a damaged state guide to Stop sharing and sharing again, which keeps the files (I4)', async () => {
+    const server = seeded();
+    const f = await joined(server);
+    server.history.length = 0;
+    await expect(f.backend.fetch()).rejects.toThrow(/Stop sharing, then share it again/);
+    await writeFile(join(f.stateDir, 'state.yaml'), 'version: [');
+    expect((await f.reopen().probe()).error?.message).toMatch(/Stop sharing, then share it again/);
   });
 
   it('a damaged state is an error status from probe and sync-state-corrupt from everything else', async () => {

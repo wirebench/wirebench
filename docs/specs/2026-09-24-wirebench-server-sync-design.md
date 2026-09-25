@@ -175,8 +175,12 @@ lifted into a module both can import, and it is not copied. Every operation maps
 - **`commit(message)`.** Diffs the tree against the last committed snapshot. With nothing to commit it
   returns `{ committed: false }`. Otherwise it appends a pending commit and returns `{ committed: true }`.
 - **`push`.**
-  - It calls `POST /workspaces/:id/sync/commits` with `parent: base` and every pending commit, in order.
-  - `201 { head, ids }` clears the pending commits and sets base = known = head.
+  - It calls `POST /workspaces/:id/sync/commits` with `parent: base` and the pending commits, in order,
+    in as many requests as fit under the server's body limit (8 MiB each, halved after a `413` until one
+    commit is left). Each request's parent is the head the previous one made, so every commit is kept.
+  - Each `201 { head, ids }` removes exactly the pending commits that request carried, and sets base =
+    known = head, with base = the old base plus those commits. A commit made while the request was in
+    flight stays pending. `WorkspaceService.close()` waits (bounded) for an operation in flight.
   - `409 sync-push-rejected` is thrown as is. `SyncService.pushNow` already answers with pull and retry,
     and the pull fetches the new head (R3).
   - When the last status says viewer, the backend is never asked to push (§3.4). If the server still
@@ -336,6 +340,9 @@ awaits every queue. `close()` in `serve.ts` awaits it before `db.close()`, compl
   - commit on save keeps working, so the local log is meaningful;
   - `SyncService` skips the push in `commitThenMaybePush` and in the start-up `pushWaitingCommits`, and a
     manual `push()` answers `sync-forbidden` without a network call.
+  - when a fetch reports the role going from viewer to editor or admin, the fetch (or the pull it is
+    part of) ends by pushing the waiting commits, as the start-up catch-up does, once nothing needs
+    pulling first and *Push on save* is on.
 
   Editing is not blocked: in the intent, a viewer sends with local edits.
 - **Signed out or access removed (R6).**
@@ -362,14 +369,14 @@ awaits every queue. `close()` in `serve.ts` awaits it before `db.close()`, compl
 
 | Server or transport (client-side code) | Backend throws | Effect |
 | --- | --- | --- |
-| `server-unreachable`, `internal`, `server-bad-response` with status ≥ 500 | `sync-offline` | `offline` state, back-off (as `git-offline`) |
+| `server-unreachable`, `internal`, `server-bad-response` or any other code with status ≥ 500 | `sync-offline` | `offline` state, back-off (as `git-offline`) |
 | `409 sync-push-rejected` | `sync-push-rejected` | pull and retry once, as for the git rejection; state kept |
 | `account-signed-out` (no token, no call), `401 identity-unauthenticated` | `sync-signed-out` | error state, *Sign in* action; stop polling |
 | `403 identity-user-disabled` | `sync-account-disabled` | error state; stop polling |
 | `404 teams-workspace-not-found` | `sync-access-removed` | error state; stop polling |
 | `403 teams-forbidden` | `sync-forbidden` | state kept; role refreshed; the popover shows the reason |
 | `413 request-too-large`, `413 sync-too-large` | `sync-too-large` | state kept; the message names `bodyLimitMb` |
-| `sync-not-ancestor`, `sync-unknown-commit` | `sync-history-mismatch` | error state suggesting *Open a team workspace…* again (rejoin) |
+| `sync-not-ancestor`, `sync-unknown-commit` | `sync-history-mismatch` | error state suggesting *Stop sharing*, then sharing again, which reconnects through a merge (O2) and keeps the files; *Open a team workspace…* is the secondary choice |
 | `400 invalid-request`, `sync-path-refused` | the same code | error state with the server's message |
 
 `SyncService` changes in `apps/desktop/src/main/sync/sync-service.ts`:
@@ -379,7 +386,8 @@ awaits every queue. `close()` in `serve.ts` awaits it before `db.close()`, compl
 - The stop-polling set is `sync-signed-out`, `sync-account-disabled` and `sync-access-removed`, with
   `resume()`.
 
-The viewer skip (§3.4) and the `SyncSettings` type (§5.3) are the only other changes.
+The viewer skip and the push after a promotion (§3.4), `idle()` (which `WorkspaceService.close()`
+awaits, bounded) and the `SyncSettings` type (§5.3) are the only other changes.
 
 ## 4. Data model and storage
 
@@ -412,8 +420,9 @@ merge.yaml        # present only while a merge is in conflict: { conflicts: [pat
 ```
 
 - All writes are atomic, through `writeFileAtomic`, the same helper the tree uses.
-- A corrupt state file puts the status in `error` with `sync-state-corrupt`. The fix is *Open a team
-  workspace…* again.
+- A corrupt state file puts the status in `error` with `sync-state-corrupt`. The fix is *Stop sharing*
+  (which does not read `server/`), then sharing again, which reconnects through a merge (O2) and keeps
+  unpushed edits in the tree. *Open a team workspace…* is offered second.
 - Adoption (§3.4) renames the whole `<id>/` directory, so this state moves with it.
 
 ### 4.3 Server
@@ -649,7 +658,7 @@ async push(): Promise<SyncStatusWire> {
   - sign in and share a workspace to a team;
   - a second profile (`SyncProfiles`) opens it as a viewer, edits, sees *Viewer* and cannot push;
   - the fake server's `setRole` promotes the profile to editor; after a fetch the badge changes and the
-    push succeeds;
+    waiting commit pushes by itself;
   - a conflict through the fake's history opens the resolver, with both resolutions;
   - an empty server workspace is hidden from the open dialog until an editor shares into it;
   - `revoke(token)` mid-session shows *Sign in*, and polling stops.

@@ -131,6 +131,11 @@ export class SyncService {
    * the fetch timer stays off until {@link resume}, or until a fetch succeeds.
    */
   private pollingStopped = false;
+  /**
+   * A fetch saw the role go from viewer to editor or admin (§1, §13.3): the commits that waited on
+   * this machine push at the end of that operation, once nothing needs pulling first.
+   */
+  private promoted = false;
   private fetchTimer: Timer | undefined;
   private saveTimer: Timer | undefined;
   /** While a debounced save is pending: whether every save folded into it was an autosave. */
@@ -210,6 +215,15 @@ export class SyncService {
     this.armFetchTimer();
   }
 
+  /**
+   * Settles once every operation queued so far has finished; never rejects. After {@link stop}, that
+   * is the one already running: `WorkspaceService.close()` waits on it, so a push or a merge still in
+   * flight cannot write into the sync state or the tree of a workspace that reopened meanwhile.
+   */
+  idle(): Promise<void> {
+    return this.queue;
+  }
+
   /** Stops the timers; operations already queued still finish. */
   stop(): void {
     this.stopped = true;
@@ -239,12 +253,17 @@ export class SyncService {
   }
 
   fetch(): Promise<SyncStatusWire> {
-    return this.run(() => this.fetchNow());
+    return this.run(async () => {
+      await this.fetchNow();
+      await this.pushAfterPromotion();
+      return this.last;
+    });
   }
 
   pull(): Promise<SyncStatusWire> {
     return this.run(async () => {
       await this.pullNow();
+      await this.pushAfterPromotion();
       return this.last;
     });
   }
@@ -508,7 +527,11 @@ export class SyncService {
   }
 
   private async fetchNow(): Promise<SyncStatusWire> {
+    const before = this.last.role;
     const fetched = await this.backend.fetch();
+    if (before === 'viewer' && fetched.role !== undefined && fetched.role !== 'viewer') {
+      this.promoted = true;
+    }
     this.offline = false;
     const status = this.setStatus(
       fetched.lastSyncAt !== undefined ? fetched : { ...fetched, lastSyncAt: this.now().toISOString() },
@@ -540,6 +563,23 @@ export class SyncService {
         throw error;
       }
       await this.probeNow();
+    }
+  }
+
+  /**
+   * After a promotion (see {@link promoted}): pushes what waited, as the start-up catch-up does.
+   * While the remote is ahead the flag stays for the pull that must come first. A failure is a
+   * status, not a failure of the fetch or pull that noticed the promotion.
+   */
+  private async pushAfterPromotion(): Promise<void> {
+    if (!this.promoted || this.last.behind > 0) {
+      return;
+    }
+    this.promoted = false;
+    try {
+      await this.pushWaitingCommits();
+    } catch (error) {
+      this.recordError(error);
     }
   }
 

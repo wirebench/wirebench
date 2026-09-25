@@ -271,3 +271,46 @@ it('takes the three sync settings for a server share, and refuses a remote or a 
   }
   expect((await loadShare(dir))?.server?.autoFetchSeconds).toBe(120);
 });
+
+it('close waits for a push already in flight, so a reopen never shares the sync state with it (I1)', async () => {
+  const sent: HttpRequest[] = [];
+  let answerPush!: () => void;
+  const pushAnswered = new Promise<void>((resolve) => {
+    answerPush = resolve;
+  });
+  const PUSHED = 'b'.repeat(40);
+  const send = async (request: HttpRequest): Promise<HttpExchange> => {
+    sent.push(request);
+    const path = new URL(request.url).pathname;
+    if (path.endsWith('/sync/head')) return json(200, { head: HEAD, commits: 1, behind: 0, role: 'editor' });
+    if (path.endsWith('/sync/commits')) {
+      await pushAnswered;
+      return json(201, { head: PUSHED, ids: [PUSHED] });
+    }
+    return json(404, { code: 'not-found', message: `No route for ${path}` });
+  };
+  const service = newService({ client: new ServerClient({ send }), accounts: fakeAccounts().accounts });
+  const { id, dir } = await seedServerWorkspace();
+  // A commit an earlier session never pushed: opening pushes it.
+  await new ServerState(join(dir, SERVER_STATE_DIR)).appendPending({
+    subject: 'Waiting',
+    at: '2026-09-25T00:00:00.000Z',
+    changes: [{ path: 'environments/qa.yaml', encoding: 'utf8', content: 'name: QA\n' }],
+  });
+
+  await service.open(id);
+  await vi.waitFor(() => expect(pathsOf(sent).some((path) => path.endsWith('/sync/commits'))).toBe(true), WAIT);
+
+  let closed = false;
+  const closing = service.close().then(() => {
+    closed = true;
+  });
+  await settle(200);
+  expect(closed).toBe(false);
+
+  answerPush();
+  await closing;
+  const state = new ServerState(join(dir, SERVER_STATE_DIR));
+  expect(await state.pending()).toEqual([]);
+  expect((await state.read()).base.head).toBe(PUSHED);
+});
