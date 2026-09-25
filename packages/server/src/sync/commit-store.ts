@@ -125,11 +125,21 @@ function exitCodeOf(error: unknown): number | undefined {
   return typeof code === 'number' ? code : undefined;
 }
 
-/** `update-ref` lost its compare-and-swap: main moved (or appeared) after the head check. */
+/**
+ * `update-ref` lost its compare-and-swap: main moved ("is at X but expected Y") or appeared
+ * ("reference already exists") after the head check. Git words other failures to lock the ref the
+ * same way ("cannot lock ref …: Unable to create '…/main.lock': File exists"), and those are not a
+ * teammate's push: answered 409, the client would pull (a no-op) and push again forever, and the
+ * server would log nothing. They stay git failures, which the server answers with a logged 500.
+ */
 function lostSwap(error: unknown): boolean {
   if (exitCodeOf(error) !== 128) return false;
   const stderr = (error as WirebenchError).details?.stderr;
-  return typeof stderr === 'string' && /cannot lock ref/i.test(stderr);
+  return (
+    typeof stderr === 'string' &&
+    /cannot lock ref/i.test(stderr) &&
+    /but expected|reference already exists/i.test(stderr)
+  );
 }
 
 /** §6: nothing that is not a full hex object id ever becomes a git argument, so none can be an option. */
@@ -140,11 +150,21 @@ function commitId(value: string): string {
   return value;
 }
 
-/** An ISO 8601 time as git's internal date (`<unix seconds> +0000`), which it stores exactly. */
+/** The last instant of the year 9999: past it, a date no longer prints as a four-digit ISO year. */
+const LATEST_COMMIT_MS = Date.UTC(9999, 11, 31, 23, 59, 59);
+
+/**
+ * An ISO 8601 time as git's raw date (`@<unix seconds> +0000`), which it stores exactly. The `@`
+ * matters: without it git reads the number as a timestamp only between 1973 and 2099 and refuses
+ * the rest. Git refuses a negative time, so a time before 1970 (or past the year 9999) is the
+ * client's mistake, answered 400 here rather than a 500 from `commit-tree` half-way through a push.
+ */
 function gitDate(iso: string): string {
   const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) throw problem('invalid-request', 'Each commit needs a valid ISO 8601 time.', 400);
-  return `${Math.floor(ms / 1000)} +0000`;
+  if (Number.isNaN(ms) || ms < 0 || ms > LATEST_COMMIT_MS) {
+    throw problem('invalid-request', 'Each commit needs a valid ISO 8601 time between 1970 and 9999.', 400);
+  }
+  return `@${Math.floor(ms / 1000)} +0000`;
 }
 
 function treePath(path: string): string {
@@ -256,11 +276,18 @@ export class CommitStore {
   /**
    * Total commits on main, and, when `from` is given, how many come after it (§3.2). An unknown
    * `from` counts the total, as the spec's head row says: the client's base is not on this server.
+   * `at` is the head to count from, as {@link head} returned it (`null`: unborn), so a push landing
+   * between the two reads cannot make the counts describe a newer head than the one answered.
    */
-  async counts(workspaceId: string, from?: string): Promise<{ readonly commits: number; readonly behind?: number }> {
+  async counts(
+    workspaceId: string,
+    from?: string,
+    at?: string | null,
+  ): Promise<{ readonly commits: number; readonly behind?: number }> {
     if (from !== undefined) commitId(from);
+    if (typeof at === 'string') commitId(at);
     const dir = this.repos.path(workspaceId);
-    const head = await this.resolve(dir, MAIN);
+    const head = at === undefined ? await this.resolve(dir, MAIN) : at;
     if (head === null) return from === undefined ? { commits: 0 } : { commits: 0, behind: 0 };
     const commits = await this.count(dir, head);
     if (from === undefined) return { commits };
@@ -335,6 +362,10 @@ export class CommitStore {
       changes: commit.changes.map(stage),
     }));
     const dir = this.repos.path(workspaceId);
+    // The caller holds `withLock` and the server is one instance (§2), so no git process of ours
+    // can own the ref's lock now: one found here was left by a crash (a SIGKILL mid-`update-ref`),
+    // and left in place it would fail every push to this workspace from now on.
+    await rm(join(dir, ...MAIN.split('/')) + '.lock', { force: true });
     if ((await this.resolve(dir, MAIN)) !== parent) throw syncPushRejected();
 
     const index = join(this.tmpDir, `${workspaceId}-${randomBytes(8).toString('hex')}.idx`);

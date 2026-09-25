@@ -46,6 +46,14 @@ const ABSOLUTE = /^(?:\/|[A-Za-z]:)/;
  * `git~1:x`) — every spelling git itself refuses in a tree under `core.protectNTFS`.
  */
 const GIT_SEGMENT = /^(?:\.git|git~\d+)[. ]*(?::.*)?$/i;
+/**
+ * A segment Windows cannot hold: a reserved device name, with or without an extension (and with the
+ * spaces Windows ignores before it); a trailing dot or space, which Windows drops; or a character
+ * Windows refuses in a name. A Mac or Linux editor can create one, and once pushed it would stop
+ * every Windows teammate from opening the workspace, so both ends refuse it (`assertPathSegment`'s
+ * rules for the name part).
+ */
+const WINDOWS_UNSAFE_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9]) *(?:\.|$)|[. ]$|[<>:"|?*]/i;
 
 /** Why a path was refused; `details.reason` of the error. */
 type Refusal =
@@ -57,6 +65,7 @@ type Refusal =
   | 'empty-segment'
   | 'dot-segment'
   | 'git-segment'
+  | 'windows-unsafe'
   | 'machine-local'
   | 'not-in-tree'
   | 'not-a-file';
@@ -87,6 +96,9 @@ function refusal(path: string): Refusal | undefined {
   if (segments.some((segment) => GIT_SEGMENT.test(segment))) {
     return 'git-segment';
   }
+  if (segments.some((segment) => WINDOWS_UNSAFE_SEGMENT.test(segment))) {
+    return 'windows-unsafe';
+  }
   const first = segments[0] ?? '';
   if (MACHINE_LOCAL_PATHS.includes(first)) {
     return 'machine-local';
@@ -103,6 +115,7 @@ function refusal(path: string): Refusal | undefined {
 /**
  * Returns `path` when it is a relative, normalised, forward-slash tree path of at most 512
  * characters: no '..', '.' or empty segment, no '.git' segment (in any spelling git refuses), no
+ * segment Windows cannot hold (a device name, a trailing dot or space, one of `<>:"|?*`), no
  * backslash or control character, not absolute, not machine-local, whose first segment is one of
  * TREE_ITEMS, and which names a file (`workspace.yaml` and `.gitattributes` stand alone; the two
  * directories need something below them).

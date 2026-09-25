@@ -33,7 +33,7 @@ export const headRoutes =
         const { from } = request.query as SyncHeadQuery;
         return whileRepositoryExists(repos, workspaceId, async () => {
           const head = await env.store.head(workspaceId);
-          const { commits, behind } = await env.store.counts(workspaceId, from);
+          const { commits, behind } = await env.store.counts(workspaceId, from, head);
           return { head, commits, ...(behind !== undefined ? { behind } : {}), role };
         });
       },

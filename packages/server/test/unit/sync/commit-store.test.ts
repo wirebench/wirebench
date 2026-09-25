@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MAX_SYNC_FILE_BYTES, type GitCli, type SyncChange, type SyncPushCommit } from '@wirebench/engine';
@@ -145,13 +145,13 @@ describeGit('CommitStore (§3.3)', () => {
         commit('Files', [
           binary('projects/p/logo.png', bytes),
           { path: 'projects/p/notes.txt', encoding: 'base64', content: Buffer.from('héllo').toString('base64') },
-          text('projects/a b/"é".yaml', 'ok: true\n'),
+          text("projects/a b/'é' #1.yaml", 'ok: true\n'),
         ]),
       ],
       ED,
     );
     expect((await store.snapshot(ID)).files).toEqual([
-      text('projects/a b/"é".yaml', 'ok: true\n'),
+      text("projects/a b/'é' #1.yaml", 'ok: true\n'),
       binary('projects/p/logo.png', bytes),
       text('projects/p/notes.txt', 'héllo'),
     ]);
@@ -190,6 +190,59 @@ describeGit('CommitStore (§3.3)', () => {
     expect(raced).toBe(true);
     expect(await store.head(ID)).toBe(b.head);
     expect(indexFiles(tmpDir)).toEqual([]);
+  });
+
+  it('a stale refs/heads/main.lock left by a crash is cleared under the workspace lock, and the push lands', async () => {
+    const a = await store.appendCommits(ID, null, [commit('A', [text('workspace.yaml', 'a\n')])], ED);
+    const lock = join(repos.path(ID), 'refs', 'heads', 'main.lock');
+    writeFileSync(lock, `${a.head}\n`);
+    const b = await store.appendCommits(ID, a.head, [commit('B', [text('workspace.yaml', 'b\n')])], ED);
+    expect(await store.head(ID)).toBe(b.head);
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  it('an update-ref failure other than a lost compare-and-swap is not a rejection: it stays a git failure (a logged 500)', async () => {
+    const a = await store.appendCommits(ID, null, [commit('A', [text('workspace.yaml', 'a\n')])], ED);
+    const lock = join(repos.path(ID), 'refs', 'heads', 'main.lock');
+    const run = git.run.bind(git) as unknown as AnyRun;
+    const locking = {
+      run: (cwd: string | undefined, args: readonly string[], options?: object) => {
+        // Another process holds the ref's lock file at the moment of the swap.
+        if (args[0] === 'update-ref') writeFileSync(lock, 'x');
+        return run(cwd, args, options);
+      },
+    } as unknown as GitCli;
+    const blocked = new CommitStore({ git: locking, repos, tmpDir, limitBytes: 1024 * 1024 });
+    const error = await blocked.appendCommits(ID, a.head, [commit('B', [text('workspace.yaml', 'b\n')])], ED).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toMatchObject({ code: 'git-failed' });
+    expect(await store.head(ID)).toBe(a.head);
+  });
+
+  it('refuses a commit time git cannot store (before 1970, or past the year 9999) with 400 before running git', async () => {
+    const spy = vi.spyOn(git, 'run');
+    for (const at of ['1969-12-31T23:59:59.000Z', '+010000-01-01T00:00:00.000Z']) {
+      await expect(
+        store.appendCommits(ID, null, [commit('x', [text('workspace.yaml', 'a')], at)], ED),
+      ).rejects.toMatchObject({ code: 'invalid-request', details: { status: 400 } });
+    }
+    expect(spy).not.toHaveBeenCalled();
+    // Both ends of the range, and a year git reads as a plain number only up to 2099.
+    let parent: string | null = null;
+    for (const at of ['1970-01-01T00:00:00.000Z', '2100-01-01T00:00:00.000Z', '9999-12-31T23:59:59.000Z']) {
+      parent = (await store.appendCommits(ID, parent, [commit(at, [text('workspace.yaml', at)], at)], ED)).head;
+      expect((await store.log(ID, 1))[0]).toMatchObject({ id: parent, subject: at, at });
+    }
+  });
+
+  it('counts at a given head: a head read earlier is never mixed with a newer main', async () => {
+    const a = await store.appendCommits(ID, null, [commit('A', [text('workspace.yaml', 'a\n')])], ED);
+    await store.appendCommits(ID, a.head, [commit('B', [text('workspace.yaml', 'b\n')])], ED);
+    expect(await store.counts(ID, a.head, a.head)).toEqual({ commits: 1, behind: 0 });
+    expect(await store.counts(ID, undefined, a.head)).toEqual({ commits: 1 });
+    expect(await store.counts(ID, a.head, null)).toEqual({ commits: 0, behind: 0 });
   });
 
   it('refuses a bad path, bad content, an oversized file, a bad time, a bad parent or no commits before running git', async () => {
