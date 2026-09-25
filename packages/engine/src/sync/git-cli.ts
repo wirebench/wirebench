@@ -2,13 +2,14 @@
  * A small, Electron-free wrapper around the system `git` executable: discovery ({@link findGit}),
  * a hardened {@link GitCli.run}, error mapping and remote URL validation ({@link assertRemoteUrl}).
  *
- * This file must never import `electron` — `SyncService` (and the server backend of spec 2)
- * runs it in plain Node, and `ipc/git.ts` is the only place that bridges it to Electron.
+ * This file must never import `electron` — `SyncService` and Wirebench Server's commit store run it
+ * in plain Node, and `ipc/git.ts` is the only place that bridges it to Electron.
  *
  * Git is never bundled: it is found on the machine it runs on, or the user is asked to locate
  * it (`git.locate`). Every invocation goes through {@link GitCli.run}, which never opens a
  * shell, never prompts, never runs a hook, and refuses any subcommand outside
- * {@link GIT_SUBCOMMANDS} before a process is even spawned.
+ * {@link GIT_SUBCOMMANDS} before a process is even spawned. A `GitCli` the server builds with
+ * `{ plumbing: true }` also accepts {@link GIT_PLUMBING_SUBCOMMANDS}; the desktop never does.
  */
 
 import { execFile } from 'node:child_process';
@@ -45,16 +46,82 @@ export const GIT_SUBCOMMANDS = [
 export type GitSubcommand = (typeof GIT_SUBCOMMANDS)[number];
 
 /**
- * How a git process is actually spawned. Resolves — never rejects — on a non-zero exit; it
- * rejects only when the executable itself could not be spawned (`ENOENT`/`EACCES`), which
- * {@link findGit} treats as "this candidate is not usable" and {@link GitCli.run} maps to
- * `git-not-found`.
+ * Git plumbing, for Wirebench Server's commit store only (server-sync spec §3.3, R1): it builds
+ * commits in a bare repository, with no working tree. This is a second list rather than a longer
+ * {@link GIT_SUBCOMMANDS}, so the desktop's allow-list does not grow. Only a `GitCli` constructed
+ * with `{ plumbing: true }`, or returned by {@link GitCli.withPlumbing}, accepts these.
+ */
+export const GIT_PLUMBING_SUBCOMMANDS = [
+  'ls-tree',
+  'cat-file',
+  'merge-base',
+  'diff-tree',
+  'read-tree',
+  'hash-object',
+  'update-index',
+  'write-tree',
+  'commit-tree',
+  'update-ref',
+] as const;
+
+/** One of the subcommands {@link GIT_PLUMBING_SUBCOMMANDS} allows. */
+export type GitPlumbingSubcommand = (typeof GIT_PLUMBING_SUBCOMMANDS)[number];
+
+/**
+ * The only variables a caller may set per call ({@link GitRunOptions.env}): the commit store's
+ * private index file, and the author and committer of the commit it writes. Anything else
+ * (`GIT_DIR`, `GIT_CONFIG_*`, `GIT_SSH_COMMAND`, `GIT_EXEC_PATH`, `PATH`) could point git somewhere
+ * else or make it run a program, so it is refused.
+ */
+export const GIT_CALL_ENV = [
+  'GIT_INDEX_FILE',
+  'GIT_AUTHOR_NAME',
+  'GIT_AUTHOR_EMAIL',
+  'GIT_AUTHOR_DATE',
+  'GIT_COMMITTER_NAME',
+  'GIT_COMMITTER_EMAIL',
+  'GIT_COMMITTER_DATE',
+] as const;
+
+/** One of the variables {@link GIT_CALL_ENV} allows. */
+export type GitCallEnv = (typeof GIT_CALL_ENV)[number];
+
+/** Per-call options of {@link GitCli.run}. */
+export interface GitRunOptions {
+  /** Kills git after this long; 60 s when absent. */
+  readonly timeoutMs?: number;
+  /** Written to the child's stdin, then stdin is closed. */
+  readonly input?: string | Uint8Array;
+  /** Refused (git-failed, before spawning) when a key is not in GIT_CALL_ENV. */
+  readonly env?: Partial<Record<GitCallEnv, string>>;
+  /** Buffered-output ceiling for this call; defaults to today's 16 MiB. */
+  readonly maxBuffer?: number;
+}
+
+/**
+ * How a git process is actually spawned. It resolves, never rejects, on a non-zero exit. It rejects
+ * only when git was never run or was killed:
+ * - The executable could not be spawned (`ENOENT`/`EACCES`). {@link findGit} treats that as "this
+ *   candidate is not usable", and {@link GitCli.run} maps it to `git-not-found`.
+ * - The timeout killed git.
+ * - git's output passed `maxBuffer` (`ERR_CHILD_PROCESS_STDIO_MAXBUFFER`).
+ *
+ * When `input` is present, it is written to stdin and stdin is closed. `encoding: 'buffer'` asks
+ * for stdout as raw bytes, because a blob need not be UTF-8. stderr is always text, because the
+ * error mapping reads it. A fake runner may answer stdout in either shape; `GitCli.run` converts it.
  */
 export type Runner = (
   file: string,
   args: readonly string[],
-  options: { cwd?: string; env: NodeJS.ProcessEnv; timeoutMs: number },
-) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  options: {
+    cwd?: string;
+    env: NodeJS.ProcessEnv;
+    timeoutMs: number;
+    input?: string | Uint8Array;
+    encoding: 'utf8' | 'buffer';
+    maxBuffer: number;
+  },
+) => Promise<{ stdout: string | Buffer; stderr: string; exitCode: number }>;
 
 /** A located, usable git executable. */
 export interface GitLocation {
@@ -64,32 +131,61 @@ export interface GitLocation {
 
 const execFileAsync = promisify(execFile);
 
-/** Bytes above which `execFile`'s buffered stdout/stderr is truncated (16 MiB). */
+/** Bytes above which `execFile`'s buffered stdout/stderr is truncated (16 MiB), unless a call says otherwise. */
 const MAX_BUFFER = 16 * 1024 * 1024;
 
-/** The default {@link Runner}: `execFile`, resolving `{ exitCode }` instead of rejecting on it. */
+/** The code Node gives an `execFile` whose output passed `maxBuffer`; it has already killed git. */
+const MAX_BUFFER_EXCEEDED = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+
+/** Output as text: a string as is, a Buffer decoded as UTF-8. */
+function asText(output: string | Buffer): string {
+  return typeof output === 'string' ? output : output.toString('utf8');
+}
+
+/** Output as bytes: a Buffer as is, a string encoded as UTF-8 (a fake runner may answer with text). */
+function asBuffer(output: string | Buffer): Buffer {
+  return typeof output === 'string' ? Buffer.from(output, 'utf8') : output;
+}
+
+/**
+ * The default {@link Runner}: `execFile`, resolving `{ exitCode }` instead of rejecting on it. It
+ * always reads raw bytes and decodes stdout itself when text was asked for. That way there is one
+ * spawn path, and a blob is never decoded before the caller sees it.
+ */
 const defaultRunner: Runner = async (file, args, options) => {
+  const pending = execFileAsync(file, args as string[], {
+    cwd: options.cwd,
+    env: options.env,
+    timeout: options.timeoutMs,
+    windowsHide: true,
+    maxBuffer: options.maxBuffer,
+    encoding: 'buffer',
+  });
+  if (options.input !== undefined) {
+    const stdin = pending.child.stdin;
+    // git may exit before reading all its input (a bad argument or object id), and the exit code
+    // already says why. An EPIPE here must not become an unhandled 'error' event, which would bring
+    // down the process.
+    stdin?.on('error', () => undefined);
+    stdin?.end(options.input);
+  }
+  const output = (stdout: Buffer): string | Buffer =>
+    options.encoding === 'buffer' ? stdout : stdout.toString('utf8');
   try {
-    const { stdout, stderr } = await execFileAsync(file, args as string[], {
-      cwd: options.cwd,
-      env: options.env,
-      timeout: options.timeoutMs,
-      windowsHide: true,
-      maxBuffer: MAX_BUFFER,
-      encoding: 'utf8',
-    });
-    return { stdout, stderr, exitCode: 0 };
+    const { stdout, stderr } = await pending;
+    return { stdout: output(stdout), stderr: stderr.toString('utf8'), exitCode: 0 };
   } catch (error) {
     const nodeError = error as NodeJS.ErrnoException & {
-      stdout?: string;
-      stderr?: string;
+      stdout?: Buffer;
+      stderr?: Buffer;
       code?: string | number;
       killed?: boolean;
       signal?: string | null;
     };
     // ENOENT/EACCES mean the executable could not be spawned at all — not "git ran and failed" —
-    // so this must still reject, per the contract above.
-    if (nodeError.code === 'ENOENT' || nodeError.code === 'EACCES') {
+    // so this must still reject, per the contract above. So must a maxBuffer overflow: git was
+    // killed part-way, and its truncated output must not pass for an answer.
+    if (nodeError.code === 'ENOENT' || nodeError.code === 'EACCES' || nodeError.code === MAX_BUFFER_EXCEEDED) {
       throw error;
     }
     if (nodeError.killed === true || (nodeError.signal !== null && nodeError.signal !== undefined)) {
@@ -99,7 +195,11 @@ const defaultRunner: Runner = async (file, args, options) => {
       throw error;
     }
     const exitCode = typeof nodeError.code === 'number' ? nodeError.code : 1;
-    return { stdout: nodeError.stdout ?? '', stderr: nodeError.stderr ?? '', exitCode };
+    return {
+      stdout: output(nodeError.stdout ?? Buffer.alloc(0)),
+      stderr: nodeError.stderr?.toString('utf8') ?? '',
+      exitCode,
+    };
   }
 };
 
@@ -196,7 +296,12 @@ export async function findGit(options: {
     }
     let result;
     try {
-      result = await run(candidate, ['--version'], { env, timeoutMs: PROBE_TIMEOUT_MS });
+      result = await run(candidate, ['--version'], {
+        env,
+        timeoutMs: PROBE_TIMEOUT_MS,
+        encoding: 'utf8',
+        maxBuffer: MAX_BUFFER,
+      });
     } catch {
       // Could not spawn at all (ENOENT/EACCES, or a fake run() that throws) — not usable.
       continue;
@@ -204,7 +309,7 @@ export async function findGit(options: {
     if (result.exitCode !== 0) {
       continue;
     }
-    const version = parseGitVersion(result.stdout);
+    const version = parseGitVersion(asText(result.stdout));
     if (version === undefined) {
       continue;
     }
@@ -395,20 +500,22 @@ function redactArg(arg: string): string {
 /** Default timeout for a `GitCli.run` call, when the caller does not name one. */
 const DEFAULT_TIMEOUT_MS = 60_000;
 
+/** `ssh -o BatchMode=yes`, the default `GitCli` sets only when nothing else already names an SSH transport. */
+const DEFAULT_GIT_SSH_COMMAND = 'ssh -o BatchMode=yes';
+
 /**
  * Runs the system git found by {@link findGit}, with every hardening constraint the plan
  * requires: no shell, no prompt, no hooks, a fixed subcommand allow-list, and error `details`
  * that never carry the environment or a credential-bearing URL.
  */
-/** `ssh -o BatchMode=yes`, the default `GitCli` sets only when nothing else already names an SSH transport. */
-const DEFAULT_GIT_SSH_COMMAND = 'ssh -o BatchMode=yes';
-
 export class GitCli {
   readonly version: string;
   private readonly path: string;
   private readonly hooksDir: string;
   private readonly runner: Runner;
   private readonly extraEnv: NodeJS.ProcessEnv;
+  /** Whether {@link GIT_PLUMBING_SUBCOMMANDS} are allowed as well: only for the server's commit store. */
+  private readonly plumbing: boolean;
   /**
    * Memoised `git config --get core.sshCommand` lookups, one per distinct `cwd` a caller has
    * `run()` with (the `cwd`-less key included) — a repository-local `core.sshCommand` only
@@ -417,12 +524,37 @@ export class GitCli {
    */
   private readonly sshCommandConfigByCwd = new Map<string | undefined, Promise<string | undefined>>();
 
-  constructor(location: GitLocation, options: { hooksDir: string; run?: Runner; env?: NodeJS.ProcessEnv }) {
+  constructor(
+    location: GitLocation,
+    options: { hooksDir: string; run?: Runner; env?: NodeJS.ProcessEnv; plumbing?: boolean },
+  ) {
     this.path = location.path;
     this.version = location.version;
     this.hooksDir = options.hooksDir;
     this.runner = options.run ?? defaultRunner;
     this.extraEnv = options.env ?? {};
+    this.plumbing = options.plumbing ?? false;
+  }
+
+  /**
+   * A copy with the same location, hooks dir, runner and env that also accepts
+   * {@link GIT_PLUMBING_SUBCOMMANDS}. The server's commit store calls this on `ctx.git`. The desktop
+   * never does, because it never runs git for a server share (server-sync spec §3.3, §6). The copy
+   * shares nothing mutable with the original, only the `core.sshCommand` lookups it repeats.
+   */
+  withPlumbing(): GitCli {
+    return new GitCli(
+      { path: this.path, version: this.version },
+      { hooksDir: this.hooksDir, run: this.runner, env: this.extraEnv, plumbing: true },
+    );
+  }
+
+  /** Whether `subcommand` is on this instance's allow-list(s). */
+  private allows(subcommand: string): boolean {
+    return (
+      (GIT_SUBCOMMANDS as readonly string[]).includes(subcommand) ||
+      (this.plumbing && (GIT_PLUMBING_SUBCOMMANDS as readonly string[]).includes(subcommand))
+    );
   }
 
   /**
@@ -442,11 +574,13 @@ export class GitCli {
           ...(cwd !== undefined ? { cwd } : {}),
           env,
           timeoutMs: DEFAULT_TIMEOUT_MS,
+          encoding: 'utf8',
+          maxBuffer: MAX_BUFFER,
         });
         if (result.exitCode !== 0) {
           return undefined;
         }
-        const value = result.stdout.trim();
+        const value = asText(result.stdout).trim();
         return value.length > 0 ? value : undefined;
       } catch {
         return undefined;
@@ -456,18 +590,49 @@ export class GitCli {
     return lookup;
   }
 
+  /**
+   * Runs `git <args>` in `cwd` behind the fixed `-c` prefix (with `core.hooksPath` pointing at an empty
+   * directory, so no hook ever runs) and the hardened environment.
+   *
+   * `options.stdout: 'buffer'` returns stdout as raw bytes. Otherwise it is decoded as UTF-8.
+   *
+   * @throws WirebenchError
+   * - `git-failed`, which covers:
+   *   - an off-list subcommand, or an `env` key outside {@link GIT_CALL_ENV}, both refused before
+   *     anything spawns;
+   *   - a non-zero exit;
+   *   - a timeout (`details.timedOut`);
+   *   - output over `maxBuffer` (`details.outputTooLarge`).
+   * - `git-auth-failed` and `git-offline`, read from stderr.
+   * - `git-not-found`.
+   */
+  run(
+    cwd: string | undefined,
+    args: readonly string[],
+    options: GitRunOptions & { readonly stdout: 'buffer' },
+  ): Promise<{ stdout: Buffer; stderr: string }>;
+  run(
+    cwd: string | undefined,
+    args: readonly string[],
+    options?: GitRunOptions & { readonly stdout?: 'utf8' },
+  ): Promise<{ stdout: string; stderr: string }>;
   async run(
     cwd: string | undefined,
     args: readonly string[],
-    options?: { timeoutMs?: number },
-  ): Promise<{
-    stdout: string;
-    stderr: string;
-  }> {
+    options?: GitRunOptions & { readonly stdout?: 'utf8' | 'buffer' },
+  ): Promise<{ stdout: string | Buffer; stderr: string }> {
     const subcommand = args[0];
-    if (!(GIT_SUBCOMMANDS as readonly string[]).includes(subcommand ?? '')) {
+    if (!this.allows(subcommand ?? '')) {
       throw new WirebenchError('git-failed', `"${subcommand ?? ''}" is not an allowed git subcommand.`, {
         details: { args: args.map(redactArg) },
+      });
+    }
+    const callEnv = options?.env ?? {};
+    const refusedKeys = Object.keys(callEnv).filter((key) => !(GIT_CALL_ENV as readonly string[]).includes(key));
+    if (refusedKeys.length > 0) {
+      // Key names only: a value could be anything the caller had to hand.
+      throw new WirebenchError('git-failed', `git ${subcommand ?? ''} may not set ${refusedKeys.join(', ')}.`, {
+        details: { args: args.map(redactArg), env: refusedKeys },
       });
     }
     const mergedEnv: NodeJS.ProcessEnv = { ...process.env, ...this.extraEnv };
@@ -486,6 +651,8 @@ export class GitCli {
     }
     const env: NodeJS.ProcessEnv = {
       ...mergedEnv,
+      // The call's own variables go under the hardening keys, so those always win.
+      ...callEnv,
       GIT_TERMINAL_PROMPT: '0',
       GIT_ASKPASS: '',
       LC_ALL: 'C',
@@ -501,14 +668,28 @@ export class GitCli {
       ...args,
     ];
     const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const encoding = options?.stdout ?? 'utf8';
     let result;
     try {
-      result = await this.runner(this.path, fullArgs, { ...(cwd !== undefined ? { cwd } : {}), env, timeoutMs });
+      result = await this.runner(this.path, fullArgs, {
+        ...(cwd !== undefined ? { cwd } : {}),
+        env,
+        timeoutMs,
+        encoding,
+        maxBuffer: options?.maxBuffer ?? MAX_BUFFER,
+        ...(options?.input !== undefined ? { input: options.input } : {}),
+      });
     } catch (error) {
       const nodeError = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string | null };
       if (nodeError.code === 'ENOENT' || nodeError.code === 'EACCES') {
         throw new WirebenchError('git-not-found', 'The configured git executable could not be run.', {
           details: { args: args.map(redactArg) },
+          cause: error,
+        });
+      }
+      if (nodeError.code === MAX_BUFFER_EXCEEDED) {
+        throw new WirebenchError('git-failed', `git ${subcommand ?? ''} produced more output than this call allows.`, {
+          details: { args: args.map(redactArg), outputTooLarge: true },
           cause: error,
         });
       }
@@ -534,7 +715,10 @@ export class GitCli {
       }
       throw new WirebenchError('git-failed', `git ${subcommand ?? ''} failed.`, { details });
     }
-    return { stdout: result.stdout, stderr: result.stderr };
+    return {
+      stdout: encoding === 'buffer' ? asBuffer(result.stdout) : asText(result.stdout),
+      stderr: result.stderr,
+    };
   }
 }
 

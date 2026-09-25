@@ -1183,6 +1183,8 @@ export type { WsSessionMaterial } from './ws/call.js';
 export { wsToCommand } from './ws/command.js';
 
 export {
+  GIT_CALL_ENV,
+  GIT_PLUMBING_SUBCOMMANDS,
   GIT_SUBCOMMANDS,
   GitCli,
   assertBranchName,
@@ -1192,7 +1194,14 @@ export {
   parseGitVersion,
   refusedLocalConfigKeys,
 } from './sync/git-cli.js';
-export type { GitLocation, GitSubcommand, Runner } from './sync/git-cli.js';
+export type {
+  GitCallEnv,
+  GitLocation,
+  GitPlumbingSubcommand,
+  GitRunOptions,
+  GitSubcommand,
+  Runner,
+} from './sync/git-cli.js';
 
 export { mergeFiles } from './sync/three-way-merge.js';
 export type { FileMerge } from './sync/three-way-merge.js';
