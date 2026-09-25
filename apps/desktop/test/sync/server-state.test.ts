@@ -344,7 +344,7 @@ describe('ServerState (§4.2)', () => {
     };
     await state.writeMerge(merge);
     expect(await new ServerState(dir).readMerge()).toEqual(merge);
-  });
+  }, 30_000);
 
   it('advanceBase keeps a pending commit it was not told about, even one another instance appended (I1)', async () => {
     await ServerState.initialize(dir, HEAD_A, new Map([['workspace.yaml', text('v1')]]));

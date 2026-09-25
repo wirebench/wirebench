@@ -234,9 +234,9 @@ describeGit('CommitStore (§3.3)', () => {
     expect(await store.head(ID)).toBe(a.head);
   });
 
-  it('refuses a commit time git cannot store (before 1970, or past the year 9999) with 400 before running git', async () => {
+  it('refuses a commit time git cannot store (before 1970, or past the year 2999) with 400 before running git', async () => {
     const spy = vi.spyOn(git, 'run');
-    for (const at of ['1969-12-31T23:59:59.000Z', '+010000-01-01T00:00:00.000Z']) {
+    for (const at of ['1969-12-31T23:59:59.000Z', '3000-01-01T00:00:00.000Z']) {
       await expect(
         store.appendCommits(ID, null, [commit('x', [text('workspace.yaml', 'a')], at)], ED),
       ).rejects.toMatchObject({ code: 'invalid-request', details: { status: 400 } });
@@ -244,7 +244,7 @@ describeGit('CommitStore (§3.3)', () => {
     expect(spy).not.toHaveBeenCalled();
     // Both ends of the range, and a year git reads as a plain number only up to 2099.
     let parent: string | null = null;
-    for (const at of ['1970-01-01T00:00:00.000Z', '2100-01-01T00:00:00.000Z', '9999-12-31T23:59:59.000Z']) {
+    for (const at of ['1970-01-01T00:00:00.000Z', '2100-01-01T00:00:00.000Z', '2999-12-31T23:59:59.000Z']) {
       parent = (await store.appendCommits(ID, parent, [commit(at, [text('workspace.yaml', at)], at)], ED)).head;
       expect((await store.log(ID, 1))[0]).toMatchObject({ id: parent, subject: at, at });
     }

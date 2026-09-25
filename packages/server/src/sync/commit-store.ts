@@ -150,19 +150,22 @@ function commitId(value: string): string {
   return value;
 }
 
-/** The last instant of the year 9999: past it, a date no longer prints as a four-digit ISO year. */
-const LATEST_COMMIT_MS = Date.UTC(9999, 11, 31, 23, 59, 59);
+/**
+ * The last instant of the year 2999. Git for Windows formats dates through the C runtime, whose
+ * `gmtime` gives up after the year 3000, so a later commit would read back as 1970 on a Windows host.
+ */
+const LATEST_COMMIT_MS = Date.UTC(2999, 11, 31, 23, 59, 59);
 
 /**
  * An ISO 8601 time as git's raw date (`@<unix seconds> +0000`), which it stores exactly. The `@`
  * matters: without it git reads the number as a timestamp only between 1973 and 2099 and refuses
- * the rest. Git refuses a negative time, so a time before 1970 (or past the year 9999) is the
+ * the rest. Git refuses a negative time, so a time before 1970 (or past the year 2999) is the
  * client's mistake, answered 400 here rather than a 500 from `commit-tree` half-way through a push.
  */
 function gitDate(iso: string): string {
   const ms = Date.parse(iso);
   if (Number.isNaN(ms) || ms < 0 || ms > LATEST_COMMIT_MS) {
-    throw problem('invalid-request', 'Each commit needs a valid ISO 8601 time between 1970 and 9999.', 400);
+    throw problem('invalid-request', 'Each commit needs a valid ISO 8601 time between 1970 and 2999.', 400);
   }
   return `@${Math.floor(ms / 1000)} +0000`;
 }
