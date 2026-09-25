@@ -101,4 +101,56 @@ describeGit('RepoStore', () => {
     expect(await store.exists(ID)).toBe(true);
     expect(readdirSync(join(dataDir, 'tmp')).filter((name) => name.startsWith(`creating-${ID}-`))).toHaveLength(1);
   });
+
+  it('drain waits for running and queued work, whatever its outcome, then refuses new work with a 503', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const done: string[] = [];
+    const running = store.withLock(ID, async () => {
+      await gate;
+      done.push('running');
+    });
+    // Caught at once, so its rejection is never unhandled while the drain is pending.
+    const failing = store.withLock(ID, () => Promise.reject(new Error('boom'))).catch((error: unknown) => error);
+    const queued = store.withLock(ID, () => {
+      done.push('queued');
+      return Promise.resolve();
+    });
+    const other = store.withLock(OTHER, async () => {
+      await gate;
+      done.push('other');
+    });
+    let drained = false;
+    const draining = store.drain().then(() => {
+      drained = true;
+    });
+
+    // Refused as a rejected promise (never a throw), for every workspace, as soon as the drain began.
+    await expect(store.withLock(ID, () => Promise.resolve('late'))).rejects.toMatchObject({
+      code: 'server-shutting-down',
+      details: { status: 503 },
+    });
+    await expect(store.withLock(OTHER, () => Promise.resolve('late'))).rejects.toMatchObject({
+      code: 'server-shutting-down',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(drained).toBe(false);
+
+    release();
+    await draining;
+    expect(drained).toBe(true);
+    expect([...done].sort()).toEqual(['other', 'queued', 'running']);
+    expect(await failing).toMatchObject({ message: 'boom' });
+    await Promise.all([running, queued, other]);
+  });
+
+  it('drain resolves at once when nothing is queued, and again when called twice', async () => {
+    await store.drain();
+    await store.drain();
+    await expect(store.withLock(ID, () => Promise.resolve(1))).rejects.toMatchObject({ code: 'server-shutting-down' });
+    // An invalid id is still a programming error, thrown before the drain check.
+    expect(() => store.withLock('../etc', () => Promise.resolve(1))).toThrow();
+  });
 });

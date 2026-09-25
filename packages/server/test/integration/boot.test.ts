@@ -101,6 +101,29 @@ describeDb('startServer', () => {
     await expect(server.ctx.db.query('select 1')).rejects.toThrow(); // the pool is closed
   });
 
+  it('close() lets work holding a repository lock finish before the pool closes, then refuses new work', async () => {
+    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn() });
+    const workspaceId = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // What a push does after its connection is gone: it still holds the lock and still queries.
+    const holder = server.ctx.repos.withLock(workspaceId, async () => {
+      await gate;
+      return (await server.ctx.db.query<{ ok: number }>('select 1 as ok')).rows[0]?.ok;
+    });
+    const closing = server.close();
+    await new Promise((resolve) => setTimeout(resolve, 50)); // app.close() has long resolved by now
+    release();
+    expect(await holder).toBe(1); // the pool was still open when the holder reached it
+    await closing;
+    await expect(server.ctx.db.query('select 1')).rejects.toThrow(); // and closed after it
+    await expect(server.ctx.repos.withLock(workspaceId, () => Promise.resolve(1))).rejects.toMatchObject({
+      code: 'server-shutting-down',
+    });
+  });
+
   it('main serve returns 0 after a SIGTERM whose drain timed out', async () => {
     const signals = new EventEmitter();
     const exit = vi.fn();

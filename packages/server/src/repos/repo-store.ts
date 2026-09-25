@@ -7,8 +7,12 @@
 import { access, mkdir, rename } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { GitCli } from '@wirebench/engine';
+import type { GitCli, WirebenchError } from '@wirebench/engine';
 import { problem } from '../problem.js';
+
+/** Sync spec R11: new repository work after shutdown began; a client retries against the next process. */
+const shuttingDown = (): WirebenchError =>
+  problem('server-shutting-down', 'The server is shutting down. Try again in a moment.', 503);
 
 export const NO_HOOKS_DIR = 'no-hooks';
 const REPOS_DIR = 'repos';
@@ -28,6 +32,8 @@ export class RepoStore {
   private readonly git: GitCli;
   private readonly dataDir: string;
   private readonly queues = new Map<string, Promise<void>>();
+  /** Set by {@link drain}; from then on {@link withLock} refuses new work. */
+  private draining = false;
 
   constructor(deps: { readonly git: GitCli; readonly dataDir: string }) {
     this.git = deps.git;
@@ -83,9 +89,15 @@ export class RepoStore {
     await rename(dir, join(this.dataDir, TMP_DIR, `removed-${workspaceId}-${Date.now()}`));
   }
 
-  /** One operation per workspace at a time, FIFO, in-process (spec assumption 1). */
+  /**
+   * One operation per workspace at a time, FIFO, in-process (spec assumption 1). Once {@link drain}
+   * has begun it refuses with `server-shutting-down` (503) as a rejected promise, never a throw:
+   * callers chain `.catch` on it (the workspace-create cleanup does), and a synchronous throw would
+   * escape that. An invalid id still throws at once, as a programming error.
+   */
   withLock<T>(workspaceId: string, fn: () => Promise<T>): Promise<T> {
     this.assertId(workspaceId);
+    if (this.draining) return Promise.reject(shuttingDown());
     const previous = this.queues.get(workspaceId) ?? Promise.resolve();
     const run = previous.then(fn);
     const settled = run.then(
@@ -97,5 +109,17 @@ export class RepoStore {
       if (this.queues.get(workspaceId) === settled) this.queues.delete(workspaceId);
     });
     return run;
+  }
+
+  /**
+   * Host spec §3.7, sync spec R11: shutdown stops new repository work and waits for what is queued.
+   * A handler keeps running after the drain deadline drops its connection, so the database pool must
+   * outlive the repository work, not only the request. Each queue entry is the settled tail of that
+   * workspace's chain (it never rejects), so this resolves once every queued operation has finished,
+   * whatever its outcome. Calling it again waits for whatever is still queued.
+   */
+  drain(): Promise<void> {
+    this.draining = true;
+    return Promise.all(this.queues.values()).then(() => undefined);
   }
 }

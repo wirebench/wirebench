@@ -85,7 +85,10 @@ export async function identityHarness(
   await migrate(db, await allMigrations(modules));
   await RepoStore.prepare(dataDir);
   const repos = new RepoStore({ git: options.git ?? testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
-  const ctx = await testContext({ dataDir, db, config, repos });
+  // R13: ctx.git (and the commit store's ctx.git.withPlumbing()) gets the same hermetic client as the
+  // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
+  // overrides only the store, for tests that force RepoStore.create to fail.
+  const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)) });
   const app = await buildServer(ctx, { modules });
   return {
     app,
