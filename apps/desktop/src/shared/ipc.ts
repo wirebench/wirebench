@@ -269,6 +269,17 @@ import {
   workspaceSetActiveEnvironmentRequestSchema,
   workspaceSnapshotResponseSchema,
   workspaceSummariesResponseSchema,
+  accountListResponseSchema,
+  accountUrlRequestSchema,
+  accountProbeResponseSchema,
+  accountSignInLocalRequestSchema,
+  accountStartOidcRequestSchema,
+  accountResponseSchema,
+  accountLookupInvitationRequestSchema,
+  accountLookupInvitationResponseSchema,
+  accountAcceptInvitationRequestSchema,
+  accountCancelResponseSchema,
+  accountChangedEventSchema,
 } from './wire-types.js';
 
 /**
@@ -468,6 +479,31 @@ export const channels = {
     status: defineChannel('oauth2.status', oauth2OwnerRequestSchema, oauth2StatusSchema),
     clearToken: defineChannel('oauth2.clearToken', oauth2OwnerRequestSchema, oauth2StatusSchema),
     cancel: defineChannel('oauth2.cancel', oauth2OwnerRequestSchema.partial(), requestCancelResponseSchema),
+  },
+  /**
+   * Accounts on Wirebench Server. A password crosses exactly once, in `signInLocal` or
+   * `acceptInvitation`; the token never crosses at all — main keeps it in the secret store and
+   * answers with the account minus its ref.
+   */
+  account: {
+    list: defineChannel('account.list', z.undefined(), accountListResponseSchema),
+    probe: defineChannel('account.probe', accountUrlRequestSchema, accountProbeResponseSchema),
+    signInLocal: defineChannel('account.signInLocal', accountSignInLocalRequestSchema, accountResponseSchema),
+    /** Resolves when the browser hand-off has completed; `cancelSignIn` ends it early. */
+    startOidc: defineChannel('account.startOidc', accountStartOidcRequestSchema, accountResponseSchema),
+    cancelSignIn: defineChannel('account.cancelSignIn', z.undefined(), accountCancelResponseSchema),
+    lookupInvitation: defineChannel(
+      'account.lookupInvitation',
+      accountLookupInvitationRequestSchema,
+      accountLookupInvitationResponseSchema,
+    ),
+    acceptInvitation: defineChannel(
+      'account.acceptInvitation',
+      accountAcceptInvitationRequestSchema,
+      accountResponseSchema,
+    ),
+    signOut: defineChannel('account.signOut', accountUrlRequestSchema, accountListResponseSchema),
+    remove: defineChannel('account.remove', accountUrlRequestSchema, accountListResponseSchema),
   },
   // An API and the definition it was imported from. Separate from `definition.*` because the two
   // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI
@@ -893,5 +929,9 @@ export const events = {
     statusChanged: defineEvent('sync.statusChanged', syncStatusChangedEventSchema),
     pulled: defineEvent('sync.pulled', syncPulledEventSchema),
     conflict: defineEvent('sync.conflict', syncConflictEventSchema),
+  },
+  account: {
+    /** The list of known servers changed (sign-in, sign-out, removal, a token the server refused). */
+    changed: defineEvent('account.changed', accountChangedEventSchema),
   },
 } as const;

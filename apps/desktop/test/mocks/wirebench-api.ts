@@ -29,6 +29,17 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
 
   const defaults: Record<string, unknown> = {
     app: { version: fail('app.version'), registerMenu: vi.fn().mockResolvedValue({ ok: true, value: { items: 0 } }) },
+    account: {
+      list: vi.fn().mockResolvedValue({ ok: true, value: { servers: [] } }),
+      probe: fail('account.probe'),
+      signInLocal: fail('account.signInLocal'),
+      startOidc: fail('account.startOidc'),
+      cancelSignIn: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: false } }),
+      lookupInvitation: fail('account.lookupInvitation'),
+      acceptInvitation: fail('account.acceptInvitation'),
+      signOut: fail('account.signOut'),
+      remove: fail('account.remove'),
+    },
     search: { query: vi.fn().mockResolvedValue({ ok: true, value: { matches: [], truncated: false } }) },
     api: {
       importOpenApi: fail('api.importOpenApi'),

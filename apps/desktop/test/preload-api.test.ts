@@ -17,6 +17,7 @@ describe('buildApi', () => {
     const api = buildApi(vi.fn(), vi.fn());
 
     expect(Object.keys(api).sort()).toEqual([
+      'account',
       'api',
       'app',
       'attachments',

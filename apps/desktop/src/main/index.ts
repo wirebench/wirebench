@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { mkdir, rename } from 'node:fs/promises';
+import { hostname } from 'node:os';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { appVersion } from './app-version.js';
@@ -55,6 +56,10 @@ import {
 } from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { OAuth2Service } from './oauth2.js';
+import { registerAccountChannels, toAccountWire } from './ipc/account.js';
+import { AccountService } from './account-service.js';
+import { ServerClient } from './server-client.js';
+import { mainHttpOptions } from './network-options.js';
 import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
@@ -101,6 +106,21 @@ const secretsFor = (projectId: string | undefined) => projectSecretGetter(secret
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
+
+/** The user's application preferences, shared by every project and every window. */
+const preferencesService = new PreferencesService(app.getPath('userData'));
+
+/** Absolute paths the user picked through a native dialog this session; see `dialog-picks.ts`. */
+const dialogPicks = new DialogPicks();
+
+/** Opens an external URL, gated the same way for every flow that hands off to a browser. */
+const openExternalChecked = async (url: string): Promise<void> => {
+  if (!isExternalUrlAllowed(url)) {
+    throw new WirebenchError('external-url-refused', 'That sign-in URL is not an http(s) address');
+  }
+  await shell.openExternal(url);
+};
+
 /**
  * OAuth2 tokens for the session, and the one loopback listener a browser sign-in answers to.
  *
@@ -108,13 +128,28 @@ const engineService = new EngineService(secretsFor(undefined));
  * with none set the listener takes a random free port, which is what RFC 8252 prefers.
  */
 const oauth2Service = new OAuth2Service({
-  openExternal: async (url) => {
-    if (!isExternalUrlAllowed(url)) {
-      throw new WirebenchError('external-url-refused', 'That authorization URL is not an http(s) address');
-    }
-    await shell.openExternal(url);
-  },
+  openExternal: openExternalChecked,
   callbackPort: () => preferencesService.get().rest.oauth2CallbackPort,
+});
+
+/** The Wirebench Server HTTP client, shared by every account and every server it signs into. */
+const serverClient = new ServerClient({
+  options: (url) =>
+    mainHttpOptions(url, {
+      preferences: () => preferencesService.get(),
+      picks: dialogPicks,
+      getSecret: secretsFor(undefined),
+      resolveSystemProxy: async (target) => await session.defaultSession.resolveProxy(target).catch(() => undefined),
+    }),
+});
+
+/** Who this installation is signed in as, per Wirebench Server (identity spec §3.8, §4.3). */
+const accountService = new AccountService({
+  userDataDir: app.getPath('userData'),
+  client: serverClient,
+  secrets: secretStore,
+  openExternal: openExternalChecked,
+  defaultDeviceName: hostname,
 });
 
 /** The session's in-flight OpenAPI imports: one fetcher, one cancel per token. */
@@ -142,12 +177,6 @@ function applyWindowTitle(workspace: WorkspaceWire | null): void {
 
 /** The user's `${#Global#name}` scope, shared by every project and every window. */
 const globalProperties = new GlobalProperties(app.getPath('userData'));
-
-/** The user's application preferences, shared by every project and every window. */
-const preferencesService = new PreferencesService(app.getPath('userData'));
-
-/** Absolute paths the user picked through a native dialog this session; see `dialog-picks.ts`. */
-const dialogPicks = new DialogPicks();
 
 /** Persistent request history — one jsonl file per open project under `userData`. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap);
@@ -358,6 +387,11 @@ void app.whenReady().then(() => {
     },
     showSecrets: showSecretsFlag,
   });
+  registerAccountChannels({ accounts: accountService });
+  accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
+  // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed
+  // shows as signed out now rather than on the first action; no account, no call (§3.8).
+  void accountService.load().then(() => accountService.refreshAll());
   registerHistoryChannels(engineService, historyService, {
     project: workspaceService,
     adHocScopes: () => {
