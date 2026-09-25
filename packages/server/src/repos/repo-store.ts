@@ -6,6 +6,7 @@
  */
 import { access, mkdir, rename } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { GitCli } from '@wirebench/engine';
 import { problem } from '../problem.js';
 
@@ -58,16 +59,23 @@ export class RepoStore {
     );
   }
 
+  /**
+   * Initialises the repository in `tmp/` and renames it into `repos/` (teams-access spec §3.7): a
+   * crash or a failing git step leaves a stray `tmp/creating-…` directory, never a half-built
+   * repository at the path the workspace id names. Callers run it inside {@link withLock}.
+   */
   async create(workspaceId: string): Promise<void> {
     const dir = this.path(workspaceId);
     if (await this.exists(workspaceId)) {
       throw problem('server-repo-exists', 'A repository for this workspace already exists.', 409);
     }
-    await mkdir(dir, { recursive: true });
-    await this.git.run(dir, [GIT.init, '--bare', '--quiet']);
-    await this.git.run(dir, [GIT.symbolicRef, 'HEAD', 'refs/heads/main']);
-    await this.git.run(dir, [GIT.config, 'core.hooksPath', join(this.dataDir, NO_HOOKS_DIR)]);
-    await this.git.run(dir, [GIT.config, 'receive.denyNonFastForwards', 'true']);
+    const staging = join(this.dataDir, TMP_DIR, `creating-${workspaceId}-${randomBytes(4).toString('hex')}`);
+    await mkdir(staging, { recursive: true });
+    await this.git.run(staging, [GIT.init, '--bare', '--quiet']);
+    await this.git.run(staging, [GIT.symbolicRef, 'HEAD', 'refs/heads/main']);
+    await this.git.run(staging, [GIT.config, 'core.hooksPath', join(this.dataDir, NO_HOOKS_DIR)]);
+    await this.git.run(staging, [GIT.config, 'receive.denyNonFastForwards', 'true']);
+    await rename(staging, dir);
   }
 
   async remove(workspaceId: string): Promise<void> {
