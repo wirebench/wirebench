@@ -68,3 +68,24 @@ endpoints are rate-limited to ten attempts a minute per address and per email (o
 the counters reset on restart). Device tokens expire after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS`
 without use or `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; a user sees and revokes their devices
 in the app, and an admin who disables a user revokes them all.
+
+## Teams
+
+A server admin creates teams (`POST /api/v1/teams`) and becomes the first admin of each. Team admins do
+the rest, from the app's **Account: Manage teams…** dialog or the API:
+
+- Add people who already have an account, invite new ones, and change or remove roles. A team keeps at
+  least one admin.
+- Workspaces belong to a team. Any member can create one and is its admin. Each workspace has a default
+  role for the team's members (`none`, `viewer` or `editor`; new workspaces default to `viewer`), and a
+  workspace admin can grant any member a different role.
+
+| Role   | Open and pull | Send requests | Push | Manage access | Delete |
+| ------ | ------------- | ------------- | ---- | ------------- | ------ |
+| viewer | yes           | yes           | no   | no            | no     |
+| editor | yes           | yes           | yes  | no            | no     |
+| admin  | yes           | yes           | yes  | yes           | yes    |
+
+Team admins and server admins are admins of every workspace of their teams. To anyone without a role,
+a workspace (or a team) does not exist: the API answers `404`, never `403`. Deleting a workspace moves
+its repository under `<data dir>/tmp/`; nothing is deleted from disk.

@@ -7,9 +7,11 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { identitySettings } from '../identity/env.js';
 import type { TeamsEnv } from './env.js';
+import { accessRoutes } from './routes/access.js';
 import { addInvitedMember, teamInvitationRoutes } from './routes/invitations.js';
 import { memberRoutes } from './routes/members.js';
 import { teamRoutes } from './routes/teams.js';
+import { workspaceRoutes } from './routes/workspaces.js';
 
 export const TEAMS_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/teams-access/', import.meta.url));
 
@@ -30,6 +32,8 @@ export function teamsModule(options: TeamsOptions = {}): ServerModule {
       teamRoutes(env)(app);
       memberRoutes(env)(app);
       teamInvitationRoutes(env)(app);
+      workspaceRoutes(env)(app);
+      accessRoutes(env)(app);
       ctx.hooks.invitationAccepted.push(addInvitedMember(now));
       await Promise.resolve();
     },
