@@ -40,8 +40,12 @@ export const MACHINE_LOCAL_PATHS: readonly string[] = [WORKSPACE_SHARE_FILE, WOR
 const CONTROL_CHARACTER = /[\x00-\x1f\x7f]/;
 /** A POSIX root, or a Windows drive. */
 const ABSOLUTE = /^(?:\/|[A-Za-z]:)/;
-/** `.git` in any case, with the trailing dots or spaces Windows ignores, or its 8.3 short name: every spelling git refuses in a tree. */
-const GIT_SEGMENT = /^(?:\.git[. ]*|git~\d+)$/i;
+/**
+ * `.git` in any case, with the trailing dots or spaces Windows ignores, its 8.3 short name, and any
+ * of those followed by an NTFS alternate-data-stream suffix (`:$INDEX_ALLOCATION`, a bare `:`, or
+ * `git~1:x`) — every spelling git itself refuses in a tree under `core.protectNTFS`.
+ */
+const GIT_SEGMENT = /^(?:\.git|git~\d+)[. ]*(?::.*)?$/i;
 
 /** Why a path was refused; `details.reason` of the error. */
 type Refusal =
