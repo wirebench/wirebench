@@ -16,7 +16,8 @@ const shuttingDown = (): WirebenchError =>
 
 export const NO_HOOKS_DIR = 'no-hooks';
 const REPOS_DIR = 'repos';
-const TMP_DIR = 'tmp';
+/** Scratch space under the data dir: staging, moved-away repositories and server-sync's private index files. */
+export const TMP_DIR = 'tmp';
 
 /** Crockford base32 ULID, upper case, 26 characters — what `ulidx` mints. */
 const WORKSPACE_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;

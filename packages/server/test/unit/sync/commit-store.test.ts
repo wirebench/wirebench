@@ -286,4 +286,8 @@ describeGit('CommitStore (§3.3)', () => {
     expect(readdirSync(tmpDir).sort()).toEqual(['keep.txt', `removed-${ID}-1`]);
     await expect(sweepIndexFiles(join(dataDir, 'missing'))).resolves.toBeUndefined();
   });
+
+  it('refuses a relative tmpDir: git and Node would resolve it against different directories', () => {
+    expect(() => new CommitStore({ git, repos, tmpDir: 'tmp', limitBytes: 1024 })).toThrow(/absolute tmpDir/);
+  });
 });

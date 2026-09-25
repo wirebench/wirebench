@@ -41,3 +41,11 @@ export function syncContentInvalid(path: string): WirebenchError {
     400,
   );
 }
+
+/**
+ * A commit subject with a control character (U+0000 to U+001F, U+007F). NUL cannot reach git as an
+ * argument at all, and a newline would turn the subject into a message body; the store does not check.
+ */
+export function syncSubjectInvalid(): WirebenchError {
+  return problem('invalid-request', 'A commit subject cannot contain control characters or line breaks.', 400);
+}

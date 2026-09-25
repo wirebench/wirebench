@@ -14,7 +14,7 @@
 import { isUtf8 } from 'node:buffer';
 import { randomBytes } from 'node:crypto';
 import { readdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import {
   assertTreePath,
   MAX_SYNC_FILE_BYTES,
@@ -86,7 +86,10 @@ export interface CommitStoreDeps {
   readonly git: GitCli;
   /** For `path(id)` only; the caller holds `withLock` for a push. */
   readonly repos: RepoStore;
-  /** `<dataDir>/tmp`, where private index files live. */
+  /**
+   * `<dataDir>/tmp`, where private index files live. Absolute: git resolves `GIT_INDEX_FILE` against
+   * the repository it runs in, Node's `rm` against the process's cwd, so a relative path names two places.
+   */
   readonly tmpDir: string;
   /** `bodyLimitMb` in bytes: the most blob content one snapshot or changes answer may carry (R5). */
   readonly limitBytes: number;
@@ -238,6 +241,7 @@ export class CommitStore {
   private readonly limitBytes: number;
 
   constructor(deps: CommitStoreDeps) {
+    if (!isAbsolute(deps.tmpDir)) throw new Error(`CommitStore needs an absolute tmpDir, got "${deps.tmpDir}"`);
     this.git = deps.git;
     this.repos = deps.repos;
     this.tmpDir = deps.tmpDir;
