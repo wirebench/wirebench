@@ -99,6 +99,11 @@ export interface UiStore extends UiSnapshot {
   readonly shareDialogOpen: boolean;
   /** Whether the Join Shared Workspace dialog is open. Transient — never persisted. */
   readonly joinDialogOpen: boolean;
+  /**
+   * Whether the Sign in dialog is open and, when it was opened for a known server (the status
+   * bar's "Sign in" on a signed-out account), which URL to start from. Transient.
+   */
+  readonly signInDialog: { readonly open: boolean; readonly url: string | undefined };
   /** The project id the Move to Workspace dialog is open for, or `null` when it is closed. */
   readonly moveProjectDialog: string | null;
   /**
@@ -130,6 +135,8 @@ export interface UiStore extends UiSnapshot {
   readonly setConflictResolverOpen: (open: boolean) => void;
   readonly setShareDialogOpen: (open: boolean) => void;
   readonly setJoinDialogOpen: (open: boolean) => void;
+  readonly openSignInDialog: (url?: string) => void;
+  readonly setSignInDialogOpen: (open: boolean) => void;
   readonly setMoveProjectDialog: (projectId: string | null) => void;
   readonly setSecretTokenDialog: (target: SecretTokenDialogTarget | null) => void;
   /** Opens the Settings dialog, optionally on one section. Every route into Settings goes here. */
@@ -222,6 +229,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     conflictResolverOpen: false,
     shareDialogOpen: false,
     joinDialogOpen: false,
+    signInDialog: { open: false, url: undefined },
     moveProjectDialog: null,
     secretTokenDialog: null,
     confirmRemoveProjectId: undefined,
@@ -302,6 +310,12 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setJoinDialogOpen: (open) => {
       set({ joinDialogOpen: open });
+    },
+    openSignInDialog: (url) => {
+      set({ signInDialog: { open: true, url } });
+    },
+    setSignInDialogOpen: (open) => {
+      set({ signInDialog: { open, url: open ? get().signInDialog.url : undefined } });
     },
     setMoveProjectDialog: (projectId) => {
       set({ moveProjectDialog: projectId });

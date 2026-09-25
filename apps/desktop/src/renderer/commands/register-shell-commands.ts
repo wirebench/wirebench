@@ -1,4 +1,5 @@
 import { resetCommands } from '../lib/commands.js';
+import { registerAccountCommands } from './register-account-commands.js';
 import { registerEditorCommands } from './register-editor-commands.js';
 import { registerExplorerCommands } from './register-explorer-commands.js';
 import { registerHistoryCommands } from './register-history-commands.js';
@@ -22,6 +23,7 @@ export function registerShellCommands(openPalette: (mode?: 'commands' | 'quick-o
   registerViewCommands(openPalette);
   registerWorkspaceCommands();
   registerSyncCommands();
+  registerAccountCommands();
   registerProjectCommands();
   registerRequestCommands();
   registerEditorCommands();
