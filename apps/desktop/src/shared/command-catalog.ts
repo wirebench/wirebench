@@ -695,6 +695,16 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Move to Workspace…',
     category: 'Project',
   },
+  'account.signIn': {
+    id: 'account.signIn',
+    label: 'Account: Sign in to a server…',
+    category: 'Account',
+  },
+  'account.signOut': {
+    id: 'account.signOut',
+    label: 'Account: Sign out…',
+    category: 'Account',
+  },
 };
 
 /** `COMMAND_CATALOG[id]`, typed so a spread at a call site needs no cast. */

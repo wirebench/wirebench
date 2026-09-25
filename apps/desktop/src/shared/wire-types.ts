@@ -4215,6 +4215,7 @@ export const preferencesWireSchema = z.object({
     logSize: z.number(),
   }),
   updates: z.object({ checkOnLaunch: z.boolean() }),
+  accounts: z.object({ showInStatusBar: z.boolean() }),
   shortcuts: z.record(z.string(), z.string()),
 });
 export type PreferencesWire = z.infer<typeof preferencesWireSchema>;
@@ -4231,6 +4232,7 @@ export const preferencesSectionSchema = z.enum([
   'editor',
   'ui',
   'updates',
+  'accounts',
   'shortcuts',
 ]);
 export type PreferencesSectionWire = z.infer<typeof preferencesSectionSchema>;
@@ -4251,6 +4253,7 @@ export const preferencesPatchWireSchema = z.object({
   editor: z.record(z.string(), z.unknown()).optional(),
   ui: z.record(z.string(), z.unknown()).optional(),
   updates: z.record(z.string(), z.unknown()).optional(),
+  accounts: z.record(z.string(), z.unknown()).optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
 });
 export type PreferencesPatchWire = z.infer<typeof preferencesPatchWireSchema>;
@@ -4893,3 +4896,62 @@ export type WorkspaceRestoredResponse = z.infer<typeof workspaceRestoredResponse
 
 /** Payload for `workspace.flushDrafts`: main is about to close; stash drafts now. */
 export const workspaceFlushDraftsEventSchema = z.object({});
+
+/**
+ * A known server and who this installation is on it (identity spec §4.3), as the renderer sees
+ * it: the secret-store ref and the token itself never cross the bridge.
+ */
+export const accountWireSchema = z.object({
+  url: z.string(),
+  userId: z.string(),
+  email: z.string(),
+  displayName: z.string(),
+  deviceName: z.string(),
+  /** True once the server stopped accepting the token (sign-out, revocation, expiry). */
+  signedOut: z.boolean(),
+  addedAt: z.string(),
+});
+export type AccountWire = z.infer<typeof accountWireSchema>;
+
+export const accountListResponseSchema = z.object({ servers: z.array(accountWireSchema) });
+export type AccountListResponse = z.infer<typeof accountListResponseSchema>;
+
+/** `GET /api/v1/meta`, as far as the Sign in dialog needs it. */
+export const serverMetaWireSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  apiVersion: z.number(),
+  publicUrl: z.string(),
+  auth: z.object({ local: z.boolean(), oidc: z.boolean(), oidcDisplayName: z.string().optional() }),
+  capabilities: z.array(z.string()),
+});
+export type ServerMetaWire = z.infer<typeof serverMetaWireSchema>;
+
+export const accountUrlRequestSchema = z.object({ url: z.string() });
+export const accountProbeResponseSchema = z.object({ url: z.string(), meta: serverMetaWireSchema });
+export type AccountProbeResponse = z.infer<typeof accountProbeResponseSchema>;
+export const accountSignInLocalRequestSchema = z.object({
+  url: z.string(),
+  email: z.string(),
+  password: z.string(),
+  deviceName: z.string().optional(),
+});
+export const accountStartOidcRequestSchema = z.object({ url: z.string(), deviceName: z.string().optional() });
+export const accountResponseSchema = z.object({ account: accountWireSchema });
+export type AccountResponse = z.infer<typeof accountResponseSchema>;
+export const accountLookupInvitationRequestSchema = z.object({ url: z.string(), secret: z.string() });
+export const accountLookupInvitationResponseSchema = z.object({
+  email: z.string(),
+  methods: z.object({ local: z.boolean(), oidc: z.boolean() }),
+});
+export type AccountLookupInvitationResponse = z.infer<typeof accountLookupInvitationResponseSchema>;
+export const accountAcceptInvitationRequestSchema = z.object({
+  url: z.string(),
+  secret: z.string(),
+  displayName: z.string(),
+  password: z.string(),
+  deviceName: z.string().optional(),
+});
+export const accountCancelResponseSchema = z.object({ cancelled: z.boolean() });
+export const accountChangedEventSchema = accountListResponseSchema;
+export type AccountChangedEvent = z.infer<typeof accountChangedEventSchema>;

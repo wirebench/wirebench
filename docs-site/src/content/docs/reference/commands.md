@@ -194,3 +194,10 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Sync: Resolve Conflicts… | — | — |
 | Sync: Show Sync Panel | — | — |
 | Sync: Reveal Shared Folder | — | — |
+
+## Account
+
+| Command | macOS | Windows and Linux |
+| --- | --- | --- |
+| Account: Sign in to a server… | — | — |
+| Account: Sign out… | — | — |

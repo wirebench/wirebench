@@ -42,7 +42,19 @@ describe('PreferencesEditor', () => {
 
   it('lists every section', () => {
     render(<PreferencesEditor />);
-    for (const label of ['HTTP', 'Proxy', 'SSL', 'REST', 'Git', 'WSDL', 'WS-I', 'Editor', 'UI', 'Shortcuts']) {
+    for (const label of [
+      'HTTP',
+      'Proxy',
+      'SSL',
+      'REST',
+      'Git',
+      'WSDL',
+      'WS-I',
+      'Editor',
+      'UI',
+      'Accounts',
+      'Shortcuts',
+    ]) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy();
     }
   });

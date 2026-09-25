@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { isInsideAny } from './path-containment.js';
 import type { ReadPicks } from './dialog-picks.js';
+import { resolveProxy, resolveTrustAnchors } from './network-options.js';
 import {
   apiDefinitionDir,
   applyUpdate,
@@ -126,7 +127,6 @@ import type {
   OperationDef,
   Project,
   ProjectFiles,
-  ProxyConfig,
   PropertyScopes,
   RequestDef,
   SendAttachmentOptions,
@@ -142,9 +142,6 @@ import {
   loadKeystore,
   removeOutgoingWss,
   toKeystoreDef,
-  isExcluded,
-  resolveProxyFor,
-  splitPemBundle,
   toTlsClientIdentity,
   toWssIncomingConfig,
   toWssOutgoingConfig,
@@ -2176,21 +2173,9 @@ export class ProjectHost {
    * that matters.
    */
   private async trustAnchors(): Promise<readonly string[] | undefined> {
-    const path = this.prefs()?.ssl.caBundlePath;
     const open = this.open;
-    if (path === undefined || path.length === 0 || open === undefined) {
-      return undefined;
-    }
-    const resolved = resolvePath(open.dir, path);
-    if (!(await allowsReadPath([open.dir], this.picks, resolved))) {
-      return undefined;
-    }
-    try {
-      const anchors = splitPemBundle(await readFile(resolved, 'utf-8'));
-      return anchors.length > 0 ? anchors : undefined;
-    } catch {
-      return undefined;
-    }
+    if (open === undefined) return undefined;
+    return resolveTrustAnchors({ caBundlePath: this.prefs()?.ssl.caBundlePath, roots: [open.dir], picks: this.picks });
   }
 
   /**
@@ -2207,38 +2192,14 @@ export class ProjectHost {
    */
   async proxyFor(url: string): Promise<ProxyOptionsWire | undefined> {
     const proxy = this.prefs()?.proxy;
-    if (proxy === undefined || proxy.mode === 'none') {
-      return undefined;
-    }
-    if (proxy.mode === 'system') {
-      // The PAC lookup is skipped for an excluded host: `session.resolveProxy` can be slow
-      // (it may run a PAC script), and a host the user has already said to reach directly has
-      // nothing to gain from asking.
-      let hostname: string;
-      try {
-        hostname = new URL(url).hostname;
-      } catch {
-        return undefined;
-      }
-      if (isExcluded(hostname, proxy.excludes)) {
-        return undefined;
-      }
-      const pac = await this.resolveSystemProxy?.(url);
-      return resolveProxyFor(url, { mode: 'system', excludes: proxy.excludes }, { resolveSystem: () => pac });
-    }
-    const config: ProxyConfig = {
-      mode: 'manual',
-      host: proxy.host ?? '',
-      port: proxy.port ?? 0,
-      excludes: proxy.excludes,
-      ...(proxy.username !== undefined ? { username: proxy.username } : {}),
-      ...(proxy.passwordRef !== undefined ? { passwordRef: proxy.passwordRef } : {}),
-    };
-    const password =
-      proxy.passwordRef !== undefined && proxy.passwordRef.length > 0
-        ? await this.getSecret(proxy.passwordRef)
-        : undefined;
-    return resolveProxyFor(url, config, { ...(password !== undefined ? { password } : {}) });
+    if (proxy === undefined) return undefined;
+    // `ProxyOptions` (network-options.ts) and `ProxyOptionsWire` are the same shape.
+    return resolveProxy({
+      url,
+      proxy,
+      getSecret: (ref) => this.getSecret(ref),
+      ...(this.resolveSystemProxy !== undefined ? { resolveSystemProxy: this.resolveSystemProxy } : {}),
+    });
   }
 
   /** The incoming WS-Security configuration with this id, or `undefined` when there is none. */

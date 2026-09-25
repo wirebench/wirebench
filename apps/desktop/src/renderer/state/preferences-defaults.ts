@@ -54,5 +54,6 @@ export const DEFAULT_PREFERENCES_WIRE: PreferencesWire = {
     logSize: 500,
   },
   updates: { checkOnLaunch: false },
+  accounts: { showInStatusBar: true },
   shortcuts: {},
 };

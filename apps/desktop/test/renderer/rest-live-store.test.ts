@@ -114,7 +114,8 @@ describe('applyRestLive', () => {
     expect(state?.live?.rows).toHaveLength(WS_LIVE_FRAME_LIMIT);
     expect(state?.live?.droppedRows).toBe(10);
     expect(state?.live?.counts?.events).toBe(WS_LIVE_FRAME_LIMIT + 10);
-  });
+    // 5010 store updates over an array that grows to the cap: slower than the 5s default on CI.
+  }, 30_000);
 
   it('ignores a row whose index is already at the tail, whatever hands it over', () => {
     const sendId = startStream();

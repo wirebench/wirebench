@@ -68,4 +68,9 @@ export interface ServerModule {
    */
   readonly migrationsDir?: string;
   register(app: FastifyInstance, ctx: ServerContext): Promise<void>;
+  /**
+   * Routes served at the root, outside `/api/v1` and outside every module hook: a page a browser
+   * opens from a link (identity's `/invite/:secret`). Most modules have none.
+   */
+  registerPublic?(app: FastifyInstance, ctx: ServerContext): Promise<void>;
 }

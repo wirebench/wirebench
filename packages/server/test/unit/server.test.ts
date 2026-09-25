@@ -19,6 +19,24 @@ afterEach(() => {
 });
 
 describe('buildServer', () => {
+  it('serves a module’s public routes at the root, outside /api/v1', async () => {
+    const app = await buildServer(await testContext({ dataDir }), {
+      modules: [
+        {
+          name: 'identity',
+          register: () => Promise.resolve(),
+          // eslint-disable-next-line @typescript-eslint/require-await -- registerPublic is async; this one has no await
+          registerPublic: async (root) => {
+            root.get('/page', async (_request, reply) => reply.type('text/html').send('<p>hi</p>'));
+          },
+        },
+      ],
+    });
+    expect((await app.inject({ method: 'GET', url: '/page' })).body).toBe('<p>hi</p>');
+    expect((await app.inject({ method: 'GET', url: '/api/v1/page' })).statusCode).toBe(404);
+    await app.close();
+  });
+
   it('serves a green /healthz when every check passes', async () => {
     const app = await buildServer(await testContext({ dataDir }), { modules: [] });
     const res = await app.inject({ method: 'GET', url: '/healthz' });
@@ -216,7 +234,7 @@ describe('buildServer', () => {
           name: 'identity',
           // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async; this one has no await
           register: async (instance) => {
-            instance.decorateRequest('caller', null);
+            instance.decorateRequest('caller', undefined);
             instance.addHook('onRequest', async (request, reply) => {
               (request as unknown as { caller: string | null }).caller = 'ada';
               void reply.header('x-probe-hook', 'seen');
@@ -287,5 +305,38 @@ describe('buildServer', () => {
     for (const secret of ['hunter2', 'tok-n3sted', 'qs-s3cret', 'qs-t0ken', 'hdr-t0ken']) {
       expect(text).not.toContain(secret);
     }
+  });
+
+  it('never logs an invitation secret carried in the /invite/:secret path', async () => {
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        lines.push(chunk.toString('utf-8'));
+        callback();
+      },
+    });
+    const ctx = await testContext({ dataDir });
+    const app = await buildServer(
+      { ...ctx, config: { ...ctx.config, logLevel: 'info' } },
+      {
+        logStream,
+        modules: [
+          {
+            name: 'identity',
+            register: () => Promise.resolve(),
+            // eslint-disable-next-line @typescript-eslint/require-await -- registerPublic is async; this one has no await
+            registerPublic: async (root) => {
+              root.get('/invite/:secret', async (_request, reply) => reply.type('text/html').send('<p>hi</p>'));
+            },
+          },
+        ],
+      },
+    );
+    const res = await app.inject({ method: 'GET', url: '/invite/S3cr3t-invite-p4th' });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+    const text = lines.join('');
+    expect(text).toContain('/invite/[redacted]');
+    expect(text).not.toContain('S3cr3t-invite-p4th');
   });
 });

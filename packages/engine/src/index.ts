@@ -1196,3 +1196,68 @@ export type { GitLocation, GitSubcommand, Runner } from './sync/git-cli.js';
 
 export { mergeFiles } from './sync/three-way-merge.js';
 export type { FileMerge } from './sync/three-way-merge.js';
+
+// ---------------------------------------------------------------------------
+// Wirebench Server API: wire schemas shared by packages/server and the desktop client
+// ---------------------------------------------------------------------------
+export { SERVER_API_VERSION, SERVER_NAME, metaResponseSchema } from './server-api/meta.js';
+export type { MetaResponse } from './server-api/meta.js';
+export {
+  DEVICE_TOKEN_PATTERN,
+  MAX_DEVICE_NAME_LENGTH,
+  MAX_DISPLAY_NAME_LENGTH,
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  PKCE_VERIFIER_PATTERN,
+  SECRET_PATTERN,
+  deviceSchema,
+  devicesResponseSchema,
+  deviceSummarySchema,
+  emailSchema,
+  identityIdParamsSchema,
+  identityIdSchema,
+  invitationAcceptRequestSchema,
+  invitationCreatedSchema,
+  invitationCreateRequestSchema,
+  invitationLookupQuerySchema,
+  invitationLookupResponseSchema,
+  invitationsResponseSchema,
+  invitationSummarySchema,
+  localSignInRequestSchema,
+  meResponseSchema,
+  oidcCallbackQuerySchema,
+  oidcCompleteRequestSchema,
+  oidcStartRequestSchema,
+  oidcStartResponseSchema,
+  passwordChangeRequestSchema,
+  passwordResetCreatedSchema,
+  passwordSchema,
+  serverUserSchema,
+  signInMethodsSchema,
+  signInResponseSchema,
+  userPatchRequestSchema,
+  usersResponseSchema,
+  userSummarySchema,
+} from './server-api/identity.js';
+export type {
+  DeviceSummary,
+  InvitationAcceptRequest,
+  InvitationCreated,
+  InvitationCreateRequest,
+  InvitationLookupResponse,
+  InvitationSummary,
+  LocalSignInRequest,
+  MeResponse,
+  OidcCallbackQuery,
+  OidcCompleteRequest,
+  OidcStartRequest,
+  OidcStartResponse,
+  PasswordChangeRequest,
+  PasswordResetCreated,
+  ServerUser,
+  SignInResponse,
+  UserPatchRequest,
+  UserSummary,
+} from './server-api/identity.js';
+export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
+export type { AccountsFile, ServerAccount } from './account/schema.js';

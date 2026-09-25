@@ -135,6 +135,8 @@ export const COMMAND_IDS = [
   'workspace.join',
   'workspace.stopSharing',
   'project.moveToWorkspace',
+  'account.signIn',
+  'account.signOut',
 ] as const;
 
 /** Every addressable action. Derived from {@link COMMAND_IDS} so the two can never drift. */
@@ -153,7 +155,8 @@ export type CommandCategory =
   | 'Secrets'
   | 'Editor'
   | 'History'
-  | 'Sync';
+  | 'Sync'
+  | 'Account';
 
 /**
  * The named conditions a command's `when` gate can stand for, and how each reads in a sentence.
@@ -186,6 +189,7 @@ export const COMMAND_WHEN_SCOPES = {
   'history.entries': 'the history has entries',
   'history.pair': 'the history has two or more entries',
   'workspace.shared': 'the open workspace is shared',
+  'account.signedIn': 'a server account is signed in',
 } as const;
 
 /** The key half of {@link COMMAND_WHEN_SCOPES}. */

@@ -22,3 +22,29 @@ describe('parseServerArgs', () => {
     expect(() => parseServerArgs(['config'])).toThrow(UsageError);
   });
 });
+
+describe('admin commands (§3.7)', () => {
+  it('parses invite, list-invitations and revoke-invitation', () => {
+    expect(parseServerArgs(['admin', 'invite', 'alice@example.com'])).toEqual({
+      command: 'admin-invite',
+      email: 'alice@example.com',
+      serverAdmin: true,
+    });
+    expect(parseServerArgs(['admin', 'invite', 'alice@example.com', '--no-admin'])).toEqual({
+      command: 'admin-invite',
+      email: 'alice@example.com',
+      serverAdmin: false,
+    });
+    expect(parseServerArgs(['admin', 'list-invitations'])).toEqual({ command: 'admin-list-invitations' });
+    expect(parseServerArgs(['admin', 'revoke-invitation', '01J8Z'])).toEqual({
+      command: 'admin-revoke-invitation',
+      id: '01J8Z',
+    });
+  });
+  it('refuses a missing email or id, an unknown sub-command, and --no-admin elsewhere', () => {
+    expect(() => parseServerArgs(['admin', 'invite'])).toThrow(/usage: wirebench-server admin invite <email>/);
+    expect(() => parseServerArgs(['admin', 'revoke-invitation'])).toThrow(/usage/);
+    expect(() => parseServerArgs(['admin', 'frobnicate'])).toThrow(/unknown admin command/);
+    expect(() => parseServerArgs(['serve', '--no-admin'])).toThrow(/--no-admin only applies to admin invite/);
+  });
+});

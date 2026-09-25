@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { Loader2 } from 'lucide-react';
 import { SecretReviewDialog } from '../components/secret-review-dialog.js';
+import { SignInDialog } from '../features/account/sign-in-dialog.js';
+import { subscribeToAccounts, useAccountStore } from '../state/account.js';
 import { ToastViewport } from '../components/toast.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
 import type { CommandContext } from '../lib/commands.js';
@@ -254,6 +256,10 @@ export function AppShell() {
 
   useEffect(() => subscribeToWorkspace(), []);
   useEffect(() => subscribeToSync(), []);
+  useEffect(() => subscribeToAccounts(), []);
+  useEffect(() => {
+    void useAccountStore.getState().load();
+  }, []);
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
   useEffect(() => subscribeToPreferences(), []);
@@ -431,6 +437,7 @@ export function AppShell() {
       <RemoveProjectDialog />
       <ShareDialog />
       <JoinDialog />
+      <SignInDialog />
       <MoveProjectDialog />
       <SyncPanel />
       <ConflictResolver />

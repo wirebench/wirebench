@@ -7,6 +7,7 @@ import { formatBytes, formatDuration } from '../lib/format-size.js';
 import { responseSize, toneFor } from '../features/request-editor/response-status.js';
 import { TrustInvalidBadge } from '../components/trust-invalid-badge.js';
 import { SyncBadge } from '../features/sync/sync-badge.js';
+import { AccountStatusItem } from '../features/account/account-status-item.js';
 import { useEditorsStore } from '../state/editors.js';
 import { lastExchangeOf, useExchangesStore } from '../state/exchanges.js';
 import { selectRequestTrustsInvalid } from '../state/project-endpoint.js';
@@ -173,6 +174,7 @@ export function StatusBar() {
             <SyncBadge />
           </>
         )}
+        <AccountStatusItem />
         <span aria-hidden="true" className="text-fg-faint">
           ·
         </span>
