@@ -25,6 +25,7 @@ describe('AccountStatusItem', () => {
     useAccountStore.setState({ servers: [], loaded: true });
     useUiStore.setState({
       signInDialog: { open: false, url: undefined },
+      teamDialog: { open: false, url: undefined },
       preferences: { open: false, section: undefined },
     });
   });
@@ -78,5 +79,15 @@ describe('AccountStatusItem', () => {
     await screen.findByTestId('account-sign-out-two.test');
     fireEvent.click(screen.getByTestId('account-manage'));
     expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'accounts' });
+  });
+
+  it('the menu offers Manage teams…', async () => {
+    useAccountStore.setState({ servers: [account('https://wb.test')] });
+    render(<AccountStatusItem />);
+    const item = screen.getByTestId('status-bar-account');
+    fireEvent.pointerDown(item, { button: 0, ctrlKey: false });
+    fireEvent.click(item);
+    fireEvent.click(await screen.findByTestId('account-manage-teams'));
+    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: undefined });
   });
 });

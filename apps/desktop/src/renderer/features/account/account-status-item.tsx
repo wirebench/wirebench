@@ -31,13 +31,14 @@ function Separator() {
  * The status bar's account item (identity spec §3.8). Hidden until a server is known and while
  * `accounts.showInStatusBar` is off. A signed-out server shows *Sign in*, which reopens the
  * dialog on that URL; a signed-in one shows the email with a menu holding *Sign out of <server>*
- * per server and *Manage accounts…*.
+ * per server, *Manage teams…* and *Manage accounts…*.
  */
 export function AccountStatusItem() {
   const servers = useAccountStore((state) => state.servers);
   const show = usePreferencesStore((state) => state.preferences.accounts.showInStatusBar);
   const openSignInDialog = useUiStore((state) => state.openSignInDialog);
   const openPreferences = useUiStore((state) => state.openPreferences);
+  const openTeamDialog = useUiStore((state) => state.openTeamDialog);
   const signOut = useAccountStore((state) => state.signOut);
   const [open, setOpen] = useState(false);
 
@@ -106,6 +107,15 @@ export function AccountStatusItem() {
               </DropdownMenu.Item>
             ))}
             <DropdownMenu.Separator className="my-1 h-px bg-hairline" />
+            <DropdownMenu.Item
+              data-testid="account-manage-teams"
+              className={ITEM_CLASS}
+              onSelect={() => {
+                openTeamDialog();
+              }}
+            >
+              Manage teams…
+            </DropdownMenu.Item>
             <DropdownMenu.Item
               data-testid="account-manage"
               className={ITEM_CLASS}

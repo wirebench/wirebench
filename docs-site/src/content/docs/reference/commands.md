@@ -201,3 +201,4 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | --- | --- | --- |
 | Account: Sign in to a server… | — | — |
 | Account: Sign out… | — | — |
+| Account: Manage teams… | — | — |

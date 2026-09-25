@@ -22,6 +22,7 @@ export function AccountsSection({ preferences, update }: SectionProps) {
   const signOut = useAccountStore((state) => state.signOut);
   const remove = useAccountStore((state) => state.remove);
   const openSignInDialog = useUiStore((state) => state.openSignInDialog);
+  const openTeamDialog = useUiStore((state) => state.openTeamDialog);
 
   return (
     <div data-testid="accounts-section">
@@ -53,14 +54,24 @@ export function AccountsSection({ preferences, update }: SectionProps) {
                     Sign in
                   </Button>
                 ) : (
-                  <Button
-                    data-testid="account-row-sign-out"
-                    onClick={() => {
-                      void signOut(server.url);
-                    }}
-                  >
-                    Sign out
-                  </Button>
+                  <>
+                    <Button
+                      data-testid="account-row-manage-teams"
+                      onClick={() => {
+                        openTeamDialog(server.url);
+                      }}
+                    >
+                      Manage teams…
+                    </Button>
+                    <Button
+                      data-testid="account-row-sign-out"
+                      onClick={() => {
+                        void signOut(server.url);
+                      }}
+                    >
+                      Sign out
+                    </Button>
+                  </>
                 )}
                 <Button
                   variant="ghost"
