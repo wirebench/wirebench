@@ -1,17 +1,19 @@
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { loadConfig } from '../../src/config.js';
-import type { ServerEvents, ServerModule } from '../../src/context.js';
+import type { ServerHooks, ServerModule } from '../../src/context.js';
 import { migrate } from '../../src/db/migrate.js';
 import { identityModule } from '../../src/identity/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
 import * as repo from '../../src/identity/repo.js';
 import { mintToken, newId } from '../../src/identity/tokens.js';
+import { NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
 import { allMigrations } from '../../src/serve.js';
 import { buildServer } from '../../src/server.js';
 import { testContext } from './context.js';
 import { testDatabase } from './database.js';
-import { mkTempDir, removeTempDir } from './git.js';
+import { mkTempDir, removeTempDir, testGit } from './git.js';
 
 export interface TestClock {
   now: Date;
@@ -23,8 +25,11 @@ export interface IdentityHarness {
   readonly app: FastifyInstance;
   readonly db: Awaited<ReturnType<typeof testDatabase>>;
   readonly clock: TestClock;
-  /** The context's emitter, to assert on `invitation.accepted`. */
-  readonly events: ServerEvents;
+  /** The context's hooks, to register an `invitationAccepted` probe. */
+  readonly hooks: ServerHooks;
+  /** A real repository store over `dataDir`: teams-access creates repositories through it. */
+  readonly repos: RepoStore;
+  readonly dataDir: string;
   close(): Promise<void>;
 }
 
@@ -43,7 +48,7 @@ export async function identityHarness(
   options: {
     readonly env?: Record<string, string>;
     readonly provider?: OidcProvider;
-    readonly modules?: readonly ServerModule[];
+    readonly modules?: readonly ServerModule[] | ((clock: TestClock) => readonly ServerModule[]);
   } = {},
 ): Promise<IdentityHarness> {
   const db = await testDatabase();
@@ -72,15 +77,20 @@ export async function identityHarness(
     sweepIntervalMs: 0,
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
   });
-  const modules = [identity, ...(options.modules ?? [])];
+  const extra = typeof options.modules === 'function' ? options.modules(clock) : (options.modules ?? []);
+  const modules = [identity, ...extra];
   await migrate(db, await allMigrations(modules));
-  const ctx = await testContext({ dataDir, db, config });
+  await RepoStore.prepare(dataDir);
+  const repos = new RepoStore({ git: testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
+  const ctx = await testContext({ dataDir, db, config, repos });
   const app = await buildServer(ctx, { modules });
   return {
     app,
     db,
     clock,
-    events: ctx.events,
+    hooks: ctx.hooks,
+    repos,
+    dataDir,
     close: async () => {
       await app.close();
       await db.close();

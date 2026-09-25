@@ -34,7 +34,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
   /** Injects env through the harness's module: `createInvitation` wants an IdentityEnv-shaped object. */
   const env = () =>
     ({
-      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, events: h.events },
+      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks },
       settings: { invitationMs: 7 * 86_400_000 },
       now: () => h.clock.now,
     }) as never;
@@ -78,7 +78,10 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
 
   it('start → callback → complete creates an invited user with the invitation’s admin flag and links the identity', async () => {
     const accepted = vi.fn();
-    h.events.on('invitation.accepted', accepted);
+    h.hooks.invitationAccepted.push((_tx, event) => {
+      accepted(event);
+      return Promise.resolve();
+    });
     const invitation = await createInvitation(env(), {
       email: 'Alice@example.com',
       serverAdmin: true,

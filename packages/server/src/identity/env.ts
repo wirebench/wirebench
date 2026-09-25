@@ -38,7 +38,7 @@ export interface IdentityEnv {
 
 /** What the invitation functions need: the CLI builds one without a Fastify app or a provider. */
 export interface InvitationEnv {
-  readonly ctx: Pick<ServerContext, 'db' | 'config' | 'events'>;
+  readonly ctx: Pick<ServerContext, 'db' | 'config' | 'hooks'>;
   readonly settings: Pick<IdentitySettings, 'invitationMs' | 'local' | 'oidc'>;
   readonly now: () => Date;
 }
