@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MAX_SYNC_FILE_BYTES, type GitCli, type SyncChange, type SyncPushCommit } from '@wirebench/engine';
@@ -196,9 +196,22 @@ describeGit('CommitStore (§3.3)', () => {
     const a = await store.appendCommits(ID, null, [commit('A', [text('workspace.yaml', 'a\n')])], ED);
     const lock = join(repos.path(ID), 'refs', 'heads', 'main.lock');
     writeFileSync(lock, `${a.head}\n`);
+    const old = new Date(Date.now() - 5 * 60_000);
+    utimesSync(lock, old, old);
     const b = await store.appendCommits(ID, a.head, [commit('B', [text('workspace.yaml', 'b\n')])], ED);
     expect(await store.head(ID)).toBe(b.head);
     expect(existsSync(lock)).toBe(false);
+  });
+
+  it('a fresh refs/heads/main.lock may belong to a live update-ref elsewhere: it is left alone and the push fails as git', async () => {
+    const a = await store.appendCommits(ID, null, [commit('A', [text('workspace.yaml', 'a\n')])], ED);
+    const lock = join(repos.path(ID), 'refs', 'heads', 'main.lock');
+    writeFileSync(lock, `${a.head}\n`);
+    await expect(
+      store.appendCommits(ID, a.head, [commit('B', [text('workspace.yaml', 'b\n')])], ED),
+    ).rejects.toMatchObject({ code: 'git-failed' });
+    expect(existsSync(lock)).toBe(true);
+    expect(await store.head(ID)).toBe(a.head);
   });
 
   it('an update-ref failure other than a lost compare-and-swap is not a rejection: it stays a git failure (a logged 500)', async () => {

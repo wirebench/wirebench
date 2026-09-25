@@ -13,7 +13,7 @@
  */
 import { isUtf8 } from 'node:buffer';
 import { randomBytes } from 'node:crypto';
-import { readdir, rm } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import {
   assertTreePath,
@@ -254,6 +254,21 @@ function blobOf(blobs: ReadonlyMap<string, Buffer>, id: string): Buffer {
   return bytes;
 }
 
+/** How old a ref lock must be before a push treats it as a crash's leftover. `update-ref` holds it for milliseconds. */
+const STALE_REF_LOCK_MS = 60_000;
+
+/**
+ * Removes the ref's lock file when it is older than {@link STALE_REF_LOCK_MS}. The caller holds
+ * `withLock`, so no push of this process owns it: an old one was left by a crash (a SIGKILL
+ * mid-`update-ref`) and would fail every push to the workspace from then on. A fresh one may belong
+ * to a live `update-ref` in a second instance, and removing it would break §6's no-lost-update
+ * promise, so it stays and that push fails as a git error instead.
+ */
+async function clearStaleRefLock(lock: string): Promise<void> {
+  const info = await stat(lock).catch(() => undefined);
+  if (info !== undefined && Date.now() - info.mtimeMs > STALE_REF_LOCK_MS) await rm(lock, { force: true });
+}
+
 export class CommitStore {
   private readonly git: GitCli;
   private readonly repos: RepoStore;
@@ -362,10 +377,7 @@ export class CommitStore {
       changes: commit.changes.map(stage),
     }));
     const dir = this.repos.path(workspaceId);
-    // The caller holds `withLock` and the server is one instance (§2), so no git process of ours
-    // can own the ref's lock now: one found here was left by a crash (a SIGKILL mid-`update-ref`),
-    // and left in place it would fail every push to this workspace from now on.
-    await rm(join(dir, ...MAIN.split('/')) + '.lock', { force: true });
+    await clearStaleRefLock(join(dir, ...MAIN.split('/')) + '.lock');
     if ((await this.resolve(dir, MAIN)) !== parent) throw syncPushRejected();
 
     const index = join(this.tmpDir, `${workspaceId}-${randomBytes(8).toString('hex')}.idx`);

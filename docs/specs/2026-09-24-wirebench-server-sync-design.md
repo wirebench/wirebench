@@ -519,7 +519,8 @@ The path rules are the engine's `assertTreePath`, so the server has no path modu
 - Plumbing subcommands are reachable only through a server-constructed `GitCli`, and the per-call `env`
   accepts only the seven named variables. The desktop's allow-list does not grow.
 - The commit store's `update-ref` compare-and-swap, plus `withLock`, prevent lost updates even if a second
-  instance were ever started. The push re-checks that the repository exists inside the lock.
+  instance were ever started. The push re-checks that the repository exists inside the lock. A ref lock
+  file older than a minute is a crash's leftover and is removed; a fresher one is left alone.
 - Repository hooks never run: `core.hooksPath` is emptied on every call, and a test plants real hooks to
   prove it.
 - No secret value can travel:
