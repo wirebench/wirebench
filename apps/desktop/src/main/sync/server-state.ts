@@ -123,6 +123,40 @@ const mergeSchema = z.object({
   preMerge: treeFileRecordSchema,
   mergePaths: z.array(z.string()),
 });
+/**
+ * YAML does not carry every text byte for byte: a whitespace-only line in a block scalar loses its
+ * blanks (`"   \n"` reads back as `"\n"`), and no scalar style avoids that for every string. So every
+ * content in `pending/` and `merge.yaml` is stored as base64, whatever its encoding, and read back
+ * through `canonicalTreeFile`, which gives valid UTF-8 back as text. (`base/` holds raw bytes.)
+ */
+function storedTreeFile(file: TreeFile): TreeFile {
+  return { encoding: 'base64', content: treeFileBytes(file).toString('base64') };
+}
+
+function toStored(change: SyncChange): SyncChange {
+  const { path, encoding, content } = change;
+  return content === null ? change : { path, ...storedTreeFile({ encoding, content }) };
+}
+
+/** A change as a read gives it back: base64 of valid UTF-8 becomes text. */
+function canonicalChange(change: SyncChange): SyncChange {
+  return change.content === null
+    ? change
+    : { path: change.path, ...canonicalTreeFile(change.encoding, change.content) };
+}
+
+function mapRecord(
+  record: Readonly<Record<string, TreeFile>>,
+  map: (file: TreeFile) => TreeFile,
+): Record<string, TreeFile> {
+  return Object.fromEntries(Object.entries(record).map(([path, file]) => [path, map(file)]));
+}
+
+/** The file operations `ServerState` lets a test replace. */
+export interface ServerStateIo {
+  readonly rename: (from: string, to: string) => Promise<void>;
+}
+
 const advanceSchema = z.object({ head: syncCommitIdSchema, clearPending: z.boolean() });
 
 function isMissing(error: unknown): boolean {
@@ -194,8 +228,14 @@ export class ServerState {
   /** The roll-forward of an interrupted `advanceBase`, run once per instance before its first use. */
   private recovery: Promise<void> | undefined;
 
-  /** `dir` is `<workspaceDir>/server` ({@link SERVER_STATE_DIR}). */
-  constructor(private readonly dir: string) {}
+  /**
+   * `dir` is `<workspaceDir>/server` ({@link SERVER_STATE_DIR}). `io.rename` is the folder swap of
+   * `advanceBase`; tests replace it to make the swap fail the way Windows can (EPERM).
+   */
+  constructor(
+    private readonly dir: string,
+    private readonly io: ServerStateIo = { rename },
+  ) {}
 
   /**
    * Writes a fresh state: `base/` holds `files` (the tree at `head`), with no pending commits and no
@@ -223,9 +263,12 @@ export class ServerState {
     return next;
   }
 
+  /** @throws WirebenchError 'sync-state-corrupt' when `base/` is missing, which must never read as an empty base. */
   async baseFiles(): Promise<Map<string, TreeFile>> {
     await this.recover();
-    return readTreeFiles(join(this.dir, BASE_DIR));
+    const base = join(this.dir, BASE_DIR);
+    if (!(await exists(base))) throw corrupt(BASE_DIR);
+    return readTreeFiles(base);
   }
 
   async pending(): Promise<PendingCommitRecord[]> {
@@ -235,7 +278,12 @@ export class ServerState {
       const file = `${PENDING_DIR}/${name}`;
       const record = await readYaml(join(this.dir, PENDING_DIR, name), pendingSchema, file);
       if (record === undefined) throw corrupt(file);
-      records.push({ id: record.id, subject: record.subject, at: record.at, changes: record.changes });
+      records.push({
+        id: record.id,
+        subject: record.subject,
+        at: record.at,
+        changes: record.changes.map(canonicalChange),
+      });
     }
     return records;
   }
@@ -249,9 +297,12 @@ export class ServerState {
       id: generateId(),
       subject: commit.subject,
       at: commit.at,
-      changes: commit.changes,
+      changes: commit.changes.map(canonicalChange),
     };
-    await writeYaml(join(this.dir, PENDING_DIR, `${String(number).padStart(4, '0')}.yaml`), record);
+    await writeYaml(join(this.dir, PENDING_DIR, `${String(number).padStart(4, '0')}.yaml`), {
+      ...record,
+      changes: record.changes.map(toStored),
+    });
     return record;
   }
 
@@ -275,18 +326,38 @@ export class ServerState {
     await mkdir(next, { recursive: true });
     await writeTreeFiles(next, files);
     await writeYaml(join(this.dir, ADVANCE_FILE), { head, clearPending: options.clearPending });
-    await this.applyAdvance();
+    try {
+      await this.applyAdvance();
+    } catch (error) {
+      // The journal is committed: the next use must roll it forward rather than trust a stale recovery.
+      this.recovery = undefined;
+      throw error;
+    }
   }
 
   async readMerge(): Promise<MergeRecord | undefined> {
     await this.recover();
-    return readYaml(join(this.dir, MERGE_FILE), mergeSchema, MERGE_FILE);
+    const stored = await readYaml(join(this.dir, MERGE_FILE), mergeSchema, MERGE_FILE);
+    if (stored === undefined) return undefined;
+    return {
+      conflicts: stored.conflicts,
+      mine: mapRecord(stored.mine, (file) => canonicalTreeFile(file.encoding, file.content)),
+      theirs: mapRecord(stored.theirs, (file) => canonicalTreeFile(file.encoding, file.content)),
+      preMerge: mapRecord(stored.preMerge, (file) => canonicalTreeFile(file.encoding, file.content)),
+      mergePaths: stored.mergePaths,
+    };
   }
 
   async writeMerge(record: MergeRecord): Promise<void> {
     await this.recover();
     for (const path of [...record.conflicts, ...record.mergePaths]) assertTreePath(path);
-    await writeYaml(join(this.dir, MERGE_FILE), record);
+    await writeYaml(join(this.dir, MERGE_FILE), {
+      conflicts: record.conflicts,
+      mine: mapRecord(record.mine, storedTreeFile),
+      theirs: mapRecord(record.theirs, storedTreeFile),
+      preMerge: mapRecord(record.preMerge, storedTreeFile),
+      mergePaths: record.mergePaths,
+    });
   }
 
   async clearMerge(): Promise<void> {
@@ -316,7 +387,7 @@ export class ServerState {
     }
     if (await exists(next)) {
       await rm(join(this.dir, BASE_DIR), { recursive: true, force: true });
-      await rename(next, join(this.dir, BASE_DIR));
+      await this.io.rename(next, join(this.dir, BASE_DIR));
     }
     if (journal.clearPending) await rm(join(this.dir, PENDING_DIR), { recursive: true, force: true });
     const doc = await this.readDoc();

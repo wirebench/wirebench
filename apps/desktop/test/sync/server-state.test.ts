@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -20,6 +20,47 @@ const HEAD_B = 'b'.repeat(40);
 const HEAD_C = 'c'.repeat(40);
 const AT = '2026-09-25T10:00:00.000Z';
 const text = (content: string): TreeFile => ({ encoding: 'utf8', content });
+
+/** Texts a YAML scalar does not carry byte for byte: whitespace-only lines lose their blanks. */
+const YAML_LOSSY = ['   \n', '\n \n', ' \t\n', '  \n\n'];
+
+/** A seeded run of awkward texts: whitespace-only lines, CRLF, BOM, NUL, YAML indicators. */
+function fuzzTexts(count: number, seed: number): string[] {
+  let state = seed >>> 0;
+  const next = (): number => {
+    // mulberry32
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const pieces = [
+    ' ',
+    '  ',
+    '\t',
+    '\n',
+    '\r\n',
+    '\r',
+    '\ufeff',
+    '\u0000',
+    'a',
+    'é',
+    '🚀',
+    '#',
+    ':',
+    '- ',
+    '"',
+    "'",
+    '|',
+    '>',
+    '---',
+    '...',
+  ];
+  return Array.from({ length: count }, () =>
+    Array.from({ length: Math.floor(next() * 12) }, () => pieces[Math.floor(next() * pieces.length)] ?? '').join(''),
+  );
+}
 
 let root: string;
 let dir: string;
@@ -279,6 +320,58 @@ describe('ServerState (§4.2)', () => {
     expect(await new ServerState(dir).readMerge()).toEqual(record);
     await state.clearMerge();
     expect(await state.readMerge()).toBeUndefined();
+  });
+
+  it('pending commits and the merge record keep every text byte for byte, whatever YAML would do to it', async () => {
+    const texts = [...YAML_LOSSY, ...fuzzTexts(3000, 0x5eed)];
+    const files = new Map(texts.map((content, index) => [`environments/f${String(index)}.yaml`, text(content)]));
+    const state = await ServerState.initialize(dir, HEAD_A, new Map());
+    const record = await state.appendPending({
+      subject: 'Fuzz',
+      at: AT,
+      changes: [...files].map(([path, file]) => ({ path, ...file })),
+    });
+    expect(await new ServerState(dir).pending()).toEqual([record]);
+    expect(await new ServerState(dir).committedFiles()).toEqual(files);
+
+    const merge: MergeRecord = {
+      conflicts: ['environments/f0.yaml'],
+      mine: Object.fromEntries(files),
+      theirs: { ...Object.fromEntries(files), 'environments/bin.bin': { encoding: 'base64', content: '/wD+' } },
+      preMerge: Object.fromEntries(files),
+      mergePaths: ['environments/f0.yaml'],
+    };
+    await state.writeMerge(merge);
+    expect(await new ServerState(dir).readMerge()).toEqual(merge);
+  });
+
+  it('a swap that fails in a running process is finished by the next use', async () => {
+    let failures = 1;
+    const state = new ServerState(dir, {
+      rename: async (from, to) => {
+        if (failures-- > 0) throw Object.assign(new Error('busy'), { code: 'EPERM' });
+        await rename(from, to);
+      },
+    });
+    await ServerState.initialize(dir, HEAD_A, new Map([['workspace.yaml', text('v1')]]));
+
+    await expect(
+      state.advanceBase(HEAD_B, new Map([['workspace.yaml', text('v2')]]), { clearPending: false }),
+    ).rejects.toMatchObject({
+      code: 'EPERM',
+    });
+    expect(await state.baseFiles()).toEqual(new Map([['workspace.yaml', text('v2')]]));
+    expect(await state.read()).toMatchObject({ base: { head: HEAD_B }, knownHead: HEAD_B, behind: 0 });
+    expect((await readdir(dir)).sort()).toEqual(['base', 'state.yaml']);
+  });
+
+  it('reports sync-state-corrupt for a missing base folder rather than reading an empty base', async () => {
+    await ServerState.initialize(dir, HEAD_A, new Map([['workspace.yaml', text('v1')]]));
+    await rm(join(dir, 'base'), { recursive: true });
+    await expect(new ServerState(dir).baseFiles()).rejects.toMatchObject({
+      code: 'sync-state-corrupt',
+      details: { file: 'base' },
+    });
   });
 
   it('reports sync-state-corrupt for a missing, unparsable or invalid state file', async () => {
