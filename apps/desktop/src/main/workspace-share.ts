@@ -618,13 +618,15 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
     }
     await deleteShare(dir, deps.fsOption);
     shareDeleted = true;
+    const wire = await deps.open(id);
     if (share.kind === 'server') {
-      // The base and pending commits belonged to the share that just ended; the server copy is
-      // untouched (§3.4) and sharing again starts from a fresh, empty base (O2). The workspace is
-      // already local here, so a `server/` that will not go is inert rather than a failure.
+      // Only once the reopen succeeded: a failed one restores `share.yaml`, and the share it
+      // restores needs its base and pending commits. The server copy is untouched (§3.4) and
+      // sharing again starts from a fresh, empty base (O2). A local workspace never reads
+      // `server/`, so one that will not go is inert rather than a failure.
       await deps.files.rm(join(dir, SERVER_STATE_DIR), { recursive: true, force: true }).catch(() => undefined);
     }
-    return await deps.open(id);
+    return wire;
   } catch (error) {
     // Without `share.yaml` and with the manifest gone back, `<id>` would vanish from the list and
     // block a re-join; put the share back first, and only then undo what was brought back.
@@ -910,16 +912,19 @@ async function adopt(
 
 /**
  * Renames `<userData>/workspaces/<old>` to `<new>`, rewrites `workspace.yaml`'s id (and name) and
- * moves the workspace state's entries (§3.4 step 4). The workspace must be closed and local.
+ * moves the workspace state's entries (§3.4 step 4). The workspace must be closed and local, and
+ * the new id a server workspace id (a ULID), as every id a server share carries is.
  *
  * @returns the new workspace folder.
+ * @throws WorkspaceError `workspace-path-invalid` when `target.id` is not a ULID.
  */
 export async function adoptWorkspaceId(
   deps: ShareDeps,
   dir: string,
   target: { readonly id: string; readonly name?: string },
 ): Promise<string> {
-  return (await adopt(deps, requireServer(deps), dir, target)).dir;
+  const server = requireServer(deps);
+  return (await adopt(deps, server, dir, { ...target, id: requireServerWorkspaceId(target.id) })).dir;
 }
 
 async function rollBackServerShare(
@@ -935,7 +940,7 @@ async function rollBackServerShare(
   const tree = join(dir, WORKSPACE_TREE_DIR);
   await deleteShare(dir, deps.fsOption).catch(() => undefined);
   // Stopping a share deletes `server/`, so any here is this call's (or an ended share's inert leftover).
-  await deps.files.rm(join(dir, SERVER_STATE_DIR), { recursive: true, force: true });
+  await deps.files.rm(join(dir, SERVER_STATE_DIR), { recursive: true, force: true }).catch(() => undefined);
   await moveTreeItemsBack(deps.files, dir, tree, state.moved);
   if (!state.treeExisted) {
     await deps.files.rm(tree, { recursive: true, force: true });

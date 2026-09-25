@@ -53,6 +53,7 @@ import { resolveWorkspaceTree } from '../src/main/workspace-files.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceHooks } from '../src/main/workspace-service.js';
 import {
+  adoptWorkspaceId,
   joinFromServer,
   nodeFileOps,
   openableTeamWorkspaces,
@@ -740,6 +741,48 @@ describe('stopSharing — a server share', () => {
     expect(existsSync(join(dir, SERVER_STATE_DIR))).toBe(false);
     expect(h.server.calls).toEqual([]);
     expect(h.server.has(id)).toBe(true);
+  });
+
+  it('keeps server/ and the share when the reopen fails, so the restored share still has its base and pending commits', async () => {
+    const h = await harness();
+    const { id, dir } = await seedLocal(h.root);
+    await shareToServer(h.deps, await localInfo(h.root, id), shareRequest({ kind: 'new', name: 'Team' }));
+    const state = new ServerState(join(dir, SERVER_STATE_DIR));
+    await state.appendPending({
+      subject: 'Not pushed yet',
+      at: '2026-09-25T00:00:00.000Z',
+      changes: [{ path: 'projects/Calc/wirebench.yaml', encoding: 'utf8', content: 'unpushed\n' }],
+    });
+    const share = await loadShare(dir);
+    const { workspace } = await loadWorkspace(join(dir, 'tree'));
+    const failingOpen: ShareDeps = {
+      ...h.deps,
+      open: () => Promise.reject(new WirebenchError('workspace-open-failed', 'Could not open the workspace.')),
+    };
+
+    await expect(stopSharing(failingOpen, { workspace, dir, tree: join(dir, 'tree'), share })).rejects.toMatchObject({
+      code: 'workspace-open-failed',
+    });
+
+    expect(await loadShare(dir)).toEqual(share);
+    expect(existsSync(join(dir, 'tree', 'workspace.yaml'))).toBe(true);
+    expect(await state.read()).toMatchObject({ base: { head: null } });
+    expect((await state.baseFiles()).size).toBe(0);
+    expect((await state.pending()).map((commit) => commit.subject)).toEqual(['Not pushed yet']);
+  });
+});
+
+describe('adoptWorkspaceId', () => {
+  it('refuses an id that is not a server workspace id, leaving the workspace where it was', async () => {
+    const h = await harness();
+    const { id, dir } = await seedLocal(h.root);
+
+    await expect(adoptWorkspaceId(h.deps, dir, { id: 'not-a-ulid' })).rejects.toMatchObject({
+      code: 'workspace-path-invalid',
+    });
+
+    await expectLocal(dir);
+    expect(await readdir(join(h.root, 'workspaces'))).toEqual([id]);
   });
 });
 
