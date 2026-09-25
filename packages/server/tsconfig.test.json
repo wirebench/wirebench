@@ -4,8 +4,22 @@
     "composite": true,
     "emitDeclarationOnly": true,
     "outDir": "dist-test",
+    "rootDir": "../..",
     "types": ["node"]
   },
-  "include": ["test"],
+  "include": [
+    "test",
+    "../../apps/desktop/test/sync/backend-contract.ts",
+    "../../apps/desktop/src/main/sync/backend.ts",
+    "../../apps/desktop/src/main/sync/types.ts",
+    "../../apps/desktop/src/main/sync/server-backend.ts",
+    "../../apps/desktop/src/main/sync/server-state.ts",
+    "../../apps/desktop/src/main/server-client.ts",
+    "../../apps/desktop/src/main/server-token.ts",
+    "../../apps/desktop/src/main/account-service.ts",
+    "../../apps/desktop/src/main/loopback-callback.ts",
+    "../../apps/desktop/src/shared/wire-types.ts",
+    "../../apps/desktop/src/shared/multi-env-limits.ts"
+  ],
   "references": [{ "path": "./tsconfig.json" }]
 }
