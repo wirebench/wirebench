@@ -1210,6 +1210,14 @@ export type {
 export { mergeFiles } from './sync/three-way-merge.js';
 export type { FileMerge, MergeFilesOptions } from './sync/three-way-merge.js';
 
+export {
+  MACHINE_LOCAL_PATHS,
+  MAX_TREE_PATH_LENGTH,
+  TREE_ITEMS,
+  assertTreePath,
+  isTreePath,
+} from './sync/tree-paths.js';
+
 // ---------------------------------------------------------------------------
 // Wirebench Server API: wire schemas shared by packages/server and the desktop client
 // ---------------------------------------------------------------------------
@@ -1326,5 +1334,43 @@ export type {
   TeamWorkspaceUpdateRequest,
   WorkspaceRole,
 } from './server-api/teams.js';
+export {
+  MAX_SYNC_FILE_BYTES,
+  MAX_SYNC_LOG_LIMIT,
+  MAX_SYNC_SUBJECT_LENGTH,
+  SYNC_COMMIT_ID_PATTERN,
+  syncChangeSchema,
+  syncChangesQuerySchema,
+  syncChangesResponseSchema,
+  syncCommitIdSchema,
+  syncEncodingSchema,
+  syncFileSchema,
+  syncHeadQuerySchema,
+  syncHeadResponseSchema,
+  syncLogEntrySchema,
+  syncLogQuerySchema,
+  syncLogResponseSchema,
+  syncPushCommitSchema,
+  syncPushRequestSchema,
+  syncPushResponseSchema,
+  syncSnapshotQuerySchema,
+  syncSnapshotResponseSchema,
+} from './server-api/sync.js';
+export type {
+  SyncChange,
+  SyncChangesQuery,
+  SyncChangesResponse,
+  SyncEncoding,
+  SyncFile,
+  SyncHeadQuery,
+  SyncHeadResponse,
+  SyncLogEntry,
+  SyncLogQuery,
+  SyncPushCommit,
+  SyncPushRequest,
+  SyncPushResponse,
+  SyncSnapshotQuery,
+  SyncSnapshotResponse,
+} from './server-api/sync.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';

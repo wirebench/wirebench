@@ -32,9 +32,9 @@ import {
   saveProject,
   saveShare,
   saveWorkspace,
+  TREE_ITEMS,
   uniqueSlug,
   WirebenchError,
-  WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_JOINING_DIR,
   WORKSPACE_MANIFEST,
   WORKSPACE_PROJECTS_DIR,
@@ -103,14 +103,6 @@ export interface OpenWorkspaceInfo {
   readonly tree: string;
   readonly share: WorkspaceShare | undefined;
 }
-
-/** Everything that makes up a tree, in the order it is moved. */
-const TREE_ITEMS = [
-  WORKSPACE_MANIFEST,
-  WORKSPACE_ENVIRONMENTS_DIR,
-  WORKSPACE_PROJECTS_DIR,
-  GIT_ATTRIBUTES_FILE,
-] as const;
 
 // ——— small helpers ——————————————————————————————————————————————————————————————————————
 
