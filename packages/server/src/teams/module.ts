@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { identitySettings } from '../identity/env.js';
 import type { TeamsEnv } from './env.js';
+import { addInvitedMember, teamInvitationRoutes } from './routes/invitations.js';
 import { memberRoutes } from './routes/members.js';
 import { teamRoutes } from './routes/teams.js';
 
@@ -28,6 +29,8 @@ export function teamsModule(options: TeamsOptions = {}): ServerModule {
       ctx.meta.addCapability('teams');
       teamRoutes(env)(app);
       memberRoutes(env)(app);
+      teamInvitationRoutes(env)(app);
+      ctx.hooks.invitationAccepted.push(addInvitedMember(now));
       await Promise.resolve();
     },
   };
