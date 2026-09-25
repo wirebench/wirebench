@@ -306,4 +306,37 @@ describe('buildServer', () => {
       expect(text).not.toContain(secret);
     }
   });
+
+  it('never logs an invitation secret carried in the /invite/:secret path', async () => {
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        lines.push(chunk.toString('utf-8'));
+        callback();
+      },
+    });
+    const ctx = await testContext({ dataDir });
+    const app = await buildServer(
+      { ...ctx, config: { ...ctx.config, logLevel: 'info' } },
+      {
+        logStream,
+        modules: [
+          {
+            name: 'identity',
+            register: () => Promise.resolve(),
+            // eslint-disable-next-line @typescript-eslint/require-await -- registerPublic is async; this one has no await
+            registerPublic: async (root) => {
+              root.get('/invite/:secret', async (_request, reply) => reply.type('text/html').send('<p>hi</p>'));
+            },
+          },
+        ],
+      },
+    );
+    const res = await app.inject({ method: 'GET', url: '/invite/S3cr3t-invite-p4th' });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+    const text = lines.join('');
+    expect(text).toContain('/invite/[redacted]');
+    expect(text).not.toContain('S3cr3t-invite-p4th');
+  });
 });

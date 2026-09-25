@@ -114,6 +114,7 @@ const SIGN_IN_MESSAGES: Readonly<Record<string, string>> = {
   'account-sign-in-timeout': 'The browser did not come back in time. Try again.',
   'account-sign-in-cancelled': 'Sign-in cancelled.',
   'external-url-refused': 'The server returned a sign-in address that is not http(s); nothing was opened.',
+  'identity-flow-invalid': 'The sign-in took too long or was already used. Try again.',
 };
 
 export function signInErrorMessage(error: IpcError): string {

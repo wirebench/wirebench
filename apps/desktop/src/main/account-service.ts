@@ -193,7 +193,13 @@ export class AccountService {
       await this.deps.openExternal(started.authorizationUrl);
       const params = await listener.result;
       const error = params.get('error');
-      if (error !== null) throw new WirebenchError(error, LOOPBACK_MESSAGES[error] ?? 'The sign-in was refused.');
+      // The loopback query parameter comes from whatever answered on localhost, not the server;
+      // it becomes a WirebenchError code the renderer switches on (SIGN_IN_MESSAGES), so an
+      // arbitrary value must not pass through as one — only a code this app actually recognises.
+      if (error !== null) {
+        const code = error in LOOPBACK_MESSAGES ? error : 'account-sign-in-failed';
+        throw new WirebenchError(code, LOOPBACK_MESSAGES[error] ?? 'The sign-in was refused.');
+      }
       const grant = params.get('grant');
       if (grant === null) throw new WirebenchError('account-sign-in-failed', 'The browser came back without a grant.');
       const response = await this.deps.client.completeOidc(origin, {
@@ -278,12 +284,12 @@ export class AccountService {
   async refresh(url: string): Promise<void> {
     const account = this.find(normalizeServerUrl(url));
     if (account === undefined || account.signedOut === true) return;
-    const token = await this.deps.secrets.get(account.tokenRef);
-    if (token === undefined) {
-      await this.replace(account.url, { ...account, signedOut: true });
-      return;
-    }
     try {
+      const token = await this.deps.secrets.get(account.tokenRef);
+      if (token === undefined) {
+        await this.replace(account.url, { ...account, signedOut: true });
+        return;
+      }
       const me = await this.deps.client.me(account.url, token);
       if (me.user.email !== account.email || me.user.displayName !== account.displayName) {
         await this.replace(account.url, { ...account, email: me.user.email, displayName: me.user.displayName });
@@ -293,6 +299,9 @@ export class AccountService {
         await this.deps.secrets.delete(account.tokenRef).catch(() => undefined);
         await this.replace(account.url, { ...account, signedOut: true });
       }
+      // Any other failure (a keychain error reading the token, a network error from `me`) changes
+      // nothing, same as it always has for a network failure — a keychain hiccup must not sign
+      // the account out.
     }
   }
 

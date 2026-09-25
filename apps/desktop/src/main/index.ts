@@ -391,7 +391,13 @@ void app.whenReady().then(() => {
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed
   // shows as signed out now rather than on the first action; no account, no call (§3.8).
-  void accountService.load().then(() => accountService.refreshAll());
+  void accountService
+    .load()
+    .then(() => accountService.refreshAll())
+    // A launch-time failure here (a corrupt accounts file, a keychain error) must not surface as
+    // an unhandled rejection; accountService already reports per-account sign-in state via
+    // onChange, so there is nothing further to log and never a token to log.
+    .catch(() => {});
   registerHistoryChannels(engineService, historyService, {
     project: workspaceService,
     adHocScopes: () => {

@@ -29,7 +29,7 @@ export const SCRYPT_PARAMS: ScryptParams = { N: 2 ** 15, r: 8, p: 1, keylen: 32 
 const SALT_BYTES = 16;
 const PREFIX = 'scrypt';
 
-/** scrypt needs 128·N·r bytes; Node's default `maxmem` (32 MiB) is exactly that for N=2^15, r=8. */
+/** scrypt needs 128·N·r bytes; this gives it 256·N·r, twice that, as headroom. */
 const maxmem = (params: ScryptParams): number => 256 * params.N * params.r;
 
 async function derive(password: string, salt: Buffer, params: ScryptParams): Promise<Buffer> {

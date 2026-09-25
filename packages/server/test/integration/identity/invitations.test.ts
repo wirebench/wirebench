@@ -178,4 +178,12 @@ describeDb('invitations (§3.1, §3.7)', () => {
     expect(closed.body).toContain('This invitation has expired or was already used.');
     expect((await h.app.inject({ method: 'GET', url: '/invite/not-a-secret' })).statusCode).toBe(404);
   });
+
+  it('rate-limits the invitation page per address', async () => {
+    const invitePage = (secret: string, ip = '10.0.0.2') =>
+      h.app.inject({ method: 'GET', url: `/invite/${secret}`, remoteAddress: ip });
+    for (let i = 0; i < 10; i += 1) await invitePage(mintSecret().secret);
+    expect((await invitePage(mintSecret().secret)).statusCode).toBe(429);
+    expect((await invitePage(mintSecret().secret, '10.0.0.9')).statusCode).toBe(200);
+  });
 });

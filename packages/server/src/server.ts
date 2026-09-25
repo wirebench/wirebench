@@ -23,7 +23,17 @@ export interface BuildServerOptions {
  * `log.info({ password })`) and as `*.key` (one level down). Deeper nesting is not covered; log
  * credentials at neither depth.
  */
-const SECRET_KEYS = ['password', 'token', 'secret', 'clientSecret'] as const;
+const SECRET_KEYS = [
+  'password',
+  'token',
+  'secret',
+  'clientSecret',
+  'grant',
+  'codeVerifier',
+  'code',
+  'currentPassword',
+  'newPassword',
+] as const;
 const REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers.cookie',
@@ -35,7 +45,10 @@ const REDACT_PATHS = [
 /** The request path without its query string: `?secret=` and `?token=` values must never be logged or echoed. */
 function pathOf(url: string): string {
   const query = url.indexOf('?');
-  return query === -1 ? url : url.slice(0, query);
+  const path = query === -1 ? url : url.slice(0, query);
+  // `/invite/<secret>` carries the invitation secret in the path itself, not the query string;
+  // the generic query-strip above never touches it, so it needs its own rewrite before logging.
+  return path.replace(/^\/invite\/[^/]+$/, '/invite/[redacted]');
 }
 
 /** Symbol Fastify reads to register a plugin into its parent's scope instead of a child one. */

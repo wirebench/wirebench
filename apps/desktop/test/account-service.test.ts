@@ -205,6 +205,15 @@ describe('AccountService', () => {
     expect(s2.cancelSignIn()).toEqual({ cancelled: false });
   });
 
+  it('OIDC: an unrecognised loopback error code does not pass through verbatim', async () => {
+    const loopback = fakeLoopback();
+    const s = service(fakeClient(), fakeSecrets(), loopback);
+    const pending = s.startOidc({ url: URL_A });
+    await vi.waitFor(() => expect(loopback.start).toHaveBeenCalled());
+    loopback.answer({ flow: 'flow-1', error: 'identity-unauthenticated' });
+    await expect(pending).rejects.toMatchObject({ code: 'account-sign-in-failed' });
+  });
+
   it('OIDC: two startOidc calls in the same tick — the second rejects account-sign-in-pending and the loopback starts once', async () => {
     const loopback = fakeLoopback();
     const s = service(fakeClient(), fakeSecrets(), loopback);
@@ -291,6 +300,18 @@ describe('AccountService', () => {
     await s.refresh(URL_A); // signed out: no call
     // eslint-disable-next-line @typescript-eslint/unbound-method -- expect() reads the mock fn, never calls it unbound
     expect(client.me).toHaveBeenCalledTimes(3);
+  });
+
+  it('refresh changes nothing when reading the token from the keychain fails', async () => {
+    const client = fakeClient();
+    const secrets = fakeSecrets();
+    const s = service(client, secrets);
+    await s.signInLocal({ url: URL_A, email: 'alice@example.com', password: 'pw'.repeat(6) });
+    secrets.get.mockRejectedValueOnce(new Error('keychain locked'));
+    await s.refresh(URL_A);
+    expect(s.list()[0]?.signedOut).toBeUndefined();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- expect() reads the mock fn, never calls it unbound
+    expect(client.me).not.toHaveBeenCalled();
   });
 
   it('load reads an existing file and tolerates a malformed one', async () => {
