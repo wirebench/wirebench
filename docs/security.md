@@ -265,6 +265,18 @@ Sending a request never opens a browser. An authorization-code configuration who
 expired and cannot be refreshed fails the send with `oauth2-sign-in-required`, and the user presses
 *Get new token*.
 
+## Server accounts
+
+Signing in to Wirebench Server yields a device token (`wbs_…`), stored in the OS keychain under the
+label `wirebench-server:<url>`; `accounts.yaml` holds the keychain reference and the account's
+public facts, never the token. The renderer has no channel that returns it: main adds the `Bearer`
+header itself, and a password crosses the bridge exactly once, in the sign-in call. The OIDC hand-off
+reuses the loopback listener described above — same `127.0.0.1` binding, same one-callback rule, same
+five-minute timeout — and the browser is only ever opened at the URL the server returned from
+`/auth/oidc/start`. The server stores tokens and invitation secrets as SHA-256 hashes and compares
+them in constant time; passwords are scrypt hashes. A token the server refuses marks the account
+signed out; nothing retries or re-prompts.
+
 ## A response body never gets to run
 
 The Query view evaluates an expression the user wrote against bytes a server returned, which makes

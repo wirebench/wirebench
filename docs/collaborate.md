@@ -220,6 +220,34 @@ own. If you already set one of those yourself, your command is used exactly as y
 length. If clone or checkout fails on long paths, run
 `git config --global core.longpaths true` once and retry.
 
+## Sign in to a server
+
+A team that runs Wirebench Server signs in to it from the app. Run **Account: Sign in to a
+server…** from the palette, use the status bar's **Sign in**, or **Add server…** under Settings →
+Accounts, then:
+
+1. Enter the server's address. Wirebench checks that it is a Wirebench Server of a version this app
+   understands and remembers the address as its origin (`https://wirebench.example.com`).
+2. Sign in the way the server allows: with an email and password, or with **Continue with
+   <provider>** when the server is connected to the team's identity provider — that opens your
+   browser and comes back to the app when the provider is done. **Have an invitation code?** takes
+   the code from an invitation link (an admin sends it) and lets you choose your display name and
+   password.
+
+Once signed in, the status bar shows your email. The session is a device token the server issued to
+this installation: it lives in the OS keychain (`secrets.json` names it under `wirebench-server:<url>`,
+the value is never in a file) and expires after 30 days without use, or 180 days at most. The
+password is sent once to the server and kept nowhere.
+
+**Sign out** (status bar → *Sign out of <server>*, or Settings → Accounts) revokes the token on the
+server and forgets it here. If the server stops accepting the token — an admin removed the device, it
+expired — the app says so once, with **Sign in again**, and does nothing on its own.
+
+Admins manage accounts from the server: `wirebench-server admin invite <email>` prints an invitation
+link, and the API under `/api/v1/users` and `/api/v1/invitations` does the rest (see the server's
+README). Nothing in the app needs a server; without one, no account UI is shown and no network call
+is made.
+
 ## Troubleshooting
 
 | Error | What it means | What to do |
