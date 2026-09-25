@@ -22,36 +22,70 @@ export const WORKSPACE_SHARE_FILE = 'share.yaml';
 /** How a workspace's tree is shared. */
 export type ShareKind = 'folder' | 'git' | 'server';
 
-/** Git-specific share settings, all required once `kind: 'git'` is set (`remote` may still be unset). */
-export interface GitShareSettings {
-  readonly remote?: string;
-  readonly branch: string;
+/**
+ * The settings `SyncService` and the Sync panel read, whatever carries the sync: how often to
+ * fetch, and whether a save commits and pushes (server-sync spec §5.2).
+ */
+export interface SyncSettings {
   readonly autoFetchSeconds: number;
   readonly commitOnSave: boolean;
   readonly pushOnSave: boolean;
 }
 
-/** Defaults a freshly-shared git workspace is given. */
-export const DEFAULT_GIT_SHARE_SETTINGS: GitShareSettings = {
-  branch: 'main',
+/** Defaults a freshly shared git or server workspace is given. */
+export const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   autoFetchSeconds: 60,
   commitOnSave: true,
   pushOnSave: true,
 };
 
+/** Git-specific share settings, all required once `kind: 'git'` is set (`remote` may still be unset). */
+export interface GitShareSettings extends SyncSettings {
+  readonly remote?: string;
+  readonly branch: string;
+}
+
+/** Defaults a freshly-shared git workspace is given. */
+export const DEFAULT_GIT_SHARE_SETTINGS: GitShareSettings = {
+  ...DEFAULT_SYNC_SETTINGS,
+  branch: 'main',
+};
+
+/** Wirebench Server share settings (server-sync spec §4.1). */
+export interface ServerShareSettings extends SyncSettings {
+  /** An http(s) origin, no path — written through the desktop's normalizeServerUrl. */
+  readonly url: string;
+  /** A ULID (TEAMS_ID_PATTERN); equals workspace.yaml's id. */
+  readonly workspaceId: string;
+  /** The team's name when shared or joined; display only. */
+  readonly teamName?: string;
+}
+
 /** `share.yaml`, as loaded (or about to be saved). */
 export interface WorkspaceShare {
   readonly version: 1;
   readonly kind: ShareKind;
-  /** Absolute path to an externally managed clone/folder; absent means the managed `tree/`. */
+  /** Absolute path to an externally managed clone/folder; absent means the managed `tree/`. Never set for `server`. */
   readonly path?: string;
   readonly git?: GitShareSettings;
-  readonly server?: { readonly url: string; readonly workspaceId: string };
+  readonly server?: ServerShareSettings;
 }
 
 /** Options shared by {@link loadShare}, {@link saveShare} and {@link deleteShare}. */
 export interface ShareOptions {
   readonly fs?: FsLike;
+}
+
+/**
+ * The sync settings of a git or server share, undefined for a folder share. Only the three shared
+ * fields are returned, so a caller cannot come to depend on one kind's extras.
+ */
+export function shareSyncSettings(share: WorkspaceShare): SyncSettings | undefined {
+  const block = share.kind === 'git' ? share.git : share.kind === 'server' ? share.server : undefined;
+  if (block === undefined) {
+    return undefined;
+  }
+  return { autoFetchSeconds: block.autoFetchSeconds, commitOnSave: block.commitOnSave, pushOnSave: block.pushOnSave };
 }
 
 function shareFile(dir: string): string {
@@ -62,8 +96,8 @@ function shareFile(dir: string): string {
  * Reads `<dir>/share.yaml`. `undefined` when the file does not exist (a local workspace).
  *
  * @throws WorkspaceError `workspace-file-invalid` when the file exists but is not valid YAML or
- * does not match {@link workspaceShareSchema} (e.g. a relative `path`, or `kind: 'git'` with no
- * `git` block).
+ * does not match {@link workspaceShareSchema} (e.g. a relative `path`, `kind: 'git'` with no
+ * `git` block, or a server block whose `workspaceId` is not a ULID).
  */
 export async function loadShare(dir: string, options?: ShareOptions): Promise<WorkspaceShare | undefined> {
   const fs = options?.fs ?? nodeFs;
@@ -100,7 +134,18 @@ export async function loadShare(dir: string, options?: ShareOptions): Promise<Wo
           },
         }
       : {}),
-    ...(parsed.server !== undefined ? { server: parsed.server } : {}),
+    ...(parsed.server !== undefined
+      ? {
+          server: {
+            url: parsed.server.url,
+            workspaceId: parsed.server.workspaceId,
+            autoFetchSeconds: parsed.server.autoFetchSeconds,
+            commitOnSave: parsed.server.commitOnSave,
+            pushOnSave: parsed.server.pushOnSave,
+            ...(parsed.server.teamName !== undefined ? { teamName: parsed.server.teamName } : {}),
+          },
+        }
+      : {}),
   };
 }
 

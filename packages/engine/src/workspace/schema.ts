@@ -11,6 +11,7 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { WorkspaceError } from '../errors.js';
+import { TEAMS_ID_PATTERN } from '../server-api/teams.js';
 import { WORKSPACE_FORMAT_VERSION } from './model.js';
 
 const nonEmpty = z.string().min(1);
@@ -80,10 +81,28 @@ const gitShareSettingsSchema = z.object({
   pushOnSave: z.boolean(),
 });
 
+/** An http(s) origin and nothing more: what the desktop's `normalizeServerUrl` returns (`URL.origin`). */
+const SERVER_ORIGIN_PATTERN = /^https?:\/\/[^/?#]+$/;
+
+/**
+ * `share.yaml`'s `server` block (server-sync spec §4.1). The three sync settings default to the
+ * values in `DEFAULT_SYNC_SETTINGS` (`share.ts`, which imports this file, so they are literals
+ * here; a test pins that the two agree). `workspaceId` is the server's ULID and equals
+ * `workspace.yaml`'s id; `teamName` is for display only.
+ */
+const serverShareSettingsSchema = z.object({
+  url: z.string().regex(SERVER_ORIGIN_PATTERN, 'url must be an http(s) origin, with no path'),
+  workspaceId: z.string().regex(TEAMS_ID_PATTERN, 'workspaceId must be a ULID'),
+  teamName: nonEmpty.optional(),
+  autoFetchSeconds: z.number().int().min(0).default(60),
+  commitOnSave: z.boolean().default(true),
+  pushOnSave: z.boolean().default(true),
+});
+
 /**
  * `share.yaml`: absent means a local workspace. `path`, when set, must be absolute — it is only
- * ever written from a native folder picker. `kind: 'git'` requires `git`; `kind: 'server'`
- * requires `server`.
+ * ever written from a native folder picker — and a server share has none, because its tree is
+ * always the managed `tree/`. `kind: 'git'` requires `git`; `kind: 'server'` requires `server`.
  */
 export const workspaceShareSchema = z
   .object({
@@ -94,7 +113,7 @@ export const workspaceShareSchema = z
       .optional()
       .refine((value) => value === undefined || isAbsolute(value), { message: 'path must be absolute' }),
     git: gitShareSettingsSchema.optional(),
-    server: z.object({ url: nonEmpty, workspaceId: nonEmpty }).optional(),
+    server: serverShareSettingsSchema.optional(),
   })
   .refine((value) => value.kind !== 'git' || value.git !== undefined, {
     message: 'kind: git requires a git block',
@@ -103,6 +122,10 @@ export const workspaceShareSchema = z
   .refine((value) => value.kind !== 'server' || value.server !== undefined, {
     message: 'kind: server requires a server block',
     path: ['server'],
+  })
+  .refine((value) => value.kind !== 'server' || value.path === undefined, {
+    message: 'kind: server always uses the managed tree, so it takes no path',
+    path: ['path'],
   });
 
 /** The manifest document as persisted. */

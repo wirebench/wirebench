@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_GIT_SHARE_SETTINGS, GitCli } from '@wirebench/engine';
+import { DEFAULT_GIT_SHARE_SETTINGS, DEFAULT_SYNC_SETTINGS, GitCli } from '@wirebench/engine';
 import type { Runner, WorkspaceShare } from '@wirebench/engine';
 import { createSyncBackend } from '../../src/main/sync/create-backend.js';
 import { FolderBackend } from '../../src/main/sync/folder-backend.js';
@@ -146,7 +146,15 @@ describe('createSyncBackend', () => {
 
   it('a server share is a FolderBackend placeholder reporting kind server', async () => {
     const backend = await createSyncBackend({
-      share: { version: 1, kind: 'server', server: { url: 'https://sync.example.test', workspaceId: 'w1' } },
+      share: {
+        version: 1,
+        kind: 'server',
+        server: {
+          ...DEFAULT_SYNC_SETTINGS,
+          url: 'https://sync.example.test',
+          workspaceId: '01J8ZC5Q0V7R3T9XK2M4N6P8QA',
+        },
+      },
       tree: '/t',
       git: undefined,
       settings,

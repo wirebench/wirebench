@@ -1,7 +1,8 @@
 /**
- * A per-file three-way merge shared by the desktop's unsaved-changes recovery and, later, the sync
- * backends (a fake one in the desktop's tests today, Wirebench Server's tomorrow). It lives in the
- * engine so both run the same code — the point of ADR-0008's "one repository, two transports".
+ * A per-file three-way merge shared by the desktop's unsaved-changes recovery and the sync
+ * backends (the fake one in the desktop's tests, and `ServerBackend` for Wirebench Server). It lives
+ * in the engine so both run the same code — the point of ADR-0008's "one repository, two
+ * transports".
  */
 import { MANIFEST_PATH } from '../project/serialize.js';
 import type { ProjectFiles } from '../project/serialize.js';
@@ -10,13 +11,24 @@ import type { ProjectFiles } from '../project/serialize.js';
 export interface FileMerge {
   /** The files the merged tree should be read from. */
   readonly files: ProjectFiles;
-  /** Changed on both sides; the `unsaved` (mine) version was kept — or, for a deletion on the
-   * `unsaved` side of a file that changed on `disk`, the disk version was. */
+  /**
+   * Changed on both sides; the `unsaved` (mine) version was kept — or, for a deletion on the
+   * `unsaved` side of a file that changed on `disk`, the disk version was. With `modifyDelete:
+   * 'conflict'`, also a change on the `unsaved` side of a file deleted on `disk`, whose unsaved
+   * version was kept.
+   */
   readonly conflicts: readonly string[];
-  /** Changed on the `unsaved` side but deleted on `disk`; the change was dropped. */
+  /** Changed on the `unsaved` side but deleted on `disk`; the change was dropped. Always empty with `modifyDelete: 'conflict'`. */
   readonly dropped: readonly string[];
   /** Whether the merged files differ from `disk` at all. */
   readonly changed: boolean;
+}
+
+/** How {@link mergeFiles} treats a file changed on the `unsaved` side and deleted on `disk`. */
+export interface MergeFilesOptions {
+  /** 'drop' (default, unsaved-changes recovery): changed on the unsaved side, deleted on disk → dropped.
+   *  'conflict' (sync): the same case is a conflict, and the unsaved (mine) version is kept in `files`. */
+  readonly modifyDelete?: 'drop' | 'conflict';
 }
 
 /**
@@ -45,11 +57,22 @@ function same(path: string, a: string | undefined, b: string | undefined): boole
  * - D = B → U (only the unsaved side changed — including an unsaved deletion);
  * - both changed:
  *   - D = U → U (the same change on both sides);
- *   - deleted on disk → dropped (the file, e.g. a request, no longer exists);
+ *   - deleted on disk → dropped (the file, e.g. a request, no longer exists) — or, with
+ *     `modifyDelete: 'conflict'`, U, flagged: sync must never lose a change silently, and git
+ *     calls this case a conflict too;
  *   - deleted in the unsaved record → D, flagged (a change on disk beats an unsaved deletion);
  *   - otherwise → U, flagged (unsaved changes are restored on top).
+ *
+ * Every value is compared whole, so the merge does not care what a value encodes (sync passes
+ * `encoding:content` strings).
  */
-export function mergeFiles(baseline: ProjectFiles, disk: ProjectFiles, unsaved: ProjectFiles): FileMerge {
+export function mergeFiles(
+  baseline: ProjectFiles,
+  disk: ProjectFiles,
+  unsaved: ProjectFiles,
+  options?: MergeFilesOptions,
+): FileMerge {
+  const modifyDelete = options?.modifyDelete ?? 'drop';
   const files = new Map<string, string>();
   const conflicts: string[] = [];
   const dropped: string[] = [];
@@ -66,8 +89,13 @@ export function mergeFiles(baseline: ProjectFiles, disk: ProjectFiles, unsaved: 
     } else if (same(path, d, u)) {
       take = u;
     } else if (d === undefined) {
-      dropped.push(path);
-      take = undefined;
+      if (modifyDelete === 'conflict') {
+        conflicts.push(path);
+        take = u;
+      } else {
+        dropped.push(path);
+        take = undefined;
+      }
     } else if (u === undefined) {
       conflicts.push(path);
       take = d;

@@ -865,6 +865,7 @@ export {
   EMPTY_LOCAL_STATE,
   WORKSPACE_SHARE_FILE,
   DEFAULT_GIT_SHARE_SETTINGS,
+  DEFAULT_SYNC_SETTINGS,
   commitMessage,
   createWorkspace,
   createWorkspaceEnvironment,
@@ -883,6 +884,7 @@ export {
   saveLocalState,
   saveShare,
   saveWorkspace,
+  shareSyncSettings,
   workspaceDir,
   workspaceEnvironmentFile,
   workspaceEnvironmentFileSchema,
@@ -902,8 +904,10 @@ export type {
   LocalStateOptions,
   MigratedWorkspaceManifest,
   SaveWorkspaceOptions,
+  ServerShareSettings,
   ShareKind,
   ShareOptions,
+  SyncSettings,
   TreeChange,
   TreeEntity,
   TreeEntityKind,
@@ -1204,7 +1208,7 @@ export type {
 } from './sync/git-cli.js';
 
 export { mergeFiles } from './sync/three-way-merge.js';
-export type { FileMerge } from './sync/three-way-merge.js';
+export type { FileMerge, MergeFilesOptions } from './sync/three-way-merge.js';
 
 // ---------------------------------------------------------------------------
 // Wirebench Server API: wire schemas shared by packages/server and the desktop client

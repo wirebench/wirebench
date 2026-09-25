@@ -52,8 +52,23 @@ export type { MigratedWorkspaceManifest } from './migrate.js';
 export { WORKSPACE_LOCAL_FILE, EMPTY_LOCAL_STATE, loadLocalState, saveLocalState } from './local-state.js';
 export type { WorkspaceLocalState, LocalStateOptions } from './local-state.js';
 
-export { WORKSPACE_SHARE_FILE, DEFAULT_GIT_SHARE_SETTINGS, loadShare, saveShare, deleteShare } from './share.js';
-export type { ShareKind, GitShareSettings, WorkspaceShare, ShareOptions } from './share.js';
+export {
+  WORKSPACE_SHARE_FILE,
+  DEFAULT_GIT_SHARE_SETTINGS,
+  DEFAULT_SYNC_SETTINGS,
+  loadShare,
+  saveShare,
+  deleteShare,
+  shareSyncSettings,
+} from './share.js';
+export type {
+  ShareKind,
+  GitShareSettings,
+  ServerShareSettings,
+  SyncSettings,
+  WorkspaceShare,
+  ShareOptions,
+} from './share.js';
 
 export { reidentifyProject } from './reidentify.js';
 
