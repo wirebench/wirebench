@@ -185,6 +185,29 @@ link, and the API under `/api/v1/users` and `/api/v1/invitations` does the rest 
 README). Nothing in the app needs a server; without one, no account UI is shown and no network call
 is made.
 
+## Teams and roles
+
+On Wirebench Server, every shared workspace belongs to a team, and what you can do in it depends on your role.
+Open **Account: Manage teams…** from the palette, the status bar's account menu, or **Manage teams…** beside a
+signed-in server under Settings → Accounts.
+
+- **Teams.** A server admin creates a team and adds its first admin. Team admins add people who already have an
+  account, or invite someone by email. The invitation link is shown once, with **Copy**, and whoever accepts it
+  joins the team with the role it names. Anyone can leave a team; a team always keeps at least one admin.
+- **Workspace roles.** A workspace has three roles: *viewer* can pull, *editor* can also push, and *admin* can also
+  change its settings and access. Your role comes from, in order:
+  1. being a server admin or an admin of the workspace's team (always *admin*);
+  2. a grant a workspace admin gave you;
+  3. the workspace's default role, which starts as *viewer* and can be *none*.
+
+  Whoever creates a workspace gets an *admin* grant on it.
+- **Access.** On the **Workspaces** tab, **Access…** lists everyone on the team, the role they end up with, and
+  where it comes from. A workspace admin sets a grant per person, or **Use default** to remove it. A team admin's
+  role cannot be lowered by a grant.
+
+If you have no role in a workspace, the server does not show it to you at all. Members who are not admins see the
+same dialog read-only, so everyone can check their own access.
+
 ## Related
 
 - [Workspaces and projects](/wirebench/guides/workspaces/) — what a workspace and a project are,
