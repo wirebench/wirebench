@@ -1,21 +1,33 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
+import { signedInServers, useAccountStore } from '../../state/account.js';
 import { useUiStore } from '../../state/ui.js';
+import { useWorkspaceStore } from '../../state/workspace.js';
+import { ServerShareForm } from './server-share-form.js';
 import { validateBranchName, validateRemoteUrl } from './share-validation.js';
 import { workspaceActions } from './workspace-actions.js';
 
-type ShareKind = 'git' | 'folder';
+type ShareKind = 'git' | 'folder' | 'server';
+
+const DESCRIPTIONS: Readonly<Record<ShareKind, string>> = {
+  git: 'Every save becomes a commit. Members join by URL, or by pointing at the same synced folder.',
+  folder: 'Every save becomes a commit. Members join by URL, or by pointing at the same synced folder.',
+  server: 'Every save becomes a commit on the server. Teammates open it with Open a team workspace…, without git.',
+};
 
 /**
  * *Share Workspace…*: turns the open local workspace into a git repository (optionally with a
- * remote to push to) or into a synced folder someone else's file-sync tool watches. Only
+ * remote to push to), into a synced folder someone else's file-sync tool watches, or into a team
+ * workspace on Wirebench Server (server-sync §3.4; offered once an account is signed in). Only
  * offered for a local workspace — `workspace.share`'s `when` keeps this from ever opening on an
  * already-shared one.
  */
 export function ShareDialog() {
   const open = useUiStore((state) => state.shareDialogOpen);
   const setOpen = useUiStore((state) => state.setShareDialogOpen);
+  const workspaceName = useWorkspaceStore((state) => state.workspace?.name ?? '');
+  const signedIn = signedInServers(useAccountStore((state) => state.servers)).length > 0;
   const [kind, setKind] = useState<ShareKind>('git');
   const [remote, setRemote] = useState('');
   const [branch, setBranch] = useState('main');
@@ -67,9 +79,7 @@ export function ShareDialog() {
           className="fixed top-1/2 left-1/2 w-[30rem] -translate-x-1/2 -translate-y-1/2 rounded-md bg-surface-raised p-4 shadow-lg"
         >
           <Dialog.Title className="text-md font-medium text-fg-default">Share this workspace</Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-fg-subtle">
-            Every save becomes a commit. Members join by URL, or by pointing at the same synced folder.
-          </Dialog.Description>
+          <Dialog.Description className="mt-1 text-xs text-fg-subtle">{DESCRIPTIONS[kind]}</Dialog.Description>
 
           <fieldset className="mt-3 flex flex-col gap-2">
             <legend className="sr-only">Share as</legend>
@@ -93,6 +103,31 @@ export function ShareDialog() {
               />
               Synced folder
             </label>
+            <label className={`flex items-center gap-2 text-sm text-fg-default${signedIn ? '' : ' opacity-60'}`}>
+              <input
+                type="radio"
+                name="share-kind"
+                data-testid="share-kind-server"
+                disabled={!signedIn}
+                checked={kind === 'server'}
+                onChange={() => setKind('server')}
+              />
+              Wirebench Server
+            </label>
+            {!signedIn && (
+              <p data-testid="share-server-signed-out" className="ml-6 flex items-center gap-2 text-xs text-fg-subtle">
+                Sign in to a Wirebench Server to share with a team there.
+                <Button
+                  data-testid="share-server-sign-in"
+                  onClick={() => {
+                    setOpen(false);
+                    useUiStore.getState().openSignInDialog();
+                  }}
+                >
+                  Sign in…
+                </Button>
+              </p>
+            )}
           </fieldset>
 
           {kind === 'git' ? (
@@ -159,7 +194,7 @@ export function ShareDialog() {
                 </Button>
               </div>
             </>
-          ) : (
+          ) : kind === 'folder' ? (
             <>
               <p className="mt-3 text-sm text-fg-subtle">
                 Choose an empty folder — a location watched by a file-sync tool of your choice. Wirebench commits to it
@@ -181,6 +216,13 @@ export function ShareDialog() {
                 </Button>
               </div>
             </>
+          ) : (
+            <ServerShareForm
+              workspaceName={workspaceName}
+              onShared={() => {
+                setOpen(false);
+              }}
+            />
           )}
         </Dialog.Content>
       </Dialog.Portal>

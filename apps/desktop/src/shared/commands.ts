@@ -133,6 +133,7 @@ export const COMMAND_IDS = [
   'sync.revealTree',
   'workspace.share',
   'workspace.join',
+  'workspace.openTeamWorkspace',
   'workspace.stopSharing',
   'project.moveToWorkspace',
   'account.signIn',

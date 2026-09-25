@@ -99,6 +99,8 @@ export interface UiStore extends UiSnapshot {
   readonly shareDialogOpen: boolean;
   /** Whether the Join Shared Workspace dialog is open. Transient — never persisted. */
   readonly joinDialogOpen: boolean;
+  /** Whether *Open a team workspace…* is open (server-sync §3.4). Transient — never persisted. */
+  readonly teamWorkspaceDialogOpen: boolean;
   /**
    * Whether the Sign in dialog is open and, when it was opened for a known server (the status
    * bar's "Sign in" on a signed-out account), which URL to start from. Transient.
@@ -137,6 +139,7 @@ export interface UiStore extends UiSnapshot {
   readonly setConflictResolverOpen: (open: boolean) => void;
   readonly setShareDialogOpen: (open: boolean) => void;
   readonly setJoinDialogOpen: (open: boolean) => void;
+  readonly setTeamWorkspaceDialogOpen: (open: boolean) => void;
   readonly openSignInDialog: (url?: string) => void;
   readonly setSignInDialogOpen: (open: boolean) => void;
   readonly openTeamDialog: (url?: string) => void;
@@ -233,6 +236,7 @@ export const useUiStore = create<UiStore>((set, get) => {
     conflictResolverOpen: false,
     shareDialogOpen: false,
     joinDialogOpen: false,
+    teamWorkspaceDialogOpen: false,
     signInDialog: { open: false, url: undefined },
     teamDialog: { open: false, url: undefined },
     moveProjectDialog: null,
@@ -315,6 +319,9 @@ export const useUiStore = create<UiStore>((set, get) => {
     },
     setJoinDialogOpen: (open) => {
       set({ joinDialogOpen: open });
+    },
+    setTeamWorkspaceDialogOpen: (open) => {
+      set({ teamWorkspaceDialogOpen: open });
     },
     openSignInDialog: (url) => {
       set({ signInDialog: { open: true, url } });

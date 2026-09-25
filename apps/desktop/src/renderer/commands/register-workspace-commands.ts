@@ -1,5 +1,6 @@
 import { catalogEntry } from '@shared/command-catalog.js';
 import { registerCommand } from '../lib/commands.js';
+import { hasSignedInServer } from './register-account-commands.js';
 import { projectRowActions } from '../features/explorer/project-actions.js';
 import { workspaceActions } from '../features/workspace/workspace-actions.js';
 import { useUiStore } from '../state/ui.js';
@@ -137,6 +138,16 @@ export function registerWorkspaceCommands(): void {
     ...catalogEntry('workspace.join'),
     run: () => {
       useUiStore.getState().setJoinDialogOpen(true);
+    },
+  });
+
+  registerCommand({
+    ...catalogEntry('workspace.openTeamWorkspace'),
+    // It lists workspaces across the signed-in servers, so there is nothing to show without one.
+    when: hasSignedInServer,
+    whenScope: 'account.signedIn',
+    run: () => {
+      useUiStore.getState().setTeamWorkspaceDialogOpen(true);
     },
   });
 

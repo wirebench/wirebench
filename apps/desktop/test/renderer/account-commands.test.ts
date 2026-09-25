@@ -78,4 +78,18 @@ describe('account.* commands', () => {
     void command.run(context);
     expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: undefined });
   });
+
+  it('workspace.openTeamWorkspace is gated on a signed-in server and opens its dialog', () => {
+    useUiStore.setState({ teamWorkspaceDialogOpen: false });
+    const command = getCommand('workspace.openTeamWorkspace')!;
+    expect(command.label).toBe('Workspace: Open a team workspace…');
+    expect(command.category).toBe('Workspace');
+    expect(command.when?.(context)).toBe(false);
+    useAccountStore.setState({ servers: [account('https://wb.test', true)] });
+    expect(command.when?.(context)).toBe(false);
+    useAccountStore.setState({ servers: [account('https://wb.test')] });
+    expect(command.when?.(context)).toBe(true);
+    void command.run(context);
+    expect(useUiStore.getState().teamWorkspaceDialogOpen).toBe(true);
+  });
 });

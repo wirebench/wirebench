@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WorkspacePicker } from '../../src/renderer/features/workspace/picker-screen.js';
+import { useAccountStore } from '../../src/renderer/state/account.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
-import type { WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
+import type { AccountWire, WorkspaceSummaryWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 
@@ -205,5 +206,48 @@ describe('WorkspacePicker', () => {
     render(<WorkspacePicker />);
 
     expect((await screen.findByTestId('workspace-picker-share')).textContent).toContain('Synced folder');
+  });
+
+  it('offers *Open a team workspace…* once a server is known, and opens its dialog', async () => {
+    const known: AccountWire = {
+      url: 'https://wb.example.com',
+      userId: 'u1',
+      email: 'ada@example.com',
+      displayName: 'Ada',
+      deviceName: 'laptop',
+      signedOut: true,
+      addedAt: '2026-09-25T10:00:00.000Z',
+    };
+    installWirebenchApi({ workspace: { list: listing([]) } });
+    useAccountStore.setState({ servers: [], loaded: true });
+    render(<WorkspacePicker />);
+    expect(screen.queryByTestId('workspace-open-team')).toBeNull();
+
+    act(() => {
+      useAccountStore.setState({ servers: [known] });
+    });
+    await userEvent.click(screen.getByTestId('workspace-open-team'));
+
+    expect(useUiStore.getState().teamWorkspaceDialogOpen).toBe(true);
+    useUiStore.setState({ teamWorkspaceDialogOpen: false });
+    useAccountStore.setState({ servers: [], loaded: false });
+  });
+
+  it('shows a server share row with its host and team, never the full URL', async () => {
+    const shared: WorkspaceSummaryWire = {
+      ...ROWS[0]!,
+      id: 'shared',
+      name: 'Shared',
+      share: {
+        kind: 'server',
+        managed: true,
+        server: { url: 'https://wb.example.com', workspaceId: '01J8ZK6Q3V4W5X6Y7Z8A9B0C1D', teamName: 'Payments QA' },
+      },
+    };
+    installWirebenchApi({ workspace: { list: listing([shared]) } });
+    render(<WorkspacePicker />);
+
+    const glyph = await screen.findByTestId('workspace-picker-share');
+    expect(glyph.textContent).toBe('wb.example.com · Payments QA');
   });
 });

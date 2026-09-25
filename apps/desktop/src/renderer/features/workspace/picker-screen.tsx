@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Folder, FolderInput, FolderPlus, FolderSearch, GitBranch } from 'lucide-react';
+import { Folder, FolderInput, FolderPlus, FolderSearch, GitBranch, Server } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { remoteHost } from '../sync/remote-host.js';
+import { useAccountStore } from '../../state/account.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { WorkspaceShareWire } from '../../../shared/wire-types.js';
@@ -14,6 +15,15 @@ function ShareGlyph({ share }: { readonly share: WorkspaceShareWire }) {
       <span data-testid="workspace-picker-share" className="inline-flex items-center gap-1 text-xs text-fg-faint">
         <Folder size={12} aria-hidden="true" />
         Synced folder
+      </span>
+    );
+  }
+  if (share.kind === 'server') {
+    const host = remoteHost(share.server?.url) ?? 'Wirebench Server';
+    return (
+      <span data-testid="workspace-picker-share" className="inline-flex items-center gap-1 text-xs text-fg-faint">
+        <Server size={12} aria-hidden="true" />
+        {share.server?.teamName === undefined ? host : `${host} · ${share.server.teamName}`}
       </span>
     );
   }
@@ -55,6 +65,9 @@ export function WorkspacePicker() {
   const lastError = useWorkspaceStore((state) => state.lastError);
   const list = useWorkspaceStore((state) => state.list);
   const setJoinDialogOpen = useUiStore((state) => state.setJoinDialogOpen);
+  const setTeamWorkspaceDialogOpen = useUiStore((state) => state.setTeamWorkspaceDialogOpen);
+  // Shown only once a server is known: without one the app shows no account UI at all.
+  const knowsServer = useAccountStore((state) => state.servers.length > 0);
   const [name, setName] = useState('');
 
   useEffect(() => {
@@ -128,6 +141,17 @@ export function WorkspacePicker() {
             <GitBranch size={14} aria-hidden="true" />
             Join shared workspace…
           </Button>
+          {knowsServer && (
+            <Button
+              data-testid="workspace-open-team"
+              onClick={() => {
+                setTeamWorkspaceDialogOpen(true);
+              }}
+            >
+              <Server size={14} aria-hidden="true" />
+              Open a team workspace…
+            </Button>
+          )}
         </div>
 
         <h2 className="mt-8 text-sm font-medium text-fg-muted">Workspaces</h2>

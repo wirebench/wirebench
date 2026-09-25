@@ -9,6 +9,7 @@
 
 import { create } from 'zustand';
 import type { IpcError } from '../../shared/ipc.js';
+import type { WirebenchApi } from '../../preload/build-api.js';
 import type {
   WorkspaceChange,
   WorkspaceChangedEvent,
@@ -53,6 +54,9 @@ export interface WorkspaceSnapshot {
   readonly status: 'idle' | 'loading' | 'error';
   readonly error?: IpcError | undefined;
 }
+
+/** `workspace.shareToServer`'s request: the server, the team, and a new or an existing empty workspace there. */
+export type ShareToServerRequest = Parameters<WirebenchApi['workspace']['shareToServer']>[0];
 
 /** The workspace store: {@link WorkspaceSnapshot} plus one action per `workspace.*` channel. */
 export interface WorkspaceStore extends WorkspaceSnapshot {
@@ -110,6 +114,13 @@ export interface WorkspaceStore extends WorkspaceSnapshot {
   readonly join: (remote: string, branch?: string) => Promise<void>;
   /** Joins a shared workspace from an existing clone or synced folder the user picks. `false` when cancelled. */
   readonly joinFromFolder: () => Promise<boolean>;
+  /**
+   * Shares the open local workspace to a team on Wirebench Server (server-sync §3.4), once the open
+   * projects are reviewed for secrets. `false` when that review was cancelled.
+   */
+  readonly shareToServer: (request: ShareToServerRequest) => Promise<boolean>;
+  /** Downloads a team workspace from Wirebench Server and opens it (*Open a team workspace…*). */
+  readonly joinFromServer: (url: string, workspaceId: string) => Promise<void>;
   /** Makes the open shared workspace local again. */
   readonly stopSharing: () => Promise<void>;
   /** Moves a project from the open workspace into another one. */
@@ -455,6 +466,23 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => {
       applyReply(sentIn, workspace);
       await get().list();
       return true;
+    },
+
+    shareToServer: async (request) => {
+      // Sharing pushes every file to the server, so it is reviewed the way a manual commit is.
+      if ((await reviewSecrets('commit')) !== 'proceed') {
+        return false;
+      }
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.shareToServer(request)).workspace);
+      return true;
+    },
+
+    joinFromServer: async (url, workspaceId) => {
+      await handOverDrafts();
+      const sentIn = generation;
+      applyReply(sentIn, unwrap(await ipc().workspace.joinFromServer({ url, workspaceId })).workspace);
+      await get().list();
     },
 
     stopSharing: async () => {

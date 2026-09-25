@@ -6,9 +6,15 @@ import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
-import type { SyncStatusWire } from '../../src/shared/wire-types.js';
+import type { SyncStatusWire, WorkspaceShareWire } from '../../src/shared/wire-types.js';
 
 const BASE: SyncStatusWire = { kind: 'git', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 };
+
+const SERVER_SHARE: WorkspaceShareWire = {
+  kind: 'server',
+  managed: true,
+  server: { url: 'https://wb.example.com', workspaceId: '01J8ZK6Q3V4W5X6Y7Z8A9B0C1D', teamName: 'Payments QA' },
+};
 
 describe('syncBadgeLabel', () => {
   it('labels every state', () => {
@@ -28,6 +34,33 @@ describe('syncBadgeLabel', () => {
 
   it('always says "Synced folder" for a folder share', () => {
     expect(syncBadgeLabel({ ...BASE, kind: 'folder', state: 'ahead', ahead: 1 })).toBe('Synced folder');
+  });
+
+  it('says "Viewer" for a viewer while nothing more pressing is going on, with what waits to pull', () => {
+    const viewer: SyncStatusWire = { ...BASE, kind: 'server', role: 'viewer' };
+    expect(syncBadgeLabel({ ...viewer, state: 'clean' })).toBe('Viewer');
+    expect(syncBadgeLabel({ ...viewer, state: 'ahead', ahead: 2 })).toBe('Viewer');
+    expect(syncBadgeLabel({ ...viewer, state: 'behind', behind: 3 })).toBe('Viewer · 3 to pull');
+    expect(syncBadgeLabel({ ...viewer, state: 'diverged', ahead: 1, behind: 1 })).toBe('Viewer · 1 to pull');
+    expect(syncBadgeLabel({ ...viewer, state: 'conflict' })).toBe('Conflicts');
+    expect(syncBadgeLabel({ ...viewer, state: 'offline' })).toBe('Offline');
+    expect(syncBadgeLabel({ ...viewer, state: 'syncing' })).toBe('Syncing…');
+    expect(syncBadgeLabel({ ...BASE, kind: 'server', role: 'editor', state: 'ahead', ahead: 2 })).toBe('2 to push');
+  });
+
+  it('names the stop-polling states, and keeps "Error" for any other failure', () => {
+    const failed = (code: string): SyncStatusWire => ({
+      ...BASE,
+      kind: 'server',
+      state: 'error',
+      error: { code, message: code },
+    });
+    expect(syncBadgeLabel(failed('sync-signed-out'))).toBe('Sign in');
+    expect(syncBadgeLabel(failed('sync-account-disabled'))).toBe('Account disabled');
+    expect(syncBadgeLabel(failed('sync-access-removed'))).toBe('No access');
+    expect(syncBadgeLabel({ ...failed('sync-signed-out'), role: 'viewer' })).toBe('Sign in');
+    expect(syncBadgeLabel(failed('sync-history-mismatch'))).toBe('Error');
+    expect(syncBadgeLabel({ ...BASE, state: 'error', error: { code: 'git-auth-failed', message: 'x' } })).toBe('Error');
   });
 });
 
@@ -91,5 +124,15 @@ describe('SyncBadge', () => {
 
     await userEvent.click(screen.getByTestId('status-bar-sync'));
     expect(useUiStore.getState().syncPanelOpen).toBe(true);
+  });
+
+  it('shows Viewer on a server share for a viewer', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ share: SERVER_SHARE }) });
+    useSyncStore.setState({ status: { ...BASE, kind: 'server', role: 'viewer', state: 'ahead', ahead: 1 } });
+    render(<SyncBadge />);
+
+    const badge = screen.getByTestId('status-bar-sync');
+    expect(badge.textContent).toBe('Viewer');
+    expect(badge.getAttribute('data-state')).toBe('ahead');
   });
 });
