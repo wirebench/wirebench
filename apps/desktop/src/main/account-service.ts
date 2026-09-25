@@ -76,19 +76,34 @@ export class AccountService {
   private readonly listeners = new Set<(servers: readonly ServerAccount[]) => void>();
   /** Every write chains onto this so renames can never land out of order (§4.3). */
   private writing: Promise<void> = Promise.resolve();
+  /** Settles {@link ready}; assigned in the constructor. */
+  private markReady!: () => void;
+  /**
+   * Settles (never rejects) once {@link load} has finished, successfully or not. A server share
+   * waits on it before its first call at launch (server-sync §3.4, R6), so a reopened workspace
+   * does not read "signed out" just because `accounts.yaml` had not been read yet.
+   */
+  readonly ready: Promise<void>;
 
   constructor(private readonly deps: AccountServiceDeps) {
     this.file = join(deps.userDataDir, ACCOUNTS_FILE);
+    this.ready = new Promise<void>((resolve) => {
+      this.markReady = resolve;
+    });
   }
 
   async load(): Promise<void> {
-    let document: unknown;
     try {
-      document = parseYaml(await readFile(this.file, 'utf8'));
-    } catch {
-      document = undefined;
+      let document: unknown;
+      try {
+        document = parseYaml(await readFile(this.file, 'utf8'));
+      } catch {
+        document = undefined;
+      }
+      this.accounts = parseAccountsFile(document);
+    } finally {
+      this.markReady();
     }
-    this.accounts = parseAccountsFile(document);
   }
 
   list(): readonly ServerAccount[] {
