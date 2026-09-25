@@ -1,9 +1,11 @@
 # Collaborate on a shared workspace
 
 A workspace can be shared with a team. Members join by URL (or by pointing at an existing
-folder), every save becomes a commit, and Sync pulls, merges and pushes so everyone converges on
-the same projects and environments. Design: [`specs/2026-09-13-wirebench-shared-workspaces-design.md`](specs/2026-09-13-wirebench-shared-workspaces-design.md);
-the decision to build this on git is [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md).
+folder, or by opening it from Wirebench Server), every save becomes a commit, and Sync pulls,
+merges and pushes so everyone converges on the same projects and environments. Design: [`specs/2026-09-13-wirebench-shared-workspaces-design.md`](specs/2026-09-13-wirebench-shared-workspaces-design.md)
+and, for Wirebench Server, [`specs/2026-09-24-wirebench-server-sync-design.md`](specs/2026-09-24-wirebench-server-sync-design.md);
+the decision to build this on git is [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md),
+and the server's merge is [ADR-0012](adr/0012-server-sync-merges-on-the-client.md).
 
 ## What a shared workspace is
 
@@ -14,7 +16,9 @@ either:
 - **a git repository**, synced by Wirebench's own Sync control over the system `git`, or
 - **a synced folder**, replicated by whatever tool you already point at that folder (Dropbox,
   OneDrive, Syncthing, a network share) — Wirebench just reads and writes the files there and has
-  no Sync control of its own for it.
+  no Sync control of its own for it, or
+- **a team workspace on Wirebench Server**, synced by the same Sync control over HTTP, with no git
+  needed on your machine (see [Share with Wirebench Server](#share-with-wirebench-server)).
 
 Everything that must never leave your machine — which environment you have active, your unsaved
 edits, secret values, history, preferences — stays in the workspace's app-data folder and is never
@@ -271,6 +275,61 @@ signed-in server under Settings → Accounts.
 If you have no role in a workspace, the server does not show it to you at all. Members who are not admins see the
 same dialog read-only, so everyone can check their own access.
 
+## Share with Wirebench Server
+
+Once you are [signed in to a server](#sign-in-to-a-server) and on a [team](#teams-and-roles), a workspace
+can live on the server instead of a git remote. Sync works as it does for git — the same badge, panel,
+conflict resolver and settings — but Wirebench talks to the server over HTTP, so nobody needs git
+installed.
+
+**Share a local workspace.** In *Manage workspaces*, choose **Share this workspace…**, then **Wirebench
+Server** (offered once you are signed in). Pick the server (when you are signed in to more than one) and
+the team, then either:
+
+- **A new workspace** — named after yours unless you change it, with the team's **default role**: *No
+  access*, *Viewer* (the default) or *Editor*. You become its admin. The name must be free in that team.
+- **An existing empty workspace** — one a team admin created under *Manage teams* that nobody has shared
+  into yet, and that you can edit. Your local workspace takes that workspace's name and id, so everyone
+  ends up on the same one.
+
+Sharing moves the workspace's files into its managed tree, makes the first commit (*Share workspace
+&lt;name&gt;*) and pushes it. If the push cannot reach the server, the workspace stays shared and *ahead*
+and pushes on the next sync.
+
+**Open a team workspace.** On the workspace picker (once a server is known) or from the palette
+(**Workspace: Open a team workspace…**), the dialog lists every workspace your teams share on every
+server you are signed in to, with its team and your role. An empty workspace is not listed until someone
+shares into it. Choosing one downloads it and opens it. If it is already on this machine, the dialog
+offers to open that copy instead.
+
+**Viewers.** With the *viewer* role, the badge reads *Viewer*. You can still edit, send and save, and
+*Commit on save* keeps a local history. **Push** and **Push on save** are disabled with the reason, and
+your commits stay on this machine. When an admin makes you an editor, the next fetch picks it up, and a
+push sends what was waiting.
+
+**How it syncs.** A pull asks the server what changed since your last sync and merges on your machine
+with the same three-way merge a git share uses ([ADR-0012](adr/0012-server-sync-merges-on-the-client.md)).
+A push sends your commits; if someone pushed first, Wirebench pulls, merges and pushes again. Conflicts
+open the same resolver. The Sync panel shows the server and the team where a git share shows its remote
+and branch; *Auto-fetch*, *Commit on save* and *Push on save* work the same way.
+
+**When sync stops.** If you are signed out, your account is disabled, or you no longer have access to the
+workspace, the badge says *Sign in*, *Account disabled* or *No access*, and automatic fetching stops so the
+server is not asked again and again. Your files stay on this machine. **Sign in…** in the Sync panel opens
+the Sign in dialog for that server; once you sign in again, sync resumes by itself. A manual **Fetch** also
+tries again.
+
+**Stop sharing and share again.** **Stop sharing…** makes the workspace local again and keeps the server
+copy for your team; a team admin deletes it under *Manage teams*. Sharing the same workspace again later
+reconnects to that copy: as an editor, Wirebench merges your files with the server's (identical files
+merge cleanly, different ones go to the resolver) and pushes. As a viewer, you are asked to remove your
+local copy and open the server's with *Open a team workspace…*.
+
+**Limits.** A push or a download carries at most the server's body limit, 32 MiB by default
+(`WIREBENCH_SERVER_BODY_LIMIT_MB`), and each file at most 8 MiB. Run **one server instance per data
+directory**: pushes to a workspace are serialised by a lock inside the server process, so two instances
+sharing a data directory could interleave them.
+
 ## Troubleshooting
 
 | Error | What it means | What to do |
@@ -293,6 +352,20 @@ same dialog read-only, so everyone can check their own access.
 | `git-identity-needed` | *Set the name and email your commits are recorded under.* | Enter your name and email in the dialog; the commit that asked is retried with its own message |
 | `workspace-move-incomplete` | *The files were copied, but the originals could not all be removed.* | The copy is complete; delete the leftover source files by hand |
 | `git-config-refused` | *This repository's .git/config sets &lt;keys&gt;, which Wirebench does not allow in a repository it did not create…* — a folder you joined from (or a synced folder holding `.git`) has local git settings beyond what `git clone` writes, or a remote URL in a form that is not allowed | Remove those keys from the repository's `.git/config`, or move them to your global git config (`git config --global …`), and fix the remote URL if it is named; then open the workspace again. Only `core.*` line-ending/filesystem defaults, `user.name`/`user.email`, `remote.*.url`/`fetch`/`tagopt`/`prune`, `branch.*.remote`/`merge`/`rebase`, `pull.rebase`/`ff`, `fetch.prune`, `init.defaultBranch` and `gc.auto` are accepted locally |
+| `sync-offline` | *Wirebench Server cannot be reached.* | Check your network and the server; changes stay on this machine and push on the next sync |
+| `sync-signed-out` | The badge says *Sign in*: this server has no session for you, or it stopped accepting it | Click **Sign in…** in the Sync panel and sign in; sync resumes by itself |
+| `sync-account-disabled` | The badge says *Account disabled*: an admin disabled your account on the server | Ask a server admin; sign in again once it is enabled |
+| `sync-access-removed` | The badge says *No access*: you left the team, or the workspace was deleted or its access changed | Ask a team admin for access, then **Sign in…** or **Fetch** again; the files stay on this machine |
+| `sync-forbidden` | *You have viewer access in this workspace; changes stay on this machine.* | Ask a workspace admin for the *editor* role; the next fetch picks it up and **Push** sends what waited |
+| `sync-too-large` | The push or download is larger than the server's body limit | Remove large attachments, or ask the operator to raise `WIREBENCH_SERVER_BODY_LIMIT_MB` |
+| `sync-history-mismatch` | This copy's history no longer matches the server's | Stop sharing, remove the local copy, and open it again with **Open a team workspace…** |
+| `sync-state-corrupt` | The local sync state in the workspace's `server/` folder cannot be read | As for `sync-history-mismatch`: open the workspace again from the server |
+| `sync-not-supported-by-server` | *This server is too old to sync workspaces.* | Ask the operator to upgrade Wirebench Server |
+| `sync-reconnect-viewer` | You shared a workspace again, but you are only a viewer of the server copy | Remove this local copy, then open the server's with **Open a team workspace…** |
+| `sync-workspace-exists-elsewhere` | A workspace with this id is on the server and you have no access to it | Ask its team's admin for access, or share into a new workspace from a fresh local copy |
+| `sync-workspace-id-mismatch` | The workspace on the server carries a different id in its `workspace.yaml` | Ask whoever shared it to share it again; it cannot be opened as it is |
+| `sync-target-not-empty` | Someone shared into the empty workspace you chose a moment before you did | Choose another target, or open that workspace with **Open a team workspace…** |
+| `teams-workspace-name-taken` | *A workspace with that name already exists in this team.* | Choose another name, or share into the existing workspace if it is empty |
 
 With git absent entirely, a `git` share still opens and works as a plain folder — the badge shows
 *No git* and the Sync panel explains what to install.

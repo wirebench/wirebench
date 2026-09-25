@@ -140,7 +140,7 @@ config knob, §4.1).
 - `RepoStore.exists`, `RepoStore.path`, `RepoStore.remove` (moves to `<dataDir>/tmp/removed-<id>-<ts>`
   rather than deleting; an operator cleans up).
 - `RepoStore.withLock(workspaceId, fn)`: one operation per workspace at a time, in-process, FIFO
-  (assumption 1). `server-sync` runs every merge inside it.
+  (assumption 1). `server-sync` runs every push inside it; the merge itself runs on the client (ADR-0012).
 - Every path is built from the workspace id after it passes the ULID check; nothing from a request is
   ever joined into a filesystem path (ADR-0005 applied server-side).
 - Git runs through the engine's `GitCli` with the same hardening the desktop has: `execFile` with
@@ -191,7 +191,7 @@ table are generated from it (a `docs:server-config --check` script, like `docs:c
 ```
 <dataDir>/
   repos/<workspaceId>.git/   # bare repositories, one per workspace
-  tmp/                       # merge worktrees (server-sync), removed repositories
+  tmp/                       # private index files (server-sync), removed repositories
   no-hooks/                  # empty; every repository's core.hooksPath
 ```
 
