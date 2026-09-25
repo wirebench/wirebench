@@ -3,6 +3,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { Loader2 } from 'lucide-react';
 import { SecretReviewDialog } from '../components/secret-review-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
+import { TeamDialog } from '../features/team/team-dialog.js';
 import { subscribeToAccounts, useAccountStore } from '../state/account.js';
 import { ToastViewport } from '../components/toast.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
@@ -438,6 +439,7 @@ export function AppShell() {
       <ShareDialog />
       <JoinDialog />
       <SignInDialog />
+      <TeamDialog />
       <MoveProjectDialog />
       <SyncPanel />
       <ConflictResolver />

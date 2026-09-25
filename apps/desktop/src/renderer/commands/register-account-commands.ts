@@ -9,9 +9,9 @@ export function hasSignedInServer(): boolean {
 }
 
 /**
- * Registers the `account.*` commands. Sign-in is always available (it is how a server first
- * becomes known); sign-out acts directly with one signed-in server and defers to Preferences →
- * Accounts, where each server has its own button, with more.
+ * Registers the `account.*` commands and `team.manage`. Sign-in is always available (it is how a
+ * server first becomes known); sign-out acts directly with one signed-in server and defers to
+ * Preferences → Accounts, where each server has its own button, with more.
  */
 export function registerAccountCommands(): void {
   registerCommand({
@@ -33,6 +33,15 @@ export function registerAccountCommands(): void {
       } else {
         useUiStore.getState().openPreferences('accounts');
       }
+    },
+  });
+
+  registerCommand({
+    ...catalogEntry('team.manage'),
+    when: hasSignedInServer,
+    whenScope: 'account.signedIn',
+    run: () => {
+      useUiStore.getState().openTeamDialog();
     },
   });
 }

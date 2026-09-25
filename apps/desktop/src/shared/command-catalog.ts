@@ -705,6 +705,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Account: Sign out…',
     category: 'Account',
   },
+  'team.manage': {
+    id: 'team.manage',
+    label: 'Account: Manage teams…',
+    category: 'Account',
+  },
 };
 
 /** `COMMAND_CATALOG[id]`, typed so a spread at a call site needs no cast. */

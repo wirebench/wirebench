@@ -280,6 +280,30 @@ import {
   accountAcceptInvitationRequestSchema,
   accountCancelResponseSchema,
   accountChangedEventSchema,
+  teamServerRequestWireSchema,
+  teamCreateRequestWireSchema,
+  teamRenameRequestWireSchema,
+  teamRefRequestWireSchema,
+  teamAddMemberRequestWireSchema,
+  teamMemberRoleRequestWireSchema,
+  teamMemberRefRequestWireSchema,
+  teamInviteRequestWireSchema,
+  teamInvitationRefRequestWireSchema,
+  teamCreateWorkspaceRequestWireSchema,
+  teamWorkspaceRefRequestWireSchema,
+  teamUpdateWorkspaceRequestWireSchema,
+  teamSetAccessRequestWireSchema,
+  teamAccessRefRequestWireSchema,
+  teamListResponseWireSchema,
+  teamResponseWireSchema,
+  teamMembersResponseWireSchema,
+  teamMemberResponseWireSchema,
+  teamInvitationsResponseWireSchema,
+  teamInviteResponseWireSchema,
+  teamWorkspacesResponseWireSchema,
+  teamWorkspaceResponseWireSchema,
+  teamAccessResponseWireSchema,
+  teamDoneResponseWireSchema,
 } from './wire-types.js';
 
 /**
@@ -504,6 +528,47 @@ export const channels = {
     ),
     signOut: defineChannel('account.signOut', accountUrlRequestSchema, accountListResponseSchema),
     remove: defineChannel('account.remove', accountUrlRequestSchema, accountListResponseSchema),
+  },
+  /**
+   * Teams on Wirebench Server (teams-access §3.5). Every request names the server by `url`; main
+   * adds that account's token, and a server that no longer accepts it marks the account signed out.
+   */
+  team: {
+    list: defineChannel('team.list', teamServerRequestWireSchema, teamListResponseWireSchema),
+    create: defineChannel('team.create', teamCreateRequestWireSchema, teamResponseWireSchema),
+    rename: defineChannel('team.rename', teamRenameRequestWireSchema, teamResponseWireSchema),
+    delete: defineChannel('team.delete', teamRefRequestWireSchema, teamDoneResponseWireSchema),
+    members: defineChannel('team.members', teamRefRequestWireSchema, teamMembersResponseWireSchema),
+    addMember: defineChannel('team.addMember', teamAddMemberRequestWireSchema, teamMemberResponseWireSchema),
+    setMemberRole: defineChannel('team.setMemberRole', teamMemberRoleRequestWireSchema, teamMemberResponseWireSchema),
+    removeMember: defineChannel('team.removeMember', teamMemberRefRequestWireSchema, teamDoneResponseWireSchema),
+    invitations: defineChannel('team.invitations', teamRefRequestWireSchema, teamInvitationsResponseWireSchema),
+    invite: defineChannel('team.invite', teamInviteRequestWireSchema, teamInviteResponseWireSchema),
+    revokeInvitation: defineChannel(
+      'team.revokeInvitation',
+      teamInvitationRefRequestWireSchema,
+      teamDoneResponseWireSchema,
+    ),
+    /** What a member can open, with role and source; `server-sync`'s join dialog reads it too (§3.6). */
+    listWorkspaces: defineChannel('team.listWorkspaces', teamServerRequestWireSchema, teamWorkspacesResponseWireSchema),
+    createWorkspace: defineChannel(
+      'team.createWorkspace',
+      teamCreateWorkspaceRequestWireSchema,
+      teamWorkspaceResponseWireSchema,
+    ),
+    updateWorkspace: defineChannel(
+      'team.updateWorkspace',
+      teamUpdateWorkspaceRequestWireSchema,
+      teamWorkspaceResponseWireSchema,
+    ),
+    deleteWorkspace: defineChannel(
+      'team.deleteWorkspace',
+      teamWorkspaceRefRequestWireSchema,
+      teamDoneResponseWireSchema,
+    ),
+    access: defineChannel('team.access', teamWorkspaceRefRequestWireSchema, teamAccessResponseWireSchema),
+    setAccess: defineChannel('team.setAccess', teamSetAccessRequestWireSchema, teamDoneResponseWireSchema),
+    clearAccess: defineChannel('team.clearAccess', teamAccessRefRequestWireSchema, teamDoneResponseWireSchema),
   },
   // An API and the definition it was imported from. Separate from `definition.*` because the two
   // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI

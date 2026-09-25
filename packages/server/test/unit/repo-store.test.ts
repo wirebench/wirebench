@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
+import type { GitCli } from '@wirebench/engine';
 import { isWorkspaceId, NO_HOOKS_DIR, RepoStore } from '../../src/repos/repo-store.js';
 import { describeGit, mkTempDir, removeTempDir, testGit } from '../helpers/git.js';
 
@@ -82,5 +83,22 @@ describeGit('RepoStore', () => {
   it('withLock releases the lock when the function throws', async () => {
     await expect(store.withLock(ID, () => Promise.reject(new Error('x')))).rejects.toThrow('x');
     expect(await store.withLock(ID, () => Promise.resolve('ok'))).toBe('ok');
+  });
+
+  it('builds under tmp/ and renames into place: a failed init leaves nothing at the real path', async () => {
+    const real = testGit(join(dataDir, NO_HOOKS_DIR));
+    const failing = {
+      run: (dir: string, args: readonly string[]) =>
+        args[0] === 'config' ? Promise.reject(new Error('config failed')) : real.run(dir, args),
+    } as unknown as GitCli;
+    const broken = new RepoStore({ git: failing, dataDir });
+    await expect(broken.create(ID)).rejects.toThrow('config failed');
+    expect(existsSync(store.path(ID))).toBe(false);
+    expect(await store.exists(ID)).toBe(false);
+    // The failed attempt's staging directory stays in tmp/ (the store never deletes); a retry works.
+    expect(readdirSync(join(dataDir, 'tmp')).filter((name) => name.startsWith(`creating-${ID}-`))).toHaveLength(1);
+    await store.create(ID);
+    expect(await store.exists(ID)).toBe(true);
+    expect(readdirSync(join(dataDir, 'tmp')).filter((name) => name.startsWith(`creating-${ID}-`))).toHaveLength(1);
   });
 });

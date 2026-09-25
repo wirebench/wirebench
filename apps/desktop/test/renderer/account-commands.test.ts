@@ -42,6 +42,7 @@ describe('account.* commands', () => {
     useAccountStore.setState({ servers: [], loaded: true });
     useUiStore.setState({
       signInDialog: { open: false, url: undefined },
+      teamDialog: { open: false, url: undefined },
       preferences: { open: false, section: undefined },
     });
   });
@@ -67,5 +68,14 @@ describe('account.* commands', () => {
     useAccountStore.setState({ servers: [account('https://one.test'), account('https://two.test')] });
     void command.run(context);
     expect(useUiStore.getState().preferences).toEqual({ open: true, section: 'accounts' });
+  });
+
+  it('team.manage is gated on a signed-in server and opens the teams dialog', () => {
+    const command = getCommand('team.manage')!;
+    expect(command.when?.(context)).toBe(false);
+    useAccountStore.setState({ servers: [account('https://wb.test')] });
+    expect(command.when?.(context)).toBe(true);
+    void command.run(context);
+    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: undefined });
   });
 });

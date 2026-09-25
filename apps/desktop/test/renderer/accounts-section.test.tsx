@@ -21,7 +21,7 @@ describe('AccountsSection', () => {
   beforeEach(() => {
     installWirebenchApi();
     useAccountStore.setState({ servers: [], loaded: true });
-    useUiStore.setState({ signInDialog: { open: false, url: undefined } });
+    useUiStore.setState({ signInDialog: { open: false, url: undefined }, teamDialog: { open: false, url: undefined } });
   });
   afterEach(() => {
     cleanup();
@@ -62,5 +62,15 @@ describe('AccountsSection', () => {
   it('says so when no server is known', () => {
     render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
     expect(screen.getByTestId('accounts-section').textContent).toContain('No servers yet');
+  });
+
+  it('a signed-in row offers Manage teams… for that server; a signed-out row does not', () => {
+    useAccountStore.setState({ servers: [account('https://wb.test'), account('https://old.test', true)] });
+    render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
+    const old = screen.getByTestId('account-row-old.test');
+    expect(old.querySelector('[data-testid="account-row-manage-teams"]')).toBeNull();
+    const live = screen.getByTestId('account-row-wb.test');
+    fireEvent.click(live.querySelector('[data-testid="account-row-manage-teams"]')!);
+    expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' });
   });
 });

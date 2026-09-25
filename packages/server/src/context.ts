@@ -1,4 +1,3 @@
-import { EventEmitter } from 'node:events';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
 import type { ServerConfig } from './config.js';
@@ -18,12 +17,35 @@ export interface Database extends Querier {
   close(): Promise<void>;
 }
 
-/** Events one module emits for later modules (identity → teams-access, per the teams spec §3.4). */
-export interface ServerEventMap {
-  'invitation.accepted': [{ readonly invitationId: string; readonly userId: string }];
+/** What identity reports when an invitation becomes a user (teams-access spec §3.4). */
+export interface InvitationAccepted {
+  readonly invitationId: string;
+  readonly userId: string;
 }
 
-export class ServerEvents extends EventEmitter<ServerEventMap> {}
+export type InvitationAcceptedHook = (tx: Querier, accepted: InvitationAccepted) => Promise<void>;
+
+/**
+ * Work a later module does inside an earlier module's transaction (teams-access spec §3.4, R1).
+ * Unlike an event, a hook is awaited and runs on the caller's transaction: its writes commit with
+ * the caller's, and a throw rolls the caller back. Modules push onto these lists in `register()`.
+ */
+export interface ServerHooks {
+  readonly invitationAccepted: InvitationAcceptedHook[];
+}
+
+export function serverHooks(): ServerHooks {
+  return { invitationAccepted: [] };
+}
+
+/** Runs every `invitationAccepted` hook in registration order; the first throw propagates. */
+export async function runInvitationAccepted(
+  hooks: ServerHooks,
+  tx: Querier,
+  accepted: InvitationAccepted,
+): Promise<void> {
+  for (const hook of hooks.invitationAccepted) await hook(tx, accepted);
+}
 
 /** What `/api/v1/meta` reports; modules fill it at registration. */
 export class MetaRegistry {
@@ -55,7 +77,7 @@ export interface ServerContext {
   readonly git: GitCli;
   readonly log: FastifyBaseLogger;
   readonly meta: MetaRegistry;
-  readonly events: ServerEvents;
+  readonly hooks: ServerHooks;
 }
 
 export interface ServerModule {

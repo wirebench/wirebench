@@ -12,6 +12,8 @@ import {
   type PasswordResetCreated,
   type SignInResponse,
 } from '@wirebench/engine';
+import { runInvitationAccepted, type Querier } from '../context.js';
+import { isUniqueViolation } from '../db/errors.js';
 import type { IdentityEnv, InvitationEnv } from './env.js';
 import { invitationExists, invitationInvalid, methodDisabled, passwordTooShort, userExists } from './errors.js';
 import { hashPassword } from './passwords.js';
@@ -28,23 +30,44 @@ export interface CreateInvitationInput {
   readonly createdBy: string | null;
 }
 
-export async function createInvitation(env: InvitationEnv, input: CreateInvitationInput): Promise<InvitationCreated> {
+/**
+ * `attach` runs in the insert's transaction with the new invitation's id: teams-access writes its
+ * `team_invitations` row through it (teams spec §3.4), so a team invitation never exists without
+ * its team.
+ */
+export async function createInvitation(
+  env: InvitationEnv,
+  input: CreateInvitationInput,
+  attach?: (tx: Querier, invitationId: string) => Promise<void>,
+): Promise<InvitationCreated> {
   const lower = emailLower(input.email);
   const now = env.now();
   if ((await repo.findUserByEmail(env.ctx.db, lower)) !== undefined) throw userExists();
   if ((await repo.openInvitationByEmail(env.ctx.db, lower, now)) !== undefined) throw invitationExists();
   const { secret, hash } = mintSecret();
-  const row = await repo.insertInvitation(env.ctx.db, {
-    id: newId(),
-    kind: 'invite',
-    email: input.email.trim(),
-    userId: null,
-    secretHash: hash,
-    serverAdmin: input.serverAdmin,
-    createdBy: input.createdBy,
-    createdAt: now,
-    expiresAt: new Date(now.getTime() + env.settings.invitationMs),
-  });
+  let row: repo.InvitationRow;
+  try {
+    row = await env.ctx.db.transaction(async (tx) => {
+      await repo.revokeExpiredInvitesOf(tx, lower, now);
+      const inserted = await repo.insertInvitation(tx, {
+        id: newId(),
+        kind: 'invite',
+        email: input.email.trim(),
+        userId: null,
+        secretHash: hash,
+        serverAdmin: input.serverAdmin,
+        createdBy: input.createdBy,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + env.settings.invitationMs),
+      });
+      if (attach !== undefined) await attach(tx, inserted.id);
+      return inserted;
+    });
+  } catch (error) {
+    // Two creates for one email raced past the pre-check: the index decides, the loser hears 409.
+    if (isUniqueViolation(error, 'invitations_one_open_per_email')) throw invitationExists();
+    throw error;
+  }
   return { id: row.id, email: row.email, url: inviteUrl(env, secret), expiresAt: row.expiresAt };
 }
 
@@ -108,30 +131,31 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
   if (invitation === undefined) throw invitationInvalid();
   const hash = await hashPassword(input.password);
   const now = env.now();
-  const outcome = await env.ctx.db.transaction(async (tx) => {
+  const user = await env.ctx.db.transaction(async (tx) => {
     if (!(await repo.acceptInvitation(tx, invitation.id, now))) throw invitationInvalid();
     if (invitation.kind === 'reset') {
-      const user = invitation.userId === null ? undefined : await repo.findUserById(tx, invitation.userId);
-      if (user === undefined || user.disabledAt !== null) throw invitationInvalid();
-      await repo.upsertCredential(tx, user.id, hash, now);
-      await repo.revokeTokensOfUser(tx, user.id, now);
-      return { user, created: false };
+      const existing = invitation.userId === null ? undefined : await repo.findUserById(tx, invitation.userId);
+      if (existing === undefined || existing.disabledAt !== null) throw invitationInvalid();
+      await repo.upsertCredential(tx, existing.id, hash, now);
+      await repo.revokeTokensOfUser(tx, existing.id, now);
+      return existing;
     }
     if ((await repo.findUserByEmail(tx, invitation.emailLower)) !== undefined) throw userExists();
     const displayName = input.displayName.trim() || (invitation.email.split('@')[0] ?? invitation.email);
-    const user = await repo.insertUser(tx, {
+    const created = await repo.insertUser(tx, {
       id: newId(),
       email: invitation.email,
       displayName,
       serverAdmin: invitation.serverAdmin,
       at: now,
     });
-    await repo.upsertCredential(tx, user.id, hash, now);
-    return { user, created: true };
+    await repo.upsertCredential(tx, created.id, hash, now);
+    // Later modules add to the new account here, in this transaction (teams spec §3.4): a
+    // failure rolls the accept back and the invitation stays open.
+    await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: invitation.id, userId: created.id });
+    return created;
   });
-  if (outcome.created)
-    env.ctx.events.emit('invitation.accepted', { invitationId: invitation.id, userId: outcome.user.id });
-  return issueToken(env, outcome.user, input.device.name);
+  return issueToken(env, user, input.device.name);
 }
 
 /** Revokes an open `invite`; `false` when there is no such open invitation. */

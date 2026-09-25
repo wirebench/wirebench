@@ -305,6 +305,18 @@ export async function revokeInvitation(db: Querier, id: string, at: Date): Promi
   await db.query('update invitations set revoked_at = $2 where id = $1', [id, at]);
 }
 
+/**
+ * Closes expired, never-used `invite` rows for an email. The one-open-invitation index cannot see
+ * `expires_at` (a partial index predicate must be immutable), so without this an expired link
+ * would block a new invitation for the same person.
+ */
+export async function revokeExpiredInvitesOf(db: Querier, emailLower: string, now: Date): Promise<void> {
+  await db.query(
+    "update invitations set revoked_at = $2 where kind = 'invite' and email_lower = $1 and accepted_at is null and revoked_at is null and expires_at <= $2",
+    [emailLower, now],
+  );
+}
+
 /** Closes every open reset for a user, so a new reset link is the only one that works. */
 export async function revokeOpenResetsOf(db: Querier, userId: string, at: Date): Promise<void> {
   await db.query(

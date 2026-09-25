@@ -162,3 +162,98 @@ describe('ServerClient', () => {
     ).rejects.toMatchObject({ code: 'server-bad-response' });
   });
 });
+
+describe('ServerClient — teams (teams-access §3.2)', () => {
+  const TEAM_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
+  const USER_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
+  const WS_ID = '01J8ZC5Q0V7R3T9XK2M4N6P8QC';
+  const TEAM = { id: TEAM_ID, name: 'Payments QA', myRole: 'admin', createdAt: '2026-09-25T10:00:00.000Z' };
+  const WORKSPACE = {
+    id: WS_ID,
+    name: 'Integration',
+    teamId: TEAM_ID,
+    teamName: 'Payments QA',
+    defaultRole: 'viewer',
+    myRole: 'admin',
+    source: 'grant',
+    createdAt: '2026-09-25T10:00:00.000Z',
+  };
+  const body = (request: HttpRequest | undefined): unknown =>
+    request?.body === undefined ? undefined : JSON.parse(new TextDecoder().decode(request.body));
+
+  it('sends each call to its route with the method, the bearer and the body the server validates', async () => {
+    const { client: c, sent } = client(
+      exchange(200, [TEAM]),
+      exchange(201, TEAM),
+      exchange(200, { ...TEAM, name: 'QA' }),
+      exchange(204, ''),
+      exchange(200, {
+        userId: USER_ID,
+        email: 'b@x.co',
+        displayName: 'B',
+        role: 'admin',
+        disabled: false,
+        addedAt: 'x',
+      }),
+      exchange(204, ''),
+      exchange(201, WORKSPACE),
+      exchange(204, ''),
+      exchange(204, ''),
+    );
+    const url = 'https://wb.test';
+    expect(await c.listTeams(url, TOKEN)).toEqual([TEAM]);
+    expect(await c.createTeam(url, TOKEN, 'Payments QA')).toEqual(TEAM);
+    expect((await c.renameTeam(url, TOKEN, TEAM_ID, 'QA')).name).toBe('QA');
+    await c.deleteTeam(url, TOKEN, TEAM_ID);
+    expect((await c.setMemberRole(url, TOKEN, TEAM_ID, USER_ID, 'admin')).role).toBe('admin');
+    await c.removeMember(url, TOKEN, TEAM_ID, USER_ID);
+    expect(await c.createWorkspace(url, TOKEN, TEAM_ID, { name: 'Integration' })).toEqual(WORKSPACE);
+    await c.setAccess(url, TOKEN, WS_ID, USER_ID, 'editor');
+    await c.clearAccess(url, TOKEN, WS_ID, USER_ID);
+    expect(sent.map((r) => [r.method, r.url])).toEqual([
+      ['GET', 'https://wb.test/api/v1/teams'],
+      ['POST', 'https://wb.test/api/v1/teams'],
+      ['PATCH', `https://wb.test/api/v1/teams/${TEAM_ID}`],
+      ['DELETE', `https://wb.test/api/v1/teams/${TEAM_ID}`],
+      ['PATCH', `https://wb.test/api/v1/teams/${TEAM_ID}/members/${USER_ID}`],
+      ['DELETE', `https://wb.test/api/v1/teams/${TEAM_ID}/members/${USER_ID}`],
+      ['POST', `https://wb.test/api/v1/teams/${TEAM_ID}/workspaces`],
+      ['PUT', `https://wb.test/api/v1/workspaces/${WS_ID}/access/${USER_ID}`],
+      ['DELETE', `https://wb.test/api/v1/workspaces/${WS_ID}/access/${USER_ID}`],
+    ]);
+    expect(sent.every((r) => r.headers['authorization'] === `Bearer ${TOKEN}`)).toBe(true);
+    expect([body(sent[1]), body(sent[2]), body(sent[4]), body(sent[6]), body(sent[7])]).toEqual([
+      { name: 'Payments QA' },
+      { name: 'QA' },
+      { role: 'admin' },
+      { name: 'Integration' },
+      { role: 'editor' },
+    ]);
+    expect(sent[3]?.body).toBeUndefined();
+  });
+
+  it('parses listings and passes teams-* problems through with their status', async () => {
+    const { client: c } = client(
+      exchange(200, [WORKSPACE]),
+      exchange(200, [
+        {
+          userId: USER_ID,
+          email: 'b@x.co',
+          displayName: 'B',
+          teamRole: 'member',
+          disabled: false,
+          effectiveRole: 'none',
+        },
+      ]),
+      exchange(400, { code: 'teams-last-admin', message: 'A team needs at least one admin.' }),
+      exchange(200, [{ ...WORKSPACE, myRole: 'owner' }]),
+    );
+    expect(await c.listWorkspaces('https://wb.test', TOKEN)).toEqual([WORKSPACE]);
+    expect((await c.workspaceAccess('https://wb.test', TOKEN, WS_ID))[0]?.effectiveRole).toBe('none');
+    await expect(c.setMemberRole('https://wb.test', TOKEN, TEAM_ID, USER_ID, 'member')).rejects.toMatchObject({
+      code: 'teams-last-admin',
+      details: { status: 400 },
+    });
+    await expect(c.listWorkspaces('https://wb.test', TOKEN)).rejects.toMatchObject({ code: 'server-bad-response' });
+  });
+});

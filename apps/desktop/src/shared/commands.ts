@@ -137,6 +137,7 @@ export const COMMAND_IDS = [
   'project.moveToWorkspace',
   'account.signIn',
   'account.signOut',
+  'team.manage',
 ] as const;
 
 /** Every addressable action. Derived from {@link COMMAND_IDS} so the two can never drift. */

@@ -6,7 +6,7 @@
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, loadConfig } from '../config.js';
-import { ServerEvents } from '../context.js';
+import { serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
@@ -31,7 +31,7 @@ export async function runAdmin(
     delete process.env.WIREBENCH_SERVER_DATABASE_URL;
     db = createDatabase(config.databaseUrl);
     env = {
-      ctx: { db, config, events: new ServerEvents() },
+      ctx: { db, config, hooks: serverHooks() },
       settings: identitySettings(config),
       now: options.now ?? (() => new Date()),
     };

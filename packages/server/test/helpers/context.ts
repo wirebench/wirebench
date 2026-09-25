@@ -1,6 +1,6 @@
 import { GitCli, findGit } from '@wirebench/engine';
 import { loadConfig } from '../../src/config.js';
-import { MetaRegistry, ServerEvents, type Database, type ServerContext } from '../../src/context.js';
+import { MetaRegistry, serverHooks, type Database, type ServerContext } from '../../src/context.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
@@ -40,7 +40,7 @@ export async function testContext(
     git: new GitCli(location, { hooksDir: dataDir }),
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
-    events: new ServerEvents(),
+    hooks: serverHooks(),
     ...rest,
   };
 }

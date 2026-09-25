@@ -4350,6 +4350,12 @@ export const syncStatusWireSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }).optional(),
   /** An automatic commit waits for the open projects' possible secrets to be reviewed; how many. */
   held: z.object({ findings: z.number() }).optional(),
+  /**
+   * The caller's role in a Wirebench Server workspace (teams-access §3.5); `server-sync` fills it and
+   * shows *Viewer* on the badge. Inlined rather than `workspaceRoleWireSchema`, which is declared
+   * further down this file.
+   */
+  role: z.enum(['viewer', 'editor', 'admin']).optional(),
 });
 export type SyncStatusWire = z.infer<typeof syncStatusWireSchema>;
 
@@ -4955,3 +4961,135 @@ export const accountAcceptInvitationRequestSchema = z.object({
 export const accountCancelResponseSchema = z.object({ cancelled: z.boolean() });
 export const accountChangedEventSchema = accountListResponseSchema;
 export type AccountChangedEvent = z.infer<typeof accountChangedEventSchema>;
+
+// ---------------------------------------------------------------------------
+// Teams on Wirebench Server (teams-access §3.5, §5.2). Restated from the engine's
+// `server-api/teams.ts` rather than imported: this file must stay free of engine values. Main parses
+// the server's answers with the engine's schemas first, then these check what crosses the bridge.
+// ---------------------------------------------------------------------------
+
+export const teamRoleWireSchema = z.enum(['member', 'admin']);
+export type TeamRoleWire = z.infer<typeof teamRoleWireSchema>;
+export const workspaceRoleWireSchema = z.enum(['viewer', 'editor', 'admin']);
+export type WorkspaceRoleWire = z.infer<typeof workspaceRoleWireSchema>;
+export const defaultRoleWireSchema = z.enum(['none', 'viewer', 'editor']);
+export type DefaultRoleWire = z.infer<typeof defaultRoleWireSchema>;
+export const roleSourceWireSchema = z.enum(['server-admin', 'team-admin', 'grant', 'default']);
+export type RoleSourceWire = z.infer<typeof roleSourceWireSchema>;
+
+export const teamWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  myRole: teamRoleWireSchema,
+  createdAt: z.string(),
+});
+export type TeamWire = z.infer<typeof teamWireSchema>;
+export const teamMemberWireSchema = z.object({
+  userId: z.string(),
+  email: z.string(),
+  displayName: z.string(),
+  role: teamRoleWireSchema,
+  disabled: z.boolean(),
+  addedAt: z.string(),
+});
+export type TeamMemberWire = z.infer<typeof teamMemberWireSchema>;
+export const teamInvitationWireSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: teamRoleWireSchema,
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+});
+export type TeamInvitationWire = z.infer<typeof teamInvitationWireSchema>;
+/** Carries the link, which the dialog shows exactly once (§3.5). */
+export const teamInvitationCreatedWireSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: teamRoleWireSchema,
+  url: z.string(),
+  expiresAt: z.string(),
+});
+export type TeamInvitationCreatedWire = z.infer<typeof teamInvitationCreatedWireSchema>;
+export const teamWorkspaceWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  teamId: z.string(),
+  teamName: z.string(),
+  defaultRole: defaultRoleWireSchema,
+  myRole: workspaceRoleWireSchema,
+  source: roleSourceWireSchema,
+  createdAt: z.string(),
+});
+export type TeamWorkspaceWire = z.infer<typeof teamWorkspaceWireSchema>;
+export const accessEntryWireSchema = z.object({
+  userId: z.string(),
+  email: z.string(),
+  displayName: z.string(),
+  teamRole: teamRoleWireSchema,
+  disabled: z.boolean(),
+  effectiveRole: z.enum(['none', 'viewer', 'editor', 'admin']),
+  source: roleSourceWireSchema.optional(),
+  grant: workspaceRoleWireSchema.optional(),
+});
+export type AccessEntryWire = z.infer<typeof accessEntryWireSchema>;
+
+export const teamServerRequestWireSchema = z.object({ url: z.string() });
+export const teamCreateRequestWireSchema = z.object({ url: z.string(), name: z.string() });
+export const teamRenameRequestWireSchema = z.object({ url: z.string(), teamId: z.string(), name: z.string() });
+export const teamRefRequestWireSchema = z.object({ url: z.string(), teamId: z.string() });
+export const teamAddMemberRequestWireSchema = z.object({
+  url: z.string(),
+  teamId: z.string(),
+  email: z.string(),
+  role: teamRoleWireSchema,
+});
+export const teamMemberRoleRequestWireSchema = z.object({
+  url: z.string(),
+  teamId: z.string(),
+  userId: z.string(),
+  role: teamRoleWireSchema,
+});
+export const teamMemberRefRequestWireSchema = z.object({ url: z.string(), teamId: z.string(), userId: z.string() });
+export const teamInviteRequestWireSchema = teamAddMemberRequestWireSchema;
+export const teamInvitationRefRequestWireSchema = z.object({
+  url: z.string(),
+  teamId: z.string(),
+  invitationId: z.string(),
+});
+export const teamCreateWorkspaceRequestWireSchema = z.object({
+  url: z.string(),
+  teamId: z.string(),
+  name: z.string(),
+  defaultRole: defaultRoleWireSchema.optional(),
+});
+export const teamWorkspaceRefRequestWireSchema = z.object({ url: z.string(), workspaceId: z.string() });
+export const teamUpdateWorkspaceRequestWireSchema = z.object({
+  url: z.string(),
+  workspaceId: z.string(),
+  name: z.string().optional(),
+  defaultRole: defaultRoleWireSchema.optional(),
+});
+export const teamSetAccessRequestWireSchema = z.object({
+  url: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+  role: workspaceRoleWireSchema,
+});
+export const teamAccessRefRequestWireSchema = z.object({
+  url: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+
+export const teamListResponseWireSchema = z.object({ teams: z.array(teamWireSchema), serverAdmin: z.boolean() });
+export type TeamListResponse = z.infer<typeof teamListResponseWireSchema>;
+export const teamResponseWireSchema = z.object({ team: teamWireSchema });
+export const teamMembersResponseWireSchema = z.object({ members: z.array(teamMemberWireSchema) });
+export const teamMemberResponseWireSchema = z.object({ member: teamMemberWireSchema });
+export const teamInvitationsResponseWireSchema = z.object({ invitations: z.array(teamInvitationWireSchema) });
+export const teamInviteResponseWireSchema = z.object({ invitation: teamInvitationCreatedWireSchema });
+export const teamWorkspacesResponseWireSchema = z.object({ workspaces: z.array(teamWorkspaceWireSchema) });
+export const teamWorkspaceResponseWireSchema = z.object({ workspace: teamWorkspaceWireSchema });
+export const teamAccessResponseWireSchema = z.object({ entries: z.array(accessEntryWireSchema) });
+export const teamDoneResponseWireSchema = z.object({ done: z.literal(true) });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { createInvitation } from '../../../src/identity/invitations.js';
 import * as repo from '../../../src/identity/repo.js';
 import { mintSecret } from '../../../src/identity/tokens.js';
 import { describeDb } from '../../helpers/database.js';
@@ -72,9 +73,12 @@ describeDb('invitations (§3.1, §3.7)', () => {
     expect((await lookup(second)).statusCode).toBe(404);
   });
 
-  it('accept creates the user with a password and a token, marks the invitation, emits the event, and works once', async () => {
+  it('accept creates the user with a password and a token, marks the invitation, runs the invitationAccepted hooks, and works once', async () => {
     const accepted = vi.fn();
-    h.events.on('invitation.accepted', accepted);
+    h.hooks.invitationAccepted.push((_tx, event) => {
+      accepted(event);
+      return Promise.resolve();
+    });
     const { url, id } = (await create({ email: 'Bob@example.com', serverAdmin: true })).json<{
       url: string;
       id: string;
@@ -185,5 +189,49 @@ describeDb('invitations (§3.1, §3.7)', () => {
     for (let i = 0; i < 10; i += 1) await invitePage(mintSecret().secret);
     expect((await invitePage(mintSecret().secret)).statusCode).toBe(429);
     expect((await invitePage(mintSecret().secret, '10.0.0.9')).statusCode).toBe(200);
+  });
+
+  it('a throwing invitationAccepted hook rolls the accept back: no user, the invitation stays open', async () => {
+    h.hooks.invitationAccepted.push(() => Promise.reject(new Error('membership failed')));
+    const { url } = (await create({ email: 'carol@example.com' })).json<{ url: string }>();
+    const res = await accept({
+      secret: secretOf(url),
+      displayName: 'Carol',
+      password: PASSWORD,
+      device: { name: 'x' },
+    });
+    expect(res.statusCode).toBe(500);
+    expect(await repo.findUserByEmail(h.db, 'carol@example.com')).toBeUndefined();
+    expect((await lookup(secretOf(url))).statusCode).toBe(200);
+  });
+
+  it('an expired, unused invitation does not block a new one for the same email', async () => {
+    expect((await create({ email: 'dan@example.com' })).statusCode).toBe(201);
+    h.clock.advance(8 * DAY);
+    expect((await create({ email: 'dan@example.com' })).statusCode).toBe(201);
+  });
+
+  it('createInvitation runs attach in the insert transaction: a failing attach leaves no invitation', async () => {
+    const env = {
+      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks },
+      settings: { invitationMs: 7 * DAY },
+      now: () => h.clock.now,
+    } as never;
+    await expect(
+      createInvitation(env, { email: 'erin@example.com', serverAdmin: false, createdBy: null }, () =>
+        Promise.reject(new Error('attach failed')),
+      ),
+    ).rejects.toThrow('attach failed');
+    expect(await repo.openInvitationByEmail(h.db, 'erin@example.com', h.clock.now)).toBeUndefined();
+    const attached: string[] = [];
+    const created = await createInvitation(
+      env,
+      { email: 'erin@example.com', serverAdmin: false, createdBy: null },
+      (tx, id) => {
+        attached.push(id);
+        return tx.query('select 1').then(() => undefined);
+      },
+    );
+    expect(attached).toEqual([created.id]);
   });
 });

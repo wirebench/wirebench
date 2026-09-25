@@ -3,6 +3,7 @@
  * up, then the writes each decision needs. Rule order is the whole point: a known identity wins
  * before `email_verified` is even consulted, and an unverified email can never link or create.
  */
+import { runInvitationAccepted } from '../context.js';
 import type { IdentityEnv } from './env.js';
 import type { OidcClaims } from './oidc.js';
 import * as repo from './repo.js';
@@ -99,10 +100,10 @@ export async function linkClaims(env: IdentityEnv, claims: OidcClaims): Promise<
           userId: created.id,
           at: now,
         });
+        await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: decision.invitationId, userId: created.id });
         return created;
       });
       if (user === undefined) return { ok: false, code: 'identity-not-invited' };
-      env.ctx.events.emit('invitation.accepted', { invitationId: decision.invitationId, userId: user.id });
       return { ok: true, user };
     }
   }
