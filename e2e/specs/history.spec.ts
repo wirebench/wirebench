@@ -117,8 +117,10 @@ test.describe('history', () => {
     // ↻ sends the entry again through its saved request; the result is a second entry.
     await page.getByRole('button', { name: 'Re-send Echo' }).click();
     await expect(rows).toHaveCount(2, { timeout: 20_000 });
-    const echoes = rest.requests.filter((request) => request.url === '/echo?x=1');
+    // The re-send reaches the server exactly as the original did: same URL, same header.
+    const echoes = rest.requests.filter((request) => request.url.startsWith('/echo?'));
     expect(echoes).toHaveLength(2);
+    expect(echoes[1]!.url).toBe(echoes[0]!.url);
     expect(echoes[1]!.headers['x-trace']).toBe('abc');
 
     const compareButtons = page.locator('button[title="Compare…"]');
