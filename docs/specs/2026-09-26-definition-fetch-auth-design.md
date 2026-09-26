@@ -189,8 +189,14 @@ The AsyncAPI update has no source on the wire (`apiAsyncApiApplyUpdateRequestSch
 AsyncAPI (detected or chosen). It is `AuthFields` with `types={['none', 'basic', 'bearer', 'api-key']}`.
 API key offers the header/query choice that `AuthFields` already has. Secrets go through `SecretField`,
 which stores the value with `secrets.set` and keeps only the reference, and the form flushes before
-Import, as the WSDL `passwordRef` flow does (`:568-573`). **None** sends no `auth`. The same credentials
-go to `api.asyncApiServers`, so the server picker works for a protected AsyncAPI document.
+Import, as the WSDL `passwordRef` flow does (`:568-573`). **None** sends no `auth`.
+
+The server picker's preview (`api.asyncApiServers`, debounced as the URL is typed) **never carries
+credentials**: every intermediate URL is a host of its own (`…example.co` on the way to `…example.com`),
+and a preemptive Basic header, token or key must not go to any of them. When the preview answers
+`definition-auth-required`, the dialog shows a **Load servers** button (accessible name *Load servers with
+these credentials*) that flushes the section and sends `api.asyncApiServers` once more, with `auth`, for
+the URL as it stands. Import itself always sends `auth`.
 
 Main records the auth on the placed API: `addApi` and `importAsyncApi` in `project-host.ts` take
 `auth?: DefinitionAuth` and write it into `definition`.
@@ -228,7 +234,8 @@ Main records the auth on the placed API: `addApi` and `importAsyncApi` in `proje
 - **Main**, `apps/desktop/test/ipc-api.test.ts`, `ipc-asyncapi.test.ts` and `ipc-rest-update.test.ts`.
   Import stores the auth on `definition`. Plan and apply with no source reuse it (the fake fetcher sees
   the resolved credentials). Apply from a chosen URL stores the new auth, and from a file clears it. A
-  dangling reference fails as `secret-missing` before any fetch. `asyncApiServers` passes auth through.
+  dangling reference fails as `secret-missing` before any fetch. `asyncApiServers` passes auth through
+  when it is given one (only the **Load servers** button gives it).
 - **Wire**, a new `apps/desktop/test/definition-auth-wire.test.ts`, next to `soap-owner-auth-wire.test.ts`.
   A plaintext `password`, `token` or `value` is refused. `auth` with a `file` or `text` source is refused.
   OAuth2 and NTLM are refused.

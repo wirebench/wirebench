@@ -21,7 +21,8 @@ contract only adds to it.
    Other versions are refused by name.
 3. For a document behind authentication, fill in **Authentication** under the URL: **Basic**, a
    **Bearer token** or an **API key**. The secret is kept in your keychain and only sent to the
-   document's own origin; the server list is read with it too. See
+   document's own origin. The server list is read while you type, without the credentials; if the
+   document needs them, choose **Load servers** to read the list with them. See
    [OpenAPI](/wirebench/guides/importers/#openapi-and-swagger) for the details.
 4. Optionally set a **Name** — by default the API is named after the document's title.
 5. When the document declares more than one `ws` or `wss` server, pick one under
