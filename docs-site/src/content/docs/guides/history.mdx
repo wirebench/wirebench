@@ -52,8 +52,7 @@ from the entry, so the same messages are sent even if the request's message text
 A REST entry goes out through the request it came from. The entry supplies what went on the wire:
 the method, the URL with its query, the headers you typed and the body. The request supplies
 everything else as it is now: auth, TLS, proxy and send settings under the active environment.
-Because the URL comes from the entry, the resend goes to the host the entry went to, whichever
-environment is active. The request itself isn't changed.
+The request itself isn't changed.
 
 - **Auth is applied once.** History never records auth headers, so the request's current auth adds
   them. When the request's API key travels in the query, the recorded key parameter is dropped and
@@ -65,6 +64,13 @@ environment is active. The request itself isn't changed.
   the body, the entry can't be re-sent.
 - **A body History cut short can't be re-sent.** History keeps the first 256 KB of a body, and
   sending that would send a different body.
+- **It goes only to the request's current host.** The recorded URL is used while its host is still
+  the one the request resolves to now. If the entry ended on another host — a redirect, or a send
+  under another environment — the entry can't be re-sent: sending the request's credentials to the
+  recorded host, or its own URL in place of the recorded one, would not be the request you see.
+  Re-send it from the request instead.
+- **Recorded text is sent as it was.** A `${…}` in the recorded URL, headers or body is not a
+  property reference any more — it's what went on the wire — so it's sent literally, never expanded.
 - **A failed send keeps the request's URL.** An entry with no response never recorded the URL it
   sent, so the request's own URL is used.
 - **Event streams re-send from the editor.** An entry whose response was an event stream has no

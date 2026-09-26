@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRestRequest, entry, WirebenchError } from '@wirebench/engine';
+import { createRestRequest, entry, expand, WirebenchError } from '@wirebench/engine';
 import type { AuthConfig, CreateRestRequestInput, RestApi, RestSendInput, UnresolvedRef } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
@@ -566,20 +566,104 @@ describe('restResendDraft', () => {
     expect(draft.url).toBe('https://api.test/pets/7');
   });
 
-  it('falls back to the saved URL when a redirect recorded a different origin', () => {
+  it('refuses with history-resend-origin when a redirect recorded a different origin', () => {
     const recorded = restEntry({ endpoint: 'https://cdn.other/pets/7?expand=owner' });
-    const draft = restResendDraft(recorded, savedRest({ url: '/pets' }), ORIGIN);
-    expect(draft).not.toHaveProperty('url');
-    expect(draft).not.toHaveProperty('query');
-    expect(draft).not.toHaveProperty('pathParams');
+    expect(refusal(() => restResendDraft(recorded, savedRest({ url: '/pets' }), ORIGIN))).toBe('history-resend-origin');
   });
 
-  it('falls back to the saved URL when savedOrigin is undefined', () => {
-    const draft = restResendDraft(restEntry(), savedRest({ url: '/pets' }), undefined);
-    expect(draft).not.toHaveProperty('url');
-    expect(draft).not.toHaveProperty('query');
-    expect(draft).not.toHaveProperty('pathParams');
+  it('refuses with history-resend-origin when the request now resolves to another host (an environment switch)', () => {
+    const recorded = restEntry({ endpoint: 'https://staging.api.test/pets/7' });
+    expect(refusal(() => restResendDraft(recorded, savedRest({ url: '/pets/{id}' }), ORIGIN))).toBe(
+      'history-resend-origin',
+    );
   });
+
+  it('refuses with history-resend-origin when savedOrigin is undefined', () => {
+    expect(refusal(() => restResendDraft(restEntry(), savedRest({ url: '/pets' }), undefined))).toBe(
+      'history-resend-origin',
+    );
+  });
+
+  it('refuses with history-resend-origin when the recorded URL does not parse', () => {
+    const recorded = restEntry({ endpoint: 'not a url' });
+    expect(refusal(() => restResendDraft(recorded, savedRest(), ORIGIN))).toBe('history-resend-origin');
+  });
+
+  it('says why an origin refusal happened', () => {
+    const recorded = restEntry({ endpoint: 'https://cdn.other/pets/7' });
+    expect(() => restResendDraft(recorded, savedRest(), ORIGIN)).toThrow(
+      'This entry was sent to another host (a redirect or another environment); re-send it from the request.',
+    );
+  });
+
+  it('keeps the saved URL for an entry with no response even when savedOrigin is undefined', () => {
+    const failed: HistoryEntryWire = { ...restEntry({ endpoint: 'https://cdn.other' }) };
+    delete failed.response;
+    expect(restResendDraft(failed, savedRest({ url: '/pets' }), undefined)).not.toHaveProperty('url');
+  });
+
+  it('sends recorded query text literally: a ${…} in a recorded name or value is escaped, not expanded', () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/cb?x=${secret:s}&${n}=1' });
+    expect(restResendDraft(recorded, savedRest(), ORIGIN).query).toEqual([
+      { name: 'x', value: '$${secret:s}', enabled: true },
+      { name: '$${n}', value: '1', enabled: true },
+    ]);
+  });
+
+  it('escapes a ${…} in the recorded path', () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/a${x}/b' });
+    expect(restResendDraft(recorded, savedRest(), ORIGIN).url).toBe('https://api.test/a$${x}/b');
+  });
+
+  it('escapes a ${…} in a recorded header name and value, but not a value filled from a saved row', () => {
+    const recorded = restEntry({
+      request: {
+        envelopeXml: '',
+        headers: [
+          { name: 'X-Echo', value: 'a ${secret:s} b' },
+          { name: 'X-${n}', value: '1' },
+          { name: 'X-Token', value: '<redacted>' },
+        ],
+      },
+    });
+    const saved = savedRest({ headers: [entry('X-Token', '${secret:token}')] });
+    expect(restResendDraft(recorded, saved, ORIGIN).headers).toEqual([
+      { name: 'X-Echo', value: 'a $${secret:s} b', enabled: true },
+      { name: 'X-$${n}', value: '1', enabled: true },
+      { name: 'X-Token', value: '${secret:token}', enabled: true },
+    ]);
+  });
+
+  it('does not escape a query value filled from a saved row', () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/pets?token=<redacted>&note=${x}' });
+    const saved = savedRest({ query: [entry('token', '${secret:t}')] });
+    expect(restResendDraft(recorded, saved, ORIGIN).query).toEqual([
+      { name: 'token', value: '${secret:t}', enabled: true },
+      { name: 'note', value: '$${x}', enabled: true },
+    ]);
+  });
+
+  it('escapes a ${…} in the recorded body, raw in either language', () => {
+    const recorded = restEntry({ request: { envelopeXml: '{"t":"${secret:s}"}', headers: [] } });
+    expect(restResendDraft(recorded, savedRest(), ORIGIN).body).toEqual({
+      kind: 'raw',
+      language: 'json',
+      text: '{"t":"$${secret:s}"}',
+    });
+    const saved = savedRest({ body: { kind: 'raw', language: 'json', text: '{}' } });
+    expect(restResendDraft(recorded, saved, ORIGIN).body).toMatchObject({ text: '{"t":"$${secret:s}"}' });
+  });
+
+  it.each(['${secret:s}', '$${x}', '$$${x}', 'a${#Env#h}b${', '${${x}}', 'plain', '$', '${'])(
+    'the escape of %s expands back to exactly that text, reaching no reference',
+    (text) => {
+      const recorded = restEntry({ request: { envelopeXml: text, headers: [] } });
+      const sent = restResendDraft(recorded, savedRest(), ORIGIN).body as { text: string };
+      const result = expand(sent.text, { project: { x: 'X' }, global: {}, system: {}, secrets: { s: 'S' } });
+      expect(result.text).toBe(text);
+      expect(result.unresolved).toEqual([]);
+    },
+  );
 
   it('treats a host differing only in case as the same origin', () => {
     const draft = restResendDraft(restEntry(), savedRest({ url: '/pets/{id}' }), 'https://API.TEST');
@@ -751,16 +835,12 @@ describe('history.resendRest', () => {
     expect(draft.url).toBe('https://api.test/pets/9');
   });
 
-  it('falls back to the saved request’s own URL, dropping the recorded one, when the entry was captured on another origin — a redirect the entry keeps no trail of', async () => {
+  it('refuses an entry captured on another origin — a redirect the entry keeps no trail of — sending nothing', async () => {
     const recorded = restEntry({ endpoint: 'https://cdn.other/pets/7?expand=owner&sig=leaked' });
     const send = registerRest([recorded]);
-    await invoke('history.resendRest', { id: 'r' });
-    const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: Record<string, unknown> }];
-    // No `url`/`query`/`pathParams` at all — the saved request's own are kept, and the entry's
-    // other-origin URL (with whatever it carried, `sig=leaked` included) never reaches the wire.
-    expect(draft).not.toHaveProperty('url');
-    expect(draft).not.toHaveProperty('query');
-    expect(draft).not.toHaveProperty('pathParams');
+    const result = await invoke('history.resendRest', { id: 'r' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-origin' } });
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('still reuses the recorded URL when a header elsewhere on the saved request has an unresolved ${secret:…}', async () => {
@@ -771,17 +851,17 @@ describe('history.resendRest', () => {
     const send = registerRest([recorded], undefined, true, saved);
     await invoke('history.resendRest', { id: 'r' });
     const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: { url?: string } }];
-    // The unresolved secret is on a header, not the URL, so it must not force the saved-URL fallback.
+    // The unresolved secret is on a header, not the URL, so it must not force an origin refusal.
     expect(draft.url).toBe('https://api.test/pets/9');
   });
 
-  it('falls back to the saved URL when the saved URL itself has an unresolved property reference', async () => {
+  it('refuses with history-resend-origin when the saved URL itself has an unresolved property reference', async () => {
     const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
     const saved = savedRestSend({ url: '/pets/${#Env#id}' });
     const send = registerRest([recorded], undefined, true, saved);
-    await invoke('history.resendRest', { id: 'r' });
-    const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: Record<string, unknown> }];
-    expect(draft).not.toHaveProperty('url');
+    const result = await invoke('history.resendRest', { id: 'r' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-origin' } });
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('refuses a draft that cannot be built without sending anything', async () => {

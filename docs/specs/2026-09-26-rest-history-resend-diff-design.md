@@ -73,9 +73,11 @@ references resolve, or `undefined` when it can't be resolved.
     `authorization`, `proxy-authorization` and `cookie` before following it
     (`packages/engine/src/http/client.ts:172-190`), but the entry records only that last hop's URL.
     Resending it with the saved auth would hand a credential to an origin the original send never
-    gave one to. A different origin, an undefined `savedOrigin`, or a recorded URL that fails to
-    parse all fall back the same way as an entry with no response: `url`, `query` and `pathParams`
-    are left out.
+    gave one to, and sending the saved URL in its place would not be the request History shows. So
+    when the entry has a response, a different origin, an undefined `savedOrigin`, or a recorded URL
+    that fails to parse is refused with `history-resend-origin` (see **Refusals**). The same rule
+    covers an environment switch: the request now resolves to another host, so the entry is re-sent
+    from the request, not from History.
 - **`headers`:** every recorded header, as an enabled row. Disabled rows were never sent, so they are
   left out.
 - **`body`:** the recorded text:
@@ -87,8 +89,15 @@ references resolve, or `undefined` when it can't be resolved.
   - Otherwise it is a raw body in `json` if the text parses as JSON, `xml` if it starts with `<`, or
     `text`.
 
-The recorded values were already expanded, and expansion runs again on the draft. That changes
-nothing unless a recorded value itself contains `${…}`.
+The recorded values were already expanded, and expansion runs again on the draft. So every recorded
+text that enters the draft is made literal first, with the tokenizer's own escape: each `${` becomes
+`$${`, which expansion turns back into `${` (`packages/engine/src/project/properties.ts`). That covers
+the recorded path, each recorded query name and every query value not filled from a saved row, every
+recorded header name and every header value not filled from a saved row, and the recorded body. The
+wire then gets exactly the recorded text: a same-origin redirect to `/cb?x=${secret:aws-prod}` (the
+URL standard keeps `${}` in a query) is sent as that text, and no secret is read for it; a body that
+went out as `${x}` from a typed `$${x}` goes out as `${x}` again. Values filled from the saved rows are
+not escaped: they are typed, and must expand.
 
 ### Filling redacted values
 
@@ -136,18 +145,22 @@ The checks run in this order:
 4. `history-resend-orphan`: the entry has no `requestId`, or `project.restSend(requestId)` returns
    `undefined` because the saved request was deleted. Auth, TLS and settings have nowhere else to come
    from.
-5. `history-resend-redacted`: a redacted header or query value has no saved row to fill it from, the
+5. `history-resend-origin` (new): the entry has a response, and its recorded URL is not on the saved
+   request's current origin, the saved URL does not resolve to an origin, or the recorded URL does
+   not parse. The message is "This entry was sent to another host (a redirect or another
+   environment); re-send it from the request." An entry with no response is not checked, since it
+   keeps the saved URL.
+6. `history-resend-redacted`: a redacted header or query value has no saved row to fill it from, the
    marker is anywhere else in the URL, or the body contains the marker.
-6. `history-resend-truncated` (new): the body is History's truncated copy, which is longer than
+7. `history-resend-truncated` (new): the body is History's truncated copy, which is longer than
    256 KB and ends with the truncation marker. Sending it would send a different body. A helper
    exported from `history-service.ts` beside `storedBody` detects it.
 
 Errors from `sendRestRequest` pass through unchanged, for example `rest-unresolved-properties`,
 `secret-missing` or a transport error.
 
-Not a refusal, but a silent fallback with the same shape: a cross-origin redirect means the recorded
-URL, query and path params are left off the draft and the saved request's own URL is sent instead —
-see the origin note under **The draft** above.
+An earlier draft of this design fell back silently to the saved URL on an origin mismatch. That is
+reversed: the fallback sent a request other than the one History shows, so a mismatch is refused.
 
 ## The send path
 
@@ -266,7 +279,11 @@ persisted tab state to migrate and no format change.
   - A failed entry keeps the saved URL.
   - A saved non-raw body is kept when the recorded text is empty.
   - One test per refusal: `history-resend-redacted` for an unfillable header, a query value, the
-    marker in the path, and the marker in the body; and `history-resend-truncated`.
+    marker in the path, and the marker in the body; `history-resend-truncated`; and
+    `history-resend-origin` for a cross-origin redirect, an environment switch, an undefined
+    `savedOrigin` and an unparsable recorded URL.
+  - A `${…}` in a recorded path, query name or value, header name or value and body is escaped, a
+    value filled from a saved row is not, and each escape expands back to exactly the recorded text.
 - **Channel:** a `describe('history.resendRest')` in the same file, with a fake `rest.send`:
   - `unknown-history-entry`.
   - `history-resend-unsupported` for SOAP and gRPC entries.
@@ -282,6 +299,9 @@ persisted tab state to migrate and no format change.
   - A resend appends a second entry under the same `requestId`.
   - The saved request is unchanged.
   - The echoed request carries a query API key exactly once.
+  - An entry recorded on another origin is refused, and neither host receives anything.
+  - Recorded `${secret:s}` text in the query, a header and the body reaches the server literally, and
+    the secret getter is never called.
 - **Normalised text:** a new `apps/desktop/test/renderer/rest-diff-text.test.ts`:
   - The status line, and the no-response line.
   - Headers sorted without regard to case, with the order kept for equal names.

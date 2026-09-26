@@ -8,7 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
 import { createApi, createProject, createRestRequest, entry, resolveApiBaseUrl } from '@wirebench/engine';
-import type { Project } from '@wirebench/engine';
+import type { GetSecret, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import {
   buildRestHistoryEntry,
@@ -74,7 +74,7 @@ function seeded(baseUrl: string): Project {
  * Main's REST send path over `model`: the real resolver and sender, and a History that builds each
  * entry the way `HistoryService.recordRestSend` does, newest first.
  */
-function harness(model: Project) {
+function harness(model: Project, secrets: GetSecret = () => Promise.resolve(undefined)) {
   const engine = new EngineService((ref) => Promise.resolve(ref === 'sec_key' ? 'good-key' : undefined));
   const entries: HistoryEntryWire[] = [];
   const history = {
@@ -96,6 +96,7 @@ function harness(model: Project) {
   const requestDeps: RequestChannelDeps = {
     project: { projectId: () => 'p1', restSend } as unknown as RequestChannelDeps['project'],
     history: history as unknown as HistoryService,
+    secretsFor: () => secrets,
   };
   registerHistoryChannels(engine, history as never, {
     project: {
@@ -137,7 +138,7 @@ describe('history.resendRest against the test server', () => {
     expect(last.headers['x-trace']).toBe('abc');
   });
 
-  it('never sends the saved key to another origin, even when the entry records one recorded there', async () => {
+  it('refuses an entry recorded on another origin, sending nothing to either host', async () => {
     const model = seeded(server.url);
     const { engine, requestDeps, entries } = harness(model);
 
@@ -153,19 +154,49 @@ describe('history.resendRest against the test server', () => {
       endpoint: `${other.url}/echo?api_key=leaked-key&x=1`,
     };
     entries.unshift(leaked);
-    const before = other.requests.length;
+    const toOther = other.requests.length;
+    const toServer = server.requests.length;
 
     const result = await invoke('history.resendRest', { id: 'leaked' });
 
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-origin' } });
+    expect(other.requests.length).toBe(toOther);
+    expect(server.requests.length).toBe(toServer);
+    expect(entries).toHaveLength(2);
+  });
+
+  it('sends recorded ${…} text literally: no secret is read and the server gets the text as recorded', async () => {
+    const model = seeded(server.url);
+    const getSecret = vi.fn((ref: string) => Promise.resolve(ref === 's' ? 'THE-SECRET' : undefined));
+    const { engine, requestDeps, entries } = harness(model, getSecret);
+
+    await sendRestRequest(engine, requestDeps, { sendId: 'first', requestId: 'req-1' });
+    const original = entries[0]!;
+
+    // A same-origin redirect to `/cb?x=${secret:s}` is recorded as it went out: WHATWG keeps `${}`
+    // in a query. Header and body text recorded with a `${…}` in it are just as literal.
+    const recorded: HistoryEntryWire = {
+      ...original,
+      id: 'literal',
+      method: 'POST',
+      endpoint: `${server.url}/echo?x=\${secret:s}&y=\${n}`,
+      request: {
+        envelopeXml: '{"t":"${secret:s}","u":"$${x}"}',
+        headers: [{ name: 'X-Echo', value: 'a ${secret:s} b' }],
+      },
+    };
+    entries.unshift(recorded);
+
+    const result = await invoke('history.resendRest', { id: 'literal' });
+
     expect(result).toMatchObject({ ok: true, value: { http: { status: 200 } } });
-    // The other origin was never contacted at all.
-    expect(other.requests.length).toBe(before);
-    // The real send landed on the saved request's own origin and path, with the real key.
+    expect(getSecret).not.toHaveBeenCalled();
     const last = server.requests.at(-1)!;
     const sent = new URL(last.url, server.url);
-    expect(sent.pathname).toBe('/echo');
-    expect(sent.searchParams.getAll('api_key')).toEqual(['good-key']);
-    expect(sent.searchParams.getAll('x')).toEqual(['1']);
+    expect(sent.searchParams.get('x')).toBe('${secret:s}');
+    expect(sent.searchParams.get('y')).toBe('${n}');
+    expect(last.headers['x-echo']).toBe('a ${secret:s} b');
+    expect(last.body.toString('utf8')).toBe('{"t":"${secret:s}","u":"$${x}"}');
   });
 
   it('reuses the recorded URL, with the real resolver, when the entry stayed on the saved origin', async () => {

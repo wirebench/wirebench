@@ -13,7 +13,9 @@ All notable changes to this project are documented here. The format follows
   request's current auth, TLS, proxy and settings. The result is a new History entry, and the request
   isn't changed. A redacted header or query value is filled from the request as typed, and a query API
   key is sent once. An entry that can't be re-sent faithfully is refused with a reason: a redacted
-  value with nothing to fill it, a body History cut short, an event stream, or a deleted request.
+  value with nothing to fill it, a body History cut short, an event stream, a deleted request, or an
+  entry that ended on another host than the request's current one (a redirect or another
+  environment). Recorded text is sent literally: a `${…}` in it is never expanded.
   Comparing two REST entries, or a REST entry with its request's latest response, opens **Response**
   and **Request** tabs that diff the status or request line, the headers and the body.
 

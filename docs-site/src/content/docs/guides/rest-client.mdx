@@ -205,7 +205,8 @@ schemas, and the project is saved. If that save fails, the API is left exactly a
 
 Every send is recorded in [History](/wirebench/guides/history/) with its method, URL, headers and
 body. Choose **↻** on the entry to send it again through this request, with the request's current
-auth and settings; redacted values are filled from the request. Comparing two entries diffs both
+auth and settings; redacted values are filled from the request. An entry that ended on another
+host (a redirect, or another environment) is re-sent from the request instead. Comparing two entries diffs both
 the response and the request — see
 [Re-send a REST request](/wirebench/guides/history/#re-send-a-rest-request).
 

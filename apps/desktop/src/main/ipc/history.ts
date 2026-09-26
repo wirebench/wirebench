@@ -99,6 +99,18 @@ function holdsUrlMarker(text: string): boolean {
   return containsRedaction(text) || ENCODED_MARKER.test(text);
 }
 
+/**
+ * Recorded text made literal for the send path. A resend's draft is property-expanded like a typed
+ * request, but what History recorded already went on the wire: a `${secret:name}` there came from a
+ * server (a redirect's `Location`, say) or was the literal text a `$${` escape produced, never a
+ * reference to fill. The tokenizer reads `$${` as a literal `${`, so this round-trips exactly.
+ * Values filled from the saved request are not passed through it: those are typed and must expand.
+ */
+function literal(text: string): string {
+  // A function, not a replacement string: in one, `$$` is itself the escape for a single `$`.
+  return text.replaceAll('${', () => '$${');
+}
+
 /** Refuses a resend that would put the redaction marker on the wire. */
 function refuseRedacted(id: string, where: string): never {
   throw new WirebenchError('history-resend-redacted', `The ${where} of this entry holds a value History redacted`, {
@@ -189,16 +201,16 @@ function resendUrl(
     const value = holdsUrlMarker(recorded.value)
       ? (lastEnabled(savedQuery, (typed) => sameParam(name, typed)) ??
         refuseRedacted(entry.id, `query parameter ${decodedName(name)}`))
-      : plus(recorded.value);
-    rows.push({ name, value, enabled: true });
+      : literal(plus(recorded.value));
+    rows.push({ name: literal(name), value, enabled: true });
   }
-  return { url: path, query: rows, pathParams: [] };
+  return { url: literal(path), query: rows, pathParams: [] };
 }
 
 /**
  * True when the recorded entry URL's origin matches `savedOrigin`, the saved request's resolved
  * origin — so the recorded URL is safe to reuse. `false` when `savedOrigin` is `undefined` or the
- * entry URL can't be parsed. Compared lower-cased on both sides: `URL.origin` already lower-cases
+ * entry URL can't be parsed, which `restResendDraft` refuses. Compared lower-cased on both sides: `URL.origin` already lower-cases
  * the host it parses, but `savedOrigin` is handed in as a plain string that may not have gone
  * through `URL` at all.
  */
@@ -234,30 +246,33 @@ function resendBody(text: string, saved: RestBody): RestBodyWire | undefined {
       kind: 'raw',
       language: saved.language,
       ...(saved.contentType !== undefined ? { contentType: saved.contentType } : {}),
-      text,
+      text: literal(text),
     };
   }
-  return text === '' ? undefined : { kind: 'raw', language: rawLanguageOf(text), text };
+  return text === '' ? undefined : { kind: 'raw', language: rawLanguageOf(text), text: literal(text) };
 }
 
 /**
  * The draft a REST entry resends with, applied over its saved request for one send only.
  *
- * The method, URL, headers and body are the entry's: what went on the wire. Auth, TLS, proxy and
- * settings stay the saved request's. A redacted header or query value is filled from the saved
- * request's last enabled row of that name, as typed, so it expands on the normal send path. An
- * entry with no response recorded no sent URL, so the saved URL is kept.
+ * The method, URL, headers and body are the entry's: what went on the wire, sent literally — a
+ * `${…}` in recorded text is escaped, not expanded (see `literal`). Auth, TLS, proxy and settings
+ * stay the saved request's. A redacted header or query value is filled from the saved request's
+ * last enabled row of that name, as typed, so it expands on the normal send path. An entry with no
+ * response recorded no sent URL, so the saved URL is kept.
  *
  * The recorded URL is reused only when its origin matches `savedOrigin`, the saved request's own
  * origin once its property references resolve. A redirect that crosses origins — to a CDN, say, or
  * a pre-signed object-store URL — makes the original send drop `authorization`,
  * `proxy-authorization` and `cookie` before following it (`packages/engine/src/http/client.ts`),
  * but the entry records only that last hop's URL. Resending it with the saved auth would hand a
- * credential to an origin the original send never gave one to, so a different origin — or one that
- * is undefined or unparsable — falls back to the saved URL, exactly as an entry with no response
- * recorded does.
+ * credential to an origin the original send never gave one to, and sending the saved URL instead
+ * would not be the request History shows. So a different origin — or one that is undefined or
+ * unparsable — is refused, and the request is re-sent from its editor.
  *
- * @throws WirebenchError `history-resend-redacted` when a redacted value has no saved row to fill
+ * @throws WirebenchError `history-resend-origin` when the entry has a response and its URL is not on
+ *   the saved request's current origin;
+ *   `history-resend-redacted` when a redacted value has no saved row to fill
  *   it, or the marker is in the URL's path, user info or fragment, or in the body;
  *   `history-resend-truncated` when the body is History's truncated copy.
  */
@@ -267,16 +282,23 @@ export function restResendDraft(
   savedOrigin: string | undefined,
 ): RestRequestPatchWire {
   const { request } = saved;
-  const url = entry.response !== undefined && sameOrigin(entry.endpoint, savedOrigin) ? resendUrl(entry, saved) : {};
+  if (entry.response !== undefined && !sameOrigin(entry.endpoint, savedOrigin)) {
+    throw new WirebenchError(
+      'history-resend-origin',
+      'This entry was sent to another host (a redirect or another environment); re-send it from the request.',
+      { details: { id: entry.id } },
+    );
+  }
+  const url = entry.response !== undefined ? resendUrl(entry, saved) : {};
   const headers: KeyValueWire[] = entry.request.headers.map((header) => {
     if (!containsRedaction(header.value)) {
-      return { name: header.name, value: header.value, enabled: true };
+      return { name: literal(header.name), value: literal(header.value), enabled: true };
     }
     const lower = header.name.toLowerCase();
     const value =
       lastEnabled(request.headers, (name) => name.toLowerCase() === lower) ??
       refuseRedacted(entry.id, `header ${header.name}`);
-    return { name: header.name, value, enabled: true };
+    return { name: literal(header.name), value, enabled: true };
   });
   const text = entry.request.envelopeXml;
   if (containsRedaction(text)) {
@@ -318,7 +340,7 @@ function isStreamEntry(entry: HistoryEntryWire): boolean {
  * unresolved *in that joined URL itself* makes this `undefined` — a `${secret:…}` (or any other
  * property reference) in a header, the body, or elsewhere on the saved request expands on its own
  * path and must not affect this. Also `undefined` when the joined text doesn't parse as a URL.
- * `restResendDraft`'s safe fallback for either case is the saved URL.
+ * `restResendDraft` refuses an entry with a response in either case.
  */
 function savedOriginOf(saved: RestSendResolution): string | undefined {
   const joined = joinBase(saved.input.baseUrl, saved.input.request.url);
