@@ -110,7 +110,7 @@ test.describe('history', () => {
     await addHeader(page, 'X-Trace', 'abc');
     await sendRest(page);
 
-    await page.getByRole('button', { name: 'History', exact: true }).click();
+    await page.getByTestId('activity-bar').getByRole('button', { name: 'History' }).click();
     const rows = page.getByTestId('history-row');
     await expect(rows).toHaveCount(1, { timeout: 20_000 });
 
