@@ -180,7 +180,7 @@ import type {
   UpdatePlanWire,
 } from '../shared/wire-types.js';
 import { isEndpointAuth } from '@wirebench/engine';
-import type { EndpointAuth, JsonSchema, SoapOwnerAuth } from '@wirebench/engine';
+import type { DefinitionAuth, EndpointAuth, JsonSchema, SoapOwnerAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -2924,6 +2924,8 @@ export class ProjectHost {
     readonly declaredVersion: string;
     /** Write the definition cache. Defaults to the WSDL caching preference, as an import does. */
     readonly cache?: boolean;
+    /** The credentials the document was fetched with, kept so Update Definition can fetch it again. */
+    readonly auth?: DefinitionAuth;
   }): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
     const taken = new Set([
@@ -2943,7 +2945,12 @@ export class ProjectHost {
       ...input.api,
       slug,
       order: open.project.interfaces.length + open.project.apis.length,
-      definition: { source: input.source, cache, version: input.declaredVersion },
+      definition: {
+        source: input.source,
+        cache,
+        version: input.declaredVersion,
+        ...(input.auth !== undefined ? { auth: input.auth } : {}),
+      },
     };
     open.project = { ...open.project, apis: [...open.project.apis, api] };
     open.dirty = true;
@@ -2972,6 +2979,8 @@ export class ProjectHost {
     readonly server?: string;
     /** Write the definition cache. Defaults to the definition-caching preference. */
     readonly cache?: boolean;
+    /** The credentials the document was fetched with, kept so Update Definition can fetch it again. */
+    readonly auth?: DefinitionAuth;
   }): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
     const slug = uniqueSlug(input.api.name, takenApiSlugs(open.project));
@@ -2995,6 +3004,7 @@ export class ProjectHost {
         source: input.source,
         cache,
         ...(input.server !== undefined ? { server: input.server } : {}),
+        ...(input.auth !== undefined ? { auth: input.auth } : {}),
       },
     };
     open.project = { ...project, wsApis: [...project.wsApis, api] };

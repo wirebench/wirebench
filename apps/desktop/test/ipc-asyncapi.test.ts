@@ -10,9 +10,14 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultFetchDocument, type FetchDocument, type WsFrame } from '@wirebench/engine';
+import {
+  createDefaultFetchDocument,
+  type DocumentFetchOptions,
+  type FetchDocument,
+  type WsFrame,
+} from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { toWsFrameWire } from '../src/main/engine-wire.js';
@@ -69,6 +74,13 @@ let docPath: string;
 const hosts = new Map<string, ProjectHost>();
 let removed: string[];
 
+/** `https://docs.test/<name>` is `<name>` in the project folder: a source read by URL, served offline. */
+const DOCS = 'https://docs.test/';
+/** The value behind the keychain reference `ref-t`. */
+const TOKEN = 's3cret-token';
+/** Every fetcher the import service built, with its options: which credentials each read went with. */
+let built: DocumentFetchOptions[];
+
 function hostFor(projectId: string): ProjectHost {
   const host = hosts.get(projectId);
   if (host === undefined) throw new Error(`no project ${projectId}`);
@@ -79,6 +91,7 @@ beforeEach(async () => {
   handlers.clear();
   hosts.clear();
   removed = [];
+  built = [];
   root = mkdtempSync(join(tmpdir(), 'wirebench-asyncapi-'));
   projectDir = join(root, 'Chat');
   await mkdir(projectDir, { recursive: true });
@@ -115,8 +128,19 @@ beforeEach(async () => {
             reject(new DOMException('The import was cancelled', 'AbortError'));
           });
         })
-      : real(location, signal);
-  const imports = new OpenApiImportService({ createFetchDocument: () => fetchDocument });
+      : location.startsWith(DOCS)
+        ? real(pathToFileURL(join(projectDir, location.slice(DOCS.length))).href, signal).then((document) => ({
+            ...document,
+            location,
+          }))
+        : real(location, signal);
+  const imports = new OpenApiImportService({
+    getSecret: (ref) => Promise.resolve(ref === 'ref-t' ? TOKEN : undefined),
+    createFetchDocument: (options) => {
+      built.push(options);
+      return fetchDocument;
+    },
+  });
   const unused = vi.fn();
   const deps: ApiChannelDeps = {
     router: {
@@ -235,6 +259,21 @@ describe('api.importAsyncApi', () => {
       const text = await readFile(join(dir, file), 'utf8');
       expect(text).not.toMatch(/\b(token|password|secret|clientSecret):\s*['"]?[^\s'"{}]+/i);
     }
+  });
+
+  it('records the credentials a URL was read with, as references only', async () => {
+    const response = await value<Imported>('api.importAsyncApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'url', url: `${DOCS}asyncapi.yaml` },
+      auth: { type: 'bearer', tokenRef: 'ref-t' },
+    });
+
+    expect(built.at(-1)).toMatchObject({ auth: { type: 'bearer', token: TOKEN }, authOrigin: 'https://docs.test' });
+    const api = (hostFor('p1').snapshot() as ProjectWire).wsApis.find((one) => one.id === response.apiId);
+    expect(api?.definition?.auth).toEqual({ type: 'bearer', tokenRef: 'ref-t' });
+    const file = await readFile(join(projectDir, 'project', 'apis', api?.slug ?? '', 'api.yaml'), 'utf8');
+    expect(file).toContain('tokenRef: ref-t');
+    expect(file).not.toContain(TOKEN);
   });
 
   it('dials a non-default WebSocket server when one is chosen', async () => {

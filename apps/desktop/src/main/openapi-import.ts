@@ -143,7 +143,10 @@ export class OpenApiImportService {
   /**
    * The fetcher for one read of `source`. A `url` source's `auth` is resolved from the keychain first,
    * so a dangling reference fails as `secret-missing` before anything reaches the network, and is
-   * sent only to that URL's origin. A file or pasted text is read with no credentials at all.
+   * sent only to that URL's origin. A file or pasted text is read with no credentials at all — and so
+   * is a `url` source whose URL cannot be parsed, or whose scheme is not `http`/`https`: a malformed
+   * address, or a `file:` URL typed into the URL field, must not blow up here or claim an `authOrigin`
+   * of `'null'` for a read that could otherwise have worked with no credentials at all.
    *
    * @throws WirebenchError `secret-missing`
    */
@@ -151,10 +154,13 @@ export class OpenApiImportService {
     const network = this.options.network;
     const base: DocumentFetchOptions = network !== undefined ? { network } : {};
     let options = base;
-    if (auth !== undefined && source.kind === 'url') {
-      const getSecret: GetSecret = this.options.getSecret ?? (() => Promise.resolve(undefined));
-      const resolved = await resolveAuthConfig(auth, getSecret);
-      options = resolved === undefined ? base : { ...base, auth: resolved, authOrigin: new URL(source.url).origin };
+    if (auth !== undefined && source.kind === 'url' && URL.canParse(source.url)) {
+      const origin = new URL(source.url);
+      if (origin.protocol === 'http:' || origin.protocol === 'https:') {
+        const getSecret: GetSecret = this.options.getSecret ?? (() => Promise.resolve(undefined));
+        const resolved = await resolveAuthConfig(auth, getSecret);
+        options = resolved === undefined ? base : { ...base, auth: resolved, authOrigin: origin.origin };
+      }
     }
     return (this.options.createFetchDocument ?? createHttpFetchDocument)(options);
   }

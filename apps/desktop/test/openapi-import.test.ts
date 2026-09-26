@@ -87,6 +87,31 @@ describe('OpenApiImportService', () => {
     expect(built[0]?.authOrigin).toBeUndefined();
   });
 
+  it('reads a malformed URL with no credentials instead of throwing', async () => {
+    const { imports, built, fetched } = service(OPENAPI, { 'ref-p': 's3cret' });
+
+    await imports.readOpenApi(
+      { kind: 'url', url: 'not a url' },
+      { type: 'basic', username: 'ada', passwordRef: 'ref-p' },
+    );
+
+    expect(built[0]?.auth).toBeUndefined();
+    expect(built[0]?.authOrigin).toBeUndefined();
+    expect(fetched).toEqual(['not a url']);
+  });
+
+  it('never gives a file: URL typed into the URL field any credentials', async () => {
+    const { imports, built } = service(OPENAPI, { 'ref-p': 's3cret' });
+
+    await imports.readOpenApi(
+      { kind: 'url', url: 'file:///etc/passwd' },
+      { type: 'basic', username: 'ada', passwordRef: 'ref-p' },
+    );
+
+    expect(built[0]?.auth).toBeUndefined();
+    expect(built[0]?.authOrigin).toBeUndefined();
+  });
+
   it('reads an AsyncAPI document with the same credentials', async () => {
     const { imports, built } = service(ASYNCAPI, { 'ref-v': 'good-key' });
 

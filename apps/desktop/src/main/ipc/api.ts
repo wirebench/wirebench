@@ -10,10 +10,18 @@
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
-import type { AsyncApiOpRef, AsyncApiUpdatePlan, OpenApiSource, RestOpRef, RestUpdatePlan } from '@wirebench/engine';
+import type {
+  AsyncApiOpRef,
+  AsyncApiUpdatePlan,
+  DefinitionAuth,
+  OpenApiSource,
+  RestOpRef,
+  RestUpdatePlan,
+} from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type {
   AsyncApiUpdatePlanWire,
+  DefinitionAuthWire,
   OpenApiSourceWire,
   RestUpdatePlanWire,
   RestUpdateSourceWire,
@@ -79,6 +87,18 @@ function toEngineSource(source: OpenApiSourceWire): OpenApiSource {
     return { kind: 'text', text: source.text, ...(source.location !== undefined ? { location: source.location } : {}) };
   }
   return source;
+}
+
+/** A definition's fetch credentials off the wire, into the model: references only, absent optionals dropped. */
+function toDefinitionAuth(wire: DefinitionAuthWire): DefinitionAuth {
+  switch (wire.type) {
+    case 'basic':
+      return { type: 'basic', username: wire.username, passwordRef: wire.passwordRef };
+    case 'bearer':
+      return { type: 'bearer', tokenRef: wire.tokenRef, ...(wire.scheme !== undefined ? { scheme: wire.scheme } : {}) };
+    case 'api-key':
+      return { type: 'api-key', name: wire.name, in: wire.in, valueRef: wire.valueRef };
+  }
 }
 
 /** A sha256 over every document an update read, location and bytes, in the order they were read. */
@@ -173,9 +193,11 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     // A `file` source is a read at a renderer-named path, answered before any project is created,
     // so a refusal changes nothing — the same order `project.addInterface` uses.
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    const auth = request.auth === undefined ? undefined : toDefinitionAuth(request.auth);
     const imported = await deps.imports.run(
       {
         source: toEngineSource(checked),
+        ...(auth !== undefined ? { auth } : {}),
         ...(request.token !== undefined ? { token: request.token } : {}),
         ...(request.name !== undefined ? { name: request.name } : {}),
         ...(request.baseUrl !== undefined ? { baseUrl: request.baseUrl } : {}),
@@ -207,6 +229,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       documents: imported.documents,
       source: sourceLabel(checked),
       declaredVersion: imported.document.declaredVersion,
+      ...(auth !== undefined ? { auth } : {}),
       ...(request.cache !== undefined ? { cache: request.cache } : {}),
     };
 
@@ -234,9 +257,11 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     }
     // Checked before anything is read or created, as `api.importOpenApi` does.
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
+    const auth = request.auth === undefined ? undefined : toDefinitionAuth(request.auth);
     const imported = await asyncApiImports.runAsyncApi(
       {
         source: toEngineSource(checked),
+        ...(auth !== undefined ? { auth } : {}),
         ...(request.token !== undefined ? { token: request.token } : {}),
         ...(request.server !== undefined ? { server: request.server } : {}),
       },
@@ -266,6 +291,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       source: checked.kind === 'text' ? (checked.location ?? 'inline:asyncapi') : sourceLabel(checked),
       declaredVersion: imported.declaredVersion,
       ...(imported.summary.server !== undefined ? { server: imported.summary.server } : {}),
+      ...(auth !== undefined ? { auth } : {}),
       ...(request.cache !== undefined ? { cache: request.cache } : {}),
     };
 
@@ -292,7 +318,9 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     }
     // The same path check an import makes: a preview must not read what an import could not.
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, request.source);
-    const { document } = await asyncApiImports.readAsyncApi(toEngineSource(checked));
+    // The picker reads the same document the import will, so it needs the same credentials.
+    const auth = request.auth === undefined ? undefined : toDefinitionAuth(request.auth);
+    const { document } = await asyncApiImports.readAsyncApi(toEngineSource(checked), auth);
     return {
       servers: document.servers
         .filter((server) => ['ws', 'wss'].includes(server.protocol.toLowerCase()))
