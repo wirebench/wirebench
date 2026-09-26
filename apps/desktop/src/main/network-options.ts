@@ -6,6 +6,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
+import { rootCertificates } from 'node:tls';
 import {
   isExcluded,
   resolveProxyFor,
@@ -19,8 +20,10 @@ import type { ReadPicks } from './dialog-picks.js';
 import { allowsReadPath } from './path-access.js';
 
 /**
- * The PEM anchors of the configured bundle, or `undefined` when none is configured, it cannot
- * be read, or it fails the read rule: inside one of `roots`, or picked through a native dialog
+ * The trust anchors a send uses when a CA bundle is configured: the default roots followed by the
+ * bundle's PEM anchors, since a `ca` given to Node replaces its default roots and the bundle is meant
+ * to add to them. `undefined` (no `ca` at all, the default roots alone) when none is configured, it
+ * cannot be read, or it fails the read rule: inside one of `roots`, or picked through a native dialog
  * this session. With no roots (no project) only a picked absolute path qualifies. Failing
  * quietly leaves verification stricter, never looser.
  */
@@ -36,7 +39,7 @@ export async function resolveTrustAnchors(input: {
   if (resolved === undefined || !(await allowsReadPath(input.roots, input.picks, resolved))) return undefined;
   try {
     const anchors = splitPemBundle(await readFile(resolved, 'utf-8'));
-    return anchors.length > 0 ? anchors : undefined;
+    return anchors.length > 0 ? [...rootCertificates, ...anchors] : undefined;
   } catch {
     return undefined;
   }

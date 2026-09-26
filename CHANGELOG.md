@@ -105,6 +105,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The CA bundle adds to the system roots, as documented.** A CA bundle set in the preferences
+  replaced the default trust roots instead of adding to them, so with a bundle holding only a private
+  CA every public HTTPS site failed verification. The bundle's certificates are now trusted in
+  addition to the default roots, for requests and definition reads alike.
+
 - **An API's Base URL field follows a change made under it.** The field kept the value it was opened
   with, so a base URL rewritten while its tab stayed open — as Update Definition rewrites it — showed
   the old one until the tab was closed and opened again. It now follows the project, and still

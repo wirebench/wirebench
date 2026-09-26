@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { rootCertificates } from 'node:tls';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_PREFERENCES, type Preferences } from '@wirebench/engine';
@@ -18,12 +19,18 @@ describe('network options without a project', () => {
 
   it('trusts a CA bundle only when main picked it, and never a relative path with no root', async () => {
     const picks = { hasRead: (path: string) => path === join(dir, 'ca.pem') };
-    expect(await resolveTrustAnchors({ caBundlePath: join(dir, 'ca.pem'), roots: [], picks })).toHaveLength(1);
+    expect(await resolveTrustAnchors({ caBundlePath: join(dir, 'ca.pem'), roots: [], picks })).toEqual([
+      ...rootCertificates,
+      PEM.trim(),
+    ]);
     expect(
       await resolveTrustAnchors({ caBundlePath: join(dir, 'ca.pem'), roots: [], picks: undefined }),
     ).toBeUndefined();
     expect(await resolveTrustAnchors({ caBundlePath: 'ca.pem', roots: [], picks })).toBeUndefined();
-    expect(await resolveTrustAnchors({ caBundlePath: 'ca.pem', roots: [dir], picks: undefined })).toHaveLength(1);
+    expect(await resolveTrustAnchors({ caBundlePath: 'ca.pem', roots: [dir], picks: undefined })).toEqual([
+      ...rootCertificates,
+      PEM.trim(),
+    ]);
     expect(await resolveTrustAnchors({ caBundlePath: undefined, roots: [dir], picks })).toBeUndefined();
   });
 
@@ -61,7 +68,8 @@ describe('network options without a project', () => {
       picks: { hasRead: (path) => path === join(dir, 'ca.pem') },
       getSecret: () => Promise.resolve(undefined),
     });
-    expect(options.tls?.ca).toHaveLength(1);
+    // The bundle adds to the default roots: Node's `ca` replaces them when given alone.
+    expect(options.tls?.ca).toEqual([...rootCertificates, PEM.trim()]);
     expect(options.tls?.minVersion).toBe('TLSv1.2');
     expect(options.proxy).toBeDefined();
     expect(
