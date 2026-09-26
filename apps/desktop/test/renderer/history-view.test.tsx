@@ -253,17 +253,16 @@ describe('HistoryView with REST entries', () => {
       expect(resend).not.toHaveBeenCalled();
     });
 
-    it('toasts the error code when the re-send fails', async () => {
+    it('toasts the error message when the re-send fails', async () => {
       showToast.mockClear();
-      const resendGrpc = vi
-        .fn()
-        .mockResolvedValue({ ok: false, error: { code: 'GRPC_REQUEST_GONE', message: 'gone' } });
+      const message = "The request this call was sent from no longer exists, so it can't be re-sent.";
+      const resendGrpc = vi.fn().mockResolvedValue({ ok: false, error: { code: 'history-resend-orphan', message } });
       installWirebenchApi({ history: { resendGrpc } });
       useHistoryStore.setState({ entries: [makeEntry({ id: 'g', kind: 'grpc', requestName: 'SayHello' })], total: 1 });
       render(<HistoryView />);
 
       await userEvent.click(screen.getByRole('button', { name: 'Re-send SayHello' }));
-      await waitFor(() => expect(showToast).toHaveBeenCalledWith('GRPC_REQUEST_GONE'));
+      await waitFor(() => expect(showToast).toHaveBeenCalledWith(message));
     });
   });
 });

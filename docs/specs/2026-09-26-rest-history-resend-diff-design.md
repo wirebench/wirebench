@@ -192,7 +192,8 @@ request, and the entry it came from is untouched.
   (`history-entry-view.tsx:123`) follow it, and the comments there saying REST resends from its
   request are updated.
 - `resendHistoryEntry` calls `history.resendRest` for a REST entry. The result arrives as a new History
-  entry through `history.appended`, and a failure shows a toast with its code, as for SOAP and gRPC.
+  entry through `history.appended`, and a failure shows a toast with main's message (its code
+  when the message is empty), as for SOAP and gRPC.
 - The "Re-send Last SOAP Request" command (`resendLastHistoryEntry`) is unchanged.
 
 ## Diff

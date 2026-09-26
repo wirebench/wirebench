@@ -95,6 +95,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A failed re-send from History says why.** Re-sending a SOAP, gRPC or REST entry that can't be
+  re-sent showed an internal code such as `history-resend-origin` in the toast. It now shows the
+  reason in words, for example that the entry was sent to another host and should be re-sent from
+  its request.
+
 - **An API's Base URL field follows a change made under it.** The field kept the value it was opened
   with, so a base URL rewritten while its tab stayed open — as Update Definition rewrites it — showed
   the old one until the tab was closed and opened again. It now follows the project, and still

@@ -29,7 +29,12 @@ export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind' | 'ss
   return kind === 'soap' || kind === 'grpc' || (kind === 'rest' && entry.sse === undefined);
 }
 
-/** Re-sends one history entry through its protocol's channel, toasting the code on failure. */
+/** The toast for a failed re-send: main's message, or the code when there is no message. */
+function resendFailure(error: { readonly code: string; readonly message: string }): string {
+  return error.message.trim() === '' ? error.code : error.message;
+}
+
+/** Re-sends one history entry through its protocol's channel, toasting why on failure. */
 export async function resendHistoryEntry(entry: Pick<HistoryEntryWire, 'id' | 'kind'>): Promise<void> {
   const result =
     entry.kind === 'grpc'
@@ -38,7 +43,7 @@ export async function resendHistoryEntry(entry: Pick<HistoryEntryWire, 'id' | 'k
         ? await ipc().history.resendRest({ id: entry.id })
         : await ipc().history.resend({ id: entry.id });
   if (!result.ok) {
-    showToast(result.error.code);
+    showToast(resendFailure(result.error));
   }
 }
 
@@ -66,7 +71,7 @@ export async function resendLastHistoryEntry(): Promise<void> {
   }
   const result = await ipc().history.resend({ id: entry.id });
   if (!result.ok) {
-    showToast(result.error.code);
+    showToast(resendFailure(result.error));
   }
 }
 
