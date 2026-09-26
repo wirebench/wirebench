@@ -508,8 +508,15 @@ export class ServerBackend implements SyncBackend {
     let refusedForLimit = false;
     // One head check at a time, so each `changed` leaves in the order its head arrived.
     let heads: Promise<void> = Promise.resolve();
+    // A throwing listener must not reach the live client's dispatch, nor leave the head chain
+    // rejected (every later check would be skipped). The backend has no logger, so it is dropped.
     const emit = (event: RemoteEvent): void => {
-      if (active) listener(event);
+      if (!active) return;
+      try {
+        listener(event);
+      } catch {
+        // Swallowed on purpose; see above.
+      }
     };
     const off = live.subscribe(this.deps.url, this.deps.workspaceId, (event) => {
       if (event.kind === 'state') {
@@ -524,9 +531,11 @@ export class ServerBackend implements SyncBackend {
       const message = event.message;
       switch (message.type) {
         case 'head':
-          heads = heads.then(async () => {
-            if (await this.isNewHead(message.head)) emit({ kind: 'changed' });
-          });
+          heads = heads
+            .then(async () => {
+              if (await this.isNewHead(message.head)) emit({ kind: 'changed' });
+            })
+            .catch(() => undefined);
           return;
         case 'access':
           emit({ kind: 'access' });
@@ -541,6 +550,10 @@ export class ServerBackend implements SyncBackend {
         case 'presence':
           emit({ kind: 'presence', users: message.users.map(({ id, name }) => ({ id, name })) });
           return;
+        default: {
+          const unreachable: never = message;
+          return unreachable;
+        }
       }
     });
     return () => {

@@ -872,6 +872,32 @@ describe('ServerBackend.subscribeRemote (live-updates §3.4, §5.3, R1)', () => 
     });
   });
 
+  it('a listener that throws on its first changed still hears a later new head, and nothing escapes into the live callback', async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    const events: RemoteEvent[] = [];
+    let thrown = false;
+    f.backend.subscribeRemote((event) => {
+      events.push(event);
+      if (event.kind === 'changed' && !thrown) {
+        thrown = true;
+        throw new Error('listener bug');
+      }
+      if (event.kind === 'access') throw new Error('listener bug');
+    });
+
+    l.send(head('e'.repeat(40)));
+    await vi.waitFor(() => {
+      expect(events).toEqual([{ kind: 'changed' }]);
+    });
+    expect(() => l.send(liveMessage({ type: 'access', workspaceId: WS_ID }))).not.toThrow();
+    l.send(head('f'.repeat(40)));
+
+    await vi.waitFor(() => {
+      expect(events).toEqual([{ kind: 'changed' }, { kind: 'access' }, { kind: 'changed' }]);
+    });
+  });
+
   it('access and refused both ask for a fetch; presence passes the users through', async () => {
     const l = fakeLive();
     const f = await joined(seeded(), { live: l.live });
