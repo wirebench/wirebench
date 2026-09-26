@@ -56,6 +56,11 @@ export interface TestRestServerDocument {
   readonly body: string;
   /** Defaults to `application/octet-stream`, so a served document is never sniffed by accident. */
   readonly contentType?: string;
+  /**
+   * Serve it only with the credential `/auth/basic`, `/auth/bearer` or `/auth/apikey` accepts: a
+   * 401 (Basic, Bearer) or a 403 (API key) otherwise, as those routes answer.
+   */
+  readonly auth?: 'basic' | 'bearer' | 'api-key';
 }
 
 /** Options for {@link startTestRestServer}. */
@@ -197,6 +202,19 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
     return `${allowed}/${`${parsed.pathname}${parsed.search}`.replace(/^\/+/, '')}`;
   };
 
+  /** The status a request without `kind`'s accepted credential gets, or `undefined` when it has it. */
+  const refusalFor = (kind: 'basic' | 'bearer' | 'api-key', request: IncomingMessage, url: URL): number | undefined => {
+    if (kind === 'basic') {
+      const expected = `Basic ${Buffer.from(`${basic.username}:${basic.password}`).toString('base64')}`;
+      return request.headers.authorization === expected ? undefined : 401;
+    }
+    if (kind === 'bearer') {
+      const [scheme, token] = (request.headers.authorization ?? '').split(' ');
+      return scheme === 'Bearer' && token === bearerToken ? undefined : 401;
+    }
+    return request.headers['x-api-key'] === apiKey || url.searchParams.get('api_key') === apiKey ? undefined : 403;
+  };
+
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     // Stamped the moment the request reaches the handler, so `/echo` can report how much of a
     // client-side round trip was this server's own doing — see `x-server-ms` below.
@@ -210,6 +228,12 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
 
       const document = options.documents?.[path];
       if (document !== undefined) {
+        const refused = document.auth === undefined ? undefined : refusalFor(document.auth, request, url);
+        if (refused !== undefined) {
+          response.writeHead(refused, { 'content-length': '0' });
+          response.end();
+          return;
+        }
         const bytes = Buffer.from(document.body, 'utf8');
         response.writeHead(200, {
           'content-type': document.contentType ?? 'application/octet-stream',
