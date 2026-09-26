@@ -94,6 +94,13 @@ describe('restEntryTexts', () => {
     delete failed.response;
     expect(restEntryTexts(failed).response).toBe('No response (connection-refused)\n\n');
   });
+
+  it('reads a status with no reason phrase as the bare status, with no trailing space', () => {
+    const noReason = restEntry({
+      response: { envelopeXml: '', rawHeaders: [], status: 204, statusText: '' },
+    });
+    expect(restEntryTexts(noReason).response).toBe('204\n\n');
+  });
 });
 
 describe('restExchangeTexts', () => {
@@ -131,5 +138,80 @@ describe('restExchangeTexts', () => {
         '}',
       ].join('\n'),
     });
+  });
+
+  it('reads a status with no reason phrase as the bare status, with no trailing space', () => {
+    const exchange = makeRestExchange({
+      text: '',
+      http: { ...makeRestExchange().http, status: 204, statusText: '', rawHeaders: [] },
+    });
+    expect(restExchangeTexts(exchange).response).toBe('204\n\n');
+  });
+
+  it('recovers the raw request body when the head only has an LF-LF separator', () => {
+    const exchange = makeRestExchange({
+      http: {
+        ...makeRestExchange().http,
+        rawRequestBase64: b64('POST /pets HTTP/1.1\nHost: api.test\n\n{"name":"Rex"}'),
+      },
+    });
+    expect(restExchangeTexts(exchange).request.endsWith(prettyPrintBody('{"name":"Rex"}'))).toBe(true);
+  });
+
+  it('reads an empty body when the raw request has no head/body separator at all', () => {
+    const exchange = makeRestExchange({
+      http: { ...makeRestExchange().http, rawRequestBase64: b64('GET /pet/1 HTTP/1.1') },
+    });
+    expect(restExchangeTexts(exchange).request).toBe(`${exchange.method} ${exchange.url}\n\n`);
+  });
+
+  it('pretty-prints an XML body from a RestExchangeSummary', () => {
+    const exchange = makeRestExchange({ text: XML });
+    expect(restExchangeTexts(exchange).response.endsWith(prettyPrintBody(XML))).toBe(true);
+    expect(prettyPrintBody(XML).split('\n').length).toBeGreaterThan(1);
+  });
+
+  it('builds the same shape as restEntryTexts for the same request and response', () => {
+    const entry = restEntry({
+      method: 'POST',
+      endpoint: 'https://api.test/pets',
+      request: {
+        envelopeXml: '{"name":"Rex"}',
+        headers: [
+          { name: 'Authorization', value: '<redacted>' },
+          { name: 'Content-Type', value: 'application/json' },
+        ],
+      },
+      response: {
+        envelopeXml: '{"id":1}',
+        rawHeaders: [
+          ['X-Id', '1'],
+          ['content-type', 'application/json'],
+        ],
+        status: 201,
+        statusText: 'Created',
+      },
+    });
+    const exchange = makeRestExchange({
+      method: 'POST',
+      url: 'https://api.test/pets',
+      text: '{"id":1}',
+      http: {
+        ...makeRestExchange().http,
+        status: 201,
+        statusText: 'Created',
+        rawHeaders: [
+          ['X-Id', '1'],
+          ['content-type', 'application/json'],
+        ],
+        rawRequestBase64: b64('POST /pets HTTP/1.1\r\nHost: api.test\r\n\r\n{"name":"Rex"}'),
+        request: {
+          url: 'https://api.test/pets',
+          method: 'POST',
+          headers: { Authorization: '<redacted>', 'Content-Type': 'application/json' },
+        },
+      },
+    });
+    expect(restExchangeTexts(exchange)).toEqual(restEntryTexts(entry));
   });
 });
