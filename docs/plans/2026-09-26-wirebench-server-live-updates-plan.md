@@ -58,7 +58,7 @@ build order: `docs/specs/2026-09-24-wirebench-server-capability-map.md`.
   - **No** `Co-Authored-By:` trailer, **no** `Claude-Session:` trailer, no generated-by footer.
   - The body says why.
 - **Copy.** Never name, in code, docs or UI copy, a product that inspired a feature
-  (`pnpm check:banned-terms`). Never mention SoapUI, ReadyAPI or SmartBear.
+  (`pnpm check:banned-terms`). The check's own list of names applies everywhere.
 - **e2e.** No local Electron windows and no local e2e run; CI runs e2e. Run heavy checks under `nice`.
 - **Dependencies.**
   - Only `@fastify/websocket` ^11 and `@types/ws` (dev), both in `packages/server` (Task 4).
