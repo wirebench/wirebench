@@ -429,25 +429,28 @@ describe('createHttpFetchDocument', () => {
   it.each([
     ['fails', () => Promise.reject(new Error('proxy resolution failed'))],
     ['answers', () => Promise.resolve({})],
-  ] as const)('stays a cancel when the signal aborts while the host resolves the proxy and it %s', async (_label, then) => {
-    const server = await start({ '/openapi.yaml': { body: DOCUMENT } });
-    const controller = new AbortController();
+  ] as const)(
+    'stays a cancel when the signal aborts while the host resolves the proxy and it %s',
+    async (_label, then) => {
+      const server = await start({ '/openapi.yaml': { body: DOCUMENT } });
+      const controller = new AbortController();
 
-    const error: unknown = await createHttpFetchDocument({
-      network: async () => {
-        await Promise.resolve();
-        controller.abort();
-        return then();
-      },
-    })(`${server.url}/openapi.yaml`, controller.signal).then(
-      () => undefined,
-      (e: unknown) => e,
-    );
+      const error: unknown = await createHttpFetchDocument({
+        network: async () => {
+          await Promise.resolve();
+          controller.abort();
+          return then();
+        },
+      })(`${server.url}/openapi.yaml`, controller.signal).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
 
-    expect(error).toBeInstanceOf(DOMException);
-    expect((error as DOMException).name).toBe('AbortError');
-    expect(server.requests).toHaveLength(0);
-  });
+      expect(error).toBeInstanceOf(DOMException);
+      expect((error as DOMException).name).toBe('AbortError');
+      expect(server.requests).toHaveLength(0);
+    },
+  );
 
   it('reads a file: location as the default fetcher does', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'wirebench-document-fetch-'));
