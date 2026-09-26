@@ -130,15 +130,27 @@ describe('re-sending a gRPC entry from its tab', () => {
     expect(resendGrpc).toHaveBeenCalledWith({ id: 'h-grpc' });
   });
 
-  it('toasts the error code when the re-send fails', async () => {
+  it('toasts the error message when the re-send fails', async () => {
     showToast.mockClear();
-    const resendGrpc = vi.fn().mockResolvedValue({ ok: false, error: { code: 'GRPC_REQUEST_GONE', message: 'gone' } });
+    const message = "The request this call was sent from no longer exists, so it can't be re-sent.";
+    const resendGrpc = vi.fn().mockResolvedValue({ ok: false, error: { code: 'history-resend-orphan', message } });
     installWirebenchApi({ history: { resendGrpc } });
     useHistoryStore.setState({ entries: [grpcEntry()], total: 1 });
     render(<HistoryEntryView historyId="h-grpc" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Re-send' }));
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('GRPC_REQUEST_GONE'));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith(message));
+  });
+
+  it('toasts the error code when the failure has no message', async () => {
+    showToast.mockClear();
+    const resendGrpc = vi.fn().mockResolvedValue({ ok: false, error: { code: 'history-resend-orphan', message: '' } });
+    installWirebenchApi({ history: { resendGrpc } });
+    useHistoryStore.setState({ entries: [grpcEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-grpc" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Re-send' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('history-resend-orphan'));
   });
 });
 
@@ -157,17 +169,18 @@ describe('re-sending a REST entry from its tab', () => {
     expect(resendRest).toHaveBeenCalledWith({ id: 'h-rest' });
   });
 
-  it('toasts the error code when the re-send fails', async () => {
+  it('toasts the error message when the re-send fails', async () => {
     showToast.mockClear();
-    const resendRest = vi
-      .fn()
-      .mockResolvedValue({ ok: false, error: { code: 'history-resend-redacted', message: 'redacted' } });
+    const message =
+      'This entry was sent to another host (a redirect or another environment); re-send it from the request.';
+    const resendRest = vi.fn().mockResolvedValue({ ok: false, error: { code: 'history-resend-origin', message } });
     installWirebenchApi({ history: { resendRest } });
     useHistoryStore.setState({ entries: [restEntry()], total: 1 });
     render(<HistoryEntryView historyId="h-rest" />);
 
     await userEvent.click(screen.getByRole('button', { name: 'Re-send' }));
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('history-resend-redacted'));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith(message));
+    expect(showToast).not.toHaveBeenCalledWith('history-resend-origin');
   });
 
   it('offers no Re-send on an event-stream entry', () => {

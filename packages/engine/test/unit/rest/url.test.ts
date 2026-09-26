@@ -149,6 +149,27 @@ describe('composeUrl', () => {
     ).toBe('https://h/s?q=cat&tag=a');
   });
 
+  it('sends a parameter once when the URL and the table both carry it', () => {
+    // What the editor saves after `/echo?x=1` is typed into the URL field: the query mirrored into
+    // an enabled row, and still in the URL. The two are one parameter, not two.
+    expect(composeUrl('http://h', '/echo?x=1', [], [entry('x', '1')]).url).toBe('http://h/echo?x=1');
+  });
+
+  it('keeps deliberate duplicates that both views carry, and only once each', () => {
+    expect(composeUrl('http://h', '/s?t=a&t=a&u=1', [], [entry('t', 'a'), entry('t', 'a'), entry('u', '1')]).url).toBe(
+      'http://h/s?t=a&t=a&u=1',
+    );
+  });
+
+  it('follows the table order when the table carries every URL parameter', () => {
+    expect(composeUrl('http://h', '/s?a=1&b=2', [], [entry('b', '2'), entry('a', '1')]).url).toBe('http://h/s?b=2&a=1');
+  });
+
+  it('still sends a URL parameter no enabled row carries', () => {
+    expect(composeUrl('http://h', '/s?q=cat&x=1', [], [entry('x', '2')]).url).toBe('http://h/s?q=cat&x=1&x=2');
+    expect(composeUrl('http://h', '/s?x=1', [], [entry('x', '1', { enabled: false })]).url).toBe('http://h/s?x=1');
+  });
+
   it('encodes query names and values, and writes a valueless row bare', () => {
     expect(composeUrl('https://h', '/s', [], [entry('a b', 'c&d'), entry('flag', '')]).url).toBe(
       'https://h/s?a%20b=c%26d&flag',

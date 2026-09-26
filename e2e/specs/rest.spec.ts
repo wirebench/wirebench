@@ -86,7 +86,12 @@ test.describe('REST: make an API, send a request, read the response', () => {
     await expect(page.getByTestId('rest-response-timing')).toBeVisible();
 
     await openResponseTab(page, 'Raw');
-    await expect(page.getByTestId('rest-response-raw-exchange')).toContainText('GET /echo?x=1');
+    // The exact request line: `/echo?x=1` typed into the field is mirrored into the Params table,
+    // and a prefix match would also accept that query sent twice (`?x=1&x=1`).
+    await expect(page.getByTestId('rest-response-raw-exchange')).toContainText('GET /echo?x=1 HTTP/1.1');
+    expect(server.requests.filter((request) => request.url.startsWith('/echo')).map((request) => request.url)).toEqual([
+      '/echo?x=1',
+    ]);
 
     // The Query tab runs XPath 3.1 over the JSON body itself — maps, arrays and `?` lookup (§3.10).
     await openResponseTab(page, 'Query');

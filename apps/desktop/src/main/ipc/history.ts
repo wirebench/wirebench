@@ -113,9 +113,11 @@ function literal(text: string): string {
 
 /** Refuses a resend that would put the redaction marker on the wire. */
 function refuseRedacted(id: string, where: string): never {
-  throw new WirebenchError('history-resend-redacted', `The ${where} of this entry holds a value History redacted`, {
-    details: { id, where },
-  });
+  throw new WirebenchError(
+    'history-resend-redacted',
+    `This entry's ${where} holds a value History redacted, so it can't be re-sent as recorded; re-send it from the request.`,
+    { details: { id, where } },
+  );
 }
 
 /** The value of the last enabled row whose name `matches`, or `undefined` when there is none. */
@@ -307,7 +309,7 @@ export function restResendDraft(
   if (isTruncatedBody(text)) {
     throw new WirebenchError(
       'history-resend-truncated',
-      'History kept only the start of this body, so sending it would send a different body',
+      "History kept only the start of this entry's body, so re-sending it would send a different body; re-send it from the request.",
       { details: { id: entry.id } },
     );
   }
@@ -396,7 +398,7 @@ export function registerHistoryChannels(
   registerHandler(channels.history.resend, (request) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
-      throw new WirebenchError('unknown-history-entry', `No history entry with id "${request.id}"`, {
+      throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
         details: { id: request.id },
       });
     }
@@ -409,7 +411,9 @@ export function registerHistoryChannels(
     if (kind !== 'soap') {
       throw new WirebenchError(
         'history-resend-unsupported',
-        `A ${kind === 'websocket' ? 'WebSocket session' : `${kind === 'grpc' ? 'gRPC' : 'REST'} call`} is resent from its request, not from History`,
+        kind === 'websocket'
+          ? 'A WebSocket session is re-sent from its request, not from History.'
+          : `This ${kind === 'grpc' ? 'gRPC' : 'REST'} entry can't be re-sent as a SOAP request.`,
         { details: { id: request.id, kind } },
       );
     }
@@ -425,7 +429,7 @@ export function registerHistoryChannels(
       if (isRedacted(entry)) {
         throw new WirebenchError(
           'history-resend-redacted',
-          'This entry contains redacted secrets and its original request no longer exists',
+          "This entry holds values History redacted and the request it was sent from no longer exists, so it can't be re-sent.",
           { details: { id: request.id } },
         );
       }
@@ -469,23 +473,27 @@ export function registerHistoryChannels(
   registerHandler(channels.history.resendGrpc, (request, sender) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
-      throw new WirebenchError('unknown-history-entry', `No history entry with id "${request.id}"`, {
+      throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
         details: { id: request.id },
       });
     }
     const { grpc } = entry;
     if (entry.kind !== 'grpc' || grpc === undefined || deps.grpc === undefined) {
-      throw new WirebenchError('history-resend-unsupported', 'Only a gRPC call is resent through this channel', {
-        details: { id: request.id, kind: entry.kind ?? 'soap' },
-      });
+      throw new WirebenchError(
+        'history-resend-unsupported',
+        "This entry isn't a gRPC call, so it can't be re-sent as one.",
+        { details: { id: request.id, kind: entry.kind ?? 'soap' } },
+      );
     }
     // The call goes out through the saved request (its endpoint, metadata, auth and TLS), so an
     // entry whose request is gone has nothing to resend through.
     const { requestId } = entry;
     if (requestId === undefined || deps.project.grpcSend?.(requestId) === undefined) {
-      throw new WirebenchError('history-resend-orphan', 'The request this call was sent from no longer exists', {
-        details: { id: request.id },
-      });
+      throw new WirebenchError(
+        'history-resend-orphan',
+        "The request this call was sent from no longer exists, so it can't be re-sent.",
+        { details: { id: request.id } },
+      );
     }
     return deps.grpc.send({ sendId: randomUUID(), requestId, draft: grpcResendDraft({ ...entry, grpc }) }, sender);
   });
@@ -493,14 +501,16 @@ export function registerHistoryChannels(
   registerHandler(channels.history.resendRest, (request) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
-      throw new WirebenchError('unknown-history-entry', `No history entry with id "${request.id}"`, {
+      throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
         details: { id: request.id },
       });
     }
     if (entry.kind !== 'rest' || deps.rest === undefined) {
-      throw new WirebenchError('history-resend-unsupported', 'Only a REST request is resent through this channel', {
-        details: { id: request.id, kind: entry.kind ?? 'soap' },
-      });
+      throw new WirebenchError(
+        'history-resend-unsupported',
+        "This entry isn't a REST request, so it can't be re-sent as one.",
+        { details: { id: request.id, kind: entry.kind ?? 'soap' } },
+      );
     }
     // A resend has no live pane, so a stream the server never closes would never finish.
     if (isStreamEntry(entry)) {
@@ -513,9 +523,11 @@ export function registerHistoryChannels(
     const { requestId } = entry;
     const saved = requestId === undefined ? undefined : deps.project.restSend?.(requestId);
     if (requestId === undefined || saved === undefined) {
-      throw new WirebenchError('history-resend-orphan', 'The request this entry was sent from no longer exists', {
-        details: { id: request.id },
-      });
+      throw new WirebenchError(
+        'history-resend-orphan',
+        "The request this entry was sent from no longer exists, so it can't be re-sent.",
+        { details: { id: request.id } },
+      );
     }
     return deps.rest.send({
       sendId: randomUUID(),

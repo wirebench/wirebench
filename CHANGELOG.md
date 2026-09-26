@@ -110,10 +110,20 @@ All notable changes to this project are documented here. The format follows
   CA every public HTTPS site failed verification. The bundle's certificates are now trusted in
   addition to the default roots, for requests and definition reads alike.
 
+- **A failed re-send from History says why.** Re-sending a SOAP, gRPC or REST entry that can't be
+  re-sent showed an internal code such as `history-resend-origin` in the toast. It now shows the
+  reason in words, for example that the entry was sent to another host and should be re-sent from
+  its request.
+
 - **An API's Base URL field follows a change made under it.** The field kept the value it was opened
   with, so a base URL rewritten while its tab stayed open — as Update Definition rewrites it — showed
   the old one until the tab was closed and opened again. It now follows the project, and still
   commits your own typing on blur or Enter as before.
+
+- **A query typed into a REST URL is sent once.** `/echo?x=1` in the URL field is mirrored into the
+  Params table, and the send added the table's rows to the URL that already carried them, so the
+  server got `/echo?x=1&x=1`. The table is the request's query: a URL parameter with the same name and
+  value as an enabled row is now that row, sent once. Requests already saved with both need no change.
 
 ## [2.2.1] - 2026-09-21
 
