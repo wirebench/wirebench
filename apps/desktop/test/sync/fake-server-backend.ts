@@ -348,6 +348,7 @@ export class FakeServerBackend implements SyncBackend {
     return Promise.resolve();
   }
 
+  /** The fake remote announces nothing; the live path is `ServerBackend`'s (`server-backend.test.ts`). */
   subscribeRemote(): () => void {
     return () => {};
   }

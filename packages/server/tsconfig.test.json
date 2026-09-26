@@ -14,6 +14,8 @@
     "../../apps/desktop/src/main/sync/types.ts",
     "../../apps/desktop/src/main/sync/server-backend.ts",
     "../../apps/desktop/src/main/sync/server-state.ts",
+    "../../apps/desktop/src/main/live/live-client.ts",
+    "../../apps/desktop/src/main/live/live-clients.ts",
     "../../apps/desktop/src/main/server-client.ts",
     "../../apps/desktop/src/main/server-token.ts",
     "../../apps/desktop/src/main/account-service.ts",

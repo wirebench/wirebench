@@ -28,9 +28,10 @@ import {
   mergeFiles,
   WirebenchError,
 } from '@wirebench/engine';
+import type { LiveClients } from '../live/live-clients.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
-import type { SyncBackend } from './backend.js';
+import type { RemoteEvent, SyncBackend } from './backend.js';
 import {
   applyChanges,
   RECONNECT_GUIDANCE,
@@ -60,6 +61,11 @@ export interface ServerBackendDeps {
   readonly defaultIdentity?: () => { readonly name: string; readonly email: string } | undefined;
   /** The most one push request carries before it is split; a test lowers it. Default {@link PUSH_BATCH_BYTES}. */
   readonly pushBatchBytes?: number;
+  /**
+   * The app's live sockets (live-updates §3.4). Omitted, `subscribeRemote` announces nothing and
+   * the fetch timer does all the work, as in the first slice. The contract suite runs that way.
+   */
+  readonly live?: Pick<LiveClients, 'subscribe'>;
 }
 
 /**
@@ -479,9 +485,69 @@ export class ServerBackend implements SyncBackend {
     await this.state.update({ identity: { name, email } });
   }
 
-  subscribeRemote(): () => void {
-    // Polling in this slice (assumption 7): SyncService's fetch timer does the work.
-    return () => {};
+  /**
+   * Relays the live socket for this share's server and workspace as {@link RemoteEvent}s (live-updates
+   * §3.4):
+   * - `head` becomes `changed` only when neither the last fetch (`knownHead`) nor the base names it.
+   *   A second device's echo of its own push is then free.
+   * - `access` and `refused` both become `access`: the fetch that follows asks the server, which knows
+   *   the role.
+   * - `presence` passes through; the live client has already removed this account's own user.
+   * - The socket's state becomes `live`, except `ended`, which becomes `ended`.
+   *
+   * A `live-too-many-subscriptions` refusal leaves this workspace without events while the socket is
+   * up. It therefore reads `off` until the socket reconnects, so `SyncService` keeps the user's own
+   * interval (§3.5).
+   */
+  subscribeRemote(listener: (event: RemoteEvent) => void): () => void {
+    const live = this.deps.live;
+    if (live === undefined) {
+      return () => {};
+    }
+    let active = true;
+    let refusedForLimit = false;
+    // One head check at a time, so each `changed` leaves in the order its head arrived.
+    let heads: Promise<void> = Promise.resolve();
+    const emit = (event: RemoteEvent): void => {
+      if (active) listener(event);
+    };
+    const off = live.subscribe(this.deps.url, this.deps.workspaceId, (event) => {
+      if (event.kind === 'state') {
+        if (event.state === 'ended') {
+          emit({ kind: 'ended' });
+          return;
+        }
+        if (event.state !== 'connected') refusedForLimit = false;
+        emit({ kind: 'live', state: refusedForLimit ? 'off' : event.state });
+        return;
+      }
+      const message = event.message;
+      switch (message.type) {
+        case 'head':
+          heads = heads.then(async () => {
+            if (await this.isNewHead(message.head)) emit({ kind: 'changed' });
+          });
+          return;
+        case 'access':
+          emit({ kind: 'access' });
+          return;
+        case 'refused':
+          emit({ kind: 'access' });
+          if (message.code === 'live-too-many-subscriptions') {
+            refusedForLimit = true;
+            emit({ kind: 'live', state: 'off' });
+          }
+          return;
+        case 'presence':
+          emit({ kind: 'presence', users: message.users.map(({ id, name }) => ({ id, name })) });
+          return;
+      }
+    });
+    return () => {
+      // First, so a head check still reading the state cannot reach a listener that is gone.
+      active = false;
+      off();
+    };
   }
 
   // ——— internals ——————————————————————————————————————————————————————————————————————————
@@ -567,5 +633,19 @@ export class ServerBackend implements SyncBackend {
 
   private currentIdentity(doc: ServerStateDoc): { readonly name: string; readonly email: string } | undefined {
     return doc.identity ?? this.deps.defaultIdentity?.();
+  }
+
+  /**
+   * Whether a pushed `head` is news: neither the last fetch's `knownHead` nor the base names it. A
+   * local read, no network. A state that cannot be read counts as news, so the fetch that follows
+   * reports the damage as the status it already is (`sync-state-corrupt`). Never rejects.
+   */
+  private async isNewHead(head: string): Promise<boolean> {
+    try {
+      const doc = await this.state.read();
+      return head !== doc.knownHead && head !== doc.base.head;
+    } catch {
+      return true;
+    }
   }
 }

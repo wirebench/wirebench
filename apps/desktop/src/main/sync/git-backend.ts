@@ -527,8 +527,8 @@ export class GitBackend implements SyncBackend {
     await this.git.run(this.tree, ['config', 'user.email', email]);
   }
 
+  /** Git has no push notification of its own: no `RemoteEvent` ever comes, and `SyncService` polls on its timer. */
   subscribeRemote(): () => void {
-    // Git has no push notification of its own; `SyncService` (T7) polls on a timer instead.
     return () => {};
   }
 }

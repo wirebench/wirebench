@@ -21,6 +21,7 @@ import type { GitCli, GitShareSettings, WorkspaceShare } from '@wirebench/engine
 import { WirebenchError, assertSafeLocalConfig } from '@wirebench/engine';
 import type { ServerClient } from '../server-client.js';
 import type { AccountService } from '../account-service.js';
+import type { LiveClients } from '../live/live-clients.js';
 import type { TokenSource } from '../server-token.js';
 import type { SyncBackend } from './backend.js';
 import { FolderBackend } from './folder-backend.js';
@@ -31,11 +32,14 @@ import { SERVER_STATE_DIR, ServerState } from './server-state.js';
 /**
  * What a server share's backend talks through: the app's one client, and the accounts' tokens (§5.3).
  * `list` finds the signed-in account for the share's URL, whose name and email are the default commit
- * identity (§3.1), so a signed-in user is never asked for one.
+ * identity (§3.1), so a signed-in user is never asked for one. `live`, the app's live sockets
+ * (live-updates §5.3), turns a teammate's push or an access change into a fetch within seconds.
+ * Without it the share polls, as it did before.
  */
 export interface ServerSyncServices {
   readonly client: ServerClient;
   readonly accounts: TokenSource & Pick<AccountService, 'list'>;
+  readonly live?: Pick<LiveClients, 'subscribe'>;
 }
 
 export interface CreateSyncBackendOptions {
@@ -88,6 +92,7 @@ export async function createSyncBackend(options: CreateSyncBackendOptions): Prom
             .find((candidate) => candidate.url === url && candidate.signedOut !== true);
           return account === undefined ? undefined : { name: account.displayName, email: account.email };
         },
+        ...(server.live !== undefined ? { live: server.live } : {}),
       });
     }
     case 'folder': {

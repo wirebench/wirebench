@@ -11,6 +11,19 @@ import type { TreeChange } from '@wirebench/engine';
 import { WirebenchError } from '@wirebench/engine';
 import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from './types.js';
 
+/**
+ * What a share's remote tells an open workspace between fetches (live-updates §5.3, R1). None of it
+ * is authoritative: `changed`, `access` and `ended` each make `SyncService` fetch over HTTP, which
+ * stays the source of truth for heads and roles. `presence` names the others with this workspace
+ * open, never the caller. `live` is the socket's state, which sets the polling interval.
+ */
+export type RemoteEvent =
+  | { readonly kind: 'changed' }
+  | { readonly kind: 'access' }
+  | { readonly kind: 'ended' }
+  | { readonly kind: 'presence'; readonly users: readonly { id: string; name: string }[] }
+  | { readonly kind: 'live'; readonly state: 'connected' | 'connecting' | 'off' };
+
 /** A workspace share's sync backend: probe/fetch/merge/commit/push plus conflict handling. */
 export interface SyncBackend {
   readonly kind: 'folder' | 'git' | 'server';
@@ -46,8 +59,12 @@ export interface SyncBackend {
   identity(): Promise<{ name: string; email: string } | undefined>;
   /** Configures the identity commits are attributed to. */
   setIdentity(name: string, email: string): Promise<void>;
-  /** Subscribes to remote-changed notifications (e.g. a filesystem watch on a synced folder); returns an unsubscribe. */
-  subscribeRemote(onChange: () => void): () => void;
+  /**
+   * Subscribes to what the remote announces (live-updates R1); returns an unsubscribe, after which
+   * `listener` hears nothing more. Git and folder shares announce nothing. A server share relays its
+   * live socket, and without one it announces nothing either.
+   */
+  subscribeRemote(listener: (event: RemoteEvent) => void): () => void;
 }
 
 /**

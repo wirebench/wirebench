@@ -11,6 +11,7 @@ import { FolderBackend } from '../../src/main/sync/folder-backend.js';
 import { GitBackend } from '../../src/main/sync/git-backend.js';
 import { ServerBackend } from '../../src/main/sync/server-backend.js';
 import { SERVER_STATE_DIR, ServerState } from '../../src/main/sync/server-state.js';
+import type { LiveClients } from '../../src/main/live/live-clients.js';
 
 /**
  * A `GitCli` whose local-config listing answers `names` (newline-separated here, NUL-terminated on
@@ -245,6 +246,41 @@ describe('createSyncBackend', () => {
       expect(await backend.identity()).toBeUndefined();
       accounts = [account];
       expect(await backend.identity()).toEqual({ name: 'Ada', email: 'ada@example.test' });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("passes the live clients through: the server backend subscribes its share's server and workspace", async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wirebench-create-backend-'));
+    try {
+      await mkdir(join(dir, 'tree'), { recursive: true });
+      await ServerState.initialize(join(dir, SERVER_STATE_DIR), null, new Map());
+      const unsubscribe = vi.fn(() => undefined);
+      const subscribe = vi.fn<Pick<LiveClients, 'subscribe'>['subscribe']>(() => unsubscribe);
+
+      const backend = await createSyncBackend({
+        share: serverShare,
+        tree: join(dir, 'tree'),
+        git: undefined,
+        settings,
+        dir,
+        server: {
+          client: new ServerClient({ send: () => Promise.reject(new Error('no network here')) }),
+          accounts: { tokenFor: () => Promise.resolve('t0k'), markSignedOut: () => undefined, list: () => [] },
+          live: { subscribe },
+        },
+      });
+
+      expect(subscribe).not.toHaveBeenCalled();
+      const off = backend.subscribeRemote(() => undefined);
+      expect(subscribe).toHaveBeenCalledWith(
+        'https://sync.example.test',
+        '01J8Z0000000000000000000AB',
+        expect.any(Function),
+      );
+      off();
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

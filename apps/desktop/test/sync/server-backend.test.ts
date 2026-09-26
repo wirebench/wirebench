@@ -14,7 +14,15 @@ import type {
   SyncPushResponse,
   WorkspaceRole,
 } from '@wirebench/engine';
-import { mapServerError, ServerBackend, STOP_POLLING_CODES } from '../../src/main/sync/server-backend.js';
+import type { LiveEvent, LiveState, LiveWorkspaceMessage } from '../../src/main/live/live-client.js';
+import type { LiveClients } from '../../src/main/live/live-clients.js';
+import type { RemoteEvent } from '../../src/main/sync/backend.js';
+import {
+  mapServerError,
+  ServerBackend,
+  STOP_POLLING_CODES,
+  type ServerBackendDeps,
+} from '../../src/main/sync/server-backend.js';
 import {
   applyChanges,
   diffTreeFiles,
@@ -140,7 +148,10 @@ afterEach(async () => {
 });
 
 /** A client that joined `server` at its head: the tree and the base are that snapshot. */
-async function joined(server: StubServer, options: { readonly token?: string | null } = {}) {
+async function joined(
+  server: StubServer,
+  options: { readonly token?: string | null; readonly live?: ServerBackendDeps['live'] } = {},
+) {
   const root = await mkdtemp(join(tmpdir(), 'wb-server-backend-'));
   roots.push(root);
   const tree = join(root, 'tree');
@@ -167,6 +178,7 @@ async function joined(server: StubServer, options: { readonly token?: string | n
       state: over,
       now: () => NOW,
       ...(defaultIdentity !== undefined ? { defaultIdentity } : {}),
+      ...(options.live !== undefined ? { live: options.live } : {}),
     });
   const at = (path: string): string => join(tree, ...path.split('/'));
   return {
@@ -765,6 +777,159 @@ describe('ServerBackend over a stub server (§3.1)', () => {
   });
 });
 
+/**
+ * A stand-in for `LiveClients` (live-updates §5.3). It records each subscription and lets a test
+ * deliver events. The listener stays registered after its unsubscribe on purpose: dropping a late
+ * delivery is the backend's job.
+ */
+function fakeLive() {
+  const subscriptions: { readonly url: string; readonly workspaceId: string }[] = [];
+  const listeners = new Set<(event: LiveEvent) => void>();
+  const unsubscribe = vi.fn(() => undefined);
+  const live: Pick<LiveClients, 'subscribe'> = {
+    subscribe: (url, workspaceId, listener) => {
+      subscriptions.push({ url, workspaceId });
+      listeners.add(listener);
+      return unsubscribe;
+    },
+  };
+  const send = (event: LiveEvent): void => {
+    for (const listener of listeners) listener(event);
+  };
+  return { live, subscriptions, unsubscribe, send };
+}
+
+const liveMessage = (message: LiveWorkspaceMessage): LiveEvent => ({ kind: 'message', message });
+const socket = (state: LiveState): LiveEvent => ({ kind: 'state', state });
+const head = (id: string): LiveEvent => liveMessage({ type: 'head', workspaceId: WS_ID, head: id });
+
+function listen(backend: ServerBackend): { readonly events: RemoteEvent[]; readonly off: () => void } {
+  const events: RemoteEvent[] = [];
+  const off = backend.subscribeRemote((event) => {
+    events.push(event);
+  });
+  return { events, off };
+}
+
+describe('ServerBackend.subscribeRemote (live-updates §3.4, §5.3, R1)', () => {
+  const BEN = { id: '01J8ZC5Q0V7R3T9XK2M4N6P8QD', name: 'Ben' };
+  const CY = { id: '01J8ZC5Q0V7R3T9XK2M4N6P8QE', name: 'Cy' };
+
+  it('without live clients it is a no-op, as in the first slice', async () => {
+    const f = await joined(seeded());
+    const { events, off } = listen(f.backend);
+    expect(() => off()).not.toThrow();
+    expect(events).toEqual([]);
+  });
+
+  it("subscribes the share's own server and workspace, and delivers nothing once unsubscribed", async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    const { events, off } = listen(f.backend);
+    expect(l.subscriptions).toEqual([{ url: SERVER, workspaceId: WS_ID }]);
+
+    l.send(liveMessage({ type: 'access', workspaceId: WS_ID }));
+    off();
+    expect(l.unsubscribe).toHaveBeenCalledTimes(1);
+    l.send(liveMessage({ type: 'access', workspaceId: WS_ID }));
+    l.send(socket('connecting'));
+
+    expect(events).toEqual([{ kind: 'access' }]);
+  });
+
+  it('a head the last fetch or the base already names is silent; a new one is changed, with no network call', async () => {
+    const server = seeded();
+    const l = fakeLive();
+    const f = await joined(server, { live: l.live });
+    const base = server.head()!;
+    const known = server.commit({ 'environments/qa.yaml': 'name: QA 2\n' });
+    await f.backend.fetch();
+    expect(await f.state.read()).toMatchObject({ base: { head: base }, knownHead: known });
+    const { events } = listen(f.backend);
+
+    l.send(head(known));
+    l.send(head(base));
+    l.send(head('c'.repeat(40)));
+
+    // Head checks run in order: once the third has spoken, the first two have finished.
+    await vi.waitFor(() => {
+      expect(events).toHaveLength(1);
+    });
+    expect(events).toEqual([{ kind: 'changed' }]);
+    expect(server.client.syncHead).toHaveBeenCalledTimes(1);
+  });
+
+  it('a head over a damaged state asks for the fetch that reports the damage', async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    await writeFile(join(f.stateDir, 'state.yaml'), 'version: [');
+    const { events } = listen(f.reopen());
+
+    l.send(head('d'.repeat(40)));
+
+    await vi.waitFor(() => {
+      expect(events).toEqual([{ kind: 'changed' }]);
+    });
+  });
+
+  it('access and refused both ask for a fetch; presence passes the users through', async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    const { events } = listen(f.backend);
+
+    l.send(liveMessage({ type: 'access', workspaceId: WS_ID }));
+    l.send(liveMessage({ type: 'refused', workspaceId: WS_ID, code: 'teams-workspace-not-found' }));
+    l.send(liveMessage({ type: 'presence', workspaceId: WS_ID, users: [BEN, CY] }));
+    l.send(liveMessage({ type: 'presence', workspaceId: WS_ID, users: [] }));
+
+    expect(events).toEqual([
+      { kind: 'access' },
+      { kind: 'access' },
+      { kind: 'presence', users: [BEN, CY] },
+      { kind: 'presence', users: [] },
+    ]);
+  });
+
+  it('socket states are live, and an ended session is ended', async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    const { events } = listen(f.backend);
+
+    l.send(socket('connecting'));
+    l.send(socket('connected'));
+    l.send(socket('off'));
+    l.send(socket('ended'));
+
+    expect(events).toEqual([
+      { kind: 'live', state: 'connecting' },
+      { kind: 'live', state: 'connected' },
+      { kind: 'live', state: 'off' },
+      { kind: 'ended' },
+    ]);
+  });
+
+  it('refused for too many subscriptions reads off until the socket reconnects, so the workspace polls (§3.5)', async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    const { events } = listen(f.backend);
+
+    l.send(socket('connected'));
+    l.send(liveMessage({ type: 'refused', workspaceId: WS_ID, code: 'live-too-many-subscriptions' }));
+    l.send(socket('connected'));
+    l.send(socket('connecting'));
+    l.send(socket('connected'));
+
+    expect(events).toEqual([
+      { kind: 'live', state: 'connected' },
+      { kind: 'access' },
+      { kind: 'live', state: 'off' },
+      { kind: 'live', state: 'off' },
+      { kind: 'live', state: 'connecting' },
+      { kind: 'live', state: 'connected' },
+    ]);
+  });
+});
+
 describe('the import graph (O4)', () => {
   it('reaches no electron import from server-backend.ts', async () => {
     const seen = new Set<string>();
@@ -779,7 +944,14 @@ describe('the import graph (O4)', () => {
     };
     await visit(fileURLToPath(new URL('../../src/main/sync/server-backend.ts', import.meta.url)));
     const names = [...seen].map((file) => file.split(/[\\/]/).at(-1) ?? '');
-    for (const name of ['server-state.ts', 'server-token.ts', 'server-client.ts', 'account-service.ts'])
+    for (const name of [
+      'server-state.ts',
+      'server-token.ts',
+      'server-client.ts',
+      'account-service.ts',
+      'live-clients.ts',
+      'live-client.ts',
+    ])
       expect(names).toContain(name);
   });
 });
