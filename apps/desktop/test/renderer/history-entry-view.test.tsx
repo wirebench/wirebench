@@ -141,3 +141,38 @@ describe('re-sending a gRPC entry from its tab', () => {
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('GRPC_REQUEST_GONE'));
   });
 });
+
+describe('re-sending a REST entry from its tab', () => {
+  function restEntry(): HistoryEntryWire {
+    return { ...sseEntry(), id: 'h-rest', sse: undefined, requestName: 'Echo' };
+  }
+
+  it('replays it through history.resendRest with its id', async () => {
+    const resendRest = vi.fn().mockResolvedValue({ ok: true, value: {} });
+    installWirebenchApi({ history: { resendRest } });
+    useHistoryStore.setState({ entries: [restEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-rest" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Re-send' }));
+    expect(resendRest).toHaveBeenCalledWith({ id: 'h-rest' });
+  });
+
+  it('toasts the error code when the re-send fails', async () => {
+    showToast.mockClear();
+    const resendRest = vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'history-resend-redacted', message: 'redacted' } });
+    installWirebenchApi({ history: { resendRest } });
+    useHistoryStore.setState({ entries: [restEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-rest" />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Re-send' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('history-resend-redacted'));
+  });
+
+  it('offers no Re-send on an event-stream entry', () => {
+    useHistoryStore.setState({ entries: [sseEntry()], total: 1 });
+    render(<HistoryEntryView historyId="h-sse" />);
+    expect(screen.queryByRole('button', { name: 'Re-send' })).toBeNull();
+  });
+});

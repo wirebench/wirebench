@@ -265,3 +265,53 @@ describe('HistoryView with REST entries', () => {
     });
   });
 });
+
+/** A REST entry of request `r-1`: a GET that got a JSON 200. */
+function restEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire {
+  return makeEntry({
+    kind: 'rest',
+    method: 'GET',
+    soapVersion: 'none',
+    requestId: 'r-1',
+    requestName: 'Pet',
+    endpoint: 'https://api.test/pet/1',
+    request: { envelopeXml: '', headers: [] },
+    response: {
+      envelopeXml: '{"id":1}',
+      rawHeaders: [['content-type', 'application/json']],
+      status: 200,
+      statusText: 'OK',
+    },
+    ...overrides,
+  });
+}
+
+describe('HistoryView re-sending and comparing REST rows', () => {
+  beforeEach(() => {
+    useHistoryStore.setState({ entries: [], total: 0, query: '', loading: false, projectId: undefined });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    installWirebenchApi();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('re-sends a REST row through history.resendRest, and offers no ↻ on a streamed one', async () => {
+    const resend = vi.fn();
+    const resendRest = vi.fn().mockResolvedValue({ ok: true, value: {} });
+    installWirebenchApi({ history: { resend, resendRest } });
+    const streamed = restEntry({
+      id: 's',
+      requestName: 'Ticks',
+      sse: { rows: [], counts: { events: 0, comments: 0, retries: 0, bytes: 0 }, lastEventId: '', endedBy: 'server' },
+    });
+    useHistoryStore.setState({ entries: [restEntry({ id: 'r' }), streamed], total: 2 });
+    render(<HistoryView />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Re-send Pet' }));
+    expect(resendRest).toHaveBeenCalledWith({ id: 'r' });
+    expect(resend).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Re-send Ticks' })).toBeNull();
+  });
+});

@@ -19,12 +19,13 @@ function comparableXml(entry: HistoryEntryWire): string {
 }
 
 /**
- * Whether History can re-send an entry: SOAP and gRPC. REST and WebSocket resend from their
- * request instead (an entry with no kind predates the other protocols and is SOAP).
+ * Whether History can re-send an entry: SOAP, gRPC and REST, except a REST event stream, which has
+ * no live pane to run in (the HTTP Log draws the same line). A WebSocket session resends from its
+ * request. An entry with no kind predates the other protocols and is SOAP.
  */
-export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind'>): boolean {
+export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind' | 'sse'>): boolean {
   const kind = entry.kind ?? 'soap';
-  return kind === 'soap' || kind === 'grpc';
+  return kind === 'soap' || kind === 'grpc' || (kind === 'rest' && entry.sse === undefined);
 }
 
 /** Re-sends one history entry through its protocol's channel, toasting the code on failure. */
@@ -32,7 +33,9 @@ export async function resendHistoryEntry(entry: Pick<HistoryEntryWire, 'id' | 'k
   const result =
     entry.kind === 'grpc'
       ? await ipc().history.resendGrpc({ id: entry.id })
-      : await ipc().history.resend({ id: entry.id });
+      : entry.kind === 'rest'
+        ? await ipc().history.resendRest({ id: entry.id })
+        : await ipc().history.resend({ id: entry.id });
   if (!result.ok) {
     showToast(result.error.code);
   }

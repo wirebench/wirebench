@@ -124,7 +124,8 @@ function Row({
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
-        {/* SOAP and gRPC sends replay from History; REST and WebSocket resend from their request. */}
+        {/* SOAP, gRPC and REST sends replay from History; a WebSocket session and a REST event
+            stream resend from their request. */}
         {canResendHistoryEntry(entry) && (
           <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
             ↻
