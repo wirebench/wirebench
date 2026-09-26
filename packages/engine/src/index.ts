@@ -1178,6 +1178,8 @@ export { prettyFrameText } from './ws/pretty.js';
 export type { PrettyFrameResult } from './ws/pretty.js';
 export { openWsSession } from './ws/session.js';
 export type { WsSessionHandle, WsSessionHooks, WsSessionOptions } from './ws/session.js';
+export { connectWebSocket } from './ws/connect.js';
+export type { ConnectedWebSocket, ConnectOptions } from './ws/connect.js';
 export { capFrames, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from './ws/transcript.js';
 export type { WsTranscript } from './ws/transcript.js';
 export { expandWsInput, expandWsMessage } from './ws/expand.js';
@@ -1372,5 +1374,16 @@ export type {
   SyncSnapshotQuery,
   SyncSnapshotResponse,
 } from './server-api/sync.js';
+export {
+  LIVE_CAPABILITY,
+  LIVE_CLOSE,
+  LIVE_LIMITS,
+  LIVE_PATH,
+  LIVE_REFUSED_CODES,
+  liveClientMessageSchema,
+  livePresenceUserSchema,
+  liveServerMessageSchema,
+} from './server-api/live.js';
+export type { LiveClientMessage, LivePresenceUser, LiveRefusedCode, LiveServerMessage } from './server-api/live.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';

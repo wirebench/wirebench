@@ -3,10 +3,21 @@
  * kinds a session test needs. No extensions, no fragmentation — undici does not fragment what it
  * sends, and a server that offers no `permessage-deflate` is a legal one.
  *
+ * A test can also play the server's part (live-updates spec §7):
+ * - `onText` sees each text frame together with its peer;
+ * - a peer can send text, or close with any code;
+ * - `status` makes every upgrade a plain HTTP answer, as an old server, or a proxy that strips
+ *   `Upgrade`, would give.
+ *
  * Test-only. Never import this from production code.
  */
 import { createHash } from 'node:crypto';
-import { createServer as createHttpServer, type IncomingHttpHeaders, type IncomingMessage } from 'node:http';
+import {
+  createServer as createHttpServer,
+  STATUS_CODES,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+} from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
@@ -19,11 +30,27 @@ export interface TestWsHandshake {
   readonly url: string;
   readonly headers: IncomingHttpHeaders;
 }
+/** One connection that switched protocols, as the server sees it: what a test drives when it plays the server. */
+export interface TestWsPeer {
+  /** Sends one text frame. Ignored once the peer is closed. */
+  sendText(text: string): void;
+  /** Sends a close frame with `code` and `reason`; the client's reply then ends the connection. */
+  close(code: number, reason?: string): void;
+  /** True once either side's close frame has been sent or received, or the connection has ended. */
+  readonly closed: boolean;
+}
 /** Options for {@link startTestWsServer}. */
 export interface TestWsServerOptions {
   readonly tls?: { readonly cert: string; readonly key: string; readonly ca?: string; readonly requestCert?: boolean };
   /** Subprotocols the server accepts; it picks the first offered one that is listed. */
   readonly subprotocols?: readonly string[];
+  /**
+   * Called with each text frame and the peer that sent it, *instead of* the path's own text handling
+   * (echo, `/close`, `/close-echo`, `/drop`). Binary and control frames keep theirs.
+   */
+  readonly onText?: (text: string, peer: TestWsPeer) => void;
+  /** Answers every upgrade with this plain HTTP status (e.g. `404`) instead of switching protocols. */
+  readonly status?: number;
 }
 /** A running {@link startTestWsServer}. */
 export interface TestWsServer {
@@ -32,6 +59,8 @@ export interface TestWsServer {
   readonly handshakes: readonly TestWsHandshake[];
   /** Every frame the server received, unmasked, in arrival order. */
   readonly received: readonly { readonly opcode: number; readonly payload: Buffer }[];
+  /** Every connection that switched protocols, in the order they opened; closed ones stay. */
+  readonly peers: readonly TestWsPeer[];
   readonly close: () => Promise<void>;
 }
 
@@ -92,19 +121,25 @@ function closePayload(code: number, reason: string): Buffer {
 }
 
 /**
- * Starts a WebSocket test server on an ephemeral port. Paths: `/echo` echoes every text and binary
- * frame; `/refuse` answers `401` with `www-authenticate: Basic realm="ws"` and body `no`; `/ping`
- * sends a ping with payload `hi` right after the upgrade, then behaves as echo; `/close` answers the
- * first message by closing with `4000` `bye`; `/close-echo` answers it by closing with `4000` and
- * the message's own payload as the reason; `/drop` destroys the socket on the first message;
- * `/hang` never answers the upgrade.
+ * Starts a WebSocket test server on an ephemeral port. The paths:
+ * - `/echo` echoes every text and binary frame;
+ * - `/refuse` answers `401` with `www-authenticate: Basic realm="ws"` and body `no`;
+ * - `/ping` sends a ping with payload `hi` right after the upgrade, then behaves as echo;
+ * - `/close` answers the first message by closing with `4000` `bye`;
+ * - `/close-echo` answers it by closing with `4000`, with the message's own payload as the reason;
+ * - `/drop` destroys the socket on the first message;
+ * - `/hang` never answers the upgrade.
  *
- * @param options TLS material for `wss://` and the subprotocols the server accepts
- * @returns the running server, with recorded handshakes/frames and a `close()`
+ * With `status`, every path answers that status instead. With `onText`, text frames go to the hook
+ * instead of the path's own handling.
+ *
+ * @param options TLS material for `wss://`, the subprotocols the server accepts, and the live hooks
+ * @returns the running server, with recorded handshakes, frames and peers, and a `close()`
  */
 export async function startTestWsServer(options: TestWsServerOptions = {}): Promise<TestWsServer> {
   const handshakes: TestWsHandshake[] = [];
   const received: { opcode: number; payload: Buffer }[] = [];
+  const peers: TestWsPeer[] = [];
   const sockets = new Set<Duplex>();
   const server =
     options.tls === undefined
@@ -122,6 +157,11 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
     socket.on('error', () => sockets.delete(socket));
     const path = new URL(req.url ?? '/', 'http://x').pathname;
     handshakes.push({ url: req.url ?? '/', headers: req.headers });
+    if (options.status !== undefined) {
+      const text = STATUS_CODES[options.status] ?? 'Status';
+      socket.end(`HTTP/1.1 ${options.status} ${text}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n`);
+      return;
+    }
     if (path === '/hang') return;
     if (path === '/refuse') {
       socket.end(
@@ -147,6 +187,29 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
         '',
       ].join('\r\n'),
     );
+
+    let closed = false;
+    /** Set when this side sent the first close frame, so the client's reply ends the connection without a second one. */
+    let closeSent = false;
+    socket.on('close', () => {
+      closed = true;
+    });
+    const peer: TestWsPeer = {
+      sendText(text) {
+        if (closed || !socket.writable) return;
+        socket.write(encodeFrame(OP.text, Buffer.from(text, 'utf8')));
+      },
+      close(code, reason = '') {
+        if (closed) return;
+        closed = true;
+        closeSent = true;
+        socket.write(encodeFrame(OP.close, closePayload(code, reason)));
+      },
+      get closed() {
+        return closed;
+      },
+    };
+    peers.push(peer);
     if (path === '/ping') socket.write(encodeFrame(OP.ping, Buffer.from('hi')));
 
     const state = { buffer: Buffer.alloc(0) };
@@ -155,9 +218,13 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
       for (const frame of decodeFrames(state)) {
         received.push(frame);
         if (frame.opcode === OP.close) {
-          socket.end(encodeFrame(OP.close, frame.payload));
+          closed = true;
+          if (closeSent) socket.end();
+          else socket.end(encodeFrame(OP.close, frame.payload));
         } else if (frame.opcode === OP.ping) {
           socket.write(encodeFrame(OP.pong, frame.payload));
+        } else if (frame.opcode === OP.text && options.onText !== undefined) {
+          options.onText(frame.payload.toString('utf8'), peer);
         } else if (frame.opcode === OP.text || frame.opcode === OP.binary) {
           if (path === '/close') socket.write(encodeFrame(OP.close, closePayload(4000, 'bye')));
           else if (path === '/close-echo')
@@ -176,6 +243,7 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
     port,
     handshakes,
     received,
+    peers,
     close: async () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
