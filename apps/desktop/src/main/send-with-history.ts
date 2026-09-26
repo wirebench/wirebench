@@ -10,11 +10,11 @@ import {
   isEndpointAuth,
   isWirebenchError,
   resolveSecretTokens,
-  resolveSoapAuth,
   secretNamesInValue,
 } from '@wirebench/engine';
 import type { OAuth2Auth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
+import { resolveSoapAuth } from './secret-resolver.js';
 import { failedExchangeOf } from './failed-exchange.js';
 import type { HistoryService } from './history-service.js';
 import type { OAuth2Service } from './oauth2.js';

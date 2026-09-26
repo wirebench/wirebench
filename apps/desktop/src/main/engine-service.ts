@@ -16,7 +16,6 @@ import {
   importDefinition as engineImportDefinition,
   normalizeWsa,
   openWsSession,
-  resolveSoapAuth,
   sendSoapRequest,
   toSendAuth,
   WirebenchError,
@@ -42,7 +41,7 @@ import type {
   WsSessionHandle,
   WsSessionOptions,
 } from '@wirebench/engine';
-import { resolveAuthConfig, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
+import { resolveAuthConfig, resolveSoapAuth, secretMissingMessage, type ResolvedAuth } from './secret-resolver.js';
 import { redactHeaders } from './redact.js';
 import type { FetchDocument, SendAuth } from '@wirebench/engine';
 import {
