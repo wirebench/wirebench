@@ -105,7 +105,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- **The CA bundle adds to the system roots, as documented.** A CA bundle set in the preferences
+- **The CA bundle adds to the default roots, as documented.** A CA bundle set in the preferences
   replaced the default trust roots instead of adding to them, so with a bundle holding only a private
   CA every public HTTPS site failed verification. The bundle's certificates are now trusted in
   addition to the default roots, for requests and definition reads alike.
