@@ -1,6 +1,6 @@
 # Wirebench Server
 
-Sign-in, teams and shared workspaces for Wirebench, self-hosted. One process, one PostgreSQL
+Sign-in, teams, shared workspaces and live updates for Wirebench, self-hosted. One process, one PostgreSQL
 database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-wirebench-server-host-design.md`.
 
 ## Configuration
@@ -39,9 +39,10 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 Runs `ghcr.io/wirebench/wirebench-server` beside PostgreSQL 16 with a named volume each. Both ports
 are published on `127.0.0.1` only: the server on `WIREBENCH_HTTP_PORT` (default `8080`) and the
 database on `WIREBENCH_DB_PORT` (default `5432`); set either when the default is taken. Outside
-development put it behind a TLS-terminating proxy and set `WIREBENCH_SERVER_PUBLIC_URL` to the
-`https://` origin users will reach. Run **one** replica: the per-workspace lock is in-process
-(ADR-0009). `wirebench-server migrate` applies schema migrations ahead of a restart;
+development put it behind a TLS-terminating proxy that forwards WebSocket upgrades (see
+[Live updates](#live-updates)) and set `WIREBENCH_SERVER_PUBLIC_URL` to the `https://` origin users will
+reach. Run **one** replica: the per-workspace lock (ADR-0009) and the live-updates hub (ADR-0013) are
+in-process. `wirebench-server migrate` applies schema migrations ahead of a restart;
 `wirebench-server migrate --check` exits 1 while any are pending; `wirebench-server config check`
 lists each variable as set, defaulted or missing without printing values. `/healthz` reports
 pass/fail per check (database, data directory, git) and nothing else.
@@ -108,3 +109,37 @@ and `POST commits` (editors and admins). `/api/v1/meta` lists `sync` among its c
   `<data dir>/tmp/`. Leftovers from a crash are removed at start-up.
 - On shutdown the server finishes the repository work already queued before it closes the database.
   Run **one** replica: the per-workspace lock is in-process.
+
+## Live updates
+
+`GET /api/v1/live` is a WebSocket, and `/api/v1/meta` lists `live` among its capabilities. The app opens one
+per signed-in account while a workspace from this server is open, sends its device token as the first message
+(never in the URL or a header), and subscribes to the open workspaces. The server then tells it when someone
+pushes, when a role or access changes, and when its session ends, and who else has each workspace open
+(display names and user ids, never emails). The app answers every event with an ordinary fetch, so the HTTP
+API stays the source of truth; while connected, it polls only every five minutes as a safety net.
+
+- The hub lives in the server process and stores nothing. Run **one** replica: a second would miss the
+  first's events. Clients still converge through the safety-net poll.
+- A reverse proxy must forward `Upgrade` and `Connection` for `/api/v1/live`. With nginx:
+
+  ```nginx
+  location /api/v1/live {
+      proxy_pass http://127.0.0.1:8080;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_set_header Host $host;
+  }
+  ```
+
+  A proxy that strips them leaves the app polling at the user's interval with a _Reconnecting…_ dot on the
+  Sync badge. The server pings every socket every 30 s and drops one that does not answer, which also keeps
+  an idle connection inside a proxy's read timeout (nginx's `proxy_read_timeout` defaults to 60 s).
+
+- Limits: a client message is at most 4 KiB, one session subscribes to at most 200 workspaces, one user holds
+  at most 32 sockets, and a socket that does not authenticate within 10 s is closed. An upgrade whose
+  `Origin` is not `WIREBENCH_SERVER_PUBLIC_URL` is refused with `403 live-origin-refused`; the app sends
+  none.
+- On shutdown every socket closes with `1001` before in-flight requests drain, and the app reconnects when
+  the server is back.

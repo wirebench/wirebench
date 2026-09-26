@@ -1,7 +1,7 @@
 # Wirebench Server: `server-host` — design
 
-Issue: #74 · Date: 2026-09-24 · Status: approved by the owner on 2026-09-24 · Module: `server-host` of
-`docs/specs/2026-09-24-wirebench-server-capability-map.md`
+Issue: #74 · Date: 2026-09-24 · Status: approved by the owner on 2026-09-24; amended 2026-09-26 for
+`live-updates` (§1, §3.7) · Module: `server-host` of `docs/specs/2026-09-24-wirebench-server-capability-map.md`
 
 - Intent: `docs/intent/wirebench-server-teams.md`
 - Builds on: `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (§5.1 `SyncBackend`, §5.4 the
@@ -64,8 +64,12 @@ unit suite everywhere and its integration suite where a PostgreSQL is reachable;
 and behaves exactly as before the engine move.
 
 **Non-goals (this module).** Any endpoint beyond health and meta; users, sessions, teams, roles, sync
-(the three modules after it); WebSockets and live updates (out of the slice); multi-instance
-deployment; a hosted cloud; an admin web UI (the app is the UI).
+(the three modules after it); multi-instance deployment; a hosted cloud; an admin web UI (the app is the
+UI). WebSockets and live updates, out of the first slice, are the second slice's `live-updates` module
+(`docs/specs/2026-09-26-wirebench-server-live-updates-design.md`): it registers `@fastify/websocket` into
+this host's `/api/v1` scope, and its hub is in-process, which assumption 1 already requires. The module
+adds workspace presence ("Also here"), and a reverse proxy in front of the host must forward `Upgrade`
+and `Connection` for `/api/v1/live`.
 
 ## 2. Concept model
 
@@ -159,6 +163,11 @@ logged. Each line carries the request id.
 `SIGTERM` or `SIGINT`: stop accepting connections, wait up to 10 s for in-flight requests and the
 current `withLock` holder, close the PostgreSQL pool, exit 0. A second signal exits immediately with
 code 130.
+
+Live sockets (`live-updates`) close first: `app.close()` runs the module's `preClose`, which closes every
+socket with `1001` and then the WebSocket server, before the in-flight wait and so before the repository
+drain. A desktop reconnects with back-off and polls meanwhile. A push that finishes during the drain
+announces into the closed hub, which does nothing. (Amended 2026-09-26.)
 
 ### 3.8 Command line
 

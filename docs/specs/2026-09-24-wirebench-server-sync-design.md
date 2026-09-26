@@ -71,7 +71,9 @@ below bring it in line. Every later section already reflects them.
    auto-fetch timer and the actions on that flag. The name stays for wire compatibility, and a comment
    says so. The fake backend follows the same rule (R9).
 7. **Polling, not push, in this slice.** `subscribeRemote` stays a no-op, and the auto-fetch interval does
-   the work. Live updates are the WebSocket follow-up in the roadmap.
+   the work. Live updates are the WebSocket follow-up in the roadmap. *Retired 2026-09-26 by `live-updates`
+   (`docs/specs/2026-09-26-wirebench-server-live-updates-design.md`, ADR-0013): `subscribeRemote` carries
+   `RemoteEvent`s for a server share, and auto-fetch waits at least 300 s while the socket is connected.*
 
 ---
 
