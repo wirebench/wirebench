@@ -406,4 +406,68 @@ describe('SyncPanel on a Wirebench Server share (server-sync §3.4, §5.4)', () 
     expect(screen.queryByTestId('sync-error-notice')).toBeNull();
     expect(screen.getByLabelText<HTMLInputElement>('Remote').value).toBe('');
   });
+
+  describe('"Also here" (live-updates §3.4, §5.4)', () => {
+    const users = (...names: string[]): { id: string; name: string }[] =>
+      names.map((name, index) => ({ id: `u${String(index + 1)}`, name }));
+
+    it('shows no line when nobody else is here, or before the first presence arrives', async () => {
+      openServerShared({ presence: [] });
+      await showPanel();
+      expect(screen.queryByTestId('sync-presence')).toBeNull();
+
+      act(() => {
+        useSyncStore.setState({ status: SERVER_STATUS });
+      });
+      expect(screen.queryByTestId('sync-presence')).toBeNull();
+    });
+
+    it('names up to five others', async () => {
+      openServerShared({ presence: users('Ana', 'Ben', 'Cy') });
+      await showPanel();
+
+      const line = screen.getByTestId('sync-presence');
+      expect(line.textContent).toBe('Also here: Ana, Ben, Cy');
+    });
+
+    it('folds everyone past the fifth into "+N", and lists them all on hover', async () => {
+      openServerShared({ presence: users('Ana', 'Ben', 'Cy', 'Dee', 'Eli', 'Fay', 'Gus') });
+      await showPanel();
+
+      const line = screen.getByTestId('sync-presence');
+      expect(line.textContent).toBe('Also here: Ana, Ben, Cy, Dee, Eli +2');
+      expect(line.getAttribute('title')).toBe('Ana, Ben, Cy, Dee, Eli, Fay, Gus');
+    });
+
+    it('keeps exactly five names without a "+N"', async () => {
+      openServerShared({ presence: users('Ana', 'Ben', 'Cy', 'Dee', 'Eli') });
+      await showPanel();
+
+      expect(screen.getByTestId('sync-presence').textContent).toBe('Also here: Ana, Ben, Cy, Dee, Eli');
+    });
+
+    it('updates while the panel is open, and goes away when the last one leaves', async () => {
+      openServerShared({ presence: users('Ana') });
+      await showPanel();
+      expect(screen.getByTestId('sync-presence').textContent).toBe('Also here: Ana');
+
+      act(() => {
+        useSyncStore.setState({ status: { ...SERVER_STATUS, presence: users('Ana', 'Ben') } });
+      });
+      expect(screen.getByTestId('sync-presence').textContent).toBe('Also here: Ana, Ben');
+
+      act(() => {
+        useSyncStore.setState({ status: { ...SERVER_STATUS, presence: [] } });
+      });
+      expect(screen.queryByTestId('sync-presence')).toBeNull();
+    });
+
+    it('never shows on a git share', async () => {
+      useWorkspaceStore.setState({ workspace: workspaceWire({ share: { kind: 'git', managed: true } }) });
+      useSyncStore.setState({ status: STATUS, conflicts: [] });
+      await showPanel();
+
+      expect(screen.queryByTestId('sync-presence')).toBeNull();
+    });
+  });
 });

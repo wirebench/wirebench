@@ -136,3 +136,68 @@ describe('SyncBadge', () => {
     expect(badge.getAttribute('data-state')).toBe('ahead');
   });
 });
+
+describe('SyncBadge live dot (live-updates §3.4, §5.4)', () => {
+  afterEach(() => {
+    cleanup();
+    useWorkspaceStore.setState({ workspace: null });
+    useSyncStore.getState().reset();
+  });
+
+  it.each([
+    ['connected', 'Live'],
+    ['connecting', 'Reconnecting…'],
+  ] as const)('shows a %s dot with the tooltip "%s", and names it for a screen reader', (live, tooltip) => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ share: SERVER_SHARE }) });
+    useSyncStore.setState({ status: { ...BASE, kind: 'server', role: 'editor', live } });
+    render(<SyncBadge />);
+
+    const dot = screen.getByTestId('sync-live-dot');
+    expect(dot.getAttribute('data-state')).toBe(live);
+    expect(dot.getAttribute('title')).toBe(tooltip);
+    const badge = screen.getByTestId('status-bar-sync');
+    expect(badge.contains(dot)).toBe(true);
+    // The dot adds no text: the label, and every e2e wait keyed on the badge, read as before.
+    expect(badge.textContent).toBe('Up to date');
+    expect(badge.getAttribute('data-state')).toBe('clean');
+    expect(badge.getAttribute('aria-label')).toBe(`Sync: Up to date. ${tooltip}. Show the Sync panel`);
+  });
+
+  it('shows no dot while the socket is off: polling looks exactly as it did before', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ share: SERVER_SHARE }) });
+    useSyncStore.setState({ status: { ...BASE, kind: 'server', role: 'editor', live: 'off' } });
+    render(<SyncBadge />);
+
+    const badge = screen.getByTestId('status-bar-sync');
+    expect(screen.queryByTestId('sync-live-dot')).toBeNull();
+    expect(badge.getAttribute('aria-label')).toBe('Sync: Up to date. Show the Sync panel');
+  });
+
+  it('shows no dot when the status carries no live state, as on a git share', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ share: { kind: 'git', managed: true } }) });
+    useSyncStore.setState({ status: BASE });
+    render(<SyncBadge />);
+
+    const badge = screen.getByTestId('status-bar-sync');
+    expect(screen.queryByTestId('sync-live-dot')).toBeNull();
+    expect(badge.getAttribute('aria-label')).toBe('Sync: Up to date. Show the Sync panel');
+  });
+
+  it('follows the live state as new statuses arrive', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ share: SERVER_SHARE }) });
+    useSyncStore.setState({ status: { ...BASE, kind: 'server', live: 'connected' } });
+    render(<SyncBadge />);
+    expect(screen.getByTestId('sync-live-dot').getAttribute('data-state')).toBe('connected');
+
+    act(() => {
+      useSyncStore.setState({ status: { ...BASE, kind: 'server', live: 'connecting' } });
+    });
+    expect(screen.getByTestId('sync-live-dot').getAttribute('data-state')).toBe('connecting');
+    expect(screen.getByTestId('sync-live-dot').getAttribute('title')).toBe('Reconnecting…');
+
+    act(() => {
+      useSyncStore.setState({ status: { ...BASE, kind: 'server', live: 'off' } });
+    });
+    expect(screen.queryByTestId('sync-live-dot')).toBeNull();
+  });
+});
