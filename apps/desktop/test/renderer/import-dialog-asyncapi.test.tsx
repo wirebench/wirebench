@@ -60,6 +60,10 @@ function mount(): void {
   installWirebenchApi({
     api: { importAsyncApi, asyncApiServers, cancelImport },
     definition: { cancelImport: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }) },
+    secrets: {
+      set: vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-1' } }),
+      exists: vi.fn().mockResolvedValue({ ok: true, value: { exists: true } }),
+    },
     on: vi.fn(() => () => undefined) as unknown as Window['wirebench']['on'],
   });
   useProjectStore.setState({
@@ -208,5 +212,29 @@ describe('ImportDialog — AsyncAPI', () => {
     const options = [...(picker as HTMLSelectElement).options].map((option) => option.value);
     expect(options).toEqual(['newer', 'newest']);
     expect(screen.getByTestId('import-submit').hasAttribute('disabled')).toBe(false);
+  });
+});
+
+describe('ImportDialog — an AsyncAPI document behind authentication', () => {
+  it('reads the servers and imports with the same credentials, by reference', async () => {
+    mount();
+    const url = 'https://gateway.test/asyncapi.yaml';
+    await userEvent.selectOptions(screen.getByTestId('import-format-select'), 'asyncapi');
+    await userEvent.type(screen.getByTestId('import-url-input'), url);
+    await userEvent.selectOptions(screen.getByLabelText('Definition authentication type'), 'bearer');
+    await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
+    await userEvent.type(screen.getByLabelText('Definition token'), 'tok');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    const auth = { type: 'bearer', tokenRef: 'ref-1' };
+    await waitFor(() => {
+      expect(asyncApiServers).toHaveBeenLastCalledWith({ source: { kind: 'url', url }, auth });
+    });
+    await userEvent.click(screen.getByTestId('import-submit'));
+
+    await waitFor(() => {
+      expect(importAsyncApi).toHaveBeenCalledTimes(1);
+    });
+    expect(importAsyncApi.mock.calls[0]?.[0]).toMatchObject({ source: { kind: 'url', url }, auth });
   });
 });

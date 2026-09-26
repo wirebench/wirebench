@@ -19,7 +19,9 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
+  ApiAsyncApiServersRequest,
   AsyncApiImportSummaryWire,
+  AuthConfigWire,
   EngineProgressEvent,
   GrpcReflectionVersionWire,
   ImportProblemWire,
@@ -34,6 +36,7 @@ import type {
   ProtoSourceWire,
 } from '../../../shared/wire-types.js';
 import { Button } from '../../components/button.js';
+import { DefinitionAuthFields, NO_DEFINITION_AUTH, toDefinitionAuthWire } from '../../components/definition-auth.js';
 import { SecretField } from '../../components/secret-field.js';
 import { Tabs } from '../../components/tabs.js';
 import { ipc } from '../../state/ipc-client.js';
@@ -171,6 +174,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }, []);
   const [useForRequests, setUseForRequests] = useState(false);
 
+  // OpenAPI and AsyncAPI by URL: the credentials the document is fetched with, as references.
+  const [definitionAuth, setDefinitionAuth] = useState<AuthConfigWire>(NO_DEFINITION_AUTH);
+  const definitionAuthFlushRef = useRef<(() => Promise<AuthConfigWire | undefined>) | undefined>(undefined);
+  const registerDefinitionAuthFlush = useCallback((flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => {
+    definitionAuthFlushRef.current = flush;
+  }, []);
+
   // Status and Target
   const [target, setTarget] = useState<string>(NEW_PROJECT);
   const [urlError, setUrlError] = useState<string | undefined>(undefined);
@@ -248,7 +258,12 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           : tab === 'url' && URL.canParse(url)
             ? { kind: 'url', url }
             : undefined;
-  const asyncApiSourceKey = asyncApiSource === undefined ? '' : JSON.stringify(asyncApiSource);
+  // The server picker reads the same document the import will, so it goes with the same credentials.
+  const asyncApiAuth = tab === 'url' ? toDefinitionAuthWire(definitionAuth) : undefined;
+  const asyncApiSourceKey =
+    asyncApiSource === undefined
+      ? ''
+      : JSON.stringify({ source: asyncApiSource, ...(asyncApiAuth !== undefined ? { auth: asyncApiAuth } : {}) });
 
   useEffect(() => {
     setWsServers([]);
@@ -260,9 +275,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setPreviewPending(true);
     let current = true;
     const timer = setTimeout(() => {
-      const source = JSON.parse(asyncApiSourceKey) as OpenApiSourceWire;
+      const request = JSON.parse(asyncApiSourceKey) as ApiAsyncApiServersRequest;
       void ipc()
-        .api.asyncApiServers({ source })
+        .api.asyncApiServers(request)
         .then((res) => {
           if (!current) {
             return; // A newer source has its own preview under way.
@@ -302,6 +317,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setServerTrustInvalid(false);
     setWsServers([]);
     setWsServer('');
+    setDefinitionAuth(NO_DEFINITION_AUTH);
   }, []);
 
   function buildSource(): ImportSourceWire | undefined {
@@ -566,6 +582,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     const into: ProjectAddInterfaceTarget = chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen };
 
     try {
+      // Only a URL is fetched from anywhere, so only a URL carries credentials; a secret typed but not
+      // yet saved is stored first, as the WSDL password is below.
+      const definitionAuthWire =
+        source.kind === 'url' && (targetFormat === 'openapi' || targetFormat === 'asyncapi')
+          ? toDefinitionAuthWire((await definitionAuthFlushRef.current?.()) ?? definitionAuth)
+          : undefined;
+      const withDefinitionAuth = definitionAuthWire !== undefined ? { auth: definitionAuthWire } : {};
+
       if (targetFormat === 'wsdl') {
         const flushedRef = (await passwordFlushRef.current?.()) ?? passwordRef;
         const options =
@@ -611,6 +635,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           token,
           ...(name.trim().length > 0 ? { name: name.trim() } : {}),
           ...(baseUrl.trim().length > 0 ? { baseUrl: baseUrl.trim() } : {}),
+          ...withDefinitionAuth,
         });
 
         if (cancelledTokensRef.current.has(token)) {
@@ -640,6 +665,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           // Named only when there was a choice: with one server, main's default is that server.
           ...(wsServers.length > 1 && wsServer !== '' ? { server: wsServer } : {}),
           ...(name.trim().length > 0 ? { name: name.trim() } : {}),
+          ...withDefinitionAuth,
         });
         if (cancelledTokensRef.current.has(token)) {
           return;
@@ -884,6 +910,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       className="rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
                     />
                     {urlError !== undefined && <p className="text-sm text-status-danger">{urlError}</p>}
+
+                    {(effectiveFormat === 'openapi' || effectiveFormat === 'asyncapi') && (
+                      <DefinitionAuthFields
+                        auth={definitionAuth}
+                        onChange={setDefinitionAuth}
+                        registerFlush={registerDefinitionAuthFlush}
+                      />
+                    )}
 
                     {(effectiveFormat === 'wsdl' || effectiveFormat === 'unknown') && (
                       <>
