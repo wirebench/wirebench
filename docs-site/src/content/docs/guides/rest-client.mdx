@@ -201,6 +201,14 @@ between, nothing is applied: the dialog says so and offers **Preview again**.
 Afterwards the cached definition is rewritten, so [response checks](#response-checks) use the new
 schemas, and the project is saved. If that save fails, the API is left exactly as it was.
 
+## Re-send from History
+
+Every send is recorded in [History](/wirebench/guides/history/) with its method, URL, headers and
+body. Choose **↻** on the entry to send it again through this request, with the request's current
+auth and settings; redacted values are filled from the request. Comparing two entries diffs both
+the response and the request — see
+[Re-send a REST request](/wirebench/guides/history/#re-send-a-rest-request).
+
 ## Limits
 
 - The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or
