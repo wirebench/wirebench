@@ -10,7 +10,7 @@
 
 import { WSS_DIR, REQUEST_SUFFIX } from '../project/paths.js';
 import { KEYSTORES_PATH } from '../project/serialize.js';
-import { WORKSPACE_ENVIRONMENTS_DIR, WORKSPACE_MANIFEST, WORKSPACE_PROJECTS_DIR } from './paths.js';
+import { TEAM_SECRETS_DIR, WORKSPACE_ENVIRONMENTS_DIR, WORKSPACE_MANIFEST, WORKSPACE_PROJECTS_DIR } from './paths.js';
 
 /** What kind of entity a tree path belongs to. */
 export type TreeEntityKind =
@@ -24,6 +24,7 @@ export type TreeEntityKind =
   | 'keystores'
   | 'attachment'
   | 'definition'
+  | 'team-secrets'
   | 'other';
 
 /**
@@ -133,6 +134,11 @@ export function describeTreePath(relativePath: string): TreeEntity {
     return describeProjectPath(projectSlug, rest, relativePath);
   }
 
+  const teamSecretsMatch = new RegExp(`^${TEAM_SECRETS_DIR}/(?:keys|access|values)/([^/]+)\\.yaml$`).exec(relativePath);
+  if (teamSecretsMatch !== null) {
+    return { kind: 'team-secrets', name: teamSecretsMatch[1] ?? basename(relativePath), key: relativePath };
+  }
+
   return { kind: 'other', name: basename(relativePath), key: relativePath };
 }
 
@@ -154,6 +160,7 @@ const LABELS: Record<TreeEntityKind, string> = {
   keystores: 'keystores',
   attachment: 'attachment',
   definition: 'definition',
+  'team-secrets': 'team secrets file',
   other: 'file',
 };
 

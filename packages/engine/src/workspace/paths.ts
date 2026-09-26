@@ -56,14 +56,17 @@ export const WORKSPACE_TREE_DIR = 'tree';
 export const WORKSPACE_JOINING_DIR = '.joining';
 /** File name of the tree's own `.gitattributes`, written on share and on join if missing. */
 export const GIT_ATTRIBUTES_FILE = '.gitattributes';
+/** Directory at the tree root holding team secrets: key requests, the access log and the vault (team-secrets §4). */
+export const TEAM_SECRETS_DIR = 'team-secrets';
 /**
  * Contents of {@link GIT_ATTRIBUTES_FILE}: normalises line endings, and leaves bytes alone where
  * they must stay exact — attachments, and the definition caches of interfaces and APIs, which keep
  * each document as fetched (a WSDL's manifest records its SHA-256, so a CRLF definition normalised
- * by git fails that check on the other side, which then re-fetches and rewrites the cache).
+ * by git fails that check on the other side, which then re-fetches and rewrites the cache). A vault
+ * entry is never text-merged: two concurrent changes are a conflict the sync settles whole.
  */
 export const GIT_ATTRIBUTES =
-  '* text=auto eol=lf\n*.yaml text\n*.xml text\n*.wsdl text\n*.xsd text\nprojects/*/attachments/** -text\nprojects/*/interfaces/*/definition/** -text\nprojects/*/apis/*/definition/** -text\n';
+  '* text=auto eol=lf\n*.yaml text\n*.xml text\n*.wsdl text\n*.xsd text\nprojects/*/attachments/** -text\nprojects/*/interfaces/*/definition/** -text\nprojects/*/apis/*/definition/** -text\nteam-secrets/values/** -merge\n';
 
 /** Absolute path of a workspace's own directory, given the app's user-data root and the workspace id. */
 export function workspaceDir(userDataDir: string, workspaceId: string): string {

@@ -14,7 +14,7 @@ const pathOfLength = (length: number): string => `projects/${'p'.repeat(length -
 
 describe('tree paths (server-sync §3.2)', () => {
   it('names the tree items and the machine-local names', () => {
-    expect([...TREE_ITEMS]).toEqual(['workspace.yaml', 'environments', 'projects', '.gitattributes']);
+    expect([...TREE_ITEMS]).toEqual(['workspace.yaml', 'environments', 'projects', '.gitattributes', 'team-secrets']);
     expect([...MACHINE_LOCAL_PATHS]).toEqual(['share.yaml', 'local.yaml', 'unsaved']);
     expect(MAX_TREE_PATH_LENGTH).toBe(512);
   });
@@ -23,6 +23,7 @@ describe('tree paths (server-sync §3.2)', () => {
     ['the manifest', 'workspace.yaml'],
     ['the attributes file', '.gitattributes'],
     ['an environment', 'environments/qa.yaml'],
+    ['a vault entry', 'team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml'],
     ['a project manifest', 'projects/billing/wirebench.yaml'],
     ['a request', 'projects/w/interfaces/i/operations/o/GetWeather.request.yaml'],
     ['an attachment', 'projects/w/attachments/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08'],

@@ -29,6 +29,7 @@ export {
   WORKSPACE_JOINING_DIR,
   GIT_ATTRIBUTES_FILE,
   GIT_ATTRIBUTES,
+  TEAM_SECRETS_DIR,
   workspaceDir,
   workspaceEnvironmentFile,
   workspaceManifestFile,

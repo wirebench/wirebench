@@ -8,6 +8,7 @@ import { WirebenchError } from '../errors.js';
 import { WORKSPACE_LOCAL_FILE } from '../workspace/local-state.js';
 import {
   GIT_ATTRIBUTES_FILE,
+  TEAM_SECRETS_DIR,
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_MANIFEST,
   WORKSPACE_PROJECTS_DIR,
@@ -20,6 +21,7 @@ export const TREE_ITEMS = [
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_PROJECTS_DIR,
   GIT_ATTRIBUTES_FILE,
+  TEAM_SECRETS_DIR,
 ] as const;
 
 /** The tree items that are single files. The other two are directories, so a path names a file below them. */
