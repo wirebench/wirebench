@@ -8,6 +8,7 @@ import {
   apiAsyncApiServersRequestSchema,
   apiImportAsyncApiRequestSchema,
   apiImportOpenApiRequestSchema,
+  apiRestPlanUpdateRequestSchema,
   definitionAuthWireSchema,
 } from '../src/shared/wire-types.js';
 
@@ -69,4 +70,16 @@ describe('credentials on an import request', () => {
       expect(parse({ source: { kind: 'url', url: 'file:///etc/passwd' }, auth: BASIC }).success).toBe(false);
     });
   }
+});
+
+describe('credentials on a REST update source', () => {
+  it('keeps them on a URL source', () => {
+    const parsed = apiRestPlanUpdateRequestSchema.parse({ apiId: 'a1', source: { ...URL_SOURCE, auth: BASIC } });
+    expect(parsed.source).toEqual({ ...URL_SOURCE, auth: BASIC });
+  });
+
+  it('refuses a plaintext secret there too', () => {
+    const source = { ...URL_SOURCE, auth: { ...BASIC, password: 'hunter2' } };
+    expect(apiRestPlanUpdateRequestSchema.safeParse({ apiId: 'a1', source }).success).toBe(false);
+  });
 });

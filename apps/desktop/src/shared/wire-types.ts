@@ -2976,6 +2976,8 @@ export const restUpdateSourceSchema = z.discriminatedUnion('kind', [
       .string()
       .max(MAX_IMPORT_LOCATION_CHARS)
       .regex(/^https?:\/\//i, 'Only http and https URLs can be read'),
+    /** Credentials for this URL; an apply records them on the API, and none clears the stored ones. */
+    auth: definitionAuthWireSchema.optional(),
   }),
   z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
 ]);

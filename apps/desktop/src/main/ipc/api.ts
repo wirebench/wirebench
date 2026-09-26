@@ -337,7 +337,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     if (asyncApiImports === undefined) {
       throw new WirebenchError('not-supported', 'This build cannot import AsyncAPI documents');
     }
-    const recorded = router.asyncApiSource(apiId);
+    const { source: recorded, auth } = router.asyncApiSource(apiId);
     if (recorded.startsWith('inline:')) {
       throw new WirebenchError(
         'definition-source-unavailable',
@@ -351,7 +351,8 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       ? { kind: 'url', url: recorded }
       : { kind: 'file', path: recorded };
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, wire);
-    return asyncApiImports.readAsyncApi(toEngineSource(checked));
+    // The credentials it was imported with, without asking again; a file is read without any.
+    return asyncApiImports.readAsyncApi(toEngineSource(checked), checked.kind === 'url' ? auth : undefined);
   };
 
   registerHandler(channels.api.asyncApiPlanUpdate, async (request) => {
@@ -386,34 +387,39 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   });
 
   /**
-   * Reads a REST API's new definition: the source the user chose, or else the one the API records,
-   * either way through the same path check an import makes. Answers the checked location too, so
-   * an apply can record a chosen source as the API's own.
-   *
-   * TODO: carry credentials, so a definition behind basic auth can be updated. Not done here because
-   * `api.importOpenApi` has no auth either — `OpenApiImportService.readOpenApi` and `run` both build
-   * their fetcher without any — so it is not a small change to this handler but a new option through
-   * the import service, the fetcher and the schema, plus somewhere to keep the API's `secretRef`.
-   * Until then the chooser lets the user point at a local copy.
+   * Reads a REST API's new definition: the source the user chose, with the credentials chosen with
+   * it, or else the one the API records, with the credentials it records — so an update never asks
+   * for what the import was given. Either way through the same path check an import makes. Answers
+   * the checked location and the credentials used, so an apply can record a chosen source as the
+   * API's own.
    */
   const readRestSource = async (apiId: string, chosen: RestUpdateSourceWire | undefined) => {
     let wire: OpenApiSourceWire;
+    let auth: DefinitionAuth | undefined;
     if (chosen !== undefined) {
-      wire = chosen;
+      if (chosen.kind === 'url') {
+        wire = { kind: 'url', url: chosen.url };
+        auth = chosen.auth === undefined ? undefined : toDefinitionAuth(chosen.auth);
+      } else {
+        wire = chosen;
+      }
     } else {
       const recorded = router.restSource(apiId);
-      if (recorded.startsWith('inline:')) {
+      if (recorded.source.startsWith('inline:')) {
         throw new WirebenchError(
           'definition-source-unavailable',
           'This API was imported from pasted text, so there is no source to read again',
           { details: { apiId } },
         );
       }
-      wire = /^https?:\/\//i.test(recorded) ? { kind: 'url', url: recorded } : { kind: 'file', path: recorded };
+      wire = /^https?:\/\//i.test(recorded.source)
+        ? { kind: 'url', url: recorded.source }
+        : { kind: 'file', path: recorded.source };
+      auth = wire.kind === 'url' ? recorded.auth : undefined;
     }
     const checked = await checkedImportSource(deps.projectDirs(), deps.picks, wire);
-    const parsed = await deps.imports.readOpenApi(toEngineSource(checked));
-    return { parsed, label: sourceLabel(checked) };
+    const parsed = await deps.imports.readOpenApi(toEngineSource(checked), auth);
+    return { parsed, label: sourceLabel(checked), auth };
   };
 
   registerHandler(channels.api.restPlanUpdate, async (request) => {
@@ -430,9 +436,10 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   });
 
   registerHandler(channels.api.restApplyUpdate, async (request) => {
-    const { parsed, label } = await readRestSource(request.apiId, request.source);
+    const { parsed, label, auth } = await readRestSource(request.apiId, request.source);
     const { project, plan, applied, warning } = await router.restApplyUpdate(request.apiId, parsed, {
-      ...(request.source !== undefined ? { source: label } : {}),
+      // A chosen source brings its own credentials, or none: a file, or a URL given without any.
+      ...(request.source !== undefined ? { source: label, ...(auth !== undefined ? { auth } : {}) } : {}),
       // The user agreed to the plan they were shown; a source or cache changed since would apply
       // something else.
       check: (cached) => {

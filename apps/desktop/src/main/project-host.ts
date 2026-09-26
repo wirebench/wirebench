@@ -3183,9 +3183,13 @@ export class ProjectHost {
     return undefined;
   }
 
-  /** Where an AsyncAPI-imported API's definition came from, as the user gave it, for an update to re-read. */
-  asyncApiSource(apiId: string): string {
-    return this.requireAsyncApi(apiId).definition.source;
+  /**
+   * Where an AsyncAPI-imported API's definition came from, as the user gave it, and the credentials
+   * it was fetched with, for an update to re-read it the same way.
+   */
+  asyncApiSource(apiId: string): { readonly source: string; readonly auth?: DefinitionAuth } {
+    const { source, auth } = this.requireAsyncApi(apiId).definition;
+    return { source, ...(auth !== undefined ? { auth } : {}) };
   }
 
   /** What updating `apiId` to `next` would change, compared with the cached document. Changes nothing. */
@@ -3230,9 +3234,13 @@ export class ProjectHost {
     return { project: this.snapshot() as ProjectWire, plan, applied };
   }
 
-  /** Where a REST API's definition came from, as the user gave it, for an update to re-read. */
-  restSource(apiId: string): string {
-    return this.requireCachedRestApi(apiId).definition.source;
+  /**
+   * Where a REST API's definition came from, as the user gave it, and the credentials it was fetched
+   * with, for an update to re-read it the same way.
+   */
+  restSource(apiId: string): { readonly source: string; readonly auth?: DefinitionAuth } {
+    const { source, auth } = this.requireCachedRestApi(apiId).definition;
+    return { source, ...(auth !== undefined ? { auth } : {}) };
   }
 
   /** What updating `apiId` to `next` would change, compared with the cached document. Changes nothing. */
@@ -3287,6 +3295,12 @@ export class ProjectHost {
       /** Becomes the API's recorded definition source. */
       readonly source?: string;
       /**
+       * The credentials `source` was read with. Only looked at with a `source`: the stored ones are then
+       * replaced, and absent clears them, so a credential never follows the API to a source it was not
+       * given for. Without a `source` the stored credentials stay as they are.
+       */
+      readonly auth?: DefinitionAuth;
+      /**
        * Sees the cached documents the update compares against before anything changes; throwing
        * refuses the update (the IPC layer's fingerprint guard).
        */
@@ -3299,7 +3313,7 @@ export class ProjectHost {
     /** Set when the update was saved but the definition cache could not be rewritten afterwards. */
     readonly warning?: string;
   }> {
-    const { source, check } = options;
+    const { source, auth, check } = options;
     const cache = await this.readRestCache(apiId);
     await check?.(cache.documents);
     // Read after every wait: an edit made meanwhile is the base the update applies to.
@@ -3308,14 +3322,17 @@ export class ProjectHost {
     const old = cache.document;
     const plan = planRestUpdate(old, next.document);
     const { api: mapped, ...applied } = applyRestUpdate(api, old, next.document);
+    // `requireCachedRestApi` proved the definition is there; the engine only ever rewrites its
+    // `version`, which this sets itself.
+    const { auth: storedAuth, ...recorded } = api.definition;
+    const nextAuth = source !== undefined ? auth : storedAuth;
     const updated: RestApi = {
       ...mapped,
       definition: {
-        // `requireCachedRestApi` proved this is there; the engine only ever rewrites its `version`,
-        // which this sets itself.
-        ...api.definition,
+        ...recorded,
         version: next.document.declaredVersion,
         ...(source !== undefined ? { source } : {}),
+        ...(nextAuth !== undefined ? { auth: nextAuth } : {}),
       },
     };
 

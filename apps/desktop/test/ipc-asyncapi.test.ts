@@ -556,6 +556,25 @@ describe('the contract a live session is checked against', () => {
     expect(requestFor(imported.apiId, 'typing')?.orphaned).toBeUndefined();
   });
 
+  it('plans and applies with the credentials the URL was imported with, without being given them', async () => {
+    const imported = await value<Imported>('api.importAsyncApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'url', url: `${DOCS}asyncapi.yaml` },
+      auth: { type: 'bearer', tokenRef: 'ref-t' },
+    });
+    built = [];
+
+    const plan = await value<{ fingerprint: string }>('api.asyncApiPlanUpdate', { apiId: imported.apiId });
+    await value('api.asyncApiApplyUpdate', { apiId: imported.apiId, fingerprint: plan.fingerprint });
+
+    expect(built).toHaveLength(2);
+    for (const options of built) {
+      expect(options).toMatchObject({ auth: { type: 'bearer', token: TOKEN }, authOrigin: 'https://docs.test' });
+    }
+    const api = (hostFor('p1').snapshot() as ProjectWire).wsApis.find((one) => one.id === imported.apiId);
+    expect(api?.definition?.auth).toEqual({ type: 'bearer', tokenRef: 'ref-t' });
+  });
+
   it('refuses to plan for an API that is not AsyncAPI-imported', async () => {
     const error = await failure('api.asyncApiPlanUpdate', { apiId: 'nope' });
     expect(error.code).toBe('not-found');
