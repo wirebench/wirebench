@@ -267,7 +267,10 @@ export interface RecordRestSendInput {
   /** The folder path inside the API, as `Pets / Admin`; empty at the API's root. */
   readonly folderPath: string;
   readonly method: string;
-  /** The URL as sent, already redacted by `toRestExchangeSummary`. */
+  /**
+   * The URL as sent. `toRestExchangeSummary` redacted it for the session's show-secrets toggle,
+   * so it can still hold a key in the clear; History redacts it again with `show: false`.
+   */
   readonly url: string;
   readonly requestHeaders: Readonly<Record<string, string>>;
   /** The request body as text; empty for a body with no text form. */
@@ -276,6 +279,8 @@ export interface RecordRestSendInput {
   readonly error?: { readonly code: string; readonly message: string };
   readonly durationMs: number;
   readonly tags?: readonly string[];
+  /** Query parameters an API key travels in, masked in the URL whatever they are called. */
+  readonly keyParams?: readonly string[];
 }
 
 /** How much of a body a history line keeps. Beyond this it is truncated with a marker. */
@@ -345,7 +350,8 @@ export function buildRestHistoryEntry(projectId: string, record: RecordRestSendI
     requestName: record.requestName,
     interfaceName: record.apiName,
     operationName: record.folderPath,
-    endpoint: record.url,
+    // Redacted again whatever the session showed: History is written to disk.
+    endpoint: redactUrl(record.url, { show: false, extraParams: record.keyParams ?? [] }),
     method: record.method,
     // A REST send speaks no SOAP version; the field is the shared entry's, so it says so.
     soapVersion: 'none',

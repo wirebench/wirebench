@@ -897,11 +897,11 @@ export async function sendRestRequest(
       request.requestId,
       summary.cookies.map((cookie) => withoutUndefined<Cookie>(cookie)),
     );
-    await recordRest(deps, request.requestId, resolved, summary, Date.now() - startedAt);
+    await recordRest(deps, request.requestId, resolved, summary, Date.now() - startedAt, keyParams);
     return summary;
   } catch (error) {
     const durationMs = Date.now() - startedAt;
-    await recordRest(deps, request.requestId, resolved, undefined, durationMs, error);
+    await recordRest(deps, request.requestId, resolved, undefined, durationMs, keyParams, error);
     // The failure row for the console's HTTP Log. When the transport got as far as building the
     // request, the error carries it (final URL with path params and query, auth applied) and the
     // row shows that; otherwise the base joined with the path and the enabled header rows. Either
@@ -946,6 +946,7 @@ async function recordRest(
   resolved: RestSendResolution,
   summary: RestExchangeSummary | undefined,
   durationMs: number,
+  keyParams: readonly string[] | undefined,
   error?: unknown,
 ): Promise<void> {
   const projectId = deps.project.projectId(requestId);
@@ -968,6 +969,7 @@ async function recordRest(
     ...(summary !== undefined ? { exchange: summary } : {}),
     ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
     durationMs,
+    ...(keyParams !== undefined ? { keyParams } : {}),
   });
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);
