@@ -4356,6 +4356,17 @@ export const syncStatusWireSchema = z.object({
    * further down this file.
    */
   role: z.enum(['viewer', 'editor', 'admin']).optional(),
+  /**
+   * The others with this server workspace open (live-updates §3.4), never the caller: names and
+   * user ids only, never emails. Set only while a server's live socket is connected.
+   */
+  presence: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+  /**
+   * A server share's live socket: `connected`, `connecting` (opening, or backing off after a drop) or
+   * `off` (the server has no `live`, or the subscription closed). Git and folder shares never have it.
+   * Older renderers ignore both fields.
+   */
+  live: z.enum(['connected', 'connecting', 'off']).optional(),
 });
 export type SyncStatusWire = z.infer<typeof syncStatusWireSchema>;
 

@@ -19,6 +19,18 @@ const KIND_ICON: Readonly<Record<SyncStatusWire['kind'], LucideIcon>> = {
   server: Server,
 };
 
+/** The live states that draw a dot. `off` draws none, so a share that only polls looks exactly as before. */
+type LiveDotState = Exclude<NonNullable<SyncStatusWire['live']>, 'off'>;
+
+/**
+ * The dot's tooltip per live state (live-updates §3.4). *Reconnecting…* also covers a proxy that strips
+ * `Upgrade`: the app then polls at the user's interval, and the word says why pushes are not instant.
+ */
+const LIVE_DOT_LABEL: Readonly<Record<LiveDotState, string>> = {
+  connected: 'Live',
+  connecting: 'Reconnecting…',
+};
+
 /**
  * The states in which a viewer's badge reads *Viewer* (server-sync §3.4): nothing more pressing (a
  * conflict, a failure, a sync in flight, no network) to report instead.
@@ -71,6 +83,11 @@ export function syncBadgeLabel(status: SyncStatusWire): string {
  * The status bar's sync indicator: a kind glyph, the status word, and — once the backend has
  * synced at least once — how long ago. Renders nothing when the open workspace is not shared.
  * Clicking it opens the Sync panel.
+ *
+ * On a server share whose socket is up or coming back (live-updates §3.4), a small dot follows the
+ * word: *Live* while connected, *Reconnecting…* while connecting. The dot carries no text, so the
+ * label and every wait keyed on the badge's `data-state` read as before; its word goes into the
+ * button's accessible name instead.
  */
 export function SyncBadge() {
   const share = useWorkspaceStore((state) => state.workspace?.share);
@@ -88,6 +105,9 @@ export function SyncBadge() {
   const label = syncBadgeLabel(status);
   const relative = status.lastSyncAt === undefined ? undefined : formatRelative(status.lastSyncAt, now);
   const text = relative === undefined ? label : `${label} · ${relative}`;
+  const live: LiveDotState | undefined =
+    status.live === 'connected' || status.live === 'connecting' ? status.live : undefined;
+  const spoken = live === undefined ? text : `${text}. ${LIVE_DOT_LABEL[live]}`;
 
   return (
     <button
@@ -95,7 +115,7 @@ export function SyncBadge() {
       data-testid="status-bar-sync"
       data-state={status.state}
       title="Show the Sync panel"
-      aria-label={`Sync: ${text}. Show the Sync panel`}
+      aria-label={`Sync: ${spoken}. Show the Sync panel`}
       className="flex items-center gap-1 rounded-sm px-1 hover:bg-surface-hover hover:text-fg-default"
       onClick={() => {
         setSyncPanelOpen(true);
@@ -103,6 +123,15 @@ export function SyncBadge() {
     >
       <Icon size={12} aria-hidden="true" />
       {text}
+      {live !== undefined && (
+        <span
+          data-testid="sync-live-dot"
+          data-state={live}
+          title={LIVE_DOT_LABEL[live]}
+          aria-hidden="true"
+          className={`size-1.5 shrink-0 rounded-full ${live === 'connected' ? 'bg-status-success' : 'bg-status-warning'}`}
+        />
+      )}
     </button>
   );
 }

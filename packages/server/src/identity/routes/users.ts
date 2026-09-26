@@ -8,6 +8,7 @@ import {
   type UserSummary,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import { notFound, selfChange } from '../errors.js';
@@ -68,6 +69,10 @@ export const userRoutes =
             await repo.setDisabled(tx, id, null);
           }
         });
+        // Sockets first: a disabled user's sockets close before any access check could look at them.
+        if (body.disabled === true) announce(env.ctx.hooks.sessionEnded, { userId: id }, request.log);
+        // The server-admin flag is a role change that lives in identity (R4).
+        if (body.serverAdmin !== undefined) announce(env.ctx.hooks.accessChanged, { userId: id }, request.log);
         return (await summaries(env, [(await repo.findUserById(env.ctx.db, id))!]))[0];
       },
     );

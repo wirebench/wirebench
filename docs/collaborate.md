@@ -3,9 +3,11 @@
 A workspace can be shared with a team. Members join by URL (or by pointing at an existing
 folder, or by opening it from Wirebench Server), every save becomes a commit, and Sync pulls,
 merges and pushes so everyone converges on the same projects and environments. Design: [`specs/2026-09-13-wirebench-shared-workspaces-design.md`](specs/2026-09-13-wirebench-shared-workspaces-design.md)
-and, for Wirebench Server, [`specs/2026-09-24-wirebench-server-sync-design.md`](specs/2026-09-24-wirebench-server-sync-design.md);
+and, for Wirebench Server, [`specs/2026-09-24-wirebench-server-sync-design.md`](specs/2026-09-24-wirebench-server-sync-design.md)
+and [`specs/2026-09-26-wirebench-server-live-updates-design.md`](specs/2026-09-26-wirebench-server-live-updates-design.md);
 the decision to build this on git is [ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md),
-and the server's merge is [ADR-0012](adr/0012-server-sync-merges-on-the-client.md).
+the server's merge is [ADR-0012](adr/0012-server-sync-merges-on-the-client.md), and its live updates are
+[ADR-0013](adr/0013-live-updates-use-an-in-process-hub.md).
 
 ## What a shared workspace is
 
@@ -304,14 +306,25 @@ offers to open that copy instead.
 
 **Viewers.** With the *viewer* role, the badge reads *Viewer*. You can still edit, send and save, and
 *Commit on save* keeps a local history. **Push** and **Push on save** are disabled with the reason, and
-your commits stay on this machine. When an admin makes you an editor, the next fetch picks it up and
-pushes what was waiting (with *Push on save* on).
+your commits stay on this machine. When an admin makes you an editor, Wirebench picks it up at once on a
+server with live updates (below), or at the next fetch otherwise, and pushes what was waiting (with *Push
+on save* on).
 
 **How it syncs.** A pull asks the server what changed since your last sync and merges on your machine
 with the same three-way merge a git share uses ([ADR-0012](adr/0012-server-sync-merges-on-the-client.md)).
 A push sends your commits; if someone pushed first, Wirebench pulls, merges and pushes again. Conflicts
 open the same resolver. The Sync panel shows the server and the team where a git share shows its remote
 and branch; *Auto-fetch*, *Commit on save* and *Push on save* work the same way.
+
+**Live updates.** On a server that offers them, Wirebench keeps one connection open per signed-in server
+while one of its workspaces is open. A teammate's push shows as *N to pull* within seconds, and a role change,
+removed access, a deleted workspace or a revoked session reaches the badge at once, as *Viewer*, *No access* or
+*Sign in*. Nothing is pulled or merged by itself: an event only makes Wirebench fetch, and pulling, merging and
+conflicts follow the rules above. The Sync panel names who else has the workspace open, as *Also here: Ana,
+Ben* (up to five names, then *+N*); it shows names only, never email addresses. A small dot on the badge reads
+*Live* while connected and *Reconnecting…* while Wirebench tries again. While connected, *Auto-fetch* waits at
+least five minutes, as a safety net; while not, it runs at your interval, and every reconnect fetches once. A
+server without live updates is polled exactly as before.
 
 **When sync stops.** If you are signed out, your account is disabled, or you no longer have access to the
 workspace, the badge says *Sign in*, *Account disabled* or *No access*, and automatic fetching stops so the
@@ -328,7 +341,14 @@ local copy and open the server's with *Open a team workspace…*.
 **Limits.** A push or a download carries at most the server's body limit, 32 MiB by default
 (`WIREBENCH_SERVER_BODY_LIMIT_MB`), and each file at most 8 MiB. Run **one server instance per data
 directory**: pushes to a workspace are serialised by a lock inside the server process, so two instances
-sharing a data directory could interleave them.
+sharing a data directory could interleave them, and live updates run on a hub inside the process, so each
+instance would announce only its own changes ([ADR-0013](adr/0013-live-updates-use-an-in-process-hub.md)).
+
+**Behind a reverse proxy.** Live updates are a WebSocket at `/api/v1/live`. A proxy in front of the server
+must forward the `Upgrade` and `Connection` headers for that path; in nginx, `proxy_http_version 1.1`,
+`proxy_set_header Upgrade $http_upgrade` and `proxy_set_header Connection "upgrade"`. The server README has
+the whole block. A proxy that drops them leaves the dot on *Reconnecting…* and Wirebench polling at your
+*Auto-fetch* interval; sync itself keeps working.
 
 ## Troubleshooting
 
@@ -370,3 +390,8 @@ sharing a data directory could interleave them.
 
 With git absent entirely, a `git` share still opens and works as a plain folder — the badge shows
 *No git* and the Sync panel explains what to install.
+
+On a Wirebench Server share, a dot that stays on *Reconnecting…* means the live connection cannot open,
+usually because a reverse proxy does not forward `Upgrade` (see
+[Share with Wirebench Server](#share-with-wirebench-server)). Sync keeps working by polling at your
+*Auto-fetch* interval.

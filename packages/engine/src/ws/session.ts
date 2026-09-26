@@ -1,8 +1,10 @@
 /**
- * One WebSocket connection from handshake to close, and the only file that touches undici's
- * WebSocket. It knows nothing about projects or containers: a saved WebSocket request opens one
- * through `call.ts`, and anything else that needs a socket — a subscription protocol layered on a
- * subprotocol, a contract check wrapped around `onFrame` — opens one the same way.
+ * One WebSocket connection from handshake to close, recorded frame by frame. It is one of the two
+ * files that touch undici's WebSocket: the other, `connect.ts`, hands a bare socket to a caller with
+ * its own protocol, and both build their dispatcher with `wsDispatcher`. It knows nothing about
+ * projects or containers: a saved WebSocket request opens one through `call.ts`, and anything else
+ * that needs a recorded socket (a subscription protocol layered on a subprotocol, a contract check
+ * wrapped around `onFrame`) opens one the same way.
  *
  * Whatever the server does is a result. `done` never rejects: a refused handshake, a dropped
  * socket and a clean close all resolve with the exchange that records them. A bad *option* is
@@ -10,11 +12,11 @@
  * whatever it had already built (subscriptions, an owned dispatcher) before doing so.
  */
 import diagnosticsChannel from 'node:diagnostics_channel';
-import { ProxyAgent, WebSocket, type Dispatcher } from 'undici';
+import { WebSocket, type Dispatcher } from 'undici';
 import { WsError } from '../errors.js';
-import { createDispatcher, proxyAgentOptionsFor } from '../http/client.js';
 import type { ProxyOptions, TlsOptions } from '../http/types.js';
 import { sslInfoForSocket, type SslInfo, type TlsSocketLike } from '../http/tls.js';
+import { wsDispatcher } from './connect.js';
 import type { WsExchange, WsFrame, WsHandshake, WsOpcode } from './model.js';
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 30_000;
@@ -122,12 +124,9 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     });
   }
 
-  // `createDispatcher({ proxy })` does not CONNECT-tunnel a WebSocket handshake: undici rewrites
-  // `ws:`/`wss:` to `http:`/`https:` before dispatching, and `ProxyAgent` only tunnels `http:`
-  // when built with `proxyTunnel: true`. So a proxied session always owns its own `ProxyAgent`;
-  // an unproxied one owns a dispatcher only when it asked for TLS/bind-address options that
-  // `createDispatcher` would otherwise hand back the shared keep-alive agent for.
-  const ownsDispatcher = options.proxy !== undefined || options.tls !== undefined || options.localAddress !== undefined;
+  // Which dispatcher the handshake gets, and whether this session must close it, is `wsDispatcher`'s
+  // rule (`connect.ts`). It is assigned in the try block that builds the socket, below.
+  let ownsDispatcher = false;
   const httpOrigin = `${target.protocol === 'wss:' ? 'https:' : 'http:'}//${target.host}`;
   const frames: WsFrame[] = [];
   const counts = { sent: 0, received: 0, bytesSent: 0, bytesReceived: 0 };
@@ -252,23 +251,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   // owned dispatcher if one got built, then report `ws-bad-options` instead of leaking either.
   let dispatcher: Dispatcher | undefined;
   try {
-    dispatcher =
-      options.proxy !== undefined
-        ? new ProxyAgent(
-            proxyAgentOptionsFor(
-              options.proxy,
-              {
-                ...(options.tls !== undefined ? { tls: options.tls } : {}),
-                ...(options.localAddress !== undefined ? { localAddress: options.localAddress } : {}),
-              },
-              false,
-              { proxyTunnel: true },
-            ),
-          )
-        : createDispatcher({
-            ...(options.tls !== undefined ? { tls: options.tls } : {}),
-            ...(options.localAddress !== undefined ? { localAddress: options.localAddress } : {}),
-          });
+    ({ dispatcher, owned: ownsDispatcher } = wsDispatcher(options));
     diagnosticsChannel.subscribe('undici:client:sendHeaders', onSendHeaders);
     diagnosticsChannel.subscribe('undici:websocket:open', onOpenChannel);
     diagnosticsChannel.subscribe('undici:websocket:ping', onPing);

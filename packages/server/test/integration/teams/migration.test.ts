@@ -18,7 +18,7 @@ describeDb('0003_teams (§4.1)', () => {
   it('comes right after identity, and production runs it', async () => {
     const list = (await allMigrations([identityModule(), teamsModule()])).map((m) => `${m.version}_${m.name}`);
     expect(list).toEqual(['1_init', '2_identity', '3_teams']);
-    expect(BUILTIN_MODULES.map((m) => m.name)).toEqual(['identity', 'teams-access', 'server-sync']);
+    expect(BUILTIN_MODULES.map((m) => m.name)).toEqual(['identity', 'teams-access', 'server-sync', 'live-updates']);
   });
 
   it('refuses to run over a workspaces table that already has rows', async () => {

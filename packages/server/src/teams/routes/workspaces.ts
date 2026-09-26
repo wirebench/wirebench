@@ -18,6 +18,7 @@ import {
   type WorkspaceRole,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireUser } from '../../identity/guard.js';
 import { newId } from '../../identity/tokens.js';
@@ -157,6 +158,9 @@ export const workspaceRoutes =
             ...(body.defaultRole !== undefined ? { defaultRole: body.defaultRole } : {}),
           })
           .catch(conflictOr);
+        // The default role moves every member on it; a rename moves no one (§3.2).
+        if (body.defaultRole !== undefined)
+          announce(env.ctx.hooks.accessChanged, { workspaceId: access.workspaceId }, request.log);
         return toWorkspace((await repo.workspaceById(db, access.workspaceId))!, access.role, access.source);
       },
     );
@@ -172,6 +176,9 @@ export const workspaceRoutes =
         // have its brand-new repository moved away by this delete's cleanup.
         await repos.withLock(workspaceId, async () => {
           await repo.deleteWorkspace(db, workspaceId); // grants go by cascade
+          // The row is gone and its grants with it: every subscriber's role is now none (§3.1). Said
+          // here, before the repository move, so a move that fails (a 500) still tells the sockets.
+          announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
           // §3.7: the row is the source of truth; the repository moves under tmp/, never deleted.
           await repos.remove(workspaceId).catch((error: unknown) => {
             if (!isMissing(error)) throw error;

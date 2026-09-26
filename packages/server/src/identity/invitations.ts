@@ -12,7 +12,7 @@ import {
   type PasswordResetCreated,
   type SignInResponse,
 } from '@wirebench/engine';
-import { runInvitationAccepted, type Querier } from '../context.js';
+import { announce, runInvitationAccepted, type Querier } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
 import type { IdentityEnv, InvitationEnv } from './env.js';
 import { invitationExists, invitationInvalid, methodDisabled, passwordTooShort, userExists } from './errors.js';
@@ -155,6 +155,9 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
     await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: invitation.id, userId: created.id });
     return created;
   });
+  // A reset revoked every device of the user above. There is no request here, and the CLI never
+  // accepts (it builds only an InvitationEnv), so the server's own logger is the one at hand.
+  if (invitation.kind === 'reset') announce(env.ctx.hooks.sessionEnded, { userId: user.id }, env.ctx.log);
   return issueToken(env, user, input.device.name);
 }
 

@@ -1,7 +1,17 @@
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { generateId } from '@wirebench/engine';
+import { connect as connectTcp, type AddressInfo } from 'node:net';
+import type { Duplex } from 'node:stream';
+import {
+  generateId,
+  LIVE_CAPABILITY,
+  LIVE_CLOSE,
+  LIVE_PATH,
+  liveClientMessageSchema,
+  type LiveClientMessage,
+  type LiveServerMessage,
+} from '@wirebench/engine';
+import { startTestWsServer, type TestWsServerOptions } from '@wirebench/engine/test-helpers';
 
 type TeamRole = 'member' | 'admin';
 type WorkspaceRole = 'viewer' | 'editor' | 'admin';
@@ -29,7 +39,10 @@ export interface FakeServerOptions {
   readonly invitations?: Readonly<Record<string, { readonly email: string }>>;
   readonly oidc?: boolean;
   readonly teams?: readonly FakeTeam[];
-  /** What `GET /meta` lists; default `['sync']`. Without `sync`, the sync routes answer a bare `404`. */
+  /**
+   * What `GET /meta` lists; default `['sync', 'live']`. Without `sync`, the sync routes answer a bare
+   * `404`; without `live`, so does the `/live` upgrade.
+   */
   readonly capabilities?: readonly string[];
 }
 
@@ -47,6 +60,15 @@ export interface FakeSyncFile {
   readonly content: string;
 }
 
+/** An open, authenticated `/live` socket, as {@link FakeServer.liveConnections} lists it. */
+export interface FakeLiveConnection {
+  /** The device token its `auth` message carried. */
+  readonly token: string;
+  readonly email: string;
+  /** The workspaces it subscribed to with a role, in subscription order. */
+  readonly workspaces: readonly string[];
+}
+
 export interface FakeServer {
   readonly url: string;
   /** Tokens issued so far, in order. */
@@ -57,11 +79,20 @@ export interface FakeServer {
   readonly requests: readonly FakeRequest[];
   /** The id of the server workspace called `name`. @throws when there is none. */
   workspaceId(name: string): string;
-  /** Gives `email` a grant on a workspace, as a workspace admin would. */
+  /**
+   * Gives `email` a grant on a workspace, as a workspace admin would, and sends `access` to their `/live`
+   * sockets on it.
+   */
   setRole(workspaceId: string, email: string, role: WorkspaceRole): void;
-  /** Sets `email`'s role on the team called `teamName`; `undefined` removes them from it. */
+  /**
+   * Sets `email`'s role on the team called `teamName`; `undefined` removes them from it. Sends `access` to
+   * their `/live` sockets on the team's workspaces, dropping any subscription left with no role.
+   */
   setTeamRole(teamName: string, email: string, role: TeamRole | undefined): void;
-  /** Stops accepting `token`, as an admin removing the device would; the app is not told. */
+  /**
+   * Stops accepting `token`, as an admin removing the device would. Its `/live` sockets get
+   * `session-ended` and close `4401`, as the real hub does; an app without one learns on its next call.
+   */
   revoke(token: string): void;
   /** The newest token issued to `email`. @throws when there is none. */
   lastToken(email: string): string;
@@ -82,6 +113,15 @@ export interface FakeServer {
   headContains(workspaceId: string, needle: string): boolean;
   /** Every commit subject on the workspace, newest first. */
   subjects(workspaceId: string): string[];
+  /** Sends `message` to every open `/live` socket subscribed to `workspaceId`; returns how many. */
+  liveSend(workspaceId: string, message: LiveServerMessage): number;
+  /**
+   * Ends `token`'s `/live` sockets as the hub does on a revocation (`session-ended`, then `4401`), without
+   * revoking the token itself; returns how many. {@link revoke} does both.
+   */
+  liveEndSession(token: string): number;
+  /** The open, authenticated `/live` sockets. */
+  liveConnections(): FakeLiveConnection[];
   close(): Promise<void>;
 }
 
@@ -113,6 +153,40 @@ function send(response: ServerResponse, status: number, body?: unknown): void {
 
 function problem(response: ServerResponse, status: number, code: string): void {
   send(response, status, { code, message: code });
+}
+
+/** A `/live` socket as the engine's test WebSocket server hands it to `onText`. */
+type LivePeer = Parameters<NonNullable<TestWsServerOptions['onText']>>[1];
+
+/** One authenticated `/live` socket: the session it bound to, and the workspaces it subscribed to with a role. */
+interface LiveConnection {
+  readonly peer: LivePeer;
+  readonly token: string;
+  readonly email: string;
+  readonly subscriptions: Set<string>;
+}
+
+/**
+ * Hands an upgrade the fake received to the engine's test WebSocket server on `port`, byte for byte: the
+ * request head as it arrived, anything already read past it, then both directions piped. The app sees
+ * the fake's own origin, as it would the real server's; the frames are the test server's.
+ */
+function pipeUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer, port: number): void {
+  const lines = [`${request.method ?? 'GET'} ${request.url ?? '/'} HTTP/${request.httpVersion}`];
+  for (let i = 0; i + 1 < request.rawHeaders.length; i += 2)
+    lines.push(`${request.rawHeaders[i] ?? ''}: ${request.rawHeaders[i + 1] ?? ''}`);
+  const upstream = connectTcp(port, '127.0.0.1', () => {
+    upstream.write(`${lines.join('\r\n')}\r\n\r\n`);
+    if (head.length > 0) upstream.write(head);
+    socket.pipe(upstream).pipe(socket);
+  });
+  const drop = (): void => {
+    socket.destroy();
+    upstream.destroy();
+  };
+  upstream.on('error', drop);
+  upstream.on('close', drop);
+  socket.on('close', drop);
 }
 
 let nextId = 1;
@@ -208,17 +282,18 @@ function diffTrees(from: ReadonlyMap<string, FakeSyncFile>, to: ReadonlyMap<stri
 
 /**
  * Enough of Wirebench Server for the desktop's sign-in flow (identity spec §11), its teams dialog
- * (teams-access spec §11) and server sync (server-sync spec §11), in memory. The real thing is
- * covered by `packages/server`'s integration suite; this exists so the e2e specs need no PostgreSQL
- * and no git. Ids are ULIDs, as the real server's are, because the desktop refuses anything else for
- * a server share.
+ * (teams-access spec §11), server sync (server-sync spec §11) and live updates (live-updates spec
+ * §11), in memory. The real thing is covered by `packages/server`'s integration suite; this exists so
+ * the e2e specs need no PostgreSQL and no git. Ids are ULIDs, as the real server's are, because the
+ * desktop refuses anything else for a server share. `/api/v1/live` is the engine's test WebSocket
+ * server behind the same origin (live-updates spec §7).
  */
 export async function startFakeServer(options: FakeServerOptions = {}): Promise<FakeServer> {
   const users = new Map(
     (options.users ?? []).map((user) => [user.email.toLowerCase(), { ...user, id: `u-${user.email}` }]),
   );
   const invitations = new Map<string, FakeInvitation>(Object.entries(options.invitations ?? {}));
-  const capabilities = [...(options.capabilities ?? ['sync'])];
+  const capabilities = [...(options.capabilities ?? ['sync', LIVE_CAPABILITY])];
   const sessions = new Map<string, string>(); // token → email
   const issued: { readonly token: string; readonly email: string }[] = [];
   const tokens: string[] = [];
@@ -329,10 +404,143 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     return ws;
   };
 
+  /*
+   * `/api/v1/live` (live-updates spec §3.1), enough for the desktop's `LiveClient`. The socket itself
+   * is the engine's test WebSocket server, reached through `pipeUpgrade`; every text frame lands in
+   * `onLiveText`. Pushes, role changes and revocations made through this fake announce as the real
+   * hub does, without its limits, its auth timer or its heartbeat.
+   */
+  const liveSockets = new Map<LivePeer, LiveConnection>();
+  /** The authenticated sockets still open. A socket that closed on its own leaves presence at the next change. */
+  const liveOpen = (): LiveConnection[] => [...liveSockets.values()].filter((connection) => !connection.peer.closed);
+  /** Sends `message` to each open connection; returns how many it reached. */
+  const liveSendTo = (connections: Iterable<LiveConnection>, message: LiveServerMessage): number => {
+    let sent = 0;
+    for (const connection of connections) {
+      if (connection.peer.closed) continue;
+      connection.peer.sendText(JSON.stringify(message));
+      sent += 1;
+    }
+    return sent;
+  };
+  const subscribersOf = (workspaceId: string): LiveConnection[] =>
+    liveOpen().filter((connection) => connection.subscriptions.has(workspaceId));
+  /** The distinct users subscribed to a workspace, sorted by name then id, recipient included (§3.1). */
+  const presenceOf = (workspaceId: string): { id: string; name: string }[] => {
+    const names = new Map<string, string>();
+    for (const connection of subscribersOf(workspaceId)) {
+      const user = userByEmail(connection.email);
+      if (user !== undefined) names.set(user.id, user.displayName);
+    }
+    return [...names]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  };
+  /** Runs `change`; when it changed the workspace's user list, every subscriber gets the new one (§3.1). */
+  const changePresence = (workspaceId: string, change: () => void): void => {
+    const before = JSON.stringify(presenceOf(workspaceId));
+    change();
+    const users = presenceOf(workspaceId);
+    if (JSON.stringify(users) !== before)
+      liveSendTo(subscribersOf(workspaceId), { type: 'presence', workspaceId, users });
+  };
+  /** `head` to every subscriber except the pushing session's sockets (§3.1). */
+  const announceHead = (workspaceId: string, head: string, pusher: string | undefined): void => {
+    const others = subscribersOf(workspaceId).filter((connection) => connection.token !== pusher);
+    liveSendTo(others, { type: 'head', workspaceId, head });
+  };
+  /**
+   * `access` to each of `email`'s subscriptions on a workspace `affects` picks. Unlike the real hub it
+   * sends without comparing roles first: the app's only reaction is a fetch. A subscription left with no
+   * role is dropped after the message, and the others' presence updates (§3.3).
+   */
+  const announceAccess = (email: string, affects: (ws: WorkspaceRow) => boolean): void => {
+    for (const connection of liveOpen()) {
+      if (connection.email.toLowerCase() !== email.toLowerCase()) continue;
+      for (const workspaceId of [...connection.subscriptions]) {
+        const ws = workspaces.get(workspaceId);
+        if (ws !== undefined && !affects(ws)) continue;
+        liveSendTo([connection], { type: 'access', workspaceId });
+        if (ws === undefined || effective(ws, connection.email) === undefined)
+          changePresence(workspaceId, () => connection.subscriptions.delete(workspaceId));
+      }
+    }
+  };
+  /** `session-ended`, then `4401`, to every socket of `token`; the others' presence updates. Returns how many. */
+  const endSession = (token: string): number => {
+    const ended = liveOpen().filter((connection) => connection.token === token);
+    for (const connection of ended) {
+      liveSendTo([connection], { type: 'session-ended' });
+      for (const workspaceId of [...connection.subscriptions])
+        changePresence(workspaceId, () => connection.subscriptions.delete(workspaceId));
+      liveSockets.delete(connection.peer);
+      connection.peer.close(LIVE_CLOSE.unauthenticated, 'session ended');
+    }
+    return ended.length;
+  };
+  /** One text frame from a `/live` socket. Anything unparseable, or anything before `auth`, closes `4400`. */
+  const onLiveText = (text: string, peer: LivePeer): void => {
+    let message: LiveClientMessage;
+    try {
+      message = liveClientMessageSchema.parse(JSON.parse(text));
+    } catch {
+      peer.close(LIVE_CLOSE.badMessage, 'bad message');
+      return;
+    }
+    const connection = liveSockets.get(peer);
+    if (connection === undefined) {
+      if (message.type !== 'auth') {
+        peer.close(LIVE_CLOSE.badMessage, 'auth first');
+        return;
+      }
+      const email = sessions.get(message.token);
+      if (email === undefined) {
+        peer.close(LIVE_CLOSE.unauthenticated, 'unauthenticated');
+        return;
+      }
+      const created: LiveConnection = { peer, token: message.token, email, subscriptions: new Set() };
+      liveSockets.set(peer, created);
+      liveSendTo([created], { type: 'ready' });
+      return;
+    }
+    switch (message.type) {
+      case 'auth':
+        // The token binds once, in the first message (§3.1).
+        peer.close(LIVE_CLOSE.badMessage, 'already authenticated');
+        return;
+      case 'ping':
+        liveSendTo([connection], { type: 'pong' });
+        return;
+      case 'subscribe': {
+        const ws = workspaces.get(message.workspaceId);
+        if (ws === undefined || effective(ws, connection.email) === undefined) {
+          liveSendTo([connection], {
+            type: 'refused',
+            workspaceId: message.workspaceId,
+            code: 'teams-workspace-not-found',
+          });
+          return;
+        }
+        if (connection.subscriptions.has(ws.id)) return;
+        const before = JSON.stringify(presenceOf(ws.id));
+        connection.subscriptions.add(ws.id);
+        const users = presenceOf(ws.id);
+        // The new subscriber always hears who is here; the others only when the user list changed.
+        const recipients = JSON.stringify(users) === before ? [connection] : subscribersOf(ws.id);
+        liveSendTo(recipients, { type: 'presence', workspaceId: ws.id, users });
+        return;
+      }
+      case 'unsubscribe':
+        changePresence(message.workspaceId, () => connection.subscriptions.delete(message.workspaceId));
+        return;
+    }
+  };
+
   /**
    * The five sync routes (server-sync spec §3.2) over an in-memory history, behind the same access
    * rule as the real guard: reads need a role, a push needs editor. Paths are not validated; the
-   * real server's checks are covered by its integration suite.
+   * real server's checks are covered by its integration suite. A push announces `head` to every
+   * `/live` subscriber but `pusher`'s sockets, as the real hub does (live-updates §3.1).
    */
   const syncApi = async (
     request: IncomingMessage,
@@ -342,6 +550,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     route: string | undefined,
     query: URLSearchParams,
     email: string,
+    pusher: string | undefined,
   ): Promise<void> => {
     const method = request.method ?? 'GET';
     if (method === 'GET' && route === 'head') {
@@ -398,7 +607,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
             applyChanges(headOf(ws)?.files ?? EMPTY_TREE, commit.changes),
           ).id,
       );
-      send(response, 201, { head: headOf(ws)!.id, ids });
+      const head = headOf(ws)!.id;
+      // After the history moved and before the 201, where the real route announces (§3.2).
+      announceHead(ws.id, head, pusher);
+      send(response, 201, { head, ids });
       return;
     }
     if (method === 'GET' && route === 'log') {
@@ -623,6 +835,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   const bearer = (request: IncomingMessage): string | undefined =>
     request.headers.authorization?.replace(/^Bearer /, '');
 
+  const wsServer = await startTestWsServer({ onText: onLiveText });
   const server: Server = createServer((request, response) => {
     void (async () => {
       const path = new URL(request.url ?? '/', url);
@@ -698,12 +911,28 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           const ws = workspaces.get(segments[1] ?? '');
           const access = ws === undefined ? undefined : effective(ws, email);
           if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
-          return await syncApi(request, response, ws, access.role, segments[3], path.searchParams, email);
+          return await syncApi(request, response, ws, access.role, segments[3], path.searchParams, email, token);
         }
         if (await teamsApi(request, response, segments, email)) return;
       }
       problem(response, 404, 'not-found');
     })();
+  });
+  const upgraded = new Set<Duplex>();
+  server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const path = new URL(request.url ?? '/', url).pathname;
+    // Logged before anything else, so a spec can prove the app never tried (live-updates §11).
+    requests.push({ method: request.method ?? 'GET', path });
+    upgraded.add(socket);
+    socket.on('close', () => upgraded.delete(socket));
+    socket.on('error', () => socket.destroy());
+    // A server without live has no socket: a plain 404. The client never gets here without `live`
+    // in meta; with it, a 404 is a refused upgrade and backs off like any other (§3.4).
+    if (path !== LIVE_PATH || !capabilities.includes(LIVE_CAPABILITY)) {
+      socket.end('HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n');
+      return;
+    }
+    pipeUpgrade(request, socket, head, wsServer.port);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   url = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
@@ -719,15 +948,18 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     },
     setRole: (workspaceId, email, role) => {
       workspaceOf(workspaceId).grants.set(email.toLowerCase(), role);
+      announceAccess(email, (ws) => ws.id === workspaceId);
     },
     setTeamRole: (teamName, email, role) => {
       const team = [...teams.values()].find((candidate) => candidate.name === teamName);
       if (team === undefined) throw new Error(`the fake server has no team named ${teamName}`);
       if (role === undefined) team.members.delete(email.toLowerCase());
       else team.members.set(email.toLowerCase(), { role, addedAt: at() });
+      announceAccess(email, (ws) => ws.teamId === team.id);
     },
     revoke: (token) => {
       sessions.delete(token);
+      endSession(token);
     },
     lastToken: (email) => {
       const found = issued.filter((entry) => entry.email.toLowerCase() === email.toLowerCase()).at(-1);
@@ -755,7 +987,20 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       workspaceOf(workspaceId)
         .history.map((commit) => commit.subject)
         .reverse(),
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    liveSend: (workspaceId, message) => liveSendTo(subscribersOf(workspaceId), message),
+    liveEndSession: (token) => endSession(token),
+    liveConnections: () =>
+      liveOpen().map((connection) => ({
+        token: connection.token,
+        email: connection.email,
+        workspaces: [...connection.subscriptions],
+      })),
+    close: async () => {
+      // Upgraded sockets are no longer the HTTP server's to drain, so they would hold its close open.
+      for (const socket of upgraded) socket.destroy();
+      await wsServer.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
   };
 }
 

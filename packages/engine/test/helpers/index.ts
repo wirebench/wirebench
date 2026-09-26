@@ -55,6 +55,7 @@ export { readCraftedFixture, readFixtureWsdl, readPublicFixture } from './fixtur
 export {
   startTestWsServer,
   encodeFrame,
+  type TestWsPeer,
   type TestWsServer,
   type TestWsServerOptions,
   type TestWsHandshake,

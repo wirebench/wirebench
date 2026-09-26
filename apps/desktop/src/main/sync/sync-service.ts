@@ -10,13 +10,20 @@
  * disabled-account and access-removed codes stop the fetch timer until {@link SyncService.resume}. A
  * viewer's commits never leave the machine (§3.4).
  *
+ * What the remote announces arrives through `backend.subscribeRemote` (live-updates §3.4, R1).
+ * - Each event becomes an ordinary fetch, and a burst of them one fetch.
+ * - While a server's live socket is connected, the timer is only a safety net at
+ *   {@link LIVE_SAFETY_NET_SECONDS}.
+ * - The socket's state and the others' presence are laid over the status, as `held` is.
+ * - Stop-polling closes the subscription, and `resume()` opens it again.
+ *
  * Electron-free and clock-injectable: timers only ever go through `deps.setTimer`/`clearTimer`,
  * so the whole service runs under fake timers in tests and in plain Node.
  */
 
 import type { SyncSettings } from '@wirebench/engine';
 import { commitMessage, isWirebenchError, WirebenchError } from '@wirebench/engine';
-import type { SyncBackend } from './backend.js';
+import type { RemoteEvent, SyncBackend } from './backend.js';
 import { STOP_POLLING_CODES } from './server-backend.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from './types.js';
 
@@ -24,6 +31,13 @@ import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from './types
 export const SAVE_COMMIT_DEBOUNCE_MS = 500;
 /** Auto-fetch delay while the remote is unreachable, until a fetch succeeds again. */
 export const OFFLINE_FETCH_SECONDS = 300;
+
+/**
+ * The auto-fetch delay while a server's live socket is connected (live-updates §2, §3.4). Each event
+ * fetches at once, so the timer only covers one that was missed. The delay is never shorter than the
+ * user's own interval.
+ */
+export const LIVE_SAFETY_NET_SECONDS = 300;
 
 /** git's refusal of a push that is behind the remote — answered by pulling and pushing once more. */
 const PUSH_REJECTED_PATTERN = /rejected|non-fast-forward|fetch first/i;
@@ -82,6 +96,11 @@ export interface SyncServiceDeps {
 }
 
 type Timer = ReturnType<typeof setTimeout>;
+
+/** A server share's live socket state, as the status carries it (live-updates §3.4). */
+type LiveState = NonNullable<SyncStatusWire['live']>;
+/** One other user with the workspace open. */
+type PresenceUser = NonNullable<SyncStatusWire['presence']>[number];
 
 /** A commit that stopped on a missing identity, retried by {@link SyncService.setIdentity}. */
 interface PendingCommit {
@@ -146,6 +165,14 @@ export class SyncService {
   /** The automatic commit held for possible secrets, run once they are reviewed (`status.held`). */
   private secretHold: SecretHold | undefined;
   private readonly offScanChange: (() => void) | undefined;
+  /** Undoes `backend.subscribeRemote` while subscribed (live-updates R1); undefined otherwise. */
+  private offRemote: (() => void) | undefined;
+  /** An event's fetch is queued and has not started: further events queue nothing (§3.4). */
+  private remoteFetchQueued = false;
+  /** The others on this workspace, from the last `presence` event; undefined when not known. */
+  private presence: readonly PresenceUser[] | undefined;
+  /** The live socket's last state; undefined for a backend that never reported one (git, folder). */
+  private live: LiveState | undefined;
 
   constructor(deps: SyncServiceDeps) {
     this.deps = deps;
@@ -212,6 +239,8 @@ export class SyncService {
         await this.pushWaitingCommits();
       }
     }).catch(() => undefined);
+    // After the fetch above: the socket's first `connected` runs a catch-up fetch of its own (§3.4).
+    this.subscribeRemote();
     this.armFetchTimer();
   }
 
@@ -237,6 +266,7 @@ export class SyncService {
     }
     this.saveIsAutosave = undefined;
     this.offScanChange?.();
+    this.closeRemote();
   }
 
   /**
@@ -359,15 +389,18 @@ export class SyncService {
   }
 
   /**
-   * After a stop-polling failure (server-sync §3.4, R6): fetches now, then re-arms the fetch timer
-   * behind it, as each timer fetch does. `WorkspaceService` calls it when the share's account is
-   * signed in again. A no-op unless such a failure stopped the timer, and once {@link stop} ran.
+   * After a stop-polling failure (server-sync §3.4, R6): subscribes to the remote again, fetches now,
+   * then re-arms the fetch timer behind it, as each timer fetch does. `WorkspaceService` calls it when
+   * the share's account is signed in again. A no-op unless such a failure stopped the timer, and once
+   * {@link stop} ran.
    */
   resume(): void {
     if (this.stopped || !this.pollingStopped) {
       return;
     }
     this.pollingStopped = false;
+    // Before the fetch, so an event arriving while it runs is heard (live-updates §3.4).
+    this.subscribeRemote();
     void this.fetch()
       .catch(() => undefined)
       .finally(() => {
@@ -418,7 +451,7 @@ export class SyncService {
   }
 
   private setStatus(next: SyncStatusWire): SyncStatusWire {
-    this.last = this.withSecretHold(
+    this.last = this.withOverlay(
       this.offline && next.state !== 'conflict' && next.state !== 'error' ? { ...next, state: 'offline' } : next,
     );
     return this.last;
@@ -426,23 +459,27 @@ export class SyncService {
 
   // ——— commits held for possible secrets (docs/specs/2026-09-22-secret-scanning-design.md, 8) ———
 
-  /** `status` carrying the hold as it stands; a backend's own status never has one. */
-  private withSecretHold(status: SyncStatusWire): SyncStatusWire {
-    if (this.secretHold !== undefined) {
-      return { ...status, held: { findings: this.secretHold.findings } };
-    }
-    if (status.held === undefined) {
-      return status;
-    }
+  /**
+   * `status` carrying what this service lays over a backend's own: the secret hold as it stands, and a
+   * server share's `presence` and `live` (live-updates §3.4). A backend's own status has none of them.
+   */
+  private withOverlay(status: SyncStatusWire): SyncStatusWire {
     const next = { ...status };
     delete next.held;
-    return next;
+    delete next.presence;
+    delete next.live;
+    return {
+      ...next,
+      ...(this.secretHold !== undefined ? { held: { findings: this.secretHold.findings } } : {}),
+      ...(this.presence !== undefined ? { presence: this.presence.map((user) => ({ ...user })) } : {}),
+      ...(this.live !== undefined ? { live: this.live } : {}),
+    };
   }
 
   private setSecretHold(hold: SecretHold | undefined): void {
     const before = this.last.held?.findings;
     this.secretHold = hold;
-    this.last = this.withSecretHold(this.last);
+    this.last = this.withOverlay(this.last);
     if (this.last.held?.findings !== before) {
       this.emit();
     }
@@ -537,8 +574,10 @@ export class SyncService {
       fetched.lastSyncAt !== undefined ? fetched : { ...fetched, lastSyncAt: this.now().toISOString() },
     );
     if (this.pollingStopped) {
-      // A fetch that works (the popover's Fetch after signing in) means the account is usable again.
+      // A fetch that works (the popover's Fetch after signing in) means the account is usable again:
+      // polling and the live subscription both come back.
       this.pollingStopped = false;
+      this.subscribeRemote();
       this.armFetchTimer();
     }
     return status;
@@ -706,7 +745,9 @@ export class SyncService {
     if (!(seconds > 0)) {
       return;
     }
-    const delaySeconds = this.offline ? Math.max(seconds, OFFLINE_FETCH_SECONDS) : seconds;
+    const userSeconds = this.offline ? Math.max(seconds, OFFLINE_FETCH_SECONDS) : seconds;
+    // While the socket is up an event fetches at once; the timer is only the safety net (§3.4).
+    const delaySeconds = this.live === 'connected' ? Math.max(userSeconds, LIVE_SAFETY_NET_SECONDS) : userSeconds;
     this.fetchTimer = this.setTimer(() => {
       this.fetchTimer = undefined;
       void this.fetch()
@@ -718,13 +759,115 @@ export class SyncService {
     unref(this.fetchTimer);
   }
 
-  /** Signed out, disabled or removed: nothing polls until {@link resume} (server-sync §3.4, §15). */
+  /**
+   * Signed out, disabled or removed: nothing polls and nothing listens until {@link resume}
+   * (server-sync §3.4, §15; live-updates §3.4).
+   */
   private stopPolling(): void {
     this.pollingStopped = true;
     if (this.fetchTimer !== undefined) {
       this.clearTimer(this.fetchTimer);
       this.fetchTimer = undefined;
     }
+    this.closeRemote();
+  }
+
+  // ——— remote events (live-updates §3.4) —————————————————————————————————————————————————
+
+  /**
+   * Opens the backend's subscription, unless one is open or polling is off (stopped, stop-polling, a
+   * folder). The listener checks its own flag, so an event already on its way when the subscription
+   * closes is dropped rather than handled by a service that moved on.
+   */
+  private subscribeRemote(): void {
+    if (this.stopped || this.pollingStopped || this.offRemote !== undefined || !this.canSync()) {
+      return;
+    }
+    let active = true;
+    const off = this.backend.subscribeRemote((event) => {
+      if (active) {
+        this.onRemote(event);
+      }
+    });
+    this.offRemote = () => {
+      active = false;
+      off();
+    };
+  }
+
+  /**
+   * Closes the subscription. The presence it reported is forgotten, and a socket state it reported
+   * reads `off`. A backend that never reported one keeps no `live` field. The caller emits: `stop()`
+   * wants nothing emitted, and stop-polling runs inside an operation that emits when it ends.
+   */
+  private closeRemote(): void {
+    const off = this.offRemote;
+    this.offRemote = undefined;
+    off?.();
+    this.presence = undefined;
+    if (this.live !== undefined) {
+      this.live = 'off';
+    }
+    this.last = this.withOverlay(this.last);
+  }
+
+  /** §3.4's table. HTTP stays the source of truth: nothing here merges, pulls or trusts a role. */
+  private onRemote(event: RemoteEvent): void {
+    if (this.stopped) {
+      return;
+    }
+    switch (event.kind) {
+      case 'changed':
+      case 'access':
+      case 'ended':
+        // *behind* updates as on a timer fetch; a role change or a removal reaches the status the
+        // same way (R2); an ended session's fetch meets `sync-signed-out`, a stop-polling code.
+        this.fetchForRemote();
+        return;
+      case 'presence':
+        this.presence = event.users.map(({ id, name }) => ({ id, name }));
+        this.refreshOverlay();
+        return;
+      case 'live': {
+        const before = this.live;
+        this.live = event.state;
+        if (event.state !== 'connected') {
+          // Stale until the next subscribe sends a fresh list; the dot already says why.
+          this.presence = undefined;
+        }
+        this.refreshOverlay();
+        this.armFetchTimer();
+        if (event.state === 'connected' && before !== 'connected') {
+          // Whatever was pushed while the socket was down arrives now.
+          this.fetchForRemote();
+        }
+        return;
+      }
+    }
+  }
+
+  /**
+   * The fetch an event asks for: `fetch()`'s own body, queued like any operation. While it waits in
+   * the queue, further events add nothing. Once it has started, the next event queues one more,
+   * since that fetch may have read an older head.
+   */
+  private fetchForRemote(): void {
+    if (this.remoteFetchQueued) {
+      return;
+    }
+    this.remoteFetchQueued = true;
+    void this.run(async () => {
+      this.remoteFetchQueued = false;
+      await this.fetchNow();
+      await this.pushAfterPromotion();
+      return this.last;
+    }).catch(() => undefined);
+  }
+
+  /** A remote event changed an overlay field: it reaches the status and the renderer now. */
+  private refreshOverlay(): void {
+    this.last = this.withOverlay(this.last);
+    this.emit();
   }
 }
 

@@ -130,4 +130,18 @@ describeDb('teams repository (§4.1)', () => {
     expect(await h.db.transaction((tx) => repo.lockTeam(tx, team.id))).toBe(true);
     expect(await h.db.transaction((tx) => repo.lockTeam(tx, newId()))).toBe(false);
   });
+
+  it('workspaceIdsOfTeam lists exactly one team’s current workspace ids, and none for an empty or unknown team', async () => {
+    const team = await seedTeam(h, { name: 'T' });
+    const other = await seedTeam(h, { name: 'U' });
+    const empty = await seedTeam(h, { name: 'V' });
+    const a = await seedWorkspace(h, { team, name: 'A' });
+    const b = await seedWorkspace(h, { team, name: 'B' });
+    await seedWorkspace(h, { team: other, name: 'A' });
+    expect([...(await repo.workspaceIdsOfTeam(h.db, team.id))].sort()).toEqual([a, b].sort());
+    expect(await repo.workspaceIdsOfTeam(h.db, empty.id)).toEqual([]);
+    expect(await repo.workspaceIdsOfTeam(h.db, newId())).toEqual([]);
+    await repo.deleteWorkspace(h.db, a);
+    expect(await repo.workspaceIdsOfTeam(h.db, team.id)).toEqual([b]);
+  });
 });

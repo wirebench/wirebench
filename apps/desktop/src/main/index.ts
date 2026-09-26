@@ -4,7 +4,14 @@ import { hostname } from 'node:os';
 import { basename, join } from 'node:path';
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import { appVersion } from './app-version.js';
-import { findGit, GitCli, WirebenchError, enabledProperties } from '@wirebench/engine';
+import {
+  connectWebSocket,
+  findGit,
+  GitCli,
+  WirebenchError,
+  enabledProperties,
+  type ConnectOptions,
+} from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
 import { registerAppProtocol } from './app-protocol-handler.js';
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, isExternalUrlAllowed } from './security.js';
@@ -60,6 +67,7 @@ import { registerAccountChannels, toAccountWire } from './ipc/account.js';
 import { registerTeamChannels } from './ipc/team.js';
 import { AccountService } from './account-service.js';
 import { ServerClient } from './server-client.js';
+import { LiveClients } from './live/live-clients.js';
 import { mainHttpOptions } from './network-options.js';
 import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
@@ -133,15 +141,28 @@ const oauth2Service = new OAuth2Service({
   callbackPort: () => preferencesService.get().rest.oauth2CallbackPort,
 });
 
+/**
+ * The CA bundle and proxy the server client last resolved, per server origin (live-updates R5).
+ * `mainHttpOptions` is async, since it reads the bundle and may ask for a PAC answer, while a live
+ * socket's `connect` is not. The socket therefore reuses what the HTTP calls resolved.
+ * `LiveClient` asks `serverClient.meta` before it connects (§3.4), and every sync fetch refreshes the
+ * entry. A server reachable over HTTP is then reachable over the socket, with the same trust and the
+ * same proxy.
+ */
+const serverConnectOptions = new Map<string, ConnectOptions>();
+
 /** The Wirebench Server HTTP client, shared by every account and every server it signs into. */
 const serverClient = new ServerClient({
-  options: (url) =>
-    mainHttpOptions(url, {
+  options: async (origin) => {
+    const options = await mainHttpOptions(origin, {
       preferences: () => preferencesService.get(),
       picks: dialogPicks,
       getSecret: secretsFor(undefined),
       resolveSystemProxy: async (target) => await session.defaultSession.resolveProxy(target).catch(() => undefined),
-    }),
+    });
+    serverConnectOptions.set(origin, options);
+    return options;
+  },
 });
 
 /** Who this installation is signed in as, per Wirebench Server (identity spec §3.8, §4.3). */
@@ -151,6 +172,20 @@ const accountService = new AccountService({
   secrets: secretStore,
   openExternal: openExternalChecked,
   defaultDeviceName: hostname,
+});
+
+/**
+ * One live socket per signed-in server with an open workspace on it (live-updates §3.4), closed on
+ * quit. It opens with the TLS and proxy `serverClient` last used for that server (R5): the key is the
+ * socket URL's `http(s):` origin, which is the stored server origin the HTTP calls went to.
+ */
+const liveClients = new LiveClients({
+  accounts: accountService,
+  client: serverClient,
+  connect: (wsUrl) => {
+    const options: ConnectOptions = serverConnectOptions.get(new URL(wsUrl.replace(/^ws/, 'http')).origin) ?? {};
+    return connectWebSocket(wsUrl, options);
+  },
 });
 
 /** The session's in-flight OpenAPI imports: one fetcher, one cancel per token. */
@@ -239,8 +274,9 @@ const workspaceService = new WorkspaceService({
   },
   hooksDir,
   // A server share syncs through the same client and accounts as sign-in and the Team dialog; the
-  // accounts' `ready` and `onChange` gate and resume its polling (server-sync §3.4, §5.3).
-  server: { client: serverClient, accounts: accountService },
+  // accounts' `ready` and `onChange` gate and resume its polling (server-sync §3.4, §5.3), and the
+  // live clients turn a teammate's push or an access change into a fetch at once (live-updates §3.4).
+  server: { client: serverClient, accounts: accountService, live: liveClients },
   engine: engineService,
   globals: globalProperties,
   secrets: secretStore,
@@ -620,6 +656,15 @@ app.on('before-quit', (event) => {
   } catch (error) {
     console.warn('[ws] closeAllWs on quit failed', error instanceof Error ? error.message : String(error));
   }
+  // The live sockets close 1000, so the server drops this device from presence now rather than at
+  // its next heartbeat (live-updates §3.4). Not awaited: a socket that will not close must never
+  // hold up the quit.
+  void liveClients.closeAll().catch((error: unknown) => {
+    console.warn(
+      '[live] closing the live sockets on quit failed',
+      error instanceof Error ? error.message : String(error),
+    );
+  });
   try {
     engineService.abortRestStreamsWhere(() => true);
   } catch (error) {

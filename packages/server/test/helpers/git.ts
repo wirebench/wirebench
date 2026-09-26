@@ -12,13 +12,20 @@ if (gitLocation === undefined) {
 }
 
 /**
+ * Each test spawns git several times, and a process start on a Windows CI runner can take hundreds
+ * of milliseconds: commit-store tests have taken 6.8 s there, past vitest's 5 s default.
+ */
+const GIT_TEST_TIMEOUT_MS = 30_000;
+
+/**
  * Typed as the narrower `(name, factory) => void` rather than `typeof describe`, matching
  * `describeDb` in database.ts: vitest 5's `SuiteAPI` type has `describe` and `describe.skip`
  * structurally incompatible, so assigning either branch to a `typeof describe`-typed const fails
  * to typecheck under strict TS.
  */
-export const describeGit: (name: string, factory: () => void) => void =
-  gitLocation === undefined ? describe.skip : describe;
+export const describeGit: (name: string, factory: () => void) => void = (name, factory) => {
+  (gitLocation === undefined ? describe.skip : describe)(name, { timeout: GIT_TEST_TIMEOUT_MS }, factory);
+};
 
 /** A `GitCli` whose global and system config are empty, so the developer's gitconfig cannot leak in. */
 export function testGit(hooksDir: string): GitCli {

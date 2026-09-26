@@ -234,21 +234,36 @@ are signed in to, with its team and your role; an empty workspace appears once s
 
 - **Viewers** see *Viewer* on the badge. They can edit, send and save, and their commits stay on their
   machine: **Push** and **Push on save** are disabled with the reason. When an admin makes them an
-  editor, the next fetch picks it up and pushes what was waiting.
+  editor, Wirebench picks it up (at once with live updates, below) and pushes what was waiting.
 - **Merging** runs on your machine with the same three-way merge as a git share. If someone pushed first,
   Wirebench pulls, merges and pushes again, and conflicts open the same resolver.
+- **Live updates:** on a server that offers them, a teammate's push shows as *N to pull* within seconds,
+  and a role change, removed access or a revoked session reaches the badge at once. Nothing pulls by
+  itself; an event only makes Wirebench fetch. While connected, auto-fetch waits at least five minutes as a
+  safety net; otherwise it runs at your interval.
+- **Presence:** the Sync panel names who else has the workspace open, as *Also here: Ana, Ben* (up to
+  five names, then *+N*). A dot on the badge reads *Live* while connected and *Reconnecting…* while
+  Wirebench tries again.
 - **Signed out, disabled or no access:** the badge says *Sign in*, *Account disabled* or *No access*,
   and automatic fetching stops. **Sign in…** in the Sync panel opens the Sign in dialog for that server,
   and sync resumes once you are signed in.
 - **Stop sharing** keeps the server copy for the team. Sharing the same workspace again reconnects to it
   and merges; a viewer is asked to open the server copy instead.
 - **Limits:** a push or download carries at most the server's body limit (32 MiB by default) and each
-  file at most 8 MiB. Run one server instance per data directory.
+  file at most 8 MiB. Run one server instance: its repository lock and its live-updates hub both live in
+  the server process.
 
 <Aside type="tip">
   If the Sync panel suggests **Stop sharing…**, this copy's history no longer matches the server's, or
   its sync state is damaged: stop sharing, then share it again. It reconnects to the server copy
   through a merge and keeps your files, including edits that were not pushed yet.
+</Aside>
+
+<Aside type="note">
+  Live updates are a WebSocket at `/api/v1/live`. A reverse proxy in front of the server must forward the
+  `Upgrade` and `Connection` headers for that path (in nginx: `proxy_http_version 1.1`,
+  `proxy_set_header Upgrade $http_upgrade` and `proxy_set_header Connection "upgrade"`). Without them the
+  dot stays on *Reconnecting…* and Wirebench polls at your *Auto-fetch* interval instead.
 </Aside>
 
 ## Related

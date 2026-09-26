@@ -26,16 +26,57 @@ export interface InvitationAccepted {
 export type InvitationAcceptedHook = (tx: Querier, accepted: InvitationAccepted) => Promise<void>;
 
 /**
- * Work a later module does inside an earlier module's transaction (teams-access spec §3.4, R1).
- * Unlike an event, a hook is awaited and runs on the caller's transaction: its writes commit with
- * the caller's, and a throw rolls the caller back. Modules push onto these lists in `register()`.
+ * A push moved a workspace's main (live-updates spec §3.2). `tokenId` is the pushing session, whose
+ * sockets get no `head` back: its client already has the commit.
+ */
+export interface HeadMoved {
+  readonly workspaceId: string;
+  readonly head: string;
+  readonly tokenId: string;
+}
+
+/**
+ * Someone's role on some workspaces may have changed (live-updates spec §3.2). At least one field is
+ * set. A subscription is affected when its workspace is `workspaceId`, or belongs to `teamId`, and,
+ * when `userId` is set, only when its user is `userId`. It carries no role: the hub asks
+ * `effectiveRole`, so HTTP's rules stay the only rules.
+ */
+export interface AccessChanged {
+  readonly workspaceId?: string;
+  readonly teamId?: string;
+  readonly userId?: string;
+}
+
+/** One device token ended, or every token of a user except `exceptTokenId` (live-updates spec §3.2). */
+export type SessionEnded = { readonly tokenId: string } | { readonly userId: string; readonly exceptTokenId?: string };
+
+/** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
+export type Announcement<E> = (event: E) => void;
+
+/**
+ * What a later module adds to an earlier module's work. Modules push onto these lists in
+ * `register()`. There are two kinds:
+ *
+ * - **Hooks** (`invitationAccepted`; teams-access spec §3.4, R1) run inside the caller's transaction
+ *   and are awaited. Their writes commit with the caller's, and a throw rolls the caller back.
+ * - **Announcements** (`headMoved`, `accessChanged`, `sessionEnded`; live-updates spec §3.2, R3) run
+ *   through {@link announce} after the caller's statement or transaction has resolved, on the success
+ *   path. They are never awaited and never run inside a transaction, and a throw is logged and
+ *   swallowed. A rolled-back transaction never reaches the line that announces.
  */
 export interface ServerHooks {
   readonly invitationAccepted: InvitationAcceptedHook[];
+  readonly headMoved: Announcement<HeadMoved>[];
+  readonly accessChanged: Announcement<AccessChanged>[];
+  readonly sessionEnded: Announcement<SessionEnded>[];
 }
 
+/**
+ * Every list empty. The admin CLI (`identity/cli.ts`) builds its own and registers no hub, so an
+ * announcement there reaches nobody (live-updates spec §14).
+ */
 export function serverHooks(): ServerHooks {
-  return { invitationAccepted: [] };
+  return { invitationAccepted: [], headMoved: [], accessChanged: [], sessionEnded: [] };
 }
 
 /** Runs every `invitationAccepted` hook in registration order; the first throw propagates. */
@@ -45,6 +86,27 @@ export async function runInvitationAccepted(
   accepted: InvitationAccepted,
 ): Promise<void> {
   for (const hook of hooks.invitationAccepted) await hook(tx, accepted);
+}
+
+const ANNOUNCEMENT_FAILED = 'an announcement listener failed';
+
+/**
+ * Calls each listener in registration order with `event` (live-updates spec §3.2). A throw is logged
+ * at warn and swallowed, and the next listener still runs. A listener that returns a promise anyway
+ * has its rejection caught the same way, so it can never become an unhandled rejection. Never throws
+ * and never awaits: a push or an access change must not fail or wait because of the hub (§12).
+ */
+export function announce<E>(listeners: readonly Announcement<E>[], event: E, log: FastifyBaseLogger): void {
+  for (const listener of listeners) {
+    try {
+      const returned: unknown = listener(event);
+      if (returned instanceof Promise) {
+        returned.catch((error: unknown) => log.warn({ err: error }, ANNOUNCEMENT_FAILED));
+      }
+    } catch (error) {
+      log.warn({ err: error }, ANNOUNCEMENT_FAILED);
+    }
+  }
 }
 
 /** What `/api/v1/meta` reports; modules fill it at registration. */
@@ -81,7 +143,7 @@ export interface ServerContext {
 }
 
 export interface ServerModule {
-  readonly name: 'identity' | 'teams-access' | 'server-sync';
+  readonly name: 'identity' | 'teams-access' | 'server-sync' | 'live-updates';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

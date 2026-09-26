@@ -90,6 +90,7 @@ export class FolderBackend implements SyncBackend {
     return syncNotSupported('setIdentity');
   }
 
+  /** A synced folder, or a share that cannot sync here, has no remote to hear from: no `RemoteEvent` ever comes. */
   subscribeRemote(): () => void {
     return () => {};
   }

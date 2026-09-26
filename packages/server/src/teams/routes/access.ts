@@ -11,6 +11,7 @@ import {
   type SetAccessRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
 import { notAMember } from '../errors.js';
@@ -67,6 +68,8 @@ export const accessRoutes =
           if (!(await repo.isTeamMemberOfWorkspace(tx, workspaceId, userId))) throw notAMember();
           await repo.upsertGrant(tx, { workspaceId, userId, role, at: env.now() });
         });
+        // Committed: the hub re-resolves the workspace's subscribers and tells the changed ones (§3.2).
+        announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
         return reply.code(204).send();
       },
     );
@@ -77,6 +80,7 @@ export const accessRoutes =
       async (request, reply) => {
         const { workspaceId, userId } = request.params as AccessParams;
         await repo.deleteGrant(db, workspaceId, userId);
+        announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
         return reply.code(204).send();
       },
     );

@@ -55,6 +55,21 @@ function settingsOf(share: WorkspaceShareWire | undefined): {
   };
 }
 
+/** How many names the "Also here" line spells out before it folds the rest into "+N" (live-updates §3.4). */
+const PRESENCE_MAX_NAMES = 5;
+
+/**
+ * "Ana, Ben" or "Ana, Ben, Cy, Dee, Eli +2": the others with this workspace open, in the order main
+ * sent them. Main has already dropped this account's own user (§3.4 *Events*), so nothing is filtered
+ * here. Five names keep the line to one row in the panel's width; the full list is its tooltip.
+ */
+function presenceNames(users: readonly { readonly name: string }[]): string {
+  const names = users.map((user) => user.name);
+  const shown = names.slice(0, PRESENCE_MAX_NAMES).join(', ');
+  const rest = users.length - PRESENCE_MAX_NAMES;
+  return rest > 0 ? `${shown} +${String(rest)}` : shown;
+}
+
 /**
  * The Sync panel: pull/push/fetch/commit, the unresolved conflicts, recent commits, the share's
  * settings, and the door out (reveal the shared folder, stop sharing). A Radix `Dialog`, opened
@@ -62,7 +77,9 @@ function settingsOf(share: WorkspaceShareWire | undefined): {
  *
  * A Wirebench Server share (server-sync §3.4) shows its server and team instead of a remote and a
  * branch; a viewer sees Push and Push on save disabled with the reason; and a server-sync code in
- * the status shows its message with the one action that ends it.
+ * the status shows its message with the one action that ends it. While others have the same
+ * workspace open, a line under the header names them (live-updates §3.4): it answers "is anyone
+ * else editing this?" before a conflict does.
  */
 export function SyncPanel() {
   const open = useUiStore((state) => state.syncPanelOpen);
@@ -101,6 +118,8 @@ export function SyncPanel() {
   // start one are disabled with the reason rather than left to fail (§3.4).
   const viewer = status.role === 'viewer';
   const notice = status.error === undefined ? undefined : syncCodeInfo(status.error.code);
+  // Present only on a server share with a live socket; main clears it when the subscription closes.
+  const others = status.presence ?? [];
 
   // Re-syncs the settings controls whenever a new workspace snapshot arrives (a settings save —
   // this panel's own or another window's — always broadcasts one). Deliberately does *not*
@@ -187,6 +206,16 @@ export function SyncPanel() {
                   ? `${syncBadgeLabel(status)} — no remote set yet.`
                   : `${status.remote} on ${status.branch ?? 'main'}`}
             </Dialog.Description>
+
+            {others.length > 0 && (
+              <p
+                data-testid="sync-presence"
+                title={others.map((user) => user.name).join(', ')}
+                className="mt-1 truncate text-xs text-fg-subtle"
+              >
+                Also here: {presenceNames(others)}
+              </p>
+            )}
 
             <div className="mt-3 flex gap-2">
               <Button

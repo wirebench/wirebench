@@ -7,6 +7,7 @@ import {
   type PasswordChangeRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import { invalidCredentials, methodDisabled, notFound, passwordTooShort, unauthenticated } from '../errors.js';
@@ -52,6 +53,8 @@ export const meRoutes =
           await repo.upsertCredential(tx, caller.id, hash, now);
           await repo.revokeTokensOfUser(tx, caller.id, now, caller.tokenId); // every *other* device (§3.1)
         });
+        // The device that changed the password keeps its sockets, as it keeps its token.
+        announce(env.ctx.hooks.sessionEnded, { userId: caller.id, exceptTokenId: caller.tokenId }, request.log);
         return reply.code(204).send();
       },
     );
@@ -83,6 +86,7 @@ export const meRoutes =
         const owned = (await repo.tokensOfUser(env.ctx.db, caller.id)).some((token) => token.id === id);
         if (!owned) throw notFound('Device');
         await repo.revokeToken(env.ctx.db, id, env.now());
+        announce(env.ctx.hooks.sessionEnded, { tokenId: id }, request.log);
         return reply.code(204).send();
       },
     );

@@ -23,6 +23,7 @@
     "dev": "node --watch dist/bin.js serve"
   },
   "dependencies": {
+    "@fastify/websocket": "^11.3.1",
     "@wirebench/engine": "workspace:*",
     "fastify": "^5.12.5",
     "openid-client": "^6.8.8",
@@ -31,6 +32,7 @@
     "zod": "^4.6.1"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.1"
   }
 }

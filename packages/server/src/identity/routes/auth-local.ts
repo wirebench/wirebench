@@ -1,5 +1,6 @@
 import { localSignInRequestSchema, signInResponseSchema, type LocalSignInRequest } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import { invalidCredentials, methodDisabled, userDisabled } from '../errors.js';
@@ -45,6 +46,7 @@ export const authLocalRoutes =
 
     app.post('/auth/sign-out', { preHandler: requireUser }, async (request, reply) => {
       await repo.revokeToken(env.ctx.db, request.caller!.tokenId, env.now());
+      announce(env.ctx.hooks.sessionEnded, { tokenId: request.caller!.tokenId }, request.log);
       return reply.code(204).send();
     });
   };

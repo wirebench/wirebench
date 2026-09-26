@@ -11,6 +11,7 @@ import {
   type SyncPushRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { unauthenticated } from '../../identity/errors.js';
 import { findUserById } from '../../identity/repo.js';
 import { jsonSchema } from '../../schema.js';
@@ -25,7 +26,7 @@ const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 export const commitRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
-    const { db, repos } = env.ctx;
+    const { db, repos, hooks } = env.ctx;
     app.post(
       '/workspaces/:workspaceId/sync/commits',
       {
@@ -49,6 +50,8 @@ export const commitRoutes =
           if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
           return env.store.appendCommits(workspaceId, body.parent, body.commits, author);
         });
+        // main has moved: a rejected or failed push never reaches this line (live-updates §3.2).
+        announce(hooks.headMoved, { workspaceId, head: result.head, tokenId: request.caller!.tokenId }, request.log);
         return reply.code(201).send(result);
       },
     );

@@ -14,8 +14,9 @@ import {
   isWirebenchError,
   WirebenchError,
 } from '@wirebench/engine';
-import type { SyncBackend } from '../../src/main/sync/backend.js';
-import { SyncService } from '../../src/main/sync/sync-service.js';
+import type { RemoteEvent, SyncBackend } from '../../src/main/sync/backend.js';
+import { LIVE_SAFETY_NET_SECONDS, SyncService } from '../../src/main/sync/sync-service.js';
+import { syncStatusWireSchema } from '../../src/shared/wire-types.js';
 import type { SyncServiceDeps } from '../../src/main/sync/sync-service.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from '../../src/main/sync/types.js';
 
@@ -156,8 +157,21 @@ class ScriptedBackend implements SyncBackend {
     });
   }
 
-  subscribeRemote(): () => void {
-    return () => {};
+  /** The listeners `subscribeRemote` holds now, and how many times it was called. */
+  readonly remoteListeners = new Set<(event: RemoteEvent) => void>();
+  subscribeCalls = 0;
+
+  subscribeRemote(listener: (event: RemoteEvent) => void): () => void {
+    this.subscribeCalls += 1;
+    this.remoteListeners.add(listener);
+    return () => {
+      this.remoteListeners.delete(listener);
+    };
+  }
+
+  /** What a server's live socket would deliver: every listener subscribed now hears `event`. */
+  remote(event: RemoteEvent): void {
+    for (const listener of [...this.remoteListeners]) listener(event);
   }
 }
 
@@ -1351,5 +1365,258 @@ describe('SyncService — stop polling and resume (server-sync §3.4, R6)', () =
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fetchesOf(h)).toBe(4);
     h.service.stop();
+  });
+});
+
+describe('SyncService — live events (live-updates §3.4)', () => {
+  const fetchesOf = (h: Harness): number => h.backend.calls.filter((call) => call === 'fetch').length;
+  const BEN = { id: '01J8ZC5Q0V7R3T9XK2M4N6P8QD', name: 'Ben' };
+  const CY = { id: '01J8ZC5Q0V7R3T9XK2M4N6P8QE', name: 'Cy' };
+  const signedOut = (): WirebenchError =>
+    new WirebenchError('sync-signed-out', 'Sign in to Wirebench Server to sync this workspace.');
+
+  it('subscribes once start has fetched, and stop() unsubscribes; an event after stop does nothing', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    let listenersAtFirstFetch: number | undefined;
+    h.backend.fetchScript.push(() => {
+      listenersAtFirstFetch = h.backend.remoteListeners.size;
+      return Promise.resolve();
+    });
+    await h.service.start();
+    expect(listenersAtFirstFetch).toBe(0);
+    expect(h.backend.subscribeCalls).toBe(1);
+    expect(h.backend.remoteListeners.size).toBe(1);
+    const [listener] = [...h.backend.remoteListeners];
+
+    h.service.stop();
+    expect(h.backend.remoteListeners.size).toBe(0);
+    listener?.({ kind: 'changed' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchesOf(h)).toBe(1);
+  });
+
+  it('a burst of events is one fetch; an event after that fetch started queues exactly one more', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    await h.service.start();
+    expect(fetchesOf(h)).toBe(1);
+    const gate = deferred();
+    h.backend.fetchScript.push(() => gate.promise);
+
+    h.backend.remote({ kind: 'changed' });
+    h.backend.remote({ kind: 'changed' });
+    h.backend.remote({ kind: 'access' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchesOf(h)).toBe(2);
+
+    // That fetch has started and may have read an older head: these two queue one more between them.
+    h.backend.remote({ kind: 'changed' });
+    h.backend.remote({ kind: 'ended' });
+    gate.resolve();
+    await h.service.idle();
+
+    expect(fetchesOf(h)).toBe(3);
+    expect(h.backend.maxActive).toBe(1);
+    expect(h.pulled).toEqual([]);
+    expect(h.backend.calls).not.toContain('merge');
+    h.service.stop();
+  });
+
+  it("connected runs one catch-up fetch and polls at the 300 s safety net; connecting restores the user's interval at once", async () => {
+    expect(LIVE_SAFETY_NET_SECONDS).toBe(300);
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    expect(fetchesOf(h)).toBe(1);
+
+    h.backend.remote({ kind: 'live', state: 'connected' });
+    await h.service.idle();
+    expect(fetchesOf(h)).toBe(2);
+    expect(h.service.status().live).toBe('connected');
+    await vi.advanceTimersByTimeAsync(299_999);
+    expect(fetchesOf(h)).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchesOf(h)).toBe(3);
+
+    await vi.advanceTimersByTimeAsync(100_000);
+    h.backend.remote({ kind: 'live', state: 'connecting' });
+    expect(h.service.status().live).toBe('connecting');
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(fetchesOf(h)).toBe(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchesOf(h)).toBe(4);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchesOf(h)).toBe(5);
+    h.service.stop();
+  });
+
+  it('a user interval longer than the safety net wins while connected', async () => {
+    const h = harness({ autoFetchSeconds: 600 });
+    await h.service.start();
+    h.backend.remote({ kind: 'live', state: 'connected' });
+    await h.service.idle();
+    expect(fetchesOf(h)).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(599_999);
+    expect(fetchesOf(h)).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchesOf(h)).toBe(3);
+    h.service.stop();
+  });
+
+  it('auto-fetch 0 arms no timer in either state, while events still fetch', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    await h.service.start();
+    h.backend.remote({ kind: 'live', state: 'connected' });
+    await h.service.idle();
+    expect(fetchesOf(h)).toBe(2);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(fetchesOf(h)).toBe(2);
+
+    h.backend.remote({ kind: 'changed' });
+    await h.service.idle();
+    expect(fetchesOf(h)).toBe(3);
+
+    h.backend.remote({ kind: 'live', state: 'connecting' });
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(fetchesOf(h)).toBe(3);
+    h.service.stop();
+  });
+
+  it('an access event fetches, and a promotion it finds pushes the commits that waited (R2)', async () => {
+    const h = harness({}, { settings: () => ({ ...DEFAULT_SYNC_SETTINGS, autoFetchSeconds: 0 }) });
+    h.backend.current = status({ kind: 'server', remote: 'https://wb.test', role: 'viewer', state: 'ahead', ahead: 1 });
+    await h.service.start();
+    expect(h.backend.calls).not.toContain('push');
+
+    h.backend.current = { ...h.backend.current, role: 'editor' };
+    h.backend.remote({ kind: 'access' });
+    await h.service.idle();
+
+    expect(fetchesOf(h)).toBe(2);
+    expect(h.backend.calls.filter((call) => call === 'push')).toHaveLength(1);
+    expect(h.service.status()).toMatchObject({ ahead: 0, role: 'editor' });
+    h.service.stop();
+  });
+
+  it('an access event whose fetch finds access removed stops polling and closes the subscription', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    h.backend.remote({ kind: 'live', state: 'connected' });
+    h.backend.remote({ kind: 'presence', users: [BEN] });
+    await h.service.idle();
+    expect(h.service.status()).toMatchObject({ live: 'connected', presence: [BEN] });
+
+    h.backend.fetchScript.push(() =>
+      Promise.reject(
+        new WirebenchError('sync-access-removed', 'You no longer have access; the files stay on this machine.'),
+      ),
+    );
+    h.backend.remote({ kind: 'access' });
+    await h.service.idle();
+
+    expect(fetchesOf(h)).toBe(3);
+    expect(h.service.status()).toMatchObject({ state: 'error', error: { code: 'sync-access-removed' }, live: 'off' });
+    expect(h.service.status()).not.toHaveProperty('presence');
+    expect(h.statuses.at(-1)).toMatchObject({ live: 'off' });
+    expect(h.backend.remoteListeners.size).toBe(0);
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(fetchesOf(h)).toBe(3);
+  });
+
+  it('ended fetches once, and the signed-out answer takes the stop-polling path (§3.4)', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    h.backend.remote({ kind: 'live', state: 'connected' });
+    await h.service.idle();
+
+    // The account is signed out by now: ServerBackend answers this without a network call
+    // (server-backend.test.ts, "with no token fetch is sync-signed-out without a call").
+    h.backend.fetchScript.push(() => Promise.reject(signedOut()));
+    h.backend.remote({ kind: 'ended' });
+    await h.service.idle();
+
+    expect(fetchesOf(h)).toBe(3);
+    expect(h.service.status()).toMatchObject({ state: 'error', error: { code: 'sync-signed-out' }, live: 'off' });
+    expect(h.backend.remoteListeners.size).toBe(0);
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(fetchesOf(h)).toBe(3);
+  });
+
+  it('resume() subscribes again before its fetch', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    h.backend.fetchScript.push(() => Promise.reject(signedOut()));
+    await rejectionOf(h.service.fetch());
+    expect(h.backend.remoteListeners.size).toBe(0);
+
+    let listenersAtFetch: number | undefined;
+    h.backend.fetchScript.push(() => {
+      listenersAtFetch = h.backend.remoteListeners.size;
+      return Promise.resolve();
+    });
+    h.service.resume();
+    await h.service.idle();
+
+    expect(listenersAtFetch).toBe(1);
+    expect(h.backend.subscribeCalls).toBe(2);
+    h.service.stop();
+  });
+
+  it('a fetch that works after a stop subscribes again, once', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    h.backend.fetchScript.push(() => Promise.reject(signedOut()));
+    await rejectionOf(h.service.fetch());
+    expect(h.backend.remoteListeners.size).toBe(0);
+
+    await h.service.fetch();
+    await h.service.fetch();
+
+    expect(h.backend.remoteListeners.size).toBe(1);
+    expect(h.backend.subscribeCalls).toBe(2);
+    h.service.stop();
+  });
+
+  it('lays live and presence over every status, and forgets presence once the socket is not connected', async () => {
+    const h = harness({ autoFetchSeconds: 0 });
+    await h.service.start();
+    h.backend.remote({ kind: 'live', state: 'connected' });
+    h.backend.remote({ kind: 'presence', users: [BEN, CY] });
+    expect(h.statuses.at(-1)).toMatchObject({ live: 'connected', presence: [BEN, CY] });
+
+    await h.service.idle();
+    // A backend's own status carries neither field; the overlay keeps both across it.
+    await h.service.fetch();
+    expect(h.service.status()).toMatchObject({ state: 'clean', live: 'connected', presence: [BEN, CY] });
+
+    h.backend.remote({ kind: 'presence', users: [CY] });
+    expect(h.service.status().presence).toEqual([CY]);
+
+    h.backend.remote({ kind: 'live', state: 'connecting' });
+    expect(h.statuses.at(-1)).toMatchObject({ live: 'connecting' });
+    expect(h.statuses.at(-1)).not.toHaveProperty('presence');
+    h.service.stop();
+  });
+
+  it('a backend that never reports a socket state (git, folder) gets no new fields, even when its subscription closes', async () => {
+    const h = harness({ autoFetchSeconds: 60 });
+    await h.service.start();
+    await h.service.fetch();
+    h.backend.fetchScript.push(() => Promise.reject(signedOut()));
+    await rejectionOf(h.service.fetch());
+    h.service.stop();
+
+    for (const emitted of [...h.statuses, h.service.status()]) {
+      expect(emitted).not.toHaveProperty('live');
+      expect(emitted).not.toHaveProperty('presence');
+    }
+  });
+
+  it('both fields survive the status schema that the sync channels and events carry', () => {
+    const wire = status({ kind: 'server', remote: 'https://wb.test', presence: [BEN, CY], live: 'connecting' });
+    expect(syncStatusWireSchema.parse(wire)).toEqual(wire);
+    expect(syncStatusWireSchema.safeParse({ ...wire, live: 'ended' }).success).toBe(false);
+    expect(syncStatusWireSchema.safeParse({ ...wire, presence: [{ id: BEN.id }] }).success).toBe(false);
   });
 });

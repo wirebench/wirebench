@@ -292,6 +292,16 @@ export async function deleteWorkspace(db: Querier, id: string): Promise<void> {
   await db.query('delete from workspaces where id = $1', [id]);
 }
 
+/**
+ * The ids of every workspace in `teamId`, in no particular order, and `[]` for an unknown team. The
+ * live hub resolves a team-scoped access change with this one query and intersects the result with
+ * the workspaces it has subscribers on (live-updates spec §3.3).
+ */
+export async function workspaceIdsOfTeam(db: Querier, teamId: string): Promise<string[]> {
+  const { rows } = await db.query<{ id: string }>('select id from workspaces where team_id = $1', [teamId]);
+  return rows.map((row) => row.id);
+}
+
 /** `undefined` when the workspace or the user does not exist: both mean `none`. */
 export async function workspaceFacts(
   db: Querier,
