@@ -51,6 +51,22 @@ describe('SecretField', () => {
     expect(onChange).toHaveBeenCalledWith('sec_abc');
   });
 
+  it('with newRef, Replace… stores under a new ref and leaves the shown one alone', async () => {
+    const set = vi.fn().mockResolvedValue({ ok: true, value: { ref: 'sec_new' } });
+    const replace = vi.fn();
+    installWirebenchApi({ secrets: { set, replace } });
+    const onChange = vi.fn();
+    render(<SecretField value="sec_abc" onChange={onChange} label="Password" newRef />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replace…' }));
+    fireEvent.change(screen.getByPlaceholderText('Enter password'), { target: { value: 'newpass' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('sec_new'));
+    expect(set).toHaveBeenCalledWith({ value: 'newpass', label: 'Password' });
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it('Clear emits undefined without calling any secrets channel', () => {
     installWirebenchApi();
     const onChange = vi.fn();

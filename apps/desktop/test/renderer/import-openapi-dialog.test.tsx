@@ -54,6 +54,8 @@ const importOpenApi = vi.fn();
 const updateApi = vi.fn();
 const cancelImport = vi.fn();
 const openFile = vi.fn();
+const setSecret = vi.fn();
+const secretExists = vi.fn();
 
 /** Installs the preload stub and returns an emitter for `engine.progress`. */
 function stubWirebench(): { emit: (name: string, payload: unknown) => void } {
@@ -61,6 +63,7 @@ function stubWirebench(): { emit: (name: string, payload: unknown) => void } {
   installWirebenchApi({
     api: { cancelImport },
     dialogs: { openFile },
+    secrets: { set: setSecret, exists: secretExists },
     on: vi.fn((name: string, listener: (payload: unknown) => void) => {
       listeners.set(name, listener);
       return () => listeners.delete(name);
@@ -88,6 +91,8 @@ beforeEach(() => {
   updateApi.mockReset().mockResolvedValue(undefined);
   cancelImport.mockReset().mockResolvedValue({ ok: true, value: { cancelled: true } });
   openFile.mockReset().mockResolvedValue({ ok: true, value: { path: '/picked/openapi.yaml' } });
+  setSecret.mockReset().mockResolvedValue({ ok: true, value: { ref: 'ref-1' } });
+  secretExists.mockReset().mockResolvedValue({ ok: true, value: { exists: true } });
   useUiStore.setState({ selection: undefined });
   stubWirebench();
 });
@@ -349,5 +354,85 @@ describe('the import summary', () => {
     await userEvent.click(screen.getByTestId('import-openapi-done'));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('ImportOpenApiDialog — a document behind authentication', () => {
+  it('offers the Authentication section on the URL tab only', async () => {
+    mount();
+    expect(screen.getByTestId('definition-auth')).toBeTruthy();
+    const types = screen.getByLabelText<HTMLSelectElement>('Definition authentication type');
+    expect([...types.options].map((option) => option.text)).toEqual([
+      'Not configured',
+      'None',
+      'Basic',
+      'Bearer token',
+      'API key',
+    ]);
+    expect(types.value).toBe('none');
+
+    await userEvent.click(screen.getByRole('tab', { name: 'File' }));
+    expect(screen.queryByTestId('definition-auth')).toBeNull();
+  });
+
+  it('never offers it for WSDL, which keeps its own Basic auth', async () => {
+    mount();
+    await userEvent.selectOptions(screen.getByTestId('import-format-select'), 'wsdl');
+
+    expect(screen.queryByTestId('definition-auth')).toBeNull();
+    expect(screen.getByText('Use Basic auth')).toBeTruthy();
+  });
+
+  it('stores a typed password in the keychain on Import and sends only its reference', async () => {
+    mount();
+
+    await userEvent.type(screen.getByTestId('import-openapi-url'), 'https://gateway.test/openapi.yaml');
+    await userEvent.selectOptions(screen.getByLabelText('Definition authentication type'), 'basic');
+    await userEvent.type(screen.getByLabelText('Definition username'), 'ada');
+    await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
+    // Typed but never saved: Import stores it first, as the WSDL password is.
+    await userEvent.type(screen.getByLabelText('Definition password'), 'hunter2');
+    await userEvent.click(screen.getByTestId('import-openapi-submit'));
+
+    await waitFor(() => {
+      expect(importOpenApi).toHaveBeenCalled();
+    });
+    expect(setSecret).toHaveBeenCalledWith({ value: 'hunter2', label: 'Definition password' });
+    const request = importOpenApi.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request['auth']).toEqual({ type: 'basic', username: 'ada', passwordRef: 'ref-1' });
+    expect(JSON.stringify(request)).not.toContain('hunter2');
+  });
+
+  it('sends a query API key by reference, and nothing at all for None', async () => {
+    mount();
+
+    await userEvent.type(screen.getByTestId('import-openapi-url'), 'https://gateway.test/openapi.yaml');
+    await userEvent.selectOptions(screen.getByLabelText('Definition authentication type'), 'api-key');
+    await userEvent.type(screen.getByLabelText('Definition name'), 'api_key');
+    await userEvent.selectOptions(screen.getByLabelText('Definition api key location'), 'query');
+    await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
+    await userEvent.type(screen.getByLabelText('Definition value'), 'good-key');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await userEvent.click(screen.getByTestId('import-openapi-submit'));
+
+    await waitFor(() => {
+      expect(importOpenApi).toHaveBeenCalledTimes(1);
+    });
+    expect((importOpenApi.mock.calls[0]?.[0] as Record<string, unknown>)['auth']).toEqual({
+      type: 'api-key',
+      name: 'api_key',
+      in: 'query',
+      valueRef: 'ref-1',
+    });
+
+    cleanup();
+    importOpenApi.mockClear();
+    mount();
+    await userEvent.type(screen.getByTestId('import-openapi-url'), 'https://api.test/openapi.yaml');
+    await userEvent.click(screen.getByTestId('import-openapi-submit'));
+    await waitFor(() => {
+      expect(importOpenApi).toHaveBeenCalledTimes(1);
+    });
+    expect(importOpenApi.mock.calls[0]?.[0]).not.toHaveProperty('auth');
   });
 });

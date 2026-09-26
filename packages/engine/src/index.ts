@@ -89,6 +89,8 @@ export type {
   ResolveProblem,
 } from './wsdl/resolver.js';
 export { createDefaultFetchDocument } from './wsdl/fetch.js';
+export { createHttpFetchDocument } from './http/document-fetch.js';
+export type { DocumentFetchOptions } from './http/document-fetch.js';
 export { assignFileNames } from './wsdl/cache-naming.js';
 export type { NamedDocument } from './wsdl/cache-naming.js';
 export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
@@ -311,6 +313,7 @@ export type {
   CreateInterfaceInput,
   CreateOptions,
   CreateRequestInput,
+  DefinitionAuth,
   Endpoint,
   EndpointAuth,
   Environment,
@@ -613,6 +616,7 @@ export {
   assertSupportedKind,
   attachmentSourceSchema,
   authConfigSchema,
+  definitionAuthSchema,
   definitionCacheManifestSchema,
   environmentFileSchema,
   keyValueEntrySchema,

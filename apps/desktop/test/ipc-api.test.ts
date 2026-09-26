@@ -271,6 +271,65 @@ describe('api.importOpenApi', () => {
   });
 });
 
+describe("a definition's fetch credentials", () => {
+  const BASIC = { type: 'basic', username: 'ada', passwordRef: 'ref-p' } as const;
+
+  it('reads the document with them and records them on the placed API', async () => {
+    const { addApi, run } = setup();
+
+    await value('api.importOpenApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'url', url: 'https://gateway.test/openapi.yaml' },
+      auth: BASIC,
+    });
+
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({ auth: BASIC }), expect.anything());
+    expect(addApi).toHaveBeenCalledWith('p1', expect.objectContaining({ auth: BASIC }));
+  });
+
+  it('records nothing when none were given', async () => {
+    const { addApi, run } = setup();
+
+    await value('api.importOpenApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'url', url: 'https://api.test/openapi.yaml' },
+    });
+
+    expect(run.mock.calls[0]?.[0]).not.toHaveProperty('auth');
+    expect(addApi.mock.calls[0]?.[1]).not.toHaveProperty('auth');
+  });
+
+  it('refuses them with a file source before reading anything', async () => {
+    const { run } = setup();
+
+    const error = await failure('api.importOpenApi', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: '/tmp/openapi.yaml' },
+      auth: BASIC,
+    });
+
+    expect(error.code).toBe('ipc-invalid-request');
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('gives them to the AsyncAPI server preview, which reads the same document', async () => {
+    const readAsyncApi = vi.fn().mockResolvedValue({
+      document: { servers: [{ key: 'public', url: 'wss://chat.test', protocol: 'wss' }] },
+      documents: [],
+    });
+    setup({ asyncApiImports: { runAsyncApi: vi.fn(), readAsyncApi } });
+    const auth = { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'ref-v' } as const;
+
+    const answer = await value<{ servers: unknown[] }>('api.asyncApiServers', {
+      source: { kind: 'url', url: 'https://gateway.test/asyncapi.yaml' },
+      auth,
+    });
+
+    expect(answer.servers).toEqual([{ key: 'public', url: 'wss://chat.test' }]);
+    expect(readAsyncApi).toHaveBeenCalledWith({ kind: 'url', url: 'https://gateway.test/asyncapi.yaml' }, auth);
+  });
+});
+
 describe('api.importOpenApi with a file source', () => {
   const dirs: string[] = [];
   afterEach(async () => {

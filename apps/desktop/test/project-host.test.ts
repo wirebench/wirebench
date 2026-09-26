@@ -5,7 +5,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadProject, mergePreferences, nodeFs } from '@wirebench/engine';
+import { createDefaultFetchDocument, importOpenApi, loadProject, mergePreferences, nodeFs } from '@wirebench/engine';
 import type { FsLike } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
@@ -103,6 +103,51 @@ describe('ProjectHost', () => {
       auth: { username: 'alice', password: 's3cret!' },
     });
     expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
+  });
+
+  it("persists a REST API definition's auth to disk and carries it through a reopen", async () => {
+    const dir = join(tempDir('project'), 'Pets Project');
+    const service = newService();
+    await service.create({ dir, name: 'Pets Project' });
+
+    const document = `openapi: 3.0.3
+info: { title: Pets, version: '1' }
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      responses:
+        '200': { description: ok }
+`;
+    const imported = await importOpenApi(
+      { kind: 'text', text: document, location: 'https://pets.example.test/openapi.yaml' },
+      { fetchDocument: createDefaultFetchDocument() },
+    );
+    const auth = { type: 'basic', username: 'ada', passwordRef: 'ref-p' } as const;
+    const { apiId } = await service.addApi({
+      api: imported.api,
+      documents: imported.documents,
+      source: 'https://pets.example.test/openapi.yaml',
+      declaredVersion: '3.0.3',
+      cache: true,
+      auth,
+    });
+
+    // `restSource` — what an update re-reads with — answers the same credentials `addApi` recorded.
+    expect(service.restSource(apiId)).toEqual({ source: 'https://pets.example.test/openapi.yaml', auth });
+    // `snapshot` goes through `toApiWire`, the same conversion `api.*` answers over IPC with.
+    const before = (service.snapshot() as ProjectWire).apis.find((api) => api.id === apiId);
+    expect(before?.definition).toMatchObject({ auth });
+
+    await service.close();
+    const reopened = newService();
+    await reopened.openProject(dir);
+    await reopened.whenHydrated();
+
+    // The credentials came back from `apis/<slug>/api.yaml` on disk, not from memory.
+    expect(reopened.restSource(apiId)).toEqual({ source: 'https://pets.example.test/openapi.yaml', auth });
+    const after = (reopened.snapshot() as ProjectWire).apis.find((api) => api.id === apiId);
+    expect(after?.definition).toMatchObject({ auth });
   });
 
   it('creates, imports, mutates, saves and reopens a project from disk', async () => {

@@ -158,7 +158,8 @@ Open it from the API's tab (**Update definition…**, in the Definition group), 
 context menu (**Update Definition…**), or from the command palette (**REST: Update Definition…**).
 The entry is offered only for an API that recorded where its definition came from.
 
-The dialog reads the source and previews, before anything changes:
+The dialog reads the source and previews, before anything changes. A document imported with
+**Authentication** is read again with the same credentials, from the keychain, without asking.
 
 - **Added operations** and **Removed operations**, each as `POST /pets`.
 - **Changed operations**, each with its reasons — `parameters`, `request-body`, `responses`,
@@ -194,6 +195,13 @@ only the tick box changes. Rows you added yourself are never switched on this wa
 **Choose another file or URL…** updates from somewhere else — a local copy, a next-version URL —
 rather than from the recorded source. An API imported from pasted text has no source to read again,
 so the dialog asks for a file or URL straight away.
+
+Under the URL is the same **Authentication** section the Import dialog has. For a URL on the recorded
+source's origin it starts with the stored credentials; for any other it starts at **None**, so a
+stored credential is never sent to a new host unless you choose it. Applying from a URL records that
+URL and the section's credentials (**None** clears them); applying from a file clears them. When the
+recorded source answers that it needs authentication, or refuses the stored credentials, the dialog
+opens this chooser on that URL with the message, so you can enter or fix them and preview again.
 
 Apply carries a fingerprint of every document the preview read. If the source changed again in
 between, nothing is applied: the dialog says so and offers **Preview again**.

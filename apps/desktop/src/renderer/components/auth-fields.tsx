@@ -81,10 +81,33 @@ export interface AuthFieldsProps {
   readonly onChange: (auth: AuthConfigWire | null) => void;
   /** Rendered under the OAuth2 fields — the token status panel, which needs an owner id. */
   readonly oauth2Status?: ReactNode;
+  /**
+   * Offer Basic's *Send credentials preemptively* box. Default true; a definition fetch is always
+   * preemptive, so its form leaves the box out rather than show one that changes nothing.
+   */
+  readonly preemptiveOption?: boolean;
+  /**
+   * Receives a flush the owner awaits before submitting: every secret typed but not yet saved is
+   * stored, and the flush answers the configuration with the fresh references. Called again with
+   * `undefined` on unmount.
+   */
+  readonly registerFlush?: (flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => void;
+  /** Store every secret typed under a new reference rather than over the one shown; see `SecretField`. */
+  readonly newSecretRefs?: boolean;
 }
 
 /** The form. */
-export function AuthFields({ scope, auth, inheritable = false, types, onChange, oauth2Status }: AuthFieldsProps) {
+export function AuthFields({
+  scope,
+  auth,
+  inheritable = false,
+  types,
+  onChange,
+  oauth2Status,
+  preemptiveOption = true,
+  registerFlush,
+  newSecretRefs = false,
+}: AuthFieldsProps) {
   const offered = types === undefined ? TYPES : TYPES.filter((option) => types.includes(option.value));
   const type = auth?.type ?? 'none';
   const patch = (next: Partial<AuthConfigWire>): void => {
@@ -125,6 +148,22 @@ export function AuthFields({ scope, auth, inheritable = false, types, onChange, 
     [],
   );
 
+  useEffect(() => {
+    registerFlush?.(async () => {
+      let current = authRef.current;
+      for (const [slot, flush] of flushes.current) {
+        const ref = await flush();
+        if (ref !== undefined && current !== undefined && ref !== current[slot]) {
+          current = { ...current, [slot]: ref };
+        }
+      }
+      return current;
+    });
+    return () => {
+      registerFlush?.(undefined);
+    };
+  }, [registerFlush]);
+
   /** One secret row, wired to the slot it writes. */
   const secret = (slot: SecretSlot, label: string): ReactNode => (
     <div className="flex items-center gap-2">
@@ -133,6 +172,7 @@ export function AuthFields({ scope, auth, inheritable = false, types, onChange, 
         <SecretField
           label={`${scope} ${label.toLowerCase()}`}
           {...(auth?.[slot] !== undefined ? { value: auth[slot] } : {})}
+          newRef={newSecretRefs}
           registerFlush={(flush) => {
             if (flush === undefined) {
               flushes.current.delete(slot);
@@ -235,7 +275,7 @@ export function AuthFields({ scope, auth, inheritable = false, types, onChange, 
           {secret('passwordRef', 'Password')}
           {type === 'ntlm' && text('domain', 'Domain')}
           {type === 'ntlm' && text('workstation', 'Workstation')}
-          {type === 'basic' && (
+          {type === 'basic' && preemptiveOption && (
             <label className="flex items-center gap-2 text-xs text-fg-default">
               <input
                 type="checkbox"

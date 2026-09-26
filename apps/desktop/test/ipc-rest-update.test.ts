@@ -9,12 +9,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { OpenApiImportService } from '../src/main/openapi-import.js';
 import { createDefaultFetchDocument, parseOpenApi, writeApiDefinitionCache } from '@wirebench/engine';
+import type { DocumentFetchOptions, FetchDocument } from '@wirebench/engine';
 import {
   apiRestApplyUpdateResponseSchema,
   apiRestPlanUpdateResponseSchema,
@@ -133,6 +135,17 @@ let projectDir: string;
 let docPath: string;
 let host: ProjectHost;
 
+/** `https://defs.test/<name>` is `<name>` in the project folder: a source read by URL, served offline. */
+const DEFS = 'https://defs.test/';
+/** Another origin serving the same files, for a chosen URL off the recorded source's origin. */
+const MIRROR = 'https://mirror.test/';
+/** The keychain, by reference: a test deletes an entry to leave a reference dangling. */
+let secrets: Record<string, string>;
+/** Every fetcher the import service built, with its options: which credentials each read went with. */
+let built: DocumentFetchOptions[];
+/** Every location a fetcher was asked for. */
+let fetched: string[];
+
 beforeEach(async () => {
   handlers.clear();
   cacheState.fails = false;
@@ -145,7 +158,27 @@ beforeEach(async () => {
   host = new ProjectHost(new EngineService(), {}, undefined, undefined, undefined, undefined, new DialogPicks());
   await host.create({ dir: join(projectDir, 'project'), name: 'Pets' });
 
-  const imports = new OpenApiImportService();
+  secrets = { 'ref-p': 'hunter2', 'ref-t': 'tok-123' };
+  built = [];
+  fetched = [];
+  const real = createDefaultFetchDocument();
+  const fetchDocument: FetchDocument = (location, signal) => {
+    fetched.push(location);
+    const origin = [DEFS, MIRROR].find((prefix) => location.startsWith(prefix));
+    return origin !== undefined
+      ? real(pathToFileURL(join(projectDir, location.slice(origin.length))).href, signal).then((document) => ({
+          ...document,
+          location,
+        }))
+      : real(location, signal);
+  };
+  const imports = new OpenApiImportService({
+    getSecret: (ref) => Promise.resolve(secrets[ref]),
+    createFetchDocument: (options) => {
+      built.push(options);
+      return fetchDocument;
+    },
+  });
   const unused = vi.fn();
   const deps: ApiChannelDeps = {
     router: {
@@ -387,5 +420,128 @@ describe('api.restPlanUpdate / api.restApplyUpdate', () => {
     const apiId = await importPets();
     const error = await failure('api.restApplyUpdate', { apiId, fingerprint: 'nope' });
     expect(error.code).not.toBe('definition-changed');
+  });
+});
+
+describe('an update reads the definition with the credentials it was imported with', () => {
+  const BASIC = { type: 'basic', username: 'ada', passwordRef: 'ref-p' } as const;
+  const BEARER = { type: 'bearer', tokenRef: 'ref-t' } as const;
+  const URL_SOURCE = { kind: 'url', url: `${DEFS}openapi.yaml` } as const;
+
+  async function importByUrl(): Promise<string> {
+    const imported = await value<{ apiId: string }>('api.importOpenApi', {
+      source: URL_SOURCE,
+      target: { projectId: 'p1' },
+      cache: true,
+      auth: BASIC,
+    });
+    return imported.apiId;
+  }
+
+  function definition(apiId: string) {
+    return (host.snapshot() as ProjectWire).apis.find((api) => api.id === apiId)?.definition;
+  }
+
+  async function planAndApply(apiId: string, source?: unknown) {
+    const request = source === undefined ? { apiId } : { apiId, source };
+    const plan = await value<{ fingerprint: string }>('api.restPlanUpdate', request);
+    return apiRestApplyUpdateResponseSchema.parse(
+      await value('api.restApplyUpdate', { ...request, fingerprint: plan.fingerprint }),
+    );
+  }
+
+  it('records them on import, and plans and applies with them without being given them again', async () => {
+    const apiId = await importByUrl();
+    expect(definition(apiId)?.auth).toEqual(BASIC);
+    expect(built.at(-1)).toMatchObject({
+      auth: { type: 'basic', username: 'ada', password: 'hunter2' },
+      authOrigin: 'https://defs.test',
+    });
+
+    await writeFile(docPath, V2);
+    built = [];
+    const applied = await planAndApply(apiId);
+
+    expect(applied.applied.requestsAdded).toBe(1);
+    // Both the plan and the apply read the recorded source, each with the recorded credentials.
+    expect(built).toHaveLength(2);
+    for (const options of built) {
+      expect(options).toMatchObject({ auth: { type: 'basic', password: 'hunter2' }, authOrigin: 'https://defs.test' });
+    }
+    expect(definition(apiId)).toMatchObject({ source: URL_SOURCE.url, auth: BASIC });
+  });
+
+  it('stores what a chosen URL was read with, and clears them for a URL given without any', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+
+    await planAndApply(apiId, { ...URL_SOURCE, auth: BEARER });
+    expect(built.at(-1)?.auth).toEqual({ type: 'bearer', token: 'tok-123' });
+    expect(definition(apiId)?.auth).toEqual(BEARER);
+
+    await writeFile(docPath, V1);
+    await planAndApply(apiId, URL_SOURCE);
+    expect(built.at(-1)?.auth).toBeUndefined();
+    expect(definition(apiId)).not.toHaveProperty('auth');
+  });
+
+  it('clears them when the update comes from a file', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+
+    await planAndApply(apiId, { kind: 'file', path: docPath });
+
+    expect(built.at(-1)?.auth).toBeUndefined();
+    expect(definition(apiId)).toMatchObject({ source: docPath });
+    expect(definition(apiId)).not.toHaveProperty('auth');
+  });
+
+  it('leaves the stored credentials alone when a chosen URL is only planned', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+
+    await value('api.restPlanUpdate', { apiId, source: { ...URL_SOURCE, auth: BEARER } });
+
+    expect(built.at(-1)?.auth).toEqual({ type: 'bearer', token: 'tok-123' });
+    expect(definition(apiId)).toMatchObject({ source: URL_SOURCE.url, auth: BASIC });
+  });
+
+  it('leaves the stored credentials alone when the apply is refused as definition-changed', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+    const source = { ...URL_SOURCE, auth: BEARER };
+    const plan = await value<{ fingerprint: string }>('api.restPlanUpdate', { apiId, source });
+    await writeFile(docPath, V2.replace("version: '2'", "version: '3'"));
+
+    const error = await failure('api.restApplyUpdate', { apiId, source, fingerprint: plan.fingerprint });
+
+    expect(error.code).toBe('definition-changed');
+    expect(definition(apiId)).toMatchObject({ source: URL_SOURCE.url, auth: BASIC });
+  });
+
+  it('reads a chosen URL on another origin with no credentials, though the API has stored ones', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+    built = [];
+    fetched = [];
+    const mirrored = `${MIRROR}openapi.yaml`;
+
+    await value('api.restPlanUpdate', { apiId, source: { kind: 'url', url: mirrored } });
+
+    expect(fetched).toEqual([mirrored]);
+    expect(built).toHaveLength(1);
+    expect(built[0]?.auth).toBeUndefined();
+    expect(built[0]?.authOrigin).toBeUndefined();
+  });
+
+  it('fails as secret-missing before fetching anything when the reference has no value here', async () => {
+    const apiId = await importByUrl();
+    delete secrets['ref-p'];
+    fetched = [];
+
+    const error = await failure('api.restPlanUpdate', { apiId });
+
+    expect(error.code).toBe('secret-missing');
+    expect(fetched).toEqual([]);
   });
 });

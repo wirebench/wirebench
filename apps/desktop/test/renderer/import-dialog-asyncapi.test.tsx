@@ -60,6 +60,10 @@ function mount(): void {
   installWirebenchApi({
     api: { importAsyncApi, asyncApiServers, cancelImport },
     definition: { cancelImport: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }) },
+    secrets: {
+      set: vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-1' } }),
+      exists: vi.fn().mockResolvedValue({ ok: true, value: { exists: true } }),
+    },
     on: vi.fn(() => () => undefined) as unknown as Window['wirebench']['on'],
   });
   useProjectStore.setState({
@@ -208,5 +212,94 @@ describe('ImportDialog — AsyncAPI', () => {
     const options = [...(picker as HTMLSelectElement).options].map((option) => option.value);
     expect(options).toEqual(['newer', 'newest']);
     expect(screen.getByTestId('import-submit').hasAttribute('disabled')).toBe(false);
+  });
+});
+
+describe('ImportDialog — an AsyncAPI document behind authentication', () => {
+  const url = 'https://gateway.test/asyncapi.yaml';
+  const auth = { type: 'bearer', tokenRef: 'ref-1' };
+  const needsAuth = {
+    ok: false,
+    error: {
+      code: 'definition-auth-required',
+      message: `The definition at ${url} needs authentication (HTTP 401).`,
+    },
+  };
+
+  /** Chooses AsyncAPI and a saved bearer token before any URL is typed. */
+  async function withBearer(): Promise<void> {
+    await userEvent.selectOptions(screen.getByTestId('import-format-select'), 'asyncapi');
+    await userEvent.selectOptions(screen.getByLabelText('Definition authentication type'), 'bearer');
+    await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
+    await userEvent.type(screen.getByLabelText('Definition token'), 'tok');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+  }
+
+  it('never sends the credentials with the server preview while the URL is typed', async () => {
+    asyncApiServers.mockResolvedValue(needsAuth);
+    mount();
+    await withBearer();
+
+    // Every intermediate URL (`https://g`, `https://gateway.te`, …) is a host of its own.
+    await userEvent.type(screen.getByTestId('import-url-input'), 'https://gateway.te');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await userEvent.type(screen.getByTestId('import-url-input'), 'st/asyncapi.yaml');
+
+    await waitFor(() => {
+      expect(asyncApiServers).toHaveBeenLastCalledWith({ source: { kind: 'url', url } });
+    });
+    expect(asyncApiServers.mock.calls.length).toBeGreaterThan(0);
+    for (const [request] of asyncApiServers.mock.calls) {
+      expect(request).not.toHaveProperty('auth');
+    }
+  });
+
+  it('offers Load servers when the preview needs authentication, and sends the credentials once', async () => {
+    asyncApiServers.mockResolvedValueOnce(needsAuth).mockResolvedValue({
+      ok: true,
+      value: {
+        servers: [
+          { key: 'public', url: 'wss://eu.chat.example.test/ws' },
+          { key: 'staging', url: 'wss://staging.chat.example.test/live' },
+        ],
+      },
+    });
+    mount();
+    await withBearer();
+    fireEvent.change(screen.getByTestId('import-url-input'), { target: { value: url } });
+
+    const load = await screen.findByRole('button', { name: 'Load servers with these credentials' });
+    expect(asyncApiServers).toHaveBeenCalledTimes(1);
+    expect(asyncApiServers).toHaveBeenLastCalledWith({ source: { kind: 'url', url } });
+
+    await userEvent.click(load);
+
+    await waitFor(() => {
+      expect(asyncApiServers).toHaveBeenCalledTimes(2);
+    });
+    expect(asyncApiServers).toHaveBeenLastCalledWith({ source: { kind: 'url', url }, auth });
+    const picker = await screen.findByTestId('import-asyncapi-server');
+    expect((picker as HTMLSelectElement).value).toBe('public');
+    expect(screen.queryByRole('button', { name: 'Load servers with these credentials' })).toBeNull();
+
+    await userEvent.click(screen.getByTestId('import-submit'));
+    await waitFor(() => {
+      expect(importAsyncApi).toHaveBeenCalledTimes(1);
+    });
+    expect(importAsyncApi.mock.calls[0]?.[0]).toMatchObject({ source: { kind: 'url', url }, auth, server: 'public' });
+    // Import itself reads the document again; the preview never asked with the credentials on its own.
+    expect(asyncApiServers).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows no Load servers button for a preview that did not ask for authentication', async () => {
+    mount();
+    await withBearer();
+    fireEvent.change(screen.getByTestId('import-url-input'), { target: { value: url } });
+
+    await waitFor(() => {
+      expect(asyncApiServers).toHaveBeenCalledWith({ source: { kind: 'url', url } });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole('button', { name: 'Load servers with these credentials' })).toBeNull();
   });
 });
