@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { WebContents } from 'electron';
-import { WirebenchError } from '@wirebench/engine';
+import { splitQuery, WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type {
   FailedExchangeWire,
@@ -15,13 +15,17 @@ import type {
   GrpcRequestPatchWire,
   HeaderEntryWire,
   HistoryEntryWire,
+  KeyValueWire,
   RequestSendGrpcRequest,
+  RestBodyWire,
+  RestRequestPatchWire,
 } from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
-import type { HistoryService } from '../history-service.js';
+import { isTruncatedBody, type HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
-import type { GetSecret, PropertyScopes } from '@wirebench/engine';
+import type { RestSendResolution } from '../rest-send.js';
+import type { GetSecret, PropertyScopes, RestBody } from '@wirebench/engine';
 import type { HistorySendProject, SendWithHistoryDeps } from '../send-with-history.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { registerHandler } from './register.js';
@@ -74,6 +78,188 @@ export function grpcResendDraft(
           )
         : requestMessages[0]!;
   return { service, method, methodKind, message };
+}
+
+/**
+ * The redaction marker as `URLSearchParams` writes it. `redactUrl` masks a query parameter by
+ * setting it through `URLSearchParams`, so a masked value is recorded percent-encoded.
+ */
+const ENCODED_MARKER = /%3credacted%3e/i;
+
+/** True when `text` holds the redaction marker in its literal or its percent-encoded form. */
+function holdsUrlMarker(text: string): boolean {
+  return containsRedaction(text) || ENCODED_MARKER.test(text);
+}
+
+/** Refuses a resend that would put the redaction marker on the wire. */
+function refuseRedacted(id: string, where: string): never {
+  throw new WirebenchError('history-resend-redacted', `The ${where} of this entry holds a value History redacted`, {
+    details: { id, where },
+  });
+}
+
+/** The value of the last enabled row whose name `matches`, or `undefined` when there is none. */
+function lastEnabled(
+  rows: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[],
+  matches: (name: string) => boolean,
+): string | undefined {
+  let value: string | undefined;
+  for (const row of rows) {
+    if (row.enabled && matches(row.name)) {
+      value = row.value;
+    }
+  }
+  return value;
+}
+
+/** A recorded query name percent-decoded, or as it is when it is not a valid escape sequence. */
+function decodedName(name: string): string {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
+/** True when a recorded (encoded) query name is the one a saved row typed as `typed`. */
+function sameParam(recorded: string, typed: string): boolean {
+  return recorded === typed || decodedName(recorded) === typed;
+}
+
+/**
+ * The query rows typed inline in a saved request's URL. Not `splitQuery`: the URL is unexpanded, and
+ * the `#` of a `${#Env#name}` reference there is not a fragment.
+ */
+function typedQuery(url: string): KeyValueWire[] {
+  const mark = url.indexOf('?');
+  if (mark === -1) {
+    return [];
+  }
+  return url
+    .slice(mark + 1)
+    .split('&')
+    .filter((pair) => pair.length > 0)
+    .map((pair) => {
+      const equals = pair.indexOf('=');
+      return {
+        name: equals === -1 ? pair : pair.slice(0, equals),
+        value: equals === -1 ? '' : pair.slice(equals + 1),
+        enabled: true,
+      };
+    });
+}
+
+/**
+ * The URL fields of a REST resend: the recorded URL split into its part before `?` and its query
+ * rows, with every redacted query value filled from the saved request and a query API key left for
+ * auth to add once. `pathParams` is empty, because the recorded path is already filled.
+ */
+function resendUrl(
+  entry: HistoryEntryWire,
+  saved: Pick<RestSendResolution, 'request' | 'auth'>,
+): Pick<RestRequestPatchWire, 'url' | 'query' | 'pathParams'> {
+  const { path, query } = splitQuery(entry.endpoint);
+  if (holdsUrlMarker(path)) {
+    refuseRedacted(entry.id, 'URL');
+  }
+  // `URLSearchParams` rewrote the whole query when it masked a parameter, in form encoding, where
+  // a `+` is a space. The literal marker comes from masking a secret value, which rewrites nothing.
+  const formEncoded = query.some((row) => ENCODED_MARKER.test(row.name) || ENCODED_MARKER.test(row.value));
+  const plus = (text: string): string => (formEncoded ? text.replaceAll('+', '%20') : text);
+  const { auth, request } = saved;
+  const keyName = auth.type === 'api-key' && auth.in === 'query' ? auth.name : undefined;
+  const savedQuery = [...typedQuery(request.url), ...request.query];
+  const rows: KeyValueWire[] = [];
+  for (const recorded of query) {
+    const name = plus(recorded.name);
+    if (keyName !== undefined && sameParam(name, keyName)) {
+      continue; // `applyAuth` appends the key again.
+    }
+    if (holdsUrlMarker(name)) {
+      refuseRedacted(entry.id, 'URL');
+    }
+    const value = holdsUrlMarker(recorded.value)
+      ? (lastEnabled(savedQuery, (typed) => sameParam(name, typed)) ??
+        refuseRedacted(entry.id, `query parameter ${decodedName(name)}`))
+      : plus(recorded.value);
+    rows.push({ name, value, enabled: true });
+  }
+  return { url: path, query: rows, pathParams: [] };
+}
+
+/** The language a recorded body is sent as when the saved request has no raw body to lend one. */
+function rawLanguageOf(text: string): 'json' | 'xml' | 'text' {
+  try {
+    JSON.parse(text);
+    return 'json';
+  } catch {
+    return text.trimStart().startsWith('<') ? 'xml' : 'text';
+  }
+}
+
+/**
+ * The body a REST resend sends: the recorded text in the saved raw body's language and content
+ * type, or `undefined` — send the saved body as it is — when the entry kept no text for a body that
+ * has none (form, multipart, binary or none).
+ */
+function resendBody(text: string, saved: RestBody): RestBodyWire | undefined {
+  if (saved.kind === 'raw') {
+    return {
+      kind: 'raw',
+      language: saved.language,
+      ...(saved.contentType !== undefined ? { contentType: saved.contentType } : {}),
+      text,
+    };
+  }
+  return text === '' ? undefined : { kind: 'raw', language: rawLanguageOf(text), text };
+}
+
+/**
+ * The draft a REST entry resends with, applied over its saved request for one send only.
+ *
+ * The method, URL, headers and body are the entry's: what went on the wire. Auth, TLS, proxy and
+ * settings stay the saved request's. A redacted header or query value is filled from the saved
+ * request's last enabled row of that name, as typed, so it expands on the normal send path. An
+ * entry with no response recorded no sent URL, so the saved URL is kept.
+ *
+ * @throws WirebenchError `history-resend-redacted` when a redacted value has no saved row to fill
+ *   it, or the marker is in the URL's path, user info or fragment, or in the body;
+ *   `history-resend-truncated` when the body is History's truncated copy.
+ */
+export function restResendDraft(
+  entry: HistoryEntryWire,
+  saved: Pick<RestSendResolution, 'request' | 'auth'>,
+): RestRequestPatchWire {
+  const { request } = saved;
+  const url = entry.response !== undefined ? resendUrl(entry, saved) : {};
+  const headers: KeyValueWire[] = entry.request.headers.map((header) => {
+    if (!containsRedaction(header.value)) {
+      return { name: header.name, value: header.value, enabled: true };
+    }
+    const lower = header.name.toLowerCase();
+    const value =
+      lastEnabled(request.headers, (name) => name.toLowerCase() === lower) ??
+      refuseRedacted(entry.id, `header ${header.name}`);
+    return { name: header.name, value, enabled: true };
+  });
+  const text = entry.request.envelopeXml;
+  if (containsRedaction(text)) {
+    refuseRedacted(entry.id, 'body');
+  }
+  if (isTruncatedBody(text)) {
+    throw new WirebenchError(
+      'history-resend-truncated',
+      'History kept only the start of this body, so sending it would send a different body',
+      { details: { id: entry.id } },
+    );
+  }
+  const body = resendBody(text, request.body);
+  return {
+    method: entry.method ?? request.method,
+    ...url,
+    headers,
+    ...(body !== undefined ? { body } : {}),
+  };
 }
 
 /** Drops headers the history store redacted (`<redacted>`) before resending — never resent verbatim. */

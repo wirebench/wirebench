@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { WirebenchError } from '@wirebench/engine';
+import { createRestRequest, entry, WirebenchError } from '@wirebench/engine';
+import type { AuthConfig, CreateRestRequestInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { grpcResendDraft, registerHistoryChannels } from '../src/main/ipc/history.js';
+import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
+import { grpcResendDraft, registerHistoryChannels, restResendDraft } from '../src/main/ipc/history.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -424,5 +426,160 @@ describe('history.resendGrpc', () => {
     );
     const result = await invoke('history.resendGrpc', { id: 'g' });
     expect(result).toMatchObject({ ok: false, error: { code: 'grpc-unavailable' } });
+  });
+});
+
+/** A REST entry recorded from saved request `r-1`: a POST that got a 200 from `endpoint`. */
+function restEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire {
+  return makeEntry({
+    id: 'r',
+    kind: 'rest',
+    requestId: 'r-1',
+    method: 'POST',
+    soapVersion: 'none',
+    endpoint: 'https://api.test/pets/7?expand=owner',
+    request: { envelopeXml: '{"name":"Rex"}', headers: [{ name: 'X-Trace', value: 'abc' }] },
+    response: { envelopeXml: '{}', rawHeaders: [], status: 200, statusText: 'OK' },
+    ...overrides,
+  });
+}
+
+/** The saved request `r-1` as `project.restSend` resolves it: the request as typed, and its auth. */
+function savedRest(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }) {
+  return { request: createRestRequest('Pet', { id: 'r-1', ...input }), auth };
+}
+
+/** The code `run` throws with, or `undefined` when it returns. */
+function refusal(run: () => unknown): string | undefined {
+  try {
+    run();
+  } catch (error) {
+    return (error as WirebenchError).code;
+  }
+  return undefined;
+}
+
+describe('restResendDraft', () => {
+  it('takes the method, URL, query, headers and body from the entry, in the saved raw body’s language', () => {
+    const saved = savedRest({
+      method: 'GET',
+      url: '/pets/{id}',
+      pathParams: [entry('id', '1')],
+      body: { kind: 'raw', language: 'json', contentType: 'application/vnd.pet+json', text: '{}' },
+    });
+    expect(restResendDraft(restEntry(), saved)).toEqual({
+      method: 'POST',
+      url: 'https://api.test/pets/7',
+      query: [{ name: 'expand', value: 'owner', enabled: true }],
+      pathParams: [],
+      headers: [{ name: 'X-Trace', value: 'abc', enabled: true }],
+      body: { kind: 'raw', language: 'json', contentType: 'application/vnd.pet+json', text: '{"name":"Rex"}' },
+    });
+  });
+
+  it('fills a redacted header from the last enabled saved row of that name, as typed', () => {
+    const recorded = restEntry({ request: { envelopeXml: '', headers: [{ name: 'X-Token', value: '<redacted>' }] } });
+    const saved = savedRest({
+      headers: [
+        entry('x-token', 'old'),
+        entry('X-TOKEN', '${secret:token}'),
+        entry('X-Token', 'off', { enabled: false }),
+      ],
+    });
+    expect(restResendDraft(recorded, saved).headers).toEqual([
+      { name: 'X-Token', value: '${secret:token}', enabled: true },
+    ]);
+  });
+
+  it('fills a query value masked by URLSearchParams and reads its + as a space', () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/pets?sig=%3Credacted%3E&note=a+b' });
+    const saved = savedRest({ url: '/pets?sig=${#Env#sig}' });
+    expect(restResendDraft(recorded, saved).query).toEqual([
+      { name: 'sig', value: '${#Env#sig}', enabled: true },
+      { name: 'note', value: 'a%20b', enabled: true },
+    ]);
+  });
+
+  it('fills a query value masked in its literal form from the last saved Query row, keeping a +', () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/pets?token=<redacted>&note=a+b' });
+    const saved = savedRest({ query: [entry('token', 'first'), entry('token', '${secret:t}')] });
+    expect(restResendDraft(recorded, saved).query).toEqual([
+      { name: 'token', value: '${secret:t}', enabled: true },
+      { name: 'note', value: 'a+b', enabled: true },
+    ]);
+  });
+
+  it('drops a query API key, masked or not, when the effective auth puts one in the query', () => {
+    const auth: AuthConfig = { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' };
+    for (const endpoint of [
+      'https://api.test/pets?api_key=%3Credacted%3E&q=1',
+      'https://api.test/pets?api_key=live-key&q=1',
+    ]) {
+      expect(restResendDraft(restEntry({ endpoint }), savedRest({}, auth)).query).toEqual([
+        { name: 'q', value: '1', enabled: true },
+      ]);
+    }
+  });
+
+  it('treats a recorded key as an ordinary redacted value once the auth is no longer a query key', () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/pets?api_key=%3Credacted%3E' });
+    expect(refusal(() => restResendDraft(recorded, savedRest({}, { type: 'bearer', tokenRef: 'sec_t' })))).toBe(
+      'history-resend-redacted',
+    );
+  });
+
+  it('keeps the saved URL for an entry with no response', () => {
+    const failed: HistoryEntryWire = { ...restEntry({ endpoint: 'https://api.test' }) };
+    delete failed.response;
+    const draft = restResendDraft(failed, savedRest({ url: '/pets' }));
+    expect(draft).not.toHaveProperty('url');
+    expect(draft).not.toHaveProperty('query');
+    expect(draft).not.toHaveProperty('pathParams');
+  });
+
+  it('sends the saved non-raw body as it is when the entry recorded no text', () => {
+    const recorded = restEntry({ request: { envelopeXml: '', headers: [] } });
+    const saved = savedRest({ body: { kind: 'form', fields: [entry('a', '1')] } });
+    expect(restResendDraft(recorded, saved)).not.toHaveProperty('body');
+  });
+
+  it.each([
+    ['{"a":1}', 'json'],
+    ['<a/>', 'xml'],
+    ['plain words', 'text'],
+  ] as const)('sends %s as a raw %s body when the saved request has no raw body', (text, language) => {
+    const recorded = restEntry({ request: { envelopeXml: text, headers: [] } });
+    expect(restResendDraft(recorded, savedRest()).body).toEqual({ kind: 'raw', language, text });
+  });
+
+  it.each([
+    [
+      'an unfillable header',
+      restEntry({ request: { envelopeXml: '', headers: [{ name: 'X-Key', value: '<redacted>' }] } }),
+    ],
+    ['an unfillable query value', restEntry({ endpoint: 'https://api.test/pets?sig=%3Credacted%3E' })],
+    ['the marker in the path', restEntry({ endpoint: 'https://api.test/%3Credacted%3E/pets' })],
+    ['the marker in the user info', restEntry({ endpoint: 'https://u:%3Credacted%3E@api.test/pets' })],
+    ['the marker in the body', restEntry({ request: { envelopeXml: '{"password":"<redacted>"}', headers: [] } })],
+  ])('refuses %s with history-resend-redacted', (_what, recorded) => {
+    expect(refusal(() => restResendDraft(recorded, savedRest()))).toBe('history-resend-redacted');
+  });
+
+  it('refuses History’s truncated copy of a body with history-resend-truncated', () => {
+    const stored = buildRestHistoryEntry('proj-1', {
+      requestId: 'r-1',
+      requestName: 'Pet',
+      apiName: 'Petstore',
+      folderPath: '',
+      method: 'POST',
+      url: 'https://api.test/pets',
+      requestHeaders: {},
+      requestBody: 'x'.repeat(300 * 1024),
+      durationMs: 1,
+    }).request.envelopeXml;
+    expect(isTruncatedBody(stored)).toBe(true);
+    expect(isTruncatedBody('x'.repeat(1024))).toBe(false);
+    const recorded = restEntry({ request: { envelopeXml: stored, headers: [] } });
+    expect(refusal(() => restResendDraft(recorded, savedRest()))).toBe('history-resend-truncated');
   });
 });
