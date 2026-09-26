@@ -36,6 +36,13 @@ export function DiffView({ leftLabel, rightLabel, leftXml, rightXml, rest }: Dif
   const [sideBySide, setSideBySide] = useState(true);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(true);
   const [pane, setPane] = useState<RestPane>('response');
+  // The editor area reuses one diff tab for every comparison, so this component is not remounted
+  // when a new one opens: start each new comparison on its Response, as a fresh tab would.
+  const [seen, setSeen] = useState(rest);
+  if (seen !== rest) {
+    setSeen(rest);
+    setPane('response');
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">

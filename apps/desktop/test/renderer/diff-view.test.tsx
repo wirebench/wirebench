@@ -66,6 +66,23 @@ describe('DiffView over two REST sides', () => {
     expect(screen.getByLabelText<HTMLTextAreaElement>('Modified').value).toBe('GET https://api.test/b\n\n');
   });
 
+  it('goes back to the Response tab when the tab is reused for another comparison', () => {
+    const { rerender } = render(<DiffView leftLabel="A" rightLabel="B" leftXml="{}" rightXml="{}" rest={rest} />);
+    fireEvent.click(
+      within(screen.getByRole('tablist', { name: 'Compare views' })).getByRole('tab', { name: 'Request' }),
+    );
+
+    const next = {
+      response: { left: '201 Created\n\n{}', right: '500 Server Error\n\n{}' },
+      request: { left: 'POST https://api.test/c\n\n', right: 'POST https://api.test/d\n\n' },
+    };
+    rerender(<DiffView leftLabel="C" rightLabel="D" leftXml="{}" rightXml="{}" rest={next} />);
+
+    const views = screen.getByRole('tablist', { name: 'Compare views' });
+    expect(within(views).getByRole('tab', { name: 'Response' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Original').value).toBe('201 Created\n\n{}');
+  });
+
   it('shows one body diff and no tabs when the sides are not both REST', () => {
     render(<DiffView leftLabel="A" rightLabel="B" leftXml="<a/>" rightXml="<b/>" />);
     expect(screen.queryByRole('tablist', { name: 'Compare views' })).toBeNull();
