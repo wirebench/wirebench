@@ -3,11 +3,13 @@
  * `history.resend` goes through the same `sendAndRecordHistory` path as `request.send`, so a
  * re-send is itself recorded as a new history entry. `history.resendGrpc` calls a gRPC entry's
  * saved request through `request.sendGrpc`'s path, with the messages the entry recorded.
+ * `history.resendRest` sends a REST entry's method, URL, headers and body through its saved
+ * request's auth, TLS and settings, on `request.sendRest`'s path, which records the new entry.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { WebContents } from 'electron';
-import { splitQuery, WirebenchError } from '@wirebench/engine';
+import { joinBase, splitQuery, WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type {
   FailedExchangeWire,
@@ -17,7 +19,9 @@ import type {
   HistoryEntryWire,
   KeyValueWire,
   RequestSendGrpcRequest,
+  RequestSendRestRequest,
   RestBodyWire,
+  RestExchangeSummary,
   RestRequestPatchWire,
 } from '../../shared/wire-types.js';
 import type { EngineService } from '../engine-service.js';
@@ -34,7 +38,7 @@ import { registerHandler } from './register.js';
 export interface HistoryChannelDeps {
   readonly project: HistorySendProject &
     Pick<ProjectRouter, 'buildLiveSendInput'> &
-    Partial<Pick<ProjectRouter, 'grpcSend'>>;
+    Partial<Pick<ProjectRouter, 'grpcSend' | 'restSend'>>;
   /**
    * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
    * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
@@ -53,6 +57,10 @@ export interface HistoryChannelDeps {
   /** Sends a gRPC call the way `request.sendGrpc` does; `history.resendGrpc` is refused without it. */
   readonly grpc?: {
     send(request: RequestSendGrpcRequest, sender: WebContents): Promise<GrpcExchangeSummary>;
+  };
+  /** Sends a REST request the way `log.resend` does; `history.resendRest` is refused without it. */
+  readonly rest?: {
+    send(request: RequestSendRestRequest): Promise<RestExchangeSummary>;
   };
 }
 
@@ -290,6 +298,37 @@ export function restResendDraft(
   };
 }
 
+/**
+ * True when a REST entry was an event stream, or, with no response to say, asked for one with an
+ * `Accept` header — the line `log.resend` draws.
+ */
+function isStreamEntry(entry: HistoryEntryWire): boolean {
+  return (
+    entry.sse !== undefined ||
+    (entry.response === undefined &&
+      entry.request.headers.some(
+        (header) => header.name.toLowerCase() === 'accept' && header.value.toLowerCase().includes('text/event-stream'),
+      ))
+  );
+}
+
+/**
+ * The saved request's resolved origin, the same synchronous property/environment expansion
+ * `deps.project.restSend` runs before `sendRestRequest` fills in `${secret:…}` tokens. `undefined`
+ * when a property reference is left unresolved or the expanded base and path don't parse as a
+ * URL — `restResendDraft`'s safe fallback for either case is the saved URL.
+ */
+function savedOriginOf(saved: RestSendResolution): string | undefined {
+  if (saved.unresolved.length > 0) {
+    return undefined;
+  }
+  try {
+    return new URL(joinBase(saved.input.baseUrl, saved.input.request.url)).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Drops headers the history store redacted (`<redacted>`) before resending — never resent verbatim. */
 function liveHeaders(headers: readonly HeaderEntryWire[]): Record<string, string> {
   return Object.fromEntries(headers.filter((header) => header.value !== '<redacted>').map((h) => [h.name, h.value]));
@@ -424,5 +463,39 @@ export function registerHistoryChannels(
       });
     }
     return deps.grpc.send({ sendId: randomUUID(), requestId, draft: grpcResendDraft({ ...entry, grpc }) }, sender);
+  });
+
+  registerHandler(channels.history.resendRest, (request) => {
+    const entry = history.get(request.id);
+    if (entry === undefined) {
+      throw new WirebenchError('unknown-history-entry', `No history entry with id "${request.id}"`, {
+        details: { id: request.id },
+      });
+    }
+    if (entry.kind !== 'rest' || deps.rest === undefined) {
+      throw new WirebenchError('history-resend-unsupported', 'Only a REST request is resent through this channel', {
+        details: { id: request.id, kind: entry.kind ?? 'soap' },
+      });
+    }
+    // A resend has no live pane, so a stream the server never closes would never finish.
+    if (isStreamEntry(entry)) {
+      throw new WirebenchError('rest-resend-streaming', 'Event streams resend from the editor.', {
+        details: { id: request.id },
+      });
+    }
+    // Auth, TLS, proxy and settings come from the saved request, so an entry whose request is gone
+    // has nothing to resend through.
+    const { requestId } = entry;
+    const saved = requestId === undefined ? undefined : deps.project.restSend?.(requestId);
+    if (requestId === undefined || saved === undefined) {
+      throw new WirebenchError('history-resend-orphan', 'The request this entry was sent from no longer exists', {
+        details: { id: request.id },
+      });
+    }
+    return deps.rest.send({
+      sendId: randomUUID(),
+      requestId,
+      draft: restResendDraft(entry, saved, savedOriginOf(saved)),
+    });
   });
 }

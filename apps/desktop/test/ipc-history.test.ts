@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRestRequest, entry, WirebenchError } from '@wirebench/engine';
-import type { AuthConfig, CreateRestRequestInput } from '@wirebench/engine';
+import type { AuthConfig, CreateRestRequestInput, RestApi, RestSendInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
 import { grpcResendDraft, registerHistoryChannels, restResendDraft } from '../src/main/ipc/history.js';
+import type { RestSendResolution } from '../src/main/rest-send.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -630,5 +631,140 @@ describe('restResendDraft', () => {
     expect(isTruncatedBody('x'.repeat(1024))).toBe(false);
     const recorded = restEntry({ request: { envelopeXml: stored, headers: [] } });
     expect(refusal(() => restResendDraft(recorded, savedRest(), ORIGIN))).toBe('history-resend-truncated');
+  });
+});
+
+/**
+ * `deps.project.restSend`'s reply for `r-1`: `savedRest`'s request and auth, resolved to `ORIGIN` —
+ * the property expansion `savedOriginOf` reads to decide whether the recorded URL is reusable.
+ */
+function savedRestSend(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }): RestSendResolution {
+  const saved = savedRest(input, auth);
+  return {
+    ...saved,
+    input: { baseUrl: ORIGIN, request: { url: saved.request.url } } as RestSendInput,
+    unresolved: [],
+    api: {} as RestApi,
+    baseUrlSource: 'api',
+  };
+}
+
+/** Registers the channels with a REST sender stub and a project that knows request `r-1`. */
+function registerRest(entries: HistoryEntryWire[], send = vi.fn(() => Promise.resolve({})), withSender = true) {
+  registerHistoryChannels(new EngineService(), fakeHistory(entries) as never, {
+    project: { ...noLiveRequests(), restSend: (id: string) => (id === 'r-1' ? savedRestSend() : undefined) },
+    ...(withSender ? { rest: { send: send as never } } : {}),
+  });
+  return send;
+}
+
+describe('history.resendRest', () => {
+  beforeEach(() => {
+    handlers.clear();
+  });
+
+  it('rejects an unknown id with unknown-history-entry', async () => {
+    const send = registerRest([]);
+    const result = await invoke('history.resendRest', { id: 'missing' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'unknown-history-entry' } });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a SOAP entry', makeEntry({ id: 'x', requestId: 'r-1' })],
+    ['a gRPC entry', { ...grpcEntry('unary', ['{}']), id: 'x' }],
+  ])('refuses %s with history-resend-unsupported', async (_what, recorded) => {
+    const send = registerRest([recorded]);
+    const result = await invoke('history.resendRest', { id: 'x' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-unsupported' } });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('refuses a REST entry when main has no REST sender', async () => {
+    registerRest([restEntry()], undefined, false);
+    const result = await invoke('history.resendRest', { id: 'r' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-unsupported' } });
+  });
+
+  it('refuses an event stream, and a failed send that asked for one, with rest-resend-streaming', async () => {
+    const streamed = restEntry({
+      id: 's',
+      sse: { rows: [], counts: { events: 0, comments: 0, retries: 0, bytes: 0 }, lastEventId: '', endedBy: 'server' },
+    });
+    const asked: HistoryEntryWire = {
+      ...restEntry({
+        id: 'a',
+        request: { envelopeXml: '', headers: [{ name: 'accept', value: 'Text/Event-Stream' }] },
+      }),
+    };
+    delete asked.response;
+    const send = registerRest([streamed, asked]);
+    for (const id of ['s', 'a']) {
+      const result = await invoke('history.resendRest', { id });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: 'rest-resend-streaming', message: 'Event streams resend from the editor.' },
+      });
+    }
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('refuses an entry whose saved request is gone with history-resend-orphan', async () => {
+    const gone = restEntry({ id: 'g', requestId: 'r-deleted' });
+    const adHoc = restEntry({ id: 'h' });
+    delete adHoc.requestId;
+    const send = registerRest([gone, adHoc]);
+    for (const id of ['g', 'h']) {
+      const result = await invoke('history.resendRest', { id });
+      expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-orphan' } });
+    }
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('sends through the saved request with a fresh send id and the built draft', async () => {
+    const recorded = restEntry();
+    const send = registerRest([recorded]);
+    // The stub's reply is no real exchange summary, so only what went out is checked here.
+    await invoke('history.resendRest', { id: 'r' });
+    expect(send).toHaveBeenCalledTimes(1);
+    const [{ sendId, ...sent }] = send.mock.calls[0]! as unknown as [Record<string, unknown>];
+    expect(typeof sendId).toBe('string');
+    expect(sent).toEqual({ requestId: 'r-1', draft: restResendDraft(recorded, savedRest(), ORIGIN) });
+  });
+
+  it('reuses the recorded URL when it shares the saved request’s origin', async () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
+    const send = registerRest([recorded]);
+    await invoke('history.resendRest', { id: 'r' });
+    const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: { url?: string } }];
+    expect(draft.url).toBe('https://api.test/pets/9');
+  });
+
+  it('falls back to the saved request’s own URL, dropping the recorded one, when the entry was captured on another origin — a redirect the entry keeps no trail of', async () => {
+    const recorded = restEntry({ endpoint: 'https://cdn.other/pets/7?expand=owner&sig=leaked' });
+    const send = registerRest([recorded]);
+    await invoke('history.resendRest', { id: 'r' });
+    const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: Record<string, unknown> }];
+    // No `url`/`query`/`pathParams` at all — the saved request's own are kept, and the entry's
+    // other-origin URL (with whatever it carried, `sig=leaked` included) never reaches the wire.
+    expect(draft).not.toHaveProperty('url');
+    expect(draft).not.toHaveProperty('query');
+    expect(draft).not.toHaveProperty('pathParams');
+  });
+
+  it('refuses a draft that cannot be built without sending anything', async () => {
+    const send = registerRest([restEntry({ endpoint: 'https://api.test/pets?sig=%3Credacted%3E' })]);
+    const result = await invoke('history.resendRest', { id: 'r' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-redacted' } });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('passes an error from the send through', async () => {
+    registerRest(
+      [restEntry()],
+      vi.fn(() => Promise.reject(new WirebenchError('rest-unresolved-properties', 'unresolved'))),
+    );
+    const result = await invoke('history.resendRest', { id: 'r' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'rest-unresolved-properties' } });
   });
 });
