@@ -14,8 +14,10 @@ import {
   generateKeyPairSync,
   hkdfSync,
   randomBytes,
+  type KeyObject,
 } from 'node:crypto';
 import { WirebenchError } from '../errors.js';
+import { teamSecretsError } from './errors.js';
 import { base64url, encryptionPrivateKey, encryptionPublicKey, fromBase64url, type MachineKeys } from './keys.js';
 
 export const WRAP_INFO = 'wirebench-team-secrets-v1-wrap';
@@ -26,9 +28,12 @@ const KEY_BYTES = 32;
 const PUBLIC_KEY_BYTES = 32;
 
 function failed(cause?: unknown): WirebenchError {
-  return new WirebenchError('team-secrets-decrypt-failed', 'A team secret could not be decrypted.', {
-    ...(cause !== undefined ? { cause } : {}),
-  });
+  return teamSecretsError('team-secrets-decrypt-failed', cause !== undefined ? { cause } : undefined);
+}
+
+/** A malformed or out-of-range key or data key. Never carries the offending key material. */
+function badKey(): WirebenchError {
+  return teamSecretsError('team-secrets-bad-key');
 }
 
 function seal(key: Buffer, plaintext: Buffer, aad?: Buffer): Buffer {
@@ -61,12 +66,47 @@ export function newDataKey(): Buffer {
   return randomBytes(KEY_BYTES);
 }
 
+/** @throws WirebenchError `team-secrets-bad-key` if `dataKey` is not exactly 32 bytes. */
+function assertDataKey(dataKey: Buffer): void {
+  if (dataKey.length !== KEY_BYTES) {
+    throw badKey();
+  }
+}
+
+/**
+ * A recipient's X25519 public key as a `KeyObject`, and the ECDH secret computed with it. Throws
+ * `team-secrets-bad-key` for anything that is not a well-formed, non-degenerate point: malformed
+ * base64url, the wrong length, or a low-order point whose shared secret is all-zero — never the raw
+ * `TypeError`/`RangeError`/OpenSSL error, and never the key material itself.
+ */
+function sharedSecretWith(privateKey: KeyObject, recipientRaw: string): Buffer {
+  let publicKey: KeyObject;
+  try {
+    publicKey = encryptionPublicKey(recipientRaw);
+  } catch {
+    throw badKey();
+  }
+  let shared: Buffer;
+  try {
+    shared = diffieHellman({ privateKey, publicKey });
+  } catch {
+    throw badKey();
+  }
+  if (shared.equals(Buffer.alloc(shared.length))) {
+    // A low-order point collapses ECDH to an all-zero secret regardless of the private key.
+    throw badKey();
+  }
+  return shared;
+}
+
 export function encryptValue(value: string, dataKey: Buffer, entryId: string): string {
+  assertDataKey(dataKey);
   return base64url(seal(dataKey, Buffer.from(value, 'utf8'), Buffer.from(entryId, 'utf8')));
 }
 
-/** @throws WirebenchError `team-secrets-decrypt-failed` */
+/** @throws WirebenchError `team-secrets-decrypt-failed` | `team-secrets-bad-key` */
 export function decryptValue(cipher: string, dataKey: Buffer, entryId: string): string {
+  assertDataKey(dataKey);
   return open(dataKey, fromBase64url(cipher), Buffer.from(entryId, 'utf8')).toString('utf8');
 }
 
@@ -74,29 +114,27 @@ function wrapKey(shared: Buffer, ephemeral: Buffer, recipient: Buffer): Buffer {
   return Buffer.from(hkdfSync('sha256', shared, Buffer.concat([ephemeral, recipient]), WRAP_INFO, KEY_BYTES));
 }
 
+/** @throws WirebenchError `team-secrets-bad-key` */
 export function wrapDataKey(dataKey: Buffer, recipientEncryptionKey: string): string {
+  assertDataKey(dataKey);
   const pair = generateKeyPairSync('x25519');
   const ephemeral = fromBase64url(String(pair.publicKey.export({ format: 'jwk' }).x));
-  const shared = diffieHellman({ privateKey: pair.privateKey, publicKey: encryptionPublicKey(recipientEncryptionKey) });
+  const shared = sharedSecretWith(pair.privateKey, recipientEncryptionKey);
   const key = wrapKey(shared, ephemeral, fromBase64url(recipientEncryptionKey));
   return base64url(Buffer.concat([ephemeral, seal(key, dataKey)]));
 }
 
-/** @throws WirebenchError `team-secrets-decrypt-failed` */
+/** @throws WirebenchError `team-secrets-decrypt-failed` | `team-secrets-bad-key` */
 export function unwrapDataKey(wrap: string, keys: MachineKeys): Buffer {
   const bytes = fromBase64url(wrap);
   if (bytes.length < PUBLIC_KEY_BYTES + NONCE_BYTES + TAG_BYTES) {
     throw failed();
   }
   const ephemeral = bytes.subarray(0, PUBLIC_KEY_BYTES);
-  let shared: Buffer;
-  try {
-    shared = diffieHellman({
-      privateKey: encryptionPrivateKey(keys),
-      publicKey: encryptionPublicKey(base64url(ephemeral)),
-    });
-  } catch (error) {
-    throw failed(error);
+  const shared = sharedSecretWith(encryptionPrivateKey(keys), base64url(ephemeral));
+  const dataKey = open(wrapKey(shared, ephemeral, fromBase64url(keys.encryptionKey)), bytes.subarray(PUBLIC_KEY_BYTES));
+  if (dataKey.length !== KEY_BYTES) {
+    throw failed();
   }
-  return open(wrapKey(shared, ephemeral, fromBase64url(keys.encryptionKey)), bytes.subarray(PUBLIC_KEY_BYTES));
+  return dataKey;
 }

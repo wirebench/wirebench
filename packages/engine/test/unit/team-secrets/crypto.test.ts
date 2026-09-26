@@ -1,3 +1,4 @@
+import { createCipheriv, diffieHellman, generateKeyPairSync, hkdfSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { WirebenchError } from '../../../src/errors.js';
 import {
@@ -5,11 +6,14 @@ import {
   encryptValue,
   newDataKey,
   unwrapDataKey,
+  WRAP_INFO,
   wrapDataKey,
 } from '../../../src/team-secrets/envelope.js';
 import { TEAM_SECRETS_MESSAGES, teamSecretsError } from '../../../src/team-secrets/errors.js';
 import {
   base32,
+  base64url,
+  encryptionPublicKey,
   fingerprintOf,
   fromBase64url,
   generateMachineKeys,
@@ -44,6 +48,32 @@ describe('machine keys (team secrets §2, §4)', () => {
     expect(parseMachineKeys(JSON.stringify({ ...keys, keyId: other.keyId }))).toBeUndefined();
     expect(parseMachineKeys('not json')).toBeUndefined();
   });
+
+  it('refuses a stored form whose public key does not match its own private half', () => {
+    const keys = generateMachineKeys();
+    const other = generateMachineKeys();
+    // A swapped public key still makes a self-consistent keyId (computed from the two public fields), so
+    // only deriving the public key from the private half catches this.
+    const tampered = { ...keys, encryptionKey: other.encryptionKey };
+    expect(parseMachineKeys(JSON.stringify({ ...tampered, keyId: keyIdOf(tampered) }))).toBeUndefined();
+    const tamperedSigning = { ...keys, signingKey: other.signingKey };
+    expect(parseMachineKeys(JSON.stringify({ ...tamperedSigning, keyId: keyIdOf(tamperedSigning) }))).toBeUndefined();
+  });
+
+  describe('fromBase64url', () => {
+    it('decodes strict base64url', () => {
+      expect(fromBase64url('Zm9vYmFy')).toEqual(Buffer.from('foobar'));
+    });
+
+    it('refuses padding, standard base64 characters and whitespace', () => {
+      expect(() => fromBase64url('Zm9vYmFy=')).toThrow(WirebenchError);
+      expect(() => fromBase64url('Zm9vYmFy==')).toThrow(WirebenchError);
+      expect(() => fromBase64url('a+b/c')).toThrow(WirebenchError);
+      expect(() => fromBase64url('Zm9v\nYmFy')).toThrow(WirebenchError);
+      expect(() => fromBase64url(' Zm9vYmFy')).toThrow(WirebenchError);
+      expect(() => fromBase64url('Zm9vYmFy ')).toThrow(WirebenchError);
+    });
+  });
 });
 
 describe('signatures', () => {
@@ -52,6 +82,33 @@ describe('signatures', () => {
       '{"a":{"c":"x","d":[2,{"y":2,"z":1}]},"b":1}',
     );
     expect(canonicalJson({ a: 1, b: 2 })).toBe(canonicalJson({ b: 2, a: 1 }));
+  });
+
+  it('refuses anything that is not a JSON value', () => {
+    expect(() => canonicalJson(NaN)).toThrow(WirebenchError);
+    expect(() => canonicalJson(Infinity)).toThrow(WirebenchError);
+    expect(() => canonicalJson(-Infinity)).toThrow(WirebenchError);
+    expect(() => canonicalJson(new Date())).toThrow(WirebenchError);
+    expect(() => canonicalJson(new Map())).toThrow(WirebenchError);
+    expect(() => canonicalJson(new Set())).toThrow(WirebenchError);
+    expect(() => canonicalJson([1, undefined, 2])).toThrow(WirebenchError);
+    expect(() => canonicalJson(class Foo {})).toThrow(WirebenchError);
+    class Bar {
+      readonly a = 1;
+    }
+    expect(() => canonicalJson(new Bar())).toThrow(WirebenchError);
+    expect(() => canonicalJson({ a: [{ b: new Date() }] })).toThrow(WirebenchError);
+  });
+
+  it('normalises -0 to 0, since JSON and YAML cannot round-trip a negative zero', () => {
+    expect(canonicalJson(-0)).toBe('0');
+  });
+
+  it('makes signDocument throw and verifyDocument return false for a non-canonical document', () => {
+    const keys = generateMachineKeys();
+    expect(() => signDocument({ at: new Date() }, keys)).toThrow(WirebenchError);
+    const signed = signDocument({ a: 1 }, keys);
+    expect(verifyDocument({ ...signed, at: new Date() }, keys.signingKey)).toBe(false);
   });
 
   it('verifies a signed document and refuses a changed field, another key or a bad signature', () => {
@@ -112,6 +169,50 @@ describe('envelope', () => {
     const bytes = fromBase64url(wrapDataKey(newDataKey(), alice.encryptionKey));
     bytes[40] = (bytes[40] ?? 0) ^ 0x01;
     expect(() => unwrapDataKey(bytes.toString('base64url'), alice)).toThrow(WirebenchError);
+  });
+
+  it('refuses a data key that is not 32 bytes, without an OpenSSL error leaking through', () => {
+    const short = Buffer.alloc(16);
+    expect(() => encryptValue('x', short, 'E')).toThrow(WirebenchError);
+    expect(() => decryptValue('AAAA', short, 'E')).toThrow(WirebenchError);
+    expect(() => wrapDataKey(short, generateMachineKeys().encryptionKey)).toThrow(WirebenchError);
+  });
+
+  it('refuses a malformed or low-order recipient key, coded and without the key material in the message', () => {
+    const dataKey = newDataKey();
+    expect(() => wrapDataKey(dataKey, 'not-base64url!!')).toThrow(WirebenchError);
+    expect(() => wrapDataKey(dataKey, base64url(Buffer.alloc(16)))).toThrow(WirebenchError);
+    // The all-zero point is a known low-order X25519 point: ECDH with it always yields an all-zero secret.
+    const lowOrder = base64url(Buffer.alloc(32));
+    let error: unknown;
+    try {
+      wrapDataKey(dataKey, lowOrder);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(WirebenchError);
+    expect((error as WirebenchError).code).toBe('team-secrets-bad-key');
+    expect((error as WirebenchError).message).not.toContain(lowOrder);
+  });
+
+  it('refuses an unwrapped data key that is not 32 bytes (a forged wrap)', () => {
+    const alice = generateMachineKeys();
+    const ephemeral = generateKeyPairSync('x25519');
+    const ephemeralPublic = fromBase64url(String(ephemeral.publicKey.export({ format: 'jwk' }).x));
+    const shared = diffieHellman({
+      privateKey: ephemeral.privateKey,
+      publicKey: encryptionPublicKey(alice.encryptionKey),
+    });
+    const sealingKey = Buffer.from(
+      hkdfSync('sha256', shared, Buffer.concat([ephemeralPublic, fromBase64url(alice.encryptionKey)]), WRAP_INFO, 32),
+    );
+    const nonce = Buffer.alloc(12);
+    const cipher = createCipheriv('aes-256-gcm', sealingKey, nonce);
+    const forgedDataKey = Buffer.alloc(16, 7); // the wrong length, on purpose
+    const sealed = Buffer.concat([cipher.update(forgedDataKey), cipher.final()]);
+    const forgedWrap = Buffer.concat([ephemeralPublic, nonce, sealed, cipher.getAuthTag()]).toString('base64url');
+    expect(() => unwrapDataKey(forgedWrap, alice)).toThrow(WirebenchError);
+    expect(() => unwrapDataKey(forgedWrap, alice)).toThrow(/could not be decrypted/);
   });
 });
 

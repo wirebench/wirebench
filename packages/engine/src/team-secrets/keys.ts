@@ -6,6 +6,7 @@
  * Pure: no I/O. The desktop keeps the private halves in its keychain-backed store; nothing else does.
  */
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { teamSecretsError } from './errors.js';
 
 /** A key id: the first 26 base32 characters of SHA-256 over both public keys. */
 export const KEY_ID_PATTERN = /^[A-Z2-7]{26}$/;
@@ -29,8 +30,26 @@ export function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString('base64url');
 }
 
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/;
+
+/**
+ * Strict base64url decoding: Node's own decoder tolerates padding, standard `+`/`/`, and embedded
+ * whitespace, silently turning any of those into *some* bytes. A team-secrets field is either exactly
+ * base64url or it is corrupt, so this instead requires the alphabet `[A-Za-z0-9_-]` with no padding, and
+ * that re-encoding the decoded bytes reproduces the input exactly (catching a truncated last group, which
+ * the pattern alone would not).
+ *
+ * @throws WirebenchError `team-secrets-bad-key` if `text` is not strictly base64url.
+ */
 export function fromBase64url(text: string): Buffer {
-  return Buffer.from(text, 'base64url');
+  if (!BASE64URL_PATTERN.test(text)) {
+    throw teamSecretsError('team-secrets-bad-key');
+  }
+  const bytes = Buffer.from(text, 'base64url');
+  if (base64url(bytes) !== text) {
+    throw teamSecretsError('team-secrets-bad-key');
+  }
+  return bytes;
 }
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -55,8 +74,21 @@ export function base32(bytes: Uint8Array): string {
   return out;
 }
 
+const PUBLIC_KEY_LENGTH = 32;
+
+/** @throws WirebenchError `team-secrets-bad-key` unless `bytes` is exactly `length` long. */
+function assertKeyLength(bytes: Buffer, length: number): Buffer {
+  if (bytes.length !== length) {
+    throw teamSecretsError('team-secrets-bad-key');
+  }
+  return bytes;
+}
+
 function publicDigest(keys: MachinePublicKeys): Buffer {
-  return createHash('sha256').update(fromBase64url(keys.encryptionKey)).update(fromBase64url(keys.signingKey)).digest();
+  return createHash('sha256')
+    .update(assertKeyLength(fromBase64url(keys.encryptionKey), PUBLIC_KEY_LENGTH))
+    .update(assertKeyLength(fromBase64url(keys.signingKey), PUBLIC_KEY_LENGTH))
+    .digest();
 }
 
 export function keyIdOf(keys: MachinePublicKeys): string {
@@ -81,6 +113,7 @@ export function generateMachineKeys(): MachineKeys {
 }
 
 export function encryptionPublicKey(raw: string): KeyObject {
+  assertKeyLength(fromBase64url(raw), PUBLIC_KEY_LENGTH);
   return createPublicKey({ key: { kty: 'OKP', crv: 'X25519', x: raw }, format: 'jwk' });
 }
 
@@ -92,6 +125,7 @@ export function encryptionPrivateKey(keys: MachineKeys): KeyObject {
 }
 
 export function signingPublicKey(raw: string): KeyObject {
+  assertKeyLength(fromBase64url(raw), PUBLIC_KEY_LENGTH);
   return createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: raw }, format: 'jwk' });
 }
 
@@ -113,7 +147,16 @@ export function serializeMachineKeys(keys: MachineKeys): string {
   });
 }
 
-/** Reads the stored form back; `undefined` for anything malformed or whose key id does not match its keys. */
+/** The public half (base64url `x`) a JWK private key exports, i.e. what its private half actually is a key for. */
+function publicHalfOf(privateKey: KeyObject): string {
+  return String((createPublicKey(privateKey).export({ format: 'jwk' }) as { x: unknown }).x);
+}
+
+/**
+ * Reads the stored form back; `undefined` for anything malformed, whose key id does not match its public
+ * keys, or whose public keys are not the ones its private halves actually derive (a stored file could
+ * otherwise carry a public key from one machine paired with a private key from another).
+ */
 export function parseMachineKeys(text: string): MachineKeys | undefined {
   let parsed: unknown;
   try {
@@ -130,5 +173,18 @@ export function parseMachineKeys(text: string): MachineKeys | undefined {
     return undefined;
   }
   const keys = Object.fromEntries(names.map((name) => [name, fields[name]])) as unknown as MachineKeys;
-  return keyIdOf(keys) === keys.keyId ? keys : undefined;
+  try {
+    if (keyIdOf(keys) !== keys.keyId) {
+      return undefined;
+    }
+    if (publicHalfOf(encryptionPrivateKey(keys)) !== keys.encryptionKey) {
+      return undefined;
+    }
+    if (publicHalfOf(signingPrivateKey(keys)) !== keys.signingKey) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return keys;
 }

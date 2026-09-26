@@ -7,6 +7,9 @@ export const TEAM_SECRETS_MESSAGES = {
   'team-secrets-admin-only': 'Only a workspace admin can change who has access to team secrets.',
   'team-secrets-untrusted': 'Ignored a secret signed by a key that is not approved.',
   'team-secrets-last-admin': 'A workspace needs at least one admin for team secrets.',
+  'team-secrets-not-canonical': 'A team secrets document contained a value that could not be signed.',
+  'team-secrets-bad-key': 'A team secrets key was malformed.',
+  'team-secrets-decrypt-failed': 'A team secret could not be decrypted.',
 } as const;
 
 export type TeamSecretsErrorCode = keyof typeof TEAM_SECRETS_MESSAGES;
