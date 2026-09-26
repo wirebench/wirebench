@@ -8,7 +8,7 @@
  * The probe proves "announces nothing". The hub stays silent for an unchanged role, so a socket alone
  * cannot tell a rolled-back change from an announced one that found nothing to do (§15, hook coupling).
  */
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   LIVE_CLOSE,
   type LiveServerMessage,
@@ -297,6 +297,20 @@ describeDb('announcements from server-sync and teams-access (§3.2)', () => {
     for (const client of [admin, editor, viewer]) {
       expect(await client.next('access')).toEqual({ type: 'access', workspaceId: c.workspaceId });
     }
+    expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { workspaceId: c.workspaceId } }]);
+  });
+
+  it('deleting the workspace still sends access when the repository move then fails', async () => {
+    const viewer = await connect(c, c.viewer);
+    await subscribeAll(c.workspaceId, [[viewer, c.viewer]]);
+    // The row, and with it every grant, is gone before the move: the roles have changed either way.
+    const move = vi.spyOn(c.h.repos, 'remove').mockRejectedValueOnce(new Error('disk full'));
+    try {
+      expect((await call(c.h, c.admin, 'DELETE', `/workspaces/${c.workspaceId}`)).status).toBe(500);
+    } finally {
+      move.mockRestore();
+    }
+    expect(await viewer.next('access')).toEqual({ type: 'access', workspaceId: c.workspaceId });
     expect(c.heard.take()).toEqual([{ hook: 'accessChanged', event: { workspaceId: c.workspaceId } }]);
   });
 

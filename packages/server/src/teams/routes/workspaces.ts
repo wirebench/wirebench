@@ -176,14 +176,15 @@ export const workspaceRoutes =
         // have its brand-new repository moved away by this delete's cleanup.
         await repos.withLock(workspaceId, async () => {
           await repo.deleteWorkspace(db, workspaceId); // grants go by cascade
+          // The row is gone and its grants with it: every subscriber's role is now none (§3.1). Said
+          // here, before the repository move, so a move that fails (a 500) still tells the sockets.
+          announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
           // §3.7: the row is the source of truth; the repository moves under tmp/, never deleted.
           await repos.remove(workspaceId).catch((error: unknown) => {
             if (!isMissing(error)) throw error;
             request.log.warn({ workspaceId }, 'deleted a workspace whose repository was already gone');
           });
         });
-        // The row is gone and its grants with it: every subscriber's role is now none (§3.1).
-        announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
         return reply.code(204).send();
       },
     );

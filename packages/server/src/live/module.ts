@@ -84,9 +84,15 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
         setTimer,
       });
       let heartbeat: { cancel(): void } | undefined;
+      // Re-armed before the work, so one failing beat cannot stop every later one: a socket that
+      // missed its pong would otherwise never be terminated again.
       const beat = (): void => {
-        hub.heartbeat();
         heartbeat = setTimer(beat, LIVE_LIMITS.heartbeatMs);
+        try {
+          hub.heartbeat();
+        } catch (error) {
+          ctx.log.warn({ err: error }, 'live heartbeat failed');
+        }
       };
 
       await app.register(fastifyWebsocket, {

@@ -9,6 +9,7 @@ import * as teamsRepo from '../../../src/teams/repo.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { signedInUser, type SignedInUser } from '../../helpers/identity.js';
+import { LiveHub } from '../../../src/live/hub.js';
 import { liveHarness, openLive, rawUpgrade, type LiveHarness } from '../../helpers/live.js';
 import { freePort } from '../../helpers/net.js';
 import { seedTeam, seedWorkspace } from '../../helpers/teams.js';
@@ -142,6 +143,24 @@ describeDb('GET /api/v1/live (live-updates §3.1, §5.1, §6)', () => {
     expect(h.timers.fire(LIVE_LIMITS.heartbeatMs)).toBe(1);
     client.send({ type: 'ping' });
     expect(await client.next('pong')).toEqual({ type: 'pong' }); // still open
+  });
+
+  it('a heartbeat that throws is logged and the next one is still armed', async () => {
+    const client = await openLive(h, viewer.token);
+    const warn = vi.spyOn(h.app.log, 'warn');
+    const failing = vi.spyOn(LiveHub.prototype, 'heartbeat').mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    expect(h.timers.fire(LIVE_LIMITS.heartbeatMs)).toBe(1);
+    expect(failing).toHaveBeenCalledTimes(1);
+    expect(h.timers.pending(LIVE_LIMITS.heartbeatMs)).toBe(1); // re-armed despite the throw
+    const [fields, message] = (warn.mock.calls[0] ?? []) as unknown as readonly [{ readonly err?: unknown }, string];
+    expect(fields.err).toBeInstanceOf(Error);
+    expect(message).toBe('live heartbeat failed');
+    failing.mockRestore();
+    expect(h.timers.fire(LIVE_LIMITS.heartbeatMs)).toBe(1);
+    client.send({ type: 'ping' });
+    expect(await client.next('pong')).toEqual({ type: 'pong' });
   });
 
   it('meta lists the live capability, and a plain GET without an upgrade is 404', async () => {
