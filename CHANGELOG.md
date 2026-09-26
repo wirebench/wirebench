@@ -95,6 +95,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A REST request's API key stays on its own origin across redirects.** A key in a custom header
+  such as `X-Api-Key` was sent on to a server on another origin when a redirect led there, and a key
+  in the query string went with it when the server echoed it into the `Location`. On a hop to another
+  origin the configured key's header is now dropped and its query parameter stripped. On a hop back to
+  the request's own origin the key is sent again, as a definition read does.
+
 - **A failed re-send from History says why.** Re-sending a SOAP, gRPC or REST entry that can't be
   re-sent showed an internal code such as `history-resend-origin` in the toast. It now shows the
   reason in words, for example that the entry was sent to another host and should be re-sent from

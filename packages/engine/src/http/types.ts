@@ -24,6 +24,18 @@ export interface HttpRequest {
    * resource needs the choice. 303 always becomes a `GET`: that is what the status means.
    */
   readonly preserveMethodOnRedirect?: boolean;
+  /**
+   * Credentials the caller put on this request for its own origin only, beyond the `Authorization`,
+   * `Proxy-Authorization` and `Cookie` headers every cross-origin hop drops anyway: an API key's
+   * custom header, or the query parameter carrying it.
+   *
+   * On a redirect hop to any other origin the named headers are removed and a parameter with the
+   * given name *and* value is stripped from the `Location`, so a server that echoes the key into it
+   * cannot pass it on. On a hop back to the original origin they are applied again: the headers
+   * with their values as sent on the first request, and the parameter appended when the `Location`
+   * does not already carry it.
+   */
+  readonly originCredentials?: OriginCredentials;
   /** Maximum response body size to buffer, in bytes. Undefined = unlimited. */
   readonly maxSizeBytes?: number;
   readonly signal?: AbortSignal;
@@ -49,6 +61,14 @@ export interface HttpRequest {
    * `undefined` leaves the response buffered exactly as without one.
    */
   readonly stream?: HttpStreamHook;
+}
+
+/** What {@link HttpRequest.originCredentials} names: the credential headers and query parameters. */
+export interface OriginCredentials {
+  /** Header names, matched case-insensitively. */
+  readonly headers?: readonly string[];
+  /** Query parameters as the caller added them to the URL, before encoding. */
+  readonly query?: readonly { readonly name: string; readonly value: string }[];
 }
 
 /** Where an accepted stream's body goes, chunk by chunk, already decompressed when `decompress` is on. */

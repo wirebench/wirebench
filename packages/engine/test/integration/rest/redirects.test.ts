@@ -9,6 +9,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sendRest } from '../../../src/rest/send.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
+import type { SendAuth } from '../../../src/types.js';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;
@@ -16,8 +17,11 @@ let other: TestRestServer;
 
 beforeAll(async () => {
   // `other` first: the redirecting server is told which second origin it may send a client to.
-  other = await startTestRestServer();
+  // `other` may send one back, once `server` has an origin: the list is read on every request.
+  const back: string[] = [];
+  other = await startTestRestServer({ redirectOrigins: back });
   server = await startTestRestServer({ redirectOrigins: [other.url] });
+  back.push(server.url);
 });
 
 afterAll(async () => {
@@ -32,6 +36,7 @@ function input(overrides: {
   readonly keepBodyOnRedirect?: boolean;
   readonly maxRedirects?: number;
   readonly headers?: readonly { name: string; value: string; enabled: boolean }[];
+  readonly auth?: SendAuth;
 }): RestSendInput {
   return {
     baseUrl: server.url,
@@ -52,6 +57,7 @@ function input(overrides: {
       ...(overrides.keepBodyOnRedirect !== undefined ? { keepBodyOnRedirect: overrides.keepBodyOnRedirect } : {}),
       ...(overrides.maxRedirects !== undefined ? { maxRedirects: overrides.maxRedirects } : {}),
     },
+    ...(overrides.auth !== undefined ? { auth: overrides.auth } : {}),
   };
 }
 
@@ -154,5 +160,100 @@ describe('credentials across a redirect', () => {
     );
 
     expect(JSON.parse(exchange.text)).toEqual({ cookie: null });
+  });
+});
+
+describe('a configured API key across a redirect', () => {
+  const headerKey: SendAuth = { type: 'api-key', name: 'X-Api-Key', value: 'k-secret', in: 'header' };
+  const queryKey: SendAuth = { type: 'api-key', name: 'api_key', value: 'q-secret', in: 'query' };
+
+  /** A `to=` target on `other`, as `/redirect/<code>` reads it. */
+  const toOther = (path: string): string => encodeURIComponent(`${other.url}${path}`);
+
+  /** Every request `other` recorded since `from`. */
+  const reachedOther = (from: number) => other.requests.slice(from);
+
+  it('keeps a header key on a same-origin hop', async () => {
+    const exchange = await sendRest(input({ url: '/redirect/302?to=/echo', auth: headerKey }));
+
+    expect((JSON.parse(exchange.text) as Echo).headers['x-api-key']).toBe('k-secret');
+  });
+
+  it('drops a header key when the redirect crosses to another origin', async () => {
+    const from = other.requests.length;
+    const exchange = await sendRest(input({ url: `/redirect/302?to=${toOther('/echo')}`, auth: headerKey }));
+
+    expect(exchange.redirects).toHaveLength(1);
+    const reached = reachedOther(from);
+    expect(reached).toHaveLength(1);
+    expect(reached[0]?.headers['x-api-key']).toBeUndefined();
+    expect(JSON.stringify(reached[0])).not.toContain('k-secret');
+  });
+
+  it('drops the key whatever case the request header that carries it was typed in', async () => {
+    const from = other.requests.length;
+    await sendRest(
+      input({
+        url: `/redirect/307?to=${toOther('/echo')}`,
+        auth: headerKey,
+        headers: [{ name: 'x-api-KEY', value: 'typed-secret', enabled: true }],
+      }),
+    );
+
+    expect(JSON.stringify(reachedOther(from))).not.toContain('secret');
+  });
+
+  it('puts a header key back when a later hop returns to the original origin', async () => {
+    const back = encodeURIComponent(`${server.url}/echo`);
+    const from = other.requests.length;
+    const exchange = await sendRest(
+      input({ url: `/redirect/302?to=${toOther(`/redirect/302?to=${back}`)}`, auth: headerKey }),
+    );
+
+    expect(exchange.redirects).toHaveLength(2);
+    expect(exchange.request.url).toBe(`${server.url}/echo`);
+    expect(reachedOther(from)[0]?.headers['x-api-key']).toBeUndefined();
+    expect((JSON.parse(exchange.text) as Echo).headers['x-api-key']).toBe('k-secret');
+  });
+
+  it('does not append a query key to a cross-origin hop', async () => {
+    const from = other.requests.length;
+    await sendRest(input({ url: `/redirect/302?to=${toOther('/echo')}`, auth: queryKey }));
+
+    const reached = reachedOther(from);
+    expect(reached).toHaveLength(1);
+    expect(reached[0]?.url).toBe('/echo');
+  });
+
+  it('strips a query key a server echoed into a cross-origin Location', async () => {
+    const from = other.requests.length;
+    const exchange = await sendRest(
+      input({ url: `/redirect/302?to=${toOther('/echo?page=2&api_key=q-secret')}`, auth: queryKey }),
+    );
+
+    const reached = reachedOther(from);
+    expect(reached).toHaveLength(1);
+    expect(reached[0]?.url).toBe('/echo?page=2');
+    expect(exchange.request.url).not.toContain('q-secret');
+  });
+
+  it('leaves a parameter of the same name but another value alone on a cross-origin hop', async () => {
+    const from = other.requests.length;
+    await sendRest(input({ url: `/redirect/302?to=${toOther('/echo?api_key=theirs')}`, auth: queryKey }));
+
+    expect(reachedOther(from)[0]?.url).toBe('/echo?api_key=theirs');
+  });
+
+  it('sends the query key on a same-origin hop, even when the Location leaves it out', async () => {
+    const exchange = await sendRest(input({ url: '/redirect/302?to=/echo', auth: queryKey }));
+
+    expect(server.requests.at(-1)?.url).toBe('/echo?api_key=q-secret');
+    expect(exchange.status).toBe(200);
+  });
+
+  it('does not send the query key twice on a same-origin hop whose Location keeps it', async () => {
+    await sendRest(input({ url: `/redirect/302?to=${encodeURIComponent('/echo?api_key=q-secret')}`, auth: queryKey }));
+
+    expect(server.requests.at(-1)?.url).toBe('/echo?api_key=q-secret');
   });
 });

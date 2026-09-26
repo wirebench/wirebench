@@ -3,6 +3,8 @@
  * every way a session ends, and the transport options (TLS, proxy, message-size cap) it accepts.
  */
 import diagnosticsChannel from 'node:diagnostics_channel';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { request as undiciRequest } from 'undici';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { WsError } from '../../../src/errors.js';
@@ -149,6 +151,28 @@ describe('openWsSession', () => {
     expect(exchange.handshake.error).toBe('The server refused the WebSocket handshake');
     expect(exchange.closed.by).toBe('error');
     expect(exchange.frames).toEqual([]);
+  });
+
+  it('a handshake answered with a redirect is refused, never followed with its headers', async () => {
+    // A server on another origin that answers every upgrade with a 302 to the test server.
+    const redirecting = createServer();
+    redirecting.on('upgrade', (_req, socket) => {
+      socket.end(`HTTP/1.1 302 Found\r\nlocation: ${server.url}/echo\r\ncontent-length: 0\r\n\r\n`);
+    });
+    await new Promise<void>((resolve) => redirecting.listen(0, '127.0.0.1', resolve));
+    const { port } = redirecting.address() as AddressInfo;
+    try {
+      const before = server.handshakes.length;
+      const session = track(
+        openWsSession({ url: `ws://127.0.0.1:${String(port)}/socket`, headers: { 'X-Api-Key': 'k-secret' } }),
+      );
+      const exchange = await session.done;
+      expect(exchange.closed.by).toBe('error');
+      expect(exchange.handshake.status).toBeUndefined();
+      expect(server.handshakes.length).toBe(before);
+    } finally {
+      await new Promise<void>((resolve) => redirecting.close(() => resolve()));
+    }
   });
 
   it('a refused handshake still resolves done on a pooled origin (after an earlier open/close)', async () => {
