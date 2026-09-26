@@ -28,6 +28,7 @@ conflict and the resolution this spec adopts. Every later section already reflec
 | R4 | Two role changes live in identity, not teams-access: the server-admin flag and disabling a user (`identity/routes/users.ts:62-70`). | Identity fires `accessChanged({ userId })` when the server-admin flag changes. Disabling already revokes every token, so it fires `sessionEnded`. |
 | R5 | Node's global `WebSocket` is usable in Electron 44's main process: running the Electron 44.3.0 binary reports `process.type` `browser`, Node 24.20.0 and `typeof WebSocket` `function`. But the WHATWG constructor takes no TLS or proxy options. A server trusted through Wirebench's CA bundle, or reached through the configured proxy, would therefore work over HTTP (`ServerClient` uses `mainHttpOptions`, `apps/desktop/src/main/index.ts:137-146`) and never over the socket. | The socket uses undici's `WebSocket`, which the engine already depends on (`packages/engine/src/ws/session.ts:13`, `undici ^8`). It is the same WHATWG API plus a `dispatcher` built from the same TLS and proxy options (§5.2). No new dependency, and no `ws` package on the desktop. |
 | R6 | The decided server messages include no reply to a client `ping` and no "authenticated" acknowledgement. The WHATWG API cannot see protocol pings, so the client could neither detect a dead server nor tell *connecting* from *connected*. | Two server messages are added: `ready` answers a valid `auth`, and `pong` answers `ping` (§3.1). |
+| R7 | Ids on `TEAMS_ID_PATTERN` everywhere would refuse real values. A presence user's id comes from identity, which treats user ids as opaque (`identityIdSchema`, `server-api/identity.ts:25`), and the e2e fake server's ids are `u-<email>`. A `head` is a commit id, which every other head on the wire checks with `syncCommitIdSchema` (`server-api/sync.ts:22`). A catch-all member in the engine's server union would give every consumer an `unknown` variant to narrow away. | `workspaceId` stays on `TEAMS_ID_PATTERN`. A presence user's `id` is `identityIdSchema` (1–64 characters, otherwise opaque), and `head` is `syncCommitIdSchema`. The engine's `liveServerMessageSchema` is a closed union. `LiveClient` owns the unknown-type catch-all: it reads `{ type }` first and ignores a type it does not know (§4, §11). |
 
 ## Assumptions
 
@@ -304,8 +305,11 @@ shows neither to the user.
   - `LIVE_LIMITS`: `maxMessageBytes: 4096`, `maxSubscriptionsPerSession: 200`, `maxSocketsPerUser: 32`,
     `authTimeoutMs: 10_000` and `heartbeatMs: 30_000`.
 
-  They are plain zod (ADR-0009), with tokens on `DEVICE_TOKEN_PATTERN` and ids on `TEAMS_ID_PATTERN`.
-  `LiveClient` parses the server union plus a catch-all for unknown types.
+  They are plain zod (ADR-0009), with tokens on `DEVICE_TOKEN_PATTERN`, workspace ids on
+  `TEAMS_ID_PATTERN`, a presence user's id on `identityIdSchema` (1–64 characters, otherwise opaque) and
+  `head` on `syncCommitIdSchema` (R7). The server union is closed. `LiveClient` owns the catch-all for
+  unknown types: it reads `{ type }` first, ignores a type it does not know, and parses the rest with the
+  server union.
 - **Storage.** None: no tables, no migration, no client files. Subscriptions and presence live in the
   hub's memory, and the live state in `LiveClients`.
 - **Status.** The two optional fields of §3.4, which older renderers ignore.
@@ -461,9 +465,10 @@ return reply.code(201).send(result);
 
 ## 11. Testing strategy
 
-- **Engine unit:** the live schemas both ways, where an off-pattern token or id is refused and an
-  unknown server `type` passes the client's catch-all; `connectWebSocket` against `startTestWsServer`
-  over TLS with a test CA.
+- **Engine unit:** the live schemas both ways, where an off-pattern token or id is refused, the closed
+  server union refuses an unknown `type` and strips unknown fields from a known message (R7);
+  `connectWebSocket` against `startTestWsServer` over TLS with a test CA. The unknown-type catch-all is
+  `LiveClient`'s, tested in `live-client.test.ts`.
 - **Server unit:**
   - `announce`: order is kept, and a throwing listener is logged while the rest run.
   - The hub with fake sockets: `head` skips the pushing session; presence is deduped per user; an access
