@@ -363,7 +363,13 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                   {urlError}
                 </p>
               )}
-              <DefinitionAuthFields auth={chooserAuth} onChange={setChooserAuth} registerFlush={registerAuthFlush} />
+              {/* The stored references are the API's: an edit here goes under a new one, which Apply records. */}
+              <DefinitionAuthFields
+                auth={chooserAuth}
+                onChange={setChooserAuth}
+                registerFlush={registerAuthFlush}
+                newSecretRefs
+              />
               <div>
                 <Button data-testid="rest-update-browse" disabled={busy} onClick={() => void browse()}>
                   Choose file…

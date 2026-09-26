@@ -207,8 +207,10 @@ Main records the auth on the placed API: `addApi` and `importAsyncApi` in `proje
   stored `definition.auth`, and the dialog asks nothing. **Choose another file or URL…** adds the same
   Authentication section under the URL field. It is prefilled with the stored auth when the typed URL has
   the same origin as the recorded source, and starts at **None** otherwise, so a stored credential is
-  never offered to a new host by default. Applying from a URL stores the URL and the section's auth (none
-  clears it). Applying from a file stores the file and clears `auth`. `restApplyUpdate`'s options
+  never offered to a new host by default. A secret typed over a prefilled one is stored under a **new**
+  reference (`SecretField`'s `newRef`), never with `secrets.replace` on the API's own: the stored
+  credential changes only when Apply records the new reference, and not at all when the dialog is
+  cancelled. Applying from a URL stores the URL and the section's auth (none clears it). Applying from a file stores the file and clears `auth`. `restApplyUpdate`'s options
   (`project-host.ts`, the `definition` rewrite at `:3303`) take `auth` beside `source`.
 - **AsyncAPI** (`features/ws-api/asyncapi-update-dialog.tsx`). It re-reads the recorded source with the
   stored auth. It has no source chooser today, and this design does not add one.

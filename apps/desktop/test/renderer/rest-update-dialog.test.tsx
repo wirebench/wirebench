@@ -394,6 +394,44 @@ describe('RestUpdateDialog', () => {
     );
   });
 
+  it('stores an edit to the offered password under a new reference, never over the stored one', async () => {
+    const plan = vi.fn().mockResolvedValue({ ok: true, value: PLAN });
+    const set = vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-new' } });
+    const replace = vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-p' } });
+    installWirebenchApi({
+      api: { restPlanUpdate: plan },
+      secrets: { set, replace, exists: vi.fn().mockResolvedValue({ ok: true, value: { exists: true } }) },
+    });
+    seed(PROTECTED);
+    const onOpenChange = vi.fn();
+    render(<RestUpdateDialog apiId={PROTECTED.id} open onOpenChange={onOpenChange} />);
+    await screen.findByTestId('rest-update-added');
+    fireEvent.click(screen.getByTestId('rest-update-choose'));
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://api.test/v2/openapi.yaml' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replace…' }));
+    fireEvent.change(screen.getByLabelText('Definition password'), { target: { value: 'typed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+    expect(set.mock.calls[0]?.[0]).toMatchObject({ value: 'typed' });
+
+    fireEvent.click(screen.getByTestId('rest-update-url-preview'));
+    await waitFor(() =>
+      expect(plan).toHaveBeenLastCalledWith({
+        apiId: PROTECTED.id,
+        source: {
+          kind: 'url',
+          url: 'https://api.test/v2/openapi.yaml',
+          auth: { type: 'basic', username: 'ada', passwordRef: 'ref-new' },
+        },
+      }),
+    );
+
+    // Cancelling leaves the API's stored credential exactly as it was.
+    fireEvent.click(screen.getByTestId('rest-update-cancel'));
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it('opens the chooser on the recorded URL when it needs authentication, with the message', async () => {
     const message = 'The definition at https://api.test/openapi.yaml refused the credentials given (HTTP 401).';
     const plan = vi

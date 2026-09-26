@@ -92,6 +92,8 @@ export interface AuthFieldsProps {
    * `undefined` on unmount.
    */
   readonly registerFlush?: (flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => void;
+  /** Store every secret typed under a new reference rather than over the one shown; see `SecretField`. */
+  readonly newSecretRefs?: boolean;
 }
 
 /** The form. */
@@ -104,6 +106,7 @@ export function AuthFields({
   oauth2Status,
   preemptiveOption = true,
   registerFlush,
+  newSecretRefs = false,
 }: AuthFieldsProps) {
   const offered = types === undefined ? TYPES : TYPES.filter((option) => types.includes(option.value));
   const type = auth?.type ?? 'none';
@@ -169,6 +172,7 @@ export function AuthFields({
         <SecretField
           label={`${scope} ${label.toLowerCase()}`}
           {...(auth?.[slot] !== undefined ? { value: auth[slot] } : {})}
+          newRef={newSecretRefs}
           registerFlush={(flush) => {
             if (flush === undefined) {
               flushes.current.delete(slot);

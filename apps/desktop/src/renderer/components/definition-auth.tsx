@@ -59,10 +59,16 @@ export interface DefinitionAuthFieldsProps {
   readonly onChange: (auth: AuthConfigWire) => void;
   /** Receives the form's flush, which stores any secret typed but not saved; see {@link AuthFields}. */
   readonly registerFlush?: (flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => void;
+  /**
+   * Store a typed secret under a new reference. The Update Definition chooser offers the API's stored
+   * references; an edit there must not change the stored credential before Apply takes it, or at all
+   * when the dialog is cancelled.
+   */
+  readonly newSecretRefs?: boolean;
 }
 
 /** The section: the scheme, its fields, and where the credentials are sent. */
-export function DefinitionAuthFields({ auth, onChange, registerFlush }: DefinitionAuthFieldsProps) {
+export function DefinitionAuthFields({ auth, onChange, registerFlush, newSecretRefs }: DefinitionAuthFieldsProps) {
   return (
     <fieldset data-testid="definition-auth" className="flex flex-col gap-2">
       <legend className="text-xs font-medium text-fg-muted">Authentication</legend>
@@ -74,6 +80,7 @@ export function DefinitionAuthFields({ auth, onChange, registerFlush }: Definiti
         // *Not configured* sends nothing either, so it reads as None rather than a second empty choice.
         onChange={(next) => onChange(next ?? NO_DEFINITION_AUTH)}
         {...(registerFlush !== undefined ? { registerFlush } : {})}
+        {...(newSecretRefs !== undefined ? { newSecretRefs } : {})}
       />
       <p className="text-xs text-fg-subtle">
         Sent only to this URL’s own scheme, host and port — never to a redirect or a referenced document elsewhere.
