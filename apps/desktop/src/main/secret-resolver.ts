@@ -4,12 +4,40 @@
  * the store entry a `${secret:name}` token names, and a way to hand those values to the send
  * resolvers (`rest-send.ts`, `grpc-send.ts`, `ws-send.ts`), which expand synchronously.
  */
-import { parseSecretPseudoRef, resolveSecretTokens, SECRET_NAME_PATTERN } from '@wirebench/engine';
+import {
+  parseSecretPseudoRef,
+  resolveAuthConfig as resolveAuthConfigValues,
+  resolveSecretTokens,
+  resolveSoapAuth as resolveSoapAuthValues,
+  SECRET_NAME_PATTERN,
+} from '@wirebench/engine';
 import type { GetSecret, PropertyScopes, UnresolvedRef } from '@wirebench/engine';
+import { recordAuthValues } from './redact.js';
 import type { SecretStore } from './secrets.js';
 
-export { resolveAuthConfig, resolveEndpointAuth, secretMissingMessage } from '@wirebench/engine';
+export { resolveEndpointAuth, secretMissingMessage } from '@wirebench/engine';
 export type { ResolvedAuth } from '@wirebench/engine';
+
+/**
+ * The engine's `resolveAuthConfig`, recording the credential it resolves for the log's masking
+ * (`recordAuthValues`): every send and export in main resolves its auth through here.
+ */
+export async function resolveAuthConfig(
+  ...args: Parameters<typeof resolveAuthConfigValues>
+): ReturnType<typeof resolveAuthConfigValues> {
+  const auth = await resolveAuthConfigValues(...args);
+  recordAuthValues(auth);
+  return auth;
+}
+
+/** The engine's `resolveSoapAuth`, recording what it resolves as {@link resolveAuthConfig} does. */
+export async function resolveSoapAuth(
+  ...args: Parameters<typeof resolveSoapAuthValues>
+): ReturnType<typeof resolveSoapAuthValues> {
+  const auth = await resolveSoapAuthValues(...args);
+  recordAuthValues(auth);
+  return auth;
+}
 
 /**
  * The store label a `${secret:name}` token's value is kept under on this machine. The project id
@@ -27,9 +55,9 @@ export type SecretLookup = Pick<SecretStore, 'get' | 'findByLabel'>;
  * {@link secretStoreLabel} for `projectId` (nothing, with no project), any other ref reads the store
  * directly. Every token value it returns is passed to `record` first — the engine's masking
  * contract, which main keeps by recording into `redact.ts`, since a token can sit anywhere. An auth
- * value is not recorded: it only ever goes out where the header, Basic, password and body-key rules
- * mask it already, and masking it everywhere for the session would rewrite ordinary text on disk
- * (a password `admin` in `/admin/users` or `"role":"admin"` in a History body).
+ * value is not recorded here: the getter cannot tell a key from a password, so {@link
+ * resolveAuthConfig} records the credential in the form it goes out (see `recordAuthValues`),
+ * which is never a bare password.
  */
 export function projectSecretGetter(
   store: SecretLookup,

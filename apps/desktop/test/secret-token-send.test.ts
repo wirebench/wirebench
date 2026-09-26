@@ -169,7 +169,7 @@ describe('projectSecretGetter', () => {
     expect(Buffer.from(redactSecretBytes(text), 'base64').toString('utf8')).toBe('{"k":"<redacted>","é":"ü"}');
   });
 
-  it('does not record an auth value, which its header, password and body-key rules already mask', async () => {
+  it('does not record a password the getter hands out, which is often ordinary text', async () => {
     // A short auth password is ordinary text elsewhere: recording it would rewrite every History
     // body and URL that happens to contain it.
     const ref = await store.set('admin');

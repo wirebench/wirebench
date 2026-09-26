@@ -5,11 +5,12 @@
  *
  * `GetSecret`'s masking contract says every value a host's getter returns must be masked. The
  * desktop getter (`projectSecretGetter`) records each `${secret:name}` value here with
- * {@link recordSecretValue} (auth values are masked by the rules for where they go), and
- * every helper below masks recorded values too — so a `${secret:name}` value sent in an ordinary
- * header, a URL or an envelope shows as `<redacted>` in the HTTP log and History exactly as an
- * `Authorization` header does. The set lives for the session in main only, and is never written
- * anywhere; with the show-secrets toggle on, values are shown like everything else.
+ * {@link recordSecretValue}, main's auth resolution records each credential it resolves with
+ * {@link recordAuthValues}, and every helper below masks recorded values too — so a
+ * `${secret:name}` value sent in an ordinary header, a URL or an envelope, or an API key a server
+ * echoes back in a body or a `Location` header, shows as `<redacted>` in the HTTP log and History
+ * exactly as an `Authorization` header does. The set lives for the session in main only, and is
+ * never written anywhere; with the show-secrets toggle on, values are shown like everything else.
  */
 import {
   createSecretMasker,
@@ -20,6 +21,7 @@ import {
   redactUrl as redactUrlByParam,
   redactXml as redactXmlByElement,
 } from '@wirebench/engine';
+import type { SendAuth } from '@wirebench/engine';
 
 export { REDACTED_MARKER, SECRET_BODY_KEYS, containsRedaction, redactResponseAttachments } from '@wirebench/engine';
 
@@ -34,6 +36,37 @@ export function recordSecretValue(value: string): void {
     recorded.add(value);
     masker = undefined;
     byteMasker = undefined;
+  }
+}
+
+/**
+ * Records the credential a resolved `auth` puts on the wire, in the form it travels there: an API
+ * key's value, a bearer or OAuth2 access token, and Basic's `base64(user:password)`. A server that
+ * echoes one back — a reflected query, a redirect's `Location`, an error quoting the header — then
+ * has it masked wherever the log or History shows the exchange, not only where the header and
+ * parameter rules look.
+ *
+ * A password is never recorded bare: people choose them, so one is often ordinary text (`admin` in
+ * `/admin/users`, `"role":"admin"`), and masking it for the session would rewrite every History
+ * line that contains it. Basic's encoded pair is opaque, so it is recorded in its place; NTLM's
+ * password never travels at all.
+ */
+export function recordAuthValues(auth: SendAuth | undefined): void {
+  switch (auth?.type) {
+    case 'api-key':
+      recordSecretValue(auth.value);
+      return;
+    case 'bearer':
+      recordSecretValue(auth.token);
+      return;
+    case 'oauth2':
+      recordSecretValue(auth.accessToken);
+      return;
+    case 'basic':
+      recordSecretValue(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
+      return;
+    default:
+      return;
   }
 }
 

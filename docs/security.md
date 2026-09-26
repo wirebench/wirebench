@@ -75,6 +75,16 @@ URL, the request headers and the raw request of the summary and its failure row,
 re-render. The summary carries those names (`http.keyNames`, never the value), so a row shown with
 show-secrets on is masked by them again when it is exported as HAR or copied as cURL.
 
+A server may echo a credential back: a reflected query or header in the body, a key in a redirect's
+`Location`. So main also records, for the session, each credential a send's auth resolves to, in
+the form it goes on the wire — an API key's value, a bearer or OAuth2 access token, and Basic's
+`base64(user:password)` — and masks it by value wherever the HTTP log shows an exchange (unless
+show-secrets is on) and always in History, the same way as a `${secret:name}` value. A bare password
+is never recorded: people choose passwords, so one is often ordinary text (`admin` in
+`/admin/users`), and masking it everywhere would rewrite unrelated History lines. NTLM never
+sends the password itself, so it has nothing to echo. The 4-character floor below
+applies here too.
+
 Copying an HTTP Log row as cURL builds the command in main from the row the renderer holds. For a
 finished exchange it follows the show-secrets toggle; for a failure row it is always masked, since
 that row was redacted when it was recorded and has no unredacted copy. Resending a row never sends
