@@ -5,6 +5,8 @@
  * location or an error; and the host's proxy and CA bundle are used.
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -31,11 +33,52 @@ const DOCUMENT = 'openapi: 3.0.3\n';
 
 const servers: TestRestServer[] = [];
 const proxies: TestProxy[] = [];
+const raws: RawServer[] = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
   await Promise.all(proxies.splice(0).map((proxy) => proxy.close()));
+  await Promise.all(raws.splice(0).map((raw) => raw.close()));
 });
+
+/** A bare HTTP server answering every request with `answer`, recording what it received. */
+interface RawServer {
+  readonly url: string;
+  readonly requests: { readonly url: string; readonly headers: IncomingHttpHeaders }[];
+  close(): Promise<void>;
+}
+
+async function startRaw(answer: (request: IncomingMessage, response: ServerResponse) => void): Promise<RawServer> {
+  const requests: RawServer['requests'] = [];
+  const server = createServer((request, response) => {
+    requests.push({ url: request.url ?? '', headers: request.headers });
+    answer(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const raw: RawServer = {
+    url: `http://127.0.0.1:${String(port)}`,
+    requests,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  };
+  raws.push(raw);
+  return raw;
+}
+
+/**
+ * A forward proxy that answers every request itself with {@link DOCUMENT} and records the request as
+ * it arrived, headers included: so a test can reach any host name, and see what went with it.
+ */
+function startRecordingProxy(): Promise<RawServer> {
+  return startRaw((_request, response) => {
+    response.writeHead(200, { 'content-length': String(Buffer.byteLength(DOCUMENT)) });
+    response.end(DOCUMENT);
+  });
+}
 
 async function start(
   documents: Record<string, TestRestServerDocument> = {},
@@ -273,6 +316,100 @@ describe('createHttpFetchDocument', () => {
     expect(JSON.stringify(refused.details)).not.toContain('good-key');
   });
 
+  it.each([
+    ['a trailing slash', 'http://docs.example.test/'],
+    ['an uppercase host', 'http://DOCS.Example.TEST'],
+    ['an explicit default port', 'http://docs.example.test:80'],
+  ])('matches an auth origin written with %s', async (_label, authOrigin) => {
+    const proxy = await startRecordingProxy();
+    const url = 'http://docs.example.test/openapi.yaml';
+
+    const fetched = await createHttpFetchDocument({
+      auth: BEARER,
+      authOrigin,
+      network: () => Promise.resolve({ proxy: { url: proxy.url } }),
+    })(url);
+
+    expect(fetched.text).toBe(DOCUMENT);
+    expect(proxy.requests.map((request) => request.url)).toEqual([url]);
+    expect(proxy.requests[0]?.headers.authorization).toBe('Bearer good-token');
+  });
+
+  it.each([['not a url'], ['null'], ['file:///etc'], ['data:text/plain,x'], ['ftp://docs.example.test']])(
+    'refuses %s as an auth origin at once',
+    (authOrigin) => {
+      let error: unknown;
+      try {
+        createHttpFetchDocument({ auth: BASIC, authOrigin });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).code).toBe('invalid-url');
+    },
+  );
+
+  it('refuses a redirect off http(s), without asking the host about it', async () => {
+    const server = await startRaw((_request, response) => {
+      response.writeHead(302, { location: 'file:///etc/passwd', 'content-length': '0' });
+      response.end();
+    });
+    const url = `${server.url}/openapi.yaml`;
+    const asked: string[] = [];
+
+    const error = await thrown(() =>
+      createHttpFetchDocument({
+        auth: BASIC,
+        authOrigin: server.url,
+        network: (target) => {
+          asked.push(target);
+          return Promise.resolve({});
+        },
+      })(url),
+    );
+
+    expect(error.code).toBe('fetch-failed');
+    expect(error.message).toContain('file:');
+    expect(error.details).toEqual({ location: url, status: 302 });
+    expect(asked).toEqual([url]);
+  });
+
+  it.each([
+    ['bearer', BEARER, 'good-token'],
+    ['a header API key', HEADER_KEY, 'good-key'],
+    ['basic', BASIC, Buffer.from('u:p').toString('base64')],
+    ['a query API key', QUERY_KEY, 'good-key'],
+  ] as const)('keeps %s out of a transport failure', async (_label, auth, secret) => {
+    const server = await start();
+    const origin = server.url;
+    await server.close();
+    servers.splice(servers.indexOf(server), 1);
+    const url = `${origin}/openapi.yaml`;
+
+    const error = await thrown(() => createHttpFetchDocument({ auth, authOrigin: origin })(url));
+
+    expect(error.code).toBe('connection-refused');
+    expect(error.details).not.toHaveProperty('request');
+    // What the transport said is kept; only the request as sent goes.
+    expect(error.details).toEqual({ code: 'ECONNREFUSED', location: url });
+    expect(JSON.stringify(error)).not.toContain(secret);
+    expect(error.message).not.toContain(secret);
+  });
+
+  it('follows exactly five redirects', async () => {
+    const server = await start({ '/openapi.yaml': { body: DOCUMENT, auth: 'basic' } });
+    let path = '/openapi.yaml';
+    for (let hop = 0; hop < 5; hop += 1) {
+      path = `/redirect/302?to=${encodeURIComponent(path)}`;
+    }
+
+    const fetched = await createHttpFetchDocument({ auth: BASIC, authOrigin: server.url })(`${server.url}${path}`);
+
+    expect(fetched.text).toBe(DOCUMENT);
+    expect(fetched.location).toBe(`${server.url}/openapi.yaml`);
+    expect(server.requests).toHaveLength(6);
+  });
+
   it('reads a file: location as the default fetcher does', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'wirebench-document-fetch-'));
     const path = join(dir, 'openapi.yaml');
@@ -327,6 +464,28 @@ describe('createHttpFetchDocument', () => {
         url,
       );
       expect(fetched.text).toBe(DOCUMENT);
+    });
+
+    it('sends nothing to the same host and port once a redirect drops to plain http', async () => {
+      const plain: string[] = [];
+      const server = await start({}, { tls: { cert: cert.certPem, key: cert.keyPem }, redirectOrigins: plain });
+      const downgraded = `${server.url.replace(/^https:/, 'http:')}/openapi.yaml`;
+      plain.push(new URL(downgraded).origin);
+      // The plain-http hop goes to a recording proxy: the TLS server on that port cannot read it.
+      const proxy = await startRecordingProxy();
+      const url = `${server.url}/redirect/302?to=${encodeURIComponent(downgraded)}`;
+
+      const fetched = await createHttpFetchDocument({
+        auth: BASIC,
+        authOrigin: server.url,
+        network: (target) =>
+          Promise.resolve(target.startsWith('https:') ? { tls: { ca: [ca.certPem] } } : { proxy: { url: proxy.url } }),
+      })(url);
+
+      expect(fetched.location).toBe(downgraded);
+      expect(last(server).headers.authorization).toBeDefined();
+      expect(proxy.requests.map((request) => request.url)).toEqual([downgraded]);
+      expect(proxy.requests[0]?.headers.authorization).toBeUndefined();
     });
   });
 });
