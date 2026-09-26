@@ -131,6 +131,19 @@ describe('AsyncApiDefinitionCard', () => {
     await waitFor(() => expect(screen.queryByTestId('asyncapi-update-dialog')).toBeNull());
   });
 
+  it('asks for nothing, and says so when the source needs credentials it was not given', async () => {
+    const message = 'The definition at https://example.com/chat.yaml needs authentication (HTTP 401).';
+    const plan = vi.fn().mockResolvedValue({ ok: false, error: { code: 'definition-auth-required', message } });
+    installWirebenchApi({ api: { asyncApiPlanUpdate: plan } });
+
+    renderCard();
+    fireEvent.click(screen.getByTestId('asyncapi-definition-update'));
+
+    await waitFor(() => expect(plan).toHaveBeenCalledWith({ apiId: 'ws-api-1' }));
+    expect((await screen.findByTestId('asyncapi-update-error')).textContent).toBe(message);
+    expect(screen.queryByTestId('definition-auth')).toBeNull();
+  });
+
   it('says so when the source changed since the preview, and previews again on request', async () => {
     const plan = vi
       .fn()

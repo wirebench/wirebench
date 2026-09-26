@@ -79,6 +79,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Imported by URL behind Basic: the credentials Update Definition reuses without asking. */
+const PROTECTED = restApiWire({
+  id: 'protected',
+  definition: {
+    source: 'https://api.test/openapi.yaml',
+    cache: true,
+    version: '1.0.0',
+    auth: { type: 'basic', username: 'ada', passwordRef: 'ref-p' },
+  },
+});
+
 describe('RestUpdateDialog', () => {
   it('is a labelled dialog that lists added, removed and changed operations, and applies with the fingerprint', async () => {
     const plan = vi.fn().mockResolvedValue({ ok: true, value: PLAN });
@@ -334,6 +345,80 @@ describe('RestUpdateDialog', () => {
     fireEvent.click(await screen.findByTestId('rest-update-replan'));
     await waitFor(() => expect(plan).toHaveBeenCalledTimes(3));
     expect(plan).toHaveBeenLastCalledWith({ apiId: DEFINED.id, source });
+  });
+
+  it('asks for nothing when the API records credentials: main reads the source with them', async () => {
+    const plan = vi.fn().mockResolvedValue({ ok: true, value: PLAN });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(PROTECTED);
+    render(<RestUpdateDialog apiId={PROTECTED.id} open onOpenChange={vi.fn()} />);
+
+    await waitFor(() => expect(plan).toHaveBeenCalledWith({ apiId: PROTECTED.id }));
+    await screen.findByTestId('rest-update-added');
+    expect(screen.queryByTestId('definition-auth')).toBeNull();
+  });
+
+  it('offers the stored credentials for another URL on the same origin only', async () => {
+    const plan = vi.fn().mockResolvedValue({ ok: true, value: PLAN });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(PROTECTED);
+    render(<RestUpdateDialog apiId={PROTECTED.id} open onOpenChange={vi.fn()} />);
+    await screen.findByTestId('rest-update-added');
+    fireEvent.click(screen.getByTestId('rest-update-choose'));
+    const type = () => screen.getByLabelText<HTMLSelectElement>('Definition authentication type').value;
+    expect(type()).toBe('none');
+
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://api.test/v2/openapi.yaml' } });
+    expect(type()).toBe('basic');
+    expect(screen.getByLabelText<HTMLInputElement>('Definition username').value).toBe('ada');
+    fireEvent.click(screen.getByTestId('rest-update-url-preview'));
+    await waitFor(() =>
+      expect(plan).toHaveBeenLastCalledWith({
+        apiId: PROTECTED.id,
+        source: {
+          kind: 'url',
+          url: 'https://api.test/v2/openapi.yaml',
+          auth: { type: 'basic', username: 'ada', passwordRef: 'ref-p' },
+        },
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://mirror.test/openapi.yaml' } });
+    expect(type()).toBe('none');
+    fireEvent.click(screen.getByTestId('rest-update-url-preview'));
+    await waitFor(() =>
+      expect(plan).toHaveBeenLastCalledWith({
+        apiId: PROTECTED.id,
+        source: { kind: 'url', url: 'https://mirror.test/openapi.yaml' },
+      }),
+    );
+  });
+
+  it('opens the chooser on the recorded URL when it needs authentication, with the message', async () => {
+    const message = 'The definition at https://api.test/openapi.yaml refused the credentials given (HTTP 401).';
+    const plan = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'definition-auth-required', message } })
+      .mockResolvedValueOnce({ ok: true, value: PLAN });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(PROTECTED);
+    render(<RestUpdateDialog apiId={PROTECTED.id} open onOpenChange={vi.fn()} />);
+
+    expect((await screen.findByTestId('rest-update-error')).textContent).toBe(message);
+    expect(screen.getByTestId('rest-update-chooser')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('URL').value).toBe('https://api.test/openapi.yaml');
+    expect(screen.getByLabelText<HTMLSelectElement>('Definition authentication type').value).toBe('basic');
+
+    fireEvent.click(screen.getByTestId('rest-update-url-preview'));
+    await waitFor(() => expect(plan).toHaveBeenCalledTimes(2));
+    expect(plan).toHaveBeenLastCalledWith({
+      apiId: PROTECTED.id,
+      source: {
+        kind: 'url',
+        url: 'https://api.test/openapi.yaml',
+        auth: { type: 'basic', username: 'ada', passwordRef: 'ref-p' },
+      },
+    });
   });
 
   it('applies once however often Apply is clicked', async () => {
