@@ -274,4 +274,35 @@ describe('AuthFields', () => {
       expect(screen.getByTestId('stub-status')).toBeTruthy();
     });
   });
+
+  describe('AuthFields for a definition fetch', () => {
+    it('leaves out the preemptive box when asked, since such a fetch is always preemptive', () => {
+      installWirebenchApi();
+      const auth: AuthConfigWire = { type: 'basic', username: 'ada' };
+      render(<AuthFields scope="Definition" auth={auth} onChange={vi.fn()} preemptiveOption={false} />);
+
+      expect(screen.queryByLabelText('Definition preemptive')).toBeNull();
+    });
+
+    it('hands its owner a flush that stores a typed secret and answers the configuration with its reference', async () => {
+      installWirebenchApi({ secrets: { set: vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-flushed' } }) } });
+      let flush: (() => Promise<AuthConfigWire | undefined>) | undefined;
+      const auth: AuthConfigWire = { type: 'bearer' };
+      render(
+        <AuthFields
+          scope="Definition"
+          auth={auth}
+          onChange={vi.fn()}
+          registerFlush={(next) => {
+            flush = next;
+          }}
+        />,
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
+      await userEvent.type(screen.getByLabelText('Definition token'), 'tok');
+
+      expect(await flush?.()).toEqual({ type: 'bearer', tokenRef: 'ref-flushed' });
+    });
+  });
 });

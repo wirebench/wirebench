@@ -15,6 +15,7 @@ import { ProjectError } from '../errors.js';
 import type {
   Attachment,
   AuthConfig,
+  DefinitionAuth,
   Endpoint,
   Environment,
   Interface,
@@ -285,6 +286,15 @@ function authConfig(parsed: Record<string, unknown>): AuthConfig {
  */
 function soapOwnerAuth(parsed: Record<string, unknown> | undefined): SoapOwnerAuth | undefined {
   return parsed === undefined ? undefined : (authConfig(parsed) as unknown as SoapOwnerAuth);
+}
+
+/**
+ * A definition's fetch credentials as loaded, through {@link authConfig}. `definitionAuthSchema` has
+ * already refused every scheme but Basic, Bearer and API key, so the narrowing cast only restates
+ * what parsing proved.
+ */
+function definitionAuth(parsed: Record<string, unknown> | undefined): DefinitionAuth | undefined {
+  return parsed === undefined ? undefined : (authConfig(parsed) as unknown as DefinitionAuth);
 }
 
 /** A table row as loaded: `enabled` defaults to true, an absent description stays absent. */
@@ -670,6 +680,7 @@ async function loadApi(
                   source: parsed.definition.source,
                   cache: parsed.definition.cache,
                   ...optional('server', parsed.definition.server),
+                  ...optional('auth', definitionAuth(parsed.definition.auth)),
                 },
               }
             : {}),
@@ -706,6 +717,7 @@ async function loadApi(
                   source: parsed.definition.source,
                   cache: parsed.definition.cache,
                   version: parsed.definition.version,
+                  ...optional('auth', definitionAuth(parsed.definition.auth)),
                 },
               }
             : {}),

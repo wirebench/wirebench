@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectError } from '../../../src/errors.js';
 import {
+  apiFileSchema,
   environmentFileSchema,
   interfaceFileSchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
   requestFileSchema,
+  wsApiFileSchema,
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
 } from '../../../src/project/schema.js';
@@ -227,6 +229,61 @@ describe('loose schemas', () => {
   for (const [siteLabel, parse] of soapAuthSites) {
     it.each(plaintextDocuments)(`refuses a plaintext %s at the ${siteLabel} auth site`, (_key, auth) => {
       expect(() => parse(auth)).toThrow(ProjectError);
+    });
+  }
+});
+
+describe("a definition's fetch credentials", () => {
+  const restApi = (auth: unknown) => ({
+    kind: 'rest',
+    id: 'A',
+    name: 'Pets',
+    order: 0,
+    baseUrl: 'https://api.test',
+    definition: { source: 'https://gateway.test/openapi.yaml', cache: true, version: '3.1.0', auth },
+  });
+  const wsApi = (auth: unknown) => ({
+    kind: 'websocket',
+    id: 'W',
+    name: 'Chat',
+    order: 0,
+    url: 'wss://chat.test',
+    definition: { kind: 'asyncapi', source: 'https://gateway.test/asyncapi.yaml', cache: true, auth },
+  });
+  const sites = [
+    ['a REST API', (auth: unknown) => parseFile(apiFileSchema, restApi(auth), 'api.yaml').definition?.auth],
+    ['a WebSocket API', (auth: unknown) => parseFile(wsApiFileSchema, wsApi(auth), 'api.yaml').definition?.auth],
+  ] as const;
+
+  const accepted = [
+    ['basic', { type: 'basic', username: 'ada', passwordRef: 'ref-p' }],
+    ['bearer', { type: 'bearer', tokenRef: 'ref-t', scheme: 'Token' }],
+    ['api-key in a header', { type: 'api-key', name: 'X-Api-Key', in: 'header', valueRef: 'ref-v' }],
+    ['api-key in the query', { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'ref-v' }],
+  ] as const;
+
+  const refused = [
+    ['a plaintext password', { type: 'basic', username: 'ada', password: 'hunter2' }],
+    ['a plaintext token beside Basic', { type: 'basic', username: 'ada', token: 'abc' }],
+    ['a plaintext token', { type: 'bearer', token: 'abc' }],
+    ['a plaintext apiKey', { type: 'api-key', name: 'X-Api-Key', in: 'header', apiKey: 'k' }],
+    ['NTLM', { type: 'ntlm', username: 'ada', passwordRef: 'ref-p' }],
+    ['OAuth2', { type: 'oauth2', grant: 'client-credentials', tokenUrl: 'https://t.test', clientId: 'c' }],
+    ['none', { type: 'none' }],
+    ['inherit', { type: 'inherit' }],
+  ] as const;
+
+  for (const [siteLabel, parse] of sites) {
+    it.each(accepted)(`accepts %s on ${siteLabel}`, (_label, auth) => {
+      expect(parse(auth)).toMatchObject(auth);
+    });
+
+    it.each(refused)(`refuses %s on ${siteLabel}`, (_label, auth) => {
+      expect(() => parse(auth)).toThrow(ProjectError);
+    });
+
+    it(`leaves ${siteLabel} without auth as it was`, () => {
+      expect(parse(undefined)).toBeUndefined();
     });
   }
 });

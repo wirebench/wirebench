@@ -2,6 +2,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { rootCertificates } from 'node:tls';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_PREFERENCES, mergePreferences, WirebenchError, type Preferences } from '@wirebench/engine';
@@ -162,8 +163,10 @@ describe('ProjectHost.tlsFor', () => {
 
     const tls = await service.tlsFor(requestId);
 
-    expect(tls?.ca).toHaveLength(2);
-    expect(tls?.ca?.[0]).toContain('BEGIN CERTIFICATE');
+    // The default roots first, then the bundle's two anchors: the bundle adds, it does not replace.
+    expect(tls?.ca).toHaveLength(rootCertificates.length + 2);
+    expect(tls?.ca?.slice(0, rootCertificates.length)).toEqual([...rootCertificates]);
+    expect(tls?.ca?.at(-1)).toContain('BEGIN CERTIFICATE');
     expect(tls?.rejectUnauthorized).toBeUndefined();
   });
 

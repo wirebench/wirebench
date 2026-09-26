@@ -6,17 +6,25 @@
  * what is applied is the source the user looked at — if it changed in between, main refuses with
  * `definition-changed` and the dialog says so and offers to preview again.
  *
- * The recorded source is read by default. An API imported from pasted text has none to read again
- * (`definition-source-unavailable`), so the dialog then asks for a file or URL; the same chooser is
- * offered for any API, to update from somewhere else.
+ * The recorded source is read by default, with the credentials the API records for it, so nothing is
+ * asked. An API imported from pasted text has none to read again (`definition-source-unavailable`), so
+ * the dialog then asks for a file or URL; the same chooser is offered for any API, to update from
+ * somewhere else. A source that answers `definition-auth-required` opens the chooser on itself, so the
+ * credentials can be entered or fixed and previewed again.
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
+import {
+  DefinitionAuthFields,
+  NO_DEFINITION_AUTH,
+  sameOrigin,
+  toDefinitionAuthWire,
+} from '../../components/definition-auth.js';
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
-import type { ApiRestPlanUpdateResponse, RestUpdateSourceWire } from '../../../shared/wire-types.js';
+import type { ApiRestPlanUpdateResponse, AuthConfigWire, RestUpdateSourceWire } from '../../../shared/wire-types.js';
 
 export interface RestUpdateDialogProps {
   readonly apiId: string;
@@ -82,6 +90,31 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
   const [urlError, setUrlError] = useState<string | undefined>(undefined);
   const urlId = useId();
   const urlErrorId = useId();
+  // The chooser's credentials. The stored ones are offered only while its URL is on the recorded
+  // source's origin, so a stored credential is never sent to a new host unless the user picks it.
+  const api = useProjectStore((state) => state.apis[apiId]);
+  const recordedRef = useRef('');
+  recordedRef.current = api?.definition?.source ?? '';
+  const storedRef = useRef<AuthConfigWire | undefined>(undefined);
+  storedRef.current = api?.definition?.auth;
+  const [chooserAuth, setChooserAuth] = useState<AuthConfigWire>(NO_DEFINITION_AUTH);
+  const offeredStored = useRef(false);
+  const authFlush = useRef<(() => Promise<AuthConfigWire | undefined>) | undefined>(undefined);
+  const registerAuthFlush = useCallback((flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => {
+    authFlush.current = flush;
+  }, []);
+
+  /** Sets the chooser's URL, switching its credentials as it moves on or off the recorded origin. */
+  const chooseUrl = useCallback((value: string): void => {
+    setUrl(value);
+    setUrlError(undefined);
+    const stored = storedRef.current;
+    const offer = stored !== undefined && sameOrigin(value.trim(), recordedRef.current);
+    if (offer !== offeredStored.current) {
+      offeredStored.current = offer;
+      setChooserAuth(offer ? stored : NO_DEFINITION_AUTH);
+    }
+  }, []);
   // A plan or apply can land after the dialog is gone; it must not drive a dialog that no longer exists.
   const mounted = useRef(true);
   // Previews overlap: only the newest may set anything, or a slow answer pairs its plan with a
@@ -122,12 +155,18 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
           );
           return;
         }
+        if (result.error.code === 'definition-auth-required' && from === undefined) {
+          // The recorded source wants credentials it was not given, or refused the stored ones: open the
+          // chooser on it, so they can be entered or fixed and previewed again.
+          setChoosing(true);
+          chooseUrl(recordedRef.current);
+        }
         setError(result.error.message);
         return;
       }
       setPlan(result.value);
     },
-    [apiId],
+    [apiId, chooseUrl],
   );
 
   useEffect(() => {
@@ -138,13 +177,15 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
    * Previews the typed URL, unless it is not http(s) — main refuses those (a `file:` location would
    * be read straight off disk), and a raw validation failure says nothing useful about the field.
    */
-  function previewUrl(value: string): void {
+  async function previewUrl(value: string): Promise<void> {
     if (!/^https?:\/\//i.test(value)) {
       setUrlError('Only http and https URLs can be read.');
       return;
     }
     setUrlError(undefined);
-    void runPlan({ kind: 'url', url: value });
+    // A secret typed but not yet saved is stored first, so the preview goes with what is on screen.
+    const auth = toDefinitionAuthWire((await authFlush.current?.()) ?? chooserAuth);
+    await runPlan({ kind: 'url', url: value, ...(auth !== undefined ? { auth } : {}) });
   }
 
   async function browse(): Promise<void> {
@@ -292,13 +333,12 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                   value={url}
                   placeholder="https://example.com/openapi.yaml"
                   onChange={(event) => {
-                    setUrl(event.target.value);
-                    setUrlError(undefined);
+                    chooseUrl(event.target.value);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && trimmedUrl.length > 0) {
                       event.preventDefault();
-                      previewUrl(trimmedUrl);
+                      void previewUrl(trimmedUrl);
                     }
                   }}
                   aria-invalid={urlError !== undefined}
@@ -308,7 +348,7 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                 <Button
                   data-testid="rest-update-url-preview"
                   disabled={busy || trimmedUrl.length === 0}
-                  onClick={() => previewUrl(trimmedUrl)}
+                  onClick={() => void previewUrl(trimmedUrl)}
                 >
                   Preview
                 </Button>
@@ -323,6 +363,13 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                   {urlError}
                 </p>
               )}
+              {/* The stored references are the API's: an edit here goes under a new one, which Apply records. */}
+              <DefinitionAuthFields
+                auth={chooserAuth}
+                onChange={setChooserAuth}
+                registerFlush={registerAuthFlush}
+                newSecretRefs
+              />
               <div>
                 <Button data-testid="rest-update-browse" disabled={busy} onClick={() => void browse()}>
                   Choose file…

@@ -8,9 +8,9 @@
 
 import { ProjectError } from '../errors.js';
 import type { AuthConfig, Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
-import type { KeyValueEntry, RestApi, RestBody, RestRequestDef } from '../rest/model.js';
+import type { KeyValueEntry, RestApi, RestBody, RestDefinitionRef, RestRequestDef } from '../rest/model.js';
 import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
-import type { WsApi, WsRequestDef } from '../ws/model.js';
+import type { WsApi, WsDefinitionRef, WsRequestDef } from '../ws/model.js';
 import { wsMessageFileName } from '../ws/model.js';
 import { RAW_LANGUAGE_EXTENSIONS } from '../rest/model.js';
 import {
@@ -61,6 +61,14 @@ export function authDocument(auth: AuthConfig): Record<string, unknown> {
     return compact({ ...auth, scopes: auth.scopes.length > 0 ? [...auth.scopes] : undefined });
   }
   return compact({ ...auth });
+}
+
+/**
+ * A REST or AsyncAPI definition record as written: its own fields, with the fetch credentials in
+ * the schema's spelling through {@link authDocument} — references only, like every other auth.
+ */
+function definitionDocument(definition: RestDefinitionRef | WsDefinitionRef): Record<string, unknown> {
+  return compact({ ...definition, auth: definition.auth === undefined ? undefined : authDocument(definition.auth) });
 }
 
 function requestDocument(request: RequestDef): Record<string, unknown> {
@@ -348,7 +356,7 @@ function addApiFiles(files: Map<string, string>, api: RestApi): void {
         baseUrl: api.baseUrl,
         servers: api.servers.length > 0 ? api.servers.map((server) => compact({ ...server })) : undefined,
         auth: api.auth === undefined ? undefined : authDocument(api.auth),
-        definition: api.definition === undefined ? undefined : compact({ ...api.definition }),
+        definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
       }),
     ),
   );
@@ -405,7 +413,7 @@ function addWsApiFiles(files: Map<string, string>, api: WsApi): void {
         url: api.url,
         headers: api.headers.length > 0 ? keyValueDocuments(api.headers) : undefined,
         auth: api.auth === undefined ? undefined : authDocument(api.auth),
-        definition: api.definition === undefined ? undefined : compact({ ...api.definition }),
+        definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
       }),
     ),
   );

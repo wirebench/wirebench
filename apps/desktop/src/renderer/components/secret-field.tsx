@@ -15,6 +15,12 @@ export interface SecretFieldProps {
    * silently dropped. Called again with `undefined` on unmount.
    */
   readonly registerFlush?: (flush: (() => Promise<string | undefined>) | undefined) => void;
+  /**
+   * Store every value under a new ref (`secrets.set`) instead of replacing `value`'s. For a form that
+   * shows a ref it does not own: editing it there must not change the credential its owner holds
+   * until the owner takes the new ref.
+   */
+  readonly newRef?: boolean;
 }
 
 /**
@@ -26,7 +32,7 @@ export interface SecretFieldProps {
  * reveals a plain `type="password"` input the user types into, which is submitted (not synced
  * character-by-character) so a half-typed value never round-trips through IPC.
  */
-export function SecretField({ value, onChange, label, disabled, registerFlush }: SecretFieldProps) {
+export function SecretField({ value, onChange, label, disabled, registerFlush, newRef = false }: SecretFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -47,7 +53,7 @@ export function SecretField({ value, onChange, label, disabled, registerFlush }:
     setSaving(true);
     try {
       const result =
-        value !== undefined
+        value !== undefined && !newRef
           ? await ipc().secrets.replace({ ref: value, value: draft })
           : await ipc().secrets.set({ value: draft, label });
       if (result.ok) {

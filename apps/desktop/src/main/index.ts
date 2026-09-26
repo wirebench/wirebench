@@ -69,7 +69,7 @@ import { registerTeamChannels } from './ipc/team.js';
 import { AccountService } from './account-service.js';
 import { ServerClient } from './server-client.js';
 import { LiveClients } from './live/live-clients.js';
-import { mainHttpOptions } from './network-options.js';
+import { mainHttpOptions, type MainHttpDeps } from './network-options.js';
 import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
@@ -152,15 +152,22 @@ const oauth2Service = new OAuth2Service({
  */
 const serverConnectOptions = new Map<string, ConnectOptions>();
 
+/**
+ * What a project-free send from main resolves its CA bundle and proxy from: the preferences, the
+ * paths picked this session, the keychain and the system's PAC answer. The server client and the
+ * definition fetcher share it, so the two never drift apart.
+ */
+const mainHttpDeps: MainHttpDeps = {
+  preferences: () => preferencesService.get(),
+  picks: dialogPicks,
+  getSecret: secretsFor(undefined),
+  resolveSystemProxy: async (target) => await session.defaultSession.resolveProxy(target).catch(() => undefined),
+};
+
 /** The Wirebench Server HTTP client, shared by every account and every server it signs into. */
 const serverClient = new ServerClient({
   options: async (origin) => {
-    const options = await mainHttpOptions(origin, {
-      preferences: () => preferencesService.get(),
-      picks: dialogPicks,
-      getSecret: secretsFor(undefined),
-      resolveSystemProxy: async (target) => await session.defaultSession.resolveProxy(target).catch(() => undefined),
-    });
+    const options = await mainHttpOptions(origin, mainHttpDeps);
     serverConnectOptions.set(origin, options);
     return options;
   },
@@ -189,8 +196,13 @@ const liveClients = new LiveClients({
   },
 });
 
-/** The session's in-flight OpenAPI imports: one fetcher, one cancel per token. */
-const openApiImports = new OpenApiImportService();
+/** The session's in-flight OpenAPI and AsyncAPI reads: one cancel per token, one fetcher per read. */
+const openApiImports = new OpenApiImportService({
+  getSecret: secretsFor(undefined),
+  // The preference-level CA bundle and proxy a project-free send uses: an import may target a project
+  // that does not exist yet, and a definition has no client identity of its own.
+  network: (url) => mainHttpOptions(url, mainHttpDeps),
+});
 const protoImports = new ProtoImportService({
   // A discovery from the Import dialog trusts what a send would: the configured CA bundle, plus the
   // user's own "trust this certificate anyway" for a development server.

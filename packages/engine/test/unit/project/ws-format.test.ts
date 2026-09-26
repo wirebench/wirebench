@@ -312,3 +312,29 @@ describe('the server an AsyncAPI-imported API was mapped against', () => {
     });
   });
 });
+
+describe("an AsyncAPI definition's fetch credentials", () => {
+  it('round-trips them as references, and a file without them loads without', async () => {
+    const auth = { type: 'bearer' as const, tokenRef: 'ref-t' };
+    const project = {
+      ...emptyProject(),
+      wsApis: [
+        {
+          ...createWsApi('Chat', { id: 'a1', url: 'wss://x.test' }),
+          definition: { kind: 'asyncapi' as const, source: 'https://gateway.test/a.yaml', cache: true, auth },
+        },
+      ],
+    };
+    const files = serializeProject(project);
+    expect(files.get('apis/Chat/api.yaml')).toContain('tokenRef: ref-t\n');
+    const reloaded = await loadFrom(files);
+    expect(reloaded.problems).toEqual([]);
+    expect(reloaded.project.wsApis[0]?.definition).toEqual({
+      kind: 'asyncapi',
+      source: 'https://gateway.test/a.yaml',
+      cache: true,
+      auth,
+    });
+    expect(serializeProject(reloaded.project)).toEqual(files);
+  });
+});

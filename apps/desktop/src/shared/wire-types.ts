@@ -1459,7 +1459,15 @@ export const restApiWireSchema = z.object({
   baseUrl: z.string(),
   servers: z.array(z.object({ url: z.string(), description: z.string().optional() })),
   auth: authConfigWireSchema.optional(),
-  definition: z.object({ source: z.string(), cache: z.boolean(), version: z.string() }).optional(),
+  definition: z
+    .object({
+      source: z.string(),
+      cache: z.boolean(),
+      version: z.string(),
+      /** How the definition document is fetched, as references; separate from the API's own `auth`. */
+      auth: authConfigWireSchema.optional(),
+    })
+    .optional(),
 });
 export type RestApiWire = z.infer<typeof restApiWireSchema>;
 
@@ -1671,6 +1679,8 @@ export const wsApiWireSchema = z.object({
       version: z.string().optional(),
       /** The cached document's WebSocket (`ws`/`wss`) server keys, in document order. */
       servers: z.array(z.string()).optional(),
+      /** How the definition document is fetched, as references; separate from the API's own `auth`. */
+      auth: authConfigWireSchema.optional(),
     })
     .optional(),
 });
@@ -2717,6 +2727,48 @@ export type ProjectImportLegacyResponse = z.infer<typeof projectImportLegacyResp
 // ---------------------------------------------------------------------------
 
 /**
+ * A definition document's fetch credentials: Basic, a bearer token or an API key, each carrying only
+ * a `secretRef`. Every arm is `.strict()`, so a plaintext `password`, `token` or `value` sent by
+ * mistake fails validation instead of being stripped, and NTLM or OAuth2 are refused by name.
+ */
+export const definitionAuthWireSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('basic'), username: z.string(), passwordRef: z.string() }).strict(),
+  z.object({ type: z.literal('bearer'), tokenRef: z.string(), scheme: z.string().optional() }).strict(),
+  z
+    .object({
+      type: z.literal('api-key'),
+      name: z.string().min(1),
+      in: z.enum(['header', 'query']),
+      valueRef: z.string(),
+    })
+    .strict(),
+]);
+export type DefinitionAuthWire = z.infer<typeof definitionAuthWireSchema>;
+
+/** Credentials go with a URL only: a file or pasted text is never fetched from anywhere. */
+const onlyWithAUrl = {
+  message: 'Definition credentials are only sent with an http(s) URL source',
+  path: ['auth'],
+};
+
+/**
+ * Whether `auth` is absent, or the source is a `url` whose scheme is `http`/`https` — the only case
+ * credentials can be sent for. A malformed URL, or one typed with another scheme (`file:`, `ftp:`),
+ * refuses `auth` the same way a `file` or `text` source does, rather than reaching main only to fail
+ * there or silently drop the credentials.
+ */
+function hasFetchableAuthSource(request: { readonly source: OpenApiSourceWire; readonly auth?: unknown }): boolean {
+  if (request.auth === undefined) {
+    return true;
+  }
+  if (request.source.kind !== 'url' || !URL.canParse(request.source.url)) {
+    return false;
+  }
+  const { protocol } = new URL(request.source.url);
+  return protocol === 'http:' || protocol === 'https:';
+}
+
+/**
  * Where an OpenAPI document comes from. The same three arms a WSDL import has, and the same rule:
  * passing this schema does not authorize a `file` path — main additionally requires it to be inside
  * an open project folder or to have been picked through a dialog this session.
@@ -2777,20 +2829,24 @@ export const openApiImportSummarySchema = z.object({
 export type OpenApiImportSummaryWire = z.infer<typeof openApiImportSummarySchema>;
 
 /** Request/response for `api.importOpenApi`. The target is the same union a WSDL import takes. */
-export const apiImportOpenApiRequestSchema = z.object({
-  target: projectAddInterfaceTargetSchema,
-  source: openApiSourceSchema,
-  /** Overrides `info.title` as the API's name; the dialog offers it for editing. */
-  name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
-  /** Overrides the first server's URL as the base URL. */
-  baseUrl: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
-  /** The security scheme, by its name in the document, to use as the API's own credentials. */
-  securityScheme: z.string().max(200).optional(),
-  /** Write the definition cache. Defaults to the definition-caching preference. */
-  cache: z.boolean().optional(),
-  /** Echoed back on `engine.progress` events raised while this import is in flight. */
-  token: z.string().optional(),
-});
+export const apiImportOpenApiRequestSchema = z
+  .object({
+    target: projectAddInterfaceTargetSchema,
+    source: openApiSourceSchema,
+    /** Overrides `info.title` as the API's name; the dialog offers it for editing. */
+    name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
+    /** Overrides the first server's URL as the base URL. */
+    baseUrl: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+    /** The security scheme, by its name in the document, to use as the API's own credentials. */
+    securityScheme: z.string().max(200).optional(),
+    /** Write the definition cache. Defaults to the definition-caching preference. */
+    cache: z.boolean().optional(),
+    /** Echoed back on `engine.progress` events raised while this import is in flight. */
+    token: z.string().optional(),
+    /** Credentials for fetching the document, recorded on the API for Update Definition. URL sources only. */
+    auth: definitionAuthWireSchema.optional(),
+  })
+  .refine(hasFetchableAuthSource, onlyWithAUrl);
 export type ApiImportOpenApiRequest = z.infer<typeof apiImportOpenApiRequestSchema>;
 
 export const apiImportOpenApiResponseSchema = z.object({
@@ -2822,18 +2878,22 @@ export const asyncApiImportSummarySchema = z.object({
 export type AsyncApiImportSummaryWire = z.infer<typeof asyncApiImportSummarySchema>;
 
 /** Request/response for `api.importAsyncApi`. The target is the union an OpenAPI import takes. */
-export const apiImportAsyncApiRequestSchema = z.object({
-  target: projectAddInterfaceTargetSchema,
-  source: openApiSourceSchema,
-  /** The `ws`/`wss` server to dial, by its key in the document; absent picks the first one. */
-  server: z.string().max(200).optional(),
-  /** Overrides `info.title` as the API's name; empty or whitespace-only falls back to the title. */
-  name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
-  /** Write the definition cache. Defaults to the definition-caching preference. */
-  cache: z.boolean().optional(),
-  /** Echoed back on `engine.progress` events raised while this import is in flight. */
-  token: z.string().optional(),
-});
+export const apiImportAsyncApiRequestSchema = z
+  .object({
+    target: projectAddInterfaceTargetSchema,
+    source: openApiSourceSchema,
+    /** The `ws`/`wss` server to dial, by its key in the document; absent picks the first one. */
+    server: z.string().max(200).optional(),
+    /** Overrides `info.title` as the API's name; empty or whitespace-only falls back to the title. */
+    name: z.string().max(MAX_IMPORT_NAME_CHARS).optional(),
+    /** Write the definition cache. Defaults to the definition-caching preference. */
+    cache: z.boolean().optional(),
+    /** Echoed back on `engine.progress` events raised while this import is in flight. */
+    token: z.string().optional(),
+    /** Credentials for fetching the document, recorded on the API for Update Definition. URL sources only. */
+    auth: definitionAuthWireSchema.optional(),
+  })
+  .refine(hasFetchableAuthSource, onlyWithAUrl);
 export type ApiImportAsyncApiRequest = z.infer<typeof apiImportAsyncApiRequestSchema>;
 
 export const apiImportAsyncApiResponseSchema = z.object({
@@ -2848,7 +2908,9 @@ export type ApiImportAsyncApiResponse = z.infer<typeof apiImportAsyncApiResponse
  * Request/response for `api.asyncApiServers`: the document's `ws`/`wss` servers, read before an
  * import so the dialog can offer a choice of server when there is more than one.
  */
-export const apiAsyncApiServersRequestSchema = z.object({ source: openApiSourceSchema });
+export const apiAsyncApiServersRequestSchema = z
+  .object({ source: openApiSourceSchema, auth: definitionAuthWireSchema.optional() })
+  .refine(hasFetchableAuthSource, onlyWithAUrl);
 export type ApiAsyncApiServersRequest = z.infer<typeof apiAsyncApiServersRequestSchema>;
 
 export const apiAsyncApiServersResponseSchema = z.object({
@@ -2914,6 +2976,8 @@ export const restUpdateSourceSchema = z.discriminatedUnion('kind', [
       .string()
       .max(MAX_IMPORT_LOCATION_CHARS)
       .regex(/^https?:\/\//i, 'Only http and https URLs can be read'),
+    /** Credentials for this URL; an apply records them on the API, and none clears the stored ones. */
+    auth: definitionAuthWireSchema.optional(),
   }),
   z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
 ]);

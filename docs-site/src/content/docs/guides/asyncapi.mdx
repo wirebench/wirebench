@@ -19,10 +19,15 @@ contract only adds to it.
 2. Give the dialog a URL, a file or pasted text. AsyncAPI 2.0–2.6 and 3.0.x documents, in YAML or
    JSON, are detected on their own; **AsyncAPI (WebSocket)** in the format list picks it by hand.
    Other versions are refused by name.
-3. Optionally set a **Name** — by default the API is named after the document's title.
-4. When the document declares more than one `ws` or `wss` server, pick one under
+3. For a document behind authentication, fill in **Authentication** under the URL: **Basic**, a
+   **Bearer token** or an **API key**. The secret is kept in your keychain and only sent to the
+   document's own origin. The server list is read while you type, without the credentials; if the
+   document needs them, choose **Load servers** to read the list with them. See
+   [OpenAPI](/wirebench/guides/importers/#openapi-and-swagger) for the details.
+4. Optionally set a **Name** — by default the API is named after the document's title.
+5. When the document declares more than one `ws` or `wss` server, pick one under
    **WebSocket server**. Its URL becomes the API's URL.
-5. Choose **Import**.
+6. Choose **Import**.
 
 </Steps>
 
@@ -78,9 +83,10 @@ newly arriving frames are marked *not checked* rather than holding the session b
 ## Update Definition
 
 When the document changes, open the API's tab and choose **Update definition…** in its
-definition card. The source is read again and a preview lists **Added operations**, **Removed
-operations** and **Changed operations**, each changed one with its reasons. Choose **Apply** to
-take it.
+definition card. The source is read again — with the credentials it was imported with, if any,
+without asking — and a preview lists **Added operations**, **Removed operations** and **Changed
+operations**, each changed one with its reasons. Choose **Apply** to take it. If the source says it
+needs authentication, the dialog shows that message.
 
 Nothing is deleted. A request whose channel is gone is kept and badged *orphaned*; if the channel
 comes back in a later update, the badge is cleared. A request field or saved message is rewritten

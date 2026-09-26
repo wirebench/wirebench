@@ -358,7 +358,16 @@ function toApiWire(api: RestApi): RestApiWire {
       ...(server.description !== undefined ? { description: server.description } : {}),
     })),
     ...(api.auth !== undefined ? { auth: toAuthConfigWire(api.auth) } : {}),
-    ...(api.definition !== undefined ? { definition: { ...api.definition } } : {}),
+    ...(api.definition !== undefined
+      ? {
+          definition: {
+            source: api.definition.source,
+            cache: api.definition.cache,
+            version: api.definition.version,
+            ...(api.definition.auth !== undefined ? { auth: toAuthConfigWire(api.definition.auth) } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -551,6 +560,7 @@ function toWsApiWire(api: WsApi, info?: AsyncApiDefinitionInfo): WsApiWire {
             cache: api.definition.cache,
             ...(api.definition.server !== undefined ? { server: api.definition.server } : {}),
             ...(info !== undefined ? { version: info.version, servers: [...info.servers] } : {}),
+            ...(api.definition.auth !== undefined ? { auth: toAuthConfigWire(api.definition.auth) } : {}),
           },
         }
       : {}),

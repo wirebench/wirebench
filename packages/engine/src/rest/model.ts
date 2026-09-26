@@ -13,7 +13,7 @@
  */
 
 import type { Assertion } from '../assert/model.js';
-import type { AttachmentSource, AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
+import type { AttachmentSource, AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 
@@ -230,6 +230,8 @@ export interface RestDefinitionRef {
   readonly cache: boolean;
   /** The OpenAPI version of the document, as it declared itself (e.g. `3.1.0`). */
   readonly version: string;
+  /** Credentials the document is fetched with, sent to the source's own origin only. */
+  readonly auth?: DefinitionAuth;
 }
 
 /** A REST API: a base URL, default credentials, and a tree of folders and requests. */

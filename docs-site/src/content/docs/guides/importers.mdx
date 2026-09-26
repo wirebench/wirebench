@@ -75,12 +75,23 @@ Wirebench reads OpenAPI 3.0, 3.1 and 3.2, and Swagger 1.x, 2.0 and 3.x, in YAML 
 1. Open **Import…** (or press <kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>) and give the document by
    URL, file or paste.
 
-2. Optionally set **Name** and **Base URL** overrides, and **Cache specification documents with the
+2. For a document behind authentication, fill in **Authentication** under the URL: **Basic**, a
+   **Bearer token** or an **API key** in a header or the query string. The password, token or key is
+   kept in your operating system's keychain; the project only records a reference to it.
+
+3. Optionally set **Name** and **Base URL** overrides, and **Cache specification documents with the
    project** to keep a copy alongside the project.
 
-3. Choose the target project and **Import**.
+4. Choose the target project and **Import**.
 
 </Steps>
+
+The credentials go only to the document's own origin — its scheme, host and port. A redirect or a
+`$ref` to another origin is fetched without them, and a query key never appears in the recorded
+source, a progress message or an error. A server that answers 401 or 403 is reported as needing
+authentication, or as having refused the credentials given. The fetch uses the proxy and CA bundle
+from your preferences. The same **Authentication** section appears for an AsyncAPI document by URL;
+see [AsyncAPI](/wirebench/guides/asyncapi/#import-a-document).
 
 The summary shows the declared version, the API version if the document gives one, the base URL,
 and the request and folder counts. When the document declares security schemes, they're listed
