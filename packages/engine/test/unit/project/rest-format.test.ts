@@ -18,7 +18,7 @@ import { APIS_DIR, MAX_FOLDER_DEPTH } from '../../../src/project/paths.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
 import { createApi, createFolder, createRestRequest, entry } from '../../../src/rest/model.js';
-import type { Project } from '../../../src/project/model.js';
+import type { DefinitionAuth, Project } from '../../../src/project/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from './fixture.js';
 
@@ -405,6 +405,65 @@ describe('problems a damaged apis/ folder reports', () => {
         file: 'apis/Orders/api.yaml',
       },
     ]);
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("a definition's fetch credentials", () => {
+  const withAuth = (auth: DefinitionAuth): Project => {
+    const project = apiProject();
+    const [first, ...rest] = project.apis;
+    return {
+      ...project,
+      apis: [
+        { ...first!, definition: { source: 'https://gateway.test/openapi.yaml', cache: true, version: '3.1.0', auth } },
+        ...rest,
+      ],
+    };
+  };
+
+  it.each([
+    ['basic', { type: 'basic', username: 'ada', passwordRef: 'ref-p' }],
+    ['bearer', { type: 'bearer', tokenRef: 'ref-t' }],
+    ['api-key', { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'ref-v' }],
+  ] as const)('round-trips %s auth as references, byte-stably', async (_label, auth) => {
+    const dir = await tempProjectDir();
+    const project = withAuth(auth);
+    await saveProject(project, dir);
+
+    const yaml = await readFile(join(dir, APIS_DIR, 'Petstore', 'api.yaml'), 'utf8');
+    expect(yaml).toContain('  auth:\n');
+    const { project: loaded, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    expect(loaded.apis[0]?.definition).toEqual(project.apis[0]?.definition);
+    const again = await saveProject(loaded, dir);
+    expect(again.written).toEqual([]);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('refuses a plaintext password in a definition on load', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(withAuth({ type: 'basic', username: 'ada', passwordRef: 'ref-p' }), dir);
+    const file = join(dir, APIS_DIR, 'Petstore', 'api.yaml');
+    await writeFile(file, (await readFile(file, 'utf8')).replace('passwordRef: ref-p', 'password: hunter2'));
+
+    const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
+
+    expect(error).toBeInstanceOf(ProjectError);
+    expect(error.code).toBe('project-file-invalid');
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('loads a definition written without auth exactly as before', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(apiProject(), dir);
+
+    const { project: loaded } = await loadProject(dir);
+    expect(loaded.apis[0]?.definition).toEqual({
+      source: 'https://petstore.test/openapi.json',
+      cache: true,
+      version: '3.0.4',
+    });
     await rm(dir, { recursive: true, force: true });
   });
 });

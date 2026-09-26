@@ -151,6 +151,19 @@ export const authConfigSchema = z.union([
  */
 export const soapOwnerAuthSchema = z.union([endpointAuthSchema, bearerAuthSchema, apiKeyAuthSchema, oauth2AuthSchema]);
 
+/**
+ * A definition's fetch credentials: Basic, Bearer or API key, each as references only. The Basic arm
+ * takes the full plaintext-key rejection too, not only `endpointAuthSchema`'s `password`, so a `token`
+ * or `apiKey` written beside `type: basic` is refused rather than ignored.
+ */
+export const definitionAuthSchema = z.union([
+  refuseSecretValues(endpointAuthSchema).refine((auth) => auth.type === 'basic', {
+    message: 'a definition supports Basic, not NTLM',
+  }),
+  bearerAuthSchema,
+  apiKeyAuthSchema,
+]);
+
 const endpointSchema = z.looseObject({
   id: nonEmpty,
   name: z.string(),
@@ -400,7 +413,12 @@ export const apiFileSchema = z.looseObject({
   servers: z.array(z.looseObject({ url: z.string(), description: z.string().optional() })).default([]),
   auth: authConfigSchema.optional(),
   definition: z
-    .looseObject({ source: nonEmpty, cache: z.boolean().default(true), version: z.string().default('') })
+    .looseObject({
+      source: nonEmpty,
+      cache: z.boolean().default(true),
+      version: z.string().default(''),
+      auth: definitionAuthSchema.optional(),
+    })
     .optional(),
 });
 
@@ -524,6 +542,7 @@ export const wsApiFileSchema = z.looseObject({
       source: nonEmpty,
       cache: z.boolean().default(true),
       server: z.string().optional(),
+      auth: definitionAuthSchema.optional(),
     })
     .optional(),
 });

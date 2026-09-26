@@ -15,7 +15,7 @@
  * holds a secret — credentials are `secretRef`s resolved from the OS keychain at send time.
  */
 
-import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
+import type { AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import type { JsonSchemaProblem } from '../json/schema-validate.js';
@@ -107,6 +107,8 @@ export interface WsDefinitionRef {
   /** The server key the API was mapped against, so an update maps the new document against the same one.
    *  Absent means the first WebSocket server. */
   readonly server?: string;
+  /** Credentials the document is fetched with, sent to the source's own origin only. */
+  readonly auth?: DefinitionAuth;
 }
 
 /** A WebSocket API: a server URL and a tree of folders and requests. */

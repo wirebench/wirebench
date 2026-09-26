@@ -140,6 +140,12 @@ export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | 
  */
 export type SoapOwnerAuth = Exclude<AuthConfig, InheritAuth>;
 
+/**
+ * How a definition document is fetched: Basic, a bearer token or an API key. Secrets are keychain
+ * references, as everywhere else. Separate from the API's own `auth`, which is what its requests send.
+ */
+export type DefinitionAuth = (EndpointAuth & { readonly type: 'basic' }) | BearerAuth | ApiKeyAuth;
+
 /** The OAuth2 fields a freshly configured entry starts with. */
 export const DEFAULT_OAUTH2_AUTH: OAuth2Auth = Object.freeze({
   type: 'oauth2',
