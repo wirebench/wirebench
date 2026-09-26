@@ -67,7 +67,12 @@ describe('credentials on an import request', () => {
 
     it(`${channel} refuses them with a malformed URL or a non-http(s) scheme`, () => {
       expect(parse({ source: { kind: 'url', url: 'not a url' }, auth: BASIC }).success).toBe(false);
-      expect(parse({ source: { kind: 'url', url: 'file:///etc/passwd' }, auth: BASIC }).success).toBe(false);
+      const refused = parse({ source: { kind: 'url', url: 'file:///etc/passwd' }, auth: BASIC });
+      expect(refused.success).toBe(false);
+      // The message names the rule: a `url` source alone is not enough, it must be http(s).
+      expect(refused.error?.issues.map((issue) => issue.message)).toContain(
+        'Definition credentials are only sent with an http(s) URL source',
+      );
     });
   }
 });

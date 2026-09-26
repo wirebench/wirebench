@@ -87,6 +87,40 @@ describe('OpenApiImportService', () => {
     expect(built[0]?.authOrigin).toBeUndefined();
   });
 
+  it('never gives a file source any credentials', async () => {
+    const { imports, built } = service(OPENAPI, { 'ref-p': 's3cret' });
+
+    await imports.readOpenApi(
+      { kind: 'file', path: 'file:///tmp/openapi.yaml' },
+      { type: 'basic', username: 'ada', passwordRef: 'ref-p' },
+    );
+
+    expect(built).toHaveLength(1);
+    expect(built[0]?.auth).toBeUndefined();
+    expect(built[0]?.authOrigin).toBeUndefined();
+  });
+
+  it('builds a fetcher per read, each with only its own credentials', async () => {
+    const { imports, built } = service(OPENAPI, { 'ref-a': 'first', 'ref-b': 'second' });
+
+    await imports.readOpenApi(
+      { kind: 'url', url: 'https://one.test/openapi.yaml' },
+      { type: 'bearer', tokenRef: 'ref-a' },
+    );
+    await imports.readOpenApi({ kind: 'url', url: 'https://two.test/openapi.yaml' });
+    await imports.readOpenApi(
+      { kind: 'url', url: 'https://three.test/openapi.yaml' },
+      { type: 'bearer', tokenRef: 'ref-b' },
+    );
+
+    expect(built).toHaveLength(3);
+    expect(built[0]).toMatchObject({ auth: { type: 'bearer', token: 'first' }, authOrigin: 'https://one.test' });
+    // The read in between had none: nothing from the first carried over.
+    expect(built[1]?.auth).toBeUndefined();
+    expect(built[1]?.authOrigin).toBeUndefined();
+    expect(built[2]).toMatchObject({ auth: { type: 'bearer', token: 'second' }, authOrigin: 'https://three.test' });
+  });
+
   it('reads a malformed URL with no credentials instead of throwing', async () => {
     const { imports, built, fetched } = service(OPENAPI, { 'ref-p': 's3cret' });
 

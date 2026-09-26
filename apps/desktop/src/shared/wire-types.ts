@@ -2747,7 +2747,7 @@ export type DefinitionAuthWire = z.infer<typeof definitionAuthWireSchema>;
 
 /** Credentials go with a URL only: a file or pasted text is never fetched from anywhere. */
 const onlyWithAUrl = {
-  message: 'Definition credentials are only sent with a URL source',
+  message: 'Definition credentials are only sent with an http(s) URL source',
   path: ['auth'],
 };
 

@@ -137,6 +137,8 @@ let host: ProjectHost;
 
 /** `https://defs.test/<name>` is `<name>` in the project folder: a source read by URL, served offline. */
 const DEFS = 'https://defs.test/';
+/** Another origin serving the same files, for a chosen URL off the recorded source's origin. */
+const MIRROR = 'https://mirror.test/';
 /** The keychain, by reference: a test deletes an entry to leave a reference dangling. */
 let secrets: Record<string, string>;
 /** Every fetcher the import service built, with its options: which credentials each read went with. */
@@ -162,8 +164,9 @@ beforeEach(async () => {
   const real = createDefaultFetchDocument();
   const fetchDocument: FetchDocument = (location, signal) => {
     fetched.push(location);
-    return location.startsWith(DEFS)
-      ? real(pathToFileURL(join(projectDir, location.slice(DEFS.length))).href, signal).then((document) => ({
+    const origin = [DEFS, MIRROR].find((prefix) => location.startsWith(prefix));
+    return origin !== undefined
+      ? real(pathToFileURL(join(projectDir, location.slice(origin.length))).href, signal).then((document) => ({
           ...document,
           location,
         }))
@@ -491,6 +494,44 @@ describe('an update reads the definition with the credentials it was imported wi
     expect(built.at(-1)?.auth).toBeUndefined();
     expect(definition(apiId)).toMatchObject({ source: docPath });
     expect(definition(apiId)).not.toHaveProperty('auth');
+  });
+
+  it('leaves the stored credentials alone when a chosen URL is only planned', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+
+    await value('api.restPlanUpdate', { apiId, source: { ...URL_SOURCE, auth: BEARER } });
+
+    expect(built.at(-1)?.auth).toEqual({ type: 'bearer', token: 'tok-123' });
+    expect(definition(apiId)).toMatchObject({ source: URL_SOURCE.url, auth: BASIC });
+  });
+
+  it('leaves the stored credentials alone when the apply is refused as definition-changed', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+    const source = { ...URL_SOURCE, auth: BEARER };
+    const plan = await value<{ fingerprint: string }>('api.restPlanUpdate', { apiId, source });
+    await writeFile(docPath, V2.replace("version: '2'", "version: '3'"));
+
+    const error = await failure('api.restApplyUpdate', { apiId, source, fingerprint: plan.fingerprint });
+
+    expect(error.code).toBe('definition-changed');
+    expect(definition(apiId)).toMatchObject({ source: URL_SOURCE.url, auth: BASIC });
+  });
+
+  it('reads a chosen URL on another origin with no credentials, though the API has stored ones', async () => {
+    const apiId = await importByUrl();
+    await writeFile(docPath, V2);
+    built = [];
+    fetched = [];
+    const mirrored = `${MIRROR}openapi.yaml`;
+
+    await value('api.restPlanUpdate', { apiId, source: { kind: 'url', url: mirrored } });
+
+    expect(fetched).toEqual([mirrored]);
+    expect(built).toHaveLength(1);
+    expect(built[0]?.auth).toBeUndefined();
+    expect(built[0]?.authOrigin).toBeUndefined();
   });
 
   it('fails as secret-missing before fetching anything when the reference has no value here', async () => {
