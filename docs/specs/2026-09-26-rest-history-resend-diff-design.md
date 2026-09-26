@@ -43,8 +43,8 @@ A resend combines two sources, as the gRPC resend does:
 - **From the saved request, as it is now:** auth, TLS, proxy and send settings, all resolved the
   usual way under the active environment.
 
-The URL comes from the entry, so the resend goes to the host the entry went to, whichever environment
-is active now. The proxy is still looked up for the saved request's base URL (`request.ts:837`), which
+The URL comes from the entry only while its host is still the saved request's current host; otherwise
+the resend is refused (refusal 5). The proxy is still looked up for the saved request's base URL (`request.ts:837`), which
 is also what happens for an editor draft with an absolute URL.
 
 ### The draft
