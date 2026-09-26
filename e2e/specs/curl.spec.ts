@@ -62,7 +62,8 @@ test.describe('cURL', () => {
 
     const preview = page.getByTestId('code-panel-preview');
     await expect(preview).toContainText('--request POST', { timeout: 20_000 });
-    await expect(preview).toContainText('/echo?dry=true');
+    // The URL up to its closing quote: a bare prefix would also accept `?dry=true&dry=true`.
+    await expect(preview).toContainText(`${server.url}/echo?dry=true'`);
     await expect(preview).toContainText('X-Trace: abc');
     // Show-secrets is off, so the command carries the shape of the credential and not its value.
     await expect(preview).toContainText('Authorization: <redacted>');

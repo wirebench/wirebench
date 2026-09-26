@@ -119,8 +119,7 @@ test.describe('history', () => {
     await expect(rows).toHaveCount(2, { timeout: 20_000 });
     // The re-send reaches the server exactly as the original did: same URL, same header.
     const echoes = rest.requests.filter((request) => request.url.startsWith('/echo?'));
-    expect(echoes).toHaveLength(2);
-    expect(echoes[1]!.url).toBe(echoes[0]!.url);
+    expect(echoes.map((request) => request.url)).toEqual(['/echo?x=1', '/echo?x=1']);
     expect(echoes[1]!.headers['x-trace']).toBe('abc');
 
     const compareButtons = page.locator('button[title="Compare…"]');
@@ -132,8 +131,9 @@ test.describe('history', () => {
       timeout: 20_000,
     });
     await views.getByRole('tab', { name: 'Request' }).click();
+    // The whole request line, up to its newline: a bare prefix would also accept `?x=1&x=1`.
     await expect
       .poll(async () => await monacoModelText(page), { timeout: 20_000 })
-      .toContain(`GET ${rest.url}/echo?x=1`);
+      .toContain(`GET ${rest.url}/echo?x=1\n`);
   });
 });

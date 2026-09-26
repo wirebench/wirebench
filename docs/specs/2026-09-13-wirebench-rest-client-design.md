@@ -130,7 +130,10 @@ lives beside it (§4).
 - **URL**: one field. Absolute (`https://…`) or relative to the API's effective base URL (`/pets/{petId}`). Path
   parameters are `{name}` and appear in the _Params_ table as they are typed; `${…}` property expansion applies to
   every part of the URL, params, headers and body. Query parameters typed into the URL are split into the table and
-  the table is written back into the URL; the two are one model, never two.
+  the table is written back into the URL; the two are one model, never two. The _Query_ table owns it (a switched-off
+  row lives there only), so a saved request usually carries each enabled parameter twice, once in `url` and once as a
+  row. The send counts such a parameter once: a URL parameter with the same name and value as an enabled row is that
+  row, matched one for one, and only a URL parameter no enabled row carries (a hand-written file) is sent on its own.
 - **Params**: a _Path_ table (name, value, description, always enabled: an unfilled path parameter is a preflight
   problem) and a _Query_ table (name, value, enabled, description; duplicates allowed; order kept). Values are
   percent-encoded on send unless the request setting `encodeUrl` is off; a value that is already encoded is not
