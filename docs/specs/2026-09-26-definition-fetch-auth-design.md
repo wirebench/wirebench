@@ -126,8 +126,10 @@ export function createHttpFetchDocument(options?: DocumentFetchOptions): FetchDo
 ```
 
 - `file:` locations are delegated to `createDefaultFetchDocument` unchanged.
-- `http(s):` goes through `sendHttp` with `followRedirects: false`, a 20 s timeout and the
-  `wirebench/0.1` user agent, as today. The fetcher follows up to 5 redirects itself, because
+- `http(s):` goes through `sendHttp` with `followRedirects: false`, a 20 s timeout, the
+  `wirebench/0.1` user agent as today, and `Accept: application/json, application/yaml, text/yaml,
+  */*;q=0.8`. The host's proxy is resolved inside the same cancel scope as the send, so a cancel while
+  it resolves stays a cancel. The fetcher follows up to 10 redirects itself, because
   `scopeHeadersToOrigin` only knows the three standard credential headers and would forward a custom
   API-key header or keep a query key. On each hop it attaches credentials only when the hop's origin
   equals `authOrigin`: Basic as a preemptive `Authorization` header (`basicAuthorization`,

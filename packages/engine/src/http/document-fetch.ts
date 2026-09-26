@@ -20,7 +20,9 @@ import type { ProxyOptions, TlsOptions } from './types.js';
 
 const TIMEOUT_MS = 20_000;
 const USER_AGENT = 'wirebench/0.1';
-const MAX_REDIRECTS = 5;
+const MAX_REDIRECTS = 10;
+/** A definition is JSON or YAML; anything else is still read, at a lower preference. */
+const ACCEPT = 'application/json, application/yaml, text/yaml, */*;q=0.8';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 
@@ -165,13 +167,15 @@ async function fetchHttp(
   for (let hops = 0; ; hops += 1) {
     const { url, headers } = credentialsFor(bare, options);
     const credentialsSent = url !== bare || Object.keys(headers).length > 0;
-    const network = (await options.network?.(bare)) ?? {};
     let exchange;
     try {
+      // Inside the try: a cancel while the host resolves the proxy is a cancel too.
+      const network = (await options.network?.(bare)) ?? {};
+      signal?.throwIfAborted();
       exchange = await sendHttp({
         url,
         method: 'GET',
-        headers: { 'user-agent': USER_AGENT, ...headers },
+        headers: { 'user-agent': USER_AGENT, accept: ACCEPT, ...headers },
         timeoutMs: TIMEOUT_MS,
         followRedirects: false,
         ...(signal !== undefined ? { signal } : {}),
@@ -217,7 +221,7 @@ async function fetchHttp(
 /**
  * Creates the {@link FetchDocument} for OpenAPI and AsyncAPI reads: `file:` (and any other non-HTTP
  * location) as {@link createDefaultFetchDocument} reads it, and `http(s):` through `sendHttp` with
- * the host's TLS and proxy, following up to 5 redirects, with `options.auth` sent only to
+ * the host's TLS and proxy, following up to 10 redirects, with `options.auth` sent only to
  * `options.authOrigin`.
  *
  * The returned `location` never carries a query key this fetcher added, so `$ref` resolution,

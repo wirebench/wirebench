@@ -9,6 +9,7 @@ import { createServer, type IncomingHttpHeaders, type IncomingMessage, type Serv
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { rootCertificates } from 'node:tls';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
@@ -255,9 +256,9 @@ describe('createHttpFetchDocument', () => {
     expect(last(server).url).toContain('api_key=wrong-key');
     expect(`${refused.message} ${JSON.stringify(refused.details)}`).not.toContain('wrong-key');
 
-    // Six hops, each back to the next, one more than the fetcher follows.
+    // Eleven hops, each back to the next, one more than the fetcher follows.
     let loop = `${server.url}/openapi.yaml`;
-    for (let hop = 0; hop < 6; hop += 1) {
+    for (let hop = 0; hop < 11; hop += 1) {
       loop = `${server.url}/redirect/302?to=${encodeURIComponent(loop.slice(server.url.length))}`;
     }
     const looped = await thrown(() => fetchDocument(`${loop}&api_key=wrong-key`));
@@ -396,18 +397,56 @@ describe('createHttpFetchDocument', () => {
     expect(error.message).not.toContain(secret);
   });
 
-  it('follows exactly five redirects', async () => {
+  it('follows exactly ten redirects, and refuses an eleventh', async () => {
     const server = await start({ '/openapi.yaml': { body: DOCUMENT, auth: 'basic' } });
     let path = '/openapi.yaml';
-    for (let hop = 0; hop < 5; hop += 1) {
+    for (let hop = 0; hop < 10; hop += 1) {
       path = `/redirect/302?to=${encodeURIComponent(path)}`;
     }
+    const fetchDocument = createHttpFetchDocument({ auth: BASIC, authOrigin: server.url });
 
-    const fetched = await createHttpFetchDocument({ auth: BASIC, authOrigin: server.url })(`${server.url}${path}`);
+    const fetched = await fetchDocument(`${server.url}${path}`);
 
     expect(fetched.text).toBe(DOCUMENT);
     expect(fetched.location).toBe(`${server.url}/openapi.yaml`);
-    expect(server.requests).toHaveLength(6);
+    expect(server.requests).toHaveLength(11);
+
+    const tooMany = `/redirect/302?to=${encodeURIComponent(path)}`;
+    const error = await thrown(() => fetchDocument(`${server.url}${tooMany}`));
+    expect(error.code).toBe('too-many-redirects');
+    expect(error.message).toContain('more than 10 times');
+  });
+
+  it('asks for a definition, and says which client asks', async () => {
+    const server = await start({ '/openapi.yaml': { body: DOCUMENT } });
+
+    await createHttpFetchDocument()(`${server.url}/openapi.yaml`);
+
+    expect(last(server).headers.accept).toBe('application/json, application/yaml, text/yaml, */*;q=0.8');
+    expect(last(server).headers['user-agent']).toBe('wirebench/0.1');
+  });
+
+  it.each([
+    ['fails', () => Promise.reject(new Error('proxy resolution failed'))],
+    ['answers', () => Promise.resolve({})],
+  ] as const)('stays a cancel when the signal aborts while the host resolves the proxy and it %s', async (_label, then) => {
+    const server = await start({ '/openapi.yaml': { body: DOCUMENT } });
+    const controller = new AbortController();
+
+    const error: unknown = await createHttpFetchDocument({
+      network: async () => {
+        await Promise.resolve();
+        controller.abort();
+        return then();
+      },
+    })(`${server.url}/openapi.yaml`, controller.signal).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(DOMException);
+    expect((error as DOMException).name).toBe('AbortError');
+    expect(server.requests).toHaveLength(0);
   });
 
   it('reads a file: location as the default fetcher does', async () => {
@@ -463,6 +502,19 @@ describe('createHttpFetchDocument', () => {
       const fetched = await createHttpFetchDocument({ network: () => Promise.resolve({ tls: { ca: [ca.certPem] } }) })(
         url,
       );
+      expect(fetched.text).toBe(DOCUMENT);
+    });
+
+    it('trusts a private CA given after the default roots, as the desktop resolves a bundle', async () => {
+      const server = await start(
+        { '/openapi.yaml': { body: DOCUMENT } },
+        { tls: { cert: cert.certPem, key: cert.keyPem } },
+      );
+
+      const fetched = await createHttpFetchDocument({
+        network: () => Promise.resolve({ tls: { ca: [...rootCertificates, ca.certPem] } }),
+      })(`${server.url}/openapi.yaml`);
+
       expect(fetched.text).toBe(DOCUMENT);
     });
 
