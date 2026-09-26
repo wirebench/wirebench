@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateMachineKeys } from '../../../src/team-secrets/keys.js';
 import {
+  accessEntryFileSchema,
   accessEntryPath,
   isTeamSecretsPath,
   isVaultEntryPath,
@@ -72,5 +73,101 @@ describe('reading the tree', () => {
     );
     expect(files.keys).toEqual([doc]);
     expect(files.invalid.sort()).toEqual([accessEntryPath('01J8ZK6Q3V4W5X6Y7Z8A9B0C1D'), keyRequestPath(other)].sort());
+  });
+
+  it('rejects a valid vault entry filed under another secret’s id', () => {
+    const keys = generateMachineKeys();
+    const secretA = { ref: 'sec_aaaaaaaaaaaaaaaaaaaaaaaaaa' };
+    const idB = vaultEntryId({ ref: 'sec_bbbbbbbbbbbbbbbbbbbbbbbbbb' });
+    const doc = signDocument(
+      {
+        version: 1 as const,
+        secret: secretA,
+        label: 'API key',
+        cipher: 'AAAA',
+        wraps: { [keys.keyId]: 'BBBB' },
+        updatedAt: '2026-09-26T10:00:00.000Z',
+        updatedBy: keys.keyId,
+      },
+      keys,
+    );
+    const files = readTeamSecretsFiles(new Map([[vaultEntryPath(idB), teamSecretsFileText(doc)]]));
+    expect(files.values.size).toBe(0);
+    expect(files.invalid).toEqual([vaultEntryPath(idB)]);
+  });
+});
+
+describe('strict schemas', () => {
+  const keys = generateMachineKeys();
+
+  it('rejects an unknown field on a key request', () => {
+    const doc = signDocument(
+      {
+        version: 1 as const,
+        keyId: keys.keyId,
+        encryptionKey: keys.encryptionKey,
+        signingKey: keys.signingKey,
+        name: 'Alex Doe',
+        email: 'alex@example.com',
+        machine: 'alex-mbp',
+        requestedAt: '2026-09-26T10:00:00.000Z',
+      },
+      keys,
+    );
+    expect(keyRequestFileSchema.safeParse(doc).success).toBe(true);
+    expect(keyRequestFileSchema.safeParse({ ...doc, extra: 'nope' }).success).toBe(false);
+  });
+
+  it('requires authority on a genesis entry and forbids it on any other action', () => {
+    const genesis = signDocument(
+      {
+        version: 1 as const,
+        id: '01J8ZK6Q3V4W5X6Y7Z8A9B0C1D',
+        action: 'genesis' as const,
+        authority: 'signed' as const,
+        key: keys.keyId,
+        by: keys.keyId,
+        at: '2026-09-26T10:00:00.000Z',
+      },
+      keys,
+    );
+    expect(accessEntryFileSchema.safeParse(genesis).success).toBe(true);
+
+    const genesisNoAuthority = signDocument({ ...genesis, authority: undefined }, keys);
+    expect(accessEntryFileSchema.safeParse(genesisNoAuthority).success).toBe(false);
+
+    const approveWithAuthority = signDocument(
+      {
+        version: 1 as const,
+        id: '01J8ZK6Q3V4W5X6Y7Z8A9B0C1E',
+        action: 'approve' as const,
+        authority: 'signed' as const,
+        key: keys.keyId,
+        by: keys.keyId,
+        at: '2026-09-26T10:00:01.000Z',
+      },
+      keys,
+    );
+    expect(accessEntryFileSchema.safeParse(approveWithAuthority).success).toBe(false);
+  });
+
+  it('requires the signature to be exactly 86 base64url characters', () => {
+    const genesis = signDocument(
+      {
+        version: 1 as const,
+        id: '01J8ZK6Q3V4W5X6Y7Z8A9B0C1D',
+        action: 'genesis' as const,
+        authority: 'signed' as const,
+        key: keys.keyId,
+        by: keys.keyId,
+        at: '2026-09-26T10:00:00.000Z',
+      },
+      keys,
+    );
+    expect(accessEntryFileSchema.safeParse(genesis).success).toBe(true);
+    expect(accessEntryFileSchema.safeParse({ ...genesis, signature: genesis.signature.slice(0, -1) }).success).toBe(
+      false,
+    );
+    expect(accessEntryFileSchema.safeParse({ ...genesis, signature: `${genesis.signature}A` }).success).toBe(false);
   });
 });

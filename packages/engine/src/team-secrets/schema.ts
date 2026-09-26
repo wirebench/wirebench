@@ -12,17 +12,24 @@ import { base32, KEY_ID_PATTERN } from './keys.js';
 
 export const TEAM_SECRETS_FORMAT_VERSION = 1;
 
-/** A Crockford-base32 ULID, as `ulidx` writes it. */
-export const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+/**
+ * A Crockford-base32 ULID, as `ulidx` writes it. The first character is restricted to `0`-`7`: a ULID's
+ * 48-bit timestamp fills at most that much of the first base32 group, so a wider first character (a
+ * corrupted or adversarial id) would decode to a timestamp `ulidx`'s `decodeTime` rejects outright — this
+ * pattern keeps that failure at parse time instead of wherever `decodeTime` is next called.
+ */
+export const ULID_PATTERN = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
 
 const base64urlSchema = z.string().regex(/^[A-Za-z0-9_-]+$/);
 /** 32 bytes as base64url without padding. */
 const publicKeySchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+/** An Ed25519 signature: 64 bytes as base64url without padding, always exactly 86 characters. */
+const signatureSchema = z.string().regex(/^[A-Za-z0-9_-]{86}$/);
 const isoSchema = z.iso.datetime({ offset: true });
 
 export const keyIdSchema = z.string().regex(KEY_ID_PATTERN);
 
-export const keyRequestFileSchema = z.object({
+export const keyRequestFileSchema = z.strictObject({
   version: z.literal(TEAM_SECRETS_FORMAT_VERSION),
   keyId: keyIdSchema,
   encryptionKey: publicKeySchema,
@@ -31,23 +38,28 @@ export const keyRequestFileSchema = z.object({
   email: z.string().max(320),
   machine: z.string().min(1).max(200),
   requestedAt: isoSchema,
-  signature: base64urlSchema,
+  signature: signatureSchema,
 });
 export type KeyRequestFile = z.infer<typeof keyRequestFileSchema>;
 
 export const ACCESS_ACTIONS = ['genesis', 'approve', 'remove', 'grant-admin', 'revoke-admin'] as const;
 export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 
-export const accessEntryFileSchema = z.object({
-  version: z.literal(TEAM_SECRETS_FORMAT_VERSION),
-  id: z.string().regex(ULID_PATTERN),
-  action: z.enum(ACCESS_ACTIONS),
-  authority: z.enum(['signed', 'server']).optional(),
-  key: keyIdSchema,
-  by: keyIdSchema,
-  at: isoSchema,
-  signature: base64urlSchema,
-});
+/** `authority` is the genesis entry's own field: present exactly when `action === 'genesis'`. */
+export const accessEntryFileSchema = z
+  .strictObject({
+    version: z.literal(TEAM_SECRETS_FORMAT_VERSION),
+    id: z.string().regex(ULID_PATTERN),
+    action: z.enum(ACCESS_ACTIONS),
+    authority: z.enum(['signed', 'server']).optional(),
+    key: keyIdSchema,
+    by: keyIdSchema,
+    at: isoSchema,
+    signature: signatureSchema,
+  })
+  .refine((entry) => (entry.action === 'genesis') === (entry.authority !== undefined), {
+    message: 'authority is required on a genesis entry and forbidden on any other action',
+  });
 export type AccessEntryFile = z.infer<typeof accessEntryFileSchema>;
 
 /** Which secret an entry holds: a keychain ref as the tree names it, or a `${secret:name}` token of one project. */
@@ -59,7 +71,7 @@ export const secretKeySchema = z.union([
 ]);
 export type SecretKey = z.infer<typeof secretKeySchema>;
 
-export const vaultEntryFileSchema = z.object({
+export const vaultEntryFileSchema = z.strictObject({
   version: z.literal(TEAM_SECRETS_FORMAT_VERSION),
   secret: secretKeySchema,
   /** The display label, never the value. */
@@ -70,7 +82,7 @@ export const vaultEntryFileSchema = z.object({
   updatedAt: isoSchema,
   /** The key that signed this version. */
   updatedBy: keyIdSchema,
-  signature: base64urlSchema,
+  signature: signatureSchema,
 });
 export type VaultEntryFile = z.infer<typeof vaultEntryFileSchema>;
 
@@ -164,7 +176,7 @@ export function readTeamSecretsFiles(files: ReadonlyMap<string, string>): TeamSe
       }
     } else {
       const doc = parseTeamSecretsFile(vaultEntryFileSchema, text);
-      if (doc !== undefined && name !== undefined) {
+      if (doc !== undefined && name !== undefined && vaultEntryId(doc.secret) === name) {
         out.values.set(name, doc);
       } else {
         out.invalid.push(path);

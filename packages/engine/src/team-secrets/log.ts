@@ -38,7 +38,10 @@ export type LogProblem =
   | 'already-approved'
   | 'removed-key'
   | 'not-approved'
+  | 'not-admin'
+  | 'already-admin'
   | 'last-admin'
+  | 'last-approved'
   | 'wrong-authority';
 
 export interface AccessState {
@@ -81,7 +84,18 @@ export function verifiedKeys(files: readonly KeyRequestFile[]): Map<string, KeyI
  */
 export function nextAccessEntryId(existing: readonly string[], now: number): string {
   const last = existing.reduce<string | undefined>((max, id) => (max === undefined || id > max ? id : max), undefined);
-  return ulid(last === undefined ? now : Math.max(now, decodeTime(last) + 1));
+  if (last === undefined) {
+    return ulid(now);
+  }
+  // A corrupted or out-of-range id (outside what `ULID_PATTERN` accepts) must never crash entry
+  // creation — decodeTime throws on those, so fall back to `now` rather than propagate.
+  let lastTime: number;
+  try {
+    lastTime = decodeTime(last);
+  } catch {
+    return ulid(now);
+  }
+  return ulid(Math.max(now, lastTime + 1));
 }
 
 /**
@@ -160,6 +174,8 @@ export function replayAccessLog(
           reject('not-approved');
         } else if (authority === 'signed' && admins.has(entry.key) && admins.size === 1) {
           reject('last-admin');
+        } else if (authority === 'server' && approved.size === 1) {
+          reject('last-approved');
         } else {
           approved.delete(entry.key);
           admins.delete(entry.key);
@@ -172,6 +188,8 @@ export function replayAccessLog(
           reject('wrong-authority');
         } else if (!approved.has(entry.key)) {
           reject('not-approved');
+        } else if (admins.has(entry.key)) {
+          reject('already-admin');
         } else {
           admins.add(entry.key);
         }
@@ -180,7 +198,7 @@ export function replayAccessLog(
         if (authority !== 'signed') {
           reject('wrong-authority');
         } else if (!admins.has(entry.key)) {
-          reject('not-approved');
+          reject('not-admin');
         } else if (admins.size === 1) {
           reject('last-admin');
         } else {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ulid } from 'ulidx';
+import { decodeTime, ulid } from 'ulidx';
 import { generateMachineKeys, type MachineKeys } from '../../../src/team-secrets/keys.js';
 import { nextAccessEntryId, replayAccessLog, verifiedKeys } from '../../../src/team-secrets/log.js';
 import type { AccessAction, AccessEntryFile, KeyRequestFile } from '../../../src/team-secrets/schema.js';
@@ -128,6 +128,87 @@ describe('nextAccessEntryId', () => {
     expect(next > later).toBe(true);
     expect(nextAccessEntryId([], clock) > ulid(clock - 1000)).toBe(true);
   });
+
+  it('never throws when an existing id is out of ULID range', () => {
+    const outOfRange = 'Z'.repeat(26);
+    expect(() => nextAccessEntryId([outOfRange], clock)).not.toThrow();
+    const next = nextAccessEntryId([outOfRange], clock);
+    expect(next).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(decodeTime(next)).toBe(clock);
+  });
+});
+
+describe('replayAccessLog: signer and target validation', () => {
+  it('rejects an entry signed by a key that is not registered at all (unknown-signer)', () => {
+    const dave = generateMachineKeys();
+    const genesis = entry('genesis', alice, alice, { authority: 'signed' });
+    const byDave = entry('approve', bob, dave);
+    const state = replayAccessLog(keys, [genesis, byDave]);
+    expect(state.problems).toEqual([{ id: byDave.id, problem: 'unknown-signer' }]);
+  });
+
+  it('rejects a non-genesis entry that sorts before any genesis entry (no-genesis)', () => {
+    // Created first, so it gets a smaller ULID than the genesis created after it, whatever order
+    // the array lists them in.
+    const tooEarly = entry('approve', bob, alice);
+    const genesis = entry('genesis', alice, alice, { authority: 'signed' });
+    const state = replayAccessLog(keys, [genesis, tooEarly]);
+    expect(state.problems).toEqual([{ id: tooEarly.id, problem: 'no-genesis' }]);
+    expect(state.on).toBe(true);
+  });
+
+  it('rejects an approval naming a key with no request on file (unknown-key)', () => {
+    const dave = generateMachineKeys();
+    const genesis = entry('genesis', alice, alice, { authority: 'signed' });
+    const approveDave = entry('approve', dave, alice);
+    const state = replayAccessLog(keys, [genesis, approveDave]);
+    expect(state.problems).toEqual([{ id: approveDave.id, problem: 'unknown-key' }]);
+  });
+
+  it('rejects a genesis whose key is not its own signer (not-allowed)', () => {
+    const badGenesis = entry('genesis', bob, alice, { authority: 'signed' });
+    const state = replayAccessLog(keys, [badGenesis]);
+    expect(state.problems).toEqual([{ id: badGenesis.id, problem: 'not-allowed' }]);
+    expect(state.on).toBe(false);
+  });
+
+  it('rejects a self-signed genesis with no authority (not-allowed)', () => {
+    const bareGenesis = entry('genesis', alice, alice);
+    const state = replayAccessLog(keys, [bareGenesis]);
+    expect(state.problems).toEqual([{ id: bareGenesis.id, problem: 'not-allowed' }]);
+    expect(state.on).toBe(false);
+  });
+
+  it('rejects an entry signed by an admin that was since removed, while another admin stays fine', () => {
+    const genesis = entry('genesis', alice, alice, { authority: 'signed' });
+    const approveBob = entry('approve', bob, alice);
+    const grantBob = entry('grant-admin', bob, alice);
+    const removeAlice = entry('remove', alice, bob);
+    const byRemovedAlice = entry('approve', carol, alice);
+    const state = replayAccessLog(keys, [genesis, approveBob, grantBob, removeAlice, byRemovedAlice]);
+    expect([...state.admins]).toEqual([bob.keyId]);
+    expect(state.removed).toEqual([{ keyId: alice.keyId, at: removeAlice.at, by: bob.keyId, entryId: removeAlice.id }]);
+    expect(state.problems).toEqual([{ id: byRemovedAlice.id, problem: 'not-allowed' }]);
+  });
+});
+
+describe('replayAccessLog: admin problem codes', () => {
+  it('reports not-admin for revoking a key that never was one, and changes nothing', () => {
+    const genesis = entry('genesis', alice, alice, { authority: 'signed' });
+    const approveBob = entry('approve', bob, alice);
+    const revokeBob = entry('revoke-admin', bob, alice);
+    const state = replayAccessLog(keys, [genesis, approveBob, revokeBob]);
+    expect(state.problems).toEqual([{ id: revokeBob.id, problem: 'not-admin' }]);
+    expect([...state.admins]).toEqual([alice.keyId]);
+  });
+
+  it('reports already-admin for granting a key that already is one, and changes nothing', () => {
+    const genesis = entry('genesis', alice, alice, { authority: 'signed' });
+    const grantAlice = entry('grant-admin', alice, alice);
+    const state = replayAccessLog(keys, [genesis, grantAlice]);
+    expect(state.problems).toEqual([{ id: grantAlice.id, problem: 'already-admin' }]);
+    expect([...state.admins]).toEqual([alice.keyId]);
+  });
 });
 
 describe('replayAccessLog (server authority)', () => {
@@ -140,5 +221,23 @@ describe('replayAccessLog (server authority)', () => {
     expect([...state.approved].sort()).toEqual([alice.keyId, bob.keyId, carol.keyId].sort());
     expect(state.admins.size).toBe(0);
     expect(state.problems).toEqual([{ id: grant.id, problem: 'wrong-authority' }]);
+  });
+
+  it('removes a key while another approved key remains', () => {
+    const genesis = entry('genesis', alice, alice, { authority: 'server' });
+    const approveBob = entry('approve', bob, alice);
+    const removeBob = entry('remove', bob, alice);
+    const state = replayAccessLog(keys, [genesis, approveBob, removeBob]);
+    expect([...state.approved]).toEqual([alice.keyId]);
+    expect(state.removed).toEqual([{ keyId: bob.keyId, at: removeBob.at, by: alice.keyId, entryId: removeBob.id }]);
+    expect(state.problems).toEqual([]);
+  });
+
+  it('refuses a remove that would leave no approved key at all', () => {
+    const genesis = entry('genesis', alice, alice, { authority: 'server' });
+    const removeAlice = entry('remove', alice, alice);
+    const state = replayAccessLog(keys, [genesis, removeAlice]);
+    expect([...state.approved]).toEqual([alice.keyId]);
+    expect(state.problems).toEqual([{ id: removeAlice.id, problem: 'last-approved' }]);
   });
 });
