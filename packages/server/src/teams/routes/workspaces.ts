@@ -18,6 +18,7 @@ import {
   type WorkspaceRole,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireUser } from '../../identity/guard.js';
 import { newId } from '../../identity/tokens.js';
@@ -157,6 +158,9 @@ export const workspaceRoutes =
             ...(body.defaultRole !== undefined ? { defaultRole: body.defaultRole } : {}),
           })
           .catch(conflictOr);
+        // The default role moves every member on it; a rename moves no one (§3.2).
+        if (body.defaultRole !== undefined)
+          announce(env.ctx.hooks.accessChanged, { workspaceId: access.workspaceId }, request.log);
         return toWorkspace((await repo.workspaceById(db, access.workspaceId))!, access.role, access.source);
       },
     );
@@ -178,6 +182,8 @@ export const workspaceRoutes =
             request.log.warn({ workspaceId }, 'deleted a workspace whose repository was already gone');
           });
         });
+        // The row is gone and its grants with it: every subscriber's role is now none (§3.1).
+        announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
         return reply.code(204).send();
       },
     );

@@ -13,6 +13,7 @@ import {
   type MemberRoleRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { announce } from '../../context.js';
 import { isForeignKeyViolation } from '../../db/errors.js';
 import { findUserByEmail } from '../../identity/repo.js';
 import { emailLower } from '../../identity/sessions.js';
@@ -68,6 +69,8 @@ export const memberRoutes =
           if (isForeignKeyViolation(error, 'team_members_team_id_fkey')) throw teamNotFound();
           throw error;
         }
+        // The team's default roles now reach them on every team workspace (§3.2).
+        announce(env.ctx.hooks.accessChanged, { teamId, userId: user.id }, request.log);
         return reply.code(201).send(await repo.memberOf(db, teamId, user.id));
       },
     );
@@ -92,6 +95,8 @@ export const memberRoutes =
           if (current === 'admin' && role !== 'admin' && (await repo.countAdmins(tx, teamId)) <= 1) throw lastAdmin();
           await repo.setMemberRole(tx, teamId, userId, role);
         });
+        // Committed: a refused last-admin demotion threw inside the transaction and never gets here.
+        announce(env.ctx.hooks.accessChanged, { teamId, userId }, request.log);
         return (await repo.memberOf(db, teamId, userId))!;
       },
     );
@@ -112,6 +117,7 @@ export const memberRoutes =
           await repo.deleteGrantsInTeam(tx, teamId, userId);
           await repo.deleteMember(tx, teamId, userId);
         });
+        announce(env.ctx.hooks.accessChanged, { teamId, userId }, request.log);
         return reply.code(204).send();
       },
     );
