@@ -205,14 +205,20 @@ export function joinQuery(path: string, query: readonly KeyValueEntry[]): string
  * Builds the URL one send actually uses.
  *
  * Order of work: the request's URL wins over the base when it is absolute; `{name}` parameters are
- * filled from the enabled rows of `pathParams`; the URL's own query string and the `query` table
- * are concatenated, in that order, so a parameter typed into the field and one added in the table
- * both survive; every value is encoded unless `encode` is off.
+ * filled from the enabled rows of `pathParams`; the query is the enabled `query` rows, preceded by
+ * any parameter of the URL's own query string that no enabled row carries; every value is encoded
+ * unless `encode` is off.
+ *
+ * The table owns the query. The editor mirrors it into the URL field, so a saved request usually
+ * holds each parameter twice — once in `url`, once as a row — and sending both would send it twice.
+ * A URL parameter with the same name and value as an enabled row is that row, matched one for one
+ * so deliberate duplicates survive. One no row carries (a hand-written file, a URL with no table)
+ * is still sent, ahead of the rows, as it is written.
  *
  * @param base the API's effective base URL, already expanded
  * @param url the request's URL, already expanded
  * @param pathParams values for the URL's `{name}` placeholders
- * @param query query rows to append
+ * @param query query rows, the request's stored query
  */
 export function composeUrl(
   base: string,
@@ -245,7 +251,7 @@ export function composeUrl(
     return encode ? encodeValue(value, "!$&'()*+,;=:@") : value;
   });
 
-  const rows = [...inlineQuery, ...query].filter((row) => row.enabled);
+  const rows = [...unclaimed(inlineQuery, query), ...query.filter((row) => row.enabled)];
   const search = rows
     .map((row) => {
       const name = encode ? encodeValue(row.name, '') : row.name;
@@ -264,6 +270,35 @@ export function composeUrl(
   }
 
   return { url: composed, problems };
+}
+
+/**
+ * The rows of `inline` that no enabled row of `table` accounts for, in order. Each table row claims
+ * at most one inline row with its name and value, so `?t=a&t=a` against two `t=a` rows is fully
+ * claimed and against one leaves one.
+ */
+function unclaimed(inline: readonly KeyValueEntry[], table: readonly KeyValueEntry[]): KeyValueEntry[] {
+  const available = new Map<string, number>();
+  for (const row of table) {
+    if (row.enabled) {
+      const key = queryKey(row);
+      available.set(key, (available.get(key) ?? 0) + 1);
+    }
+  }
+  return inline.filter((row) => {
+    const key = queryKey(row);
+    const left = available.get(key) ?? 0;
+    if (left === 0) {
+      return true;
+    }
+    available.set(key, left - 1);
+    return false;
+  });
+}
+
+/** One key per name and value; `=` cannot end a name, so the join is unambiguous. */
+function queryKey(row: KeyValueEntry): string {
+  return `${row.name}=${row.value}`;
 }
 
 /** Appends a query string to a URL that may already carry a fragment. */

@@ -100,6 +100,11 @@ All notable changes to this project are documented here. The format follows
   the old one until the tab was closed and opened again. It now follows the project, and still
   commits your own typing on blur or Enter as before.
 
+- **A query typed into a REST URL is sent once.** `/echo?x=1` in the URL field is mirrored into the
+  Params table, and the send added the table's rows to the URL that already carried them, so the
+  server got `/echo?x=1&x=1`. The table is the request's query: a URL parameter with the same name and
+  value as an enabled row is now that row, sent once. Requests already saved with both need no change.
+
 ## [2.2.1] - 2026-09-21
 
 ### Fixed
