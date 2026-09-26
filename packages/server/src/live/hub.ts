@@ -75,6 +75,11 @@ export class LiveHub {
   private readonly byToken = new Map<string, Set<LiveSocket>>();
   /** Subscribes and access re-checks still running, which {@link idle} waits for. */
   private readonly pending = new Set<Promise<void>>();
+  /**
+   * The access re-checks, one after another. Each writes back the role its query saw, so two
+   * overlapping checks could otherwise record the older answer last and misreport the next change.
+   */
+  private rechecks: Promise<void> = Promise.resolve();
   private closed = false;
 
   constructor(private readonly deps: LiveHubDeps) {}
@@ -166,11 +171,17 @@ export class LiveHub {
 
   /**
    * Re-checks the affected subscriptions in the background, so the announcement returns at once
-   * (§3.3). Nothing subscribed means nothing to re-check and no query.
+   * (§3.3). Checks run one at a time, in the order the events came. Nothing subscribed means nothing
+   * to re-check and no query.
    */
   accessChanged(event: AccessChanged): void {
     if (this.byWorkspace.size === 0) return;
-    void this.track(this.recheck(event));
+    this.rechecks = this.rechecks
+      .then(() => this.recheck(event))
+      .catch((error: unknown) => {
+        this.deps.log.warn({ err: error }, 'live access re-check failed');
+      });
+    void this.track(this.rechecks);
   }
 
   /** `session-ended`, then close `4401`, for a token's sockets or a user's, minus `exceptTokenId` (§3.1). */
@@ -253,7 +264,9 @@ export class LiveHub {
   private async recheck(event: AccessChanged): Promise<void> {
     try {
       const pairs = new Map<string, { readonly userId: string; readonly workspaceId: string }>();
-      for (const workspaceId of await this.scope(event)) {
+      const workspaceIds = await this.scope(event);
+      if (this.closed) return;
+      for (const workspaceId of workspaceIds) {
         for (const socket of this.byWorkspace.get(workspaceId) ?? []) {
           const userId = this.bySocket.get(socket)?.session.userId;
           if (userId === undefined || (event.userId !== undefined && event.userId !== userId)) continue;
@@ -267,6 +280,7 @@ export class LiveHub {
       }[] = [];
       // One query at a time: a team-wide change costs one per subscribed member, in the background (§15).
       for (const pair of pairs.values()) {
+        if (this.closed) return; // closeAll() dropped every subscription: nothing is left to ask about
         const found = await this.deps.effectiveRole(pair.userId, pair.workspaceId);
         results.push({ ...pair, role: found.role });
       }
@@ -285,7 +299,9 @@ export class LiveHub {
     const ids = new Set<string>();
     if (event.workspaceId !== undefined) ids.add(event.workspaceId);
     if (event.teamId !== undefined) {
-      for (const id of await this.deps.workspaceIdsOfTeam(event.teamId)) ids.add(id);
+      const teamWorkspaceIds = await this.deps.workspaceIdsOfTeam(event.teamId);
+      if (this.closed) return [];
+      for (const id of teamWorkspaceIds) ids.add(id);
     }
     if (event.workspaceId === undefined && event.teamId === undefined) {
       for (const id of this.byWorkspace.keys()) ids.add(id);
@@ -296,6 +312,8 @@ export class LiveHub {
   /**
    * Step 3 of §3.3, on the indexes as they are now. Each subscription whose recorded role differs gets
    * `access`. Then it is dropped when the new role is `none`, or keeps the new role otherwise.
+   * A socket found dead is discarded only after the loop, together with the drops, so one presence
+   * goes out per workspace and none reaches a socket about to lose access.
    */
   private applyRoles(
     results: readonly {
@@ -305,14 +323,17 @@ export class LiveHub {
     }[],
   ): void {
     const left: Pair[] = [];
+    const dead: LiveSocket[] = [];
     for (const { userId, workspaceId, role } of results) {
       for (const socket of [...(this.byWorkspace.get(workspaceId) ?? [])]) {
         const state = this.bySocket.get(socket);
         const recorded = state?.subs.get(workspaceId);
         if (state === undefined || state.session.userId !== userId || recorded === undefined || recorded === role)
           continue;
-        this.deliver([socket], { type: 'access', workspaceId });
-        if (this.bySocket.get(socket) !== state) continue; // the send found it dead, and it is already gone
+        if (!trySend(socket, JSON.stringify({ type: 'access', workspaceId } satisfies LiveServerMessage))) {
+          dead.push(socket);
+          continue;
+        }
         if (role === 'none') {
           state.subs.delete(workspaceId);
           removeFrom(this.byWorkspace, workspaceId, socket);
@@ -322,7 +343,10 @@ export class LiveHub {
         }
       }
     }
-    this.announcePresence(this.whoLeft(left));
+    this.terminate(dead);
+    const changed = this.detach(dead);
+    for (const workspaceId of this.whoLeft(left)) changed.add(workspaceId);
+    this.announcePresence(changed);
   }
 
   /** Ends a session by age, in steps no longer than a timer can wait (§3.3). */
@@ -330,7 +354,9 @@ export class LiveHub {
     const remaining = state.session.expiresAt - this.deps.now();
     state.deadline =
       remaining > MAX_TIMER_MS
-        ? this.deps.setTimer(() => this.armDeadline(socket, state), MAX_TIMER_MS)
+        ? this.deps.setTimer(() => {
+            if (this.bySocket.get(socket) === state) this.armDeadline(socket, state);
+          }, MAX_TIMER_MS)
         : this.deps.setTimer(
             () => {
               if (this.bySocket.get(socket) === state) this.end([socket]);
@@ -359,14 +385,18 @@ export class LiveHub {
 
   /** Terminates dead or silent sockets and removes them. One dead socket never affects another (§3.3). */
   private discard(sockets: readonly LiveSocket[]): void {
+    this.terminate(sockets);
+    this.announcePresence(this.detach(sockets));
+  }
+
+  private terminate(sockets: readonly LiveSocket[]): void {
     for (const socket of sockets) {
       try {
         socket.terminate();
       } catch {
-        // Already gone: the removal below is what matters.
+        // Already gone: the removal that follows is what matters.
       }
     }
-    this.announcePresence(this.detach(sockets));
   }
 
   /** Sends one message to each target. A socket that is not open, or whose send throws, is discarded afterwards. */

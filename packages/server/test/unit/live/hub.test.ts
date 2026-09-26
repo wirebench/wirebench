@@ -133,13 +133,20 @@ function fixture() {
   const roleCalls: string[] = [];
   const teamCalls: string[] = [];
   let gate: Promise<void> | undefined;
+  let gateOnce = false;
   let failure: Error | undefined;
   const hub = new LiveHub({
     effectiveRole: async (userId: string, workspaceId: string): Promise<Effective> => {
       roleCalls.push(`${userId} ${workspaceId}`);
-      if (gate !== undefined) await gate;
-      if (failure !== undefined) throw failure;
+      // Read when asked, as a database would: a held answer can be stale by the time it arrives.
       const role = roles.get(`${userId} ${workspaceId}`);
+      const wait = gate;
+      if (gateOnce) {
+        gate = undefined;
+        gateOnce = false;
+      }
+      if (wait !== undefined) await wait;
+      if (failure !== undefined) throw failure;
       return role === undefined ? { role: 'none' } : { role, source: 'grant' };
     },
     workspaceIdsOfTeam: (teamId: string): Promise<string[]> => {
@@ -163,15 +170,20 @@ function fixture() {
     team: (teamId: string, ids: readonly string[]): void => {
       teams.set(teamId, ids);
     },
-    /** Holds every role query until `release()`, to see what the hub does meanwhile. */
-    hold: (): { release(): void } => {
+    /** Holds every role query (or, with `once`, only the next) until `release()`, to see what the hub does meanwhile. */
+    hold: (options: { readonly once?: boolean } = {}): { release(): void } => {
       let open: () => void = () => undefined;
-      gate = new Promise<void>((resolve) => {
+      const held = new Promise<void>((resolve) => {
         open = resolve;
       });
+      gate = held;
+      gateOnce = options.once === true;
       return {
         release: () => {
-          gate = undefined;
+          if (gate === held) {
+            gate = undefined;
+            gateOnce = false;
+          }
           open();
         },
       };
@@ -224,6 +236,17 @@ async function joined(
 
 function settle(...sockets: FakeSocket[]): void {
   for (const socket of sockets) socket.take();
+}
+
+/** Lets queued promise callbacks run, without fake or real time. */
+async function flush(): Promise<void> {
+  for (let i = 0; i < 50; i += 1) await Promise.resolve();
+}
+
+/** Lets queued promise callbacks run until `ready()` holds. */
+async function until(ready: () => boolean): Promise<void> {
+  for (let i = 0; i < 50 && !ready(); i += 1) await Promise.resolve();
+  expect(ready()).toBe(true);
 }
 
 describe('LiveHub — admit (§3.3)', () => {
@@ -498,6 +521,87 @@ describe('LiveHub — accessChanged (§3.2, §3.3)', () => {
     f.hub.accessChanged({ userId: ANA });
     expect(f.teamCalls).toEqual([]);
     expect(f.roleCalls).toEqual([]);
+  });
+
+  it('runs re-checks one at a time, so a held answer never overwrites a newer one', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    f.roleCalls.length = 0;
+
+    f.grant(ANA, WS_A, 'editor');
+    const first = f.hold({ once: true });
+    f.hub.accessChanged({ workspaceId: WS_A });
+    await until(() => f.roleCalls.length === 1); // the first check has read `editor` and waits
+    f.grant(ANA, WS_A, 'viewer');
+    f.hub.accessChanged({ workspaceId: WS_A });
+    await flush();
+    expect(f.roleCalls).toHaveLength(1); // the second waits for the first
+    first.release();
+    await f.hub.idle();
+    expect(f.roleCalls).toHaveLength(2);
+    expect(ana.take()).toEqual([access(WS_A), access(WS_A)]); // viewer → editor → viewer
+
+    // `viewer` was recorded last, so the next real change to `editor` is still announced.
+    f.grant(ANA, WS_A, 'editor');
+    f.hub.accessChanged({ workspaceId: WS_A });
+    await f.hub.idle();
+    expect(ana.take()).toEqual([access(WS_A)]);
+  });
+
+  it('sends nothing to a socket removed while its re-check ran', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    const ben = await joined(f, BEN, 'tok-ben', WS_A);
+    settle(ana, ben);
+    f.roleCalls.length = 0;
+
+    f.grant(ANA, WS_A, 'none');
+    const gate = f.hold();
+    f.hub.accessChanged({ workspaceId: WS_A });
+    await until(() => f.roleCalls.length === 1);
+    f.hub.remove(ana);
+    expect(ben.take()).toEqual([presence(WS_A, BEN)]);
+    gate.release();
+    await f.hub.idle();
+    expect([...ana.sent, ...ben.sent]).toEqual([]);
+  });
+
+  it('writes nothing back for a subscription dropped while its re-check ran', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    f.roleCalls.length = 0;
+
+    f.grant(ANA, WS_A, 'editor');
+    const gate = f.hold();
+    f.hub.accessChanged({ workspaceId: WS_A });
+    await until(() => f.roleCalls.length === 1);
+    f.hub.unsubscribe(ana, WS_A);
+    gate.release();
+    await f.hub.idle();
+    expect(ana.sent).toEqual([]);
+    f.hub.headMoved({ workspaceId: WS_A, head: HEAD, tokenId: 'tok-ben' });
+    expect(ana.sent).toEqual([]);
+  });
+
+  it('stops a re-check under way when the hub closes', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    f.grant(ANA, WS_B, 'viewer');
+    await f.hub.subscribe(ana, WS_B);
+    settle(ana);
+    f.roleCalls.length = 0;
+
+    f.grant(ANA, WS_A, 'none');
+    f.grant(ANA, WS_B, 'none');
+    const gate = f.hold();
+    f.hub.accessChanged({ userId: ANA });
+    await until(() => f.roleCalls.length === 1);
+    f.hub.closeAll();
+    gate.release();
+    await f.hub.idle();
+    expect(f.roleCalls).toHaveLength(1); // WS_B is never asked about
+    expect(ana.sent).toEqual([]);
+    expect(ana.closed?.code).toBe(LIVE_CLOSE.goingAway);
   });
 });
 
