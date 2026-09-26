@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Definitions behind authentication.** Importing an OpenAPI or AsyncAPI document by URL offers an
+  **Authentication** section: Basic, a bearer token, or an API key in a header or the query string.
+  The secret is kept in the keychain and the project records only a reference, so Update Definition
+  reads the document again later without asking. The credentials go only to the document's own
+  origin, never to a redirect or a `$ref` elsewhere, and a query key never shows in the recorded
+  source, progress or errors. A 401 or 403 says the definition needs authentication, or that the
+  credentials were refused. **Choose another file or URL…** in the REST update offers the stored
+  credentials for a URL on the same origin only; applying from a file clears them. Every OpenAPI and
+  AsyncAPI fetch now uses the proxy and CA bundle from the preferences.
+
 - **Re-send and compare REST entries from History.** A REST entry's **↻** (or **Re-send** on its
   tab) sends its method, URL, headers and body again through the request it came from, with that
   request's current auth, TLS, proxy and settings. The result is a new History entry, and the request
