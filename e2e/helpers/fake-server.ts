@@ -926,7 +926,8 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     upgraded.add(socket);
     socket.on('close', () => upgraded.delete(socket));
     socket.on('error', () => socket.destroy());
-    // A server without live has no socket: a plain 404, which the client reads as "off" (§3.4).
+    // A server without live has no socket: a plain 404. The client never gets here without `live`
+    // in meta; with it, a 404 is a refused upgrade and backs off like any other (§3.4).
     if (path !== LIVE_PATH || !capabilities.includes(LIVE_CAPABILITY)) {
       socket.end('HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n');
       return;

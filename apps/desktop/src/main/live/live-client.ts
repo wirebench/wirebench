@@ -2,10 +2,10 @@
  * One live socket to one Wirebench Server (live-updates spec §3.4, §5.3). It opens when the first
  * workspace subscribes and the server offers `live`, sends the account's token in the first
  * message and nowhere else, subscribes every workspace on `ready`, and turns what the server says
- * into {@link LiveEvent}s. Every failure backs off and tries again, except two: `4401` runs the
- * normal token check and waits for a new sign-in, and an upgrade answered `404` means the server
- * has no live endpoint. HTTP stays the source of truth, so nothing here decides a role or a head;
- * an event only says "look again".
+ * into {@link LiveEvent}s. Every failure backs off and tries again, a refused upgrade of any status
+ * included, except `4401`, which runs the normal token check and waits for a new sign-in. Only
+ * `meta` decides that a server has no live endpoint. HTTP stays the source of truth, so nothing here
+ * decides a role or a head; an event only says "look again".
  *
  * Electron-free, like everything `ServerBackend` imports (server-sync O4): it imports nothing but
  * the engine, and the socket, the token, the meta call and every timer come in through
@@ -72,21 +72,20 @@ const CLOSE_GRACE_MS = 5_000;
 /** `WebSocket.OPEN` and `WebSocket.CLOSED`, spelled out so this module needs no global constructor. */
 const OPEN = 1;
 const CLOSED = 3;
-/** An upgrade answered with this status means the server has no live endpoint: `off`, no retry (§3.4). */
-const NO_LIVE_ENDPOINT = 404;
 /**
  * The server message types this client knows. The engine's union is closed, so a newer server's
- * type would fail it: anything not listed here is ignored before the schema sees it (§3.1, §4).
+ * type would fail it: anything not listed here is ignored before the schema sees it (§3.1, §4). A
+ * `Record` over the union, so a type added to the engine fails to compile here until it is listed.
  */
-const KNOWN_TYPES: ReadonlySet<string> = new Set([
-  'ready',
-  'head',
-  'access',
-  'presence',
-  'refused',
-  'session-ended',
-  'pong',
-] satisfies readonly LiveServerMessage['type'][]);
+const KNOWN: Record<LiveServerMessage['type'], true> = {
+  ready: true,
+  head: true,
+  access: true,
+  presence: true,
+  refused: true,
+  'session-ended': true,
+  pong: true,
+};
 
 /** `min(60 s, 1 s × 2^attempt)`, times a random factor in [0.5, 1] (§3.4). */
 export function backoffMs(attempt: number, random: () => number): number {
@@ -113,7 +112,7 @@ function parseServerMessage(data: unknown): LiveServerMessage | undefined {
   }
   if (typeof parsed !== 'object' || parsed === null) return undefined;
   const type = (parsed as { readonly type?: unknown }).type;
-  if (typeof type !== 'string' || !KNOWN_TYPES.has(type)) return undefined;
+  if (typeof type !== 'string' || !Object.hasOwn(KNOWN, type)) return undefined;
   const result = liveServerMessageSchema.safeParse(parsed);
   return result.success ? result.data : undefined;
 }
@@ -257,7 +256,12 @@ export class LiveClient {
         this.onReady(conn);
         return;
       case 'pong':
-        if (conn.ready) this.armHeartbeat(conn);
+        if (conn.ready) {
+          // The connection stayed up a heartbeat: only now does the back-off start over, so a server
+          // that says `ready` and then drops the socket still backs off further each time (§3.4).
+          this.attempt = 0;
+          this.armHeartbeat(conn);
+        }
         return;
       case 'session-ended':
         // The `4401` close that follows runs the token check.
@@ -288,7 +292,6 @@ export class LiveClient {
     if (conn.ready) return;
     conn.ready = true;
     conn.timer?.cancel();
-    this.attempt = 0;
     for (const workspaceId of this.workspaces.keys()) this.send(conn, { type: 'subscribe', workspaceId });
     // Before the state change: a listener that unsubscribes the last workspace stops this socket,
     // and must find the heartbeat already armed so it gets cancelled.
@@ -312,11 +315,9 @@ export class LiveClient {
     conn.timer?.cancel();
     this.presence.clear();
     void conn.opened.dispose().catch(() => undefined);
+    // A refused upgrade, `404` included, backs off like a dropped socket: `meta` listed `live`, so a
+    // `404` is most likely a proxy that strips `Upgrade`, and polling covers the gap (§3.4).
     const refusedStatus = conn.opened.refusedStatus();
-    if (refusedStatus === NO_LIVE_ENDPOINT) {
-      this.halt('the upgrade answered 404');
-      return;
-    }
     if (refusedStatus !== undefined) this.log(`the upgrade answered ${String(refusedStatus)}`);
     else this.log(code === LIVE_CLOSE.tooBig ? 'closed 1009: a message was too big' : `closed ${String(code)}`);
     if (code === LIVE_CLOSE.unauthenticated) {

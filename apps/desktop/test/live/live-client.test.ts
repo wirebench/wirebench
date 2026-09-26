@@ -330,7 +330,7 @@ describe('LiveClient (live-updates §3.4)', () => {
     expect(sockets).toHaveLength(1);
   });
 
-  it('backs off 1 s, 2 s and 4 s while it cannot get in, and starts again at 1 s after ready', async () => {
+  it('backs off 1 s, 2 s and 4 s while it cannot get in, and starts again at 1 s after a pong', async () => {
     const { client, timers } = makeClient();
     const a = recorder();
     client.subscribe(WS_A, a.listener);
@@ -345,6 +345,11 @@ describe('LiveClient (live-updates §3.4)', () => {
     timers.fire(await timers.armed(4000));
     peer = await accept();
     await a.inbox.take(isState('connected'));
+    // The connection has to stay up a heartbeat before the back-off starts over.
+    timers.fire(await timers.armed(30_000));
+    await next('ping');
+    reply(peer, { type: 'pong' });
+    await timers.armed(30_000);
     peer.close(1001);
     await a.inbox.take(isState('connecting'));
     await timers.armed(1000);
@@ -354,6 +359,21 @@ describe('LiveClient (live-updates §3.4)', () => {
       { kind: 'state', state: 'connected' },
       { kind: 'state', state: 'connecting' },
     ]);
+  });
+
+  it('keeps growing the back-off when a server says ready and then drops the socket at once', async () => {
+    const { client, timers } = makeClient();
+    const a = recorder();
+    client.subscribe(WS_A, a.listener);
+    let peer = await accept();
+    await a.inbox.take(isState('connected'));
+    peer.close(1011);
+    timers.fire(await timers.armed(1000));
+    peer = await accept();
+    await a.inbox.take(isState('connected'));
+    peer.close(1011);
+    await timers.armed(2000);
+    expect(timers.live()).toEqual([2000]);
   });
 
   it('waits sixty seconds after 4429', async () => {
@@ -451,19 +471,19 @@ describe('LiveClient (live-updates §3.4)', () => {
     expect(sockets).toHaveLength(1);
   });
 
-  it('reports off and stops when the upgrade answers 404', async () => {
+  it('treats an upgrade answered 404 like any refused upgrade: connecting and backing off', async () => {
+    // meta already listed live, so a 404 here is most likely a proxy that strips Upgrade (§3.4).
     const missing = await startTestWsServer({ status: 404 });
     try {
-      const { client, timers } = makeClient({ url: `http://127.0.0.1:${missing.port}` });
+      const { client, timers, log } = makeClient({ url: `http://127.0.0.1:${missing.port}` });
       const a = recorder();
       client.subscribe(WS_A, a.listener);
-      await a.inbox.take(isState('off'));
-      expect(a.events).toEqual([
-        { kind: 'state', state: 'connecting' },
-        { kind: 'state', state: 'off' },
-      ]);
-      expect(missing.handshakes).toHaveLength(1);
-      expect(timers.live()).toEqual([]);
+      timers.fire(await timers.armed(1000));
+      await timers.armed(2000);
+      expect(missing.handshakes).toHaveLength(2);
+      expect(a.events).toEqual([{ kind: 'state', state: 'connecting' }]);
+      expect(client.state).toBe('connecting');
+      expect(log.mock.calls.some(([message]) => message.includes('the upgrade answered 404'))).toBe(true);
     } finally {
       await missing.close();
     }

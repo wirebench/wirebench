@@ -934,6 +934,17 @@ describe('ServerBackend.subscribeRemote (live-updates §3.4, §5.3, R1)', () => 
     ]);
   });
 
+  it('an ended session straight from connected reads off before ended, so the dot never stays on Live', async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    const { events } = listen(f.backend);
+
+    l.send(socket('connected'));
+    l.send(socket('ended'));
+
+    expect(events).toEqual([{ kind: 'live', state: 'connected' }, { kind: 'live', state: 'off' }, { kind: 'ended' }]);
+  });
+
   it('refused for too many subscriptions reads off until the socket reconnects, so the workspace polls (§3.5)', async () => {
     const l = fakeLive();
     const f = await joined(seeded(), { live: l.live });

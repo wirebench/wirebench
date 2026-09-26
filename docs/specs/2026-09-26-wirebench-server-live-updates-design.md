@@ -176,7 +176,7 @@ means in code.
 | `headMoved` | `sync/routes/commits.ts:48-52`: the `withLock` whose `update-ref` compare-and-swap moved main (`sync/commit-store.ts:514-523`); before the `201` | `{ workspaceId, head, tokenId: caller.tokenId }` |
 | `accessChanged` | `teams/routes/access.ts:66-69` (set grant) and `:79` (delete grant) | `{ workspaceId }` |
 | | `teams/routes/workspaces.ts:154-159`, only when `body.defaultRole` was given | `{ workspaceId }` |
-| | `teams/routes/workspaces.ts:173-180`, workspace delete | `{ workspaceId }` |
+| | `teams/routes/workspaces.ts:173-180`, workspace delete: inside the lock, right after the row delete resolves and before the repository move, so a move that fails still announces | `{ workspaceId }` |
 | | `teams/routes/members.ts:62` (add), `:88-94` (role), `:106-114` (remove) | `{ teamId, userId }` |
 | | `identity/routes/users.ts:62-70`, when `body.serverAdmin` was given (R4) | `{ userId }` |
 | `sessionEnded` | `identity/routes/auth-local.ts:46-47`, sign-out | `{ tokenId: caller.tokenId }` |
@@ -220,7 +220,8 @@ no socket yet; team create, rename and delete (a team with workspaces cannot be 
 - **Send.** `socket.send` inside `try`. A socket that is not open, or whose send throws, is terminated and
   removed from every index, and presence updates. One dead socket never affects another.
 - **Heartbeat.** Every 30 s the hub sends a protocol ping to each socket, and terminates any socket that
-  did not answer the previous one. A client `ping` gets `pong`.
+  did not answer the previous one. A client `ping` gets `pong`. The module re-arms the next beat before
+  running this one and logs a beat that throws, so one failure never stops the heartbeat.
 - **Limits.** Client messages are at most 4 KiB (`maxPayload: 4096`, closing `1009`); server messages are
   not capped, since a presence list grows with the team. A session has at most 200 subscriptions across
   its sockets, and a user 32 authenticated sockets. The 10 s timer bounds unauthenticated ones.
@@ -236,14 +237,19 @@ no socket yet; team create, rename and delete (a team with workspaces cannot be 
     `account-service.ts:113-118`), and on quit (`before-quit`, `index.ts:604`).
   - An `onChange` showing a new `tokenRef` reconnects with the new token.
 - **Capability.** Before connecting, it calls `ServerClient.meta(url)` (`server-client.ts:131-144`).
-  Without `live` in `capabilities`, or when the upgrade answers `404`, it reports `off`, makes no attempt,
-  and polling is exactly as today.
+  Without `live` in `capabilities` it reports `off`, makes no attempt, and polling is exactly as today.
+  Only `meta` decides this. An upgrade refused with any status, `404` included, is a failed attempt:
+  the client stays `connecting` and backs off. With `live` listed, a `404` most likely comes from a
+  reverse proxy that strips `Upgrade`, so the dot stays on *Reconnecting…* and sync polls at the
+  user's interval.
 - **Connect.**
   1. The URL is `/api/v1/live` on the stored origin, with `https:`→`wss:` and `http:`→`ws:`. An `http:`
      origin exists only where the operator allowed it (`config.ts:284-285`).
   2. The client sends `auth`. On `ready` it subscribes every workspace and reports `connected`.
   3. It sends a `ping` every 30 s. No `ready`, or no `pong`, within 10 s closes and reconnects.
-- **Back-off.** `min(60 s, 1 s × 2^n)`, times a random factor in [0.5, 1]. `n` resets on `ready`, and
+- **Back-off.** `min(60 s, 1 s × 2^n)`, times a random factor in [0.5, 1]. `n` resets on the first `pong`,
+  that is once the connection has stayed up a heartbeat, so a server that answers `ready` and then
+  drops the socket still backs off further each time; and
   `4429` waits 60 s.
 - **`4401`.** The client runs the normal token check, `AccountService.refresh(url)`
   (`account-service.ts:299-321`), which marks the account signed out when the server confirms
@@ -259,7 +265,7 @@ no socket yet; team create, rename and delete (a team with workspaces cannot be 
   | --- | --- |
   | `changed` | `fetch()` (`sync-service.ts:255-261`): *behind* updates, as a timer fetch does. Nothing merges; pull, merge and conflicts follow the existing rules. |
   | `access` | `fetch()` (R2). A promotion pushes waiting commits. `404` → `sync-access-removed` and a disabled account → `sync-account-disabled`, both stop-polling codes (`server-backend.ts:80-84`). |
-  | `ended` | `fetch()`. The account is now signed out, so the backend throws `sync-signed-out` without a network call: the existing stop-polling path. |
+  | `ended` | `ServerBackend` sends `live: 'off'` just before it (unless `off` already shows), so the dot never stays on *Live*. Then `fetch()`. The account is now signed out, so the backend throws `sync-signed-out` without a network call: the existing stop-polling path. |
   | `presence` | stored and emitted |
   | `live` | stored and emitted, and the fetch timer re-armed. `connected` also runs one catch-up `fetch()`. |
 
@@ -493,7 +499,8 @@ return reply.code(201).send(result);
     `repos.drain()` resolves, and a push in flight completes.
 - **Desktop unit:**
   - `LiveClient` against `startTestWsServer`: no `live` means no connection; subscribe after `ready`;
-    back-off and jitter bounds (fake timers, seeded `random`); reset on `ready`; `4429` waits 60 s; a
+    back-off and jitter bounds (fake timers, seeded `random`); reset on the first `pong`, not on `ready`;
+    a refused upgrade, `404` included, backs off; `4429` waits 60 s; a
     `pong` timeout reconnects; `4401` calls `refresh` and waits for a new token; self removed from
     `presence`; unknown types ignored; `1000` on the last unsubscribe.
   - `LiveClients`: one client per URL, closed on sign-out.

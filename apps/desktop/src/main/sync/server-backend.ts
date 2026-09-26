@@ -493,7 +493,8 @@ export class ServerBackend implements SyncBackend {
    * - `access` and `refused` both become `access`: the fetch that follows asks the server, which knows
    *   the role.
    * - `presence` passes through; the live client has already removed this account's own user.
-   * - The socket's state becomes `live`, except `ended`, which becomes `ended`.
+   * - The socket's state becomes `live`, except `ended`, which becomes `live: 'off'` (unless off
+   *   already shows) and then `ended`.
    *
    * A `live-too-many-subscriptions` refusal leaves this workspace without events while the socket is
    * up. It therefore reads `off` until the socket reconnects, so `SyncService` keeps the user's own
@@ -506,6 +507,8 @@ export class ServerBackend implements SyncBackend {
     }
     let active = true;
     let refusedForLimit = false;
+    /** The last `live` state emitted, so `ended` adds an `off` only when one is not already showing. */
+    let lastLive: 'connected' | 'connecting' | 'off' | undefined;
     // One head check at a time, so each `changed` leaves in the order its head arrived.
     let heads: Promise<void> = Promise.resolve();
     // A throwing listener must not reach the live client's dispatch, nor leave the head chain
@@ -521,11 +524,16 @@ export class ServerBackend implements SyncBackend {
     const off = live.subscribe(this.deps.url, this.deps.workspaceId, (event) => {
       if (event.kind === 'state') {
         if (event.state === 'ended') {
+          // The socket is gone: say so first, so nothing that only listens for `live` keeps showing
+          // `connected` (the client can go straight from `connected` to `ended` on `4401`).
+          if (lastLive !== 'off') emit({ kind: 'live', state: 'off' });
+          lastLive = 'off';
           emit({ kind: 'ended' });
           return;
         }
         if (event.state !== 'connected') refusedForLimit = false;
-        emit({ kind: 'live', state: refusedForLimit ? 'off' : event.state });
+        lastLive = refusedForLimit ? 'off' : event.state;
+        emit({ kind: 'live', state: lastLive });
         return;
       }
       const message = event.message;
@@ -544,6 +552,7 @@ export class ServerBackend implements SyncBackend {
           emit({ kind: 'access' });
           if (message.code === 'live-too-many-subscriptions') {
             refusedForLimit = true;
+            lastLive = 'off';
             emit({ kind: 'live', state: 'off' });
           }
           return;
