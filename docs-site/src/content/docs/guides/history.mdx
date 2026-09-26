@@ -29,8 +29,8 @@ protocol badge, its name and operation, the endpoint's host, its status and its 
 
 Click the **↻** button on a row (or **Re-send** on an open entry's tab) to send it again. This
 resends the original request as recorded — it doesn't reopen the request for editing first. The
-result appears as a new History entry. SOAP and gRPC entries can be re-sent; a REST or WebSocket
-call is sent again from its request.
+result appears as a new History entry. SOAP, gRPC and REST entries can be re-sent; a WebSocket
+session, or a REST request whose response was an event stream, is sent again from its request.
 
 ### Re-send a gRPC call
 
@@ -47,6 +47,37 @@ from the entry, so the same messages are sent even if the request's message text
 - If the request the call came from has been deleted, the entry can't be re-sent: History keeps
   neither the TLS identity nor the `.proto` set the call needs.
 
+### Re-send a REST request
+
+A REST entry goes out through the request it came from. The entry supplies what went on the wire:
+the method, the URL with its query, the headers you typed and the body. The request supplies
+everything else as it is now: auth, TLS, proxy and send settings under the active environment.
+The request itself isn't changed.
+
+- **Auth is applied once.** History never records auth headers, so the request's current auth adds
+  them. When the request's API key travels in the query, the recorded key parameter is dropped and
+  the current key is added in its place.
+- **Redacted values are filled from the request.** History stores secrets as `<redacted>`. A
+  redacted header or query value is replaced by the request's own value for that header or
+  parameter, as typed (a `${secret:token}` reference, say), so it resolves the usual way. If the
+  request no longer has that header or parameter, or the redacted value is in the URL's path or in
+  the body, the entry can't be re-sent.
+- **A body History cut short can't be re-sent.** History keeps the first 256 KB of a body, and
+  sending that would send a different body.
+- **It goes only to the request's current host.** The recorded URL is used while its host is still
+  the one the request resolves to now. If the entry ended on another host — a redirect, or a send
+  under another environment — the entry can't be re-sent: sending the request's credentials to the
+  recorded host, or its own URL in place of the recorded one, would not be the request you see.
+  Re-send it from the request instead.
+- **Recorded text is sent as it was.** A `${…}` in the recorded URL, headers or body is not a
+  property reference any more — it's what went on the wire — so it's sent literally, never expanded.
+- **A failed send keeps the request's URL.** An entry with no response never recorded the URL it
+  sent, so the request's own URL is used.
+- **Event streams re-send from the editor.** An entry whose response was an event stream has no
+  **↻**; open the request and send it there.
+- If the request the entry came from has been deleted, the entry can't be re-sent: its auth, TLS
+  and settings have nowhere to come from.
+
 ## Diff two runs
 
 <Steps>
@@ -55,10 +86,16 @@ from the entry, so the same messages are sent even if the request's message text
    side by side (or stacked, using the **Side by side** toggle), pretty-printed as JSON or XML
    depending on what they are.
 2. Toggle **Ignore whitespace** to hide formatting-only differences.
-3. To compare a past entry against its request's current state, use the row's **Compare with current**
-   button instead — it diffs the entry against what the live request would send now.
+3. To compare a past entry with its request's latest response in this session, use the row's
+   **Compare with current** button instead.
 
 </Steps>
+
+Two REST entries open with two tabs, **Response** and **Request**. The Response tab starts with the
+status line and the Request tab with the method and URL; then come the headers, sorted by name, and
+the body. Redacted values show as they were recorded. When you compare a REST entry with current,
+the Request tab shows the current side's headers as they were sent, including the auth and default
+headers an entry never records.
 
 ![A Compare tab diffing two runs of Request 1 side by side, next to the History list](/wirebench/images/history/diff-view.png)
 
@@ -78,13 +115,12 @@ per-row delete — only a full clear.
 ## Limits
 
 - A REST request whose response was an event stream (see [REST](/wirebench/guides/rest-client/#event-streams))
-  is recorded with its events, capped at both ends; re-sending from History is offered for SOAP and
-  gRPC entries only.
+  is recorded with its events, capped at both ends; it can't be re-sent from History.
 - History is per-workspace and stored on disk, so it survives closing and reopening Wirebench.
-- Only the recorded request and response bodies are diffed or shown — History doesn't replay
-  timings, connection details or raw headers; that detail lives in the HTTP Log for the session
-  it happened in.
-- **Compare** and **Compare with current** always diff the response body (falling back to the
+- History doesn't keep timings or connection details; that detail lives in the HTTP Log for the
+  session it happened in.
+- **Compare** and **Compare with current** diff the response and the request, headers included,
+  when both sides are REST. Any other pair diffs the response body only (falling back to the
   request body when there's no response, such as after a failed send).
 
 ## Related

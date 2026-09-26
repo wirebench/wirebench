@@ -90,6 +90,11 @@ export interface EditorTab {
     readonly rightLabel: string;
     readonly leftXml: string;
     readonly rightXml: string;
+    /** Set when both sides are REST: each side's normalised text, per tab of the diff. */
+    readonly rest?: {
+      readonly response: { readonly left: string; readonly right: string };
+      readonly request: { readonly left: string; readonly right: string };
+    };
   };
   /**
    * Set when `kind` is `'env-compare'`: one multi-environment send's results and its baseline.

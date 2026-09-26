@@ -8,7 +8,7 @@ import { useGridNavigation } from '../../lib/grid-navigation.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { useHistoryStore } from '../../state/history.js';
-import { canResendHistoryEntry, resendHistoryEntry } from './history-actions.js';
+import { canResendHistoryEntry, entrySide, openCompareTab, resendHistoryEntry } from './history-actions.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import type { HistoryEntryWire, WorkspaceProjectWire } from '../../../shared/wire-types.js';
 
@@ -124,7 +124,8 @@ function Row({
         </button>
       </div>
       <div role="gridcell" aria-colindex={2} className="flex shrink-0 items-center gap-1">
-        {/* SOAP and gRPC sends replay from History; REST and WebSocket resend from their request. */}
+        {/* SOAP, gRPC and REST sends replay from History; a WebSocket session and a REST event
+            stream resend from their request. */}
         {canResendHistoryEntry(entry) && (
           <Button variant="ghost" onClick={onResend} title="Re-send" aria-label={`Re-send ${entry.requestName}`}>
             ↻
@@ -168,7 +169,6 @@ export function HistoryView() {
   const projectNameOf = (projectId: string): string | undefined =>
     workspaceProjects.find((project) => project.id === projectId)?.name;
   const openTab = useEditorsStore((state) => state.open);
-  const openOrReplaceTab = useEditorsStore((state) => state.openOrReplace);
   const [compareFirst, setCompareFirst] = useState<string | undefined>(undefined);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -191,17 +191,7 @@ export function HistoryView() {
   };
 
   const openDiff = (a: HistoryEntryWire, b: HistoryEntryWire) => {
-    openOrReplaceTab({
-      id: 'diff',
-      kind: 'diff',
-      title: 'Compare',
-      diff: {
-        leftLabel: `${a.requestName} (${formatClockTime(a.at)})`,
-        rightLabel: `${b.requestName} (${formatClockTime(b.at)})`,
-        leftXml: a.response?.envelopeXml ?? a.request.envelopeXml,
-        rightXml: b.response?.envelopeXml ?? b.request.envelopeXml,
-      },
-    });
+    openCompareTab(entrySide(a), entrySide(b));
   };
 
   const compare = (entry: HistoryEntryWire) => {
@@ -220,23 +210,24 @@ export function HistoryView() {
     }
   };
 
+  // Compares with the request's latest response: a REST request's from its own exchange map, since
+  // the SOAP map never holds one.
   const compareWithCurrent = (entry: HistoryEntryWire) => {
-    const current =
-      entry.requestId !== undefined ? useExchangesStore.getState().byRequest[entry.requestId]?.exchange : undefined;
-    if (current === undefined) {
+    if (entry.requestId === undefined) {
       return;
     }
-    openOrReplaceTab({
-      id: 'diff',
-      kind: 'diff',
-      title: 'Compare',
-      diff: {
-        leftLabel: `${entry.requestName} (${formatClockTime(entry.at)})`,
-        rightLabel: 'Current',
-        leftXml: entry.response?.envelopeXml ?? entry.request.envelopeXml,
-        rightXml: current.response?.envelopeXml ?? '',
-      },
-    });
+    const exchanges = useExchangesStore.getState();
+    if (entry.kind === 'rest') {
+      const current = exchanges.restByRequest[entry.requestId]?.exchange;
+      if (current !== undefined) {
+        openCompareTab(entrySide(entry), { label: 'Current', restExchange: current });
+      }
+      return;
+    }
+    const current = exchanges.byRequest[entry.requestId]?.exchange;
+    if (current !== undefined) {
+      openCompareTab(entrySide(entry), { label: 'Current', body: current.response?.envelopeXml ?? '' });
+    }
   };
 
   return (

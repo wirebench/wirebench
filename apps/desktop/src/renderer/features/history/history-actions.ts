@@ -7,11 +7,12 @@
  */
 
 import { showToast } from '../../components/toast.js';
-import { useEditorsStore } from '../../state/editors.js';
+import { useEditorsStore, type EditorTab } from '../../state/editors.js';
 import { useHistoryStore } from '../../state/history.js';
 import { ipc } from '../../state/ipc-client.js';
 import { formatClockTime } from '../../lib/format-size.js';
-import type { HistoryEntryWire } from '../../../shared/wire-types.js';
+import type { HistoryEntryWire, RestExchangeSummary } from '../../../shared/wire-types.js';
+import { restEntryTexts, restExchangeTexts, type RestDiffTexts } from './rest-diff-text.js';
 
 /** The response body a history entry is best compared by, falling back to what was sent. */
 function comparableXml(entry: HistoryEntryWire): string {
@@ -19,12 +20,13 @@ function comparableXml(entry: HistoryEntryWire): string {
 }
 
 /**
- * Whether History can re-send an entry: SOAP and gRPC. REST and WebSocket resend from their
- * request instead (an entry with no kind predates the other protocols and is SOAP).
+ * Whether History can re-send an entry: SOAP, gRPC and REST, except a REST event stream, which has
+ * no live pane to run in (the HTTP Log draws the same line). A WebSocket session resends from its
+ * request. An entry with no kind predates the other protocols and is SOAP.
  */
-export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind'>): boolean {
+export function canResendHistoryEntry(entry: Pick<HistoryEntryWire, 'kind' | 'sse'>): boolean {
   const kind = entry.kind ?? 'soap';
-  return kind === 'soap' || kind === 'grpc';
+  return kind === 'soap' || kind === 'grpc' || (kind === 'rest' && entry.sse === undefined);
 }
 
 /** Re-sends one history entry through its protocol's channel, toasting the code on failure. */
@@ -32,7 +34,9 @@ export async function resendHistoryEntry(entry: Pick<HistoryEntryWire, 'id' | 'k
   const result =
     entry.kind === 'grpc'
       ? await ipc().history.resendGrpc({ id: entry.id })
-      : await ipc().history.resend({ id: entry.id });
+      : entry.kind === 'rest'
+        ? await ipc().history.resendRest({ id: entry.id })
+        : await ipc().history.resend({ id: entry.id });
   if (!result.ok) {
     showToast(result.error.code);
   }
@@ -66,23 +70,70 @@ export async function resendLastHistoryEntry(): Promise<void> {
   }
 }
 
+/** One side of a Compare tab: a History entry, a REST request's latest exchange, or a bare body. */
+export type CompareSide =
+  | { readonly label: string; readonly entry: HistoryEntryWire }
+  | { readonly label: string; readonly restExchange: RestExchangeSummary }
+  | { readonly label: string; readonly body: string };
+
+/** The side an entry makes, labelled with its request's name and the time it was sent. */
+export function entrySide(entry: HistoryEntryWire): CompareSide {
+  return { label: `${entry.requestName} (${formatClockTime(entry.at)})`, entry };
+}
+
+/** The one body a side is diffed by when the pair is not REST on both sides. */
+function sideBody(side: CompareSide): string {
+  if ('entry' in side) {
+    return comparableXml(side.entry);
+  }
+  return 'restExchange' in side ? side.restExchange.text : side.body;
+}
+
+/** A side's REST texts, or `undefined` when the side is not REST. */
+function sideRestTexts(side: CompareSide): RestDiffTexts | undefined {
+  if ('entry' in side) {
+    return side.entry.kind === 'rest' ? restEntryTexts(side.entry) : undefined;
+  }
+  return 'restExchange' in side ? restExchangeTexts(side.restExchange) : undefined;
+}
+
+/**
+ * A Compare tab's data for two sides. Every entry point builds its tab here, so they cannot drift:
+ * two REST sides also get their Response and Request texts, and any other pair diffs one body.
+ */
+export function compareDiff(left: CompareSide, right: CompareSide): NonNullable<EditorTab['diff']> {
+  const leftRest = sideRestTexts(left);
+  const rightRest = leftRest === undefined ? undefined : sideRestTexts(right);
+  return {
+    leftLabel: left.label,
+    rightLabel: right.label,
+    leftXml: sideBody(left),
+    rightXml: sideBody(right),
+    ...(leftRest !== undefined && rightRest !== undefined
+      ? {
+          rest: {
+            response: { left: leftRest.response, right: rightRest.response },
+            request: { left: leftRest.request, right: rightRest.request },
+          },
+        }
+      : {}),
+  };
+}
+
+/** Opens (or replaces) the Compare tab over two sides. */
+export function openCompareTab(left: CompareSide, right: CompareSide): void {
+  useEditorsStore
+    .getState()
+    .openOrReplace({ id: 'diff', kind: 'diff', title: 'Compare', diff: compareDiff(left, right) });
+}
+
 /** Opens a diff tab over the two most recent history entries, newest on the right. */
 export function compareLastTwoHistoryEntries(): void {
   const [newer, older] = useHistoryStore.getState().entries;
   if (newer === undefined || older === undefined) {
     return;
   }
-  useEditorsStore.getState().openOrReplace({
-    id: 'diff',
-    kind: 'diff',
-    title: 'Compare',
-    diff: {
-      leftLabel: `${older.requestName} (${formatClockTime(older.at)})`,
-      rightLabel: `${newer.requestName} (${formatClockTime(newer.at)})`,
-      leftXml: comparableXml(older),
-      rightXml: comparableXml(newer),
-    },
-  });
+  openCompareTab(entrySide(older), entrySide(newer));
 }
 
 /** Deletes every history entry. The view's own button confirms first; the command is explicit. */

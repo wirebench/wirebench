@@ -151,6 +151,29 @@ describe('history commands', () => {
     const tab = useEditorsStore.getState().tabs.find((candidate) => candidate.kind === 'diff');
     expect(tab?.diff?.leftXml).toBe('<Old/>');
     expect(tab?.diff?.rightXml).toBe('<New/>');
+    expect(tab?.diff?.rest).toBeUndefined();
+  });
+
+  it('compares the two newest REST entries by their Response and Request texts', async () => {
+    const rest = (id: string, status: number, statusText: string): HistoryEntryWire =>
+      entry({
+        id,
+        kind: 'rest',
+        method: 'GET',
+        soapVersion: 'none',
+        endpoint: `https://api.test/${id}`,
+        request: { envelopeXml: '', headers: [] },
+        response: { envelopeXml: '{}', rawHeaders: [], status, statusText },
+      });
+    useHistoryStore.setState({ entries: [rest('new', 404, 'Not Found'), rest('old', 200, 'OK')], total: 2 });
+
+    expect(await runCommand('history.compare', context)).toBe(true);
+
+    const texts = useEditorsStore.getState().tabs.find((candidate) => candidate.kind === 'diff')?.diff?.rest;
+    expect(texts?.response.left.split('\n')[0]).toBe('200 OK');
+    expect(texts?.response.right.split('\n')[0]).toBe('404 Not Found');
+    expect(texts?.request.left.split('\n')[0]).toBe('GET https://api.test/old');
+    expect(texts?.request.right.split('\n')[0]).toBe('GET https://api.test/new');
   });
 
   it('clears every entry', async () => {

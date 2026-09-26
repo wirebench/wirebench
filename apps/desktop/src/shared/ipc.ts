@@ -141,6 +141,7 @@ import {
   historyListResponseSchema,
   historyResendRequestSchema,
   historyResendGrpcRequestSchema,
+  historyResendRestRequestSchema,
   snapshotReadResponseSchema,
   snapshotRemoveResponseSchema,
   snapshotRequestSchema,
@@ -856,6 +857,7 @@ export const channels = {
     clear: defineChannel('history.clear', z.undefined(), historyClearResponseSchema),
     resend: defineChannel('history.resend', historyResendRequestSchema, exchangeSummarySchema),
     resendGrpc: defineChannel('history.resendGrpc', historyResendGrpcRequestSchema, grpcExchangeSummarySchema),
+    resendRest: defineChannel('history.resendRest', historyResendRestRequestSchema, restExchangeSummarySchema),
   },
   // A request's golden response, kept beside its files as `<slug>.golden.yaml`.
   snapshot: {

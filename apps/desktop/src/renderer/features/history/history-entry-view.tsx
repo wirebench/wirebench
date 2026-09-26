@@ -120,7 +120,8 @@ export function HistoryEntryView({ historyId }: HistoryEntryViewProps) {
               Go to request
             </Button>
           )}
-          {/* SOAP and gRPC sends replay from History; REST and WebSocket resend from their request. */}
+          {/* SOAP, gRPC and REST sends replay from History; a WebSocket session and a REST event
+              stream resend from their request. */}
           {canResendHistoryEntry(entry) && (
             <Button variant="secondary" onClick={onResend}>
               Re-send

@@ -3570,6 +3570,9 @@ export const historyResendRequestSchema = z.object({ id: z.string() });
 /** Request payload for `history.resendGrpc`: calls a past gRPC entry's saved request with its recorded messages. */
 export const historyResendGrpcRequestSchema = z.object({ id: z.string() });
 
+/** Request payload for `history.resendRest`: sends a past REST entry through its saved request. */
+export const historyResendRestRequestSchema = z.object({ id: z.string() });
+
 /** Payload for the `history.appended` event: one new entry, for the History view to prepend. */
 export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });
 export type HistoryAppendedEvent = z.infer<typeof historyAppendedEventSchema>;

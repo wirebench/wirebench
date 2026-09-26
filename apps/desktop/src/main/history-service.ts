@@ -294,6 +294,17 @@ function storedBody(body: string): string {
   return `${kept}\n… truncated, ${String(text.length - MAX_HISTORY_BODY_CHARS)} more characters`;
 }
 
+/** The line {@link storedBody} ends a cut body with. */
+const TRUNCATION_TAIL = /\n… truncated, \d+ more characters$/;
+
+/**
+ * True when `text` is History's truncated copy of a body: longer than the cap, and ending with the
+ * line {@link storedBody} writes. Only the tail is tested, so a 256 KB body costs one short match.
+ */
+export function isTruncatedBody(text: string): boolean {
+  return text.length > MAX_HISTORY_BODY_CHARS && TRUNCATION_TAIL.test(text.slice(-64));
+}
+
 /** An event-stream row as stored: its data or text masked, whatever the summary showed. */
 function storedSseRow(row: SseRow): SseRow {
   if (row.kind === 'event') {

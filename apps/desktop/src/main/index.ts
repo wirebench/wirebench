@@ -57,6 +57,7 @@ import { registerWorkspaceChannels } from './ipc/workspace.js';
 import {
   registerRequestChannels,
   sendGrpcRequest,
+  sendRestRequest,
   whenRestSendsRecorded,
   whenWsSessionsRecorded,
   type RequestChannelDeps,
@@ -452,6 +453,7 @@ void app.whenReady().then(() => {
     oauth2: oauth2Service,
     getSecret: secretsFor(undefined),
     grpc: { send: (request, sender) => sendGrpcRequest(engineService, requestDeps, request, sender) },
+    rest: { send: (request) => sendRestRequest(engineService, requestDeps, request) },
   });
   registerProjectChannels({
     router: workspaceService,
