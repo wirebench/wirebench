@@ -9,15 +9,19 @@
  */
 
 import {
-  createDefaultFetchDocument,
+  createHttpFetchDocument,
   importAsyncApi,
   importOpenApi,
   parseAsyncApi,
   parseOpenApi,
+  resolveAuthConfig,
   WirebenchError,
 } from '@wirebench/engine';
 import type {
+  DefinitionAuth,
+  DocumentFetchOptions,
   FetchDocument,
+  GetSecret,
   ImportedAsyncApi,
   ImportedOpenApi,
   OpenApiSource,
@@ -36,6 +40,8 @@ export interface RunOpenApiImportInput {
   readonly securityScheme?: string;
   readonly includeOptional?: boolean;
   readonly sampleValues?: boolean;
+  /** Credentials for a `url` source's own origin; ignored for a file or pasted text. */
+  readonly auth?: DefinitionAuth;
 }
 
 /** What one AsyncAPI import needs: the same source and token, and which server to dial. */
@@ -44,6 +50,18 @@ export interface RunAsyncApiImportInput {
   readonly token?: string;
   /** The `ws`/`wss` server, by its key in the document; absent picks the first one. */
   readonly server?: string;
+  /** Credentials for a `url` source's own origin; ignored for a file or pasted text. */
+  readonly auth?: DefinitionAuth;
+}
+
+/** What the service reaches the network with. Every part is optional so a test builds only what it needs. */
+export interface OpenApiImportServiceOptions {
+  /** Resolves a definition's keychain references; without it a definition with auth cannot be read. */
+  readonly getSecret?: GetSecret;
+  /** The TLS and proxy for one URL: the preference-level CA bundle and proxy, as `mainHttpOptions` resolves them. */
+  readonly network?: DocumentFetchOptions['network'];
+  /** Builds one call's fetcher. Defaults to the engine's `createHttpFetchDocument`; tests inject their own. */
+  readonly createFetchDocument?: (options: DocumentFetchOptions) => FetchDocument;
 }
 
 /** Hooks one import reports through. */
@@ -58,12 +76,9 @@ export interface RunOpenApiImportHooks {
  * has already finished is a no-op rather than an error — the dialog may well send one on the way out.
  */
 export class OpenApiImportService {
-  private readonly fetchDocument: FetchDocument;
   private readonly inFlight = new Map<string, AbortController>();
 
-  constructor(options?: { readonly fetchDocument?: FetchDocument }) {
-    this.fetchDocument = options?.fetchDocument ?? createDefaultFetchDocument();
-  }
+  constructor(private readonly options: OpenApiImportServiceOptions = {}) {}
 
   /**
    * Fetches, resolves, parses and maps one document.
@@ -71,7 +86,7 @@ export class OpenApiImportService {
    * @throws the engine's `OpenApiError` codes, or an `AbortError` when the import was cancelled
    */
   async run(input: RunOpenApiImportInput, hooks: RunOpenApiImportHooks = {}): Promise<ImportedOpenApi> {
-    return this.track(input.token, hooks, async (fetchDocument, signal, progress) => {
+    return this.track(input.token, input.source, input.auth, hooks, async (fetchDocument, signal, progress) => {
       const imported = await importOpenApi(input.source, {
         fetchDocument,
         signal,
@@ -93,7 +108,7 @@ export class OpenApiImportService {
    * @throws the engine's `AsyncApiError` codes, or an `AbortError` when the import was cancelled
    */
   async runAsyncApi(input: RunAsyncApiImportInput, hooks: RunOpenApiImportHooks = {}): Promise<ImportedAsyncApi> {
-    return this.track(input.token, hooks, async (fetchDocument, signal, progress) => {
+    return this.track(input.token, input.source, input.auth, hooks, async (fetchDocument, signal, progress) => {
       const imported = await importAsyncApi(input.source, {
         fetchDocument,
         signal,
@@ -106,23 +121,49 @@ export class OpenApiImportService {
 
   /**
    * Reads and resolves an AsyncAPI document without mapping it — what an Update Definition compares
-   * against the cached one. Fetched through the same fetcher an import uses.
+   * against the cached one. Fetched through the same fetcher an import uses, with the same credentials.
    */
-  async readAsyncApi(source: OpenApiSource): Promise<ParsedAsyncApi> {
-    return this.track(undefined, {}, (fetchDocument, signal) => parseAsyncApi(source, { fetchDocument, signal }));
+  async readAsyncApi(source: OpenApiSource, auth?: DefinitionAuth): Promise<ParsedAsyncApi> {
+    return this.track(undefined, source, auth, {}, (fetchDocument, signal) =>
+      parseAsyncApi(source, { fetchDocument, signal }),
+    );
   }
 
   /**
    * Reads and resolves an OpenAPI document without mapping it — what a REST Update Definition
-   * compares against the cached one. Fetched through the same fetcher an import uses.
+   * compares against the cached one. Fetched through the same fetcher an import uses, with the same
+   * credentials.
    */
-  async readOpenApi(source: OpenApiSource): Promise<ParsedOpenApi> {
-    return this.track(undefined, {}, (fetchDocument, signal) => parseOpenApi(source, { fetchDocument, signal }));
+  async readOpenApi(source: OpenApiSource, auth?: DefinitionAuth): Promise<ParsedOpenApi> {
+    return this.track(undefined, source, auth, {}, (fetchDocument, signal) =>
+      parseOpenApi(source, { fetchDocument, signal }),
+    );
+  }
+
+  /**
+   * The fetcher for one read of `source`. A `url` source's `auth` is resolved from the keychain first,
+   * so a dangling reference fails as `secret-missing` before anything reaches the network, and is
+   * sent only to that URL's origin. A file or pasted text is read with no credentials at all.
+   *
+   * @throws WirebenchError `secret-missing`
+   */
+  private async fetcherFor(source: OpenApiSource, auth: DefinitionAuth | undefined): Promise<FetchDocument> {
+    const network = this.options.network;
+    const base: DocumentFetchOptions = network !== undefined ? { network } : {};
+    let options = base;
+    if (auth !== undefined && source.kind === 'url') {
+      const getSecret: GetSecret = this.options.getSecret ?? (() => Promise.resolve(undefined));
+      const resolved = await resolveAuthConfig(auth, getSecret);
+      options = resolved === undefined ? base : { ...base, auth: resolved, authOrigin: new URL(source.url).origin };
+    }
+    return (this.options.createFetchDocument ?? createHttpFetchDocument)(options);
   }
 
   /** Runs one import under `token`'s controller, naming every document fetched as progress. */
   private async track<T>(
     token: string | undefined,
+    source: OpenApiSource,
+    auth: DefinitionAuth | undefined,
     hooks: RunOpenApiImportHooks,
     body: (
       fetchDocument: FetchDocument,
@@ -141,17 +182,17 @@ export class OpenApiImportService {
       hooks.onProgress?.({ kind: 'import', phase, message, ...(token !== undefined ? { token } : {}) });
     };
 
-    let fetched = 0;
-    const fetchDocument: FetchDocument = async (location, signal) => {
-      fetched += 1;
-      // Every document the resolver reaches is named, because a reference to a slow host is exactly
-      // the case where the user needs to know what the import is waiting for.
-      progress('fetch', fetched === 1 ? `Fetching ${location}` : `Fetching ${location} (${String(fetched)})`);
-      return this.fetchDocument(location, signal);
-    };
-
     try {
       progress('fetch', 'Starting');
+      const fetcher = await this.fetcherFor(source, auth);
+      let fetched = 0;
+      const fetchDocument: FetchDocument = async (location, signal) => {
+        fetched += 1;
+        // Every document the resolver reaches is named, because a reference to a slow host is exactly
+        // the case where the user needs to know what the import is waiting for.
+        progress('fetch', fetched === 1 ? `Fetching ${location}` : `Fetching ${location} (${String(fetched)})`);
+        return fetcher(location, signal);
+      };
       return await body(fetchDocument, controller.signal, progress);
     } catch (error) {
       // A cancel is named as one over IPC; otherwise the envelope would call it an internal error.

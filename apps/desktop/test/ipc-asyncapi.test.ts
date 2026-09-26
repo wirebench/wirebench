@@ -116,7 +116,7 @@ beforeEach(async () => {
           });
         })
       : real(location, signal);
-  const imports = new OpenApiImportService({ fetchDocument });
+  const imports = new OpenApiImportService({ createFetchDocument: () => fetchDocument });
   const unused = vi.fn();
   const deps: ApiChannelDeps = {
     router: {

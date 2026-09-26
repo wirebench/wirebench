@@ -189,8 +189,19 @@ const liveClients = new LiveClients({
   },
 });
 
-/** The session's in-flight OpenAPI imports: one fetcher, one cancel per token. */
-const openApiImports = new OpenApiImportService();
+/** The session's in-flight OpenAPI and AsyncAPI reads: one cancel per token, one fetcher per read. */
+const openApiImports = new OpenApiImportService({
+  getSecret: secretsFor(undefined),
+  // The preference-level CA bundle and proxy a project-free send uses: an import may target a project
+  // that does not exist yet, and a definition has no client identity of its own.
+  network: (url) =>
+    mainHttpOptions(url, {
+      preferences: () => preferencesService.get(),
+      picks: dialogPicks,
+      getSecret: secretsFor(undefined),
+      resolveSystemProxy: async (target) => await session.defaultSession.resolveProxy(target).catch(() => undefined),
+    }),
+});
 const protoImports = new ProtoImportService({
   // A discovery from the Import dialog trusts what a send would: the configured CA bundle, plus the
   // user's own "trust this certificate anyway" for a development server.
