@@ -172,7 +172,10 @@ lives beside it (§4).
 - **Redirects**, in the engine's own loop (not undici's): `307`/`308` keep method and body; `303` becomes a `GET`
   without body; `301`/`302` on a non-`GET` become a `GET` (browser behaviour) unless the request's _keep body on
   301/302_ setting is on. Every hop is listed in the response pane with its status and location, and a method change
-  is called out in the HTTP log. The `Authorization` header is dropped on a cross-origin hop.
+  is called out in the HTTP log. The `Authorization`, `Proxy-Authorization` and `Cookie` headers are dropped on a
+  cross-origin hop, and so is the configured auth's own header (an API key's `X-Api-Key`, say); a query API key is
+  stripped from a cross-origin `Location` that echoes it. On a hop back to the request's origin the configured auth is
+  sent again.
 - **Response pane**: status line with reason phrase, colour by class, duration, size (body and total), the protocol
   (`HTTP/1.1` or `2`). Tabs:
   - _Body_ with a view switch: **Pretty** (JSON, XML and HTML formatted, Monaco read-only in the matching mode, fold,

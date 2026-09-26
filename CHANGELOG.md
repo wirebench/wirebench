@@ -105,6 +105,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A REST request's API key stays on its own origin across redirects.** A key in a custom header
+  such as `X-Api-Key` was sent on to a server on another origin when a redirect led there, and a key
+  in the query string went with it when the server echoed it into the `Location`. On a hop to another
+  origin the configured key's header is now dropped and its query parameter stripped. On a hop back to
+  the request's own origin the key is sent again, as a definition read does.
+
 - **The CA bundle adds to the default roots, as documented.** A CA bundle set in the preferences
   replaced the default trust roots instead of adding to them, so with a bundle holding only a private
   CA every public HTTPS site failed verification. The bundle's certificates are now trusted in

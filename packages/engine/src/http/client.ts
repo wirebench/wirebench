@@ -5,7 +5,14 @@ import { failedRequestFor, withFailedRequest, type FailedRequest } from './faile
 import { invalidUrlError, toHttpError, tooManyRedirectsError } from './errors.js';
 import { buildRawRequest, buildRawResponse } from './raw-capture.js';
 import { TimingTracker } from './timings.js';
-import type { HttpExchange, HttpRequest, HttpStreamSink, ProxyOptions, TlsOptions } from './types.js';
+import type {
+  HttpExchange,
+  HttpRequest,
+  HttpStreamSink,
+  OriginCredentials,
+  ProxyOptions,
+  TlsOptions,
+} from './types.js';
 
 const DEFAULT_MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -186,6 +193,48 @@ function scopeHeadersToOrigin(headers: Record<string, string>, fromUrl: URL, toU
     scoped[name] = value;
   }
   return scoped;
+}
+
+/**
+ * Applies a request's {@link OriginCredentials} to the next hop of a redirect: removed from a hop to
+ * any origin but the request's own, applied again on a hop back to it.
+ *
+ * A query key is stripped by name and value rather than by name alone, so a parameter the target
+ * uses for its own purposes survives; only the key's exact value is a secret. The URL is only
+ * re-serialised when something changes, so a `Location` otherwise reaches the wire as the server
+ * wrote it.
+ */
+function scopeCredentialsToOrigin(
+  credentials: OriginCredentials,
+  original: { readonly url: URL; readonly headers: Readonly<Record<string, string>> },
+  headers: Record<string, string>,
+  toUrl: URL,
+): { readonly headers: Record<string, string>; readonly url: URL } {
+  const names = new Set((credentials.headers ?? []).map((name) => name.toLowerCase()));
+  const sameOrigin = originOf(toUrl) === originOf(original.url);
+  const scoped: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (!names.has(name.toLowerCase())) scoped[name] = value;
+  }
+  if (sameOrigin) {
+    for (const [name, value] of Object.entries(original.headers)) {
+      if (names.has(name.toLowerCase())) scoped[name] = value;
+    }
+  }
+
+  const url = new URL(toUrl);
+  let changed = false;
+  for (const { name, value } of credentials.query ?? []) {
+    const present = url.searchParams.getAll(name).includes(value);
+    if (sameOrigin && !present) {
+      url.searchParams.append(name, value);
+      changed = true;
+    } else if (!sameOrigin && present) {
+      url.searchParams.delete(name, value);
+      changed = true;
+    }
+  }
+  return { headers: scoped, url: changed ? url : toUrl };
 }
 
 /** Joins undici's raw header shape (string | string[] per name) into our lower-cased map. */
@@ -447,7 +496,19 @@ export async function sendHttp(
         // Drop credential headers (Authorization/Proxy-Authorization/Cookie)
         // when the redirect crosses to a different origin.
         currentHeaders = scopeHeadersToOrigin(currentHeaders, currentUrl, nextUrl);
-        currentUrl = nextUrl;
+        if (req.originCredentials === undefined) {
+          currentUrl = nextUrl;
+        } else {
+          // The caller's own credentials go to the request's origin only, on every hop.
+          const scoped = scopeCredentialsToOrigin(
+            req.originCredentials,
+            { url: parsedUrl, headers: req.headers },
+            currentHeaders,
+            nextUrl,
+          );
+          currentHeaders = scoped.headers;
+          currentUrl = scoped.url;
+        }
         continue;
       }
 

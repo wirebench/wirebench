@@ -14,6 +14,7 @@ import { sendWithAuth } from '../http/auth/apply.js';
 import type { HttpExchange, HttpRequest, HttpStreamSink, ProxyOptions, TlsOptions } from '../http/types.js';
 import type { AuthSummary, SendAuth } from '../types.js';
 import { applyAuth } from './auth.js';
+import type { AppliedAuth } from './auth.js';
 import { encodeRestBody } from './body.js';
 import type { FileResolver } from './body.js';
 import { cookieHeader } from './cookies.js';
@@ -160,6 +161,20 @@ function mergeRequestHeaders(input: {
   return Object.fromEntries([...merged.values()]);
 }
 
+/**
+ * The credentials `applyAuth` put on the request, for `sendHttp` to keep to the request's origin
+ * across redirects. `Authorization` is dropped on a cross-origin hop anyway; an API key's custom
+ * header or query parameter is only known here.
+ */
+function originCredentialsFor(applied: AppliedAuth): Pick<HttpRequest, 'originCredentials'> {
+  const headers = Object.keys(applied.headers);
+  const query = applied.query.map(({ name, value }) => ({ name, value }));
+  if (headers.length === 0 && query.length === 0) {
+    return {};
+  }
+  return { originCredentials: { headers, query } };
+}
+
 /** The methods this transport will send. A custom method is passed through as given. */
 function methodFor(method: RestMethod): HttpRequest['method'] {
   return method.toUpperCase() as HttpRequest['method'];
@@ -221,6 +236,7 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
     ...(settings.maxRedirects !== undefined ? { maxRedirects: settings.maxRedirects } : {}),
     ...(settings.keepBodyOnRedirect === true ? { preserveMethodOnRedirect: true } : {}),
     ...(settings.maxSizeBytes !== undefined ? { maxSizeBytes: settings.maxSizeBytes } : {}),
+    ...originCredentialsFor(applied),
     ...(settings.localAddress !== undefined ? { localAddress: settings.localAddress } : {}),
     ...(settings.allowH2 === true ? { allowH2: true } : {}),
     ...(settings.decompress !== undefined ? { decompress: settings.decompress } : {}),
