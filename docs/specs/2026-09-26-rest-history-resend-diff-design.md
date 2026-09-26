@@ -52,10 +52,11 @@ is also what happens for an editor draft with an absolute URL.
 The entry becomes a `RestRequestPatchWire` (`apps/desktop/src/shared/wire-types.ts:1488`), the same
 draft input the editor sends with. `resolveRestSend` applies it over the saved request for one send
 only (`withDraft`, `apps/desktop/src/main/rest-send.ts:86`). Nothing is written back, so the saved
-request never changes. A new pure function, `restResendDraft(entry, saved)`, sits next to
+request never changes. A new pure function, `restResendDraft(entry, saved, savedOrigin)`, sits next to
 `grpcResendDraft` in `ipc/history.ts`. `saved` is the result of `project.restSend(requestId)` with no
 draft: its `request` is the saved request as typed, and its `auth` is the effective credentials from
-the folder chain.
+the folder chain. `savedOrigin` is the origin of the saved request's own URL once its property
+references resolve, or `undefined` when it can't be resolved.
 
 - **`method`:** the entry's method.
 - **`url`, `query`, `pathParams`:** the entry's URL split by `splitQuery`
@@ -66,6 +67,15 @@ the folder chain.
   rewritten it as form encoding, so a `+` in it stands for a space and is read as one.
   - When the entry has no response, it recorded no sent URL. The draft then leaves `url`, `query` and
     `pathParams` out, and the saved request's own values are used.
+  - The recorded URL is used only when its origin matches the saved request's own origin, once its
+    property references resolve (`savedOrigin`, compared case-insensitively). A redirect that crosses
+    origins — to a CDN or a pre-signed object-store URL, say — makes the engine client drop
+    `authorization`, `proxy-authorization` and `cookie` before following it
+    (`packages/engine/src/http/client.ts:172-190`), but the entry records only that last hop's URL.
+    Resending it with the saved auth would hand a credential to an origin the original send never
+    gave one to. A different origin, an undefined `savedOrigin`, or a recorded URL that fails to
+    parse all fall back the same way as an entry with no response: `url`, `query` and `pathParams`
+    are left out.
 - **`headers`:** every recorded header, as an enabled row. Disabled rows were never sent, so they are
   left out.
 - **`body`:** the recorded text:
@@ -134,6 +144,10 @@ The checks run in this order:
 
 Errors from `sendRestRequest` pass through unchanged, for example `rest-unresolved-properties`,
 `secret-missing` or a transport error.
+
+Not a refusal, but a silent fallback with the same shape: a cross-origin redirect means the recorded
+URL, query and path params are left off the draft and the saved request's own URL is sent instead —
+see the origin note under **The draft** above.
 
 ## The send path
 
