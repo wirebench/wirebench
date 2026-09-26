@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { DiffView } from '../../src/renderer/features/history/diff-view.js';
 
 vi.mock('@monaco-editor/react', async () => await import('../mocks/monaco-editor-react.js'));
@@ -38,5 +38,36 @@ describe('DiffView', () => {
     const ignoreWs = screen.getByLabelText<HTMLInputElement>('Ignore whitespace');
     expect(sideBySide.checked).toBe(true);
     expect(ignoreWs.checked).toBe(true);
+  });
+});
+
+describe('DiffView over two REST sides', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const rest = {
+    response: { left: '200 OK\n\n{}', right: '404 Not Found\n\n{}' },
+    request: { left: 'GET https://api.test/a\n\n', right: 'GET https://api.test/b\n\n' },
+  };
+
+  it('opens on the Response tab and switches to the Request tab', () => {
+    render(<DiffView leftLabel="A" rightLabel="B" leftXml="{}" rightXml="{}" rest={rest} />);
+
+    const views = screen.getByRole('tablist', { name: 'Compare views' });
+    expect(within(views).getByRole('tab', { name: 'Response' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Original').value).toBe('200 OK\n\n{}');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Modified').value).toBe('404 Not Found\n\n{}');
+
+    fireEvent.click(within(views).getByRole('tab', { name: 'Request' }));
+
+    expect(within(views).getByRole('tab', { name: 'Request' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Original').value).toBe('GET https://api.test/a\n\n');
+    expect(screen.getByLabelText<HTMLTextAreaElement>('Modified').value).toBe('GET https://api.test/b\n\n');
+  });
+
+  it('shows one body diff and no tabs when the sides are not both REST', () => {
+    render(<DiffView leftLabel="A" rightLabel="B" leftXml="<a/>" rightXml="<b/>" />);
+    expect(screen.queryByRole('tablist', { name: 'Compare views' })).toBeNull();
   });
 });

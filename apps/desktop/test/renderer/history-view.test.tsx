@@ -3,10 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { HistoryView } from '../../src/renderer/features/history/history-view.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useHistoryStore } from '../../src/renderer/state/history.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
+import { makeRestExchange } from '../mocks/wire-fixtures.js';
 import type { HistoryEntryWire } from '../../src/shared/wire-types.js';
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
@@ -295,6 +297,7 @@ describe('HistoryView re-sending and comparing REST rows', () => {
 
   afterEach(() => {
     cleanup();
+    useExchangesStore.setState({ restByRequest: {}, byRequest: {} });
   });
 
   it('re-sends a REST row through history.resendRest, and offers no ↻ on a streamed one', async () => {
@@ -313,5 +316,42 @@ describe('HistoryView re-sending and comparing REST rows', () => {
     expect(resendRest).toHaveBeenCalledWith({ id: 'r' });
     expect(resend).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Re-send Ticks' })).toBeNull();
+  });
+
+  it('opens Response and Request texts for two REST rows, and one body diff for a mixed pair', async () => {
+    useHistoryStore.setState({
+      entries: [restEntry({ id: 'a' }), restEntry({ id: 'b', status: 404 }), makeEntry({ id: 'c' })],
+      total: 3,
+    });
+    render(<HistoryView />);
+    const compareButtons = screen.getAllByTitle('Compare…');
+
+    await userEvent.click(compareButtons[0]!);
+    await userEvent.click(compareButtons[1]!);
+    const rest = useEditorsStore.getState().tabs[0]?.diff?.rest;
+    expect(rest?.response.left.split('\n')[0]).toBe('200 OK');
+    expect(rest?.request.left.split('\n')[0]).toBe('GET https://api.test/pet/1');
+
+    await userEvent.click(compareButtons[0]!);
+    await userEvent.click(compareButtons[2]!);
+    const mixed = useEditorsStore.getState().tabs[0]?.diff;
+    expect(mixed?.rest).toBeUndefined();
+    expect(mixed?.leftXml).toBe('{"id":1}');
+    expect(mixed?.rightXml).toBe('<Envelope>res</Envelope>');
+  });
+
+  it('compares a REST row with its request’s latest exchange', async () => {
+    useExchangesStore.setState({
+      restByRequest: { 'r-1': { status: 'done', sendId: 'send-1', exchange: makeRestExchange() } },
+    });
+    useHistoryStore.setState({ entries: [restEntry({ id: 'a' })], total: 1 });
+    render(<HistoryView />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Compare Pet with current' }));
+
+    const diff = useEditorsStore.getState().tabs[0]?.diff;
+    expect(diff?.rightLabel).toBe('Current');
+    expect(diff?.rest?.request.right.split('\n')[0]).toBe('GET https://api.test/pet/1');
+    expect(diff?.rest?.response.right.split('\n')[0]).toBe('200 OK');
   });
 });

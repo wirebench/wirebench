@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { Tabs, type TabItem } from '../../components/tabs.js';
 import { DiffXmlEditor } from '../../editor/diff-xml-editor.js';
+import type { EditorTab } from '../../state/editors.js';
 import { prettyPrintBody } from './history-format.js';
 
 export interface DiffViewProps {
@@ -7,7 +9,16 @@ export interface DiffViewProps {
   readonly rightLabel: string;
   readonly leftXml: string;
   readonly rightXml: string;
+  /** Set when both sides are REST: the normalised texts of the Response and Request tabs. */
+  readonly rest?: NonNullable<EditorTab['diff']>['rest'];
 }
+
+type RestPane = 'response' | 'request';
+
+const REST_PANES: readonly TabItem<RestPane>[] = [
+  { id: 'response', label: 'Response' },
+  { id: 'request', label: 'Request' },
+];
 
 /**
  * A read-only diff tab (`editors.ts` `kind: 'diff'`): two recorded bodies, pretty-printed, side by
@@ -17,10 +28,14 @@ export interface DiffViewProps {
  * Both sides are formatted as whatever they turn out to be — two JSON bodies are reformatted as
  * JSON, two envelopes as XML — because a diff of two differently-formatted copies of the same
  * content is all noise. A side that does not parse is shown as it was recorded.
+ *
+ * Two REST sides get two tabs instead, **Response** and **Request**, each over texts built when the
+ * tab opened (`rest-diff-text.ts`): a status or request line, the sorted headers, then the body.
  */
-export function DiffView({ leftLabel, rightLabel, leftXml, rightXml }: DiffViewProps) {
+export function DiffView({ leftLabel, rightLabel, leftXml, rightXml, rest }: DiffViewProps) {
   const [sideBySide, setSideBySide] = useState(true);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(true);
+  const [pane, setPane] = useState<RestPane>('response');
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -55,13 +70,29 @@ export function DiffView({ leftLabel, rightLabel, leftXml, rightXml }: DiffViewP
           </label>
         </div>
       </div>
+      {rest !== undefined && (
+        <div className="shrink-0 border-b border-hairline">
+          <Tabs label="Compare views" items={REST_PANES} active={pane} onSelect={setPane} />
+        </div>
+      )}
       <div className="min-h-0 flex-1">
-        <DiffXmlEditor
-          original={prettyPrintBody(leftXml)}
-          modified={prettyPrintBody(rightXml)}
-          renderSideBySide={sideBySide}
-          ignoreTrimWhitespace={ignoreWhitespace}
-        />
+        {rest === undefined ? (
+          <DiffXmlEditor
+            original={prettyPrintBody(leftXml)}
+            modified={prettyPrintBody(rightXml)}
+            renderSideBySide={sideBySide}
+            ignoreTrimWhitespace={ignoreWhitespace}
+          />
+        ) : (
+          <DiffXmlEditor
+            key={pane}
+            original={rest[pane].left}
+            modified={rest[pane].right}
+            renderSideBySide={sideBySide}
+            ignoreTrimWhitespace={ignoreWhitespace}
+            language="plaintext"
+          />
+        )}
       </div>
     </div>
   );
