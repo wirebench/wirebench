@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRestRequest, entry, WirebenchError } from '@wirebench/engine';
-import type { AuthConfig, CreateRestRequestInput, RestApi, RestSendInput } from '@wirebench/engine';
+import type { AuthConfig, CreateRestRequestInput, RestApi, RestSendInput, UnresolvedRef } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
 import { grpcResendDraft, registerHistoryChannels, restResendDraft } from '../src/main/ipc/history.js';
@@ -637,22 +637,33 @@ describe('restResendDraft', () => {
 /**
  * `deps.project.restSend`'s reply for `r-1`: `savedRest`'s request and auth, resolved to `ORIGIN` —
  * the property expansion `savedOriginOf` reads to decide whether the recorded URL is reusable.
+ * `unresolved` stands for property references left unresolved *elsewhere* on the saved request
+ * (a header, the body): `savedOriginOf` must ignore them and look at the URL alone.
  */
-function savedRestSend(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }): RestSendResolution {
+function savedRestSend(
+  input: CreateRestRequestInput = {},
+  auth: AuthConfig = { type: 'none' },
+  unresolved: UnresolvedRef[] = [],
+): RestSendResolution {
   const saved = savedRest(input, auth);
   return {
     ...saved,
     input: { baseUrl: ORIGIN, request: { url: saved.request.url } } as RestSendInput,
-    unresolved: [],
+    unresolved,
     api: {} as RestApi,
     baseUrlSource: 'api',
   };
 }
 
 /** Registers the channels with a REST sender stub and a project that knows request `r-1`. */
-function registerRest(entries: HistoryEntryWire[], send = vi.fn(() => Promise.resolve({})), withSender = true) {
+function registerRest(
+  entries: HistoryEntryWire[],
+  send = vi.fn(() => Promise.resolve({})),
+  withSender = true,
+  saved: RestSendResolution = savedRestSend(),
+) {
   registerHistoryChannels(new EngineService(), fakeHistory(entries) as never, {
-    project: { ...noLiveRequests(), restSend: (id: string) => (id === 'r-1' ? savedRestSend() : undefined) },
+    project: { ...noLiveRequests(), restSend: (id: string) => (id === 'r-1' ? saved : undefined) },
     ...(withSender ? { rest: { send: send as never } } : {}),
   });
   return send;
@@ -752,10 +763,50 @@ describe('history.resendRest', () => {
     expect(draft).not.toHaveProperty('pathParams');
   });
 
+  it('still reuses the recorded URL when a header elsewhere on the saved request has an unresolved ${secret:…}', async () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
+    const saved = savedRestSend({ headers: [entry('Authorization', 'Bearer ${secret:token}')] }, undefined, [
+      { expr: '${secret:token}', scope: 'Secret', name: 'token', code: 'missing', start: 0, end: 0 },
+    ]);
+    const send = registerRest([recorded], undefined, true, saved);
+    await invoke('history.resendRest', { id: 'r' });
+    const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: { url?: string } }];
+    // The unresolved secret is on a header, not the URL, so it must not force the saved-URL fallback.
+    expect(draft.url).toBe('https://api.test/pets/9');
+  });
+
+  it('falls back to the saved URL when the saved URL itself has an unresolved property reference', async () => {
+    const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
+    const saved = savedRestSend({ url: '/pets/${#Env#id}' });
+    const send = registerRest([recorded], undefined, true, saved);
+    await invoke('history.resendRest', { id: 'r' });
+    const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: Record<string, unknown> }];
+    expect(draft).not.toHaveProperty('url');
+  });
+
   it('refuses a draft that cannot be built without sending anything', async () => {
     const send = registerRest([restEntry({ endpoint: 'https://api.test/pets?sig=%3Credacted%3E' })]);
     const result = await invoke('history.resendRest', { id: 'r' });
     expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-redacted' } });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('refuses History’s truncated copy of a body with history-resend-truncated, sending nothing', async () => {
+    const stored = buildRestHistoryEntry('proj-1', {
+      requestId: 'r-1',
+      requestName: 'Pet',
+      apiName: 'Petstore',
+      folderPath: '',
+      method: 'POST',
+      url: 'https://api.test/pets',
+      requestHeaders: {},
+      requestBody: 'x'.repeat(300 * 1024),
+      durationMs: 1,
+    }).request.envelopeXml;
+    const recorded = restEntry({ request: { envelopeXml: stored, headers: [] } });
+    const send = registerRest([recorded]);
+    const result = await invoke('history.resendRest', { id: 'r' });
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-truncated' } });
     expect(send).not.toHaveBeenCalled();
   });
 

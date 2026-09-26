@@ -167,4 +167,31 @@ describe('history.resendRest against the test server', () => {
     expect(sent.searchParams.getAll('api_key')).toEqual(['good-key']);
     expect(sent.searchParams.getAll('x')).toEqual(['1']);
   });
+
+  it('reuses the recorded URL, with the real resolver, when the entry stayed on the saved origin', async () => {
+    const model = seeded(server.url);
+    const { engine, requestDeps, entries } = harness(model);
+
+    await sendRestRequest(engine, requestDeps, { sendId: 'first', requestId: 'req-1' });
+    const original = entries[0]!;
+
+    // Same origin as the saved request, but a different query value than the saved request has —
+    // proving the *recorded* URL is what goes out, not just a fallback to the saved one that
+    // happens to look right.
+    const edited: HistoryEntryWire = {
+      ...original,
+      id: 'edited',
+      endpoint: original.endpoint.replace('x=1', 'x=2'),
+    };
+    entries.unshift(edited);
+
+    const result = await invoke('history.resendRest', { id: 'edited' });
+
+    expect(result).toMatchObject({ ok: true, value: { http: { status: 200 } } });
+    const last = server.requests.at(-1)!;
+    const sent = new URL(last.url, server.url);
+    expect(sent.pathname).toBe('/echo');
+    expect(sent.searchParams.getAll('x')).toEqual(['2']);
+    expect(sent.searchParams.getAll('api_key')).toEqual(['good-key']);
+  });
 });

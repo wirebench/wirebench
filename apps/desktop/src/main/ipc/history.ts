@@ -313,17 +313,20 @@ function isStreamEntry(entry: HistoryEntryWire): boolean {
 }
 
 /**
- * The saved request's resolved origin, the same synchronous property/environment expansion
- * `deps.project.restSend` runs before `sendRestRequest` fills in `${secret:…}` tokens. `undefined`
- * when a property reference is left unresolved or the expanded base and path don't parse as a
- * URL — `restResendDraft`'s safe fallback for either case is the saved URL.
+ * The saved request's resolved origin: the base and path joined the same synchronous way
+ * `sendRestRequest` does before it separately fills in `${secret:…}` tokens. Only a reference left
+ * unresolved *in that joined URL itself* makes this `undefined` — a `${secret:…}` (or any other
+ * property reference) in a header, the body, or elsewhere on the saved request expands on its own
+ * path and must not affect this. Also `undefined` when the joined text doesn't parse as a URL.
+ * `restResendDraft`'s safe fallback for either case is the saved URL.
  */
 function savedOriginOf(saved: RestSendResolution): string | undefined {
-  if (saved.unresolved.length > 0) {
+  const joined = joinBase(saved.input.baseUrl, saved.input.request.url);
+  if (joined.includes('${')) {
     return undefined;
   }
   try {
-    return new URL(joinBase(saved.input.baseUrl, saved.input.request.url)).origin;
+    return new URL(joined).origin;
   } catch {
     return undefined;
   }
