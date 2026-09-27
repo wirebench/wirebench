@@ -845,6 +845,12 @@ export class TeamSecretsService {
     if (access.removed.some((removal) => removal.keyId === me.keyId)) {
       return 'removed';
     }
+    // An approval of this key that this machine saw is still in the tree: its request file went missing after
+    // the approval, not by a decline. Waiting again re-sends the same key, and the approve replays valid.
+    const seen = new Set(view.local.seenAccess);
+    if (view.files.access.some((entry) => entry.action === 'approve' && entry.key === me.keyId && seen.has(entry.id))) {
+      return 'pending';
+    }
     // Seen in the tree once, and gone since while still waiting: an admin deleted the request (§3.2).
     return view.local.seenKeyId === me.keyId && !access.keys.has(me.keyId) ? 'declined' : 'pending';
   }

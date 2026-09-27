@@ -366,6 +366,11 @@ for a server workspace.
   only among members everyone would trust as admins.
 - **The secret field marks refs only.** "Only on this machine" and Rotate on a secret field follow refs;
   `${secret:name}` tokens show those marks in the Team secrets section only.
+- **A quick decline on a server share.** A server share's key request goes through the route without waiting,
+  so a decline that lands before the machine's next load has seen its request file is not recognised as a
+  decline: the machine asks once more, automatically. A second decline sticks.
+- An approved machine whose request file goes missing (its approval, which it saw, is still in the tree) is
+  waiting again, not declined: it re-sends the same key and the approval counts again.
 - A new value is dated after every removal this machine knows, so a clock running behind never leaves a
   rotated value marked Rotate.
 - **Known limits.** The remote author of a losing concurrent change gets no "replaced" notice — only the

@@ -1452,7 +1452,8 @@ export class WorkspaceService implements ProjectRouter {
    * once it settles. A path a pull just brought in is that pull's own write (see `teamPulled`) and is dropped.
    */
   private teamSecretsChangedOnDisk(open: OpenWorkspace, reported: readonly string[]): void {
-    const now = this.now().getTime();
+    // The real clock, as the watcher's own self-write TTL uses: an injected test clock must not stretch it.
+    const now = Date.now();
     const paths = reported.filter((path) => {
       const until = open.teamPulled.get(path);
       if (until !== undefined && until < now) {
@@ -1605,7 +1606,8 @@ export class WorkspaceService implements ProjectRouter {
       return Promise.resolve();
     }
     const teamPaths = changedPaths.filter(isTeamSecretsPath);
-    const now = this.now().getTime();
+    // The real clock, as the watcher's own self-write TTL uses (see `teamSecretsChangedOnDisk`).
+    const now = Date.now();
     for (const [path, until] of open.teamPulled) {
       if (until < now) {
         open.teamPulled.delete(path);

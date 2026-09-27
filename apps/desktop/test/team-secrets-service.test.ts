@@ -1225,6 +1225,23 @@ describe('TeamSecretsService — final review fixes', () => {
     expect(await readdir(join(tree, 'team-secrets', 'keys'))).toContain(`${again.me.keyId}.yaml`);
   });
 
+  it('re-sends the same key when an approved machine’s request file is deleted, and is approved again', async () => {
+    const { a, b } = await aliceAndBob();
+    await b.service.afterPull([]); // B has now seen its approval
+    const bobKey = (await b.service.status()).me.keyId!;
+    await rm(join(tree, 'team-secrets', 'keys', `${bobKey}.yaml`));
+
+    expect((await b.service.status()).me.state).toBe('pending');
+    await b.service.afterPull([]);
+
+    expect(await readdir(join(tree, 'team-secrets', 'keys'))).toContain(`${bobKey}.yaml`);
+    expect(b.commits.at(-1)).toBe('Request team secrets access for Bob');
+    const status = await b.service.status();
+    expect(status).toMatchObject({ me: { state: 'approved', keyId: bobKey } });
+    expect(status.message).toBeUndefined();
+    expect((await a.service.status()).message).toBeUndefined();
+  });
+
   it('counts a removed machine’s deleted key request as damage, and keeps its Rotate marks (I3)', async () => {
     const { a, b } = await aliceAndBob();
     const bobKey = (await b.service.status()).me.keyId!;
