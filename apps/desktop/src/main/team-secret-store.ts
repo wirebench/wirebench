@@ -8,6 +8,7 @@
  * are this machine's, not the team's.
  */
 import { teamSecretsError, type GetSecret, type SecretKey } from '@wirebench/engine';
+import { isMachineOnlyLabel } from './secrets.js';
 import type { SecretStore } from './secrets.js';
 import type { TeamSecretsService } from './team-secrets-service.js';
 
@@ -73,6 +74,11 @@ export class TeamSecretStore implements RawStore {
   }
 
   private async record(ref: string, label: string | undefined, value: string): Promise<void> {
+    // Defense in depth: the raw store already refuses to create or relabel an entry with a
+    // machine-only label, but a value team secrets itself never seals is never even offered.
+    if (isMachineOnlyLabel(label)) {
+      return;
+    }
     const secret = secretOfLabel(ref, label);
     await this.team.recordValue(secret, displayLabel(secret, label, ref), value).catch((error: unknown) => {
       this.log(`[team-secrets] could not write a secret to the vault: ${describe(error)}`);

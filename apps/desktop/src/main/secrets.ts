@@ -256,19 +256,21 @@ export class SecretStore {
   /**
    * Stores `value` under the given `ref`, creating the entry when it does not exist (team secrets write a
    * ref the tree already names). An existing entry keeps its label and creation time; `opts.label` names a
-   * new one. Refuses a ref whose existing entry is machine-only — a value write must never overwrite a
-   * machine key or a kept replaced value; {@link putMachineOnly} is for those.
+   * new one. Refuses a ref whose existing entry is machine-only, and refuses to create or relabel an entry
+   * with a machine-only label on a fresh ref — a value write must never overwrite, or masquerade as, a
+   * machine key or a kept replaced value; {@link putMachineOnly} is the only writer allowed to make one.
    */
   put(ref: string, value: string, opts?: { label?: string }): Promise<void> {
     return this.enqueue(async () => {
-      this.refuseMachineOnly(ref);
+      this.refuseMachineOnly(ref, opts?.label);
       await this.putEntry(ref, value, opts ?? {});
     });
   }
 
   /**
    * Like {@link put}, for team secrets' own machine-only entries (this machine's key pair, a value another
-   * machine replaced): the only writer allowed to touch a ref already carrying a machine-only label.
+   * machine replaced): the only writer allowed to touch a ref already carrying a machine-only label, or to
+   * give a ref a machine-only label in the first place.
    */
   putMachineOnly(ref: string, value: string, opts?: { label?: string }): Promise<void> {
     return this.enqueue(async () => {
@@ -276,9 +278,9 @@ export class SecretStore {
     });
   }
 
-  /** Throws `secret-machine-only` when `ref` already names a machine-only entry. Call inside `enqueue`. */
-  private refuseMachineOnly(ref: string): void {
-    if (isMachineOnlyLabel(this.data.entries[ref]?.label)) {
+  /** Throws `secret-machine-only` when `ref` already names a machine-only entry, or `label` would make it one. */
+  private refuseMachineOnly(ref: string, label?: string): void {
+    if (isMachineOnlyLabel(this.data.entries[ref]?.label) || isMachineOnlyLabel(label)) {
       throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
     }
   }

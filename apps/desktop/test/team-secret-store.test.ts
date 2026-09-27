@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
+import { TEAM_KEY_LABEL_PREFIX, TEAM_REPLACED_LABEL_PREFIX } from '../src/main/secrets.js';
 import { secretOfLabel, TeamSecretStore, teamSecretGetter } from '../src/main/team-secret-store.js';
 
 const REF = 'sec_0123456789abcdef0123456789';
@@ -84,6 +85,17 @@ describe('TeamSecretStore', () => {
     expect(team.forget).toHaveBeenCalledWith({ ref }, 'Password');
     expect(log).toHaveBeenCalledWith(expect.stringContaining('disk full'));
     expect(JSON.stringify(log.mock.calls)).not.toContain('hunter2');
+  });
+
+  it('never hands a machine-only label to the vault, for either prefix (defense in depth)', async () => {
+    const raw = rawStore();
+    const team = service();
+    const store = new TeamSecretStore(raw, team);
+
+    await store.set('{"private":"k"}', { label: `${TEAM_KEY_LABEL_PREFIX}ws-1` });
+    await store.set('old-value', { label: `${TEAM_REPLACED_LABEL_PREFIX}ws-1:E` });
+
+    expect(team.recordValue).not.toHaveBeenCalled();
   });
 });
 

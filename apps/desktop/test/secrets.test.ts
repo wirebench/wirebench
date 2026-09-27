@@ -203,6 +203,23 @@ describe('SecretStore machine-only entries (team secrets)', () => {
     expect(await store.getMachineOnly(key)).toBe('{"private":"k2"}');
   });
 
+  it('refuses put on a fresh ref whose new label is machine-only, for either prefix; putMachineOnly still creates it', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+
+    await expect(
+      store.put('sec_freshfreshfreshfreshfresh1', 'x', { label: `${TEAM_KEY_LABEL_PREFIX}ws-1` }),
+    ).rejects.toMatchObject({ code: 'secret-machine-only' });
+    expect(await store.exists('sec_freshfreshfreshfreshfresh1')).toBe(false);
+
+    await expect(
+      store.put('sec_freshfreshfreshfreshfresh2', 'x', { label: `${TEAM_REPLACED_LABEL_PREFIX}ws-1:E` }),
+    ).rejects.toMatchObject({ code: 'secret-machine-only' });
+    expect(await store.exists('sec_freshfreshfreshfreshfresh2')).toBe(false);
+
+    await store.putMachineOnly('sec_freshfreshfreshfreshfresh1', 'x', { label: `${TEAM_KEY_LABEL_PREFIX}ws-1` });
+    expect(await store.getMachineOnly('sec_freshfreshfreshfreshfresh1')).toBe('x');
+  });
+
   it('never lets put or replace turn an ordinary entry machine-only, or the reverse', async () => {
     const store = new SecretStore(dir, fakeCrypto());
     const plain = await store.set('value', { label: 'Password' });

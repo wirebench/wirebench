@@ -429,7 +429,10 @@ export class TeamSecretsService {
         return;
       }
       const id = vaultEntryId(secret);
-      const existing = view.files.values.get(id);
+      // Only a trusted entry with the same label and value is really a no-op; an untrusted one that
+      // happens to match (an unapproved or rejected signer, a stale verdict) still needs re-sealing
+      // under this machine's own key so the rest of the workspace trusts it again.
+      const existing = this.trustedValues(view).get(id);
       if (existing !== undefined && existing.label === label && openVaultEntry(existing, view.me) === value) {
         return;
       }

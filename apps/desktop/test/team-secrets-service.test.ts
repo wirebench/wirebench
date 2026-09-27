@@ -585,7 +585,7 @@ describe('TeamSecretsService — machine-only store entries', () => {
   it('never puts a kept replaced value or a machine key into the vault or the local-only list', async () => {
     const a = machine('Alice');
     const kept = 'sec_ffffffffffffffffffffffffff';
-    await a.store.put(kept, 'lost-value', { label: `${TEAM_REPLACED_LABEL_PREFIX}X` });
+    await a.store.putMachineOnly(kept, 'lost-value', { label: `${TEAM_REPLACED_LABEL_PREFIX}X` });
     a.uses = [{ secret: { ref: kept } }];
     expect((await a.service.status()).localOnly).toEqual([]);
     await a.service.turnOn();
@@ -645,7 +645,46 @@ describe('TeamSecretsService — saving values (§3.3)', () => {
     await expect(vaultEntry(other.ref)).rejects.toThrow();
   });
 
-  it('keeps a value local on a machine that is not approved, or is a server viewer', async () => {
+  it('re-signs an untrusted entry with the same label and value, instead of treating it as already saved', async () => {
+    const { a, b } = await aliceAndBob();
+    const other = { ref: 'sec_abcdefabcdefabcdefabcdefab' };
+    const carol = machine('Carol');
+    await carol.service.afterPull([]); // pending — never approved, so anything Carol signs stays untrusted
+    const carolKeyId = (await carol.service.status()).me.keyId!;
+    const carolKeys = await keysOf(carol);
+    const files = readTeamSecretsFiles(
+      new Map([
+        [
+          `team-secrets/keys/${carolKeyId}.yaml`,
+          await readFile(join(tree, 'team-secrets', 'keys', `${carolKeyId}.yaml`), 'utf8'),
+        ],
+      ]),
+    );
+    const untrusted = buildVaultEntry({
+      secret: other,
+      label: 'Token',
+      value: 'tok-123',
+      recipients: [...verifiedKeys(files.keys).values()],
+      signer: carolKeys,
+      at: new Date(clock).toISOString(),
+    });
+    await writeFile(
+      join(tree, ...vaultEntryPath(vaultEntryId(other)).split('/')),
+      teamSecretsFileText(untrusted),
+      'utf8',
+    );
+
+    await b.service.recordValue(other, 'Token', 'tok-123');
+
+    const entry = await vaultEntry(other.ref);
+    expect(entry.updatedBy).toBe((await b.service.status()).me.keyId);
+    expect(Object.keys(entry.wraps).sort()).toEqual(
+      [(await a.service.status()).me.keyId!, (await b.service.status()).me.keyId!].sort(),
+    );
+    expect(b.commits.at(-1)).toBe('Update secret Token');
+  });
+
+  it('keeps a value local on a machine that is not approved', async () => {
     const a = machine('Alice');
     await a.service.turnOn();
     const b = machine('Bob');
