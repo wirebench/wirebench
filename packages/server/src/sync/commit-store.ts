@@ -313,6 +313,20 @@ export class CommitStore {
     return { commits, behind: base === null ? commits : await this.count(dir, `${base}..${head}`) };
   }
 
+  /** Whether `path` names a file in commit `at`. @throws syncPathRefused for a path outside the tree rules */
+  async hasFile(workspaceId: string, at: string, path: string): Promise<boolean> {
+    commitId(at);
+    const dir = this.repos.path(workspaceId);
+    try {
+      await this.git.run(dir, [GIT.catFile, '-e', `${at}:${treePath(path)}`]);
+      return true;
+    } catch (error) {
+      const code = exitCodeOf(error);
+      if (code === 1 || code === 128) return false;
+      throw error;
+    }
+  }
+
   /** Every file at `at` (default: the head). @throws syncUnknownCommit, syncTooLarge */
   async snapshot(workspaceId: string, at?: string): Promise<SyncSnapshotResponse> {
     const dir = this.repos.path(workspaceId);

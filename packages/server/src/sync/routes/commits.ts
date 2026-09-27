@@ -7,6 +7,7 @@
 import {
   syncPushRequestSchema,
   syncPushResponseSchema,
+  TEAM_SECRETS_ACCESS_DIR,
   teamWorkspaceParamsSchema,
   type SyncPushRequest,
 } from '@wirebench/engine';
@@ -18,10 +19,19 @@ import { jsonSchema } from '../../schema.js';
 import { workspaceNotFound } from '../../teams/errors.js';
 import { requireWorkspaceRole } from '../../teams/roles.js';
 import type { SyncEnv } from '../env.js';
-import { syncSubjectInvalid } from '../errors.js';
+import { syncSubjectInvalid, teamSecretsAdminOnly } from '../errors.js';
 
 /** C0 controls and DEL: NUL cannot be a git argument, and a line break would start a message body. */
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
+/**
+ * team-secrets §5.1: whether any change in the push lands under `team-secrets/access/`. Case-insensitive,
+ * since a checkout on a case-insensitive file system would merge `TEAM-SECRETS/access` into the same folder.
+ */
+function touchesAccessLog(body: SyncPushRequest): boolean {
+  const prefix = `${TEAM_SECRETS_ACCESS_DIR}/`;
+  return body.commits.some((c) => c.changes.some((change) => change.path.toLowerCase().startsWith(prefix)));
+}
 
 export const commitRoutes =
   (env: SyncEnv) =>
@@ -38,10 +48,12 @@ export const commitRoutes =
         },
       },
       async (request, reply) => {
-        const { workspaceId } = request.workspaceAccess!;
+        const { workspaceId, role } = request.workspaceAccess!;
         const body = request.body as SyncPushRequest;
         // The commit store takes the subject as is; JSON Schema cannot say "no control characters".
         if (body.commits.some((c) => CONTROL_CHARACTER.test(c.subject))) throw syncSubjectInvalid();
+        // No file body is parsed: the paths alone say whether the access log changes.
+        if (role !== 'admin' && touchesAccessLog(body)) throw teamSecretsAdminOnly();
         // R2, §6: the author is the account, never anything in the body; request.caller has no name.
         const user = await findUserById(db, request.caller!.id);
         if (user === undefined) throw unauthenticated();

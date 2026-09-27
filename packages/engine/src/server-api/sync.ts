@@ -11,6 +11,7 @@
  * - the per-file limit of {@link MAX_SYNC_FILE_BYTES}.
  */
 import { z } from 'zod';
+import { KEY_ID_PATTERN } from '../team-secrets/keys.js';
 import { MAX_TREE_PATH_LENGTH } from '../sync/tree-paths.js';
 import { workspaceRoleSchema } from './teams.js';
 
@@ -137,3 +138,20 @@ export const syncLogEntrySchema = z.object({
 });
 export type SyncLogEntry = z.infer<typeof syncLogEntrySchema>;
 export const syncLogResponseSchema = z.array(syncLogEntrySchema);
+
+// ---- team secrets (team-secrets spec §5.1) -------------------------------------------------
+
+/** The most a key request's file may hold, in UTF-8 bytes. */
+export const TEAM_SECRETS_KEY_REQUEST_MAX_BYTES = 4096;
+
+/**
+ * `POST …/team-secrets/key-requests`: `content` is the key file's text as the app wrote it. The server
+ * derives the path from `keyId` and never parses `content` (plan decision 11).
+ */
+export const teamSecretsKeyRequestSchema = z.object({
+  keyId: z.string().regex(KEY_ID_PATTERN),
+  content: z.string().min(1).max(TEAM_SECRETS_KEY_REQUEST_MAX_BYTES),
+});
+export type TeamSecretsKeyRequest = z.infer<typeof teamSecretsKeyRequestSchema>;
+export const teamSecretsKeyRequestResponseSchema = z.object({ head: syncCommitIdSchema });
+export type TeamSecretsKeyRequestResponse = z.infer<typeof teamSecretsKeyRequestResponseSchema>;

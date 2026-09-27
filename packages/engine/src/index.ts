@@ -1447,6 +1447,9 @@ export {
   syncPushResponseSchema,
   syncSnapshotQuerySchema,
   syncSnapshotResponseSchema,
+  TEAM_SECRETS_KEY_REQUEST_MAX_BYTES,
+  teamSecretsKeyRequestSchema,
+  teamSecretsKeyRequestResponseSchema,
 } from './server-api/sync.js';
 export type {
   SyncChange,
@@ -1463,6 +1466,8 @@ export type {
   SyncPushResponse,
   SyncSnapshotQuery,
   SyncSnapshotResponse,
+  TeamSecretsKeyRequest,
+  TeamSecretsKeyRequestResponse,
 } from './server-api/sync.js';
 export {
   LIVE_CAPABILITY,

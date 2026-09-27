@@ -12,6 +12,7 @@ import type { SyncEnv } from './env.js';
 import { changesRoutes } from './routes/changes.js';
 import { commitRoutes } from './routes/commits.js';
 import { headRoutes } from './routes/head.js';
+import { keyRequestRoutes } from './routes/key-requests.js';
 import { logRoutes } from './routes/log.js';
 import { snapshotRoutes } from './routes/snapshot.js';
 
@@ -41,6 +42,7 @@ export function syncModule(): ServerModule {
       changesRoutes(env)(app);
       commitRoutes(env)(app);
       logRoutes(env)(app);
+      keyRequestRoutes(env)(app);
     },
   };
 }
