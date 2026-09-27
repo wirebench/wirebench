@@ -147,3 +147,21 @@ export function assertTreePath(path: string): string {
 export function isTreePath(path: string): boolean {
   return refusal(path) === undefined;
 }
+
+/**
+ * Whether a single filesystem entry name (never a `/`-joined path) is one the tree rules refuse
+ * anywhere: empty, `.`/`..`, a control character, a `.git` spelling, or a Windows-unsafe name.
+ * Unlike {@link isTreePath} it never asks whether the name completes a valid tree path — a directory
+ * has no such thing — so a tree walk can prune an unsafe folder (a nested `.git`, say) before
+ * descending into it, rather than reading it and refusing every file inside one at a time.
+ */
+export function isSafeTreeSegment(segment: string): boolean {
+  return (
+    segment.length > 0 &&
+    segment !== '.' &&
+    segment !== '..' &&
+    !CONTROL_CHARACTER.test(segment) &&
+    !GIT_SEGMENT.test(segment) &&
+    !WINDOWS_UNSAFE_SEGMENT.test(segment)
+  );
+}

@@ -1307,6 +1307,7 @@ export {
   MAX_TREE_PATH_LENGTH,
   TREE_ITEMS,
   assertTreePath,
+  isSafeTreeSegment,
   isTreePath,
 } from './sync/tree-paths.js';
 

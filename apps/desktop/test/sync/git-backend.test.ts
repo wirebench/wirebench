@@ -207,6 +207,42 @@ describe('GitBackend (mocked runner)', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('conflictSides reads :2 and :3 from the index; a missing stage reads back null', async () => {
+    const runner = mockRunner((args) => {
+      if (args[0] === 'show' && args[1] === ':2:environments/qa.yaml') {
+        return { stdout: 'name: QA\nurl: https://mine.example\n' };
+      }
+      if (args[0] === 'show' && args[1] === ':3:environments/qa.yaml') {
+        return {
+          stdout: '',
+          stderr: "fatal: path 'environments/qa.yaml' is in the index, but not at stage 3\n",
+          exitCode: 128,
+        };
+      }
+      throw new Error(`unexpected args ${JSON.stringify(args)}`);
+    });
+    const cli = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner });
+    const backend = new GitBackend({ git: cli, tree, settings });
+
+    await expect(backend.conflictSides('environments/qa.yaml')).resolves.toEqual({
+      mine: 'name: QA\nurl: https://mine.example\n',
+      theirs: null,
+    });
+  });
+
+  it('conflictSides rethrows a failure that is not a missing stage', async () => {
+    const runner = mockRunner((args) => {
+      if (args[0] === 'show' && args[1] === ':2:environments/qa.yaml') {
+        return { stdout: '', stderr: 'fatal: bad object HEAD', exitCode: 128 };
+      }
+      throw new Error(`unexpected args ${JSON.stringify(args)}`);
+    });
+    const cli = new GitCli({ path: 'git', version: '2.55.0' }, { hooksDir: tree, run: runner });
+    const backend = new GitBackend({ git: cli, tree, settings });
+
+    await expect(backend.conflictSides('environments/qa.yaml')).rejects.toMatchObject({ code: 'git-failed' });
+  });
+
   it('merge() is a no-op when origin/<branch> does not resolve', async () => {
     const runner = mockRunner((args) => {
       if (args[0] === 'rev-parse' && args.includes('--verify')) {
@@ -605,6 +641,51 @@ describeGit('GitBackend (real git)', { timeout: 30_000 }, () => {
     // … while B's own HEAD is still the pre-rewrite commit — a real divergence (two unrelated
     // commits since the rewrite), correctly reported rather than thrown.
     expect(await b.probe()).toMatchObject({ state: 'diverged', ahead: 1, behind: 1 });
+  });
+
+  it('conflictSides reads a real conflict from the index without changing the working file', async () => {
+    root = await mkTempDir();
+    const remoteDir = join(root, 'remote.git');
+    const treeA = join(root, 'a');
+    const treeB = join(root, 'b');
+    const hooksDir = join(root, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    const env = await hermeticGitEnv(root);
+    const git = makeTestGitCli(hooksDir, env);
+
+    const bare = await createBareRemote(git, remoteDir);
+    await GitBackend.init(git, treeA, 'main');
+    await git.run(treeA, ['remote', 'add', 'origin', bare.url]);
+    const shared: GitShareSettings = { ...DEFAULT_GIT_SHARE_SETTINGS, branch: 'main' };
+    const a = new GitBackend({ git, tree: treeA, settings: () => shared });
+    await a.setIdentity('Alice', 'alice@example.com');
+    await mkdir(join(treeA, 'environments'), { recursive: true });
+    await writeFile(join(treeA, 'environments', 'qa.yaml'), 'name: QA\n', 'utf8');
+    await a.commit('Initial commit');
+    await a.push();
+
+    await GitBackend.clone(git, bare.url, 'main', treeB);
+    const b = new GitBackend({ git, tree: treeB, settings: () => shared });
+    await b.setIdentity('Bob', 'bob@example.com');
+
+    await writeFile(join(treeA, 'environments', 'qa.yaml'), 'name: QA\nurl: https://a.example\n', 'utf8');
+    await a.commit('Update QA (A)');
+    await a.push();
+
+    await writeFile(join(treeB, 'environments', 'qa.yaml'), 'name: QA\nurl: https://b.example\n', 'utf8');
+    await b.commit('Update QA (B)');
+    await b.fetch();
+    expect((await b.merge()).conflicts).toHaveLength(1);
+
+    const beforeRead = await readFile(join(treeB, 'environments', 'qa.yaml'));
+
+    await expect(b.conflictSides('environments/qa.yaml')).resolves.toEqual({
+      mine: 'name: QA\nurl: https://b.example\n',
+      theirs: 'name: QA\nurl: https://a.example\n',
+    });
+
+    // The read did not check anything out: the conflict-marked working file is byte-identical.
+    expect(await readFile(join(treeB, 'environments', 'qa.yaml'))).toEqual(beforeRead);
   });
 });
 

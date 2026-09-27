@@ -1712,4 +1712,85 @@ describe('team secrets (team-secrets §3.3, §3.5)', () => {
       code: 'sync-not-supported',
     });
   });
+
+  it('rejects the caller on a key-request failure (a rate limit, or another 4xx) without marking the share error', async () => {
+    const h = harness();
+    const rateLimited = new WirebenchError('team-secrets-rate-limited', 'Too many requests.');
+    Object.assign(h.backend, { requestTeamSecretsKey: vi.fn().mockRejectedValue(rateLimited) });
+
+    await expect(h.service.requestTeamSecretsKey('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'x')).rejects.toMatchObject({
+      code: 'team-secrets-rate-limited',
+    });
+    expect(h.service.status().state).not.toBe('error');
+    // The route itself failed: nothing landed, so there is nothing to fetch either.
+    expect(h.backend.calls).not.toContain('fetch');
+  });
+
+  it('afterTeamSecretsWrite during a conflict defers, keeping the message, and commits once the conflict resolves', async () => {
+    const h = harness();
+    h.backend.mergeResult = { conflicts: [conflictOf(VAULT)], changedPaths: [] };
+    await h.service.pull();
+    expect(h.service.status().state).toBe('conflict');
+
+    h.backend.changes = [{ path: VAULT, status: 'modified' }];
+    h.service.afterTeamSecretsWrite('Update secret Payments API key');
+    await h.service.idle();
+    expect(h.backend.calls).not.toContain('commit');
+    expect(h.service.status().state).toBe('conflict');
+
+    h.backend.mergeChanged = [];
+    await h.service.resolve(VAULT, 'mine');
+    await h.service.idle();
+
+    expect(h.backend.commits.at(-1)).toBe('Update secret Payments API key');
+  });
+
+  it('keeps the "Update secret" message across a hold for possible secrets', async () => {
+    const scans = new FakeScans();
+    scans.findings = 1;
+    const h = harness({}, scans.deps());
+    h.backend.changes = [{ path: VAULT, status: 'modified' }];
+    h.service.afterTeamSecretsWrite('Update secret Payments API key');
+    await h.service.idle();
+    expect(h.backend.commits).toHaveLength(0);
+    expect(h.service.status().held).toEqual({ findings: 1 });
+
+    scans.findings = 0;
+    scans.change();
+    await h.service.idle();
+
+    expect(h.backend.commits.at(-1)).toBe('Update secret Payments API key');
+  });
+
+  it('falls back to the dialog when the resolver itself throws', async () => {
+    const h = harness({}, { resolveConflicts: () => Promise.reject(new Error('boom')) });
+    Object.assign(h.backend, { conflictSides: () => Promise.resolve({ mine: 'm', theirs: 't' }) });
+    h.backend.mergeResult = { conflicts: [conflictOf(VAULT)], changedPaths: [] };
+
+    await h.service.pull();
+
+    expect(h.conflicts).toEqual([[conflictOf(VAULT)]]);
+    expect(h.backend.calls).not.toContain('finishMerge');
+  });
+
+  it('ignores a decision for a path that is not actually conflicted, and falls back if resolve itself throws', async () => {
+    const other = 'environments/qa.yaml';
+    const decided = vi.fn().mockResolvedValue(
+      new Map([
+        [VAULT, 'theirs' as const],
+        [other, 'mine' as const],
+      ]),
+    );
+    const h = harness({}, { resolveConflicts: decided });
+    Object.assign(h.backend, { conflictSides: () => Promise.resolve({ mine: 'm', theirs: 't' }) });
+    const resolve = vi.spyOn(h.backend, 'resolve').mockRejectedValueOnce(new Error('boom'));
+    h.backend.mergeResult = { conflicts: [conflictOf(VAULT)], changedPaths: [] };
+
+    await h.service.pull();
+
+    expect(resolve).toHaveBeenCalledWith(VAULT, 'theirs');
+    expect(resolve).not.toHaveBeenCalledWith(other, 'mine');
+    expect(h.conflicts).toEqual([[conflictOf(VAULT)]]);
+    expect(h.backend.calls).not.toContain('finishMerge');
+  });
 });

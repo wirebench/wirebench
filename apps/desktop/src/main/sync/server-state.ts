@@ -28,6 +28,7 @@ import { join } from 'node:path';
 import {
   assertTreePath,
   generateId,
+  isSafeTreeSegment,
   isTreePath,
   nodeFs,
   syncChangeSchema,
@@ -518,11 +519,15 @@ export async function readTreeFiles(tree: string): Promise<Map<string, TreeFile>
   const files = new Map<string, TreeFile>();
   const walk = async (folder: string): Promise<void> => {
     for (const entry of await readdir(join(tree, ...folder.split('/')), { withFileTypes: true })) {
+      // Pruned by its own name alone, before anything below it is read: a nested `.git` (a
+      // submodule, say) or a Windows-unsafe name is never part of a tree, whatever is inside it.
+      if (!isSafeTreeSegment(entry.name)) continue;
       const path = `${folder}/${entry.name}`;
       // `isTreePath` answers for a *complete* path, so it is only meaningful at a file: under
       // `team-secrets/`, an intermediate directory (`keys`, `access`, `values`) is never itself a
       // complete path and would otherwise be skipped, along with everything below it. A directory
-      // always recurses; every file still passes the full check before it is kept.
+      // (its name already known safe) always recurses; every file still passes the full check
+      // before it is kept.
       if (entry.isDirectory()) await walk(path);
       else if (entry.isFile() && isTreePath(path)) {
         files.set(path, treeFileFromBytes(await readFile(join(tree, ...path.split('/')))));

@@ -109,6 +109,21 @@ describe('readTreeFiles', () => {
   it('reads a missing tree as empty', async () => {
     expect((await readTreeFiles(join(root, 'nothing-here'))).size).toBe(0);
   });
+
+  it('walks team-secrets/{keys,access,values} despite none being a complete path on its own, and refuses a stray file directly under team-secrets/', async () => {
+    await put('tree/team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml', 'version: 1\n');
+    await put('tree/team-secrets/keys/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml', 'version: 1\n');
+    await put('tree/team-secrets/access/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml', 'version: 1\n');
+    await put('tree/team-secrets/stray.yaml', 'version: 1\n');
+
+    const files = await readTreeFiles(join(root, 'tree'));
+
+    expect([...files.keys()].sort()).toEqual([
+      'team-secrets/access/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml',
+      'team-secrets/keys/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml',
+      'team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml',
+    ]);
+  });
 });
 
 describe('writeTreeFiles', () => {

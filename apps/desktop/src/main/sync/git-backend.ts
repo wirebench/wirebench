@@ -5,7 +5,7 @@
  * contract by `apps/desktop/test/sync/backend-contract.test.ts`.
  */
 
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { GitCli, GitShareSettings, TreeChange } from '@wirebench/engine';
 import {
@@ -460,21 +460,27 @@ export class GitBackend implements SyncBackend {
   }
 
   /**
-   * Each side through `checkout --theirs|--ours` and a read: the allow-list has no `show` (plan decision 7).
-   * The working file is left at ours; the `resolve` that follows checks out the side it keeps.
+   * Each side read straight from the index — `git show :2:<path>` (ours) and `:3:<path>` (theirs) —
+   * never touching the working file, so calling this to preview a decision cannot itself change what
+   * a person opening the file to resolve it by hand would see (superseding plan decision 7, which
+   * had the allow-list without `show`; it now does). A side missing from the index (that side
+   * deleted the path) reads back `null`; any other failure is rethrown.
    */
   async conflictSides(path: string): Promise<ConflictSides> {
     assertTreePath(path);
-    const read = async (flag: '--ours' | '--theirs'): Promise<string | null> => {
+    const read = async (stage: 2 | 3): Promise<string | null> => {
       try {
-        await this.git.run(this.tree, ['checkout', flag, '--', path]);
-        return await readFile(join(this.tree, ...path.split('/')), 'utf8');
-      } catch {
-        return null;
+        const { stdout } = await this.git.run(this.tree, ['show', `:${stage}:${path}`]);
+        return stdout;
+      } catch (error) {
+        if (isExpectedGitFailure(error, 128, /does not exist|not at stage \d/i)) {
+          return null;
+        }
+        throw error;
       }
     };
-    const theirs = await read('--theirs');
-    const mine = await read('--ours');
+    const mine = await read(2);
+    const theirs = await read(3);
     return { mine, theirs };
   }
 
