@@ -35,7 +35,7 @@ import {
 } from '../src/main/redact.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
 import { projectSecretGetter, resolveWithStoredValues, secretStoreLabel } from '../src/main/secret-resolver.js';
-import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
+import { newSecretRef, SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { resolveWsSend } from '../src/main/ws-send.js';
 
@@ -118,7 +118,8 @@ describe('projectSecretGetter', () => {
   });
 
   it('never resolves a team secrets machine key, even named directly', async () => {
-    const key = await store.set('{"private":"k"}', { label: 'wirebench-team-key:ws-1' });
+    const key = newSecretRef();
+    await store.putMachineOnly(key, '{"private":"k"}', { label: 'wirebench-team-key:ws-1' });
     expect(await getterFor('p1')(key)).toBeUndefined();
   });
 

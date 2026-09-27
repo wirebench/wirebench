@@ -114,8 +114,11 @@ async function writeAtomic(path: string, data: string): Promise<void> {
   }
 }
 
-/** Generates a `sec_` + 26 random base36-ish hex-derived id secret reference. */
-function generateRef(): string {
+/**
+ * Generates a `sec_` + 26 random base36-ish hex-derived id secret reference. Exported for team secrets,
+ * which make their machine-only entries with {@link SecretStore.putMachineOnly} under a fresh ref.
+ */
+export function newSecretRef(): string {
   return `sec_${randomBytes(20).toString('hex').slice(0, 26)}`;
 }
 
@@ -227,10 +230,14 @@ export class SecretStore {
     return result;
   }
 
-  /** Encrypts and stores `value`, returning a fresh `secretRef`. */
+  /**
+   * Encrypts and stores `value`, returning a fresh `secretRef`. Refuses a machine-only label: only
+   * {@link putMachineOnly} makes those.
+   */
   set(value: string, opts?: { label?: string }): Promise<string> {
     return this.enqueue(async () => {
-      const ref = generateRef();
+      this.refuseMachineOnly(undefined, opts?.label);
+      const ref = newSecretRef();
       const { blob, encrypted } = this.encode(value);
       const entry: SecretEntry = {
         value: blob,
@@ -279,8 +286,9 @@ export class SecretStore {
   }
 
   /** Throws `secret-machine-only` when `ref` already names a machine-only entry, or `label` would make it one. */
-  private refuseMachineOnly(ref: string, label?: string): void {
-    if (isMachineOnlyLabel(this.data.entries[ref]?.label) || isMachineOnlyLabel(label)) {
+  private refuseMachineOnly(ref: string | undefined, label?: string): void {
+    const existing = ref === undefined ? undefined : this.data.entries[ref]?.label;
+    if (isMachineOnlyLabel(existing) || isMachineOnlyLabel(label)) {
       throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
     }
   }

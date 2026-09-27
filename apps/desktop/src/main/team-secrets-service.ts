@@ -61,7 +61,13 @@ import {
 } from '@wirebench/engine';
 import type { SyncConflictWire, TeamSecretsKeyWire, TeamSecretsStatusWire } from '../shared/wire-types.js';
 import { secretStoreLabel } from './secret-resolver.js';
-import { isMachineOnlyLabel, TEAM_KEY_LABEL_PREFIX, TEAM_REPLACED_LABEL_PREFIX, type SecretStore } from './secrets.js';
+import {
+  isMachineOnlyLabel,
+  newSecretRef,
+  TEAM_KEY_LABEL_PREFIX,
+  TEAM_REPLACED_LABEL_PREFIX,
+  type SecretStore,
+} from './secrets.js';
 import type { ConflictSides } from './sync/backend.js';
 
 /** The machine-only store labels; defined beside the store, which fences them off from secret values. */
@@ -375,6 +381,9 @@ export class TeamSecretsService {
       }
       const files = new Map<string, string | null>([[accessEntryPath(entry.id), teamSecretsFileText(entry)]]);
       const unreadable: string[] = [];
+      // Refused entries (an older copy put back, a machine-only label) are skipped on purpose: the removed
+      // key already had that ciphertext, and the trusted copy, where machines still hold it, is sealed
+      // again by their late re-encryption after the next pull (plan decision 6).
       for (const [id, value] of this.trustedValues(view)) {
         const plain = openVaultEntry(value, me);
         if (plain === undefined) {
@@ -501,7 +510,8 @@ export class TeamSecretsService {
       if (ws === undefined || paths.length === 0) {
         return decided;
       }
-      const view = await this.load(ws);
+      // Mid-merge, the tree may hold access entries the merge could still abort: remember none of them.
+      const view = await this.load(ws, { remember: false });
       if (!view.access.on || view.damaged) {
         return decided;
       }
@@ -538,7 +548,8 @@ export class TeamSecretsService {
         for (const old of local.replaced.filter((notice) => notice.entryId === entryId)) {
           await this.deps.store.delete(old.storedRef);
         }
-        const storedRef = await this.deps.store.set(lost, { label: `${TEAM_REPLACED_LABEL_PREFIX}${entryId}` });
+        const storedRef = newSecretRef();
+        await this.deps.store.putMachineOnly(storedRef, lost, { label: `${TEAM_REPLACED_LABEL_PREFIX}${entryId}` });
         local = {
           ...local,
           replaced: [
@@ -554,7 +565,8 @@ export class TeamSecretsService {
         };
       }
       if (local !== view.local) {
-        await this.saveLocal(ws, local);
+        // Only the notices: the seen entries and accepted times on disk stay as they were before the merge.
+        await this.saveLocal(ws, { ...(await readLocalState(ws.dir)), replaced: local.replaced });
       }
       return decided;
     });
@@ -581,18 +593,20 @@ export class TeamSecretsService {
       const value = restore ? await this.deps.store.getMachineOnly(notice.storedRef) : undefined;
       if (value !== undefined) {
         await this.importValue(notice.secret, notice.label, value);
-        if (this.canWriteVault(view) && view.me !== undefined) {
-          const entry = buildVaultEntry({
-            secret: notice.secret,
-            label: notice.label,
-            value,
-            recipients: approvedRecipients(view.access),
-            signer: view.me,
-            at: this.nextUpdatedAt(view, entryId),
-          });
-          await this.write(ws, new Map([[vaultEntryPath(entryId), teamSecretsFileText(entry)]]));
-          ws.afterWrite(`Update secret ${notice.label}`);
+        if (!this.canWriteVault(view) || view.me === undefined) {
+          // Restored here only: the notice (and the kept value) stay until the vault can take it too.
+          return await this.emit(ws);
         }
+        const entry = buildVaultEntry({
+          secret: notice.secret,
+          label: notice.label,
+          value,
+          recipients: approvedRecipients(view.access),
+          signer: view.me,
+          at: this.nextUpdatedAt(view, entryId),
+        });
+        await this.write(ws, new Map([[vaultEntryPath(entryId), teamSecretsFileText(entry)]]));
+        ws.afterWrite(`Update secret ${notice.label}`);
       }
       await this.deps.store.delete(notice.storedRef);
       await this.saveLocal(ws, {
@@ -648,16 +662,15 @@ export class TeamSecretsService {
     const keys = generateMachineKeys();
     const label = this.keyLabel(ws);
     const existing = await this.deps.store.findByLabel(label);
-    if (existing === undefined) {
-      await this.deps.store.set(serializeMachineKeys(keys), { label });
-    } else {
-      await this.deps.store.putMachineOnly(existing, serializeMachineKeys(keys));
-    }
+    await this.deps.store.putMachineOnly(existing ?? newSecretRef(), serializeMachineKeys(keys), { label });
     return keys;
   }
 
-  /** Reads the tree and replays the log, pinning the genesis and every valid entry seen (plan decision 4). */
-  protected async load(ws: TeamSecretsWorkspace): Promise<View> {
+  /**
+   * Reads the tree and replays the log, pinning the genesis and every valid entry seen (plan decision 4).
+   * `remember: false` pins nothing on disk (the view still counts them), for a read mid-merge.
+   */
+  protected async load(ws: TeamSecretsWorkspace, options: { readonly remember?: boolean } = {}): Promise<View> {
     const files = readTeamSecretsFiles(await readTreeFiles(ws.tree));
     let local = await readLocalState(ws.dir);
     const access = replayAccessLog(
@@ -680,7 +693,9 @@ export class TeamSecretsService {
           ...(access.genesisId !== undefined ? { genesisId: access.genesisId } : {}),
           seenAccess: seen,
         };
-        await writeLocalState(ws.dir, local);
+        if (options.remember !== false) {
+          await writeLocalState(ws.dir, local);
+        }
       }
     }
     const refused = new Map<string, Refusal>();
@@ -987,7 +1002,7 @@ export class TeamSecretsService {
           value: stored.value,
           recipients,
           signer: view.me,
-          at: this.now().toISOString(),
+          at: this.nextUpdatedAt(view, id),
         });
         out.set(vaultEntryPath(id), teamSecretsFileText(entry));
       }

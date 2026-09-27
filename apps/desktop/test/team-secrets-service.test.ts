@@ -1063,3 +1063,101 @@ describe('TeamSecretsService — two machines set one value (§3.4)', () => {
     expect((await a.service.status()).replaced).toEqual([]);
   });
 });
+
+describe('TeamSecretsService — Task 8 review fixes', () => {
+  it('dates a new value after one it accepted from a clock running ahead, so it is not refused', async () => {
+    const { a, b } = await aliceAndBob();
+    const ahead = buildVaultEntry({
+      secret: { ref: REF },
+      label: 'Password',
+      value: 'from-the-future',
+      recipients: await approvedAndPending(a),
+      signer: await keysOf(a),
+      at: '2027-01-01T00:00:00.000Z',
+    });
+    await writeTree(vaultEntryPath(vaultEntryId({ ref: REF })), teamSecretsFileText(ahead));
+    await b.service.afterPull([]);
+    expect(await b.store.get(REF)).toBe('from-the-future');
+
+    await b.service.recordValue({ ref: REF }, 'Password', 'bob-new');
+
+    expect((await vaultEntry()).updatedAt).toBe('2027-01-01T00:00:00.001Z');
+    await b.service.afterPull([]);
+    expect(await b.store.get(REF)).toBe('bob-new');
+    expect((await b.service.status()).untrusted).toEqual([]);
+  });
+
+  it('remembers nothing a merge brought in while resolving, so an aborted merge leaves no damage', async () => {
+    const { a } = await aliceAndBob();
+    const c = machine('Carol');
+    await c.service.afterPull([]);
+    const carolKey = (await c.service.status()).me.keyId!;
+    const alice = await keysOf(a);
+    const last = (await accessEntries()).at(-1)!;
+    const at = new Date(Date.parse(last.at) + 1).toISOString();
+    // What the merge put in the working tree: Carol approved on another clone.
+    const approval = signDocument(
+      {
+        version: 1 as const,
+        id: nextAccessEntryId(
+          (await accessEntries()).map((entry) => entry.id),
+          Date.parse(at),
+        ),
+        action: 'approve' as const,
+        key: carolKey,
+        by: alice.keyId,
+        at,
+      },
+      alice,
+    );
+    await writeTree(accessEntryPath(approval.id), teamSecretsFileText(approval));
+    const path = vaultEntryPath(vaultEntryId({ ref: REF }));
+    const text = await readTree(path);
+
+    await a.service.resolveConflicts([{ path }], () => Promise.resolve({ mine: text, theirs: null }));
+    await rm(join(tree, ...accessEntryPath(approval.id).split('/'))); // the merge is aborted
+
+    const status = await a.service.status();
+    expect(status.message).toBeUndefined();
+    expect(status.canManage).toBe(true);
+  });
+
+  it('keeps the replaced notice and the kept value when the value can only be restored on this machine', async () => {
+    const { a, b } = await aliceAndBob();
+    const path = vaultEntryPath(vaultEntryId({ ref: REF }));
+    const entryId = vaultEntryId({ ref: REF });
+    await b.service.recordValue({ ref: REF }, 'Password', 'bob-new');
+    const mine = await readTree(path);
+    await a.service.recordValue({ ref: REF }, 'Password', 'alice-new');
+    const theirs = await readTree(path);
+    await b.service.resolveConflicts([{ path }], () => Promise.resolve({ mine, theirs }));
+    await a.service.remove((await b.service.status()).me.keyId!);
+    const commits = [...b.commits];
+    const vault = await readTree(path);
+
+    const status = await b.service.restoreMine(entryId);
+
+    expect(await b.store.get(REF)).toBe('bob-new');
+    expect(status.replaced).toEqual([{ entryId, label: 'Password', byName: 'Alice' }]);
+    const kept = await b.store.findByLabel(`${TEAM_REPLACED_LABEL_PREFIX}${entryId}`);
+    expect(await b.store.getMachineOnly(kept!)).toBe('bob-new');
+    expect(b.commits).toEqual(commits);
+    expect(await readTree(path)).toBe(vault);
+  });
+
+  it('writes the machine key and a kept value only as machine-only entries', async () => {
+    const { a, b } = await aliceAndBob();
+    const path = vaultEntryPath(vaultEntryId({ ref: REF }));
+    await a.service.recordValue({ ref: REF }, 'Password', 'alice-new');
+    const mine = await readTree(path);
+    await b.service.recordValue({ ref: REF }, 'Password', 'bob-new');
+    const theirs = await readTree(path);
+    await a.service.resolveConflicts([{ path }], () => Promise.resolve({ mine, theirs }));
+
+    const keyRef = (await a.store.findByLabel('wirebench-team-key:ws-1'))!;
+    const kept = (await a.store.findByLabel(`${TEAM_REPLACED_LABEL_PREFIX}${vaultEntryId({ ref: REF })}`))!;
+    expect(await a.store.isMachineOnly(keyRef)).toBe(true);
+    expect(await a.store.isMachineOnly(kept)).toBe(true);
+    expect(await a.store.get(kept)).toBeUndefined();
+  });
+});
