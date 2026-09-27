@@ -42,11 +42,11 @@ import {
   vaultEntryPath,
   verifiedKeys,
   verifyVaultEntry,
-  WirebenchError,
   type AccessAction,
   type AccessEntryFile,
   type AccessState,
   type KeyInfo,
+  type LogProblem,
   type MachineKeys,
   type SecretKey,
   type TeamSecretsFiles,
@@ -54,10 +54,10 @@ import {
 } from '@wirebench/engine';
 import type { TeamSecretsKeyWire, TeamSecretsStatusWire } from '../shared/wire-types.js';
 import { secretStoreLabel } from './secret-resolver.js';
-import type { SecretStore } from './secrets.js';
+import { TEAM_KEY_LABEL_PREFIX, type SecretStore } from './secrets.js';
 
-export const TEAM_KEY_LABEL_PREFIX = 'wirebench-team-key:';
-export const TEAM_REPLACED_LABEL_PREFIX = 'wirebench-team-replaced:';
+/** The machine-only store labels; defined beside the store, which fences them off from secret values. */
+export { TEAM_KEY_LABEL_PREFIX, TEAM_REPLACED_LABEL_PREFIX } from './secrets.js';
 /** Machine-local, in the workspace's app-data folder: the genesis pin, seen entries, replaced notices. */
 export const TEAM_SECRETS_LOCAL_FILE = 'team-secrets.json';
 
@@ -82,7 +82,7 @@ export const TEAM_SECRETS_OFF: TeamSecretsStatusWire = {
 
 export type TeamSecretsStore = Pick<
   SecretStore,
-  'get' | 'set' | 'put' | 'delete' | 'findByLabel' | 'list' | 'encryptionAvailable'
+  'get' | 'getMachineOnly' | 'set' | 'put' | 'delete' | 'findByLabel' | 'list' | 'encryptionAvailable'
 >;
 
 /** One secret the workspace's projects use. */
@@ -149,7 +149,7 @@ interface View {
   readonly access: AccessState;
   readonly me: MachineKeys | undefined;
   readonly local: LocalState;
-  /** A remembered access entry is missing from the tree, or the replay now rejects it (plan decision 4). */
+  /** A remembered access entry is missing from the tree, or now fails its signature or signer (plan decision 4). */
   readonly damaged: boolean;
 }
 
@@ -203,6 +203,30 @@ async function readLocalState(dir: string): Promise<LocalState> {
 async function writeLocalState(dir: string, state: LocalState): Promise<void> {
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, TEAM_SECRETS_LOCAL_FILE), JSON.stringify(state, null, 2), 'utf8');
+}
+
+/**
+ * Plan decision 4: the replay problems that mean a seen entry was tampered with (its signature, or its
+ * signer's key request, no longer checks out). Any other problem on a seen entry (its subject's request
+ * is gone after a concurrent decline, or a concurrent change reordered who could make it) only stops it
+ * counting.
+ */
+const TAMPER_PROBLEMS: ReadonlySet<LogProblem> = new Set<LogProblem>(['bad-signature', 'unknown-signer']);
+
+/** The error for an access entry the replay would reject (generic guard before writing). */
+function refusal(problem: LogProblem): Error {
+  switch (problem) {
+    case 'already-admin':
+      return teamSecretsError('team-secrets-already-admin');
+    case 'not-admin':
+      return teamSecretsError('team-secrets-not-admin');
+    case 'last-admin':
+      return teamSecretsError('team-secrets-last-admin');
+    case 'last-approved':
+      return teamSecretsError('team-secrets-last-approved');
+    default:
+      return teamSecretsError('team-secrets-not-allowed');
+  }
 }
 
 function sameList(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
@@ -286,7 +310,7 @@ export class TeamSecretsService {
       const { view, me } = await this.managerView();
       const subject = this.pendingKey(view, keyId);
       const entry = this.accessEntry(view, 'approve', keyId, me);
-      const next = this.replayWith(view, entry);
+      const next = this.replayOrRefuse(view, entry);
       const files = new Map<string, string | null>([[accessEntryPath(entry.id), teamSecretsFileText(entry)]]);
       for (const [id, value] of this.trustedValues(view)) {
         const healed = healVaultEntry(value, next, me);
@@ -316,17 +340,24 @@ export class TeamSecretsService {
     return this.enqueue(async () => {
       const { view, me } = await this.managerView();
       const subject = this.approvedKey(view, keyId);
-      if (view.access.authority === 'signed' && view.access.admins.has(keyId) && view.access.admins.size === 1) {
-        throw teamSecretsError('team-secrets-last-admin');
-      }
       const entry = this.accessEntry(view, 'remove', keyId, me);
-      const recipients = approvedRecipients(this.replayWith(view, entry));
+      const recipients = approvedRecipients(this.replayOrRefuse(view, entry));
+      if (keyId === me.keyId) {
+        throw teamSecretsError('team-secrets-remove-self');
+      }
       const files = new Map<string, string | null>([[accessEntryPath(entry.id), teamSecretsFileText(entry)]]);
+      const unreadable: string[] = [];
       for (const [id, value] of this.trustedValues(view)) {
         const plain = openVaultEntry(value, me);
-        if (plain !== undefined) {
+        if (plain === undefined) {
+          unreadable.push(value.label);
+        } else {
           files.set(vaultEntryPath(id), teamSecretsFileText(sealVaultEntry(value, plain, recipients, me)));
         }
+      }
+      if (unreadable.length > 0) {
+        // Sealing only what it can read would leave the removed key's wraps on the rest.
+        throw teamSecretsError('team-secrets-cannot-reencrypt', { labels: unreadable });
       }
       await this.write(view.ws, files);
       view.ws.afterWrite(`Remove ${subject.name} from team secrets`);
@@ -365,7 +396,7 @@ export class TeamSecretsService {
 
   protected requireWorkspace(): TeamSecretsWorkspace {
     if (this.ws === undefined) {
-      throw new WirebenchError('team-secrets-not-shared', 'Team secrets need a shared workspace.');
+      throw teamSecretsError('team-secrets-not-shared');
     }
     return this.ws;
   }
@@ -388,7 +419,7 @@ export class TeamSecretsService {
 
   private async myKeys(ws: TeamSecretsWorkspace): Promise<MachineKeys | undefined> {
     const ref = await this.deps.store.findByLabel(this.keyLabel(ws));
-    const text = ref === undefined ? undefined : await this.deps.store.get(ref);
+    const text = ref === undefined ? undefined : await this.deps.store.getMachineOnly(ref);
     return text === undefined ? undefined : parseMachineKeys(text);
   }
 
@@ -418,8 +449,12 @@ export class TeamSecretsService {
       local.genesisId !== undefined ? { genesisId: local.genesisId } : {},
     );
     const present = new Set(files.access.map((entry) => entry.id));
-    const rejected = new Set(access.problems.map((problem) => problem.id));
-    const damaged = local.seenAccess.some((id) => !present.has(id) || rejected.has(id));
+    const problems = new Map(access.problems.map(({ id, problem }) => [id, problem]));
+    const rejected = new Set(problems.keys());
+    const damaged = local.seenAccess.some((id) => {
+      const problem = problems.get(id);
+      return !present.has(id) || (problem !== undefined && TAMPER_PROBLEMS.has(problem));
+    });
     if (access.on && !damaged) {
       const seen = [...new Set([...local.seenAccess, ...[...present].filter((id) => !rejected.has(id))])].sort();
       if (local.genesisId !== access.genesisId || !sameList(seen, local.seenAccess)) {
@@ -432,11 +467,14 @@ export class TeamSecretsService {
       }
     }
     const me = await this.myKeys(ws);
-    this.cache = {
-      on: access.on,
-      approved: me !== undefined && access.approved.has(me.keyId),
-      vaultIds: new Set(files.values.keys()),
-    };
+    if (ws === this.ws) {
+      // A load for a workspace closed meanwhile must not stand in for the open one's.
+      this.cache = {
+        on: access.on,
+        approved: me !== undefined && access.approved.has(me.keyId),
+        vaultIds: new Set(files.values.keys()),
+      };
+    }
     return { ws, files, access, me, local, damaged };
   }
 
@@ -472,8 +510,15 @@ export class TeamSecretsService {
     return view.access.authority === 'signed' ? view.access.admins.has(view.me.keyId) : view.ws.role() === 'admin';
   }
 
+  /** @throws team-secrets-damaged, team-secrets-pending, or team-secrets-admin-only */
   private async managerView(): Promise<{ view: View; me: MachineKeys }> {
     const view = await this.load(this.requireWorkspace());
+    if (view.damaged) {
+      throw teamSecretsError('team-secrets-damaged');
+    }
+    if (view.access.on && this.myState(view) !== 'approved') {
+      throw teamSecretsError('team-secrets-pending');
+    }
     if (!this.isManager(view) || view.me === undefined) {
       throw teamSecretsError('team-secrets-admin-only');
     }
@@ -484,7 +529,7 @@ export class TeamSecretsService {
     const subject = view.access.keys.get(keyId);
     const removed = view.access.removed.some((removal) => removal.keyId === keyId);
     if (subject === undefined || view.access.approved.has(keyId) || removed) {
-      throw new WirebenchError('team-secrets-no-such-key', 'That machine is not waiting for approval.');
+      throw teamSecretsError('team-secrets-no-such-key');
     }
     return subject;
   }
@@ -492,7 +537,7 @@ export class TeamSecretsService {
   private approvedKey(view: View, keyId: string): KeyInfo {
     const subject = view.access.keys.get(keyId);
     if (subject === undefined || !view.access.approved.has(keyId)) {
-      throw new WirebenchError('team-secrets-no-such-key', 'That machine is not approved for team secrets.');
+      throw teamSecretsError('team-secrets-no-such-key');
     }
     return subject;
   }
@@ -501,16 +546,11 @@ export class TeamSecretsService {
     return this.enqueue(async () => {
       const { view, me } = await this.managerView();
       if (view.access.authority !== 'signed') {
-        throw new WirebenchError(
-          'team-secrets-server-authority',
-          'On a server workspace, the server roles decide who is an admin.',
-        );
+        throw teamSecretsError('team-secrets-server-authority');
       }
       const subject = this.approvedKey(view, keyId);
-      if (action === 'revoke-admin' && view.access.admins.has(keyId) && view.access.admins.size === 1) {
-        throw teamSecretsError('team-secrets-last-admin');
-      }
       const entry = this.accessEntry(view, action, keyId, me);
+      this.replayOrRefuse(view, entry);
       await this.write(view.ws, new Map([[accessEntryPath(entry.id), teamSecretsFileText(entry)]]));
       view.ws.afterWrite(
         action === 'grant-admin'
@@ -539,12 +579,21 @@ export class TeamSecretsService {
     );
   }
 
-  private replayWith(view: View, entry: AccessEntryFile): AccessState {
-    return replayAccessLog(
+  /**
+   * The log replayed with `entry` appended. Every other machine replays it the same way, so an entry the
+   * replay rejects is refused here instead of written.
+   */
+  private replayOrRefuse(view: View, entry: AccessEntryFile): AccessState {
+    const next = replayAccessLog(
       view.access.keys,
       [...view.files.access, entry],
       view.local.genesisId !== undefined ? { genesisId: view.local.genesisId } : {},
     );
+    const problem = next.problems.find((item) => item.id === entry.id);
+    if (problem !== undefined) {
+      throw refusal(problem.problem);
+    }
+    return next;
   }
 
   /** The vault entries the replay trusts, by id. */

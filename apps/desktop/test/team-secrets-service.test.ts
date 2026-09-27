@@ -3,8 +3,26 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseTeamSecretsFile, vaultEntryFileSchema, vaultEntryId, vaultEntryPath } from '@wirebench/engine';
-import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
+import {
+  accessEntryFileSchema,
+  accessEntryPath,
+  buildVaultEntry,
+  decryptValue,
+  GIT_ATTRIBUTES,
+  nextAccessEntryId,
+  parseMachineKeys,
+  parseTeamSecretsFile,
+  signDocument,
+  teamSecretsFileText,
+  unwrapDataKey,
+  vaultEntryFileSchema,
+  vaultEntryId,
+  vaultEntryPath,
+  verifiedKeys,
+  readTeamSecretsFiles,
+  type MachineKeys,
+} from '@wirebench/engine';
+import { SecretStore, TEAM_REPLACED_LABEL_PREFIX, type CryptoBackend } from '../src/main/secrets.js';
 import { TeamSecretsService, type SecretUse, type TeamSecretsWorkspace } from '../src/main/team-secrets-service.js';
 
 const REF = 'sec_0123456789abcdef0123456789';
@@ -299,7 +317,7 @@ describe('TeamSecretsService — what leaves main', () => {
   it('never answers with a value or a private key', async () => {
     const { a, b } = await aliceAndBob();
     const keyRef = await a.store.findByLabel('wirebench-team-key:ws-1');
-    const privateKeys = JSON.parse((await a.store.get(keyRef!))!) as Record<string, string>;
+    const privateKeys = JSON.parse((await a.store.getMachineOnly(keyRef!))!) as Record<string, string>;
     const answered = JSON.stringify([await a.service.status(), await b.service.status()]);
     expect(answered).not.toContain('hunter2');
     expect(answered).not.toContain(privateKeys['encryptionPrivate']);
@@ -307,6 +325,20 @@ describe('TeamSecretsService — what leaves main', () => {
     expect(await treeText()).not.toContain(privateKeys['signingPrivate']);
   });
 });
+
+/** This machine's key pair, as the service keeps it (test-only: a real answer never carries it). */
+async function keysOf(m: Machine): Promise<MachineKeys> {
+  const ref = await m.store.findByLabel('wirebench-team-key:ws-1');
+  return parseMachineKeys((await m.store.getMachineOnly(ref!))!)!;
+}
+
+async function accessEntries() {
+  const dir = join(tree, 'team-secrets', 'access');
+  const names = (await readdir(dir)).sort();
+  return Promise.all(
+    names.map(async (name) => parseTeamSecretsFile(accessEntryFileSchema, await readFile(join(dir, name), 'utf8'))!),
+  );
+}
 
 describe('TeamSecretsService — a damaged access log (plan decision 4)', () => {
   const DAMAGED =
@@ -323,22 +355,7 @@ describe('TeamSecretsService — a damaged access log (plan decision 4)', () => 
     const commits = [...a.commits];
 
     expect(await a.service.status()).toMatchObject({ canManage: false, message: DAMAGED });
-    await expect(a.service.approve(carolKey)).rejects.toMatchObject({ code: 'team-secrets-admin-only' });
-    expect(a.commits).toEqual(commits);
-  });
-
-  it('stops writing when an access entry it has seen is still there but the replay now rejects it', async () => {
-    const { a, b } = await aliceAndBob();
-    const bobKey = (await b.service.status()).me.keyId!;
-    const c = machine('Carol');
-    await c.service.afterPull([]);
-    const carolKey = (await c.service.status()).me.keyId!;
-    // The approval stays, but the key request it names is gone: the replay now rejects it.
-    await rm(join(tree, 'team-secrets', 'keys', `${bobKey}.yaml`));
-    const commits = [...a.commits];
-
-    expect(await a.service.status()).toMatchObject({ canManage: false, message: DAMAGED });
-    await expect(a.service.approve(carolKey)).rejects.toMatchObject({ code: 'team-secrets-admin-only' });
+    await expect(a.service.approve(carolKey)).rejects.toMatchObject({ code: 'team-secrets-damaged' });
     expect(a.commits).toEqual(commits);
   });
 
@@ -354,6 +371,251 @@ describe('TeamSecretsService — a damaged access log (plan decision 4)', () => 
     }
 
     expect(await a.service.status()).toMatchObject({ canManage: false, message: DAMAGED });
-    await expect(a.service.remove(bobKey)).rejects.toMatchObject({ code: 'team-secrets-admin-only' });
+    await expect(a.service.remove(bobKey)).rejects.toMatchObject({ code: 'team-secrets-damaged' });
+  });
+
+  it('stops writing when the key request of a seen entry’s signer is gone', async () => {
+    const { a, b } = await aliceAndBob();
+    const bobKey = (await b.service.status()).me.keyId!;
+    await a.service.grantAdmin(bobKey);
+    const c = machine('Carol');
+    await c.service.afterPull([]);
+    const carolKey = (await c.service.status()).me.keyId!;
+    await b.service.approve(carolKey); // signed by Bob; Alice sees it next
+    await a.service.status();
+    await rm(join(tree, 'team-secrets', 'keys', `${bobKey}.yaml`));
+
+    expect(await a.service.status()).toMatchObject({ canManage: false, message: DAMAGED });
+  });
+
+  it('does not count a seen entry whose subject’s request is gone (a concurrent decline) as damage', async () => {
+    const { a, b } = await aliceAndBob();
+    const bobKey = (await b.service.status()).me.keyId!;
+    const c = machine('Carol');
+    await c.service.afterPull([]);
+    const carolKey = (await c.service.status()).me.keyId!;
+    await rm(join(tree, 'team-secrets', 'keys', `${bobKey}.yaml`));
+
+    const status = await a.service.status();
+    expect(status.message).toBeUndefined();
+    expect(status.canManage).toBe(true);
+    expect(status.approved.map((key) => key.name)).toEqual(['Alice']);
+    await a.service.approve(carolKey);
+    expect(a.commits.at(-1)).toBe('Approve team secrets access for Carol');
+  });
+
+  it('merges two logs with concurrent admin changes without damage: the later entry just stops counting', async () => {
+    const { a, b } = await aliceAndBob();
+    const bobKey = (await b.service.status()).me.keyId!;
+    await a.service.grantAdmin(bobKey);
+    const grant = (await accessEntries()).at(-1)!;
+    const c = machine('Carol');
+    await c.service.afterPull([]);
+    const carolKey = (await c.service.status()).me.keyId!;
+    // Bob approves Carol; meanwhile, on another clone, Alice revoked Bob's admin just after the grant.
+    await b.service.approve(carolKey);
+    expect((await b.service.status()).approved.map((key) => key.name).sort()).toEqual(['Alice', 'Bob', 'Carol']);
+    const revoke = signDocument(
+      {
+        version: 1 as const,
+        id: nextAccessEntryId([grant.id], Date.parse(grant.at)),
+        action: 'revoke-admin' as const,
+        key: bobKey,
+        by: grant.by,
+        at: new Date(Date.parse(grant.at) + 1).toISOString(),
+      },
+      await keysOf(a),
+    );
+    await writeFile(join(tree, ...accessEntryPath(revoke.id).split('/')), teamSecretsFileText(revoke), 'utf8');
+
+    for (const m of [a, b]) {
+      const status = await m.service.status();
+      expect(status.message).toBeUndefined();
+      expect(status.approved.map((key) => key.name).sort()).toEqual(['Alice', 'Bob']);
+    }
+    expect((await b.service.status()).canManage).toBe(false);
+    expect((await a.service.status()).canManage).toBe(true);
+  });
+});
+
+describe('TeamSecretsService — refusals before writing', () => {
+  it('refuses removing this machine’s own key, with two admins (signed)', async () => {
+    const { a, b } = await aliceAndBob();
+    const aliceKey = (await a.service.status()).me.keyId!;
+    await a.service.grantAdmin((await b.service.status()).me.keyId!);
+    const commits = [...a.commits];
+    await expect(a.service.remove(aliceKey)).rejects.toMatchObject({ code: 'team-secrets-remove-self' });
+    expect(a.commits).toEqual(commits);
+  });
+
+  it('refuses removing its own key on a server share, and the last approved key', async () => {
+    const a = machine('Alice', { kind: 'server', role: 'admin' });
+    await a.service.turnOn();
+    const aliceKey = (await a.service.status()).me.keyId!;
+    await expect(a.service.remove(aliceKey)).rejects.toMatchObject({ code: 'team-secrets-last-approved' });
+    const v = machine('Vera', { kind: 'server', role: 'viewer' });
+    await v.service.afterPull([]);
+    await a.service.approve((await v.service.status()).me.keyId!);
+    await expect(a.service.remove(aliceKey)).rejects.toMatchObject({ code: 'team-secrets-remove-self' });
+  });
+
+  it('refuses a removal when a value is not readable here, naming its label', async () => {
+    const { a, b } = await aliceAndBob();
+    const bobKey = (await b.service.status()).me.keyId!;
+    const bob = await keysOf(b);
+    const secret = { ref: 'sec_abcdefabcdefabcdefabcdefab' };
+    const files = readTeamSecretsFiles(
+      new Map([
+        [
+          `team-secrets/keys/${bobKey}.yaml`,
+          await readFile(join(tree, 'team-secrets', 'keys', `${bobKey}.yaml`), 'utf8'),
+        ],
+      ]),
+    );
+    const onlyBob = buildVaultEntry({
+      secret,
+      label: 'Token',
+      value: 'tok-bob',
+      recipients: [...verifiedKeys(files.keys).values()],
+      signer: bob,
+      at: new Date(clock).toISOString(),
+    });
+    await writeFile(
+      join(tree, ...vaultEntryPath(vaultEntryId(secret)).split('/')),
+      teamSecretsFileText(onlyBob),
+      'utf8',
+    );
+    const commits = [...a.commits];
+
+    await expect(a.service.remove(bobKey)).rejects.toMatchObject({
+      code: 'team-secrets-cannot-reencrypt',
+      details: { labels: ['Token'] },
+    });
+    expect(a.commits).toEqual(commits);
+  });
+
+  it('refuses granting admin to an admin and revoking it from a non-admin', async () => {
+    const { a, b } = await aliceAndBob();
+    const aliceKey = (await a.service.status()).me.keyId!;
+    const bobKey = (await b.service.status()).me.keyId!;
+    await expect(a.service.grantAdmin(aliceKey)).rejects.toMatchObject({ code: 'team-secrets-already-admin' });
+    await expect(a.service.revokeAdmin(bobKey)).rejects.toMatchObject({ code: 'team-secrets-not-admin' });
+  });
+
+  it('tells a machine waiting for approval that it is pending', async () => {
+    const a = machine('Alice');
+    await a.service.turnOn();
+    const b = machine('Bob');
+    await b.service.afterPull([]);
+    const aliceKey = (await a.service.status()).me.keyId!;
+    await expect(b.service.remove(aliceKey)).rejects.toMatchObject({ code: 'team-secrets-pending' });
+  });
+
+  it('asks for the keychain before asking for access again', async () => {
+    const a = machine('Alice');
+    await a.service.turnOn();
+    const noKeychain = machine('Nokey', { available: false });
+    await expect(noKeychain.service.requestAccess()).rejects.toMatchObject({ code: 'team-secrets-no-safe-storage' });
+  });
+});
+
+describe('TeamSecretsService — server authority', () => {
+  it('lets a server admin approve and remove, and refuses an approved editor', async () => {
+    const a = machine('Alice', { kind: 'server', role: 'admin' });
+    await a.store.put(REF, 'hunter2', { label: 'Password' });
+    a.uses = [{ secret: { ref: REF } }];
+    await a.service.turnOn();
+    const e = machine('Eve', { kind: 'server', role: 'editor' });
+    await e.service.afterPull([]);
+    const eveKey = (await e.service.status()).me.keyId!;
+    await a.service.approve(eveKey);
+    const v = machine('Vera', { kind: 'server', role: 'viewer' });
+    await v.service.afterPull([]);
+    const veraKey = (await v.service.status()).me.keyId!;
+
+    expect(await e.service.status()).toMatchObject({ me: { state: 'approved' }, canManage: false });
+    await expect(e.service.approve(veraKey)).rejects.toMatchObject({ code: 'team-secrets-admin-only' });
+    await expect(e.service.grantAdmin(veraKey)).rejects.toMatchObject({ code: 'team-secrets-admin-only' });
+    await expect(a.service.grantAdmin(eveKey)).rejects.toMatchObject({ code: 'team-secrets-server-authority' });
+
+    await a.service.approve(veraKey);
+    await a.service.remove(eveKey);
+    expect((await a.service.status()).approved.map((key) => key.name).sort()).toEqual(['Alice', 'Vera']);
+    const wraps = Object.keys((await vaultEntry()).wraps);
+    expect(wraps).toContain(veraKey);
+    expect(wraps).not.toContain(eveKey);
+  });
+});
+
+describe('TeamSecretsService — the data key after a removal', () => {
+  it('seals the value under a data key the old wrap cannot open', async () => {
+    const { a, b } = await aliceAndBob();
+    const alice = await keysOf(a);
+    const before = await vaultEntry();
+    await a.service.remove((await b.service.status()).me.keyId!);
+    const after = await vaultEntry();
+
+    const oldKey = unwrapDataKey(before.wraps[alice.keyId]!, alice);
+    const id = vaultEntryId({ ref: REF });
+    expect(decryptValue(before.cipher, oldKey, id)).toBe('hunter2');
+    expect(() => decryptValue(after.cipher, oldKey, id)).toThrow();
+    expect(decryptValue(after.cipher, unwrapDataKey(after.wraps[alice.keyId]!, alice), id)).toBe('hunter2');
+  });
+});
+
+describe('TeamSecretsService — .gitattributes on a git share', () => {
+  it('writes it when missing and appends the vault line to an existing one', async () => {
+    const a = machine('Alice', { kind: 'git' });
+    await a.service.turnOn();
+    expect(await readFile(join(tree, '.gitattributes'), 'utf8')).toBe(GIT_ATTRIBUTES);
+
+    await rm(base, { recursive: true, force: true });
+    await mkdir(tree, { recursive: true });
+    await writeFile(join(tree, '.gitattributes'), '* text=auto', 'utf8');
+    const b = machine('Bob', { kind: 'git' });
+    await b.service.turnOn();
+    expect(await readFile(join(tree, '.gitattributes'), 'utf8')).toBe('* text=auto\nteam-secrets/values/** -merge\n');
+  });
+});
+
+describe('TeamSecretsService — machine-only store entries', () => {
+  it('never puts a kept replaced value or a machine key into the vault or the local-only list', async () => {
+    const a = machine('Alice');
+    const kept = 'sec_ffffffffffffffffffffffffff';
+    await a.store.put(kept, 'lost-value', { label: `${TEAM_REPLACED_LABEL_PREFIX}X` });
+    a.uses = [{ secret: { ref: kept } }];
+    expect((await a.service.status()).localOnly).toEqual([]);
+    await a.service.turnOn();
+    const keyRef = (await a.store.findByLabel('wirebench-team-key:ws-1'))!;
+    a.uses = [{ secret: { ref: kept } }, { secret: { ref: keyRef } }];
+    await a.service.afterPull([]);
+    expect(await treeText()).not.toContain('lost-value');
+    await expect(vaultEntry(kept)).rejects.toThrow();
+    await expect(vaultEntry(keyRef)).rejects.toThrow();
+  });
+});
+
+describe('TeamSecretsService — the send cache', () => {
+  class Probe extends TeamSecretsService {
+    cacheNow() {
+      return this.cache;
+    }
+    loadFor(ws: TeamSecretsWorkspace) {
+      return this.load(ws);
+    }
+  }
+
+  it('is not overwritten by a load for a workspace that is no longer attached', async () => {
+    const a = machine('Alice');
+    await a.service.turnOn();
+    const probe = new Probe({ store: a.store, now: () => new Date((clock += 1000)) });
+    probe.attach(a.ws);
+    await probe.loadFor(a.ws);
+    expect(probe.cacheNow().on).toBe(true);
+
+    const other: TeamSecretsWorkspace = { ...a.ws, workspaceId: 'ws-2', tree: join(base, 'other-tree') };
+    probe.attach(other);
+    await probe.loadFor(a.ws);
+    expect(probe.cacheNow()).toMatchObject({ on: false, approved: false });
   });
 });

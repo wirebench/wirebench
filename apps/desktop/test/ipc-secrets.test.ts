@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { channels } from '../src/shared/ipc.js';
-import { SecretStore, ShowSecretsFlag, type CryptoBackend } from '../src/main/secrets.js';
+import { SecretStore, ShowSecretsFlag, TEAM_KEY_LABEL_PREFIX, type CryptoBackend } from '../src/main/secrets.js';
 import { registerSecretsChannels } from '../src/main/ipc/secrets.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -83,6 +83,24 @@ describe('registerSecretsChannels', () => {
 
     expect(await invoke('secrets.delete', { ref })).toMatchObject({ ok: true, value: { deleted: true } });
     expect(await invoke('secrets.exists', { ref })).toMatchObject({ ok: true, value: { exists: false } });
+  });
+
+  it('leaves team secrets machine-only entries out of list, and refuses to replace or delete them', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    registerSecretsChannels(store, new ShowSecretsFlag());
+    const key = await store.set('{"private":"k"}', { label: `${TEAM_KEY_LABEL_PREFIX}ws-1` });
+
+    const listed = (await invoke('secrets.list', undefined)) as { ok: true; value: { entries: { ref: string }[] } };
+    expect(listed.value.entries.map((e) => e.ref)).not.toContain(key);
+    expect(await invoke('secrets.delete', { ref: key })).toMatchObject({
+      ok: false,
+      error: { code: 'secret-machine-only' },
+    });
+    expect(await invoke('secrets.replace', { ref: key, value: 'x' })).toMatchObject({
+      ok: false,
+      error: { code: 'secret-machine-only' },
+    });
+    expect(await store.getMachineOnly(key)).toBe('{"private":"k"}');
   });
 
   it('setShowSecrets toggles the injected flag', async () => {

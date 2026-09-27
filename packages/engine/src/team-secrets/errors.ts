@@ -10,6 +10,18 @@ export const TEAM_SECRETS_MESSAGES = {
   'team-secrets-not-canonical': 'A team secrets document contained a value that could not be signed.',
   'team-secrets-bad-key': 'A team secrets key was malformed.',
   'team-secrets-decrypt-failed': 'A team secret could not be decrypted.',
+  'team-secrets-not-shared': 'Team secrets need a shared workspace.',
+  'team-secrets-no-such-key': 'That machine is not waiting for approval, or not approved, as this change needs.',
+  'team-secrets-server-authority': 'On a server workspace, the server roles decide who is an admin.',
+  'team-secrets-remove-self': 'Ask another admin to remove this machine.',
+  'team-secrets-cannot-reencrypt':
+    'Some team secrets are not readable on this machine, so they cannot be re-encrypted. Ask another admin to remove this machine, or wait for this machine to receive them.',
+  'team-secrets-already-admin': 'That machine is already a team secrets admin.',
+  'team-secrets-not-admin': 'That machine is not a team secrets admin.',
+  'team-secrets-last-approved': 'A workspace needs at least one approved machine for team secrets.',
+  'team-secrets-not-allowed': 'That change to team secrets access is not allowed.',
+  'team-secrets-damaged':
+    'The team secrets access log on this machine does not match what it saw before; this machine will not change team secrets until it is repaired.',
 } as const;
 
 export type TeamSecretsErrorCode = keyof typeof TEAM_SECRETS_MESSAGES;

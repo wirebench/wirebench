@@ -3,7 +3,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SECRETS_FILE, SecretStore, type CryptoBackend } from '../src/main/secrets.js';
+import {
+  SECRETS_FILE,
+  SecretStore,
+  TEAM_KEY_LABEL_PREFIX,
+  TEAM_REPLACED_LABEL_PREFIX,
+  type CryptoBackend,
+} from '../src/main/secrets.js';
 
 let dir: string;
 
@@ -166,5 +172,22 @@ describe('SecretStore.put and encryptionAvailable (team secrets)', () => {
     expect(await store.list()).toEqual([
       expect.objectContaining({ ref: 'sec_0123456789abcdef0123456789', label: 'Password' }),
     ]);
+  });
+});
+
+describe('SecretStore machine-only entries (team secrets)', () => {
+  it('never resolves a machine key or a kept replaced value as a secret; only getMachineOnly reads them', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    const key = await store.set('{"private":"k"}', { label: `${TEAM_KEY_LABEL_PREFIX}ws-1` });
+    const kept = await store.set('old', { label: `${TEAM_REPLACED_LABEL_PREFIX}ws-1:E` });
+    const plain = await store.set('value', { label: 'Password' });
+
+    expect(await store.get(key)).toBeUndefined();
+    expect(await store.get(kept)).toBeUndefined();
+    expect(await store.get(plain)).toBe('value');
+    expect(await store.getMachineOnly(key)).toBe('{"private":"k"}');
+    expect(await store.getMachineOnly(plain)).toBeUndefined();
+    expect(await store.isMachineOnly(kept)).toBe(true);
+    expect(await store.isMachineOnly(plain)).toBe(false);
   });
 });

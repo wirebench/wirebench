@@ -117,6 +117,11 @@ describe('projectSecretGetter', () => {
     expect(await getterFor('p1')(ref)).toBe('fake-password-not-real');
   });
 
+  it('never resolves a team secrets machine key, even named directly', async () => {
+    const key = await store.set('{"private":"k"}', { label: 'wirebench-team-key:ws-1' });
+    expect(await getterFor('p1')(key)).toBeUndefined();
+  });
+
   it('records every token value it hands out, so the log shows it redacted', async () => {
     await store.set('fake-recorded-not-real-1', { label: secretStoreLabel('p1', 'recorded') });
     await store.set('fake-recorded-not-real-2', { label: secretStoreLabel('p1', 'recorded_2') });

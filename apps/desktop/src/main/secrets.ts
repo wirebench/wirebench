@@ -118,6 +118,21 @@ function generateRef(): string {
   return `sec_${randomBytes(20).toString('hex').slice(0, 26)}`;
 }
 
+/** The label on a workspace's team-secrets machine key: its private keys, never a secret value. */
+export const TEAM_KEY_LABEL_PREFIX = 'wirebench-team-key:';
+/** The label on a value team secrets kept on this machine after another one replaced it. */
+export const TEAM_REPLACED_LABEL_PREFIX = 'wirebench-team-replaced:';
+
+/**
+ * True for an entry team secrets keep for this machine only (a machine key, a replaced value): it is
+ * never a secret value, so it is never resolved, listed or deleted as one.
+ */
+export function isMachineOnlyLabel(label: string | undefined): boolean {
+  return (
+    label !== undefined && (label.startsWith(TEAM_KEY_LABEL_PREFIX) || label.startsWith(TEAM_REPLACED_LABEL_PREFIX))
+  );
+}
+
 /**
  * Owns the secret store for one `userData` directory. Writes are serialised (a promise chain,
  * matching `GlobalProperties`) so overlapping `set`/`replace`/`delete` calls cannot race each
@@ -271,14 +286,34 @@ export class SecretStore {
     return this.crypto.available;
   }
 
-  /** Resolves a `secretRef` to its plaintext value, or `undefined` when the ref is unknown. */
+  /**
+   * Resolves a `secretRef` to its plaintext value, or `undefined` when the ref is unknown. A machine-only
+   * entry ({@link isMachineOnlyLabel}) is never a secret value: it resolves to `undefined` here, and only
+   * {@link getMachineOnly} reads it.
+   */
   async get(ref: string): Promise<string | undefined> {
     await this.ensureLoaded();
     const entry = this.data.entries[ref];
-    if (!entry) {
+    if (!entry || isMachineOnlyLabel(entry.label)) {
       return undefined;
     }
     return this.decode(entry.value, entry.encrypted);
+  }
+
+  /** A machine-only entry's text (team secrets' own keys and kept values); `undefined` for any other ref. */
+  async getMachineOnly(ref: string): Promise<string | undefined> {
+    await this.ensureLoaded();
+    const entry = this.data.entries[ref];
+    if (!entry || !isMachineOnlyLabel(entry.label)) {
+      return undefined;
+    }
+    return this.decode(entry.value, entry.encrypted);
+  }
+
+  /** Whether `ref` is a machine-only entry, which the renderer may neither list, change nor delete. */
+  async isMachineOnly(ref: string): Promise<boolean> {
+    await this.ensureLoaded();
+    return isMachineOnlyLabel(this.data.entries[ref]?.label);
   }
 
   async exists(ref: string): Promise<boolean> {
