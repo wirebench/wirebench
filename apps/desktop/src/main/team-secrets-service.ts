@@ -263,6 +263,10 @@ function refusal(problem: LogProblem): Error {
   }
 }
 
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function sameList(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
   return a !== undefined && b !== undefined && a.length === b.length && a.every((item, i) => item === b[i]);
 }
@@ -332,9 +336,14 @@ export class TeamSecretsService {
       try {
         await this.refreshNow(ws);
       } catch (error) {
-        this.deps.log?.(`[team-secrets] refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+        this.deps.log?.(`[team-secrets] refresh failed: ${describeError(error)}`);
       }
-      await this.emit(ws);
+      // Still inside the guard: the status a failed refresh leaves is shown too, and nothing escapes.
+      try {
+        await this.emit(ws);
+      } catch (error) {
+        this.deps.log?.(`[team-secrets] status failed: ${describeError(error)}`);
+      }
     });
   }
 

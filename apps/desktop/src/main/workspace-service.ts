@@ -79,7 +79,7 @@ import type { EngineService } from './engine-service.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
-import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher } from './project-watch.js';
+import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
@@ -313,6 +313,16 @@ interface OpenWorkspace {
   sync: SyncService | undefined;
   /** Outside-edit notifications held while sync runs an operation or sits in a conflict (see the sync region). */
   readonly held: HeldChanges;
+  /**
+   * `team-secrets/` paths the watcher reported while sync ran an operation or sat in a conflict: a pull's own
+   * vault writes arrive through `applyPulled`, so these are handed to team secrets only once sync settles.
+   */
+  readonly teamHeld: Set<string>;
+  /**
+   * `team-secrets/` paths a pull brought in, until when (epoch ms) the watcher's report of them is that pull's
+   * own write: an event recorded before `applyPulled` could `expect` it is still flushed after the debounce.
+   */
+  readonly teamPulled: Map<string, number>;
   /** Settles once `startSync` has built and started the sync service (at once for a local workspace). Never rejects. */
   syncReady: Promise<void>;
 }
@@ -776,6 +786,8 @@ export class WorkspaceService implements ProjectRouter {
       closing: false,
       sync: undefined,
       held: new HeldChanges(),
+      teamHeld: new Set(),
+      teamPulled: new Map(),
       syncReady: Promise.resolve(),
     };
     this.current = open;
@@ -808,7 +820,7 @@ export class WorkspaceService implements ProjectRouter {
           // A folder share has no pull: another machine's team-secrets write arrives as an outside edit.
           const teamPaths = changed.filter(isTeamSecretsPath);
           if (teamPaths.length > 0) {
-            void this.deps.teamSecrets?.afterPull(teamPaths);
+            this.teamSecretsChangedOnDisk(open, teamPaths);
           }
           const paths = changed.filter((path) => !isTeamSecretsPath(path));
           if (paths.length === 0 || open.held.offerWorkspace(paths)) {
@@ -1046,6 +1058,14 @@ export class WorkspaceService implements ProjectRouter {
     // at `this.current` alone — `closing` is the signal it checks instead.
     open.closing = true;
     open.watcher?.stop();
+    // Before sync stops: a team-secrets write still in flight ends in `afterWrite`, whose commit (under its own
+    // "Update secret …" message) must reach the sync queue while it still runs operations. Bounded as below.
+    if (this.deps.teamSecrets !== undefined) {
+      await waitAtMost(this.deps.teamSecrets.detach(), SYNC_CLOSE_WAIT_MS);
+      if (open.sync !== undefined) {
+        await waitAtMost(open.sync.idle(), SYNC_CLOSE_WAIT_MS);
+      }
+    }
     // Same first step: no timer fetch or debounced save commit may start while this closes, and
     // nothing held for a conflict is replayed into a closing workspace.
     open.sync?.stop();
@@ -1057,7 +1077,6 @@ export class WorkspaceService implements ProjectRouter {
     if (open.sync !== undefined) {
       await waitAtMost(open.sync.idle(), SYNC_CLOSE_WAIT_MS);
     }
-    await this.deps.teamSecrets?.detach().catch(() => undefined);
     try {
       // Nothing is written to a project on close: unsaved changes stay unsaved and come back
       // the next time this workspace opens (see `unsaved-store.ts`).
@@ -1377,7 +1396,7 @@ export class WorkspaceService implements ProjectRouter {
     }
     await sync.start();
     // The first look: ask for access, or pick up what changed while this workspace was closed.
-    void this.deps.teamSecrets?.afterPull([]);
+    this.notifyTeamSecrets([]);
   }
 
   /**
@@ -1410,6 +1429,61 @@ export class WorkspaceService implements ProjectRouter {
     };
   }
 
+  /** Runs team secrets' pull hook without waiting on it; it never throws, and nothing it rejects goes unhandled. */
+  private notifyTeamSecrets(paths: readonly string[]): void {
+    void this.deps.teamSecrets?.afterPull(paths).catch(() => undefined);
+  }
+
+  /**
+   * An outside edit under `team-secrets/` (plan decision 15: a folder share's only way in). Held while sync runs
+   * an operation or sits in a conflict — a pull's vault writes arrive through `applyPulled` — and handed over
+   * once it settles. A path a pull just brought in is that pull's own write (see `teamPulled`) and is dropped.
+   */
+  private teamSecretsChangedOnDisk(open: OpenWorkspace, reported: readonly string[]): void {
+    const now = this.now().getTime();
+    const paths = reported.filter((path) => {
+      const until = open.teamPulled.get(path);
+      if (until !== undefined && until < now) {
+        open.teamPulled.delete(path);
+      }
+      return until === undefined || until < now;
+    });
+    if (paths.length === 0) {
+      return;
+    }
+    const state = open.sync?.status().state;
+    if (state === 'syncing' || state === 'conflict') {
+      for (const path of paths) {
+        open.teamHeld.add(path);
+      }
+      return;
+    }
+    this.notifyTeamSecrets(paths);
+  }
+
+  /**
+   * The tree's own git identity, for a key request made before sync exists (a git or folder share turning team
+   * secrets on as it is made). `undefined` without a git repository in the tree or without a name and email; the
+   * request then carries the OS user.
+   */
+  private async treeIdentity(open: OpenWorkspace): Promise<{ name: string; email: string } | undefined> {
+    if (!existsSync(join(open.tree, '.git'))) {
+      return undefined;
+    }
+    const git = await this.deps.git?.().catch(() => undefined);
+    if (git === undefined) {
+      return undefined;
+    }
+    const value = async (key: string): Promise<string | undefined> => {
+      const { stdout } = await git.run(open.tree, ['config', '--get', key]).catch(() => ({ stdout: '' }));
+      const trimmed = stdout.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    };
+    const name = await value('user.name');
+    const email = await value('user.email');
+    return name !== undefined && email !== undefined ? { name, email } : undefined;
+  }
+
   /** Hands the open shared workspace to team secrets; a local workspace has none. */
   private attachTeamSecrets(open: OpenWorkspace): void {
     const team = this.deps.teamSecrets;
@@ -1424,12 +1498,13 @@ export class WorkspaceService implements ProjectRouter {
       kind: share.kind,
       role: () => open.sync?.status().role,
       uses: () => this.secretUses(open),
-      identity: () => open.sync?.identity() ?? Promise.resolve(undefined),
+      identity: () => open.sync?.identity() ?? this.treeIdentity(open),
       beforeWrite: (paths) => {
         open.watcher?.expect(paths);
       },
       afterWrite: (message) => {
-        if (!this.stale(open)) {
+        // `current`, not `stale`: `close()` lets a last write commit before it stops sync.
+        if (this.current === open) {
           open.sync?.afterTeamSecretsWrite(message);
         }
       },
@@ -1475,8 +1550,14 @@ export class WorkspaceService implements ProjectRouter {
     if (this.stale(open)) {
       return;
     }
-    const batch = open.held.setHolding(status.state === 'syncing' || status.state === 'conflict');
+    const holding = status.state === 'syncing' || status.state === 'conflict';
+    const batch = open.held.setHolding(holding);
     this.deps.hooks?.onSyncStatus?.(open.workspace.id, status);
+    if (!holding && open.teamHeld.size > 0) {
+      const teamPaths = [...open.teamHeld];
+      open.teamHeld.clear();
+      this.notifyTeamSecrets(teamPaths);
+    }
     if (batch !== undefined) {
       void this.enqueueWorkspaceOp(() => this.replayHeld(open, batch));
     }
@@ -1511,67 +1592,93 @@ export class WorkspaceService implements ProjectRouter {
     if (this.stale(open)) {
       return Promise.resolve();
     }
+    const teamPaths = changedPaths.filter(isTeamSecretsPath);
+    const now = this.now().getTime();
+    for (const [path, until] of open.teamPulled) {
+      if (until < now) {
+        open.teamPulled.delete(path);
+      }
+    }
+    for (const path of teamPaths) {
+      open.teamPulled.set(path, now + SELF_WRITE_TTL_MS);
+    }
     return this.enqueueWorkspaceOp(async () => {
+      try {
+        await this.applyPulledNow(open, changedPaths, teamPaths);
+      } finally {
+        // Also after a failed reload or a workspace that went stale mid-pull. This pull covers whatever the
+        // watcher held back under `team-secrets/` while it ran. Not awaited: team secrets never wait on this
+        // pull's sync operation (plan decision 14).
+        if (this.current === open) {
+          open.teamHeld.clear();
+          this.notifyTeamSecrets(teamPaths);
+        }
+      }
+    });
+  }
+
+  /** {@link applyPulled}'s work, inside its queued workspace operation. */
+  private async applyPulledNow(
+    open: OpenWorkspace,
+    changedPaths: readonly string[],
+    teamPaths: readonly string[],
+  ): Promise<void> {
+    if (this.stale(open)) {
+      return;
+    }
+    const plan = planPull(changedPaths);
+    open.watcher?.expect(plan.workspacePaths);
+    open.watcher?.expect(teamPaths);
+    const byProjectId = new Map<string, readonly string[]>();
+    for (const [slug, paths] of plan.projects) {
+      const entry = this.entryOfSlug(open, slug);
+      entry?.host?.expectOnDisk(paths);
+      if (entry !== undefined) {
+        byProjectId.set(entry.projectId, paths);
+      }
+    }
+    // Events the merge produced before the announcements above were held; they are this pull.
+    open.held.forget(plan.workspacePaths, byProjectId);
+
+    const existing = new Set(open.entries);
+    const workspaceChanged = plan.workspacePaths.length > 0;
+    if (workspaceChanged) {
+      await this.reloadWorkspaceFromDisk(open, plan.workspacePaths);
       if (this.stale(open)) {
         return;
       }
-      const plan = planPull(changedPaths);
-      open.watcher?.expect(plan.workspacePaths);
-      const teamPaths = changedPaths.filter(isTeamSecretsPath);
-      open.watcher?.expect(teamPaths);
-      const byProjectId = new Map<string, readonly string[]>();
-      for (const [slug, paths] of plan.projects) {
-        const entry = this.entryOfSlug(open, slug);
-        entry?.host?.expectOnDisk(paths);
-        if (entry !== undefined) {
-          byProjectId.set(entry.projectId, paths);
-        }
+    }
+    const projectIds: string[] = [];
+    for (const [slug, paths] of plan.projects) {
+      const entry = this.entryOfSlug(open, slug);
+      if (entry === undefined) {
+        continue;
       }
-      // Events the merge produced before the announcements above were held; they are this pull.
-      open.held.forget(plan.workspacePaths, byProjectId);
-
-      const existing = new Set(open.entries);
-      const workspaceChanged = plan.workspacePaths.length > 0;
-      if (workspaceChanged) {
-        await this.reloadWorkspaceFromDisk(open, plan.workspacePaths);
-        if (this.stale(open)) {
-          return;
-        }
+      projectIds.push(entry.projectId);
+      // A host the reload above just opened already read the pulled files.
+      if (entry.host === undefined || !existing.has(entry)) {
+        continue;
       }
-      const projectIds: string[] = [];
-      for (const [slug, paths] of plan.projects) {
-        const entry = this.entryOfSlug(open, slug);
-        if (entry === undefined) {
-          continue;
-        }
-        projectIds.push(entry.projectId);
-        // A host the reload above just opened already read the pulled files.
-        if (entry.host === undefined || !existing.has(entry)) {
-          continue;
-        }
-        if (entry.host.snapshot()?.dirty === true) {
-          this.deps.hooks?.onProjectChangedOnDisk?.(entry.projectId, paths);
-          continue;
-        }
-        try {
-          await entry.host.reload();
-        } catch {
-          // Unloadable pulled files (a half-resolved merge, a newer format): leave the model and
-          // let the user decide through the banner rather than failing the whole pull.
-          this.deps.hooks?.onProjectChangedOnDisk?.(entry.projectId, paths);
-        }
-        if (this.stale(open)) {
-          return;
-        }
+      if (entry.host.snapshot()?.dirty === true) {
+        this.deps.hooks?.onProjectChangedOnDisk?.(entry.projectId, paths);
+        continue;
       }
-      this.deps.hooks?.onSyncPulled?.({
-        workspaceId: open.workspace.id,
-        projectIds,
-        workspaceChanged,
-        entityCount: plan.entityCount,
-      });
-      // Not awaited: team secrets never wait on this pull's sync operation (plan decision 14).
-      void this.deps.teamSecrets?.afterPull(teamPaths);
+      try {
+        await entry.host.reload();
+      } catch {
+        // Unloadable pulled files (a half-resolved merge, a newer format): leave the model and
+        // let the user decide through the banner rather than failing the whole pull.
+        this.deps.hooks?.onProjectChangedOnDisk?.(entry.projectId, paths);
+      }
+      if (this.stale(open)) {
+        return;
+      }
+    }
+    this.deps.hooks?.onSyncPulled?.({
+      workspaceId: open.workspace.id,
+      projectIds,
+      workspaceChanged,
+      entityCount: plan.entityCount,
     });
   }
 
