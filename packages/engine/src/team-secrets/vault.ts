@@ -103,7 +103,11 @@ export function verifyVaultEntry(entry: VaultEntryFile, fileId: string, state: A
     return 'not-approved';
   }
   const signer = state.keys.get(entry.updatedBy);
-  return signer !== undefined && verifyDocument(entry, signer.signingKey) ? 'trusted' : 'bad-signature';
+  if (signer === undefined) {
+    // Approved, but the log never saw a verified key request for it — there is no signature to check.
+    return 'not-approved';
+  }
+  return verifyDocument(entry, signer.signingKey) ? 'trusted' : 'bad-signature';
 }
 
 /** The value, when `entry` is wrapped for `me` and opens; `undefined` otherwise. */
@@ -137,11 +141,18 @@ export function healVaultEntry(entry: VaultEntryFile, state: AccessState, me: Ma
     return undefined;
   }
   const wraps: Record<string, string> = { ...entry.wraps };
+  let added = false;
   for (const recipient of missing) {
     const wrap = tryWrap(dataKey, recipient);
     if (wrap !== undefined) {
       wraps[recipient.keyId] = wrap;
+      added = true;
     }
+  }
+  if (!added) {
+    // Every missing recipient had a bad key, so healing would produce nothing but a re-signed copy of
+    // the same wraps — machines would re-sign and commit this forever with no progress.
+    return undefined;
   }
   return signDocument({ ...(withoutSignature(entry) as VaultBody), wraps, updatedBy: me.keyId }, me);
 }
@@ -160,7 +171,7 @@ export interface RotateMark {
 }
 
 /**
- * §3.6: a value set before a removal was readable by the removed key (plan decision 5), so it is marked
+ * §3.6: a value set at or before a removal was readable by the removed key (plan decision 5), so it is marked
  * until it changes. Pass trusted entries only, keyed by id.
  */
 export function rotateMarks(values: ReadonlyMap<string, VaultEntryFile>, state: AccessState): RotateMark[] {
@@ -168,7 +179,7 @@ export function rotateMarks(values: ReadonlyMap<string, VaultEntryFile>, state: 
   for (const [entryId, entry] of values) {
     const setAt = Date.parse(entry.updatedAt);
     const names = state.removed
-      .filter((removal) => setAt < Date.parse(removal.at))
+      .filter((removal) => setAt <= Date.parse(removal.at))
       .map((removal) => state.keys.get(removal.keyId)?.name ?? removal.keyId);
     if (names.length > 0) {
       marks.push({ entryId, label: entry.label, secret: entry.secret, removedNames: [...new Set(names)] });

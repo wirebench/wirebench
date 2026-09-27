@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ulid } from 'ulidx';
 import {
   buildVaultEntry,
+  decryptValue,
   generateMachineKeys,
   healVaultEntry,
   openVaultEntry,
@@ -9,10 +10,12 @@ import {
   rotateMarks,
   sealVaultEntry,
   signDocument,
+  unwrapDataKey,
   vaultConflictWinner,
   vaultEntryId,
   verifiedKeys,
   verifyVaultEntry,
+  WirebenchError,
   wrapsUnapprovedKey,
   type AccessAction,
   type AccessEntryFile,
@@ -98,6 +101,15 @@ describe('vault entries (§3.3, §3.4, §4)', () => {
     expect(verifyVaultEntry({ ...written, label: 'Other' }, vaultEntryId(REF), withBob)).toBe('bad-signature');
   });
 
+  it('treats an approved signer with no verified key request as not-approved, not bad-signature', () => {
+    const written = valueFor('hunter2', withBob);
+    const stateWithoutSignerKey: AccessState = {
+      ...withBob,
+      keys: new Map([...keys].filter(([keyId]) => keyId !== alice.keyId)),
+    };
+    expect(verifyVaultEntry(written, vaultEntryId(REF), stateWithoutSignerKey)).toBe('not-approved');
+  });
+
   it('cannot be opened once re-signed for another secret: the entry id is the cipher’s additional data', () => {
     const written = valueFor('hunter2', withBob);
     const other = { ref: 'sec_other000000000000000000' };
@@ -121,6 +133,8 @@ describe('vault entries (§3.3, §3.4, §4)', () => {
 
   it('seals again for the remaining keys after a removal, and marks what the removed key could read', () => {
     const before = valueFor('hunter2', withBob);
+    const oldBobWrap = before.wraps[bob.keyId]!;
+    const oldDataKey = unwrapDataKey(oldBobWrap, bob);
     const remove = entry('remove', bob, alice);
     const without = replayAccessLog(keys, [genesis, approveBob, remove]);
     expect(wrapsUnapprovedKey(before, without)).toBe(true);
@@ -129,6 +143,9 @@ describe('vault entries (§3.3, §3.4, §4)', () => {
     expect(sealed.cipher).not.toBe(before.cipher);
     expect(openVaultEntry(sealed, bob)).toBeUndefined();
     expect(wrapsUnapprovedKey(sealed, without)).toBe(false);
+    // The re-seal used a fresh data key, so bob's old wrap — even if he had kept it — no longer opens
+    // the new cipher.
+    expect(() => decryptValue(sealed.cipher, oldDataKey, vaultEntryId(REF))).toThrow(WirebenchError);
 
     const after = valueFor('rotated', without);
     const marks = rotateMarks(
@@ -139,6 +156,21 @@ describe('vault entries (§3.3, §3.4, §4)', () => {
       without,
     );
     expect(marks).toEqual([{ entryId: 'A'.repeat(26), label: 'Payments API key', secret: REF, removedNames: ['bob'] }]);
+  });
+
+  it('marks a value dated exactly at the removal', () => {
+    const remove = entry('remove', bob, alice);
+    const without = replayAccessLog(keys, [genesis, approveBob, remove]);
+    const at = buildVaultEntry({
+      secret: REF,
+      label: 'Payments API key',
+      value: 'hunter2',
+      recipients: [info(alice)],
+      signer: alice,
+      at: remove.at,
+    });
+    const marks = rotateMarks(new Map([['C'.repeat(26), at]]), without);
+    expect(marks).toEqual([{ entryId: 'C'.repeat(26), label: 'Payments API key', secret: REF, removedNames: ['bob'] }]);
   });
 
   it('skips a recipient with a malformed key when building or sealing, and still wraps the rest', () => {
@@ -159,7 +191,7 @@ describe('vault entries (§3.3, §3.4, §4)', () => {
     expect(openVaultEntry(resealed, alice)).toBe('hunter2');
   });
 
-  it('skips a recipient with a malformed key when healing, and still heals the rest', () => {
+  it('heals nothing when the only missing recipient has a bad key: returns undefined, not a re-signed no-op', () => {
     const written = valueFor('hunter2', withBob);
     const bad: KeyInfo = { ...info(carol), encryptionKey: Buffer.alloc(16).toString('base64url') };
     const stateWithBad: AccessState = {
@@ -167,10 +199,32 @@ describe('vault entries (§3.3, §3.4, §4)', () => {
       approved: new Set([...withBob.approved, carol.keyId]),
       keys: new Map([...keys, [carol.keyId, bad]]),
     };
-    const healed = healVaultEntry(written, stateWithBad, alice)!;
+    expect(healVaultEntry(written, stateWithBad, alice)).toBeUndefined();
+  });
+
+  it('heals a good missing recipient while skipping a bad one, and still returns an entry', () => {
+    const written = valueFor('hunter2', withBob);
+    const dave = generateMachineKeys();
+    const goodDave: KeyInfo = {
+      keyId: dave.keyId,
+      encryptionKey: dave.encryptionKey,
+      signingKey: dave.signingKey,
+      name: 'dave',
+      email: 'dave@example.test',
+      machine: 'dave',
+      requestedAt: tick(),
+      fingerprint: '',
+    };
+    const badCarol: KeyInfo = { ...info(carol), encryptionKey: Buffer.alloc(16).toString('base64url') };
+    const stateWithBoth: AccessState = {
+      ...withBob,
+      approved: new Set([...withBob.approved, dave.keyId, carol.keyId]),
+      keys: new Map([...keys, [dave.keyId, goodDave], [carol.keyId, badCarol]]),
+    };
+    const healed = healVaultEntry(written, stateWithBoth, alice)!;
     expect(healed).not.toBeUndefined();
-    expect(Object.keys(healed.wraps).sort()).toEqual([alice.keyId, bob.keyId].sort());
-    expect(openVaultEntry(healed, bob)).toBe('hunter2');
+    expect(Object.keys(healed.wraps).sort()).toEqual([alice.keyId, bob.keyId, dave.keyId].sort());
+    expect(openVaultEntry(healed, dave)).toBe('hunter2');
   });
 });
 
