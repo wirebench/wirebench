@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createBareRemote, remoteLog, runGit } from '../helpers/git-remote.js';
+import { createBareRemote, remoteFiles, remoteLog, runGit } from '../helpers/git-remote.js';
 import { expandExplorer, openFirstRequest, saveAll } from '../helpers/project.js';
 import {
   joinSharedWorkspace,
@@ -15,6 +15,14 @@ const BEN = { name: 'Ben', email: 'ben@example.com' };
 /** A value distinctive enough that finding it anywhere in the remote's history is proof of a leak. */
 const WRONG = 'wrong-7f3e9c41d2';
 const RIGHT = 'pass';
+
+/** The remote's sealed vault entries as blob ids, so a re-seal shows as a change; '' before the first. */
+function vaultBlobs(dir: string): string {
+  return remoteFiles(dir)
+    .filter((file) => /^team-secrets\/values\/[^/]+\.yaml$/.test(file))
+    .map((file) => runGit(['--git-dir', dir, 'rev-parse', `main:${file}`]).trim())
+    .join(',');
+}
 
 async function authPanel(page: Page) {
   await expandExplorer(page, 'Request 1');
@@ -78,7 +86,8 @@ test.describe('shared workspaces: team secrets', () => {
     await panelA.getByRole('button', { name: 'Save' }).click();
     await expect(panelA.getByLabel('Password')).toHaveText('••••••••');
     await saveAll(pageA);
-    await expect.poll(() => remoteLog(remote.dir), { timeout: SYNC_TIMEOUT }).toContain('Update secret Password');
+    // The vault entry, not a commit subject: the request edits saved alongside it make the commit's message the generated one.
+    await expect.poll(() => vaultBlobs(remote.dir), { timeout: SYNC_TIMEOUT }).not.toBe('');
 
     // --- B joins and asks; its send says it is waiting ---------------------------------------
     const b = await profiles.launch({ identity: BEN });
@@ -118,14 +127,11 @@ test.describe('shared workspaces: team secrets', () => {
     await expect(pageB.getByTestId('response-status')).toContainText('401', { timeout: 20_000 });
 
     // --- A replaces the value; B's next send after a pull succeeds ---------------------------
+    const sealedBefore = vaultBlobs(remote.dir);
     await panelA.getByRole('button', { name: 'Replace…' }).click();
     await panelA.getByPlaceholder('Enter password').fill(RIGHT);
     await panelA.getByRole('button', { name: 'Save' }).click();
-    await expect
-      .poll(() => remoteLog(remote.dir).filter((subject) => subject === 'Update secret Password').length, {
-        timeout: SYNC_TIMEOUT,
-      })
-      .toBe(2);
+    await expect.poll(() => vaultBlobs(remote.dir), { timeout: SYNC_TIMEOUT }).not.toBe(sealedBefore);
     await pullNow(pageB);
     await expect
       .poll(
