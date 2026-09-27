@@ -345,7 +345,7 @@ async function accessEntries() {
 
 describe('TeamSecretsService — a damaged access log (plan decision 4)', () => {
   const DAMAGED =
-    'An access change is missing from this workspace. Restore it from the history before changing team secrets.';
+    'The team secrets access log on this machine does not match what it saw before; this machine will not change team secrets until it is repaired.';
 
   it('stops writing when an access entry it has seen is missing from the tree', async () => {
     const { a } = await aliceAndBob();
@@ -619,7 +619,7 @@ describe('TeamSecretsService — the send cache', () => {
     const other: TeamSecretsWorkspace = { ...a.ws, workspaceId: 'ws-2', tree: join(base, 'other-tree') };
     probe.attach(other);
     await probe.loadFor(a.ws);
-    expect(probe.cacheNow()).toMatchObject({ on: false, approved: false });
+    expect(probe.cacheNow()).toMatchObject({ on: false, state: 'none' });
   });
 });
 
@@ -627,6 +627,7 @@ describe('TeamSecretsService — saving values (§3.3)', () => {
   it('writes a value an approved machine saves, sealed for every approved key, and deletes it again', async () => {
     const { a, b } = await aliceAndBob();
     const other = { ref: 'sec_abcdefabcdefabcdefabcdefab' };
+    b.uses = [...b.uses, { secret: other }];
 
     await b.service.recordValue(other, 'Token', 'tok-123');
 
@@ -648,6 +649,7 @@ describe('TeamSecretsService — saving values (§3.3)', () => {
   it('re-signs an untrusted entry with the same label and value, instead of treating it as already saved', async () => {
     const { a, b } = await aliceAndBob();
     const other = { ref: 'sec_abcdefabcdefabcdefabcdefab' };
+    b.uses = [...b.uses, { secret: other }];
     const carol = machine('Carol');
     await carol.service.afterPull([]); // pending — never approved, so anything Carol signs stays untrusted
     const carolKeyId = (await carol.service.status()).me.keyId!;
@@ -702,6 +704,7 @@ describe('TeamSecretsService — saving values (§3.3)', () => {
     const admin = machine('Ann', { kind: 'server', role: 'admin' });
     await admin.service.turnOn();
     const viewer = machine('Vic', { kind: 'server', role: 'viewer' });
+    viewer.uses = [{ secret: { ref: REF } }];
     await viewer.service.afterPull([]);
     await new Promise((resolve) => setImmediate(resolve));
     await admin.service.approve((await viewer.service.status()).me.keyId!);
@@ -723,9 +726,9 @@ describe('TeamSecretsService — saving values (§3.3)', () => {
     const b = machine('Bob');
     await b.service.afterPull([]);
 
-    expect(b.service.waitingFor(REF, undefined)).toBe(true);
-    expect(b.service.waitingFor('sec_ffffffffffffffffffffffffff', undefined)).toBe(false);
-    expect(a.service.waitingFor(REF, undefined)).toBe(false);
+    expect(b.service.missingValueError(REF, undefined)).toMatchObject({ code: 'team-secrets-pending' });
+    expect(b.service.missingValueError('sec_ffffffffffffffffffffffffff', undefined)).toBeUndefined();
+    expect(a.service.missingValueError(REF, undefined)).toBeUndefined();
   });
 });
 
@@ -768,7 +771,7 @@ describe('TeamSecretsService — after a pull (§3.2, §3.4)', () => {
     expect(await b.store.get(REF)).toBe('hunter2');
     const tokenRef = await b.store.findByLabel('wirebench-secret:proj-1:api_token');
     expect(await b.store.get(tokenRef!)).toBe('tok-1');
-    expect(b.service.waitingFor(REF, undefined)).toBe(false);
+    expect(b.service.missingValueError(REF, undefined)).toBeUndefined();
   });
 
   it('ignores a value signed by a key that is not approved, and lists it', async () => {
@@ -956,11 +959,12 @@ describe('TeamSecretsService — a damaged or replaced log (plan decision 4, §6
     await rm(join(tree, 'team-secrets', 'access', access.sort().at(-1)!));
 
     await b.service.afterPull([]);
+    b.uses = [...b.uses, { secret: { ref: 'sec_abcdefabcdefabcdefabcdefab' } }];
     await b.service.recordValue({ ref: 'sec_abcdefabcdefabcdefabcdefab' }, 'Token', 'tok');
 
     expect(await b.service.status()).toMatchObject({
       message:
-        'An access change is missing from this workspace. Restore it from the history before changing team secrets.',
+        'The team secrets access log on this machine does not match what it saw before; this machine will not change team secrets until it is repaired.',
       canManage: false,
     });
     await expect(vaultEntry('sec_abcdefabcdefabcdefabcdefab')).rejects.toThrow();
@@ -1159,5 +1163,162 @@ describe('TeamSecretsService — Task 8 review fixes', () => {
     expect(await a.store.isMachineOnly(keyRef)).toBe(true);
     expect(await a.store.isMachineOnly(kept)).toBe(true);
     expect(await a.store.get(kept)).toBeUndefined();
+  });
+});
+
+describe('TeamSecretsService — final review fixes', () => {
+  const PROXY = { ref: 'sec_proxyproxyproxyproxyproxy' };
+
+  it('keeps an app-level secret the workspace does not use out of the vault (C1)', async () => {
+    const { b } = await aliceAndBob();
+    const commits = [...b.commits];
+    await b.store.put(PROXY.ref, 'proxy-pass', { label: 'Proxy password' });
+
+    await b.service.recordValue(PROXY, 'Proxy password', 'proxy-pass');
+
+    await expect(vaultEntry(PROXY.ref)).rejects.toThrow();
+    expect(b.commits).toEqual(commits);
+    expect(await treeText()).not.toContain('Proxy password');
+
+    // A used ref still reaches the vault, and forgetting an unused one leaves a planted entry alone.
+    await b.service.recordValue({ ref: REF }, 'Password', 'bob-new');
+    expect(b.commits.at(-1)).toBe('Update secret Password');
+    await b.service.forget(PROXY, 'Proxy password');
+    expect(b.commits.at(-1)).toBe('Update secret Password');
+  });
+
+  it('seals a secret a save starts using through the backfill (C1)', async () => {
+    const { b } = await aliceAndBob();
+    const token = { token: { projectId: 'proj-1', name: 'api_token' } };
+    await b.store.set('tok-1', { label: 'wirebench-secret:proj-1:api_token' });
+    await b.service.recordValue(token, 'api_token', 'tok-1');
+    await expect(readTree(vaultEntryPath(vaultEntryId(token)))).rejects.toThrow();
+
+    b.uses = [...b.uses, { secret: token }];
+    await b.service.backfill();
+
+    expect(b.commits.at(-1)).toBe('Update team secrets');
+    expect(await readTree(vaultEntryPath(vaultEntryId(token)))).toContain('label: api_token');
+  });
+
+  it('keeps a declined machine declined: no automatic request until it asks again (I1)', async () => {
+    const a = machine('Alice');
+    await a.service.turnOn();
+    const b = machine('Bob');
+    await b.service.afterPull([]);
+    const first = (await b.service.status()).me.keyId!;
+    await a.service.decline(first);
+
+    await b.service.afterPull([]);
+    await b.service.afterPull([]);
+
+    expect(await readdir(join(tree, 'team-secrets', 'keys'))).toHaveLength(1);
+    expect(b.commits).toEqual(['Request team secrets access for Bob']);
+    expect(await b.service.status()).toMatchObject({
+      me: { state: 'declined', keyId: first },
+      message: "An admin declined this machine's request for team secrets.",
+    });
+
+    const again = await b.service.requestAccess();
+    expect(again.me.state).toBe('pending');
+    expect(again.me.keyId).not.toBe(first);
+    expect(await readdir(join(tree, 'team-secrets', 'keys'))).toContain(`${again.me.keyId}.yaml`);
+  });
+
+  it('counts a removed machine’s deleted key request as damage, and keeps its Rotate marks (I3)', async () => {
+    const { a, b } = await aliceAndBob();
+    const bobKey = (await b.service.status()).me.keyId!;
+    await a.service.remove(bobKey);
+    expect((await a.service.status()).rotate).toHaveLength(1);
+
+    await rm(join(tree, 'team-secrets', 'keys', `${bobKey}.yaml`));
+
+    const status = await a.service.status();
+    expect(status.message).toBe(
+      'The team secrets access log on this machine does not match what it saw before; this machine will not change team secrets until it is repaired.',
+    );
+    expect(status.canManage).toBe(false);
+    expect(status.rotate).toEqual([
+      { entryId: vaultEntryId({ ref: REF }), label: 'Password', secret: { ref: REF }, removedNames: ['Bob'] },
+    ]);
+  });
+
+  it('dates a rotation after the removal even with a clock behind it, so the Rotate mark clears (M2)', async () => {
+    const { a, b } = await aliceAndBob();
+    await a.service.remove((await b.service.status()).me.keyId!);
+    clock -= 3_600_000;
+
+    await a.service.recordValue({ ref: REF }, 'Password', 'rotated');
+
+    expect((await a.service.status()).rotate).toEqual([]);
+  });
+
+  it('never lets a side older than the value it accepted win a conflict (M3)', async () => {
+    const { a, b } = await aliceAndBob();
+    const path = vaultEntryPath(vaultEntryId({ ref: REF }));
+    const old = await readTree(path);
+    await b.service.recordValue({ ref: REF }, 'Password', 'bob-new');
+    await a.service.afterPull([path]);
+
+    const decided = await a.service.resolveConflicts([{ path }], () => Promise.resolve({ mine: old, theirs: null }));
+
+    expect([...decided]).toEqual([]);
+  });
+
+  it('reports a failed request for access and keeps the key it had (M4)', async () => {
+    const a = machine('Alice', { kind: 'server', role: 'admin' });
+    await a.service.turnOn();
+    const v = machine('Vera', { kind: 'server', role: 'editor' });
+    await v.service.afterPull([]);
+    await new Promise((resolve) => setImmediate(resolve));
+    const veraKey = (await v.service.status()).me.keyId!;
+    await a.service.approve(veraKey);
+    await a.service.remove(veraKey);
+    const limited = Object.assign(new Error('Too many requests for team secrets access. Try again in a few minutes.'), {
+      code: 'team-secrets-rate-limited',
+    });
+    Object.assign(v.ws, { requestKey: () => Promise.reject(limited) });
+
+    await expect(v.service.requestAccess()).rejects.toMatchObject({ code: 'team-secrets-rate-limited' });
+
+    expect(await v.service.status()).toMatchObject({ me: { state: 'removed', keyId: veraKey } });
+  });
+
+  it('refuses a ref entry labelled like a token’s store entry, so it never shadows the token (M5)', async () => {
+    const { a, b } = await aliceAndBob();
+    const planted = { ref: 'sec_abcdefabcdefabcdefabcdefab' };
+    const entry = buildVaultEntry({
+      secret: planted,
+      label: 'wirebench-secret:proj-1:api_token',
+      value: 'shadow',
+      recipients: await approvedAndPending(a),
+      signer: await keysOf(a),
+      at: '2026-09-26T11:00:00.000Z',
+    });
+    await writeTree(vaultEntryPath(vaultEntryId(planted)), teamSecretsFileText(entry));
+
+    await b.service.afterPull([]);
+
+    expect(await b.store.get(planted.ref)).toBeUndefined();
+    expect(await b.store.findByLabel('wirebench-secret:proj-1:api_token')).toBeUndefined();
+    expect((await b.service.status()).untrusted).toEqual([
+      { entryId: vaultEntryId(planted), label: 'wirebench-secret:proj-1:api_token' },
+    ]);
+  });
+
+  it('tells a removed machine it was removed, not that it waits, on a send and an access change (M9)', async () => {
+    const { a, b } = await aliceAndBob();
+    const c = machine('Carol');
+    await c.service.afterPull([]);
+    await a.service.remove((await b.service.status()).me.keyId!);
+    await b.service.afterPull([]);
+
+    expect(b.service.missingValueError(REF, undefined)).toMatchObject({
+      code: 'team-secrets-removed',
+      message: 'An admin removed this machine from team secrets.',
+    });
+    await expect(b.service.approve((await c.service.status()).me.keyId!)).rejects.toMatchObject({
+      code: 'team-secrets-removed',
+    });
   });
 });

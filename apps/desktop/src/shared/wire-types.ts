@@ -4502,12 +4502,12 @@ export const teamSecretsStatusWireSchema = z.object({
   /** May approve, decline and remove (and, with signed authority, change admins). */
   canManage: z.boolean(),
   me: z.object({
-    state: z.enum(['unavailable', 'none', 'pending', 'approved', 'removed']),
+    state: z.enum(['unavailable', 'none', 'pending', 'approved', 'removed', 'declined']),
     keyId: teamSecretsIdSchema.optional(),
     fingerprint: z.string().optional(),
     admin: z.boolean(),
   }),
-  /** Why this machine cannot take part, when it cannot (no keychain, a damaged log, removed). */
+  /** Why this machine cannot take part, when it cannot (no keychain, a damaged log, removed, declined). */
   message: z.string().optional(),
   pending: z.array(teamSecretsKeyWireSchema),
   approved: z.array(teamSecretsKeyWireSchema),

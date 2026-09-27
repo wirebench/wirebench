@@ -256,7 +256,7 @@ export interface WorkspaceServiceDeps {
    */
   readonly teamSecrets?: Pick<
     TeamSecretsService,
-    'attach' | 'detach' | 'turnOn' | 'turnOnIfAdmin' | 'afterPull' | 'resolveConflicts'
+    'attach' | 'detach' | 'turnOn' | 'turnOnIfAdmin' | 'afterPull' | 'resolveConflicts' | 'backfill'
   >;
   /**
    * The Wirebench Server client and accounts a server share syncs through (server-sync §5.3). The
@@ -970,6 +970,7 @@ export class WorkspaceService implements ProjectRouter {
         },
         onSaved: (event) => {
           this.current?.sync?.afterSave(event.reason === 'autosave' ? 'autosave' : 'manual');
+          this.backfillTeamSecrets();
         },
         onHydration: (event) => {
           this.deps.hooks?.onHydration?.(entry.projectId, event);
@@ -1066,8 +1067,8 @@ export class WorkspaceService implements ProjectRouter {
         await waitAtMost(open.sync.idle(), SYNC_CLOSE_WAIT_MS);
       }
     }
-    // Same first step: no timer fetch or debounced save commit may start while this closes, and
-    // nothing held for a conflict is replayed into a closing workspace.
+    // No timer fetch or debounced save commit may start while this closes, and nothing held for a
+    // conflict is replayed into a closing workspace.
     open.sync?.stop();
     open.held.clear();
     // The operation already running (a push or a merge, up to SYNC_TRANSFER_TIMEOUT_MS) finishes
@@ -1427,6 +1428,17 @@ export class WorkspaceService implements ProjectRouter {
       resolveConflicts: (conflicts: readonly SyncConflictWire[], sides: (path: string) => Promise<ConflictSides>) =>
         team.resolveConflicts(conflicts, sides),
     };
+  }
+
+  /**
+   * A save may start using a secret whose value only this machine holds: team secrets seal it now rather than
+   * after the next pull (C1 keeps `recordValue` to secrets already in use). Not awaited; a local workspace has
+   * nothing attached, so this does nothing there.
+   */
+  private backfillTeamSecrets(): void {
+    if (this.current?.share !== undefined) {
+      void this.deps.teamSecrets?.backfill().catch(() => undefined);
+    }
   }
 
   /** Runs team secrets' pull hook without waiting on it; it never throws, and nothing it rejects goes unhandled. */
@@ -2518,6 +2530,7 @@ export class WorkspaceService implements ProjectRouter {
       await saveWorkspaceAnnounced(open.watcher, open.workspace, open.tree, candidates, this.fsOption());
       this.requireStillOpen(open);
       open.sync?.afterSave('workspace');
+      this.backfillTeamSecrets();
       this.deps.hooks?.onChanged?.(this.snapshot());
       return {
         workspace: this.requireSnapshot(),

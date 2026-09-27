@@ -1168,6 +1168,7 @@ export {
   readTeamSecretsFiles,
   replayAccessLog,
   rotateMarks,
+  rotateMarksFor,
   sameSecret,
   sealVaultEntry,
   secretKeySchema,

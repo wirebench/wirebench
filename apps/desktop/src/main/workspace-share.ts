@@ -75,6 +75,7 @@ import type { TokenSource } from './server-token.js';
 import { GIT_NOT_FOUND_ERROR } from './sync/create-backend.js';
 import { GitBackend } from './sync/git-backend.js';
 import { SERVER_STATE_DIR, ServerState, writeTreeFiles } from './sync/server-state.js';
+import { TEAM_SECRETS_LOCAL_FILE } from './team-secrets-service.js';
 import type { TreeFile } from './sync/server-state.js';
 import { copyProjectPayload, isEmptyDir, requireWorkspaceId, resolveWorkspaceTree } from './workspace-files.js';
 import type { WorkspaceState } from './workspace-state.js';
@@ -624,6 +625,9 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
     await deleteShare(dir, deps.fsOption);
     shareDeleted = true;
     const wire = await deps.open(id);
+    // Team secrets' machine-local pins belong to the share that is gone: a later share starts its own log
+    // (or picks up the tree's), and stale pins would read it as damaged. The machine key may stay.
+    await deps.files.rm(join(dir, TEAM_SECRETS_LOCAL_FILE), { recursive: true, force: true }).catch(() => undefined);
     if (share.kind === 'server') {
       // Only once the reopen succeeded: a failed one restores `share.yaml`, and the share it
       // restores needs its base and pending commits. The server copy is untouched (§3.4) and

@@ -56,6 +56,21 @@ describe('useTeamSecretsStore', () => {
     expect(showToast).toHaveBeenCalledWith('The team secrets log is damaged.');
   });
 
+  it('toasts a failed request for access and keeps the status it had (M4)', async () => {
+    const requestAccess = vi.fn().mockResolvedValue({
+      ok: false,
+      error: {
+        code: 'team-secrets-rate-limited',
+        message: 'Too many requests for team secrets access. Try again in a few minutes.',
+      },
+    });
+    installWirebenchApi({ teamSecrets: { requestAccess } });
+    useTeamSecretsStore.setState({ status: ON });
+    await useTeamSecretsStore.getState().run('requestAccess');
+    expect(showToast).toHaveBeenCalledWith('Too many requests for team secrets access. Try again in a few minutes.');
+    expect(useTeamSecretsStore.getState().status).toEqual(ON);
+  });
+
   it('toasts the error message when refresh fails', async () => {
     const status = vi.fn().mockResolvedValue({
       ok: false,

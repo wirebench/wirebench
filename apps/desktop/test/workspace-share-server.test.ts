@@ -863,6 +863,7 @@ describe('WorkspaceService — shareToServer end to end', { timeout: 30_000 }, (
       }),
       afterPull: vi.fn(() => Promise.resolve()),
       resolveConflicts: vi.fn(() => Promise.resolve(new Map<string, 'mine' | 'theirs'>())),
+      backfill: vi.fn(() => Promise.resolve()),
     };
     const { service } = await newService(server, {}, team);
     await service.create('Team');

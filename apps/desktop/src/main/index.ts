@@ -127,8 +127,8 @@ const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
  * The secret getter every send resolves through, for one project's `${secret:name}` tokens (or,
  * with no project, for plain refs only). Each value it hands out is recorded in `redact.ts`, so it
  * is masked in the HTTP log and History like any `Authorization` header. Team secrets gets a look
- * first: a value this machine is waiting for refuses the send with `team-secrets-pending` instead
- * of the plain "not on this machine".
+ * first: a value the vault holds that this machine cannot open refuses the send with why (waiting,
+ * removed or declined) instead of the plain "not on this machine".
  */
 const secretsFor = (projectId: string | undefined) =>
   teamSecretGetter(projectSecretGetter(secretStore, projectId, recordSecretValue), teamSecrets, projectId);

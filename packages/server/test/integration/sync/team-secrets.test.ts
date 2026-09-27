@@ -91,6 +91,39 @@ describeDb('team secrets on the server (team-secrets §5.1)', () => {
     expect(editor.status).toBe(201);
   });
 
+  it("refuses a non-admin's push that changes or deletes an existing key request, and lets an admin", async () => {
+    const KEY = `team-secrets/keys/${KEY_ID}.yaml`;
+    const base = await push(f.editor, { parent: null, commits: [commit('Request', [text(KEY, 'key\n')])] });
+    expect(base.status).toBe(201);
+    const changes = [text(KEY, 'swapped\n'), { path: KEY, encoding: 'utf8', content: null }];
+    for (const change of changes) {
+      expect(
+        await push(f.editor, { parent: base.body.head, commits: [commit('Tamper', [change as SyncChange])] }),
+      ).toMatchObject({ status: 403, body: { code: 'team-secrets-admin-only' } });
+    }
+    // A case-folded spelling of the same file is refused too (the tree rules reject it outright).
+    const folded = await push(f.editor, {
+      parent: base.body.head,
+      commits: [commit('Tamper', [text(`TEAM-SECRETS/Keys/${KEY_ID}.yaml`, 'swapped\n')])],
+    });
+    expect(folded.status).toBeGreaterThanOrEqual(400);
+    // An add followed by a change of the same file in a later commit of the same push is a change too.
+    const other = 'team-secrets/keys/BBCDEFGHIJKLMNOPQRSTUVWXYZ.yaml';
+    expect(
+      await push(f.editor, {
+        parent: base.body.head,
+        commits: [commit('Add', [text(other, 'one\n')]), commit('Change', [text(other, 'two\n')])],
+      }),
+    ).toMatchObject({ status: 403, body: { code: 'team-secrets-admin-only' } });
+    expect(await head()).toBe(base.body.head);
+    // An admin declines by deleting the request.
+    const decline = await push(f.admin, {
+      parent: base.body.head,
+      commits: [commit('Decline', [{ path: KEY, encoding: 'utf8', content: null }])],
+    });
+    expect(decline.status).toBe(201);
+  });
+
   it('lets a viewer add exactly one key file as a commit authored by them', async () => {
     const before = await head();
     const res = await requestKey(f.viewer, { keyId: KEY_ID, content: 'version: 1\n' });

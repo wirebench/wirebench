@@ -198,4 +198,23 @@ describe('TeamSecretsSection', () => {
     await userEvent.click(screen.getByTestId('team-secrets-request-access'));
     expect(requestAccess).toHaveBeenCalled();
   });
+
+  it('tells a declined machine why, and offers to ask again with a fresh key', async () => {
+    const requestAccess = vi.fn().mockResolvedValue({ ok: true, value: status({}) });
+    installWirebenchApi({ teamSecrets: { requestAccess } });
+    useTeamSecretsStore.setState({
+      status: status({
+        canManage: false,
+        me: { state: 'declined', keyId: BEN.keyId, fingerprint: BEN.fingerprint, admin: false },
+        message: "An admin declined this machine's request for team secrets.",
+      }),
+    });
+    render(<TeamSecretsSection />);
+    expect(screen.getByTestId('team-secrets-me').textContent).toContain('Request declined');
+    expect(screen.getByTestId('team-secrets-message').textContent).toBe(
+      "An admin declined this machine's request for team secrets.",
+    );
+    await userEvent.click(screen.getByTestId('team-secrets-request-access'));
+    expect(requestAccess).toHaveBeenCalled();
+  });
 });

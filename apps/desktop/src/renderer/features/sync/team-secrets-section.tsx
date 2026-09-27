@@ -16,6 +16,7 @@ const ME_WORDS = {
   pending: 'Waiting for an admin to approve this machine',
   approved: 'Approved',
   removed: 'Removed',
+  declined: 'Request declined',
 } as const;
 
 /** Why an entry was ignored (team-secrets ruling): a rollback reads differently from an untrusted signer. */
@@ -74,7 +75,7 @@ export function TeamSecretsSection() {
           {status.message}
         </p>
       )}
-      {status.me.state === 'removed' && (
+      {(status.me.state === 'removed' || status.me.state === 'declined') && (
         <Button data-testid="team-secrets-request-access" disabled={busy} onClick={() => void run('requestAccess')}>
           Ask for access again
         </Button>

@@ -32,7 +32,7 @@ import {
   parseTeamSecretsFile,
   readTeamSecretsFiles,
   replayAccessLog,
-  rotateMarks,
+  rotateMarksFor,
   sealVaultEntry,
   secretKeySchema,
   serializeMachineKeys,
@@ -76,9 +76,8 @@ export { TEAM_KEY_LABEL_PREFIX, TEAM_REPLACED_LABEL_PREFIX } from './secrets.js'
 export const TEAM_SECRETS_LOCAL_FILE = 'team-secrets.json';
 
 const ATTRIBUTES_LINE = 'team-secrets/values/** -merge';
-const DAMAGED_MESSAGE =
-  'An access change is missing from this workspace. Restore it from the history before changing team secrets.';
-const REMOVED_MESSAGE = 'An admin removed this machine from team secrets.';
+/** The store label a `${secret:name}` token's value is kept under; a vault ref entry may never claim it. */
+const TOKEN_LABEL_PREFIX = 'wirebench-secret:';
 
 export const TEAM_SECRETS_OFF: TeamSecretsStatusWire = {
   on: false,
@@ -151,6 +150,13 @@ const localStateSchema = z.object({
   genesisId: z.string().optional(),
   seenAccess: z.array(z.string()).default([]),
   /**
+   * This machine's key once its request was seen in the tree. Seen, then gone while neither approved nor
+   * removed, means an admin declined it: no automatic request again (§3.2).
+   */
+  seenKeyId: z.string().optional(),
+  /** Every removal replayed so far, so its rotate marks outlive the removed key's request file (§3.6). */
+  seenRemovals: z.array(z.object({ keyId: z.string(), name: z.string(), at: z.string() })).default([]),
+  /**
    * Rollback protection: per vault id, the latest `updatedAt` this machine accepted after a pull. A trusted
    * entry dated earlier is an older signed copy put back, and is refused.
    */
@@ -187,18 +193,26 @@ interface View {
 
 type Refusal = 'rolled-back' | 'machine-label';
 
+/**
+ * Whether a vault entry's label is one no shared value may carry: a machine-only store label, or (on a ref
+ * entry) a token's store label, which would shadow that project's `${secret:name}` value.
+ */
+function forbiddenLabel(entry: Pick<VaultEntryFile, 'label' | 'secret'>): boolean {
+  return isMachineOnlyLabel(entry.label) || ('ref' in entry.secret && entry.label.startsWith(TOKEN_LABEL_PREFIX));
+}
+
 type MyState = TeamSecretsStatusWire['me']['state'];
 
 /** What the send path reads synchronously (Task 7). */
 interface SendCache {
   readonly on: boolean;
-  readonly approved: boolean;
+  readonly state: MyState;
   readonly vaultIds: ReadonlySet<string>;
 }
 
 /** The cache with no workspace, or before the first load. */
 function offCache(): SendCache {
-  return { on: false, approved: false, vaultIds: new Set() };
+  return { on: false, state: 'none', vaultIds: new Set() };
 }
 
 async function readTreeFiles(tree: string): Promise<Map<string, string>> {
@@ -230,7 +244,7 @@ async function readLocalState(dir: string): Promise<LocalState> {
   try {
     return localStateSchema.parse(JSON.parse(await readFile(join(dir, TEAM_SECRETS_LOCAL_FILE), 'utf8')));
   } catch {
-    return { version: 1, seenAccess: [], accepted: {}, replaced: [] };
+    return { version: 1, seenAccess: [], seenRemovals: [], accepted: {}, replaced: [] };
   }
 }
 
@@ -241,11 +255,19 @@ async function writeLocalState(dir: string, state: LocalState): Promise<void> {
 
 /**
  * Plan decision 4: the replay problems that mean a seen entry was tampered with (its signature, or its
- * signer's key request, no longer checks out). Any other problem on a seen entry (its subject's request
- * is gone after a concurrent decline, or a concurrent change reordered who could make it) only stops it
- * counting.
+ * signer's key request, no longer checks out). Any other problem on a seen entry (a concurrent change
+ * reordered who could make it) only stops it counting.
  */
 const TAMPER_PROBLEMS: ReadonlySet<LogProblem> = new Set<LogProblem>(['bad-signature', 'unknown-signer']);
+
+/**
+ * Whether a seen entry's problem means tampering. A subject's request gone (`unknown-key`) is tamper too,
+ * except on an `approve`: only a pending key can be declined, and a concurrent decline removes exactly that
+ * request. A removal's or an admin change's subject was approved, so its request is never declined.
+ */
+function isTamper(problem: LogProblem, action: AccessAction | undefined): boolean {
+  return TAMPER_PROBLEMS.has(problem) || (problem === 'unknown-key' && action !== 'approve');
+}
 
 /** The error for an access entry the replay would reject (generic guard before writing). */
 function refusal(problem: LogProblem): Error {
@@ -261,6 +283,17 @@ function refusal(problem: LogProblem): Error {
     default:
       return teamSecretsError('team-secrets-not-allowed');
   }
+}
+
+/** The error a send, or an access change, meets on a machine that may not take part (§3.8). */
+function notApprovedError(state: MyState): Error {
+  return teamSecretsError(
+    state === 'removed'
+      ? 'team-secrets-removed'
+      : state === 'declined'
+        ? 'team-secrets-declined'
+        : 'team-secrets-pending',
+  );
 }
 
 function describeError(error: unknown): string {
@@ -419,7 +452,11 @@ export class TeamSecretsService {
     return this.changeAdmin(keyId, 'revoke-admin');
   }
 
-  /** Plan decision 20: a removed machine makes a fresh key and asks again. */
+  /**
+   * Plan decision 20: a removed or declined machine makes a fresh key and asks again. A request that fails
+   * (the server's rate limit, no network) throws, and this machine keeps the key it had, so the status never
+   * claims a request that was not made.
+   */
   requestAccess(): Promise<TeamSecretsStatusWire> {
     return this.enqueue(async () => {
       const ws = this.requireWorkspace();
@@ -427,16 +464,53 @@ export class TeamSecretsService {
       if (!view.access.on || this.myState(view) === 'approved') {
         return await this.statusOf(view);
       }
-      await this.sendKeyRequest(ws, await this.newKeys(ws));
+      const label = this.keyLabel(ws);
+      const oldRef = await this.deps.store.findByLabel(label);
+      const old = oldRef === undefined ? undefined : await this.deps.store.getMachineOnly(oldRef);
+      try {
+        await this.sendKeyRequest(ws, await this.newKeys(ws), { wait: true });
+      } catch (error) {
+        const ref = await this.deps.store.findByLabel(label);
+        if (old !== undefined && oldRef !== undefined) {
+          await this.deps.store.putMachineOnly(oldRef, old, { label });
+        } else if (ref !== undefined) {
+          await this.deps.store.delete(ref);
+        }
+        throw error;
+      }
       return await this.emit(ws);
     });
   }
 
-  /** §3.3: the value a save stored on this machine, into the vault for every approved key. */
+  /**
+   * §3.1: seals the values the workspace now uses that the vault lacks (a secret a save just started using).
+   * After a project or workspace save; the next pull does the same.
+   */
+  backfill(): Promise<void> {
+    return this.enqueue(async () => {
+      const ws = this.ws;
+      if (ws === undefined) {
+        return;
+      }
+      const files = await this.backfillFiles(await this.load(ws));
+      if (files.size === 0) {
+        return;
+      }
+      await this.write(ws, files);
+      ws.afterWrite('Update team secrets');
+      await this.emit(ws);
+    });
+  }
+
+  /**
+   * §3.3: the value a save stored on this machine, into the vault for every approved key. Only a secret the
+   * open workspace uses: an app-level one (the proxy password) stays on this machine. A ref a project starts
+   * using later is sealed by the backfill after that save.
+   */
   recordValue(secret: SecretKey, label: string, value: string): Promise<void> {
     return this.enqueue(async () => {
       const ws = this.attached;
-      if (ws === undefined) {
+      if (ws === undefined || !this.isUsed(ws, secret)) {
         return;
       }
       const view = await this.load(ws);
@@ -468,11 +542,11 @@ export class TeamSecretsService {
     });
   }
 
-  /** Plan decision 18: a value deleted on an approved machine leaves the vault too. */
+  /** Plan decision 18: a value deleted on an approved machine leaves the vault too (a secret the workspace uses). */
   forget(secret: SecretKey, label: string): Promise<void> {
     return this.enqueue(async () => {
       const ws = this.attached;
-      if (ws === undefined) {
+      if (ws === undefined || !this.isUsed(ws, secret)) {
         return;
       }
       const view = await this.load(ws);
@@ -487,19 +561,20 @@ export class TeamSecretsService {
   }
 
   /**
-   * §3.2: whether a send that found no value should say this machine is waiting for approval. Reads
-   * the state the last load cached, so the send path never waits on the tree.
+   * §3.2, §3.8: the error for a send that found no value the vault holds for someone else — this machine is
+   * waiting for approval, was removed, or was declined — or `undefined`. Reads the state the last load
+   * cached, so the send path never waits on the tree.
    */
-  waitingFor(ref: string, projectId: string | undefined): boolean {
-    if (!this.cache.on || this.cache.approved) {
-      return false;
+  missingValueError(ref: string, projectId: string | undefined): Error | undefined {
+    if (!this.cache.on || this.cache.state === 'approved') {
+      return undefined;
     }
     const name = parseSecretPseudoRef(ref);
     if (name !== undefined && projectId === undefined) {
-      return false;
+      return undefined;
     }
     const secret: SecretKey = name === undefined ? { ref } : { token: { projectId: projectId!, name } };
-    return this.cache.vaultIds.has(vaultEntryId(secret));
+    return this.cache.vaultIds.has(vaultEntryId(secret)) ? notApprovedError(this.cache.state) : undefined;
   }
 
   /**
@@ -531,12 +606,15 @@ export class TeamSecretsService {
         if (both === undefined) {
           continue;
         }
-        // A side the current log does not trust never wins, however new it claims to be.
+        // A side the current log does not trust never wins, however new it claims to be; nor does one older
+        // than the value this machine last accepted for the id (a rollback, as `load` refuses it).
+        const accepted = view.local.accepted[entryId];
         const usable = (text: string | null): VaultEntryFile | undefined => {
           const entry = text === null ? undefined : parseTeamSecretsFile(vaultEntryFileSchema, text);
           return entry !== undefined &&
             verifyVaultEntry(entry, entryId, view.access) === 'trusted' &&
-            !isMachineOnlyLabel(entry.label)
+            !forbiddenLabel(entry) &&
+            (accepted === undefined || Date.parse(entry.updatedAt) >= Date.parse(accepted))
             ? entry
             : undefined;
         };
@@ -653,6 +731,12 @@ export class TeamSecretsService {
     return this.now;
   }
 
+  /** Whether the open workspace's projects or environments name `secret` (C1: nothing else reaches the vault). */
+  private isUsed(ws: TeamSecretsWorkspace, secret: SecretKey): boolean {
+    const id = vaultEntryId(secret);
+    return ws.uses().some((use) => vaultEntryId(use.secret) === id);
+  }
+
   private keyLabel(ws: TeamSecretsWorkspace): string {
     return `${TEAM_KEY_LABEL_PREFIX}${ws.workspaceId}`;
   }
@@ -687,24 +771,43 @@ export class TeamSecretsService {
       files.access,
       local.genesisId !== undefined ? { genesisId: local.genesisId } : {},
     );
-    const present = new Set(files.access.map((entry) => entry.id));
+    const actions = new Map(files.access.map((entry) => [entry.id, entry.action]));
     const problems = new Map(access.problems.map(({ id, problem }) => [id, problem]));
-    const rejected = new Set(problems.keys());
     const damaged = local.seenAccess.some((id) => {
       const problem = problems.get(id);
-      return !present.has(id) || (problem !== undefined && TAMPER_PROBLEMS.has(problem));
+      return !actions.has(id) || (problem !== undefined && isTamper(problem, actions.get(id)));
     });
+    const me = await this.myKeys(ws);
+    let next = local;
     if (access.on && !damaged) {
-      const seen = [...new Set([...local.seenAccess, ...[...present].filter((id) => !rejected.has(id))])].sort();
-      if (local.genesisId !== access.genesisId || !sameList(seen, local.seenAccess)) {
-        local = {
-          ...local,
+      const seen = [...new Set([...local.seenAccess, ...[...actions.keys()].filter((id) => !problems.has(id))])].sort();
+      const removals = [...local.seenRemovals];
+      for (const removal of access.removed) {
+        if (!removals.some((known) => known.keyId === removal.keyId)) {
+          const name = access.keys.get(removal.keyId)?.name ?? removal.keyId;
+          removals.push({ keyId: removal.keyId, name, at: removal.at });
+        }
+      }
+      if (
+        local.genesisId !== access.genesisId ||
+        !sameList(seen, local.seenAccess) ||
+        removals.length !== local.seenRemovals.length
+      ) {
+        next = {
+          ...next,
           ...(access.genesisId !== undefined ? { genesisId: access.genesisId } : {}),
           seenAccess: seen,
+          seenRemovals: removals,
         };
-        if (options.remember !== false) {
-          await writeLocalState(ws.dir, local);
-        }
+      }
+    }
+    if (me !== undefined && access.keys.has(me.keyId) && local.seenKeyId !== me.keyId) {
+      next = { ...next, seenKeyId: me.keyId };
+    }
+    if (next !== local) {
+      local = next;
+      if (options.remember !== false) {
+        await writeLocalState(ws.dir, local);
       }
     }
     const refused = new Map<string, Refusal>();
@@ -713,22 +816,18 @@ export class TeamSecretsService {
         continue;
       }
       const accepted = local.accepted[id];
-      if (isMachineOnlyLabel(entry.label)) {
+      if (forbiddenLabel(entry)) {
         refused.set(id, 'machine-label');
       } else if (accepted !== undefined && Date.parse(entry.updatedAt) < Date.parse(accepted)) {
         refused.set(id, 'rolled-back');
       }
     }
-    const me = await this.myKeys(ws);
+    const view: View = { ws, files, access, me, local, damaged, refused };
     if (ws === this.ws) {
       // A load for a workspace closed meanwhile must not stand in for the open one's.
-      this.cache = {
-        on: access.on,
-        approved: me !== undefined && access.approved.has(me.keyId),
-        vaultIds: new Set(files.values.keys()),
-      };
+      this.cache = { on: access.on, state: this.myState(view), vaultIds: new Set(files.values.keys()) };
     }
-    return { ws, files, access, me, local, damaged, refused };
+    return view;
   }
 
   protected async saveLocal(ws: TeamSecretsWorkspace, local: LocalState): Promise<void> {
@@ -743,7 +842,11 @@ export class TeamSecretsService {
     if (access.approved.has(me.keyId)) {
       return 'approved';
     }
-    return access.removed.some((removal) => removal.keyId === me.keyId) ? 'removed' : 'pending';
+    if (access.removed.some((removal) => removal.keyId === me.keyId)) {
+      return 'removed';
+    }
+    // Seen in the tree once, and gone since while still waiting: an admin deleted the request (§3.2).
+    return view.local.seenKeyId === me.keyId && !access.keys.has(me.keyId) ? 'declined' : 'pending';
   }
 
   /** Plan decisions 4, 13: approved, not a server viewer, and the log intact. */
@@ -763,14 +866,15 @@ export class TeamSecretsService {
     return view.access.authority === 'signed' ? view.access.admins.has(view.me.keyId) : view.ws.role() === 'admin';
   }
 
-  /** @throws team-secrets-damaged, team-secrets-pending, or team-secrets-admin-only */
+  /** @throws team-secrets-damaged, team-secrets-pending, -removed, -declined, or team-secrets-admin-only */
   private async managerView(): Promise<{ view: View; me: MachineKeys }> {
     const view = await this.load(this.requireWorkspace());
     if (view.damaged) {
       throw teamSecretsError('team-secrets-damaged');
     }
-    if (view.access.on && this.myState(view) !== 'approved') {
-      throw teamSecretsError('team-secrets-pending');
+    const state = this.myState(view);
+    if (view.access.on && state !== 'approved') {
+      throw notApprovedError(state);
     }
     if (!this.isManager(view) || view.me === undefined) {
       throw teamSecretsError('team-secrets-admin-only');
@@ -859,9 +963,9 @@ export class TeamSecretsService {
   }
 
   /**
-   * The `updatedAt` for a new value of `id`: now, but always after the trusted entry it replaces and after
-   * what this machine accepted, so a machine whose clock runs behind never writes a copy others refuse as
-   * rolled back.
+   * The `updatedAt` for a new value of `id`: now, but always after the trusted entry it replaces, after what
+   * this machine accepted, and after every removal, so a machine whose clock runs behind never writes a copy
+   * others refuse as rolled back, nor one that still carries a Rotate mark.
    */
   protected nextUpdatedAt(view: View, id: string): string {
     const current = this.trustedValues(view).get(id)?.updatedAt;
@@ -869,8 +973,24 @@ export class TeamSecretsService {
     const floor = Math.max(
       current === undefined ? 0 : Date.parse(current) + 1,
       accepted === undefined ? 0 : Date.parse(accepted) + 1,
+      ...this.removalsOf(view).map((removal) => Date.parse(removal.at) + 1),
     );
     return new Date(Math.max(this.now().getTime(), floor)).toISOString();
+  }
+
+  /** Every removal the log replays now, and every one this machine saw before (§3.6), with the removed name. */
+  protected removalsOf(view: View): { readonly keyId: string; readonly name: string; readonly at: string }[] {
+    const removals = view.access.removed.map((removal) => ({
+      keyId: removal.keyId,
+      name: view.access.keys.get(removal.keyId)?.name ?? removal.keyId,
+      at: removal.at,
+    }));
+    for (const seen of view.local.seenRemovals) {
+      if (!removals.some((removal) => removal.keyId === seen.keyId)) {
+        removals.push(seen);
+      }
+    }
+    return removals;
   }
 
   /** Writes (text) or removes (`null`) tree files, announcing them to the watcher first. */
@@ -907,10 +1027,21 @@ export class TeamSecretsService {
     return { text: teamSecretsFileText(doc), name };
   }
 
-  /** §3.2: a file and a commit on git and folder shares; the route on a server share (plan decision 11). */
-  private async sendKeyRequest(ws: TeamSecretsWorkspace, keys: MachineKeys): Promise<void> {
+  /**
+   * §3.2: a file and a commit on git and folder shares; the route on a server share (plan decision 11). The
+   * pull hook never waits on the route (plan decision 14); `wait` (the Request access button) does, and throws.
+   */
+  private async sendKeyRequest(
+    ws: TeamSecretsWorkspace,
+    keys: MachineKeys,
+    options: { readonly wait?: boolean } = {},
+  ): Promise<void> {
     const { text, name } = await this.keyRequestText(ws, keys);
     if (ws.kind === 'server') {
+      if (options.wait === true) {
+        await ws.requestKey?.(keys.keyId, text);
+        return;
+      }
       void ws.requestKey?.(keys.keyId, text).catch((error: unknown) => {
         this.deps.log?.(`[team-secrets] key request failed: ${error instanceof Error ? error.message : String(error)}`);
       });
@@ -1108,6 +1239,10 @@ export class TeamSecretsService {
   private async importValue(secret: SecretKey, label: string, value: string): Promise<void> {
     const { store } = this.deps;
     if ('ref' in secret) {
+      if (forbiddenLabel({ secret, label })) {
+        // `load` refuses such an entry already; a restored notice carries a label from the vault too.
+        return;
+      }
       if ((await store.get(secret.ref)) !== value) {
         await store.put(secret.ref, value, { label });
       }
@@ -1149,10 +1284,12 @@ export class TeamSecretsService {
       state === 'unavailable'
         ? TEAM_SECRETS_MESSAGES['team-secrets-no-safe-storage']
         : view.damaged
-          ? DAMAGED_MESSAGE
+          ? TEAM_SECRETS_MESSAGES['team-secrets-damaged']
           : state === 'removed'
-            ? REMOVED_MESSAGE
-            : undefined;
+            ? TEAM_SECRETS_MESSAGES['team-secrets-removed']
+            : state === 'declined'
+              ? TEAM_SECRETS_MESSAGES['team-secrets-declined']
+              : undefined;
     const localOnly: SecretKey[] = [];
     if (!this.canWriteVault(view)) {
       for (const use of ws.uses()) {
@@ -1180,7 +1317,7 @@ export class TeamSecretsService {
         ws.kind === 'server' && members !== undefined
           ? approved.filter((info) => !members.includes(info.email.toLowerCase())).map((info) => info.keyId)
           : [],
-      rotate: rotateMarks(this.trustedValues(view), access),
+      rotate: rotateMarksFor(this.trustedValues(view), this.removalsOf(view)),
       untrusted: [...view.files.values]
         .filter(([id, entry]) => verifyVaultEntry(entry, id, access) !== 'trusted' || view.refused.has(id))
         .map(([entryId, entry]) => ({

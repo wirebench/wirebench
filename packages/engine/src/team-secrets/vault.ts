@@ -175,12 +175,24 @@ export interface RotateMark {
  * until it changes. Pass trusted entries only, keyed by id.
  */
 export function rotateMarks(values: ReadonlyMap<string, VaultEntryFile>, state: AccessState): RotateMark[] {
+  return rotateMarksFor(
+    values,
+    state.removed.map((removal) => ({ at: removal.at, name: state.keys.get(removal.keyId)?.name ?? removal.keyId })),
+  );
+}
+
+/**
+ * {@link rotateMarks} for removals given by name and time: a machine that remembers a removal it saw keeps its
+ * marks even after the removed key's request file is gone from the tree.
+ */
+export function rotateMarksFor(
+  values: ReadonlyMap<string, VaultEntryFile>,
+  removals: readonly { readonly at: string; readonly name: string }[],
+): RotateMark[] {
   const marks: RotateMark[] = [];
   for (const [entryId, entry] of values) {
     const setAt = Date.parse(entry.updatedAt);
-    const names = state.removed
-      .filter((removal) => setAt <= Date.parse(removal.at))
-      .map((removal) => state.keys.get(removal.keyId)?.name ?? removal.keyId);
+    const names = removals.filter((removal) => setAt <= Date.parse(removal.at)).map((removal) => removal.name);
     if (names.length > 0) {
       marks.push({ entryId, label: entry.label, secret: entry.secret, removedNames: [...new Set(names)] });
     }

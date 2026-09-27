@@ -25,7 +25,7 @@ import { SecretStore } from '../src/main/secrets.js';
 import { GitBackend } from '../src/main/sync/git-backend.js';
 import type { SyncConflictWire } from '../src/main/sync/types.js';
 import { TeamSecretStore } from '../src/main/team-secret-store.js';
-import { TeamSecretsService } from '../src/main/team-secrets-service.js';
+import { TEAM_SECRETS_LOCAL_FILE, TeamSecretsService } from '../src/main/team-secrets-service.js';
 import type { TeamSecretsServiceDeps } from '../src/main/team-secrets-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
@@ -40,6 +40,8 @@ import {
 } from './sync/git-fixture.js';
 
 const WAIT = { timeout: 20_000, interval: 50 };
+/** The ref the seeded workspace's `password` property names: a secret the workspace uses, so it is shared. */
+const PASSWORD_REF = 'sec_0123456789abcdef0123456789';
 
 interface Machine {
   readonly service: WorkspaceService;
@@ -66,7 +68,7 @@ function share(): Parameters<typeof saveShare>[1] {
 
 async function seedShared(): Promise<string> {
   const root = join(base, 'a');
-  workspace = createWorkspace('Team');
+  workspace = { ...createWorkspace('Team'), properties: { password: PASSWORD_REF } };
   const dir = workspaceDir(root, workspace.id);
   const tree = join(dir, 'tree');
   await mkdir(tree, { recursive: true });
@@ -131,6 +133,18 @@ async function latestSubject(m: Machine): Promise<string | undefined> {
   return (await m.service.sync()?.log(1))?.[0]?.subject;
 }
 
+/**
+ * Saves the workspace's Password through what the renderer's `secrets.*` channels write through (only a secret
+ * the workspace uses reaches the vault).
+ */
+async function setPassword(m: Machine, value: string): Promise<string> {
+  if (!(await m.store.exists(PASSWORD_REF))) {
+    await m.store.put(PASSWORD_REF, value, { label: 'Password' });
+  }
+  await m.secrets.replace(PASSWORD_REF, value);
+  return PASSWORD_REF;
+}
+
 /** Waits for `subject` to be the newest commit, then pushes it. */
 async function committed(m: Machine, subject: string): Promise<void> {
   await vi.waitFor(async () => expect(await latestSubject(m)).toBe(subject), WAIT);
@@ -184,6 +198,7 @@ it('leaves a local workspace alone (§13.6)', async () => {
     turnOnIfAdmin: vi.fn(),
     afterPull: vi.fn(),
     resolveConflicts: vi.fn(),
+    backfill: vi.fn(() => Promise.resolve()),
   };
   const service = new WorkspaceService({
     userDataDir: root,
@@ -203,7 +218,7 @@ describeGit('WorkspaceService — team secrets over git', { timeout: 90_000 }, (
     const a = await openMachine(await seedShared());
     await a.team.turnOn();
     await committed(a, 'Turn on team secrets');
-    const ref = await a.secrets.set('hunter2', { label: 'Password' });
+    const ref = await setPassword(a, 'hunter2');
     await committed(a, 'Update secret Password');
 
     const b = await openMachine(await cloneTo('b'));
@@ -223,7 +238,7 @@ describeGit('WorkspaceService — team secrets over git', { timeout: 90_000 }, (
     const a = await openMachine(await seedShared());
     await a.team.turnOn();
     await committed(a, 'Turn on team secrets');
-    const ref = await a.secrets.set('hunter2', { label: 'Password' });
+    const ref = await setPassword(a, 'hunter2');
     await committed(a, 'Update secret Password');
     const b = await openMachine(await cloneTo('b'));
     await committed(b, 'Request team secrets access for Bob');
@@ -295,6 +310,7 @@ describeGit('WorkspaceService — team secrets over git', { timeout: 90_000 }, (
         turnOnIfAdmin: vi.fn(),
         afterPull: vi.fn(() => Promise.reject(new Error('boom'))),
         resolveConflicts: vi.fn(() => Promise.resolve(new Map<string, 'mine' | 'theirs'>())),
+        backfill: vi.fn(() => Promise.resolve()),
       };
       const service = new WorkspaceService({
         userDataDir: root,
@@ -308,7 +324,7 @@ describeGit('WorkspaceService — team secrets over git', { timeout: 90_000 }, (
       await service.open(workspace.id);
       await vi.waitFor(() => expect(service.sync()).toBeDefined(), WAIT);
       await service.sync()?.idle();
-      await a.secrets.set('hunter2', { label: 'Password' });
+      await setPassword(a, 'hunter2');
       await committed(a, 'Update secret Password');
 
       await expect(service.sync()?.pull()).resolves.toBeDefined();
@@ -336,7 +352,7 @@ describeGit('WorkspaceService — team secrets over git', { timeout: 90_000 }, (
       closed ??= a.service.close();
       return load(...args);
     });
-    await a.secrets.set('hunter2', { label: 'Password' });
+    await setPassword(a, 'hunter2');
     await closed;
 
     expect(await treeGit(a.tree, ['log', '-1', '--format=%s'])).toBe('Update secret Password');
@@ -401,6 +417,30 @@ describeGit('WorkspaceService — sharing turns team secrets on', { timeout: 60_
     expect(existsSync(join(tree, 'team-secrets'))).toBe(true);
     expect(existsSync(join(dir, 'team-secrets'))).toBe(false);
     expect(existsSync(join(dir, 'workspace.yaml'))).toBe(true);
+  });
+
+  it('turns team secrets on again when a workspace is shared, stopped and shared again (I2)', async () => {
+    await globalIdentity('Alice', 'alice@example.com');
+    const target = join(base, 'synced-again');
+    await mkdir(target);
+    const { service, team, dir } = await localMachine({
+      dialogs: { pickFolder: () => Promise.resolve(target), pickFolderToWrite: () => Promise.resolve(target) },
+    });
+    await service.share({});
+    await service.sync()?.idle();
+    expect((await team.status()).on).toBe(true);
+
+    await service.stopSharing();
+    expect(existsSync(join(dir, TEAM_SECRETS_LOCAL_FILE))).toBe(false);
+
+    // Shared again somewhere new: the old share's pins would read the new log as damaged.
+    await service.shareToFolder({} as WebContents);
+
+    await vi.waitFor(async () => expect((await team.status()).on).toBe(true), WAIT);
+    const status = await team.status();
+    expect(status).toMatchObject({ canManage: true, me: { state: 'approved' } });
+    expect(status.message).toBeUndefined();
+    expect(existsSync(join(target, 'team-secrets'))).toBe(true);
   });
 
   it('turns on in a folder share, named after the OS user when the folder is no git repository', async () => {

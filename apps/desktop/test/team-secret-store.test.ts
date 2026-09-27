@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { WirebenchError } from '@wirebench/engine';
+import { teamSecretsError, WirebenchError } from '@wirebench/engine';
 import { TEAM_KEY_LABEL_PREFIX, TEAM_REPLACED_LABEL_PREFIX } from '../src/main/secrets.js';
 import { secretOfLabel, TeamSecretStore, teamSecretGetter } from '../src/main/team-secret-store.js';
 
@@ -103,7 +103,11 @@ describe('TeamSecretStore', () => {
 describe('teamSecretGetter', () => {
   it('answers a stored value, refuses a value this machine waits for, and passes on a plain miss', async () => {
     const inner = vi.fn((ref: string) => Promise.resolve(ref === REF ? 'hunter2' : undefined));
-    const waiting = { waitingFor: vi.fn((ref: string) => ref === 'sec_waitingwaitingwaitingwait') };
+    const waiting = {
+      missingValueError: vi.fn((ref: string) =>
+        ref === 'sec_waitingwaitingwaitingwait' ? teamSecretsError('team-secrets-pending') : undefined,
+      ),
+    };
     const get = teamSecretGetter(inner, waiting, 'proj-1');
 
     expect(await get(REF)).toBe('hunter2');
@@ -114,6 +118,6 @@ describe('teamSecretGetter', () => {
       code: 'team-secrets-pending',
       message: 'This machine is waiting for an admin to approve it for team secrets.',
     });
-    expect(waiting.waitingFor).toHaveBeenCalledWith('sec_waitingwaitingwaitingwait', 'proj-1');
+    expect(waiting.missingValueError).toHaveBeenCalledWith('sec_waitingwaitingwaitingwait', 'proj-1');
   });
 });

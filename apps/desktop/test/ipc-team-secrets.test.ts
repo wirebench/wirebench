@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { WirebenchError } from '@wirebench/engine';
 import { channels, events } from '../src/shared/ipc.js';
 import { registerTeamSecretsChannels } from '../src/main/ipc/team-secrets.js';
 import { TEAM_SECRETS_OFF } from '../src/main/team-secrets-service.js';
@@ -45,24 +46,80 @@ beforeEach(() => {
 });
 
 describe('teamSecrets channels', () => {
-  it('registers one handler per channel and routes each to the service', async () => {
-    const team = service();
-    registerTeamSecretsChannels(team);
-
+  it('registers one handler per channel', () => {
+    registerTeamSecretsChannels(service());
     expect([...handlers.keys()].filter((name) => name.startsWith('teamSecrets.')).sort()).toEqual(
       Object.values(channels.teamSecrets)
         .map((channel) => channel.name)
         .sort(),
     );
-    expect(await invoke('teamSecrets.status')).toEqual({ ok: true, value: TEAM_SECRETS_OFF });
-    await invoke('teamSecrets.turnOn');
-    await invoke('teamSecrets.approve', { keyId: KEY });
-    await invoke('teamSecrets.remove', { keyId: KEY });
-    await invoke('teamSecrets.restoreMine', { entryId: KEY });
-    expect(team.turnOn).toHaveBeenCalledWith({ commit: true });
-    expect(team.approve).toHaveBeenCalledWith(KEY);
-    expect(team.remove).toHaveBeenCalledWith(KEY);
-    expect(team.restoreMine).toHaveBeenCalledWith(KEY);
+  });
+
+  const ROUTES: readonly [
+    channel: string,
+    payload: unknown,
+    method: keyof ReturnType<typeof service>,
+    args: unknown[],
+  ][] = [
+    ['teamSecrets.status', undefined, 'status', []],
+    ['teamSecrets.turnOn', undefined, 'turnOn', [{ commit: true }]],
+    ['teamSecrets.requestAccess', undefined, 'requestAccess', []],
+    ['teamSecrets.approve', { keyId: KEY }, 'approve', [KEY]],
+    ['teamSecrets.decline', { keyId: KEY }, 'decline', [KEY]],
+    ['teamSecrets.remove', { keyId: KEY }, 'remove', [KEY]],
+    ['teamSecrets.grantAdmin', { keyId: KEY }, 'grantAdmin', [KEY]],
+    ['teamSecrets.revokeAdmin', { keyId: KEY }, 'revokeAdmin', [KEY]],
+    ['teamSecrets.restoreMine', { entryId: KEY }, 'restoreMine', [KEY]],
+    ['teamSecrets.dismissReplaced', { entryId: KEY }, 'dismissReplaced', [KEY]],
+  ];
+
+  it('covers every channel in the routing table', () => {
+    expect(ROUTES.map(([channel]) => channel).sort()).toEqual(
+      Object.values(channels.teamSecrets)
+        .map((channel) => channel.name)
+        .sort(),
+    );
+  });
+
+  it.each(ROUTES)('routes %s to the service', async (channel, payload, method, args) => {
+    const team = service();
+    registerTeamSecretsChannels(team);
+    expect(await invoke(channel, payload)).toEqual({ ok: true, value: TEAM_SECRETS_OFF });
+    expect(team[method]).toHaveBeenCalledWith(...args);
+    for (const [name, other] of Object.entries(team)) {
+      if (name !== method) {
+        expect(other).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it('refuses a malformed entry id before it reaches the service', async () => {
+    const team = service();
+    registerTeamSecretsChannels(team);
+    for (const channel of ['teamSecrets.restoreMine', 'teamSecrets.dismissReplaced']) {
+      const result = (await invoke(channel, { entryId: '../values/x' })) as { ok: boolean };
+      expect(result.ok).toBe(false);
+    }
+    expect(team.restoreMine).not.toHaveBeenCalled();
+    expect(team.dismissReplaced).not.toHaveBeenCalled();
+  });
+
+  it('answers a failed request for access with its error, for the renderer to show (M4)', async () => {
+    const team = service();
+    team.requestAccess.mockRejectedValueOnce(
+      new WirebenchError(
+        'team-secrets-rate-limited',
+        'Too many requests for team secrets access. Try again in a few minutes.',
+      ),
+    );
+    registerTeamSecretsChannels(team);
+    expect(await invoke('teamSecrets.requestAccess')).toMatchObject({
+      ok: false,
+      error: {
+        code: 'team-secrets-rate-limited',
+        message: 'Too many requests for team secrets access. Try again in a few minutes.',
+      },
+    });
   });
 
   it('refuses a malformed key id before it reaches the service', async () => {

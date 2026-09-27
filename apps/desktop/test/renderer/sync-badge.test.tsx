@@ -231,4 +231,33 @@ describe('SyncBadge live dot (live-updates §3.4, §5.4)', () => {
     expect(screen.getByTestId('status-bar-sync').textContent).toContain('Up to date · 1 waiting');
     expect(screen.getByTestId('status-bar-sync').getAttribute('data-state')).toBe('clean');
   });
+
+  it('shows no waiting count to a machine that cannot approve', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ share: { kind: 'git', managed: true } }) });
+    useSyncStore.setState({
+      status: { kind: 'git', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 },
+    });
+    useTeamSecretsStore.setState({
+      status: {
+        ...TEAM_SECRETS_OFF_STATUS,
+        on: true,
+        canManage: false,
+        pending: [
+          {
+            keyId: 'BBBBBBBBBBBBBBBBBBBBBBBBBB',
+            name: 'Ben',
+            email: '',
+            machine: 'm',
+            fingerprint: 'f',
+            requestedAt: '2026-09-26T10:00:00.000Z',
+            admin: false,
+            mine: false,
+          },
+        ],
+      },
+    });
+    render(<SyncBadge />);
+    expect(screen.getByTestId('status-bar-sync').textContent).toBe('Up to date');
+    expect(screen.getByTestId('status-bar-sync').textContent).not.toContain('waiting');
+  });
 });

@@ -60,6 +60,7 @@ export {
   healVaultEntry,
   openVaultEntry,
   rotateMarks,
+  rotateMarksFor,
   sealVaultEntry,
   verifyVaultEntry,
   wrapsUnapprovedKey,

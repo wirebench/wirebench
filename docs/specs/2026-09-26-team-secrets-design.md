@@ -71,16 +71,28 @@ Owner decisions (interview, 2026-09-26):
   section: name, email, machine label, key fingerprint (first 16 hex of SHA-256 of the public keys, in
   groups of four), requested date. **Approve** writes an `approve` entry and wraps every vault entry's
   data key for the new key, in one commit. **Decline** deletes the request file.
+- A declined machine remembers that its request was seen and then deleted while it waited: it does not ask
+  again by itself, and shows `team-secrets-declined` ("An admin declined this machine's request for team
+  secrets.") with **Request access**, which makes a fresh key and asks again. A removed machine sees
+  `team-secrets-removed` ("An admin removed this machine from team secrets.") and the same button. Both
+  codes replace `team-secrets-pending` on a send that needs a team value, and on an access change.
+- **Request access** waits for the request to go out: a failure (the server's `team-secrets-rate-limited`,
+  no network) is shown, and the machine keeps the key and state it had.
 - The admin checks the fingerprint with the person out of band; the dialog says so.
 
 ### 3.3 Changing a value
 
-- Saving a value (Enter…, the secret field, the `${secret:name}` dialog, or a secret-scan move) in a
-  workspace with team secrets writes the vault entry: new data key, value encrypted, wrapped for every
+- Saving a value (Enter…, the secret field, the `${secret:name}` dialog, or a secret-scan move) for a ref or
+  token the workspace's projects or environments use, in a workspace with team secrets, writes the vault
+  entry: new data key, value encrypted, wrapped for every
   key approved in the current log, signed by this machine. The keychain keeps a local copy as the cache.
 - The vault write is an ordinary tree change: it follows commit-on-save and push-on-save like any other
   save, and the commit message reads "Update secret <label>" (never the value).
-- Deleting a ref deletes its vault entry.
+- Deleting a ref the workspace uses deletes its vault entry.
+- **App-level secrets stay on the machine.** A value the workspace does not use — the proxy password in
+  Preferences, any ref no project or environment names — never reaches the vault, even while a shared
+  workspace is open. A ref a project starts using later is sealed by the backfill that runs after that
+  save (and after every pull).
 - A machine without an approved key cannot write the vault; its save stays local and is marked "Only on
   this machine".
 
@@ -133,8 +145,10 @@ which writes it again as a new change. Conflicts on `keys/` or `access/` files c
 | Code | When | Message |
 | --- | --- | --- |
 | `team-secrets-pending` | send needs a team value; machine not approved | This machine is waiting for an admin to approve it for team secrets. |
+| `team-secrets-removed` | send needs a team value, or an access change is asked for, on a removed machine | An admin removed this machine from team secrets. |
+| `team-secrets-declined` | the same, on a machine whose request an admin declined | An admin declined this machine's request for team secrets. |
 | `team-secrets-no-safe-storage` | creating a machine key without OS encryption | Team secrets need the system keychain, which is not available on this machine. |
-| `team-secrets-admin-only` | server refuses a non-admin push touching `access/` | Only a workspace admin can change who has access to team secrets. |
+| `team-secrets-admin-only` | server refuses a non-admin push touching `access/`, or changing or deleting an existing `keys/` file | Only a workspace admin can change who has access to team secrets. |
 | `team-secrets-untrusted` | vault entry fails verification | Ignored a secret signed by a key that is not approved. |
 | `team-secrets-last-admin` | revoking the last admin key | A workspace needs at least one admin for team secrets. |
 | `team-secrets-damaged` | this machine's access log does not match what it saw before | The team secrets access log on this machine does not match what it saw before; this machine will not change team secrets until it is repaired. |
@@ -215,7 +229,8 @@ not approved.
 
 - `POST /workspaces/:id/sync/commits` checks the changed paths (already computed by the commit store) and
   refuses with 403 `team-secrets-admin-only` when a non-admin's push adds, changes or deletes a file under
-  `team-secrets/access/`. No file body is parsed.
+  `team-secrets/access/`, or changes or deletes an existing file under `team-secrets/keys/` (adding a new
+  key request stays allowed: that is how an editor asks). No file body is parsed.
 - `POST /workspaces/:id/team-secrets/key-requests` lets any member with at least viewer role add exactly
   one file `team-secrets/keys/<keyId>.yaml` as a server-authored commit ("Request team secrets access for
   <name>"), author the signed-in account. The body is size-capped (4 KiB) and the path is derived from the
@@ -260,8 +275,12 @@ move writes the vault too.
 - **Rollback protection.** A machine pins the genesis it first saw and every access entry it has accepted;
   it refuses to write a vault entry older than one it already accepted for the same secret, and a seen
   access entry that goes missing or comes back tampered with (its signature, or its signer's request, no
-  longer checks out) stops that machine from writing team secrets at all until repaired
-  (`team-secrets-damaged`).
+  longer checks out, or the request of the key it removes or changes admin on is gone) stops that machine
+  from writing team secrets at all until repaired (`team-secrets-damaged`). Only an `approve` whose
+  subject's request is gone is not damage: a concurrent decline deletes exactly that. A machine also keeps
+  every removal it saw, so the Rotate marks survive the removed key's request file being deleted.
+- A vault ref entry labelled like a `${secret:name}` token's store entry (`wirebench-secret:…`) or a
+  machine-only one is refused as untrusted; a token's store label always comes from the entry's token.
 - The machine's own private key never leaves the keychain-backed store: it is kept under a machine-only
   label and cannot be listed, deleted, replaced, or used as an ordinary secret's value.
 - `updatedAt` on a vault entry is whatever the writing member's machine sets; a future-dated value wins a
@@ -337,6 +356,18 @@ for a server workspace.
 - Clock skew decides concurrent-change winners; acceptable, and the loser can restore.
 - A lost admin key with no other admin leaves access frozen (recovery is out of scope); the UI warns when
   there is a single admin.
+- **Two turn-ons at once.** If two machines turn team secrets on for the same git or folder share before
+  either syncs, each pins its own genesis; the other's is ignored as a second genesis on that machine, and
+  the team stays split without a notice. There is no turn-off to start over from, so the docs ask members
+  to agree who turns team secrets on. Parked: a status message on `second-genesis`, and a way to reset.
+- **A server workspace moved to git or a folder** keeps its server authority, where any approved member
+  can change access because no server checks the pusher. Parked: treating that log as read-only, or turning
+  team secrets off and on again once a turn-off exists; until then the docs say to move such a workspace
+  only among members everyone would trust as admins.
+- **The secret field marks refs only.** "Only on this machine" and Rotate on a secret field follow refs;
+  `${secret:name}` tokens show those marks in the Team secrets section only.
+- A new value is dated after every removal this machine knows, so a clock running behind never leaves a
+  rotated value marked Rotate.
 - **Known limits.** The remote author of a losing concurrent change gets no "replaced" notice — only the
   machine that merges and sees both sides does (§3.5, plan decision 9). Forgetting a value (deleting its
   ref) that a project still uses elsewhere can be brought back by another member's next save of that

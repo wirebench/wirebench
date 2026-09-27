@@ -7,7 +7,7 @@
  * Main's own writers (sign-in tokens, OAuth refresh tokens, a cURL import) keep the raw store: they
  * are this machine's, not the team's.
  */
-import { teamSecretsError, type GetSecret, type SecretKey } from '@wirebench/engine';
+import type { GetSecret, SecretKey } from '@wirebench/engine';
 import { isMachineOnlyLabel } from './secrets.js';
 import type { SecretStore } from './secrets.js';
 import type { TeamSecretsService } from './team-secrets-service.js';
@@ -99,18 +99,20 @@ function describe(error: unknown): string {
 }
 
 /**
- * The send getter with team secrets (§3.2): a value this machine is waiting for refuses the send with
- * `team-secrets-pending` instead of the plain "not on this machine".
+ * The send getter with team secrets (§3.2, §3.8): a value the vault holds that this machine cannot open
+ * refuses the send with why — `team-secrets-pending`, `-removed` or `-declined` — instead of the plain
+ * "not on this machine".
  */
 export function teamSecretGetter(
   inner: GetSecret,
-  service: Pick<TeamSecretsService, 'waitingFor'>,
+  service: Pick<TeamSecretsService, 'missingValueError'>,
   projectId: string | undefined,
 ): GetSecret {
   return async (ref) => {
     const value = await inner(ref);
-    if (value === undefined && service.waitingFor(ref, projectId)) {
-      throw teamSecretsError('team-secrets-pending');
+    const refusal = value === undefined ? service.missingValueError(ref, projectId) : undefined;
+    if (refusal !== undefined) {
+      throw refusal;
     }
     return value;
   };
