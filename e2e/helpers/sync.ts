@@ -1,10 +1,11 @@
 import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page } from '@playwright/test';
 import { setMonacoText } from './editor.js';
 import { environmentRow, openEnvironmentsView, setVariable } from './environments.js';
-import { ADA, gitConfigEnv, remoteContains, remoteLog, type GitIdentity } from './git-remote.js';
+import { ADA, gitConfigEnv, remoteContains, remoteFiles, remoteLog, type GitIdentity } from './git-remote.js';
 import { launchApp, removeDirSync, type LaunchedApp } from './launch-app.js';
 import { runCommand } from './palette.js';
 import { createProjectWithCalculator, expandExplorer, openFirstRequest, saveAll } from './project.js';
@@ -210,10 +211,23 @@ export async function startSharedWorkspace(
   await expect.poll(() => remoteLog(remote.dir), { timeout: SYNC_TIMEOUT }).toContain('Share workspace Workspace 1');
 }
 
-/** Profile B's start: joins `remoteUrl` from the picker and waits for a clean sync. */
+/**
+ * Profile B's start: joins `remoteUrl` from the picker and waits for a clean sync. When the remote
+ * has team secrets on, the join also asks for access (a commit of its own); that commit lands
+ * before this returns, so a spec's commit counts start after it.
+ */
 export async function joinSharedWorkspace(page: Page, remoteUrl: string): Promise<void> {
   await joinWorkspace(page, remoteUrl);
   await waitForSync(page, 'clean');
+  const remoteDir = fileURLToPath(remoteUrl);
+  if (remoteFiles(remoteDir).some((file) => file.startsWith('team-secrets/access/'))) {
+    await expect
+      .poll(() => remoteLog(remoteDir).some((subject) => subject.startsWith('Request team secrets access for')), {
+        timeout: SYNC_TIMEOUT,
+      })
+      .toBe(true);
+    await waitForSync(page, 'clean');
+  }
 }
 
 /** Stops sharing the open workspace from the manage dialog, confirming, and waits for the badge to go. */

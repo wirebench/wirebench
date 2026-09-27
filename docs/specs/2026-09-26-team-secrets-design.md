@@ -137,6 +137,14 @@ which writes it again as a new change. Conflicts on `keys/` or `access/` files c
 | `team-secrets-admin-only` | server refuses a non-admin push touching `access/` | Only a workspace admin can change who has access to team secrets. |
 | `team-secrets-untrusted` | vault entry fails verification | Ignored a secret signed by a key that is not approved. |
 | `team-secrets-last-admin` | revoking the last admin key | A workspace needs at least one admin for team secrets. |
+| `team-secrets-damaged` | this machine's access log does not match what it saw before | The team secrets access log on this machine does not match what it saw before; this machine will not change team secrets until it is repaired. |
+| `team-secrets-remove-self` | an admin tries to remove their own machine's key | Ask another admin to remove this machine. |
+| `team-secrets-cannot-reencrypt` | removing a key whose vault entries this machine cannot decrypt to re-encrypt | Some team secrets are not readable on this machine, so they cannot be re-encrypted. Ask another admin to remove this machine, or wait for this machine to receive them. |
+| `team-secrets-already-admin` | granting admin to a key that already is one | That machine is already a team secrets admin. |
+| `team-secrets-not-admin` | revoking admin from a key that is not one | That machine is not a team secrets admin. |
+| `team-secrets-last-approved` | removing the last approved machine | A workspace needs at least one approved machine for team secrets. |
+| `team-secrets-not-allowed` | a change to team secrets access that the current authority does not allow | That change to team secrets access is not allowed. |
+| `team-secrets-rate-limited` | a machine asks the server for team secrets access too often | Too many requests for team secrets access. Try again in a few minutes. |
 
 ## 4. Data model and wire
 
@@ -188,10 +196,12 @@ AES-256-GCM with a random 12-byte nonce. The GCM additional data for `cipher` is
 entry cannot be moved to another secret.
 
 Wire additions (desktop main ↔ renderer): `teamSecrets.status` (on, authority, my key state, pending
-requests, approved keys with admin flags, rotate marks, untrusted entries), `teamSecrets.turnOn`,
-`.approve`, `.decline`, `.remove`, `.grantAdmin`, `.revokeAdmin`, `.restoreMine`; and a
-`team-secrets-changed` event. Only ids, names, fingerprints and labels cross IPC, never a value or a
-private key.
+requests, approved keys with admin flags, rotate marks, untrusted entries, replaced notices), `teamSecrets.turnOn`,
+`.requestAccess`, `.approve`, `.decline`, `.remove`, `.grantAdmin`, `.revokeAdmin`, `.restoreMine`,
+`.dismissReplaced`; and a `teamSecrets.changed` event. Only ids, names, fingerprints and labels cross IPC,
+never a value or a private key. An untrusted entry may carry `reason: 'rolled-back'` when it reads as an
+older signed copy than the one this machine already accepted, distinct from one signed by a key that is
+not approved.
 
 ## 5. Architecture
 
@@ -241,6 +251,16 @@ move writes the vault too.
   are ignored. Only an admin's signature (git) or the server's admin check (server) adds a reader.
 - The secret scanner ignores `team-secrets/` (ciphertext is not a secret leak).
 - Git history keeps old ciphertexts; removal marks values for rotation instead of claiming they are safe.
+- **Rollback protection.** A machine pins the genesis it first saw and every access entry it has accepted;
+  it refuses to write a vault entry older than one it already accepted for the same secret, and a seen
+  access entry that goes missing or comes back tampered with (its signature, or its signer's request, no
+  longer checks out) stops that machine from writing team secrets at all until repaired
+  (`team-secrets-damaged`).
+- The machine's own private key never leaves the keychain-backed store: it is kept under a machine-only
+  label and cannot be listed, deleted, replaced, or used as an ordinary secret's value.
+- `updatedAt` on a vault entry is whatever the writing member's machine sets; a future-dated value wins a
+  conflict against an honestly-dated one (§3.5). Members of a shared workspace are trusted; this is not a
+  defense against a malicious member, only against races between honest ones.
 
 ## 7. Tech stack
 
@@ -301,13 +321,20 @@ zod schemas beside the types.
 ## 14. Migration and compatibility
 
 Existing shared workspaces keep per-member values until an admin turns team secrets on (§3.1). An older
-app version ignores `team-secrets/` and keeps working with per-member values.
+app version ignores `team-secrets/` and keeps working with per-member values. On a Wirebench Server share,
+though, an older app refuses to open a workspace whose tree holds `team-secrets/` at all (it is a tree
+item the older app does not recognise), so members should update before an admin turns team secrets on
+for a server workspace.
 
 ## 15. Risks
 
 - Clock skew decides concurrent-change winners; acceptable, and the loser can restore.
 - A lost admin key with no other admin leaves access frozen (recovery is out of scope); the UI warns when
   there is a single admin.
+- **Known limits.** The remote author of a losing concurrent change gets no "replaced" notice — only the
+  machine that merges and sees both sides does (§3.5, plan decision 9). Forgetting a value (deleting its
+  ref) that a project still uses elsewhere can be brought back by another member's next save of that
+  value, since healing and ordinary saves both re-add what the log still approves.
 
 ## 16. Out of scope
 

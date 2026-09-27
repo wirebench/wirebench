@@ -78,9 +78,11 @@ and tested in the task named.
 6. **Late re-encryption** (Tasks 3, 8). A value written concurrently with a removal can carry a wrap for the removed
    key. The pull hook re-encrypts, with a fresh data key, any trusted entry that wraps a key the log no longer
    approves. This is §3.6's re-encryption applied late; healing itself still only adds wraps.
-7. **Conflict sides without a new git subcommand** (Task 5). The desktop's git allow-list has no `show` or
-   `cat-file`. `GitBackend.conflictSides` reads each side with `checkout --theirs|--ours -- <path>` and a file read;
-   the resolution that follows checks out the chosen side anyway.
+7. **Conflict sides read via `git show`** (Task 5; superseded during implementation). `git show` is now on
+   the desktop's git allow-list, read-only. `GitBackend.conflictSides` reads each side straight from the
+   index — `git show :2:<path>` (ours) and `:3:<path>` (theirs) — never touching the working file, so
+   previewing a decision cannot change what a person resolving the conflict by hand would see. The
+   resolution that follows still checks out the chosen side with `checkout --ours|--theirs`.
 8. **A deleted side of a vault conflict** (Task 3). The side that still has the file wins (a value is never lost
    silently; deleting again is one click). An unparseable side loses.
 9. **Who sees the "replaced" notice** (Task 8). The conflict is seen by the machine that pulls second; that machine

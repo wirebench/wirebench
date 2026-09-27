@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Team secrets.** A shared workspace can share secret values, not just references: each value is
+  encrypted for every approved machine and travels with the workspace, so a teammate's next send uses it
+  with nothing typed. Joining machines ask for access; an admin approves after checking a fingerprint.
+  Removing a machine re-encrypts every value and marks the ones it could read for rotation. Two machines
+  changing one value keep the newer, with a way back to your own. Needs the system keychain. Members of a
+  server workspace should update before an admin turns team secrets on.
+
 - **Definitions behind authentication.** Importing an OpenAPI or AsyncAPI document by URL offers an
   **Authentication** section: Basic, a bearer token, or an API key in a header or the query string.
   The secret is kept in the keychain and the project records only a reference, so Update Definition

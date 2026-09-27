@@ -142,6 +142,32 @@ palette. Until you do, a send that uses it fails with *The secret "name" is not 
 the toast's **Set value…** button opens that same dialog on the missing token. See
 [Secret tokens and scanning](/wirebench/guides/secrets/#the-secretname-token).
 
+## Team secrets
+
+Sharing a workspace to git or a folder turns **team secrets** on: the values behind secret references are
+shared too, encrypted for each approved machine. A server workspace turns them on when an admin shares it, or
+from **Team secrets → Turn on team secrets** in the Sync panel. Team secrets need the system keychain; on a
+machine without one, values stay local.
+
+- **Joining.** A machine that joins asks for access on its first sync. Until an admin approves it, sending a
+  request that needs a team value says the machine is waiting for approval.
+- **Approving.** The sync badge counts machines waiting. In the Sync panel, each request shows its person,
+  machine and fingerprint. Check the fingerprint with the person another way — a call or in person — before
+  choosing **Approve**. The joining machine sees its own fingerprint in the same section.
+- **Changing a value.** Saving a value on an approved machine commits it encrypted as *Update secret …*. Every
+  other approved machine uses it after its next sync, with nothing to type.
+- **At the same time.** When two machines change one value before syncing, the newer one wins. The other
+  machine keeps its own value and offers **Use mine** or **Keep theirs**.
+- **Removing.** Removing a machine re-encrypts every value without it. A removed machine may have kept what it
+  could read, so every such value is marked **Rotate**: change it where it is issued. Git history keeps old
+  ciphertexts, so this marks the value for rotation rather than claiming it is safe.
+- **Admins.** Whoever turns team secrets on is the first admin; add another so the team keeps access if that
+  machine is lost. On a server workspace, the workspace's admins are the team-secrets admins.
+- **Updating.** Everyone should update Wirebench before an admin turns team secrets on: an older version syncs
+  the `team-secrets/` folder but cannot use it.
+- **Stopping sharing** leaves the encrypted values with the shared copy; the local workspace keeps only this
+  machine's own values.
+
 ## Without git
 
 A synced folder has no Sync control of its own: whatever tool watches that folder is in charge of
