@@ -70,9 +70,12 @@ test.describe('shared workspaces: pull', () => {
     expect(environmentFiles).toHaveLength(1);
     const environmentSlug = (environmentFiles[0] as string).replace(/^environments\/|\.yaml$/g, '');
     await waitForSync(a.window, 'clean');
-    // B's own team-secrets key request (where the OS has a keychain) lands on its own schedule, not A's edit's.
+    // B's own team-secrets key request (where the OS has a keychain) lands on its own schedule, not A's edit's,
+    // and A merges it in when the two race: neither is part of the edit.
     const editCommits = (): string[] =>
-      remoteLog(remote.dir).filter((subject) => !subject.startsWith('Request team secrets access'));
+      remoteLog(remote.dir).filter(
+        (subject) => !subject.startsWith('Request team secrets access') && !subject.startsWith('Merge '),
+      );
     const commitsBefore = editCommits();
 
     // --- A changes the variable's value: one mutation, one commit, one push -------------------

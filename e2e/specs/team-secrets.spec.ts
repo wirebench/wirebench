@@ -111,8 +111,9 @@ test.describe('shared workspaces: team secrets', () => {
     const syncA = await openSyncPanel(pageA);
     const row = syncA.getByTestId('team-secrets-pending-row');
     await expect(row).toContainText('Ben');
-    const shown = (await row.textContent()) ?? '';
-    expect(fingerprintB).toContain(shown.split('·').at(-1)?.trim() ?? '<none>');
+    const shown = (await row.locator('.font-mono').textContent())?.trim() ?? '';
+    expect(shown).not.toBe('');
+    expect(fingerprintB).toContain(shown);
     await syncA.getByTestId('team-secrets-approve').click();
     await expect(row).toHaveCount(0);
     await closeSyncPanel(pageA);
