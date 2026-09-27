@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { SettingsGroup } from '../../components/settings-grid.js';
-import { useTeamSecretsStore } from '../../state/team-secrets.js';
+import { rotateMessage, useTeamSecretsStore } from '../../state/team-secrets.js';
 import type { TeamSecretsKeyWire, TeamSecretsUntrustedWire } from '../../../shared/wire-types.js';
 
 const ME_WORDS = {
@@ -41,7 +41,7 @@ export function TeamSecretsSection() {
         hint="Share secret values with the people in this workspace, encrypted for each approved machine."
       >
         {status.message !== undefined && (
-          <p data-testid="team-secrets-message" className="mb-2 text-sm text-fg-subtle">
+          <p role="status" data-testid="team-secrets-message" className="mb-2 text-sm text-fg-subtle">
             {status.message}
           </p>
         )}
@@ -60,7 +60,7 @@ export function TeamSecretsSection() {
 
   return (
     <SettingsGroup title="Team secrets">
-      <p data-testid="team-secrets-me" className="mb-2 text-sm text-fg-default">
+      <p role="status" data-testid="team-secrets-me" className="mb-2 text-sm text-fg-default">
         This machine: {ME_WORDS[status.me.state]}
         {status.me.fingerprint !== undefined && (
           <>
@@ -70,7 +70,7 @@ export function TeamSecretsSection() {
         )}
       </p>
       {status.message !== undefined && (
-        <p data-testid="team-secrets-message" className="mb-2 text-sm text-fg-subtle">
+        <p role="status" data-testid="team-secrets-message" className="mb-2 text-sm text-fg-subtle">
           {status.message}
         </p>
       )}
@@ -104,6 +104,7 @@ export function TeamSecretsSection() {
                 <span className="flex gap-1">
                   <Button
                     data-testid="team-secrets-approve"
+                    aria-label={`Approve ${key.name} (${key.machine})`}
                     disabled={busy}
                     onClick={() => void run('approve', key.keyId)}
                   >
@@ -111,6 +112,7 @@ export function TeamSecretsSection() {
                   </Button>
                   <Button
                     data-testid="team-secrets-decline"
+                    aria-label={`Decline ${key.name} (${key.machine})`}
                     disabled={busy}
                     onClick={() => void run('decline', key.keyId)}
                   >
@@ -141,13 +143,19 @@ export function TeamSecretsSection() {
                 {signed && (
                   <Button
                     data-testid={key.admin ? 'team-secrets-revoke-admin' : 'team-secrets-grant-admin'}
+                    aria-label={key.admin ? `Remove admin from ${key.name}` : `Make ${key.name} an admin`}
                     disabled={busy}
                     onClick={() => void run(key.admin ? 'revokeAdmin' : 'grantAdmin', key.keyId)}
                   >
                     {key.admin ? 'Remove admin' : 'Make admin'}
                   </Button>
                 )}
-                <Button data-testid="team-secrets-remove" disabled={busy} onClick={() => setRemoving(key)}>
+                <Button
+                  data-testid="team-secrets-remove"
+                  aria-label={`Remove ${key.name} (${key.machine})`}
+                  disabled={busy}
+                  onClick={() => setRemoving(key)}
+                >
                   Remove
                 </Button>
               </span>
@@ -160,7 +168,7 @@ export function TeamSecretsSection() {
         <ul className="mb-2 flex flex-col gap-1">
           {status.rotate.map((mark) => (
             <li key={mark.entryId} data-testid="team-secrets-rotate-row" className="text-sm text-status-warning">
-              Rotate {mark.label}: {mark.removedNames.join(', ')} could read it.
+              {rotateMessage(mark.label, mark.removedNames)}
             </li>
           ))}
         </ul>
@@ -168,7 +176,7 @@ export function TeamSecretsSection() {
 
       {status.untrusted.map((entry) => (
         <p key={entry.entryId} data-testid="team-secrets-untrusted-row" className="text-sm text-fg-subtle">
-          Ignored {entry.label}: {untrustedReason(entry)}.
+          {entry.label} — {untrustedReason(entry)}
         </p>
       ))}
 
@@ -179,7 +187,7 @@ export function TeamSecretsSection() {
           className="flex items-center justify-between gap-2 text-sm"
         >
           <span>
-            {notice.byName} changed {notice.label} at the same time; their value is in use.
+            Your change to {notice.label} was replaced by {notice.byName}'s newer value.
           </span>
           <span className="flex gap-1">
             <Button
@@ -187,7 +195,7 @@ export function TeamSecretsSection() {
               disabled={busy}
               onClick={() => void run('restoreMine', notice.entryId)}
             >
-              Use mine
+              Restore my value
             </Button>
             <Button
               data-testid="team-secrets-dismiss"

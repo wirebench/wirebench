@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ipc } from '../state/ipc-client.js';
-import { useTeamSecretsStore } from '../state/team-secrets.js';
+import { rotateMessage, useTeamSecretsStore } from '../state/team-secrets.js';
 import { Button } from './button.js';
 
 export interface SecretFieldProps {
@@ -51,6 +51,7 @@ export function SecretField({ value, onChange, label, disabled, registerFlush, n
       : state.status.rotate.find((mark) => 'ref' in mark.secret && mark.secret.ref === value),
   );
   const inputId = useId();
+  const rotateDescriptionId = useId();
   // `commit` is recreated every render (it closes over the draft), so the flush callback is
   // kept in a ref and re-pointed rather than re-registered on every keystroke.
   const commitRef = useRef<() => Promise<string | undefined>>(() => Promise.resolve(value));
@@ -182,13 +183,19 @@ export function SecretField({ value, onChange, label, disabled, registerFlush, n
         </span>
       )}
       {rotate !== undefined && (
-        <span
-          data-testid="secret-rotate"
-          className="text-xs text-status-warning"
-          title={`${rotate.removedNames.join(', ')} could read this value. Change it where it is issued.`}
-        >
-          Rotate
-        </span>
+        <>
+          <span
+            data-testid="secret-rotate"
+            className="text-xs text-status-warning"
+            aria-describedby={rotateDescriptionId}
+            title={rotateMessage(rotate.label, rotate.removedNames)}
+          >
+            Rotate
+          </span>
+          <span id={rotateDescriptionId} className="sr-only">
+            {rotateMessage(rotate.label, rotate.removedNames)}
+          </span>
+        </>
       )}
       <Button disabled={disabled} onClick={() => setEditing(true)}>
         {missing ? 'Enter…' : value !== undefined ? 'Replace…' : 'Set…'}

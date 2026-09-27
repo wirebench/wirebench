@@ -240,8 +240,16 @@ describe('SecretField — team secrets marks', () => {
     expect(screen.queryByTestId('secret-rotate')).toBeNull();
 
     rerender(<SecretField value="sec_old" label="Password" onChange={() => undefined} />);
-    expect(screen.getByTestId('secret-rotate').textContent).toBe('Rotate');
-    expect(screen.getByTestId('secret-rotate').getAttribute('title')).toContain('Cy');
+    const rotateMark = screen.getByTestId('secret-rotate');
+    expect(rotateMark.textContent).toBe('Rotate');
+    expect(rotateMark.getAttribute('title')).toContain('Cy');
+    // The names and the "change it at its provider" instruction must be reachable by more than
+    // the mouse-only `title` — an `aria-describedby` pointing at hidden text carries it too.
+    const describedBy = rotateMark.getAttribute('aria-describedby');
+    expect(describedBy).not.toBeNull();
+    expect(document.getElementById(describedBy ?? '')?.textContent).toBe(
+      'Password: Cy had access. Change this value at its provider, then here.',
+    );
     await waitFor(() => expect(screen.queryByTestId('secret-local-only')).toBeNull());
   });
 });
