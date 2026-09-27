@@ -52,6 +52,27 @@ describeDb('team secrets on the server (team-secrets §5.1)', () => {
         },
       });
     }
+    // The access change need not be in the first commit of the push to be caught.
+    expect(
+      await push(f.editor, {
+        parent: base.body.head,
+        commits: [
+          commit('Innocuous', [text('workspace.yaml', 'ok\n')]),
+          commit('Forge via a later commit', [text(ACCESS, 'forged-in-second-commit\n')]),
+        ],
+      }),
+    ).toMatchObject({ status: 403, body: { code: 'team-secrets-admin-only' } });
+    // A rename is a delete and an add in the same commit; either half alone would already be caught,
+    // but a rename must not slip through by virtue of being two changes rather than one.
+    const renamed = 'team-secrets/access/01J8ZK6Q3V4W5X6Y7Z8A9B0C1E.yaml';
+    expect(
+      await push(f.editor, {
+        parent: base.body.head,
+        commits: [
+          commit('Rename access entry', [{ path: ACCESS, encoding: 'utf8', content: null }, text(renamed, 'moved\n')]),
+        ],
+      }),
+    ).toMatchObject({ status: 403, body: { code: 'team-secrets-admin-only' } });
     expect(await head()).toBe(base.body.head);
   });
 
@@ -100,5 +121,18 @@ describeDb('team secrets on the server (team-secrets §5.1)', () => {
     });
     expect((await requestKey(f.stranger, { keyId: 'BBCDEFGHIJKLMNOPQRSTUVWXYZ', content: 'x' })).status).toBe(404);
     expect(await snapshot()).toEqual([`team-secrets/keys/${KEY_ID}.yaml`]);
+  });
+
+  it('rate-limits repeated key requests from the same user', async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const res = await requestKey(f.viewer, { keyId: KEY_ID, content: `attempt ${i}\n` });
+      expect(res.status).not.toBe(429);
+    }
+    expect(await requestKey(f.viewer, { keyId: KEY_ID, content: 'one too many\n' })).toMatchObject({
+      status: 429,
+      body: { code: 'team-secrets-rate-limited' },
+    });
+    // A different user has their own bucket.
+    expect((await requestKey(f.editor, { keyId: 'BBCDEFGHIJKLMNOPQRSTUVWXYZ', content: 'mine\n' })).status).toBe(201);
   });
 });

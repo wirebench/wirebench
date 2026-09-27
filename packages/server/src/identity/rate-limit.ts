@@ -5,7 +5,6 @@
  * grow without bound.
  */
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import type { IdentityEnv } from './env.js';
 
 export interface RateLimitDecision {
   readonly allowed: boolean;
@@ -54,13 +53,19 @@ export class RateLimiter {
   }
 }
 
+const DEFAULT_PROBLEM = { code: 'identity-rate-limited', message: 'Too many attempts. Try again shortly.' } as const;
+
 /**
  * A preHandler that charges every key `keysOf` returns and answers 429 with `Retry-After` when
  * any is empty. Sent directly rather than thrown: the host's error handler sets no headers.
+ * `env` is typed structurally (just the limiter) so any module holding a {@link RateLimiter} can
+ * reuse this preHandler, not only identity's own routes. `problem` overrides the body for a caller
+ * whose bucket means something other than "an identity attempt" (a code and message of its own).
  */
 export function rateLimit(
-  env: IdentityEnv,
+  env: { readonly limiter: RateLimiter },
   keysOf: (request: FastifyRequest) => readonly (string | undefined)[],
+  problem: { readonly code: string; readonly message: string } = DEFAULT_PROBLEM,
 ): preHandlerHookHandler {
   return (request: FastifyRequest, reply: FastifyReply, done: (error?: Error) => void): void => {
     let retryAfter = 0;
@@ -70,10 +75,7 @@ export function rateLimit(
       if (!decision.allowed) retryAfter = Math.max(retryAfter, decision.retryAfterSeconds);
     }
     if (retryAfter > 0) {
-      void reply
-        .header('retry-after', String(retryAfter))
-        .code(429)
-        .send({ code: 'identity-rate-limited', message: 'Too many attempts. Try again shortly.' });
+      void reply.header('retry-after', String(retryAfter)).code(429).send(problem);
       return;
     }
     done();
@@ -87,3 +89,6 @@ export const emailKey = (request: FastifyRequest): string | undefined => {
   const email = (request.body as { readonly email?: unknown } | undefined)?.email;
   return typeof email === 'string' ? `email:${email.trim().toLowerCase()}` : undefined;
 };
+/** The per-caller key of an authenticated request; `undefined` before identity's guard has run. */
+export const callerKey = (request: FastifyRequest): string | undefined =>
+  request.caller === undefined ? undefined : `user:${request.caller.id}`;

@@ -1,7 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { MAX_SYNC_FILE_BYTES, type GitCli, type SyncChange, type SyncPushCommit } from '@wirebench/engine';
+import {
+  MAX_SYNC_FILE_BYTES,
+  WirebenchError,
+  type GitCli,
+  type SyncChange,
+  type SyncPushCommit,
+} from '@wirebench/engine';
 import { NO_HOOKS_DIR, RepoStore } from '../../../src/repos/repo-store.js';
 import { CommitStore, sweepIndexFiles, type CommitAuthor } from '../../../src/sync/commit-store.js';
 import { describeGit, mkTempDir, removeTempDir, testGit } from '../../helpers/git.js';
@@ -355,5 +361,37 @@ describeGit('CommitStore (§3.3)', () => {
 
   it('refuses a relative tmpDir: git and Node would resolve it against different directories', () => {
     expect(() => new CommitStore({ git, repos, tmpDir: 'tmp', limitBytes: 1024 })).toThrow(/absolute tmpDir/);
+  });
+
+  const EXISTING_KEY = 'team-secrets/keys/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml';
+  const MISSING_KEY = 'team-secrets/keys/BBCDEFGHIJKLMNOPQRSTUVWXYZ.yaml';
+
+  it('hasFile: true for a path in the tree, false when it is missing, and it never swallows an unrelated git failure', async () => {
+    const first = await store.appendCommits(
+      ID,
+      null,
+      [commit('One', [text('workspace.yaml', 'a\n'), text(EXISTING_KEY, 'k\n')])],
+      ED,
+    );
+    expect(await store.hasFile(ID, first.head, EXISTING_KEY)).toBe(true);
+    expect(await store.hasFile(ID, first.head, MISSING_KEY)).toBe(false);
+
+    const run = git.run.bind(git) as unknown as AnyRun;
+    const failing = {
+      run: (cwd: string | undefined, args: readonly string[], options?: object) => {
+        if (args[0] === 'cat-file') {
+          return Promise.reject(
+            new WirebenchError('git-failed', 'git cat-file failed.', {
+              details: { args, exitCode: 128, stderr: 'fatal: unable to read tree (disk error)' },
+            }),
+          );
+        }
+        return run(cwd, args, options);
+      },
+    } as unknown as GitCli;
+    const broken = new CommitStore({ git: failing, repos, tmpDir, limitBytes: 1024 * 1024 });
+    await expect(broken.hasFile(ID, first.head, EXISTING_KEY)).rejects.toMatchObject({
+      code: 'git-failed',
+    });
   });
 });

@@ -15,6 +15,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { announce } from '../../context.js';
 import { unauthenticated } from '../../identity/errors.js';
+import { callerKey, rateLimit } from '../../identity/rate-limit.js';
 import { findUserById } from '../../identity/repo.js';
 import { jsonSchema } from '../../schema.js';
 import { workspaceNotFound } from '../../teams/errors.js';
@@ -24,6 +25,12 @@ import { teamSecretsKeyExists, teamSecretsRequestTooLarge } from '../errors.js';
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
 
+/** team-secrets §5.1: a machine that already has one key request rarely needs a second. */
+const KEY_REQUEST_RATE_LIMIT_PROBLEM = {
+  code: 'team-secrets-rate-limited',
+  message: 'Too many requests for team secrets access. Try again in a few minutes.',
+} as const;
+
 export const keyRequestRoutes =
   (env: SyncEnv) =>
   (app: FastifyInstance): void => {
@@ -31,7 +38,10 @@ export const keyRequestRoutes =
     app.post(
       '/workspaces/:workspaceId/team-secrets/key-requests',
       {
-        preHandler: requireWorkspaceRole(db, 'viewer'),
+        preHandler: [
+          requireWorkspaceRole(db, 'viewer'),
+          rateLimit(env, (request) => [callerKey(request)], KEY_REQUEST_RATE_LIMIT_PROBLEM),
+        ],
         // A key request is a few hundred bytes; the operator's sync limit is for trees.
         bodyLimit: 16 * 1024,
         schema: {
