@@ -28,6 +28,7 @@ import {
   DEFAULT_SYNC_SETTINGS,
   shareSyncSettings,
   EMPTY_LOCAL_STATE,
+  isTeamSecretsPath,
   loadLocalState,
   loadProject,
   loadWorkspace,
@@ -37,10 +38,13 @@ import {
   saveProject,
   saveShare,
   saveWorkspace,
+  secretNamesInValue,
+  secretRefsInValue,
   slugify,
   uniqueSlug,
   WirebenchError,
   WorkspaceError,
+  TEAM_SECRETS_DIR,
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_JOINING_DIR,
   WORKSPACE_MANIFEST,
@@ -79,9 +83,11 @@ import { isWorkspaceManagedDir, isWorkspaceManagedPath, ProjectWatcher } from '.
 import { ProjectHost } from './project-host.js';
 import type { ProjectRouter } from './project-router.js';
 import type { SecretScanSessions } from './secret-scan-session.js';
+import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
 import type { SecretStore } from './secrets.js';
 import type { AccountService } from './account-service.js';
 import type { TokenSource } from './server-token.js';
+import type { ConflictSides } from './sync/backend.js';
 import { createSyncBackend, type ServerSyncServices } from './sync/create-backend.js';
 import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
@@ -244,6 +250,14 @@ export interface WorkspaceServiceDeps {
    * have unreviewed findings. Omitted in tests that never scan (nothing is held).
    */
   readonly secretScans?: Pick<SecretScanSessions, 'findings' | 'onChange'>;
+  /**
+   * Team secrets for the open shared workspace (team-secrets spec): attached on open, told about
+   * every pull, and asked to decide vault conflicts. Omitted in tests that never share secrets.
+   */
+  readonly teamSecrets?: Pick<
+    TeamSecretsService,
+    'attach' | 'detach' | 'turnOn' | 'turnOnIfAdmin' | 'afterPull' | 'resolveConflicts'
+  >;
   /**
    * The Wirebench Server client and accounts a server share syncs through (server-sync §5.3). The
    * accounts also say when they have loaded (`ready`: a server workspace's first call waits for
@@ -710,9 +724,13 @@ export class WorkspaceService implements ProjectRouter {
 
   /**
    * {@link open}, plus an `initialCommitMessage` a new git share commits its tree under before
-   * sync's own start-up commit could take it with a generated message.
+   * sync's own start-up commit could take it with a generated message, and `teamSecrets`, which
+   * turns team secrets on in a git or folder share as it is made (§3.1).
    */
-  private async openWorkspace(id: string, options: { readonly initialCommitMessage?: string }): Promise<WorkspaceWire> {
+  private async openWorkspace(
+    id: string,
+    options: { readonly initialCommitMessage?: string; readonly teamSecrets?: boolean },
+  ): Promise<WorkspaceWire> {
     await this.close();
     const dir = workspaceDir(this.deps.userDataDir, requireWorkspaceId(id));
     const { share, tree } = await this.resolveTree(dir);
@@ -782,11 +800,18 @@ export class WorkspaceService implements ProjectRouter {
       // "workspace-level watcher" region below).
       open.watcher = new ProjectWatcher({
         dir: tree,
-        isManaged: isWorkspaceManagedPath,
-        isWatchedDir: isWorkspaceManagedDir,
+        isManaged: (path) => isWorkspaceManagedPath(path) || isTeamSecretsPath(path),
+        isWatchedDir: (dir) =>
+          isWorkspaceManagedDir(dir) || dir === TEAM_SECRETS_DIR || dir.startsWith(`${TEAM_SECRETS_DIR}/`),
         ...(this.deps.watchDebounceMs !== undefined ? { debounceMs: this.deps.watchDebounceMs } : {}),
-        onChange: (paths) => {
-          if (open.held.offerWorkspace(paths)) {
+        onChange: (changed) => {
+          // A folder share has no pull: another machine's team-secrets write arrives as an outside edit.
+          const teamPaths = changed.filter(isTeamSecretsPath);
+          if (teamPaths.length > 0) {
+            void this.deps.teamSecrets?.afterPull(teamPaths);
+          }
+          const paths = changed.filter((path) => !isTeamSecretsPath(path));
+          if (paths.length === 0 || open.held.offerWorkspace(paths)) {
             return;
           }
           void this.enqueueWorkspaceOp(() => this.reloadWorkspaceFromDisk(open, paths));
@@ -814,7 +839,10 @@ export class WorkspaceService implements ProjectRouter {
       this.deps.hooks?.onChanged?.(this.snapshot());
       // Never awaited: a shared workspace opens on its files alone, and git (a missing
       // executable, a slow remote) only ever shows up in the sync status.
-      open.syncReady = this.startSync(open, options.initialCommitMessage).catch(() => undefined);
+      this.attachTeamSecrets(open);
+      open.syncReady = this.turnOnTeamSecrets(open, options.teamSecrets === true)
+        .then(() => this.startSync(open, options.initialCommitMessage))
+        .catch(() => undefined);
       return this.requireSnapshot();
     } catch (error) {
       await this.close().catch(() => undefined);
@@ -1029,6 +1057,7 @@ export class WorkspaceService implements ProjectRouter {
     if (open.sync !== undefined) {
       await waitAtMost(open.sync.idle(), SYNC_CLOSE_WAIT_MS);
     }
+    await this.deps.teamSecrets?.detach().catch(() => undefined);
     try {
       // Nothing is written to a project on close: unsaved changes stay unsaved and come back
       // the next time this workspace opens (see `unsaved-store.ts`).
@@ -1337,6 +1366,7 @@ export class WorkspaceService implements ProjectRouter {
         }
       },
       ...this.secretHoldDeps(open),
+      ...this.teamConflictDeps(),
     });
     open.sync = sync;
     if (initialCommitMessage !== undefined) {
@@ -1346,6 +1376,8 @@ export class WorkspaceService implements ProjectRouter {
       void sync.commit(initialCommitMessage).catch(() => undefined);
     }
     await sync.start();
+    // The first look: ask for access, or pick up what changed while this workspace was closed.
+    void this.deps.teamSecrets?.afterPull([]);
   }
 
   /**
@@ -1364,6 +1396,78 @@ export class WorkspaceService implements ProjectRouter {
       onScanChange: (listener) => scans.onChange(listener),
       unsaved: () => openHosts().some((entry) => entry.host?.unsavedFiles() !== undefined),
     };
+  }
+
+  /** Sync settles vault conflicts through team secrets before any reach the Conflicts list (§3.5). */
+  private teamConflictDeps(): Pick<SyncServiceDeps, 'resolveConflicts'> {
+    const team = this.deps.teamSecrets;
+    if (team === undefined) {
+      return {};
+    }
+    return {
+      resolveConflicts: (conflicts: readonly SyncConflictWire[], sides: (path: string) => Promise<ConflictSides>) =>
+        team.resolveConflicts(conflicts, sides),
+    };
+  }
+
+  /** Hands the open shared workspace to team secrets; a local workspace has none. */
+  private attachTeamSecrets(open: OpenWorkspace): void {
+    const team = this.deps.teamSecrets;
+    const share = open.share;
+    if (team === undefined || share === undefined) {
+      return;
+    }
+    team.attach({
+      workspaceId: open.workspace.id,
+      dir: open.dir,
+      tree: open.tree,
+      kind: share.kind,
+      role: () => open.sync?.status().role,
+      uses: () => this.secretUses(open),
+      identity: () => open.sync?.identity() ?? Promise.resolve(undefined),
+      beforeWrite: (paths) => {
+        open.watcher?.expect(paths);
+      },
+      afterWrite: (message) => {
+        if (!this.stale(open)) {
+          open.sync?.afterTeamSecretsWrite(message);
+        }
+      },
+      ...(share.kind === 'server'
+        ? {
+            requestKey: (keyId: string, content: string) =>
+              open.sync?.requestTeamSecretsKey(keyId, content) ?? Promise.resolve(),
+            memberEmails: () => open.sync?.workspaceMembers() ?? Promise.resolve(undefined),
+          }
+        : {}),
+    });
+  }
+
+  /** §3.1: a git or folder share turns team secrets on as it is made, inside its first commit. */
+  private async turnOnTeamSecrets(open: OpenWorkspace, requested: boolean): Promise<void> {
+    if (!requested || open.share === undefined || open.share.kind === 'server') {
+      return;
+    }
+    // No keychain: the share still happens, and the Sync panel says why team secrets are off.
+    await this.deps.teamSecrets?.turnOn({ commit: false }).catch(() => undefined);
+  }
+
+  /** Every secret the workspace's open projects and its environments name: refs and tokens. */
+  private secretUses(open: OpenWorkspace): SecretUse[] {
+    const uses: SecretUse[] = secretRefsInValue(open.workspace).map((ref) => ({ secret: { ref } }));
+    for (const entry of open.entries) {
+      const model = entry.host?.model();
+      if (model === undefined) {
+        continue;
+      }
+      for (const ref of secretRefsInValue(model)) {
+        uses.push({ secret: { ref } });
+      }
+      for (const name of secretNamesInValue(model)) {
+        uses.push({ secret: { token: { projectId: entry.projectId, name } } });
+      }
+    }
+    return uses;
   }
 
   /** Holds outside-edit delivery while sync is busy or in conflict; replays what was held once it is neither. */
@@ -1413,6 +1517,8 @@ export class WorkspaceService implements ProjectRouter {
       }
       const plan = planPull(changedPaths);
       open.watcher?.expect(plan.workspacePaths);
+      const teamPaths = changedPaths.filter(isTeamSecretsPath);
+      open.watcher?.expect(teamPaths);
       const byProjectId = new Map<string, readonly string[]>();
       for (const [slug, paths] of plan.projects) {
         const entry = this.entryOfSlug(open, slug);
@@ -1464,6 +1570,8 @@ export class WorkspaceService implements ProjectRouter {
         workspaceChanged,
         entityCount: plan.entityCount,
       });
+      // Not awaited: team secrets never wait on this pull's sync operation (plan decision 14).
+      void this.deps.teamSecrets?.afterPull(teamPaths);
     });
   }
 
@@ -1625,6 +1733,8 @@ export class WorkspaceService implements ProjectRouter {
       return wire;
     }
     await reopened.sync?.push().catch(() => undefined);
+    // Plan decision 10: the push told us the role; an admin's server workspace turns team secrets on.
+    await this.deps.teamSecrets?.turnOnIfAdmin().catch(() => undefined);
     return this.current === reopened ? (this.snapshot() ?? wire) : wire;
   }
 

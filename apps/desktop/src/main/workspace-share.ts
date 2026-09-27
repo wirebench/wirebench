@@ -37,6 +37,7 @@ import {
   saveShare,
   saveWorkspace,
   TEAMS_ID_PATTERN,
+  TEAM_SECRETS_DIR,
   TREE_ITEMS,
   uniqueSlug,
   WirebenchError,
@@ -117,8 +118,11 @@ export interface ShareDeps {
   readonly ready: Promise<void>;
   /** Closes the open workspace (safe inside a queued operation: it never awaits the chain). */
   readonly close: () => Promise<unknown>;
-  /** Opens a workspace; `initialCommitMessage` is committed before sync's own first commit. */
-  readonly open: (id: string, options?: { readonly initialCommitMessage?: string }) => Promise<WorkspaceWire>;
+  /** Opens a workspace; `initialCommitMessage` is committed before sync's own first commit, and `teamSecrets` turns team secrets on in it. */
+  readonly open: (
+    id: string,
+    options?: { readonly initialCommitMessage?: string; readonly teamSecrets?: boolean },
+  ) => Promise<WorkspaceWire>;
   /** Wirebench Server's client, tokens and the workspace state; absent where no server flow can run. */
   readonly server?: ServerShareServices;
 }
@@ -390,7 +394,7 @@ export async function shareAsGit(
     await deps.open(id).catch(() => undefined);
     throw error;
   }
-  return await deps.open(id, { initialCommitMessage: `Share workspace ${name}` });
+  return await deps.open(id, { initialCommitMessage: `Share workspace ${name}`, teamSecrets: true });
 }
 
 async function rollBackShare(
@@ -455,7 +459,7 @@ export async function shareToFolder(
     await deps.open(id).catch(() => undefined);
     throw error;
   }
-  return await deps.open(id);
+  return await deps.open(id, { teamSecrets: true });
 }
 
 // ——— join ———————————————————————————————————————————————————————————————————————————————
@@ -585,7 +589,8 @@ export async function stopSharing(deps: ShareDeps, info: OpenWorkspaceInfo): Pro
       { details: { workspaceId: id } },
     );
   }
-  const present = TREE_ITEMS.filter((name) => existsSync(join(tree, name)));
+  // Plan decision 16: the vault stays with the shared tree; a local workspace has no team.
+  const present = TREE_ITEMS.filter((name) => name !== TEAM_SECRETS_DIR && existsSync(join(tree, name)));
   if (present.some((name) => existsSync(join(dir, name)))) {
     throw new WirebenchError(
       'folder-not-empty',
