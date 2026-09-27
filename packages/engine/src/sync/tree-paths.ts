@@ -5,9 +5,11 @@
  * exactly the same paths.
  */
 import { WirebenchError } from '../errors.js';
+import { isTeamSecretsPath } from '../team-secrets/schema.js';
 import { WORKSPACE_LOCAL_FILE } from '../workspace/local-state.js';
 import {
   GIT_ATTRIBUTES_FILE,
+  TEAM_SECRETS_DIR,
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_MANIFEST,
   WORKSPACE_PROJECTS_DIR,
@@ -20,9 +22,10 @@ export const TREE_ITEMS = [
   WORKSPACE_ENVIRONMENTS_DIR,
   WORKSPACE_PROJECTS_DIR,
   GIT_ATTRIBUTES_FILE,
+  TEAM_SECRETS_DIR,
 ] as const;
 
-/** The tree items that are single files. The other two are directories, so a path names a file below them. */
+/** The tree items that are single files. The other three are directories, so a path names a file below them. */
 const FILE_ITEMS: ReadonlySet<string> = new Set([WORKSPACE_MANIFEST, GIT_ATTRIBUTES_FILE]);
 
 /** Longest tree path the sync accepts, in characters (§3.2). */
@@ -109,6 +112,9 @@ function refusal(path: string): Refusal | undefined {
   if (FILE_ITEMS.has(first) !== (segments.length === 1)) {
     return 'not-a-file';
   }
+  if (first === TEAM_SECRETS_DIR && !isTeamSecretsPath(path)) {
+    return 'not-a-file';
+  }
   return undefined;
 }
 
@@ -117,8 +123,9 @@ function refusal(path: string): Refusal | undefined {
  * characters: no '..', '.' or empty segment, no '.git' segment (in any spelling git refuses), no
  * segment Windows cannot hold (a device name, a trailing dot or space, one of `<>:"|?*`), no
  * backslash or control character, not absolute, not machine-local, whose first segment is one of
- * TREE_ITEMS, and which names a file (`workspace.yaml` and `.gitattributes` stand alone; the two
- * directories need something below them).
+ * TREE_ITEMS, and which names a file (`workspace.yaml` and `.gitattributes` stand alone; the three
+ * directories need something below them — and under `team-secrets/` specifically, exactly
+ * `keys/<id>.yaml`, `access/<id>.yaml` or `values/<id>.yaml`, per {@link isTeamSecretsPath}).
  *
  * @throws WirebenchError 'sync-path-refused' otherwise, with `details.reason` naming the rule and
  * `details.path` the path, cut to {@link MAX_TREE_PATH_LENGTH} characters.
@@ -139,4 +146,22 @@ export function assertTreePath(path: string): string {
 /** Whether {@link assertTreePath} would accept `path`. */
 export function isTreePath(path: string): boolean {
   return refusal(path) === undefined;
+}
+
+/**
+ * Whether a single filesystem entry name (never a `/`-joined path) is one the tree rules refuse
+ * anywhere: empty, `.`/`..`, a control character, a `.git` spelling, or a Windows-unsafe name.
+ * Unlike {@link isTreePath} it never asks whether the name completes a valid tree path — a directory
+ * has no such thing — so a tree walk can prune an unsafe folder (a nested `.git`, say) before
+ * descending into it, rather than reading it and refusing every file inside one at a time.
+ */
+export function isSafeTreeSegment(segment: string): boolean {
+  return (
+    segment.length > 0 &&
+    segment !== '.' &&
+    segment !== '..' &&
+    !CONTROL_CHARACTER.test(segment) &&
+    !GIT_SEGMENT.test(segment) &&
+    !WINDOWS_UNSAFE_SEGMENT.test(segment)
+  );
 }

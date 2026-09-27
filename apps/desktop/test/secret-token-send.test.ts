@@ -35,7 +35,7 @@ import {
 } from '../src/main/redact.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
 import { projectSecretGetter, resolveWithStoredValues, secretStoreLabel } from '../src/main/secret-resolver.js';
-import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
+import { newSecretRef, SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { resolveWsSend } from '../src/main/ws-send.js';
 
@@ -115,6 +115,12 @@ describe('projectSecretGetter', () => {
     expect(await getterFor('p2')('secret:api_token')).toBeUndefined();
     expect(await getterFor(undefined)('secret:api_token')).toBeUndefined();
     expect(await getterFor('p1')(ref)).toBe('fake-password-not-real');
+  });
+
+  it('never resolves a team secrets machine key, even named directly', async () => {
+    const key = newSecretRef();
+    await store.putMachineOnly(key, '{"private":"k"}', { label: 'wirebench-team-key:ws-1' });
+    expect(await getterFor('p1')(key)).toBeUndefined();
   });
 
   it('records every token value it hands out, so the log shows it redacted', async () => {

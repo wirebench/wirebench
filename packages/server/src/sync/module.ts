@@ -6,12 +6,14 @@
 import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
+import { RateLimiter } from '../identity/rate-limit.js';
 import { TMP_DIR } from '../repos/repo-store.js';
 import { CommitStore, sweepIndexFiles } from './commit-store.js';
 import type { SyncEnv } from './env.js';
 import { changesRoutes } from './routes/changes.js';
 import { commitRoutes } from './routes/commits.js';
 import { headRoutes } from './routes/head.js';
+import { keyRequestRoutes } from './routes/key-requests.js';
 import { logRoutes } from './routes/log.js';
 import { snapshotRoutes } from './routes/snapshot.js';
 
@@ -34,13 +36,16 @@ export function syncModule(): ServerModule {
         // R5: one operator setting bounds a push (Fastify's bodyLimit) and a snapshot (the store).
         limitBytes: ctx.config.bodyLimitMb * MIB,
       });
-      const env: SyncEnv = { ctx, store };
+      // team-secrets §5.1: 10 key requests per user per 10 minutes.
+      const limiter = new RateLimiter({ capacity: 10, refillPerMs: 10 / 600_000 });
+      const env: SyncEnv = { ctx, store, limiter };
       ctx.meta.addCapability('sync');
       headRoutes(env)(app);
       snapshotRoutes(env)(app);
       changesRoutes(env)(app);
       commitRoutes(env)(app);
       logRoutes(env)(app);
+      keyRequestRoutes(env)(app);
     },
   };
 }

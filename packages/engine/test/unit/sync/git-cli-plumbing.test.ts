@@ -63,6 +63,7 @@ describe('the plumbing allow-list', () => {
       'push',
       'status',
       'diff',
+      'show',
       'rev-list',
       'rev-parse',
       'log',

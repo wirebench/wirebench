@@ -14,10 +14,11 @@ import {
   WirebenchError,
   assertBranchName,
   assertRemoteUrl,
+  assertTreePath,
   describeTreePath,
   isWirebenchError,
 } from '@wirebench/engine';
-import type { SyncBackend } from './backend.js';
+import type { ConflictSides, SyncBackend } from './backend.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncState, SyncStatusWire } from './types.js';
 
 /** Dependencies a `GitBackend` needs — never Electron, per the file-level rule. */
@@ -456,6 +457,31 @@ export class GitBackend implements SyncBackend {
     const flag = side === 'mine' ? '--ours' : '--theirs';
     await this.git.run(this.tree, ['checkout', flag, '--', path]);
     await this.git.run(this.tree, ['add', '--', path]);
+  }
+
+  /**
+   * Each side read straight from the index — `git show :2:<path>` (ours) and `:3:<path>` (theirs) —
+   * never touching the working file, so calling this to preview a decision cannot itself change what
+   * a person opening the file to resolve it by hand would see (superseding plan decision 7, which
+   * had the allow-list without `show`; it now does). A side missing from the index (that side
+   * deleted the path) reads back `null`; any other failure is rethrown.
+   */
+  async conflictSides(path: string): Promise<ConflictSides> {
+    assertTreePath(path);
+    const read = async (stage: 2 | 3): Promise<string | null> => {
+      try {
+        const { stdout } = await this.git.run(this.tree, ['show', `:${stage}:${path}`]);
+        return stdout;
+      } catch (error) {
+        if (isExpectedGitFailure(error, 128, /does not exist|not at stage \d/i)) {
+          return null;
+        }
+        throw error;
+      }
+    };
+    const mine = await read(2);
+    const theirs = await read(3);
+    return { mine, theirs };
   }
 
   async finishMerge(): Promise<{ changedPaths: string[] }> {

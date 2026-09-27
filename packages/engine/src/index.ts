@@ -865,6 +865,7 @@ export {
   WORKSPACE_JOINING_DIR,
   GIT_ATTRIBUTES_FILE,
   GIT_ATTRIBUTES,
+  TEAM_SECRETS_DIR,
   WORKSPACE_LOCAL_FILE,
   EMPTY_LOCAL_STATE,
   WORKSPACE_SHARE_FILE,
@@ -1130,6 +1131,92 @@ export { applySecretMoves, proposeSecretName } from './secrets/scan/apply.js';
 export type { SecretMove, SecretMovesResult } from './secrets/scan/apply.js';
 export type { SecretFinding, SecretLocation } from './secrets/scan/walk.js';
 
+export { SECRET_REF_PATTERN, secretRefsInValue } from './secrets/secret-refs.js';
+
+// ---------------------------------------------------------------------------
+// Team secrets: machine keys, the access log and the vault (team-secrets spec §4, §5.2)
+// ---------------------------------------------------------------------------
+export {
+  ACCESS_ACTIONS,
+  accessEntryFileSchema,
+  accessEntryPath,
+  approvedRecipients,
+  base32,
+  base64url,
+  buildVaultEntry,
+  canonicalJson,
+  decryptValue,
+  encryptValue,
+  encryptionPrivateKey,
+  encryptionPublicKey,
+  fingerprintOf,
+  fromBase64url,
+  generateMachineKeys,
+  healVaultEntry,
+  isTeamSecretsPath,
+  isVaultEntryPath,
+  KEY_ID_PATTERN,
+  keyIdOf,
+  keyIdSchema,
+  keyRequestFileSchema,
+  keyRequestPath,
+  newDataKey,
+  nextAccessEntryId,
+  openVaultEntry,
+  parseMachineKeys,
+  parseTeamSecretsFile,
+  readTeamSecretsFiles,
+  replayAccessLog,
+  rotateMarks,
+  rotateMarksFor,
+  sameSecret,
+  sealVaultEntry,
+  secretKeySchema,
+  serializeMachineKeys,
+  signDocument,
+  signingPrivateKey,
+  signingPublicKey,
+  TEAM_SECRETS_ACCESS_DIR,
+  TEAM_SECRETS_FORMAT_VERSION,
+  TEAM_SECRETS_KEYS_DIR,
+  TEAM_SECRETS_MESSAGES,
+  TEAM_SECRETS_VALUES_DIR,
+  teamSecretsError,
+  teamSecretsFileText,
+  ULID_PATTERN,
+  unwrapDataKey,
+  vaultConflictWinner,
+  vaultEntryFileSchema,
+  vaultEntryId,
+  vaultEntryIdOfPath,
+  vaultEntryPath,
+  verifiedKeys,
+  verifyDocument,
+  verifyVaultEntry,
+  withoutSignature,
+  WRAP_INFO,
+  wrapDataKey,
+  wrapsUnapprovedKey,
+} from './team-secrets/index.js';
+export type {
+  AccessAction,
+  AccessEntryFile,
+  AccessState,
+  KeyInfo,
+  KeyRequestFile,
+  LogProblem,
+  MachineKeys,
+  MachinePublicKeys,
+  Removal,
+  RotateMark,
+  SecretKey,
+  Signed,
+  TeamSecretsErrorCode,
+  TeamSecretsFiles,
+  VaultEntryFile,
+  VaultVerdict,
+} from './team-secrets/index.js';
+
 export {
   REDACTED_MARKER,
   SECRET_BODY_KEYS,
@@ -1221,6 +1308,7 @@ export {
   MAX_TREE_PATH_LENGTH,
   TREE_ITEMS,
   assertTreePath,
+  isSafeTreeSegment,
   isTreePath,
 } from './sync/tree-paths.js';
 
@@ -1361,6 +1449,9 @@ export {
   syncPushResponseSchema,
   syncSnapshotQuerySchema,
   syncSnapshotResponseSchema,
+  TEAM_SECRETS_KEY_REQUEST_MAX_BYTES,
+  teamSecretsKeyRequestSchema,
+  teamSecretsKeyRequestResponseSchema,
 } from './server-api/sync.js';
 export type {
   SyncChange,
@@ -1377,6 +1468,8 @@ export type {
   SyncPushResponse,
   SyncSnapshotQuery,
   SyncSnapshotResponse,
+  TeamSecretsKeyRequest,
+  TeamSecretsKeyRequestResponse,
 } from './server-api/sync.js';
 export {
   LIVE_CAPABILITY,

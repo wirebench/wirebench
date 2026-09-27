@@ -126,6 +126,24 @@ function exitCodeOf(error: unknown): number | undefined {
 }
 
 /**
+ * Whether a `cat-file -e` failure means "no such path", not some other git failure: exit 1 (the
+ * object itself is missing from the store), or exit 128 whose stderr names a missing path
+ * ("does not exist in", "exists on disk, but not in") or an invalid object ("not a valid object
+ * name") the way git words it. Anything else — a corrupt repository, a permissions failure, git
+ * itself misbehaving — is not "not there" and must not be read as one: {@link hasFile}'s
+ * never-overwrite guarantee would otherwise fail open instead of throwing.
+ */
+function pathMissing(error: unknown): boolean {
+  const code = exitCodeOf(error);
+  if (code === 1) return true;
+  if (code !== 128) return false;
+  const stderr = (error as WirebenchError).details?.stderr;
+  return (
+    typeof stderr === 'string' && /does not exist in|exists on disk, but not in|not a valid object name/i.test(stderr)
+  );
+}
+
+/**
  * `update-ref` lost its compare-and-swap: main moved ("is at X but expected Y") or appeared
  * ("reference already exists") after the head check. Git words other failures to lock the ref the
  * same way ("cannot lock ref …: Unable to create '…/main.lock': File exists"), and those are not a
@@ -311,6 +329,19 @@ export class CommitStore {
     if (from === undefined) return { commits };
     const base = await this.resolve(dir, from);
     return { commits, behind: base === null ? commits : await this.count(dir, `${base}..${head}`) };
+  }
+
+  /** Whether `path` names a file in commit `at`. @throws syncPathRefused for a path outside the tree rules */
+  async hasFile(workspaceId: string, at: string, path: string): Promise<boolean> {
+    commitId(at);
+    const dir = this.repos.path(workspaceId);
+    try {
+      await this.git.run(dir, [GIT.catFile, '-e', `${at}:${treePath(path)}`]);
+      return true;
+    } catch (error) {
+      if (pathMissing(error)) return false;
+      throw error;
+    }
   }
 
   /** Every file at `at` (default: the head). @throws syncUnknownCommit, syncTooLarge */

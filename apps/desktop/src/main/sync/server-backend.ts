@@ -31,7 +31,7 @@ import {
 import type { LiveClients } from '../live/live-clients.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
-import type { RemoteEvent, SyncBackend } from './backend.js';
+import type { ConflictSides, RemoteEvent, SyncBackend } from './backend.js';
 import {
   applyChanges,
   RECONNECT_GUIDANCE,
@@ -48,7 +48,8 @@ import {
 import type { SyncConflictWire, SyncLogEntryWire, SyncState, SyncStatusWire } from './types.js';
 
 export interface ServerBackendDeps {
-  readonly client: Pick<ServerClient, 'syncHead' | 'syncChanges' | 'pushCommits' | 'syncLog'>;
+  readonly client: Pick<ServerClient, 'syncHead' | 'syncChanges' | 'pushCommits' | 'syncLog'> &
+    Partial<Pick<ServerClient, 'requestTeamSecretsKey' | 'workspaceAccess'>>;
   readonly accounts: TokenSource;
   /** The share's server origin (`share.yaml`'s `server.url`, stored normalised). */
   readonly url: string;
@@ -411,6 +412,45 @@ export class ServerBackend implements SyncBackend {
     const kept = (side === 'mine' ? record.mine : record.theirs)[path];
     await writeTreeFiles(this.deps.tree, new Map([[path, kept ?? null]]));
     await this.state.writeMerge({ ...record, conflicts: record.conflicts.filter((candidate) => candidate !== path) });
+  }
+
+  async conflictSides(path: string): Promise<ConflictSides> {
+    const record = await this.state.readMerge();
+    const text = (file: TreeFile | undefined): string | null =>
+      file === undefined
+        ? null
+        : file.encoding === 'utf8'
+          ? file.content
+          : Buffer.from(file.content, 'base64').toString('utf8');
+    return { mine: text(record?.mine[path]), theirs: text(record?.theirs[path]) };
+  }
+
+  /** §5.1: a key file that is already there is this machine's own earlier request. */
+  async requestTeamSecretsKey(keyId: string, content: string): Promise<void> {
+    const request = this.deps.client.requestTeamSecretsKey;
+    if (request === undefined) {
+      throw new WirebenchError('sync-not-supported', 'This server cannot take a team secrets request.');
+    }
+    try {
+      await this.call((url, token) =>
+        request.call(this.deps.client, url, token, this.deps.workspaceId, { keyId, content }),
+      );
+    } catch (error) {
+      if (isWirebenchError(error) && error.code === 'team-secrets-key-exists') return;
+      throw error;
+    }
+  }
+
+  /** Who still has a role here (team-secrets §3.6); only an admin may ask, so anyone else gets `undefined`. */
+  async workspaceMembers(): Promise<readonly string[] | undefined> {
+    const access = this.deps.client.workspaceAccess;
+    if (access === undefined) return undefined;
+    try {
+      const rows = await this.call((url, token) => access.call(this.deps.client, url, token, this.deps.workspaceId));
+      return rows.filter((row) => row.effectiveRole !== 'none').map((row) => row.email.toLowerCase());
+    } catch {
+      return undefined;
+    }
   }
 
   async finishMerge(): Promise<{ changedPaths: string[] }> {

@@ -51,7 +51,7 @@ import { applyChanges, readTreeFiles, SERVER_STATE_DIR, ServerState } from '../s
 import type { TreeFile } from '../src/main/sync/server-state.js';
 import { resolveWorkspaceTree } from '../src/main/workspace-files.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
-import type { WorkspaceHooks } from '../src/main/workspace-service.js';
+import type { WorkspaceHooks, WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 import {
   adoptWorkspaceId,
   joinFromServer,
@@ -815,6 +815,7 @@ describe('WorkspaceService — shareToServer end to end', { timeout: 30_000 }, (
   async function newService(
     server: StubServer,
     hooks: WorkspaceHooks = {},
+    teamSecrets?: WorkspaceServiceDeps['teamSecrets'],
   ): Promise<{ readonly root: string; readonly service: WorkspaceService }> {
     serial += 1;
     const root = join(base, `service-${String(serial)}`);
@@ -829,6 +830,7 @@ describe('WorkspaceService — shareToServer end to end', { timeout: 30_000 }, (
         client: server as unknown as ServerClient,
         accounts: { ...accountsFor(true), onChange: () => () => undefined, ready: Promise.resolve() },
       },
+      ...(teamSecrets !== undefined ? { teamSecrets } : {}),
     });
     services.push(service);
     return { root, service };
@@ -846,6 +848,32 @@ describe('WorkspaceService — shareToServer end to end', { timeout: 30_000 }, (
     expect(server.pushes).toEqual([{ parent: null, accepted: true }]);
     expect([...server.filesOf(created.id).keys()]).toContain('workspace.yaml');
     expect(service.syncStatus()).toMatchObject({ kind: 'server', ahead: 0 });
+  });
+
+  it('turns team secrets on only after the first push (plan decision 10), never as the share is made', async () => {
+    const server = new StubServer();
+    let pushesAtTurnOn: number | undefined;
+    const team = {
+      attach: vi.fn(),
+      detach: vi.fn(() => Promise.resolve()),
+      turnOn: vi.fn(),
+      turnOnIfAdmin: vi.fn(() => {
+        pushesAtTurnOn = server.pushes.filter((push) => push.accepted).length;
+        return Promise.resolve();
+      }),
+      afterPull: vi.fn(() => Promise.resolve()),
+      resolveConflicts: vi.fn(() => Promise.resolve(new Map<string, 'mine' | 'theirs'>())),
+      backfill: vi.fn(() => Promise.resolve()),
+    };
+    const { service } = await newService(server, {}, team);
+    await service.create('Team');
+
+    await service.shareToServer(shareRequest({ kind: 'new', name: 'Team' }));
+
+    expect(team.turnOnIfAdmin).toHaveBeenCalledTimes(1);
+    expect(pushesAtTurnOn).toBe(1);
+    expect(team.turnOn).not.toHaveBeenCalled();
+    expect(team.attach).toHaveBeenCalledWith(expect.objectContaining({ kind: 'server' }));
   });
 
   it('a reconnect as editor merges over the empty base: the rejected push pulls, and the differing workspace.yaml is a conflict', async () => {

@@ -142,6 +142,47 @@ palette. Until you do, a send that uses it fails with *The secret "name" is not 
 the toast's **Set value…** button opens that same dialog on the missing token. See
 [Secret tokens and scanning](/wirebench/guides/secrets/#the-secretname-token).
 
+## Team secrets
+
+Sharing a workspace to git or a folder turns **team secrets** on: the values behind secret references are
+shared too, encrypted for each approved machine. A server workspace turns them on when an admin shares it, or
+from **Team secrets → Turn on team secrets** in the Sync panel. Team secrets need the system keychain; on a
+machine without one, values stay local.
+
+- **Joining.** A machine that joins asks for access on its first sync. Until an admin approves it, sending a
+  request that needs a team value says the machine is waiting for approval.
+- **Declined or removed.** A machine whose request an admin declined does not ask again by itself: the Sync
+  panel says so and offers **Ask for access again**, which makes a new key and asks. A removed machine gets
+  the same button. If the request cannot go out (for example, too many requests in a short time), the
+  panel says why and nothing changes.
+  On a server workspace, a request declined within moments of being sent can be sent once more by itself;
+  decline it again and it stays declined.
+- **Approving.** The sync badge counts machines waiting. In the Sync panel, each request shows its person,
+  machine and fingerprint. Check the fingerprint with the person another way — a call or in person — before
+  choosing **Approve**. The joining machine sees its own fingerprint in the same section.
+- **Changing a value.** Saving a value on an approved machine commits it encrypted as *Update secret …*. Every
+  other approved machine uses it after its next sync, with nothing to type.
+- **Only the workspace's secrets.** Only values the workspace's projects or environments use are shared.
+  Secrets of the app itself, such as the proxy password in Preferences, stay on your machine.
+- **At the same time.** When two machines change one value before syncing, the newer one wins. The other
+  machine keeps its own value and offers **Restore my value** or **Keep theirs**.
+- **Removing.** Removing a machine re-encrypts every value without it. A removed machine may have kept what it
+  could read, so every such value is marked **Rotate**: change it where it is issued. Git history keeps old
+  ciphertexts, so this marks the value for rotation rather than claiming it is safe.
+- **Admins.** Whoever turns team secrets on is the first admin; add another so the team keeps access if that
+  machine is lost. On a server workspace, the workspace's admins are the team-secrets admins.
+- **Updating.** Everyone should update Wirebench before an admin turns team secrets on: an older version syncs
+  the `team-secrets/` folder but cannot use it.
+- **Stopping sharing** leaves the encrypted values with the shared copy; the local workspace keeps only this
+  machine's own values. Sharing it again later turns team secrets on afresh.
+- **Moving a server workspace to git or a folder** keeps the server's rules for who may change access, with
+  no server to enforce them: any approved member can then approve and remove machines. Only move one among
+  people you would all trust as admins.
+- **Two machines turning team secrets on at once** for the same share end up with two separate logs that
+  ignore each other. Agree who turns it on.
+- **Marks on the field.** *Only on this machine* and **Rotate** appear on a secret reference's field; for a
+  `${secret:name}` token, look in the Team secrets section.
+
 ## Without git
 
 A synced folder has no Sync control of its own: whatever tool watches that folder is in charge of

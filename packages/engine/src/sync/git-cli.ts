@@ -31,6 +31,7 @@ export const GIT_SUBCOMMANDS = [
   'push',
   'status',
   'diff',
+  'show',
   'rev-list',
   'rev-parse',
   'log',

@@ -102,6 +102,19 @@ describe('describeTreePath', () => {
   it.each(cases)('classifies %s', (path, expected) => {
     expect(describeTreePath(path)).toEqual(expected);
   });
+
+  it('classifies the team-secrets files, and a vault-only change reads as one kind', () => {
+    expect(describeTreePath('team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml')).toEqual({
+      kind: 'team-secrets',
+      name: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      key: 'team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml',
+    });
+    const changes: TreeChange[] = [
+      { path: 'team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml', status: 'modified' },
+      { path: 'team-secrets/values/BBCDEFGHIJKLMNOPQRSTUVWXYZ.yaml', status: 'modified' },
+    ];
+    expect(commitMessage(changes).split('\n\n')[0]).toBe('Update 2 team secrets files');
+  });
 });
 
 describe('commitMessage', () => {

@@ -91,9 +91,13 @@ test.describe('shared workspaces: secrets', () => {
 
     // Sending now fails in words that say where to act.
     await pageB.getByTestId('request-send').click();
+    // With team secrets on (an OS keychain), the vault holds A's value and B waits for approval;
+    // without one, the value is simply not on this machine (plan decision 23).
     await expect(
       pageB
-        .getByText('The password for "user" is not on this machine — enter it in the authentication settings.')
+        .getByText(
+          /The password for "user" is not on this machine — enter it in the authentication settings\.|This machine is waiting for an admin to approve it for team secrets\./,
+        )
         .first(),
     ).toBeVisible({ timeout: 20_000 });
 

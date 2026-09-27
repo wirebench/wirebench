@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SecretField } from '../../src/renderer/components/secret-field.js';
+import { TEAM_SECRETS_OFF_STATUS, useTeamSecretsStore } from '../../src/renderer/state/team-secrets.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 afterEach(() => {
@@ -163,6 +164,23 @@ describe('SecretField', () => {
       expect(screen.queryByTestId('secret-missing')).toBeNull();
     });
 
+    it('probes again when the team secrets status changes, so a pulled team value shows as present', async () => {
+      const exists = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, value: { exists: false } })
+        .mockResolvedValue({ ok: true, value: { exists: true } });
+      installWirebenchApi({ secrets: { exists } });
+      render(<SecretField value="sec_abc" onChange={vi.fn()} label="Password" />);
+      await waitFor(() => expect(screen.queryByTestId('secret-missing')).not.toBeNull());
+
+      act(() => {
+        useTeamSecretsStore.setState({ status: { ...TEAM_SECRETS_OFF_STATUS, on: true } });
+      });
+
+      await waitFor(() => expect(screen.queryByTestId('secret-missing')).toBeNull());
+      expect(exists).toHaveBeenCalledTimes(2);
+    });
+
     it('ignores a stale probe result for a value that has since changed', async () => {
       let resolveFirst: (value: { ok: true; value: { exists: boolean } }) => void = () => undefined;
       const exists = vi.fn().mockImplementation((request: { ref: string }) => {
@@ -208,5 +226,47 @@ describe('SecretField', () => {
       expect(exists).not.toHaveBeenCalled();
       expect(screen.queryByTestId('secret-missing')).toBeNull();
     });
+  });
+});
+
+describe('SecretField — team secrets marks', () => {
+  afterEach(() => {
+    cleanup();
+    useTeamSecretsStore.getState().reset();
+  });
+
+  it('marks a value that is only on this machine, and one to rotate', async () => {
+    installWirebenchApi({ secrets: { exists: vi.fn().mockResolvedValue({ ok: true, value: { exists: true } }) } });
+    useTeamSecretsStore.setState({
+      status: {
+        ...TEAM_SECRETS_OFF_STATUS,
+        on: true,
+        localOnly: [{ ref: 'sec_local' }],
+        rotate: [
+          {
+            entryId: 'CCCCCCCCCCCCCCCCCCCCCCCCCC',
+            label: 'Password',
+            secret: { ref: 'sec_old' },
+            removedNames: ['Cy'],
+          },
+        ],
+      },
+    });
+    const { rerender } = render(<SecretField value="sec_local" label="Password" onChange={() => undefined} />);
+    expect(screen.getByTestId('secret-local-only').textContent).toBe('Only on this machine');
+    expect(screen.queryByTestId('secret-rotate')).toBeNull();
+
+    rerender(<SecretField value="sec_old" label="Password" onChange={() => undefined} />);
+    const rotateMark = screen.getByTestId('secret-rotate');
+    expect(rotateMark.textContent).toBe('Rotate');
+    expect(rotateMark.getAttribute('title')).toContain('Cy');
+    // The names and the "change it at its provider" instruction must be reachable by more than
+    // the mouse-only `title` — an `aria-describedby` pointing at hidden text carries it too.
+    const describedBy = rotateMark.getAttribute('aria-describedby');
+    expect(describedBy).not.toBeNull();
+    expect(document.getElementById(describedBy ?? '')?.textContent).toBe(
+      'Password: Cy had access. Change this value at its provider, then here.',
+    );
+    await waitFor(() => expect(screen.queryByTestId('secret-local-only')).toBeNull());
   });
 });

@@ -3,6 +3,7 @@
  * repository that disappeared under a read answers like the guard would (R11).
  */
 import type { ServerContext } from '../context.js';
+import type { RateLimiter } from '../identity/rate-limit.js';
 import type { RepoStore } from '../repos/repo-store.js';
 import { workspaceNotFound } from '../teams/errors.js';
 import type { CommitStore } from './commit-store.js';
@@ -10,6 +11,8 @@ import type { CommitStore } from './commit-store.js';
 export interface SyncEnv {
   readonly ctx: ServerContext;
   readonly store: CommitStore;
+  /** team-secrets §5.1: the per-user bucket for the key-request route. */
+  readonly limiter: RateLimiter;
 }
 
 /**

@@ -20,6 +20,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { WirebenchError } from '@wirebench/engine';
 
 /** The pluggable encryption backend. Electron's `safeStorage` satisfies this shape directly. */
 export interface CryptoBackend {
@@ -113,9 +114,27 @@ async function writeAtomic(path: string, data: string): Promise<void> {
   }
 }
 
-/** Generates a `sec_` + 26 random base36-ish hex-derived id secret reference. */
-function generateRef(): string {
+/**
+ * Generates a `sec_` + 26 random base36-ish hex-derived id secret reference. Exported for team secrets,
+ * which make their machine-only entries with {@link SecretStore.putMachineOnly} under a fresh ref.
+ */
+export function newSecretRef(): string {
   return `sec_${randomBytes(20).toString('hex').slice(0, 26)}`;
+}
+
+/** The label on a workspace's team-secrets machine key: its private keys, never a secret value. */
+export const TEAM_KEY_LABEL_PREFIX = 'wirebench-team-key:';
+/** The label on a value team secrets kept on this machine after another one replaced it. */
+export const TEAM_REPLACED_LABEL_PREFIX = 'wirebench-team-replaced:';
+
+/**
+ * True for an entry team secrets keep for this machine only (a machine key, a replaced value): it is
+ * never a secret value, so it is never resolved, listed or deleted as one.
+ */
+export function isMachineOnlyLabel(label: string | undefined): boolean {
+  return (
+    label !== undefined && (label.startsWith(TEAM_KEY_LABEL_PREFIX) || label.startsWith(TEAM_REPLACED_LABEL_PREFIX))
+  );
 }
 
 /**
@@ -211,10 +230,14 @@ export class SecretStore {
     return result;
   }
 
-  /** Encrypts and stores `value`, returning a fresh `secretRef`. */
+  /**
+   * Encrypts and stores `value`, returning a fresh `secretRef`. Refuses a machine-only label: only
+   * {@link putMachineOnly} makes those.
+   */
   set(value: string, opts?: { label?: string }): Promise<string> {
     return this.enqueue(async () => {
-      const ref = generateRef();
+      this.refuseMachineOnly(undefined, opts?.label);
+      const ref = newSecretRef();
       const { blob, encrypted } = this.encode(value);
       const entry: SecretEntry = {
         value: blob,
@@ -231,28 +254,93 @@ export class SecretStore {
   /** Replaces the value stored under an existing `ref`, keeping the same ref and label. */
   replace(ref: string, value: string): Promise<string> {
     return this.enqueue(async () => {
-      const existing = this.data.entries[ref];
-      const { blob, encrypted } = this.encode(value);
-      const entry: SecretEntry = {
-        value: blob,
-        encrypted,
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-        ...(existing?.label !== undefined ? { label: existing.label } : {}),
-      };
-      this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
-      await this.persist();
+      this.refuseMachineOnly(ref);
+      await this.putEntry(ref, value, {});
       return ref;
     });
   }
 
-  /** Resolves a `secretRef` to its plaintext value, or `undefined` when the ref is unknown. */
+  /**
+   * Stores `value` under the given `ref`, creating the entry when it does not exist (team secrets write a
+   * ref the tree already names). An existing entry keeps its label and creation time; `opts.label` names a
+   * new one. Refuses a ref whose existing entry is machine-only, and refuses to create or relabel an entry
+   * with a machine-only label on a fresh ref — a value write must never overwrite, or masquerade as, a
+   * machine key or a kept replaced value; {@link putMachineOnly} is the only writer allowed to make one.
+   */
+  put(ref: string, value: string, opts?: { label?: string }): Promise<void> {
+    return this.enqueue(async () => {
+      this.refuseMachineOnly(ref, opts?.label);
+      await this.putEntry(ref, value, opts ?? {});
+    });
+  }
+
+  /**
+   * Like {@link put}, for team secrets' own machine-only entries (this machine's key pair, a value another
+   * machine replaced): the only writer allowed to touch a ref already carrying a machine-only label, or to
+   * give a ref a machine-only label in the first place.
+   */
+  putMachineOnly(ref: string, value: string, opts?: { label?: string }): Promise<void> {
+    return this.enqueue(async () => {
+      await this.putEntry(ref, value, opts ?? {});
+    });
+  }
+
+  /** Throws `secret-machine-only` when `ref` already names a machine-only entry, or `label` would make it one. */
+  private refuseMachineOnly(ref: string | undefined, label?: string): void {
+    const existing = ref === undefined ? undefined : this.data.entries[ref]?.label;
+    if (isMachineOnlyLabel(existing) || isMachineOnlyLabel(label)) {
+      throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
+    }
+  }
+
+  /** The shared write behind `replace`, `put` and `putMachineOnly`: keeps an existing label unless `opts.label` names one. */
+  private async putEntry(ref: string, value: string, opts: { label?: string }): Promise<void> {
+    const existing = this.data.entries[ref];
+    const { blob, encrypted } = this.encode(value);
+    const label = existing?.label ?? opts.label;
+    const entry: SecretEntry = {
+      value: blob,
+      encrypted,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      ...(label !== undefined ? { label } : {}),
+    };
+    this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
+    await this.persist();
+  }
+
+  /** Whether values are really encrypted at rest here; team secrets refuse to make a key without it. */
+  encryptionAvailable(): boolean {
+    return this.crypto.available;
+  }
+
+  /**
+   * Resolves a `secretRef` to its plaintext value, or `undefined` when the ref is unknown. A machine-only
+   * entry ({@link isMachineOnlyLabel}) is never a secret value: it resolves to `undefined` here, and only
+   * {@link getMachineOnly} reads it.
+   */
   async get(ref: string): Promise<string | undefined> {
     await this.ensureLoaded();
     const entry = this.data.entries[ref];
-    if (!entry) {
+    if (!entry || isMachineOnlyLabel(entry.label)) {
       return undefined;
     }
     return this.decode(entry.value, entry.encrypted);
+  }
+
+  /** A machine-only entry's text (team secrets' own keys and kept values); `undefined` for any other ref. */
+  async getMachineOnly(ref: string): Promise<string | undefined> {
+    await this.ensureLoaded();
+    const entry = this.data.entries[ref];
+    if (!entry || !isMachineOnlyLabel(entry.label)) {
+      return undefined;
+    }
+    return this.decode(entry.value, entry.encrypted);
+  }
+
+  /** Whether `ref` is a machine-only entry, which the renderer may neither list, change nor delete. */
+  async isMachineOnly(ref: string): Promise<boolean> {
+    await this.ensureLoaded();
+    return isMachineOnlyLabel(this.data.entries[ref]?.label);
   }
 
   async exists(ref: string): Promise<boolean> {

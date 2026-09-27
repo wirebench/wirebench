@@ -7,6 +7,8 @@
 import {
   syncPushRequestSchema,
   syncPushResponseSchema,
+  TEAM_SECRETS_ACCESS_DIR,
+  TEAM_SECRETS_KEYS_DIR,
   teamWorkspaceParamsSchema,
   type SyncPushRequest,
 } from '@wirebench/engine';
@@ -18,10 +20,36 @@ import { jsonSchema } from '../../schema.js';
 import { workspaceNotFound } from '../../teams/errors.js';
 import { requireWorkspaceRole } from '../../teams/roles.js';
 import type { SyncEnv } from '../env.js';
-import { syncSubjectInvalid } from '../errors.js';
+import { syncSubjectInvalid, teamSecretsAdminOnly } from '../errors.js';
 
 /** C0 controls and DEL: NUL cannot be a git argument, and a line break would start a message body. */
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
+/**
+ * team-secrets §5.1: whether any change in the push lands under `team-secrets/access/`. Case-insensitive,
+ * since a checkout on a case-insensitive file system would merge `TEAM-SECRETS/access` into the same folder.
+ */
+function touchesAccessLog(body: SyncPushRequest): boolean {
+  const prefix = `${TEAM_SECRETS_ACCESS_DIR}/`;
+  return body.commits.some((c) => c.changes.some((change) => change.path.toLowerCase().startsWith(prefix)));
+}
+
+/**
+ * team-secrets §5.1: a non-admin may add a key request under `team-secrets/keys/`, never change or delete one
+ * that exists (at `parent`, or added earlier in this push). Deleting a signer's request would read as a
+ * damaged log on every machine. Case-insensitive, as {@link touchesAccessLog}.
+ */
+async function changesKeyRequest(exists: (path: string) => Promise<boolean>, body: SyncPushRequest): Promise<boolean> {
+  const prefix = `${TEAM_SECRETS_KEYS_DIR}/`;
+  const added = new Set<string>();
+  for (const change of body.commits.flatMap((c) => c.changes)) {
+    const path = change.path.toLowerCase();
+    if (!path.startsWith(prefix)) continue;
+    if (change.content === null || added.has(path) || (await exists(change.path))) return true;
+    added.add(path);
+  }
+  return false;
+}
 
 export const commitRoutes =
   (env: SyncEnv) =>
@@ -38,16 +66,24 @@ export const commitRoutes =
         },
       },
       async (request, reply) => {
-        const { workspaceId } = request.workspaceAccess!;
+        const { workspaceId, role } = request.workspaceAccess!;
         const body = request.body as SyncPushRequest;
         // The commit store takes the subject as is; JSON Schema cannot say "no control characters".
         if (body.commits.some((c) => CONTROL_CHARACTER.test(c.subject))) throw syncSubjectInvalid();
+        // No file body is parsed: the paths alone say whether the access log changes.
+        if (role !== 'admin' && touchesAccessLog(body)) throw teamSecretsAdminOnly();
         // R2, §6: the author is the account, never anything in the body; request.caller has no name.
         const user = await findUserById(db, request.caller!.id);
         if (user === undefined) throw unauthenticated();
         const author = { name: user.displayName, email: user.email };
         const result = await repos.withLock(workspaceId, async () => {
           if (!(await repos.exists(workspaceId))) throw workspaceNotFound();
+          if (role !== 'admin') {
+            const parent = body.parent;
+            const exists = (path: string): Promise<boolean> =>
+              parent === null ? Promise.resolve(false) : env.store.hasFile(workspaceId, parent, path);
+            if (await changesKeyRequest(exists, body)) throw teamSecretsAdminOnly();
+          }
           return env.store.appendCommits(workspaceId, body.parent, body.commits, author);
         });
         // main has moved: a rejected or failed push never reaches this line (live-updates §3.2).

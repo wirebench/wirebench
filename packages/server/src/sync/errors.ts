@@ -2,7 +2,12 @@
  * Every `sync-*` problem (spec §3.2, §3.5, §10), one function each so a code is spelled once.
  * Clients see `{ code, message }` only (host spec §3.3); the desktop maps these codes in §3.5.
  */
-import { MAX_SYNC_FILE_BYTES, type WirebenchError } from '@wirebench/engine';
+import {
+  MAX_SYNC_FILE_BYTES,
+  TEAM_SECRETS_KEY_REQUEST_MAX_BYTES,
+  TEAM_SECRETS_MESSAGES,
+  type WirebenchError,
+} from '@wirebench/engine';
 import { problem } from '../problem.js';
 
 /** R3: no head in the body. `toProblem` drops details anyway; the client's retry fetches the head. */
@@ -48,4 +53,19 @@ export function syncContentInvalid(path: string): WirebenchError {
  */
 export function syncSubjectInvalid(): WirebenchError {
   return problem('invalid-request', 'A commit subject cannot contain control characters or line breaks.', 400);
+}
+
+/** team-secrets §5.1: only an admin's push may touch `team-secrets/access/`. */
+export function teamSecretsAdminOnly(): WirebenchError {
+  return problem('team-secrets-admin-only', TEAM_SECRETS_MESSAGES['team-secrets-admin-only'], 403);
+}
+
+/** A key request for a key file that is already there; nobody overwrites another machine's request. */
+export function teamSecretsKeyExists(): WirebenchError {
+  return problem('team-secrets-key-exists', 'This machine has already asked for access to team secrets.', 409);
+}
+
+export function teamSecretsRequestTooLarge(): WirebenchError {
+  const kib = TEAM_SECRETS_KEY_REQUEST_MAX_BYTES / 1024;
+  return problem('invalid-request', `A request for team secrets access is limited to ${kib} KiB.`, 400);
 }

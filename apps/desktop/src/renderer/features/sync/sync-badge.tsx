@@ -2,6 +2,7 @@ import { Folder, GitBranch, Server } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SyncStatusWire } from '../../../shared/wire-types.js';
 import { useSyncStore } from '../../state/sync.js';
+import { useTeamSecretsStore } from '../../state/team-secrets.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { formatRelative } from './relative-time.js';
@@ -92,6 +93,7 @@ export function syncBadgeLabel(status: SyncStatusWire): string {
 export function SyncBadge() {
   const share = useWorkspaceStore((state) => state.workspace?.share);
   const status = useSyncStore((store) => store.status);
+  const waiting = useTeamSecretsStore((store) => (store.status.canManage ? store.status.pending.length : 0));
   const setSyncPanelOpen = useUiStore((state) => state.setSyncPanelOpen);
   // Called unconditionally (the Rules of Hooks) even though the badge below renders nothing for
   // an unshared workspace — the ticking clock only matters while it is on screen either way.
@@ -104,7 +106,8 @@ export function SyncBadge() {
   const Icon = KIND_ICON[status.kind];
   const label = syncBadgeLabel(status);
   const relative = status.lastSyncAt === undefined ? undefined : formatRelative(status.lastSyncAt, now);
-  const text = relative === undefined ? label : `${label} · ${relative}`;
+  const synced = relative === undefined ? label : `${label} · ${relative}`;
+  const text = waiting > 0 ? `${synced} · ${String(waiting)} waiting` : synced;
   const live: LiveDotState | undefined =
     status.live === 'connected' || status.live === 'connecting' ? status.live : undefined;
   const spoken = live === undefined ? text : `${text}. ${LIVE_DOT_LABEL[live]}`;

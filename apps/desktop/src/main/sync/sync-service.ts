@@ -22,8 +22,8 @@
  */
 
 import type { SyncSettings } from '@wirebench/engine';
-import { commitMessage, isWirebenchError, WirebenchError } from '@wirebench/engine';
-import type { RemoteEvent, SyncBackend } from './backend.js';
+import { commitMessage, isTeamSecretsPath, isWirebenchError, WirebenchError } from '@wirebench/engine';
+import type { ConflictSides, RemoteEvent, SyncBackend } from './backend.js';
 import { STOP_POLLING_CODES } from './server-backend.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from './types.js';
 
@@ -89,6 +89,14 @@ export interface SyncServiceDeps {
   onScanChange?: (listener: () => void) => () => void;
   /** True while an open project has edits not yet written; a released hold then waits for the save. */
   unsaved?: () => boolean;
+  /**
+   * Decides the conflicts the sync settles itself (team-secrets §3.5: whole-file vault entries). Each path in
+   * the answer is resolved to that side; the rest go to `onConflict`. `sides` reads both versions of a path.
+   */
+  resolveConflicts?: (
+    conflicts: readonly SyncConflictWire[],
+    sides: (path: string) => Promise<ConflictSides>,
+  ) => Promise<ReadonlyMap<string, 'mine' | 'theirs'>>;
   /** Stamps `lastSyncAt` when a backend does not report its own. */
   now?: () => Date;
   setTimer?: typeof setTimeout;
@@ -117,6 +125,19 @@ interface SecretHold {
 
 function hasCode(error: unknown, code: string): boolean {
   return isWirebenchError(error) && error.code === code;
+}
+
+/**
+ * Wraps a failure from `requestTeamSecretsKey`'s POST itself: `run`'s catch unwraps it back to
+ * `cause` for the caller without recording it as a sync-wide error. The request is a side action —
+ * a rate limit or another 4xx from the route says nothing about whether the share's own sync is
+ * healthy, so it must reach the caller (the key-request UI) without painting the whole workspace
+ * `error`. A subsequent `fetchNow()` failure is a real fetch failure and is recorded as any other is.
+ */
+class KeyRequestFailed extends Error {
+  constructor(readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+  }
 }
 
 /** The remote moved on since our base: git's non-fast-forward refusal, or the server's `sync-push-rejected`. */
@@ -161,6 +182,12 @@ export class SyncService {
   private saveIsAutosave: boolean | undefined;
   /** A save commit was skipped because the workspace was in `conflict`; rescheduled once it is not. */
   private saveDeferredByConflict = false;
+  /**
+   * The message `afterTeamSecretsWrite` deferred behind `saveDeferredByConflict` (an open merge),
+   * replayed with the same message once the conflict clears — a plain save has no message of its own
+   * to lose, but "Update secret <label>" would otherwise be replaced by the generated one.
+   */
+  private deferredTeamSecretsMessage: string | undefined;
   private identityPending: PendingCommit | undefined;
   /** The automatic commit held for possible secrets, run once they are reviewed (`status.held`). */
   private secretHold: SecretHold | undefined;
@@ -408,6 +435,70 @@ export class SyncService {
       });
   }
 
+  /**
+   * The commit identity, read from the backend directly rather than queued: a pull's `onPulled` runs inside a
+   * queued operation and asks for it (plan decision 14). Reading config races nothing.
+   */
+  identity(): Promise<{ name: string; email: string } | undefined> {
+    return this.backend.identity();
+  }
+
+  /**
+   * Server shares: sends a team-secrets key request through the server's route, then fetches (§3.2).
+   * A failure of the request itself (a 429 `team-secrets-rate-limited`, or another 4xx the route
+   * answers with) rejects normally but never marks the share's own sync status `error` — see
+   * {@link KeyRequestFailed}. A failure of the fetch that follows is recorded as any other is.
+   */
+  requestTeamSecretsKey(keyId: string, content: string): Promise<void> {
+    return this.run(async () => {
+      const request = this.backend.requestTeamSecretsKey?.bind(this.backend);
+      if (request === undefined) {
+        throw new WirebenchError('sync-not-supported', 'This share has no key-request route.');
+      }
+      try {
+        await request(keyId, content);
+      } catch (error) {
+        throw new KeyRequestFailed(error);
+      }
+      await this.fetchNow();
+    });
+  }
+
+  /** Server shares: the emails of the people with a role in the workspace, when this account may ask. */
+  workspaceMembers(): Promise<readonly string[] | undefined> {
+    return this.run(async () => await this.backend.workspaceMembers?.());
+  }
+
+  /**
+   * Team secrets wrote into the tree (§3.3). With commit-on-save it commits now — under `message` when only
+   * `team-secrets/` changed, under the generated message when other saves ride along — and pushes as a save
+   * would. Held like any automatic commit while possible secrets wait for review, and deferred, exactly as a
+   * save is, while a merge conflict is open — `message` is kept for the retry that follows, unlike a plain
+   * save's generated one, which is only ever regenerated fresh. Never throws.
+   */
+  afterTeamSecretsWrite(message: string): void {
+    if (this.stopped || !this.canSync() || !this.deps.settings().commitOnSave) {
+      return;
+    }
+    void this.run(async () => {
+      if (this.last.state === 'conflict') {
+        this.saveDeferredByConflict = true;
+        this.deferredTeamSecretsMessage = message;
+        return;
+      }
+      const changes = await this.backend.changedPaths();
+      const onlyTeamSecrets = changes.length > 0 && changes.every((change) => isTeamSecretsPath(change.path));
+      const commit: PendingCommit = { message: onlyTeamSecrets ? message : undefined, autosave: false, push: true };
+      if (await this.holdForSecrets(commit)) {
+        return;
+      }
+      if (changes.length === 0) {
+        return;
+      }
+      await this.commitThenMaybePush(commit);
+    }).catch(() => undefined);
+  }
+
   // ——— internals: each runs inside an operation already holding the queue ———————————————
 
   private run<T>(op: () => Promise<T>): Promise<T> {
@@ -423,6 +514,9 @@ export class SyncService {
       try {
         return await op();
       } catch (error) {
+        if (error instanceof KeyRequestFailed) {
+          throw error.cause;
+        }
         this.recordError(error);
         throw error;
       } finally {
@@ -430,8 +524,14 @@ export class SyncService {
         this.emit();
         if (this.saveDeferredByConflict && this.last.state !== 'conflict') {
           this.saveDeferredByConflict = false;
-          this.saveIsAutosave = this.saveIsAutosave ?? false;
-          this.scheduleSaveCommit();
+          const teamSecretsMessage = this.deferredTeamSecretsMessage;
+          this.deferredTeamSecretsMessage = undefined;
+          if (teamSecretsMessage !== undefined) {
+            this.afterTeamSecretsWrite(teamSecretsMessage);
+          } else {
+            this.saveIsAutosave = this.saveIsAutosave ?? false;
+            this.scheduleSaveCommit();
+          }
         }
       }
     });
@@ -697,14 +797,55 @@ export class SyncService {
     }
     const { conflicts, changedPaths } = await this.backend.merge();
     if (conflicts.length > 0) {
+      const left = await this.autoResolve(conflicts);
+      if (left.length > 0) {
+        await this.probeNow();
+        this.deps.onConflict(left);
+        return;
+      }
+      // Every conflict was a whole-file value settled above: finish as `resolve` does for the last one.
+      const merged = await this.backend.finishMerge();
       await this.probeNow();
-      this.deps.onConflict(conflicts);
+      if (merged.changedPaths.length > 0) {
+        await this.deps.onPulled(merged.changedPaths);
+      }
       return;
     }
     if (changedPaths.length > 0) {
       await this.deps.onPulled(changedPaths);
     }
     await this.probeNow();
+  }
+
+  /**
+   * Resolves what `deps.resolveConflicts` answers; returns the conflicts still open. A decision for
+   * a path that is not actually in `conflicts` is ignored (a resolver bug must not resolve the wrong
+   * thing), and a failure anywhere in here — the resolver itself, a `conflictSides` read inside it,
+   * or `backend.resolve` — falls back to the normal dialog over whatever `backend.conflicts()` still
+   * reports, rather than losing the merge to an unrelated error.
+   */
+  private async autoResolve(conflicts: readonly SyncConflictWire[]): Promise<SyncConflictWire[]> {
+    const decide = this.deps.resolveConflicts;
+    const sides = this.backend.conflictSides?.bind(this.backend);
+    if (decide === undefined || sides === undefined) {
+      return [...conflicts];
+    }
+    try {
+      const decisions = await decide(conflicts, sides);
+      if (decisions.size === 0) {
+        return [...conflicts];
+      }
+      const conflictPaths = new Set(conflicts.map((conflict) => conflict.path));
+      for (const [path, side] of decisions) {
+        if (!conflictPaths.has(path)) {
+          continue;
+        }
+        await this.backend.resolve(path, side);
+      }
+      return await this.backend.conflicts();
+    } catch {
+      return await this.backend.conflicts();
+    }
   }
 
   private scheduleSaveCommit(): void {
