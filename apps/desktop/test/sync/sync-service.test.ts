@@ -1620,3 +1620,96 @@ describe('SyncService — live events (live-updates §3.4)', () => {
     expect(syncStatusWireSchema.safeParse({ ...wire, presence: [{ id: BEN.id }] }).success).toBe(false);
   });
 });
+
+describe('team secrets (team-secrets §3.3, §3.5)', () => {
+  const VAULT = 'team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml';
+  const conflictOf = (path: string): SyncConflictWire => ({ path, entity: { kind: 'team-secrets', name: 'x' } });
+
+  it('settles the conflicts the resolver answers, finishes the merge and applies it', async () => {
+    const decided = vi.fn().mockResolvedValue(new Map([[VAULT, 'theirs' as const]]));
+    const h = harness({}, { resolveConflicts: decided });
+    Object.assign(h.backend, {
+      conflictSides: (path: string) => Promise.resolve({ mine: `mine:${path}`, theirs: `theirs:${path}` }),
+    });
+    const resolve = vi.spyOn(h.backend, 'resolve');
+    h.backend.mergeResult = { conflicts: [conflictOf(VAULT)], changedPaths: [] };
+    h.backend.mergeChanged = [VAULT];
+
+    await h.service.pull();
+
+    expect(decided).toHaveBeenCalledWith([conflictOf(VAULT)], expect.any(Function));
+    const sides = decided.mock.calls[0]?.[1] as (path: string) => Promise<unknown>;
+    await expect(sides(VAULT)).resolves.toEqual({ mine: `mine:${VAULT}`, theirs: `theirs:${VAULT}` });
+    expect(resolve).toHaveBeenCalledWith(VAULT, 'theirs');
+    expect(h.backend.calls).toContain('finishMerge');
+    expect(h.pulled).toEqual([[VAULT]]);
+    expect(h.conflicts).toEqual([]);
+  });
+
+  it('hands the dialog only what the resolver left', async () => {
+    const other = conflictOf('environments/qa.yaml');
+    const h = harness({}, { resolveConflicts: () => Promise.resolve(new Map([[VAULT, 'mine' as const]])) });
+    Object.assign(h.backend, { conflictSides: () => Promise.resolve({ mine: null, theirs: null }) });
+    h.backend.mergeResult = { conflicts: [conflictOf(VAULT), other], changedPaths: [] };
+
+    await h.service.pull();
+
+    expect(h.conflicts).toEqual([[other]]);
+    expect(h.backend.calls).not.toContain('finishMerge');
+  });
+
+  it('commits a vault-only change under its own message and pushes, and a mixed one under the generated one', async () => {
+    const h = harness();
+    await h.service.start();
+    const mark = h.backend.calls.length;
+    h.backend.changes = [{ path: VAULT, status: 'modified' }];
+    h.service.afterTeamSecretsWrite('Update secret Payments API key');
+    await h.service.idle();
+    expect(h.backend.commits.at(-1)).toBe('Update secret Payments API key');
+    expect(h.backend.calls.slice(mark)).toContain('push');
+
+    const mixed: TreeChange[] = [
+      { path: VAULT, status: 'modified' },
+      { path: 'environments/qa.yaml', status: 'modified' },
+    ];
+    h.backend.changes = mixed;
+    h.service.afterTeamSecretsWrite('Update secret Payments API key');
+    await h.service.idle();
+    expect(h.backend.commits.at(-1)).toBe(commitMessage(mixed));
+  });
+
+  it('leaves a vault write uncommitted when commit-on-save is off', async () => {
+    const h = harness({ commitOnSave: false });
+    await h.service.start();
+    const before = h.backend.commits.length;
+    h.backend.changes = [{ path: VAULT, status: 'added' }];
+    h.service.afterTeamSecretsWrite('Update secret X');
+    await h.service.idle();
+    expect(h.backend.commits).toHaveLength(before);
+  });
+
+  it('reads the identity without queuing behind a running operation', async () => {
+    const h = harness();
+    const gate = deferred();
+    h.backend.fetchScript.push(() => gate.promise);
+    const fetching = h.service.fetch();
+    await expect(h.service.identity()).resolves.toEqual({ name: 'Ada', email: 'ada@example.test' });
+    gate.resolve();
+    await fetching;
+  });
+
+  it('sends a key request through a backend that has the route, then fetches; refuses one that has not', async () => {
+    const h = harness();
+    const request = vi.fn().mockResolvedValue(undefined);
+    Object.assign(h.backend, { requestTeamSecretsKey: request });
+    const mark = h.backend.calls.length;
+    await h.service.requestTeamSecretsKey('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'version: 1\n');
+    expect(request).toHaveBeenCalledWith('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'version: 1\n');
+    expect(h.backend.calls.slice(mark)).toContain('fetch');
+
+    const plain = harness();
+    await expect(plain.service.requestTeamSecretsKey('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'x')).rejects.toMatchObject({
+      code: 'sync-not-supported',
+    });
+  });
+});

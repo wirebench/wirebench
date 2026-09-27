@@ -14,7 +14,7 @@
 
 import type { TreeChange } from '@wirebench/engine';
 import { WirebenchError, describeTreePath } from '@wirebench/engine';
-import type { SyncBackend } from '../../src/main/sync/backend.js';
+import type { ConflictSides, SyncBackend } from '../../src/main/sync/backend.js';
 import { mergeUnsaved } from '../../src/main/unsaved-store.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncState, SyncStatusWire } from '../../src/main/sync/types.js';
 
@@ -273,6 +273,13 @@ export class FakeServerBackend implements SyncBackend {
     }
     this.mergeState.conflicts.delete(path);
     return Promise.resolve();
+  }
+
+  conflictSides(path: string): Promise<ConflictSides> {
+    return Promise.resolve({
+      mine: this.mergeState?.mine.get(path) ?? null,
+      theirs: this.mergeState?.theirs.get(path) ?? null,
+    });
   }
 
   finishMerge(): Promise<{ changedPaths: string[] }> {

@@ -519,9 +519,14 @@ export async function readTreeFiles(tree: string): Promise<Map<string, TreeFile>
   const walk = async (folder: string): Promise<void> => {
     for (const entry of await readdir(join(tree, ...folder.split('/')), { withFileTypes: true })) {
       const path = `${folder}/${entry.name}`;
-      if (!isTreePath(path)) continue;
+      // `isTreePath` answers for a *complete* path, so it is only meaningful at a file: under
+      // `team-secrets/`, an intermediate directory (`keys`, `access`, `values`) is never itself a
+      // complete path and would otherwise be skipped, along with everything below it. A directory
+      // always recurses; every file still passes the full check before it is kept.
       if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile()) files.set(path, treeFileFromBytes(await readFile(join(tree, ...path.split('/')))));
+      else if (entry.isFile() && isTreePath(path)) {
+        files.set(path, treeFileFromBytes(await readFile(join(tree, ...path.split('/')))));
+      }
     }
   };
   for (const item of TREE_ITEMS) {

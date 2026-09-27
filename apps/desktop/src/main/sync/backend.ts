@@ -24,6 +24,12 @@ export type RemoteEvent =
   | { readonly kind: 'presence'; readonly users: readonly { id: string; name: string }[] }
   | { readonly kind: 'live'; readonly state: 'connected' | 'connecting' | 'off' };
 
+/** Both versions of one conflicted path as text; `null` for a side that deleted it (team-secrets §3.5). */
+export interface ConflictSides {
+  readonly mine: string | null;
+  readonly theirs: string | null;
+}
+
 /** A workspace share's sync backend: probe/fetch/merge/commit/push plus conflict handling. */
 export interface SyncBackend {
   readonly kind: 'folder' | 'git' | 'server';
@@ -65,6 +71,15 @@ export interface SyncBackend {
    * live socket, and without one it announces nothing either.
    */
   subscribeRemote(listener: (event: RemoteEvent) => void): () => void;
+  /**
+   * Reads both sides of a conflicted path, so a whole-file value can be settled without the dialog
+   * (team-secrets §3.5). Optional: a backend without it never has a conflict settled for it.
+   */
+  conflictSides?(path: string): Promise<ConflictSides>;
+  /** Server shares only: commits a team-secrets key request through the server's route (§5.1). */
+  requestTeamSecretsKey?(keyId: string, content: string): Promise<void>;
+  /** Server shares only: the emails of the people with a role in the workspace; `undefined` when not allowed to ask. */
+  workspaceMembers?(): Promise<readonly string[] | undefined>;
 }
 
 /**

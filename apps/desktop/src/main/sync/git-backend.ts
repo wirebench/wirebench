@@ -5,7 +5,7 @@
  * contract by `apps/desktop/test/sync/backend-contract.test.ts`.
  */
 
-import { access, writeFile } from 'node:fs/promises';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { GitCli, GitShareSettings, TreeChange } from '@wirebench/engine';
 import {
@@ -14,10 +14,11 @@ import {
   WirebenchError,
   assertBranchName,
   assertRemoteUrl,
+  assertTreePath,
   describeTreePath,
   isWirebenchError,
 } from '@wirebench/engine';
-import type { SyncBackend } from './backend.js';
+import type { ConflictSides, SyncBackend } from './backend.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncState, SyncStatusWire } from './types.js';
 
 /** Dependencies a `GitBackend` needs — never Electron, per the file-level rule. */
@@ -456,6 +457,25 @@ export class GitBackend implements SyncBackend {
     const flag = side === 'mine' ? '--ours' : '--theirs';
     await this.git.run(this.tree, ['checkout', flag, '--', path]);
     await this.git.run(this.tree, ['add', '--', path]);
+  }
+
+  /**
+   * Each side through `checkout --theirs|--ours` and a read: the allow-list has no `show` (plan decision 7).
+   * The working file is left at ours; the `resolve` that follows checks out the side it keeps.
+   */
+  async conflictSides(path: string): Promise<ConflictSides> {
+    assertTreePath(path);
+    const read = async (flag: '--ours' | '--theirs'): Promise<string | null> => {
+      try {
+        await this.git.run(this.tree, ['checkout', flag, '--', path]);
+        return await readFile(join(this.tree, ...path.split('/')), 'utf8');
+      } catch {
+        return null;
+      }
+    };
+    const theirs = await read('--theirs');
+    const mine = await read('--ours');
+    return { mine, theirs };
   }
 
   async finishMerge(): Promise<{ changedPaths: string[] }> {

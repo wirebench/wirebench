@@ -271,4 +271,37 @@ export function defineContract(factory: () => Promise<Fixture>): void {
     expect(await b.conflicts()).toEqual([]);
     expect(await fixture.readB('environments/qa.yaml')).toBe(beforeMergeContent);
   });
+
+  it('reads both sides of a conflicted vault entry, a deleted side as null (team-secrets §3.5)', async () => {
+    fixture = await factory();
+    const { a, b } = fixture;
+    const changed = 'team-secrets/values/ABCDEFGHIJKLMNOPQRSTUVWXYZ.yaml';
+    const deleted = 'team-secrets/values/BBCDEFGHIJKLMNOPQRSTUVWXYZ.yaml';
+    await fixture.writeA(changed, 'side: base\n');
+    await fixture.writeA(deleted, 'side: base\n');
+    await a.commit('Add two entries');
+    await a.push();
+    await b.fetch();
+    await b.merge();
+
+    await fixture.writeA(changed, 'side: a\n');
+    await fixture.deleteA(deleted);
+    await a.commit('A changes one and deletes the other');
+    await a.push();
+    await fixture.writeB(changed, 'side: b\n');
+    await fixture.writeB(deleted, 'side: b\n');
+    await b.commit('B changes both');
+    await b.fetch();
+
+    const merged = await b.merge();
+    expect(merged.conflicts.map((conflict) => conflict.path).sort()).toEqual([changed, deleted].sort());
+    expect(await b.conflictSides?.(changed)).toEqual({ mine: 'side: b\n', theirs: 'side: a\n' });
+    expect(await b.conflictSides?.(deleted)).toEqual({ mine: 'side: b\n', theirs: null });
+
+    await b.resolve(changed, 'theirs');
+    await b.resolve(deleted, 'mine');
+    await b.finishMerge();
+    expect(await fixture.readB(changed)).toBe('side: a\n');
+    expect(await fixture.readB(deleted)).toBe('side: b\n');
+  });
 }

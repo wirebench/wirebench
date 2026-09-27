@@ -22,8 +22,8 @@
  */
 
 import type { SyncSettings } from '@wirebench/engine';
-import { commitMessage, isWirebenchError, WirebenchError } from '@wirebench/engine';
-import type { RemoteEvent, SyncBackend } from './backend.js';
+import { commitMessage, isTeamSecretsPath, isWirebenchError, WirebenchError } from '@wirebench/engine';
+import type { ConflictSides, RemoteEvent, SyncBackend } from './backend.js';
 import { STOP_POLLING_CODES } from './server-backend.js';
 import type { SyncConflictWire, SyncLogEntryWire, SyncStatusWire } from './types.js';
 
@@ -89,6 +89,14 @@ export interface SyncServiceDeps {
   onScanChange?: (listener: () => void) => () => void;
   /** True while an open project has edits not yet written; a released hold then waits for the save. */
   unsaved?: () => boolean;
+  /**
+   * Decides the conflicts the sync settles itself (team-secrets §3.5: whole-file vault entries). Each path in
+   * the answer is resolved to that side; the rest go to `onConflict`. `sides` reads both versions of a path.
+   */
+  resolveConflicts?: (
+    conflicts: readonly SyncConflictWire[],
+    sides: (path: string) => Promise<ConflictSides>,
+  ) => Promise<ReadonlyMap<string, 'mine' | 'theirs'>>;
   /** Stamps `lastSyncAt` when a backend does not report its own. */
   now?: () => Date;
   setTimer?: typeof setTimeout;
@@ -408,6 +416,54 @@ export class SyncService {
       });
   }
 
+  /**
+   * The commit identity, read from the backend directly rather than queued: a pull's `onPulled` runs inside a
+   * queued operation and asks for it (plan decision 14). Reading config races nothing.
+   */
+  identity(): Promise<{ name: string; email: string } | undefined> {
+    return this.backend.identity();
+  }
+
+  /** Server shares: sends a team-secrets key request through the server's route, then fetches (§3.2). */
+  requestTeamSecretsKey(keyId: string, content: string): Promise<void> {
+    return this.run(async () => {
+      const request = this.backend.requestTeamSecretsKey?.bind(this.backend);
+      if (request === undefined) {
+        throw new WirebenchError('sync-not-supported', 'This share has no key-request route.');
+      }
+      await request(keyId, content);
+      await this.fetchNow();
+    });
+  }
+
+  /** Server shares: the emails of the people with a role in the workspace, when this account may ask. */
+  workspaceMembers(): Promise<readonly string[] | undefined> {
+    return this.run(async () => await this.backend.workspaceMembers?.());
+  }
+
+  /**
+   * Team secrets wrote into the tree (§3.3). With commit-on-save it commits now — under `message` when only
+   * `team-secrets/` changed, under the generated message when other saves ride along — and pushes as a save
+   * would. Held like any automatic commit while possible secrets wait for review. Never throws.
+   */
+  afterTeamSecretsWrite(message: string): void {
+    if (this.stopped || !this.canSync() || !this.deps.settings().commitOnSave) {
+      return;
+    }
+    void this.run(async () => {
+      const commit: PendingCommit = { message: undefined, autosave: false, push: true };
+      if (await this.holdForSecrets(commit)) {
+        return;
+      }
+      const changes = await this.backend.changedPaths();
+      if (changes.length === 0) {
+        return;
+      }
+      const onlyTeamSecrets = changes.every((change) => isTeamSecretsPath(change.path));
+      await this.commitThenMaybePush({ ...commit, message: onlyTeamSecrets ? message : undefined });
+    }).catch(() => undefined);
+  }
+
   // ——— internals: each runs inside an operation already holding the queue ———————————————
 
   private run<T>(op: () => Promise<T>): Promise<T> {
@@ -697,14 +753,41 @@ export class SyncService {
     }
     const { conflicts, changedPaths } = await this.backend.merge();
     if (conflicts.length > 0) {
+      const left = await this.autoResolve(conflicts);
+      if (left.length > 0) {
+        await this.probeNow();
+        this.deps.onConflict(left);
+        return;
+      }
+      // Every conflict was a whole-file value settled above: finish as `resolve` does for the last one.
+      const merged = await this.backend.finishMerge();
       await this.probeNow();
-      this.deps.onConflict(conflicts);
+      if (merged.changedPaths.length > 0) {
+        await this.deps.onPulled(merged.changedPaths);
+      }
       return;
     }
     if (changedPaths.length > 0) {
       await this.deps.onPulled(changedPaths);
     }
     await this.probeNow();
+  }
+
+  /** Resolves what `deps.resolveConflicts` answers; returns the conflicts still open. */
+  private async autoResolve(conflicts: readonly SyncConflictWire[]): Promise<SyncConflictWire[]> {
+    const decide = this.deps.resolveConflicts;
+    const sides = this.backend.conflictSides?.bind(this.backend);
+    if (decide === undefined || sides === undefined) {
+      return [...conflicts];
+    }
+    const decisions = await decide(conflicts, sides);
+    if (decisions.size === 0) {
+      return [...conflicts];
+    }
+    for (const [path, side] of decisions) {
+      await this.backend.resolve(path, side);
+    }
+    return await this.backend.conflicts();
   }
 
   private scheduleSaveCommit(): void {

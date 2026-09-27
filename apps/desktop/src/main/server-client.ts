@@ -25,6 +25,7 @@ import {
   teamMemberSchema,
   teamMembersResponseSchema,
   teamSchema,
+  teamSecretsKeyRequestResponseSchema,
   teamsResponseSchema,
   teamWorkspaceSchema,
   teamWorkspacesResponseSchema,
@@ -55,6 +56,8 @@ import {
   type TeamInvitationCreateRequest,
   type TeamMember,
   type TeamRole,
+  type TeamSecretsKeyRequest,
+  type TeamSecretsKeyRequestResponse,
   type TeamWorkspace,
   type TeamWorkspaceCreateRequest,
   type TeamWorkspaceUpdateRequest,
@@ -310,6 +313,22 @@ export class ServerClient {
       path: `${workspacePath(workspaceId)}/access`,
       token,
       schema: accessResponseSchema,
+    });
+  }
+
+  /** team-secrets §5.1: adds this machine's key request as a server-authored commit. */
+  requestTeamSecretsKey(
+    url: string,
+    token: string,
+    workspaceId: string,
+    body: TeamSecretsKeyRequest,
+  ): Promise<TeamSecretsKeyRequestResponse> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/team-secrets/key-requests`,
+      token,
+      body,
+      schema: teamSecretsKeyRequestResponseSchema,
     });
   }
 
