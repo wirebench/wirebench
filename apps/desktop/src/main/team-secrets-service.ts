@@ -27,6 +27,7 @@ import {
   nextAccessEntryId,
   openVaultEntry,
   parseMachineKeys,
+  parseSecretPseudoRef,
   readTeamSecretsFiles,
   replayAccessLog,
   rotateMarks,
@@ -82,7 +83,7 @@ export const TEAM_SECRETS_OFF: TeamSecretsStatusWire = {
 
 export type TeamSecretsStore = Pick<
   SecretStore,
-  'get' | 'getMachineOnly' | 'set' | 'put' | 'delete' | 'findByLabel' | 'list' | 'encryptionAvailable'
+  'get' | 'getMachineOnly' | 'set' | 'putMachineOnly' | 'delete' | 'findByLabel' | 'list' | 'encryptionAvailable'
 >;
 
 /** One secret the workspace's projects use. */
@@ -386,6 +387,73 @@ export class TeamSecretsService {
     });
   }
 
+  /** §3.3: the value a save stored on this machine, into the vault for every approved key. */
+  recordValue(secret: SecretKey, label: string, value: string): Promise<void> {
+    return this.enqueue(async () => {
+      const ws = this.attached;
+      if (ws === undefined) {
+        return;
+      }
+      const view = await this.load(ws);
+      if (!this.canWriteVault(view) || view.me === undefined) {
+        if (view.access.on) {
+          await this.emit(ws); // the "Only on this machine" mark (plan decision 17)
+        }
+        return;
+      }
+      const id = vaultEntryId(secret);
+      const existing = view.files.values.get(id);
+      if (existing !== undefined && existing.label === label && openVaultEntry(existing, view.me) === value) {
+        return;
+      }
+      const entry = buildVaultEntry({
+        secret,
+        label,
+        value,
+        recipients: approvedRecipients(view.access),
+        signer: view.me,
+        at: this.clock().toISOString(),
+      });
+      await this.write(ws, new Map([[vaultEntryPath(id), teamSecretsFileText(entry)]]));
+      ws.afterWrite(`Update secret ${label}`);
+      await this.emit(ws);
+    });
+  }
+
+  /** Plan decision 18: a value deleted on an approved machine leaves the vault too. */
+  forget(secret: SecretKey, label: string): Promise<void> {
+    return this.enqueue(async () => {
+      const ws = this.attached;
+      if (ws === undefined) {
+        return;
+      }
+      const view = await this.load(ws);
+      const id = vaultEntryId(secret);
+      if (!this.canWriteVault(view) || !view.files.values.has(id)) {
+        return;
+      }
+      await this.write(ws, new Map([[vaultEntryPath(id), null]]));
+      ws.afterWrite(`Delete secret ${label}`);
+      await this.emit(ws);
+    });
+  }
+
+  /**
+   * §3.2: whether a send that found no value should say this machine is waiting for approval. Reads
+   * the state the last load cached, so the send path never waits on the tree.
+   */
+  waitingFor(ref: string, projectId: string | undefined): boolean {
+    if (!this.cache.on || this.cache.approved) {
+      return false;
+    }
+    const name = parseSecretPseudoRef(ref);
+    if (name !== undefined && projectId === undefined) {
+      return false;
+    }
+    const secret: SecretKey = name === undefined ? { ref } : { token: { projectId: projectId!, name } };
+    return this.cache.vaultIds.has(vaultEntryId(secret));
+  }
+
   // ——— internals ——————————————————————————————————————————————————————————————————————————
 
   protected enqueue<T>(op: () => Promise<T>): Promise<T> {
@@ -434,7 +502,7 @@ export class TeamSecretsService {
     if (existing === undefined) {
       await this.deps.store.set(serializeMachineKeys(keys), { label });
     } else {
-      await this.deps.store.put(existing, serializeMachineKeys(keys));
+      await this.deps.store.putMachineOnly(existing, serializeMachineKeys(keys));
     }
     return keys;
   }

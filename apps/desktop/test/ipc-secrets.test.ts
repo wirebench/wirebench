@@ -103,6 +103,17 @@ describe('registerSecretsChannels', () => {
     expect(await store.getMachineOnly(key)).toBe('{"private":"k"}');
   });
 
+  it('refuses to set a value under a machine-only label, so the renderer cannot plant a fake machine key', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    registerSecretsChannels(store, new ShowSecretsFlag());
+
+    expect(await invoke('secrets.set', { value: 'x', label: `${TEAM_KEY_LABEL_PREFIX}ws-1` })).toMatchObject({
+      ok: false,
+      error: { code: 'secret-machine-only' },
+    });
+    expect(await store.findByLabel(`${TEAM_KEY_LABEL_PREFIX}ws-1`)).toBeUndefined();
+  });
+
   it('setShowSecrets toggles the injected flag', async () => {
     const store = new SecretStore(dir, fakeCrypto());
     const flag = new ShowSecretsFlag();

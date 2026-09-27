@@ -190,4 +190,27 @@ describe('SecretStore machine-only entries (team secrets)', () => {
     expect(await store.isMachineOnly(kept)).toBe(true);
     expect(await store.isMachineOnly(plain)).toBe(false);
   });
+
+  it('refuses replace and put on a ref already carrying a machine-only entry; putMachineOnly still writes it', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    const key = await store.set('{"private":"k"}', { label: `${TEAM_KEY_LABEL_PREFIX}ws-1` });
+
+    await expect(store.replace(key, 'x')).rejects.toMatchObject({ code: 'secret-machine-only' });
+    await expect(store.put(key, 'x')).rejects.toMatchObject({ code: 'secret-machine-only' });
+    expect(await store.getMachineOnly(key)).toBe('{"private":"k"}');
+
+    await store.putMachineOnly(key, '{"private":"k2"}');
+    expect(await store.getMachineOnly(key)).toBe('{"private":"k2"}');
+  });
+
+  it('never lets put or replace turn an ordinary entry machine-only, or the reverse', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    const plain = await store.set('value', { label: 'Password' });
+
+    // Neither refuses an ordinary ref: the guard only fires when the EXISTING entry is machine-only.
+    await store.replace(plain, 'value2');
+    await store.put(plain, 'value3');
+    expect(await store.get(plain)).toBe('value3');
+    expect(await store.isMachineOnly(plain)).toBe(false);
+  });
 });

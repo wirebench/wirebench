@@ -619,3 +619,70 @@ describe('TeamSecretsService — the send cache', () => {
     expect(probe.cacheNow()).toMatchObject({ on: false, approved: false });
   });
 });
+
+describe('TeamSecretsService — saving values (§3.3)', () => {
+  it('writes a value an approved machine saves, sealed for every approved key, and deletes it again', async () => {
+    const { a, b } = await aliceAndBob();
+    const other = { ref: 'sec_abcdefabcdefabcdefabcdefab' };
+
+    await b.service.recordValue(other, 'Token', 'tok-123');
+
+    expect(b.commits.at(-1)).toBe('Update secret Token');
+    const entry = await vaultEntry(other.ref);
+    expect(Object.keys(entry.wraps).sort()).toEqual(
+      [(await a.service.status()).me.keyId!, (await b.service.status()).me.keyId!].sort(),
+    );
+    expect(await treeText()).not.toContain('tok-123');
+
+    await b.service.recordValue(other, 'Token', 'tok-123');
+    expect(b.commits.filter((message) => message === 'Update secret Token')).toHaveLength(1);
+
+    await b.service.forget(other, 'Token');
+    expect(b.commits.at(-1)).toBe('Delete secret Token');
+    await expect(vaultEntry(other.ref)).rejects.toThrow();
+  });
+
+  it('keeps a value local on a machine that is not approved, or is a server viewer', async () => {
+    const a = machine('Alice');
+    await a.service.turnOn();
+    const b = machine('Bob');
+    await b.service.afterPull([]);
+    b.uses = [{ secret: { ref: REF } }];
+    await b.store.put(REF, 'mine-only', { label: 'Password' });
+
+    await b.service.recordValue({ ref: REF }, 'Password', 'mine-only');
+
+    expect(b.commits).toEqual(['Request team secrets access for Bob']);
+    expect((await b.service.status()).localOnly).toEqual([{ ref: REF }]);
+  });
+
+  it('keeps an approved server viewer’s value local until the role allows writing (plan decision 13)', async () => {
+    const admin = machine('Ann', { kind: 'server', role: 'admin' });
+    await admin.service.turnOn();
+    const viewer = machine('Vic', { kind: 'server', role: 'viewer' });
+    await viewer.service.afterPull([]);
+    await new Promise((resolve) => setImmediate(resolve));
+    await admin.service.approve((await viewer.service.status()).me.keyId!);
+
+    await viewer.service.recordValue({ ref: REF }, 'Password', 'viewer-value');
+    await expect(vaultEntry()).rejects.toThrow();
+
+    viewer.role = 'editor';
+    await viewer.service.recordValue({ ref: REF }, 'Password', 'editor-value');
+    expect((await vaultEntry()).label).toBe('Password');
+    expect(await treeText()).not.toContain('editor-value');
+  });
+
+  it('says a machine is waiting for a value the vault holds for it', async () => {
+    const a = machine('Alice');
+    await a.store.put(REF, 'hunter2', { label: 'Password' });
+    a.uses = [{ secret: { ref: REF } }];
+    await a.service.turnOn();
+    const b = machine('Bob');
+    await b.service.afterPull([]);
+
+    expect(b.service.waitingFor(REF, undefined)).toBe(true);
+    expect(b.service.waitingFor('sec_ffffffffffffffffffffffffff', undefined)).toBe(false);
+    expect(a.service.waitingFor(REF, undefined)).toBe(false);
+  });
+});

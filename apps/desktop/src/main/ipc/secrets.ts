@@ -19,6 +19,9 @@ export function registerSecretsChannels(
   showSecrets: { get(): boolean; set(show: boolean): void },
 ): void {
   registerHandler(channels.secrets.set, async (request) => {
+    if (isMachineOnlyLabel(request.label)) {
+      throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
+    }
     const ref = await secrets.set(request.value, request.label !== undefined ? { label: request.label } : undefined);
     return { ref };
   });

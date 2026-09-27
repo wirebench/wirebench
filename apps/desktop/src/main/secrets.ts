@@ -20,6 +20,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { WirebenchError } from '@wirebench/engine';
 
 /** The pluggable encryption backend. Electron's `safeStorage` satisfies this shape directly. */
 export interface CryptoBackend {
@@ -246,16 +247,8 @@ export class SecretStore {
   /** Replaces the value stored under an existing `ref`, keeping the same ref and label. */
   replace(ref: string, value: string): Promise<string> {
     return this.enqueue(async () => {
-      const existing = this.data.entries[ref];
-      const { blob, encrypted } = this.encode(value);
-      const entry: SecretEntry = {
-        value: blob,
-        encrypted,
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-        ...(existing?.label !== undefined ? { label: existing.label } : {}),
-      };
-      this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
-      await this.persist();
+      this.refuseMachineOnly(ref);
+      await this.putEntry(ref, value, {});
       return ref;
     });
   }
@@ -263,22 +256,46 @@ export class SecretStore {
   /**
    * Stores `value` under the given `ref`, creating the entry when it does not exist (team secrets write a
    * ref the tree already names). An existing entry keeps its label and creation time; `opts.label` names a
-   * new one.
+   * new one. Refuses a ref whose existing entry is machine-only — a value write must never overwrite a
+   * machine key or a kept replaced value; {@link putMachineOnly} is for those.
    */
   put(ref: string, value: string, opts?: { label?: string }): Promise<void> {
     return this.enqueue(async () => {
-      const existing = this.data.entries[ref];
-      const { blob, encrypted } = this.encode(value);
-      const label = existing?.label ?? opts?.label;
-      const entry: SecretEntry = {
-        value: blob,
-        encrypted,
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-        ...(label !== undefined ? { label } : {}),
-      };
-      this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
-      await this.persist();
+      this.refuseMachineOnly(ref);
+      await this.putEntry(ref, value, opts ?? {});
     });
+  }
+
+  /**
+   * Like {@link put}, for team secrets' own machine-only entries (this machine's key pair, a value another
+   * machine replaced): the only writer allowed to touch a ref already carrying a machine-only label.
+   */
+  putMachineOnly(ref: string, value: string, opts?: { label?: string }): Promise<void> {
+    return this.enqueue(async () => {
+      await this.putEntry(ref, value, opts ?? {});
+    });
+  }
+
+  /** Throws `secret-machine-only` when `ref` already names a machine-only entry. Call inside `enqueue`. */
+  private refuseMachineOnly(ref: string): void {
+    if (isMachineOnlyLabel(this.data.entries[ref]?.label)) {
+      throw new WirebenchError('secret-machine-only', 'That entry belongs to team secrets and cannot be changed here.');
+    }
+  }
+
+  /** The shared write behind `replace`, `put` and `putMachineOnly`: keeps an existing label unless `opts.label` names one. */
+  private async putEntry(ref: string, value: string, opts: { label?: string }): Promise<void> {
+    const existing = this.data.entries[ref];
+    const { blob, encrypted } = this.encode(value);
+    const label = existing?.label ?? opts.label;
+    const entry: SecretEntry = {
+      value: blob,
+      encrypted,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      ...(label !== undefined ? { label } : {}),
+    };
+    this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
+    await this.persist();
   }
 
   /** Whether values are really encrypted at rest here; team secrets refuse to make a key without it. */
