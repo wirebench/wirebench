@@ -4486,6 +4486,7 @@ export const teamSecretsUntrustedWireSchema = z.object({
   label: z.string(),
   reason: z.enum(['rolled-back']).optional(),
 });
+export type TeamSecretsUntrustedWire = z.infer<typeof teamSecretsUntrustedWireSchema>;
 export const teamSecretsReplacedWireSchema = z.object({
   entryId: teamSecretsIdSchema,
   label: z.string(),

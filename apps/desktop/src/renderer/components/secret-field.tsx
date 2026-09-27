@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ipc } from '../state/ipc-client.js';
+import { useTeamSecretsStore } from '../state/team-secrets.js';
 import { Button } from './button.js';
 
 export interface SecretFieldProps {
@@ -40,6 +41,15 @@ export function SecretField({ value, onChange, label, disabled, registerFlush, n
   // renders exactly like 'present', to avoid flicker) until a probe confirms one way or the
   // other — only a confirmed `exists → false` shows the "Not on this machine" state.
   const [presence, setPresence] = useState<'unknown' | 'present' | 'missing'>('unknown');
+  // Team secrets (team-secrets spec §4.3): a value that stays on this machine, or one a removed member could read.
+  const localOnly = useTeamSecretsStore(
+    (state) => value !== undefined && state.status.localOnly.some((secret) => 'ref' in secret && secret.ref === value),
+  );
+  const rotate = useTeamSecretsStore((state) =>
+    value === undefined
+      ? undefined
+      : state.status.rotate.find((mark) => 'ref' in mark.secret && mark.secret.ref === value),
+  );
   const inputId = useId();
   // `commit` is recreated every render (it closes over the draft), so the flush callback is
   // kept in a ref and re-pointed rather than re-registered on every keystroke.
@@ -162,6 +172,24 @@ export function SecretField({ value, onChange, label, disabled, registerFlush, n
           'Not set'
         )}
       </span>
+      {localOnly && !missing && (
+        <span
+          data-testid="secret-local-only"
+          className="text-xs text-fg-subtle"
+          title="Team secrets are not shared from this machine yet."
+        >
+          Only on this machine
+        </span>
+      )}
+      {rotate !== undefined && (
+        <span
+          data-testid="secret-rotate"
+          className="text-xs text-status-warning"
+          title={`${rotate.removedNames.join(', ')} could read this value. Change it where it is issued.`}
+        >
+          Rotate
+        </span>
+      )}
       <Button disabled={disabled} onClick={() => setEditing(true)}>
         {missing ? 'Enter…' : value !== undefined ? 'Replace…' : 'Set…'}
       </Button>

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SecretField } from '../../src/renderer/components/secret-field.js';
+import { TEAM_SECRETS_OFF_STATUS, useTeamSecretsStore } from '../../src/renderer/state/team-secrets.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 
 afterEach(() => {
@@ -208,5 +209,39 @@ describe('SecretField', () => {
       expect(exists).not.toHaveBeenCalled();
       expect(screen.queryByTestId('secret-missing')).toBeNull();
     });
+  });
+});
+
+describe('SecretField — team secrets marks', () => {
+  afterEach(() => {
+    cleanup();
+    useTeamSecretsStore.getState().reset();
+  });
+
+  it('marks a value that is only on this machine, and one to rotate', async () => {
+    installWirebenchApi({ secrets: { exists: vi.fn().mockResolvedValue({ ok: true, value: { exists: true } }) } });
+    useTeamSecretsStore.setState({
+      status: {
+        ...TEAM_SECRETS_OFF_STATUS,
+        on: true,
+        localOnly: [{ ref: 'sec_local' }],
+        rotate: [
+          {
+            entryId: 'CCCCCCCCCCCCCCCCCCCCCCCCCC',
+            label: 'Password',
+            secret: { ref: 'sec_old' },
+            removedNames: ['Cy'],
+          },
+        ],
+      },
+    });
+    const { rerender } = render(<SecretField value="sec_local" label="Password" onChange={() => undefined} />);
+    expect(screen.getByTestId('secret-local-only').textContent).toBe('Only on this machine');
+    expect(screen.queryByTestId('secret-rotate')).toBeNull();
+
+    rerender(<SecretField value="sec_old" label="Password" onChange={() => undefined} />);
+    expect(screen.getByTestId('secret-rotate').textContent).toBe('Rotate');
+    expect(screen.getByTestId('secret-rotate').getAttribute('title')).toContain('Cy');
+    await waitFor(() => expect(screen.queryByTestId('secret-local-only')).toBeNull());
   });
 });

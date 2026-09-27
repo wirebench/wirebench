@@ -12,6 +12,7 @@ import { workspaceActions } from '../workspace/workspace-actions.js';
 import { formatRelative } from './relative-time.js';
 import { syncBadgeLabel } from './sync-badge.js';
 import { SYNC_ACTION_LABELS, syncCodeInfo, VIEWER_PUSH_REASON } from './sync-codes.js';
+import { TeamSecretsSection } from './team-secrets-section.js';
 import { useNow } from './use-now.js';
 
 /**
@@ -359,6 +360,8 @@ export function SyncPanel() {
                 </ul>
               </SettingsGroup>
             )}
+
+            <TeamSecretsSection />
 
             <SettingsGroup title="Recent commits">
               {logEntries.length === 0 ? (

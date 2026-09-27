@@ -3,6 +3,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SyncBadge, syncBadgeLabel } from '../../src/renderer/features/sync/sync-badge.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
+import { TEAM_SECRETS_OFF_STATUS, useTeamSecretsStore } from '../../src/renderer/state/team-secrets.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { workspaceWire } from '../helpers/workspace-wire.js';
@@ -72,6 +73,7 @@ describe('SyncBadge', () => {
     cleanup();
     useWorkspaceStore.setState({ workspace: null });
     useSyncStore.getState().reset();
+    useTeamSecretsStore.getState().reset();
     useUiStore.setState({ syncPanelOpen: false });
   });
 
@@ -199,5 +201,34 @@ describe('SyncBadge live dot (live-updates §3.4, §5.4)', () => {
       useSyncStore.setState({ status: { ...BASE, kind: 'server', live: 'off' } });
     });
     expect(screen.queryByTestId('sync-live-dot')).toBeNull();
+  });
+
+  it('counts the machines waiting for an admin who can approve them', () => {
+    useWorkspaceStore.setState({ workspace: workspaceWire({ share: { kind: 'git', managed: true } }) });
+    useSyncStore.setState({
+      status: { kind: 'git', gitAvailable: true, state: 'clean', ahead: 0, behind: 0, uncommitted: 0 },
+    });
+    useTeamSecretsStore.setState({
+      status: {
+        ...TEAM_SECRETS_OFF_STATUS,
+        on: true,
+        canManage: true,
+        pending: [
+          {
+            keyId: 'BBBBBBBBBBBBBBBBBBBBBBBBBB',
+            name: 'Ben',
+            email: '',
+            machine: 'm',
+            fingerprint: 'f',
+            requestedAt: '2026-09-26T10:00:00.000Z',
+            admin: false,
+            mine: false,
+          },
+        ],
+      },
+    });
+    render(<SyncBadge />);
+    expect(screen.getByTestId('status-bar-sync').textContent).toContain('Up to date · 1 waiting');
+    expect(screen.getByTestId('status-bar-sync').getAttribute('data-state')).toBe('clean');
   });
 });
