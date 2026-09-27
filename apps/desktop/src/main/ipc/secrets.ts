@@ -4,6 +4,14 @@ import { isMachineOnlyLabel, type SecretStore } from '../secrets.js';
 import { registerHandler } from './register.js';
 
 /**
+ * `secrets` is the team-aware store in production ({@link TeamSecretStore}, which wraps the raw
+ * keychain-backed store to also seal saves into the vault) and a plain {@link SecretStore} in
+ * `ipc-secrets.test.ts`. Either way, these guards — refusing a machine-only ref, omitting
+ * machine-only entries from `list` — run here, in front of whichever store is passed in.
+ */
+type SecretsFor = Pick<SecretStore, 'set' | 'replace' | 'exists' | 'delete' | 'list' | 'isMachineOnly'>;
+
+/**
  * Registers the `secrets.*` IPC channels against the shared {@link SecretStore}.
  *
  * Deliberately NO `secrets.get` handler: the renderer can create (`set`), rotate (`replace`),
@@ -15,7 +23,7 @@ import { registerHandler } from './register.js';
  * `delete` refuse them.
  */
 export function registerSecretsChannels(
-  secrets: SecretStore,
+  secrets: SecretsFor,
   showSecrets: { get(): boolean; set(show: boolean): void },
 ): void {
   registerHandler(channels.secrets.set, async (request) => {

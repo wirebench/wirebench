@@ -208,6 +208,10 @@ import {
   secretScanSetValueResponseSchema,
   secretScanTokensRequestSchema,
   secretScanTokensResponseSchema,
+  teamSecretsStatusWireSchema,
+  teamSecretsKeyActionRequestSchema,
+  teamSecretsEntryActionRequestSchema,
+  teamSecretsChangedEventSchema,
   xmlCompletionsRequestSchema,
   xmlCompletionsResponseSchema,
   xmlPathRequestSchema,
@@ -833,6 +837,32 @@ export const channels = {
     tokens: defineChannel('secretScan.tokens', secretScanTokensRequestSchema, secretScanTokensResponseSchema),
     setValue: defineChannel('secretScan.setValue', secretScanSetValueRequestSchema, secretScanSetValueResponseSchema),
   },
+  // Team secrets in the open shared workspace (team-secrets spec §4). Nothing here carries a value
+  // or a private key in either direction: ids, names, fingerprints and labels only.
+  teamSecrets: {
+    status: defineChannel('teamSecrets.status', z.undefined(), teamSecretsStatusWireSchema),
+    turnOn: defineChannel('teamSecrets.turnOn', z.undefined(), teamSecretsStatusWireSchema),
+    requestAccess: defineChannel('teamSecrets.requestAccess', z.undefined(), teamSecretsStatusWireSchema),
+    approve: defineChannel('teamSecrets.approve', teamSecretsKeyActionRequestSchema, teamSecretsStatusWireSchema),
+    decline: defineChannel('teamSecrets.decline', teamSecretsKeyActionRequestSchema, teamSecretsStatusWireSchema),
+    remove: defineChannel('teamSecrets.remove', teamSecretsKeyActionRequestSchema, teamSecretsStatusWireSchema),
+    grantAdmin: defineChannel('teamSecrets.grantAdmin', teamSecretsKeyActionRequestSchema, teamSecretsStatusWireSchema),
+    revokeAdmin: defineChannel(
+      'teamSecrets.revokeAdmin',
+      teamSecretsKeyActionRequestSchema,
+      teamSecretsStatusWireSchema,
+    ),
+    restoreMine: defineChannel(
+      'teamSecrets.restoreMine',
+      teamSecretsEntryActionRequestSchema,
+      teamSecretsStatusWireSchema,
+    ),
+    dismissReplaced: defineChannel(
+      'teamSecrets.dismissReplaced',
+      teamSecretsEntryActionRequestSchema,
+      teamSecretsStatusWireSchema,
+    ),
+  },
   // Re-reads one cached exchange, redacted per the show-secrets flag as it stands *now*, so a
   // toggle can reveal (or re-hide) an entry the HTTP log already holds.
   exchanges: {
@@ -1020,6 +1050,10 @@ export const events = {
     statusChanged: defineEvent('sync.statusChanged', syncStatusChangedEventSchema),
     pulled: defineEvent('sync.pulled', syncPulledEventSchema),
     conflict: defineEvent('sync.conflict', syncConflictEventSchema),
+  },
+  teamSecrets: {
+    /** The open shared workspace's team-secrets status changed (a pull, an approval, a save). */
+    changed: defineEvent('teamSecrets.changed', teamSecretsChangedEventSchema),
   },
   account: {
     /** The list of known servers changed (sign-in, sign-out, removal, a token the server refused). */

@@ -68,6 +68,7 @@ describe('buildApi', () => {
       'ssl',
       'sync',
       'team',
+      'teamSecrets',
       'theme',
       'validate',
       'workspace',

@@ -4520,6 +4520,15 @@ export const teamSecretsStatusWireSchema = z.object({
 });
 export type TeamSecretsStatusWire = z.infer<typeof teamSecretsStatusWireSchema>;
 
+export const teamSecretsKeyActionRequestSchema = z.object({ keyId: teamSecretsIdSchema });
+export type TeamSecretsKeyActionRequest = z.infer<typeof teamSecretsKeyActionRequestSchema>;
+export const teamSecretsEntryActionRequestSchema = z.object({ entryId: teamSecretsIdSchema });
+export type TeamSecretsEntryActionRequest = z.infer<typeof teamSecretsEntryActionRequestSchema>;
+
+/** Payload for `teamSecrets.changed`: the open shared workspace's team-secrets status, as `teamSecrets.status` answers. */
+export const teamSecretsChangedEventSchema = z.object({ workspaceId: z.string(), status: teamSecretsStatusWireSchema });
+export type TeamSecretsChangedEvent = z.infer<typeof teamSecretsChangedEventSchema>;
+
 /** One entry of a backend's commit history, newest first. */
 export const syncLogEntryWireSchema = z.object({
   id: z.string(),

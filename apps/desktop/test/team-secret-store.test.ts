@@ -32,6 +32,7 @@ function rawStore() {
         })),
       ),
     ),
+    isMachineOnly: vi.fn(() => Promise.resolve(false)),
   };
 }
 

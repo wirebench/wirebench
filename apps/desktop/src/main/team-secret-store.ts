@@ -24,7 +24,7 @@ function displayLabel(secret: SecretKey, label: string | undefined, ref: string)
   return 'token' in secret ? secret.token.name : (label ?? ref);
 }
 
-type RawStore = Pick<SecretStore, 'set' | 'replace' | 'exists' | 'delete' | 'findByLabel' | 'list'>;
+type RawStore = Pick<SecretStore, 'set' | 'replace' | 'exists' | 'delete' | 'findByLabel' | 'list' | 'isMachineOnly'>;
 
 export class TeamSecretStore implements RawStore {
   constructor(
@@ -67,6 +67,14 @@ export class TeamSecretStore implements RawStore {
 
   list(): ReturnType<SecretStore['list']> {
     return this.raw.list();
+  }
+
+  /**
+   * Delegates straight to the raw store: the `secrets.*` IPC guards (refuse replace/delete, omit
+   * from list) run in front of this wrapper and need this check untouched by team secrets.
+   */
+  isMachineOnly(ref: string): Promise<boolean> {
+    return this.raw.isMachineOnly(ref);
   }
 
   private async labelOf(ref: string): Promise<string | undefined> {

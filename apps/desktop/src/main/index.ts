@@ -32,6 +32,8 @@ import { safeStorageBackend, SecretStore, ShowSecretsFlag } from './secrets.js';
 import { recordSecretValue } from './redact.js';
 import { projectSecretGetter } from './secret-resolver.js';
 import { SecretScanSessions } from './secret-scan-session.js';
+import { TeamSecretsService } from './team-secrets-service.js';
+import { TeamSecretStore, teamSecretGetter } from './team-secret-store.js';
 import { events } from '../shared/ipc.js';
 import { emitEvent } from './ipc/events.js';
 import { registerAppChannels } from './ipc/app.js';
@@ -74,6 +76,7 @@ import { OpenApiImportService } from './openapi-import.js';
 import { ProtoImportService } from './proto-import.js';
 import { registerSearchChannels } from './ipc/search.js';
 import { registerSecretsChannels } from './ipc/secrets.js';
+import { registerTeamSecretsChannels } from './ipc/team-secrets.js';
 import { registerSecretScanChannels } from './ipc/secret-scan.js';
 import { registerSnapshotChannels } from './ipc/snapshot.js';
 import { SnapshotStore } from './snapshot-store.js';
@@ -108,11 +111,27 @@ const secretStore = new SecretStore(app.getPath('userData'), safeStorageBackend(
 const showSecretsFlag = new ShowSecretsFlag();
 
 /**
+ * Team secrets for the open shared workspace. It writes this machine's keys and the team's values
+ * into `secretStore` directly; everything the renderer saves goes through `teamSecretStore`, which
+ * stores locally and then hands the value to the vault. Sign-in tokens, OAuth refresh tokens and a
+ * cURL import stay on `secretStore`: they are this machine's, not the team's.
+ */
+const teamSecrets = new TeamSecretsService({
+  store: secretStore,
+  onChanged: (workspaceId, status) => broadcast(events.teamSecrets.changed, { workspaceId, status }),
+  log: (message) => console.warn(message),
+});
+const teamSecretStore = new TeamSecretStore(secretStore, teamSecrets);
+
+/**
  * The secret getter every send resolves through, for one project's `${secret:name}` tokens (or,
  * with no project, for plain refs only). Each value it hands out is recorded in `redact.ts`, so it
- * is masked in the HTTP log and History like any `Authorization` header.
+ * is masked in the HTTP log and History like any `Authorization` header. Team secrets gets a look
+ * first: a value this machine is waiting for refuses the send with `team-secrets-pending` instead
+ * of the plain "not on this machine".
  */
-const secretsFor = (projectId: string | undefined) => projectSecretGetter(secretStore, projectId, recordSecretValue);
+const secretsFor = (projectId: string | undefined) =>
+  teamSecretGetter(projectSecretGetter(secretStore, projectId, recordSecretValue), teamSecrets, projectId);
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
@@ -293,6 +312,7 @@ const workspaceService = new WorkspaceService({
   engine: engineService,
   globals: globalProperties,
   secrets: secretStore,
+  teamSecrets,
   preferences: preferencesService,
   picks: dialogPicks,
   history: historyService,
@@ -374,7 +394,7 @@ const workspaceService = new WorkspaceService({
 /** Each open project's secret scan: its findings, its session-only Keep list, Move to secret. */
 const secretScans: SecretScanSessions = new SecretScanSessions({
   host: (projectId) => workspaceService.hostFor(projectId),
-  store: secretStore,
+  store: teamSecretStore,
   holdAutosave: (projectId) => workspaceService.hostFor(projectId).holdAutosave(),
 });
 
@@ -568,7 +588,8 @@ void app.whenReady().then(() => {
     },
   });
   registerSearchChannels(engineService, workspaceService);
-  registerSecretsChannels(secretStore, showSecretsFlag);
+  registerSecretsChannels(teamSecretStore, showSecretsFlag);
+  registerTeamSecretsChannels(teamSecrets);
   registerSecretScanChannels(secretScans);
   registerSnapshotChannels(
     new SnapshotStore((requestId) => {
