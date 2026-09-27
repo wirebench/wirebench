@@ -145,6 +145,12 @@ which writes it again as a new change. Conflicts on `keys/` or `access/` files c
 | `team-secrets-last-approved` | removing the last approved machine | A workspace needs at least one approved machine for team secrets. |
 | `team-secrets-not-allowed` | a change to team secrets access that the current authority does not allow | That change to team secrets access is not allowed. |
 | `team-secrets-rate-limited` | a machine asks the server for team secrets access too often | Too many requests for team secrets access. Try again in a few minutes. |
+| `team-secrets-not-shared` | a team secrets action is called without an open shared workspace | Team secrets need a shared workspace. |
+| `team-secrets-no-such-key` | approving, declining, removing or changing admin on a `keyId` that is not in the state the action needs (already approved, not yet requested, already removed) | That machine is not waiting for approval, or not approved, as this change needs. |
+
+`team-secrets-server-authority` ("On a server workspace, the server roles decide who is an admin.") guards
+`grantAdmin`/`revokeAdmin` on the server authority, but the renderer only offers those buttons when
+`status.authority === 'signed'` (§5.4), so this code is not reachable from the UI in normal use.
 
 ## 4. Data model and wire
 

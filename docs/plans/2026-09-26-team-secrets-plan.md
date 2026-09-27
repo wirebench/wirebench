@@ -86,9 +86,9 @@ and tested in the task named.
 8. **A deleted side of a vault conflict** (Task 3). The side that still has the file wins (a value is never lost
    silently; deleting again is one click). An unparseable side loses.
 9. **Who sees the "replaced" notice** (Task 8). The conflict is seen by the machine that pulls second; that machine
-   keeps its losing value for **Use mine** and shows the notice. A machine whose already-pushed value is later
-   superseded by a newer concurrent one receives it as any later change. The notice has **Keep theirs** as well
-   (`teamSecrets.dismissReplaced`), which the spec's channel list lacks.
+   keeps its losing value for **Restore my value** and shows the notice. A machine whose already-pushed value is
+   later superseded by a newer concurrent one receives it as any later change. The notice has **Keep theirs** as
+   well (`teamSecrets.dismissReplaced`), which the spec's channel list now includes.
 10. **Server shares turn on after the share push** (Task 9). At share time the sharer's server role is unknown, and a
     non-admin's push touching `access/` is refused. `WorkspaceService.shareToServer` calls `turnOnIfAdmin()` after
     its catch-up push; the genesis is then its own commit ("Turn on team secrets"). Git and folder shares write it

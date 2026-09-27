@@ -157,7 +157,7 @@ machine without one, values stay local.
 - **Changing a value.** Saving a value on an approved machine commits it encrypted as *Update secret …*. Every
   other approved machine uses it after its next sync, with nothing to type.
 - **At the same time.** When two machines change one value before syncing, the newer one wins. The other
-  machine keeps its own value and offers **Use mine** or **Keep theirs**.
+  machine keeps its own value and offers **Restore my value** or **Keep theirs**.
 - **Removing.** Removing a machine re-encrypts every value without it. A removed machine may have kept what it
   could read, so every such value is marked **Rotate**: change it where it is issued. Git history keeps old
   ciphertexts, so this marks the value for rotation rather than claiming it is safe.
