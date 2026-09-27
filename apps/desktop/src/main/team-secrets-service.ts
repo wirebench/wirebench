@@ -23,11 +23,13 @@ import {
   GIT_ATTRIBUTES_FILE,
   healVaultEntry,
   isTeamSecretsPath,
+  isVaultEntryPath,
   keyRequestPath,
   nextAccessEntryId,
   openVaultEntry,
   parseMachineKeys,
   parseSecretPseudoRef,
+  parseTeamSecretsFile,
   readTeamSecretsFiles,
   replayAccessLog,
   rotateMarks,
@@ -39,10 +41,14 @@ import {
   TEAM_SECRETS_MESSAGES,
   teamSecretsError,
   teamSecretsFileText,
+  vaultConflictWinner,
+  vaultEntryFileSchema,
   vaultEntryId,
+  vaultEntryIdOfPath,
   vaultEntryPath,
   verifiedKeys,
   verifyVaultEntry,
+  wrapsUnapprovedKey,
   type AccessAction,
   type AccessEntryFile,
   type AccessState,
@@ -53,9 +59,10 @@ import {
   type TeamSecretsFiles,
   type VaultEntryFile,
 } from '@wirebench/engine';
-import type { TeamSecretsKeyWire, TeamSecretsStatusWire } from '../shared/wire-types.js';
+import type { SyncConflictWire, TeamSecretsKeyWire, TeamSecretsStatusWire } from '../shared/wire-types.js';
 import { secretStoreLabel } from './secret-resolver.js';
-import { TEAM_KEY_LABEL_PREFIX, type SecretStore } from './secrets.js';
+import { isMachineOnlyLabel, TEAM_KEY_LABEL_PREFIX, TEAM_REPLACED_LABEL_PREFIX, type SecretStore } from './secrets.js';
+import type { ConflictSides } from './sync/backend.js';
 
 /** The machine-only store labels; defined beside the store, which fences them off from secret values. */
 export { TEAM_KEY_LABEL_PREFIX, TEAM_REPLACED_LABEL_PREFIX } from './secrets.js';
@@ -83,7 +90,15 @@ export const TEAM_SECRETS_OFF: TeamSecretsStatusWire = {
 
 export type TeamSecretsStore = Pick<
   SecretStore,
-  'get' | 'getMachineOnly' | 'set' | 'putMachineOnly' | 'delete' | 'findByLabel' | 'list' | 'encryptionAvailable'
+  | 'get'
+  | 'getMachineOnly'
+  | 'set'
+  | 'put'
+  | 'putMachineOnly'
+  | 'delete'
+  | 'findByLabel'
+  | 'list'
+  | 'encryptionAvailable'
 >;
 
 /** One secret the workspace's projects use. */
@@ -129,6 +144,11 @@ const localStateSchema = z.object({
   version: z.literal(1),
   genesisId: z.string().optional(),
   seenAccess: z.array(z.string()).default([]),
+  /**
+   * Rollback protection: per vault id, the latest `updatedAt` this machine accepted after a pull. A trusted
+   * entry dated earlier is an older signed copy put back, and is refused.
+   */
+  accepted: z.record(z.string(), z.string()).default({}),
   replaced: z
     .array(
       z.object({
@@ -152,7 +172,14 @@ interface View {
   readonly local: LocalState;
   /** A remembered access entry is missing from the tree, or now fails its signature or signer (plan decision 4). */
   readonly damaged: boolean;
+  /**
+   * Vault entries the replay trusts that are still refused: an older copy than this machine accepted
+   * (`rolled-back`), or one labelled like a machine-only store entry (`machine-label`).
+   */
+  readonly refused: ReadonlyMap<string, Refusal>;
 }
+
+type Refusal = 'rolled-back' | 'machine-label';
 
 type MyState = TeamSecretsStatusWire['me']['state'];
 
@@ -197,7 +224,7 @@ async function readLocalState(dir: string): Promise<LocalState> {
   try {
     return localStateSchema.parse(JSON.parse(await readFile(join(dir, TEAM_SECRETS_LOCAL_FILE), 'utf8')));
   } catch {
-    return { version: 1, seenAccess: [], replaced: [] };
+    return { version: 1, seenAccess: [], accepted: {}, replaced: [] };
   }
 }
 
@@ -289,7 +316,7 @@ export class TeamSecretsService {
   }
 
   /** After every pull, and a folder share's outside edit under `team-secrets/`. Never throws. */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the changed paths drive Task 8's pull hook
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- every pull re-reads the whole vault
   afterPull(_paths: readonly string[]): Promise<void> {
     return this.enqueue(async () => {
       const ws = this.ws;
@@ -412,7 +439,7 @@ export class TeamSecretsService {
         value,
         recipients: approvedRecipients(view.access),
         signer: view.me,
-        at: this.clock().toISOString(),
+        at: this.nextUpdatedAt(view, id),
       });
       await this.write(ws, new Map([[vaultEntryPath(id), teamSecretsFileText(entry)]]));
       ws.afterWrite(`Update secret ${label}`);
@@ -452,6 +479,125 @@ export class TeamSecretsService {
     }
     const secret: SecretKey = name === undefined ? { ref } : { token: { projectId: projectId!, name } };
     return this.cache.vaultIds.has(vaultEntryId(secret));
+  }
+
+  /**
+   * §3.4, plan decisions 7–9: decides every conflicted vault entry (`team-secrets/values/`) — the newer value
+   * wins, a deleted, unreadable or untrusted side loses — and leaves every other path, the key requests and
+   * the access log included, to the Conflicts list. Runs inside the sync operation, so it never waits on the
+   * sync queue.
+   */
+  resolveConflicts(
+    conflicts: readonly SyncConflictWire[],
+    sides: (path: string) => Promise<ConflictSides>,
+  ): Promise<Map<string, 'mine' | 'theirs'>> {
+    return this.enqueue(async () => {
+      const decided = new Map<string, 'mine' | 'theirs'>();
+      const ws = this.attached;
+      const paths = conflicts.map((conflict) => conflict.path).filter(isVaultEntryPath);
+      if (ws === undefined || paths.length === 0) {
+        return decided;
+      }
+      const view = await this.load(ws);
+      if (!view.access.on || view.damaged) {
+        return decided;
+      }
+      let local = view.local;
+      for (const path of paths) {
+        const entryId = vaultEntryIdOfPath(path)!;
+        const both = await sides(path).catch(() => undefined);
+        if (both === undefined) {
+          continue;
+        }
+        // A side the current log does not trust never wins, however new it claims to be.
+        const usable = (text: string | null): VaultEntryFile | undefined => {
+          const entry = text === null ? undefined : parseTeamSecretsFile(vaultEntryFileSchema, text);
+          return entry !== undefined &&
+            verifyVaultEntry(entry, entryId, view.access) === 'trusted' &&
+            !isMachineOnlyLabel(entry.label)
+            ? entry
+            : undefined;
+        };
+        const mine = usable(both.mine);
+        const theirs = usable(both.theirs);
+        if (mine === undefined && theirs === undefined) {
+          continue;
+        }
+        const side = vaultConflictWinner(mine, theirs);
+        decided.set(path, side);
+        if (side !== 'theirs' || mine === undefined || theirs === undefined || view.me === undefined) {
+          continue;
+        }
+        const lost = openVaultEntry(mine, view.me);
+        if (lost === undefined || lost === openVaultEntry(theirs, view.me)) {
+          continue;
+        }
+        for (const old of local.replaced.filter((notice) => notice.entryId === entryId)) {
+          await this.deps.store.delete(old.storedRef);
+        }
+        const storedRef = await this.deps.store.set(lost, { label: `${TEAM_REPLACED_LABEL_PREFIX}${entryId}` });
+        local = {
+          ...local,
+          replaced: [
+            ...local.replaced.filter((notice) => notice.entryId !== entryId),
+            {
+              entryId,
+              label: mine.label,
+              byName: view.access.keys.get(theirs.updatedBy)?.name ?? 'Someone',
+              secret: mine.secret,
+              storedRef,
+            },
+          ],
+        };
+      }
+      if (local !== view.local) {
+        await this.saveLocal(ws, local);
+      }
+      return decided;
+    });
+  }
+
+  /** Puts this machine's replaced value back, here and (when it may write) in the vault as the newest. */
+  restoreMine(entryId: string): Promise<TeamSecretsStatusWire> {
+    return this.settleReplaced(entryId, true);
+  }
+
+  /** Keeps the value that won and forgets this machine's replaced one. */
+  dismissReplaced(entryId: string): Promise<TeamSecretsStatusWire> {
+    return this.settleReplaced(entryId, false);
+  }
+
+  private settleReplaced(entryId: string, restore: boolean): Promise<TeamSecretsStatusWire> {
+    return this.enqueue(async () => {
+      const ws = this.requireWorkspace();
+      const view = await this.load(ws);
+      const notice = view.local.replaced.find((item) => item.entryId === entryId);
+      if (notice === undefined) {
+        return await this.statusOf(view);
+      }
+      const value = restore ? await this.deps.store.getMachineOnly(notice.storedRef) : undefined;
+      if (value !== undefined) {
+        await this.importValue(notice.secret, notice.label, value);
+        if (this.canWriteVault(view) && view.me !== undefined) {
+          const entry = buildVaultEntry({
+            secret: notice.secret,
+            label: notice.label,
+            value,
+            recipients: approvedRecipients(view.access),
+            signer: view.me,
+            at: this.nextUpdatedAt(view, entryId),
+          });
+          await this.write(ws, new Map([[vaultEntryPath(entryId), teamSecretsFileText(entry)]]));
+          ws.afterWrite(`Update secret ${notice.label}`);
+        }
+      }
+      await this.deps.store.delete(notice.storedRef);
+      await this.saveLocal(ws, {
+        ...view.local,
+        replaced: view.local.replaced.filter((item) => item.entryId !== entryId),
+      });
+      return await this.emit(ws);
+    });
   }
 
   // ——— internals ——————————————————————————————————————————————————————————————————————————
@@ -534,6 +680,18 @@ export class TeamSecretsService {
         await writeLocalState(ws.dir, local);
       }
     }
+    const refused = new Map<string, Refusal>();
+    for (const [id, entry] of files.values) {
+      if (verifyVaultEntry(entry, id, access) !== 'trusted') {
+        continue;
+      }
+      const accepted = local.accepted[id];
+      if (isMachineOnlyLabel(entry.label)) {
+        refused.set(id, 'machine-label');
+      } else if (accepted !== undefined && Date.parse(entry.updatedAt) < Date.parse(accepted)) {
+        refused.set(id, 'rolled-back');
+      }
+    }
     const me = await this.myKeys(ws);
     if (ws === this.ws) {
       // A load for a workspace closed meanwhile must not stand in for the open one's.
@@ -543,7 +701,7 @@ export class TeamSecretsService {
         vaultIds: new Set(files.values.keys()),
       };
     }
-    return { ws, files, access, me, local, damaged };
+    return { ws, files, access, me, local, damaged, refused };
   }
 
   protected async saveLocal(ws: TeamSecretsWorkspace, local: LocalState): Promise<void> {
@@ -664,11 +822,28 @@ export class TeamSecretsService {
     return next;
   }
 
-  /** The vault entries the replay trusts, by id. */
+  /** The vault entries the replay trusts and this machine does not refuse, by id. */
   protected trustedValues(view: View): Map<string, VaultEntryFile> {
     return new Map(
-      [...view.files.values].filter(([id, entry]) => verifyVaultEntry(entry, id, view.access) === 'trusted'),
+      [...view.files.values].filter(
+        ([id, entry]) => verifyVaultEntry(entry, id, view.access) === 'trusted' && !view.refused.has(id),
+      ),
     );
+  }
+
+  /**
+   * The `updatedAt` for a new value of `id`: now, but always after the trusted entry it replaces and after
+   * what this machine accepted, so a machine whose clock runs behind never writes a copy others refuse as
+   * rolled back.
+   */
+  protected nextUpdatedAt(view: View, id: string): string {
+    const current = this.trustedValues(view).get(id)?.updatedAt;
+    const accepted = view.local.accepted[id];
+    const floor = Math.max(
+      current === undefined ? 0 : Date.parse(current) + 1,
+      accepted === undefined ? 0 : Date.parse(accepted) + 1,
+    );
+    return new Date(Math.max(this.now().getTime(), floor)).toISOString();
   }
 
   /** Writes (text) or removes (`null`) tree files, announcing them to the watcher first. */
@@ -833,11 +1008,90 @@ export class TeamSecretsService {
     return value === undefined ? undefined : { value, label: secret.token.name };
   }
 
-  /** Task 8 replaces this with the full pull hook; here it only asks for access. */
+  /** After a pull: ask, import, then heal, re-encrypt and backfill in one commit (§3.2, §3.4, plan decision 6). */
   protected async refreshNow(ws: TeamSecretsWorkspace): Promise<void> {
     const view = await this.load(ws);
-    if (view.access.on && !view.damaged) {
-      await this.ensureRequested(view);
+    if (!view.access.on || view.damaged) {
+      return;
+    }
+    await this.ensureRequested(view);
+    const me = view.me;
+    if (me === undefined || this.myState(view) !== 'approved') {
+      return;
+    }
+    const trusted = this.trustedValues(view);
+    for (const [id, entry] of view.files.values) {
+      if (!trusted.has(id)) {
+        const why =
+          view.refused.get(id) === 'rolled-back'
+            ? 'Ignored an older copy of a secret than the one this machine has'
+            : TEAM_SECRETS_MESSAGES['team-secrets-untrusted'];
+        this.deps.log?.(`[team-secrets] ${why} (${entry.label})`);
+      }
+    }
+    const accepted = { ...view.local.accepted };
+    for (const [id, entry] of trusted) {
+      const value = openVaultEntry(entry, me);
+      if (value !== undefined) {
+        try {
+          await this.importValue(entry.secret, entry.label, value);
+        } catch (error) {
+          // A ref naming one of this machine's own entries, which the store refuses: skip that one only.
+          this.deps.log?.(
+            `[team-secrets] could not store ${entry.label}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+      const before = accepted[id];
+      if (before === undefined || Date.parse(entry.updatedAt) > Date.parse(before)) {
+        accepted[id] = entry.updatedAt;
+      }
+    }
+    if (Object.entries(accepted).some(([id, at]) => view.local.accepted[id] !== at)) {
+      await this.saveLocal(ws, { ...view.local, accepted });
+    }
+    if (!this.canWriteVault(view)) {
+      return;
+    }
+    const files = new Map<string, string | null>();
+    const recipients = approvedRecipients(view.access);
+    for (const [id, entry] of trusted) {
+      if (wrapsUnapprovedKey(entry, view.access)) {
+        const value = openVaultEntry(entry, me);
+        if (value !== undefined) {
+          files.set(vaultEntryPath(id), teamSecretsFileText(sealVaultEntry(entry, value, recipients, me)));
+        }
+        continue;
+      }
+      const healed = healVaultEntry(entry, view.access, me);
+      if (healed !== undefined) {
+        files.set(vaultEntryPath(id), teamSecretsFileText(healed));
+      }
+    }
+    for (const [path, text] of await this.backfillFiles(view)) {
+      files.set(path, text);
+    }
+    if (files.size > 0) {
+      await this.write(ws, files);
+      ws.afterWrite('Update team secrets');
+    }
+  }
+
+  /** Stores a vault value on this machine (the raw store: nothing goes back to the vault). */
+  private async importValue(secret: SecretKey, label: string, value: string): Promise<void> {
+    const { store } = this.deps;
+    if ('ref' in secret) {
+      if ((await store.get(secret.ref)) !== value) {
+        await store.put(secret.ref, value, { label });
+      }
+      return;
+    }
+    const storeLabel = secretStoreLabel(secret.token.projectId, secret.token.name);
+    const ref = await store.findByLabel(storeLabel);
+    if (ref === undefined) {
+      await store.set(value, { label: storeLabel });
+    } else if ((await store.get(ref)) !== value) {
+      await store.put(ref, value);
     }
   }
 
@@ -901,8 +1155,12 @@ export class TeamSecretsService {
           : [],
       rotate: rotateMarks(this.trustedValues(view), access),
       untrusted: [...view.files.values]
-        .filter(([id, entry]) => verifyVaultEntry(entry, id, access) !== 'trusted')
-        .map(([entryId, entry]) => ({ entryId, label: entry.label })),
+        .filter(([id, entry]) => verifyVaultEntry(entry, id, access) !== 'trusted' || view.refused.has(id))
+        .map(([entryId, entry]) => ({
+          entryId,
+          label: entry.label,
+          ...(view.refused.get(entryId) === 'rolled-back' ? { reason: 'rolled-back' as const } : {}),
+        })),
       replaced: view.local.replaced.map(({ entryId, label, byName }) => ({ entryId, label, byName })),
       localOnly,
     };

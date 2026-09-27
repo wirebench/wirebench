@@ -4477,7 +4477,15 @@ export const teamSecretsRotateMarkWireSchema = z.object({
 });
 export type TeamSecretsRotateMarkWire = z.infer<typeof teamSecretsRotateMarkWireSchema>;
 
-export const teamSecretsUntrustedWireSchema = z.object({ entryId: teamSecretsIdSchema, label: z.string() });
+/**
+ * A vault entry this machine ignores: signed by a key the log does not approve, or (`rolled-back`) an older
+ * signed copy than the one this machine already accepted.
+ */
+export const teamSecretsUntrustedWireSchema = z.object({
+  entryId: teamSecretsIdSchema,
+  label: z.string(),
+  reason: z.enum(['rolled-back']).optional(),
+});
 export const teamSecretsReplacedWireSchema = z.object({
   entryId: teamSecretsIdSchema,
   label: z.string(),
