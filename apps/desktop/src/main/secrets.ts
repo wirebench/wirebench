@@ -245,6 +245,32 @@ export class SecretStore {
     });
   }
 
+  /**
+   * Stores `value` under the given `ref`, creating the entry when it does not exist (team secrets write a
+   * ref the tree already names). An existing entry keeps its label and creation time; `opts.label` names a
+   * new one.
+   */
+  put(ref: string, value: string, opts?: { label?: string }): Promise<void> {
+    return this.enqueue(async () => {
+      const existing = this.data.entries[ref];
+      const { blob, encrypted } = this.encode(value);
+      const label = existing?.label ?? opts?.label;
+      const entry: SecretEntry = {
+        value: blob,
+        encrypted,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+        ...(label !== undefined ? { label } : {}),
+      };
+      this.data = { version: 2, entries: { ...this.data.entries, [ref]: entry } };
+      await this.persist();
+    });
+  }
+
+  /** Whether values are really encrypted at rest here; team secrets refuse to make a key without it. */
+  encryptionAvailable(): boolean {
+    return this.crypto.available;
+  }
+
   /** Resolves a `secretRef` to its plaintext value, or `undefined` when the ref is unknown. */
   async get(ref: string): Promise<string | undefined> {
     await this.ensureLoaded();

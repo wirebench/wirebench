@@ -4445,6 +4445,73 @@ export const syncConflictWireSchema = z.object({
 });
 export type SyncConflictWire = z.infer<typeof syncConflictWireSchema>;
 
+// ---- team secrets (docs/specs/2026-09-26-team-secrets-design.md §4) -------------------------
+
+const teamSecretsIdSchema = z.string().regex(/^[A-Z2-7]{26}$/);
+
+/** Which secret: a keychain ref the tree names, or one project's `${secret:name}` token. Never a value. */
+export const teamSecretsSecretWireSchema = z.union([
+  z.object({ ref: z.string() }),
+  z.object({ token: z.object({ projectId: z.string(), name: z.string() }) }),
+]);
+export type TeamSecretsSecretWire = z.infer<typeof teamSecretsSecretWireSchema>;
+
+/** One machine key: who asked, from which machine, and the fingerprint an admin checks out of band. */
+export const teamSecretsKeyWireSchema = z.object({
+  keyId: teamSecretsIdSchema,
+  name: z.string(),
+  email: z.string(),
+  machine: z.string(),
+  fingerprint: z.string(),
+  requestedAt: z.string(),
+  admin: z.boolean(),
+  mine: z.boolean(),
+});
+export type TeamSecretsKeyWire = z.infer<typeof teamSecretsKeyWireSchema>;
+
+export const teamSecretsRotateMarkWireSchema = z.object({
+  entryId: teamSecretsIdSchema,
+  label: z.string(),
+  secret: teamSecretsSecretWireSchema,
+  removedNames: z.array(z.string()),
+});
+export type TeamSecretsRotateMarkWire = z.infer<typeof teamSecretsRotateMarkWireSchema>;
+
+export const teamSecretsUntrustedWireSchema = z.object({ entryId: teamSecretsIdSchema, label: z.string() });
+export const teamSecretsReplacedWireSchema = z.object({
+  entryId: teamSecretsIdSchema,
+  label: z.string(),
+  byName: z.string(),
+});
+export type TeamSecretsReplacedWire = z.infer<typeof teamSecretsReplacedWireSchema>;
+
+/** `teamSecrets.status` and the `teamSecrets.changed` event: ids, names, fingerprints and labels only. */
+export const teamSecretsStatusWireSchema = z.object({
+  on: z.boolean(),
+  authority: z.enum(['signed', 'server']).optional(),
+  canTurnOn: z.boolean(),
+  /** May approve, decline and remove (and, with signed authority, change admins). */
+  canManage: z.boolean(),
+  me: z.object({
+    state: z.enum(['unavailable', 'none', 'pending', 'approved', 'removed']),
+    keyId: teamSecretsIdSchema.optional(),
+    fingerprint: z.string().optional(),
+    admin: z.boolean(),
+  }),
+  /** Why this machine cannot take part, when it cannot (no keychain, a damaged log, removed). */
+  message: z.string().optional(),
+  pending: z.array(teamSecretsKeyWireSchema),
+  approved: z.array(teamSecretsKeyWireSchema),
+  /** Server shares: approved keys whose email has no role in the workspace any more (§3.6). */
+  formerMembers: z.array(teamSecretsIdSchema),
+  rotate: z.array(teamSecretsRotateMarkWireSchema),
+  untrusted: z.array(teamSecretsUntrustedWireSchema),
+  replaced: z.array(teamSecretsReplacedWireSchema),
+  /** Secrets whose value is on this machine only (plan decision 17). */
+  localOnly: z.array(teamSecretsSecretWireSchema),
+});
+export type TeamSecretsStatusWire = z.infer<typeof teamSecretsStatusWireSchema>;
+
 /** One entry of a backend's commit history, newest first. */
 export const syncLogEntryWireSchema = z.object({
   id: z.string(),

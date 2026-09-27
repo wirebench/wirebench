@@ -154,3 +154,17 @@ describe('SecretStore', () => {
     expect(await store.list()).toEqual([]);
   });
 });
+
+describe('SecretStore.put and encryptionAvailable (team secrets)', () => {
+  it('writes under a given ref, keeping an existing label, and says whether the keychain encrypts', async () => {
+    const store = new SecretStore(dir, fakeCrypto());
+    expect(store.encryptionAvailable()).toBe(true);
+    expect(new SecretStore(dir, fakeCrypto(false)).encryptionAvailable()).toBe(false);
+    await store.put('sec_0123456789abcdef0123456789', 'one', { label: 'Password' });
+    await store.put('sec_0123456789abcdef0123456789', 'two');
+    expect(await store.get('sec_0123456789abcdef0123456789')).toBe('two');
+    expect(await store.list()).toEqual([
+      expect.objectContaining({ ref: 'sec_0123456789abcdef0123456789', label: 'Password' }),
+    ]);
+  });
+});
