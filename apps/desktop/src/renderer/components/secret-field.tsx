@@ -50,6 +50,9 @@ export function SecretField({ value, onChange, label, disabled, registerFlush, n
       ? undefined
       : state.status.rotate.find((mark) => 'ref' in mark.secret && mark.secret.ref === value),
   );
+  // Every team secrets status change may have brought this ref's value in (a pull after approval) or
+  // taken it out, so the presence probe below runs again on each one.
+  const teamSecretsStatus = useTeamSecretsStore((state) => state.status);
   const inputId = useId();
   const rotateDescriptionId = useId();
   // `commit` is recreated every render (it closes over the draft), so the flush callback is
@@ -110,7 +113,7 @@ export function SecretField({ value, onChange, label, disabled, registerFlush, n
     return () => {
       cancelled = true;
     };
-  }, [value, disabled]);
+  }, [value, disabled, teamSecretsStatus]);
 
   function clear(): void {
     onChange(undefined);

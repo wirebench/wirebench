@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SecretField } from '../../src/renderer/components/secret-field.js';
 import { TEAM_SECRETS_OFF_STATUS, useTeamSecretsStore } from '../../src/renderer/state/team-secrets.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -162,6 +162,23 @@ describe('SecretField', () => {
       expect(screen.getByLabelText('Password').textContent).toBe('••••••••');
       expect(screen.getByRole('button', { name: 'Replace…' })).not.toBeNull();
       expect(screen.queryByTestId('secret-missing')).toBeNull();
+    });
+
+    it('probes again when the team secrets status changes, so a pulled team value shows as present', async () => {
+      const exists = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, value: { exists: false } })
+        .mockResolvedValue({ ok: true, value: { exists: true } });
+      installWirebenchApi({ secrets: { exists } });
+      render(<SecretField value="sec_abc" onChange={vi.fn()} label="Password" />);
+      await waitFor(() => expect(screen.queryByTestId('secret-missing')).not.toBeNull());
+
+      act(() => {
+        useTeamSecretsStore.setState({ status: { ...TEAM_SECRETS_OFF_STATUS, on: true } });
+      });
+
+      await waitFor(() => expect(screen.queryByTestId('secret-missing')).toBeNull());
+      expect(exists).toHaveBeenCalledTimes(2);
     });
 
     it('ignores a stale probe result for a value that has since changed', async () => {
