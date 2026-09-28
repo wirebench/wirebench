@@ -26,6 +26,7 @@ import type {
   OperationDef,
   Project,
   ProjectSettings,
+  PropertyMap,
   RequestDef,
   RequestProperties,
   SoapOwnerAuth,
@@ -147,6 +148,11 @@ export interface MutationDeps {
   readonly allowsKeystorePath?: (path: string) => Promise<boolean>;
   /** The slugs of sequence files the last load refused; a new or renamed sequence avoids them. */
   readonly reservedSequenceSlugs?: ReadonlySet<string>;
+  /**
+   * The properties of the workspace the project is open inside, if any: creating the webhook
+   * collection seeds `webhookTarget` only when neither the project nor these define it.
+   */
+  readonly workspaceProperties?: PropertyMap;
 }
 
 /** The outcome of one change: the next model, plus any entity the change created. */
@@ -832,26 +838,38 @@ export async function applyChange(
       return cloneRestRequest(project, change.requestId);
 
     case 'ensure-webhooks':
-      return ensureWebhooks(project);
+      return ensureWebhooks(project, deps.workspaceProperties);
 
     case 'update-webhooks':
-      return updateWebhooks(project, {
-        ...(change.patch.target !== undefined ? { target: change.patch.target } : {}),
-        ...(change.patch.auth !== undefined ? { auth: change.patch.auth } : {}),
-      });
+      return updateWebhooks(
+        project,
+        {
+          ...(change.patch.target !== undefined ? { target: change.patch.target } : {}),
+          ...(change.patch.auth !== undefined ? { auth: change.patch.auth } : {}),
+        },
+        deps.workspaceProperties,
+      );
 
     case 'add-webhook-request':
-      return addWebhookRequest(project, {
-        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
-        ...(change.name !== undefined ? { name: change.name } : {}),
-        ...(change.draft !== undefined ? { draft: change.draft } : {}),
-      });
+      return addWebhookRequest(
+        project,
+        {
+          ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+          ...(change.name !== undefined ? { name: change.name } : {}),
+          ...(change.draft !== undefined ? { draft: change.draft } : {}),
+        },
+        deps.workspaceProperties,
+      );
 
     case 'add-webhook-folder':
-      return addWebhookFolder(project, {
-        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
-        ...(change.name !== undefined ? { name: change.name } : {}),
-      });
+      return addWebhookFolder(
+        project,
+        {
+          ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+          ...(change.name !== undefined ? { name: change.name } : {}),
+        },
+        deps.workspaceProperties,
+      );
 
     case 'set-webhook-folder-target':
       return setWebhookFolderTarget(project, change.folderId, change.target);

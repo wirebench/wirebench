@@ -230,6 +230,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     );
     // Full order, no `only`: the mapped folder's requests line up one to one with the document's
     // own webhook/callback list, so a label is pulled from there rather than the plain request name.
+    const webhookItems = imported.webhooks !== undefined ? webhookItemsOf(imported.document) : [];
     const webhookGroup =
       imported.webhooks !== undefined
         ? {
@@ -237,7 +238,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
             name: imported.webhooks.name,
             items: imported.webhooks.requests.map((item, index) => ({
               id: item.id,
-              label: webhookItemsOf(imported.document)[index]?.label ?? item.name,
+              label: webhookItems[index]?.label ?? item.name,
             })),
           }
         : undefined;

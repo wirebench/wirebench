@@ -23,7 +23,7 @@ import {
   webhookFolders,
   WEBHOOK_TARGET_PROPERTY,
 } from '@wirebench/engine';
-import type { Project, RestRequestDef, WebhookCollection, WebhookFolder } from '@wirebench/engine';
+import type { Project, PropertyMap, RestRequestDef, WebhookCollection, WebhookFolder } from '@wirebench/engine';
 import type { AuthConfigWire, RestRequestPatchWire } from '../shared/wire-types.js';
 import {
   applyRestRequestPatch,
@@ -44,17 +44,19 @@ export { isWebhookCollectionId, webhookCollectionId };
 
 /**
  * Creates the project's webhook collection if it does not have one yet, and seeds the
- * `webhookTarget` property empty when the project has none by that name. A no-op once the
- * collection exists — the property is never overwritten, so a value the user set survives.
+ * `webhookTarget` property empty when neither the project nor its workspace (`workspaceProperties`)
+ * has one by that name: a project value, even an empty one, wins over the workspace's, so seeding
+ * it over a workspace value would hide that value. A no-op once the collection exists — the
+ * property is never overwritten, so a value the user set survives.
  */
-export function ensureWebhooks(project: Project): RestMutationResult {
+export function ensureWebhooks(project: Project, workspaceProperties?: PropertyMap): RestMutationResult {
   if (project.webhooks !== undefined) {
     return { project };
   }
-  const properties =
-    project.properties[WEBHOOK_TARGET_PROPERTY] !== undefined
-      ? project.properties
-      : { ...project.properties, [WEBHOOK_TARGET_PROPERTY]: '' };
+  const defined =
+    project.properties[WEBHOOK_TARGET_PROPERTY] !== undefined ||
+    workspaceProperties?.[WEBHOOK_TARGET_PROPERTY] !== undefined;
+  const properties = defined ? project.properties : { ...project.properties, [WEBHOOK_TARGET_PROPERTY]: '' };
   return { project: { ...project, webhooks: createWebhookCollection(), properties } };
 }
 
@@ -62,8 +64,9 @@ export function ensureWebhooks(project: Project): RestMutationResult {
 export function updateWebhooks(
   project: Project,
   patch: { readonly target?: string; readonly auth?: AuthConfigWire | null },
+  workspaceProperties?: PropertyMap,
 ): RestMutationResult {
-  const ensured = ensureWebhooks(project).project;
+  const ensured = ensureWebhooks(project, workspaceProperties).project;
   const webhooks = ensured.webhooks!;
   const next = cleanUndefined<WebhookCollection>({
     target: patch.target ?? webhooks.target,
@@ -82,8 +85,9 @@ export function addWebhookRequest(
     readonly name?: string | undefined;
     readonly draft?: RestRequestPatchWire | undefined;
   },
+  workspaceProperties?: PropertyMap,
 ): RestMutationResult {
-  const ensured = ensureWebhooks(project).project;
+  const ensured = ensureWebhooks(project, workspaceProperties).project;
   const webhooks = ensured.webhooks!;
   let createdId = '';
   const next = inRestTreeContainer(webhooks, input.parentId, (container: Container) => {
@@ -107,8 +111,9 @@ export function addWebhookRequest(
 export function addWebhookFolder(
   project: Project,
   input: { readonly parentId?: string | undefined; readonly name?: string | undefined },
+  workspaceProperties?: PropertyMap,
 ): RestMutationResult {
-  const ensured = ensureWebhooks(project).project;
+  const ensured = ensureWebhooks(project, workspaceProperties).project;
   const webhooks = ensured.webhooks!;
   let createdId = '';
   const next = inRestTreeContainer(webhooks, input.parentId, (container: Container) => {
@@ -152,8 +157,12 @@ export function setWebhookFolderTarget(project: Project, folderId: string, targe
  * collection's root, ensuring the collection exists first and giving the group a unique slug and
  * the next root order — the same placement rule `addFolder` gives a REST one.
  */
-export function addWebhookGroup(project: Project, folder: WebhookFolder): RestMutationResult {
-  const ensured = ensureWebhooks(project).project;
+export function addWebhookGroup(
+  project: Project,
+  folder: WebhookFolder,
+  workspaceProperties?: PropertyMap,
+): RestMutationResult {
+  const ensured = ensureWebhooks(project, workspaceProperties).project;
   const webhooks = ensured.webhooks!;
   const placed: WebhookFolder = {
     ...folder,
@@ -167,12 +176,13 @@ export function addWebhookGroup(project: Project, folder: WebhookFolder): RestMu
 }
 
 /**
- * The collection's root folder linked to `apiId` — the one an OpenAPI import's group carries as
+ * The collection's folder linked to `apiId` — the one an OpenAPI import's group carries as
  * `source.apiId` — or `undefined` when the project has no collection or nothing of this API's is
- * linked. Groups are placed at the root (`addWebhookGroup`), so only root folders are checked.
+ * linked. A group is placed at the root (`addWebhookGroup`) but may since have been moved into
+ * another folder, so every folder is searched.
  */
 export function linkedWebhookFolder(webhooks: WebhookCollection | undefined, apiId: string): WebhookFolder | undefined {
-  return webhooks?.folders.find((folder) => folder.source?.apiId === apiId);
+  return webhooks === undefined ? undefined : webhookFolders(webhooks).find((folder) => folder.source?.apiId === apiId);
 }
 
 /** Every hook key held anywhere in `folder`'s own tree: its own requests and every nested folder's. */

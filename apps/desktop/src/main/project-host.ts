@@ -1399,7 +1399,9 @@ export class ProjectHost {
     createdWssIncomingId?: string;
   }> {
     const open = this.require();
+    const workspaceProperties = this.workspaceContext?.()?.workspace.properties;
     const result = await applyChange(open.project, change, {
+      ...(workspaceProperties !== undefined ? { workspaceProperties } : {}),
       reservedSequenceSlugs: refusedSequenceSlugs(open.problems),
       addAttachmentFile: (input) => this.readAttachmentSource(open.dir, input),
       allowsKeystorePath: (path) => allowsReadPath([open.dir], this.picks, resolvePath(open.dir, path)),
@@ -3058,7 +3060,7 @@ export class ProjectHost {
     };
     let project: Project = { ...open.project, apis: [...open.project.apis, api] };
     if (input.webhooks !== undefined) {
-      project = addWebhookGroup(project, input.webhooks).project;
+      project = addWebhookGroup(project, input.webhooks, this.workspaceContext?.()?.workspace.properties).project;
     }
     open.project = project;
     open.dirty = true;
@@ -3576,7 +3578,7 @@ export class ProjectHost {
           { details: { apiId } },
         );
       }
-      const result = addWebhookGroup(open.project, mapped.folder);
+      const result = addWebhookGroup(open.project, mapped.folder, this.workspaceContext?.()?.workspace.properties);
       project = result.project;
       folderId = result.createdId ?? mapped.folder.id;
       added = mapped.items;

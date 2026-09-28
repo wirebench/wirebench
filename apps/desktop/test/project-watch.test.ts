@@ -924,6 +924,8 @@ describe('isManagedDir', () => {
     ['environments', true],
     ['wss', true],
     ['sequences', true],
+    ['webhooks', true],
+    ['webhooks/requests/Folder', true],
     ['attachments', false],
     ['imported-scripts', false],
     ['node_modules', false],
@@ -940,6 +942,20 @@ describe('isManagedPath for sequences', () => {
     ['sequences/notes.yaml', false],
     ['sequences/nested/checkout.sequence.yaml', false],
     ['sequences/README.md', false],
+  ])('%s -> %s', (path, expected) => {
+    expect(isManagedPath(path)).toBe(expected);
+  });
+});
+
+describe('isManagedPath for webhooks', () => {
+  it.each([
+    ['webhooks/webhooks.yaml', true],
+    ['webhooks/requests/ping.request.yaml', true],
+    ['webhooks/requests/petstore-api/folder.yaml', true],
+    ['webhooks/requests/petstore-api/new-pet.body.json', true],
+    ['webhooks/notes.yaml', false],
+    ['webhooks/README.md', false],
+    ['webhooks/requests/README.md', false],
   ])('%s -> %s', (path, expected) => {
     expect(isManagedPath(path)).toBe(expected);
   });

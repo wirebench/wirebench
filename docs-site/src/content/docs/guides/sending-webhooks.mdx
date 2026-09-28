@@ -28,7 +28,8 @@ the resolved address, for example `→ https://my-app.dev/hooks/newPet`.
 <Steps>
 
 1. Right-click a project and choose **New Webhook**. The first one creates the project's **Webhooks**
-   node in the Explorer, seeded with an empty project property `webhookTarget`.
+   node in the Explorer, seeded with an empty project property `webhookTarget` unless the project or
+   its workspace already defines one.
 2. Right-click the **Webhooks** node (or a folder inside it) for **New Webhook**, **New Folder**, and
    **Settings…**.
 3. Edit it like any REST request: method, path, params, headers, body, auth and assertions.
@@ -48,9 +49,11 @@ Right-click the **Webhooks** node or a folder and choose **Settings…**:
   capture enabled — see [Webhook inbox](/wirebench/guides/webhooks/) for setting one up.
 - **Auth** on the collection's own settings: what an item whose auth is *inherit* uses.
 
-The target is an ordinary project property (`webhookTarget`), so an environment or the workspace can
-override it through the usual Environment → Project → Workspace chain — see
-[Environments and properties](/wirebench/guides/environments/).
+The target is an ordinary property (`webhookTarget`) resolved through the usual Environment →
+Project → Workspace chain — see [Environments and properties](/wirebench/guides/environments/). The
+first webhook seeds an empty project `webhookTarget` only when neither the project nor the workspace
+already defines one. A project value, even an empty one, wins over the workspace's: delete the project
+property to fall back to the workspace value. An environment's value still overrides both.
 
 An empty resolved target disables **Send**, with a tooltip and a link straight to **Settings…**.
 

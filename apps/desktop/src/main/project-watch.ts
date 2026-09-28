@@ -146,12 +146,12 @@ export interface ProjectWatcherOptions {
 const MAX_WATCH_DEPTH = 3 + MAX_FOLDER_DEPTH;
 
 /** The top-level folders under which {@link isManagedPath} reports files at all. */
-const MANAGED_TOP_DIRS = new Set(['interfaces', 'apis', 'environments', 'wss', 'sequences']);
+const MANAGED_TOP_DIRS = new Set(['interfaces', 'apis', 'environments', 'wss', 'sequences', 'webhooks']);
 
 /**
  * True when the per-directory watch should cover `dir` (relative, `/`-separated): a folder that can
  * hold a file {@link isManagedPath} would report — so under `interfaces/`, `apis/`, `environments/`,
- * `wss/` or `sequences/`, and never inside an interface's or API's definition cache — and not a dot-folder (a
+ * `wss/`, `sequences/` or `webhooks/`, and never inside an interface's or API's definition cache — and not a dot-folder (a
  * sync client's own state). Everything else (`.git`, `attachments/`, `node_modules/`, a big cache)
  * would otherwise mean thousands of watches, each against the OS's per-user watch limit, and a
  * steady stream of directories appearing and vanishing for nothing.
@@ -210,6 +210,13 @@ export function isManagedPath(path: string): boolean {
     // An API's own file, a folder file, a request file — and a raw body, which is edited as the
     // file it is (`Create pet.body.json`), so an external change to one is a change to the request.
     return !path.includes('/definition/') && (path.endsWith('.yaml') || /\.body\.[A-Za-z0-9]+$/.test(path));
+  }
+  if (path.startsWith('webhooks/')) {
+    // The collection's own file, and a request tree shaped like an API's (bodies included).
+    return (
+      path === 'webhooks/webhooks.yaml' ||
+      (path.startsWith('webhooks/requests/') && (path.endsWith('.yaml') || /\.body\.[A-Za-z0-9]+$/.test(path)))
+    );
   }
   if (path.startsWith('sequences/')) {
     // One file per sequence, directly in the folder.

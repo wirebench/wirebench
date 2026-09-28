@@ -1021,11 +1021,7 @@ function preflightUnresolved(unresolved: readonly UnresolvedRef[]): UnresolvedRe
   return unresolved.filter((ref) => !isSecretTokenRef(ref)).map(toUnresolvedRefWire);
 }
 
-/**
- * The dry run of a REST send: where it would go, what would not expand, and which credentials it
- * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
- * badge while the user types.
- */
+/** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
 function isWebhookUrlSource(source: RestSendResolution['baseUrlSource']): source is WebhookUrlSource {
   return source === 'target' || source === 'callback' || source === 'callback-fallback';
 }
@@ -1035,6 +1031,11 @@ function endpointSourceOf(source: RestSendResolution['baseUrlSource']): Endpoint
   return source === 'api' || isWebhookUrlSource(source) ? 'interface-default' : source;
 }
 
+/**
+ * The dry run of a REST send: where it would go, what would not expand, and which credentials it
+ * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
+ * badge while the user types.
+ */
 function preflightRest(
   deps: RequestChannelDeps,
   request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },

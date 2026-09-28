@@ -151,9 +151,11 @@ interface RestRequestDef { /* … */ readonly hook?: HookLink }
 - Methods are kept as the document gives them. A webhook or callback defining several methods yields
   one item per method; the update key is `hook` plus the method.
 - Deleting an API clears `source` on its group, which then stays as a plain folder.
-- Creating the collection seeds an empty project property `webhookTarget` when none exists. Each
-  project therefore has its own receiver; an environment or the workspace can still override it
-  through the Env → Project → Workspace chain.
+- Creating the collection seeds an empty project property `webhookTarget` only when neither the
+  project nor its workspace already defines one (R12). Resolution follows the Env → Project →
+  Workspace chain: an environment's value overrides the project's, and a project value — even an
+  empty one — wins over the workspace's. Deleting the project property falls back to the workspace
+  value.
 - `hook` is only valid on requests inside the collection; `target` and `source` only on its folders.
 
 ## 5. Files
@@ -331,3 +333,11 @@ The capture becomes a `RestRequestDef`:
   `PropertyHighlightInput`, the same highlighted field the URL bar uses, so a `${…}` in a webhook
   target is as visible there as in a request's own URL bar. Neither field offers property
   autocomplete.
+- **R11 — a run sends webhook items only when selected.** `selectRequests(project, [])` leaves the
+  webhook items out: a webhook delivers to the user's own receiver rather than testing an API, and
+  an existing `wirebench run` with no selector must not start sending to it. An item joins a run only
+  when a selector covers it, by item path (`Webhooks/…`) or disk path (`webhooks/requests/…`).
+- **R12 — seeding `webhookTarget`.** Creating the collection seeds the empty project property only
+  when neither the project nor the workspace defines `webhookTarget`. A project value, even empty,
+  wins over the workspace's, so seeding over a workspace value would hide it; deleting the project
+  property falls back to the workspace value, and environments still override both.

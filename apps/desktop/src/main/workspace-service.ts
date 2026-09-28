@@ -2713,6 +2713,11 @@ export class WorkspaceService implements ProjectRouter {
       for (const request of project.restRequests) {
         add(request.id);
       }
+      // The webhook collection's folders and items already ride the two lists above (as REST rows
+      // whose `apiId` is the collection's); the collection itself owns auth too, OAuth2 included.
+      if (project.webhooks !== undefined) {
+        add(project.webhooks.id);
+      }
       for (const api of project.grpcApis) {
         add(api.id);
       }

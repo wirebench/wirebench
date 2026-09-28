@@ -5,6 +5,7 @@ import {
   addWebhookGroup,
   addWebhookRequest,
   ensureWebhooks,
+  linkedWebhookFolder,
   setWebhookFolderTarget,
   updateWebhooks,
 } from '../src/main/project-webhook-mutations.js';
@@ -30,6 +31,26 @@ describe('webhook mutations', () => {
     expect(once.properties['webhookTarget']).toBe('');
     const kept = ensureWebhooks({ ...once, properties: { webhookTarget: 'https://x.test' } }).project;
     expect(kept.properties['webhookTarget']).toBe('https://x.test');
+  });
+
+  it('seeds webhookTarget only when neither the project nor the workspace defines it', () => {
+    const workspace = { webhookTarget: 'https://ws.test' };
+    expect(ensureWebhooks(bare(), workspace).project.properties).toEqual({});
+    expect(addWebhookRequest(bare(), {}, workspace).project.properties).toEqual({});
+    expect(addWebhookFolder(bare(), {}, workspace).project.properties).toEqual({});
+    expect(updateWebhooks(bare(), {}, workspace).project.properties).toEqual({});
+    const group = createWebhookFolder('G', { id: 'g1' });
+    expect(addWebhookGroup(bare(), group, workspace).project.properties).toEqual({});
+    expect(ensureWebhooks(bare(), { other: 'x' }).project.properties).toEqual({ webhookTarget: '' });
+  });
+
+  it('finds a linked group wherever it was moved in the collection', () => {
+    const outer = addWebhookFolder(bare(), { name: 'Outer' });
+    const group = createWebhookFolder('Petstore', { id: 'g1', source: { apiId: 'api-1' } });
+    const placed = addWebhookGroup(outer.project, group).project;
+    const moved = moveNode(placed, { nodeId: 'g1', parentId: outer.createdId!, index: 0 }).project;
+    expect(moved.webhooks?.folders.map((f) => f.id)).toEqual([outer.createdId]);
+    expect(linkedWebhookFolder(moved.webhooks, 'api-1')?.id).toBe('g1');
   });
 
   it('adds requests and folders, creating the collection on the way', () => {
