@@ -5,6 +5,7 @@ import { createApi, createFolder, createRestRequest, entry as kv } from '../../.
 import { createGrpcApi, createGrpcRequest } from '../../../../src/grpc/model.js';
 import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../../src/ws/model.js';
 import { maskedPreview, scanProjectForSecrets } from '../../../../src/secrets/scan/scan.js';
+import { hooksProject } from '../../webhooks/fixture.js';
 
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';
 const AWS = 'AKIAFAKEFAKEFAKEFAKE';
@@ -256,5 +257,12 @@ describe('maskedPreview', () => {
   it('shows the first 3 characters and the length only', () => {
     expect(maskedPreview(GH)).toBe(`ghp… (${GH.length} chars)`);
     expect(maskedPreview('abc')).toBe('… (3 chars)');
+  });
+});
+
+describe('scanProjectForSecrets — webhooks', () => {
+  it('scans webhook items like REST requests', () => {
+    const findings = scanProjectForSecrets(hooksProject());
+    expect(findings.some((finding) => finding.label.startsWith('Webhooks'))).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ import { scanProjectForSecrets } from '../../../../src/secrets/scan/scan.js';
 import { applySecretMoves, proposeSecretName } from '../../../../src/secrets/scan/apply.js';
 import { expand } from '../../../../src/project/properties.js';
 import type { SecretFinding } from '../../../../src/secrets/scan/walk.js';
+import { hooksProject } from '../../webhooks/fixture.js';
 
 const GH = 'ghp_FAKEFAKEFAKEFAKEFAKEFAKEFAKE1234';
 const AWS = 'AKIAFAKEFAKEFAKEFAKE';
@@ -288,5 +289,14 @@ describe('proposeSecretName', () => {
   it('de-duplicates against taken names ignoring case', () => {
     const f = find(project({ properties: { password: 'changeme' } }));
     expect(proposeSecretName(f, new Set(['PASSWORD', 'password_2']))).toBe('password_3');
+  });
+});
+
+describe('applySecretMoves — webhooks', () => {
+  it('moves a secret out of a webhook item', () => {
+    const project = hooksProject();
+    const [finding] = scanProjectForSecrets(project).filter((f) => f.label.startsWith('Webhooks'));
+    const result = applySecretMoves(project, [{ finding: finding!, name: 'hookToken' }]);
+    expect(result.project.webhooks?.requests[0]?.headers[0]?.value).toContain('hookToken');
   });
 });

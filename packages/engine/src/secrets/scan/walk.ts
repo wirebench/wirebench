@@ -233,6 +233,7 @@ export function* scanTargets(project: Project): Generator<ScanTarget> {
     }
   }
   for (const api of project.apis) yield* tree(api, api.name, restRequest);
+  if (project.webhooks !== undefined) yield* tree(project.webhooks, 'Webhooks', restRequest);
   for (const api of project.grpcApis) {
     yield* keyed('grpc-api-metadata', api.id, api.name, 'metadata', 'header', api.metadata);
     yield* tree(api, api.name, grpcRequest);

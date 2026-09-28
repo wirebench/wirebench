@@ -4,7 +4,11 @@
  */
 import type { GrpcApi, GrpcFolder, GrpcRequestDef } from '../grpc/model.js';
 import type { Interface, OperationDef, Project, SoapRequestDef } from '../project/model.js';
+import { WEBHOOKS_DIR, REQUESTS_DIR } from '../project/paths.js';
 import type { RestApi, RestFolder, RestRequestDef } from '../rest/model.js';
+import { createApi } from '../rest/model.js';
+import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
+import { effectiveTarget } from '../webhooks/model.js';
 
 /** One saved request selected for a run, with enough context to send and report it. */
 export type SelectedRequest =
@@ -135,6 +139,43 @@ function walkGrpc(api: GrpcApi, out: Candidate[]): void {
   );
 }
 
+/**
+ * The project's webhook items, as REST items against a synthetic API whose base URL is each item's
+ * effective target (plan R3). A run has no history, so a callback uses the target.
+ */
+function walkWebhooks(collection: WebhookCollection, out: Candidate[]): void {
+  const visit = (
+    folders: readonly WebhookFolder[],
+    requests: readonly RestRequestDef[],
+    chain: readonly WebhookFolder[],
+  ): void => {
+    const group = ['Webhooks', ...chain.map((folder) => folder.name)].join('/');
+    const dir = [WEBHOOKS_DIR, REQUESTS_DIR, ...chain.map((folder) => folder.slug)].join('/');
+    const api = createApi('Webhooks', {
+      id: 'webhooks',
+      slug: 'webhooks',
+      baseUrl: effectiveTarget(collection, chain),
+      ...(collection.auth !== undefined ? { auth: collection.auth } : {}),
+    });
+    for (const request of [...requests].sort(byOrder)) {
+      if (request.orphaned === true) continue;
+      out.push({
+        item: {
+          kind: 'rest',
+          path: `${group}/${request.name}`,
+          group,
+          api,
+          chain: chain as unknown as readonly RestFolder[],
+          request,
+        },
+        diskPath: `${dir}/${request.slug}`,
+      });
+    }
+    for (const folder of [...folders].sort(byOrder)) visit(folder.folders, folder.requests, [...chain, folder]);
+  };
+  visit(collection.folders, collection.requests, []);
+}
+
 function candidates(project: Project): Candidate[] {
   const out: Candidate[] = [];
   for (const container of [...project.interfaces, ...project.apis, ...project.grpcApis].sort(byOrder)) {
@@ -158,6 +199,7 @@ function candidates(project: Project): Candidate[] {
       }
     }
   }
+  if (project.webhooks !== undefined) walkWebhooks(project.webhooks, out);
   return out;
 }
 
@@ -233,6 +275,9 @@ function findInTree<R extends { readonly id: string }>(
  * missing.
  */
 export function findStepRequest(project: Project, requestId: string): StepRequestLookup {
+  if (project.webhooks !== undefined && findInTree(project.webhooks, requestId) !== undefined) {
+    return { kind: 'unsupported', reason: 'A webhook cannot be a sequence step' };
+  }
   const runnable = candidates(project).find((candidate) => candidate.item.request.id === requestId);
   if (runnable !== undefined) {
     return { kind: 'found', selected: runnable.item };

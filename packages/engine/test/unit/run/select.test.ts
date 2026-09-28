@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { selectRequests } from '../../../src/run/select.js';
+import { findStepRequest, selectRequests } from '../../../src/run/select.js';
+import { hooksProject } from '../webhooks/fixture.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Interface, OperationDef, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
@@ -153,5 +154,23 @@ describe('selectRequests — gRPC', () => {
       'Greeter/Chat',
       'Greeter/Gone',
     ]);
+  });
+});
+
+describe('selectRequests — webhooks', () => {
+  it('selects webhook items against their effective target', () => {
+    const selected = selectRequests(hooksProject(), []).selected;
+    const hooks = selected.filter((item) => item.kind === 'rest' && item.group.startsWith('Webhooks'));
+    expect(hooks.map((item) => (item.kind === 'rest' ? [item.request.id, item.api.baseUrl] : []))).toEqual([
+      ['w1', 'https://receiver.test/hooks'],
+      ['w2', 'https://other.test'],
+    ]);
+  });
+
+  it('refuses a webhook item as a sequence step', () => {
+    expect(findStepRequest(hooksProject(), 'w1')).toEqual({
+      kind: 'unsupported',
+      reason: 'A webhook cannot be a sequence step',
+    });
   });
 });
