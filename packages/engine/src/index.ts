@@ -469,7 +469,13 @@ export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/o
 export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
 export { selectResponse } from './rest/openapi/responses.js';
 export type { ResponseSelection } from './rest/openapi/responses.js';
-export { applyRestUpdate, planRestUpdate, sameStructure } from './rest/openapi/update.js';
+export {
+  applyRestUpdate,
+  applyWebhookUpdate,
+  planRestUpdate,
+  planWebhookUpdate,
+  sameStructure,
+} from './rest/openapi/update.js';
 export type {
   ApplyRestUpdateOptions,
   RestApiChangeReason,
@@ -477,6 +483,8 @@ export type {
   RestChangeReason,
   RestOpRef,
   RestUpdatePlan,
+  WebhookApplyResult,
+  WebhookUpdatePlan,
 } from './rest/openapi/update.js';
 export { matchOperation } from './rest/openapi/match.js';
 export type { RestOperationRef } from './rest/openapi/match.js';
