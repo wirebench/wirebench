@@ -1412,6 +1412,33 @@ export const restSettingsWireSchema = z.object({
 });
 export type RestSettingsWire = z.infer<typeof restSettingsWireSchema>;
 
+/**
+ * The engine's `HookLink` restated: which OpenAPI `webhooks` or `callbacks` entry a webhook
+ * collection item was imported from, so *Update definition* can keep it in step.
+ */
+export const hookLinkWireSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('webhook'), name: z.string() }),
+  z.object({
+    kind: z.literal('callback'),
+    /** The parent operation's contract key, e.g. `post /subscriptions`. */
+    operation: z.string(),
+    name: z.string(),
+    /** The callback's path-item key, verbatim, e.g. `{$request.body#/callbackUrl}`. */
+    expression: z.string(),
+  }),
+]);
+export type HookLinkWire = z.infer<typeof hookLinkWireSchema>;
+
+/** One project's webhook collection, as the renderer sees it; its tree travels with the REST one. */
+export const webhookCollectionWireSchema = z.object({
+  /** Synthetic: `webhooks:<projectId>`, never a real API id. */
+  id: z.string(),
+  projectId: z.string(),
+  target: z.string(),
+  auth: authConfigWireSchema.optional(),
+});
+export type WebhookCollectionWire = z.infer<typeof webhookCollectionWireSchema>;
+
 /** One REST request as the renderer sees it. */
 export const restRequestWireSchema = z.object({
   kind: z.literal('rest'),
@@ -1432,6 +1459,8 @@ export const restRequestWireSchema = z.object({
   auth: authConfigWireSchema,
   settings: restSettingsWireSchema,
   orphaned: z.boolean().optional(),
+  /** Set only on a webhook collection item imported from an OpenAPI definition. */
+  hook: hookLinkWireSchema.optional(),
 });
 export type RestRequestWire = z.infer<typeof restRequestWireSchema>;
 
@@ -1445,6 +1474,10 @@ export const restFolderWireSchema = z.object({
   order: z.number(),
   description: z.string().optional(),
   auth: authConfigWireSchema.optional(),
+  /** Webhook folder only: overrides the inherited target for everything inside. */
+  target: z.string().optional(),
+  /** Webhook folder only: set on a group imported from an API's definition. */
+  source: z.object({ apiId: z.string() }).optional(),
 });
 export type RestFolderWire = z.infer<typeof restFolderWireSchema>;
 
@@ -2494,8 +2527,13 @@ export const projectWireSchema = z.object({
   apis: z.array(restApiWireSchema),
   /** Every folder of every API, flat; `parentId` gives the tree. */
   folders: z.array(restFolderWireSchema),
-  /** Every REST request of every API, flat; `apiId`/`folderId` give its place. */
+  /**
+   * Every REST request of every API, flat; `apiId`/`folderId` give its place. A webhook
+   * collection's own requests join this list too, under `webhooks.id`.
+   */
   restRequests: z.array(restRequestWireSchema),
+  /** The project's webhook collection, absent until the first webhook is created or imported. */
+  webhooks: webhookCollectionWireSchema.optional(),
   /** The project's gRPC APIs; their folders are in `folders`, keyed by `apiId` like a REST API's. */
   grpcApis: z.array(grpcApiWireSchema),
   /** Every gRPC request of every gRPC API, flat. */
@@ -2639,6 +2677,36 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-rest-request'), requestId: z.string(), patch: restRequestPatchSchema }),
   z.object({ kind: z.literal('remove-rest-request'), requestId: z.string() }),
   z.object({ kind: z.literal('clone-rest-request'), requestId: z.string() }),
+  /** Creates the project's webhook collection if it does not have one yet. A no-op once it does. */
+  z.object({ kind: z.literal('ensure-webhooks') }),
+  z.object({
+    kind: z.literal('update-webhooks'),
+    patch: z.object({
+      target: z.string().optional(),
+      /** `null` clears the collection's own credentials, back to `inherit` having nothing above it. */
+      auth: authConfigWireSchema.nullable().optional(),
+    }),
+  }),
+  z.object({
+    kind: z.literal('add-webhook-request'),
+    /** Absent adds the request at the collection's root. */
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+    /** A full request body, applied with the same patch logic as `update-rest-request`. */
+    draft: restRequestPatchSchema.optional(),
+  }),
+  z.object({
+    kind: z.literal('add-webhook-folder'),
+    /** Absent adds the folder at the collection's root. */
+    parentId: z.string().optional(),
+    name: z.string().optional(),
+  }),
+  z.object({
+    kind: z.literal('set-webhook-folder-target'),
+    folderId: z.string(),
+    /** `null` clears the folder's own target, back to inheriting the collection's (or a parent's). */
+    target: z.string().nullable(),
+  }),
   z.object({
     kind: z.literal('move-node'),
     nodeId: z.string(),

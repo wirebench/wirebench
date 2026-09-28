@@ -103,6 +103,13 @@ import {
   updateWssIncoming,
   updateWssOutgoing,
 } from './project-wss-mutations.js';
+import {
+  addWebhookFolder,
+  addWebhookRequest,
+  ensureWebhooks,
+  setWebhookFolderTarget,
+  updateWebhooks,
+} from './project-webhook-mutations.js';
 import type { RequestLocation } from './project-wire.js';
 import { findRequest } from './project-wire.js';
 import { addSequence, duplicateSequence, removeSequence, updateSequence } from './project-sequence-mutations.js';
@@ -823,6 +830,31 @@ export async function applyChange(
 
     case 'clone-rest-request':
       return cloneRestRequest(project, change.requestId);
+
+    case 'ensure-webhooks':
+      return ensureWebhooks(project);
+
+    case 'update-webhooks':
+      return updateWebhooks(project, {
+        ...(change.patch.target !== undefined ? { target: change.patch.target } : {}),
+        ...(change.patch.auth !== undefined ? { auth: change.patch.auth } : {}),
+      });
+
+    case 'add-webhook-request':
+      return addWebhookRequest(project, {
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        ...(change.name !== undefined ? { name: change.name } : {}),
+        ...(change.draft !== undefined ? { draft: change.draft } : {}),
+      });
+
+    case 'add-webhook-folder':
+      return addWebhookFolder(project, {
+        ...(change.parentId !== undefined ? { parentId: change.parentId } : {}),
+        ...(change.name !== undefined ? { name: change.name } : {}),
+      });
+
+    case 'set-webhook-folder-target':
+      return setWebhookFolderTarget(project, change.folderId, change.target);
 
     case 'move-node':
       return (

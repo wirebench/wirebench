@@ -30,6 +30,7 @@ import type {
   Project,
   RequestDef,
   UpdatePlan,
+  WebhookCollection,
   WsApi,
   WsRequestDef,
   WssEntry,
@@ -63,6 +64,7 @@ import type {
   RequestWire,
 } from '../shared/wire-types.js';
 import { toSequenceWire } from './project-sequence-mutations.js';
+import { webhookCollectionId } from './project-webhook-mutations.js';
 
 /** What the main process knows about one interface beyond the saved model. */
 export interface InterfaceRuntime {
@@ -426,6 +428,7 @@ function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: str
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
     ...(request.orphaned === true ? { orphaned: true } : {}),
+    ...(request.hook !== undefined ? { hook: request.hook } : {}),
   };
 }
 
@@ -457,6 +460,57 @@ function toRestTreeWires(apis: readonly RestApi[]): {
   for (const api of apis) {
     walk(api, api);
   }
+  return { folders, requests };
+}
+
+/**
+ * The project's webhook collection, projected for the wire under the synthetic id
+ * `webhooks:<projectId>` — never a real API id — or `undefined` when the project has none yet.
+ */
+function toWebhookCollectionWire(project: Project): ProjectWire['webhooks'] {
+  const webhooks = project.webhooks;
+  if (webhooks === undefined) {
+    return undefined;
+  }
+  return {
+    id: webhookCollectionId(project.id),
+    projectId: project.id,
+    target: webhooks.target,
+    ...(webhooks.auth !== undefined ? { auth: toAuthConfigWire(webhooks.auth) } : {}),
+  };
+}
+
+/**
+ * Every folder and request of the project's webhook collection, flattened for the wire exactly
+ * like an API's tree, joining the same flat `folders`/`restRequests` lists under `webhooks.id`.
+ */
+function toWebhookTreeWires(
+  collection: WebhookCollection,
+  collectionId: string,
+): { readonly folders: RestFolderWire[]; readonly requests: RestRequestWire[] } {
+  const folders: RestFolderWire[] = [];
+  const requests: RestRequestWire[] = [];
+  const walk = (container: Pick<WebhookCollection, 'folders' | 'requests'>, parentId?: string): void => {
+    for (const request of container.requests) {
+      requests.push(toRestRequestWire(request, collectionId, parentId));
+    }
+    for (const folder of container.folders) {
+      folders.push({
+        id: folder.id,
+        apiId: collectionId,
+        ...(parentId !== undefined ? { parentId } : {}),
+        name: folder.name,
+        slug: folder.slug,
+        order: folder.order,
+        ...(folder.description !== undefined ? { description: folder.description } : {}),
+        ...(folder.auth !== undefined ? { auth: toAuthConfigWire(folder.auth) } : {}),
+        ...(folder.target !== undefined ? { target: folder.target } : {}),
+        ...(folder.source !== undefined ? { source: { apiId: folder.source.apiId } } : {}),
+      });
+      walk(folder, folder.id);
+    }
+  };
+  walk(collection);
   return { folders, requests };
 }
 
@@ -639,6 +693,9 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
   const restTree = toRestTreeWires(project.apis);
   const grpcTree = toGrpcTreeWires(project.grpcApis);
   const wsTree = toWsTreeWires(project.wsApis);
+  const webhookTree =
+    project.webhooks !== undefined ? toWebhookTreeWires(project.webhooks, webhookCollectionId(project.id)) : undefined;
+  const webhooksWire = toWebhookCollectionWire(project);
   return {
     id: project.id,
     name: project.name,
@@ -648,8 +705,9 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     interfaces: project.interfaces.map((iface) => toInterfaceWire(iface, context.runtime.get(iface.id))),
     requests: toRequestWires(project),
     apis: project.apis.map(toApiWire),
-    folders: [...restTree.folders, ...grpcTree.folders, ...wsTree.folders],
-    restRequests: restTree.requests,
+    folders: [...restTree.folders, ...grpcTree.folders, ...wsTree.folders, ...(webhookTree?.folders ?? [])],
+    restRequests: [...restTree.requests, ...(webhookTree?.requests ?? [])],
+    ...(webhooksWire !== undefined ? { webhooks: webhooksWire } : {}),
     grpcApis: project.grpcApis.map(toGrpcApiWire),
     grpcRequests: grpcTree.requests,
     wsApis: project.wsApis.map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
