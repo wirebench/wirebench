@@ -307,6 +307,12 @@ Both evaluators also run on a **worker thread** with a five-second budget
 than a frozen window, and neither library is in the renderer bundle: evaluation is an IPC call, and
 the renderer has no evaluator of its own.
 
+An assertion's `matches:` regular expression runs on that same worker, under the same budget
+(`matchRegexWithTimeout`). The pattern comes from a file that may have come from someone else, and a
+backtracking pattern such as `(a+)+$` against a long near-miss runs for minutes. JavaScript cannot interrupt a
+running `RegExp`, so a thread that can be terminated is the only bound. A timeout or an invalid pattern is an
+`errored` assertion (`packages/engine/test/unit/assert/match-regex.test.ts`).
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

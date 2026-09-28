@@ -379,7 +379,8 @@ Nothing in a sequence file is evaluated any other way.
 teammate, such as `(a+)+$` against a long `aaaa…!`, would block the thread. In the CLI that is one hung job; in
 the desktop, where sequence assertions run in the main process, it would freeze the app. So:
 - regex matching (`match`, and the new `header` assertion) moves onto the same worker, with the same budget;
-- a timeout reports as an `errored` assertion with `assert-regex-timeout`;
+- a timeout reports as an `errored` assertion whose message says the expression timed out (`matchRegexWithTimeout`
+  returns `regex-timeout`; `AssertionResult` carries a message, not a code, so the report shape is unchanged);
 - the pattern is compiled on the worker, so an invalid pattern is an `errored` assertion there too.
 
 ### Shared files
@@ -413,7 +414,8 @@ the desktop, where sequence assertions run in the main process, it would freeze 
   - `sequence-value-too-large`
   - `sequence-value-invalid`
   - `sequence-origin-from-response`
-- **Assertion error:** `assert-regex-timeout`.
+- **Assertion errors:** a regex timeout or an invalid pattern is an `errored` assertion with a message
+  (`regex-timeout` / `regex-invalid` from `matchRegexWithTimeout`).
 - **Desktop run error:** `sequence-already-running`.
 - **Unchanged:** every existing send and prepare error (`unresolved-properties`, `secret-missing`, …) passes through
   as the step's error.

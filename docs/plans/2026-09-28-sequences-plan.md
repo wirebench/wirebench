@@ -13,8 +13,8 @@
 - `packages/engine/src/xpath/worker.ts` and `evaluate-async.ts`: a `regex` job, `{ pattern, text }` →
   `{ matched } | { error }`, sharing the worker, the 5-second budget and the termination path.
 - `packages/engine/src/assert/match.ts`: `matches:` goes through the new `matchRegexWithTimeout`. A timeout becomes
-  `errored` with `assert-regex-timeout`; an invalid pattern becomes `errored` with the syntax message.
-- `packages/engine/src/errors.ts`: the code.
+  `errored` with a timeout message (`regex-timeout` from the helper); an invalid pattern becomes `errored` with the
+  syntax message.
 - Test: `packages/engine/test/unit/assert/match-regex.test.ts`.
 
 **Tests**

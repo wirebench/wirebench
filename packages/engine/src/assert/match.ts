@@ -1,4 +1,4 @@
-import { evaluateWithTimeout } from '../xpath/evaluate-async.js';
+import { evaluateWithTimeout, matchRegexWithTimeout } from '../xpath/evaluate-async.js';
 import type { QueryResult } from '../xpath/evaluate.js';
 import type { AssertionResult, AssertionSubject, MatchAssertion } from './model.js';
 
@@ -58,7 +58,13 @@ export async function evaluateMatch(subject: AssertionSubject, assertion: MatchA
   }
   const actual = firstText(result) ?? '';
   if (assertion.matches !== undefined) {
-    return new RegExp(assertion.matches).test(actual)
+    // On the worker, never here: the pattern comes from a file, and a backtracking one would block
+    // this thread (the desktop's main process, for a sequence) for as long as it runs.
+    const matched = await matchRegexWithTimeout(assertion.matches, actual);
+    if (matched.kind === 'error') {
+      return { ...base, outcome: 'errored', message: matched.message };
+    }
+    return matched.matched
       ? { ...base, outcome: 'passed' }
       : { ...base, outcome: 'failed', expected: `/${assertion.matches}/`, actual: truncate(actual) };
   }
