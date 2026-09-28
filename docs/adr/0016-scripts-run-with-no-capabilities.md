@@ -1,6 +1,6 @@
 # ADR-0016: A script runs with no capabilities
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-09-28
 - Context: issue #63; `docs/specs/2026-09-28-typed-scripting-design.md` (§Sandbox, §Secrets, §Security). Extends
   ADR-0015 to values a script sets, and keeps ADR-0001 (no native modules) and ADR-0002 (the engine runs in main,
@@ -48,6 +48,8 @@ convention.
 
 - A Postman script that calls `pm.sendRequest`, uses the cookie jar, or relies on timers cannot run. It fails with
   `script-unsupported`, naming the call. Chaining requests is what sequences are for.
+- Scripts imported from a Postman collection arrive switched off (`scripts.enabled: false`). Code nobody on the team
+  has read does not run until someone switches it on, and that is a change to the request file that shows in review.
 - A script that signs a request needs its key listed in `scripts.secrets`. That is one more line in the request file,
   and it is visible in review.
 - Running a project someone else wrote now also runs their scripts. The sandbox limits what that can do to what a

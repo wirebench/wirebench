@@ -15,8 +15,8 @@ Scripts run in a sandbox with no capabilities: no network, no files, no clock to
 can read and change its own request, read its response, record test results, set values for later requests and log.
 Nothing else.
 
-Collections imported from Postman keep their pre-request and test scripts, which run through a `pm` compatibility
-layer over the same sandbox.
+Collections imported from Postman keep their pre-request and test scripts. They are imported switched off, and once
+someone has read and switched them on, they run through a `pm` compatibility layer over the same sandbox.
 
 ## Scope
 
@@ -28,7 +28,8 @@ In:
 - Script tests reported like assertions: in the response panel, sequence run panel, and every CLI reporter.
 - Values a script sets, used by later requests as `${#Sequence#name}`, in a sequence, a CLI run, or an app session
   (§Values).
-- A `pm` compatibility layer for imported Postman scripts (§Postman), and the importer keeping those scripts.
+- A `pm` compatibility layer for imported Postman scripts (§Postman), and the importer keeping those scripts,
+  switched off until enabled.
 - Editing in Monaco: highlighting, completion, hover and diagnostics, served by a TypeScript language service in main.
 
 Out, each its own later work:
@@ -56,6 +57,7 @@ scripts:
   pre: Checkout.pre.ts         # a file beside the request, required when `pre` is set
   post: Checkout.post.ts
   api: wirebench               # or `postman`; default wirebench
+  enabled: true                # default true; the Postman importer writes false (§Postman)
   secrets: [signing-key]       # secrets the scripts may read (§Secrets); default none
   timeoutMs: 1000              # per script; default 1000, at most 10000
 ```
@@ -70,6 +72,9 @@ WebSocket request files refuse it.
 - A named file that is missing is a load problem (`script-file-missing`) shown on the request, and the request
   refuses to send until it is fixed.
 - A script file is at most 256 KiB (`script-too-large`).
+- `enabled: false` keeps the scripts and their files, but none of them runs: the request is sent as if it had no
+  scripts, and its result says the scripts were off (`scriptsOff: true`). A switched-off script is not type-checked
+  either, so a switched-off script with errors never blocks a send.
 - Save writes a script file only when its text changed, like a body sidecar. Removing a script removes its file.
 
 ### Project settings
@@ -300,6 +305,13 @@ The Postman importer stops dropping `event` scripts. For each request:
 - The `prerequest` and `test` scripts of the collection, then each enclosing folder, then the request, are
   concatenated in that order into `<R>.pre.js` and `<R>.post.js`. A comment line marks where each part came from.
   `scripts.api: postman` is set.
+- **Imported scripts are switched off** (`scripts.enabled: false`, §Owner decisions, 6). A collection from elsewhere is
+  code nobody on the team has read yet, so it runs only once someone has. The request sends as if it had no scripts
+  until then, and its result says the scripts were off.
+- Switching them on is a change to the request file (`enabled: true`), so it shows in review like any other. It is
+  done either per request, on the **Scripts** tab, or for many requests at once with **Switch on scripts…** on an
+  API or a folder. That dialog lists each request with scripts and the unsupported calls found in them, and switches
+  on the ones ticked.
 - `pm.environment.set`, `pm.collectionVariables.set`, `pm.globals.set` and `pm.variables.set` all map to `vars.set`,
   and the matching `get` calls to `vars.get`, falling back to `props.get`. The import summary says so, since Wirebench
   keeps them in the run's values, not in an environment.
@@ -315,8 +327,9 @@ The Postman importer stops dropping `event` scripts. For each request:
   - `btoa` and `atob`.
 - Anything else fails when it is called, with `script-unsupported` naming it. That includes `pm.sendRequest`,
   `pm.cookies.jar()`, `pm.visualizer`, `require`, `pm.execution.setNextRequest` and `postman.setNextRequest`.
-- The import summary lists the requests whose scripts call something unsupported, found by a static scan for those
-  names. The warning that scripts were not imported goes away.
+- The import summary says how many requests came with scripts, that they are switched off, and which of them call
+  something unsupported (found by a static scan for those names). The warning that scripts were not imported goes
+  away.
 - An imported script is not type-checked. It is editable and runs as JavaScript, and its user can rewrite it against
   the `wirebench` API at any time.
 
@@ -326,6 +339,9 @@ The Postman importer stops dropping `event` scripts. For each request:
 
 - **Request editor.** A **Scripts** tab on SOAP, REST and gRPC requests has two editors, *Pre-request* and
   *Post-response*, and a secrets list. The tab shows a dot when either script is set.
+  - A switched-off script shows a banner, "These scripts are off. Read them, then switch them on.", with a
+    **Switch on** button.
+  - **Switch on scripts…** on an API or folder switches on many requests at once (§Postman).
 - **Monaco.** `monaco-core.ts` registers the TypeScript and JavaScript Monarch grammars from `basic-languages`. They
   are tokenisers only and start no worker. Completion, hover, signature help and diagnostics come from providers
   that ask main over IPC, the way XML completion does today.
@@ -395,7 +411,8 @@ ADR-0016 records the decision. In short:
   - ADR-0015's hostile values set through `vars.set`;
   - the Postman layer against scripts from real collections, and `script-unsupported`.
 - **Format tests:** a version-5 fixture migrates by stamp, and a version-6 project with scripts round-trips; renaming
-  and moving a request moves its scripts; a missing file is reported.
+  and moving a request moves its scripts; a missing file is reported; `enabled: false` sends without running or
+  checking the scripts.
 - **CLI integration**, against the demo server:
   - a log-in request's post-response script sets the token, and the next request uses it;
   - a pre-request script signs with an HMAC from a listed secret, and the signature is masked in every reporter;
@@ -413,13 +430,17 @@ ADR-0016 records the decision. In short:
 - A **Scripts** guide in the docs site.
 - The **property syntax** page: session values under the Sequence scope.
 - The **project format** page: version 6 and `scripts`.
-- The **Postman** switching page: scripts are imported, what the layer supports, and what it does not.
+- The **Postman** switching page: scripts are imported switched off, how to switch them on, what the layer supports,
+  and what it does not.
 - A **script API** reference page, generated from the API declarations.
 - `docs/security.md` gains a section.
 - Success criteria SC-S1 onwards.
 - The roadmap and the CHANGELOG.
 
 ## Owner decisions
+
+Accepted 2026-09-28. Decisions 1–5 are as recommended. Decision 6 took the alternative: imported scripts are switched
+off until enabled (§Postman).
 
 1. **Sandbox: QuickJS compiled to WebAssembly**, on a worker thread (`quickjs-emscripten-core` plus one release build,
    MIT, about 1.4 MB). It has hard memory and time limits, the same engine in the app and the CLI, and no native
@@ -441,5 +462,6 @@ ADR-0016 records the decision. In short:
 5. **Session values.** In the app, values a single send's script sets live in the project's session, in memory, and
    `${#Sequence#name}` resolves from them outside a sequence run. The Sequences guide currently says such a reference
    is unresolved outside a run; that sentence changes.
-6. **Imported Postman scripts run** through the `pm` layer, with collection and folder scripts copied into each
-   request's script. The alternative is to import them as inert text that runs only once the user turns it on.
+6. **Imported Postman scripts are switched off until enabled** (accepted over the recommendation to run them).
+   They are imported through the `pm` layer, with collection and folder scripts copied into each request's script,
+   and written with `enabled: false`. Switching them on is a reviewable change to the request file.
