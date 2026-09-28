@@ -595,6 +595,64 @@ function originOf(url: string): { readonly origin?: string } {
   return origin !== undefined ? { origin } : {};
 }
 
+/**
+ * Type-checks the scripts of every selected request before a run sends anything (spec
+ * §Type-checking): each request whose scripts are switched on, against its own contract's types.
+ * Returns one error per request that fails, in selection order; empty when all pass.
+ */
+export async function checkRunScripts(
+  selected: readonly SelectedRequest[],
+  context: RunContext,
+): Promise<readonly WirebenchError[]> {
+  const scripting = context.scripting;
+  const errors: WirebenchError[] = [];
+  if (scripting === undefined) return errors;
+  const definitions = new Map<string, Promise<LoadedDefinition | undefined>>();
+  const protoSets = new Map<string, Promise<ProtoSet | undefined>>();
+  const documents = new Map<string, Promise<OpenApiDocument | undefined>>();
+  const once = <T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
+    let found = cache.get(key);
+    if (found === undefined) {
+      found = load();
+      cache.set(key, found);
+    }
+    return found;
+  };
+  for (const item of selected) {
+    const scripts = activeScripts(item.request.scripts);
+    if (scripts === undefined) continue;
+    const loaded =
+      item.kind === 'soap'
+        ? await once(definitions, item.iface.id, () => loadDefinition(context.projectDir, item.iface))
+        : undefined;
+    const protoSet =
+      item.kind === 'grpc'
+        ? await once(protoSets, item.api.id, () => loadProtoSetFor(context.projectDir, item.api).catch(() => undefined))
+        : undefined;
+    const openApi =
+      item.kind === 'rest'
+        ? await once(documents, item.api.id, () => loadOpenApiDocument(context.projectDir, item.api.slug))
+        : undefined;
+    try {
+      await scripting.check({
+        protocol: item.kind,
+        path: item.path,
+        name: item.request.name,
+        slug: item.request.slug,
+        scripts,
+        types: scriptTypesFor(item, loaded, protoSet, openApi),
+      });
+    } catch (error) {
+      errors.push(
+        isWirebenchError(error)
+          ? error
+          : new WirebenchError('script-type-error', error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  return errors;
+}
+
 /** Runs one request; a throw anywhere on the way becomes an errored result, never a stopped run. */
 async function runOne(
   item: SelectedRequest,

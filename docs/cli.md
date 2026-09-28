@@ -184,6 +184,28 @@ wirebench run ./shop -e staging --sequence checkout --reporter junit=reports/che
 Each step is reported as a request of the run: grouped by its sequence (one JUnit test suite per sequence),
 named `<sequence>/<n>. <step>`.
 
+## Scripts
+
+A saved SOAP, REST or unary gRPC request may carry a pre-request and a post-response script, in TypeScript files
+beside it (`<request>.pre.ts`, `<request>.post.ts`). `wirebench run` runs them on every send, with and without
+`--sequence`. What a script can do, and cannot, is in [the typed scripting design](specs/2026-09-28-typed-scripting-design.md).
+
+- Every script of the selection is type-checked against its request's contract before anything is sent. A type error
+  exits 2, naming the file, line and column on stderr. So does a script file that is missing.
+- A pre-request script that throws, times out or changes where the request goes stops that request before it is sent
+  (errored). A post-response script that throws keeps the response and errors the request.
+- A post-response script's tests are reported as assertions of type `script`. A request whose only checks are
+  script tests counts as asserted under `--require-assertions`.
+- Values a script sets with `vars.set` are read by the requests after it as `${#Sequence#name}`. In a plain run they
+  last for the run, in selection order, and in a sequence they join the sequence's values.
+- A value set with `{ secret: true }`, or one that holds a secret the run resolved, is masked in every report. A
+  secret a script reads with `secrets.get` must be listed in the request's `scripts.secrets`. It is read from
+  `WIREBENCH_SECRET_<NAME>` like any other, and masked the same way.
+- A script's log is printed with `-v`, and always for a request that did not pass. The `json` report carries it as
+  `scriptLog`, and the `html` report shows it. It is masked like everything else.
+- A request whose scripts are switched off (`scripts.enabled: false`, which is how scripts imported from a
+  collection arrive) is sent without them, and is marked `(scripts off)`.
+
 ## Secrets
 
 A ref in a saved request may carry a friendlier, committable name beside it:
@@ -337,7 +359,9 @@ The stable machine interface, its own `formatVersion` starting at 1:
 `protocol` is `"soap"`, `"rest"` or `"grpc"`; for a gRPC request `status` is the gRPC status
 code. A sequence step (`--sequence`) carries three more fields, added within `formatVersion` 1:
 `sequence` (`{ id, name, stepId }`), `transfers` (`[{ name, outcome, secret, value?, message? }]`, with no
-`value` for a secret transfer) and `origin`, where the step's request went. `exchange` (redacted, raw HTTP) is included for a failed or errored request; a change to this
+`value` for a secret transfer) and `origin`, where the step's request went. A request with scripts may carry
+`scriptLog` (what its scripts logged, masked) and `scriptsOff: true`, also within `formatVersion` 1, and a script's
+tests are assertions with `"type": "script"`. `exchange` (redacted, raw HTTP) is included for a failed or errored request; a change to this
 shape after S5 is an ask-first.
 
 ### `html=<file>`

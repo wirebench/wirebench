@@ -230,15 +230,28 @@
 ## Task 8 — CLI
 
 **Files**
-- `packages/cli/src/commands/run.ts` and `sequence.ts`:
-  - check every enabled script of the selection first;
-  - on errors, write each file, line and message to stderr and exit 2;
-  - `--verbose` prints script logs.
-- The cli, html, json and junit reporters show `script` assertions, and the JSON reporter carries `scriptLog`,
-  masked.
-- `docs/cli.md`: a Scripts section.
-- Tests: `packages/cli/test/integration/scripts.test.ts`. The demo server's `/login` and `/carts` routes are reused,
-  with a signed-request route added.
+- `packages/engine/src/run/run.ts`: `checkRunScripts(selected, context)` checks every active script of a selection
+  against its types, with the run's own loaders, and returns one error per failing request.
+- `packages/engine/src/run/secret-needs.ts`: a script's text is no longer scanned for `${secret:…}` (it is code),
+  and the names in `scripts.secrets` are needs, so `WIREBENCH_SECRET_<NAME>` is read for them.
+- `packages/engine/src/script/index.ts`: the scripting API exported from the engine.
+- `packages/cli/src/commands/run.ts`:
+  - one sandbox and one checker per run, disposed at the end;
+  - `RunContext.scripting` and `containsKnownSecret`;
+  - every script checked before any send, and any error written to stderr with exit 2.
+- `packages/cli/src/commands/sequence.ts`: a step's script results pass through, and a step whose only checks are a
+  post-response script's tests counts as asserted.
+- Reporters:
+  - `mask.ts` masks `scriptLog`;
+  - `cli.ts` prints `log:` lines with `-v` or for a request that did not pass, and marks `(scripts off)`;
+  - `json.ts` adds `scriptLog` and `scriptsOff` within `formatVersion` 1;
+  - `html.ts` shows the log.
+- `docs/cli.md`: a Scripts section, and the JSON report fields.
+- Tests: `packages/cli/test/integration/scripts.test.ts`, against the built binary and the demo server:
+  - a log-in script's token and cookie reach the next request, and the token is never printed;
+  - script tests and the masked log in the JSON report;
+  - a type error exits 2 before any send, naming file, line and column;
+  - a missing script file exits 2.
 
 ## Task 9 — Postman
 

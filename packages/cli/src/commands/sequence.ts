@@ -1,4 +1,5 @@
 import {
+  activeScripts,
   cappedExchange,
   createRunSender,
   errorOf,
@@ -129,9 +130,11 @@ export async function runSequences(
     // Kept per step for the report: the raw exchange of a failed or errored step.
     const raw = new Map<string, SentRequest['raw']>();
     const sender: SequenceStepSender = async (step, sequenceScope) => {
+      // A post-response script's tests count as the step's assertions (#63).
       const declared =
         (step.step.requestAssertions ? (step.selected.request.assertions ?? []).length : 0) +
-        step.step.assertions.length;
+        step.step.assertions.length +
+        (activeScripts(step.selected.request.scripts)?.post !== undefined ? 1 : 0);
       if (options.requireAssertions && declared === 0) {
         return { error: { code: 'assertions-required', message: 'This step has no assertions.' } };
       }
@@ -141,7 +144,12 @@ export async function runSequences(
           ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
         });
         raw.set(step.step.id, sent.raw);
-        return { subject: sent.subject, ...(sent.origin !== undefined ? { origin: sent.origin } : {}) };
+        return {
+          subject: sent.subject,
+          ...(sent.origin !== undefined ? { origin: sent.origin } : {}),
+          ...(sent.script !== undefined ? { script: sent.script } : {}),
+          ...(sent.scriptsOff === true ? { scriptsOff: true } : {}),
+        };
       } catch (error) {
         return { error: errorOf(error) };
       }
@@ -217,5 +225,7 @@ function stepResult(
     sequence: { id: sequence.id, name: sequence.name, stepId: step.stepId },
     transfers: step.transfers,
     ...(step.origin !== undefined ? { origin: step.origin } : {}),
+    ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog } : {}),
+    ...(step.scriptsOff === true ? { scriptsOff: true } : {}),
   };
 }

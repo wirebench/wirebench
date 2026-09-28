@@ -2,11 +2,15 @@ import { access, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import {
+  checkRunScripts,
+  createScriptChecker,
+  createScriptSandbox,
   createSecretMasker,
   envVariablesFor,
   isWirebenchError,
   loadProject,
   loadWorkspace,
+  RequestScripting,
   runRequests,
   secretNeedsOf,
   selectRequests,
@@ -308,6 +312,8 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   const output = createMaskedReporters(buildReporters(args, io), maskNow, (raw) => explainMissingSecret(raw, needs));
   const proxyFor = proxyFromEnv(io.env);
 
+  const sandbox = createScriptSandbox();
+  const checker = createScriptChecker();
   const controller = new AbortController();
   let interrupted = false;
   const onSigint = (): void => {
@@ -328,9 +334,20 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     signal: controller.signal,
     // An OAuth2 token, and a sequence value that is (or holds) a secret: every mask built after this hides it.
     onSecretValue: (value) => tokens.add(value),
+    containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
+    scripting: new RequestScripting({ sandbox, checker, onSecretValue: (value) => tokens.add(value) }),
   };
   let result: RunResult;
   try {
+    // Every script is checked before anything is sent: a wrong path fails the run up front, the
+    // same way in CI as in the app (#63).
+    const scriptErrors = await checkRunScripts(selected, context);
+    if (scriptErrors.length > 0) {
+      for (const error of scriptErrors) {
+        io.stderr.write(`${error.code}: ${maskNow()(error.message)}\n`);
+      }
+      return ExitCode.Usage;
+    }
     result =
       sequences !== undefined
         ? await runSequences(sequences, context, {
@@ -357,6 +374,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     throw error;
   } finally {
     process.removeListener('SIGINT', onSigint);
+    await Promise.all([sandbox.dispose(), checker.dispose()]);
   }
 
   await output.onRunDone(result);
