@@ -20,6 +20,7 @@ import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
   ApiAsyncApiServersRequest,
+  ApiImportOpenApiResponse,
   AsyncApiImportSummaryWire,
   AuthConfigWire,
   EngineProgressEvent,
@@ -125,7 +126,13 @@ export type UnifiedImportResult =
       readonly name: string;
       readonly problems: ImportProblemWire[];
     }
-  | { readonly kind: 'openapi'; readonly apiId: string; readonly summary: OpenApiImportSummaryWire }
+  | {
+      readonly kind: 'openapi';
+      readonly apiId: string;
+      readonly projectId: string;
+      readonly summary: OpenApiImportSummaryWire;
+      readonly webhookGroup?: ApiImportOpenApiResponse['webhookGroup'];
+    }
   | { readonly kind: 'asyncapi'; readonly apiId: string; readonly summary: AsyncApiImportSummaryWire }
   | { readonly kind: 'postman'; readonly apiId: string; readonly summary: PostmanImportSummaryWire }
   | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire }
@@ -151,6 +158,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [cache, setCache] = useState(true);
+  // OpenAPI only: also import the document's webhooks and callbacks into the project's webhook
+  // group. Ticked by default — the document offering them is reason enough to bring them across.
+  const [importWebhooksChecked, setImportWebhooksChecked] = useState(true);
   // gRPC: whether the target speaks TLS. A `host:port` says nothing about it, unlike a URL.
   const [tls, setTls] = useState(false);
   // gRPC server reflection: the server to ask, which version to ask with, and whether to insist.
@@ -347,6 +357,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setUrl('');
     setName('');
     setBaseUrl('');
+    setImportWebhooksChecked(true);
     setTls(false);
     setServerTarget('');
     setReflectionVersion('auto');
@@ -670,6 +681,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           source: openApiSource,
           cache,
           token,
+          webhooks: importWebhooksChecked,
           ...(name.trim().length > 0 ? { name: name.trim() } : {}),
           ...(baseUrl.trim().length > 0 ? { baseUrl: baseUrl.trim() } : {}),
           ...withDefinitionAuth,
@@ -682,7 +694,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
         setResult({
           kind: 'openapi',
           apiId: imported.apiId,
+          projectId: imported.projectId,
           summary: imported.summary,
+          ...(imported.webhookGroup !== undefined ? { webhookGroup: imported.webhookGroup } : {}),
         });
       } else if (targetFormat === 'asyncapi') {
         const imported = await useProjectStore.getState().importAsyncApi({
@@ -1286,6 +1300,18 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 </label>
               )}
 
+              {effectiveFormat === 'openapi' && (
+                <label className="mt-2 flex items-center gap-2 text-sm text-fg-subtle">
+                  <input
+                    type="checkbox"
+                    data-testid="import-openapi-webhooks"
+                    checked={importWebhooksChecked}
+                    onChange={(e) => setImportWebhooksChecked(e.target.checked)}
+                  />
+                  Import webhooks & callbacks
+                </label>
+              )}
+
               {progress !== undefined && (
                 <p data-testid="import-openapi-progress" className="mt-3 truncate text-sm text-fg-subtle">
                   {progress}
@@ -1362,6 +1388,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResult; readonly onDone: () => void }) {
   const updateApi = useProjectStore((state) => state.updateApi);
   const openApiSummary = result.kind === 'openapi' ? result.summary : undefined;
+  const projectName = useProjectStore((state) =>
+    result.kind === 'openapi' ? state.projects[result.projectId]?.name : undefined,
+  );
   const [applied, setApplied] = useState<string | undefined>(
     openApiSummary?.securitySchemes.find((scheme) => scheme.applied)?.name,
   );
@@ -1397,7 +1426,11 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
               {result.summary.requests} request{result.summary.requests === 1 ? '' : 's'} in {result.summary.folders}{' '}
               folder
               {result.summary.folders === 1 ? '' : 's'}
-              {result.summary.deprecated > 0 ? `, ${result.summary.deprecated} deprecated` : ''}.
+              {result.summary.deprecated > 0 ? `, ${result.summary.deprecated} deprecated` : ''}
+              {result.summary.webhooks > 0
+                ? `, ${result.summary.webhooks} webhook${result.summary.webhooks === 1 ? '' : 's'}`
+                : ''}
+              .
             </p>
           </div>
 
@@ -1438,6 +1471,21 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
               {usable.length === 0 && (
                 <p className="mt-1 text-xs text-fg-subtle">None of them is a scheme this client can send.</p>
               )}
+            </div>
+          )}
+
+          {result.webhookGroup !== undefined && (
+            <div data-testid="import-openapi-webhooks-result" className="rounded border border-hairline-strong p-2">
+              <p className="text-sm text-fg-default">
+                {result.webhookGroup.items.length} webhook{result.webhookGroup.items.length === 1 ? '' : 's'} & callback
+                {result.webhookGroup.items.length === 1 ? '' : 's'} → added to {projectName} ▸ Webhooks ▸{' '}
+                {result.webhookGroup.name}
+              </p>
+              <ul className="mt-1 flex flex-col gap-0.5 text-xs text-fg-subtle">
+                {result.webhookGroup.items.map((item) => (
+                  <li key={item.id}>{item.label}</li>
+                ))}
+              </ul>
             </div>
           )}
 

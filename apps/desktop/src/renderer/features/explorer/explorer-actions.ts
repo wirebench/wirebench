@@ -339,8 +339,10 @@ export const explorerActions = {
    * fills the dialog in.
    */
   importWebhooks(apiId: string | undefined): void {
-    // Task 14 replaces this body with the import dialog.
-    void apiId;
+    if (apiId === undefined) {
+      return;
+    }
+    useWebhookItemsDialogs.getState().openImport(apiId);
   },
 
   /** Creates a gRPC API in one project and opens its tab, so the user lands on its target field. */

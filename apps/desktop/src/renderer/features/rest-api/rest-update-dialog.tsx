@@ -24,6 +24,7 @@ import {
 import { showToast } from '../../components/toast.js';
 import { ipc } from '../../state/ipc-client.js';
 import { useProjectStore } from '../../state/project.js';
+import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
 import type { ApiRestPlanUpdateResponse, AuthConfigWire, RestUpdateSourceWire } from '../../../shared/wire-types.js';
 
 export interface RestUpdateDialogProps {
@@ -256,7 +257,15 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
   }
 
   const empty =
-    plan !== undefined && plan.added.length + plan.removed.length + plan.changed.length + plan.api.length === 0;
+    plan !== undefined &&
+    plan.added.length +
+      plan.removed.length +
+      plan.changed.length +
+      plan.api.length +
+      plan.webhooks.added.length +
+      plan.webhooks.removed.length +
+      plan.webhooks.changed.length ===
+      0;
   const trimmedUrl = url.trim();
 
   return (
@@ -318,6 +327,51 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                 Nothing is deleted: a removed operation’s request is kept and badged orphaned. Fields are rewritten only
                 where they still equal what the old definition generated.
               </p>
+              {(plan.webhooks.added.length > 0 ||
+                plan.webhooks.removed.length > 0 ||
+                plan.webhooks.changed.length > 0) && (
+                <div data-testid="rest-update-webhooks" className="flex flex-col gap-2 border-t border-hairline pt-3">
+                  {!plan.webhooks.linked && plan.webhooks.added.length > 0 ? (
+                    <p className="text-xs text-fg-default">
+                      Webhooks not imported —{' '}
+                      <button
+                        type="button"
+                        data-testid="rest-update-webhooks-import"
+                        className="text-accent underline"
+                        onClick={() => useWebhookItemsDialogs.getState().openImport(apiId)}
+                      >
+                        Import webhooks…
+                      </button>
+                    </p>
+                  ) : (
+                    <>
+                      <h3 className="text-xs font-medium text-fg-muted">
+                        {`Webhooks +${String(plan.webhooks.added.length)} ~${String(plan.webhooks.changed.length)} −${String(plan.webhooks.removed.length)}`}
+                      </h3>
+                      <OpList
+                        title="Added webhooks"
+                        testId="rest-update-webhooks-added"
+                        items={plan.webhooks.added.map((item) => item.label)}
+                      />
+                      <OpList
+                        title="Removed webhooks"
+                        testId="rest-update-webhooks-removed"
+                        items={plan.webhooks.removed.map((item) => item.label)}
+                      />
+                      <OpList
+                        title="Changed webhooks"
+                        testId="rest-update-webhooks-changed"
+                        items={plan.webhooks.changed.map(
+                          (change) => `${change.item.label}: ${change.reasons.join(', ')}`,
+                        )}
+                      />
+                      <p className="text-xs text-fg-subtle">
+                        Removed webhooks are kept and badged orphaned; hand-made webhooks are never changed.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {choosing ? (

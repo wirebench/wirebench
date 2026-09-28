@@ -6,6 +6,7 @@ import type { IpcError } from '../../shared/ipc.js';
 import type {
   ApiImportAsyncApiRequest,
   ApiImportOpenApiRequest,
+  ApiImportOpenApiResponse,
   AsyncApiImportSummaryWire,
   ApiGrpcRefreshRequest,
   ApiGrpcRefreshResponse,
@@ -240,9 +241,13 @@ export interface ProjectStore extends ProjectSnapshot {
    * Imports an OpenAPI document as a new API. Unlike {@link addApi} this is not a mutation: main
    * fetches, maps, caches and saves in one call, so the mirror takes the project it answers with.
    */
-  readonly importOpenApi: (
-    request: ApiImportOpenApiRequest,
-  ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: OpenApiImportSummaryWire }>;
+  readonly importOpenApi: (request: ApiImportOpenApiRequest) => Promise<{
+    readonly apiId: string;
+    readonly projectId: string;
+    readonly summary: OpenApiImportSummaryWire;
+    /** The webhook group the import placed, when the document offered anything to place. */
+    readonly webhookGroup?: ApiImportOpenApiResponse['webhookGroup'];
+  }>;
   /**
    * Imports an AsyncAPI document as a new WebSocket API. Like {@link importOpenApi}, main reads,
    * maps, caches and saves in one call, and the mirror takes the project it answers with.
@@ -1379,7 +1384,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         throw asError(result.error);
       }
       apply(result.value.projectId, result.value.project);
-      return { apiId: result.value.apiId, projectId: result.value.projectId, summary: result.value.summary };
+      return {
+        apiId: result.value.apiId,
+        projectId: result.value.projectId,
+        summary: result.value.summary,
+        ...(result.value.webhookGroup !== undefined ? { webhookGroup: result.value.webhookGroup } : {}),
+      };
     },
 
     importAsyncApi: async (request) => {
