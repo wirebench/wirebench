@@ -159,6 +159,24 @@ export interface OpenApiOperation {
   readonly security?: readonly OpenApiSecurityRequirement[];
   /** The declared responses, keyed as the document keys them (`'200'`, `'4XX'`, `'default'`). */
   readonly responses?: OpenApiResponses;
+  /** This operation's `callbacks`, when it declares any. */
+  readonly callbacks?: readonly OpenApiCallback[];
+}
+
+/** A root `webhooks` entry (OpenAPI 3.1+): its name and one operation per method. */
+export interface OpenApiHook {
+  readonly name: string;
+  /** Each operation's `path` is the hook's name; `method` is lower-case. */
+  readonly operations: readonly OpenApiOperation[];
+}
+
+/** One `callbacks` entry of an operation: its name, its path-item key, and that item's operations. */
+export interface OpenApiCallback {
+  readonly name: string;
+  /** The path-item key verbatim, e.g. `{$request.body#/callbackUrl}`. */
+  readonly expression: string;
+  /** Each operation's `path` is the expression. */
+  readonly operations: readonly OpenApiOperation[];
 }
 
 /** One declared response media type. The schema is the `$ref`-resolved node, kept as plain data. */
@@ -230,6 +248,8 @@ export interface OpenApiDocument {
   /** The document-level security requirements, when it declares any. */
   readonly security?: readonly OpenApiSecurityRequirement[];
   readonly tags: readonly OpenApiTag[];
+  /** Root `webhooks` entries (OpenAPI 3.1+), when the document declares any. */
+  readonly webhooks?: readonly OpenApiHook[];
   /** Everything the model does not carry, counted and located. */
   readonly skipped: readonly OpenApiSkipped[];
 }

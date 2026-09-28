@@ -510,8 +510,10 @@ export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
 export type {
   JsonSchema,
   JsonValue,
+  OpenApiCallback,
   OpenApiDocument,
   OpenApiExample,
+  OpenApiHook,
   OpenApiInfo,
   OpenApiMediaType,
   OpenApiOAuthFlow,

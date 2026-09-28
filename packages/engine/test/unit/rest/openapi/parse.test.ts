@@ -266,11 +266,11 @@ describe('parsing the 3.1 fixture', () => {
 
   it('counts what it does not import, and says where each was', () => {
     const kinds = document.skipped.map((entry) => entry.kind);
-    expect(kinds).toContain('webhook');
-    expect(kinds).toContain('callback');
+    expect(kinds).not.toContain('webhook');
+    expect(kinds).not.toContain('callback');
     expect(kinds).toContain('extension');
-    const webhook = document.skipped.find((entry) => entry.kind === 'webhook');
-    expect(webhook?.where).toBe('/webhooks/petCreated');
+    expect(document.webhooks?.map((hook) => hook.name)).toEqual(['petCreated']);
+    expect(document.operations[0]?.callbacks?.[0]?.name).toBe('onDone');
     // The two extensions: one at the root, one on the operation.
     expect(document.skipped.filter((entry) => entry.kind === 'extension')).toHaveLength(2);
   });

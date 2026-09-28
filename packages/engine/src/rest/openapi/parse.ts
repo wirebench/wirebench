@@ -17,8 +17,10 @@ import { OpenApiError } from '../../errors.js';
 import type {
   JsonSchema,
   JsonValue,
+  OpenApiCallback,
   OpenApiDocument,
   OpenApiExample,
+  OpenApiHook,
   OpenApiMediaType,
   OpenApiOAuthFlow,
   OpenApiOperation,
@@ -180,7 +182,6 @@ export function versionOf(root: unknown): { readonly version: OpenApiVersion; re
 
 /** The keys a document may carry that this client knowingly does not read, with what to call them. */
 const IGNORED_ROOT_KEYS: Readonly<Record<string, string>> = {
-  webhooks: 'webhook',
   callbacks: 'callback',
   links: 'link',
 };
@@ -213,6 +214,8 @@ export function parseOpenApiDocument(root: unknown): OpenApiDocument {
   const info = isRecord(document['info']) ? document['info'] : {};
   const title = asString(info['title']) ?? 'Imported API';
 
+  const webhooks = parseWebhooks(document['webhooks'], version, skipped);
+
   for (const [key, kind] of Object.entries(IGNORED_ROOT_KEYS)) {
     const value = document[key];
     if (isRecord(value)) {
@@ -242,8 +245,31 @@ export function parseOpenApiDocument(root: unknown): OpenApiDocument {
       ? { security: parseSecurityRequirements(document['security']) as readonly OpenApiSecurityRequirement[] }
       : {}),
     tags: parseTags(document['tags']),
+    ...(webhooks.length > 0 ? { webhooks } : {}),
     skipped,
   };
+}
+
+/** Root `webhooks` (OpenAPI 3.1+): one {@link OpenApiHook} per name, each a path item of operations. */
+function parseWebhooks(value: unknown, version: OpenApiVersion, skipped: OpenApiSkipped[]): readonly OpenApiHook[] {
+  if (!isRecord(value)) return [];
+  const hooks: OpenApiHook[] = [];
+  for (const [name, item] of Object.entries(value)) {
+    if (name.startsWith('x-')) {
+      skipped.push({ kind: 'extension', where: `/webhooks/${name}`, reason: 'vendor extensions are not imported' });
+      continue;
+    }
+    if (version === '3.0') {
+      skipped.push({ kind: 'webhook', where: `/webhooks/${name}`, reason: 'webhooks need OpenAPI 3.1' });
+      continue;
+    }
+    if (!isRecord(item)) {
+      skipped.push({ kind: 'webhook', where: `/webhooks/${name}`, reason: 'not a path item' });
+      continue;
+    }
+    hooks.push({ name, operations: parsePathItemOperations(name, item, skipped) });
+  }
+  return hooks;
 }
 
 function parseServers(value: unknown, skipped: OpenApiSkipped[]): readonly OpenApiServer[] {
@@ -313,37 +339,44 @@ function parseOperations(value: unknown, skipped: OpenApiSkipped[]): readonly Op
       skipped.push({ kind: 'path', where: `/paths/${path}`, reason: 'not a path item' });
       continue;
     }
-    const shared = parseParameters(item['parameters'], `${path} (path level)`, skipped);
-    for (const [key, operation] of Object.entries(item)) {
-      if (!HTTP_METHODS.includes(key.toLowerCase())) {
+    operations.push(...parsePathItemOperations(path, item, skipped));
+  }
+  return operations;
+}
+
+/** One path item's operations: the fixed HTTP-method fields plus 3.2's `additionalOperations`. */
+function parsePathItemOperations(key: string, item: Record_, skipped: OpenApiSkipped[]): OpenApiOperation[] {
+  const operations: OpenApiOperation[] = [];
+  const shared = parseParameters(item['parameters'], `${key} (path level)`, skipped);
+  for (const [method, operation] of Object.entries(item)) {
+    if (!HTTP_METHODS.includes(method.toLowerCase())) {
+      continue;
+    }
+    if (!isRecord(operation)) {
+      skipped.push({ kind: 'operation', where: `${method.toUpperCase()} ${key}`, reason: 'not an object' });
+      continue;
+    }
+    operations.push(parseOperation(method.toLowerCase(), key, operation, shared, skipped));
+  }
+  if (isRecord(item['additionalOperations'])) {
+    for (const [method, operation] of Object.entries(item['additionalOperations'])) {
+      if (method.startsWith('x-')) {
+        skipped.push({ kind: 'extension', where: `${method} ${key}`, reason: 'vendor extensions are not imported' });
+        continue;
+      }
+      if (FIXED_PATH_ITEM_METHODS.has(method.toLowerCase())) {
+        skipped.push({ kind: 'operation', where: `${method} ${key}`, reason: 'use the fixed field' });
+        continue;
+      }
+      if (!RFC_9110_METHOD_TOKEN.test(method)) {
+        skipped.push({ kind: 'operation', where: `${method} ${key}`, reason: 'invalid HTTP method name' });
         continue;
       }
       if (!isRecord(operation)) {
-        skipped.push({ kind: 'operation', where: `${key.toUpperCase()} ${path}`, reason: 'not an object' });
+        skipped.push({ kind: 'operation', where: `${method} ${key}`, reason: 'not an object' });
         continue;
       }
-      operations.push(parseOperation(key.toLowerCase(), path, operation, shared, skipped));
-    }
-    if (isRecord(item['additionalOperations'])) {
-      for (const [key, operation] of Object.entries(item['additionalOperations'])) {
-        if (key.startsWith('x-')) {
-          skipped.push({ kind: 'extension', where: `${key} ${path}`, reason: 'vendor extensions are not imported' });
-          continue;
-        }
-        if (FIXED_PATH_ITEM_METHODS.has(key.toLowerCase())) {
-          skipped.push({ kind: 'operation', where: `${key} ${path}`, reason: 'use the fixed field' });
-          continue;
-        }
-        if (!RFC_9110_METHOD_TOKEN.test(key)) {
-          skipped.push({ kind: 'operation', where: `${key} ${path}`, reason: 'invalid HTTP method name' });
-          continue;
-        }
-        if (!isRecord(operation)) {
-          skipped.push({ kind: 'operation', where: `${key} ${path}`, reason: 'not an object' });
-          continue;
-        }
-        operations.push(parseOperation(key, path, operation, shared, skipped));
-      }
+      operations.push(parseOperation(method, key, operation, shared, skipped));
     }
   }
   return operations;
@@ -365,8 +398,8 @@ function parseOperation(
     merged.set(`${parameter.in}:${parameter.name}`, parameter);
   }
   for (const key of Object.keys(operation)) {
-    if (key === 'callbacks' || key === 'links') {
-      skipped.push({ kind: key.replace(/s$/, ''), where, reason: `${key} are not imported` });
+    if (key === 'links') {
+      skipped.push({ kind: 'link', where, reason: 'links are not imported' });
     }
     if (key.startsWith('x-')) {
       skipped.push({ kind: 'extension', where: `${where} ${key}`, reason: 'vendor extensions are not imported' });
@@ -375,6 +408,7 @@ function parseOperation(
   const requestBody = parseRequestBody(operation['requestBody'], where, skipped);
   const security = parseSecurityRequirements(operation['security']);
   const responses = parseResponses(operation['responses'], false);
+  const callbacks = parseCallbacks(operation['callbacks'], where, skipped);
 
   return {
     method,
@@ -392,7 +426,26 @@ function parseOperation(
     ...(requestBody !== undefined ? { requestBody } : {}),
     ...(security !== undefined ? { security } : {}),
     ...(responses !== undefined ? { responses } : {}),
+    ...(callbacks.length > 0 ? { callbacks } : {}),
   };
+}
+
+/** One operation's `callbacks`: each name to its path-item key (an expression) and that item's operations. */
+function parseCallbacks(value: unknown, where: string, skipped: OpenApiSkipped[]): readonly OpenApiCallback[] {
+  if (!isRecord(value)) return [];
+  const callbacks: OpenApiCallback[] = [];
+  for (const [name, entry] of Object.entries(value)) {
+    if (name.startsWith('x-') || !isRecord(entry)) continue;
+    for (const [expression, item] of Object.entries(entry)) {
+      if (expression.startsWith('x-')) continue;
+      if (!isRecord(item)) {
+        skipped.push({ kind: 'callback', where: `${where} ${name}`, reason: 'not a path item' });
+        continue;
+      }
+      callbacks.push({ name, expression, operations: parsePathItemOperations(expression, item, skipped) });
+    }
+  }
+  return callbacks;
 }
 
 /**
