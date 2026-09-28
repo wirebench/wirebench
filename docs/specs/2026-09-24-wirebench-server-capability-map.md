@@ -19,7 +19,7 @@ stable; plans, branches and commits select work by them. The second slice adds o
 | `webhook-capture` | Third slice: catch URLs owned by a workspace (`ANY /hooks/<secret>/*`, public, secret in the path), captures stored in Postgres with retention by count and age, a configured response per catch URL, a per-URL rate limit, a management API for editors, live `capture` / `hooks` events, the desktop *Webhooks* node and capture viewer | `teams-access`, `live-updates` | `2026-09-27-wirebench-server-webhook-capture-design.md` |
 | `webhook-signatures` | Third slice: a provider preset and secret per catch URL; each capture shows verified, failed or not checked | `webhook-capture` | not yet written |
 | `callback-assertion` | Third slice: a request assertion that waits after the send for a matching capture on a catch URL, within a timeout, then asserts on it | `webhook-capture` | not yet written |
-| `openapi-webhooks-import` | Third slice: OpenAPI `webhooks` and `callbacks` imported as a *Webhooks* folder of requests aimed at a target variable; engine and desktop only | — | not yet written |
+| `openapi-webhooks-import` | Third slice: a per-project *Webhooks* collection of outbound webhook items (made by hand, imported from OpenAPI `webhooks` and `callbacks`, or saved from a capture), sent through the REST sender to a target set once and overridable per folder; callback URLs resolved from runtime expressions; kept in step by *Update definition*; engine and desktop only | `webhook-capture` (catch-URL picker, *Save as webhook*) | `2026-09-28-wirebench-openapi-webhooks-import-design.md` |
 
 Build order: `server-host` → `identity` → `teams-access` → `server-sync`.
 
