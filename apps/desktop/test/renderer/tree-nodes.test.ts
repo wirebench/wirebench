@@ -581,3 +581,51 @@ describe('buildExplorerTree with WebSocket APIs', () => {
     expect(before[0]?.children?.map((child) => child.kind)).toEqual(['interface']);
   });
 });
+
+describe('buildExplorerTree — webhooks (webhook-capture §4.2)', () => {
+  const HOOKS = {
+    canEdit: false,
+    hooks: [
+      { id: 'h1', name: 'Payments', enabled: true, unseen: { count: 3, more: false } },
+      { id: 'h2', name: 'Source', enabled: false, unseen: { count: 200, more: true } },
+    ],
+  };
+
+  it('appends a Webhooks root after the projects, with a node per catch URL', () => {
+    const tree = buildExplorerTree([], [], {}, [], {}, undefined, {}, {}, HOOKS);
+    expect(tree).toEqual([
+      {
+        id: 'webhooks',
+        kind: 'webhooks',
+        label: 'Webhooks',
+        canEdit: false,
+        children: [
+          {
+            id: 'catch-url:h1',
+            kind: 'catch-url',
+            label: 'Payments',
+            hookId: 'h1',
+            canEdit: false,
+            enabled: true,
+            unseen: 3,
+            unseenMore: false,
+          },
+          {
+            id: 'catch-url:h2',
+            kind: 'catch-url',
+            label: 'Source',
+            hookId: 'h2',
+            canEdit: false,
+            enabled: false,
+            unseen: 200,
+            unseenMore: true,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('leaves the tree as it was without webhooks', () => {
+    expect(buildExplorerTree([], [], {}, [])).toEqual([]);
+  });
+});

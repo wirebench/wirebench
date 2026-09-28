@@ -4,6 +4,7 @@ import { recreateRequest, type RecreateMode } from '../request-editor/request-ac
 import { explorerActions } from './explorer-actions.js';
 import { projectRowActions } from './project-actions.js';
 import type { ExplorerNode } from './tree-nodes.js';
+import { webhooksActions } from '../webhooks/webhooks-actions.js';
 
 /**
  * The OS file manager's own name for itself, so the menu reads the way the platform does.
@@ -315,6 +316,33 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         run: () => explorerActions.copyEndpointAddress(node.address),
       },
     ]);
+  }
+
+  // webhook-capture §4.2: a viewer sees what it may run and nothing else.
+  if (node.kind === 'webhooks') {
+    return groups(
+      node.canEdit === true
+        ? [{ key: 'new-catch-url', label: 'New catch URL…', run: () => webhooksActions.newCatchUrl() }]
+        : [],
+    );
+  }
+
+  if (node.kind === 'catch-url' && node.hookId !== undefined) {
+    const hookId = node.hookId;
+    const editor = node.canEdit === true;
+    return groups(
+      [
+        { key: 'copy-url', label: 'Copy URL', run: () => void webhooksActions.copyUrl(hookId) },
+        { key: 'settings', label: 'Settings…', run: () => webhooksActions.openSettings(hookId) },
+      ],
+      editor
+        ? [
+            { key: 'rotate', label: 'Rotate URL…', run: () => webhooksActions.confirm('rotate', hookId) },
+            { key: 'clear', label: 'Clear captures', run: () => webhooksActions.confirm('clear', hookId) },
+          ]
+        : [],
+      editor ? [{ key: 'delete', label: 'Delete', run: () => webhooksActions.confirm('delete', hookId) }] : [],
+    );
   }
 
   return [];

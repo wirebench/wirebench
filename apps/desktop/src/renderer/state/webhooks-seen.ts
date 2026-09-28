@@ -7,6 +7,14 @@ export const SEEN_KEY = 'wirebench.webhooks.seen';
 
 const keyOf = (url: string, hookId: string): string => `${url} ${hookId}`;
 
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+}
+
 function readAll(storage: Storage): Record<string, string> {
   try {
     const raw = storage.getItem(SEEN_KEY);
@@ -39,8 +47,9 @@ export function writeSeen(url: string, hookId: string, captureId: string, storag
   writeAll(storage, { ...readAll(storage), [keyOf(url, hookId)]: captureId });
 }
 
+/** `url` may be the server's full URL or its origin — this applies `originOf` itself, like the store does. */
 export function forgetSeen(url: string, hookId: string, storage: Storage = localStorage): void {
   const seen = readAll(storage);
-  delete seen[keyOf(url, hookId)];
+  delete seen[keyOf(originOf(url), hookId)];
   writeAll(storage, seen);
 }

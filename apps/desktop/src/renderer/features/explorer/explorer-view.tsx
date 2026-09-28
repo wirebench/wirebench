@@ -12,6 +12,7 @@ import {
   FolderPlus,
   FoldVertical,
   Globe,
+  Inbox,
   Link2,
   Loader2,
   Network,
@@ -19,6 +20,7 @@ import {
   Radio,
   RefreshCw,
   UnfoldVertical,
+  Webhook,
 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -37,8 +39,11 @@ import { explorerActions } from './explorer-actions.js';
 import { openProjectTab, projectRowActions } from './project-actions.js';
 import { isDropDisabled, planMoves } from './drag-drop.js';
 import { getExplorerTree, registerExplorerTree } from './explorer-api.js';
-import type { ExplorerNode, ExplorerProject } from './tree-nodes.js';
+import type { ExplorerNode, ExplorerProject, ExplorerWebhooks } from './tree-nodes.js';
 import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
+import { openCatchUrlTab, webhooksActions } from '../webhooks/webhooks-actions.js';
+import { useSyncStore } from '../../state/sync.js';
+import { useWebhooksStore } from '../../state/webhooks.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
 function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, { width: number; height: number }] {
@@ -76,6 +81,8 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'grpc-api': Radio,
   'ws-api': Cable,
   folder: Folder,
+  webhooks: Webhook,
+  'catch-url': Inbox,
 };
 
 /**
@@ -105,6 +112,8 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'grpc-request': 'grpc-request-row',
   'ws-api': 'ws-api-row',
   'ws-request': 'ws-request-row',
+  webhooks: 'webhooks-row',
+  'catch-url': 'catch-url-row',
 };
 
 const INLINE_BUTTON_CLASS =
@@ -147,7 +156,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             node.data.kind === 'request' ||
             node.data.kind === 'rest-request' ||
             node.data.kind === 'grpc-request' ||
-            node.data.kind === 'ws-request'
+            node.data.kind === 'ws-request' ||
+            node.data.kind === 'catch-url'
           ) {
             node.activate();
           } else if (node.data.kind === 'api' || node.data.kind === 'grpc-api' || node.data.kind === 'ws-api') {
@@ -305,6 +315,24 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             {node.data.problemCount}
           </span>
         )}
+        {node.data.kind === 'catch-url' && node.data.enabled === false && (
+          <span
+            data-testid="catch-url-disabled-badge"
+            title="Answers 404 to every sender"
+            className="shrink-0 rounded-full bg-surface-base px-1.5 text-xs text-fg-subtle"
+          >
+            off
+          </span>
+        )}
+        {node.data.kind === 'catch-url' && (node.data.unseen ?? 0) > 0 && (
+          <span
+            data-testid="catch-url-unseen"
+            title="Captures not seen on this device"
+            className="shrink-0 rounded-full bg-accent px-1.5 text-xs text-fg-on-accent"
+          >
+            {`${String(node.data.unseen)}${node.data.unseenMore === true ? '+' : ''}`}
+          </span>
+        )}
       </div>
     </ExplorerContextMenu>
   );
@@ -337,6 +365,10 @@ export function ExplorerView() {
   const requestDeleteNode = useUiStore((state) => state.requestDeleteNode);
   const requestRemoveInterface = useUiStore((state) => state.requestRemoveInterface);
   const requestDeleteRequest = useUiStore((state) => state.requestDeleteRequest);
+  const role = useSyncStore((state) => state.status.role);
+  const hooksMeta = useWebhooksStore((state) => state.meta);
+  const catchUrls = useWebhooksStore((state) => state.hooks);
+  const unseen = useWebhooksStore((state) => state.unseen);
 
   const [containerRef, size] = useElementSize<HTMLDivElement>();
   const [treeRef, setTreeRef] = useState<import('react-arborist').TreeApi<ExplorerNode> | null | undefined>(undefined);
@@ -353,7 +385,30 @@ export function ExplorerView() {
     ...(project.message !== undefined ? { message: project.message } : {}),
   }));
   const conflicted = useConflictTargets();
-  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests), rest, conflicted, grpc, ws);
+  // webhook-capture §4.2: the Webhooks root, when the workspace's server offers catch URLs.
+  const webhooks: ExplorerWebhooks | undefined =
+    hooksMeta?.enabled === true
+      ? {
+          canEdit: role === 'editor' || role === 'admin',
+          hooks: catchUrls.map((hook) => ({
+            id: hook.id,
+            name: hook.name,
+            enabled: hook.enabled,
+            unseen: unseen[hook.id] ?? { count: 0, more: false },
+          })),
+        }
+      : undefined;
+  const data = buildExplorerTree(
+    roots,
+    order,
+    interfaces,
+    Object.values(requests),
+    rest,
+    conflicted,
+    grpc,
+    ws,
+    webhooks,
+  );
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
@@ -564,6 +619,13 @@ export function ExplorerView() {
                   explorerActions.openWsRequest(node.data.requestId);
                   return;
                 }
+                if (node.data.kind === 'webhooks') {
+                  return;
+                }
+                if (node.data.kind === 'catch-url') {
+                  if (node.data.hookId !== undefined) openCatchUrlTab(node.data.hookId);
+                  return;
+                }
                 explorerActions.openRequest(node.data.requestId);
               }}
               onSelect={(nodes) => {
@@ -669,6 +731,12 @@ export function ExplorerView() {
                     explorerActions.removeWsApi(node.data.apiId);
                   } else if (node.data.kind === 'ws-request') {
                     explorerActions.deleteWsRequest(node.data.requestId);
+                  } else if (
+                    node.data.kind === 'catch-url' &&
+                    node.data.canEdit === true &&
+                    node.data.hookId !== undefined
+                  ) {
+                    webhooksActions.confirm('delete', node.data.hookId);
                   }
                 }
               }}
