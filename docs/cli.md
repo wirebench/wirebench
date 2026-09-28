@@ -34,7 +34,7 @@ wirebench run <path> [selector…] [options]
 [selector…]            Paths below <path>: a request file, an operation, an interface, an API.
                        None = every request in the project.
 
--e, --env <name>       Environment by name or slug. Required when the target defines any.
+-e, --env <name>       Environment by name, slug or id. Required when the target defines any.
     --var <k=v>        Override an environment property for this run. Repeatable.
     --reporter <spec>  cli | junit=<file> | json=<file> | html=<file>. Repeatable. Default: cli.
     --bail             Stop at the first failed or errored request; the rest are skipped.
@@ -56,6 +56,39 @@ wirebench --version | --help
 Requests run one after another, in the project's own order (`order`, then name) — deterministic,
 and `--bail` stops after exactly the requests that would otherwise have run before the failure.
 Parallelism is out of scope.
+
+## Environments and properties
+
+A `${…}` reference in a request resolves the way it does in the desktop app, against the scopes a
+run supplies:
+
+- **Environment** — the properties of the environment `--env` names, `${#Env#name}`. Each
+  `--var k=v` is laid over them, so a `--var` always wins.
+- **Project** — `wirebench.yaml`'s `properties`, `${#Project#name}`.
+- **System** — the process environment, `${#System#name}`.
+
+The `${name}` shorthand looks in the environment first, then the project, then the workspace.
+
+There are no global properties: what the app reads from its user's preferences has no counterpart
+in a pipeline.
+
+**Inside a workspace.** When the project directory sits inside a workspace — the nearest
+`workspace.yaml` above it lists the project, as an internal project under its `projects/` or a
+linked one by path — the run resolves as the app does with that workspace open:
+
+- the workspace's `properties` are the `${#Workspace#name}` scope;
+- `--env` names a **workspace** environment (by name, slug or id), and the project's own
+  environments are no longer offered on their own. The environment scope is that workspace
+  environment's properties, with the project environment of the same slug, if there is one, laid
+  over them (the project's value wins on a shared key) and `--var` over both;
+- an endpoint or base URL comes from that linked project environment's override first, then the
+  workspace environment's `<projectSlug>/<interfaceSlug>` override, then the request's, interface's
+  or API's own.
+
+A `workspace.yaml` that does not list the project, or that is not a workspace at all, is reported
+with a warning and not applied.
+`secrets list` reads the same scopes, so a `${secret:name}` token a workspace property holds is
+listed too.
 
 ## Assertions
 

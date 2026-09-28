@@ -38,6 +38,19 @@ export function linkedEnvironment(
   return project.environments.find((environment) => environment.slug === workspaceEnv.slug);
 }
 
+/**
+ * `workspace` with `environmentId` as its active environment, or with none active when it is
+ * `undefined`: resolution under a chosen environment without touching the workspace's own.
+ */
+export function withActiveEnvironment(workspace: Workspace, environmentId: string | undefined): Workspace {
+  if (environmentId !== undefined) {
+    return { ...workspace, activeEnvironmentId: environmentId };
+  }
+  const copy: { -readonly [K in keyof Workspace]: Workspace[K] } = { ...workspace };
+  delete copy.activeEnvironmentId;
+  return copy;
+}
+
 /** Finds `workspace`'s active environment (per `activeEnvironmentId`), or `undefined` when none is active. */
 function activeWorkspaceEnvironment(workspace: Workspace): WorkspaceEnvironment | undefined {
   if (workspace.activeEnvironmentId === undefined) {
