@@ -27,6 +27,7 @@ import type {
   PostmanBody,
   PostmanCollection,
   PostmanHeader,
+  PostmanEvent,
   PostmanImportSummary,
   PostmanItem,
   PostmanQueryParam,
@@ -34,6 +35,7 @@ import type {
   PostmanUrl,
 } from './model.js';
 import { MAX_POSTMAN_DEPTH } from './parse.js';
+import type { RequestScripts } from '../../script/model.js';
 
 /** Matches a leading `${baseUrl}` / `${base_url}` reference in any letter case. */
 const BASE_URL_REFERENCE = /^\$\{(baseurl|base_url)\}/i;
@@ -99,9 +101,15 @@ export function apiFromPostmanCollection(
   let folderCount = 0;
   let requestCount = 0;
 
+  let scriptedRequests = 0;
+  const unsupported = new Map<string, Set<string>>();
+  const collectionParts = scriptParts(collection.event, `the collection "${name}"`);
+
   const mapItems = (
     items: readonly PostmanItem[],
     depth: number,
+    inherited: ScriptParts,
+    trail: readonly string[],
   ): { folders: RestFolder[]; requests: RestRequestDef[] } => {
     if (depth > MAX_POSTMAN_DEPTH) {
       throw tooDeep();
@@ -121,7 +129,13 @@ export function apiFromPostmanCollection(
         const slug = uniqueSlug(item.name, folderSlugs);
         folderSlugs.add(slug);
         const folderAuth = mapPostmanAuth(item.auth, false, warnings);
-        const children = mapItems(item.item, depth + 1);
+        const folderTrail = [...trail, item.name];
+        const children = mapItems(
+          item.item,
+          depth + 1,
+          joinParts(inherited, scriptParts(item.event, `the folder "${folderTrail.join(' / ')}"`)),
+          folderTrail,
+        );
 
         folders.push(
           createFolder(item.name, {
@@ -141,14 +155,29 @@ export function apiFromPostmanCollection(
         requestSlugs.add(slug);
 
         const mappedRequest = mapRequest(item.name, slug, requests.length, item, newId, baseUrl, warnings);
-        requests.push(mappedRequest);
+        const parts = joinParts(inherited, scriptParts(item.event, 'the request'));
+        const scripts = importedScripts(parts);
+        if (scripts !== undefined) {
+          scriptedRequests += 1;
+          const calls = unsupportedCalls([...parts.pre, ...parts.post].map((part) => part.text).join('\n'));
+          if (calls.length > 0) unsupported.set([...trail, item.name].join(' / '), new Set(calls));
+        }
+        requests.push(scripts !== undefined ? { ...mappedRequest, scripts } : mappedRequest);
       }
     }
 
     return { folders, requests };
   };
 
-  const root = mapItems(collection.item, 1);
+  const root = mapItems(collection.item, 1, collectionParts, []);
+  if (scriptedRequests > 0) {
+    warnings.push(
+      `Scripts on ${String(scriptedRequests)} ${scriptedRequests === 1 ? 'request was' : 'requests were'} imported switched off: read them on each request's Scripts tab, then switch them on`,
+    );
+  }
+  for (const [path, calls] of unsupported) {
+    warnings.push(`The scripts of "${path}" call what Wirebench does not run: ${[...calls].sort().join(', ')}`);
+  }
   if (unmappedVariables.size > 0) {
     warnings.push(
       `Collection and folder variables were not imported; define them as properties: ${[...unmappedVariables].sort().join(', ')}`,
@@ -531,4 +560,64 @@ function inferBaseUrl(items: readonly PostmanItem[], depth: number): string {
     }
   }
   return '';
+}
+
+/** One piece of a request's script, and where in the collection it came from. */
+interface ScriptPart {
+  readonly from: string;
+  readonly text: string;
+}
+
+interface ScriptParts {
+  readonly pre: readonly ScriptPart[];
+  readonly post: readonly ScriptPart[];
+}
+
+function scriptParts(events: readonly PostmanEvent[] | undefined, from: string): ScriptParts {
+  const pre: ScriptPart[] = [];
+  const post: ScriptPart[] = [];
+  for (const event of events ?? []) {
+    (event.listen === 'prerequest' ? pre : post).push({ from, text: event.exec });
+  }
+  return { pre, post };
+}
+
+function joinParts(outer: ScriptParts, inner: ScriptParts): ScriptParts {
+  return { pre: [...outer.pre, ...inner.pre], post: [...outer.post, ...inner.post] };
+}
+
+/** The parts concatenated in the order Postman runs them, each under a comment saying where it came from. */
+function scriptText(parts: readonly ScriptPart[]): string {
+  return parts.map((part) => `// --- From ${part.from} ---\n${part.text.replace(/\s+$/, '')}\n`).join('\n');
+}
+
+/**
+ * A request's imported scripts: the collection's, then each enclosing folder's, then its own,
+ * written against the Postman layer and switched off until someone has read them (#63).
+ */
+function importedScripts(parts: ScriptParts): RequestScripts | undefined {
+  if (parts.pre.length === 0 && parts.post.length === 0) return undefined;
+  return {
+    ...(parts.pre.length > 0 ? { pre: { text: scriptText(parts.pre) } } : {}),
+    ...(parts.post.length > 0 ? { post: { text: scriptText(parts.post) } } : {}),
+    api: 'postman',
+    enabled: false,
+    secrets: [],
+  };
+}
+
+/** The Postman calls a script makes that the layer does not run (spec §Postman), found by name. */
+const UNSUPPORTED_CALLS: readonly [RegExp, string][] = [
+  [/\bpm\.sendRequest\b/, 'pm.sendRequest'],
+  [/\bpm\.cookies\.jar\b/, 'pm.cookies.jar'],
+  [/\bpm\.visualizer\b/, 'pm.visualizer'],
+  [/\bpm\.execution\.setNextRequest\b/, 'pm.execution.setNextRequest'],
+  [/\bpostman\.setNextRequest\b/, 'postman.setNextRequest'],
+  [/\brequire\s*\(/, 'require'],
+  [/\bpm\.iterationData\b/, 'pm.iterationData'],
+  [/\bpm\.vault\b/, 'pm.vault'],
+];
+
+export function unsupportedCalls(text: string): string[] {
+  return UNSUPPORTED_CALLS.filter(([pattern]) => pattern.test(text)).map(([, name]) => name);
 }

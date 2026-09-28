@@ -13,6 +13,7 @@ import type {
   PostmanCollection,
   PostmanFormDataParam,
   PostmanHeader,
+  PostmanEvent,
   PostmanInfo,
   PostmanItem,
   PostmanQueryParam,
@@ -43,7 +44,6 @@ export const MAX_POSTMAN_DEPTH = 64;
 interface ParseContext {
   readonly dynamic: Set<string>;
   skippedItems: number;
-  scriptedItems: number;
 }
 
 function itemCount(n: number): string {
@@ -130,7 +130,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
     );
   }
   const doc = root as Record_;
-  const ctx: ParseContext = { dynamic: new Set(), skippedItems: 0, scriptedItems: 0 };
+  const ctx: ParseContext = { dynamic: new Set(), skippedItems: 0 };
   const rawInfo = doc['info'] as Record_;
 
   const desc = extractDescription(rawInfo['description']);
@@ -150,16 +150,13 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
   const item = parseItems(rawItems, ctx, 1);
   const auth = isRecord(doc['auth']) ? parseAuth(doc['auth'], ctx) : undefined;
   const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable'], ctx) : undefined;
-  if (hasEvents(doc)) ctx.scriptedItems += 1;
+  const event = parseEvents(doc);
 
   const warnings: string[] = [];
   if (ctx.skippedItems > 0) {
     warnings.push(
       `${itemCount(ctx.skippedItems)} without a request ${ctx.skippedItems === 1 ? 'was' : 'were'} skipped`,
     );
-  }
-  if (ctx.scriptedItems > 0) {
-    warnings.push(`Scripts on ${itemCount(ctx.scriptedItems)} (pre-request and test) were not imported`);
   }
   if (ctx.dynamic.size > 0) {
     warnings.push(
@@ -170,14 +167,35 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
   return {
     info,
     item,
+    ...(event.length > 0 ? { event } : {}),
     ...(auth !== undefined ? { auth } : {}),
     ...(variable !== undefined ? { variable } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
-function hasEvents(raw: Record_): boolean {
-  return Array.isArray(raw['event']) && raw['event'].length > 0;
+/**
+ * An item's `prerequest` and `test` scripts, each as one text. `exec` may be a list of lines or one
+ * string; a script of another kind, or with no source, is left out.
+ */
+function parseEvents(raw: Record_): PostmanEvent[] {
+  if (!Array.isArray(raw['event'])) return [];
+  const events: PostmanEvent[] = [];
+  for (const entry of raw['event']) {
+    if (!isRecord(entry)) continue;
+    const listen = entry['listen'];
+    if (listen !== 'prerequest' && listen !== 'test') continue;
+    const script = isRecord(entry['script']) ? entry['script'] : undefined;
+    if (script !== undefined && script['disabled'] === true) continue;
+    const exec = script?.['exec'];
+    const text = Array.isArray(exec)
+      ? exec.filter((line): line is string => typeof line === 'string').join('\n')
+      : typeof exec === 'string'
+        ? exec
+        : '';
+    if (text.trim() !== '') events.push({ listen, exec: text });
+  }
+  return events;
 }
 
 function parseItems(raw: readonly unknown[], ctx: ParseContext, depth: number): PostmanItem[] {
@@ -201,7 +219,7 @@ function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem 
   const description = extractDescription(raw['description']);
   const auth = isRecord(raw['auth']) ? parseAuth(raw['auth'], ctx) : undefined;
   const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable'], ctx) : undefined;
-  if (hasEvents(raw)) ctx.scriptedItems += 1;
+  const event = parseEvents(raw);
 
   if (Array.isArray(raw['item'])) {
     // Folder item
@@ -209,6 +227,7 @@ function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem 
     return {
       name,
       item: children,
+      ...(event.length > 0 ? { event } : {}),
       ...(description !== undefined ? { description } : {}),
       ...(auth !== undefined ? { auth } : {}),
       ...(variable !== undefined ? { variable } : {}),
@@ -224,6 +243,7 @@ function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem 
   return {
     name,
     request,
+    ...(event.length > 0 ? { event } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(auth !== undefined ? { auth } : {}),
     ...(variable !== undefined ? { variable } : {}),

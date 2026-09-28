@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { TRANSFER_NAME_PATTERN } from '../sequence/model.js';
 import { applyRequestChanges } from './apply.js';
 import { buildPrelude } from './api/prelude.js';
+import { POSTMAN_LAYER } from './api/postman.js';
 import {
   SCRIPT_OUTPUT_LIMITS,
   type RequestSnapshot,
@@ -134,7 +135,12 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
       : input.response;
 
   const result = await input.sandbox.run({
-    prelude: buildPrelude(input.request.protocol, input.phase, input.api, input.layer),
+    prelude: buildPrelude(
+      input.request.protocol,
+      input.phase,
+      input.api,
+      input.layer ?? (input.api === 'postman' ? POSTMAN_LAYER : undefined),
+    ),
     code,
     filename: input.filename,
     timeoutMs: input.timeoutMs ?? 0,

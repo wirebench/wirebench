@@ -256,25 +256,33 @@
 ## Task 9 — Postman
 
 **Files**
-- `packages/engine/src/rest/postman/parse.ts` and `map.ts`:
-  - read `event` scripts at the collection, folder and request levels;
-  - concatenate them per request with part markers;
-  - write `.pre.js` and `.post.js` with `api: postman` and `enabled: false`;
-  - the summary counts requests with scripts, and lists the unsupported calls from a static scan.
-- `packages/engine/src/script/api/postman.ts`: the `pm` layer, written as JavaScript that runs inside the sandbox over
-  the common API:
+- `packages/engine/src/rest/postman/model.ts`: a collection and an item carry `event?: PostmanEvent[]`.
+- `packages/engine/src/rest/postman/parse.ts`: reads each `prerequest` and `test` script as one text, skipping a
+  disabled one or one of another kind. The "scripts were not imported" warning is gone.
+- `packages/engine/src/rest/postman/map.ts`:
+  - a request's scripts are the collection's, then each folder's, then its own, each part under a
+    `// --- From … ---` comment;
+  - they are written with `api: postman` and `enabled: false`;
+  - the summary counts the requests with scripts, says they arrived switched off, and names per request the calls
+    `unsupportedCalls` finds.
+- `packages/engine/src/script/api/postman.ts`: `POSTMAN_LAYER`, used by `runScript` for every `api: postman` script:
   - `pm.test`;
-  - an `expect` chain subset;
-  - `pm.response`, `pm.request` and `pm.info`;
-  - variable get and set mapped to `vars` and `props`;
-  - `CryptoJS`, `btoa` and `atob`;
-  - `script-unsupported` stubs for everything else the spec names.
-- Tests: `packages/engine/test/unit/rest/postman-scripts.test.ts` and
-  `packages/engine/test/unit/script/postman-layer.test.ts`:
-  - a fixture collection with root, folder and request scripts, concatenated in order;
-  - `enabled: false`;
-  - the layer runs typical test scripts;
-  - `pm.sendRequest` is `script-unsupported`.
+  - a chai-like `pm.expect`;
+  - `pm.response`, with `to.have.status`, `to.have.header` and `to.be.ok`;
+  - `pm.request`: headers, body, URL and query;
+  - `pm.environment`, `pm.collectionVariables`, `pm.globals` and `pm.variables`, all over `vars` and `props`;
+  - `pm.info`, the legacy `postman.*Variable` calls, `CryptoJS` hashes, HMACs and encoders, `btoa` and `atob`;
+  - `ScriptUnsupported` for `pm.sendRequest`, the cookie jar, the visualizer, `setNextRequest`, `require` and the
+    rest.
+- Tests:
+  - `packages/engine/test/unit/rest/postman/scripts.test.ts`: concatenation order, switched off, the summary,
+    `unsupportedCalls`;
+  - `packages/engine/test/unit/script/postman-layer.test.ts`:
+    - typical test scripts, including a failing chain's message;
+    - request changes;
+    - CryptoJS against Node's `crypto`;
+    - each unsupported call named;
+    - the legacy calls.
 
 ## Task 10 — Desktop main
 
