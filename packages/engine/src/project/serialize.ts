@@ -30,6 +30,7 @@ import {
   slugify,
 } from './paths.js';
 import { compact, stringifyYaml } from './yaml.js';
+import { sequenceDocument, sequenceFilePath } from '../sequence/file.js';
 
 /** A project's files, keyed by path relative to the project root (always `/`-separated). */
 export type ProjectFiles = ReadonlyMap<string, string>;
@@ -514,6 +515,10 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
   }
   for (const api of project.wsApis) {
     addWsApiFiles(files, api);
+  }
+  for (const sequence of project.sequences) {
+    assertPathSegment(sequence.slug);
+    files.set(sequenceFilePath(sequence.slug), sequenceDocument(sequence));
   }
 
   for (const [direction, refs] of [

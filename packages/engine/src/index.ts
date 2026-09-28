@@ -4,13 +4,15 @@ export type {
   AssertionLanguage,
   AssertionResult,
   AssertionSubject,
+  HeaderAssertion,
   MatchAssertion,
   SchemaAssertion,
   SlaAssertion,
   SoapFaultAssertion,
   StatusAssertion,
+  StepAssertion,
 } from './assert/model.js';
-export { assertionsSchema } from './assert/schema.js';
+export { assertionsSchema, stepAssertionsSchema } from './assert/schema.js';
 
 export * from './run/index.js';
 
@@ -1485,3 +1487,13 @@ export {
 export type { LiveClientMessage, LivePresenceUser, LiveRefusedCode, LiveServerMessage } from './server-api/live.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';
+export * from './sequence/index.js';
+export { readSequences } from './sequence/load.js';
+export type { SequenceFileProblem, SequenceFiles } from './sequence/load.js';
+export {
+  assertNoControlCharacters,
+  assertOriginIndependent,
+  expandWithSequenceEscaped,
+  hasSequenceValues,
+  urlOrigin,
+} from './project/sequence-guards.js';

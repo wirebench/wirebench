@@ -95,31 +95,35 @@
 ## Task 4 — Engine: sequence model, schema, load and save
 
 **Files**
-- Add `packages/engine/src/sequence/{model,schema,index}.ts`, and a `./sequence` subpath export in both blocks of
-  `packages/engine/package.json`.
-- `project/model.ts`: `Project.sequences`, and `createProject` defaults it to `[]`.
-- `project/paths.ts`: `SEQUENCES_DIR`, `SEQUENCE_SUFFIX`.
-- `project/load.ts`: `loadSequences`:
-  - the 256 KiB check comes before parsing;
-  - zod validation and the limits;
-  - `kind`, and `version` above 1, are refused per file as problems;
-  - sorted by `order`.
+- Add `packages/engine/src/sequence/{model,file,load,index}.ts`, exported from the engine root. Not a subpath:
+  every subpath is a browser-safe entry for the renderer, which reads sequences through the IPC wire types, and
+  `load.ts` needs `node:path`.
+- `project/model.ts`: `Project.sequences`, which `createProject` defaults to `[]`.
+- `sequence/file.ts`: `SEQUENCES_DIR`, `SEQUENCE_SUFFIX`, `parseSequenceFile`, `sequenceDocument`.
+  - The 256 KiB check comes before parsing.
+  - zod validation and the limits.
+  - `kind` other than `sequence`, and `version` above 1, are refused per file.
+  - Only an assertion's own fields are kept, so an unknown key is never written back.
+- `sequence/load.ts`: `readSequences`, shared by the loader and by save. A duplicate id loads the first by file name.
+- `project/load.ts`: sequences sorted by `order`; each refused file becomes a problem.
 - `project/serialize.ts`: write `sequences/<slug>.sequence.yaml`, with deterministic keys and defaults omitted.
-- `project/save.ts` `listManagedFiles`: a `sequences/*.sequence.yaml` file is managed, and so may be deleted, only
-  if this build loaded it: it parses, its `version` is one this build knows, and no other file has its id. A file
-  that is too new, malformed (say, mid-merge) or a duplicate is foreign and never deleted, so a save cannot destroy
-  a sequence the build could not read.
+- `project/save.ts`:
+  - `listManagedFiles` treats a sequence file as managed, and so deletable, only if this build loaded it. A file
+    that is too new, malformed (say, mid-merge) or a duplicate is foreign and never deleted.
+  - Writing over such a file is refused with `sequence-file-conflict`.
 - `apps/desktop/src/main/project-watch.ts`: add `sequences` to `MANAGED_TOP_DIRS` and `isManagedPath`, with a test.
-- `packages/engine/src/assert/{model,schema,index}.ts`:
-  - the `header` assertion;
+- `packages/engine/src/assert/{model,schema,index,header}.ts`:
+  - the `header` assertion, allowed in `stepAssertionsSchema` only, so request files are unchanged;
   - `AssertionSubject.headers`, filled by the runner's `soapSubject`, `restSubject` and `grpcSubject`.
-- Fixture: `packages/engine/test/fixtures/format-v5-sequences/project`.
 - Tests:
-  - `packages/engine/test/unit/sequence/{schema,load-save}.test.ts`;
-  - a format test proving that `formatVersion` stays `5` and that a project saved by the new build, then loaded
-    through a loader without sequence support, has `sequences/` untouched;
-  - a save test proving that a `version: 2` file, a malformed file and a duplicate-id file all survive a save;
+  - `packages/engine/test/unit/sequence/{file,load-save}.test.ts`;
+  - `formatVersion` stays `5` after a save;
+  - a `version: 2` file, a malformed file and a duplicate-id file all survive a save that drops every sequence;
+  - overwriting a foreign file is refused;
   - `assert/header.test.ts`.
+
+That an older build leaves `sequences/` alone is a property of the older build's code, not of this one, so it is
+established by reading that code (ADR-0003, update of 2026-09-28) rather than by a test here.
 
 ## Task 5 — Engine: transfers and `runSequence`
 

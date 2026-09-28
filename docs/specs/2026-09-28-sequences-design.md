@@ -106,7 +106,15 @@ It shows as "Missing request" and errors with `sequence-step-missing-request` wh
 
 **Load problems.** A malformed sequence file becomes a `sequence-file-invalid` project problem naming the file, and
 only that file is skipped. So is an over-size file: over 256 KiB, over 100 steps, or over 50 transfers or 50
-assertions in one step.
+assertions in one step. Two files with one id load the first by file name; the other is `sequence-duplicate-id`.
+
+**A save never deletes or overwrites a file it could not read.** A save removes the managed files the project no
+longer has, so "managed" for `sequences/` means *loaded by this build*. A file that is too new, malformed (say,
+mid-merge) or a duplicate is foreign: it survives every save, even one that drops every sequence. A save that would
+write a sequence over such a file is refused with `sequence-file-conflict`. The desktop picks new slugs around those
+files, so this is only a backstop. Both rules share `readSequences` (`sequence/load.ts`) with the loader.
+
+Workspace sync carries the whole `projects/` tree, so `sequences/` travels to teammates with no change there.
 
 ## Property transfers
 
@@ -149,14 +157,18 @@ the body's language, and never into a URL's origin.
 ## Assertions
 
 A step's assertions are the runner's `Assertion` union — `status`, `soap-fault`, `match`, `schema`, `sla` — with the
-same schema and the same evaluator (`evaluateAssertions`). One new member is added, and the CLI gets it too:
+same schema and the same evaluator (`evaluateAssertions`). A step may also use one new member:
 
 ```ts
-interface HeaderAssertion { type: 'header'; name: string; equals?: string; matches?: string; exists?: boolean;
-                            label?: string }
+interface HeaderAssertion { type: 'header'; header: string; equals?: string; matches?: string; exists?: boolean;
+                            name?: string }
 ```
 
-For this, `AssertionSubject` gains `headers: readonly (readonly [string, string])[]`. Transfers use it as well.
+`header` is a step assertion only (`stepAssertionsSchema`). A request file's `assertions:` stays exactly the
+runner's catalogue: that list is a closed union an older build reads, and a new member there is a new enum value,
+which ADR-0003 makes a `formatVersion` bump. For this, `AssertionSubject` gains
+`headers?: readonly (readonly [string, string])[]` in wire order (gRPC: metadata, then trailers), filled by the
+runner's three subjects. Transfers use it as well.
 
 A step runs the request's own assertions first (unless `requestAssertions: false`), then its own. Every assertion is
 evaluated even after one fails, as in the runner. A step with no assertions at all passes when a response arrives.
@@ -421,7 +433,8 @@ the desktop, where sequence assertions run in the main process, it would freeze 
 
 ## Error codes
 
-- **Load problems:** `sequence-file-invalid` and `sequence-version-too-new`.
+- **Load problems:** `sequence-file-invalid`, `sequence-version-too-new` and `sequence-duplicate-id`.
+- **Save error:** `sequence-file-conflict`.
 - **Step errors:**
   - `sequence-step-missing-request`
   - `sequence-step-unsupported` (a WebSocket or streaming gRPC request)
@@ -480,9 +493,9 @@ the desktop, where sequence assertions run in the main process, it would freeze 
 - `docs/success-criteria.md`: rows SC-Q1 and on.
 - `docs/roadmap.md` and `CHANGELOG.md`.
 
-## Decisions for the owner
+## Owner decisions
 
-These are the calls this design makes that earlier specs marked ask-first:
+These are the calls this design makes that earlier specs marked ask-first. The owner accepted all four on 2026-09-28:
 
 1. **No `formatVersion` bump.** A per-file `version` is used instead, as argued under [Storage](#storage). The
    roadmap expected 3.0 to be a major release partly *because* Sequences are a new file kind. With this design

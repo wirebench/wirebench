@@ -169,6 +169,7 @@ function soapSubject(
     durationMs: exchange.durationMs,
     bodyText,
     bodyKind: exchange.response?.isSoap === true ? 'xml' : 'other',
+    headers: exchange.http.rawHeaders,
     fault: {
       present: fault !== undefined,
       ...(fault !== undefined ? { summary: [fault.code, fault.reason].filter((s) => s.length > 0).join(' — ') } : {}),
@@ -196,6 +197,7 @@ function restSubject(exchange: RestExchange): AssertionSubject {
     durationMs: exchange.durationMs,
     bodyText: exchange.text,
     bodyKind: exchange.language === 'json' ? 'json' : exchange.language === 'xml' ? 'xml' : 'other',
+    headers: exchange.rawHeaders,
   };
 }
 
@@ -240,6 +242,8 @@ export function grpcSubject(result: GrpcCallResult): AssertionSubject {
     durationMs: result.exchange.durationMs,
     bodyText: decoded ? JSON.stringify(first.json) : '',
     bodyKind: decoded ? 'json' : 'other',
+    // Metadata first, then trailers: a header assertion or transfer takes the first value it finds.
+    headers: [...Object.entries(result.exchange.headers), ...Object.entries(result.exchange.trailers)],
   };
 }
 

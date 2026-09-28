@@ -51,6 +51,26 @@ export interface SlaAssertion {
 /** The union of every declarative check a request file may carry under `assertions:`. */
 export type Assertion = StatusAssertion | SoapFaultAssertion | MatchAssertion | SchemaAssertion | SlaAssertion;
 
+/**
+ * Checks a response header (gRPC: response metadata, then trailers). Name matching ignores case; the
+ * first value found is compared.
+ *
+ * A sequence step may carry it; a request file may not. The request `assertions:` schema is a closed
+ * union an older build reads, and a new member there would be a new enum value, which ADR-0003 makes
+ * a `formatVersion` bump.
+ */
+export interface HeaderAssertion {
+  readonly type: 'header';
+  readonly header: string;
+  readonly equals?: string;
+  readonly matches?: string;
+  readonly exists?: boolean;
+  readonly name?: string;
+}
+
+/** What a sequence step may assert: the request catalogue plus {@link HeaderAssertion}. */
+export type StepAssertion = Assertion | HeaderAssertion;
+
 /** What an assertion looks at — protocol-neutral, built by the runner from an exchange. */
 export interface AssertionSubject {
   readonly protocol: 'soap' | 'rest' | 'grpc';
@@ -63,11 +83,16 @@ export interface AssertionSubject {
   readonly fault?: { readonly present: boolean; readonly summary?: string };
   /** SOAP only, when the interface's definition is available: validates the response. */
   readonly validateContract?: () => Promise<readonly { readonly message: string }[]>;
+  /**
+   * The response headers in wire order (gRPC: metadata, then trailers), for `header` assertions and
+   * sequence transfers. Absent means none were recorded.
+   */
+  readonly headers?: readonly (readonly [string, string])[];
 }
 
 /** The outcome of evaluating one assertion against a subject. */
 export interface AssertionResult {
-  readonly type: Assertion['type'];
+  readonly type: StepAssertion['type'];
   readonly label: string;
   readonly outcome: 'passed' | 'failed' | 'errored';
   readonly expected?: string;

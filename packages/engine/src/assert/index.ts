@@ -1,11 +1,12 @@
-import type { Assertion, AssertionResult, AssertionSubject } from './model.js';
+import type { AssertionResult, AssertionSubject, StepAssertion } from './model.js';
 import { evaluateContract } from './contract.js';
+import { evaluateHeader } from './header.js';
 import { evaluateMatch } from './match.js';
 import { evaluateSla } from './sla.js';
 import { evaluateSoapFault } from './soap-fault.js';
 import { evaluateStatus } from './status.js';
 
-function evaluateOne(subject: AssertionSubject, assertion: Assertion): Promise<AssertionResult> | AssertionResult {
+function evaluateOne(subject: AssertionSubject, assertion: StepAssertion): Promise<AssertionResult> | AssertionResult {
   switch (assertion.type) {
     case 'status':
       return evaluateStatus(subject, assertion);
@@ -17,13 +18,15 @@ function evaluateOne(subject: AssertionSubject, assertion: Assertion): Promise<A
       return evaluateMatch(subject, assertion);
     case 'schema':
       return evaluateContract(subject, assertion);
+    case 'header':
+      return evaluateHeader(subject, assertion);
   }
 }
 
 /** Evaluates every assertion, in order. One failing or erroring never stops the rest. */
 export async function evaluateAssertions(
   subject: AssertionSubject,
-  assertions: readonly Assertion[],
+  assertions: readonly StepAssertion[],
 ): Promise<AssertionResult[]> {
   const results: AssertionResult[] = [];
   for (const assertion of assertions) {

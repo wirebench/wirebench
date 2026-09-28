@@ -28,6 +28,9 @@ import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from './fs.js';
 import type { ProjectFiles } from './serialize.js';
 import { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './serialize.js';
+import { readSequences } from '../sequence/load.js';
+import { ProjectError } from '../errors.js';
+import { SEQUENCES_DIR } from '../sequence/file.js';
 
 /** What a {@link saveProject} call did, as relative `/`-separated paths. */
 export interface SaveResult {
@@ -129,6 +132,12 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
       managed.push(`${base}/${API_FILE}`);
     }
     managed.push(...(await listApiTreeFiles(fs, root, `${base}/${REQUESTS_DIR}`)));
+  }
+
+  // Only the sequence files this build loaded: one it refused (too new, malformed, a duplicate id) is
+  // foreign, so a save can never delete a sequence the user has not seen (`sequence/load.ts`).
+  for (const { file } of (await readSequences(fs, root)).loaded) {
+    managed.push(file);
   }
 
   for (const entry of await readdirIfExists(fs, toAbsolute(root, INTERFACES_DIR))) {
@@ -264,6 +273,35 @@ async function pruneEmptyDirs(fs: FsLike, root: string, relativeDirs: ReadonlySe
 }
 
 /**
+ * Refuses a save that would write over a sequence file this build did not load. A new sequence whose
+ * slug matches a file from a newer build (or one mid-merge) would otherwise replace it unseen; the
+ * mutation layer picks slugs around such files, so this is the backstop, not the usual path.
+ *
+ * @throws ProjectError `sequence-file-conflict`
+ */
+async function refuseOverwritingForeignSequences(
+  fs: FsLike,
+  root: string,
+  desired: ReadonlyMap<string, string>,
+  managed: readonly string[],
+): Promise<void> {
+  const loaded = new Set(managed);
+  for (const relative of desired.keys()) {
+    if (
+      relative.startsWith(`${SEQUENCES_DIR}/`) &&
+      !loaded.has(relative) &&
+      (await readFileIfExists(fs, toAbsolute(root, relative))) !== undefined
+    ) {
+      throw new ProjectError(
+        'sequence-file-conflict',
+        `${relative} exists but could not be loaded by this build; rename the sequence instead of replacing it`,
+        { details: { file: relative } },
+      );
+    }
+  }
+}
+
+/**
  * Saves `project` into the directory `root`, creating it if needed.
  *
  * @returns which files were written, removed and left untouched.
@@ -272,6 +310,7 @@ export async function saveProject(project: Project, root: string, options?: Save
   const fs = options?.fs ?? nodeFs;
   const desired = projectFiles(project, options?.writer !== undefined ? { writer: options.writer } : undefined);
   const existing = await listManagedFiles(fs, root);
+  await refuseOverwritingForeignSequences(fs, root, desired, existing);
 
   const backupsWritten: string[] = [];
   for (const backup of options?.backups ?? []) {

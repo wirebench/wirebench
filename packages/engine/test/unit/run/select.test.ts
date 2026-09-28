@@ -72,6 +72,7 @@ function makeProject(): Project {
     apis: [billing],
     grpcApis: [],
     wsApis: [],
+    sequences: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

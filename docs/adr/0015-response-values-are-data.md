@@ -30,8 +30,9 @@ scope follows these rules. Any future scope with the same origin, a script's con
   `${secret:${#Sequence#n}}`) is refused as `name-from-response`, since otherwise the server would choose which
   property or secret is read.
 - **Explicit.** The shorthand `${name}` never reads it, so it can never shadow a value a request already uses.
-- **Escaped where it lands.** It is always escaped for the body's language (JSON, XML, form), whatever the request's
-  own `escape`/`entitize` setting.
+- **Escaped where it lands.** It is always escaped, exactly once, for the body's language (JSON; XML and HTML with
+  all five entities), whatever the request's own `escape`/`entitize` setting. A form field needs nothing, since each
+  field is encoded on its own.
 - **Never the origin.** It may not change the scheme, host or port of a URL, SOAP endpoint or gRPC target, and it
   may not bring CR, LF or NUL into a URL, header or metadata.
 - **Masked when secret.** A value that is marked secret, or that contains a credential the run already knows, is
