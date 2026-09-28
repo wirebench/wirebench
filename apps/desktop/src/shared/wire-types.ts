@@ -5291,3 +5291,88 @@ export const workspaceTeamWorkspacesResponseWireSchema = z.object({
   workspaces: z.array(z.object({ url: z.string(), workspace: teamWorkspaceWireSchema })),
 });
 export type WorkspaceTeamWorkspacesResponseWire = z.infer<typeof workspaceTeamWorkspacesResponseWireSchema>;
+
+// ---------------------------------------------------------------------------
+// Webhook capture on Wirebench Server (webhook-capture §3.5, §4). Restated from the engine's
+// `server-api/hooks.ts` rather than imported: this file must stay free of engine values. Main parses
+// the server's answers with the engine's schemas first; these check what crosses the bridge.
+// ---------------------------------------------------------------------------
+
+export const catchUrlResponseWireSchema = z.object({
+  status: z.number(),
+  contentType: z.string().nullable(),
+  body: z.string().nullable(),
+  delayMs: z.number(),
+});
+export type CatchUrlResponseWire = z.infer<typeof catchUrlResponseWireSchema>;
+export const catchUrlWireSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  name: z.string(),
+  url: z.string(),
+  enabled: z.boolean(),
+  response: catchUrlResponseWireSchema,
+  captureCount: z.number(),
+  newestCaptureId: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type CatchUrlWire = z.infer<typeof catchUrlWireSchema>;
+export const captureSummaryWireSchema = z.object({
+  id: z.string(),
+  receivedAt: z.string(),
+  method: z.string(),
+  subpath: z.string(),
+  bodySize: z.number(),
+  truncated: z.boolean(),
+  sourceIp: z.string(),
+});
+export type CaptureSummaryWire = z.infer<typeof captureSummaryWireSchema>;
+/** One capture, decoded in main for the viewers the REST response pane already has. */
+export const captureViewWireSchema = captureSummaryWireSchema.extend({
+  query: z.string(),
+  headers: z.array(z.tuple([z.string(), z.string()])),
+  /** The stored bytes: at most the server's body limit, so `bodySize` can be larger. */
+  bodyBase64: z.string(),
+  /** The first `Content-Type` the sender sent, if any. */
+  contentType: z.string().nullable(),
+  /** Decoded as a REST response body is; empty for an image or another binary body. */
+  text: z.string(),
+  language: z.enum(['json', 'xml', 'html', 'javascript', 'text', 'image', 'binary']),
+  decodeNote: z.string().optional(),
+});
+export type CaptureViewWire = z.infer<typeof captureViewWireSchema>;
+export const hooksMetaWireSchema = z.object({
+  enabled: z.boolean(),
+  bodyLimitBytes: z.number(),
+  keep: z.number(),
+  maxAgeDays: z.number(),
+});
+export type HooksMetaWire = z.infer<typeof hooksMetaWireSchema>;
+
+/** A `hooks` nudge or a reconnect: re-list this workspace's catch URLs. */
+export const hooksChangedEventWireSchema = z.object({ url: z.string(), workspaceId: z.string() });
+export type HooksChangedEventWire = z.infer<typeof hooksChangedEventWireSchema>;
+/** A `capture` nudge: the catch URL's unseen count may have grown. */
+export const hooksCapturedEventWireSchema = z.object({
+  url: z.string(),
+  workspaceId: z.string(),
+  hookId: z.string(),
+  captureId: z.string(),
+});
+export type HooksCapturedEventWire = z.infer<typeof hooksCapturedEventWireSchema>;
+/** What changed in one open view: new summaries on top, a fresh first page, or a failed fetch. */
+export const hooksCapturesEventWireSchema = z.discriminatedUnion('mode', [
+  z.object({ viewId: z.string(), mode: z.literal('prepend'), captures: z.array(captureSummaryWireSchema) }),
+  z.object({
+    viewId: z.string(),
+    mode: z.literal('replace'),
+    captures: z.array(captureSummaryWireSchema),
+    more: z.boolean(),
+  }),
+  z.object({
+    viewId: z.string(),
+    mode: z.literal('error'),
+    error: z.object({ code: z.string(), message: z.string() }),
+  }),
+]);
+export type HooksCapturesEventWire = z.infer<typeof hooksCapturesEventWireSchema>;
