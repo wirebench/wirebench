@@ -39,10 +39,13 @@ export interface PublicCatchUrl {
   readonly response: CatchUrlResponse;
 }
 
+/** Every field optional, and explicitly `| undefined` (not just absent) so a zod `.partial()` shape assigns directly. */
+export type ResponsePatch = { readonly [K in keyof CatchUrlResponse]?: CatchUrlResponse[K] | undefined };
+
 export interface CatchUrlPatch {
   readonly name?: string;
   readonly enabled?: boolean;
-  readonly response?: Partial<CatchUrlResponse>;
+  readonly response?: ResponsePatch;
 }
 
 export interface NewCapture {
@@ -244,7 +247,8 @@ export async function catchUrlBySecret(db: Querier, secret: string): Promise<Pub
 }
 
 /** Sets only what `patch` names; `null` in `response.contentType` or `response.body` clears it. */
-export async function updateCatchUrl(db: Querier, id: string, patch: CatchUrlPatch): Promise<void> {
+/** `false` when there was no row to update (deleted out from under the caller). */
+export async function updateCatchUrl(db: Querier, id: string, patch: CatchUrlPatch): Promise<boolean> {
   const params: unknown[] = [id];
   const sets: string[] = [];
   const set = (column: string, value: unknown): void => {
@@ -258,12 +262,13 @@ export async function updateCatchUrl(db: Querier, id: string, patch: CatchUrlPat
   if (response.contentType !== undefined) set('response_content_type', response.contentType);
   if (response.body !== undefined) set('response_body', response.body);
   if (response.delayMs !== undefined) set('response_delay_ms', response.delayMs);
-  if (sets.length === 0) return;
-  await db.query(`update catch_urls set ${sets.join(', ')} where id = $1`, params);
+  if (sets.length === 0) return ((await db.query('select id from catch_urls where id = $1', [id])).rowCount ?? 0) > 0;
+  return ((await db.query(`update catch_urls set ${sets.join(', ')} where id = $1`, params)).rowCount ?? 0) > 0;
 }
 
-export async function rotateSecret(db: Querier, id: string, secret: string): Promise<void> {
-  await db.query('update catch_urls set secret = $2 where id = $1', [id, secret]);
+/** `false` when there was no row to rotate (deleted out from under the caller). */
+export async function rotateSecret(db: Querier, id: string, secret: string): Promise<boolean> {
+  return ((await db.query('update catch_urls set secret = $2 where id = $1', [id, secret])).rowCount ?? 0) > 0;
 }
 
 /** `false` when there was nothing to delete. Its captures go with it (cascade). */

@@ -11,6 +11,7 @@ import { realTimer } from '../live/module.js';
 import type { HooksEnv, SetTimer } from './env.js';
 import { CatchBuckets } from './rate-limit.js';
 import { captureIdFactory } from './repo.js';
+import { manageRoutes } from './routes/manage.js';
 import { publicRoutes } from './routes/public.js';
 import { hooksMetaOf, hooksSettings } from './settings.js';
 import { CaptureSweeper } from './sweep.js';
@@ -66,6 +67,8 @@ export function hooksModule(options: HooksOptions = {}): ServerModule {
       sweeper.start();
       // Before `startServer` drains and closes the pool (host spec §3.7): a batch under way finishes.
       app.addHook('onClose', () => sweeper.stop());
+      // §3.7: switched off, the management routes do not exist either (the sweep above still runs).
+      if (env.settings.enabled) manageRoutes(env)(app);
       await Promise.resolve();
     },
 
