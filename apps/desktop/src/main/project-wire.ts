@@ -64,7 +64,7 @@ import type {
   RequestWire,
 } from '../shared/wire-types.js';
 import { toSequenceWire } from './project-sequence-mutations.js';
-import { webhookCollectionId } from './project-webhook-mutations.js';
+import { webhookCollectionId } from './webhook-ids.js';
 
 /** What the main process knows about one interface beyond the saved model. */
 export interface InterfaceRuntime {

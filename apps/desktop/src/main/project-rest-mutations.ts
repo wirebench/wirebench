@@ -43,7 +43,7 @@ export interface RestMutationResult {
 }
 
 /** Anything that holds folders and requests: an API, or a folder inside one. */
-type Container = Pick<RestApi, 'folders' | 'requests'>;
+export type Container = Pick<RestApi, 'folders' | 'requests'>;
 
 /**
  * An API, or the project's single webhook collection — the two containers a request or folder
@@ -51,7 +51,7 @@ type Container = Pick<RestApi, 'folders' | 'requests'>;
  * project, addressed on the wire by the synthetic `webhooks:<projectId>`), so it is told apart
  * from an API by the absence of `kind` rather than by comparing ids.
  */
-type RestTreeOwner = RestApi | WebhookCollection;
+export type RestTreeOwner = RestApi | WebhookCollection;
 
 function isWebhookOwner(owner: RestTreeOwner): owner is WebhookCollection {
   return !('kind' in owner);
@@ -95,7 +95,7 @@ export function withRestTreeOwning(
  * webhook collection — at `parentId` (a folder in that same tree, or its root when absent).
  * `undefined` when `parentId` names no folder there at all.
  */
-function inRestTreeContainer<O extends RestTreeOwner>(
+export function inRestTreeContainer<O extends RestTreeOwner>(
   owner: O,
   parentId: string | undefined,
   transform: (container: Container) => Container,
@@ -107,7 +107,7 @@ function inRestTreeContainer<O extends RestTreeOwner>(
   return folders === undefined ? undefined : { ...owner, folders };
 }
 
-function notFound(what: string, id: string): never {
+export function notFound(what: string, id: string): never {
   throw new ProjectError('project-entity-not-found', `No ${what} with id ${id}`, { details: { what, id } });
 }
 
@@ -162,7 +162,7 @@ function inContainer(
  * the tree; `undefined` when it is not there at all, so a caller can tell "not found" from "found
  * and unchanged".
  */
-function mapFolder(
+export function mapFolder(
   folders: readonly RestFolder[],
   folderId: string,
   transform: (folder: RestFolder) => RestFolder,
@@ -556,15 +556,67 @@ export function addRestRequest(
   return { project: replaceApi(project, next), createdId };
 }
 
-/** `Request 1`, `Request 2`, … skipping names the container already uses. */
-function nextRequestName(container: Container): string {
-  const used = new Set(container.requests.map((request) => request.name));
-  for (let n = 1; ; n += 1) {
-    const candidate = `Request ${String(n)}`;
+/**
+ * `${base} 1`, `${base} 2`, … skipping names already in `used` — or, with `firstBare`, the bare
+ * `base` itself first and `${base} 2`, `${base} 3`, … after. Shared by REST's `Request N` and the
+ * webhook collection's `Webhook`/`Webhook N` and `Group`/`Group N` naming.
+ */
+export function nextName(base: string, used: ReadonlySet<string>, options?: { readonly firstBare?: boolean }): string {
+  const firstBare = options?.firstBare === true;
+  if (firstBare && !used.has(base)) {
+    return base;
+  }
+  for (let n = firstBare ? 2 : 1; ; n += 1) {
+    const candidate = `${base} ${String(n)}`;
     if (!used.has(candidate)) {
       return candidate;
     }
   }
+}
+
+/** `Request 1`, `Request 2`, … skipping names the container already uses. */
+function nextRequestName(container: Container): string {
+  return nextName('Request', new Set(container.requests.map((request) => request.name)));
+}
+
+/**
+ * Applies a REST request patch to `request`, re-deriving its slug against `container` only when
+ * the name actually changes. Shared by `updateRestRequest` and `addWebhookRequest`'s `draft`,
+ * which patches a freshly-created request the exact same way.
+ */
+export function applyRestRequestPatch(
+  request: RestRequestDef,
+  container: Container,
+  patch: RestRequestPatchWire,
+): RestRequestDef {
+  const name = patch.name ?? request.name;
+  return cleanUndefined<RestRequestDef>({
+    kind: 'rest' as const,
+    id: request.id,
+    name,
+    slug:
+      patch.name !== undefined && patch.name !== request.name
+        ? uniqueSlug(patch.name, takenSlugs(container, request.id))
+        : request.slug,
+    order: request.order,
+    ...(patch.description === null ? {} : { description: patch.description ?? request.description }),
+    method: patch.method ?? request.method,
+    url: patch.url ?? request.url,
+    pathParams: patch.pathParams !== undefined ? toEngineRows(patch.pathParams) : request.pathParams,
+    query: patch.query !== undefined ? toEngineRows(patch.query) : request.query,
+    headers: patch.headers !== undefined ? toEngineRows(patch.headers) : request.headers,
+    body: patch.body !== undefined ? toEngineBody(patch.body) : request.body,
+    auth: patch.auth !== undefined ? toEngineAuthConfig(patch.auth) : request.auth,
+    // Settings are replaced wholesale, not merged: an absent field means *inherit*, so a merge
+    // could never turn an override back off.
+    settings: patch.settings !== undefined ? cleanUndefined<RestRequestSettings>(patch.settings) : request.settings,
+    assertions: request.assertions,
+    ...(request.orphaned === true ? { orphaned: true } : {}),
+    // The contract link is main's record of what the import generated; a patch cannot set it.
+    ...(request.contract !== undefined ? { contract: request.contract } : {}),
+    // Same for a webhook collection item's link back to the OpenAPI entry it came from.
+    ...(request.hook !== undefined ? { hook: request.hook } : {}),
+  });
 }
 
 /** Applies a patch to a REST request. Every field is optional; a rename moves its files. */
@@ -575,40 +627,9 @@ export function updateRestRequest(
 ): RestMutationResult {
   const apply = (container: Container): Container => ({
     ...container,
-    requests: container.requests.map((request) => {
-      if (request.id !== requestId) {
-        return request;
-      }
-      const name = patch.name ?? request.name;
-      const next = cleanUndefined<RestRequestDef>({
-        kind: 'rest' as const,
-        id: request.id,
-        name,
-        slug:
-          patch.name !== undefined && patch.name !== request.name
-            ? uniqueSlug(patch.name, takenSlugs(container, request.id))
-            : request.slug,
-        order: request.order,
-        ...(patch.description === null ? {} : { description: patch.description ?? request.description }),
-        method: patch.method ?? request.method,
-        url: patch.url ?? request.url,
-        pathParams: patch.pathParams !== undefined ? toEngineRows(patch.pathParams) : request.pathParams,
-        query: patch.query !== undefined ? toEngineRows(patch.query) : request.query,
-        headers: patch.headers !== undefined ? toEngineRows(patch.headers) : request.headers,
-        body: patch.body !== undefined ? toEngineBody(patch.body) : request.body,
-        auth: patch.auth !== undefined ? toEngineAuthConfig(patch.auth) : request.auth,
-        // Settings are replaced wholesale, not merged: an absent field means *inherit*, so a
-        // merge could never turn an override back off.
-        settings: patch.settings !== undefined ? cleanUndefined<RestRequestSettings>(patch.settings) : request.settings,
-        assertions: request.assertions,
-        ...(request.orphaned === true ? { orphaned: true } : {}),
-        // The contract link is main's record of what the import generated; a patch cannot set it.
-        ...(request.contract !== undefined ? { contract: request.contract } : {}),
-        // Same for a webhook collection item's link back to the OpenAPI entry it came from.
-        ...(request.hook !== undefined ? { hook: request.hook } : {}),
-      });
-      return next;
-    }),
+    requests: container.requests.map((request) =>
+      request.id !== requestId ? request : applyRestRequestPatch(request, container, patch),
+    ),
     folders: container.folders.map((folder) => ({ ...folder, ...apply(folder) })),
   });
   return {
@@ -652,6 +673,8 @@ export function cloneRestRequest(project: Project, requestId: string): RestMutat
       settings: original.settings,
       ...(original.contract !== undefined ? { contract: original.contract } : {}),
       ...(original.description !== undefined ? { description: original.description } : {}),
+      // Deliberately no `hook`: two items sharing one hook key would confuse *Update definition*
+      // about which one an OpenAPI re-import should refresh, so a clone starts unlinked.
     });
     const withAssertions: RestRequestDef = { ...copy, assertions: original.assertions };
     createdId = withAssertions.id;
@@ -695,7 +718,7 @@ export function moveNode(
     const parentInWebhooks = project.webhooks !== undefined && containerHolds(project.webhooks, parentId);
     const parentInApi = project.apis.some((api) => api.id === parentId || containerHolds(api, parentId));
     if ((nodeInWebhooks && parentInApi) || (!nodeInWebhooks && parentInWebhooks)) {
-      throw new ProjectError('invalid-move', 'A webhook moves only within Webhooks', {
+      throw new ProjectError('project-move-across-apis', 'A webhook moves only within Webhooks', {
         details: { nodeId: input.nodeId, parentId },
       });
     }
