@@ -21,6 +21,7 @@ import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
 import type { RestApi, RestRequestDef } from '../rest/model.js';
 import type { WsApi, WsRequestDef } from '../ws/model.js';
 import type { SequenceDef } from '../sequence/model.js';
+import type { WebhookCollection } from '../webhooks/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
@@ -432,6 +433,11 @@ export interface Project {
    * sequence holds no requests of its own, only references to theirs by id.
    */
   readonly sequences: readonly SequenceDef[];
+  /**
+   * The project's webhook collection (spec `…-openapi-webhooks-import-design.md`), absent until the
+   * first webhook is created or imported. Not a list like the API containers: one per project.
+   */
+  readonly webhooks?: WebhookCollection;
   readonly environments: readonly Environment[];
   /** Id of the environment currently active for this project, if any. */
   readonly activeEnvironmentId?: string;

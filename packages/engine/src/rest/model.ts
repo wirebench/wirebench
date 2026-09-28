@@ -16,6 +16,7 @@ import type { Assertion } from '../assert/model.js';
 import type { AttachmentSource, AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
+import type { HookLink } from '../webhooks/model.js';
 
 /**
  * An HTTP method. The seven a REST client needs are spelled out so the common case is
@@ -196,6 +197,11 @@ export interface RestRequestDef {
    * the definition spells it (`/pets/{petId}`). Set by an import, kept by edits; absent when unknown.
    */
   readonly contract?: RestContractLink;
+  /**
+   * Set only on an item of a project's webhook collection that was imported from an OpenAPI
+   * `webhooks` or `callbacks` entry: which one, so *Update definition* can keep it in step.
+   */
+  readonly hook?: HookLink;
 }
 
 /** A request's link to an operation of its API's definition. */
@@ -325,6 +331,7 @@ export interface CreateRestRequestInput extends CreateOptions {
   readonly auth?: AuthConfig;
   readonly settings?: RestRequestSettings;
   readonly contract?: RestContractLink;
+  readonly hook?: HookLink;
 }
 
 /** Creates a `GET` request with an empty URL, no body and inherited credentials. */
@@ -346,6 +353,7 @@ export function createRestRequest(name: string, input: CreateRestRequestInput = 
     settings: input.settings ?? {},
     assertions: [],
     ...(input.contract !== undefined ? { contract: { method: input.contract.method, path: input.contract.path } } : {}),
+    ...(input.hook !== undefined ? { hook: { ...input.hook } } : {}),
   };
 }
 

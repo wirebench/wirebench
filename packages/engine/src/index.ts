@@ -349,6 +349,26 @@ export {
   entry,
   folderRequests,
 } from './rest/model.js';
+export {
+  DEFAULT_WEBHOOK_TARGET,
+  WEBHOOKS_COLLECTION_PREFIX,
+  WEBHOOK_TARGET_PROPERTY,
+  createWebhookCollection,
+  createWebhookFolder,
+  effectiveTarget,
+  findWebhookRequest,
+  hookKey,
+  webhookFolders,
+  webhookPath,
+  webhookRequests,
+} from './webhooks/model.js';
+export type {
+  CreateWebhookCollectionInput,
+  CreateWebhookFolderInput,
+  HookLink,
+  WebhookCollection,
+  WebhookFolder,
+} from './webhooks/model.js';
 export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
 export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
