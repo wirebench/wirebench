@@ -13,6 +13,7 @@ import { CatchBuckets } from './rate-limit.js';
 import { captureIdFactory } from './repo.js';
 import { publicRoutes } from './routes/public.js';
 import { hooksMetaOf, hooksSettings } from './settings.js';
+import { CaptureSweeper } from './sweep.js';
 
 /** Beside `dist/`, like every module's migrations (`ServerModule.migrationsDir`). */
 export const HOOKS_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/webhook-capture/', import.meta.url));
@@ -51,9 +52,20 @@ export function hooksModule(options: HooksOptions = {}): ServerModule {
     name: 'webhook-capture',
     migrationsDir: HOOKS_MIGRATIONS_DIR,
 
-    async register(_app: FastifyInstance, ctx: ServerContext): Promise<void> {
+    async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const env = envFor(ctx);
       ctx.meta.setHooks(hooksMetaOf(env.settings));
+      // §3.4: runs whether or not the feature is on, so switching it off never keeps old captures.
+      const sweeper = new CaptureSweeper({
+        db: ctx.db,
+        maxAgeDays: env.settings.maxAgeDays,
+        now,
+        setTimer,
+        log: ctx.log,
+      });
+      sweeper.start();
+      // Before `startServer` drains and closes the pool (host spec §3.7): a batch under way finishes.
+      app.addHook('onClose', () => sweeper.stop());
       await Promise.resolve();
     },
 
