@@ -33,7 +33,9 @@
   - **never** in `lookupShorthand`;
   - in `expandAt`, a Sequence value is substituted without recursing into it: no `expandAt(value, …)` and no
     tokenising;
-  - `secretNamesIn` does not descend into Sequence values.
+  - `secretNamesIn` does not descend into Sequence values;
+  - a reference whose name was built from a Sequence value is refused with the new unresolved code
+    `name-from-response`, which `apps/desktop/src/shared/wire-types.ts` also learns.
 - Test: `packages/engine/test/unit/project/sequence-scope.test.ts`.
 
 **Tests**
@@ -42,6 +44,8 @@
 - The values `${secret:k}`, `${#System#HOME}`, `${#Env#baseUrl}` and `$${y}` are substituted verbatim:
   - directly;
   - through `${#Env#chain}`, where `env.chain = '${#Sequence#x}'`.
+- `${${#Sequence#n}}`, `${#Env#${#Sequence#n}}` and `${secret:${#Sequence#n}}` are refused as
+  `name-from-response`, directly and inside a chained Env value; a typed name may still pick a Sequence value.
 - `used` reports `Sequence#x`.
 - `secretNamesIn('${#Sequence#x}', scopes)`, with `x` holding `${secret:k}`, is `[]`.
 

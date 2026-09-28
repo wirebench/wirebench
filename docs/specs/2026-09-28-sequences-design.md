@@ -298,8 +298,15 @@ way.
 
 **Rule 1:** a Sequence-scope value is substituted **literally**. `expandAt` appends it without recursing, in both the
 explicit form and the chained form (an Env value that itself says `${#Sequence#x}`). Because the value is never
-tokenised, `$${` in it is not an escape and `${` in it is not a reference. [ADR-0015](../adr/0015-response-values-are-data.md)
-records this as a rule for every future feature that moves response data into a request, scripting (#63) included.
+tokenised, `$${` in it is not an escape and `${` in it is not a reference.
+
+The name inside `${…}` is expanded first, too, so literal substitution alone is not enough:
+`${${#Sequence#n}}`, with `n` set to `secret:prod-db` by a response, would read that secret. So a reference
+whose own name was built from a Sequence value is refused. It stays unexpanded, with the new unresolved code
+`name-from-response`. A name typed by the user may still *pick* a Sequence value, as in `${#Sequence#${#Env#which}}`.
+
+[ADR-0015](../adr/0015-response-values-are-data.md) records this as a rule for every future feature that moves
+response data into a request, scripting (#63) included.
 
 ### Values are escaped where they land
 
@@ -432,7 +439,8 @@ the desktop, where sequence assertions run in the main process, it would freeze 
     default namespaces.
   - **The Sequence scope:** explicit only; never in shorthand; unresolved outside a run.
   - **Rule 1:** a value of `${secret:x}`, `${#System#HOME}` and `$${x}` is sent verbatim, directly and through a
-    chained Env reference.
+    chained Env reference;
+    `${${#Sequence#n}}` and `${secret:${#Sequence#n}}` are refused as `name-from-response`.
   - **Rule 2:** JSON, XML, SOAP envelope and form escaping of a hostile value, with the request's `escape` off.
   - **Rule 3:** a Sequence value in the host, port or scheme is refused for SOAP, REST and gRPC, and allowed in the
     path and query.

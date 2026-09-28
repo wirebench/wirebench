@@ -26,6 +26,9 @@ A value that comes from a response is carried in a scope of its own (for Sequenc
 scope follows these rules. Any future scope with the same origin, a script's context included, follows them too.
 
 - **Literal.** It is substituted as-is and never tokenised: no recursion, no `$${` escape, no reference inside it.
+- **Never a name.** A reference whose own name was built from such a value (`${${#Sequence#n}}`,
+  `${secret:${#Sequence#n}}`) is refused as `name-from-response`, since otherwise the server would choose which
+  property or secret is read.
 - **Explicit.** The shorthand `${name}` never reads it, so it can never shadow a value a request already uses.
 - **Escaped where it lands.** It is always escaped for the body's language (JSON, XML, form), whatever the request's
   own `escape`/`entitize` setting.

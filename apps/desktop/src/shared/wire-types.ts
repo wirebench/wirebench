@@ -741,7 +741,7 @@ export const unresolvedRefWireSchema = z.object({
   expr: z.string(),
   scope: z.string().optional(),
   name: z.string().optional(),
-  code: z.enum(['missing', 'unknown-scope', 'cycle', 'too-deep', 'malformed']),
+  code: z.enum(['missing', 'unknown-scope', 'cycle', 'too-deep', 'malformed', 'name-from-response']),
   start: z.number(),
   end: z.number(),
   via: z.array(z.string()).optional(),
