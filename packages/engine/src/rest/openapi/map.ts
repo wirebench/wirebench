@@ -551,23 +551,34 @@ export interface WebhookItemRef {
 }
 
 /** A document's webhook and callback methods with their operations. Internal to the OpenAPI modules. */
-export function webhookSourcesOf(
-  document: OpenApiDocument,
-): { readonly ref: WebhookItemRef; readonly operation: OpenApiOperation; readonly link: HookLink }[] {
-  const sources: { ref: WebhookItemRef; operation: OpenApiOperation; link: HookLink }[] = [];
+export function webhookSourcesOf(document: OpenApiDocument): {
+  readonly ref: WebhookItemRef;
+  readonly operation: OpenApiOperation;
+  readonly link: HookLink;
+  /** The item's own name for the first method, `name (METHOD)` for a later one — no parent label. */
+  readonly displayName: string;
+}[] {
+  const sources: {
+    ref: WebhookItemRef;
+    operation: OpenApiOperation;
+    link: HookLink;
+    displayName: string;
+  }[] = [];
   const named = (name: string, method: string, first: boolean) => (first ? name : `${name} (${method.toUpperCase()})`);
   for (const hook of document.webhooks ?? []) {
     hook.operations.forEach((operation, index) => {
       const link: HookLink = { kind: 'webhook', name: hook.name };
+      const displayName = named(hook.name, operation.method, index === 0);
       sources.push({
         operation,
         link,
+        displayName,
         ref: {
           key: hookKey(link, operation.method),
           kind: 'webhook',
           name: hook.name,
           method: operation.method,
-          label: named(hook.name, operation.method, index === 0),
+          label: displayName,
         },
       });
     });
@@ -583,9 +594,11 @@ export function webhookSourcesOf(
           name: callback.name,
           expression: callback.expression,
         };
+        const displayName = named(callback.name, operation.method, index === 0);
         sources.push({
           operation,
           link,
+          displayName,
           ref: {
             key: hookKey(link, operation.method),
             kind: 'callback',
@@ -593,7 +606,7 @@ export function webhookSourcesOf(
             method: operation.method,
             operation: parentKey,
             expression: callback.expression,
-            label: `${named(callback.name, operation.method, index === 0)} · ${parentLabel}`,
+            label: `${displayName} · ${parentLabel}`,
           },
         });
       });
@@ -619,16 +632,15 @@ export interface MapWebhooksOptions extends MapApiOptions {
 export function webhooksFromDocument(
   document: OpenApiDocument,
   options: MapWebhooksOptions,
-): { readonly folder: WebhookFolder; readonly items: number } | undefined {
+): { readonly folder: WebhookFolder; readonly items: number; readonly skipped: readonly OpenApiSkipped[] } | undefined {
   const chosen = webhookSourcesOf(document).filter((source) => options.only?.has(source.ref.key) ?? true);
   if (chosen.length === 0) return undefined;
   const newId = options.newId ?? generateId;
   const context: MapContext = { document, options, newId, skipped: [], counts: { requests: 0, deprecated: 0 } };
   const taken = new Set<string>();
   const requests = chosen.map((source, index) => {
-    const name = source.ref.kind === 'callback' ? (source.ref.label.split(' · ')[0] as string) : source.ref.label;
     const request = requestFromOperation(source.operation, index, taken, context, {
-      name,
+      name: source.displayName,
       url: `/${source.ref.name}`,
       hook: source.link,
     });
@@ -640,6 +652,7 @@ export function webhooksFromDocument(
   return {
     folder: createWebhookFolder(name, { id: newId(), source: { apiId: options.apiId }, requests }),
     items: requests.length,
+    skipped: context.skipped,
   };
 }
 

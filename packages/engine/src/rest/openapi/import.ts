@@ -128,16 +128,17 @@ export interface ImportedOpenApi extends MappedApi {
 export async function importOpenApi(source: OpenApiSource, options: ImportOpenApiOptions): Promise<ImportedOpenApi> {
   const parsed = await parseOpenApi(source, options);
   const mapped = apiFromDocument(parsed.document, options);
+  const webhookOptions: MapWebhooksOptions = { ...options, apiId: options.apiId ?? mapped.api.id };
+  const hooks = options.webhooks === false ? undefined : webhooksFromDocument(parsed.document, webhookOptions);
   const skipped = [
     ...mapped.summary.skipped,
+    ...(hooks?.skipped ?? []),
     ...parsed.refProblems.map((problem) => ({
       kind: 'reference',
       where: problem.at,
       reason: `${problem.ref}: ${problem.reason}`,
     })),
   ];
-  const webhookOptions: MapWebhooksOptions = { ...options, apiId: options.apiId ?? mapped.api.id };
-  const hooks = options.webhooks === false ? undefined : webhooksFromDocument(parsed.document, webhookOptions);
   return {
     api: mapped.api,
     summary: { ...mapped.summary, skipped },

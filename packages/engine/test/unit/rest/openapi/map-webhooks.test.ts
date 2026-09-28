@@ -67,4 +67,25 @@ describe('webhooksFromDocument', () => {
     expect(summary.webhooks).toBe(4);
     expect(api.folders.flatMap((f) => f.requests).every((r) => r.hook === undefined)).toBe(true);
   });
+
+  it('surfaces what mapping a webhook operation could not use', () => {
+    const withCookie = parseOpenApiDocument(
+      parseDocumentText(`
+openapi: 3.1.0
+info: { title: Cookie API, version: 1.0.0 }
+webhooks:
+  petMoved:
+    post:
+      parameters:
+        - { name: session, in: cookie, schema: { type: string } }
+      responses: { '200': { description: Received } }
+`),
+    );
+    const mapped = webhooksFromDocument(withCookie, { apiId: 'api-1', newId });
+    expect(mapped?.skipped).toContainEqual({
+      kind: 'parameter',
+      where: 'POST petMoved',
+      reason: 'Cookie parameter "session" is not imported',
+    });
+  });
 });
