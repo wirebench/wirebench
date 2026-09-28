@@ -184,6 +184,38 @@ describe('HistoryService', () => {
     expect(cleared).toBe(2);
     expect(history.list().entries).toEqual([]);
   });
+  it("finds a request's newest REST entry in its own project", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const history = new HistoryService(userDataDir);
+      await history.open('p1');
+      const append = async (requestId: string, url: string, at: string) => {
+        vi.setSystemTime(new Date(at));
+        return await history.recordRestSend('p1', {
+          requestId,
+          requestName: requestId,
+          apiName: 'Petstore',
+          folderPath: '',
+          method: 'POST',
+          url,
+          requestHeaders: {},
+          requestBody: '',
+          durationMs: 1,
+        });
+      };
+      await append('a', 'https://api.test/first', '2026-01-01T00:00:01.000Z');
+      const later = await append('a', 'https://api.test/second', '2026-01-01T00:00:02.000Z');
+      await append('b', 'https://api.test/other', '2026-01-01T00:00:03.000Z');
+
+      expect(history.newestFor('p1', 'a')?.id).toBe(later?.id);
+      expect(history.newestFor('p1', 'a')?.endpoint).toBe('https://api.test/second');
+      expect(history.newestFor('p1', 'zzz')).toBeUndefined();
+      expect(history.newestFor('p2', 'a')).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('holds one file per open project, merging their entries newest-first', async () => {
     // Only `Date` is faked, so the appends' real file I/O still runs; this just gives every
     // entry a distinct, deterministic timestamp to be merged on.

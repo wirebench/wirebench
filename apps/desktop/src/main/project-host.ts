@@ -146,6 +146,9 @@ import {
   toTlsClientIdentity,
   toWssIncomingConfig,
   toWssOutgoingConfig,
+  findWebhookRequest,
+  webhookFolders,
+  webhookPath,
   WirebenchError,
 } from '@wirebench/engine';
 import type {
@@ -167,6 +170,7 @@ import type {
   DefinitionUpdateOptions,
   DefinitionUpdateSource,
   EngineProgressEvent,
+  HistoryEntryWire,
   HydrationStatus,
   ImportSourceWire,
   InterfaceSummary,
@@ -190,6 +194,8 @@ import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
 import { findRestFolder, findRestRequest, restApiOwning } from './project-rest-mutations.js';
+import { isWebhookCollectionId } from './webhook-ids.js';
+import { resolveWebhookSend } from './webhook-send.js';
 import type { RestContractTarget } from './rest-contract.js';
 import { resolveRestSend } from './rest-send.js';
 import type { RestSendResolution } from './rest-send.js';
@@ -253,6 +259,11 @@ export interface ProjectHostHooks {
    * through untouched. The host knows nothing about what listens — a shared workspace commits.
    */
   readonly onSaved?: (event: { reason: string; written: readonly string[]; removed: readonly string[] }) => void;
+  /**
+   * A request's newest REST history entry in this project, which a webhook callback's URL is read
+   * from. Omitted, a callback always falls back to its target.
+   */
+  readonly newestRest?: (projectId: string, requestId: string) => HistoryEntryWire | undefined;
 }
 
 /**
@@ -1577,12 +1588,30 @@ export class ProjectHost {
     const project = this.open.project;
     const context = this.workspaceContextFor(envId);
     const preferences = this.prefs();
+    // A sequence step's `${#Sequence#…}` values ride along; the expanders hold them to ADR-0015.
+    const scopes = { ...this.scopesFor(envId), ...(sequence !== undefined ? { sequence } : {}) };
+    const cookies = this.restCookiesFor(requestId);
+    if (
+      findRestRequest(project, requestId) === undefined &&
+      project.webhooks !== undefined &&
+      findWebhookRequest(project.webhooks, requestId) !== undefined
+    ) {
+      return resolveWebhookSend({
+        project,
+        projectId: project.id,
+        requestId,
+        scopes,
+        newest: (id) => this.hooks.newestRest?.(project.id, id),
+        ...(draft !== undefined ? { draft } : {}),
+        ...(preferences !== undefined ? { preferences } : {}),
+        ...(cookies !== undefined ? { cookies } : {}),
+      });
+    }
     return resolveRestSend({
       project,
       requestId,
       ...(draft !== undefined ? { draft } : {}),
-      // A sequence step's `${#Sequence#…}` values ride along; the expanders hold them to ADR-0015.
-      scopes: { ...this.scopesFor(envId), ...(sequence !== undefined ? { sequence } : {}) },
+      scopes,
       ...(preferences !== undefined ? { preferences } : {}),
       resolveBaseUrl: (api) =>
         context === undefined
@@ -1593,7 +1622,7 @@ export class ProjectHost {
               projectSlug: context.projectSlug,
               api,
             }),
-      ...(this.restCookiesFor(requestId) !== undefined ? { cookies: this.restCookiesFor(requestId)! } : {}),
+      ...(cookies !== undefined ? { cookies } : {}),
     });
   }
 
@@ -1616,7 +1645,31 @@ export class ProjectHost {
     if (folder !== undefined) {
       return folder.auth;
     }
-    return findRestRequest(project, ownerId)?.auth;
+    const webhooks = project.webhooks;
+    if (webhooks !== undefined) {
+      // The collection, one of its folders or one of its items, which configure credentials the
+      // same way an API, a folder and a request do.
+      if (isWebhookCollectionId(ownerId)) {
+        return webhooks.auth;
+      }
+      const webhookFolder = webhookFolders(webhooks).find((candidate) => candidate.id === ownerId);
+      if (webhookFolder !== undefined) {
+        return webhookFolder.auth;
+      }
+    }
+    return this.restOrWebhookRequest(ownerId)?.auth;
+  }
+
+  /** The REST request with this id, in an API or in the project's webhook collection. */
+  private restOrWebhookRequest(requestId: string): RestRequestDef | undefined {
+    if (this.open === undefined) {
+      return undefined;
+    }
+    const { project } = this.open;
+    return (
+      findRestRequest(project, requestId) ??
+      (project.webhooks === undefined ? undefined : findWebhookRequest(project.webhooks, requestId))
+    );
   }
 
   /**
@@ -1644,6 +1697,15 @@ export class ProjectHost {
         return { requestName: found.request.name, apiName: api.name, folderPath: found.folders.join(' / ') };
       }
     }
+    const webhooks = this.open.project.webhooks;
+    const webhook = webhooks === undefined ? undefined : webhookPath(webhooks, requestId);
+    if (webhook !== undefined) {
+      return {
+        requestName: webhook.request.name,
+        apiName: 'Webhooks',
+        folderPath: webhook.chain.map((folder) => folder.name).join(' / '),
+      };
+    }
     return undefined;
   }
 
@@ -1654,7 +1716,7 @@ export class ProjectHost {
    * depends on another's, and nothing about cookies reaches disk.
    */
   private restCookiesFor(requestId: string): readonly Cookie[] | undefined {
-    const request = this.open === undefined ? undefined : findRestRequest(this.open.project, requestId);
+    const request = this.restOrWebhookRequest(requestId);
     if (request?.settings.sendCookies !== true) {
       return undefined;
     }
@@ -1679,7 +1741,7 @@ export class ProjectHost {
     if (this.open === undefined) {
       return undefined;
     }
-    const request = findRestRequest(this.open.project, requestId);
+    const request = this.restOrWebhookRequest(requestId);
     const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
     const ca = await this.trustAnchors();
     const trustInvalid = request?.settings.trustInvalid === true;

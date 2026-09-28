@@ -620,6 +620,18 @@ export class HistoryService {
     return undefined;
   }
 
+  /**
+   * The newest REST entry of one request in its own project's file, or `undefined` when it was
+   * never sent (or that file is not open). What a callback's URL is read from.
+   */
+  newestFor(projectId: string, requestId: string): HistoryEntryWire | undefined {
+    const entry = this.files
+      .get(projectId)
+      ?.list({})
+      .find((candidate) => candidate.requestId === requestId && candidate.kind === 'rest');
+    return entry === undefined ? undefined : toHistoryEntryWire(entry);
+  }
+
   /** Empties one project's history, or every open project's. Returns the entries cleared. */
   async clear(projectId?: string): Promise<number> {
     let cleared = 0;

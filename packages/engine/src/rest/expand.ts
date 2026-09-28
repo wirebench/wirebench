@@ -27,6 +27,11 @@ export interface ExpandRestOptions {
    * entities — which is the request's *escape properties* setting. Off by default.
    */
   readonly escape?: boolean;
+  /**
+   * Leave the request URL exactly as given: it came from a recorded exchange (a callback URL), and
+   * values from an exchange are never expanded again (ADR-0015). Everything else still expands.
+   */
+  readonly literalUrl?: boolean;
 }
 
 /**
@@ -86,6 +91,9 @@ export function expandRestSendInput(
       value: run(entry.value, `The ${place} ${entry.name}`),
     }));
 
+  const url = (s: PropertyScopes): string =>
+    options.literalUrl === true ? input.request.url : expand(input.request.url, s).text;
+
   // Where the request goes is decided by the base URL, the URL and any path parameter placed in its
   // host, so the guard composes the URL the way `sendRest` will.
   assertOriginIndependent(
@@ -93,7 +101,7 @@ export function expandRestSendInput(
     (s) =>
       composeUrl(
         expand(input.baseUrl, s).text,
-        expand(input.request.url, s).text,
+        url(s),
         input.request.pathParams.map((row) => ({ ...row, value: expand(row.value, s).text })),
         [],
         { encode: input.settings.encodeUrl ?? true },
@@ -103,7 +111,7 @@ export function expandRestSendInput(
 
   const request: RestSendRequest = {
     method: input.request.method,
-    url: run(input.request.url, 'The request URL'),
+    url: options.literalUrl === true ? input.request.url : run(input.request.url, 'The request URL'),
     pathParams: rows(input.request.pathParams, 'path parameter'),
     query: rows(input.request.query, 'query parameter'),
     headers: rows(input.request.headers, 'header'),

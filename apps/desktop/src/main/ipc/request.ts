@@ -53,7 +53,7 @@ import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactUrl, redactXml } from '../redact.js';
 import { failedExchangeOf } from '../failed-exchange.js';
 import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
-import type { RestSendResolution } from '../rest-send.js';
+import type { RestSendResolution, WebhookUrlSource } from '../rest-send.js';
 import type { GrpcSendResolution } from '../grpc-send.js';
 import type { WsSendResolution } from '../ws-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
@@ -64,6 +64,7 @@ import type {
   RequestSendGrpcRequest,
   RestRequestPatchWire,
   UnresolvedRefWire,
+  EndpointSourceWire,
   RequestSendRestRequest,
   RestExchangeSummary,
   ExchangeSummary,
@@ -1025,6 +1026,15 @@ function preflightUnresolved(unresolved: readonly UnresolvedRef[]): UnresolvedRe
  * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
  * badge while the user types.
  */
+function isWebhookUrlSource(source: RestSendResolution['baseUrlSource']): source is WebhookUrlSource {
+  return source === 'target' || source === 'callback' || source === 'callback-fallback';
+}
+
+/** A REST base URL's source in the endpoint vocabulary the editor's badge reads. */
+function endpointSourceOf(source: RestSendResolution['baseUrlSource']): EndpointSourceWire {
+  return source === 'api' || isWebhookUrlSource(source) ? 'interface-default' : source;
+}
+
 function preflightRest(
   deps: RequestChannelDeps,
   request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },
@@ -1055,11 +1065,20 @@ function preflightRest(
   return {
     endpoint: composed.url,
     // The base URL's source uses the same vocabulary an interface endpoint's does, so the badge in
-    // the editor reads identically for either protocol.
-    endpointSource: resolved.baseUrlSource === 'api' ? 'interface-default' : resolved.baseUrlSource,
+    // the editor reads identically for either protocol. A webhook item's target is its default,
+    // and where it actually went is reported in `target`.
+    endpointSource: endpointSourceOf(resolved.baseUrlSource),
     unresolved: [...preflightUnresolved(resolved.unresolved), ...missing],
     auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
     wsa: { enabled: false },
+    ...(isWebhookUrlSource(resolved.baseUrlSource)
+      ? {
+          target: {
+            source: resolved.baseUrlSource,
+            ...(resolved.targetDetail !== undefined ? { detail: resolved.targetDetail } : {}),
+          },
+        }
+      : {}),
   };
 }
 

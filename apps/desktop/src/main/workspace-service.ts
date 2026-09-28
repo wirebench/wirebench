@@ -208,7 +208,7 @@ export interface WorkspaceServiceDeps {
   /** Answers Chromium's PAC-style proxy string for a URL; omitted in tests. */
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
   /** One history file per open project. */
-  readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'>;
+  readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'> & Partial<Pick<HistoryService, 'newestFor'>>;
   /**
    * Closes every WebSocket session belonging to `projectId` — all of them when it is omitted —
    * and resolves once each has written its History entry.
@@ -978,6 +978,7 @@ export class WorkspaceService implements ProjectRouter {
         onProgress: (event) => {
           this.deps.hooks?.onProgress?.(event);
         },
+        newestRest: (projectId, requestId) => this.deps.history.newestFor?.(projectId, requestId),
       },
       this.deps.fs,
       this.deps.globals,

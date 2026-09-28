@@ -806,6 +806,13 @@ export const requestPreflightResponseSchema = z.object({
       messageId: z.string().optional(),
     })
     .default({ enabled: false }),
+  /**
+   * A webhook item's URL: its target, the callback URL its parent's last exchange named, or the
+   * target standing in for a callback URL that did not resolve — `detail` says which and why.
+   */
+  target: z
+    .object({ source: z.enum(['target', 'callback', 'callback-fallback']), detail: z.string().optional() })
+    .optional(),
 });
 export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSchema>;
 

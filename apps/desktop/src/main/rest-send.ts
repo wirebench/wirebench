@@ -47,11 +47,19 @@ export interface RestSendResolution {
   readonly api: RestApi;
   /** The request as it will be sent: the saved one with the editor's draft applied. */
   readonly request: RestRequestDef;
-  /** Where the base URL came from, for the Details inspector and the preflight badge. */
-  readonly baseUrlSource: BaseUrlSource;
+  /**
+   * Where the base URL came from, for the Details inspector and the preflight badge. A webhook
+   * item's is its target, or the callback URL its parent's last exchange named (`webhook-send.ts`).
+   */
+  readonly baseUrlSource: BaseUrlSource | WebhookUrlSource;
+  /** A webhook callback's editor note: where its URL came from, or why the target stands in. */
+  readonly targetDetail?: string;
   /** The credentials that apply, still as `secretRef`s. */
   readonly auth: AuthConfig;
 }
+
+/** Where a webhook item's URL came from: its target, its callback URL, or the target standing in. */
+export type WebhookUrlSource = 'target' | 'callback' | 'callback-fallback';
 
 /** Everything {@link resolveRestSend} needs. */
 export interface ResolveRestSendArgs {
@@ -83,7 +91,7 @@ function locate(project: Project, requestId: string): { api: RestApi; request: R
 }
 
 /** The saved request with the editor's draft applied, for this send only — nothing is persisted. */
-function withDraft(request: RestRequestDef, draft: RestRequestPatchWire | undefined): RestRequestDef {
+export function withDraft(request: RestRequestDef, draft: RestRequestPatchWire | undefined): RestRequestDef {
   if (draft === undefined) {
     return request;
   }
@@ -132,6 +140,25 @@ export function resolveRestSend(args: ResolveRestSendArgs): RestSendResolution |
   const chain = [request.auth, ...savedChain.slice(1)];
   const auth = resolveAuthChain(chain);
 
+  const { input, unresolved } = expandedSendInput(args, request, base.url);
+
+  return { input, unresolved, api, request, baseUrlSource: base.source, auth };
+}
+
+/** What {@link expandedSendInput} takes from a send's arguments. */
+type SendContext = Pick<ResolveRestSendArgs, 'project' | 'scopes' | 'preferences' | 'cookies' | 'tls' | 'proxy'>;
+
+/**
+ * The engine's send input for `request` against `baseUrl`: the settings ladder climbed, then every
+ * property expanded across the whole input at once. With `literalUrl`, the request URL is left
+ * exactly as given — a URL read from a recorded exchange is never expanded again (ADR-0015).
+ */
+export function expandedSendInput(
+  context: SendContext,
+  request: RestRequestDef,
+  baseUrl: string,
+  options: { readonly literalUrl?: boolean } = {},
+): { readonly input: RestSendInput; readonly unresolved: readonly UnresolvedRef[] } {
   const unexpanded = toRestSendInput({
     request: {
       method: request.method,
@@ -142,17 +169,15 @@ export function resolveRestSend(args: ResolveRestSendArgs): RestSendResolution |
       body: request.body,
       settings: request.settings,
     },
-    baseUrl: base.url,
-    ...(args.preferences !== undefined ? { preferences: args.preferences } : {}),
-    projectSettings: args.project.settings,
-    ...(args.cookies !== undefined ? { cookies: args.cookies } : {}),
-    ...(args.tls !== undefined ? { tls: args.tls } : {}),
-    ...(args.proxy !== undefined ? { proxy: args.proxy } : {}),
+    baseUrl,
+    ...(context.preferences !== undefined ? { preferences: context.preferences } : {}),
+    projectSettings: context.project.settings,
+    ...(context.cookies !== undefined ? { cookies: context.cookies } : {}),
+    ...(context.tls !== undefined ? { tls: context.tls } : {}),
+    ...(context.proxy !== undefined ? { proxy: context.proxy } : {}),
   });
-
-  const { input, unresolved } = expandRestSendInput(unexpanded, withSecretTokenScope(args.scopes), {
+  return expandRestSendInput(unexpanded, withSecretTokenScope(context.scopes), {
     escape: request.settings.escapeProperties === true,
+    ...(options.literalUrl === true ? { literalUrl: true } : {}),
   });
-
-  return { input, unresolved, api, request, baseUrlSource: base.source, auth };
 }
