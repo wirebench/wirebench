@@ -293,7 +293,7 @@ export class EngineService {
   private readonly definitions = new Map<string, StoredDefinition>();
   private readonly sends = new Map<string, AbortController>();
   /** One-shot observers of a send's unredacted engine exchange, keyed by `sendId`; see {@link observe}. */
-  private readonly observers = new Map<string, (exchange: ObservedExchange) => Promise<void> | void>();
+  private readonly observers = new Map<string, ((exchange: ObservedExchange) => Promise<void> | void)[]>();
   /** The REST sends whose response is an open event stream, by send id, to the request they belong to. */
   private readonly restStreams = new Map<string, string>();
 
@@ -343,22 +343,28 @@ export class EngineService {
    *
    * A sequence step needs this twice over: its transfers must read what the server sent, not the
    * redacted summary, and a value it marks secret must be recorded for masking before that same step's
-   * log row and History entry are written, not after.
+   * log row and History entry are written, not after. A request's post-response script needs the same
+   * (#63), so a send may have several observers; they run in the order they were added.
    */
   observe(sendId: string, observer: (exchange: ObservedExchange) => Promise<void> | void): () => void {
-    this.observers.set(sendId, observer);
+    this.observers.set(sendId, [...(this.observers.get(sendId) ?? []), observer]);
     return () => {
-      if (this.observers.get(sendId) === observer) {
+      const remaining = (this.observers.get(sendId) ?? []).filter((candidate) => candidate !== observer);
+      if (remaining.length > 0) {
+        this.observers.set(sendId, remaining);
+      } else {
         this.observers.delete(sendId);
       }
     };
   }
 
   private async notify(sendId: string, exchange: ObservedExchange): Promise<void> {
-    const observer = this.observers.get(sendId);
-    if (observer !== undefined) {
+    const observers = this.observers.get(sendId);
+    if (observers !== undefined) {
       this.observers.delete(sendId);
-      await observer(exchange);
+      for (const observer of observers) {
+        await observer(exchange);
+      }
     }
   }
 

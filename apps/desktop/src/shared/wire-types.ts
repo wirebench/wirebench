@@ -850,6 +850,20 @@ export const wssExchangeWireSchema = z.object({
 });
 export type WssExchangeWire = z.infer<typeof wssExchangeWireSchema>;
 
+/**
+ * What a request's scripts did in one send (#63): the tests they recorded, their log, and a
+ * post-response script's failure. Every string is masked before it leaves main.
+ */
+export const scriptResultWireSchema = z.object({
+  tests: z.array(z.object({ name: z.string(), passed: z.boolean(), message: z.string().optional() })),
+  log: z.array(z.string()),
+  /** The log reached its cap and later lines were dropped. */
+  truncated: z.boolean(),
+  /** A post-response script that failed: the response is kept, and this says why the script did not finish. */
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+});
+export type ScriptResultWire = z.infer<typeof scriptResultWireSchema>;
+
 /** Response payload for `request.send`: a JSON-serialisable projection of `SoapExchange`. */
 export const exchangeSummarySchema = z.object({
   sendId: z.string(),
@@ -865,6 +879,10 @@ export const exchangeSummarySchema = z.object({
   wss: wssExchangeWireSchema.optional(),
   /** Set only when the send carried WS-Addressing: the `Action` and `MessageID` it put on the wire. */
   wsa: z.object({ messageId: z.string().optional(), action: z.string().optional() }).optional(),
+  /** What the request's scripts did; absent when it has none, or they are switched off. */
+  script: scriptResultWireSchema.optional(),
+  /** Set when the request has scripts and they are switched off, so none ran. */
+  scriptsOff: z.boolean().optional(),
 });
 export type ExchangeSummary = z.infer<typeof exchangeSummarySchema>;
 
@@ -1131,6 +1149,43 @@ export const attachmentPatchSchema = z.object({
 });
 export type AttachmentPatchWire = z.infer<typeof attachmentPatchSchema>;
 
+/**
+ * A request's scripts as the renderer sees and edits them (#63): the text of each, not a file name,
+ * since the files are always named after the request's slug.
+ */
+export const requestScriptsWireSchema = z.object({
+  pre: z.string().optional(),
+  post: z.string().optional(),
+  api: z.enum(['wirebench', 'postman']),
+  /** False keeps the scripts but runs none of them, as an imported Postman collection's are. */
+  enabled: z.boolean(),
+  /** The secrets a script may read with `secrets.get`, named as the engine's `SECRET_NAME_PATTERN` allows. */
+  secrets: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)),
+  timeoutMs: z.number().int().positive().max(10_000).optional(),
+  /** Set when a script file could not be used; the request refuses to send until it is fixed. */
+  problems: z
+    .array(z.object({ phase: z.enum(['pre', 'post']), code: z.enum(['script-file-missing', 'script-too-large']) }))
+    .optional(),
+});
+export type RequestScriptsWire = z.infer<typeof requestScriptsWireSchema>;
+
+/**
+ * An edit to a request's scripts, for `update-request-scripts`. Only the fields present change; a
+ * `null` script removes that script and its file, and a `null` timeout goes back to the default.
+ * A request without scripts gets them, on the typed API and switched on.
+ */
+export const requestScriptsPatchSchema = z.object({
+  pre: z.string().nullable().optional(),
+  post: z.string().nullable().optional(),
+  enabled: z.boolean().optional(),
+  secrets: z
+    .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/))
+    .max(100)
+    .optional(),
+  timeoutMs: z.number().int().positive().max(10_000).nullable().optional(),
+});
+export type RequestScriptsPatchWire = z.infer<typeof requestScriptsPatchSchema>;
+
 /** A saved request, flattened out of its owning operation so the renderer can index it by id. */
 export const requestWireSchema = z.object({
   id: z.string(),
@@ -1171,6 +1226,7 @@ export const requestWireSchema = z.object({
    */
   attachments: z.array(attachmentWireSchema).default([]),
   properties: requestPropertiesSchema,
+  scripts: requestScriptsWireSchema.optional(),
   /**
    * True when this request's operation is no longer in the interface's definition, after an
    * Update Definition dropped it. Nothing is deleted; the explorer badges the row instead.
@@ -1431,6 +1487,7 @@ export const restRequestWireSchema = z.object({
   body: restBodyWireSchema,
   auth: authConfigWireSchema,
   settings: restSettingsWireSchema,
+  scripts: requestScriptsWireSchema.optional(),
   orphaned: z.boolean().optional(),
 });
 export type RestRequestWire = z.infer<typeof restRequestWireSchema>;
@@ -1540,6 +1597,7 @@ export const grpcRequestWireSchema = z.object({
   message: z.string(),
   auth: authConfigWireSchema,
   settings: grpcSettingsWireSchema,
+  scripts: requestScriptsWireSchema.optional(),
   orphaned: z.boolean().optional(),
 });
 export type GrpcRequestWire = z.infer<typeof grpcRequestWireSchema>;
@@ -1840,6 +1898,10 @@ export const restExchangeSummarySchema = z.object({
    * a stream, a non-JSON body, or a request whose API has no cached definition.
    */
   contract: restContractResultSchema.optional(),
+  /** What the request's scripts did; absent when it has none, or they are switched off. */
+  script: scriptResultWireSchema.optional(),
+  /** Set when the request has scripts and they are switched off, so none ran. */
+  scriptsOff: z.boolean().optional(),
 });
 export type RestExchangeSummary = z.infer<typeof restExchangeSummarySchema>;
 
@@ -1976,6 +2038,10 @@ export const grpcExchangeSummarySchema = z.object({
   truncated: z.boolean(),
   problems: z.array(exchangeProblemSchema),
   unresolved: z.array(unresolvedRefWireSchema).optional(),
+  /** What the request's scripts did; absent when it has none, or they are switched off. */
+  script: scriptResultWireSchema.optional(),
+  /** Set when the request has scripts and they are switched off, so none ran. */
+  scriptsOff: z.boolean().optional(),
 });
 export type GrpcExchangeSummary = z.infer<typeof grpcExchangeSummarySchema>;
 
@@ -2713,6 +2779,15 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     requestId: z.string(),
     patch: requestPropertiesPatchSchema,
   }),
+  // A SOAP, REST or gRPC request's scripts (#63); `null` removes them, and their files, altogether.
+  z.object({
+    kind: z.literal('update-request-scripts'),
+    requestId: z.string(),
+    scripts: requestScriptsPatchSchema.nullable(),
+  }),
+  // **Switch on scripts…**: switches on the scripts of many requests at once, each one a reviewable
+  // change to its request file. A request without scripts is left as it is.
+  z.object({ kind: z.literal('enable-scripts'), requestIds: z.array(z.string()).min(1).max(10_000) }),
   z.object({ kind: z.literal('update-project-settings'), patch: projectSettingsPatchSchema }),
   z.object({
     kind: z.literal('update-interface'),
