@@ -1,5 +1,6 @@
-/** The webhooks dialogs, mounted once in the shell: the confirmation for Rotate, Clear and Delete. */
+/** The webhooks dialogs, mounted once in the shell: the settings dialog, and the confirmation for Rotate, Clear and Delete. */
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { CatchUrlSettingsDialog } from './catch-url-settings-dialog.js';
 import { webhooksActions } from './webhooks-actions.js';
 import { useWebhooksDialogs, type WebhooksConfirm } from './webhooks-dialogs-state.js';
 
@@ -31,19 +32,22 @@ export function WebhooksDialogs() {
   const closeConfirm = useWebhooksDialogs((state) => state.closeConfirm);
   const copy = confirm === undefined ? undefined : COPY[confirm.action];
   return (
-    <ConfirmDialog
-      open={confirm !== undefined}
-      onOpenChange={(open) => {
-        if (!open) closeConfirm();
-      }}
-      title={copy?.title ?? ''}
-      description={copy?.description ?? ''}
-      confirmLabel={copy?.label ?? ''}
-      destructive
-      testId="webhooks-confirm"
-      onConfirm={() => {
-        if (confirm !== undefined) void webhooksActions.run(confirm.action, confirm.hookId);
-      }}
-    />
+    <>
+      <ConfirmDialog
+        open={confirm !== undefined}
+        onOpenChange={(open) => {
+          if (!open) closeConfirm();
+        }}
+        title={copy?.title ?? ''}
+        description={copy?.description ?? ''}
+        confirmLabel={copy?.label ?? ''}
+        destructive
+        testId="webhooks-confirm"
+        onConfirm={() => {
+          if (confirm !== undefined) void webhooksActions.run(confirm.action, confirm.hookId);
+        }}
+      />
+      <CatchUrlSettingsDialog />
+    </>
   );
 }
