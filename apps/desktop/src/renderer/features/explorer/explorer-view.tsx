@@ -15,6 +15,7 @@ import {
   ListOrdered,
   Globe,
   Inbox,
+  Link,
   Link2,
   Loader2,
   Network,
@@ -119,6 +120,9 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'grpc-request': 'grpc-request-row',
   'ws-api': 'ws-api-row',
   'ws-request': 'ws-request-row',
+  'webhook-collection': 'webhook-collection-row',
+  'webhook-folder': 'webhook-folder-row',
+  'webhook-request': 'webhook-request-row',
   webhooks: 'webhooks-row',
   'catch-url': 'catch-url-row',
   sequences: 'sequences-group-row',
@@ -216,7 +220,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             hard against the name. Right-aligning it lines the method labels up with each other and
             every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
         <span className="flex w-6 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
-          {node.data.kind === 'rest-request' && node.data.method !== undefined ? (
+          {(node.data.kind === 'rest-request' || node.data.kind === 'webhook-request') &&
+          node.data.method !== undefined ? (
             <MethodBadge
               method={node.data.method}
               title={`${node.data.method} ${node.data.label}`}
@@ -253,6 +258,11 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             className={`min-w-0 flex-1 truncate pl-1 ${node.data.kind === 'project-missing' ? 'text-status-danger' : ''}`}
           >
             {node.data.label}
+          </span>
+        )}
+        {node.data.suffix !== undefined && (
+          <span className="shrink-0 truncate pl-1 text-xs text-fg-subtle" data-testid="explorer-row-suffix">
+            · {node.data.suffix}
           </span>
         )}
         {node.data.kind === 'project-missing' && node.data.projectId !== undefined && (
@@ -295,6 +305,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           >
             <Link2 size={11} aria-hidden="true" />
             linked
+          </span>
+        )}
+        {/* A webhook folder imported from an OpenAPI document (§3.1): a quiet cue, not the
+            project-level "linked" pill above — this folder is not a linked *project*. */}
+        {node.data.kind === 'webhook-folder' && node.data.linked === true && (
+          <span
+            data-testid="webhook-folder-imported-badge"
+            title="Imported from an API definition"
+            aria-label="Imported from an API definition"
+            className="flex shrink-0 items-center text-fg-subtle"
+          >
+            <Link size={11} aria-hidden="true" />
           </span>
         )}
         {node.data.kind === 'project' && node.data.loading === true && (

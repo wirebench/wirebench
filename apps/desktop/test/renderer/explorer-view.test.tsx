@@ -686,6 +686,116 @@ describe('ExplorerView with APIs', () => {
   });
 });
 
+describe('ExplorerView with a webhook collection (openapi-webhooks-import §3.1)', () => {
+  beforeEach(() => {
+    useProjectStore.setState({
+      projects: {},
+      interfaces: {},
+      requests: {},
+      apis: {},
+      folders: {},
+      restRequests: {},
+      rest: {},
+      webhooks: {},
+      order: [],
+    });
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    useUiStore.setState({ selection: undefined, workspaces: {}, confirmDeleteNode: undefined });
+    openWorkspace([wireProject()]);
+    globalThis.ResizeObserver = ManualResizeObserver;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  /** A root request, and a linked (imported) folder holding a callback request with a suffix. */
+  function seedWebhooks(): void {
+    const folder = restFolderWire({
+      id: 'wf-1',
+      apiId: 'webhooks:p1',
+      name: 'Petstore',
+      source: { apiId: 'api-1' },
+    });
+    const rootRequest = restRequestWire({
+      id: 'wr-1',
+      apiId: 'webhooks:p1',
+      name: 'Order paid',
+      method: 'POST',
+      url: '/orders',
+    });
+    const callbackRequest = restRequestWire({
+      id: 'wr-2',
+      apiId: 'webhooks:p1',
+      folderId: 'wf-1',
+      name: 'onPetEvent',
+      method: 'POST',
+      url: '/callbacks/pet-event',
+      hook: {
+        kind: 'callback',
+        operation: 'post /subscriptions',
+        name: 'onPetEvent',
+        expression: '{$request.body#/callbackUrl}',
+      },
+    });
+    useProjectStore.setState({
+      order: [{ projectId: 'p1', interfaceIds: [] }],
+      rest: { p1: { apis: [], folders: [folder], requests: [rootRequest, callbackRequest] } },
+      folders: { 'wf-1': folder },
+      restRequests: { 'wr-1': rootRequest, 'wr-2': callbackRequest },
+      webhooks: { p1: { id: 'webhooks:p1', projectId: 'p1', target: '${webhookTarget}' } },
+      projectOf: { p1: 'p1', 'wf-1': 'p1', 'wr-1': 'p1', 'wr-2': 'p1' },
+    });
+    useUiStore.setState({
+      workspaces: {
+        w1: { tabs: [], explorerOpen: { 'webhook-collection:p1': true, 'webhook-folder:wf-1': true } },
+      },
+    });
+  }
+
+  function mount(): void {
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+  }
+
+  it('renders the collection with a method-badged root request and a linked folder', () => {
+    seedWebhooks();
+    mount();
+
+    expect(screen.getByTestId('webhook-collection-row').textContent).toContain('Webhooks');
+    expect(screen.getByTestId('webhook-folder-row').textContent).toContain('Petstore');
+    const requestRows = screen.getAllByTestId('webhook-request-row');
+    expect(requestRows).toHaveLength(2);
+    const badges = screen.getAllByTestId('method-badge');
+    expect(badges.map((badge) => badge.getAttribute('data-method'))).toEqual(['POST', 'POST']);
+  });
+
+  it('shows a callback request’s parent operation as a muted suffix (I1)', () => {
+    seedWebhooks();
+    mount();
+
+    const callbackRow = screen.getByText('onPetEvent').closest('[data-testid="webhook-request-row"]');
+    const suffix = callbackRow?.querySelector('[data-testid="explorer-row-suffix"]');
+    expect(suffix?.textContent).toContain('post /subscriptions');
+    // The root request has no callback link, so it gets no suffix.
+    const rootRow = screen.getByText('Order paid').closest('[data-testid="webhook-request-row"]');
+    expect(rootRow?.querySelector('[data-testid="explorer-row-suffix"]')).toBeNull();
+  });
+
+  it('marks an imported webhook folder distinctly from a linked project (M1)', () => {
+    seedWebhooks();
+    mount();
+
+    const marker = screen.getByTestId('webhook-folder-imported-badge');
+    expect(marker.closest('[data-testid="webhook-folder-row"]')).not.toBeNull();
+    expect(marker.getAttribute('title')).toBe('Imported from an API definition');
+    expect(screen.queryByTestId('explorer-project-linked-badge')).toBeNull();
+  });
+});
+
 describe('ExplorerView with a WebSocket API', () => {
   beforeEach(() => {
     useProjectStore.setState({

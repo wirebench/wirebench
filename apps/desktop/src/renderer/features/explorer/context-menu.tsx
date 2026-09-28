@@ -292,7 +292,8 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
   }
 
   if (node.kind === 'webhook-folder' && node.projectId !== undefined && node.folderId !== undefined) {
-    const { projectId, folderId } = { projectId: node.projectId, folderId: node.folderId };
+    const projectId = node.projectId;
+    const folderId = node.folderId;
     return groups(
       [
         { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId, folderId) },
