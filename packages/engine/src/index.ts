@@ -467,6 +467,18 @@ export type {
 export { matchOperation } from './rest/openapi/match.js';
 export type { RestOperationRef } from './rest/openapi/match.js';
 export {
+  evaluateRuntimeTemplate,
+  parseRuntimeExpression,
+  parseRuntimeTemplate,
+  resolveJsonPointer,
+} from './rest/openapi/runtime-expression.js';
+export type {
+  RuntimeExchange,
+  RuntimeExpression,
+  RuntimeSource,
+  TemplatePart,
+} from './rest/openapi/runtime-expression.js';
+export {
   checkRestResponse,
   DEFAULT_REST_CHECK_BUDGET_MS,
   MAX_CHECKED_BODY_BYTES,
