@@ -56,6 +56,8 @@ import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerApiChannels } from './ipc/api.js';
 import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
+import { registerSequenceChannels } from './ipc/sequence.js';
+import { SequenceRunner } from './sequence-runner.js';
 import {
   registerRequestChannels,
   sendGrpcRequest,
@@ -449,6 +451,13 @@ void app.whenReady().then(() => {
     secretsFor,
   };
   registerRequestChannels(engineService, requestDeps);
+  // A sequence's steps go through the very paths a single send takes, with the same dependencies.
+  registerSequenceChannels(new SequenceRunner(), engineService, {
+    service: engineService,
+    requests: requestDeps,
+    modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
+    emit: (event) => broadcast(events.sequence.progress, event),
+  });
   registerOAuth2Channels({
     oauth2: oauth2Service,
     project: workspaceService,

@@ -62,6 +62,7 @@ import type {
   ProjectWire,
   RequestWire,
 } from '../shared/wire-types.js';
+import { toSequenceWire } from './project-sequence-mutations.js';
 
 /** What the main process knows about one interface beyond the saved model. */
 export interface InterfaceRuntime {
@@ -653,6 +654,7 @@ export function toProjectWire(project: Project, context: ProjectWireContext): Pr
     grpcRequests: grpcTree.requests,
     wsApis: project.wsApis.map((api) => toWsApiWire(api, context.asyncApiInfo?.get(api.id))),
     wsRequests: wsTree.requests,
+    sequences: project.sequences.map(toSequenceWire),
     properties: { ...project.properties },
     disabledProperties: [...project.disabledProperties],
     environments: project.environments.map(toEnvironmentWire),

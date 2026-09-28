@@ -290,6 +290,7 @@ async function record(
     ...(exchange !== undefined ? { exchange } : {}),
     ...(opts.error !== undefined ? { error: opts.error } : {}),
     durationMs: opts.durationMs,
+    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
   });
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);

@@ -970,6 +970,7 @@ async function recordRest(
     ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
     durationMs,
     ...(keyParams !== undefined ? { keyParams } : {}),
+    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
   });
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);
@@ -1281,6 +1282,7 @@ async function recordGrpc(
     ...(summary !== undefined ? { exchange: summary } : {}),
     ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
     durationMs,
+    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
   });
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);

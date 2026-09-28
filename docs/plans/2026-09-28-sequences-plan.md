@@ -190,24 +190,35 @@ established by reading that code (ADR-0003, update of 2026-09-28) rather than by
 
 **Files**
 - `shared/wire-types.ts`:
-  - `sequenceWireSchema`, and `projectWireSchema.sequences`;
-  - the change kinds `add-sequence`, `update-sequence`, `remove-sequence`, `duplicate-sequence`;
-  - `sequenceRunResultWireSchema`, and the progress event.
+  - the sequence, step, transfer and step-assertion wire schemas, and `projectWireSchema.sequences`;
+  - the change kinds `add-sequence`, `update-sequence`, `remove-sequence` and `duplicate-sequence`;
+  - the run request and result, and the progress event.
 - `shared/ipc.ts`: `sequence.run` and `sequence.cancel`, and the event `sequence.progress`.
-- `main/project-sequence-mutations.ts`, and the dispatch in `applyChange`.
-- `project-wire.ts`, plus `workspace-service.ts` `reindex`, which must index the sequence ids.
-- `main/sequence-runner.ts`:
-  - builds a `SequenceStepSender` over `sendAndRecordHistory`, `sendRestRequest` and `sendGrpcRequest`, each gaining
-    an optional `sequence?: PropertyMap` and `tags?`;
-  - one run per sequence at a time;
-  - the run id and `AbortController` are kept by `runId`;
-  - secret values go into the session credential set, and `containsKnownSecret` reads that same set.
+- `main/project-sequence-mutations.ts`:
+  - every edit is round-tripped through `parseSequenceFile`, and refused as `sequence-invalid`;
+  - new slugs avoid the files the load refused (`refusedSequenceSlugs`, passed as
+    `MutationDeps.reservedSequenceSlugs`);
+  - `toSequenceWire`.
+- `project-mutations.ts`: the dispatch. `project-wire.ts`: the snapshot. `workspace-service.ts`: `reindex`.
+- `main/engine-service.ts`: `observe(sendId, observer)`, awaited before any summary is built.
+- `main/project-host.ts`:
+  - `restSend` and `grpcSend` take the Sequence values;
+  - the three `*Meta` results may carry `tags`;
+  - the three History recorders pass the tags through.
+- `main/redact.ts`: `containsRecordedSecret`.
+- `main/sequence-runner.ts`: the `SequenceRunner` and the per-step `Proxy`.
 - `main/ipc/sequence.ts`, registered in `main/index.ts`.
-- `test/mocks/wirebench-api.ts`, and the wire fixtures.
+- `test/mocks/wirebench-api.ts` and `test/helpers/wire-defaults.ts`.
 - Tests:
   - `apps/desktop/test/sequence-mutations.test.ts`;
-  - `apps/desktop/test/sequence-runner.test.ts`: History tags, progress order, cancel, already-running, and a
-    masked secret in History and in the HTTP Log.
+  - `apps/desktop/test/sequence-runner.test.ts`, against a real engine service, a real History and a local server:
+    - the secret reaches the next step;
+    - its own step's History line and raw log response are masked;
+    - tags;
+    - nothing reaches the renderer;
+    - cancel mid-step;
+    - already-running;
+    - unknown sequence.
 
 ## Task 8 — Renderer: explorer, tab and run panel
 

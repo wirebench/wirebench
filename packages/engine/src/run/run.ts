@@ -155,13 +155,34 @@ async function loadDefinition(projectDir: string, iface: SoapSelected['iface']):
   }
 }
 
+/**
+ * A SOAP response as assertions and sequence transfers see it, without contract validation: what a
+ * host that has no compiled definition at hand (the desktop's sequence runner) can build from the
+ * exchange alone.
+ */
+export function soapResponseSubject(exchange: SoapExchange): AssertionSubject {
+  const fault = exchange.response?.fault;
+  return {
+    protocol: 'soap',
+    status: exchange.http.status,
+    durationMs: exchange.durationMs,
+    bodyText: exchange.response?.envelopeXml ?? new TextDecoder().decode(exchange.http.body),
+    bodyKind: exchange.response?.isSoap === true ? 'xml' : 'other',
+    headers: exchange.http.rawHeaders,
+    fault: {
+      present: fault !== undefined,
+      ...(fault !== undefined ? { summary: [fault.code, fault.reason].filter((s) => s.length > 0).join(' — ') } : {}),
+    },
+  };
+}
+
 function soapSubject(
   exchange: SoapExchange,
   loaded: LoadedDefinition | undefined,
   item: SoapSelected,
 ): AssertionSubject {
-  const fault = exchange.response?.fault;
-  const bodyText = exchange.response?.envelopeXml ?? new TextDecoder().decode(exchange.http.body);
+  const base = soapResponseSubject(exchange);
+  const bodyText = base.bodyText;
   const binding =
     loaded === undefined
       ? undefined
@@ -172,16 +193,7 @@ function soapSubject(
         );
   const contentType = exchange.http.headers['content-type'];
   return {
-    protocol: 'soap',
-    status: exchange.http.status,
-    durationMs: exchange.durationMs,
-    bodyText,
-    bodyKind: exchange.response?.isSoap === true ? 'xml' : 'other',
-    headers: exchange.http.rawHeaders,
-    fault: {
-      present: fault !== undefined,
-      ...(fault !== undefined ? { summary: [fault.code, fault.reason].filter((s) => s.length > 0).join(' — ') } : {}),
-    },
+    ...base,
     ...(loaded !== undefined && binding !== undefined
       ? {
           validateContract: () =>
@@ -198,7 +210,8 @@ function soapSubject(
   };
 }
 
-function restSubject(exchange: RestExchange): AssertionSubject {
+/** A REST response as assertions and sequence transfers see it. */
+export function restSubject(exchange: RestExchange): AssertionSubject {
   return {
     protocol: 'rest',
     status: exchange.status,

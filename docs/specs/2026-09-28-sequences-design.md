@@ -290,13 +290,28 @@ wirebench secrets list <project> --sequence "Checkout flow" [--env staging]
   - *Open in History* goes to the step's entry.
   - A run's results stay in the tab for the session and are not persisted.
 - **Sends are ordinary sends.** Each step goes through the protocol's existing main-process send path
-  (`sendAndRecordHistory`, `sendRestRequest`, `sendGrpcRequest`), with the Sequence scope added. It therefore gets
-  the same auth, TLS, proxy, HTTP Log row and History entry as a single send.
-  - Its History entry is tagged `sequence:<sequenceId>` and `run:<runId>`, using the `tags` field every `record*`
-    input already accepts. History search then finds a run's steps.
-  - REST, gRPC and SOAP each resolve their scopes differently today, so each path gains an optional
-    `sequence?: PropertyMap` merged into the scopes it resolves itself. The same shape as `multi-env-send.ts`
-    passing `envId` through.
+  (`sendAndRecordHistory`, `sendRestRequest`, `sendGrpcRequest`). It therefore gets the same auth, TLS, proxy,
+  HTTP Log row and History entry as a single send. `main/sequence-runner.ts` is the desktop's `SequenceStepSender`.
+  - **The step's own view of the project.** The runner wraps the router in a `Proxy`, as `multi-env-send.ts` does.
+    `scopesFor` (SOAP), `restSend` and `grpcSend` add the run's Sequence values; `ProjectHost.restSend` and
+    `grpcSend` take them as an optional last parameter merged into the scopes they build. `requestMeta`, `restMeta`
+    and `grpcMeta` add the tags `sequence:<sequenceId>` and `run:<runId>`, which the three History recorders pass
+    through. History search then finds a run's steps.
+  - **Transfers read the unredacted exchange.** A summary is already redacted: a login's `access_token` is
+    `<redacted>` there. So the runner registers with `EngineService.observe(sendId, …)` and receives the engine
+    exchange itself, in main only. The engine service *awaits* the observer before it builds the step's summary, log
+    row or History entry. Inside it, the runner extracts the step's transfers and records every secret one (and
+    every one holding an already recorded credential) with `recordSecretValue`. The step that produced a secret
+    therefore has it masked in its own HTTP Log raw response and History entry, not only the steps after it.
+  - **Log rows.** Main originates the sends, so each step's summary reaches the HTTP Log through the existing
+    `exchange.logged` event. A failure row arrives through `exchange.failed`, as for any send. As for a single send,
+    the REST response *text* shows the body as it arrived, while the raw response and History are masked.
+  - **What crosses to the renderer.** Every string of a step result (labels, expected and actual values, messages,
+    non-secret transfer values) is masked with the session's recorded values before it is sent. A secret transfer
+    carries no value at all.
+  - **Two limits of v1.** A step sends the request as it is in the open project, with its saved text. Text still
+    being edited in a request tab is not used, since a run is not tied to what an editor shows. And a `schema`
+    assertion errors in a desktop run, because the runner has no compiled definition at hand; the CLI evaluates it.
 - **Commands:** `sequence.new`, `sequence.run`, `sequence.cancel` and `sequence.addStep`, scoped to `editor.sequence`
   or `selection.sequence`. `reference/commands.md` is regenerated from the catalogue.
 
@@ -305,12 +320,15 @@ wirebench secrets list <project> --sequence "Checkout flow" [--env staging]
 | Channel | Request | Response |
 |---|---|---|
 | `project.mutate` change kinds | `add-sequence {name}`, `update-sequence {sequenceId, patch}`, `remove-sequence {sequenceId}`, `duplicate-sequence {sequenceId}` | the usual `{ project, createdId? }` |
-| `sequence.run` | `{ projectId, sequenceId, environmentId? }` | `SequenceRunResult` (wire form), when the run ends |
+| `sequence.run` | `{ sequenceId, runId }` | `SequenceRunResult` (wire form), when the run ends |
 | `sequence.cancel` | `{ runId }` | `{ cancelled: boolean }` |
 | event `sequence.progress` | — | `{ runId, sequenceId, step: SequenceStepResult }` |
 
-`sequence.run` sends the run's id in its first progress event, so the tab can cancel before the run ends. One run per
-sequence at a time: a second `sequence.run` for a sequence already running is refused with `sequence-already-running`.
+The renderer names the run (`runId`), as a multi-environment send names its batch, so it can cancel before the first
+step reports. A run uses the active environment, as a single send does. One run per sequence at a time: a second
+`sequence.run` for a sequence already running is refused with `sequence-already-running`. `sequence.cancel` aborts
+the step in flight (`EngineService.cancel`) and skips the rest. Sequence ids are in the workspace's entity index, so
+the run routes to the project that owns the sequence.
 
 ## Security
 

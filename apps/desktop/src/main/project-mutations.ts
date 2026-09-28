@@ -105,6 +105,7 @@ import {
 } from './project-wss-mutations.js';
 import type { RequestLocation } from './project-wire.js';
 import { findRequest } from './project-wire.js';
+import { addSequence, duplicateSequence, removeSequence, updateSequence } from './project-sequence-mutations.js';
 
 /** The engine output `add-request` needs; supplied by the service, which owns the engine. */
 export interface GeneratedEnvelope {
@@ -137,6 +138,8 @@ export interface MutationDeps {
    * never add a keystore — `add-keystore` refuses outright when it is.
    */
   readonly allowsKeystorePath?: (path: string) => Promise<boolean>;
+  /** The slugs of sequence files the last load refused; a new or renamed sequence avoids them. */
+  readonly reservedSequenceSlugs?: ReadonlySet<string>;
 }
 
 /** The outcome of one change: the next model, plus any entity the change created. */
@@ -914,6 +917,18 @@ export async function applyChange(
 
     case 'remove-ws-message':
       return removeWsMessage(project, { requestId: change.requestId, messageId: change.messageId });
+
+    case 'add-sequence':
+      return addSequence(project, change.name, deps.reservedSequenceSlugs);
+
+    case 'update-sequence':
+      return updateSequence(project, change.sequenceId, change.patch, deps.reservedSequenceSlugs);
+
+    case 'remove-sequence':
+      return removeSequence(project, change.sequenceId);
+
+    case 'duplicate-sequence':
+      return duplicateSequence(project, change.sequenceId, deps.reservedSequenceSlugs);
 
     case 'add-environment': {
       const added = addEnvironment(project, change.name);

@@ -2,7 +2,15 @@ export { findStepRequest, selectRequests } from './select.js';
 export type { SelectedRequest, StepRequestLookup } from './select.js';
 export { prepareSend } from './prepare.js';
 export type { PreparedSend, RunContext } from './prepare.js';
-export { cappedExchange, createRunSender, errorOf, runRequests } from './run.js';
+export {
+  cappedExchange,
+  createRunSender,
+  errorOf,
+  grpcSubject,
+  restSubject,
+  runRequests,
+  soapResponseSubject,
+} from './run.js';
 export type {
   RequestOutcome,
   RequestResult,
