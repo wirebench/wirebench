@@ -63,12 +63,16 @@ scripts:
 ```
 
 The same key sits in SOAP request files (`interfaces/<I>/operations/<Op>/<R>.request.yaml`) and gRPC request files.
-WebSocket request files refuse it.
+A WebSocket request file does not read it, so a WebSocket request has no scripts.
 
 - A script file lives beside its request and is named after it: `<R>.pre.ts` and `<R>.post.ts` for the `wirebench`
   API, `<R>.pre.js` and `<R>.post.js` for `postman`. Renaming or moving a request moves its scripts, as it moves its
   body sidecar today.
-- The key names the file, so a file that exists without being named is not a script and never runs.
+- A script runs only when the key names it. A file with a script's name beside a request whose key does not name
+  it is never loaded. It is reported as a file that belongs to no request, and like a stray body file, the next save
+  removes it.
+- The loader always opens the name derived from the slug, never the name the key records, so a hand-edited name
+  cannot point outside the request's directory.
 - A named file that is missing is a load problem (`script-file-missing`) shown on the request, and the request
   refuses to send until it is fixed.
 - A script file is at most 256 KiB (`script-too-large`).

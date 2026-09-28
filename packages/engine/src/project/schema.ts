@@ -280,6 +280,20 @@ const attachmentSchema = z.looseObject({
   source: attachmentSourceSchema,
 });
 
+/**
+ * A request's `scripts` key (format 6, #63). `pre` and `post` record the script file names for a
+ * reader of the YAML; the loader never reads them, and always opens the name derived from the
+ * request's slug (`scriptFileName`), so a hand-edited name cannot reach outside the directory.
+ */
+export const scriptsSchema = z.looseObject({
+  pre: nonEmpty.optional(),
+  post: nonEmpty.optional(),
+  api: z.enum(['wirebench', 'postman']).default('wirebench'),
+  enabled: z.boolean().default(true),
+  secrets: z.array(nonEmpty).default([]),
+  timeoutMs: z.number().int().positive().max(10_000).optional(),
+});
+
 /** `interfaces/<slug>/operations/<slug>/<name>.request.yaml` (the envelope lives in the sibling `.xml`). */
 export const requestFileSchema = z.looseObject({
   kind: z.literal('soap'),
@@ -300,6 +314,7 @@ export const requestFileSchema = z.looseObject({
   properties: requestPropertiesSchema,
   assertions: assertionsSchema.default([]),
   orphaned: z.boolean().optional(),
+  scripts: scriptsSchema.optional(),
 });
 
 /**
@@ -391,6 +406,7 @@ export const restRequestFileSchema = z.looseObject({
   orphaned: z.boolean().optional(),
   /** The operation of the API's definition this request calls. */
   contract: z.looseObject({ method: nonEmpty, path: nonEmpty }).optional(),
+  scripts: scriptsSchema.optional(),
 });
 
 /** `apis/<slug>/requests/[<folder>/…]folder.yaml`. */
@@ -454,6 +470,7 @@ export const grpcRequestFileSchema = z.looseObject({
   settings: grpcSettingsSchema.default({}),
   orphaned: z.boolean().optional(),
   assertions: assertionsSchema.default([]),
+  scripts: scriptsSchema.optional(),
 });
 
 /** `apis/<slug>/api.yaml` for a gRPC API. */

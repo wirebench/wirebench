@@ -139,3 +139,39 @@ export const SCRIPT_OUTPUT_LIMITS = {
   values: 100,
   valueBytes: 64 * 1024,
 } as const;
+
+/** A script file as loaded. `problem` is set when it could not be used; such a request refuses to send. */
+export interface ScriptSource {
+  readonly text: string;
+  readonly problem?: 'script-file-missing' | 'script-too-large';
+}
+
+/**
+ * A request's scripts (spec §Storage): the `scripts` key of a SOAP, REST or gRPC request file, with
+ * the text of each script file beside it.
+ */
+export interface RequestScripts {
+  readonly pre?: ScriptSource;
+  readonly post?: ScriptSource;
+  readonly api: ScriptApi;
+  /** False keeps the scripts but runs none of them; the Postman importer writes false (§Postman). */
+  readonly enabled: boolean;
+  /** The secrets a script may read with `secrets.get` (§Secrets). */
+  readonly secrets: readonly string[];
+  /** Per script; absent means {@link SCRIPT_LIMITS.defaultTimeoutMs}. */
+  readonly timeoutMs?: number;
+}
+
+/**
+ * The file a request's script lives in, beside the request file: `<slug>.pre.ts` for the typed API,
+ * `<slug>.pre.js` for the Postman layer. Always derived from the slug, never read from the request
+ * file, so a hand-edited name cannot point outside the request's directory.
+ */
+export function scriptFileName(slug: string, phase: ScriptPhase, api: ScriptApi): string {
+  return `${slug}.${phase}.${api === 'postman' ? 'js' : 'ts'}`;
+}
+
+/** True for `<slug>.pre.ts`, `<slug>.post.ts`, `<slug>.pre.js` or `<slug>.post.js` of this slug. */
+export function isScriptFileOf(name: string, slug: string): boolean {
+  return /^\.(pre|post)\.(ts|js)$/.test(name.startsWith(slug) ? name.slice(slug.length) : '');
+}

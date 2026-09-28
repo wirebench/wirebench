@@ -84,8 +84,7 @@
 **Files**
 - `packages/engine/src/project/model.ts`: `FORMAT_VERSION = 6`, and `ScriptsDef` (`pre?`, `post?`, `api`,
   `enabled`, `secrets`, `timeoutMs`) on SOAP, REST and gRPC request definitions, with the script text loaded.
-- `packages/engine/src/project/schema.ts`: a `scripts` key on the three request file schemas, which the WebSocket
-  file schema does not accept.
+- `packages/engine/src/project/schema.ts`: `scriptsSchema`, a `scripts` key on the three request file schemas.
 - `packages/engine/src/project/migrate.ts`: 5 → 6 is a stamp.
 - `project/load.ts`, `serialize.ts` and `save.ts`:
   - the sidecar files, and the file names derived from the request;
@@ -103,8 +102,8 @@
 - A project with scripts round-trips byte for byte.
 - Renaming a request renames `X.pre.ts` to `Y.pre.ts`.
 - A missing script file is a problem on the request.
-- A WebSocket request with `scripts` is refused.
-- An unnamed `.pre.ts` beside a request is left alone and never loaded.
+- An unnamed `.pre.ts` beside a request is never loaded, and is reported as an orphan.
+- A hand-edited script name in the request file (`../../outside.ts`) is ignored, and the slug's file is read.
 
 ## Task 4 — Engine: types from JSON Schema and proto
 
