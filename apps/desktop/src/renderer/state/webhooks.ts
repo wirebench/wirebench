@@ -15,7 +15,9 @@ import type {
 } from '../../shared/wire-types.js';
 import { ipc } from './ipc-client.js';
 import { useSyncStore } from './sync.js';
-import { readSeen, writeSeen } from './webhooks-seen.js';
+import { originOf, readSeen, writeSeen } from './webhooks-seen.js';
+
+export { originOf } from './webhooks-seen.js';
 import { useWorkspaceStore } from './workspace.js';
 
 export interface WebhooksServer {
@@ -60,14 +62,6 @@ const EMPTY: WebhooksSnapshot = {
   error: undefined,
   unseen: {},
 };
-
-export function originOf(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return url;
-  }
-}
 
 export function sameServer(
   a: { readonly url: string; readonly workspaceId: string } | undefined,

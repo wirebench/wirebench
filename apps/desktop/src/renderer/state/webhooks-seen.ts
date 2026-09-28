@@ -7,7 +7,8 @@ export const SEEN_KEY = 'wirebench.webhooks.seen';
 
 const keyOf = (url: string, hookId: string): string => `${url} ${hookId}`;
 
-function originOf(url: string): string {
+/** The lower module: `state/webhooks.ts` imports and re-exports this rather than keeping a copy (M11). */
+export function originOf(url: string): string {
   try {
     return new URL(url).origin;
   } catch {

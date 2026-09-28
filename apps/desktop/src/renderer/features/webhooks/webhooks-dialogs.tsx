@@ -3,13 +3,15 @@ import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { webhooksActions } from './webhooks-actions.js';
 import { useWebhooksDialogs, type WebhooksConfirm } from './webhooks-dialogs-state.js';
 
+/** R-B10: Rotate's own sentence, and half of Delete's — both send the same "acts at once" warning. */
+const STOPS_WORKING_AT_ONCE = 'Its URL stops working at once';
+
 const COPY: Readonly<
   Record<WebhooksConfirm['action'], { readonly title: string; readonly description: string; readonly label: string }>
 > = {
   rotate: {
     title: 'Rotate URL?',
-    description:
-      'The current URL stops working at once: anything still sending to it gets 404 until it has the new one.',
+    description: `${STOPS_WORKING_AT_ONCE}: anything still sending to the old one gets 404 until it has the new one.`,
     label: 'Rotate',
   },
   clear: {
@@ -19,7 +21,7 @@ const COPY: Readonly<
   },
   delete: {
     title: 'Delete catch URL?',
-    description: 'Deletes the catch URL and its captures for everyone in the workspace. Its URL stops working at once.',
+    description: `Deletes the catch URL and its captures for everyone in the workspace. ${STOPS_WORKING_AT_ONCE}.`,
     label: 'Delete',
   },
 };
