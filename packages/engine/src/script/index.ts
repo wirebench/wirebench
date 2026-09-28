@@ -69,7 +69,8 @@ export {
   soapOperationElements,
 } from './contracts.js';
 export { scriptProperties } from './props.js';
-export { apiDeclarations, scriptDeclarations, secretNameType } from './types/api.js';
+export { apiDeclarations, apiReference, scriptDeclarations, secretNameType } from './types/api.js';
+export type { ApiReferenceSection } from './types/api.js';
 export { restScriptTypes } from './types/rest.js';
 export { grpcScriptTypes } from './types/grpc.js';
 export { projectSoapBody, replaceSoapBody, soapScriptTypes } from './types/xsd.js';

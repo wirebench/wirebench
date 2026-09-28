@@ -309,7 +309,7 @@ pre-request script sees of another request's response.
 - **Tests** are reported as assertions of type `script`, with the test's name, passed or failed, and the failure
   message. They count in the request's outcome like any assertion.
 - **Logs** are masked and kept with the result:
-  - in the app, on a **Script** tab of the response and in the HTTP Log row;
+  - in the app, on a **Script** tab of the response;
   - in the CLI, on stderr with `--verbose`;
   - in the JSON report, as `scriptLog` (optional field; `formatVersion` 1 stays).
 - **In a sequence**, a script error fails its step, which then stops the run under **Stop on first failure**.
@@ -328,8 +328,8 @@ The Postman importer stops dropping `event` scripts. For each request:
   until then, and its result says the scripts were off.
 - Switching them on is a change to the request file (`enabled: true`), so it shows in review like any other. It is
   done either per request, on the **Scripts** tab, or for many requests at once with **Switch on scripts…** on an
-  API or a folder. That dialog lists each request with scripts and the unsupported calls found in them, and switches
-  on the ones ticked.
+  interface, API or folder. That dialog names the requests whose scripts are off beneath it and switches them all on;
+  the import summary is where the unsupported calls are listed.
 - `pm.environment.set`, `pm.collectionVariables.set`, `pm.globals.set` and `pm.variables.set` all map to `vars.set`,
   and the matching `get` calls to `vars.get`, falling back to `props.get`. The import summary says so, since Wirebench
   keeps them in the run's values, not in an environment.

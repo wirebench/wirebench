@@ -358,6 +358,50 @@ requests name, with your credentials. That is the trust any shared *request* alr
 shared request can already put `${secret:x}` into a URL of its choosing. The rules above make
 sure a *server* gains nothing more.
 
+## A script runs with no capabilities
+
+A SOAP, REST or gRPC request can carry a pre-request and a post-response script (#63): TypeScript
+files beside the request file, or JavaScript for one imported from Postman. A script is code from the
+project, so it may come from a teammate, a pull or an import. The decision is
+[ADR-0016](adr/0016-scripts-run-with-no-capabilities.md), which holds together with ADR-0015:
+
+- **Nothing to call.** A script runs in QuickJS compiled to WebAssembly, on a worker thread, in a fresh
+  runtime for every run. The only API it gets is a set of functions of strings — hashing, HMAC,
+  encodings, XPath over the response, a log — installed by the engine. No host object, function or
+  prototype is reachable, and there is no network, file system, keychain, timer or module loader. The
+  sandbox and the TypeScript checker run in main (the app) or the CLI process; the renderer gains no
+  `unsafe-eval`, no `wasm-unsafe-eval` and no language worker. Tests:
+  `packages/engine/test/unit/script/{sandbox,execute}.test.ts`.
+- **Bounded.** Time (1 s by default, at most 10 s, with the worker terminated and replaced as a
+  backstop), 64 MiB of memory, a 1 MiB stack, and caps on log lines and bytes, tests and values. A
+  script file over 256 KiB is refused.
+- **The destination is fixed first.** A pre-request script runs after property expansion and before
+  auth, WS-Addressing, WS-Security and signing. A change to the scheme, host or port fails the send
+  (`script-origin-change`), and a CR, LF or NUL in a URL, header, metadata or SOAP action fails it
+  (`script-value-invalid`). Configured credentials are applied after the script, bound to that origin,
+  and a script never sees them. Tests: `packages/engine/test/unit/script/apply.test.ts`.
+- **Secrets by listing only.** `secrets.get` returns a value only for a name the request file lists under
+  `scripts.secrets`, and each value it returns is recorded for masking before the script runs. A
+  `${secret:…}` in the request's own text reaches the script as a placeholder (`wbsec`, a nonce new for
+  every send, an index, `z`) and is put back after it; every expander substitutes secrets raw, so the
+  value lands exactly where it would have. A `${secret:…}` the script writes itself is never resolved
+  (`script-secret-denied`), so neither a script nor a server value passed through one can name a secret
+  to be read. Tests: `packages/engine/test/integration/run/scripts.test.ts`,
+  `apps/desktop/test/script-send.test.ts`.
+- **What a script produces is data.** A value it sets with `vars.set` is held to every rule of
+  ADR-0015 above, and one marked secret (or holding a known secret) is masked from the moment it is
+  set. In the desktop, the post-response script runs inside the same awaited observer as a sequence's
+  transfers, so the summary, the HTTP Log row and the History entry of the very send that produced a
+  secret already mask it.
+- **Checked before it runs.** A script is type-checked against its request's types before the send;
+  an error stops the send, and a run in CI exits 2 before anything is sent.
+- **Imported scripts start switched off.** A Postman collection's scripts are imported with
+  `enabled: false`; switching them on is a change to the request file, visible in review.
+
+What this does not change: a script someone else wrote runs when you send its request, as a shared
+request already sends what it says to where it says. The rules above make sure the script gains
+nothing a declarative request could not already do, beyond CPU and memory within its limits.
+
 ## Catch URLs take anyone's request
 
 A catch URL (webhook capture) is the one Wirebench Server route that needs no account, so its secret

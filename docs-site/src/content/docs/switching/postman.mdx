@@ -10,8 +10,9 @@ A Postman collection becomes **one REST API** in the project you choose:
 - requests become requests;
 - `{{variables}}` become Wirebench properties.
 
-Scripts, variable values and credentials do not come across. The import summary lists each of
-them, so you know what to set up before the first send.
+Variable values and credentials do not come across. Pre-request and test scripts do, switched off
+until someone has read them. The import summary lists each of these, so you know what to set up before
+the first send.
 
 To run the import, see [Postman collections](/wirebench/guides/importers/#postman-collections) in
 the importers guide. It takes Collection v2.0 and v2.1 JSON, from a file or pasted.
@@ -60,7 +61,7 @@ See [Authentication](/wirebench/guides/auth/) for each scheme's fields.
 | Passwords, tokens, API key values, client secrets | Never copied. The summary counts the auth configurations that need one | Enter each on its **Auth** tab. Wirebench stores it encrypted outside the project |
 | Collection and folder variables, other than the base URL | Not imported. The summary names them; their values are lost | Define each as a project property or an environment variable, with the same name |
 | Dynamic variables such as `{{$guid}}` or `{{$timestamp}}` | Translated to `${$guid}`, but nothing generates a value. The summary names them | Define each as a property |
-| Pre-request and test scripts | Not imported. The summary counts the items that had them | Recreate a check as a request's assertions. Where one request uses a value from another's response (a token, an id, a cookie), build a [sequence](/wirebench/guides/sequences/). Wirebench does not run scripts |
+| Pre-request and test scripts | Imported as each request's [scripts](/wirebench/guides/scripts/#postman-scripts): the collection's, the folders' and the request's own, in order, run through a `pm` layer. **Switched off** until switched on. The summary counts them and names the requests that call something the layer does not support | Read them, then **Switch on** (per request) or **Switch on scripts…** (for an API or folder). Rewrite a call the layer does not support, such as `pm.sendRequest`; a value one request passes to another can also be a [sequence](/wirebench/guides/sequences/) transfer |
 | OAuth 2.0 password or implicit grants | Auth set to none. The summary names the grant | Pick a supported grant on the **Auth** tab, or set the token as Bearer |
 | Other auth types (Digest, AWS Signature, Hawk, OAuth 1.0, Akamai, JWT…) | Auth set to none. The summary names the type | Set the request's auth by hand, or send the header yourself |
 | Items that are neither a folder nor a request | Skipped. The summary counts them | Nothing: there was no request to import |
