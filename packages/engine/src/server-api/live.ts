@@ -89,6 +89,10 @@ export type LiveClientMessage = z.infer<typeof liveClientMessageSchema>;
  *   *connecting* from *connected*, and a dead server from a quiet one.
  * - `presence` includes the recipient, whom the desktop removes.
  * - `session-ended` is always followed by a `4401` close.
+ * - `capture` and `hooks` (webhook-capture spec §3.6) say "a catch URL of this workspace caught
+ *   something" and "the workspace's catch URLs changed". Like every message they carry ids only; the
+ *   desktop fetches. The hub sends at most one `capture` per catch URL every 250 ms, carrying the
+ *   newest id. An app older than them skips both types.
  */
 export const liveServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ready') }),
@@ -98,5 +102,12 @@ export const liveServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('refused'), workspaceId: teamsIdSchema, code: z.enum(LIVE_REFUSED_CODES) }),
   z.object({ type: z.literal('session-ended') }),
   z.object({ type: z.literal('pong') }),
+  z.object({
+    type: z.literal('capture'),
+    workspaceId: teamsIdSchema,
+    hookId: teamsIdSchema,
+    captureId: teamsIdSchema,
+  }),
+  z.object({ type: z.literal('hooks'), workspaceId: teamsIdSchema }),
 ]);
 export type LiveServerMessage = z.infer<typeof liveServerMessageSchema>;

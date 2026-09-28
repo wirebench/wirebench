@@ -85,6 +85,8 @@ const KNOWN: Record<LiveServerMessage['type'], true> = {
   refused: true,
   'session-ended': true,
   pong: true,
+  capture: true,
+  hooks: true,
 };
 
 /** `min(60 s, 1 s × 2^attempt)`, times a random factor in [0.5, 1] (§3.4). */
@@ -283,6 +285,10 @@ export class LiveClient {
         return;
       case 'head':
       case 'access':
+      case 'capture':
+      case 'hooks':
+        // `capture` and `hooks` (webhook-capture §3.6) reach the hooks service, which subscribes the
+        // workspace on the same client; `ServerBackend` ignores them.
         this.deliver(message.workspaceId, { kind: 'message', message });
         return;
     }

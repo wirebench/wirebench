@@ -240,6 +240,28 @@ describe('LiveClient (live-updates §3.4)', () => {
     expect(b.events.filter((event) => event.kind === 'message')).toEqual([
       { kind: 'message', message: { type: 'head', workspaceId: WS_B, head: HEAD } },
     ]);
+  });
+
+  it('delivers capture and hooks nudges to their workspace like head (webhook-capture §3.6)', async () => {
+    const HOOK = '01J8ZC5Q0V7R3T9XK2M4N6P8QE';
+    const CAPTURE = '01J8ZC5Q0V7R3T9XK2M4N6P8QF';
+    const { client } = makeClient();
+    const a = recorder();
+    const b = recorder();
+    client.subscribe(WS_A, a.listener);
+    client.subscribe(WS_B, b.listener);
+    const peer = await accept();
+    await a.inbox.take(isState('connected'));
+    reply(peer, { type: 'capture', workspaceId: WS_A, hookId: HOOK, captureId: CAPTURE });
+    reply(peer, { type: 'hooks', workspaceId: WS_B });
+    await a.inbox.take(isMessage('capture'));
+    await b.inbox.take(isMessage('hooks'));
+    expect(a.events.filter((event) => event.kind === 'message')).toEqual([
+      { kind: 'message', message: { type: 'capture', workspaceId: WS_A, hookId: HOOK, captureId: CAPTURE } },
+    ]);
+    expect(b.events.filter((event) => event.kind === 'message')).toEqual([
+      { kind: 'message', message: { type: 'hooks', workspaceId: WS_B } },
+    ]);
     expect(client.state).toBe('connected');
   });
 

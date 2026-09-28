@@ -133,4 +133,22 @@ describe('server-api live protocol (live-updates §3.1, §4)', () => {
     expect(livePresenceUserSchema.safeParse({ id: '', name: 'Ana' }).success).toBe(false);
     expect(livePresenceUserSchema.safeParse({ id: USER_A, name: '' }).success).toBe(false);
   });
+
+  it('carries a capture nudge and a hooks change, ids only (webhook-capture §3.6)', () => {
+    const HOOK = '01J8ZC5Q0V7R3T9XK2M4N6P8QB';
+    const CAPTURE = '01J8ZC5Q0V7R3T9XK2M4N6P8QC';
+    const messages: LiveServerMessage[] = [
+      { type: 'capture', workspaceId: WS_ID, hookId: HOOK, captureId: CAPTURE },
+      { type: 'hooks', workspaceId: WS_ID },
+    ];
+    for (const message of messages) expect(liveServerMessageSchema.parse(message)).toEqual(message);
+    expect(liveServerMessageSchema.safeParse({ type: 'capture', workspaceId: WS_ID, hookId: HOOK }).success).toBe(
+      false,
+    );
+    expect(liveServerMessageSchema.safeParse({ type: 'hooks' }).success).toBe(false);
+    // A newer server may add a field; an older app strips it.
+    expect(
+      liveServerMessageSchema.parse({ type: 'capture', workspaceId: WS_ID, hookId: HOOK, captureId: CAPTURE, size: 3 }),
+    ).toEqual({ type: 'capture', workspaceId: WS_ID, hookId: HOOK, captureId: CAPTURE });
+  });
 });
