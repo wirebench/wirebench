@@ -13,6 +13,8 @@ import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
+import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
+import type { Workspace } from '../workspace/model.js';
 import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
@@ -161,15 +163,25 @@ function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonl
   ];
 }
 
+/** A workspace's scopes with no environment active, then under each of its environments in turn. */
+function workspaceScopeSets(workspace: Workspace, project: Project): PropertyScopes[] {
+  return [undefined, ...workspace.environments.map((environment) => environment.id)].map((environmentId) =>
+    resolveWorkspaceScopes({ workspace: withActiveEnvironment(workspace, environmentId), project, globals: {} }),
+  );
+}
+
 /**
  * The secrets `selected` needs, one entry per ref in first-use order, each with every request
  * that uses it. The first declaration of a ref supplies its name and purpose. `overrides` are the
- * run's `--var` properties, laid over the environment's as a send lays them.
+ * run's `--var` properties, laid over the environment's as a send lays them. With a `workspace`
+ * the scopes are the ones a send inside it expands against: the workspace's properties, and each
+ * workspace environment with its linked project environment.
  */
 export function secretNeedsOf(
   selected: readonly SelectedRequest[],
   project: Project,
   overrides: PropertyMap = {},
+  workspace?: Workspace,
 ): LocatedSecretNeed[] {
   const byRef = new Map<string, { need: SecretNeed; usedBy: string[] }>();
   // A token a property holds counts whichever environment a run picks: project properties alone,
@@ -178,10 +190,14 @@ export function secretNeedsOf(
     ...scopes,
     env: { ...(scopes.env ?? {}), ...overrides },
   });
-  const scopeSets = [
-    resolveScopes(project, undefined, {}, {}),
-    ...project.environments.map((environment) => resolveScopes(project, environment.id, {}, {})),
-  ].map(withOverrides);
+  const scopeSets = (
+    workspace === undefined
+      ? [
+          resolveScopes(project, undefined, {}, {}),
+          ...project.environments.map((environment) => resolveScopes(project, environment.id, {}, {})),
+        ]
+      : workspaceScopeSets(workspace, project)
+  ).map(withOverrides);
   for (const item of selected) {
     for (const need of needsOf(item, project, scopeSets)) {
       const known = byRef.get(need.ref);

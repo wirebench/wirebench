@@ -1,6 +1,6 @@
-import { access } from 'node:fs/promises';
+import { access, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   createSecretMasker,
   envVariablesFor,
@@ -18,9 +18,11 @@ import type {
   RequestResult,
   RunContext,
   RunResult,
+  RunWorkspace,
   SecretNeed,
   SelectedRequest,
   SequenceDef,
+  WorkspaceEnvironment,
 } from '@wirebench/engine';
 import { UsageError } from '../args.js';
 import type { RunArgs } from '../args.js';
@@ -73,12 +75,72 @@ async function refuseWorkspace(path: string, io: CliIo): Promise<ExitCode> {
   return ExitCode.Usage;
 }
 
-/** `--env` by name first, then by slug or id; required as soon as the project has any environment. */
-function pickEnvironment(project: Project, wanted: string | undefined): Environment | undefined {
-  const { environments } = project;
+/** The directory's real path, or its resolved one when it has none (a path that does not exist). */
+async function realOrResolved(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * The workspace `projectDir` sits inside: the nearest `workspace.yaml` above it, provided that
+ * workspace lists this folder among its projects (an internal one under its `projects/`, or a
+ * linked one by path). A `workspace.yaml` that does not list it, or is not a workspace at all (the
+ * name is common enough for another tool's file), is reported and applies nothing.
+ */
+async function enclosingWorkspace(projectDir: string, io: CliIo): Promise<RunWorkspace | undefined> {
+  const project = await realOrResolved(projectDir);
+  for (let dir = dirname(project); ; dir = dirname(dir)) {
+    const manifest = join(dir, 'workspace.yaml');
+    if (await exists(manifest)) {
+      let loaded: Awaited<ReturnType<typeof loadWorkspace>>;
+      try {
+        loaded = await loadWorkspace(dir);
+      } catch (error) {
+        if (!isWirebenchError(error)) {
+          throw error;
+        }
+        io.stderr.write(
+          `warning: ${manifest} is not a workspace this run can read (${error.code}: ${error.message}); its environments and properties do not apply\n`,
+        );
+        return undefined;
+      }
+      for (const problem of loaded.problems) {
+        io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
+      }
+      for (const ref of loaded.workspace.projects) {
+        const refDir =
+          ref.source === 'linked' && ref.path !== undefined ? ref.path : workspaceProjectDir(dir, ref.slug);
+        if ((await realOrResolved(refDir)) === project) {
+          return { workspace: loaded.workspace, projectSlug: ref.slug };
+        }
+      }
+      io.stderr.write(
+        `warning: ${manifest} does not list this project; its environments and properties do not apply\n`,
+      );
+      return undefined;
+    }
+    if (dirname(dir) === dir) {
+      return undefined;
+    }
+  }
+}
+
+/**
+ * `--env` by name first, then by slug or id; required as soon as there is any environment. Inside a
+ * workspace the environments are the workspace's, as in the app: a project environment applies
+ * through the workspace environment of the same slug, never on its own.
+ */
+function pickEnvironment<E extends Environment | WorkspaceEnvironment>(
+  environments: readonly E[],
+  owner: 'project' | 'workspace',
+  wanted: string | undefined,
+): E | undefined {
   if (environments.length === 0) {
     if (wanted !== undefined) {
-      throw new UsageError(`unknown environment "${wanted}": this project defines none`);
+      throw new UsageError(`unknown environment "${wanted}": this ${owner} defines none`);
     }
     return undefined;
   }
@@ -112,10 +174,14 @@ function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
   });
 }
 
-/** A loaded project, its chosen environment and the requests a selection covers. */
+/**
+ * A loaded project, the workspace it sits inside (if any), its chosen environment — the
+ * workspace's when there is a workspace — and the requests a selection covers.
+ */
 export interface LoadedSelection {
   readonly project: Project;
-  readonly environment?: Environment;
+  readonly workspace?: RunWorkspace;
+  readonly environment?: Environment | WorkspaceEnvironment;
   /** The requests to send: the selection's, or every request the sequences' steps name. */
   readonly selected: readonly SelectedRequest[];
   /** Set when the run is of sequences (`--sequence`). */
@@ -123,8 +189,9 @@ export interface LoadedSelection {
 }
 
 /**
- * What `run` and `secrets list` share: load the project, pick the environment, select. Returns an
- * exit code instead when the path is refused; throws `UsageError` for a bad environment or selector.
+ * What `run` and `secrets list` share: load the project and the workspace around it, pick the
+ * environment, select. Returns an exit code instead when the path is refused; throws `UsageError`
+ * for a bad environment or selector.
  */
 export async function loadSelection(
   args: {
@@ -137,6 +204,7 @@ export async function loadSelection(
 ): Promise<LoadedSelection | ExitCode> {
   const { path } = args;
   let project: Project;
+  let workspace: RunWorkspace | undefined;
   try {
     if (!(await exists(join(path, 'wirebench.yaml'))) && (await exists(join(path, 'workspace.yaml')))) {
       return await refuseWorkspace(path, io);
@@ -146,6 +214,7 @@ export async function loadSelection(
     for (const problem of loaded.problems) {
       io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
     }
+    workspace = await enclosingWorkspace(path, io);
   } catch (error) {
     if (isWirebenchError(error)) {
       io.stderr.write(`${error.code}: ${error.message}\n`);
@@ -154,11 +223,20 @@ export async function loadSelection(
     throw error;
   }
 
-  const environment = pickEnvironment(project, args.env);
+  const environment =
+    workspace === undefined
+      ? pickEnvironment(project.environments, 'project', args.env)
+      : pickEnvironment(workspace.workspace.environments, 'workspace', args.env);
   if (args.sequences !== undefined && args.sequences.length > 0) {
     const sequences = selectSequences(project, args.sequences);
     const selected = resolveSteps(project, sequences);
-    return { project, ...(environment !== undefined ? { environment } : {}), selected, sequences };
+    return {
+      project,
+      ...(workspace !== undefined ? { workspace } : {}),
+      ...(environment !== undefined ? { environment } : {}),
+      selected,
+      sequences,
+    };
   }
   const { selected, unmatched } = selectRequests(project, args.selectors);
   if (unmatched.length > 0) {
@@ -167,7 +245,12 @@ export async function loadSelection(
   if (selected.length === 0) {
     throw new UsageError('nothing to run: the project has no requests');
   }
-  return { project, ...(environment !== undefined ? { environment } : {}), selected };
+  return {
+    project,
+    ...(workspace !== undefined ? { workspace } : {}),
+    ...(environment !== undefined ? { environment } : {}),
+    selected,
+  };
 }
 
 /**
@@ -215,8 +298,8 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   if (typeof loaded === 'number') {
     return loaded;
   }
-  const { project, environment, selected, sequences } = loaded;
-  const needs = secretNeedsOf(selected, project, args.vars);
+  const { project, workspace, environment, selected, sequences } = loaded;
+  const needs = secretNeedsOf(selected, project, args.vars, workspace?.workspace);
   const secrets = createEnvSecrets(needs, io.env);
   // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
   // one as it arrives, and every mask built after that — they are built per result — hides it.
@@ -235,6 +318,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   const context: RunContext = {
     project,
     projectDir: args.path,
+    ...(workspace !== undefined ? { workspace } : {}),
     ...(environment !== undefined ? { environmentId: environment.id } : {}),
     overrides: args.vars,
     getSecret: secrets.getSecret,

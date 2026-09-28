@@ -7,6 +7,7 @@ import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestApi } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
+import type { Workspace } from '../../../src/workspace/model.js';
 
 function soapRequest(extra: Partial<SoapRequestDef> = {}): SoapRequestDef {
   return {
@@ -211,6 +212,45 @@ describe('secretNeedsOf — ${secret:name} tokens', () => {
     expect(secretNeedsOf(selected, p).map((need) => need.ref)).toEqual(['secret:project_other']);
     expect(secretNeedsOf(selected, p, { key: '${secret:var_key}', other: 'plain' }).map((need) => need.ref)).toEqual([
       'secret:var_key',
+    ]);
+  });
+
+  it("lists a token a workspace's properties or environments hold, when the run has that workspace", () => {
+    const api = createApi('demo', {
+      id: 'api-1',
+      slug: 'demo',
+      requests: [createRestRequest('a', { id: 'r-a', url: '/a?k=${key}&w=${#Workspace#team}' })],
+    });
+    const p = project({ apis: [api] });
+    const workspace: Workspace = {
+      formatVersion: 3,
+      id: 'ws-1',
+      name: 'Team',
+      createdAt: '2026-09-18T00:00:00.000Z',
+      properties: { team: '${secret:team_key}' },
+      disabledProperties: [],
+      projects: [{ id: 'proj-1', slug: 'demo-project', source: 'internal' }],
+      environments: [
+        {
+          id: 'wsenv-1',
+          name: 'Staging',
+          slug: 'staging',
+          order: 0,
+          endpoints: {},
+          properties: { key: '${secret:ws_env_key}' },
+          disabledProperties: [],
+        },
+      ],
+    };
+    const selected = selectRequests(p, []).selected;
+    expect(secretNeedsOf(selected, p)).toEqual([]);
+    expect(secretNeedsOf(selected, p, {}, workspace).map((need) => need.ref)).toEqual([
+      'secret:team_key',
+      'secret:ws_env_key',
+    ]);
+    // A --var still overrides the workspace environment's value.
+    expect(secretNeedsOf(selected, p, { key: 'plain' }, workspace).map((need) => need.ref)).toEqual([
+      'secret:team_key',
     ]);
   });
 

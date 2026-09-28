@@ -22,6 +22,7 @@ import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestBody } from '../../../src/rest/model.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import type { WsaConfigPatch } from '../../../src/wsa/model.js';
+import type { Workspace, WorkspaceEnvironment } from '../../../src/workspace/model.js';
 import { generateClientCert, generateTestCa } from '../../helpers/test-certs.js';
 
 interface ProjectOptions {
@@ -494,6 +495,103 @@ describe('prepareSend — ${secret:name} tokens', () => {
       message: 'The secret "nope" is not on this machine — set it with Set Secret Token Value… (Secrets).',
       details: { ref: 'secret:nope' },
     });
+  });
+});
+
+describe('prepareSend — inside a workspace', () => {
+  // `linked` shares the project environment's slug, so that environment is laid over it;
+  // `staging` has no project counterpart and applies on its own.
+  const LINKED: WorkspaceEnvironment = {
+    id: 'wsenv-linked',
+    name: 'Linked',
+    slug: 'test',
+    order: 0,
+    properties: { tenant: 'ws-tenant', region: 'eu-linked' },
+    endpoints: {},
+    disabledProperties: [],
+  };
+  const STAGING: WorkspaceEnvironment = {
+    id: 'wsenv-staging',
+    name: 'Staging',
+    slug: 'staging',
+    order: 1,
+    properties: { tenant: 'staging-tenant', id: '7', key: '${secret:billing_key}' },
+    endpoints: {
+      'billing/Billing': 'https://staging.example.test/soap',
+      'billing/billing-api': 'https://api.staging.test',
+    },
+    disabledProperties: [],
+  };
+  const WORKSPACE: Workspace = {
+    formatVersion: 3,
+    id: 'ws-1',
+    name: 'Team',
+    createdAt: '2026-09-18T00:00:00.000Z',
+    properties: { host: 'https://ws.example.test' },
+    disabledProperties: [],
+    projects: [{ id: 'proj-1', slug: 'billing', source: 'internal' }],
+    environments: [LINKED, STAGING],
+  };
+  const inWorkspace = (project: Project, extra: Partial<RunContext> = {}): RunContext =>
+    contextFor(project, { workspace: { workspace: WORKSPACE, projectSlug: 'billing' }, ...extra });
+
+  it('resolves ${#Workspace#name} from the workspace properties', async () => {
+    const project = makeProject({ restUrl: '${#Workspace#host}/invoices' });
+    const prepared = await prepareSend(restOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
+    expect(prepared.kind === 'rest' && prepared.input.request.url).toBe('https://ws.example.test/invoices');
+
+    const soapProject = makeProject({ envelopeXml: '<Envelope>${#Workspace#host}</Envelope>' });
+    const soap = await prepareSend(soapOf(soapProject), inWorkspace(soapProject));
+    expect(soap.kind === 'soap' && soap.scopes.workspace).toEqual({ host: 'https://ws.example.test' });
+  });
+
+  it('resolves ${name} and the endpoints through the workspace environment the run names', async () => {
+    const project = makeProject();
+    const soap = await prepareSend(soapOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
+    if (soap.kind !== 'soap') throw new Error('expected soap');
+    expect(soap.input.endpoint).toBe('https://staging.example.test/soap');
+    expect(soap.scopes.env).toMatchObject({ tenant: 'staging-tenant', id: '7' });
+
+    const rest = await prepareSend(restOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
+    if (rest.kind !== 'rest') throw new Error('expected rest');
+    expect(rest.input.baseUrl).toBe('https://api.staging.test');
+    expect(rest.input.request.pathParams[0]?.value).toBe('7');
+  });
+
+  it('lays the linked project environment over the workspace one, as the app does', async () => {
+    const project = makeProject({ envelopeXml: '<Envelope>${tenant} ${region}</Envelope>' });
+    const prepared = await prepareSend(soapOf(project), inWorkspace(project, { environmentId: 'wsenv-linked' }));
+    if (prepared.kind !== 'soap') throw new Error('expected soap');
+    expect(prepared.scopes.env).toMatchObject({ tenant: 'env-tenant', region: 'eu-linked', id: '42' });
+    expect(prepared.input.endpoint).toBe('https://env.example.test/soap');
+  });
+
+  it("does not read the project's environment on its own: its id means nothing inside a workspace", async () => {
+    const project = makeProject();
+    await expect(
+      prepareSend(soapOf(project), inWorkspace(project, { environmentId: 'env-test' })),
+    ).rejects.toMatchObject({ code: 'unresolved-properties', details: { unresolved: ['${tenant}'] } });
+  });
+
+  it('lets a --var override beat the workspace environment property', async () => {
+    const project = makeProject();
+    const prepared = await prepareSend(
+      soapOf(project),
+      inWorkspace(project, { environmentId: 'wsenv-staging', overrides: { tenant: 'cli-tenant' } }),
+    );
+    expect(prepared.kind === 'soap' && prepared.scopes.env).toMatchObject({ tenant: 'cli-tenant', id: '7' });
+  });
+
+  it('expands a ${secret:name} token a workspace environment property holds', async () => {
+    const project = makeProject({ envelopeXml: '<Envelope>${key}</Envelope>' });
+    const prepared = await prepareSend(
+      soapOf(project),
+      inWorkspace(project, {
+        environmentId: 'wsenv-staging',
+        getSecret: (ref) => Promise.resolve(ref === 'secret:billing_key' ? 'ghp_FAKEvalue' : undefined),
+      }),
+    );
+    expect(prepared.kind === 'soap' && prepared.scopes.secrets).toEqual({ billing_key: 'ghp_FAKEvalue' });
   });
 });
 

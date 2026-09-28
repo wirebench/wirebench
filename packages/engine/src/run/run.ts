@@ -464,7 +464,9 @@ export async function runRequests(
     }
   }
   const count = (outcome: RequestOutcome): number => results.filter((r) => r.outcome === outcome).length;
-  const environment = context.project.environments.find((e) => e.id === context.environmentId)?.name;
+  // Inside a workspace the environment a run names is the workspace's.
+  const environments = context.workspace?.workspace.environments ?? context.project.environments;
+  const environment = environments.find((e) => e.id === context.environmentId)?.name;
   return {
     startedAt,
     ...(environment !== undefined ? { environment } : {}),
