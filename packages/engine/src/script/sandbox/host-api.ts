@@ -3,6 +3,7 @@
  * handle, object or prototype of the host ever reaches the sandbox, only the strings these return.
  */
 import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { evaluate } from '../../xpath/evaluate.js';
 import { SCRIPT_LIMITS, type SandboxLog } from './model.js';
 
 export const HASH_ALGORITHMS = ['md5', 'sha1', 'sha256', 'sha512'] as const;
@@ -55,6 +56,35 @@ export function base64url(text: string): string {
 
 export function urlEncode(text: string): string {
   return encodeURIComponent(text);
+}
+
+/**
+ * The strings an XPath expression selects in `xml`, as JSON text: each node's text, or each value.
+ * `namespacesJson` is a JSON object of prefix to URI.
+ */
+export function xpathStrings(xml: string, expression: string, namespacesJson: string): string {
+  let namespaces: Record<string, string> = {};
+  try {
+    const parsed: unknown = JSON.parse(namespacesJson);
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      namespaces = Object.fromEntries(
+        Object.entries(parsed as Record<string, unknown>).filter(
+          (e): e is [string, string] => typeof e[1] === 'string',
+        ),
+      );
+    }
+  } catch {
+    throw new HostCallError('namespaces must be a JSON object');
+  }
+  const result = evaluate(xml, expression, { language: 'xpath', namespaces });
+  switch (result.kind) {
+    case 'error':
+      throw new HostCallError(result.message);
+    case 'empty':
+      return '[]';
+    default:
+      return JSON.stringify(result.items.map((item) => item.text));
+  }
 }
 
 const TRUNCATED_MARK = '… (log cut short)';

@@ -180,7 +180,8 @@ Generation lives in the engine (`packages/engine/src/script/types/`) and is the 
   - Attributes are `"@name"` fields, and the text of an element with attributes is `"#text"`.
   - A choice makes each arm optional.
   - `xs:any` is `unknown`.
-  - If two elements in one parent share a local name, both are keyed `"prefix:name"`.
+  - If two elements in one parent share a local name, both are keyed by their namespace, `"{urn:a}name"`. A schema
+    names no prefixes, so the namespace is the only stable key.
 - Simple types map to TypeScript like this:
   - `xs:boolean` is `boolean`.
   - `xs:int`, `xs:short`, `xs:byte`, `xs:float` and `xs:double` are `number`.

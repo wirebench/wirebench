@@ -25,6 +25,9 @@ import {
 import type { ScriptSandbox } from './sandbox/host.js';
 import type { SandboxError } from './sandbox/model.js';
 import { StripError, stripTypes } from './strip.js';
+import { projectSoapBody, replaceSoapBody } from './types/xsd.js';
+import type { SchemaSet } from '../xsd/schema-set.js';
+import type { QName } from '../wsdl/qname.js';
 
 export interface ScriptRunInput {
   readonly sandbox: ScriptSandbox;
@@ -51,6 +54,12 @@ export interface ScriptRunInput {
   readonly layer?: string;
   /** Called with each secret value before the script runs, so it is masked wherever it lands. */
   readonly onSecretValue?: (value: string) => void;
+  /**
+   * For a SOAP request: the schema and the operation's input and output elements, which give the
+   * script a typed `request.body` / `response.body` (`types/xsd.ts`). Without it the body is only
+   * reachable as `envelope`.
+   */
+  readonly soap?: { readonly schemas: SchemaSet; readonly input?: QName; readonly output?: QName };
 }
 
 /** A rule's error, raised in the sandbox by name (`api/prelude.ts`), mapped to its code. */
@@ -118,6 +127,12 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     input.onSecretValue?.(value);
   }
 
+  const request = withSoapBody(input.request, input.soap?.schemas, input.soap?.input);
+  const response =
+    input.response?.protocol === 'soap' && input.soap !== undefined
+      ? withBody(input.response, projectSoapBody(input.soap.schemas, input.soap.output, input.response.text))
+      : input.response;
+
   const result = await input.sandbox.run({
     prelude: buildPrelude(input.request.protocol, input.phase, input.api, input.layer),
     code,
@@ -125,8 +140,8 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     timeoutMs: input.timeoutMs ?? 0,
     input: {
       phase: input.phase,
-      request: input.request,
-      ...(input.response !== undefined ? { response: input.response } : {}),
+      request,
+      ...(response !== undefined ? { response } : {}),
       vars: input.vars,
       props: input.props,
       secrets: input.secrets,
@@ -150,11 +165,60 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     };
   }
   if (input.phase === 'pre') {
-    const applied = applyRequestChanges(input.request, output.request);
+    const applied = applyRequestChanges(request, output.request);
     if (!applied.ok) {
       return { ok: false, error: applied.error, tests, values, log: result.log };
     }
-    return { ok: true, request: applied.request, tests, values, log: result.log };
+    const written = writeSoapBody(request, applied.request, input.soap);
+    if (!written.ok) {
+      return { ok: false, error: written.error, tests, values, log: result.log };
+    }
+    return { ok: true, request: written.request, tests, values, log: result.log };
   }
   return { ok: true, tests, values, log: result.log };
+}
+
+function withBody<T extends object>(snapshot: T, body: unknown): T {
+  return body === undefined ? snapshot : { ...snapshot, body };
+}
+
+/** A SOAP request with its body projected, when the schema describes the body element. */
+function withSoapBody(
+  request: RequestSnapshot,
+  schemas: SchemaSet | undefined,
+  element: QName | undefined,
+): RequestSnapshot {
+  if (request.protocol !== 'soap' || schemas === undefined) {
+    return request;
+  }
+  return withBody(request, projectSoapBody(schemas, element, request.envelope));
+}
+
+/**
+ * Writes a changed `request.body` back into the envelope, replacing the body element. The body wins
+ * over an envelope the script also edited, since it is written into that edited envelope.
+ */
+function writeSoapBody(
+  before: RequestSnapshot,
+  after: RequestSnapshot,
+  soap: ScriptRunInput['soap'],
+): { ok: true; request: RequestSnapshot } | { ok: false; error: ScriptFailure } {
+  if (before.protocol !== 'soap' || after.protocol !== 'soap') {
+    return { ok: true, request: after };
+  }
+  const { body, ...rest } = after;
+  if (body === undefined || JSON.stringify(body) === JSON.stringify(before.body) || soap?.input === undefined) {
+    return { ok: true, request: rest };
+  }
+  try {
+    return { ok: true, request: { ...rest, envelope: replaceSoapBody(soap.schemas, soap.input, rest.envelope, body) } };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: 'script-error',
+        message: `request.body could not be written: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    };
+  }
 }

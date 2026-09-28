@@ -38,6 +38,7 @@ const snapshotSchema = z.discriminatedUnion('protocol', [
     soapAction: z.string(),
     headers: z.array(pair),
     envelope: z.string(),
+    body: z.unknown().optional(),
   }),
   z.object({
     protocol: z.literal('grpc'),

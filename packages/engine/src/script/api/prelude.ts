@@ -325,8 +325,12 @@ const soapRequest = (snapshot, writable) => {
     soapAction: snapshot.soapAction,
     headers: snapshot.headers.map(([n, v]) => [n, v]),
     envelope: snapshot.envelope,
+    body: snapshot.body === undefined ? undefined : JSON.parse(JSON.stringify(snapshot.body)),
   };
   const refuse = (what) => () => { throw new TypeError('The ' + what + ' of a sent request cannot be changed'); };
+  const noSchema = () => {
+    throw new TypeError('This operation\'s body has no schema element, so request.body is not available; use request.envelope');
+  };
   const request = Object.freeze({
     get endpoint() { return data.endpoint; },
     set endpoint(value) { if (!writable) refuse('endpoint')(); data.endpoint = String(value); },
@@ -340,8 +344,26 @@ const soapRequest = (snapshot, writable) => {
     headers: pairsApi(data.headers, writable, 'header'),
     get envelope() { return data.envelope; },
     set envelope(value) { if (!writable) refuse('envelope')(); data.envelope = String(value); },
+    get body() {
+      if (snapshot.body === undefined) noSchema();
+      return writable ? data.body : deepFreeze(data.body);
+    },
+    set body(value) {
+      if (!writable) refuse('body')();
+      if (snapshot.body === undefined) noSchema();
+      const text = JSON.stringify(value);
+      if (text === undefined) throw new TypeError('request.body must be a JSON value');
+      data.body = JSON.parse(text);
+    },
   });
-  const snapshotOf = () => ({ protocol: 'soap', endpoint: data.endpoint, soapAction: data.soapAction, headers: data.headers, envelope: data.envelope });
+  const snapshotOf = () => ({
+    protocol: 'soap',
+    endpoint: data.endpoint,
+    soapAction: data.soapAction,
+    headers: data.headers,
+    envelope: data.envelope,
+    ...(data.body === undefined ? {} : { body: data.body }),
+  });
   return { request, snapshotOf };
 };
 
@@ -351,6 +373,8 @@ const soapResponse = (snapshot) => deepFreeze({
   text: snapshot.text,
   envelope: snapshot.text,
   fault: snapshot.fault,
+  body: snapshot.body,
+  select: (xpath, namespaces) => JSON.parse(__host.xpath(snapshot.text, String(xpath), JSON.stringify(namespaces === undefined ? {} : namespaces))),
   durationMs: snapshot.durationMs,
 });
 

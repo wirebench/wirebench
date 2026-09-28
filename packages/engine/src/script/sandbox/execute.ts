@@ -12,7 +12,18 @@
  * starts the worker with room to spare.
  */
 import type { QuickJSContext, QuickJSHandle, QuickJSWASMModule, VmCallResult } from 'quickjs-emscripten-core';
-import { base64, base64url, fromBase64, hash, hmac, HostCallError, LogCollector, urlEncode, uuid } from './host-api.js';
+import {
+  base64,
+  base64url,
+  fromBase64,
+  hash,
+  hmac,
+  HostCallError,
+  LogCollector,
+  urlEncode,
+  uuid,
+  xpathStrings,
+} from './host-api.js';
 import { SCRIPT_LIMITS, type SandboxError, type SandboxJob, type SandboxResult, type ScriptPosition } from './model.js';
 
 /** What the worker hands back: the result, and whether the runtime ended in a state worth not reusing the worker after. */
@@ -138,6 +149,14 @@ function installHost(context: QuickJSContext, log: LogCollector, inputJson: stri
     fromBase64: (ctx, args) => ctx.newString(fromBase64(stringArg(ctx, args[0], 'text'))),
     base64url: (ctx, args) => ctx.newString(base64url(stringArg(ctx, args[0], 'text'))),
     urlEncode: (ctx, args) => ctx.newString(urlEncode(stringArg(ctx, args[0], 'text'))),
+    xpath: (ctx, args) =>
+      ctx.newString(
+        xpathStrings(
+          stringArg(ctx, args[0], 'xml'),
+          stringArg(ctx, args[1], 'expression'),
+          stringArg(ctx, args[2], 'namespaces'),
+        ),
+      ),
   };
   const host = context.newObject();
   try {

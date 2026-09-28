@@ -128,18 +128,26 @@
 ## Task 5 — Engine: types from XSD, and the XML projection
 
 **Files**
-- `packages/engine/src/script/types/xsd.ts`: `soapScriptTypes(schemaSet, operation)`. It follows the spec's element,
-  attribute and simple-type mapping, including `"prefix:name"` on a clash and `xs:any` as `unknown`.
-- `packages/engine/src/script/xml-projection.ts`:
-  - `projectXml(schemaSet, element, xml)` turns an instance into the object the types describe;
-  - `applyProjection(schemaSet, element, object)` turns it back into XML in schema order, built on
-    `xsd/form-model.ts` (`buildForm` / `applyForm`);
-  - mixed content is not projected, and is reported so the SOAP API offers only `envelope` for it.
-- Tests: `packages/engine/test/unit/script/{types-xsd,xml-projection}.test.ts`, with the stock-quote and
-  order fixtures:
-  - a projection round-trip is byte-stable where the instance was already in schema order;
-  - a changed field changes only that element;
-  - arrays, optional and nillable fields, and attributes are all covered.
+- `packages/engine/src/script/types/xsd.ts`: a single walk over the schema set serves three functions.
+  - `elementSlots`: the child elements a content model allows, in schema order, with `many` and `optional`.
+  - `soapScriptTypes(schemas, input, output)` gives `WbSoapRequestBody` and `WbSoapResponseBody`, with an alias per
+    named complex type.
+  - `projectSoapBody` and `projectElement` read the envelope's body element through the tolerant scanner
+    (`xsd/xml-scan.ts`) as the object the types describe.
+  - `replaceSoapBody` and `serializeElement` write it back in schema order. They declare a default namespace where it
+    changes and splice only the body element's range, so the rest of the envelope is byte for byte.
+  - A clash of local names is keyed `{namespace}local`, `xs:any` and mixed content are not projected, and depth and
+    aliases are bounded.
+- The API: `request.body` (writable before the send) and `response.body` on SOAP, plus `response.select(xpath,
+  namespaces)` through a new `__host.xpath`, which runs the engine's evaluator on the sandbox worker.
+- `packages/engine/src/script/run.ts`: `soap: { schemas, input, output }` projects both bodies before the script runs
+  and writes a changed `request.body` into the envelope after it.
+  - An untouched body leaves the envelope unchanged, and a value the schema cannot hold is a `script-error`.
+- Tests: `packages/engine/test/unit/script/types-xsd.test.ts`:
+  - types compile with a script, and a wrong path fails;
+  - projection of arrays, attributes, simple content, nil, enumerations and 64-bit numbers;
+  - a round trip that keeps the envelope outside the body;
+  - scripts using `request.body`, `response.body` and `select`.
 
 ## Task 6 — Engine: the checker
 

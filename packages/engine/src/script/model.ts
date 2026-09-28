@@ -36,6 +36,8 @@ export interface SoapRequestSnapshot {
   readonly headers: readonly HeaderPair[];
   /** The whole envelope, after property expansion and before WS-Addressing or WS-Security. */
   readonly envelope: string;
+  /** The body element as the object its schema describes (`types/xsd.ts`); absent when there is no schema. */
+  readonly body?: unknown;
 }
 
 export interface GrpcRequestSnapshot {
@@ -67,6 +69,8 @@ export interface SoapResponseSnapshot {
   readonly text: string;
   readonly durationMs: number;
   readonly fault?: { readonly code: string; readonly reason: string };
+  /** The body element as the object its schema describes; absent when there is no schema. */
+  readonly body?: unknown;
 }
 
 export interface GrpcResponseSnapshot {
