@@ -298,3 +298,14 @@ spec when its turn comes:
 - `openapi-webhooks-import`: import an OpenAPI document's `webhooks` and `callbacks` as a *Webhooks*
   folder of requests aimed at a target variable, instead of skipping them. Engine importer and
   desktop only: it needs no server and ships independently.
+
+## Revisions after planning
+
+- The environment variables are `WIREBENCH_SERVER_HOOKS_*`, not `WIREBENCH_HOOKS_*`.
+- The migration file is `0004_webhook-capture.sql`.
+- Logged URLs show `/hooks/[redacted]`, not the secret.
+- Seen markers live in `localStorage`, one per device, keyed by server origin rather than kept in
+  preferences.
+- The Webhooks node is a root in the Explorer after the projects, not under a workspace row.
+- A capture shows a Form tab for an `application/x-www-form-urlencoded` body.
+- `/meta`'s `hooks` flag is read by the main process and served to the renderer.

@@ -307,6 +307,23 @@ Both evaluators also run on a **worker thread** with a five-second budget
 than a frozen window, and neither library is in the renderer bundle: evaluation is an IPC call, and
 the renderer has no evaluator of its own.
 
+## Catch URLs take anyone's request
+
+A catch URL (webhook capture) is the one Wirebench Server route that needs no account, so its secret
+is the whole credential.
+
+- **The secret.** It is 128 bits from `crypto.randomBytes`. Only the workspace's members see it, inside
+  the full URL. `/meta` never carries it, request logs show `/hooks/[redacted]`, and an editor can
+  rotate it at once.
+- **Nothing to probe.** An unknown secret and a disabled one both get the same bare `404`.
+- **Bounded writes.** A token bucket per catch URL, a per-workspace cap, a stored-body limit, and
+  retention by count and by age bound what a stranger holding a URL can make the server store.
+- **No held connection.** A configured response delay never holds a database connection.
+- **Untrusted content.** A capture is shown only through the viewers that already show untrusted
+  response bodies, so nothing in it is rendered as HTML or run. The app keeps captures in memory
+  while their tab is open (`apps/desktop/src/main/hooks/hooks-service.ts`) and never writes them to
+  disk.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

@@ -344,6 +344,13 @@ directory**: pushes to a workspace are serialised by a lock inside the server pr
 sharing a data directory could interleave them, and live updates run on a hub inside the process, so each
 instance would announce only its own changes ([ADR-0013](adr/0013-live-updates-use-an-in-process-hub.md)).
 
+**Catch URLs.** On a server that offers them, a shared workspace also shows a *Webhooks* node in the
+Explorer. Each catch URL under it is a public address that records every request sent to it: point a
+webhook at it and read each delivery in its tab as it arrives. Editors create, rotate and delete them;
+everyone in the workspace reads the captures. The server keeps them for a week by default and the app
+never saves them to disk. A reverse proxy must forward `/hooks/` as well as `/api/v1/`; the server
+README has the block.
+
 **Behind a reverse proxy.** Live updates are a WebSocket at `/api/v1/live`. A proxy in front of the server
 must forward the `Upgrade` and `Connection` headers for that path; in nginx, `proxy_http_version 1.1`,
 `proxy_set_header Upgrade $http_upgrade` and `proxy_set_header Connection "upgrade"`. The server README has

@@ -150,3 +150,44 @@ API stays the source of truth; while connected, it polls only every five minutes
   none.
 - On shutdown every socket closes with `1001` before in-flight requests drain, and the app reconnects when
   the server is back.
+
+## Webhook capture
+
+A workspace's editors create **catch URLs**. Each one is a public address,
+`<WIREBENCH_SERVER_PUBLIC_URL>/hooks/<secret>[/<anything>]`, that stores every request sent to it for
+the workspace's members to read in the app. `/api/v1/meta` reports `hooks` with `enabled` and the
+limits below. The management routes live under `/api/v1/workspaces/:workspaceId/hooks`: viewers read,
+editors and admins create, change, rotate, clear and delete.
+
+- **The public route takes any method and any content type.** It answers with the catch URL's configured
+  response, `404` for an unknown or disabled secret, `413` past the body limit, `415` for a
+  syntactically invalid `Content-Type` header (nothing is stored), `429` with `Retry-After: 1`
+  past the rate limit, or `503` with `Retry-After: 30` when the capture could not be stored. Senders
+  read that as "retry later". A `GET` or `HEAD` request's body is never parsed, so its capture stores
+  an empty body.
+- **A reverse proxy must forward `/hooks/`** with every method, the request body and the client's
+  address, as it forwards `/api/v1/`. With nginx:
+
+  ```nginx
+  location /hooks/ {
+      proxy_pass http://127.0.0.1:8080;
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      client_max_body_size 32m;
+  }
+  ```
+
+- **Storage is bounded.**
+  - Each catch URL keeps its newest `WIREBENCH_SERVER_HOOKS_KEEP` captures.
+  - A sweep every ten minutes deletes captures older than `WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS`.
+  - A body is stored up to `WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB`; the rest is counted but not kept.
+  - A workspace holds at most `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` catch URLs.
+- **The rate limit is per catch URL and per process**: `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` tokens a
+  second, up to `WIREBENCH_SERVER_HOOKS_BURST`. Run **one** replica, as for live updates.
+- **The secret stays out of logs.** Request logs show `/hooks/[redacted]`.
+- **Behind a proxy with `WIREBENCH_SERVER_TRUST_PROXY`**, the server's usual `x-request-id` handling
+  applies on catch URLs too: a proxy-supplied id may be echoed back. Nothing from the request body or
+  headers is ever echoed.
+- **Turning it off:** `WIREBENCH_SERVER_HOOKS_ENABLED=false` registers neither the public route nor the
+  management routes, and the app hides its Webhooks node. The age sweep keeps running, so captures
+  already stored still expire.

@@ -47,6 +47,7 @@ export default defineConfig({
             { label: 'History', slug: 'guides/history' },
             { label: 'Snapshot regression', slug: 'guides/snapshot-regression' },
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
+            { label: 'Webhooks', slug: 'guides/webhooks' },
             { label: 'Preferences and layout', slug: 'guides/preferences' },
             { label: 'Run in CI', slug: 'guides/run-in-ci' },
           ],

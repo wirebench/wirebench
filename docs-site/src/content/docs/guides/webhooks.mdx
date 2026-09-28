@@ -1,0 +1,81 @@
+---
+title: Webhooks
+description: Give a workspace on Wirebench Server a public catch URL, point a webhook at it, and read each request it receives as it arrives.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A **catch URL** is a public address on your Wirebench Server that records every request sent to it.
+Point a payment provider's, a CI system's or your own service's webhook at it, and each delivery shows
+up in Wirebench seconds later: method, path, headers and body, exactly as they arrived.
+
+Catch URLs belong to a workspace shared on Wirebench Server, so everyone in the workspace sees the
+same captures. See [Shared workspaces](/wirebench/guides/shared-workspaces/) for sharing a workspace
+on a server.
+
+## Create a catch URL
+
+<Steps>
+
+1. Open a workspace shared on a Wirebench Server. When the server offers catch URLs, the Explorer
+   shows a **Webhooks** node after your projects.
+2. Right-click **Webhooks** and choose **New catch URL…**. You need the editor or admin role.
+3. Give it a name. Optionally, set the response every sender gets: its status (200 by default), a
+   content type, a body and a delay of up to 30 seconds.
+4. Click **Create**. Its tab opens with the full URL and a copy button.
+
+</Steps>
+
+The URL looks like `https://wirebench.example.com/hooks/01J8…`. Anything after it is kept as the
+capture's subpath, so `…/hooks/01J8…/orders/created` works too, and you can tell deliveries apart.
+
+## Read captures
+
+The catch URL's tab lists captures newest first: method, subpath, time and size. New ones appear as
+they arrive while the app is connected. Scroll down, or click **Load older**, for earlier ones.
+
+Select a capture to read it:
+
+- **Headers** shows every header in the order it arrived, repeats included.
+- **Body** shows the body in the same viewers as a REST response: pretty JSON or XML, raw text, and a
+  hex dump for binary.
+- **Form** shows the fields of an `application/x-www-form-urlencoded` body.
+- **Details** shows the method, subpath, query, source address, time received and size.
+
+A body larger than the server's limit is cut, and the tab says so: _Body cut at 1.0 MB of 3.4 MB_.
+
+A `GET` or `HEAD` request carries no body, so its capture stores an empty one.
+
+Each catch URL in the Explorer carries a badge counting the captures you have not seen on this device.
+Opening its tab clears the badge.
+
+<Aside>
+Captures are not saved on your computer. The app fetches them from the server while their tab is
+open and forgets them when it closes. Offline, the tab asks you to connect.
+</Aside>
+
+## Manage catch URLs
+
+Right-click a catch URL for:
+
+- **Copy URL**
+- **Settings…**: viewers can read the settings; editors can change them.
+- **Rotate URL…**: gives the catch URL a new address. The old one stops working at once, so update
+  every sender.
+- **Clear captures**: deletes its captures for everyone in the workspace.
+- **Delete**: removes the catch URL and its captures.
+
+A disabled catch URL answers `404` to every sender and records nothing, exactly like a URL that
+never existed.
+
+## What the server keeps
+
+The server keeps the newest 500 captures of each catch URL for 7 days, and stores up to 1 MiB of each
+body. A catch URL accepts 10 requests a second, with bursts of 50, and answers `429` beyond that. The
+server's administrator can change all of these. See the
+[server README](https://github.com/wirebench/wirebench/blob/main/packages/server/README.md#webhook-capture).
+
+<Aside type="caution">
+Anyone who knows a catch URL can send to it. Treat the URL as a secret, share it only with the
+systems that need it, and rotate it if it leaks.
+</Aside>

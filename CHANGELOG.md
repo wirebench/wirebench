@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Webhook capture.** A workspace shared on Wirebench Server gets catch URLs. Each is a public address
+  that records every request sent to it, with a configurable fixed response. Captures appear live in a
+  tab under the Explorer's new *Webhooks* node, read with the same body and header viewers as a response,
+  with a per-device badge for the ones not yet seen. Editors create, rotate, clear and delete catch URLs;
+  viewers read them. The server bounds captures by count, age, body size and rate, and the app never
+  writes them to disk.
+
 - **Team secrets.** A shared workspace can share secret values, not just references: each value is
   encrypted for every approved machine and travels with the workspace, so a teammate's next send uses it
   with nothing typed. Joining machines ask for access; an admin approves after checking a fingerprint.
