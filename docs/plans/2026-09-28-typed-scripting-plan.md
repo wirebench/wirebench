@@ -152,20 +152,31 @@
 ## Task 6 — Engine: the checker
 
 **Files**
-- `packages/engine/package.json`: `typescript` 5.9, pinned, as a runtime dependency. Licences regenerated.
-- `packages/engine/src/script/check/worker.ts` and `host.ts`, one persistent worker:
-  - `checkScript({ source, types, api })` returns diagnostics with line, column and message;
-  - a language service keeps its models by id for `completionsAt`, `quickInfoAt`, `signatureHelpAt` and
-    `diagnostics`;
-  - compiler options follow the spec (`strict`, `noEmit`, `erasableSyntaxOnly`, `lib: es2023`, no DOM), with the lib
-    files read once.
-- `packages/engine/src/script/check/postman.ts`: `parseOnly(source)` for `api: postman`, which reports
-  `script-syntax-error`.
-- Tests: `packages/engine/test/unit/script/check.test.ts`:
-  - `response.json().pett` on a typed response is an error with its position;
-  - `response.status === 200 && response.json().id` checks;
-  - `enum` is an error;
-  - completion at `response.json().` lists the schema's fields.
+- `packages/engine/package.json`: `typescript` `~5.9.3` as a runtime dependency, and the licences regenerated.
+  TypeScript 7 ships a native binary per platform, so it cannot be used here (ADR-0001).
+- `packages/engine/src/script/check/service.ts`: one language service per script model, over two virtual files, the
+  declarations and the script.
+  - The services share a document registry, so the standard library is parsed once.
+  - At most 32 models are kept, least recently used dropped first, and an unchanged model is not re-parsed.
+  - Options are `strict`, no emit, ES2023 with no DOM, no `@types`, and `erasableSyntaxOnly`.
+  - It serves `diagnosticsOf`, `completionsAt`, `quickInfoAt`, `signatureHelpAt` and `checkOnce`.
+  - A Postman script (`api: postman`, JavaScript) gets syntax errors only.
+  - Nothing on disk is read but the standard library.
+- `packages/engine/src/script/check/worker.ts` and `host.ts`: `createScriptChecker`, one persistent worker with a
+  deadline per request.
+  - Each request carries its model, so a replaced worker loses nothing.
+- `packages/engine/src/script/types/api.ts`: `scriptDeclarations(protocol, phase, secrets, generated)`.
+- Tests: `packages/engine/test/unit/script/check.test.ts`, covering the service in-process and the host on the
+  worker:
+  - a wrong path with its position;
+  - `enum` refused;
+  - Postman syntax only;
+  - completion of a response's fields;
+  - hover and signature help;
+  - the model cap;
+  - the deadline.
+- To confirm in Task 10: the language service reads TypeScript's `lib/*.d.ts` from inside the asar on the worker. If
+  a packaged smoke test shows it cannot, `typescript/lib` joins `asarUnpack`.
 
 ## Task 7 — Engine: scripts in a send
 

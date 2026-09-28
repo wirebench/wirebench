@@ -226,3 +226,13 @@ export function secretNameType(secrets: readonly string[]): string {
   const names = secrets.map((name) => JSON.stringify(name));
   return `type WbSecretName = ${names.length > 0 ? names.join(' | ') : 'never'};\n`;
 }
+
+/** Everything a script is checked against: the API, its secret names, and the request's generated types. */
+export function scriptDeclarations(
+  protocol: ScriptProtocol,
+  phase: ScriptPhase,
+  secrets: readonly string[],
+  generated: string,
+): string {
+  return `${apiDeclarations(protocol, phase)}\n${secretNameType(secrets)}\n${generated}`;
+}
