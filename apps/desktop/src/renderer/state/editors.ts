@@ -57,7 +57,8 @@ export interface EditorTab {
     | 'grpc-api'
     | 'ws-request'
     | 'ws-api'
-    | 'env-compare';
+    | 'env-compare'
+    | 'catch-url';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;
@@ -78,6 +79,11 @@ export interface EditorTab {
   readonly wsRequestId?: string;
   /** Set when `kind` is `'ws-api'`: the WebSocket API this tab shows. */
   readonly wsApiId?: string;
+  /**
+   * Set when `kind` is `'catch-url'`: the catch URL this tab shows (webhook-capture §4.2). Session
+   * only: captures are never cached, so the tab is not persisted.
+   */
+  readonly hookId?: string;
   /** Set when `kind` is `'project'`: the project this tab shows. */
   readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */

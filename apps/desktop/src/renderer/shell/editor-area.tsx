@@ -9,6 +9,7 @@ import { SyncBanner } from '../features/sync/sync-banner.js';
 import { useDraftsStore } from '../state/drafts.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useProjectStore } from '../state/project.js';
+import { useWebhooksStore } from '../state/webhooks.js';
 import { useWorkspaceStore } from '../state/workspace.js';
 import type { ProjectWire, WorkspaceEnvironmentWire } from '../../shared/wire-types.js';
 
@@ -70,6 +71,11 @@ const EnvCompareView = lazy(async () => {
 const InterfaceEditor = lazy(async () => {
   const module = await import('../features/interface-editor/interface-editor.js');
   return { default: module.InterfaceEditor };
+});
+
+const CatchUrlTab = lazy(async () => {
+  const module = await import('../features/webhooks/catch-url-tab.js');
+  return { default: module.CatchUrlTab };
 });
 
 /**
@@ -145,6 +151,8 @@ export function EditorArea() {
   const wsApis = useProjectStore((state) => state.wsApis);
   const wsRequests = useProjectStore((state) => state.wsRequests);
   const dirtyWsRequests = useDraftsStore((state) => state.wsRequests);
+  const catchUrls = useWebhooksStore((state) => state.hooks);
+  const catchUrlNames = Object.fromEntries(catchUrls.map((hook) => [hook.id, hook.name]));
 
   // The tab being dragged, and where it would land: before or after the tab under the pointer.
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
@@ -247,6 +255,7 @@ export function EditorArea() {
     (tab.environmentId !== undefined
       ? environmentName(projects, workspaceEnvironments, tab.environmentId)
       : undefined) ??
+    (tab.kind === 'catch-url' && tab.hookId !== undefined ? catchUrlNames[tab.hookId] : undefined) ??
     tab.title;
   // Only the request kinds carry drafts; every other kind still autosaves.
   const isDirty = (tab: (typeof tabs)[number]): boolean =>
@@ -548,6 +557,10 @@ export function EditorArea() {
         ) : activeTab.kind === 'ws-request' && activeTab.wsRequestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <WsEditor requestId={activeTab.wsRequestId} />
+          </Suspense>
+        ) : activeTab.kind === 'catch-url' && activeTab.hookId !== undefined ? (
+          <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading…</p>}>
+            <CatchUrlTab key={activeTab.hookId} hookId={activeTab.hookId} />
           </Suspense>
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
