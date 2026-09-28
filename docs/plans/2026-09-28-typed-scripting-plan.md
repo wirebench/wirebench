@@ -287,30 +287,32 @@
 ## Task 10 — Desktop main
 
 **Files**
-- `apps/desktop/src/main/ipc/request.ts`: the SOAP, REST and gRPC send paths run the scripts through the engine's
-  helpers from Task 7.
-  - The pre-request script runs after `restSend`/`grpcSend` resolve, and before OAuth2 and TLS.
-  - SOAP goes through the `send.ts` hook.
-  - The post-response script runs from `EngineService.observe`, before the History entry and log row are built, so
-    secrets read by a script are masked in both.
-- `apps/desktop/src/main/session-values.ts`: per project, in memory:
-  - `set`, `get`, `list` and `clear`;
-  - it feeds single sends as `RunContext.sequence`;
-  - the sequence runner still uses its own run scope.
-- `apps/desktop/src/main/script-service.ts`: the checker host from Task 6.
-  - It builds types per request from `openApiDocumentFor`, `schemaSetFor` and `grpcProtoSetFor`.
-  - It caches them, and invalidates them on Update Definition.
-- IPC:
-  - `script.diagnostics`, `script.completions`, `script.quickInfo`, `script.signatureHelp`;
-  - `script.values.list`, `script.values.clear`, and the `script.values.changed` event;
-  - mutations `update-request-scripts` (text, enabled, secrets, timeout) and `enable-scripts` (bulk), validated by the
-    engine schema.
-- Wire types in `apps/desktop/src/shared/wire-types.ts`.
-- `apps/desktop/electron-builder.yml`: `asarUnpack` for the QuickJS WASM file, only if loading it from the asar fails
-  in the packaged smoke test.
-- Tests:
-  - `apps/desktop/test/{script-send,session-values,script-mutations}.test.ts`;
-  - `script-send` covers the ordering, masking in History and the log, `script-origin-change`, and `scriptsOff`.
+- `packages/engine/src/run/script-support.ts`: `scriptSession`, one send's pre- and post-response runs, shared by the
+  run and the app. A value a script marks secret is reported for masking as soon as it is set.
+- `apps/desktop/src/main/script-host.ts`: `ScriptHost` owns the sandbox and the checker (started on first use, ended on
+  quit), builds a request's types from the definition main already caches (`openApiDocumentFor`, the loaded WSDL,
+  `grpcProtoSetFor`), kept per loaded definition object, and holds the session values per project.
+- `apps/desktop/src/main/script-send.ts`: the steps every send path shares: look up and type-check, the session values,
+  starting the scripts, and the summary's `script`.
+- The send paths, in the run's order:
+  - REST and gRPC (`ipc/request.ts`): resolved with placeholders (`resolveWithStoredValues` takes them), the
+    pre-request script, the secrets put back, then OAuth2, TLS and the proxy.
+  - SOAP (`send-with-history.ts`): `EngineService.send` takes a `beforeSend` hook that gets the envelope as expanded,
+    before auth, WS-Addressing and WS-Security; the result is sent without expanding it again.
+  - The post-response script runs from `EngineService.observe`, before the summary, the log row and the History entry
+    are built from the exchange, so a secret it sets is masked in all three.
+- Values: a single send reads and keeps its project's session values (`${#Sequence#…}`); a sequence step hands its
+  script results to the run through `onScriptsRan`, and its step result carries `scriptLog` and `scriptsOff`.
+- IPC (`ipc/script.ts`): `script.diagnostics`, `script.completions`, `script.quickInfo`, `script.signatureHelp`,
+  `script.closeModel`, `script.listValues`, `script.clearValues`, and the `script.valuesChanged` event.
+- Mutations (`project-script-mutations.ts`): `update-request-scripts` (a patch; `null` removes) and `enable-scripts`.
+  The SOAP and REST updates and the REST and gRPC clones keep a request's scripts.
+- Packaging: the engine's workers ship as the REST contract checker's do; no `asarUnpack` entry was added. Confirm in
+  a packaged build that the QuickJS WASM file and TypeScript's `lib` files load from the asar.
+- Tests: `apps/desktop/test/{script-send,script-host,script-mutations}.test.ts`.
+  - `script-send` covers the order (script, then auth), a secret the script never sees, session values and their
+    masking in the summary and History, `script-origin-change`, a type error, `scriptsOff`, a SOAP send, and a sequence
+    step whose values go to the run.
 
 ## Task 11 — Renderer
 

@@ -2513,6 +2513,10 @@ export const sequenceStepResultWireSchema = z.object({
   transfers: z.array(sequenceTransferResultWireSchema),
   error: z.object({ code: z.string(), message: z.string() }).optional(),
   skipped: z.enum(['disabled', 'after-failure', 'cancelled']).optional(),
+  /** What the step request's scripts logged, masked (#63). */
+  scriptLog: z.array(z.string()).optional(),
+  /** The step's request has scripts, switched off, so none ran. */
+  scriptsOff: z.boolean().optional(),
   /** The send behind the step, for its HTTP Log row; absent for a step never sent. */
   sendId: z.string().optional(),
 });
@@ -5653,3 +5657,79 @@ export type HooksPageResponseWire = z.infer<typeof hooksPageResponseWireSchema>;
 export const hooksOpenResponseWireSchema = hooksPageResponseWireSchema.extend({ viewId: z.string() });
 export type HooksOpenResponseWire = z.infer<typeof hooksOpenResponseWireSchema>;
 export const hooksCaptureResponseWireSchema = z.object({ capture: captureViewWireSchema });
+
+// ---------------------------------------------------------------------------
+// Scripts (#63): the editor's language features, answered by main's checker, and the session values.
+// ---------------------------------------------------------------------------
+
+const scriptPhaseWireSchema = z.enum(['pre', 'post']);
+
+/** A script as the editor holds it: its request, which of its two scripts, and its text. */
+export const scriptSourceRequestSchema = z.object({
+  requestId: z.string(),
+  phase: scriptPhaseWireSchema,
+  /** Bounded as a script file is: text over the limit refuses to send anyway. */
+  source: z.string().max(256 * 1024),
+});
+export type ScriptSourceRequest = z.infer<typeof scriptSourceRequestSchema>;
+
+/** A position in a script: 1-based line and column, as the diagnostics report them. */
+export const scriptPositionRequestSchema = scriptSourceRequestSchema.extend({
+  line: z.number().int().min(1),
+  column: z.number().int().min(1),
+});
+export type ScriptPositionRequest = z.infer<typeof scriptPositionRequestSchema>;
+
+export const scriptDiagnosticWireSchema = z.object({
+  line: z.number(),
+  column: z.number(),
+  endLine: z.number(),
+  endColumn: z.number(),
+  message: z.string(),
+  code: z.number(),
+  severity: z.enum(['error', 'warning']),
+});
+export type ScriptDiagnosticWire = z.infer<typeof scriptDiagnosticWireSchema>;
+
+export const scriptDiagnosticsResponseSchema = z.object({ diagnostics: z.array(scriptDiagnosticWireSchema) });
+
+export const scriptCompletionsResponseSchema = z.object({
+  items: z.array(z.object({ name: z.string(), kind: z.string(), detail: z.string().optional() })),
+});
+export type ScriptCompletionsResponse = z.infer<typeof scriptCompletionsResponseSchema>;
+
+export const scriptQuickInfoResponseSchema = z.object({
+  info: z.object({ text: z.string(), documentation: z.string().optional() }).optional(),
+});
+
+export const scriptSignatureHelpResponseSchema = z.object({
+  help: z
+    .object({
+      label: z.string(),
+      parameters: z.array(z.string()),
+      activeParameter: z.number(),
+      documentation: z.string().optional(),
+    })
+    .optional(),
+});
+
+/** Request/response for `script.closeModel`: an editor closed, so its language service can go. */
+export const scriptCloseModelRequestSchema = z.object({ requestId: z.string(), phase: scriptPhaseWireSchema });
+export const scriptCloseModelResponseSchema = z.object({});
+
+/** A project whose session values are asked for or cleared. */
+export const scriptValuesRequestSchema = z.object({ projectId: z.string() });
+
+/** One session value as the explorer lists it: a secret one has no value, and every value is masked. */
+export const scriptValueWireSchema = z.object({
+  name: z.string(),
+  value: z.string().optional(),
+  secret: z.boolean(),
+});
+export type ScriptValueWire = z.infer<typeof scriptValueWireSchema>;
+
+export const scriptValuesListResponseSchema = z.object({ values: z.array(scriptValueWireSchema) });
+export const scriptValuesClearResponseSchema = z.object({ cleared: z.number() });
+
+/** Payload for `script.valuesChanged`: a project's session values changed; list them again. */
+export const scriptValuesChangedEventSchema = z.object({ projectId: z.string() });

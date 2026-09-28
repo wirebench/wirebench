@@ -36,11 +36,9 @@ import type { TransferResult } from '../sequence/run.js';
 import { expandSendInput } from '../project/properties.js';
 import type { OpenApiDocument } from '../rest/openapi/model.js';
 import { loadOpenApiDocument } from '../script/contracts.js';
-import type { RequestSnapshot, ResponseSnapshot, ScriptOutcome, ScriptTest, ScriptValue } from '../script/model.js';
 import { scriptProperties } from '../script/props.js';
 import {
   activeScripts,
-  scriptError,
   type RequestScripting,
   type ScriptedRequest,
   type ScriptRunValues,
@@ -61,6 +59,7 @@ import {
   listedSecrets,
   mergeScriptValues,
   scriptAssertions,
+  scriptSession,
   scriptTypesFor,
   type SentScripts,
 } from './script-support.js';
@@ -481,46 +480,9 @@ async function sendScripted(
     props: scriptProperties(scopesFor(context)),
     secrets: await listedSecrets(scripted.scripts.secrets, context.getSecret),
   };
-  const collected = {
-    tests: [] as ScriptTest[],
-    values: [] as ScriptValue[],
-    lines: [] as string[],
-    truncated: false,
-  };
-  const collect = (outcome: ScriptOutcome): void => {
-    collected.tests.push(...outcome.tests);
-    collected.values.push(...outcome.values);
-    collected.lines.push(...outcome.log.lines);
-    collected.truncated ||= outcome.log.truncated;
-  };
-  /** Runs the pre-request script, if there is one, on `before`; the request as it will be sent. */
-  const pre = async <S extends RequestSnapshot>(before: S): Promise<S> => {
-    if (scripted.scripts.pre === undefined) return before;
-    const outcome = await scripting.pre(scripted, before, values);
-    collect(outcome);
-    return (outcome.request ?? before) as S;
-  };
-  const post = async (sent: RequestSnapshot, response: ResponseSnapshot): Promise<SentScripts> => {
-    let error: SentScripts['error'];
-    if (scripted.scripts.post !== undefined) {
-      const later = {
-        ...values,
-        vars: { ...values.vars, ...Object.fromEntries(collected.values.map((v) => [v.name, v.value])) },
-      };
-      const outcome = await scripting.post(scripted, sent, response, later);
-      collect(outcome);
-      if (!outcome.ok) {
-        const thrown = scriptError(outcome.error, scripting.fileOf(scripted, 'post'));
-        error = { code: thrown.code, message: thrown.message };
-      }
-    }
-    return {
-      tests: collected.tests,
-      values: collected.values,
-      log: { lines: collected.lines, truncated: collected.truncated },
-      ...(error !== undefined ? { error } : {}),
-    };
-  };
+  // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is shown
+  // before that.
+  const { pre, post } = scriptSession(scripting, scripted, values);
 
   if (prepared.kind === 'soap' && item.kind === 'soap') {
     const expanded = expandSendInput(prepared.input, prepared.scopes, {

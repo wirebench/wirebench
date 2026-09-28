@@ -678,6 +678,12 @@ export class EngineService {
        * credentials for one.
        */
       proxy?: ProxyOptionsWire;
+      /**
+       * A request's pre-request script (#63): handed the send as expanded with `scopes`, before
+       * auth, WS-Addressing and WS-Security apply, it returns the send to make. That send is not
+       * expanded again, so nothing the script wrote is read as a reference.
+       */
+      beforeSend?: (expanded: SoapSendInput) => Promise<SoapSendInput>;
     } = {},
   ): Promise<ExchangeSummary> {
     const controller = new AbortController();
@@ -691,12 +697,27 @@ export class EngineService {
       // The credentials go to the engine rather than being baked into a header here, so the
       // engine can run the 401-challenge retry when they are not preemptive, and apply a token
       // scheme after property expansion (`applySoapAuth`).
-      const exchange = await sendSoapRequest(
-        toEngineSendInput(request.input, controller.signal, options.attachments, sendAuth, options.wss, options.proxy),
-        {
-          ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
-        },
+      const input = toEngineSendInput(
+        request.input,
+        controller.signal,
+        options.attachments,
+        sendAuth,
+        options.wss,
+        options.proxy,
       );
+      let exchange: SoapExchange;
+      if (options.beforeSend !== undefined) {
+        const expanded =
+          options.scopes === undefined
+            ? { input, unresolved: [] }
+            : expandSendInput(input, options.scopes, { entitize: input.entitize ?? false });
+        exchange = await sendSoapRequest(await options.beforeSend(expanded.input));
+        if (expanded.unresolved.length > 0) exchange = { ...exchange, unresolved: expanded.unresolved };
+      } else {
+        exchange = await sendSoapRequest(input, {
+          ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
+        });
+      }
       await this.notify(request.sendId, { kind: 'soap', exchange });
       // The cache keeps the unredacted summary in main only; what crosses IPC is redacted per
       // the flag as it stands right now (`exchanges.get` re-redacts on a later toggle). The

@@ -26,6 +26,13 @@ import {
   secretNamesIn,
   grpcMethodPath,
   wsToCommand,
+  SecretPlaceholders,
+  applyGrpcSnapshot,
+  applyRestSnapshot,
+  grpcRequestSnapshot,
+  grpcResponseSnapshot,
+  restRequestSnapshot,
+  restResponseSnapshot,
 } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
@@ -43,6 +50,10 @@ import type {
   UnresolvedRef,
   WsSessionMaterial,
   WsSessionOptions,
+  GrpcRequestSnapshot,
+  RestRequestSnapshot,
+  ScriptSession,
+  SentScripts,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
 import { isSecretTokenRef, resolveAuthConfig, resolveWithStoredValues } from '../secret-resolver.js';
@@ -53,6 +64,14 @@ import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactUrl, redactXml } from '../redact.js';
 import { failedExchangeOf } from '../failed-exchange.js';
 import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
+import {
+  finishScripts,
+  scriptsFailed,
+  scriptsForSend,
+  sessionValuesFor,
+  startScripts,
+  type SendScripts,
+} from '../script-send.js';
 import type { RestSendResolution } from '../rest-send.js';
 import type { GrpcSendResolution } from '../grpc-send.js';
 import type { WsSendResolution } from '../ws-send.js';
@@ -225,6 +244,13 @@ export interface RequestChannelDeps {
    * that send no tokens, where a token then refuses the send as `secret-missing`.
    */
   readonly secretsFor?: (projectId: string | undefined) => GetSecret;
+  /**
+   * The app's script host (#63). Omitted in tests that send no scripted request; such a request is
+   * then sent as if it had none.
+   */
+  readonly scripts?: SendScripts;
+  /** Told what a sequence step's scripts did; see `ScriptSendDeps.onScriptsRan`. */
+  readonly onScriptsRan?: (sent: SentScripts) => void;
 }
 
 /** The token getter for a send of `requestId`: its own project's, or one that finds nothing. */
@@ -800,15 +826,23 @@ export async function sendRestRequest(
   onLive?: (event: RestLiveEvent) => void,
   envId?: string,
 ): Promise<RestExchangeSummary> {
-  const resolved = await resolveWithStoredValues(
-    () => deps.project.restSend?.(request.requestId, request.draft, envId),
-    tokenSecrets(deps, request.requestId),
+  // Type-checked before anything is resolved: a script that does not check never reaches the wire.
+  const scripts = await scriptsForSend(deps, request.requestId);
+  const projectId = deps.project.projectId(request.requestId);
+  const getSecret = tokenSecrets(deps, request.requestId);
+  // With scripts, the secrets stand behind placeholders until the pre-request script has run.
+  const placeholders = scripts.kind === 'on' ? new SecretPlaceholders() : undefined;
+  const found = await resolveWithStoredValues(
+    () => deps.project.restSend?.(request.requestId, request.draft, envId, sessionValuesFor(deps, projectId)),
+    getSecret,
+    placeholders,
   );
-  if (resolved === undefined) {
+  if (found === undefined) {
     throw new ProjectError('unknown-entity', `No REST request with id "${request.requestId}"`, {
       details: { requestId: request.requestId },
     });
   }
+  let resolved = found;
   if (resolved.unresolved.length > 0) {
     throw new WirebenchError('rest-unresolved-properties', 'Some property references could not be resolved', {
       details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
@@ -824,7 +858,18 @@ export async function sendRestRequest(
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let input: typeof resolved.input;
   let accessToken: string | undefined;
+  let session: ScriptSession | undefined;
+  let scripted: RestRequestSnapshot | undefined;
   try {
+    // The pre-request script, before the credentials, the TLS identity and the proxy are settled.
+    if (scripts.kind === 'on' && placeholders !== undefined) {
+      session = await startScripts(deps, scripts, deps.project.scopesFor(request.requestId, envId), getSecret);
+      const before = restRequestSnapshot(resolved.input);
+      scripted = await session.pre(before);
+      const changed = applyRestSnapshot(resolved.input, before, scripted);
+      const restored = await placeholders.restore({ baseUrl: changed.baseUrl, request: changed.request }, getSecret);
+      resolved = { ...resolved, input: { ...changed, ...restored } };
+    }
     const tls = await deps.project.restTlsFor?.(request.requestId);
     const anchors = extraTrustAnchors();
     const baseCa = tls?.ca ?? resolved.input.tls?.ca ?? [];
@@ -880,8 +925,19 @@ export async function sendRestRequest(
   // Handled here too: a cache that fails to read while the send itself fails is never awaited.
   contract?.catch(() => undefined);
   const startedAt = Date.now();
+  // The post-response script, on the exchange as it arrives: before the summary, the log row and
+  // the History entry exist, so a value it marks secret is masked in all three.
+  let ran: SentScripts | undefined;
+  const pending = session === undefined || scripted === undefined ? undefined : { session, sent: scripted };
+  const stopObserving =
+    pending === undefined
+      ? undefined
+      : service.observe(request.sendId, async (observed) => {
+          if (observed.kind !== 'rest') return;
+          ran = await pending.session.post(pending.sent, restResponseSnapshot(observed.exchange)).catch(scriptsFailed);
+        });
   try {
-    const summary = await service.sendRestRequest(
+    const sent = await service.sendRestRequest(
       { sendId: request.sendId, requestId: request.requestId, input },
       {
         showSecrets: deps.showSecrets?.get() ?? false,
@@ -893,6 +949,11 @@ export async function sendRestRequest(
         ...(contract !== undefined ? { contract } : {}),
       },
     );
+    const summary: RestExchangeSummary = {
+      ...sent,
+      ...(ran !== undefined ? finishScripts(deps, projectId, ran) : {}),
+      ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
+    };
     deps.project.rememberRestCookies?.(
       request.requestId,
       summary.cookies.map((cookie) => withoutUndefined<Cookie>(cookie)),
@@ -927,6 +988,8 @@ export async function sendRestRequest(
       }),
     );
     throw error;
+  } finally {
+    stopObserving?.();
   }
 }
 
@@ -1131,15 +1194,22 @@ export async function sendGrpcRequest(
   request: RequestSendGrpcRequest,
   sender: WebContents,
 ): Promise<GrpcExchangeSummary> {
-  const resolved = await resolveWithStoredValues(
-    () => deps.project.grpcSend?.(request.requestId, request.draft),
-    tokenSecrets(deps, request.requestId),
+  // As for REST: checked first, resolved with placeholders, the pre-request script before auth and TLS.
+  const scripts = await scriptsForSend(deps, request.requestId);
+  const projectId = deps.project.projectId(request.requestId);
+  const getSecret = tokenSecrets(deps, request.requestId);
+  const placeholders = scripts.kind === 'on' ? new SecretPlaceholders() : undefined;
+  const found = await resolveWithStoredValues(
+    () => deps.project.grpcSend?.(request.requestId, request.draft, sessionValuesFor(deps, projectId)),
+    getSecret,
+    placeholders,
   );
-  if (resolved === undefined) {
+  if (found === undefined) {
     throw new ProjectError('unknown-entity', `No gRPC request with id "${request.requestId}"`, {
       details: { requestId: request.requestId },
     });
   }
+  let resolved = found;
   if (resolved.unresolved.length > 0) {
     throw new WirebenchError('grpc-unresolved-properties', 'Some property references could not be resolved', {
       details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
@@ -1159,7 +1229,24 @@ export async function sendGrpcRequest(
   let set: Awaited<ReturnType<typeof deps.project.grpcProtoSetFor>>;
   let tlsOptions: TlsOptions;
   let accessToken: string | undefined;
+  let session: ScriptSession | undefined;
+  let scripted: GrpcRequestSnapshot | undefined;
   try {
+    if (scripts.kind === 'on' && placeholders !== undefined) {
+      session = await startScripts(deps, scripts, deps.project.scopesFor(request.requestId), getSecret);
+      const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
+      scripted = await session.pre(before);
+      const changed = applyGrpcSnapshot(resolved.input, resolved.messageText, before, scripted);
+      const restored = await placeholders.restore(
+        { metadata: changed.input.metadata, messageText: changed.messageText },
+        getSecret,
+      );
+      resolved = {
+        ...resolved,
+        input: { ...resolved.input, metadata: restored.metadata },
+        messageText: restored.messageText,
+      };
+    }
     set = await deps.project.grpcProtoSetFor(request.requestId);
 
     const tls = await deps.project.grpcTlsFor?.(request.requestId);
@@ -1200,8 +1287,17 @@ export async function sendGrpcRequest(
   }
 
   const startedAt = Date.now();
+  let ran: SentScripts | undefined;
+  const pending = session === undefined || scripted === undefined ? undefined : { session, sent: scripted };
+  const stopObserving =
+    pending === undefined
+      ? undefined
+      : service.observe(request.sendId, async (observed) => {
+          if (observed.kind !== 'grpc') return;
+          ran = await pending.session.post(pending.sent, grpcResponseSnapshot(observed.result)).catch(scriptsFailed);
+        });
   try {
-    const summary = await service.sendGrpcRequest(
+    const sent = await service.sendGrpcRequest(
       {
         sendId: request.sendId,
         requestId: request.requestId,
@@ -1221,6 +1317,11 @@ export async function sendGrpcRequest(
         },
       },
     );
+    const summary: GrpcExchangeSummary = {
+      ...sent,
+      ...(ran !== undefined ? finishScripts(deps, projectId, ran) : {}),
+      ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
+    };
     await recordGrpc(deps, request.requestId, resolved, summary, Date.now() - startedAt);
     return summary;
   } catch (error) {
@@ -1249,6 +1350,8 @@ export async function sendGrpcRequest(
       }),
     );
     throw error;
+  } finally {
+    stopObserving?.();
   }
 }
 

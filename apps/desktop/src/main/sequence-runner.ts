@@ -27,7 +27,14 @@ import {
   WirebenchError,
   isWirebenchError,
 } from '@wirebench/engine';
-import type { AssertionSubject, PropertyMap, Project, SequenceStepResult, SequenceStepSender } from '@wirebench/engine';
+import type {
+  AssertionSubject,
+  PropertyMap,
+  Project,
+  SentScripts,
+  SequenceStepResult,
+  SequenceStepSender,
+} from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { EngineService, ObservedExchange } from './engine-service.js';
 import { sendGrpcRequest, sendRestRequest, withRequestProperties, type RequestChannelDeps } from './ipc/request.js';
@@ -145,6 +152,8 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
     })),
     ...(step.error !== undefined ? { error: { code: step.error.code, message: mask(step.error.message) } } : {}),
     ...(step.skipped !== undefined ? { skipped: step.skipped } : {}),
+    ...(step.scriptLog !== undefined ? { scriptLog: step.scriptLog.map(mask) } : {}),
+    ...(step.scriptsOff === true ? { scriptsOff: true } : {}),
     ...(sendId !== undefined ? { sendId } : {}),
   };
 }
@@ -181,9 +190,15 @@ export class SequenceRunner {
       const sendId = `${request.runId}:${resolved.index}`;
       sendIds.set(resolved.step.id, sendId);
       active.sendId = sendId;
+      // The step's scripts hand their values to the run, not to the project's session (#63).
+      let ran: SentScripts | undefined;
+      let scriptsOff = false;
       const requestDeps: RequestChannelDeps = {
         ...deps.requests,
         project: forStep(deps.requests.project, sequenceScope, tags),
+        onScriptsRan: (sent) => {
+          ran = sent;
+        },
       };
       let described: { subject: AssertionSubject; origin?: string } | undefined;
       const stopObserving = deps.service.observe(sendId, async (observed) => {
@@ -205,12 +220,15 @@ export class SequenceRunner {
           }
           const effective = await withRequestProperties(requestDeps.project, { sendId, requestId, input });
           const summary = await sendAndRecordHistory(deps.service, requestDeps, effective);
+          scriptsOff = summary.scriptsOff === true;
           deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
         } else if (resolved.selected.kind === 'rest') {
           const summary = await sendRestRequest(deps.service, requestDeps, { sendId, requestId });
+          scriptsOff = summary.scriptsOff === true;
           deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
         } else {
           const summary = await sendGrpcRequest(deps.service, requestDeps, { sendId, requestId }, sender);
+          scriptsOff = summary.scriptsOff === true;
           deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
         }
       } catch (error) {
@@ -227,7 +245,7 @@ export class SequenceRunner {
       if (described === undefined) {
         return { error: { code: 'no-response', message: 'The send ended without a response' } };
       }
-      return described;
+      return { ...described, ...(ran !== undefined ? { script: ran } : {}), ...(scriptsOff ? { scriptsOff } : {}) };
     };
 
     try {
