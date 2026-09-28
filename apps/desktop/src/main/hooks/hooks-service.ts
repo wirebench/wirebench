@@ -94,6 +94,17 @@ interface View {
   filling: boolean;
   /** A nudge arrived during the fill: run one more round when it ends. */
   again: boolean;
+  /**
+   * The view's own serial queue: `open`'s initial load, every fill, every reload and every `older`
+   * run one at a time, in the order they were asked for. A task mutates `summaries`/`details` only
+   * from inside its own turn, so nothing it reads or writes can be stepped on by another task that
+   * started before it and is still awaiting a fetch (the fill/reload/clear race the review flagged).
+   * `undefined` while nothing is running: {@link HooksService.enqueue} then starts the next task
+   * synchronously, the same as calling it directly, so a fill triggered by a nudge that lands with
+   * nothing else in flight still gets the fast path a single-flight fill needs (a coalesced nudge
+   * must land before the fetch it will be folded into begins).
+   */
+  queue: Promise<unknown> | undefined;
 }
 
 type Page = { readonly before?: string; readonly after?: string; readonly limit: number };
@@ -103,6 +114,18 @@ const watchKey = (url: string, workspaceId: string): string => `${url} ${workspa
 function problemOf(error: unknown): { readonly code: string; readonly message: string } {
   if (error instanceof WirebenchError) return { code: error.code, message: error.message };
   return { code: 'unexpected', message: error instanceof Error ? error.message : String(error) };
+}
+
+/** Newest-first, first occurrence wins. Defensive: the view's own queue should already prevent overlap. */
+function dedupeNewestFirst(captures: readonly CaptureSummary[]): CaptureSummary[] {
+  const seen = new Set<string>();
+  const result: CaptureSummary[] = [];
+  for (const capture of captures) {
+    if (seen.has(capture.id)) continue;
+    seen.add(capture.id);
+    result.push(capture);
+  }
+  return result;
 }
 
 /** A capture as the response viewers take it, decoded as `rest/send.ts` decodes a response body. */
@@ -171,18 +194,31 @@ export class HooksService {
     );
   }
 
-  /** Clears on the server, then empties this device's open views of that catch URL at once. */
+  /**
+   * Clears on the server, then empties this device's open views of that catch URL. Each view's empty
+   * runs on that view's own queue, behind any fill or reload already in flight for it, so a fill that
+   * fetched before the clear can never resurrect what the clear just removed.
+   */
   async clear(ref: HookRef): Promise<void> {
     await withToken(this.deps, ref.url, (origin, token) =>
       this.deps.client.clearCaptures(origin, token, ref.workspaceId, ref.hookId),
     );
     const url = normalizeServerUrl(ref.url);
-    for (const view of this.views.values()) {
-      if (view.url !== url || view.workspaceId !== ref.workspaceId || view.hookId !== ref.hookId) continue;
-      view.summaries = [];
-      view.details.clear();
-      this.deps.emit.captures({ viewId: view.id, mode: 'replace', captures: [], more: false });
-    }
+    const matches = [...this.views.values()].filter(
+      (view) => view.url === url && view.workspaceId === ref.workspaceId && view.hookId === ref.hookId,
+    );
+    await Promise.all(
+      matches.map((view) =>
+        this.enqueue(view, () =>
+          Promise.resolve().then(() => {
+            if (!this.isOpen(view)) return;
+            view.summaries = [];
+            view.details.clear();
+            this.deps.emit.captures({ viewId: view.id, mode: 'replace', captures: [], more: false });
+          }),
+        ),
+      ),
+    );
   }
 
   /**
@@ -223,32 +259,45 @@ export class HooksService {
     watch.stop();
   }
 
+  /**
+   * The view is registered and watching *before* the first page is fetched, so a nudge that lands
+   * during that fetch finds a view to fill instead of being dropped (the fetch's own task runs first
+   * on the view's queue, and a fill it triggers queues behind it, running once the fetch has set
+   * `summaries`).
+   */
   async open(
     ref: HookRef,
   ): Promise<{ readonly viewId: string; readonly captures: CaptureSummary[]; readonly more: boolean }> {
-    const captures = await this.page(ref, { limit: FIRST_PAGE });
     const view: View = {
       id: this.newViewId(),
       url: normalizeServerUrl(ref.url),
       workspaceId: ref.workspaceId,
       hookId: ref.hookId,
-      summaries: captures,
+      summaries: [],
       details: new Map(),
       filling: false,
       again: false,
+      queue: undefined,
     };
     this.views.set(view.id, view);
     this.watch(view.url, view.workspaceId);
+    const captures = await this.enqueue(view, async () => {
+      const page = await this.page(view, { limit: FIRST_PAGE });
+      if (this.isOpen(view)) view.summaries = page;
+      return page;
+    });
     return { viewId: view.id, captures, more: captures.length === FIRST_PAGE };
   }
 
   async older(viewId: string): Promise<{ readonly captures: CaptureSummary[]; readonly more: boolean }> {
     const view = this.view(viewId);
-    const oldest = view.summaries.at(-1);
-    if (oldest === undefined) return { captures: [], more: false };
-    const captures = await this.page(view, { before: oldest.id, limit: FIRST_PAGE });
-    if (this.isOpen(view)) view.summaries = [...view.summaries, ...captures];
-    return { captures, more: captures.length === FIRST_PAGE };
+    return this.enqueue(view, async () => {
+      const oldest = view.summaries.at(-1);
+      if (oldest === undefined) return { captures: [], more: false };
+      const captures = await this.page(view, { before: oldest.id, limit: FIRST_PAGE });
+      if (this.isOpen(view)) view.summaries = dedupeNewestFirst([...view.summaries, ...captures]);
+      return { captures, more: captures.length === FIRST_PAGE };
+    });
   }
 
   async capture(viewId: string, captureId: string): Promise<CaptureViewWire> {
@@ -318,6 +367,28 @@ export class HooksService {
     void work.finally(() => this.pending.delete(work));
   }
 
+  /**
+   * Runs `task` after everything already queued on `view` has settled (or immediately, if nothing
+   * is), and returns its result. `view.queue` clears back to `undefined` as soon as `run` settles, so
+   * the *next* call sees an idle view the moment this one is done, not one extra microtask later.
+   * That is what keeps this equivalent to calling `task` directly when the view is idle: a failing
+   * task still lets the next one start, so one failed reload cannot wedge a view's fill forever.
+   */
+  private enqueue<T>(view: View, task: () => Promise<T>): Promise<T> {
+    const previous = view.queue;
+    const run = previous === undefined ? task() : previous.then(task, task);
+    view.queue = run;
+    run.then(
+      () => {
+        if (view.queue === run) view.queue = undefined;
+      },
+      () => {
+        if (view.queue === run) view.queue = undefined;
+      },
+    );
+    return run;
+  }
+
   private onLive(url: string, workspaceId: string, event: LiveEvent): void {
     const watch = this.watches.get(watchKey(url, workspaceId));
     if (watch === undefined) return;
@@ -341,17 +412,24 @@ export class HooksService {
     }
   }
 
+  /** Queues a fill round behind whatever the view's queue is already running. */
   private fill(view: View): void {
     if (view.filling) {
       view.again = true;
       return;
     }
     view.filling = true;
-    this.track(this.fillRounds(view));
+    this.track(this.enqueue(view, () => this.fillRounds(view)));
   }
 
   /**
    * Everything after the newest summary held, {@link GAP_PAGE} at a time until a short page.
+   *
+   * Runs on the view's own queue (via {@link fill}), so it never overlaps a reload, a clear or
+   * `older` for the same view: whichever was asked for first runs to completion, mutating
+   * `summaries`/`details`, before this one even starts its own fetch. That is what stops a fill from
+   * resurrecting a clear that raced it, losing a capture a reload raced past, or duplicating what a
+   * reload already listed.
    *
    * A round that starts on an empty view (no summary to fetch `after`) fetches only the newest
    * {@link GAP_PAGE} and reports it as `replace`, not `prepend` (M3): the view has nothing to prepend
@@ -371,17 +449,21 @@ export class HooksService {
           if (after === undefined || page.length < GAP_PAGE) break;
         }
         if (!this.isOpen(view)) return;
+        const deduped = dedupeNewestFirst(fresh);
         if (emptyStart) {
-          view.summaries = fresh;
+          // Nothing changed: skip the noisy no-op replace of an already-empty view.
+          if (deduped.length === 0) continue;
+          view.summaries = deduped;
+          view.details.clear();
           this.deps.emit.captures({
             viewId: view.id,
             mode: 'replace',
-            captures: fresh,
+            captures: deduped,
             more: fresh.length === GAP_PAGE,
           });
-        } else if (fresh.length > 0) {
-          view.summaries = [...fresh, ...view.summaries];
-          this.deps.emit.captures({ viewId: view.id, mode: 'prepend', captures: fresh });
+        } else if (deduped.length > 0) {
+          view.summaries = dedupeNewestFirst([...deduped, ...view.summaries]);
+          this.deps.emit.captures({ viewId: view.id, mode: 'prepend', captures: deduped });
         }
       } while (view.again);
     } catch (error) {
@@ -391,25 +473,30 @@ export class HooksService {
     }
   }
 
-  /** The first page again: a clear, a delete or a rotate elsewhere may have changed everything. */
+  /**
+   * The first page again: a clear, a delete or a rotate elsewhere may have changed everything. Runs
+   * on the view's own queue (behind any fill/older/reload already under way for it), same as
+   * {@link fillRounds}.
+   */
   private reload(view: View): void {
     this.track(
-      (async () => {
+      this.enqueue(view, async () => {
         try {
           const captures = await this.page(view, { limit: FIRST_PAGE });
           if (!this.isOpen(view)) return;
-          view.summaries = captures;
+          const deduped = dedupeNewestFirst(captures);
+          view.summaries = deduped;
           view.details.clear();
           this.deps.emit.captures({
             viewId: view.id,
             mode: 'replace',
-            captures,
+            captures: deduped,
             more: captures.length === FIRST_PAGE,
           });
         } catch (error) {
           if (this.isOpen(view)) this.deps.emit.captures({ viewId: view.id, mode: 'error', error: problemOf(error) });
         }
-      })(),
+      }),
     );
   }
 }

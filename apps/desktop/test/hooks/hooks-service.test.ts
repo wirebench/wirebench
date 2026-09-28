@@ -29,6 +29,14 @@ const summary = (n: number): CaptureSummary => ({
 const ids = (captures: readonly CaptureSummary[]): string[] => captures.map((capture) => capture.id);
 const range = (from: number, to: number): number[] => Array.from({ length: to - from + 1 }, (_, i) => from + i);
 
+type ListArgs = [
+  string,
+  string,
+  string,
+  string,
+  { readonly before?: string; readonly after?: string; readonly limit?: number },
+];
+
 /** The capture routes over an in-memory list, with the server's paging rules (§3.5). */
 class FakeServer {
   /** Oldest first. */
@@ -36,31 +44,37 @@ class FakeServer {
   add(...ns: number[]): void {
     this.captures.push(...ns.map(summary));
   }
-  readonly listCaptures = vi.fn(
-    (
-      _url: string,
-      _token: string,
-      _workspaceId: string,
-      _hookId: string,
-      page: { readonly before?: string; readonly after?: string; readonly limit?: number },
-    ): Promise<CaptureSummary[]> => {
-      const limit = page.limit ?? FIRST_PAGE;
-      if (page.after !== undefined) {
-        const after = page.after;
-        return Promise.resolve(
-          this.captures
-            .filter((c) => c.id > after)
-            .slice(0, limit)
-            .reverse(),
-        );
-      }
-      const newestFirst = [...this.captures].reverse();
-      const before = page.before;
+  /**
+   * The real paging logic, kept as its own method (not just `vi.fn`'s default implementation) so a
+   * test can call it directly to snapshot a result before delaying delivery. `vi.fn(...).
+   * getMockImplementation()` is not that: once a test installs a `mockImplementationOnce`, it can
+   * return that override instead of the original default, which would make a "call straight through"
+   * helper recurse into the very override it is standing in for.
+   */
+  readonly realListCaptures = (
+    _url: string,
+    _token: string,
+    _workspaceId: string,
+    _hookId: string,
+    page: { readonly before?: string; readonly after?: string; readonly limit?: number },
+  ): Promise<CaptureSummary[]> => {
+    const limit = page.limit ?? FIRST_PAGE;
+    if (page.after !== undefined) {
+      const after = page.after;
       return Promise.resolve(
-        (before === undefined ? newestFirst : newestFirst.filter((c) => c.id < before)).slice(0, limit),
+        this.captures
+          .filter((c) => c.id > after)
+          .slice(0, limit)
+          .reverse(),
       );
-    },
-  );
+    }
+    const newestFirst = [...this.captures].reverse();
+    const before = page.before;
+    return Promise.resolve(
+      (before === undefined ? newestFirst : newestFirst.filter((c) => c.id < before)).slice(0, limit),
+    );
+  };
+  readonly listCaptures = vi.fn(this.realListCaptures);
   readonly getCapture = vi.fn(
     (_url: string, _token: string, _workspaceId: string, _hookId: string, captureId: string): Promise<Capture> =>
       Promise.resolve({
@@ -112,6 +126,61 @@ function harness() {
   const nudge = (n: number): void =>
     live.send({ kind: 'message', message: { type: 'capture', workspaceId: WS, hookId: HOOK, captureId: id(n) } });
   return { server, live, emit, service, nudge };
+}
+
+/** Drains pending microtasks: lets an async chain (a mocked `tokenFor` then a mocked fetch) settle. */
+async function microtasks(times = 8): Promise<void> {
+  for (let i = 0; i < times; i += 1) await Promise.resolve();
+}
+
+/**
+ * Pauses the *next* `listCaptures` call: the result is computed eagerly, against the server's state
+ * at the moment the call actually reaches the fake (the same as a real request, answered against the
+ * state when it is received), but delivery to the caller waits for `release()`. Lets a test hold a
+ * fetch in flight while it fires a second, racing operation, then observe how the two interleave.
+ *
+ * `started` resolves once the call has actually begun — the token lookup ahead of it is itself async,
+ * so a caller that needs to mutate the server *after* the snapshot but *before* releasing (to prove
+ * the paused fetch really did miss the mutation) should await it first, rather than guess a microtask
+ * count. `release()` waits on the same thing before delivering, so a caller that does not need that
+ * ordering can call it right away.
+ */
+function pauseNextList(
+  server: FakeServer,
+  order?: string[],
+  label?: string,
+): { readonly started: Promise<void>; release: () => Promise<void> } {
+  let deliver: (() => void) | undefined;
+  let notifyStarted: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    notifyStarted = resolve;
+  });
+  server.listCaptures.mockImplementationOnce((...args: ListArgs) => {
+    order?.push(`${label ?? 'call'}-start`);
+    const result = server.realListCaptures(...args); // snapshotted now, before whatever races it
+    notifyStarted?.();
+    return new Promise((resolve) => {
+      deliver = () => {
+        order?.push(`${label ?? 'call'}-end`);
+        void result.then(resolve);
+      };
+    });
+  });
+  return {
+    started,
+    release: async () => {
+      await started;
+      deliver?.();
+    },
+  };
+}
+
+/** Records when the *next* `listCaptures` call starts, without pausing it. */
+function trackNextList(server: FakeServer, order: string[], label: string): void {
+  server.listCaptures.mockImplementationOnce((...args: ListArgs) => {
+    order.push(`${label}-start`);
+    return server.realListCaptures(...args);
+  });
 }
 
 describe('HooksService — views (webhook-capture §4.1)', () => {
@@ -173,6 +242,24 @@ describe('HooksService — views (webhook-capture §4.1)', () => {
 
     const source = readFileSync(new URL('../../src/main/hooks/hooks-service.ts', import.meta.url), 'utf8');
     expect(source).not.toMatch(/from 'node:fs|from 'fs|electron'/);
+  });
+
+  it('a nudge that arrives while the initial open fetch is pending still fills afterward', async () => {
+    const { server, service, emit, nudge } = harness();
+    server.add(1, 2, 3);
+
+    const opening = pauseNextList(server); // pauses open()'s own first-page fetch
+    const openPromise = service.open(REF);
+    await opening.started; // the fetch has snapshotted 1,2,3 but not delivered yet
+    server.add(4);
+    nudge(4); // the view is already registered and watching, though open()'s fetch has not resolved
+    await opening.release();
+    const opened = await openPromise;
+    await service.idle();
+
+    expect(emit.captured).toHaveBeenCalledWith({ url: SERVER, workspaceId: WS, hookId: HOOK, captureId: id(4) });
+    expect(emit.captures).toHaveBeenCalledWith({ viewId: opened.viewId, mode: 'prepend', captures: [summary(4)] });
+    expect(service.held().summaries).toBe(4);
   });
 });
 
@@ -297,6 +384,78 @@ describe('HooksService — live nudges and the gap fill (§4.1)', () => {
     expect(event.captures[0]?.id).toBe(id(202));
     expect(event.more).toBe(true);
     expect(service.held().summaries).toBe(GAP_PAGE);
+  });
+
+  it('a hooks nudge during an in-flight fill does not duplicate ids', async () => {
+    const { server, service, emit, live, nudge } = harness();
+    server.add(1, 2, 3);
+    const { viewId } = await service.open(REF);
+    server.listCaptures.mockClear();
+    server.add(4, 5);
+
+    const filling = pauseNextList(server); // pauses the fill's after=id(3) fetch
+    nudge(5);
+    live.send({ kind: 'message', message: { type: 'hooks', workspaceId: WS } }); // queues behind the fill
+    await filling.release();
+    await service.idle();
+
+    const modes = emit.captures.mock.calls.map((call) => (call[0] as { mode: string }).mode);
+    expect(modes).toEqual(['prepend', 'replace']);
+    const replaced = emit.captures.mock.calls[1]?.[0] as { viewId: string; captures: CaptureSummary[] };
+    expect(replaced.viewId).toBe(viewId);
+    expect(ids(replaced.captures)).toEqual([id(5), id(4), id(3), id(2), id(1)]);
+    expect(new Set(ids(replaced.captures)).size).toBe(replaced.captures.length);
+  });
+
+  it('a clear during an in-flight fill does not resurrect the cleared captures', async () => {
+    const { server, service, emit, nudge } = harness();
+    server.add(1, 2, 3);
+    const { viewId } = await service.open(REF);
+    server.listCaptures.mockClear();
+    server.add(4);
+
+    const filling = pauseNextList(server); // pauses the fill's after=id(3) fetch
+    nudge(4);
+    const clearing = service.clear(REF); // clearCaptures resolves at once; the per-view empty queues behind the fill
+    await filling.release();
+    await clearing;
+    await service.idle();
+
+    expect(server.clearCaptures).toHaveBeenCalledWith(SERVER, 'tok', WS, HOOK);
+    const last = emit.captures.mock.calls.at(-1)?.[0] as {
+      viewId: string;
+      mode: string;
+      captures: CaptureSummary[];
+    };
+    expect(last).toEqual({ viewId, mode: 'replace', captures: [], more: false });
+    expect(service.held().summaries).toBe(0);
+  });
+
+  it('serializes a reload behind an in-flight fill so no capture is lost', async () => {
+    const { server, service, emit, live, nudge } = harness();
+    server.add(1, 2, 3);
+    const { viewId } = await service.open(REF);
+    server.listCaptures.mockClear();
+    server.add(4);
+
+    const order: string[] = [];
+    const filling = pauseNextList(server, order, 'fill');
+    trackNextList(server, order, 'reload');
+
+    nudge(4);
+    live.send({ kind: 'message', message: { type: 'hooks', workspaceId: WS } });
+    await microtasks(); // let the fill's fetch actually start; the reload stays queued behind it
+    expect(order).toEqual(['fill-start']); // the reload has not started: it is serialized behind the fill
+    await filling.release();
+    await service.idle();
+
+    expect(order).toEqual(['fill-start', 'fill-end', 'reload-start']);
+    const modes = emit.captures.mock.calls.map((call) => (call[0] as { mode: string }).mode);
+    expect(modes).toEqual(['prepend', 'replace']);
+    const replaced = emit.captures.mock.calls[1]?.[0] as { viewId: string; captures: CaptureSummary[] };
+    expect(replaced.viewId).toBe(viewId);
+    expect(ids(replaced.captures)).toContain(id(4)); // the fill's capture is not lost by the later reload
+    expect(new Set(ids(replaced.captures)).size).toBe(replaced.captures.length);
   });
 });
 
