@@ -239,6 +239,23 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       restoreMine: fail('teamSecrets.restoreMine'),
       dismissReplaced: fail('teamSecrets.dismissReplaced'),
     },
+    hooks: {
+      // A server without the module: no Webhooks node, so existing renderer tests are unaffected.
+      status: vi.fn().mockResolvedValue({ ok: true, value: { hooks: null } }),
+      list: fail('hooks.list'),
+      create: fail('hooks.create'),
+      update: fail('hooks.update'),
+      rotate: fail('hooks.rotate'),
+      remove: fail('hooks.remove'),
+      clear: fail('hooks.clear'),
+      unseen: fail('hooks.unseen'),
+      watch: vi.fn().mockResolvedValue({ ok: true, value: { done: true } }),
+      unwatch: vi.fn().mockResolvedValue({ ok: true, value: { done: true } }),
+      open: fail('hooks.open'),
+      older: fail('hooks.older'),
+      capture: fail('hooks.capture'),
+      close: vi.fn().mockResolvedValue({ ok: true, value: { done: true } }),
+    },
     xml: {
       completions: fail('xml.completions'),
       declaration: fail('xml.declaration'),

@@ -5376,3 +5376,39 @@ export const hooksCapturesEventWireSchema = z.discriminatedUnion('mode', [
   }),
 ]);
 export type HooksCapturesEventWire = z.infer<typeof hooksCapturesEventWireSchema>;
+
+export const hooksServerRequestWireSchema = z.object({ url: z.string() });
+export const hooksWorkspaceRequestWireSchema = z.object({ url: z.string(), workspaceId: z.string() });
+export const hooksRefRequestWireSchema = z.object({ url: z.string(), workspaceId: z.string(), hookId: z.string() });
+export const hooksCreateRequestWireSchema = z.object({
+  url: z.string(),
+  workspaceId: z.string(),
+  name: z.string(),
+  enabled: z.boolean().optional(),
+  response: catchUrlResponseWireSchema.partial().optional(),
+});
+export type HooksCreateRequestWire = z.infer<typeof hooksCreateRequestWireSchema>;
+export const hooksUpdateRequestWireSchema = hooksRefRequestWireSchema.extend({
+  name: z.string().optional(),
+  enabled: z.boolean().optional(),
+  response: catchUrlResponseWireSchema.partial().optional(),
+});
+export type HooksUpdateRequestWire = z.infer<typeof hooksUpdateRequestWireSchema>;
+/** `after: null` counts every capture: this device has seen none of them. */
+export const hooksUnseenRequestWireSchema = hooksRefRequestWireSchema.extend({ after: z.string().nullable() });
+export const hooksViewRequestWireSchema = z.object({ viewId: z.string() });
+export const hooksCaptureRequestWireSchema = z.object({ viewId: z.string(), captureId: z.string() });
+
+export const hooksStatusResponseWireSchema = z.object({ hooks: hooksMetaWireSchema.nullable() });
+export type HooksStatusResponseWire = z.infer<typeof hooksStatusResponseWireSchema>;
+export const hooksListResponseWireSchema = z.object({ hooks: z.array(catchUrlWireSchema) });
+export type HooksListResponseWire = z.infer<typeof hooksListResponseWireSchema>;
+export const hooksHookResponseWireSchema = z.object({ hook: catchUrlWireSchema });
+export const hooksDoneResponseWireSchema = z.object({ done: z.literal(true) });
+export const hooksUnseenResponseWireSchema = z.object({ count: z.number(), more: z.boolean() });
+export type HooksUnseenResponseWire = z.infer<typeof hooksUnseenResponseWireSchema>;
+export const hooksPageResponseWireSchema = z.object({ captures: z.array(captureSummaryWireSchema), more: z.boolean() });
+export type HooksPageResponseWire = z.infer<typeof hooksPageResponseWireSchema>;
+export const hooksOpenResponseWireSchema = hooksPageResponseWireSchema.extend({ viewId: z.string() });
+export type HooksOpenResponseWire = z.infer<typeof hooksOpenResponseWireSchema>;
+export const hooksCaptureResponseWireSchema = z.object({ capture: captureViewWireSchema });

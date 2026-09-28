@@ -314,6 +314,25 @@ import {
   teamWorkspaceResponseWireSchema,
   teamAccessResponseWireSchema,
   teamDoneResponseWireSchema,
+  hooksCaptureRequestWireSchema,
+  hooksCaptureResponseWireSchema,
+  hooksCapturedEventWireSchema,
+  hooksCapturesEventWireSchema,
+  hooksChangedEventWireSchema,
+  hooksCreateRequestWireSchema,
+  hooksDoneResponseWireSchema,
+  hooksHookResponseWireSchema,
+  hooksListResponseWireSchema,
+  hooksOpenResponseWireSchema,
+  hooksPageResponseWireSchema,
+  hooksRefRequestWireSchema,
+  hooksServerRequestWireSchema,
+  hooksStatusResponseWireSchema,
+  hooksUnseenRequestWireSchema,
+  hooksUnseenResponseWireSchema,
+  hooksUpdateRequestWireSchema,
+  hooksViewRequestWireSchema,
+  hooksWorkspaceRequestWireSchema,
 } from './wire-types.js';
 
 /**
@@ -579,6 +598,26 @@ export const channels = {
     access: defineChannel('team.access', teamWorkspaceRefRequestWireSchema, teamAccessResponseWireSchema),
     setAccess: defineChannel('team.setAccess', teamSetAccessRequestWireSchema, teamDoneResponseWireSchema),
     clearAccess: defineChannel('team.clearAccess', teamAccessRefRequestWireSchema, teamDoneResponseWireSchema),
+  },
+  /** Catch URLs and captures on Wirebench Server (webhook-capture spec §4). */
+  hooks: {
+    /** The server's `/meta` `hooks`, `null` without the module: whether to show the Webhooks node. */
+    status: defineChannel('hooks.status', hooksServerRequestWireSchema, hooksStatusResponseWireSchema),
+    list: defineChannel('hooks.list', hooksWorkspaceRequestWireSchema, hooksListResponseWireSchema),
+    create: defineChannel('hooks.create', hooksCreateRequestWireSchema, hooksHookResponseWireSchema),
+    update: defineChannel('hooks.update', hooksUpdateRequestWireSchema, hooksHookResponseWireSchema),
+    rotate: defineChannel('hooks.rotate', hooksRefRequestWireSchema, hooksHookResponseWireSchema),
+    remove: defineChannel('hooks.remove', hooksRefRequestWireSchema, hooksDoneResponseWireSchema),
+    clear: defineChannel('hooks.clear', hooksRefRequestWireSchema, hooksDoneResponseWireSchema),
+    unseen: defineChannel('hooks.unseen', hooksUnseenRequestWireSchema, hooksUnseenResponseWireSchema),
+    /** Follow the workspace's live nudges while the Webhooks node shows. */
+    watch: defineChannel('hooks.watch', hooksWorkspaceRequestWireSchema, hooksDoneResponseWireSchema),
+    unwatch: defineChannel('hooks.unwatch', hooksWorkspaceRequestWireSchema, hooksDoneResponseWireSchema),
+    /** A catch URL tab opens a view: its captures stay in main's memory until `close`. */
+    open: defineChannel('hooks.open', hooksRefRequestWireSchema, hooksOpenResponseWireSchema),
+    older: defineChannel('hooks.older', hooksViewRequestWireSchema, hooksPageResponseWireSchema),
+    capture: defineChannel('hooks.capture', hooksCaptureRequestWireSchema, hooksCaptureResponseWireSchema),
+    close: defineChannel('hooks.close', hooksViewRequestWireSchema, hooksDoneResponseWireSchema),
   },
   // An API and the definition it was imported from. Separate from `definition.*` because the two
   // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI
@@ -1054,6 +1093,14 @@ export const events = {
   teamSecrets: {
     /** The open shared workspace's team-secrets status changed (a pull, an approval, a save). */
     changed: defineEvent('teamSecrets.changed', teamSecretsChangedEventSchema),
+  },
+  hooks: {
+    /** Re-list a workspace's catch URLs: a `hooks` nudge, or the live socket came back. */
+    changed: defineEvent('hooks.changed', hooksChangedEventWireSchema),
+    /** A `capture` nudge: recount that catch URL's unseen badge. */
+    captured: defineEvent('hooks.captured', hooksCapturedEventWireSchema),
+    /** An open view's summaries changed: new ones on top, a fresh first page, or a failed fetch. */
+    captures: defineEvent('hooks.captures', hooksCapturesEventWireSchema),
   },
   account: {
     /** The list of known servers changed (sign-in, sign-out, removal, a token the server refused). */

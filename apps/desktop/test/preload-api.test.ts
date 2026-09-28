@@ -54,6 +54,7 @@ describe('buildApi', () => {
       'git',
       'globals',
       'history',
+      'hooks',
       'keystores',
       'log',
       'oauth2',
