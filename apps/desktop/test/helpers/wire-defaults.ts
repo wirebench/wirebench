@@ -14,6 +14,7 @@ import type {
   RestApiWire,
   RestFolderWire,
   RestRequestWire,
+  SequenceWire,
   WsApiWire,
   WsRequestWire,
 } from '../../src/shared/wire-types.js';
@@ -150,6 +151,19 @@ export function wsRequestWire(overrides: Partial<WsRequestWire> = {}): WsRequest
     auth: { type: 'inherit' },
     settings: {},
     messages: [],
+    ...overrides,
+  };
+}
+
+/** One sequence on the wire: no steps unless the caller says otherwise, and stop-on-failure on. */
+export function sequenceWire(overrides: Partial<SequenceWire> = {}): SequenceWire {
+  return {
+    id: 'seq-1',
+    name: 'Checkout',
+    slug: 'Checkout',
+    order: 0,
+    settings: { stopOnFailure: true },
+    steps: [],
     ...overrides,
   };
 }

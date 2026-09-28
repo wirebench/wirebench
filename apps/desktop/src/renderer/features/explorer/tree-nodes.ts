@@ -30,7 +30,10 @@ export type ExplorerNodeKind =
   | 'grpc-api'
   | 'grpc-request'
   | 'ws-api'
-  | 'ws-request';
+  | 'ws-request'
+  /** The group of a project's sequences; a container, not an entity. */
+  | 'sequences'
+  | 'sequence';
 
 /**
  * What the tree needs to know about one project in the open workspace. Structurally the subset
@@ -110,6 +113,14 @@ export interface ExplorerNode {
    * `explorer-view.tsx` badges the row without recomputing the match itself.
    */
   readonly conflicted?: boolean;
+  /** Set on `sequence` nodes: the sequence the row stands for. */
+  readonly sequenceId?: string;
+}
+
+/** What the explorer shows of one sequence. */
+export interface ExplorerSequence {
+  readonly id: string;
+  readonly name: string;
 }
 
 /** {@link buildExplorerTree}'s conflict marks — the ids `conflictTargets` (Task 11) produced. */
@@ -472,6 +483,8 @@ export interface ExplorerRestData {
  *   gRPC data, which then gets the tree it got before gRPC existed.
  * @param ws each project's WebSocket APIs and requests, by project id. Omitted for a caller with
  *   no WebSocket data, which then gets the tree it got before the WebSocket kind existed.
+ * @param sequences each project's sequences, in order, by project id. A project with none shows no
+ *   Sequences group at all.
  */
 export function buildExplorerTree(
   projects: readonly ExplorerProject[],
@@ -482,6 +495,7 @@ export function buildExplorerTree(
   conflicted: ExplorerConflictTargets = NO_CONFLICTS,
   grpc: Readonly<Record<string, ExplorerGrpcData>> = {},
   ws: Readonly<Record<string, ExplorerWsData>> = {},
+  sequences: Readonly<Record<string, readonly ExplorerSequence[]>> = {},
 ): ExplorerNode[] {
   return projects.map((project) => {
     const broken = project.status === 'missing' || project.status === 'error';
@@ -506,7 +520,7 @@ export function buildExplorerTree(
           conflicted,
           grpc[project.id],
           ws[project.id],
-        );
+        ).concat(sequencesGroup(project.id, sequences[project.id] ?? []));
 
     return {
       id: `proj:${project.id}`,
@@ -557,6 +571,31 @@ function orderedChildren(
   // (interfaces first, then REST, then gRPC, then WebSocket), rather than letting the tree
   // reshuffle between snapshots.
   return [...nodes, ...apis, ...grpcApis, ...wsApis].sort((a, b) => a.order - b.order).map((entry) => entry.node);
+}
+
+/**
+ * A project's Sequences group, after its interfaces and APIs: sequences have an ordering of their
+ * own, not the containers' shared one. None when the project has no sequence.
+ */
+function sequencesGroup(projectId: string, sequences: readonly ExplorerSequence[]): ExplorerNode[] {
+  if (sequences.length === 0) {
+    return [];
+  }
+  return [
+    {
+      id: `sequences:${projectId}`,
+      kind: 'sequences',
+      label: 'Sequences',
+      projectId,
+      children: sequences.map((sequence) => ({
+        id: `sequence:${sequence.id}`,
+        kind: 'sequence' as const,
+        label: sequence.name,
+        projectId,
+        sequenceId: sequence.id,
+      })),
+    },
+  ];
 }
 
 /**

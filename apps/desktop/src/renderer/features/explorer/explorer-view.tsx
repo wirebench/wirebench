@@ -11,6 +11,7 @@ import {
   Folder,
   FolderPlus,
   FoldVertical,
+  ListOrdered,
   Globe,
   Link2,
   Loader2,
@@ -76,6 +77,8 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'grpc-api': Radio,
   'ws-api': Cable,
   folder: Folder,
+  sequences: Folder,
+  sequence: ListOrdered,
 };
 
 /**
@@ -105,6 +108,8 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'grpc-request': 'grpc-request-row',
   'ws-api': 'ws-api-row',
   'ws-request': 'ws-request-row',
+  sequences: 'sequences-group-row',
+  sequence: 'sequence-row',
 };
 
 const INLINE_BUTTON_CLASS =
@@ -147,7 +152,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             node.data.kind === 'request' ||
             node.data.kind === 'rest-request' ||
             node.data.kind === 'grpc-request' ||
-            node.data.kind === 'ws-request'
+            node.data.kind === 'ws-request' ||
+            node.data.kind === 'sequence'
           ) {
             node.activate();
           } else if (node.data.kind === 'api' || node.data.kind === 'grpc-api' || node.data.kind === 'ws-api') {
@@ -322,6 +328,7 @@ export function ExplorerView() {
   const rest = useProjectStore((state) => state.rest);
   const grpc = useProjectStore((state) => state.grpc);
   const ws = useProjectStore((state) => state.ws);
+  const sequenceLists = useProjectStore((state) => state.sequenceLists);
   const removeInterface = useProjectStore((state) => state.removeInterface);
   const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
@@ -353,7 +360,17 @@ export function ExplorerView() {
     ...(project.message !== undefined ? { message: project.message } : {}),
   }));
   const conflicted = useConflictTargets();
-  const data = buildExplorerTree(roots, order, interfaces, Object.values(requests), rest, conflicted, grpc, ws);
+  const data = buildExplorerTree(
+    roots,
+    order,
+    interfaces,
+    Object.values(requests),
+    rest,
+    conflicted,
+    grpc,
+    ws,
+    sequenceLists,
+  );
 
   useEffect(() => {
     registerExplorerTree(treeRef ?? null);
@@ -477,7 +494,8 @@ export function ExplorerView() {
                 node.kind !== 'grpc-api' &&
                 node.kind !== 'grpc-request' &&
                 node.kind !== 'ws-api' &&
-                node.kind !== 'ws-request'
+                node.kind !== 'ws-request' &&
+                node.kind !== 'sequence'
               }
               disableDrag={(node) =>
                 node.kind !== 'rest-request' &&
@@ -564,6 +582,14 @@ export function ExplorerView() {
                   explorerActions.openWsRequest(node.data.requestId);
                   return;
                 }
+                if (node.data.kind === 'sequence') {
+                  explorerActions.openSequence(node.data.sequenceId);
+                  return;
+                }
+                if (node.data.kind === 'sequences') {
+                  // A group row has nothing to open; a click folds it.
+                  return;
+                }
                 explorerActions.openRequest(node.data.requestId);
               }}
               onSelect={(nodes) => {
@@ -646,6 +672,12 @@ export function ExplorerView() {
                     .updateWsRequest(node.requestId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
+                if (node.kind === 'sequence' && node.sequenceId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateSequence(node.sequenceId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
               }}
               onDelete={({ nodes }) => {
                 for (const node of nodes) {
@@ -669,6 +701,8 @@ export function ExplorerView() {
                     explorerActions.removeWsApi(node.data.apiId);
                   } else if (node.data.kind === 'ws-request') {
                     explorerActions.deleteWsRequest(node.data.requestId);
+                  } else if (node.data.kind === 'sequence') {
+                    explorerActions.removeSequence(node.data.sequenceId);
                   }
                 }
               }}
@@ -711,7 +745,9 @@ export function ExplorerView() {
             ? 'Delete API?'
             : confirmDeleteNode?.kind === 'folder'
               ? 'Delete folder?'
-              : 'Delete request?'
+              : confirmDeleteNode?.kind === 'sequence'
+                ? 'Delete sequence?'
+                : 'Delete request?'
         }
         description={
           confirmDeleteNode === undefined
@@ -743,7 +779,9 @@ export function ExplorerView() {
                       ? store.removeGrpcRequest(id)
                       : kind === 'ws-request'
                         ? store.removeWsRequest(id)
-                        : store.removeRestRequest(id);
+                        : kind === 'sequence'
+                          ? store.removeSequence(id)
+                          : store.removeRestRequest(id);
           void done.catch((error: unknown) => {
             showToast(error instanceof Error ? error.message : 'Delete failed');
           });

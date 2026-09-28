@@ -581,3 +581,40 @@ describe('buildExplorerTree with WebSocket APIs', () => {
     expect(before[0]?.children?.map((child) => child.kind)).toEqual(['interface']);
   });
 });
+
+describe('buildExplorerTree with sequences', () => {
+  const project = { id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/demo', status: 'ready' } as const;
+  const tree = (sequences: Record<string, readonly { id: string; name: string }[]>): ExplorerNode[] =>
+    buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: ['iface-1'] }],
+      { 'iface-1': iface() },
+      [],
+      { p1: { apis: [restApiWire({ order: 0 })], folders: [], requests: [] } },
+      undefined,
+      {},
+      {},
+      sequences,
+    );
+
+  it('groups a project’s sequences after its interfaces and APIs, in their own order', () => {
+    const [root] = tree({
+      p1: [
+        { id: 's1', name: 'Checkout' },
+        { id: 's2', name: 'Refund' },
+      ],
+    });
+    const group = root?.children?.at(-1);
+    expect(root?.children?.map((child) => child.kind)).toEqual(['interface', 'api', 'sequences']);
+    expect(group).toMatchObject({ id: 'sequences:p1', label: 'Sequences', projectId: 'p1' });
+    expect(group?.children).toEqual([
+      { id: 'sequence:s1', kind: 'sequence', label: 'Checkout', projectId: 'p1', sequenceId: 's1' },
+      { id: 'sequence:s2', kind: 'sequence', label: 'Refund', projectId: 'p1', sequenceId: 's2' },
+    ]);
+  });
+
+  it('shows no Sequences group for a project without any', () => {
+    const [root] = tree({ p1: [] });
+    expect(root?.children?.map((child) => child.kind)).toEqual(['interface', 'api']);
+  });
+});

@@ -223,15 +223,39 @@ established by reading that code (ADR-0003, update of 2026-09-28) rather than by
 ## Task 8 — Renderer: explorer, tab and run panel
 
 **Files**
-- `features/explorer/{tree-nodes,context-menu,explorer-actions,explorer-view}.ts(x)`: the Sequences group and the
-  menus.
-- `features/sequence-editor/{sequence-tab,step-list,transfer-table,assertion-table,run-panel,add-step-picker}.tsx`.
-- `state/{editors,project,drafts,workspace-tabs,ui-state}.ts`: the `sequence` tab kind, persisted.
-- `shell/editor-area.tsx`: a lazy branch.
-- `shared/commands.ts` and `shared/command-catalog.ts`, then `renderer/commands/register-sequence-commands.ts`.
-  Afterwards run `pnpm docs:commands`.
-- Tests: `apps/desktop/test/renderer/{sequence-tab,sequence-run-panel,explorer-sequences}.test.tsx`, plus the command
-  registry audit.
+- `state/project.ts`:
+  - `sequences` and `sequenceLists` indexes;
+  - `addSequence`, `updateSequence`, `removeSequence` and `duplicateSequence`.
+- `state/sequence-runs.ts`: the latest run per sequence, and `subscribeToSequenceProgress`, mounted in
+  `shell/app-shell.tsx`.
+- `features/sequence/`:
+  - `sequence-actions.ts`;
+  - `sequence-tab.tsx`;
+  - `step-requests.ts`, which mirrors `findStepRequest` for labels;
+  - `add-step-dialog.tsx`;
+  - `transfer-table.tsx` and `assertion-table.tsx`;
+  - `step-fields.tsx`;
+  - `run-panel.tsx`.
+- Explorer:
+  - `tree-nodes.ts`: the `sequences` group and `sequence` rows;
+  - `context-menu.tsx`, `explorer-actions.ts` and `explorer-api.ts`;
+  - `explorer-view.tsx`: the icon, test ids, activation, rename, delete and the confirmation;
+  - `state/ui.ts`: the pending deletion kind.
+- Tabs:
+  - `state/editors.ts`;
+  - `shell/editor-area.tsx`;
+  - `state/ui-state.ts` and `state/workspace-tabs.ts`, which persist the tab.
+- Commands:
+  - `shared/commands.ts`: `sequence.new`, `sequence.run` and `sequence.cancel`, and the `editor.sequence` scope;
+  - `shared/command-catalog.ts`;
+  - `renderer/commands/register-{explorer,request}-commands.ts`;
+  - `command-helpers.ts`: `activeSequenceId`;
+  - then `pnpm docs:commands`.
+- Tests:
+  - `apps/desktop/test/renderer/sequence-tab.test.tsx`;
+  - `tree-nodes.test.ts`;
+  - the pinned lists in `explorer-context-menu.test.ts` and `keymap.test.ts`;
+  - `test/helpers/wire-defaults.ts`: `sequenceWire`.
 
 ## Task 9 — e2e, docs and changelog
 

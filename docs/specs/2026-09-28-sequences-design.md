@@ -268,27 +268,36 @@ wirebench secrets list <project> --sequence "Checkout flow" [--env staging]
 
 ## Desktop
 
-- **Explorer.** Each project gets a **Sequences** group after its APIs, listing its sequences by `order`.
-  - The project's menu gains *New Sequence…*.
-  - A sequence's menu offers *Open*, *Run*, *Rename*, *Duplicate* and *Delete*, with the existing delete
-    confirmation.
-- **Sequence tab**, opened by a single click like an API tab:
-  - A header with the name, **Run** / **Cancel**, the active environment's name (a run uses it), and *Stop on first
-    failure*.
-  - **Steps**: an ordered list you can drag or reorder from the keyboard. Each row shows a step number, the method or
-    protocol badge, the request's path, and an enable checkbox. *Add step…* opens a quick-pick over the project's
-    SOAP, REST and unary gRPC requests; WebSocket and streaming gRPC requests are shown disabled, with the reason. A
-    step whose request is missing is marked *Missing request*.
-  - The selected step shows two tables:
-    - **Transfers**: name, source (body / header / status), expression or header name, a *Secret* checkbox and an
-      *Optional* checkbox.
-    - **Assertions**: type, expression or name, and expected value.
-  - Edits are staged in drafts and saved with the project, with a dirty mark on the tab, like every other editor.
-- **Run panel**, below the steps. It shows one row per step, filled in as each step completes: outcome, status,
-  duration, then the assertions and transfers when the row is expanded.
-  - A transferred value is shown, unless it is secret (see [Masking](#masking)).
-  - *Open in History* goes to the step's entry.
-  - A run's results stay in the tab for the session and are not persisted.
+- **Explorer.** A project with sequences gets a **Sequences** group after its interfaces and APIs, listing them by
+  their own `order`. A project without any shows no group, so nothing changes for it.
+  - The project's menu (and the group's) gains *New Sequence*. The new sequence is named `Sequence N` and its tab
+    opens, as a new API's does.
+  - A sequence's menu offers *Open*, *Run*, *Duplicate*, *Rename…* and *Delete*, with the existing delete
+    confirmation. A sequence only refers to its requests, so deleting it never touches them.
+- **Sequence tab**, opened by a single click and restored across restarts like an API tab:
+  - At the top: the name, *Stop on first failure*, *Step timeout*, and **Run** or **Cancel**. A note says that a run
+    uses the active environment and that a later step uses a transfer as `${#Sequence#name}`.
+  - **Steps**: an ordered list. Each row has a step number, an enable checkbox, the method or protocol badge, the
+    step's (or its request's) name, the request's path, and *Move up*, *Move down* and *Remove*. A step whose
+    request is gone is marked *Missing request*. One whose request cannot be a step (WebSocket, a streaming gRPC call,
+    orphaned) says why.
+  - *Add step…* opens a searchable list of the project's requests, like the command palette's quick-open. A request
+    that cannot be a step is listed disabled, with the reason.
+  - The selected step shows its own name, *Run the request's own assertions too*, and two tables:
+    - **Transfers**: name, source (body / header / cookie / status), language and expression, header or cookie name,
+      and *Secret* and *Optional* checkboxes.
+    - **Assertions**: type (status, header, body matches, response time, SOAP fault, schema). For *body matches* and
+      *header*, a check (equals, matches, is present, is absent) and its value.
+  - **Edits apply at once**, as on an API tab: each committed field sends one `update-sequence` with the steps
+    replaced whole, and the project's own dirty mark and autosave take it from there. Main re-reads every edit
+    through the sequence file parser. A refused edit is reported and the field snaps back to the stored value.
+- **Run panel**, below the steps. It shows one row per step, filled in from `sequence.progress` as each step ends:
+  outcome, status, duration and origin, then the assertions, the transfers and any error. A failed step opens by
+  itself.
+  - A transferred value is shown, unless it is secret; then it reads `(secret)` (see [Masking](#masking)).
+  - *Show in History* opens History searched for the run's tag, `run:<runId>`, which every step's entry carries.
+  - A run's results stay in the tab for the session and are not persisted. An event for any run but the latest is
+    dropped.
 - **Sends are ordinary sends.** Each step goes through the protocol's existing main-process send path
   (`sendAndRecordHistory`, `sendRestRequest`, `sendGrpcRequest`). It therefore gets the same auth, TLS, proxy,
   HTTP Log row and History entry as a single send. `main/sequence-runner.ts` is the desktop's `SequenceStepSender`.
@@ -312,8 +321,12 @@ wirebench secrets list <project> --sequence "Checkout flow" [--env staging]
   - **Two limits of v1.** A step sends the request as it is in the open project, with its saved text. Text still
     being edited in a request tab is not used, since a run is not tied to what an editor shows. And a `schema`
     assertion errors in a desktop run, because the runner has no compiled definition at hand; the CLI evaluates it.
-- **Commands:** `sequence.new`, `sequence.run`, `sequence.cancel` and `sequence.addStep`, scoped to `editor.sequence`
-  or `selection.sequence`. `reference/commands.md` is regenerated from the catalogue.
+- **Commands:**
+  - `sequence.new`, with a project selected;
+  - `sequence.run` (`Mod+Enter`) and `sequence.cancel`, scoped to the new `editor.sequence`.
+
+  `editor.sequence` does not overlap the request editors' scopes, so it shares their send chord.
+  `reference/commands.md` is regenerated from the catalogue.
 
 ### IPC
 

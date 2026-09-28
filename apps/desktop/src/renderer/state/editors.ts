@@ -57,6 +57,7 @@ export interface EditorTab {
     | 'grpc-api'
     | 'ws-request'
     | 'ws-api'
+    | 'sequence'
     | 'env-compare';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
@@ -78,6 +79,8 @@ export interface EditorTab {
   readonly wsRequestId?: string;
   /** Set when `kind` is `'ws-api'`: the WebSocket API this tab shows. */
   readonly wsApiId?: string;
+  /** Set when `kind` is `'sequence'`: the sequence this tab edits and runs. */
+  readonly sequenceId?: string;
   /** Set when `kind` is `'project'`: the project this tab shows. */
   readonly projectId?: string;
   /** Set when `kind` is `'environment'`: the environment this tab edits. */
