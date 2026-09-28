@@ -31,6 +31,12 @@ export interface UrlBarProps {
   readonly basePrefix?: string | undefined;
   /** Where that base came from — `api`, `environment`, `workspace` — shown on the prefix's title. */
   readonly baseSource?: string | undefined;
+  /**
+   * When set, the greyed prefix reads `<baseLabel> ·` instead of the base URL text — a webhook
+   * item has no API, so there is no base worth showing in full — with the resolved base (when
+   * known) carried in the prefix's `title` instead.
+   */
+  readonly baseLabel?: string | undefined;
   readonly sending: boolean;
   /** An event-stream response is arriving — Cancel reads *Stop* instead, same button, same handler. */
   readonly live?: boolean;
@@ -40,6 +46,8 @@ export interface UrlBarProps {
   readonly onCancel: () => void;
   /** The formatted `Mod+Enter` shortcut, shown on Send's title. */
   readonly sendShortcut?: string | undefined;
+  /** Disables *Send* when set, e.g. a webhook item with no target — the reason is the button's title. */
+  readonly sendDisabledReason?: string | undefined;
   /** The overflow menu; passed in so this strip needs nothing from the stores. */
   readonly menu?: React.ReactNode;
 }
@@ -50,6 +58,7 @@ export function UrlBar({
   url,
   basePrefix,
   baseSource,
+  baseLabel,
   sending,
   live = false,
   onMethodChange,
@@ -57,6 +66,7 @@ export function UrlBar({
   onSend,
   onCancel,
   sendShortcut,
+  sendDisabledReason,
   menu,
 }: UrlBarProps) {
   const known = (KNOWN_METHODS as readonly string[]).includes(method.toUpperCase());
@@ -100,13 +110,19 @@ export function UrlBar({
       )}
 
       <div className="flex h-row min-w-0 flex-1 items-center overflow-hidden rounded-md border border-hairline-strong bg-surface-raised">
-        {basePrefix !== undefined && basePrefix.length > 0 && (
+        {(baseLabel !== undefined || (basePrefix !== undefined && basePrefix.length > 0)) && (
           <span
             data-testid="rest-url-base"
-            title={baseSource === undefined ? basePrefix : `${basePrefix} — from the ${baseSource}`}
+            title={
+              baseLabel !== undefined
+                ? (basePrefix ?? baseLabel)
+                : baseSource === undefined
+                  ? basePrefix
+                  : `${basePrefix} — from the ${baseSource}`
+            }
             className={`max-w-[45%] shrink-0 truncate pl-2 text-fg-subtle ${FIELD_FONT}`}
           >
-            {basePrefix}
+            {baseLabel !== undefined ? `${baseLabel} ·` : basePrefix}
           </span>
         )}
         {/* The mirror and the input share the same font, padding and box, and the input's own text
@@ -175,7 +191,12 @@ export function UrlBar({
           variant="primary"
           data-testid="rest-send"
           onClick={onSend}
-          {...(sendShortcut !== undefined ? { title: `Send (${sendShortcut})` } : {})}
+          disabled={sendDisabledReason !== undefined}
+          {...(sendDisabledReason !== undefined
+            ? { title: sendDisabledReason }
+            : sendShortcut !== undefined
+              ? { title: `Send (${sendShortcut})` }
+              : {})}
         >
           <Send size={12} aria-hidden="true" />
           Send

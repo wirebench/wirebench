@@ -8,6 +8,11 @@
  *
  * The URL bar's greyed base prefix and the resolved URL come from main's own dry run
  * (`request.preflightRest`), because only main knows the active environment and the API's servers.
+ *
+ * A webhook item (`request.apiId` starting with `webhooks:`) is a REST request on the wire, so it
+ * opens here unchanged rather than in a tab kind of its own; only the URL bar's base and the line
+ * under it differ, since a webhook item has no API to read a base URL from — see
+ * `webhook-url-note.tsx`.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
@@ -21,7 +26,9 @@ import { folderChainOf, selectApiOf, useProjectStore } from '../../state/project
 import { isAbsoluteUrl, queryFromUrl, syncPathParams } from '../../state/rest-url.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
-import type { AuthConfigWire, RestRequestPatchWire } from '../../../shared/wire-types.js';
+import type { AuthConfigWire, RequestPreflightResponse, RestRequestPatchWire } from '../../../shared/wire-types.js';
+import { explorerActions } from '../explorer/explorer-actions.js';
+import { WebhookUrlNote } from '../webhook-items/webhook-url-note.js';
 import { RestAuthTab } from './auth-tab.js';
 import { BodyTab } from './body-tab.js';
 import { HeadersTab } from './headers-tab.js';
@@ -31,6 +38,14 @@ import { SettingsTab } from './settings-tab.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
 import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
+
+/** The two webhook-target error codes `request.preflightRest` refuses a webhook item's send with. */
+const WEBHOOK_TARGET_ERROR_CODES = new Set(['webhook-target-missing', 'webhook-target-invalid']);
+
+/** Whether a REST request id names a webhook item rather than an ordinary REST request. */
+function isWebhookRequest(apiId: string | undefined): boolean {
+  return apiId?.startsWith('webhooks:') === true;
+}
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -60,10 +75,20 @@ function baseSourceLabel(source: string | undefined): string | undefined {
   return source === 'interface-default' ? 'API' : source;
 }
 
+/** What the preflight effect keeps: a resolved endpoint, or a webhook target error. */
+interface PreflightState {
+  readonly endpoint?: string | undefined;
+  readonly source?: string | undefined;
+  readonly target?: RequestPreflightResponse['target'] | undefined;
+  readonly targetErrorCode?: string | undefined;
+}
+
 /** One REST request's editor. */
 export function RestEditor({ requestId }: RestEditorProps) {
   const request = useProjectStore((state) => state.restRequests[requestId]);
+  const isWebhookItem = isWebhookRequest(request?.apiId);
   const api = useProjectStore((state) => selectApiOf(state, requestId));
+  const projectId = useProjectStore((state) => state.projectOf[requestId]);
   // The map, then the chain in a memo: the chain is a fresh array, and building one inside a
   // selector would hand React a new reference on every render.
   const folderMap = useProjectStore((state) => state.folders);
@@ -78,7 +103,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
   const layout = useEditorLayout(requestId);
   const [tab, setTab] = useState<TabId>('params');
-  const [resolved, setResolved] = useState<{ endpoint?: string | undefined; source?: string | undefined }>({});
+  const [resolved, setResolved] = useState<PreflightState>({});
   const platform = useMemo(() => detectPlatform(), []);
 
   const url = request?.url ?? '';
@@ -90,8 +115,19 @@ export function RestEditor({ requestId }: RestEditorProps) {
       void ipc()
         .request.preflightRest({ requestId })
         .then((result) => {
-          if (!cancelled && result.ok) {
-            setResolved({ endpoint: result.value.endpoint, source: result.value.endpointSource });
+          if (cancelled) {
+            return;
+          }
+          if (result.ok) {
+            setResolved({
+              endpoint: result.value.endpoint,
+              source: result.value.endpointSource,
+              target: result.value.target,
+            });
+          } else if (WEBHOOK_TARGET_ERROR_CODES.has(result.error.code)) {
+            // The two webhook-target refusals never carry a value — there is nowhere for this
+            // send to go — so the editor reads the error itself rather than the usual result.
+            setResolved({ targetErrorCode: result.error.code });
           }
         });
     }, PREFLIGHT_DEBOUNCE_MS);
@@ -123,6 +159,19 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const sending = exchange?.status === 'sending';
   const orientation = groupOrientation(layout);
   const relative = !isAbsoluteUrl(request.url);
+  // A webhook item has no target-missing note until the user has set one, and no inline error
+  // until the target resolves to something that is not `http(s)` — the two `webhook-target-*`
+  // refusals `preflightRest` reports as an IPC error rather than in its usual value.
+  const sendDisabledReason =
+    isWebhookItem && resolved.targetErrorCode === 'webhook-target-missing' ? 'Set the Webhooks target' : undefined;
+  const invalidTargetMessage =
+    isWebhookItem && resolved.targetErrorCode === 'webhook-target-invalid'
+      ? 'The Webhooks target must start with http:// or https://'
+      : undefined;
+  const webhookNoteSource: 'target' | 'callback' | 'callback-fallback' | 'missing' =
+    sendDisabledReason !== undefined ? 'missing' : (resolved.target?.source ?? 'target');
+  // The folder an imported group's requests hang off; its name is what the header chip shows.
+  const webhookGroup = isWebhookItem ? folders.find((folder) => folder.source !== undefined) : undefined;
   const inheritedAuth = [...folders]
     .reverse()
     .find((folder) => folder.auth !== undefined && folder.auth.type !== 'inherit');
@@ -191,11 +240,21 @@ export function RestEditor({ requestId }: RestEditorProps) {
   return (
     <section aria-label={`Request ${request.name}`} data-testid="rest-editor" className="flex h-full min-h-0 flex-col">
       <RestBreadcrumb requestId={requestId} />
+      {isWebhookItem && (
+        <div className="flex h-6 shrink-0 items-center border-b border-hairline bg-surface-base px-3">
+          <span data-testid="webhook-chip" className="rounded bg-surface-raised px-1.5 py-0.5 text-2xs text-fg-subtle">
+            {webhookGroup !== undefined ? `webhook · ${webhookGroup.name}` : 'webhook'}
+          </span>
+        </div>
+      )}
       <UrlBar
         method={request.method}
         url={request.url}
-        basePrefix={relative ? (api?.baseUrl ?? undefined) : undefined}
-        baseSource={baseSourceLabel(resolved.source)}
+        // A webhook item has no API, so its base is never read from one — the target it would
+        // actually go to (or nothing, while unresolved) stands in, under the `baseLabel` prefix.
+        basePrefix={isWebhookItem ? resolved.endpoint : relative ? (api?.baseUrl ?? undefined) : undefined}
+        baseLabel={isWebhookItem ? 'Target' : undefined}
+        baseSource={isWebhookItem ? undefined : baseSourceLabel(resolved.source)}
         sending={sending}
         live={exchange?.live !== undefined}
         onMethodChange={(method) => {
@@ -216,8 +275,26 @@ export function RestEditor({ requestId }: RestEditorProps) {
           void cancelRest(requestId);
         }}
         sendShortcut={shortcutFor('rest.send', platform)}
+        sendDisabledReason={sendDisabledReason}
         menu={<SendToEnvironmentsButton requestId={requestId} kind="rest" />}
       />
+      {isWebhookItem && (
+        <>
+          {invalidTargetMessage !== undefined && (
+            <p role="alert" className="border-b border-hairline bg-surface-base px-3 py-1 text-xs text-status-danger">
+              {invalidTargetMessage}
+            </p>
+          )}
+          <WebhookUrlNote
+            resolvedUrl={resolved.endpoint}
+            source={webhookNoteSource}
+            detail={resolved.target?.detail}
+            onOpenSettings={() => {
+              explorerActions.openWebhookSettings(projectId, request.folderId);
+            }}
+          />
+        </>
+      )}
 
       {layout.mode === 'tabs' ? (
         requestTabs
