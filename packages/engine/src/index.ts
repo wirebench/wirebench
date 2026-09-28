@@ -443,8 +443,22 @@ export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/f
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
-export { apiFromDocument, authFromScheme, mapScheme } from './rest/openapi/map.js';
-export type { MapApiOptions, MappedApi, OpenApiImportSummary, OpenApiSchemeCandidate } from './rest/openapi/map.js';
+export {
+  apiFromDocument,
+  authFromScheme,
+  mapScheme,
+  webhookItemsOf,
+  webhookSourcesOf,
+  webhooksFromDocument,
+} from './rest/openapi/map.js';
+export type {
+  MapApiOptions,
+  MappedApi,
+  MapWebhooksOptions,
+  OpenApiImportSummary,
+  OpenApiSchemeCandidate,
+  WebhookItemRef,
+} from './rest/openapi/map.js';
 export { createCachedApiFetch, readApiDefinitionCache, writeApiDefinitionCache } from './rest/openapi/cache.js';
 export type {
   ApiDefinitionCacheOptions,

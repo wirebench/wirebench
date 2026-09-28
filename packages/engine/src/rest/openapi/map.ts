@@ -15,6 +15,8 @@
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { slugify, uniqueSlug } from '../../project/paths.js';
+import type { HookLink } from '../../webhooks/model.js';
+import { createWebhookFolder, hookKey, type WebhookFolder } from '../../webhooks/model.js';
 import type {
   KeyValueEntry,
   MultipartFormPart,
@@ -96,6 +98,8 @@ export interface OpenApiImportSummary {
   readonly folders: number;
   readonly requests: number;
   readonly deprecated: number;
+  /** Every webhook and callback method the document offers, whether or not this import maps them. */
+  readonly webhooks: number;
   /** The auth the API ended up with, by type, when it got any. */
   readonly auth?: AuthConfig['type'];
   /** Every scheme the document declares, so the dialog can offer a different one. */
@@ -480,6 +484,165 @@ function groupByFolder(operations: readonly OpenApiOperation[]): Map<string | un
   return groups;
 }
 
+/** What {@link requestFromOperation} needs beyond the operation itself, threaded through one mapping pass. */
+interface MapContext {
+  readonly document: OpenApiDocument;
+  readonly options: MapApiOptions;
+  readonly newId: IdGenerator;
+  readonly skipped: OpenApiSkipped[];
+  readonly counts: { requests: number; deprecated: number };
+}
+
+/** Overrides a webhook or callback item applies over what the operation itself would produce. */
+interface RequestOverrides {
+  readonly name: string;
+  readonly url: string;
+  readonly hook: HookLink;
+}
+
+/**
+ * One operation as a request. Shared by an API's own paths and by a webhook group's items —
+ * `overrides` is how the latter departs: its own name and URL, a {@link HookLink} instead of a
+ * `contract`, and no path parameters, since a webhook or callback URL is the caller's to fill in.
+ */
+function requestFromOperation(
+  operation: OpenApiOperation,
+  order: number,
+  taken: Set<string>,
+  context: MapContext,
+  overrides?: RequestOverrides,
+): RestRequestDef {
+  const { document, options, newId, skipped, counts } = context;
+  noteCookieParameters(operation, skipped);
+  if (operation.deprecated === true) {
+    counts.deprecated += 1;
+  }
+  counts.requests += 1;
+  const label = overrides?.name ?? requestName(operation);
+  const auth = operationAuth(operation, document, skipped);
+  const description = requestDescription(operation);
+  return createRestRequest(label, {
+    id: newId(),
+    slug: uniqueSlug(label, taken),
+    order,
+    method: HTTP_METHODS.includes(operation.method.toLowerCase()) ? operation.method.toUpperCase() : operation.method,
+    url: overrides?.url ?? operation.path,
+    ...(description !== undefined ? { description } : {}),
+    pathParams: overrides !== undefined ? [] : parameterRows(operation, 'path', options, skipped),
+    query: parameterRows(operation, 'query', options, skipped),
+    headers: parameterRows(operation, 'header', options, skipped),
+    body: bodyOf(operation, options, skipped),
+    ...(auth !== undefined ? { auth } : {}),
+    ...(overrides !== undefined
+      ? { hook: overrides.hook }
+      : { contract: { method: operation.method.toLowerCase(), path: operation.path } }),
+  });
+}
+
+/** One webhook or callback method a document offers, keyed as *Update definition* matches it. */
+export interface WebhookItemRef {
+  readonly key: string;
+  readonly kind: 'webhook' | 'callback';
+  readonly name: string;
+  readonly method: string;
+  readonly operation?: string;
+  readonly expression?: string;
+  readonly label: string;
+}
+
+/** A document's webhook and callback methods with their operations. Internal to the OpenAPI modules. */
+export function webhookSourcesOf(
+  document: OpenApiDocument,
+): { readonly ref: WebhookItemRef; readonly operation: OpenApiOperation; readonly link: HookLink }[] {
+  const sources: { ref: WebhookItemRef; operation: OpenApiOperation; link: HookLink }[] = [];
+  const named = (name: string, method: string, first: boolean) => (first ? name : `${name} (${method.toUpperCase()})`);
+  for (const hook of document.webhooks ?? []) {
+    hook.operations.forEach((operation, index) => {
+      const link: HookLink = { kind: 'webhook', name: hook.name };
+      sources.push({
+        operation,
+        link,
+        ref: {
+          key: hookKey(link, operation.method),
+          kind: 'webhook',
+          name: hook.name,
+          method: operation.method,
+          label: named(hook.name, operation.method, index === 0),
+        },
+      });
+    });
+  }
+  for (const parent of document.operations) {
+    const parentKey = `${parent.method.toLowerCase()} ${parent.path}`;
+    const parentLabel = parent.operationId ?? `${parent.method.toUpperCase()} ${parent.path}`;
+    for (const callback of parent.callbacks ?? []) {
+      callback.operations.forEach((operation, index) => {
+        const link: HookLink = {
+          kind: 'callback',
+          operation: parentKey,
+          name: callback.name,
+          expression: callback.expression,
+        };
+        sources.push({
+          operation,
+          link,
+          ref: {
+            key: hookKey(link, operation.method),
+            kind: 'callback',
+            name: callback.name,
+            method: operation.method,
+            operation: parentKey,
+            expression: callback.expression,
+            label: `${named(callback.name, operation.method, index === 0)} · ${parentLabel}`,
+          },
+        });
+      });
+    }
+  }
+  return sources;
+}
+
+/** Every webhook and callback method `document` offers, in document order. */
+export function webhookItemsOf(document: OpenApiDocument): WebhookItemRef[] {
+  return webhookSourcesOf(document).map((source) => source.ref);
+}
+
+/** Options for {@link webhooksFromDocument}. */
+export interface MapWebhooksOptions extends MapApiOptions {
+  /** The API the group is linked to. */
+  readonly apiId: string;
+  /** Keys ({@link WebhookItemRef.key}) to keep; all when absent. */
+  readonly only?: ReadonlySet<string>;
+}
+
+/** The document's webhooks and callbacks as one group for the project's webhook collection. */
+export function webhooksFromDocument(
+  document: OpenApiDocument,
+  options: MapWebhooksOptions,
+): { readonly folder: WebhookFolder; readonly items: number } | undefined {
+  const chosen = webhookSourcesOf(document).filter((source) => options.only?.has(source.ref.key) ?? true);
+  if (chosen.length === 0) return undefined;
+  const newId = options.newId ?? generateId;
+  const context: MapContext = { document, options, newId, skipped: [], counts: { requests: 0, deprecated: 0 } };
+  const taken = new Set<string>();
+  const requests = chosen.map((source, index) => {
+    const name = source.ref.kind === 'callback' ? (source.ref.label.split(' · ')[0] as string) : source.ref.label;
+    const request = requestFromOperation(source.operation, index, taken, context, {
+      name,
+      url: `/${source.ref.name}`,
+      hook: source.link,
+    });
+    taken.add(request.slug);
+    return request;
+  });
+  const title = document.info.title.trim();
+  const name = options.name?.trim() ?? (title.length > 0 ? title : 'API');
+  return {
+    folder: createWebhookFolder(name, { id: newId(), source: { apiId: options.apiId }, requests }),
+    items: requests.length,
+  };
+}
+
 /**
  * Maps a parsed document onto one API.
  *
@@ -513,38 +676,12 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
   const folders: RestFolder[] = [];
   const folderSlugs = new Set<string>();
   const rootSlugs = new Set<string>();
-  let deprecated = 0;
-  let requests = 0;
-
-  const buildRequest = (operation: OpenApiOperation, order: number, taken: Set<string>): RestRequestDef => {
-    noteCookieParameters(operation, skipped);
-    if (operation.deprecated === true) {
-      deprecated += 1;
-    }
-    requests += 1;
-    const label = requestName(operation);
-    const auth = operationAuth(operation, document, skipped);
-    const description = requestDescription(operation);
-    return createRestRequest(label, {
-      id: newId(),
-      slug: uniqueSlug(label, taken),
-      order,
-      method: HTTP_METHODS.includes(operation.method.toLowerCase()) ? operation.method.toUpperCase() : operation.method,
-      url: operation.path,
-      ...(description !== undefined ? { description } : {}),
-      pathParams: parameterRows(operation, 'path', options, skipped),
-      query: parameterRows(operation, 'query', options, skipped),
-      headers: parameterRows(operation, 'header', options, skipped),
-      body: bodyOf(operation, options, skipped),
-      ...(auth !== undefined ? { auth } : {}),
-      contract: { method: operation.method.toLowerCase(), path: operation.path },
-    });
-  };
+  const context: MapContext = { document, options, newId, skipped, counts: { requests: 0, deprecated: 0 } };
 
   for (const [folderName, operations] of groups) {
     if (folderName === undefined) {
       operations.forEach((operation, index) => {
-        const request = buildRequest(operation, index, rootSlugs);
+        const request = requestFromOperation(operation, index, rootSlugs, context);
         rootSlugs.add(request.slug);
         rootRequests.push(request);
       });
@@ -552,7 +689,7 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
     }
     const taken = new Set<string>();
     const inside = operations.map((operation, index) => {
-      const request = buildRequest(operation, index, taken);
+      const request = requestFromOperation(operation, index, taken, context);
       taken.add(request.slug);
       return request;
     });
@@ -593,8 +730,9 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
       baseUrl,
       servers,
       folders: folders.length,
-      requests,
-      deprecated,
+      requests: context.counts.requests,
+      deprecated: context.counts.deprecated,
+      webhooks: webhookItemsOf(document).length,
       ...(apiAuth !== undefined ? { auth: apiAuth.type } : {}),
       securitySchemes: document.securitySchemes.map((scheme) => {
         const mapped = mapScheme(scheme);
