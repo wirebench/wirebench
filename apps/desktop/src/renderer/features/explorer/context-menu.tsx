@@ -56,6 +56,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },
         { key: 'new-grpc-api', label: 'New gRPC API…', run: () => explorerActions.newGrpcApi(projectId) },
         { key: 'new-ws-api', label: 'New WebSocket API…', run: () => explorerActions.newWsApi(projectId) },
+        { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId) },
         { key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) },
       ],
       [
@@ -201,7 +202,8 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'new-request', label: 'New request', run: () => explorerActions.newRestRequest(apiId) },
         { key: 'import-curl', label: 'Import cURL…', run: () => explorerActions.importCurlInto(apiId) },
       ],
-      // Only an API imported from a definition has one to read again.
+      // Only an API imported from a definition has one to read again, and one to import webhooks
+      // and callbacks from.
       node.hasDefinition === true
         ? [
             {
@@ -209,6 +211,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
               label: 'Update Definition…',
               run: () => explorerActions.updateRestDefinition(apiId),
             },
+            { key: 'import-webhooks', label: 'Import webhooks…', run: () => explorerActions.importWebhooks(apiId) },
           ]
         : [],
       [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('api', apiId) }],
@@ -269,6 +272,47 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
       [
         { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateRestRequest(requestId) },
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('rest-request', requestId) },
+      ],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRestRequest(requestId) }],
+    );
+  }
+
+  // openapi-webhooks-import §3.1. Rename/delete/duplicate/auth reuse the REST actions verbatim:
+  // a webhook folder/request is a REST folder/request on the wire, so the same ids resolve in
+  // the same stores.
+  if (node.kind === 'webhook-collection' && node.projectId !== undefined) {
+    const projectId = node.projectId;
+    return groups(
+      [
+        { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId) },
+        { key: 'new-folder', label: 'New Folder', run: () => explorerActions.newWebhookFolder(projectId) },
+      ],
+      [{ key: 'settings', label: 'Settings…', run: () => explorerActions.openWebhookSettings(projectId) }],
+    );
+  }
+
+  if (node.kind === 'webhook-folder' && node.projectId !== undefined && node.folderId !== undefined) {
+    const { projectId, folderId } = { projectId: node.projectId, folderId: node.folderId };
+    return groups(
+      [
+        { key: 'new-webhook', label: 'New Webhook', run: () => explorerActions.newWebhook(projectId, folderId) },
+        { key: 'new-folder', label: 'New Folder', run: () => explorerActions.newWebhookFolder(projectId, folderId) },
+      ],
+      [
+        { key: 'settings', label: 'Settings…', run: () => explorerActions.openWebhookSettings(projectId, folderId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('webhook-folder', folderId) },
+        { key: 'auth', label: 'Auth…', run: () => explorerActions.editFolderAuth(folderId) },
+      ],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeFolder(folderId) }],
+    );
+  }
+
+  if (node.kind === 'webhook-request' && node.requestId !== undefined) {
+    const requestId = node.requestId;
+    return groups(
+      [
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateRestRequest(requestId) },
+        { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('webhook-request', requestId) },
       ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteRestRequest(requestId) }],
     );

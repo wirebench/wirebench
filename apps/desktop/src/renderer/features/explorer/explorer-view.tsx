@@ -11,6 +11,7 @@ import {
   Folder,
   FolderPlus,
   FoldVertical,
+  Forward,
   ListOrdered,
   Globe,
   Inbox,
@@ -82,6 +83,9 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'grpc-api': Radio,
   'ws-api': Cable,
   folder: Folder,
+  'webhook-collection': Forward,
+  'webhook-folder': Folder,
+  'webhook-request': Forward,
   webhooks: Webhook,
   'catch-url': Inbox,
   sequences: Folder,
@@ -162,6 +166,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             node.data.kind === 'rest-request' ||
             node.data.kind === 'grpc-request' ||
             node.data.kind === 'ws-request' ||
+            node.data.kind === 'webhook-request' ||
             node.data.kind === 'catch-url' ||
             node.data.kind === 'sequence'
           ) {
@@ -354,6 +359,7 @@ export function ExplorerView() {
   const order = useProjectStore((state) => state.order);
   const requests = useProjectStore((state) => state.requests);
   const rest = useProjectStore((state) => state.rest);
+  const webhookCollections = useProjectStore((state) => state.webhooks);
   const grpc = useProjectStore((state) => state.grpc);
   const ws = useProjectStore((state) => state.ws);
   const sequenceLists = useProjectStore((state) => state.sequenceLists);
@@ -416,6 +422,7 @@ export function ExplorerView() {
     ws,
     sequenceLists,
     webhooks,
+    webhookCollections,
   );
 
   useEffect(() => {
@@ -628,6 +635,16 @@ export function ExplorerView() {
                   explorerActions.openWsRequest(node.data.requestId);
                   return;
                 }
+                if (node.data.kind === 'webhook-request') {
+                  // No new tab kind: a webhook item is a REST request on the wire.
+                  explorerActions.openRestRequest(node.data.requestId);
+                  return;
+                }
+                if (node.data.kind === 'webhook-collection' || node.data.kind === 'webhook-folder') {
+                  // Nothing to open; a click folds/unfolds the row, same as an interface's other
+                  // grouping rows.
+                  return;
+                }
                 if (node.data.kind === 'webhooks') {
                   return;
                 }
@@ -725,6 +742,20 @@ export function ExplorerView() {
                     .updateWsRequest(node.requestId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
+                // openapi-webhooks-import §3.1: a webhook folder/request is a REST folder/request
+                // on the wire, so the same update reaches it.
+                if (node.kind === 'webhook-folder' && node.folderId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateFolder(node.folderId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
+                if (node.kind === 'webhook-request' && node.requestId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateRestRequest(node.requestId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
                 if (node.kind === 'sequence' && node.sequenceId !== undefined) {
                   void useProjectStore
                     .getState()
@@ -754,6 +785,10 @@ export function ExplorerView() {
                     explorerActions.removeWsApi(node.data.apiId);
                   } else if (node.data.kind === 'ws-request') {
                     explorerActions.deleteWsRequest(node.data.requestId);
+                  } else if (node.data.kind === 'webhook-folder') {
+                    explorerActions.removeFolder(node.data.folderId);
+                  } else if (node.data.kind === 'webhook-request') {
+                    explorerActions.deleteRestRequest(node.data.requestId);
                   } else if (
                     node.data.kind === 'catch-url' &&
                     node.data.canEdit === true &&

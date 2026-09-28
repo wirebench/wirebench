@@ -279,6 +279,68 @@ export const explorerActions = {
     }
   },
 
+  /**
+   * Creates a webhook request in a project's collection (or one of its folders) and opens its
+   * editor. No new tab kind: a webhook item is a REST request on the wire, so it opens in the
+   * REST request tab, which recognises it by its `apiId`.
+   */
+  newWebhook(projectId: string | undefined, parentId?: string): void {
+    if (projectId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .addWebhookRequest(projectId, parentId)
+      .then((requestId) => {
+        openRestRequestTab(requestId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New webhook failed');
+      });
+  },
+
+  /**
+   * Creates a folder in a project's webhook collection, at its root or inside another folder, and
+   * puts the row into rename mode, as {@link newFolder} does for a REST folder.
+   */
+  newWebhookFolder(projectId: string | undefined, parentId?: string): void {
+    if (projectId === undefined) {
+      return;
+    }
+    const collectionId = useProjectStore.getState().webhooks[projectId]?.id;
+    const existing = Object.values(useProjectStore.getState().folders)
+      .filter((folder) => folder.apiId === collectionId && folder.parentId === parentId)
+      .map((folder) => folder.name);
+    void useProjectStore
+      .getState()
+      .addWebhookFolder(projectId, parentId, nextName('Folder', existing))
+      .then((folderId) => {
+        startRenamingNode('webhook-folder', folderId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New folder failed');
+      });
+  },
+
+  /**
+   * Opens the Webhooks settings dialog (target, auth) for a project's collection, or for one of
+   * its folders. Stub: Task 13 fills the dialog in.
+   */
+  openWebhookSettings(projectId: string | undefined, folderId?: string): void {
+    // Task 13 replaces this body with the settings dialog.
+    void projectId;
+    void folderId;
+  },
+
+  /**
+   * Opens the *Import webhooks…* dialog, read from an API's stored definition. Stub: Task 14
+   * fills the dialog in.
+   */
+  importWebhooks(apiId: string | undefined): void {
+    // Task 14 replaces this body with the import dialog.
+    void apiId;
+  },
+
   /** Creates a gRPC API in one project and opens its tab, so the user lands on its target field. */
   newGrpcApi(projectId: string | undefined): void {
     if (projectId === undefined) {

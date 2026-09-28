@@ -13,7 +13,7 @@ const LIVE_TIMEOUT = 5_000;
 
 /**
  * Webhook capture (webhook-capture spec §7, e2e) against the fake server: a catch URL is made from the
- * Webhooks node, a sender POSTs to it, and the capture appears in the open tab without a refresh.
+ * Webhook inbox node, a sender POSTs to it, and the capture appears in the open tab without a refresh.
  */
 test.describe('webhook capture', () => {
   let profiles = new SyncProfiles();
@@ -40,7 +40,7 @@ test.describe('webhook capture', () => {
     });
     fake = server;
 
-    // --- Alice shares a workspace on the server; the Webhooks node appears -----------------------
+    // --- Alice shares a workspace on the server; the Webhook inbox node appears -------------------
     const alice = await profiles.launch({ extraEnv: NO_GIT });
     const page = alice.window;
     await signIn(page, server.url, ALICE);

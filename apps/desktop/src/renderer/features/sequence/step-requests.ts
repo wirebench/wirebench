@@ -70,14 +70,26 @@ export function stepRequestInfo(state: ProjectState, requestId: string): StepReq
   return undefined;
 }
 
-/** Every request of `projectId` a step could name, runnable ones first, in a stable order. */
+/**
+ * A REST request id that names a webhook item (`apiId` starting with `webhooks:<projectId>`,
+ * never a real API id) rather than an ordinary REST request.
+ */
+function isWebhookRequestId(state: ProjectState, id: string): boolean {
+  return state.restRequests[id]?.apiId.startsWith('webhooks:') === true;
+}
+
+/**
+ * Every request of `projectId` a step could name, runnable ones first, in a stable order. A
+ * webhook item is left out entirely — the engine refuses one as a sequence step, and showing it
+ * here would only offer a row that always fails with an empty path.
+ */
 export function projectStepRequests(state: ProjectState, projectId: string): StepRequestInfo[] {
   const ids = [
     ...Object.keys(state.requests),
     ...Object.keys(state.restRequests),
     ...Object.keys(state.grpcRequests),
     ...Object.keys(state.wsRequests),
-  ].filter((id) => state.projectOf[id] === projectId);
+  ].filter((id) => state.projectOf[id] === projectId && !isWebhookRequestId(state, id));
   return ids
     .map((id) => stepRequestInfo(state, id))
     .filter((info): info is StepRequestInfo => info !== undefined)
