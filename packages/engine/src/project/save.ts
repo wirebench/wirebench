@@ -22,6 +22,8 @@ import {
   OPERATIONS_DIR,
   REQUEST_SUFFIX,
   REQUESTS_DIR,
+  WEBHOOKS_DIR,
+  WEBHOOKS_FILE,
   WSS_DIR,
 } from './paths.js';
 import type { FsLike } from './fs.js';
@@ -93,6 +95,8 @@ function toAbsolute(root: string, relative: string): string {
  *   any such file
  * - `wss/{outgoing,incoming}/*.yaml`
  * - `wss/keystores.yaml`
+ * - `webhooks/webhooks.yaml`
+ * - `webhooks/requests/**` (the collection's own request tree, same layout as an API's)
  *
  * Anything else on disk — a README, a `.gitkeep`, notes, an orphan `.xml`
  * with no matching `.request.yaml` — is a foreign file and is never a
@@ -133,6 +137,12 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
     }
     managed.push(...(await listApiTreeFiles(fs, root, `${base}/${REQUESTS_DIR}`)));
   }
+
+  const webhooksFile = `${WEBHOOKS_DIR}/${WEBHOOKS_FILE}`;
+  if ((await readFileIfExists(fs, toAbsolute(root, webhooksFile))) !== undefined) {
+    managed.push(webhooksFile);
+  }
+  managed.push(...(await listApiTreeFiles(fs, root, `${WEBHOOKS_DIR}/${REQUESTS_DIR}`)));
 
   // Only the sequence files this build loaded: one it refused (too new, malformed, a duplicate id) is
   // foreign, so a save can never delete a sequence the user has not seen (`sequence/load.ts`).

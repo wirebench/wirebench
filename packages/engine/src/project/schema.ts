@@ -372,6 +372,23 @@ const restSettingsSchema = z.looseObject({
   escapeProperties: z.boolean().optional(),
 });
 
+/** A request's link to the OpenAPI `webhooks`/`callbacks` entry it was imported from. */
+export const hookLinkSchema = z.discriminatedUnion('kind', [
+  z.looseObject({ kind: z.literal('webhook'), name: nonEmpty }),
+  z.looseObject({
+    kind: z.literal('callback'),
+    operation: nonEmpty,
+    name: nonEmpty,
+    expression: z.string(),
+  }),
+]);
+
+/** `webhooks/webhooks.yaml`. */
+export const webhooksFileSchema = z.looseObject({
+  target: z.string(),
+  auth: authConfigSchema.optional(),
+});
+
 /** `apis/<slug>/requests/[<folder>/…]<name>.request.yaml`. */
 export const restRequestFileSchema = z.looseObject({
   kind: z.literal('rest'),
@@ -391,6 +408,8 @@ export const restRequestFileSchema = z.looseObject({
   orphaned: z.boolean().optional(),
   /** The operation of the API's definition this request calls. */
   contract: z.looseObject({ method: nonEmpty, path: nonEmpty }).optional(),
+  /** Only under `webhooks/`: the imported `webhooks`/`callbacks` entry; refused elsewhere by the loader. */
+  hook: hookLinkSchema.optional(),
 });
 
 /** `apis/<slug>/requests/[<folder>/…]folder.yaml`. */
@@ -400,6 +419,12 @@ export const restFolderFileSchema = z.looseObject({
   order: z.number().int(),
   description: z.string().optional(),
   auth: authConfigSchema.optional(),
+});
+
+/** `webhooks/requests/[<folder>/…]folder.yaml`: a REST folder plus a target override and its source API. */
+export const webhookFolderFileSchema = restFolderFileSchema.extend({
+  target: z.string().optional(),
+  source: z.looseObject({ apiId: nonEmpty }).optional(),
 });
 
 /** `apis/<slug>/api.yaml`. */

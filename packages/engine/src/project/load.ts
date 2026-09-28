@@ -35,6 +35,7 @@ import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists } from './fs.js';
 import { migrate } from './migrate.js';
 import { normalizeWsa } from '../wsa/model.js';
+import type { HookLink, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import {
   API_FILE,
   APIS_DIR,
@@ -46,6 +47,8 @@ import {
   OPERATIONS_DIR,
   REQUEST_SUFFIX,
   REQUESTS_DIR,
+  WEBHOOKS_DIR,
+  WEBHOOKS_FILE,
   WSS_DIR,
 } from './paths.js';
 import type { KeyValueEntryFile } from './schema.js';
@@ -63,6 +66,8 @@ import {
   requestFileSchema,
   restFolderFileSchema,
   restRequestFileSchema,
+  webhookFolderFileSchema,
+  webhooksFileSchema,
   wsApiFileSchema,
   wsRequestFileSchema,
   wssIncomingFileSchema,
@@ -418,7 +423,27 @@ function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       ...(parsed.contract !== undefined
         ? { contract: { method: parsed.contract.method, path: parsed.contract.path } }
         : {}),
+      ...(parsed.hook !== undefined ? { hook: exact<HookLink>(parsed.hook) } : {}),
     };
+  };
+}
+
+/** A REST request under `apis/`: the same as {@link restRequestReader}, but a `hook` has no place there. */
+function apiRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): RequestReader<RestRequestDef> {
+  const read = restRequestReader(fs, root, problems);
+  return async (dir, fileName, unclaimed) => {
+    const request = await read(dir, fileName, unclaimed);
+    if (request.hook !== undefined) {
+      const file = `${dir}/${fileName}`;
+      throw new ProjectError(
+        'project-file-invalid',
+        `Invalid project file ${file}: hook is only allowed under ${WEBHOOKS_DIR}/`,
+        {
+          details: { file, issues: [{ path: 'hook', message: `only allowed under ${WEBHOOKS_DIR}/` }] },
+        },
+      );
+    }
+    return request;
   };
 }
 
@@ -543,6 +568,7 @@ async function loadFolderContents<R extends { readonly order: number; readonly n
   depth: number,
   problems: ProjectProblem[],
   readRequest: RequestReader<R>,
+  folderExtra?: (document: unknown, relative: string) => Record<string, unknown>,
 ): Promise<FolderContents<R>> {
   const entries = await readdirIfExists(fs, abs(root, dir));
   const unclaimed = new Set(entries.filter((e) => e.isFile && e.name !== FOLDER_FILE).map((e) => e.name));
@@ -566,7 +592,7 @@ async function loadFolderContents<R extends { readonly order: number; readonly n
       });
       continue;
     }
-    const contents = await loadFolderContents(fs, root, childDir, depth + 1, problems, readRequest);
+    const contents = await loadFolderContents(fs, root, childDir, depth + 1, problems, readRequest, folderExtra);
     const relative = `${childDir}/${FOLDER_FILE}`;
     const document = await readYaml(fs, root, relative);
     const parsed = document === undefined ? undefined : parseFile(restFolderFileSchema, document, relative);
@@ -579,6 +605,7 @@ async function loadFolderContents<R extends { readonly order: number; readonly n
       ...(parsed?.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
       folders: contents.folders,
       requests: contents.requests,
+      ...(folderExtra?.(document, relative) ?? {}),
     });
   }
 
@@ -704,7 +731,7 @@ async function loadApi(
         requestsDir,
         0,
         problems,
-        restRequestReader(fs, root, problems),
+        apiRequestReader(fs, root, problems),
       );
       return {
         kind: 'rest',
@@ -770,6 +797,40 @@ async function loadWssRefs(fs: FsLike, root: string, direction: 'outgoing' | 'in
     refs.push({ id: parsed.id, name: parsed.name, file: relative, document: parsed });
   }
   return refs.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Loads `webhooks/`, or nothing when the project has no `webhooks.yaml`. */
+async function loadWebhooks(
+  fs: FsLike,
+  root: string,
+  problems: ProjectProblem[],
+): Promise<WebhookCollection | undefined> {
+  const relative = `${WEBHOOKS_DIR}/${WEBHOOKS_FILE}`;
+  const document = await readYaml(fs, root, relative);
+  if (document === undefined) return undefined;
+  const parsed = parseFile(webhooksFileSchema, document, relative);
+  const contents = await loadFolderContents(
+    fs,
+    root,
+    `${WEBHOOKS_DIR}/${REQUESTS_DIR}`,
+    0,
+    problems,
+    restRequestReader(fs, root, problems),
+    (folderDocument, folderFile) => {
+      if (folderDocument === undefined) return {};
+      const folder = parseFile(webhookFolderFileSchema, folderDocument, folderFile);
+      return {
+        ...optional('target', folder.target),
+        ...(folder.source !== undefined ? { source: { apiId: folder.source.apiId } } : {}),
+      };
+    },
+  );
+  return {
+    target: parsed.target,
+    ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+    folders: contents.folders as unknown as WebhookFolder[],
+    requests: contents.requests,
+  };
 }
 
 /**
@@ -846,6 +907,8 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
   const sequenceFiles = await readSequences(fs, root);
   problems.push(...sequenceFiles.problems);
 
+  const webhooks = await loadWebhooks(fs, root, problems);
+
   const project: Project = {
     formatVersion: FORMAT_VERSION,
     id: manifest.id,
@@ -860,6 +923,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     grpcApis: grpcApis.sort(byOrder),
     wsApis: wsApis.sort(byOrder),
     sequences: sequenceFiles.loaded.map((entry) => entry.sequence).sort(byOrder),
+    ...(webhooks !== undefined ? { webhooks } : {}),
     environments: await loadEnvironments(fs, root),
     wss: {
       outgoing: await loadWssRefs(fs, root, 'outgoing'),

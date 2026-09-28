@@ -631,6 +631,8 @@ export {
   restRequestFile,
   slugify,
   uniqueSlug,
+  WEBHOOKS_DIR,
+  WEBHOOKS_FILE,
   wssFile,
 } from './project/paths.js';
 export type { RequestFilePair } from './project/paths.js';
@@ -659,6 +661,9 @@ export {
   grpcMethodKindSchema,
   protoDefinitionCacheManifestSchema,
   apiKindOf,
+  hookLinkSchema,
+  webhookFolderFileSchema,
+  webhooksFileSchema,
   wssIncomingFileSchema,
   wssEntrySchema,
   wssOutgoingFileSchema,

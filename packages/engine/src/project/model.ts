@@ -30,11 +30,12 @@ export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '.
  *
  * 4 added `assertions` on a request and the `…Env` name beside each secret reference. 5 let a SOAP
  * interface, endpoint or request carry `bearer`, `api-key` and `oauth2` auth (previously
- * REST-only) — new keys and new enum values on an existing field. Both are additive, and both
- * still bump the version: this format does not round-trip unknown keys, so an older build would
- * delete them on its next save (see `schema.ts` and ADR-0003).
+ * REST-only) — new keys and new enum values on an existing field. 6 added the project's webhook
+ * collection under `webhooks/` and `hook` on a request. All are additive, and all still bump the
+ * version: this format does not round-trip unknown keys, so an older build would delete them on
+ * its next save (see `schema.ts` and ADR-0003).
  */
-export const FORMAT_VERSION = 5;
+export const FORMAT_VERSION = 6;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;

@@ -40,7 +40,7 @@ describe('loading a version-1 project folder', () => {
     const { project, problems } = await loadProject(V1_DIR);
 
     expect(problems).toEqual([]);
-    expect(project.formatVersion).toBe(5);
+    expect(project.formatVersion).toBe(6);
     expect(project.disabledProperties).toEqual([]);
     expect(project.apis).toEqual([]);
     expect(project.environments.length).toBeGreaterThan(0);
@@ -63,7 +63,7 @@ describe('loading a version-1 project folder', () => {
       const afterText = after.get(file)!;
       if (file === 'wirebench.yaml') {
         expect(beforeText).toContain('formatVersion: 1');
-        expect(afterText).toBe(beforeText.replace('formatVersion: 1', 'formatVersion: 5'));
+        expect(afterText).toBe(beforeText.replace('formatVersion: 1', 'formatVersion: 6'));
       } else {
         expect(afterText).toBe(beforeText);
       }
@@ -78,7 +78,7 @@ describe('loading a version-2 project folder', () => {
     const { project, problems } = await loadProject(V2_DIR);
 
     expect(problems).toEqual([]);
-    expect(project.formatVersion).toBe(5);
+    expect(project.formatVersion).toBe(6);
     expect(project.apis).toEqual([]);
     expect(project.disabledProperties).toEqual(['tier']);
     expect(project.interfaces.length).toBeGreaterThan(0);
@@ -98,7 +98,7 @@ describe('loading a version-2 project folder', () => {
       const afterText = after.get(file)!;
       if (file === 'wirebench.yaml') {
         expect(beforeText).toContain('formatVersion: 2');
-        expect(afterText).toBe(beforeText.replace('formatVersion: 2', 'formatVersion: 5'));
+        expect(afterText).toBe(beforeText.replace('formatVersion: 2', 'formatVersion: 6'));
       } else {
         expect(afterText).toBe(beforeText);
       }
@@ -112,7 +112,7 @@ describe('loading a version-3 project folder', () => {
   it('loads at version 4 with no problems', async () => {
     const { project, problems } = await loadProject(V3_DIR);
     expect(problems).toEqual([]);
-    expect(project.formatVersion).toBe(5);
+    expect(project.formatVersion).toBe(6);
   });
 
   it('is rewritten with nothing changed but the formatVersion line', async () => {
@@ -126,18 +126,18 @@ describe('loading a version-3 project folder', () => {
     expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
     for (const [file, beforeText] of before) {
       const expected =
-        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 3', 'formatVersion: 5') : beforeText;
+        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 3', 'formatVersion: 6') : beforeText;
       expect(after.get(file)).toBe(expected);
     }
 
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('refuses a version-6 folder as too new', async () => {
+  it('refuses a version-7 folder as too new', async () => {
     const dir = await tempProjectDir();
     await cp(V3_DIR, dir, { recursive: true });
     const manifest = join(dir, 'wirebench.yaml');
-    await writeFile(manifest, (await readFile(manifest, 'utf8')).replace('formatVersion: 3', 'formatVersion: 6'));
+    await writeFile(manifest, (await readFile(manifest, 'utf8')).replace('formatVersion: 3', 'formatVersion: 7'));
     await expect(loadProject(dir)).rejects.toMatchObject({ code: 'project-format-too-new' });
 
     await rm(dir, { recursive: true, force: true });
@@ -148,7 +148,7 @@ describe('loading a version-4 project folder', () => {
   it('loads at version 5 with no problems, and its SOAP auth intact', async () => {
     const { project, problems } = await loadProject(V4_DIR);
     expect(problems).toEqual([]);
-    expect(project.formatVersion).toBe(5);
+    expect(project.formatVersion).toBe(6);
     expect(project.interfaces.length).toBeGreaterThan(0);
   });
 
@@ -183,7 +183,7 @@ describe('loading a version-4 project folder', () => {
     expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
     for (const [file, beforeText] of before) {
       const expected =
-        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 4', 'formatVersion: 5') : beforeText;
+        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 4', 'formatVersion: 6') : beforeText;
       expect(after.get(file)).toBe(expected);
     }
 
