@@ -14,6 +14,13 @@ export const registeredCompletionProviders: { readonly language: string; readonl
 /** Document-formatting providers registered through the fake `monaco.languages`, newest last. */
 export const registeredFormattingProviders: { readonly language: string; readonly provider: unknown }[] = [];
 
+/** Hover and signature-help providers registered through the fake `monaco.languages`, newest last. */
+export const registeredHoverProviders: { readonly language: string; readonly provider: unknown }[] = [];
+export const registeredSignatureHelpProviders: { readonly language: string; readonly provider: unknown }[] = [];
+
+/** Markers set through the fake `monaco.editor.setModelMarkers`, newest last. */
+export const setMarkers: { readonly uri: string; readonly owner: string; readonly markers: readonly unknown[] }[] = [];
+
 /** The subset of the Monaco API `@monaco-editor/react` hands to `onMount`, with real values. */
 export const fakeMonaco = {
   KeyMod: { CtrlCmd: 2048, Shift: 1024 },
@@ -21,8 +28,28 @@ export const fakeMonaco = {
   // Enough of `languages` for the once-guarded provider registrations to run and be inspected. The
   // providers themselves are exercised against real Monaco in e2e, and as pure functions in unit
   // tests; what this gives a component test is that registration happened, and with what.
+  // No `editor` namespace: the app's marker code reads its absence as "nothing to mark", which is
+  // what every component test wants. A test about markers uses `fakeMonacoWithMarkers`.
+  MarkerSeverity: { Hint: 1, Info: 2, Warning: 4, Error: 8 },
   languages: {
-    CompletionItemKind: { Field: 3, Property: 9 },
+    CompletionItemKind: {
+      Method: 0,
+      Function: 1,
+      Constructor: 2,
+      Field: 3,
+      Variable: 4,
+      Class: 5,
+      Interface: 7,
+      Module: 8,
+      Property: 9,
+      Value: 13,
+      Enum: 15,
+      Keyword: 17,
+      Text: 18,
+      EnumMember: 20,
+      Constant: 14,
+      TypeParameter: 24,
+    },
     CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
     registerCompletionItemProvider: (language: string, provider: unknown) => {
       registeredCompletionProviders.push({ language, provider });
@@ -32,10 +59,37 @@ export const fakeMonaco = {
       registeredFormattingProviders.push({ language, provider });
       return { dispose: () => undefined };
     },
+    registerHoverProvider: (language: string, provider: unknown) => {
+      registeredHoverProviders.push({ language, provider });
+      return { dispose: () => undefined };
+    },
+    registerSignatureHelpProvider: (language: string, provider: unknown) => {
+      registeredSignatureHelpProviders.push({ language, provider });
+      return { dispose: () => undefined };
+    },
+  },
+};
+
+/** `fakeMonaco` with `editor.setModelMarkers`, recording into {@link setMarkers}. */
+export const fakeMonacoWithMarkers = {
+  ...fakeMonaco,
+  editor: {
+    setModelMarkers: (model: { uri: { toString: () => string } }, owner: string, markers: readonly unknown[]) => {
+      setMarkers.push({ uri: model.uri.toString(), owner, markers });
+    },
   },
 };
 
 let nextModelId = 1;
+
+/** A model's version stands for its text: the same text, the same version. */
+function versionOf(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
 
 /** Must match `editor/monaco.ts`'s `SEND_KEYBINDING`. */
 const SEND_KEYBINDING = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyCode.Enter;
@@ -81,6 +135,8 @@ export function Editor({ value = '', onChange, options, onMount }: MockEditorPro
       getModel: () => ({
         getValue: () => valueRef.current,
         getFullModelRange: () => ({}),
+        getVersionId: () => versionOf(valueRef.current),
+        isDisposed: () => false,
         uri: { toString: () => uri.current },
       }),
       executeEdits: (source: string, edits: readonly { readonly range?: unknown; readonly text: string }[]) => {

@@ -317,20 +317,25 @@
 ## Task 11 — Renderer
 
 **Files**
-- `apps/desktop/src/renderer/editor/monaco-core.ts`: register the `typescript` and `javascript` basic-language
-  definitions (Monarch only).
-- `apps/desktop/src/renderer/editor/script-language.ts`: completion, hover, signature help and marker providers that
-  call the IPC from Task 10, keyed by model URI, like `json-completion.ts`.
+- `apps/desktop/src/renderer/editor/monaco-core.ts`: registers the `typescript` and `javascript` basic-language
+  definitions (Monarch only; no worker). `code-editor.tsx` maps both, and takes a model `path`.
+- `apps/desktop/src/renderer/editor/script-language.ts`: completion, hover, signature help and markers that call the
+  `script.*` IPC from Task 10, keyed by model URI, like `json-completion.ts`. A diagnostics answer for text the model no
+  longer holds is dropped.
 - `apps/desktop/src/renderer/features/scripts/`:
-  - `scripts-tab.tsx`, with pre and post editors, a secrets list, a timeout, and the off banner with **Switch on**;
-  - `enable-scripts-dialog.tsx`;
-  - `script-results.tsx`, the response **Script** tab.
-- The SOAP, REST and gRPC request editors get the **Scripts** tab, with a dot when scripts are set.
-- The explorer gets a **Values** node with **Clear**, and **Switch on scripts…** on an API or folder.
-- Commands: `script.clearValues`. Regenerate `docs-site` `reference/commands.md`.
-- Tests:
-  - `apps/desktop/test/renderer/{scripts-tab,script-language,enable-scripts-dialog}.test.tsx`;
-  - `build-output.test.ts` must still pass unchanged, with no `ts.worker` and under budget.
+  - `scripts-tab.tsx`: pre and post editors, the secrets list, the timeout, **Run these scripts**, the problems a file
+    had on load, and the off banner with **Switch on**. Edits are written through with `update-request-scripts`, not
+    staged, as a request's properties are.
+  - `enable-scripts-dialog.tsx`: **Switch on scripts…**, naming what will run.
+  - `script-results.tsx`: the response **Script** tab, shown when a send ran scripts or had them off.
+- The REST and gRPC editors get a **Scripts** tab, with a dot when a script is set; SOAP gets a **Scripts** inspector.
+  The three response panes get **Script** (SOAP: an inspector), with a passed/total badge.
+- The explorer gets a **Values** group under a project (masked; a secret value is shown as `(secret)`) with **Clear
+  values**, and **Switch on scripts…** on an interface, API or folder with switched-off scripts beneath it.
+- `state/script-values.ts` mirrors the session values from the `script.valuesChanged` event.
+- Commands: `script.clearValues`. `docs-site` `reference/commands.md` regenerated.
+- Tests: `apps/desktop/test/renderer/{scripts-tab,script-language,enable-scripts-dialog}.test.*`;
+  `build-output.test.ts` still passes unchanged, with no `ts.worker` and under budget.
 
 ## Task 12 — e2e, docs and changelog
 

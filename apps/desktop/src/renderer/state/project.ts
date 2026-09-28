@@ -44,6 +44,7 @@ import type {
   ProjectWire,
   RequestPatchWire,
   RequestPropertiesPatchWire,
+  RequestScriptsPatchWire,
   RequestWire,
   ApiPatchWire,
   RestApiWire,
@@ -211,6 +212,16 @@ export interface ProjectStore extends ProjectSnapshot {
    * property back to "inherit".
    */
   readonly updateRequestProperties: (requestId: string, patch: RequestPropertiesPatchWire) => void;
+  /**
+   * Edits a SOAP, REST or gRPC request's scripts (#63), written through to main at once as the
+   * properties are; `null` removes them and their files. Resolves once main has the change.
+   */
+  readonly updateRequestScripts: (requestId: string, patch: RequestScriptsPatchWire | null) => Promise<void>;
+  /**
+   * Switches on the scripts of every listed request that has them — **Switch on scripts…**. The
+   * requests are one project's: the first one's.
+   */
+  readonly enableScripts: (requestIds: readonly string[]) => Promise<void>;
   /** Merges a patch into one project's settings (`wirebench.yaml`). */
   readonly updateProjectSettings: (projectId: string, patch: ProjectSettingsPatchWire) => Promise<void>;
   /** Renames one project. The folder keeps its slug; only the name in `wirebench.yaml` changes. */
@@ -1869,6 +1880,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         .catch((error: unknown) => {
           revert(error instanceof Error ? error.message : 'Could not save the change');
         });
+    },
+
+    updateRequestScripts: async (requestId, patch) => {
+      await mutateEntity(requestId, { kind: 'update-request-scripts', requestId, scripts: patch });
+    },
+
+    enableScripts: async (requestIds) => {
+      const first = requestIds[0];
+      if (first === undefined) {
+        return;
+      }
+      await mutateEntity(first, { kind: 'enable-scripts', requestIds: [...requestIds] });
     },
 
     updateProjectSettings: async (projectId, patch) => {

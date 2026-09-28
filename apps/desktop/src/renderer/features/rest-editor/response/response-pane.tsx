@@ -25,6 +25,7 @@ import { RedirectsView } from './redirects-view.js';
 import { ResponseHeadersView } from './headers-view.js';
 import { StatusLine } from './status-line.js';
 import { SnapshotPanel } from '../../snapshot/snapshot-panel.js';
+import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../../scripts/script-results.js';
 
 /** The response tabs, in order. An event stream swaps Body for Events, first. */
 const TABS = [
@@ -37,6 +38,7 @@ const TABS = [
   { id: 'tls', label: 'TLS' },
   { id: 'raw', label: 'Raw' },
   { id: 'query', label: 'Query' },
+  { id: 'script', label: 'Script' },
   { id: 'snapshot', label: 'Snapshot' },
 ] as const;
 
@@ -76,14 +78,17 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
   const available = TABS.filter((item) =>
     live !== undefined
       ? item.id === 'events' || item.id === 'headers'
-      : isStream
-        ? item.id !== 'body'
-        : item.id !== 'events',
+      : (isStream ? item.id !== 'body' : item.id !== 'events') &&
+        (item.id !== 'script' || (exchange !== undefined && hasScriptResults(exchange))),
   );
   const items = available.map((item) => {
     if (item.id === 'events') {
       const total = stream !== undefined ? streamRowTotal(stream) : (live?.rows.length ?? 0) + (live?.droppedRows ?? 0);
       return total > 0 ? { ...item, badge: String(total) } : item;
+    }
+    if (item.id === 'script') {
+      const badge = scriptResultsBadge(exchange?.script);
+      return badge !== undefined ? { ...item, badge } : item;
     }
     if (item.id === 'cookies' && exchange !== undefined && exchange.cookies.length > 0) {
       return { ...item, badge: String(exchange.cookies.length) };
@@ -167,6 +172,7 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
               </div>
             )}
             {activeTab === 'raw' && <RawExchange exchange={exchange} />}
+            {activeTab === 'script' && <ScriptResults script={exchange.script} scriptsOff={exchange.scriptsOff} />}
             {activeTab === 'snapshot' && (
               <SnapshotPanel
                 requestId={requestId}

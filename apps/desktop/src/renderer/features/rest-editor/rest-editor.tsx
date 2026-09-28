@@ -31,6 +31,7 @@ import { SettingsTab } from './settings-tab.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
 import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
+import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -40,6 +41,7 @@ const TABS = [
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
+  { id: 'scripts', label: 'Scripts' },
   { id: 'settings', label: 'Settings' },
 ] as const;
 
@@ -137,7 +139,14 @@ export function RestEditor({ requestId }: RestEditorProps) {
     // `h-full`, not `flex-1`: the panel this sits in is a plain block, so a flex child of it would
     // size to its content and the raw body's editor would collapse to nothing.
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <Tabs label="Request tabs" items={TABS} active={tab} onSelect={setTab} />
+      <Tabs
+        label="Request tabs"
+        items={TABS.map((item) =>
+          item.id === 'scripts' && hasScripts(request.scripts) ? { ...item, badge: '●' } : item,
+        )}
+        active={tab}
+        onSelect={setTab}
+      />
       {/* A flex column, so a tab that fills the pane (the raw body's editor) is given a height
           rather than collapsing to its content. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -169,6 +178,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
             }}
           />
         )}
+        {tab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
         {tab === 'settings' && (
           <SettingsTab
             settings={request.settings}
