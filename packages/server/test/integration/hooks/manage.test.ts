@@ -190,6 +190,26 @@ describeDb('the management API: catch URLs (§3.5, §3.6)', () => {
     expect(c.heard).toHaveLength(4);
   });
 
+  it('refuses an invalid response content type on PATCH, leaving the stored catch URL unchanged', async () => {
+    c = await setUp();
+    const hook = (await create(c, c.editor, { name: 'Payments' })).body;
+    const base = `${hooksPath(c.workspaceId)}/${hook.id}`;
+    const crlf = await call<{ code: string }>(c.h, c.editor, 'PATCH', base, {
+      response: { contentType: 'text/plain\nX-Evil: 1' },
+    });
+    expect([crlf.status, crlf.body.code]).toEqual([400, 'invalid-request']);
+    const nonPrintable = await call<{ code: string }>(c.h, c.editor, 'PATCH', base, {
+      response: { contentType: 'text/plain\u0000' },
+    });
+    expect([nonPrintable.status, nonPrintable.body.code]).toEqual([400, 'invalid-request']);
+    const tooLong = await call<{ code: string }>(c.h, c.editor, 'PATCH', base, {
+      response: { contentType: 'x'.repeat(256) },
+    });
+    expect([tooLong.status, tooLong.body.code]).toEqual([400, 'invalid-request']);
+    const unchanged = await call<CatchUrl[]>(c.h, c.editor, 'GET', hooksPath(c.workspaceId));
+    expect(unchanged.body.find((h) => h.id === hook.id)?.response).toEqual(hook.response);
+  });
+
   it("answers 404 hooks-not-found for another workspace's catch URL, on every route", async () => {
     c = await setUp();
     const elsewhere = (await create(c, c.editor, { name: 'Elsewhere' }, c.otherWorkspaceId)).body;
