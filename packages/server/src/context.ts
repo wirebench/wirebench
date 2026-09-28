@@ -50,6 +50,18 @@ export interface AccessChanged {
 /** One device token ended, or every token of a user except `exceptTokenId` (live-updates spec §3.2). */
 export type SessionEnded = { readonly tokenId: string } | { readonly userId: string; readonly exceptTokenId?: string };
 
+/** A catch URL stored a capture (webhook-capture spec §3.6); fired after the insert's transaction committed. */
+export interface CaptureReceived {
+  readonly workspaceId: string;
+  readonly hookId: string;
+  readonly captureId: string;
+}
+
+/** A workspace's catch URLs changed: created, changed, rotated, deleted or cleared (webhook-capture §3.6). */
+export interface HooksChanged {
+  readonly workspaceId: string;
+}
+
 /** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
 export type Announcement<E> = (event: E) => void;
 
@@ -59,16 +71,19 @@ export type Announcement<E> = (event: E) => void;
  *
  * - **Hooks** (`invitationAccepted`; teams-access spec §3.4, R1) run inside the caller's transaction
  *   and are awaited. Their writes commit with the caller's, and a throw rolls the caller back.
- * - **Announcements** (`headMoved`, `accessChanged`, `sessionEnded`; live-updates spec §3.2, R3) run
- *   through {@link announce} after the caller's statement or transaction has resolved, on the success
- *   path. They are never awaited and never run inside a transaction, and a throw is logged and
- *   swallowed. A rolled-back transaction never reaches the line that announces.
+ * - **Announcements** (`headMoved`, `accessChanged`, `sessionEnded`; live-updates spec §3.2, R3;
+ *   `captureReceived`, `hooksChanged`; webhook-capture spec §3.6) run through {@link announce} after
+ *   the caller's statement or transaction has resolved, on the success path. They are never awaited
+ *   and never run inside a transaction, and a throw is logged and swallowed. A rolled-back
+ *   transaction never reaches the line that announces.
  */
 export interface ServerHooks {
   readonly invitationAccepted: InvitationAcceptedHook[];
   readonly headMoved: Announcement<HeadMoved>[];
   readonly accessChanged: Announcement<AccessChanged>[];
   readonly sessionEnded: Announcement<SessionEnded>[];
+  readonly captureReceived: Announcement<CaptureReceived>[];
+  readonly hooksChanged: Announcement<HooksChanged>[];
 }
 
 /**
@@ -76,7 +91,14 @@ export interface ServerHooks {
  * announcement there reaches nobody (live-updates spec §14).
  */
 export function serverHooks(): ServerHooks {
-  return { invitationAccepted: [], headMoved: [], accessChanged: [], sessionEnded: [] };
+  return {
+    invitationAccepted: [],
+    headMoved: [],
+    accessChanged: [],
+    sessionEnded: [],
+    captureReceived: [],
+    hooksChanged: [],
+  };
 }
 
 /** Runs every `invitationAccepted` hook in registration order; the first throw propagates. */

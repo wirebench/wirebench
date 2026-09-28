@@ -88,7 +88,14 @@ describe('announce (live-updates §3.2, R3)', () => {
 describe('serverHooks and ServerModule (live-updates §5.1, §14)', () => {
   it('starts every list empty, and each call gets lists of its own', () => {
     const one = serverHooks();
-    expect(one).toEqual({ invitationAccepted: [], headMoved: [], accessChanged: [], sessionEnded: [] });
+    expect(one).toEqual({
+      invitationAccepted: [],
+      headMoved: [],
+      accessChanged: [],
+      sessionEnded: [],
+      captureReceived: [],
+      hooksChanged: [],
+    });
     one.headMoved.push(() => undefined);
     one.accessChanged.push(() => undefined);
     one.sessionEnded.push(() => undefined);

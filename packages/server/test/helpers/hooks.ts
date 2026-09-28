@@ -8,8 +8,10 @@ import { hooksModule } from '../../src/hooks/module.js';
 import * as repo from '../../src/hooks/repo.js';
 import { mintCatchSecret } from '../../src/hooks/secret.js';
 import { newId } from '../../src/identity/tokens.js';
+import { liveModule } from '../../src/live/module.js';
 import { teamsModule } from '../../src/teams/module.js';
 import { identityHarness, type IdentityHarness } from './identity.js';
+import { manualTimers, type ManualTimers } from './timers.js';
 
 export function hooksRepoHarness(): Promise<IdentityHarness> {
   return identityHarness({ modules: (clock) => [teamsModule({ now: () => clock.now }), hooksModule()] });
@@ -52,4 +54,27 @@ export function newCapture(catchUrlId: string, patch: Partial<repo.NewCapture> =
     sourceIp: '203.0.113.9',
     ...patch,
   };
+}
+
+export interface HooksHarness extends IdentityHarness {
+  readonly port: number;
+  /** Shared by webhook-capture and live-updates: the response delay, the sweep, the coalescing window and the heartbeat. */
+  readonly timers: ManualTimers;
+}
+
+/** Identity, teams-access, webhook-capture and live-updates on the harness clock, listening on 127.0.0.1:0. */
+export async function hooksHarness(options: { readonly env?: Record<string, string> } = {}): Promise<HooksHarness> {
+  const timers = manualTimers();
+  const h = await identityHarness({
+    ...options,
+    modules: (clock) => [
+      teamsModule({ now: () => clock.now }),
+      hooksModule({ now: () => clock.now, setTimer: timers.setTimer }),
+      liveModule({ now: () => clock.now, setTimer: timers.setTimer }),
+    ],
+  });
+  await h.app.listen({ host: '127.0.0.1', port: 0 });
+  const address = h.app.server.address();
+  if (address === null || typeof address === 'string') throw new Error('the hooks harness is not listening on a port');
+  return { ...h, port: address.port, timers };
 }
