@@ -152,8 +152,8 @@ describe('REST pre-request scripts', () => {
   it('read listed secrets only, and report them for masking first', async () => {
     const seen: string[] = [];
     const outcome = await pre(
-      `request.headers.set('X-Sig', crypto.hmac('sha256', secrets.get('signing-key'), request.body.text));`,
-      { secrets: { 'signing-key': 'k3y' }, onSecretValue: (v) => seen.push(v) },
+      `request.headers.set('X-Sig', crypto.hmac('sha256', secrets.get('signing_key'), request.body.text));`,
+      { secrets: { signing_key: 'k3y' }, onSecretValue: (v) => seen.push(v) },
     );
     expect(seen).toEqual(['k3y']);
     expect(outcome.ok ? outcome.request : undefined).toMatchObject({

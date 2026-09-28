@@ -181,29 +181,51 @@
 ## Task 7 — Engine: scripts in a send
 
 **Files**
-- `packages/engine/src/run/prepare.ts`: two-phase expansion. Properties are expanded before the script, and
-  `${secret:…}` after it. The SOAP path hands the script the expanded envelope before auth, WS-Addressing and
-  WS-Security. A new hook in `packages/engine/src/send.ts` runs after `expandSendInput` and before `applySoapAuth`.
-- `packages/engine/src/run/run.ts`, in `createRunSender`:
-  1. type-check once per request, cached by script hash and type hash;
-  2. run the pre-request script;
-  3. apply its changes;
-  4. send;
-  5. run the post-response script against the subject;
-  6. merge its tests into the assertions as type `script`;
-  7. hand its values to the run's value scope;
-  8. return `scriptLog` and `scriptsOff`.
-- `RequestResult` gains optional `scriptLog` and `scriptsOff`. `AssertionResult` gains type `script`.
-- `packages/engine/src/run/run.ts`, in `runRequests`: one value scope shared across the run, in order. The run
-  applies it as `RunContext.sequence`.
-- `enabled: false`: no check and no run, and `scriptsOff: true`.
-- Tests: `packages/engine/test/unit/run/scripts.test.ts`, against a local server:
-  - log in, then a script sets the token, then the next request uses it;
-  - an HMAC signature header from a listed secret is masked in the result;
-  - a type error fails before any send;
-  - a pre-request error means no send;
-  - a SOAP body change is signed by WS-Security, because it runs before WSS;
-  - `enabled: false`.
+- `packages/engine/src/script/send.ts`, the secret placeholders and the snapshot converters:
+  - `SecretPlaceholders`: one nonce per send. It maps a secret name to `wbsec<nonce>n<i>z` and puts each back
+    afterwards (`restore`).
+  - `restRequestSnapshot` / `applyRestSnapshot`: the URL is rebuilt only when the script changed it, and then sent
+    exactly as written.
+  - The same for SOAP (on the expanded envelope, sent without scopes so nothing is expanded again) and for gRPC.
+  - The response snapshots.
+- `packages/engine/src/script/contracts.ts`: `soapOperationElements`, `restOperationFor`, `loadOpenApiDocument`,
+  `grpcMessageTypes`.
+- `packages/engine/src/script/props.ts`: `scriptProperties(scopes)`, the shorthand-reachable properties resolved
+  without secrets.
+- `packages/engine/src/script/request-scripts.ts`: `RequestScripting`, shared by the run and the app.
+  - `check` is cached by script and types.
+  - `pre` throws a failure, while `post` returns one.
+  - `activeScripts`, `assertScriptsUsable` (`script-file-missing`, `script-too-large`), `scriptError` and
+    `typeCheckError`.
+- `packages/engine/src/run/prepare.ts`: `RunContext.secretPlaceholders`, `scripting` and `containsKnownSecret`, and
+  `scopesFor` exported.
+- `packages/engine/src/run/run.ts`: `createRunSender` sends a request with active scripts through `sendScripted`.
+  1. Check.
+  2. Prepare with placeholders.
+  3. Run the pre-request script.
+  4. Apply its changes.
+  5. Restore the secrets.
+  6. Send.
+  7. Run the post-response script against the request as the script left it.
+  - A request with switched-off scripts is sent as before, with `scriptsOff`.
+  - `runRequests` keeps one value scope for the whole run, and a request whose only checks are script tests still
+    counts as asserted.
+- `packages/engine/src/run/script-support.ts`: `scriptTypesFor`, `listedSecrets`, `scriptAssertions` and
+  `mergeScriptValues`.
+- `packages/engine/src/sequence/run.ts`: a step's script values join the run's before its transfers, its tests are
+  assertions, and a post-response failure errors the step. `scriptLog` and `scriptsOff` are on the step result.
+- `AssertionResult.type` gains `script`. `RequestResult` gains `scriptLog` and `scriptsOff`. `scripts.secrets` is
+  validated as secret names.
+- Tests:
+  - `packages/engine/test/integration/run/scripts.test.ts`, against local servers:
+    - a log-in script's token used by the next request;
+    - an HMAC over the body with a listed secret, checked on the wire, while the script sees only a placeholder for
+      the request's own secret;
+    - a type error, a pre-request failure and a post-response failure;
+    - switched-off scripts;
+    - a missing script file;
+    - a SOAP envelope change, with a `${…}` the script wrote sent literally.
+  - `packages/engine/test/unit/sequence/run.test.ts`: the merge.
 
 ## Task 8 — CLI
 

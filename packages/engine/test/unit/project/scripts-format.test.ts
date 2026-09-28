@@ -31,7 +31,7 @@ const SCRIPTS: RequestScripts = {
   post: { text: 'test("created", () => expect(response.status).toBe(201));\n' },
   api: 'wirebench',
   enabled: true,
-  secrets: ['signing-key'],
+  secrets: ['signing_key'],
   timeoutMs: 2000,
 };
 
@@ -66,7 +66,7 @@ describe('request scripts on disk', () => {
         '  post: Create cart.post.ts',
         '  pre: Create cart.pre.ts',
         '  secrets:',
-        '    - signing-key',
+        '    - signing_key',
         '  timeoutMs: 2000',
       ].join('\n'),
     );

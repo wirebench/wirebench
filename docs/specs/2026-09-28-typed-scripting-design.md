@@ -58,7 +58,7 @@ scripts:
   post: Checkout.post.ts
   api: wirebench               # or `postman`; default wirebench
   enabled: true                # default true; the Postman importer writes false (§Postman)
-  secrets: [signing-key]       # secrets the scripts may read (§Secrets); default none
+  secrets: [signing_key]       # secrets the scripts may read (§Secrets), by secret name; default none
   timeoutMs: 1000              # per script; default 1000, at most 10000
 ```
 
@@ -281,11 +281,18 @@ pre-request script sees of another request's response.
 
 - Configured auth (basic, bearer, API key, OAuth2, WS-Security) is applied after the pre-request script. A script
   never sees those credentials.
-- `${secret:name}` in the request's own text is resolved after the pre-request script too. The script sees the
-  reference text, not the value.
-  - After the script, only references that were already in the request's text are resolved.
-  - A reference the script added, naming a secret the request's text did not name, fails the send with
-    `script-secret-denied`. Otherwise a script could read any secret by writing a reference to it.
+- `${secret:name}` in the request's own text is resolved after the pre-request script too.
+  - While the script runs, each such secret stands behind a placeholder: `wbsec`, a nonce new for every send, the
+    secret's index, then `z`. The script sees the placeholder, never the value.
+  - After the script, the host puts each placeholder back as its secret's value. Secrets are substituted raw by
+    every expander, and a placeholder is alphanumeric, so no escaping along the way changes it, and the value lands
+    exactly where it would have without the script.
+  - The placeholders are not `${secret:name}` text, and cannot be guessed. So a value a server chose, arriving in
+    the request through `${#Sequence#…}`, can never name a secret to be put back (ADR-0015).
+  - A `${secret:…}` reference the script wrote itself is never resolved. It fails the send with
+    `script-secret-denied` when it names a secret the request's text did not, so a script cannot read a secret by
+    naming it.
+  - A post-response script's `request` is the request as the pre-request script left it, placeholders and all.
 - `secrets.get(name)` returns a value only for a name in `scripts.secrets`, and the type `SecretName` is the union of
   those names. Otherwise it throws `script-secret-denied`. The list is in the request file, so adding a secret to it is
   a change a reviewer sees. Signing a body with an HMAC key is the use it is for.

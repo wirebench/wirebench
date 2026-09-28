@@ -29,7 +29,7 @@ const OPERATION: OpenApiOperation = {
   parameters: [],
   responses: { '200': { content: { 'application/json': { schema: pet } } } },
 };
-const DECLARATIONS = scriptDeclarations('rest', 'post', ['signing-key'], restScriptTypes(OPERATION));
+const DECLARATIONS = scriptDeclarations('rest', 'post', ['signing_key'], restScriptTypes(OPERATION));
 
 describe('the checker service', () => {
   it('reports a wrong path with its position', () => {

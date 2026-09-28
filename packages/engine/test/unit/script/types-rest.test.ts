@@ -40,7 +40,7 @@ const OPERATION: OpenApiOperation = {
 };
 
 const declarations = (operation: OperationInput, phase: 'pre' | 'post' = 'post'): string =>
-  apiDeclarations('rest', phase) + secretNameType(['signing-key']) + restScriptTypes(operation);
+  apiDeclarations('rest', phase) + secretNameType(['signing_key']) + restScriptTypes(operation);
 type OperationInput = OpenApiOperation | undefined;
 
 describe('JsonSchemaTypes', () => {
@@ -112,7 +112,7 @@ describe('restScriptTypes', () => {
       }
       test('created', () => expect(response.status).toBe(201));
       vars.set('id', 1, { secret: true });
-      log(secrets.get('signing-key'));
+      log(secrets.get('signing_key'));
     `;
     expect(typeErrors(declarations(OPERATION), script)).toEqual([]);
   });

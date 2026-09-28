@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { assertionsSchema } from '../assert/schema.js';
 import { ProjectError } from '../errors.js';
 import { FORMAT_VERSION } from './model.js';
+import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import { DEFAULT_WSS_ENCRYPTION_PARTS, DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
 
 const nonEmpty = z.string().min(1);
@@ -290,7 +291,7 @@ export const scriptsSchema = z.looseObject({
   post: nonEmpty.optional(),
   api: z.enum(['wirebench', 'postman']).default('wirebench'),
   enabled: z.boolean().default(true),
-  secrets: z.array(nonEmpty).default([]),
+  secrets: z.array(z.string().regex(SECRET_NAME_PATTERN)).default([]),
   timeoutMs: z.number().int().positive().max(10_000).optional(),
 });
 

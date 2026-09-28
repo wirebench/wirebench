@@ -55,6 +55,8 @@ import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effec
 import { createRunTokenSource, requiredSecret } from './oauth2-token.js';
 import type { RunTokenSource } from './oauth2-token.js';
 import { secretNamesInValue } from './secret-needs.js';
+import type { SecretPlaceholders } from '../script/send.js';
+import type { RequestScripting } from '../script/request-scripts.js';
 import type { SelectedRequest } from './select.js';
 
 /**
@@ -106,6 +108,18 @@ export interface RunContext {
   readonly tokenSource?: RunTokenSource;
   /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
   readonly sequence?: PropertyMap;
+  /**
+   * Set for a request with a pre-request script: every `${secret:…}` in the request's text becomes
+   * one of these placeholders, and the script's host puts the values back after it (#63).
+   */
+  readonly secretPlaceholders?: SecretPlaceholders;
+  /**
+   * Runs requests' scripts (#63). A run without it refuses a request whose scripts are switched on,
+   * rather than send it without them.
+   */
+  readonly scripting?: RequestScripting;
+  /** True when a value holds a credential the run knows; such a script value is treated as secret. */
+  readonly containsKnownSecret?: (value: string) => boolean;
 }
 
 /**
@@ -128,7 +142,8 @@ type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
 type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
 type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
 
-function scopesFor(context: RunContext): PropertyScopes {
+/** The property scopes a request of this run expands against, secrets not yet added. */
+export function scopesFor(context: RunContext): PropertyScopes {
   const { project, environmentId, workspace } = context;
   const scopes =
     workspace === undefined
@@ -184,9 +199,18 @@ function baseUrlFor(context: RunContext, api: { readonly slug: string; readonly 
  * `scopes` with the value of every `${secret:name}` token `input` reaches. Each value comes from
  * `getSecret`, so a host that masks what it hands out (the CLI's `createEnvSecrets`) masks these too.
  */
-async function withSecrets(input: unknown, scopes: PropertyScopes, getSecret: GetSecret): Promise<PropertyScopes> {
+async function withSecrets(
+  input: unknown,
+  scopes: PropertyScopes,
+  getSecret: GetSecret,
+  placeholders?: SecretPlaceholders,
+): Promise<PropertyScopes> {
   const names = secretNamesInValue(input, scopes);
-  return names.length === 0 ? scopes : { ...scopes, secrets: await resolveSecretTokens(names, getSecret) };
+  if (names.length === 0) return scopes;
+  return {
+    ...scopes,
+    secrets: placeholders !== undefined ? placeholders.scopeFor(names) : await resolveSecretTokens(names, getSecret),
+  };
 }
 
 function unresolvedError(path: string, unresolved: readonly UnresolvedRef[]): WirebenchError {
@@ -404,7 +428,7 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
     ...(wss !== undefined ? { wss } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   };
-  const withTokens = await withSecrets(input, scopes, context.getSecret);
+  const withTokens = await withSecrets(input, scopes, context.getSecret, context.secretPlaceholders);
   // Refused here, before the wire: the engine would report the same refs on the exchange, but by
   // then a half-expanded envelope has already been sent to somebody's service.
   const { unresolved } = expandSendInput(input, withTokens);
@@ -483,7 +507,7 @@ async function prepareRest(selected: RestSelected, context: RunContext): Promise
     resolveFile: restFileResolver(context),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
-  const withTokens = await withSecrets(unexpanded, scopes, context.getSecret);
+  const withTokens = await withSecrets(unexpanded, scopes, context.getSecret, context.secretPlaceholders);
   const { input, unresolved } = expandRestSendInput(unexpanded, withTokens, {
     escape: request.settings.escapeProperties === true,
   });
@@ -531,7 +555,7 @@ async function prepareGrpc(selected: GrpcSelected, context: RunContext): Promise
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
   const withMessage = { ...unexpanded, messageText: request.message };
-  const withTokens = await withSecrets(withMessage, scopes, context.getSecret);
+  const withTokens = await withSecrets(withMessage, scopes, context.getSecret, context.secretPlaceholders);
   const { input, unresolved } = expandGrpcInput(withMessage, withTokens, {
     escape: request.settings.escapeProperties === true,
   });

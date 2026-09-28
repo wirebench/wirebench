@@ -15,6 +15,7 @@ import { findStepRequest } from '../run/select.js';
 import type { SelectedRequest } from '../run/select.js';
 import type { SequenceDef, SequenceStep } from './model.js';
 import { extractTransfer } from './transfer.js';
+import { mergeScriptValues, scriptAssertions, type SentScripts } from '../run/script-support.js';
 
 /** How one step, or a run, ended. The runner's own outcomes, with `skipped` for a step never sent. */
 export type SequenceOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
@@ -33,6 +34,10 @@ export interface SequenceStepSent {
   readonly subject: AssertionSubject;
   /** The origin the request went to, for the run panel and the reports. */
   readonly origin?: string;
+  /** What the step request's scripts produced (#63): tests, values for later steps, a log. */
+  readonly script?: SentScripts;
+  /** True when the step's request has scripts and they are switched off. */
+  readonly scriptsOff?: boolean;
 }
 
 /** A step the host could not send. */
@@ -75,6 +80,10 @@ export interface SequenceStepResult {
   readonly error?: { readonly code: string; readonly message: string };
   /** Why a `skipped` step was not sent. */
   readonly skipped?: 'disabled' | 'after-failure' | 'cancelled';
+  /** What the step request's scripts logged. NOT yet redacted. */
+  readonly scriptLog?: readonly string[];
+  /** True when the step's request has scripts and they are switched off. */
+  readonly scriptsOff?: boolean;
 }
 
 /** A whole run's result. */
@@ -197,7 +206,9 @@ export async function runSequence(
       continue;
     }
 
-    const { subject } = sent;
+    const { subject, script } = sent;
+    // A script's values join the run's before the step's own transfers, which win on a clash (#63).
+    mergeScriptValues(values, script?.values ?? [], options.onSecretValue, options.containsKnownSecret);
     const transfers: TransferResult[] = [];
     let transferError: { code: string; message: string } | undefined;
     for (const transfer of step.transfers) {
@@ -226,10 +237,14 @@ export async function runSequence(
       transferError ??= { code: found.code, message: `${transfer.name}: ${found.message}` };
     }
 
-    const assertions = await evaluateAssertions(subject, [
-      ...(step.requestAssertions ? requestAssertionsOf(target.selected) : []),
-      ...step.assertions,
-    ]);
+    const assertions = [
+      ...(await evaluateAssertions(subject, [
+        ...(step.requestAssertions ? requestAssertionsOf(target.selected) : []),
+        ...step.assertions,
+      ])),
+      ...scriptAssertions(script?.tests ?? []),
+    ];
+    transferError ??= script?.error;
     const outcome: SequenceOutcome =
       transferError !== undefined || assertions.some((a) => a.outcome === 'errored')
         ? 'errored'
@@ -245,6 +260,8 @@ export async function runSequence(
       assertions,
       transfers,
       ...(transferError !== undefined ? { error: transferError } : {}),
+      ...(script !== undefined && script.log.lines.length > 0 ? { scriptLog: script.log.lines } : {}),
+      ...(sent.scriptsOff === true ? { scriptsOff: true } : {}),
     });
   }
 
