@@ -76,4 +76,37 @@ describe('applyWebhookUpdate', () => {
     const body = result.folder.requests.find((request) => request.name === 'newPet')?.body;
     expect(body).toEqual({ kind: 'raw', language: 'json', text: '{"mine":true}' });
   });
+
+  it('adds only what is new to next, never an item next also had before that the import left unticked', () => {
+    const imported = webhooksFromDocument(old, {
+      apiId: 'api-1',
+      newId,
+      only: new Set(['webhook newPet post']),
+    })!.folder;
+    const result = applyWebhookUpdate(imported, old, next, { newId });
+    const names = result.folder.requests.map((request) => request.name);
+    expect(names).toContain('petDeleted');
+    expect(names).not.toContain('onPetEvent');
+  });
+
+  it('never resurrects an item both documents still offer that the group was never given', () => {
+    const shared = `openapi: 3.1.0
+info: { title: Shared, version: '1' }
+webhooks:
+  a:
+    post: { responses: { '200': { description: ok } } }
+  b:
+    post: { responses: { '200': { description: ok } } }
+`;
+    const withA = parseOpenApiDocument(parseDocumentText(shared));
+    const withB = parseOpenApiDocument(parseDocumentText(shared));
+    const imported = webhooksFromDocument(withA, {
+      apiId: 'api-2',
+      newId,
+      only: new Set(['webhook a post']),
+    })!.folder;
+    const result = applyWebhookUpdate(imported, withA, withB, { newId });
+    expect(result.added).toBe(0);
+    expect(result.folder.requests.map((request) => request.name)).toEqual(['a']);
+  });
 });

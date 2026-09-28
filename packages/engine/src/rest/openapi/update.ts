@@ -490,7 +490,9 @@ export interface WebhookApplyResult {
  * contract. A request with no `hook` (added by hand) is left untouched; an item's `hook` — including
  * a callback's `expression` — follows the new document, since a renamed expression is not a new
  * item. A new webhook or callback method is appended to the group root with a unique slug and an
- * increasing `order`. Never deletes a request or a folder.
+ * increasing `order` — but only one truly new to `next`: an item `old` already offered and the group
+ * never held (an import that used `only` to leave it unticked) stays absent rather than coming back.
+ * Never deletes a request or a folder.
  */
 export function applyWebhookUpdate(
   folder: WebhookFolder,
@@ -533,7 +535,7 @@ export function applyWebhookUpdate(
   let order = requests.reduce((max, request) => Math.max(max, request.order + 1), 0);
   let added = 0;
   for (const [key, fresh] of after) {
-    if (seen.has(key)) continue;
+    if (seen.has(key) || before.has(key)) continue;
     const slug = uniqueSlug(fresh.name, taken);
     taken.add(slug);
     requests.push({ ...fresh, slug, order });
