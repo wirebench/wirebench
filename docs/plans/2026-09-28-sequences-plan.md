@@ -53,37 +53,44 @@
 
 **Files**
 - A new helper module, `packages/engine/src/project/sequence-guards.ts`:
-  - `assertOriginIndependent(resolve: (scopes: PropertyScopes) => string, scopes, kind: 'url' | 'grpc-target')`: the
-    two-expansion check, using the marker `wbseq`;
-  - `assertNoControlChars(text, used, scopes)`, which throws `sequence-value-invalid` when a Sequence value with
-    CR, LF or NUL was substituted.
+  - `assertOriginIndependent(place, resolve, scopes, originOf = urlOrigin)`: the two-expansion check, with the
+    marker `wbseq`;
+  - `assertNoControlCharacters(place, result, scopes)`: throws `sequence-value-invalid` when a Sequence value with
+    CR, LF or NUL was substituted, directly or through a chained property;
+  - `expandWithSequenceEscaped(expandText, scopes, escape)`: the placeholder mechanism that escapes each Sequence
+    value exactly once;
+  - `escapeXmlValue`, which escapes all five entities.
+- `errors.ts`: `SequenceError`, exported from the engine.
 - `project/properties.ts` `expandSendInput`:
-  - the envelope always entitizes Sequence values;
+  - the envelope always escapes Sequence values, quotes included;
   - the endpoint gets the origin guard;
   - the endpoint, `soapAction`, headers and WS-A fields get the control-character guard.
 - `rest/expand.ts`:
-  - `escapedScopes` always escapes `sequence`, even when `options.escape` is off. Only the Sequence map is escaped
-    when it is off; the other scopes behave as today;
-  - the base URL plus URL get the origin guard;
-  - the URL, path, query and header rows get the control-character guard.
+  - a JSON, XML or HTML body always escapes Sequence values; the user's own values are escaped only when the request
+    asks, as today;
+  - the URL as `composeUrl` builds it (base, URL, path parameters) gets the origin guard;
+  - the URL, base URL, path, query and header rows get the control-character guard.
 - `grpc/expand.ts`:
-  - the target gets the origin guard;
+  - the target may hold no Sequence value at all;
   - metadata gets the control-character guard;
-  - the JSON message escapes Sequence values.
-- `ws/expand.ts`: the same guards, for completeness, even though WebSocket steps are out of scope, so the scope is
-  safe wherever it appears.
-- `errors.ts`: `sequence-origin-from-response`, `sequence-value-invalid`.
-- Tests: `packages/engine/test/unit/project/sequence-guards.test.ts` and additions to the REST, gRPC and SOAP expand
-  tests.
+  - the JSON message always escapes Sequence values.
+- `ws/expand.ts` is unchanged. A WebSocket request is refused as a step (`sequence-step-unsupported`), so no
+  WebSocket send is ever given a Sequence scope.
+- Test: `packages/engine/test/unit/project/sequence-guards.test.ts`.
 
 **Tests**
-- `x", "admin": true, "y": "` in a JSON body with `escape` off gives one string field.
-- `</a><b>` in an XML body and in a SOAP envelope is entitized.
-- Form encoding.
-- Host, port and scheme from a Sequence value are refused for SOAP, REST and gRPC.
+- `x", "admin": true, "y": "` in a JSON body and a gRPC message gives one string field, with the request's escaping
+  off and on.
+- A chained Env value's Sequence part is escaped exactly once, with escaping off and on.
+- An XML body and a SOAP envelope escape `</Note><Admin>` and quotes, with `entitize` off and on; a text body is not
+  escaped.
+- Host, port and scheme from a Sequence value are refused for SOAP, REST (including a path parameter placed in the
+  host) and gRPC.
 - Path, query and fragment are allowed.
 - An Env base URL that *contains* `${#Sequence#h}` in the host is refused.
-- CR/LF in a header and a query is refused; the same value in a body is allowed.
+- CR/LF/NUL in a header name or value, a URL, a query row, a SOAP action and gRPC metadata is refused, directly and
+  through a chained Env value. The same value in a body is allowed.
+- Placeholder 1 followed by a digit is never read as placeholder 15.
 
 ## Task 4 — Engine: sequence model, schema, load and save
 
@@ -98,7 +105,10 @@
   - `kind`, and `version` above 1, are refused per file as problems;
   - sorted by `order`.
 - `project/serialize.ts`: write `sequences/<slug>.sequence.yaml`, with deterministic keys and defaults omitted.
-- `project/save.ts` `listManagedFiles`: list `sequences/*.sequence.yaml` only.
+- `project/save.ts` `listManagedFiles`: a `sequences/*.sequence.yaml` file is managed, and so may be deleted, only
+  if this build loaded it: it parses, its `version` is one this build knows, and no other file has its id. A file
+  that is too new, malformed (say, mid-merge) or a duplicate is foreign and never deleted, so a save cannot destroy
+  a sequence the build could not read.
 - `apps/desktop/src/main/project-watch.ts`: add `sequences` to `MANAGED_TOP_DIRS` and `isManagedPath`, with a test.
 - `packages/engine/src/assert/{model,schema,index}.ts`:
   - the `header` assertion;
@@ -108,6 +118,7 @@
   - `packages/engine/test/unit/sequence/{schema,load-save}.test.ts`;
   - a format test proving that `formatVersion` stays `5` and that a project saved by the new build, then loaded
     through a loader without sequence support, has `sequences/` untouched;
+  - a save test proving that a `version: 2` file, a malformed file and a duplicate-id file all survive a save;
   - `assert/header.test.ts`.
 
 ## Task 5 — Engine: transfers and `runSequence`

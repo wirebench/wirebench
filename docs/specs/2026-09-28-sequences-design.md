@@ -316,13 +316,21 @@ substituted into `{"note": "${#Sequence#note}"}` without escaping is JSON inject
 `x", "admin": true, "y": "` adds a field to the next request.
 
 **Rule 2:** Sequence-scope values are always escaped for the place they land, whatever the request's setting:
-- JSON string escaping in a JSON raw body;
-- XML entities in an XML raw body, a SOAP envelope, or a SOAP header field;
-- form encoding in a form field.
+- JSON string escaping in a JSON raw body and a gRPC message;
+- the five XML entities, quotes included, in an XML or HTML raw body and a SOAP envelope, so a value is safe in an
+  attribute as well as in element text.
 
-Other scopes keep today's behaviour. A text, HTML or JavaScript raw body is not escaped, as today. Each expander gets
-an always-on escape for the Sequence scope alone: `escapedScopes` in `rest/expand.ts`, `substituted` for the SOAP
-envelope, and the equivalent in `grpc/expand.ts`.
+A form field needs nothing: each field is percent-encoded on its own when the body is built, so a value cannot reach
+another field. A text or JavaScript raw body is not escaped, as today, and neither is a multipart text part. Other
+scopes keep today's behaviour.
+
+A value must be escaped exactly **once**, whether the request also escapes its own values or not, and whether the
+reference is direct or chained through another property. Pre-escaping the Sequence map would be escaped again by a
+request that escapes, and the envelope's `entitize` escapes a chained property's whole expansion. So
+`expandWithSequenceEscaped` (`project/sequence-guards.ts`) first expands with each Sequence value replaced by a
+placeholder, then swaps each placeholder for the value escaped once. The placeholders are letters and digits only,
+built on a fresh random nonce per call so no user text can contain one, and no escaping touches them.
+`rest/expand.ts`, `grpc/expand.ts` and the SOAP envelope in `expandSendInput` all go through it.
 
 ### A response cannot choose where the next request goes
 
@@ -441,7 +449,8 @@ the desktop, where sequence assertions run in the main process, it would freeze 
   - **Rule 1:** a value of `${secret:x}`, `${#System#HOME}` and `$${x}` is sent verbatim, directly and through a
     chained Env reference;
     `${${#Sequence#n}}` and `${secret:${#Sequence#n}}` are refused as `name-from-response`.
-  - **Rule 2:** JSON, XML, SOAP envelope and form escaping of a hostile value, with the request's `escape` off.
+  - **Rule 2:** JSON, XML, SOAP envelope and gRPC escaping of a hostile value, with the request's own escaping off and
+    on, directly and through a chained Env value, each escaped exactly once.
   - **Rule 3:** a Sequence value in the host, port or scheme is refused for SOAP, REST and gRPC, and allowed in the
     path and query.
   - **Rules 4 and 5:** CR/LF/NUL in a header and in the URL; the 64 KiB cap.

@@ -10,7 +10,13 @@
 
 import { expand } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
+import {
+  assertNoControlCharacters,
+  assertOriginIndependent,
+  expandWithSequenceEscaped,
+} from '../project/sequence-guards.js';
 import { escapeForLanguage } from './body.js';
+import { composeUrl } from './url.js';
 import type { KeyValueEntry, MultipartFormPart, RestBody } from './model.js';
 import type { RestSendInput, RestSendRequest } from './send.js';
 
@@ -42,39 +48,70 @@ export function expandRestSendInput(
 ): { readonly input: RestSendInput; readonly unresolved: UnresolvedRef[] } {
   const unresolved: UnresolvedRef[] = [];
 
-  const run = (text: string): string => {
+  /** Expands `text`; `place`, when given, names a line-oriented field a Sequence value must not break. */
+  const run = (text: string, place?: string): string => {
     const result = expand(text, scopes);
     unresolved.push(...result.unresolved);
+    if (place !== undefined) {
+      assertNoControlCharacters(place, result, scopes);
+    }
     return result.text;
   };
 
-  /** A body value: expanded, then escaped for the body's language when the request asks for it. */
+  /**
+   * A body value: expanded, then escaped for the body's language when the request asks for it. A
+   * Sequence value is escaped whether or not the request asks, because it came from a response and
+   * could otherwise add fields or elements to the body (ADR-0015).
+   */
   const runBody = (text: string, language: Parameters<typeof escapeForLanguage>[1] | undefined): string => {
     const result = expand(text, scopes);
     unresolved.push(...result.unresolved);
-    if (options.escape !== true || language === undefined) {
+    if (language === undefined) {
       return result.text;
     }
     // Escaping has to happen per substituted value, not over the finished text, or the body's own
     // punctuation would be escaped too. `expand` reports which references it replaced, so the
     // cheapest correct thing is to re-expand with an escaping substitution.
-    return expand(text, escapedScopes(scopes, language)).text;
+    return expandWithSequenceEscaped(
+      (s) => (options.escape === true ? expand(text, escapedScopes(s, language)) : expand(text, s)).text,
+      scopes,
+      (value) => escapeForLanguage(value, language),
+    );
   };
 
-  const rows = (entries: readonly KeyValueEntry[]): KeyValueEntry[] =>
-    entries.map((entry) => ({ ...entry, name: run(entry.name), value: run(entry.value) }));
+  const rows = (entries: readonly KeyValueEntry[], place: string): KeyValueEntry[] =>
+    entries.map((entry) => ({
+      ...entry,
+      name: run(entry.name, `A ${place} name`),
+      value: run(entry.value, `The ${place} ${entry.name}`),
+    }));
+
+  // Where the request goes is decided by the base URL, the URL and any path parameter placed in its
+  // host, so the guard composes the URL the way `sendRest` will.
+  assertOriginIndependent(
+    'The request URL',
+    (s) =>
+      composeUrl(
+        expand(input.baseUrl, s).text,
+        expand(input.request.url, s).text,
+        input.request.pathParams.map((row) => ({ ...row, value: expand(row.value, s).text })),
+        [],
+        { encode: input.settings.encodeUrl ?? true },
+      ).url,
+    scopes,
+  );
 
   const request: RestSendRequest = {
     method: input.request.method,
-    url: run(input.request.url),
-    pathParams: rows(input.request.pathParams),
-    query: rows(input.request.query),
-    headers: rows(input.request.headers),
+    url: run(input.request.url, 'The request URL'),
+    pathParams: rows(input.request.pathParams, 'path parameter'),
+    query: rows(input.request.query, 'query parameter'),
+    headers: rows(input.request.headers, 'header'),
     body: expandBody(input.request.body, run, runBody),
   };
 
   return {
-    input: { ...input, baseUrl: run(input.baseUrl), request },
+    input: { ...input, baseUrl: run(input.baseUrl, 'The base URL'), request },
     unresolved,
   };
 }

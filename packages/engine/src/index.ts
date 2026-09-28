@@ -23,6 +23,7 @@ export {
   WssError,
   ProjectError,
   ValidationError,
+  SequenceError,
   WorkspaceError,
   OpenApiError,
   AsyncApiError,

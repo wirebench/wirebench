@@ -151,6 +151,18 @@ export class ValidationError extends WirebenchError {
   }
 }
 
+/**
+ * Thrown when a sequence step would put a value taken from a response somewhere ADR-0015 forbids:
+ * the origin of a URL or target (`sequence-origin-from-response`), or a line break or NUL into a
+ * URL, header or metadata (`sequence-value-invalid`).
+ */
+export class SequenceError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'SequenceError';
+  }
+}
+
 /** Type guard identifying any {@link WirebenchError} (base class or subclass). */
 export function isWirebenchError(e: unknown): e is WirebenchError {
   return e instanceof WirebenchError;
