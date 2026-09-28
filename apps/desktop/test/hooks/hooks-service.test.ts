@@ -261,6 +261,22 @@ describe('HooksService — views (webhook-capture §4.1)', () => {
     expect(emit.captures).toHaveBeenCalledWith({ viewId: opened.viewId, mode: 'prepend', captures: [summary(4)] });
     expect(service.held().summaries).toBe(4);
   });
+
+  it('closes the view again when the first page fetch fails, so nothing is left watching it', async () => {
+    const { server, service, emit, live, nudge } = harness();
+    server.listCaptures.mockRejectedValueOnce(
+      new WirebenchError('server-unreachable', 'Could not reach https://wb.test'),
+    );
+
+    await expect(service.open(REF)).rejects.toMatchObject({ code: 'server-unreachable' });
+    expect(service.held()).toEqual({ views: 0, summaries: 0, captures: 0 });
+    expect(live.listening()).toBe(0); // the watch is released, not leaked
+
+    nudge(1); // no view was ever handed to the caller, so nothing should react to this
+    await service.idle();
+    expect(emit.captured).not.toHaveBeenCalled();
+    expect(emit.captures).not.toHaveBeenCalled();
+  });
 });
 
 describe('HooksService — live nudges and the gap fill (§4.1)', () => {

@@ -263,7 +263,9 @@ export class HooksService {
    * The view is registered and watching *before* the first page is fetched, so a nudge that lands
    * during that fetch finds a view to fill instead of being dropped (the fetch's own task runs first
    * on the view's queue, and a fill it triggers queues behind it, running once the fetch has set
-   * `summaries`).
+   * `summaries`). If that first fetch fails, the view never existed as far as the caller is concerned
+   * (they get the rejection, not a `viewId`), so it is closed again here: dropped from `views` and its
+   * watch released, rather than left registered and watching forever with no one able to reach it.
    */
   async open(
     ref: HookRef,
@@ -281,11 +283,17 @@ export class HooksService {
     };
     this.views.set(view.id, view);
     this.watch(view.url, view.workspaceId);
-    const captures = await this.enqueue(view, async () => {
-      const page = await this.page(view, { limit: FIRST_PAGE });
-      if (this.isOpen(view)) view.summaries = page;
-      return page;
-    });
+    let captures: CaptureSummary[];
+    try {
+      captures = await this.enqueue(view, async () => {
+        const page = await this.page(view, { limit: FIRST_PAGE });
+        if (this.isOpen(view)) view.summaries = page;
+        return page;
+      });
+    } catch (error) {
+      this.close(view.id);
+      throw error;
+    }
     return { viewId: view.id, captures, more: captures.length === FIRST_PAGE };
   }
 
