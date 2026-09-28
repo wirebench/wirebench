@@ -31,6 +31,9 @@ export type ExplorerNodeKind =
   | 'grpc-request'
   | 'ws-api'
   | 'ws-request'
+  /** The open workspace's catch URLs on its server (webhook-capture §4.2); a root after the projects. */
+  | 'webhooks'
+  | 'catch-url'
   /** The group of a project's sequences; a container, not an entity. */
   | 'sequences'
   | 'sequence';
@@ -113,6 +116,15 @@ export interface ExplorerNode {
    * `explorer-view.tsx` badges the row without recomputing the match itself.
    */
   readonly conflicted?: boolean;
+  /** Set on `catch-url` nodes: the catch URL's id. */
+  readonly hookId?: string;
+  /** Set on `webhooks` and `catch-url` nodes: whether the caller's role may change catch URLs. */
+  readonly canEdit?: boolean;
+  /** Set on `catch-url` nodes: `false` when the catch URL answers `404` to every sender. */
+  readonly enabled?: boolean;
+  /** Set on `catch-url` nodes: captures this device has not seen, and whether there are more than that. */
+  readonly unseen?: number;
+  readonly unseenMore?: boolean;
   /** Set on `sequence` nodes: the sequence the row stands for. */
   readonly sequenceId?: string;
 }
@@ -459,6 +471,38 @@ export interface ExplorerRestData {
   readonly requests: readonly RestRequestWire[];
 }
 
+/** The Webhooks root's input: present only when the workspace's server offers catch URLs. */
+export interface ExplorerWebhooks {
+  readonly canEdit: boolean;
+  readonly hooks: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly enabled: boolean;
+    readonly unseen: { readonly count: number; readonly more: boolean };
+  }[];
+}
+
+export const WEBHOOKS_ROOT_ID = 'webhooks';
+
+export function webhooksNode(webhooks: ExplorerWebhooks): ExplorerNode {
+  return {
+    id: WEBHOOKS_ROOT_ID,
+    kind: 'webhooks',
+    label: 'Webhooks',
+    canEdit: webhooks.canEdit,
+    children: webhooks.hooks.map((hook) => ({
+      id: `catch-url:${hook.id}`,
+      kind: 'catch-url' as const,
+      label: hook.name,
+      hookId: hook.id,
+      canEdit: webhooks.canEdit,
+      enabled: hook.enabled,
+      unseen: hook.unseen.count,
+      unseenMore: hook.unseen.more,
+    })),
+  };
+}
+
 /**
  * Pure mapping from the open workspace's projects and the project store's indexes to the tree
  * `react-arborist` renders: Project -> Interface -> Endpoints / Operations (grouped by binding
@@ -485,6 +529,7 @@ export interface ExplorerRestData {
  *   no WebSocket data, which then gets the tree it got before the WebSocket kind existed.
  * @param sequences each project's sequences, in order, by project id. A project with none shows no
  *   Sequences group at all.
+ * @param webhooks the Webhooks root's catch URLs; omitted when the workspace's server offers none.
  */
 export function buildExplorerTree(
   projects: readonly ExplorerProject[],
@@ -496,8 +541,9 @@ export function buildExplorerTree(
   grpc: Readonly<Record<string, ExplorerGrpcData>> = {},
   ws: Readonly<Record<string, ExplorerWsData>> = {},
   sequences: Readonly<Record<string, readonly ExplorerSequence[]>> = {},
+  webhooks?: ExplorerWebhooks,
 ): ExplorerNode[] {
-  return projects.map((project) => {
+  const roots = projects.map((project) => {
     const broken = project.status === 'missing' || project.status === 'error';
     const children: ExplorerNode[] = broken
       ? [
@@ -534,6 +580,7 @@ export function buildExplorerTree(
       children,
     };
   });
+  return webhooks === undefined ? roots : [...roots, webhooksNode(webhooks)];
 }
 
 /**

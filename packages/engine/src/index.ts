@@ -1485,6 +1485,35 @@ export {
   liveServerMessageSchema,
 } from './server-api/live.js';
 export type { LiveClientMessage, LivePresenceUser, LiveRefusedCode, LiveServerMessage } from './server-api/live.js';
+export {
+  CATCH_CONTENT_TYPE_PATTERN,
+  CATCH_SECRET_PATTERN,
+  CATCH_URL_DEFAULT_RESPONSE,
+  CATCH_URL_PATH_PREFIX,
+  captureParamsSchema,
+  captureSchema,
+  capturesQuerySchema,
+  capturesResponseSchema,
+  captureSummarySchema,
+  catchUrlCreateRequestSchema,
+  catchUrlParamsSchema,
+  catchUrlResponseSchema,
+  catchUrlSchema,
+  catchUrlsResponseSchema,
+  catchUrlUpdateRequestSchema,
+  HOOKS_LIMITS,
+  hooksMetaSchema,
+} from './server-api/hooks.js';
+export type {
+  Capture,
+  CapturesQuery,
+  CaptureSummary,
+  CatchUrl,
+  CatchUrlCreateRequest,
+  CatchUrlResponse,
+  CatchUrlUpdateRequest,
+  HooksMeta,
+} from './server-api/hooks.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';
 export * from './sequence/index.js';

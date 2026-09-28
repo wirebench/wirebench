@@ -46,9 +46,10 @@ const REDACT_PATHS = [
 function pathOf(url: string): string {
   const query = url.indexOf('?');
   const path = query === -1 ? url : url.slice(0, query);
-  // `/invite/<secret>` carries the invitation secret in the path itself, not the query string;
-  // the generic query-strip above never touches it, so it needs its own rewrite before logging.
-  return path.replace(/^\/invite\/[^/]+$/, '/invite/[redacted]');
+  // Two routes carry a secret in the path itself, which the query strip above never touches:
+  // `/invite/<secret>` and a catch URL's `/hooks/<secret>[/<subpath>]` (webhook-capture §3.3). The
+  // subpath stays: it is the sender's, and it tells two webhooks apart in the log.
+  return path.replace(/^\/invite\/[^/]+$/, '/invite/[redacted]').replace(/^\/hooks\/[^/]+/, '/hooks/[redacted]');
 }
 
 /** Symbol Fastify reads to register a plugin into its parent's scope instead of a child one. */

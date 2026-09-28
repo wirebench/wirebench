@@ -17,7 +17,7 @@ import {
   type LiveServerMessage,
   type WorkspaceRole,
 } from '@wirebench/engine';
-import type { AccessChanged, HeadMoved, SessionEnded } from '../context.js';
+import type { AccessChanged, CaptureReceived, HeadMoved, HooksChanged, SessionEnded } from '../context.js';
 import type { Effective } from '../teams/roles.js';
 import { LIVE_TOO_MANY_SUBSCRIPTIONS } from './errors.js';
 
@@ -53,6 +53,15 @@ export interface LiveHubDeps {
 /** Node's `setTimeout` fires at once past 2^31 − 1 ms (about 24.8 days), and the default maximum token age is 180 days. */
 const MAX_TIMER_MS = 2 ** 31 - 1;
 
+/** Per catch URL, at most one `capture` per this many milliseconds (webhook-capture §3.6). */
+export const CAPTURE_WINDOW_MS = 250;
+
+/** A catch URL's open window: the newest capture announced since its last `capture`, if any. */
+interface CaptureWindow {
+  held: CaptureReceived | undefined;
+  timer: { cancel(): void } | undefined;
+}
+
 const byName = new Intl.Collator('en', { sensitivity: 'base' });
 
 type RefusedCode = Extract<LiveServerMessage, { type: 'refused' }>['code'];
@@ -73,6 +82,8 @@ export class LiveHub {
   private readonly byWorkspace = new Map<string, Set<LiveSocket>>();
   private readonly byUser = new Map<string, Set<LiveSocket>>();
   private readonly byToken = new Map<string, Set<LiveSocket>>();
+  /** The open coalescing windows, by catch URL id (webhook-capture §3.6). */
+  private readonly captureWindows = new Map<string, CaptureWindow>();
   /** Subscribes and access re-checks still running, which {@link idle} waits for. */
   private readonly pending = new Set<Promise<void>>();
   /**
@@ -195,11 +206,36 @@ export class LiveHub {
     if (sockets.length > 0) this.end(sockets);
   }
 
+  /**
+   * `capture` to every subscriber of the workspace (webhook-capture §3.6). A quiet catch URL's first
+   * capture goes out at once and opens a 250 ms window; the window holds the newest capture announced
+   * meanwhile and sends it when it ends. The desktop fetches everything after what it holds, so the
+   * merged ones are not lost.
+   */
+  captureReceived(event: CaptureReceived): void {
+    if (this.closed) return;
+    const open = this.captureWindows.get(event.hookId);
+    if (open === undefined) {
+      this.sendCapture(event);
+      return;
+    }
+    // Ids are monotonic, so the largest is the newest even if two announcements crossed.
+    if (open.held === undefined || event.captureId > open.held.captureId) open.held = event;
+  }
+
+  /** `hooks` to every subscriber of the workspace: its catch URLs changed (webhook-capture §3.6). */
+  hooksChanged(event: HooksChanged): void {
+    if (this.closed) return;
+    this.deliver(this.byWorkspace.get(event.workspaceId) ?? [], { type: 'hooks', workspaceId: event.workspaceId });
+  }
+
   /** Shutdown (§3.3, §5.1): closes every socket `1001` and clears the indexes. Later calls are no-ops. */
   closeAll(): void {
     this.closed = true;
     const sockets = [...this.bySocket.keys()];
     for (const state of this.bySocket.values()) state.deadline?.cancel();
+    for (const open of this.captureWindows.values()) open.timer?.cancel();
+    this.captureWindows.clear();
     this.bySocket.clear();
     this.byWorkspace.clear();
     this.byUser.clear();
@@ -252,6 +288,18 @@ export class LiveHub {
 
   private refuse(socket: LiveSocket, workspaceId: string, code: RefusedCode): void {
     this.deliver([socket], { type: 'refused', workspaceId, code });
+  }
+
+  /** Sends `event` and opens its catch URL's window; the window re-sends what it held when it ends. */
+  private sendCapture(event: CaptureReceived): void {
+    const { workspaceId, hookId, captureId } = event;
+    this.deliver(this.byWorkspace.get(workspaceId) ?? [], { type: 'capture', workspaceId, hookId, captureId });
+    const slot: CaptureWindow = { held: undefined, timer: undefined };
+    this.captureWindows.set(hookId, slot);
+    slot.timer = this.deps.setTimer(() => {
+      this.captureWindows.delete(hookId);
+      if (slot.held !== undefined) this.sendCapture(slot.held);
+    }, CAPTURE_WINDOW_MS);
   }
 
   /** §3.3: a session has at most 200 subscriptions across its sockets. */

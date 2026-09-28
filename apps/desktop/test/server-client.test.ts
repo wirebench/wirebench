@@ -357,3 +357,92 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
     expect(sent.map((r) => r.timeoutMs)).toEqual([5_000, SYNC_TRANSFER_TIMEOUT_MS]);
   });
 });
+
+describe('ServerClient — webhook capture (webhook-capture §3.5)', () => {
+  const SERVER = 'https://wb.test';
+  const WS = '01J8ZC5Q0V7R3T9XK2M4N6P8QA';
+  const HOOK_ID = '01J8ZC5Q0V7R3T9XK2M4N6H001';
+  const CAPTURE_ID = '01J8ZE00000000000000000001';
+  const ROUTE = `/api/v1/workspaces/${WS}/hooks`;
+  const HOOK = {
+    id: HOOK_ID,
+    workspaceId: WS,
+    name: 'Payments',
+    url: `https://wb.test/hooks/${'7'.repeat(26)}`,
+    enabled: true,
+    response: { status: 200, contentType: null, body: null, delayMs: 0 },
+    captureCount: 1,
+    newestCaptureId: CAPTURE_ID,
+    createdAt: '2026-09-24T12:00:00.000Z',
+  };
+  const SUMMARY = {
+    id: CAPTURE_ID,
+    receivedAt: '2026-09-24T12:00:01.000Z',
+    method: 'POST',
+    subpath: '/events',
+    bodySize: 7,
+    truncated: false,
+    sourceIp: '203.0.113.9',
+  };
+  const CAPTURE = {
+    ...SUMMARY,
+    query: 'a=1',
+    headers: [['Content-Type', 'application/json']],
+    body: Buffer.from('{"n":1}').toString('base64'),
+  };
+  const body = (request: HttpRequest | undefined): unknown =>
+    request?.body === undefined ? undefined : JSON.parse(new TextDecoder().decode(request.body));
+
+  it('sends each call to its route with the method, the bearer and the body', async () => {
+    const { client: c, sent } = client(
+      exchange(200, [HOOK]),
+      exchange(201, HOOK),
+      exchange(200, HOOK),
+      exchange(200, HOOK),
+      exchange(204, ''),
+      exchange(200, [SUMMARY]),
+      exchange(200, [SUMMARY]),
+      exchange(200, CAPTURE),
+      exchange(204, ''),
+    );
+    expect(await c.listHooks(SERVER, TOKEN, WS)).toEqual([HOOK]);
+    expect(await c.createHook(SERVER, TOKEN, WS, { name: 'Payments', response: { status: 202 } })).toEqual(HOOK);
+    expect(await c.updateHook(SERVER, TOKEN, WS, HOOK_ID, { enabled: false })).toEqual(HOOK);
+    expect(await c.rotateHook(SERVER, TOKEN, WS, HOOK_ID)).toEqual(HOOK);
+    await c.deleteHook(SERVER, TOKEN, WS, HOOK_ID);
+    expect(await c.listCaptures(SERVER, TOKEN, WS, HOOK_ID, {})).toEqual([SUMMARY]);
+    expect(await c.listCaptures(SERVER, TOKEN, WS, HOOK_ID, { after: CAPTURE_ID, limit: 200 })).toEqual([SUMMARY]);
+    expect(await c.getCapture(SERVER, TOKEN, WS, HOOK_ID, CAPTURE_ID)).toEqual(CAPTURE);
+    await c.clearCaptures(SERVER, TOKEN, WS, HOOK_ID);
+
+    expect(sent.map((r) => [r.method, r.url.replace(SERVER, ''), r.timeoutMs])).toEqual([
+      ['GET', ROUTE, 15_000],
+      ['POST', ROUTE, 15_000],
+      ['PATCH', `${ROUTE}/${HOOK_ID}`, 15_000],
+      ['POST', `${ROUTE}/${HOOK_ID}/rotate`, 15_000],
+      ['DELETE', `${ROUTE}/${HOOK_ID}`, 15_000],
+      ['GET', `${ROUTE}/${HOOK_ID}/captures`, 15_000],
+      ['GET', `${ROUTE}/${HOOK_ID}/captures?after=${CAPTURE_ID}&limit=200`, 15_000],
+      ['GET', `${ROUTE}/${HOOK_ID}/captures/${CAPTURE_ID}`, SYNC_TRANSFER_TIMEOUT_MS],
+      ['DELETE', `${ROUTE}/${HOOK_ID}/captures`, 15_000],
+    ]);
+    expect(sent.every((r) => r.headers.authorization === `Bearer ${TOKEN}`)).toBe(true);
+    expect([body(sent[1]), body(sent[2])]).toEqual([
+      { name: 'Payments', response: { status: 202 } },
+      { enabled: false },
+    ]);
+    expect(sent[3]?.body).toBeUndefined();
+  });
+
+  it('passes hooks-* problems through with their status and refuses a drifting answer', async () => {
+    const { client: c } = client(
+      exchange(409, { code: 'hooks-name-taken', message: 'This workspace already has a catch URL with this name.' }),
+      exchange(200, [{ ...HOOK, url: undefined }]),
+    );
+    await expect(c.createHook(SERVER, TOKEN, WS, { name: 'Payments' })).rejects.toMatchObject({
+      code: 'hooks-name-taken',
+      details: { status: 409 },
+    });
+    await expect(c.listHooks(SERVER, TOKEN, WS)).rejects.toMatchObject({ code: 'server-bad-response' });
+  });
+});

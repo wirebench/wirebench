@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { ResponseHeadersInspector } from '../../src/renderer/features/request-editor/inspectors/response-headers-inspector.js';
+import { ResponseHeadersView } from '../../src/renderer/features/rest-editor/response/headers-view.js';
 import { makeExchange } from '../mocks/exchange-fixtures.js';
 
 function renderInspector(exchange?: ReturnType<typeof makeExchange>): void {
@@ -57,5 +59,32 @@ describe('ResponseHeadersInspector', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Copy response headers' }));
 
     expect(writeText).toHaveBeenCalledWith('content-type: text/xml\nx-b: 2');
+  });
+});
+
+describe('ResponseHeadersView', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows a captured request's pairs in arrival order, repeats kept, as request headers", () => {
+    render(
+      <TooltipPrimitive.Provider>
+        <ResponseHeadersView
+          subject="request"
+          pairs={[
+            ['X-Trace', 'a'],
+            ['Content-Type', 'application/json'],
+            ['X-Trace', 'b'],
+          ]}
+        />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.getByRole('heading', { name: 'Request headers' })).toBeTruthy();
+    expect(screen.getAllByTestId('rest-response-header-row').map((row) => row.textContent)).toEqual([
+      'X-Tracea',
+      'Content-Typeapplication/json',
+      'X-Traceb',
+    ]);
   });
 });

@@ -300,4 +300,20 @@ describe('explorerMenuItems on a WebSocket row', () => {
     expect(explorerMenuItems(node({ kind: 'ws-api' }))).toEqual([]);
     expect(explorerMenuItems(node({ kind: 'ws-request', apiId: 'w1' }))).toEqual([]);
   });
+
+  it('offers New catch URL on the Webhooks root to an editor only', () => {
+    expect(explorerMenuItems(node({ kind: 'webhooks', canEdit: true })).map((item) => item.label)).toEqual([
+      'New catch URL…',
+    ]);
+    expect(explorerMenuItems(node({ kind: 'webhooks', canEdit: false }))).toEqual([]);
+  });
+
+  it('offers a viewer Copy URL and Settings only, and an editor Rotate, Clear and Delete too', () => {
+    const labels = (canEdit: boolean): string[] =>
+      explorerMenuGroups(node({ kind: 'catch-url', hookId: 'h1', canEdit })).map((group) =>
+        group.map((item) => item.label).join(', '),
+      );
+    expect(labels(false)).toEqual(['Copy URL, Settings…']);
+    expect(labels(true)).toEqual(['Copy URL, Settings…', 'Rotate URL…, Clear captures', 'Delete']);
+  });
 });

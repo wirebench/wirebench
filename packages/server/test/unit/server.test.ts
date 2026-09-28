@@ -339,4 +339,38 @@ describe('buildServer', () => {
     expect(text).toContain('/invite/[redacted]');
     expect(text).not.toContain('S3cr3t-invite-p4th');
   });
+
+  it('never logs a catch URL secret carried in the /hooks/:secret path, and keeps the subpath', async () => {
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        lines.push(chunk.toString('utf-8'));
+        callback();
+      },
+    });
+    const ctx = await testContext({ dataDir });
+    const app = await buildServer(
+      { ...ctx, config: { ...ctx.config, logLevel: 'info' } },
+      {
+        logStream,
+        modules: [
+          {
+            name: 'webhook-capture',
+            register: () => Promise.resolve(),
+            // eslint-disable-next-line @typescript-eslint/require-await -- registerPublic is async; this one has no await
+            registerPublic: async (root) => {
+              root.all('/hooks/:secret/*', async (_request, reply) => reply.code(204).send());
+            },
+          },
+        ],
+      },
+    );
+    const res = await app.inject({ method: 'POST', url: '/hooks/7ZC5Q0V7R3T9XK2M4N6P8QAB7Y/payments?x=1' });
+    expect(res.statusCode).toBe(204);
+    await app.close();
+    const text = lines.join('');
+    expect(text).toContain('/hooks/[redacted]/payments');
+    expect(text).not.toContain('7ZC5Q0V7R3T9XK2M4N6P8QAB7Y');
+    expect(text).not.toContain('x=1');
+  });
 });

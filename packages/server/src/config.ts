@@ -59,6 +59,13 @@ const inputSchema = z.object({
   tokenIdleDays: integerText(1, 3650, '30'),
   tokenMaxDays: integerText(1, 3650, '180'),
   invitationDays: integerText(1, 365, '7'),
+  hooksEnabled: booleanText('true'),
+  hooksBodyLimitMb: integerText(1, 32, '1'),
+  hooksKeep: integerText(1, 10_000, '500'),
+  hooksMaxAgeDays: integerText(1, 365, '7'),
+  hooksRatePerSecond: integerText(1, 1_000, '10'),
+  hooksBurst: integerText(1, 10_000, '50'),
+  hooksPerWorkspace: integerText(1, 1_000, '50'),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -226,6 +233,63 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: '7',
     secret: false,
     description: 'How long an invitation or password-reset link stays valid.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_ENABLED',
+    key: 'hooksEnabled',
+    required: false,
+    defaultText: 'true',
+    secret: false,
+    description: 'Serve catch URLs: the public `/hooks/…` route and the webhook management API.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB',
+    key: 'hooksBodyLimitMb',
+    required: false,
+    defaultText: '1',
+    secret: false,
+    description:
+      'How much of a caught request body is stored, in MiB (1–32). A longer body is cut and marked truncated.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_KEEP',
+    key: 'hooksKeep',
+    required: false,
+    defaultText: '500',
+    secret: false,
+    description: 'Captures kept per catch URL (1–10000); the oldest go first.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS',
+    key: 'hooksMaxAgeDays',
+    required: false,
+    defaultText: '7',
+    secret: false,
+    description: 'Captures older than this many days are deleted (1–365).',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND',
+    key: 'hooksRatePerSecond',
+    required: false,
+    defaultText: '10',
+    secret: false,
+    description: 'Requests per second a catch URL accepts once its burst is spent (1–1000); past it, `429`.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_BURST',
+    key: 'hooksBurst',
+    required: false,
+    defaultText: '50',
+    secret: false,
+    description: 'Requests a catch URL accepts at once before the rate applies (1–10000).',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_PER_WORKSPACE',
+    key: 'hooksPerWorkspace',
+    required: false,
+    defaultText: '50',
+    secret: false,
+    description: 'Catch URLs a workspace may hold (1–1000).',
   },
 ];
 

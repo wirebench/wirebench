@@ -8,6 +8,7 @@ import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
+import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import type { InterfaceWire, WorkspaceProjectWire, WorkspaceWire } from '../../src/shared/wire-types.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -752,5 +753,88 @@ describe('ExplorerView with a WebSocket API', () => {
     });
 
     expect(screen.getByRole('alertdialog', { name: 'Delete API?' })).not.toBeNull();
+  });
+});
+
+describe('ExplorerView — webhooks (webhook-capture §4.2)', () => {
+  const HOOK = {
+    id: '01J8ZC5Q0V7R3T9XK2M4N6H001',
+    workspaceId: '01J8ZC5Q0V7R3T9XK2M4N6P8QA',
+    name: 'Payments',
+    url: `https://wb.test/hooks/${'7'.repeat(26)}`,
+    enabled: true,
+    response: { status: 200, contentType: null, body: null, delayMs: 0 },
+    captureCount: 250,
+    newestCaptureId: null,
+    createdAt: '2026-09-24T12:00:00.000Z',
+  };
+  afterEach(() => {
+    cleanup();
+    useWebhooksStore.setState({ server: undefined, meta: undefined, hooks: [], loaded: false, unseen: {} });
+    useEditorsStore.getState().reset();
+  });
+
+  it('shows the Webhooks root with its catch URLs and their unseen badges, and opens one on click', async () => {
+    installWirebenchApi();
+    openWorkspace([wireProject()]);
+    useWebhooksStore.setState({
+      server: { url: 'https://wb.test', workspaceId: HOOK.workspaceId },
+      meta: { enabled: true, bodyLimitBytes: 1_048_576, keep: 500, maxAgeDays: 7 },
+      hooks: [HOOK, { ...HOOK, id: '01J8ZC5Q0V7R3T9XK2M4N6H002', name: 'Source', enabled: false }],
+      loaded: true,
+      unseen: {
+        [HOOK.id]: { count: 3, more: false },
+        '01J8ZC5Q0V7R3T9XK2M4N6H002': { count: 200, more: true },
+      },
+    });
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(await screen.findByTestId('webhooks-row')).toBeTruthy();
+    const rows = await screen.findAllByTestId('catch-url-row');
+    expect(rows.map((row) => row.textContent)).toEqual(['Payments3', 'Sourceoff200+']);
+
+    fireEvent.click(rows[0]!);
+    expect(useEditorsStore.getState().tabs.map((tab) => [tab.id, tab.kind])).toEqual([
+      [`catch-url:${HOOK.id}`, 'catch-url'],
+    ]);
+  });
+
+  it('shows no Webhooks root for a server without the module', () => {
+    installWirebenchApi();
+    openWorkspace([wireProject()]);
+    useWebhooksStore.setState({ meta: null });
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.queryByTestId('webhooks-row')).toBeNull();
+  });
+
+  it('opens the Webhooks root once it arrives after the tree has already mounted (controller ruling I4)', async () => {
+    installWirebenchApi();
+    openWorkspace([wireProject()]);
+    render(
+      <TooltipPrimitive.Provider>
+        <ExplorerView />
+      </TooltipPrimitive.Provider>,
+    );
+    expect(screen.queryByTestId('webhooks-row')).toBeNull();
+
+    act(() => {
+      useWebhooksStore.setState({
+        server: { url: 'https://wb.test', workspaceId: HOOK.workspaceId },
+        meta: { enabled: true, bodyLimitBytes: 1_048_576, keep: 500, maxAgeDays: 7 },
+        hooks: [HOOK],
+        loaded: true,
+        unseen: { [HOOK.id]: { count: 3, more: false } },
+      });
+    });
+
+    expect(await screen.findByTestId('webhooks-row')).toBeTruthy();
+    expect(await screen.findByTestId('catch-url-row')).toBeTruthy();
   });
 });

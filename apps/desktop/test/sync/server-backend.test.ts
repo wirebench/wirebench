@@ -837,6 +837,23 @@ describe('ServerBackend.subscribeRemote (live-updates §3.4, §5.3, R1)', () => 
     expect(events).toEqual([{ kind: 'access' }]);
   });
 
+  it('capture and hooks nudges are not sync events (webhook-capture §3.6)', async () => {
+    const l = fakeLive();
+    const f = await joined(seeded(), { live: l.live });
+    const { events } = listen(f.backend);
+    l.send(
+      liveMessage({
+        type: 'capture',
+        workspaceId: WS_ID,
+        hookId: '01J8ZC5Q0V7R3T9XK2M4N6P8QE',
+        captureId: '01J8ZC5Q0V7R3T9XK2M4N6P8QF',
+      }),
+    );
+    l.send(liveMessage({ type: 'hooks', workspaceId: WS_ID }));
+    l.send(liveMessage({ type: 'access', workspaceId: WS_ID }));
+    expect(events).toEqual([{ kind: 'access' }]);
+  });
+
   it('a head the last fetch or the base already names is silent; a new one is changed, with no network call', async () => {
     const server = seeded();
     const l = fakeLive();

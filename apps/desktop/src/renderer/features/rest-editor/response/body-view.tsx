@@ -27,6 +27,18 @@ import type { RestExchangeSummary } from '../../../../shared/wire-types.js';
 /** Which of the three views is showing. */
 export type BodyViewMode = 'pretty' | 'raw' | 'preview';
 
+/**
+ * What the body views read. A REST response summary satisfies it; so does a captured request
+ * (webhook-capture §4.2), which has no status, timings or send id to fake.
+ */
+export interface BodyViewExchange {
+  readonly text: string;
+  readonly language: RestExchangeSummary['language'];
+  readonly decodeNote?: string | undefined;
+  readonly contract?: RestExchangeSummary['contract'];
+  readonly http: { readonly bodyBase64: string; readonly headers: Readonly<Record<string, string>> };
+}
+
 /** The languages `CodeEditor` can colour; anything else is shown as plain text. */
 function editorLanguage(language: RestExchangeSummary['language']): EditorLanguage {
   switch (language) {
@@ -46,7 +58,7 @@ function formattable(language: RestExchangeSummary['language']): 'json' | 'xml' 
 }
 
 /** Whether this response is an image the Preview tab can render. */
-export function isImage(exchange: RestExchangeSummary): boolean {
+export function isImage(exchange: BodyViewExchange): boolean {
   return exchange.language === 'image';
 }
 
@@ -81,7 +93,7 @@ export function hexLines(bytes: Uint8Array, limit = HEX_MAX_LINES): readonly str
 const RAW_LINE_HEIGHT = 18;
 
 export interface BodyViewProps {
-  readonly exchange: RestExchangeSummary;
+  readonly exchange: BodyViewExchange;
   /** Called with a JSONPath-style path when the user copies one, so the Query tab can take it. */
   readonly onCopyPath?: (path: string) => void;
   /** The request this response answered: a Problems reveal addressed to it is taken here. */
@@ -281,7 +293,7 @@ function RawBody({
 }
 
 /** An image, or a hex dump of whatever else came back. */
-function PreviewView({ exchange }: { readonly exchange: RestExchangeSummary }) {
+function PreviewView({ exchange }: { readonly exchange: BodyViewExchange }) {
   const [objectUrl, setObjectUrl] = useState<string | undefined>(undefined);
   const image = isImage(exchange);
   const contentType = exchange.http.headers['content-type'] ?? 'application/octet-stream';

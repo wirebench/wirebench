@@ -7,7 +7,7 @@ import {
   type LiveServerMessage,
   type WorkspaceRole,
 } from '@wirebench/engine';
-import { LiveHub, type LiveSession, type LiveSocket } from '../../../src/live/hub.js';
+import { CAPTURE_WINDOW_MS, LiveHub, type LiveSession, type LiveSocket } from '../../../src/live/hub.js';
 import type { Effective } from '../../../src/teams/roles.js';
 
 const T0 = Date.parse('2026-09-26T10:00:00.000Z');
@@ -745,5 +745,104 @@ describe('LiveHub — closeAll (§3.3, §5.1)', () => {
     expect(f.hub.admit(late, session(CAT, 'tok-cat'))).toBe('ok');
     expect(late.closed?.code).toBe(LIVE_CLOSE.goingAway);
     expect(late.sent).toEqual([]);
+  });
+});
+
+const HOOK_1 = '01J8ZC5Q0V7R3T9XK2M4N6H001';
+const HOOK_2 = '01J8ZC5Q0V7R3T9XK2M4N6H002';
+/** Capture ids in arrival order, on `TEAMS_ID_PATTERN`. */
+const cap = (n: number): string => `01J8ZE0000000000000000${String(n).padStart(4, '0')}`;
+const captured = (workspaceId: string, hookId: string, n: number): LiveServerMessage => ({
+  type: 'capture',
+  workspaceId,
+  hookId,
+  captureId: cap(n),
+});
+/** The coalescing windows armed; session deadlines are armed too, with other delays. */
+const windows = (f: Fixture): number => f.clock.armed().filter((ms) => ms === CAPTURE_WINDOW_MS).length;
+
+describe('LiveHub — captureReceived (webhook-capture §3.6)', () => {
+  it('sends the first capture at once to every subscriber of the workspace, viewers included, and nobody else', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A, 'editor');
+    const ben = await joined(f, BEN, 'tok-ben', WS_A, 'viewer');
+    const cat = await joined(f, CAT, 'tok-cat', WS_B, 'admin');
+    settle(ana, ben, cat);
+
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 1)]);
+    expect(ben.take()).toEqual([captured(WS_A, HOOK_1, 1)]);
+    expect(cat.sent).toEqual([]);
+  });
+
+  it('merges a burst into one message per window per catch URL, carrying the newest id', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    settle(ana);
+
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(3) });
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_2, captureId: cap(4) }); // its own window
+    expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 1), captured(WS_A, HOOK_2, 4)]);
+
+    f.clock.advance(CAPTURE_WINDOW_MS - 1);
+    expect(ana.sent).toEqual([]);
+    f.clock.advance(1);
+    expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 3)]); // HOOK_2's window ends with nothing held
+    expect(windows(f)).toBe(1); // the trailing send opened a fresh window for HOOK_1
+
+    f.clock.advance(CAPTURE_WINDOW_MS);
+    expect(ana.sent).toEqual([]);
+    expect(windows(f)).toBe(0); // quiet: nothing armed
+
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(5) });
+    expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 5)]); // leading edge again
+  });
+
+  it('keeps the newest id when two announcements arrive out of order', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    settle(ana);
+
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(3) });
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
+    f.clock.advance(CAPTURE_WINDOW_MS);
+    expect(ana.take()).toEqual([captured(WS_A, HOOK_1, 1), captured(WS_A, HOOK_1, 3)]);
+  });
+
+  it('stops every window on closeAll and ignores later captures', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A);
+    settle(ana);
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(1) });
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_1, captureId: cap(2) });
+    ana.take();
+
+    f.hub.closeAll();
+    expect(windows(f)).toBe(0);
+    f.hub.captureReceived({ workspaceId: WS_A, hookId: HOOK_2, captureId: cap(3) });
+    f.hub.hooksChanged({ workspaceId: WS_A });
+    f.clock.advance(CAPTURE_WINDOW_MS);
+    expect(ana.sent).toEqual([]);
+    expect(windows(f)).toBe(0);
+  });
+});
+
+describe('LiveHub — hooksChanged (webhook-capture §3.6)', () => {
+  it('sends hooks to every subscriber of the workspace, one per change', async () => {
+    const f = fixture();
+    const ana = await joined(f, ANA, 'tok-ana', WS_A, 'editor');
+    const ben = await joined(f, BEN, 'tok-ben', WS_A);
+    const cat = await joined(f, CAT, 'tok-cat', WS_B);
+    settle(ana, ben, cat);
+
+    f.hub.hooksChanged({ workspaceId: WS_A });
+    f.hub.hooksChanged({ workspaceId: WS_A });
+    const hooks: LiveServerMessage = { type: 'hooks', workspaceId: WS_A };
+    expect(ana.take()).toEqual([hooks, hooks]);
+    expect(ben.take()).toEqual([hooks, hooks]);
+    expect(cat.sent).toEqual([]);
   });
 });

@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Webhook capture.** A workspace shared on Wirebench Server gets catch URLs. Each is a public address
+  that records every request sent to it, with a configurable fixed response. Captures appear live in a
+  tab under the Explorer's new *Webhooks* node, read with the same body and header viewers as a response,
+  with a per-device badge for the ones not yet seen. Editors create, rotate, clear and delete catch URLs;
+  viewers read them. The server bounds captures by count, age, body size and rate, and the app never
+  writes them to disk.
+
 - **Sequences.** A sequence sends saved SOAP, REST and unary gRPC requests one after another, and is
   declared in its own file, `sequences/<name>.sequence.yaml`, with no code. A step can lift a value
   from its response (a body expression, a header, a cookie or the status) for later steps to use as

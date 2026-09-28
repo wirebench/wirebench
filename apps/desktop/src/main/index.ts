@@ -70,6 +70,8 @@ import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
 import { registerTeamChannels } from './ipc/team.js';
+import { HooksService } from './hooks/hooks-service.js';
+import { registerHooksChannels } from './ipc/hooks.js';
 import { AccountService } from './account-service.js';
 import { ServerClient } from './server-client.js';
 import { LiveClients } from './live/live-clients.js';
@@ -214,6 +216,21 @@ const liveClients = new LiveClients({
   connect: (wsUrl) => {
     const options: ConnectOptions = serverConnectOptions.get(new URL(wsUrl.replace(/^ws/, 'http')).origin) ?? {};
     return connectWebSocket(wsUrl, options);
+  },
+});
+
+/**
+ * Catch URLs and captures (webhook-capture §4.1): the server calls share `serverClient`'s CA bundle and
+ * proxy, and the live nudges ride the same sockets as sync. Captures stay in memory, per open tab.
+ */
+const hooksService = new HooksService({
+  client: serverClient,
+  accounts: accountService,
+  live: liveClients,
+  emit: {
+    changed: (event) => broadcast(events.hooks.changed, event),
+    captured: (event) => broadcast(events.hooks.captured, event),
+    captures: (event) => broadcast(events.hooks.captures, event),
   },
 });
 
@@ -471,6 +488,7 @@ void app.whenReady().then(() => {
   });
   registerAccountChannels({ accounts: accountService });
   registerTeamChannels({ client: serverClient, accounts: accountService });
+  registerHooksChannels({ hooks: hooksService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed
   // shows as signed out now rather than on the first action; no account, no call (§3.8).
@@ -700,6 +718,8 @@ app.on('before-quit', (event) => {
   } catch (error) {
     console.warn('[ws] closeAllWs on quit failed', error instanceof Error ? error.message : String(error));
   }
+  // The catch URL views and their subscriptions go first; nothing of them outlives the process.
+  hooksService.dispose();
   // The live sockets close 1000, so the server drops this device from presence now rather than at
   // its next heartbeat (live-updates §3.4). Not awaited: a socket that will not close must never
   // hold up the quit.

@@ -107,6 +107,59 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...required, WIREBENCH_SERVER_PORT: 'eighty' }, '2.1.1')).toThrow(ConfigError);
     expect(() => loadConfig({ ...required, WIREBENCH_SERVER_TRUST_PROXY: 'yes' }, '2.1.1')).toThrow(ConfigError);
   });
+
+  it('defaults and bounds the webhook-capture variables (webhook-capture §3.7)', () => {
+    expect(loadConfig(required, '2.1.1')).toMatchObject({
+      hooksEnabled: true,
+      hooksBodyLimitMb: 1,
+      hooksKeep: 500,
+      hooksMaxAgeDays: 7,
+      hooksRatePerSecond: 10,
+      hooksBurst: 50,
+      hooksPerWorkspace: 50,
+    });
+    expect(
+      loadConfig(
+        {
+          ...required,
+          WIREBENCH_SERVER_HOOKS_ENABLED: 'false',
+          WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB: '32',
+          WIREBENCH_SERVER_HOOKS_KEEP: '10000',
+          WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS: '365',
+          WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND: '1000',
+          WIREBENCH_SERVER_HOOKS_BURST: '1',
+          WIREBENCH_SERVER_HOOKS_PER_WORKSPACE: '1000',
+        },
+        '2.1.1',
+      ),
+    ).toMatchObject({
+      hooksEnabled: false,
+      hooksBodyLimitMb: 32,
+      hooksKeep: 10_000,
+      hooksMaxAgeDays: 365,
+      hooksRatePerSecond: 1000,
+      hooksBurst: 1,
+      hooksPerWorkspace: 1000,
+    });
+    for (const [variable, value] of [
+      ['WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB', '0'],
+      ['WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB', '33'],
+      ['WIREBENCH_SERVER_HOOKS_KEEP', '10001'],
+      ['WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS', '366'],
+      ['WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND', '0'],
+      ['WIREBENCH_SERVER_HOOKS_BURST', '10001'],
+      ['WIREBENCH_SERVER_HOOKS_PER_WORKSPACE', '1001'],
+      ['WIREBENCH_SERVER_HOOKS_ENABLED', 'maybe'],
+    ] as const) {
+      let caught: unknown;
+      try {
+        loadConfig({ ...required, [variable]: value }, '2.1.1');
+      } catch (error) {
+        caught = error;
+      }
+      expect((caught as ConfigError).problems.map((p) => p.variable)).toEqual([variable]);
+    }
+  });
 });
 
 describe('describeConfig', () => {
@@ -128,6 +181,13 @@ describe('describeConfig', () => {
         'WIREBENCH_SERVER_DATABASE_URL',
         'WIREBENCH_SERVER_DATA_DIR',
         'WIREBENCH_SERVER_GIT_PATH',
+        'WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB',
+        'WIREBENCH_SERVER_HOOKS_BURST',
+        'WIREBENCH_SERVER_HOOKS_ENABLED',
+        'WIREBENCH_SERVER_HOOKS_KEEP',
+        'WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS',
+        'WIREBENCH_SERVER_HOOKS_PER_WORKSPACE',
+        'WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND',
         'WIREBENCH_SERVER_HOST',
         'WIREBENCH_SERVER_INVITATION_DAYS',
         'WIREBENCH_SERVER_LOCAL_AUTH',

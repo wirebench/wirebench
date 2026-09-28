@@ -150,6 +150,12 @@ export function liveModule(options: LiveOptions = {}): ServerModule {
       ctx.hooks.sessionEnded.push((event) => {
         hub.sessionEnded(event);
       });
+      ctx.hooks.captureReceived.push((event) => {
+        hub.captureReceived(event);
+      });
+      ctx.hooks.hooksChanged.push((event) => {
+        hub.hooksChanged(event);
+      });
       ctx.meta.addCapability(LIVE_CAPABILITY);
       heartbeat = setTimer(beat, LIVE_LIMITS.heartbeatMs);
     },

@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { SecretReviewDialog } from '../components/secret-review-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
+import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
 import { subscribeToAccounts, useAccountStore } from '../state/account.js';
 import { ToastViewport } from '../components/toast.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
@@ -29,6 +30,7 @@ import { subscribeToProject, useProjectStore } from '../state/project.js';
 import { subscribeToWorkspace, useWorkspaceStore } from '../state/workspace.js';
 import { subscribeToSync } from '../state/sync.js';
 import { subscribeToTeamSecrets } from '../state/team-secrets.js';
+import { subscribeToWebhooks } from '../state/webhooks.js';
 import { WorkspacePicker } from '../features/workspace/picker-screen.js';
 import { NewProjectDialog } from '../features/workspace/new-project-dialog.js';
 import { CreateWorkspaceDialog } from '../features/workspace/create-workspace-dialog.js';
@@ -261,6 +263,7 @@ export function AppShell() {
   useEffect(() => subscribeToWorkspace(), []);
   useEffect(() => subscribeToSync(), []);
   useEffect(() => subscribeToTeamSecrets(), []);
+  useEffect(() => subscribeToWebhooks(), []);
   useEffect(() => subscribeToAccounts(), []);
   useEffect(() => {
     void useAccountStore.getState().load();
@@ -446,6 +449,7 @@ export function AppShell() {
       <OpenTeamWorkspaceDialog />
       <SignInDialog />
       <TeamDialog />
+      <WebhooksDialogs />
       <MoveProjectDialog />
       <SyncPanel />
       <ConflictResolver />

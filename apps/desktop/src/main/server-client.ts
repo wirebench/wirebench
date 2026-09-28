@@ -7,6 +7,10 @@
  */
 import {
   accessResponseSchema,
+  captureSchema,
+  capturesResponseSchema,
+  catchUrlSchema,
+  catchUrlsResponseSchema,
   invitationLookupResponseSchema,
   meResponseSchema,
   metaResponseSchema,
@@ -31,6 +35,11 @@ import {
   teamWorkspacesResponseSchema,
   WirebenchError,
   type AccessEntry,
+  type Capture,
+  type CaptureSummary,
+  type CatchUrl,
+  type CatchUrlCreateRequest,
+  type CatchUrlUpdateRequest,
   type HttpExchange,
   type HttpRequest,
   type InvitationAcceptRequest,
@@ -83,6 +92,8 @@ export const SYNC_TRANSFER_TIMEOUT_MS = 120_000;
 
 const teamPath = (teamId: string): string => `/api/v1/teams/${encodeURIComponent(teamId)}`;
 const workspacePath = (workspaceId: string): string => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`;
+const hookPath = (workspaceId: string, hookId: string): string =>
+  `${workspacePath(workspaceId)}/hooks/${encodeURIComponent(hookId)}`;
 
 /**
  * `path` plus a query string built from the defined values only. `URLSearchParams` encodes every
@@ -409,6 +420,92 @@ export class ServerClient {
       token,
       schema: syncLogResponseSchema,
     });
+  }
+
+  // ---- webhook-capture (spec §3.5): one method per route -----------------------------------------
+
+  listHooks(url: string, token: string, workspaceId: string): Promise<CatchUrl[]> {
+    return this.call(url, {
+      method: 'GET',
+      path: `${workspacePath(workspaceId)}/hooks`,
+      token,
+      schema: catchUrlsResponseSchema,
+    });
+  }
+
+  createHook(url: string, token: string, workspaceId: string, body: CatchUrlCreateRequest): Promise<CatchUrl> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/hooks`,
+      token,
+      body,
+      schema: catchUrlSchema,
+    });
+  }
+
+  updateHook(
+    url: string,
+    token: string,
+    workspaceId: string,
+    hookId: string,
+    body: CatchUrlUpdateRequest,
+  ): Promise<CatchUrl> {
+    return this.call(url, {
+      method: 'PATCH',
+      path: hookPath(workspaceId, hookId),
+      token,
+      body,
+      schema: catchUrlSchema,
+    });
+  }
+
+  /** The old URL stops answering the moment the server commits (§3.5). */
+  rotateHook(url: string, token: string, workspaceId: string, hookId: string): Promise<CatchUrl> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${hookPath(workspaceId, hookId)}/rotate`,
+      token,
+      schema: catchUrlSchema,
+    });
+  }
+
+  async deleteHook(url: string, token: string, workspaceId: string, hookId: string): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: hookPath(workspaceId, hookId), token });
+  }
+
+  /** Newest first; `before` pages back from an id, `after` returns the captures right after one (the gap fill). */
+  listCaptures(
+    url: string,
+    token: string,
+    workspaceId: string,
+    hookId: string,
+    page: { readonly before?: string; readonly after?: string; readonly limit?: number },
+  ): Promise<CaptureSummary[]> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery(`${hookPath(workspaceId, hookId)}/captures`, {
+        before: page.before,
+        after: page.after,
+        limit: page.limit,
+      }),
+      token,
+      schema: capturesResponseSchema,
+    });
+  }
+
+  /** One capture in full. Its body can be the server's whole body limit, so it gets the transfer timeout. */
+  getCapture(url: string, token: string, workspaceId: string, hookId: string, captureId: string): Promise<Capture> {
+    return this.call(url, {
+      method: 'GET',
+      path: `${hookPath(workspaceId, hookId)}/captures/${encodeURIComponent(captureId)}`,
+      token,
+      schema: captureSchema,
+      timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+    });
+  }
+
+  async clearCaptures(url: string, token: string, workspaceId: string, hookId: string): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: `${hookPath(workspaceId, hookId)}/captures`, token });
   }
 
   private async call<T>(url: string, call: Call<T>): Promise<T> {

@@ -44,6 +44,11 @@ export interface FakeServerOptions {
    * `404`; without `live`, so does the `/live` upgrade.
    */
   readonly capabilities?: readonly string[];
+  /**
+   * Serve catch URLs (webhook-capture spec §3): `/meta` reports `hooks`, the management routes the
+   * webhooks spec drives answer, and `/hooks/<secret>` captures and pushes `capture` over `/live`.
+   */
+  readonly hooks?: boolean;
 }
 
 /** One request the fake answered, for specs that assert what the app sent (or did not). */
@@ -122,6 +127,8 @@ export interface FakeServer {
   liveEndSession(token: string): number;
   /** The open, authenticated `/live` sockets. */
   liveConnections(): FakeLiveConnection[];
+  /** The full catch URL of the workspace's catch URL called `name`. @throws when there is none. */
+  catchUrlOf(workspaceId: string, name: string): string;
   close(): Promise<void>;
 }
 
@@ -220,6 +227,45 @@ interface WorkspaceRow {
   readonly grants: Map<string, WorkspaceRole>;
   /** Oldest first; the last one is the head. */
   readonly history: FakeCommit[];
+}
+
+interface FakeCapture {
+  readonly id: string;
+  readonly receivedAt: string;
+  readonly method: string;
+  readonly subpath: string;
+  readonly query: string;
+  readonly headers: [string, string][];
+  readonly body: Buffer;
+  readonly sourceIp: string;
+}
+
+interface FakeCatchUrl {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly name: string;
+  readonly secret: string;
+  readonly enabled: boolean;
+  readonly response: {
+    readonly status: number;
+    readonly contentType: string | null;
+    readonly body: string | null;
+    readonly delayMs: number;
+  };
+  readonly createdAt: string;
+  /** Oldest first. */
+  readonly captures: FakeCapture[];
+}
+
+/** What `/meta` reports with `hooks: true`: the real server's defaults (spec §3.7). */
+const HOOKS_META = { enabled: true, bodyLimitBytes: 1_048_576, keep: 500, maxAgeDays: 7 };
+
+function readBody(request: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('end', () => resolve(Buffer.concat(chunks)));
+  });
 }
 
 interface FakeInvitation {
@@ -821,6 +867,142 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     return false;
   };
 
+  /*
+   * Catch URLs (webhook-capture spec §3.3, §3.5), with `hooks: true`: enough of the management API for
+   * `server-webhooks.spec.ts`, and the public route. The real routes are covered by `packages/server`'s
+   * integration suite.
+   */
+  const catchUrls = new Map<string, FakeCatchUrl>();
+  let captureSeq = 1;
+  /** Ids that sort in arrival order on the ULID alphabet, as the real server's monotonic ids do. */
+  const nextCaptureId = (): string => `01J8ZE${String(captureSeq++).padStart(20, '0')}`;
+  const toCatchUrl = (hook: FakeCatchUrl) => ({
+    id: hook.id,
+    workspaceId: hook.workspaceId,
+    name: hook.name,
+    url: `${url}/hooks/${hook.secret}`,
+    enabled: hook.enabled,
+    response: hook.response,
+    captureCount: hook.captures.length,
+    newestCaptureId: hook.captures.at(-1)?.id ?? null,
+    createdAt: hook.createdAt,
+  });
+  const toSummary = (capture: FakeCapture) => ({
+    id: capture.id,
+    receivedAt: capture.receivedAt,
+    method: capture.method,
+    subpath: capture.subpath,
+    bodySize: capture.body.length,
+    truncated: false,
+    sourceIp: capture.sourceIp,
+  });
+
+  const hooksApi = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    ws: WorkspaceRow,
+    role: WorkspaceRole,
+    segments: readonly string[],
+    query: URLSearchParams,
+  ): Promise<void> => {
+    const method = request.method ?? 'GET';
+    // workspaces / :workspaceId / hooks / :hookId / captures / :captureId
+    const [, , , hookId, sub, captureId] = segments;
+    const mine = [...catchUrls.values()].filter((hook) => hook.workspaceId === ws.id);
+    if (hookId === undefined && method === 'GET') {
+      return send(response, 200, mine.sort((a, b) => a.name.localeCompare(b.name)).map(toCatchUrl));
+    }
+    if (hookId === undefined && method === 'POST') {
+      if (role === 'viewer') return problem(response, 403, 'teams-forbidden');
+      const body = (await readJson(request)) as {
+        name: string;
+        enabled?: boolean;
+        response?: Partial<FakeCatchUrl['response']>;
+      };
+      const name = body.name.trim();
+      if (mine.some((hook) => hook.name.toLowerCase() === name.toLowerCase()))
+        return problem(response, 409, 'hooks-name-taken');
+      const hook: FakeCatchUrl = {
+        id: generateId(),
+        workspaceId: ws.id,
+        name,
+        secret: generateId(),
+        enabled: body.enabled ?? true,
+        response: { status: 200, contentType: null, body: null, delayMs: 0, ...body.response },
+        createdAt: at(),
+        captures: [],
+      };
+      catchUrls.set(hook.id, hook);
+      // After the change and before the 201, where the real route announces (§3.6).
+      liveSendTo(subscribersOf(ws.id), { type: 'hooks', workspaceId: ws.id });
+      return send(response, 201, toCatchUrl(hook));
+    }
+    const hook = hookId === undefined ? undefined : catchUrls.get(hookId);
+    if (hook === undefined || hook.workspaceId !== ws.id) return problem(response, 404, 'hooks-not-found');
+    if (sub === 'captures' && captureId === undefined && method === 'GET') {
+      const limit = Number(query.get('limit') ?? '50');
+      const before = query.get('before');
+      const after = query.get('after');
+      const page =
+        after !== null
+          ? hook.captures
+              .filter((capture) => capture.id > after)
+              .slice(0, limit)
+              .reverse()
+          : [...hook.captures]
+              .reverse()
+              .filter((capture) => before === null || capture.id < before)
+              .slice(0, limit);
+      return send(response, 200, page.map(toSummary));
+    }
+    if (sub === 'captures' && captureId !== undefined && method === 'GET') {
+      const capture = hook.captures.find((candidate) => candidate.id === captureId);
+      if (capture === undefined) return problem(response, 404, 'hooks-capture-not-found');
+      return send(response, 200, {
+        ...toSummary(capture),
+        query: capture.query,
+        headers: capture.headers,
+        body: capture.body.toString('base64'),
+      });
+    }
+    problem(response, 404, 'not-found');
+  };
+
+  /** `ANY /hooks/<secret>[/<subpath>]` (§3.3): store, nudge the workspace, answer the configured response. */
+  const catchPublic = async (request: IncomingMessage, response: ServerResponse, path: URL): Promise<void> => {
+    const [, , secret, ...rest] = path.pathname.split('/');
+    const body = await readBody(request);
+    const hook = [...catchUrls.values()].find((candidate) => candidate.secret === secret);
+    if (hook === undefined || !hook.enabled) {
+      response.writeHead(404, { 'content-length': '0' });
+      response.end();
+      return;
+    }
+    const headers: [string, string][] = [];
+    for (let index = 0; index + 1 < request.rawHeaders.length; index += 2)
+      headers.push([request.rawHeaders[index]!, request.rawHeaders[index + 1]!]);
+    const capture: FakeCapture = {
+      id: nextCaptureId(),
+      receivedAt: at(),
+      method: request.method ?? 'GET',
+      subpath: rest.length > 0 ? `/${rest.join('/')}` : '',
+      query: path.search.replace(/^\?/, ''),
+      headers,
+      body,
+      sourceIp: request.socket.remoteAddress ?? '',
+    };
+    hook.captures.push(capture);
+    liveSendTo(subscribersOf(hook.workspaceId), {
+      type: 'capture',
+      workspaceId: hook.workspaceId,
+      hookId: hook.id,
+      captureId: capture.id,
+    });
+    const answer = hook.response;
+    response.writeHead(answer.status, answer.contentType === null ? {} : { 'content-type': answer.contentType });
+    response.end(answer.body ?? undefined);
+  };
+
   const userOf = (email: string) => {
     const user = users.get(email.toLowerCase())!;
     return { id: user.id, email: user.email, displayName: user.displayName, serverAdmin: user.serverAdmin ?? false };
@@ -845,6 +1027,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         path: path.pathname,
         ...(token !== undefined ? { token } : {}),
       });
+      if (options.hooks === true && path.pathname.startsWith('/hooks/')) {
+        await catchPublic(request, response, path);
+        return;
+      }
       if (request.method === 'GET' && path.pathname === '/api/v1/meta') {
         send(response, 200, {
           name: NAME,
@@ -853,6 +1039,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           publicUrl: url,
           auth: { local: true, oidc: options.oidc ?? false },
           capabilities,
+          ...(options.hooks === true ? { hooks: HOOKS_META } : {}),
         });
         return;
       }
@@ -912,6 +1099,13 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           const access = ws === undefined ? undefined : effective(ws, email);
           if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
           return await syncApi(request, response, ws, access.role, segments[3], path.searchParams, email, token);
+        }
+        if (segments[0] === 'workspaces' && segments[2] === 'hooks') {
+          if (options.hooks !== true) return problem(response, 404, 'not-found');
+          const ws = workspaces.get(segments[1] ?? '');
+          const access = ws === undefined ? undefined : effective(ws, email);
+          if (ws === undefined || access === undefined) return problem(response, 404, 'teams-workspace-not-found');
+          return await hooksApi(request, response, ws, access.role, segments, path.searchParams);
         }
         if (await teamsApi(request, response, segments, email)) return;
       }
@@ -995,6 +1189,13 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         email: connection.email,
         workspaces: [...connection.subscriptions],
       })),
+    catchUrlOf: (workspaceId, name) => {
+      const hook = [...catchUrls.values()].find(
+        (candidate) => candidate.workspaceId === workspaceId && candidate.name === name,
+      );
+      if (hook === undefined) throw new Error(`the fake server has no catch URL named ${name}`);
+      return `${url}/hooks/${hook.secret}`;
+    },
     close: async () => {
       // Upgraded sockets are no longer the HTTP server's to drain, so they would hold its close open.
       for (const socket of upgraded) socket.destroy();

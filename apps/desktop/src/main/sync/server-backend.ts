@@ -599,6 +599,10 @@ export class ServerBackend implements SyncBackend {
         case 'presence':
           emit({ kind: 'presence', users: message.users.map(({ id, name }) => ({ id, name })) });
           return;
+        case 'capture':
+        case 'hooks':
+          // Webhook nudges (webhook-capture §3.6) are the hooks service's; nothing in the tree changed.
+          return;
         default: {
           const unreachable: never = message;
           return unreachable;

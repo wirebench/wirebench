@@ -6,12 +6,16 @@ import { jsonSchema } from '../schema.js';
 export const metaRoutes =
   (ctx: ServerContext) =>
   (app: FastifyInstance): void => {
-    app.get('/meta', { schema: { response: { 200: jsonSchema(metaResponseSchema) } } }, () => ({
-      name: SERVER_NAME,
-      version: ctx.config.version,
-      apiVersion: SERVER_API_VERSION,
-      publicUrl: ctx.config.publicUrl,
-      auth: ctx.meta.signInMethods(),
-      capabilities: ctx.meta.capabilities(),
-    }));
+    app.get('/meta', { schema: { response: { 200: jsonSchema(metaResponseSchema) } } }, () => {
+      const hooks = ctx.meta.hooks();
+      return {
+        name: SERVER_NAME,
+        version: ctx.config.version,
+        apiVersion: SERVER_API_VERSION,
+        publicUrl: ctx.config.publicUrl,
+        auth: ctx.meta.signInMethods(),
+        capabilities: ctx.meta.capabilities(),
+        ...(hooks !== undefined ? { hooks } : {}),
+      };
+    });
   };

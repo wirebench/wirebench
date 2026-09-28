@@ -1,0 +1,273 @@
+/**
+ * The management API (webhook-capture spec §3.5), under `/api/v1`, guarded by teams-access's
+ * `requireWorkspaceRole`: viewers read, editors and admins change. Identity's `onRequest` hook has set
+ * `request.caller` before the guard runs, because this module registers after identity in the shared
+ * scope. Every change announces `hooksChanged` after it has committed (§3.6).
+ */
+import {
+  CATCH_URL_DEFAULT_RESPONSE,
+  CATCH_URL_PATH_PREFIX,
+  captureParamsSchema,
+  captureSchema,
+  capturesQuerySchema,
+  capturesResponseSchema,
+  catchUrlCreateRequestSchema,
+  catchUrlParamsSchema,
+  catchUrlSchema,
+  catchUrlsResponseSchema,
+  catchUrlUpdateRequestSchema,
+  HOOKS_LIMITS,
+  teamWorkspaceParamsSchema,
+  type Capture,
+  type CaptureSummary,
+  type CapturesQuery,
+  type CatchUrl,
+  type CatchUrlCreateRequest,
+  type CatchUrlUpdateRequest,
+} from '@wirebench/engine';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { announce } from '../../context.js';
+import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
+import { newId } from '../../identity/tokens.js';
+import { jsonSchema } from '../../schema.js';
+import { workspaceNotFound } from '../../teams/errors.js';
+import { requireWorkspaceRole } from '../../teams/roles.js';
+import type { HooksEnv } from '../env.js';
+import {
+  captureNotFound,
+  catchUrlLimitReached,
+  catchUrlNameInvalid,
+  catchUrlNameTaken,
+  catchUrlNotFound,
+  cursorConflict,
+  responseBodyTooLarge,
+} from '../errors.js';
+import * as repo from '../repo.js';
+import { mintCatchSecret } from '../secret.js';
+
+/** A row as the wire shows it: the secret only inside the full URL (§5). */
+export function toCatchUrl(row: repo.CatchUrlListRow, publicUrl: string): CatchUrl {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    url: `${publicUrl}${CATCH_URL_PATH_PREFIX}${row.secret}`,
+    enabled: row.enabled,
+    response: row.response,
+    captureCount: row.captureCount,
+    newestCaptureId: row.newestCaptureId,
+    createdAt: row.createdAt,
+  };
+}
+
+/** §3.5: 1–100 characters after trimming; JSON Schema cannot trim, so the handler re-checks. */
+function cleanName(raw: string): string {
+  const name = raw.trim();
+  if (name.length === 0 || name.length > HOOKS_LIMITS.maxNameLength) throw catchUrlNameInvalid();
+  return name;
+}
+
+/** §3.5: the body limit is in UTF-8 bytes; the schema's `max` only bounded characters. */
+function checkResponse(response: repo.ResponsePatch | undefined): void {
+  const body = response?.body;
+  if (typeof body === 'string' && Buffer.byteLength(body, 'utf8') > HOOKS_LIMITS.maxResponseBodyBytes) {
+    throw responseBodyTooLarge();
+  }
+}
+
+/** A racing duplicate answers like the name rule; a racing workspace delete like the guard. */
+function conflictOr(error: unknown): never {
+  if (isUniqueViolation(error, repo.CATCH_URL_NAME_INDEX)) throw catchUrlNameTaken();
+  if (isForeignKeyViolation(error, repo.CATCH_URL_WORKSPACE_FK)) throw workspaceNotFound();
+  throw error;
+}
+
+export const manageRoutes =
+  (env: HooksEnv) =>
+  (app: FastifyInstance): void => {
+    const { db, config } = env.ctx;
+    const one = jsonSchema(catchUrlSchema);
+    const workspaceParams = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
+    const hookParams = jsonSchema(catchUrlParamsSchema, { io: 'input' });
+
+    const found = async (workspaceId: string, hookId: string): Promise<repo.CatchUrlListRow> => {
+      const row = await repo.catchUrlInWorkspace(db, workspaceId, hookId);
+      if (row === undefined) throw catchUrlNotFound();
+      return row;
+    };
+    const hookOf = (request: FastifyRequest): { readonly workspaceId: string; readonly hookId: string } => ({
+      workspaceId: request.workspaceAccess!.workspaceId,
+      hookId: (request.params as { readonly hookId: string }).hookId,
+    });
+
+    app.get(
+      '/workspaces/:workspaceId/hooks',
+      {
+        preHandler: requireWorkspaceRole(db, 'viewer'),
+        schema: { params: workspaceParams, response: { 200: jsonSchema(catchUrlsResponseSchema) } },
+      },
+      async (request): Promise<CatchUrl[]> => {
+        const rows = await repo.catchUrlsOfWorkspace(db, request.workspaceAccess!.workspaceId);
+        return rows.map((row) => toCatchUrl(row, config.publicUrl));
+      },
+    );
+
+    app.post(
+      '/workspaces/:workspaceId/hooks',
+      {
+        preHandler: requireWorkspaceRole(db, 'editor'),
+        schema: {
+          params: workspaceParams,
+          body: jsonSchema(catchUrlCreateRequestSchema, { io: 'input' }),
+          response: { 201: one },
+        },
+      },
+      async (request, reply) => {
+        const { workspaceId } = request.workspaceAccess!;
+        const body = request.body as CatchUrlCreateRequest;
+        const name = cleanName(body.name);
+        checkResponse(body.response);
+        const id = newId();
+        try {
+          await db.transaction(async (tx) => {
+            if (!(await repo.lockWorkspace(tx, workspaceId))) throw workspaceNotFound();
+            if ((await repo.countCatchUrls(tx, workspaceId)) >= env.settings.perWorkspace) {
+              throw catchUrlLimitReached(env.settings.perWorkspace);
+            }
+            await repo.insertCatchUrl(tx, {
+              id,
+              workspaceId,
+              name,
+              secret: mintCatchSecret(),
+              enabled: body.enabled ?? true,
+              response: {
+                status: body.response?.status ?? CATCH_URL_DEFAULT_RESPONSE.status,
+                contentType: body.response?.contentType ?? CATCH_URL_DEFAULT_RESPONSE.contentType,
+                body: body.response?.body ?? CATCH_URL_DEFAULT_RESPONSE.body,
+                delayMs: body.response?.delayMs ?? CATCH_URL_DEFAULT_RESPONSE.delayMs,
+              },
+              createdBy: request.caller!.id,
+              at: env.now(),
+            });
+          });
+        } catch (error) {
+          conflictOr(error);
+        }
+        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        return reply.code(201).send(toCatchUrl(await found(workspaceId, id), config.publicUrl));
+      },
+    );
+
+    app.patch(
+      '/workspaces/:workspaceId/hooks/:hookId',
+      {
+        preHandler: requireWorkspaceRole(db, 'editor'),
+        schema: {
+          params: hookParams,
+          body: jsonSchema(catchUrlUpdateRequestSchema, { io: 'input' }),
+          response: { 200: one },
+        },
+      },
+      async (request): Promise<CatchUrl> => {
+        const { workspaceId, hookId } = hookOf(request);
+        const body = request.body as CatchUrlUpdateRequest;
+        await found(workspaceId, hookId);
+        checkResponse(body.response);
+        let updated: boolean;
+        try {
+          updated = await repo.updateCatchUrl(db, hookId, {
+            ...(body.name !== undefined ? { name: cleanName(body.name) } : {}),
+            ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+            ...(body.response !== undefined ? { response: body.response } : {}),
+          });
+        } catch (error) {
+          conflictOr(error);
+        }
+        if (!updated) throw catchUrlNotFound();
+        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl);
+      },
+    );
+
+    app.post(
+      '/workspaces/:workspaceId/hooks/:hookId/rotate',
+      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams, response: { 200: one } } },
+      async (request): Promise<CatchUrl> => {
+        const { workspaceId, hookId } = hookOf(request);
+        await found(workspaceId, hookId);
+        // The old URL answers 404 from the moment this commits (§3.5).
+        const rotated = await repo.rotateSecret(db, hookId, mintCatchSecret());
+        if (!rotated) throw catchUrlNotFound();
+        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl);
+      },
+    );
+
+    app.delete(
+      '/workspaces/:workspaceId/hooks/:hookId',
+      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
+      async (request, reply) => {
+        const { workspaceId, hookId } = hookOf(request);
+        await found(workspaceId, hookId);
+        if (!(await repo.deleteCatchUrl(db, hookId))) throw catchUrlNotFound();
+        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        return reply.code(204).send();
+      },
+    );
+
+    app.get(
+      '/workspaces/:workspaceId/hooks/:hookId/captures',
+      {
+        preHandler: requireWorkspaceRole(db, 'viewer'),
+        schema: {
+          params: hookParams,
+          querystring: jsonSchema(capturesQuerySchema, { io: 'input' }),
+          response: { 200: jsonSchema(capturesResponseSchema) },
+        },
+      },
+      async (request): Promise<CaptureSummary[]> => {
+        const { workspaceId, hookId } = hookOf(request);
+        const query = request.query as CapturesQuery;
+        if (query.before !== undefined && query.after !== undefined) throw cursorConflict();
+        await found(workspaceId, hookId);
+        const page: repo.CapturePage =
+          query.after !== undefined
+            ? { after: query.after }
+            : query.before !== undefined
+              ? { before: query.before }
+              : {};
+        return repo.listCaptures(db, hookId, page, query.limit ?? HOOKS_LIMITS.defaultPageSize);
+      },
+    );
+
+    app.get(
+      '/workspaces/:workspaceId/hooks/:hookId/captures/:captureId',
+      {
+        preHandler: requireWorkspaceRole(db, 'viewer'),
+        schema: {
+          params: jsonSchema(captureParamsSchema, { io: 'input' }),
+          response: { 200: jsonSchema(captureSchema) },
+        },
+      },
+      async (request): Promise<Capture> => {
+        const { workspaceId, hookId } = hookOf(request);
+        const { captureId } = request.params as { readonly captureId: string };
+        await found(workspaceId, hookId);
+        const row = await repo.captureById(db, hookId, captureId);
+        if (row === undefined) throw captureNotFound();
+        return { ...row, body: row.body.toString('base64') };
+      },
+    );
+
+    app.delete(
+      '/workspaces/:workspaceId/hooks/:hookId/captures',
+      { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
+      async (request, reply) => {
+        const { workspaceId, hookId } = hookOf(request);
+        await found(workspaceId, hookId);
+        await repo.clearCaptures(db, hookId);
+        announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
+        return reply.code(204).send();
+      },
+    );
+  };

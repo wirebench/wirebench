@@ -29,6 +29,13 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` | no | `30` | A device token unused for this long expires. |
 | `WIREBENCH_SERVER_TOKEN_MAX_DAYS` | no | `180` | A device token older than this expires whatever its use. |
 | `WIREBENCH_SERVER_INVITATION_DAYS` | no | `7` | How long an invitation or password-reset link stays valid. |
+| `WIREBENCH_SERVER_HOOKS_ENABLED` | no | `true` | Serve catch URLs: the public `/hooks/…` route and the webhook management API. |
+| `WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB` | no | `1` | How much of a caught request body is stored, in MiB (1–32). A longer body is cut and marked truncated. |
+| `WIREBENCH_SERVER_HOOKS_KEEP` | no | `500` | Captures kept per catch URL (1–10000); the oldest go first. |
+| `WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS` | no | `7` | Captures older than this many days are deleted (1–365). |
+| `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` | no | `10` | Requests per second a catch URL accepts once its burst is spent (1–1000); past it, `429`. |
+| `WIREBENCH_SERVER_HOOKS_BURST` | no | `50` | Requests a catch URL accepts at once before the rate applies (1–10000). |
+| `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` | no | `50` | Catch URLs a workspace may hold (1–1000). |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
@@ -143,3 +150,44 @@ API stays the source of truth; while connected, it polls only every five minutes
   none.
 - On shutdown every socket closes with `1001` before in-flight requests drain, and the app reconnects when
   the server is back.
+
+## Webhook capture
+
+A workspace's editors create **catch URLs**. Each one is a public address,
+`<WIREBENCH_SERVER_PUBLIC_URL>/hooks/<secret>[/<anything>]`, that stores every request sent to it for
+the workspace's members to read in the app. `/api/v1/meta` reports `hooks` with `enabled` and the
+limits below. The management routes live under `/api/v1/workspaces/:workspaceId/hooks`: viewers read,
+editors and admins create, change, rotate, clear and delete.
+
+- **The public route takes any method and any content type.** It answers with the catch URL's configured
+  response, `404` for an unknown or disabled secret, `413` past the body limit, `415` for a
+  syntactically invalid `Content-Type` header (nothing is stored), `429` with `Retry-After: 1`
+  past the rate limit, or `503` with `Retry-After: 30` when the capture could not be stored. Senders
+  read that as "retry later". A `GET` or `HEAD` request's body is never parsed, so its capture stores
+  an empty body.
+- **A reverse proxy must forward `/hooks/`** with every method, the request body and the client's
+  address, as it forwards `/api/v1/`. With nginx:
+
+  ```nginx
+  location /hooks/ {
+      proxy_pass http://127.0.0.1:8080;
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      client_max_body_size 32m;
+  }
+  ```
+
+- **Storage is bounded.**
+  - Each catch URL keeps its newest `WIREBENCH_SERVER_HOOKS_KEEP` captures.
+  - A sweep every ten minutes deletes captures older than `WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS`.
+  - A body is stored up to `WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB`; the rest is counted but not kept.
+  - A workspace holds at most `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` catch URLs.
+- **The rate limit is per catch URL and per process**: `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` tokens a
+  second, up to `WIREBENCH_SERVER_HOOKS_BURST`. Run **one** replica, as for live updates.
+- **The secret stays out of logs.** Request logs show `/hooks/[redacted]`.
+- **Behind a proxy with `WIREBENCH_SERVER_TRUST_PROXY`**, the server's usual `x-request-id` handling
+  applies on catch URLs too: a proxy-supplied id may be echoed back. Nothing from the request body or
+  headers is ever echoed.
+- **Turning it off:** `WIREBENCH_SERVER_HOOKS_ENABLED=false` registers neither the public route nor the
+  management routes, and the app hides its Webhooks node. The age sweep keeps running, so captures
+  already stored still expire.
