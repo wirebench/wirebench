@@ -1,0 +1,143 @@
+---
+title: Sending webhooks
+description: Build and send outbound webhook events from a provider's OpenAPI document or a captured request, and point them at your own receiver.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A **webhook item** is an outbound request that plays the part of a provider calling *you*: an event
+your own receiver should handle, sent on demand so you can build and debug that handler without
+waiting for a real delivery. Each project has one **Webhooks** collection for them, alongside its
+APIs — a webhook item is an ordinary request, edited in the same REST editor, with auth, params,
+body and history all working exactly as they do for a REST request.
+
+<Aside>
+This page is about *sending* webhooks you define. For *receiving* real deliveries on a public URL, see
+[Webhook inbox](/wirebench/guides/webhooks/).
+</Aside>
+
+## What a webhook item is
+
+A webhook item has no base URL of its own. Instead, the collection (and any folder inside it) carries
+a **target** — where a send actually goes — and each item contributes only a path. This mirrors an
+API's `baseUrl`: a webhook item's URL bar reads `METHOD  Target · <path>`, and the line under it shows
+the resolved address, for example `→ https://my-app.dev/hooks/newPet`.
+
+## Create one
+
+<Steps>
+
+1. Right-click a project and choose **New Webhook**. The first one creates the project's **Webhooks**
+   node in the Explorer, seeded with an empty project property `webhookTarget`.
+2. Right-click the **Webhooks** node (or a folder inside it) for **New Webhook**, **New Folder**, and
+   **Settings…**.
+3. Edit it like any REST request: method, path, params, headers, body, auth and assertions.
+
+</Steps>
+
+## Where it is sent
+
+Right-click the **Webhooks** node or a folder and choose **Settings…**:
+
+- **Target**: the URL a send resolves against, with the same `${…}` property highlighting as the URL
+  bar (there is no property autocomplete in the app, on this field or the URL bar). A folder shows
+  *inherits: `<value>`* until it sets its own target; **Reset** removes the override. The nearest
+  folder's target wins over the collection's, from the item's own folder up to the root.
+- A **Catch URLs ▸** menu lists the workspace's catch URLs and writes the picked one's full address
+  into the field. It only appears when the project's workspace is shared on a Wirebench Server with
+  capture enabled — see [Webhook inbox](/wirebench/guides/webhooks/) for setting one up.
+- **Auth** on the collection's own settings: what an item whose auth is *inherit* uses.
+
+The target is an ordinary project property (`webhookTarget`), so an environment or the workspace can
+override it through the usual Environment → Project → Workspace chain — see
+[Environments and properties](/wirebench/guides/environments/).
+
+An empty resolved target disables **Send**, with a tooltip and a link straight to **Settings…**.
+
+## Import from OpenAPI
+
+Wirebench can bring a provider's declared outbound events straight into the project's Webhooks
+collection:
+
+- **OpenAPI 3.1+ `webhooks`** — the document's top-level webhook definitions. A 3.0 document's
+  `webhooks` key is reported as skipped, with a note that webhooks need 3.1.
+- **OpenAPI 3.0+ operation `callbacks`** — callbacks declared on an operation.
+
+<Steps>
+
+1. Import the document as usual (see [Importing APIs](/wirebench/guides/importers/)). When it
+   declares any webhooks or callbacks, the import dialog shows an **Import webhooks & callbacks**
+   checkbox, ticked by default. Leaving it ticked adds every item; unticking it skips them all for
+   this import.
+2. Each imported item becomes a webhook or a callback in a folder named after the API, linked back to
+   it. The result names where they landed: *→ added to `<project>` ▸ Webhooks ▸ `<API>`*.
+
+</Steps>
+
+To bring in items an earlier import left out — or ones a document has grown since — right-click the
+API and choose **Import webhooks…**. It reads the API's stored definition and lists every webhook and
+callback: items already in the collection show ticked and disabled (*already imported*); tick the
+rest and choose **Import**. An API with no stored definition to read from disables the menu item with
+that reason.
+
+When the document later changes, **Update Definition** on the API keeps its webhooks in step the same
+way it keeps operations in step: added items appear, changed ones keep your edits where you made any,
+and removed ones are marked *orphaned* rather than deleted. Hand-made webhooks are never touched. An
+item a partial **Import webhooks…** left unticked stays out on a later update, too — only items new to
+the updated document are added, never ones you already chose to leave behind. If the API's webhooks
+were never imported at all, the update dialog shows *Webhooks not imported — Import webhooks…* instead
+of a diff, and applying does nothing to webhooks until you import them. A successful apply's toast
+names how many webhooks were added, orphaned, restored and rewritten, alongside the operation counts.
+
+## Callback URLs
+
+A callback's URL bar shows the document's own expression instead of a plain path. At send time,
+Wirebench evaluates that expression against the **last recorded exchange of its parent request** —
+the operation the callback belongs to — reading its request URL, method, headers and body and its
+response status, headers and body. When that evaluates to an absolute `http://` or `https://` URL, the
+send goes there, used exactly as evaluated: a value taken from a real exchange is never expanded
+again, the same rule History re-sends follow.
+
+Otherwise — no linked API, no parent request, the parent was never sent, or the expression does not
+resolve to an absolute URL — the send falls back to the collection's target plus the callback's path.
+Either way, the note under the URL bar says which happened: *from your last POST /subscriptions
+(10:42)* for a resolved callback, or *expression unresolved — `<reason>`* for a fallback.
+
+When the resolved target itself still holds an unresolved `${…}` property, sending reports that
+unresolved property rather than a generic "must start with http:// or https://" error — the same way
+an unresolved reference is reported anywhere else in the app.
+
+## Replay a real event
+
+From a capture's tab in the [Webhook inbox](/wirebench/guides/webhooks/), the capture viewer offers
+**Save as webhook…**:
+
+<Steps>
+
+1. Pick the project (any open in the workspace) and the folder in its Webhooks collection.
+2. The name is prefilled from a top-level string `type` field of a JSON body, else
+   `<METHOD> <sub-path>`. Edit it if you like.
+3. Choose **Save**. The new item opens in its own editor.
+
+</Steps>
+
+The new item's method and path come from the capture; its headers are the ones that arrived, minus
+hop-by-hop and transport headers (`Host`, `Content-Length`, `Connection`, and the like) and minus any
+header whose name contains `signature` — a captured signature is stale the moment the body changes,
+so it is left out rather than kept and silently wrong. Signing an outgoing webhook is not yet
+supported; it is planned for a later release. **Save as webhook…** is disabled, with the reason, on a
+capture whose body was truncated or is binary.
+
+## In a run
+
+`wirebench run` sends webhook items the same way it sends REST requests: selecting one by path sends
+it to its resolved target. A callback has no recorded history in a run, so it always uses the target
+fallback there — the CLI never re-sends a stored exchange's response to derive a callback URL.
+
+## Related
+
+- [Webhook inbox](/wirebench/guides/webhooks/)
+- [Importing APIs](/wirebench/guides/importers/)
+- [REST](/wirebench/guides/rest-client/)
+- [Environments and properties](/wirebench/guides/environments/)
+</content>

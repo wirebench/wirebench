@@ -99,6 +99,14 @@ with **Use** buttons to apply one to the API — credentials are yours to fill i
 API tab. Anything the import could not carry across is listed under "things not imported," with the
 reason next to each. See [From OpenAPI and Swagger](/wirebench/switching/openapi/) for every mapping.
 
+When the document declares any OpenAPI 3.1+ root `webhooks` or OpenAPI 3.0+ operation `callbacks`,
+the dialog shows an **Import webhooks & callbacks** checkbox, ticked by default: leave it ticked to
+add them to the project's own Webhooks collection, in a folder named after the API, or untick it to
+skip them for this import. `links` stay reported as skipped, on every version. Anything left out this
+way can still be brought in afterwards with **Import webhooks…** on the API. See
+[Sending webhooks](/wirebench/guides/sending-webhooks/#import-from-openapi) for the whole flow,
+including how these items are kept in step by Update Definition.
+
 When the document later changes, don't import it again — that would make a second API. Use
 [Update Definition](/wirebench/guides/rest-client/#update-definition) on the API you already have:
 it previews the added, removed and changed operations, keeps what you edited, and deletes nothing.
@@ -231,5 +239,6 @@ kept. Below the counts, two lists cover what needs attention:
 
 - [SOAP and WSDL](/wirebench/guides/soap-wsdl/)
 - [REST](/wirebench/guides/rest-client/)
+- [Sending webhooks](/wirebench/guides/sending-webhooks/)
 - [Environments](/wirebench/guides/environments/)
 - [Ten-minute walkthrough](/wirebench/getting-started/walkthrough/)

@@ -289,3 +289,45 @@ The capture becomes a `RestRequestDef`:
 - `webhook-signatures`: besides verifying captures, a signing preset and secret on the *Webhooks*
   collection or a folder, applied to outgoing webhooks at send time.
 - `callback-assertion`: may pair a webhook send with a wait on a catch URL.
+
+## Revisions after planning
+
+- **R1 — import dialog selection.** The OpenAPI import dialog has no preview step (only AsyncAPI
+  previews), so the dialog shows one checkbox *Import webhooks & callbacks* (ticked) before *Import*,
+  and the result lists what was imported with *→ added to <project> ▸ Webhooks ▸ <API>*. Per-item
+  ticking is offered by *Import webhooks…* on an existing API (which reads the cached definition
+  first). §3.4 otherwise unchanged.
+- **R2 — naming.** The existing workspace root label *Webhooks* becomes *Webhook inbox*; the new
+  per-project node is *Webhooks*. Internal kinds stay `webhooks`/`catch-url`; new kinds are
+  `webhook-collection`, `webhook-folder`, `webhook-request`.
+- **R3 — CLI/runner.** `run/select.ts` selects webhook items as REST items against a synthetic API
+  whose `baseUrl` is the item's effective target. The runner has no history, so a callback always uses
+  the target fallback there.
+- **R4 — callback exchange.** A callback expression is evaluated against the parent request's newest
+  REST history entry: request URL = `entry.endpoint`, method = `entry.method`, request headers =
+  `entry.request.headers`, request body = `entry.request.envelopeXml`, response status/headers/body =
+  `entry.response.status` / `rawHeaders` / `envelopeXml`. `$request.path.<name>` matches the parent's
+  `contract.path` template against the endpoint path.
+- **R5 — wire.** Webhook folders and requests travel to the renderer as `RestFolderWire` /
+  `RestRequestWire` rows whose `apiId` is the collection id `webhooks:<projectId>`, plus a `webhooks`
+  wire per project. The REST editor and the REST mutations therefore work on them with small, explicit
+  branches.
+- **R6 — hook key.** Update matches imported items by `hookKey`: `webhook <name> <method>` or
+  `callback <operation> <name> <method>` (the expression is refreshed on merge, not part of the key).
+- **R7 — update leaves partial imports alone.** *Update definition* never brings back an item a
+  partial *Import webhooks…* left unticked: `applyWebhookUpdate` only appends an item from the new
+  document that neither the old document's mapping nor the current group already accounts for — one
+  the group never held stays absent rather than reappearing.
+- **R8 — unresolved target reports the property, not the shape.** `resolveWebhookSend`'s target check
+  only raises `webhook-target-invalid` ("The Webhooks target must start with http:// or https://") for
+  a *resolved* target that isn't `http(s)`. When the target still holds a `${…}` reference nothing
+  resolved, the check stands aside and the send's own unresolved-reference list refuses it, naming the
+  reference — the same reporting path REST and SOAP sends already use.
+- **R9 — update dialog on an unimported API, and counted toasts.** *Update definition* on a definition
+  whose webhooks were never imported shows *Webhooks not imported — Import webhooks…* instead of a
+  diff, and applies nothing to webhooks until they are. A successful apply's toast appends however many
+  webhooks were added, orphaned, restored and rewritten to the existing operation counts.
+- **R10 — target field highlighting.** The Target field in the Webhooks settings dialog is a
+  `PropertyHighlightInput`, the same highlighted field the URL bar uses, so a `${…}` in a webhook
+  target is as visible there as in a request's own URL bar. Neither field offers property
+  autocomplete.
