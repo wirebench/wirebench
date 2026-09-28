@@ -8,8 +8,14 @@ describe('live-updates module wiring (§5.1)', () => {
     vi.useRealTimers();
   });
 
-  it('is registered last, after server-sync', () => {
-    expect(BUILTIN_MODULES.map((m) => m.name)).toEqual(['identity', 'teams-access', 'server-sync', 'live-updates']);
+  it('is registered last, after server-sync and webhook-capture', () => {
+    expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
+      'identity',
+      'teams-access',
+      'server-sync',
+      'webhook-capture',
+      'live-updates',
+    ]);
   });
 
   it('realTimer never holds the process open', () => {
