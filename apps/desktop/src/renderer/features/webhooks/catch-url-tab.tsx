@@ -12,6 +12,8 @@ import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { originOf, useWebhooksStore } from '../../state/webhooks.js';
 import { InspectorIconButton } from '../request-editor/inspectors/inspector-strip.js';
+import { rememberCapture } from '../webhook-items/save-as-webhook.js';
+import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
 import { CaptureViewer } from './capture-viewer.js';
 import { useCaptureView, type Problem } from './use-capture-view.js';
 import { catchUrlTabId } from './webhooks-actions.js';
@@ -68,6 +70,11 @@ export function CatchUrlTab({ hookId }: { readonly hookId: string }) {
       .hooks.capture({ viewId, captureId: shown })
       .then((result) => {
         if (!current) return;
+        if (result.ok) {
+          // Save-as-webhook (Task 15) reads this back by id: refetching it would need this view's
+          // `viewId`, which only this tab still has once the dialog opens.
+          rememberCapture(result.value.capture);
+        }
         setDetail(
           result.ok ? { kind: 'ready', capture: result.value.capture } : { kind: 'failed', error: result.error },
         );
@@ -181,7 +188,11 @@ export function CatchUrlTab({ hookId }: { readonly hookId: string }) {
         </ol>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {detail.kind === 'ready' ? (
-            <CaptureViewer key={detail.capture.id} capture={detail.capture} />
+            <CaptureViewer
+              key={detail.capture.id}
+              capture={detail.capture}
+              onSaveAsWebhook={() => useWebhookItemsDialogs.getState().openSaveAs(detail.capture.id)}
+            />
           ) : detail.kind === 'failed' ? (
             <p className="p-4 text-sm text-fg-default">{`Could not open the capture: ${detail.error.message}`}</p>
           ) : detail.kind === 'loading' ? (

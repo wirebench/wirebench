@@ -4,6 +4,7 @@
  * untrusted content (§5): it is shown only through viewers that render nothing and run nothing.
  */
 import { useState } from 'react';
+import { Button } from '../../components/button.js';
 import { SettingsGroup, ReadOnlySetting } from '../../components/settings-grid.js';
 import { Tabs, type TabItem } from '../../components/tabs.js';
 import { base64ByteLength, formatBytes } from '../../lib/format-size.js';
@@ -63,7 +64,25 @@ function CaptureDetails({ capture }: { readonly capture: CaptureViewWire }) {
   );
 }
 
-export function CaptureViewer({ capture }: { readonly capture: CaptureViewWire }) {
+/** Why *Save as webhook…* is disabled, or `undefined` when the capture can be replayed as one. */
+function saveAsWebhookDisabledReason(capture: CaptureViewWire): string | undefined {
+  if (capture.truncated) {
+    return "The body was cut at the server's limit, so it cannot be replayed.";
+  }
+  if (capture.language === 'binary' || capture.language === 'image') {
+    return 'A binary body cannot be saved as a webhook.';
+  }
+  return undefined;
+}
+
+export function CaptureViewer({
+  capture,
+  onSaveAsWebhook,
+}: {
+  readonly capture: CaptureViewWire;
+  /** Kept store-free on purpose: the caller (`catch-url-tab.tsx`) owns opening the dialog. */
+  readonly onSaveAsWebhook?: () => void;
+}) {
   const [tab, setTab] = useState<ViewerTab>('body');
   const form = isFormBody(capture.contentType);
   const items: TabItem<ViewerTab>[] = [
@@ -73,9 +92,22 @@ export function CaptureViewer({ capture }: { readonly capture: CaptureViewWire }
     { id: 'details', label: 'Details' },
   ];
   const active: ViewerTab = tab === 'form' && !form ? 'body' : tab;
+  const disabledReason = saveAsWebhookDisabledReason(capture);
 
   return (
     <div data-testid="capture-viewer" className="flex min-h-0 flex-1 flex-col">
+      {onSaveAsWebhook !== undefined && (
+        <div className="flex shrink-0 items-center justify-end border-b border-hairline px-2 py-1.5">
+          <Button
+            data-testid="capture-save-as-webhook"
+            disabled={disabledReason !== undefined}
+            title={disabledReason}
+            onClick={onSaveAsWebhook}
+          >
+            Save as webhook…
+          </Button>
+        </div>
+      )}
       {capture.truncated && (
         <p
           role="status"

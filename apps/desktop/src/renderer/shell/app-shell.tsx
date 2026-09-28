@@ -6,6 +6,7 @@ import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
 import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
 import { ImportWebhooksDialog } from '../features/webhook-items/import-webhooks-dialog.js';
+import { SaveAsWebhookDialog } from '../features/webhook-items/save-as-webhook-dialog.js';
 import { WebhookSettingsDialog } from '../features/webhook-items/webhook-settings-dialog.js';
 import { subscribeToAccounts, useAccountStore } from '../state/account.js';
 import { ToastViewport } from '../components/toast.js';
@@ -454,6 +455,7 @@ export function AppShell() {
       <WebhooksDialogs />
       <WebhookSettingsDialog />
       <ImportWebhooksDialog />
+      <SaveAsWebhookDialog />
       <MoveProjectDialog />
       <SyncPanel />
       <ConflictResolver />
