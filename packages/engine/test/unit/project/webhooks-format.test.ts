@@ -118,6 +118,16 @@ describe('the webhooks/ tree', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('leaves a webhooks/requests tree alone when there is no webhooks.yaml', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(createProject('Plain', { id: 'p4' }), dir);
+    await mkdir(join(dir, 'webhooks/requests'), { recursive: true });
+    await writeFile(join(dir, 'webhooks/requests/stray.request.yaml'), 'kind: rest\n');
+    const result = await saveProject(createProject('Plain', { id: 'p4' }), dir);
+    expect(result.removed).not.toContain('webhooks/requests/stray.request.yaml');
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('refuses a hook on a request under apis/', async () => {
     const dir = await tempProjectDir();
     await saveProject(createProject('Plain', { id: 'p3' }), dir);

@@ -139,7 +139,13 @@ function pathParam(url: string, template: string | undefined, name: string): str
   const match = new RegExp(`${pattern}$`).exec(path);
   const at = names.indexOf(name);
   const found = match === null || at < 0 ? undefined : match[at + 1];
-  return found === undefined ? undefined : decodeURIComponent(found);
+  if (found === undefined) return undefined;
+  try {
+    return decodeURIComponent(found);
+  } catch {
+    // A stray `%` that is not an escape: the parameter has no value rather than the send failing.
+    return undefined;
+  }
 }
 
 function bodyValue(body: string | undefined, pointer: string): string | undefined {

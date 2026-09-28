@@ -41,6 +41,8 @@ interface Candidate {
   readonly item: SelectedRequest;
   /** The request's path on disk, without the `.request.yaml` suffix. */
   readonly diskPath: string;
+  /** A webhook item: a run sends it only when a selector names it. */
+  readonly webhook?: true;
 }
 
 const byOrder = <T extends { readonly order: number; readonly name: string }>(a: T, b: T): number =>
@@ -169,6 +171,7 @@ function walkWebhooks(collection: WebhookCollection, out: Candidate[]): void {
           request,
         },
         diskPath: `${dir}/${request.slug}`,
+        webhook: true,
       });
     }
     for (const folder of [...folders].sort(byOrder)) visit(folder.folders, folder.requests, [...chain, folder]);
@@ -216,7 +219,9 @@ const covers = (selector: string, candidate: string): boolean =>
 
 /**
  * Resolves `selectors` (display paths or on-disk paths, matched at a `/` boundary) against the
- * project's requests, in explorer order. An empty `selectors` list selects everything. A WebSocket
+ * project's requests, in explorer order. An empty `selectors` list selects everything but the webhook
+ * items: those deliver to a receiver rather than test an API, so a run sends one only when a selector
+ * covers it (`Webhooks/…` or `webhooks/requests/…`). A WebSocket
  * API, and a gRPC request that streams, are skipped: neither is runnable from the command line yet,
  * and there is no per-selector reason to report — a selector naming one simply matches nothing and
  * surfaces through `unmatched`, same as a typo would. `unmatched` lists every selector that covered no
@@ -228,7 +233,7 @@ export function selectRequests(
 ): { selected: SelectedRequest[]; unmatched: string[] } {
   const all = candidates(project);
   if (selectors.length === 0) {
-    return { selected: all.map((c) => c.item), unmatched: [] };
+    return { selected: all.filter((c) => c.webhook !== true).map((c) => c.item), unmatched: [] };
   }
   const matches = (selector: string, c: Candidate): boolean => {
     const s = normalise(selector);

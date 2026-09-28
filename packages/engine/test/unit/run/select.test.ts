@@ -158,8 +158,22 @@ describe('selectRequests — gRPC', () => {
 });
 
 describe('selectRequests — webhooks', () => {
-  it('selects webhook items against their effective target', () => {
+  it('leaves webhook items out of a run that names no selector', () => {
     const selected = selectRequests(hooksProject(), []).selected;
+    expect(selected.filter((item) => item.group.startsWith('Webhooks'))).toEqual([]);
+  });
+
+  it('selects webhook items by item path or disk path', () => {
+    expect(selectRequests(hooksProject(), ['Webhooks/Group']).selected.map((s) => s.path)).toEqual([
+      'Webhooks/Group/Inner',
+    ]);
+    expect(selectRequests(hooksProject(), ['webhooks/requests/ping.request.yaml']).selected.map((s) => s.path)).toEqual(
+      ['Webhooks/Ping'],
+    );
+  });
+
+  it('selects webhook items against their effective target', () => {
+    const selected = selectRequests(hooksProject(), ['Webhooks']).selected;
     const hooks = selected.filter((item) => item.kind === 'rest' && item.group.startsWith('Webhooks'));
     expect(hooks.map((item) => (item.kind === 'rest' ? [item.request.id, item.api.baseUrl] : []))).toEqual([
       ['w1', 'https://receiver.test/hooks'],

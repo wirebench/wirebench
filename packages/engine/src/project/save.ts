@@ -138,11 +138,12 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
     managed.push(...(await listApiTreeFiles(fs, root, `${base}/${REQUESTS_DIR}`)));
   }
 
+  // The request tree is managed only beside its `webhooks.yaml`, as an API's is beside its `api.yaml`.
   const webhooksFile = `${WEBHOOKS_DIR}/${WEBHOOKS_FILE}`;
   if ((await readFileIfExists(fs, toAbsolute(root, webhooksFile))) !== undefined) {
     managed.push(webhooksFile);
+    managed.push(...(await listApiTreeFiles(fs, root, `${WEBHOOKS_DIR}/${REQUESTS_DIR}`)));
   }
-  managed.push(...(await listApiTreeFiles(fs, root, `${WEBHOOKS_DIR}/${REQUESTS_DIR}`)));
 
   // Only the sequence files this build loaded: one it refused (too new, malformed, a duplicate id) is
   // foreign, so a save can never delete a sequence the user has not seen (`sequence/load.ts`).

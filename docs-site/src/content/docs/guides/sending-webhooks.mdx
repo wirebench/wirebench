@@ -130,8 +130,11 @@ capture whose body was truncated or is binary.
 
 ## In a run
 
-`wirebench run` sends webhook items the same way it sends REST requests: selecting one by path sends
-it to its resolved target. A callback has no recorded history in a run, so it always uses the target
+`wirebench run` sends webhook items only when you select them: a run with no selector leaves the
+Webhooks collection out, since a webhook delivers to your receiver rather than testing an API. Name
+them by item path (`Webhooks/<folder>/<name>`, or just `Webhooks` for all of them) or by disk path
+(`webhooks/requests/…`), and each selected item is sent to its resolved target the same way a REST
+request is. A callback has no recorded history in a run, so it always uses the target
 fallback there — the CLI never re-sends a stored exchange's response to derive a callback URL.
 
 ## Related

@@ -46,6 +46,14 @@ describe('runtime expressions', () => {
     expect(value('{$request.path.id}')).toBe('42');
   });
 
+  it('answers no value for a path parameter that is not valid percent-encoding', () => {
+    const result = evaluateRuntimeTemplate('{$request.path.id}', {
+      ...exchange,
+      url: 'https://api.test/subscriptions/%zz',
+    });
+    expect(result).toEqual({ ok: false, reason: '$request.path.id has no value' });
+  });
+
   it('reads bodies through a JSON pointer, with ~0 and ~1 escapes and array indexes', () => {
     expect(value('{$request.body#/callbackUrl}')).toBe('https://my-app.dev/subs/cb-91');
     expect(value('{$request.body#/a~1b/c~0d}')).toBe('x');
