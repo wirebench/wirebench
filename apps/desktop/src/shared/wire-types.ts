@@ -3066,8 +3066,20 @@ export const openApiImportSummarySchema = z.object({
   auth: z.string().optional(),
   securitySchemes: z.array(openApiSchemeCandidateSchema),
   skipped: z.array(openApiSkippedSchema),
+  /** Webhook and callback methods the document offered, mapped into the project's webhook group. */
+  webhooks: z.number(),
 });
 export type OpenApiImportSummaryWire = z.infer<typeof openApiImportSummarySchema>;
+
+/** One webhook or callback method of an OpenAPI document, restated for the wire. */
+export const webhookItemWireSchema = z.object({
+  key: z.string(),
+  kind: z.enum(['webhook', 'callback']),
+  name: z.string(),
+  method: z.string(),
+  label: z.string(),
+});
+export type WebhookItemWire = z.infer<typeof webhookItemWireSchema>;
 
 /** Request/response for `api.importOpenApi`. The target is the same union a WSDL import takes. */
 export const apiImportOpenApiRequestSchema = z
@@ -3086,6 +3098,8 @@ export const apiImportOpenApiRequestSchema = z
     token: z.string().optional(),
     /** Credentials for fetching the document, recorded on the API for Update Definition. URL sources only. */
     auth: definitionAuthWireSchema.optional(),
+    /** Also import the document's webhooks and callbacks into the project's webhook group. Defaults to `true`. */
+    webhooks: z.boolean().optional(),
   })
   .refine(hasFetchableAuthSource, onlyWithAUrl);
 export type ApiImportOpenApiRequest = z.infer<typeof apiImportOpenApiRequestSchema>;
@@ -3096,6 +3110,14 @@ export const apiImportOpenApiResponseSchema = z.object({
   project: projectWireSchema,
   apiId: z.string(),
   summary: openApiImportSummarySchema,
+  /** The webhook group the import placed, when the document offered anything and `webhooks` was not `false`. */
+  webhookGroup: z
+    .object({
+      folderId: z.string(),
+      name: z.string(),
+      items: z.array(z.object({ id: z.string(), label: z.string() })),
+    })
+    .optional(),
 });
 export type ApiImportOpenApiResponse = z.infer<typeof apiImportOpenApiResponseSchema>;
 
@@ -3229,17 +3251,31 @@ const MAX_REST_UPDATE_ID_CHARS = 256;
 
 const restOpRefSchema = z.object({ method: z.string(), path: z.string(), summary: z.string().optional() });
 
+/** The reasons a REST or webhook operation's contract is reported as changed. */
+const restChangeReasonSchema = z.enum(['parameters', 'request-body', 'responses', 'security', 'servers']);
+
+/**
+ * What updating an OpenAPI-imported API's webhooks and callbacks would change, mirroring
+ * {@link restUpdatePlanSchema} over `WebhookItemWire` instead of an operation ref. `linked` says
+ * whether the project currently has a webhook group linked to this API at all — the added/removed/
+ * changed lists compare the *document*, not the project, so a plan can list items to add even when
+ * there is nothing linked yet to add them to.
+ */
+export const webhookUpdatePlanSchema = z.object({
+  added: z.array(webhookItemWireSchema),
+  removed: z.array(webhookItemWireSchema),
+  changed: z.array(z.object({ item: webhookItemWireSchema, reasons: z.array(restChangeReasonSchema) })),
+  linked: z.boolean(),
+});
+export type WebhookUpdatePlanWire = z.infer<typeof webhookUpdatePlanSchema>;
+
 /** What updating an OpenAPI-imported REST API would change, per operation and API-wide (`api.restPlanUpdate`). */
 export const restUpdatePlanSchema = z.object({
   added: z.array(restOpRefSchema),
   removed: z.array(restOpRefSchema),
-  changed: z.array(
-    z.object({
-      op: restOpRefSchema,
-      reasons: z.array(z.enum(['parameters', 'request-body', 'responses', 'security', 'servers'])),
-    }),
-  ),
+  changed: z.array(z.object({ op: restOpRefSchema, reasons: z.array(restChangeReasonSchema) })),
   api: z.array(z.enum(['servers', 'security', 'version'])),
+  webhooks: webhookUpdatePlanSchema,
 });
 export type RestUpdatePlanWire = z.infer<typeof restUpdatePlanSchema>;
 
@@ -3284,9 +3320,45 @@ export const apiRestApplyUpdateResponseSchema = z.object({
     requestsRewritten: z.number(),
     rowsAdded: z.number(),
     rowsRemoved: z.number(),
+    /**
+     * What the same update did to the webhook group linked to this API, applied in the same
+     * project change. Every count is `0` when no group is linked — nothing to update.
+     */
+    webhooks: z.object({
+      added: z.number(),
+      orphaned: z.number(),
+      restored: z.number(),
+      rewritten: z.number(),
+    }),
   }),
 });
 export type ApiRestApplyUpdateResponse = z.infer<typeof apiRestApplyUpdateResponseSchema>;
+
+/** Request/response for `api.webhookItems`: an API's webhooks and callbacks, for the import picker. */
+export const apiWebhookItemsRequestSchema = z.object({ apiId: z.string().max(MAX_REST_UPDATE_ID_CHARS) });
+export type ApiWebhookItemsRequest = z.infer<typeof apiWebhookItemsRequestSchema>;
+
+export const apiWebhookItemsResponseSchema = z.object({
+  items: z.array(webhookItemWireSchema),
+  /** Keys ({@link WebhookItemWire.key}) already present in the group linked to this API. */
+  imported: z.array(z.string()),
+});
+export type ApiWebhookItemsResponse = z.infer<typeof apiWebhookItemsResponseSchema>;
+
+/** Request/response for `api.importWebhooks`: places the chosen items into the linked webhook group. */
+export const apiImportWebhooksRequestSchema = z.object({
+  apiId: z.string().max(MAX_REST_UPDATE_ID_CHARS),
+  /** Keys ({@link WebhookItemWire.key}) to import; already-present ones are ignored. */
+  keys: z.array(z.string().max(500)).min(1).max(500),
+});
+export type ApiImportWebhooksRequest = z.infer<typeof apiImportWebhooksRequestSchema>;
+
+export const apiImportWebhooksResponseSchema = z.object({
+  folderId: z.string(),
+  /** How many of the requested keys were newly placed — already-present ones are not counted. */
+  added: z.number(),
+});
+export type ApiImportWebhooksResponse = z.infer<typeof apiImportWebhooksResponseSchema>;
 
 /** Source for Postman collection import: file path or pasted JSON text. */
 export const postmanSourceSchema = z.discriminatedUnion('kind', [

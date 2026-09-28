@@ -18,10 +18,12 @@ import {
   createRestRequest,
   createWebhookCollection,
   createWebhookFolder,
+  hookKey,
   uniqueSlug,
+  webhookFolders,
   WEBHOOK_TARGET_PROPERTY,
 } from '@wirebench/engine';
-import type { Project, WebhookCollection, WebhookFolder } from '@wirebench/engine';
+import type { Project, RestRequestDef, WebhookCollection, WebhookFolder } from '@wirebench/engine';
 import type { AuthConfigWire, RestRequestPatchWire } from '../shared/wire-types.js';
 import {
   applyRestRequestPatch,
@@ -162,4 +164,57 @@ export function addWebhookGroup(project: Project, folder: WebhookFolder): RestMu
     project: { ...ensured, webhooks: { ...webhooks, folders: [...webhooks.folders, placed] } },
     createdId: folder.id,
   };
+}
+
+/**
+ * The collection's root folder linked to `apiId` — the one an OpenAPI import's group carries as
+ * `source.apiId` — or `undefined` when the project has no collection or nothing of this API's is
+ * linked. Groups are placed at the root (`addWebhookGroup`), so only root folders are checked.
+ */
+export function linkedWebhookFolder(webhooks: WebhookCollection | undefined, apiId: string): WebhookFolder | undefined {
+  return webhooks?.folders.find((folder) => folder.source?.apiId === apiId);
+}
+
+/** Every hook key held anywhere in `folder`'s own tree: its own requests and every nested folder's. */
+export function webhookKeysUnder(folder: WebhookFolder): Set<string> {
+  const keys = new Set<string>();
+  for (const container of [folder, ...webhookFolders(folder)]) {
+    for (const request of container.requests) {
+      if (request.hook !== undefined) {
+        keys.add(hookKey(request.hook, request.method));
+      }
+    }
+  }
+  return keys;
+}
+
+/**
+ * Adds already-mapped items to an existing group's root: unique slugs against the whole group,
+ * increasing order — the same placement rule a fresh import's group gets from {@link addWebhookGroup}.
+ */
+export function appendWebhookItems(
+  project: Project,
+  folderId: string,
+  items: readonly RestRequestDef[],
+): RestMutationResult {
+  const webhooks = project.webhooks;
+  if (webhooks === undefined) {
+    notFound('folder', folderId);
+  }
+  const folders = mapFolder(webhooks.folders, folderId, (folder) => {
+    const taken = takenSlugs(folder);
+    let order = folder.requests.length;
+    const appended = items.map((item) => {
+      const slug = uniqueSlug(item.slug, taken);
+      taken.add(slug);
+      const placed = { ...item, slug, order };
+      order += 1;
+      return placed;
+    });
+    return { ...folder, requests: [...folder.requests, ...appended] };
+  });
+  if (folders === undefined) {
+    notFound('folder', folderId);
+  }
+  return { project: { ...project, webhooks: { ...webhooks, folders } } };
 }

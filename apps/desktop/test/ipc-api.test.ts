@@ -93,6 +93,7 @@ function imported(): unknown {
         { name: 'api_key', type: 'apiKey', auth: { type: 'api-key', name: 'api_key', in: 'header' }, applied: false },
       ],
       skipped: [],
+      webhooks: 0,
     },
   };
 }
@@ -144,6 +145,8 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
       restSource: vi.fn(),
       restPlanUpdate: vi.fn(),
       restApplyUpdate: vi.fn(),
+      webhookItems: vi.fn(),
+      importWebhooks: vi.fn(),
       apiDefinitionDocuments: vi.fn(),
       apiDefinitionText: vi.fn(),
       exportApiDefinitionTo: vi.fn(),

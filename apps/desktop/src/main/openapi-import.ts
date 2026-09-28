@@ -40,6 +40,8 @@ export interface RunOpenApiImportInput {
   readonly securityScheme?: string;
   readonly includeOptional?: boolean;
   readonly sampleValues?: boolean;
+  /** Also map the document's webhooks and callbacks into a group. Defaults to `true`. */
+  readonly webhooks?: boolean;
   /** Credentials for a `url` source's own origin; ignored for a file or pasted text. */
   readonly auth?: DefinitionAuth;
 }
@@ -95,6 +97,7 @@ export class OpenApiImportService {
         ...(input.securityScheme !== undefined ? { securityScheme: input.securityScheme } : {}),
         ...(input.includeOptional !== undefined ? { includeOptional: input.includeOptional } : {}),
         ...(input.sampleValues !== undefined ? { sampleValues: input.sampleValues } : {}),
+        ...(input.webhooks !== undefined ? { webhooks: input.webhooks } : {}),
       });
       progress('done', `Imported ${String(imported.summary.requests)} requests`);
       return imported;

@@ -3005,6 +3005,16 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  webhookItems(...args: Parameters<ProjectRouter['webhookItems']>): ReturnType<ProjectRouter['webhookItems']> {
+    return this.hostOfEntity(args[0]).webhookItems(...args);
+  }
+
+  /** @inheritdoc */
+  importWebhooks(...args: Parameters<ProjectRouter['importWebhooks']>): ReturnType<ProjectRouter['importWebhooks']> {
+    return this.hostOfEntity(args[0]).importWebhooks(...args);
+  }
+
+  /** @inheritdoc */
   wsTlsFor(...args: Parameters<ProjectRouter['wsTlsFor']>): ReturnType<ProjectRouter['wsTlsFor']> {
     return this.hostOfEntity(args[0]).wsTlsFor(...args);
   }

@@ -68,6 +68,7 @@ import {
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
   applyRestUpdate,
+  applyWebhookUpdate,
   asyncApiChannelMessages,
   createCachedApiFetch,
   matchOperation,
@@ -76,6 +77,9 @@ import {
   parseOpenApi,
   planAsyncApiUpdate,
   planRestUpdate,
+  hookKey,
+  webhookItemsOf,
+  webhooksFromDocument,
   writeDefinitionCache,
   writeDescriptorDefinitionCache,
   writeFileAtomic,
@@ -109,6 +113,9 @@ import type {
   ParsedOpenApi,
   RestApplyResult,
   RestUpdatePlan,
+  WebhookApplyResult,
+  WebhookFolder,
+  WebhookItemRef,
   ChannelMessages,
   ParsedAsyncApi,
   RestApi,
@@ -193,8 +200,14 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
-import { findRestFolder, findRestRequest, restApiOwning } from './project-rest-mutations.js';
+import { findRestFolder, findRestRequest, mapFolder, restApiOwning } from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
+import {
+  addWebhookGroup,
+  appendWebhookItems,
+  linkedWebhookFolder,
+  webhookKeysUnder,
+} from './project-webhook-mutations.js';
 import { resolveWebhookSend } from './webhook-send.js';
 import type { RestContractTarget } from './rest-contract.js';
 import { resolveRestSend } from './rest-send.js';
@@ -3011,6 +3024,12 @@ export class ProjectHost {
     readonly cache?: boolean;
     /** The credentials the document was fetched with, kept so Update Definition can fetch it again. */
     readonly auth?: DefinitionAuth;
+    /**
+     * The document's webhooks and callbacks, already mapped into one group (`importOpenApi`'s own
+     * `webhooks`). Placed in the collection in the same change as the API — one undo step, one save —
+     * so an import never leaves the API without its group, or the group without its API.
+     */
+    readonly webhooks?: WebhookFolder;
   }): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
     const taken = new Set([
@@ -3037,7 +3056,11 @@ export class ProjectHost {
         ...(input.auth !== undefined ? { auth: input.auth } : {}),
       },
     };
-    open.project = { ...open.project, apis: [...open.project.apis, api] };
+    let project: Project = { ...open.project, apis: [...open.project.apis, api] };
+    if (input.webhooks !== undefined) {
+      project = addWebhookGroup(project, input.webhooks).project;
+    }
+    open.project = project;
     open.dirty = true;
     this.openApiDocuments.delete(api.id);
     await this.save({ reason: 'import' });
@@ -3332,9 +3355,15 @@ export class ProjectHost {
   async planRestUpdate(
     apiId: string,
     next: OpenApiDocument,
-  ): Promise<{ readonly plan: RestUpdatePlan; readonly cached: readonly ResolvedDocument[] }> {
+  ): Promise<{
+    readonly plan: RestUpdatePlan;
+    readonly cached: readonly ResolvedDocument[];
+    /** Whether the project currently has a webhook group linked to this API. */
+    readonly linked: boolean;
+  }> {
     const old = await this.readRestCache(apiId);
-    return { plan: planRestUpdate(old.document, next), cached: old.documents };
+    const linked = linkedWebhookFolder(this.require().project.webhooks, apiId) !== undefined;
+    return { plan: planRestUpdate(old.document, next), cached: old.documents, linked };
   }
 
   /**
@@ -3394,7 +3423,17 @@ export class ProjectHost {
   ): Promise<{
     readonly project: ProjectWire;
     readonly plan: RestUpdatePlan;
-    readonly applied: Omit<RestApplyResult, 'api'>;
+    /** Whether the project has a webhook group linked to this API. */
+    readonly linked: boolean;
+    readonly applied: Omit<RestApplyResult, 'api'> & {
+      /** What the same update did to the webhook group linked to this API, applied alongside it. */
+      readonly webhooks: {
+        readonly added: number;
+        readonly orphaned: number;
+        readonly restored: number;
+        readonly rewritten: number;
+      };
+    };
     /** Set when the update was saved but the definition cache could not be rewritten afterwards. */
     readonly warning?: string;
   }> {
@@ -3406,7 +3445,7 @@ export class ProjectHost {
     const api = this.requireCachedRestApi(apiId);
     const old = cache.document;
     const plan = planRestUpdate(old, next.document);
-    const { api: mapped, ...applied } = applyRestUpdate(api, old, next.document);
+    const { api: mapped, ...restApplied } = applyRestUpdate(api, old, next.document);
     // `requireCachedRestApi` proved the definition is there; the engine only ever rewrites its
     // `version`, which this sets itself.
     const { auth: storedAuth, ...recorded } = api.definition;
@@ -3421,11 +3460,33 @@ export class ProjectHost {
       },
     };
 
+    // The linked webhook group, if any, is updated in the same change: one undo step, one save.
+    const linked = linkedWebhookFolder(open.project.webhooks, apiId);
+    let webhookResult: WebhookApplyResult | undefined;
+    let webhooks = open.project.webhooks;
+    if (linked !== undefined && webhooks !== undefined) {
+      webhookResult = applyWebhookUpdate(linked, old, next.document);
+      const folders = mapFolder(webhooks.folders, linked.id, () => webhookResult!.folder);
+      if (folders !== undefined) {
+        webhooks = { ...webhooks, folders: folders as unknown as WebhookFolder[] };
+      }
+    }
+    const applied = {
+      ...restApplied,
+      webhooks: {
+        added: webhookResult?.added ?? 0,
+        orphaned: webhookResult?.orphaned ?? 0,
+        restored: webhookResult?.restored ?? 0,
+        rewritten: webhookResult?.rewritten ?? 0,
+      },
+    };
+
     const priorProject = open.project;
     const priorDirty = open.dirty;
     open.project = {
       ...open.project,
       apis: open.project.apis.map((candidate) => (candidate.id === apiId ? updated : candidate)),
+      ...(webhooks !== open.project.webhooks ? { webhooks } : {}),
     };
     open.dirty = true;
     try {
@@ -3467,9 +3528,90 @@ export class ProjectHost {
     return {
       project: this.snapshot() as ProjectWire,
       plan,
+      linked: linked !== undefined,
       applied,
       ...(warning !== undefined ? { warning } : {}),
     };
+  }
+
+  /**
+   * An API's webhooks and callbacks, from its cached definition, and which of their keys the group
+   * linked to it already holds — what the *Import webhooks…* picker offers and pre-ticks.
+   *
+   * @throws ProjectError `webhook-definition-missing` when the API has no readable cached definition
+   */
+  async webhookItems(
+    apiId: string,
+  ): Promise<{ readonly items: readonly WebhookItemRef[]; readonly imported: readonly string[] }> {
+    const document = await this.cachedRestDocumentForWebhooks(apiId);
+    const linked = linkedWebhookFolder(this.require().project.webhooks, apiId);
+    return { items: webhookItemsOf(document), imported: linked !== undefined ? [...webhookKeysUnder(linked)] : [] };
+  }
+
+  /**
+   * Places the chosen webhooks and callbacks (by {@link WebhookItemRef.key}) into the group linked to
+   * `apiId`, creating one if there is none yet. Only keys not already in the group are added, with a
+   * unique slug and the next order, as a fresh import's group gets — so calling this again for what
+   * was left unticked the first time never duplicates an item. Saves immediately, as an import does.
+   *
+   * @throws ProjectError `webhook-definition-missing` when the API has no readable cached definition
+   */
+  async importWebhooks(
+    apiId: string,
+    keys: readonly string[],
+  ): Promise<{ readonly folderId: string; readonly added: number }> {
+    const document = await this.cachedRestDocumentForWebhooks(apiId);
+    const open = this.require();
+    const linked = linkedWebhookFolder(open.project.webhooks, apiId);
+    const mapped = webhooksFromDocument(document, { apiId, only: new Set(keys) });
+
+    let project: Project;
+    let folderId: string;
+    let added: number;
+    if (linked === undefined) {
+      if (mapped === undefined) {
+        throw new ProjectError(
+          'project-entity-not-found',
+          'None of the given keys are webhooks or callbacks of this API',
+          { details: { apiId } },
+        );
+      }
+      const result = addWebhookGroup(open.project, mapped.folder);
+      project = result.project;
+      folderId = result.createdId ?? mapped.folder.id;
+      added = mapped.items;
+    } else {
+      const already = webhookKeysUnder(linked);
+      const toAdd = (mapped?.folder.requests ?? []).filter(
+        (request) => request.hook !== undefined && !already.has(hookKey(request.hook, request.method)),
+      );
+      const result = appendWebhookItems(open.project, linked.id, toAdd);
+      project = result.project;
+      folderId = linked.id;
+      added = toAdd.length;
+    }
+
+    open.project = project;
+    open.dirty = true;
+    await this.save({ reason: 'import' });
+    return { folderId, added };
+  }
+
+  /**
+   * A REST API's cached definition, read the way {@link planRestUpdate} reads the old document, for
+   * the webhook endpoints: any reason it cannot be read becomes `webhook-definition-missing`, since
+   * without it there are no webhooks or callbacks to offer.
+   */
+  private async cachedRestDocumentForWebhooks(apiId: string): Promise<OpenApiDocument> {
+    try {
+      return (await this.readRestCache(apiId)).document;
+    } catch (error) {
+      throw new ProjectError(
+        'webhook-definition-missing',
+        'This API has no cached definition to read webhooks from. Import it again instead.',
+        { details: { apiId, cause: errorMessage(error) } },
+      );
+    }
   }
 
   /** A REST API that cached its definition, or `definition-not-cached`: without it there is nothing to compare. */

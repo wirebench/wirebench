@@ -35,6 +35,7 @@ const PLAN = {
   removed: [{ method: 'delete', path: '/pets/{id}' }],
   changed: [{ op: { method: 'get', path: '/pets/{id}' }, reasons: ['parameters' as const, 'responses' as const] }],
   api: ['version' as const],
+  webhooks: { added: [], removed: [], changed: [], linked: false },
   source: RECORDED_SOURCE,
   fingerprint: FP1,
 };
@@ -50,6 +51,7 @@ const APPLIED = {
     requestsRewritten: 2,
     rowsAdded: 0,
     rowsRemoved: 0,
+    webhooks: { added: 0, orphaned: 0, restored: 0, rewritten: 0 },
   },
 };
 

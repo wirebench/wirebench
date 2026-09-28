@@ -46,6 +46,7 @@ function summary(overrides: Partial<OpenApiImportSummaryWire> = {}): OpenApiImpo
     deprecated: 1,
     securitySchemes: [],
     skipped: [],
+    webhooks: 0,
     ...overrides,
   };
 }
