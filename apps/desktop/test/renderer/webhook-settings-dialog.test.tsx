@@ -70,6 +70,16 @@ describe('WebhookSettingsDialog', () => {
     expect(updateWebhooks).toHaveBeenCalledWith('p1', { target: 'https://srv.test/hooks/abc/' });
   });
 
+  it('sends an auth key only when the Auth block was actually touched', () => {
+    seed();
+    render(<WebhookSettingsDialog />);
+    act(() => useWebhookItemsDialogs.getState().openSettings('p1'));
+
+    fireEvent.change(screen.getByLabelText('Webhooks authentication type'), { target: { value: 'none' } });
+    fireEvent.click(screen.getByTestId('webhook-settings-save'));
+    expect(updateWebhooks).toHaveBeenCalledWith('p1', { target: '${webhookTarget}', auth: { type: 'none' } });
+  });
+
   it('has no Catch URLs menu when the hooks module is off', () => {
     seed();
     useWebhooksStore.setState({ server: SERVER, meta: null, hooks: [] });

@@ -3,29 +3,27 @@
  * target override. Reached from the explorer's *Webhooks settings…* and from a webhook item's
  * *Set the Webhooks target* note (`webhook-url-note.tsx`).
  *
- * The Target field reuses the REST URL field's property-reference highlighting (`urlSegments`,
- * behind a transparent input, exactly as `url-bar.tsx` layers it) rather than a plain text box, so
- * a `${…}` in a webhook target is as visible here as it is in a request's own URL bar.
+ * The Target field is a {@link PropertyHighlightInput} — the same highlighted field the URL bar
+ * uses — rather than a plain text box, so a `${…}` in a webhook target is as visible here as it is
+ * in a request's own URL bar.
  *
  * A folder has no Auth block: its *Auth…* item (the same {@link AuthFields} form as everywhere
  * else) already covers it, the way a REST folder's credentials live in `folder-auth-dialog.tsx`
  * rather than here.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { AuthFields } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
+import { PropertyHighlightInput } from '../rest-editor/property-highlight-input.js';
 import { folderChainOf, useProjectStore } from '../../state/project.js';
-import { urlSegments } from '../../state/rest-url.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
 import { useWebhookItemsDialogs } from './webhook-items-state.js';
 import type { AuthConfigWire, RestFolderWire } from '../../../shared/wire-types.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
-
-const FIELD_FONT = 'font-mono text-sm leading-[26px]';
 
 /** The nearest ancestor folder's own target, else the collection's — the engine's `effectiveTarget`. */
 function inheritedTargetOf(
@@ -41,64 +39,6 @@ function inheritedTargetOf(
     }
   }
   return collectionTarget;
-}
-
-/** The Target field: a single-line input with the URL bar's highlighted mirror behind it. */
-function TargetField({
-  id,
-  value,
-  placeholder,
-  onChange,
-}: {
-  readonly id: string;
-  readonly value: string;
-  readonly placeholder?: string | undefined;
-  readonly onChange: (value: string) => void;
-}) {
-  const mirrorRef = useRef<HTMLDivElement>(null);
-  return (
-    <div className="flex h-row min-w-0 flex-1 items-center overflow-hidden rounded-md border border-hairline-strong bg-surface-raised">
-      <div className="relative min-w-0 flex-1">
-        <div
-          ref={mirrorRef}
-          aria-hidden="true"
-          className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 ${FIELD_FONT}`}
-        >
-          {urlSegments(value).map((segment, index) => (
-            <span
-              key={index}
-              className={
-                segment.kind === 'property'
-                  ? 'text-accent'
-                  : segment.kind === 'param'
-                    ? 'text-status-info'
-                    : 'text-fg-default'
-              }
-            >
-              {segment.text}
-            </span>
-          ))}
-        </div>
-        <input
-          id={id}
-          aria-label="Target"
-          data-testid={id}
-          spellCheck={false}
-          value={value}
-          placeholder={placeholder}
-          className={`relative h-row w-full bg-transparent px-2 text-transparent caret-fg-default placeholder:text-fg-faint focus:outline-none ${FIELD_FONT}`}
-          onChange={(event) => {
-            onChange(event.target.value);
-          }}
-          onScroll={(event) => {
-            if (mirrorRef.current !== null) {
-              mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft;
-            }
-          }}
-        />
-      </div>
-    </div>
-  );
 }
 
 export function WebhookSettingsDialog() {
@@ -204,17 +144,21 @@ export function WebhookSettingsDialog() {
               Target
             </label>
             <div className="mt-1 flex items-center gap-2">
-              <TargetField
-                id="webhook-settings-target"
-                value={targetDraft}
-                placeholder={isFolder ? `inherits: ${inheritedTarget}` : undefined}
-                onChange={(value) => {
-                  setTargetDraft(value);
-                  if (isFolder) {
-                    setHasOverride(true);
-                  }
-                }}
-              />
+              <div className="flex h-row min-w-0 flex-1 items-center overflow-hidden rounded-md border border-hairline-strong bg-surface-raised">
+                <PropertyHighlightInput
+                  id="webhook-settings-target"
+                  ariaLabel="Target"
+                  testId="webhook-settings-target"
+                  value={targetDraft}
+                  placeholder={isFolder ? `inherits: ${inheritedTarget}` : undefined}
+                  onChange={(value) => {
+                    setTargetDraft(value);
+                    if (isFolder) {
+                      setHasOverride(true);
+                    }
+                  }}
+                />
+              </div>
               {isFolder && (
                 <Button data-testid="webhook-settings-reset" onClick={reset}>
                   Reset

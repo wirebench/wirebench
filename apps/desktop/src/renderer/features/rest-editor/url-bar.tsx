@@ -3,19 +3,14 @@
  *
  * Two things here are not ordinary form fields. The **method** is a select of the nine methods a
  * REST client sends plus a *Custom…* entry, because a REST client must be able to send a method this
- * build has never heard of. The **URL** is an input with a highlighted mirror behind it: property
- * references (`${…}`) and path placeholders (`{param}`) are coloured so an unfilled one is visible
- * while typing, and a relative URL shows the API's effective base URL as a greyed prefix — the user
- * needs to see where the request is actually going, and only main knows that.
- *
- * The mirror is a plain element rather than a Monaco instance: a single-line field does not need an
- * editor (no folding, no find, no completion), and one Monaco per open tab for a URL would be paid
- * for on every tab switch.
+ * build has never heard of. The **URL** is a {@link PropertyHighlightInput}: a relative URL shows
+ * the API's effective base URL as a greyed prefix beside it — the user needs to see where the
+ * request is actually going, and only main knows that.
  */
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Send, Square } from 'lucide-react';
 import { Button } from '../../components/button.js';
-import { urlSegments } from '../../state/rest-url.js';
+import { PropertyHighlightInput } from './property-highlight-input.js';
 
 /** The methods the select offers by name; anything else is typed through *Custom…*. */
 export const KNOWN_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE'] as const;
@@ -71,7 +66,6 @@ export function UrlBar({
 }: UrlBarProps) {
   const known = (KNOWN_METHODS as readonly string[]).includes(method.toUpperCase());
   const [custom, setCustom] = useState(!known);
-  const mirrorRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex h-title-bar shrink-0 items-center gap-2 border-b border-hairline bg-surface-base px-3">
@@ -125,55 +119,19 @@ export function UrlBar({
             {baseLabel !== undefined ? `${baseLabel} ·` : basePrefix}
           </span>
         )}
-        {/* The mirror and the input share the same font, padding and box, and the input's own text
-            is transparent, so the coloured runs behind it line up with the caret exactly. */}
-        <div className="relative min-w-0 flex-1">
-          <div
-            ref={mirrorRef}
-            aria-hidden="true"
-            data-testid="rest-url-highlight"
-            className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 ${FIELD_FONT}`}
-          >
-            {urlSegments(url).map((segment, index) => (
-              <span
-                key={index}
-                data-kind={segment.kind}
-                className={
-                  segment.kind === 'property'
-                    ? 'text-accent'
-                    : segment.kind === 'param'
-                      ? 'text-status-info'
-                      : 'text-fg-default'
-                }
-              >
-                {segment.text}
-              </span>
-            ))}
-          </div>
-          <input
-            aria-label="Request URL"
-            data-testid="rest-url"
-            spellCheck={false}
-            value={url}
-            placeholder="/path or https://host/path"
-            className={`relative h-row w-full bg-transparent px-2 text-transparent caret-fg-default placeholder:text-fg-faint focus:outline-none ${FIELD_FONT}`}
-            onChange={(event) => {
-              onUrlChange(event.target.value);
-            }}
-            onScroll={(event) => {
-              // Keep the mirror in step when the text is longer than the field.
-              if (mirrorRef.current !== null) {
-                mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft;
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
-                event.preventDefault();
-                onSend();
-              }
-            }}
-          />
-        </div>
+        <PropertyHighlightInput
+          ariaLabel="Request URL"
+          testId="rest-url"
+          value={url}
+          placeholder="/path or https://host/path"
+          onChange={onUrlChange}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
+              event.preventDefault();
+              onSend();
+            }
+          }}
+        />
       </div>
 
       {sending ? (
