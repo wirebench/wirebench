@@ -47,25 +47,25 @@
 ## Task 2 — Engine: the script API and its rules
 
 **Files**
-- `packages/engine/src/script/api/`:
-  - `common.ts`: `vars`, `props`, `secrets`, `log`, `test` and `expect`, written as JavaScript source that runs
-    inside the sandbox over the host functions;
-  - `rest.ts`, `soap.ts` and `grpc.ts`: the per-protocol `request` and `response` objects. A pre-request script
-    works on a JSON snapshot of the request. The host applies the returned snapshot.
-- `packages/engine/src/script/apply.ts`:
-  - `applyRequestChanges(protocol, before, after)` checks and applies what a pre-request script changed;
-  - a different scheme, host or port (a URL, SOAP endpoint or gRPC target) is `script-origin-change`;
-  - CR, LF or NUL in a header, metadata value or SOAPAction is `script-value-invalid`;
-  - a typed body is serialised by the engine: JSON for REST, and `applyForm` for the SOAP body.
-- `packages/engine/src/script/secrets.ts`:
-  - `secretReferencesIn(text)`;
-  - after the script, a `${secret:name}` not present before in the request's text is `script-secret-denied`;
-  - `secrets.get` is allowed only for names in `scripts.secrets`, and each value read is reported to `onSecretValue`
-    before the script runs.
-- `packages/engine/src/script/run.ts`: `runPreRequestScript` and `runPostResponseScript`, which return `ScriptOutcome`
-  (`tests`, `logs`, `values`, `error?`).
-- `packages/engine/src/errors.ts`: `ScriptError`, carrying the spec's codes.
-- Tests: `packages/engine/test/unit/script/{api,apply,secrets}.test.ts`.
+- `packages/engine/src/script/model.ts`: the request and response snapshots per protocol, `ScriptTest`,
+  `ScriptValue`, `ScriptFailure` and `ScriptOutcome`, and the output caps.
+- `packages/engine/src/script/api/prelude.ts`: `buildPrelude(protocol, phase, api, layer)`, the API as JavaScript
+  that runs inside the sandbox over `__host`:
+  - `vars`, `props`, `secrets`, `crypto`, `encoding`, `log`/`console`, `test` and `expect`;
+  - the protocol's `request` (writable before the send) and `response`.
+  - A rule's error is raised by name (`ScriptSecretDenied`, `ScriptValueInvalid`, `ScriptUnsupported`), and
+    `run.ts` maps the name to its code.
+- `packages/engine/src/script/apply.ts`: `applyRequestChanges(before, returned)` and `secretReferencesIn`.
+  - What the sandbox hands back is parsed against a schema first, since a script can forge `__finish`.
+  - A different scheme, host or port (a URL, SOAP endpoint or gRPC target) is `script-origin-change`, and so is a
+    changed relative destination.
+  - CR, LF or NUL in a URL, header, metadata value or SOAPAction is `script-value-invalid`, and so is a method
+    that is not a token.
+  - A body the script cannot edit must come back unchanged.
+  - A `${secret:name}` reference the request did not already hold is `script-secret-denied`.
+- `packages/engine/src/script/run.ts`: `runScript(input)` strips the types, reports the listed secrets to
+  `onSecretValue` before the script runs, runs the job, checks the output, and returns a `ScriptOutcome`.
+- Tests: `packages/engine/test/unit/script/{api,apply}.test.ts`.
 
 **Tests**
 - A REST pre-request script sets a header, a query parameter and `body.json`, and the applied request has them.
