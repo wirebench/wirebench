@@ -307,8 +307,9 @@
   `script.closeModel`, `script.listValues`, `script.clearValues`, and the `script.valuesChanged` event.
 - Mutations (`project-script-mutations.ts`): `update-request-scripts` (a patch; `null` removes) and `enable-scripts`.
   The SOAP and REST updates and the REST and gRPC clones keep a request's scripts.
-- Packaging: the engine's workers ship as the REST contract checker's do; no `asarUnpack` entry was added. Confirm in
-  a packaged build that the QuickJS WASM file and TypeScript's `lib` files load from the asar.
+- Packaging: the engine's workers ship as the REST contract checker's do, with no `asarUnpack` entry. A packaged
+  Linux build (`electron-builder --linux dir`) type-checked a script (TypeScript and its `lib` files read from the
+  asar in the checker's worker) and ran one in the QuickJS sandbox.
 - Tests: `apps/desktop/test/{script-send,script-host,script-mutations}.test.ts`.
   - `script-send` covers the order (script, then auth), a secret the script never sees, session values and their
     masking in the summary and History, `script-origin-change`, a type error, `scriptsOff`, a SOAP send, and a sequence

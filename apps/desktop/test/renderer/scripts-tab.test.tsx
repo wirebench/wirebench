@@ -14,6 +14,7 @@ vi.mock('../../src/renderer/editor/monaco.js', async () => await import('../mock
 
 const { ScriptsTab, hasScripts, parseSecretNames } = await import('../../src/renderer/features/scripts/scripts-tab.js');
 const { useProjectStore } = await import('../../src/renderer/state/project.js');
+const { flushScriptEdits, hasScriptEditors } = await import('../../src/renderer/state/script-edits.js');
 
 const updateRequestScripts = vi.fn();
 const diagnostics = vi.fn();
@@ -67,6 +68,30 @@ describe('ScriptsTab', () => {
       vi.advanceTimersByTime(400);
     });
     expect(updateRequestScripts).toHaveBeenLastCalledWith('r1', { pre: null });
+  });
+
+  it('writes a pending edit at once when a send or save flushes, and waits for main to have it', async () => {
+    let written: () => void = () => undefined;
+    updateRequestScripts.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          written = resolve;
+        }),
+    );
+    render(<ScriptsTab requestId="r1" scripts={undefined} />);
+    expect(hasScriptEditors()).toBe(true);
+    fireEvent.change(screen.getByLabelText('Pre-request script'), { target: { value: 'log(3);' } });
+
+    let flushed = false;
+    const flushing = flushScriptEdits().then(() => {
+      flushed = true;
+    });
+    expect(updateRequestScripts).toHaveBeenCalledWith('r1', { pre: 'log(3);' });
+    await Promise.resolve();
+    expect(flushed).toBe(false);
+    written();
+    await flushing;
+    expect(flushed).toBe(true);
   });
 
   it('writes a pending edit when the other script is opened', () => {

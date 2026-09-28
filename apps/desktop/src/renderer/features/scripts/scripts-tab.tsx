@@ -24,6 +24,7 @@ import {
   type ScriptPhase,
 } from '../../editor/script-language.js';
 import { useProjectStore } from '../../state/project.js';
+import { registerScriptEditFlush } from '../../state/script-edits.js';
 import type { RequestScriptsPatchWire, RequestScriptsWire } from '../../../shared/wire-types.js';
 
 /** Long enough that a burst of keystrokes is one write, short enough that a send right after sees it. */
@@ -73,10 +74,12 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
   const api = scripts?.api ?? 'wirebench';
 
   const write = useCallback(
-    (patch: RequestScriptsPatchWire) => {
-      updateRequestScripts(requestId, patch).catch((error: unknown) => {
+    async (patch: RequestScriptsPatchWire): Promise<void> => {
+      try {
+        await updateRequestScripts(requestId, patch);
+      } catch (error) {
         showToast(error instanceof Error ? error.message : 'Could not save the scripts');
-      });
+      }
     },
     [requestId, updateRequestScripts],
   );
@@ -98,7 +101,7 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
             variant="primary"
             data-testid="scripts-switch-on"
             onClick={() => {
-              write({ enabled: true });
+              void write({ enabled: true });
             }}
           >
             Switch on
@@ -129,9 +132,9 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
           phase={phase}
           api={api}
           value={scripts?.[phase] ?? ''}
-          onCommit={(text) => {
+          onCommit={async (text) => {
             const next = text === '' ? null : text;
-            write(phase === 'pre' ? { pre: next } : { post: next });
+            await write(phase === 'pre' ? { pre: next } : { post: next });
           }}
         />
       </div>
@@ -143,7 +146,7 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
             disabled={!hasScripts(scripts)}
             testId="scripts-enabled"
             onChange={(enabled) => {
-              write({ enabled });
+              void write({ enabled });
             }}
           />
           <TextSetting
@@ -159,7 +162,7 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
                 showToast(`Not a secret name: ${invalid.join(', ')}`);
                 return;
               }
-              write({ secrets: names });
+              void write({ secrets: names });
             }}
           />
           <NumberSetting
@@ -170,7 +173,7 @@ export function ScriptsTab({ requestId, scripts }: ScriptsTabProps) {
             hint={`Per script, up to ${String(MAX_TIMEOUT_MS)} ms.`}
             testId="scripts-timeout"
             onCommit={(value) => {
-              write({ timeoutMs: value === undefined ? null : Math.min(Math.max(1, value), MAX_TIMEOUT_MS) });
+              void write({ timeoutMs: value === undefined ? null : Math.min(Math.max(1, value), MAX_TIMEOUT_MS) });
             }}
           />
         </SettingsGroup>
@@ -184,13 +187,15 @@ export interface ScriptEditorProps {
   readonly phase: ScriptPhase;
   readonly api: 'wirebench' | 'postman';
   readonly value: string;
-  readonly onCommit: (text: string) => void;
+  /** Writes the text; resolves once main has it. */
+  readonly onCommit: (text: string) => Promise<void>;
 }
 
 /**
  * One script's editor. It keeps what is typed locally and writes it after a pause; the request's
  * text coming back from main is taken only when it is not this editor's own last write, so a
- * keystroke made meanwhile survives the echo.
+ * keystroke made meanwhile survives the echo. A send or save made inside the pause waits for the
+ * write (`flushScriptEdits`).
  */
 export function ScriptEditor({ requestId, phase, api, value, onCommit }: ScriptEditorProps) {
   const [local, setLocal] = useState(value);
@@ -215,16 +220,19 @@ export function ScriptEditor({ requestId, phase, api, value, onCommit }: ScriptE
     });
   }, []);
 
-  const flush = useCallback(() => {
+  const inflight = useRef<Promise<void>>(Promise.resolve());
+  const flush = useCallback((): Promise<void> => {
     clearTimeout(commitTimer.current);
     const text = pending.current;
-    if (text === undefined) {
-      return;
+    if (text !== undefined) {
+      pending.current = undefined;
+      committed.current = text;
+      inflight.current = onCommitRef.current(text);
     }
-    pending.current = undefined;
-    committed.current = text;
-    onCommitRef.current(text);
+    return inflight.current;
   }, []);
+
+  useEffect(() => registerScriptEditFlush(flush), [flush]);
 
   useEffect(() => {
     if (value === committed.current) {
@@ -238,7 +246,7 @@ export function ScriptEditor({ requestId, phase, api, value, onCommit }: ScriptE
 
   useEffect(
     () => () => {
-      flush();
+      void flush();
       clearTimeout(checkTimer.current);
       const model = modelRef.current;
       if (model !== undefined) {
@@ -275,7 +283,9 @@ export function ScriptEditor({ requestId, phase, api, value, onCommit }: ScriptE
             setLocal(next);
             pending.current = next;
             clearTimeout(commitTimer.current);
-            commitTimer.current = setTimeout(flush, COMMIT_DEBOUNCE_MS);
+            commitTimer.current = setTimeout(() => {
+              void flush();
+            }, COMMIT_DEBOUNCE_MS);
             clearTimeout(checkTimer.current);
             checkTimer.current = setTimeout(check, CHECK_DEBOUNCE_MS);
           }}

@@ -61,6 +61,7 @@ import { useExchangesStore } from './exchanges.js';
 import { ipc } from './ipc-client.js';
 import { reviewSecrets } from './secret-review.js';
 import { useUiStore } from './ui.js';
+import { flushScriptEdits, hasScriptEditors } from './script-edits.js';
 
 /**
  * One request as the renderer sees it. Historically an in-memory draft; since Task 21 it is
@@ -1246,6 +1247,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     saveRequest: async (requestId, options) => {
+      if (hasScriptEditors()) {
+        await flushScriptEdits();
+      }
       await saveItem(
         requestId,
         useDraftsStore.getState().peekRequest(requestId) !== undefined,
@@ -1529,6 +1533,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     saveGrpcRequest: async (requestId, options) => {
+      if (hasScriptEditors()) {
+        await flushScriptEdits();
+      }
       await saveItem(
         requestId,
         useDraftsStore.getState().peekGrpcRequest(requestId) !== undefined,
@@ -1729,6 +1736,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     saveRestRequest: async (requestId, options) => {
+      if (hasScriptEditors()) {
+        await flushScriptEdits();
+      }
       await saveItem(
         requestId,
         useDraftsStore.getState().peekRestRequest(requestId) !== undefined,
