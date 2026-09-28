@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   isManagedDir,
+  isManagedPath,
   isWorkspaceManagedPath,
   ProjectWatcher,
   type WatchDirEntry,
@@ -922,6 +923,7 @@ describe('isManagedDir', () => {
     ['apis/pets/definition', false],
     ['environments', true],
     ['wss', true],
+    ['sequences', true],
     ['attachments', false],
     ['imported-scripts', false],
     ['node_modules', false],
@@ -929,6 +931,17 @@ describe('isManagedDir', () => {
     ['docs', false],
   ])('%s -> %s', (path, expected) => {
     expect(isManagedDir(path)).toBe(expected);
+  });
+});
+
+describe('isManagedPath for sequences', () => {
+  it.each([
+    ['sequences/checkout.sequence.yaml', true],
+    ['sequences/notes.yaml', false],
+    ['sequences/nested/checkout.sequence.yaml', false],
+    ['sequences/README.md', false],
+  ])('%s -> %s', (path, expected) => {
+    expect(isManagedPath(path)).toBe(expected);
   });
 });
 

@@ -121,3 +121,15 @@ build, which would otherwise fail the narrower schema with a confusing "invalid 
 error instead of the clean "created by a newer version of Wirebench" one. The 4 → 5 migration is a
 stamp — no data moves, proved by a version-4 fixture whose save changes only the `formatVersion`
 line.
+
+**Update (2026-09-28, Sequences): `formatVersion` stays `5`; `sequences/` carries its own `version`.**
+Sequences (`docs/specs/2026-09-28-sequences-design.md`) are a new file kind in a new top-level folder,
+`sequences/<slug>.sequence.yaml`. The additive-field rule above is about a key an older build would drop from
+a file it *does* read and then lose on save. A folder an older build never reads is a different case, and the
+code makes it safe: `loadProject` walks only the folders it knows, `listManagedFiles` never lists
+`sequences/`, so nothing there is deleted, and `isManagedPath` ignores it. An older build therefore opens the
+project, shows no sequences, and leaves the folder byte for byte as it was, just as ADR-0014 relies on for
+`team-secrets/`. Each sequence file carries `kind: sequence` and its own `version: 1`. A change to the
+sequence shape bumps that version, and a build refuses only the files that are too new for it, as a
+`sequence-version-too-new` problem, never the whole project. The project's `formatVersion` still moves
+for any change to a file kind an older build reads.

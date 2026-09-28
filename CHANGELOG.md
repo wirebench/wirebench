@@ -15,6 +15,16 @@ All notable changes to this project are documented here. The format follows
   viewers read them. The server bounds captures by count, age, body size and rate, and the app never
   writes them to disk.
 
+- **Sequences.** A sequence sends saved SOAP, REST and unary gRPC requests one after another, and is
+  declared in its own file, `sequences/<name>.sequence.yaml`, with no code. A step can lift a value
+  from its response (a body expression, a header, a cookie or the status) for later steps to use as
+  `${#Sequence#name}`, and check the response with assertions, a header included. Build and run one
+  from the explorer and its tab, where the run panel fills in step by step; each step is logged and
+  kept in History like any other send. `wirebench run --sequence <name>` runs one in CI, one test per
+  step. A value from a response is data, never a template: it is used exactly as it arrived, escaped
+  for the body it lands in, can't choose the scheme, host or port of the next request, can't carry a
+  line break into a URL or header, and is masked everywhere once marked secret.
+
 - **Team secrets.** A shared workspace can share secret values, not just references: each value is
   encrypted for every approved machine and travels with the workspace, so a teammate's next send uses it
   with nothing typed. Joining machines ask for access; an admin approves after checking a fingerprint.
@@ -118,6 +128,10 @@ All notable changes to this project are documented here. The format follows
   Reconnecting with `Last-Event-ID`, honouring `retry:`, and the CLI runner are out of scope.
 
 ### Fixed
+
+- **A `matches:` assertion can't hang a run.** Its regular expression now runs off the main thread
+  with a time budget, as XPath and JSONPath already did, so a pattern that backtracks badly fails
+  the assertion instead of freezing the app or the CLI.
 
 - **A REST request's API key stays on its own origin across redirects.** A key in a custom header
   such as `X-Api-Key` was sent on to a server on another origin when a redirect led there, and a key

@@ -1,0 +1,84 @@
+{
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 2,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 4,
+  "numPassedTests": 4,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1790579700958,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["CatchBuckets (webhook-capture §3.3 step 3)"],
+          "fullName": "CatchBuckets (webhook-capture §3.3 step 3) allows a full burst at once, then refuses without spending",
+          "status": "passed",
+          "title": "allows a full burst at once, then refuses without spending",
+          "duration": 0.955750000000009,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["CatchBuckets (webhook-capture §3.3 step 3)"],
+          "fullName": "CatchBuckets (webhook-capture §3.3 step 3) refills at the configured rate, never above the burst",
+          "status": "passed",
+          "title": "refills at the configured rate, never above the burst",
+          "duration": 0.1750419999999906,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["CatchBuckets (webhook-capture §3.3 step 3)"],
+          "fullName": "CatchBuckets (webhook-capture §3.3 step 3) drops a bucket once it has been full for ten minutes, checked at most once a minute",
+          "status": "passed",
+          "title": "drops a bucket once it has been full for ten minutes, checked at most once a minute",
+          "duration": 0.12591599999998948,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["CatchBuckets (webhook-capture §3.3 step 3)"],
+          "fullName": "CatchBuckets (webhook-capture §3.3 step 3) never drops a bucket that is still refilling",
+          "status": "passed",
+          "title": "never drops a bucket that is still refilling",
+          "duration": 0.6872500000000059,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1790579701058,
+      "endTime": 1790579701059.6873,
+      "status": "passed",
+      "message": "",
+      "name": "/Users/mnaami/Data/apps/wirebench/git-worktrees/webhook-capture/packages/server/test/unit/hooks/rate-limit.test.ts"
+    }
+  ]
+}

@@ -78,6 +78,7 @@ function makeProject(auth: AuthConfig): Project {
     ],
     grpcApis: [grpcApi],
     wsApis: [],
+    sequences: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

@@ -67,3 +67,29 @@ describe('createMaskedReporters', () => {
     expect(seen.join('')).not.toContain(SECRET);
   });
 });
+
+describe('maskRequestResult for a sequence step', () => {
+  it('masks a transfer value and message that hold a credential', () => {
+    const step: RequestResult = {
+      path: 'checkout/1. Log in',
+      group: 'checkout',
+      name: '1. Log in',
+      protocol: 'rest',
+      outcome: 'errored',
+      assertions: [],
+      unasserted: true,
+      sequence: { id: 'S', name: 'checkout', stepId: 'T' },
+      transfers: [
+        { name: 'echo', outcome: 'set', secret: false, value: 'Bearer hunter2-long-9f' },
+        { name: 'bad', outcome: 'errored', secret: false, message: 'hunter2-long-9f is not JSON' },
+        { name: 'token', outcome: 'set', secret: true },
+      ],
+    };
+    const masked = maskRequestResult(step, (text) => text.replaceAll('hunter2-long-9f', '<redacted>'));
+    expect(masked.transfers).toEqual([
+      { name: 'echo', outcome: 'set', secret: false, value: 'Bearer <redacted>' },
+      { name: 'bad', outcome: 'errored', secret: false, message: '<redacted> is not JSON' },
+      { name: 'token', outcome: 'set', secret: true },
+    ]);
+  });
+});

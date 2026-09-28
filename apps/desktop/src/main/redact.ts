@@ -80,6 +80,15 @@ function maskRecorded(text: string): string {
 }
 
 /**
+ * Whether `value` holds a secret value main has recorded this session, in any form the masker knows
+ * (plain, percent-, form-, XML- or JSON-escaped, base64): exactly when masking would change it. A
+ * sequence treats a transferred value like that as secret even when its transfer is not marked.
+ */
+export function containsRecordedSecret(value: string): boolean {
+  return maskRecorded(value) !== value;
+}
+
+/**
  * `text` with every recorded value masked, whatever the show-secrets toggle says: for what is
  * written to disk (a History body), which is always redacted.
  */

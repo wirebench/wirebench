@@ -45,6 +45,7 @@ export default defineConfig({
             { label: 'Secrets', slug: 'guides/secrets' },
             { label: 'HTTP Log', slug: 'guides/http-log' },
             { label: 'History', slug: 'guides/history' },
+            { label: 'Sequences', slug: 'guides/sequences' },
             { label: 'Snapshot regression', slug: 'guides/snapshot-regression' },
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
             { label: 'Webhooks', slug: 'guides/webhooks' },

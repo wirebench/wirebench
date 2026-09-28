@@ -25,6 +25,12 @@ export function activeWsRequestId(): string | undefined {
   return tabs.find((tab) => tab.id === activeId && tab.kind === 'ws-request')?.wsRequestId;
 }
 
+/** The sequence behind the active editor tab, or `undefined` when none is a sequence tab. */
+export function activeSequenceId(): string | undefined {
+  const { tabs, activeId } = useEditorsStore.getState();
+  return tabs.find((tab) => tab.id === activeId && tab.kind === 'sequence')?.sequenceId;
+}
+
 /** The UI store's current actions. A function, not a binding: the store is replaced on every set. */
 export function ui(): ReturnType<typeof useUiStore.getState> {
   return useUiStore.getState();

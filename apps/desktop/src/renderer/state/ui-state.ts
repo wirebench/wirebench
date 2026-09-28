@@ -26,7 +26,8 @@ export interface PersistedTab {
     | 'grpc-request'
     | 'grpc-api'
     | 'ws-request'
-    | 'ws-api';
+    | 'ws-api'
+    | 'sequence';
   /** The entity id — the request, interface, API, environment or project the tab edits. */
   readonly id: string;
 }
@@ -43,6 +44,7 @@ const PERSISTED_TAB_KINDS: readonly PersistedTab['kind'][] = [
   'grpc-api',
   'ws-request',
   'ws-api',
+  'sequence',
 ];
 
 /** What one workspace leaves behind when it is closed, so reopening it looks the same. */

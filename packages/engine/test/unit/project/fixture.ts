@@ -88,6 +88,7 @@ export function sampleProject(): Project {
     apis: [],
     grpcApis: [],
     wsApis: [],
+    sequences: [],
     interfaces: [
       {
         kind: 'soap',

@@ -40,6 +40,8 @@ function tabIdFor(tab: PersistedTab): string {
       return `ws:${tab.id}`;
     case 'ws-api':
       return `ws-api:${tab.id}`;
+    case 'sequence':
+      return `sequence:${tab.id}`;
   }
 }
 
@@ -74,6 +76,9 @@ function persist(tab: EditorTab): PersistedTab | undefined {
   }
   if (tab.kind === 'ws-api' && tab.wsApiId !== undefined) {
     return { kind: 'ws-api', id: tab.wsApiId };
+  }
+  if (tab.kind === 'sequence' && tab.sequenceId !== undefined) {
+    return { kind: 'sequence', id: tab.sequenceId };
   }
   return undefined;
 }
@@ -115,6 +120,8 @@ function titleFor(tab: PersistedTab): string | undefined {
       return projects.wsRequests[tab.id]?.name;
     case 'ws-api':
       return projects.wsApis[tab.id]?.name;
+    case 'sequence':
+      return projects.sequences[tab.id]?.name;
   }
 }
 
@@ -169,6 +176,7 @@ export function restoreWorkspaceTabs(workspaceId: string): void {
       ...(tab.kind === 'grpc-api' ? { grpcApiId: tab.id } : {}),
       ...(tab.kind === 'ws-request' ? { wsRequestId: tab.id } : {}),
       ...(tab.kind === 'ws-api' ? { wsApiId: tab.id } : {}),
+      ...(tab.kind === 'sequence' ? { sequenceId: tab.id } : {}),
     });
     if (tab.id === entry.activeId) {
       activeTabId = id;

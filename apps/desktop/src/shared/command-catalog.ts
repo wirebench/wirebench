@@ -360,6 +360,23 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'WebSocket: Copy as Command',
     category: 'Request',
   },
+  'sequence.new': {
+    id: 'sequence.new',
+    label: 'Sequence: New Sequence',
+    category: 'Explorer',
+  },
+  // The tab's one action, on the chord every editor sends with; a sequence tab is none of theirs.
+  'sequence.run': {
+    id: 'sequence.run',
+    label: 'Sequence: Run',
+    category: 'Request',
+    shortcut: 'Mod+Enter',
+  },
+  'sequence.cancel': {
+    id: 'sequence.cancel',
+    label: 'Sequence: Cancel Run',
+    category: 'Request',
+  },
   'env.switch': {
     id: 'env.switch',
     label: 'Switch Environment…',

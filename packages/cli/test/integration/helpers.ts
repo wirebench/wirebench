@@ -40,6 +40,10 @@ export function runCli(
   });
 }
 
+/** What `/login` hands out: a token in the body and a session cookie, both long enough to be masked. */
+export const LOGIN_TOKEN = 'login-token-long-5a3c9e';
+export const SESSION_COOKIE = 'session-cookie-long-8d2f';
+
 /** The OAuth2 client secret the fixture's `OAUTH_SECRET` stands for, and the token it buys. */
 export const CLIENT_SECRET = 'client-secret-long-7c1d';
 export const ACCESS_TOKEN = 'access-token-long-4b9e';
@@ -52,6 +56,8 @@ export interface DemoServer {
   readonly secureAuth: (string | undefined)[];
   /** How many token requests `/token` answered with a token. */
   readonly tokensIssued: () => number;
+  /** The `Authorization` and `Cookie` headers of every request to `/carts`, in order. */
+  readonly cartCalls: { readonly authorization?: string; readonly cookie?: string }[];
   close(): Promise<void>;
 }
 
@@ -67,6 +73,7 @@ export interface DemoServer {
 export async function startDemoServer(): Promise<DemoServer> {
   const requests: string[] = [];
   const secureAuth: (string | undefined)[] = [];
+  const cartCalls: { authorization?: string; cookie?: string }[] = [];
   const expected = `Basic ${Buffer.from('svc:hunter2-long').toString('base64')}`;
   const client = `Basic ${Buffer.from(`runner:${CLIENT_SECRET}`).toString('base64')}`;
   let issued = 0;
@@ -108,6 +115,21 @@ export async function startDemoServer(): Promise<DemoServer> {
       } else {
         json(401, { error: 'invalid_client' });
       }
+    } else if (path === '/login') {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'set-cookie': `sid=${SESSION_COOKIE}; Path=/; HttpOnly`,
+      });
+      // `elsewhere` is a host no step may be sent to: a sequence that tries is refused before the send.
+      res.end(JSON.stringify({ token: LOGIN_TOKEN, elsewhere: 'http://127.0.0.1:1' }));
+    } else if (path === '/carts') {
+      cartCalls.push({
+        ...(req.headers.authorization !== undefined ? { authorization: req.headers.authorization } : {}),
+        ...(req.headers.cookie !== undefined ? { cookie: req.headers.cookie } : {}),
+      });
+      const allowed =
+        req.headers.authorization === `Bearer ${LOGIN_TOKEN}` && req.headers.cookie === `sid=${SESSION_COOKIE}`;
+      json(allowed ? 201 : 401, allowed ? { id: 'cart-42' } : {});
     } else if (path === '/protected') {
       json(req.headers.authorization === `Bearer ${ACCESS_TOKEN}` ? 200 : 401, {});
     } else if (path === '/secure') {
@@ -124,6 +146,7 @@ export async function startDemoServer(): Promise<DemoServer> {
     requests,
     secureAuth,
     tokensIssued: () => issued,
+    cartCalls,
     close: () =>
       new Promise((resolve, reject) => {
         server.closeAllConnections();

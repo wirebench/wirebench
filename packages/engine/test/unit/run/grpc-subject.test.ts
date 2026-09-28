@@ -11,7 +11,12 @@ import { grpcSubject } from '../../../src/run/run.js';
 
 function result(messages: readonly GrpcResponseMessage[], status = 0): GrpcCallResult {
   return {
-    exchange: { status, durationMs: 12 } as unknown as GrpcExchange,
+    exchange: {
+      status,
+      durationMs: 12,
+      headers: { 'content-type': 'application/grpc' },
+      trailers: { 'grpc-status': String(status) },
+    } as unknown as GrpcExchange,
     methodKind: 'unary',
     requestType: 'a.Req',
     responseType: 'a.Res',
@@ -30,6 +35,11 @@ describe('grpcSubject', () => {
       durationMs: 12,
       bodyText: '{"message":"hi"}',
       bodyKind: 'json',
+      // Metadata before trailers: a header assertion or transfer takes the first value it finds.
+      headers: [
+        ['content-type', 'application/grpc'],
+        ['grpc-status', '0'],
+      ],
     });
   });
 

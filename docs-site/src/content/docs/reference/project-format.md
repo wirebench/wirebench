@@ -29,6 +29,8 @@ my-service/
       <Request>.body.json     # a raw body, in a file of its own language (.json/.xml/.txt/…)
       <Request>.golden.yaml   # the request's snapshot, when one is saved (SOAP requests have one too)
       <Folder>/folder.yaml    # a folder's own name, order and inherited auth
+  sequences/
+    <Sequence>.sequence.yaml  # kind: sequence, version, steps (request ids), transfers, assertions
   wss/…                       # outgoing/incoming WS-Security configs and keystore entries (no secrets)
   attachments/                 # content-addressed by sha256
 ```
@@ -51,6 +53,7 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `apis/<Api>/api.yaml` | A REST API: its OpenAPI reference, base URL, settings and auth reference |
 | `<Request>.request.yaml` + `<Request>.xml` (SOAP) or `<Request>.body.json` (REST) | One saved request: metadata in YAML, the payload in a file of its own kind |
 | `<Request>.golden.yaml` | A request's snapshot: the golden response body, its content type, when it was saved and the ignore rules. It sits beside the request's own file, outside the project model, so an older build leaves it alone and it needs no format-version change. Renaming or moving the request leaves it behind. See [Snapshot regression](/wirebench/guides/snapshot-regression/) |
+| `sequences/<Sequence>.sequence.yaml` | One [sequence](/wirebench/guides/sequences/): its steps in order, each naming a saved request by id, with the step's transfers and assertions and the run settings. It carries `kind: sequence` and its own `version` (see below) |
 | `definition/` | The fetched or imported API definition (WSDL, XSD, OpenAPI), kept byte-exact, plus a manifest mapping each URL to its cached file and checksum |
 | `wss/` | WS-Security configuration and keystore entries — no secret values |
 | `attachments/` | Files attached to a request, stored by content hash |
@@ -90,7 +93,7 @@ guessing:
 
 > Project was created by a newer version of Wirebench (format N, this build supports M)
 
-The project format is currently **version 3**:
+The project format is currently **version 5**:
 
 1. **Version 1** — the original layout described above, without APIs or per-variable disabling.
 2. **Version 2** — every property scope gained a per-variable `disabled` list, so a variable can be
@@ -98,6 +101,15 @@ The project format is currently **version 3**:
    enabled".
 3. **Version 3** — projects can hold REST APIs beside interfaces, in the `apis/` tree shown above.
    A version-1 or version-2 project opens unchanged and is rewritten at version 3 on its next save.
+4. **Version 4** — a request can carry `assertions`, and each secret reference can name the
+   environment variable a CI run reads it from (`…Env`).
+5. **Version 5** — a SOAP interface, endpoint or request can use bearer, API-key and OAuth2 auth,
+   previously REST-only.
+
+A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
+reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it
+was. A build that finds a sequence file newer than it understands, malformed, or sharing another's
+id reports it as a problem, skips it, and never deletes or overwrites it on save.
 
 A workspace manifest has its own, independent format version (`WORKSPACE_FORMAT_VERSION`, currently
 3), versioned and migrated the same way, with the same "created by a newer version" error when a

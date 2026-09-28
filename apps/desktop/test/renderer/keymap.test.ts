@@ -114,6 +114,7 @@ describe('keymapRows', () => {
       'Send gRPC Request',
       'Send Request',
       'Send REST Request',
+      'Sequence: Run',
       'WebSocket: Connect or Send Selected Message',
     ]);
     expect(rowFor(rows, 'request.send')?.conflictsWith).toEqual(['Toggle Sidebar']);
@@ -129,6 +130,7 @@ describe('keymapRows', () => {
       'Send gRPC Request',
       'Send Request',
       'Send REST Request',
+      'Sequence: Run',
       'WebSocket: Connect or Send Selected Message',
     ]);
   });

@@ -1,6 +1,6 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { startTestSoapServer } from '@wirebench/engine/test-helpers';
 import type { TestSoapServer } from '@wirebench/engine/test-helpers';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -188,5 +188,119 @@ describe('wirebench run', () => {
   it('leaves the fixture byte-identical', async () => {
     await run();
     expect(await hashTree(FIXTURE)).toEqual(before);
+  });
+});
+
+describe('wirebench run — a project inside a workspace', () => {
+  /**
+   * A workspace holding a copy of the fixture as its internal project `runner`, with one
+   * environment `ci` (no project environment shares its slug) whose properties are `envProps`.
+   * Returns the project's directory.
+   */
+  async function workspaceWith(
+    envProps: Record<string, string>,
+    workspaceProps: Record<string, string> = {},
+  ): Promise<string> {
+    const root = await tempDir();
+    const projectDir = join(root, 'projects', 'runner');
+    await cp(FIXTURE, projectDir, { recursive: true });
+    const map = (props: Record<string, string>): string[] =>
+      Object.keys(props).length === 0
+        ? ['properties: {}']
+        : ['properties:', ...Object.entries(props).map(([key, value]) => `  ${key}: ${JSON.stringify(value)}`)];
+    await writeFile(
+      join(root, 'workspace.yaml'),
+      [
+        'formatVersion: 3',
+        'id: WS1',
+        'name: Team',
+        'createdAt: 2026-09-18T00:00:00.000Z',
+        ...map(workspaceProps),
+        'projects:',
+        '  - id: RUNNER0001',
+        '    slug: runner',
+        '    source: internal',
+        '',
+      ].join('\n'),
+    );
+    await mkdir(join(root, 'environments'));
+    await writeFile(
+      join(root, 'environments', 'ci.yaml'),
+      ['id: WSENV1', 'name: CI', 'order: 0', 'endpoints: {}', ...map(envProps), ''].join('\n'),
+    );
+    return projectDir;
+  }
+
+  it('resolves ${name} from the workspace environment --env names, by name or id', async () => {
+    const dir = await workspaceWith({ baseUrl: demo.url });
+    for (const env of ['CI', 'WSENV1']) {
+      const { code, stdout } = await runCli(['run', dir, '-e', env, 'demo/ok']);
+      expect(stdout).toContain('✓ demo/ok');
+      expect(code).toBe(0);
+    }
+  });
+
+  it('resolves ${#Workspace#name} from the workspace properties', async () => {
+    const dir = await workspaceWith({}, { demoUrl: demo.url });
+    const api = join(dir, 'apis', 'demo', 'api.yaml');
+    await writeFile(api, (await readFile(api, 'utf8')).replace('${baseUrl}', '${#Workspace#demoUrl}'));
+    const { code, stdout } = await runCli(['run', dir, '-e', 'ci', 'demo/ok']);
+    expect(stdout).toContain('✓ demo/ok');
+    expect(code).toBe(0);
+  });
+
+  it("lets --var override the workspace environment's value", async () => {
+    const dir = await workspaceWith({ baseUrl: 'http://127.0.0.1:1' });
+    expect((await runCli(['run', dir, '-e', 'ci', 'demo/ok'])).code).toBe(3);
+    const { code } = await runCli(['run', dir, '-e', 'ci', '--var', `baseUrl=${demo.url}`, 'demo/ok']);
+    expect(code).toBe(0);
+  });
+
+  it("offers the workspace's environments, not the project's own", async () => {
+    const dir = await workspaceWith({ baseUrl: demo.url });
+    const { code, stderr } = await runCli(['run', dir, '-e', 'local', 'demo/ok']);
+    expect(code).toBe(2);
+    expect(stderr).toContain('unknown environment "local"; environments: CI');
+  });
+
+  it('finds a ${secret:name} token a workspace environment property holds', async () => {
+    const dir = await workspaceWith({ baseUrl: demo.url, key: '${secret:demo_key}' });
+    const request = join(dir, 'apis', 'demo', 'requests', 'ok.request.yaml');
+    await writeFile(request, `${await readFile(request, 'utf8')}headers:\n  - name: X-Key\n    value: \${key}\n`);
+    const listed = await runCli(['secrets', 'list', dir, '-e', 'ci', 'demo/ok']);
+    expect(listed.stdout).toContain('WIREBENCH_SECRET_DEMO_KEY');
+    expect(listed.code).toBe(3);
+    const missing = await runCli(['run', dir, '-e', 'ci', 'demo/ok']);
+    expect(missing.stdout + missing.stderr).toContain('WIREBENCH_SECRET_DEMO_KEY');
+    expect(missing.code).toBe(3);
+    const { code } = await runCli(['run', dir, '-e', 'ci', 'demo/ok'], { WIREBENCH_SECRET_DEMO_KEY: 'k-value' });
+    expect(code).toBe(0);
+  });
+
+  it('warns and applies nothing from a workspace.yaml that does not list the project', async () => {
+    const dir = await workspaceWith({ baseUrl: 'http://127.0.0.1:1' });
+    const moved = join(dirname(dir), 'unlisted');
+    await rename(dir, moved);
+    const { code, stderr } = await runCli(['run', moved, '-e', 'local', '--var', `baseUrl=${demo.url}`, 'demo/ok']);
+    expect(stderr).toContain('does not list this project');
+    expect(code).toBe(0);
+  });
+
+  it("warns and runs on when a workspace.yaml above the project is another tool's file", async () => {
+    const root = await tempDir();
+    const projectDir = join(root, 'runner');
+    await cp(FIXTURE, projectDir, { recursive: true });
+    await writeFile(join(root, 'workspace.yaml'), 'folders:\n  - path: .\n');
+    const { code, stderr } = await runCli([
+      'run',
+      projectDir,
+      '-e',
+      'local',
+      '--var',
+      `baseUrl=${demo.url}`,
+      'demo/ok',
+    ]);
+    expect(stderr).toContain('is not a workspace this run can read');
+    expect(code).toBe(0);
   });
 });

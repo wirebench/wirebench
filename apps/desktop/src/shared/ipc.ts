@@ -333,6 +333,11 @@ import {
   hooksUpdateRequestWireSchema,
   hooksViewRequestWireSchema,
   hooksWorkspaceRequestWireSchema,
+  sequenceCancelRequestSchema,
+  sequenceCancelResponseSchema,
+  sequenceProgressEventSchema,
+  sequenceRunRequestSchema,
+  sequenceRunResultWireSchema,
 } from './wire-types.js';
 
 /**
@@ -928,6 +933,13 @@ export const channels = {
     resendGrpc: defineChannel('history.resendGrpc', historyResendGrpcRequestSchema, grpcExchangeSummarySchema),
     resendRest: defineChannel('history.resendRest', historyResendRestRequestSchema, restExchangeSummarySchema),
   },
+  // A sequence (`sequences/<slug>.sequence.yaml`) run end to end; edits go through `project.mutate`.
+  sequence: {
+    /** Runs a sequence; resolves when it ends, with every step. `sequence.progress` reports each as it ends. */
+    run: defineChannel('sequence.run', sequenceRunRequestSchema, sequenceRunResultWireSchema),
+    /** Stops a run: the step in flight is cancelled and the rest are skipped. */
+    cancel: defineChannel('sequence.cancel', sequenceCancelRequestSchema, sequenceCancelResponseSchema),
+  },
   // A request's golden response, kept beside its files as `<slug>.golden.yaml`.
   snapshot: {
     read: defineChannel('snapshot.read', snapshotRequestSchema, snapshotReadResponseSchema),
@@ -1071,6 +1083,10 @@ export const events = {
   },
   history: {
     appended: defineEvent('history.appended', historyAppendedEventSchema),
+  },
+  sequence: {
+    /** One step of a running sequence has ended, keyed by the run's id. */
+    progress: defineEvent('sequence.progress', sequenceProgressEventSchema),
   },
   exchange: {
     /** A send failed before a response arrived; the console's HTTP Log records it as a failure row. */

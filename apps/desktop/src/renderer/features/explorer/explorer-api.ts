@@ -25,7 +25,7 @@ export function startRenamingRequest(requestId: string): void {
 
 /** The explorer row kinds a rename can be started on by id, with the prefix their tree ids carry. */
 export type RenamableNodeKind =
-  'api' | 'folder' | 'rest-request' | 'grpc-api' | 'grpc-request' | 'ws-api' | 'ws-request';
+  'api' | 'folder' | 'rest-request' | 'grpc-api' | 'grpc-request' | 'ws-api' | 'ws-request' | 'sequence';
 
 const NODE_ID_PREFIX: Readonly<Record<RenamableNodeKind, string>> = {
   api: 'api',
@@ -35,6 +35,7 @@ const NODE_ID_PREFIX: Readonly<Record<RenamableNodeKind, string>> = {
   'grpc-request': 'grpc',
   'ws-api': 'ws-api',
   'ws-request': 'ws',
+  sequence: 'sequence',
 };
 
 /** Enters inline edit mode for an API, folder, REST request or gRPC row. */

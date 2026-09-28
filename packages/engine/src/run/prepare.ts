@@ -5,8 +5,9 @@
  * way it runs when its author presses Send.
  *
  * What the app reads from the user's preferences — a global client keystore, a CA bundle, a
- * proxy, global properties — has no counterpart here: a run is described by the project and its
- * command line alone. Trust anchors beyond Node's own come from `NODE_EXTRA_CA_CERTS`.
+ * proxy, global properties — has no counterpart here: a run is described by the project, the
+ * workspace it sits inside (if any) and its command line. Trust anchors beyond Node's own come from
+ * `NODE_EXTRA_CA_CERTS`.
  */
 import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
@@ -17,8 +18,18 @@ import type { GrpcSendInput } from '../grpc/send.js';
 import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
 import { resolveApiBaseUrl, resolveEndpoint, resolveScopes } from '../project/environments.js';
+import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
-import type { Attachment, AttachmentSource, AuthConfig, Project, PropertyMap } from '../project/model.js';
+import type {
+  Attachment,
+  AttachmentSource,
+  AuthConfig,
+  Endpoint,
+  Interface,
+  Project,
+  PropertyMap,
+  RequestDef,
+} from '../project/model.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
 import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
@@ -29,6 +40,13 @@ import type { GetSecret } from '../secrets/resolve.js';
 import { toGrpcSendInput, toRestSendInput, toSendInput } from '../send-options.js';
 import type { AttachmentResolvers } from '../send-options.js';
 import type { SoapSendInput, SoapSendWss } from '../types.js';
+import {
+  resolveWorkspaceApiBaseUrl,
+  resolveWorkspaceEndpoint,
+  resolveWorkspaceScopes,
+  withActiveEnvironment,
+} from '../workspace/environments.js';
+import type { Workspace } from '../workspace/model.js';
 import { effectiveWsa } from '../wsa/model.js';
 import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
 import type { Keystore } from '../wss/keystore/index.js';
@@ -39,12 +57,31 @@ import type { RunTokenSource } from './oauth2-token.js';
 import { secretNamesInValue } from './secret-needs.js';
 import type { SelectedRequest } from './select.js';
 
+/**
+ * The workspace a project is run inside, and the slug its manifest addresses the project by (the
+ * first half of a workspace environment's `<projectSlug>/<interfaceSlug>` endpoint key).
+ */
+export interface RunWorkspace {
+  readonly workspace: Workspace;
+  readonly projectSlug: string;
+}
+
 /** Everything a run supplies around the saved requests it sends. */
 export interface RunContext {
   readonly project: Project;
   /** The project folder: keystores, attachments and file bodies are read from inside it only. */
   readonly projectDir: string;
+  /**
+   * The environment the run resolves under. Inside a workspace it is a *workspace* environment's
+   * id, as it is in the app: the project's own environments apply only through the one linked to
+   * it by slug.
+   */
   readonly environmentId?: string;
+  /**
+   * The workspace the project sits inside. Its properties become the `${#Workspace#…}` scope, and
+   * its environment (with the linked project one laid over it) the `${…}` shorthand's.
+   */
+  readonly workspace?: RunWorkspace;
   /** `--var` overrides, laid over the environment's properties. */
   readonly overrides: PropertyMap;
   readonly getSecret: GetSecret;
@@ -67,6 +104,8 @@ export interface RunContext {
    * configuration shares a token; a lone `prepareSend` without one gets a fresh source.
    */
   readonly tokenSource?: RunTokenSource;
+  /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
+  readonly sequence?: PropertyMap;
 }
 
 /**
@@ -90,8 +129,55 @@ type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
 type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
 
 function scopesFor(context: RunContext): PropertyScopes {
-  const scopes = resolveScopes(context.project, context.environmentId, {}, process.env);
-  return { ...scopes, env: { ...(scopes.env ?? {}), ...context.overrides } };
+  const { project, environmentId, workspace } = context;
+  const scopes =
+    workspace === undefined
+      ? resolveScopes(project, environmentId, {}, process.env)
+      : resolveWorkspaceScopes({
+          workspace: withActiveEnvironment(workspace.workspace, environmentId),
+          project,
+          globals: {},
+          system: process.env,
+        });
+  return {
+    ...scopes,
+    env: { ...(scopes.env ?? {}), ...context.overrides },
+    // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
+    ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
+  };
+}
+
+/** A SOAP request's endpoint, through the workspace's environment when the run has a workspace. */
+function endpointFor(
+  context: RunContext,
+  iface: Interface,
+  request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
+  const { project, environmentId, workspace } = context;
+  return workspace === undefined
+    ? resolveEndpoint(project, environmentId, iface, request)
+    : resolveWorkspaceEndpoint({
+        workspace: withActiveEnvironment(workspace.workspace, environmentId),
+        project,
+        projectSlug: workspace.projectSlug,
+        iface,
+        request,
+      });
+}
+
+/** A REST API's base URL (or a gRPC API's target), through the workspace's environment likewise. */
+function baseUrlFor(context: RunContext, api: { readonly slug: string; readonly baseUrl: string }): string {
+  const { project, environmentId, workspace } = context;
+  const resolved: { url: string; source: BaseUrlSource } =
+    workspace === undefined
+      ? resolveApiBaseUrl(project, environmentId, api)
+      : resolveWorkspaceApiBaseUrl({
+          workspace: withActiveEnvironment(workspace.workspace, environmentId),
+          project,
+          projectSlug: workspace.projectSlug,
+          api,
+        });
+  return resolved.url;
 }
 
 /**
@@ -276,7 +362,7 @@ function restFileResolver(context: RunContext): (source: AttachmentSource) => Pr
 
 async function prepareSoap(selected: SoapSelected, context: RunContext): Promise<PreparedSend> {
   const { iface, request } = selected;
-  const resolved = resolveEndpoint(context.project, context.environmentId, iface, request);
+  const resolved = endpointFor(context, iface, request);
   if (resolved.url === undefined) {
     throw new WirebenchError('endpoint-unresolved', `No endpoint resolves for "${selected.path}"`, {
       details: { path: selected.path },
@@ -379,7 +465,7 @@ async function prepareRest(selected: RestSelected, context: RunContext): Promise
   const scopes = scopesFor(context);
   const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
   const auth = await authFor(restEffectiveAuth(selected), selected.path, context, tls);
-  const baseUrl = resolveApiBaseUrl(context.project, context.environmentId, api).url;
+  const baseUrl = baseUrlFor(context, api);
   const unexpanded = toRestSendInput({
     request: {
       method: request.method,
@@ -427,7 +513,7 @@ async function prepareGrpc(selected: GrpcSelected, context: RunContext): Promise
   const scopes = scopesFor(context);
   const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
   const auth = await authFor(grpcEffectiveAuth(selected), selected.path, context, tls);
-  const target = resolveApiBaseUrl(context.project, context.environmentId, { slug: api.slug, baseUrl: api.target }).url;
+  const target = baseUrlFor(context, { slug: api.slug, baseUrl: api.target });
   const unexpanded = toGrpcSendInput({
     request: {
       service: request.service,

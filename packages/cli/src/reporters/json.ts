@@ -16,6 +16,11 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *   - `assertions[]`: `{ type, label, outcome, expected?, actual?, message? }`, in order.
  *   - `error`: `{ code, message, details? }`, present only for an errored request.
  *   - `exchange`: `{ request, response }`, present only for a failed or errored request.
+ *   - For a sequence step only (`--sequence`), three more fields, added without a version change
+ *     since a consumer of requests alone never sees them:
+ *     - `sequence`: `{ id, name, stepId }`.
+ *     - `transfers[]`: `{ name, outcome, secret, value?, message? }`; a secret transfer has no `value`.
+ *     - `origin`: where the step's request went.
  *
  * An absent optional is omitted from the object entirely, never written as `null`.
  */
@@ -44,10 +49,14 @@ export interface JsonReportRequest {
     readonly details?: Readonly<Record<string, unknown>>;
   };
   readonly exchange?: { readonly request: string; readonly response: string };
+  readonly sequence?: RequestResult['sequence'];
+  readonly transfers?: RequestResult['transfers'];
+  readonly origin?: string;
 }
 
 function toReportRequest(result: RequestResult): JsonReportRequest {
   const { path, group, name, protocol, outcome, status, durationMs, unasserted, assertions, error, exchange } = result;
+  const { sequence, transfers, origin } = result;
   return {
     path,
     group,
@@ -60,6 +69,9 @@ function toReportRequest(result: RequestResult): JsonReportRequest {
     assertions,
     ...(error !== undefined ? { error } : {}),
     ...(exchange !== undefined ? { exchange } : {}),
+    ...(sequence !== undefined ? { sequence } : {}),
+    ...(transfers !== undefined ? { transfers } : {}),
+    ...(origin !== undefined ? { origin } : {}),
   };
 }
 

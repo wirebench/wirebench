@@ -34,6 +34,7 @@ describe('explorerMenuItems', () => {
       'New API…',
       'New gRPC API…',
       'New WebSocket API…',
+      'New Sequence',
       'Settings…',
       REVEAL,
       'Export project…',
@@ -61,6 +62,7 @@ describe('explorerMenuItems', () => {
       'New API…',
       'New gRPC API…',
       'New WebSocket API…',
+      'New Sequence',
       'Settings…',
       'Project environments (linked project)',
       REVEAL,
@@ -133,7 +135,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new-api', 'new-grpc-api', 'new-ws-api'],
+      ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-sequence'],
       ['settings'],
       ['reveal', 'export'],
       ['move-to-workspace'],

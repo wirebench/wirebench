@@ -8,6 +8,11 @@
 
 import { expand } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
+import {
+  assertNoControlCharacters,
+  assertOriginIndependent,
+  expandWithSequenceEscaped,
+} from '../project/sequence-guards.js';
 import { escapeForLanguage } from '../rest/body.js';
 import type { KeyValueEntry } from '../rest/model.js';
 
@@ -31,21 +36,39 @@ export function expandGrpcInput<T extends GrpcExpandable>(
   options: ExpandGrpcOptions = {},
 ): { readonly input: T; readonly unresolved: UnresolvedRef[] } {
   const unresolved: UnresolvedRef[] = [];
-  const run = (text: string): string => {
+  const run = (text: string, place: string): string => {
     const result = expand(text, scopes);
     unresolved.push(...result.unresolved);
+    assertNoControlCharacters(place, result, scopes);
     return result.text;
   };
+  // The message is JSON. A Sequence value is JSON-escaped whether or not the request asks, because it
+  // came from a response and could otherwise add fields to the message (ADR-0015).
   const runMessage = (text: string): string => {
     const result = expand(text, scopes);
     unresolved.push(...result.unresolved);
-    return options.escape === true ? expand(text, escapedScopes(scopes)).text : result.text;
+    return expandWithSequenceEscaped(
+      (s) => (options.escape === true ? expand(text, escapedScopes(s)) : expand(text, s)).text,
+      scopes,
+      (value) => escapeForLanguage(value, 'json'),
+    );
   };
+  // A target is nothing but where the call goes, so no part of it may come from a response.
+  assertOriginIndependent(
+    'The target',
+    (s) => expand(input.target, s).text,
+    scopes,
+    (target) => target,
+  );
   return {
     input: {
       ...input,
-      target: run(input.target),
-      metadata: input.metadata.map((row) => ({ ...row, name: run(row.name), value: run(row.value) })),
+      target: run(input.target, 'The target'),
+      metadata: input.metadata.map((row) => ({
+        ...row,
+        name: run(row.name, 'A metadata key'),
+        value: run(row.value, `The ${row.name} metadata`),
+      })),
       messageText: runMessage(input.messageText),
     },
     unresolved,

@@ -7,6 +7,10 @@
  * unresolved expressions are left verbatim in the output and reported via
  * `unresolved`.
  *
+ * `${#Sequence#name}` is the exception: its values come from responses, so
+ * they are never expanded again, never reached by the shorthand, and never
+ * allowed to form another reference's name (ADR-0015).
+ *
  * Pure module: no I/O beyond reading the `scopes.system` map the caller
  * passes in (default `process.env`).
  */
@@ -15,6 +19,12 @@ import { entitizeValue } from '../soap/transforms.js';
 import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import type { PropertyMap } from './model.js';
 import type { SoapSendInput } from '../types.js';
+import {
+  assertNoControlCharacters,
+  assertOriginIndependent,
+  escapeXmlValue,
+  expandWithSequenceEscaped,
+} from './sequence-guards.js';
 
 /** The property lookup scopes available to {@link expand}. */
 export interface PropertyScopes {
@@ -37,6 +47,13 @@ export interface PropertyScopes {
    * expansion itself stays synchronous and pure.
    */
   readonly secrets?: Readonly<Record<string, string>>;
+  /**
+   * Values a running sequence lifted out of earlier responses, for `${#Sequence#name}`. Text a
+   * server chose, so it is held to ADR-0015: substituted literally (never expanded again), reachable
+   * only by the explicit form (never by the `${name}` shorthand), and never allowed to name another
+   * reference.
+   */
+  readonly sequence?: PropertyMap;
 }
 
 /**
@@ -68,7 +85,11 @@ export interface UnresolvedRef {
   readonly expr: string;
   readonly scope?: string;
   readonly name?: string;
-  readonly code: 'missing' | 'unknown-scope' | 'cycle' | 'too-deep' | 'malformed';
+  /**
+   * Why the reference stayed unexpanded. `name-from-response`: the reference's own name was built
+   * from a `${#Sequence#…}` value, so a server would be choosing which property (or secret) is read.
+   */
+  readonly code: 'missing' | 'unknown-scope' | 'cycle' | 'too-deep' | 'malformed' | 'name-from-response';
   /**
    * Offsets into the original text of the *outermost* `${...}` reference the user can see. When
    * this ref was discovered while recursively expanding a property's value (not the original
@@ -92,10 +113,10 @@ export interface ExpandResult {
 }
 
 const DEFAULT_MAX_DEPTH = 8;
-const SCOPE_NAMES = new Set(['Project', 'Env', 'Workspace', 'Global', 'System']);
+const SCOPE_NAMES = new Set(['Project', 'Env', 'Workspace', 'Global', 'System', 'Sequence']);
 
 interface ParsedExpr {
-  /** Explicit scope (`Project`/`Env`/`Global`/`System`), or undefined for the shorthand form. */
+  /** Explicit scope (`Project`/`Env`/`Workspace`/`Global`/`System`/`Sequence`), or undefined for the shorthand form. */
   readonly scope: string | undefined;
   readonly name: string;
 }
@@ -130,6 +151,8 @@ function lookupInScope(scope: string, name: string, scopes: PropertyScopes): str
       return scopes.global[name];
     case 'System':
       return (scopes.system ?? process.env)[name];
+    case 'Sequence':
+      return scopes.sequence !== undefined && Object.hasOwn(scopes.sequence, name) ? scopes.sequence[name] : undefined;
     case 'Secret':
       return SECRET_NAME_PATTERN.test(name) ? scopes.secrets?.[name] : undefined;
     default:
@@ -302,7 +325,19 @@ function expandAt(
     // The span/chain to attribute anything found from here on down (this token's own span, unless already nested).
     const effectiveOuter = outer ?? { start: token.start, end: token.end };
     // The inner text of the expression may itself contain expressions (nesting); expand those first.
+    const usedBefore = ctx.used.length;
     const resolvedInner = expandAt(token.inner, depth + 1, stack, ctx, effectiveOuter, via);
+    if (ctx.used.slice(usedBefore).some((entry) => entry.scope === 'Sequence')) {
+      // `${${#Sequence#n}}`: a response value would pick the reference, `secret:…` included.
+      pushUnresolved(ctx, outer, via, {
+        expr: token.raw,
+        code: 'name-from-response',
+        start: token.start,
+        end: token.end,
+      });
+      out += token.raw;
+      continue;
+    }
     const { scope, name } = parseExpr(resolvedInner);
 
     if (scope !== undefined) {
@@ -333,6 +368,12 @@ function expandAt(
         continue;
       }
       ctx.used.push({ scope, name });
+      if (scope === 'Sequence') {
+        // Literal: the value came from a response, and expanding it would let a server name any
+        // property or secret for the next request to carry back (ADR-0015).
+        out += substituted(ctx, outer, value, scope);
+        continue;
+      }
       out += substituted(
         ctx,
         outer,
@@ -445,7 +486,8 @@ export function secretNamesIn(text: string, scopes?: PropertyScopes): string[] {
         }
         continue;
       }
-      if (scopes === undefined) {
+      // A Sequence value is substituted literally, so a `${secret:…}` inside one is never resolved.
+      if (scopes === undefined || scope === 'Sequence') {
         continue;
       }
       let value: string | undefined;
@@ -503,22 +545,27 @@ export function expandSendInput(
 ): { input: SoapSendInput; unresolved: UnresolvedRef[] } {
   const unresolved: UnresolvedRef[] = [];
 
-  function run(text: string, entitize = false): string {
-    const result = expand(text, scopes, { ...options, entitize });
+  /** Expands `text`; `place`, when given, names a line-oriented field a Sequence value must not break. */
+  function run(text: string, place?: string): string {
+    const result = expand(text, scopes, { ...options, entitize: false });
     unresolved.push(...result.unresolved);
+    if (place !== undefined) {
+      assertNoControlCharacters(place, result, scopes);
+    }
     return result.text;
   }
 
-  const endpoint = run(input.endpoint);
-  // Only the envelope is entitized: escaping a header value or an endpoint would corrupt it.
-  const envelopeXml = run(input.envelopeXml, options?.entitize ?? input.entitize ?? false);
-  const soapAction = input.soapAction !== undefined ? run(input.soapAction) : undefined;
+  // The endpoint is where the envelope, and every credential with it, goes (ADR-0015).
+  assertOriginIndependent('The endpoint', (s) => expand(input.endpoint, s).text, scopes);
+  const endpoint = run(input.endpoint, 'The endpoint');
+  const envelopeXml = expandEnvelope(input.envelopeXml, scopes, options, input.entitize, unresolved);
+  const soapAction = input.soapAction !== undefined ? run(input.soapAction, 'The SOAP action') : undefined;
 
   let headers: Record<string, string> | undefined;
   if (input.headers !== undefined) {
     headers = {};
     for (const [name, value] of Object.entries(input.headers)) {
-      headers[run(name)] = run(value);
+      headers[run(name, 'A header name')] = run(value, `The ${name} header`);
     }
   }
 
@@ -540,11 +587,15 @@ export function expandSendInput(
           ...input.wsa,
           config: {
             ...input.wsa.config,
-            ...(input.wsa.config.to !== undefined ? { to: run(input.wsa.config.to) } : {}),
-            ...(input.wsa.config.action !== undefined ? { action: run(input.wsa.config.action) } : {}),
-            ...(input.wsa.config.replyTo !== undefined ? { replyTo: run(input.wsa.config.replyTo) } : {}),
-            ...(input.wsa.config.from !== undefined ? { from: run(input.wsa.config.from) } : {}),
-            ...(input.wsa.config.faultTo !== undefined ? { faultTo: run(input.wsa.config.faultTo) } : {}),
+            ...(input.wsa.config.to !== undefined ? { to: run(input.wsa.config.to, 'wsa:To') } : {}),
+            ...(input.wsa.config.action !== undefined ? { action: run(input.wsa.config.action, 'wsa:Action') } : {}),
+            ...(input.wsa.config.replyTo !== undefined
+              ? { replyTo: run(input.wsa.config.replyTo, 'wsa:ReplyTo') }
+              : {}),
+            ...(input.wsa.config.from !== undefined ? { from: run(input.wsa.config.from, 'wsa:From') } : {}),
+            ...(input.wsa.config.faultTo !== undefined
+              ? { faultTo: run(input.wsa.config.faultTo, 'wsa:FaultTo') }
+              : {}),
           },
         }
       : undefined;
@@ -561,4 +612,27 @@ export function expandSendInput(
     },
     unresolved,
   };
+}
+
+/**
+ * The envelope, expanded. Only the envelope is entitized: escaping a header value or an endpoint
+ * would corrupt it. A Sequence value is XML-escaped here whatever the request's own setting, quotes
+ * included, because it came from a response and could otherwise add elements or attributes to the
+ * envelope (ADR-0015).
+ */
+function expandEnvelope(
+  envelopeXml: string,
+  scopes: PropertyScopes,
+  options: ExpandOptions | undefined,
+  requested: boolean | undefined,
+  unresolved: UnresolvedRef[],
+): string {
+  const entitize = options?.entitize ?? requested ?? false;
+  const result = expand(envelopeXml, scopes, { ...options, entitize });
+  unresolved.push(...result.unresolved);
+  return expandWithSequenceEscaped(
+    (s) => expand(envelopeXml, s, { ...options, entitize }).text,
+    scopes,
+    escapeXmlValue,
+  );
 }

@@ -26,7 +26,9 @@ built by [`plans/2026-09-22-soap-owner-auth-plan.md`](plans/2026-09-22-soap-owne
 ([`specs/2026-09-26-definition-fetch-auth-design.md`](specs/2026-09-26-definition-fetch-auth-design.md), issue #135,
 built by [`plans/2026-09-26-definition-fetch-auth-plan.md`](plans/2026-09-26-definition-fetch-auth-plan.md)), and SC-T1–SC-T6 for team secrets
 ([`specs/2026-09-26-team-secrets-design.md`](specs/2026-09-26-team-secrets-design.md) §13, issue #38, built by
-[`plans/2026-09-26-team-secrets-plan.md`](plans/2026-09-26-team-secrets-plan.md)). The SC1–SC13 rows stay about SOAP; nothing REST weakens them, and the whole SOAP
+[`plans/2026-09-26-team-secrets-plan.md`](plans/2026-09-26-team-secrets-plan.md)), and SC-Q1–SC-Q7 for Sequences
+([`specs/2026-09-28-sequences-design.md`](specs/2026-09-28-sequences-design.md), issue #62, built by
+[`plans/2026-09-28-sequences-plan.md`](plans/2026-09-28-sequences-plan.md)). The SC1–SC13 rows stay about SOAP; nothing REST weakens them, and the whole SOAP
 suite still runs unchanged.
 
 Every row's evidence runs in `pnpm check` (lint + typecheck + unit/integration + perf) or
@@ -107,6 +109,13 @@ build here rather than going stale silently.
 | SC-T4 | **Removal re-encrypts and marks for rotation** (§13.4) | `packages/engine/test/unit/team-secrets/vault.test.ts`, `apps/desktop/test/team-secrets-service.test.ts` ("re-encrypts every value without the removed key…", "re-encrypts a value still wrapped for a key that is not approved"), `apps/desktop/test/renderer/{team-secrets-section,secret-field}.test.tsx`, `e2e/specs/team-secrets.spec.ts` | Met |
 | SC-T5 | **Concurrent changes: newer wins, with a notice and a restore** (§13.5) | `packages/engine/test/unit/team-secrets/vault.test.ts` (`vaultConflictWinner`), `apps/desktop/test/sync/sync-service.test.ts`, `apps/desktop/test/team-secrets-service.test.ts` ("keeps the newer value, and gives the loser its own back"), `apps/desktop/test/workspace-team-secrets.test.ts` ("settles two machines setting one value…") | Met |
 | SC-T6 | **Local workspaces unchanged** (§13.6) | `apps/desktop/test/workspace-team-secrets.test.ts` ("leaves a local workspace alone"), every existing workspace and secrets test unchanged | Met |
+| SC-Q1 | **A sequence is a file of its own, and nothing it cannot read is lost**: a `<slug>.sequence.yaml` file in the project's `sequences` folder loads and saves with the project, `formatVersion` stays 5, and a newer, malformed or duplicate file survives every save | `packages/engine/test/unit/sequence/{file,load-save}.test.ts`, `apps/desktop/test/project-watch.test.ts` | Met |
+| SC-Q2 | **Steps chain**: transfers from the body, a header, a cookie or the status reach later steps only; stop-on-failure, disabled, missing, unsupported and cancelled steps behave as specified | `packages/engine/test/unit/sequence/{transfer,run}.test.ts` | Met |
+| SC-Q3 | **A response value is data, never a template** (ADR-0015): literal, never a name, explicit only, escaped once where it lands, never the destination, no line breaks in a header or URL | `packages/engine/test/unit/project/{sequence-scope,sequence-guards}.test.ts` | Met |
+| SC-Q4 | **A regex from a file cannot hang the app**: `matches:` runs on the evaluation worker under its time budget | `packages/engine/test/unit/assert/match-regex.test.ts`, `packages/engine/test/unit/assert/header.test.ts` | Met |
+| SC-Q5 | **Runs in CI**: `wirebench run --sequence` sends each step as the runner sends a request, refuses a broken sequence before any send, reports steps in every reporter, and never shows a secret transfer's value | `packages/cli/test/integration/sequence.test.ts`, `packages/cli/test/unit/{args,reporters/mask}.test.ts` | Met |
+| SC-Q6 | **Runs in the app like a single send**: each step goes through the ordinary send path, is tagged in History, and a secret is masked even in the step that produced it | `apps/desktop/test/{sequence-runner,sequence-mutations}.test.ts` | Met |
+| SC-Q7 | **Built and run from the UI**: explorer, tab, step and transfer editing, run panel | `apps/desktop/test/renderer/sequence-tab.test.tsx`, `apps/desktop/test/renderer/tree-nodes.test.ts`, `e2e/specs/sequences.spec.ts` | Met; e2e run locally under xvfb |
 
 ## Shared workspaces (docs/specs/2026-09-13-wirebench-shared-workspaces-design.md §13)
 
