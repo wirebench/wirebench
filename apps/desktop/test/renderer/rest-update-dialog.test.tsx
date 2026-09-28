@@ -585,6 +585,45 @@ describe('RestUpdateDialog', () => {
     expect(screen.queryByTestId('rest-update-empty')).toBeNull();
   });
 
+  it('appends the webhook counts to the toast when the applied webhook group changed too', async () => {
+    const apply = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        ...APPLIED,
+        applied: { ...APPLIED.applied, webhooks: { added: 1, orphaned: 1, restored: 0, rewritten: 0 } },
+      },
+    });
+    installWirebenchApi({
+      api: {
+        restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN_WITH_LINKED_WEBHOOKS }),
+        restApplyUpdate: apply,
+      },
+    });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('rest-update-apply'));
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'Definition updated — 1 added, 2 rewritten, 1 orphaned, 0 restored, 1 webhook added, 1 webhook orphaned',
+      ),
+    );
+  });
+
+  it('says nothing about webhooks in the toast when the applied webhook counts are all zero', async () => {
+    const apply = vi.fn().mockResolvedValue({ ok: true, value: APPLIED });
+    installWirebenchApi({
+      api: { restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN }), restApplyUpdate: apply },
+    });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('rest-update-apply'));
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Definition updated — 1 added, 2 rewritten, 1 orphaned, 0 restored'),
+    );
+  });
+
   it('still records an apply that lands after the dialog unmounted, but no longer drives the dialog', async () => {
     let answer: (value: unknown) => void = () => undefined;
     const apply = vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve)));

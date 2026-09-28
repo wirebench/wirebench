@@ -9,7 +9,7 @@
  * only to see. An API with no stored definition to read from (`webhook-definition-missing`) gets a
  * plain message and only *Close*, since there is nothing here a retry would fix.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
@@ -32,6 +32,19 @@ export function ImportWebhooksDialog() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [missing, setMissing] = useState(false);
+
+  // The dialog itself never unmounts (app-shell mounts it once); what makes a reply stale is the
+  // api it was asked about no longer being the one showing. Updated every render, not in an
+  // effect, so it is current by the time an in-flight call's reply lands.
+  const requestedApiIdRef = useRef<string | undefined>(undefined);
+  requestedApiIdRef.current = importFor?.apiId;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (importFor === undefined) {
@@ -117,9 +130,26 @@ export function ImportWebhooksDialog() {
       close();
       return;
     }
+    // The api this call is for; a reply is this dialog's business only while it is still the one
+    // showing — the user may have closed it, or reopened it for another API, before it lands.
+    const requestApiId = apiId;
+    const current = (): boolean => mountedRef.current && requestedApiIdRef.current === requestApiId;
     setBusy(true);
     setError(undefined);
-    const result = await ipc().api.importWebhooks({ apiId, keys });
+    let result;
+    try {
+      result = await ipc().api.importWebhooks({ apiId: requestApiId, keys });
+    } catch (failure: unknown) {
+      if (!current()) {
+        return;
+      }
+      setBusy(false);
+      setError(failure instanceof Error ? failure.message : 'The import could not be saved.');
+      return;
+    }
+    if (!current()) {
+      return;
+    }
     setBusy(false);
     if (!result.ok) {
       setError(result.error.message);

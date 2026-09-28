@@ -243,14 +243,27 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
       setBusy(false);
       onOpenChange(false);
     }
-    const { requestsAdded, requestsAlreadyPresent, requestsRewritten, requestsOrphaned, requestsRestored } =
+    const { requestsAdded, requestsAlreadyPresent, requestsRewritten, requestsOrphaned, requestsRestored, webhooks } =
       result.value.applied;
+    // Only the counts that moved are worth a word — a webhook group with nothing to add, orphan,
+    // restore or rewrite says nothing, the same way the REST counts above always speak regardless.
+    const webhookSegments = (
+      [
+        [webhooks.added, 'added'],
+        [webhooks.orphaned, 'orphaned'],
+        [webhooks.restored, 'restored'],
+        [webhooks.rewritten, 'rewritten'],
+      ] as const
+    )
+      .filter(([count]) => count > 0)
+      .map(([count, label]) => `${String(count)} webhook${count === 1 ? '' : 's'} ${label}`);
     showToast(
       `Definition updated — ${String(requestsAdded)} added, ${String(requestsRewritten)} rewritten, ${String(
         requestsOrphaned,
       )} orphaned, ${String(requestsRestored)} restored` +
         // Says why Added listed more than were made, rather than leaving the count short of the list.
         (requestsAlreadyPresent > 0 ? `, ${String(requestsAlreadyPresent)} already covered by your requests` : '') +
+        (webhookSegments.length > 0 ? `, ${webhookSegments.join(', ')}` : '') +
         // The update stands, but something after the save did not: the toast must not read as a clean success.
         (result.value.warning !== undefined ? `. ${result.value.warning}` : ''),
     );

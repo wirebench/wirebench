@@ -192,4 +192,50 @@ describe('ImportWebhooksDialog', () => {
     // Nothing closed: the picker stays open so the user can try again.
     expect(useWebhookItemsDialogs.getState().importFor).toEqual({ apiId: 'api-1' });
   });
+
+  it('shows an error and re-enables Import when the import call itself rejects', async () => {
+    const webhookItems = vi.fn().mockResolvedValue({ ok: true, value: { items: ITEMS, imported: [] } });
+    const importWebhooks = vi.fn().mockRejectedValue(new Error('bridge is gone'));
+    installWirebenchApi({ api: { webhookItems, importWebhooks } });
+    render(<ImportWebhooksDialog />);
+    useWebhookItemsDialogs.getState().openImport('api-1');
+    await screen.findByLabelText('webhook newPet POST');
+
+    const submit = screen.getByTestId<HTMLButtonElement>('import-webhooks-submit');
+    fireEvent.click(submit);
+    expect(submit.disabled).toBe(true);
+
+    expect((await screen.findByTestId('import-webhooks-error')).textContent).toBe('bridge is gone');
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    // Nothing closed: the picker stays open so the user can try again.
+    expect(useWebhookItemsDialogs.getState().importFor).toEqual({ apiId: 'api-1' });
+  });
+
+  it('drops a reply that lands after the dialog closed and reopened for another API', async () => {
+    let resolveImport: (value: unknown) => void = () => undefined;
+    const webhookItemsA = vi.fn().mockResolvedValue({ ok: true, value: { items: ITEMS, imported: [] } });
+    const importWebhooks = vi.fn().mockReturnValue(new Promise((resolve) => (resolveImport = resolve)));
+    installWirebenchApi({ api: { webhookItems: webhookItemsA, importWebhooks } });
+    render(<ImportWebhooksDialog />);
+    useWebhookItemsDialogs.getState().openImport('api-1');
+    await screen.findByLabelText('webhook newPet POST');
+    fireEvent.click(screen.getByTestId('import-webhooks-submit'));
+    await waitFor(() => expect(importWebhooks).toHaveBeenCalledTimes(1));
+
+    // The user closes this dialog and opens it again for a different API before the reply lands.
+    useWebhookItemsDialogs.getState().close();
+    const webhookItemsB = vi.fn().mockResolvedValue({ ok: true, value: { items: [ITEMS[1]!], imported: [] } });
+    installWirebenchApi({ api: { webhookItems: webhookItemsB, importWebhooks } });
+    useWebhookItemsDialogs.getState().openImport('api-2');
+    await screen.findByLabelText('callback subEvent POST');
+
+    resolveImport({ ok: true, value: { folderId: 'folder-1', added: 2 } });
+    await waitFor(() => expect(webhookItemsB).toHaveBeenCalled());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The stale reply for api-1 must not toast, and must not close the dialog now showing api-2.
+    expect(showToast).not.toHaveBeenCalled();
+    expect(useWebhookItemsDialogs.getState().importFor).toEqual({ apiId: 'api-2' });
+  });
 });
