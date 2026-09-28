@@ -162,19 +162,29 @@ established by reading that code (ADR-0003, update of 2026-09-28) rather than by
 ## Task 6 — CLI: `--sequence`
 
 **Files**
-- `packages/cli/src/args.ts`: a repeatable `--sequence`. Combining it with selectors is a `UsageError`.
-- `commands/run.ts`: select the sequences, then build a sender from `prepareSend` plus a new `sendPrepared`,
-  factored out of `run/run.ts` `runOne`. There is no cookie jar: a cookie travels only by a `cookie` transfer.
-  `containsKnownSecret` answers from the env-secret values and the OAuth2 tokens resolved so far.
-- `run/prepare.ts`: `RunContext.sequence` is merged into the scopes as `sequence`.
-- Reporters: steps as `RequestResult`s with `group = sequence name`, plus the optional `sequence` and `transfers`
-  fields.
-  - JUnit: a suite per sequence.
-  - HTML: the steps grouped per sequence.
-  - Masking: a secret transfer value goes through the masker.
+- `packages/engine/src/run/run.ts`: `createRunSender` (prepare, send, describe, with the run's caches and token
+  source), shared by `runRequests` and sequences; `RequestResult` gains optional `sequence`, `transfers` and
+  `origin`. `run/prepare.ts`: `RunContext.sequence`, merged into the scopes.
+- The engine's model type is `SequenceDef`, since the root already exports the XML Schema `Sequence`.
+- `packages/cli/src/args.ts`: a repeatable `--sequence` for `run` and `secrets list`; combining it with selectors is
+  a `UsageError`.
+- `packages/cli/src/commands/sequence.ts`:
+  - `selectSequences`;
+  - `resolveSteps`, which refuses a missing or unsupported step before any send;
+  - `withDefaultSla`;
+  - `runSequences`, which sends through `createRunSender` and maps each step to a `RequestResult`.
+- `commands/run.ts`: `loadSelection` returns the sequences, and `runCommand` branches on them.
+  `containsKnownSecret` answers from the env-secret values and the tokens obtained so far. There is no cookie jar: a
+  cookie travels only by a `cookie` transfer.
+- Reporters:
+  - `cli`: transfers;
+  - `html`: a transfers table;
+  - `json`: the optional fields;
+  - `mask`: transfer values and messages.
 - `docs/cli.md`.
-- Tests: `packages/cli/test/{args,run-sequence,reporters-sequence}.test.ts`, against the local mock server that the
-  runner tests already use.
+- Tests:
+  - `packages/cli/test/integration/sequence.test.ts`, against the demo server's new `/login` and `/carts`;
+  - `packages/cli/test/unit/{args,reporters/mask}.test.ts`.
 
 ## Task 7 — Desktop main: model, mutations and runner
 

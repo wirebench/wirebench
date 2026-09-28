@@ -74,3 +74,23 @@ describe('parseCliArgs', () => {
     expect(() => parseCliArgs(argv)).toThrow(UsageError);
   });
 });
+
+describe('parseCliArgs --sequence', () => {
+  it('collects every --sequence for run and secrets list', () => {
+    expect(parseCliArgs(['run', 'p', '--sequence', 'a', '--sequence', 'sequences/b.sequence.yaml'])).toMatchObject({
+      command: 'run',
+      selectors: [],
+      sequences: ['a', 'sequences/b.sequence.yaml'],
+    });
+    expect(parseCliArgs(['secrets', 'list', 'p', '--sequence', 'a'])).toMatchObject({
+      command: 'secrets-list',
+      sequences: ['a'],
+    });
+    expect(parseCliArgs(['run', 'p'])).toMatchObject({ sequences: [] });
+  });
+
+  it('refuses --sequence together with request selectors', () => {
+    expect(() => parseCliArgs(['run', 'p', 'demo/ok', '--sequence', 'a'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['secrets', 'list', 'p', 'demo/ok', '--sequence', 'a'])).toThrow(UsageError);
+  });
+});

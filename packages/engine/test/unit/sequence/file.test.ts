@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { isWirebenchError } from '../../../src/errors.js';
 import { parseSequenceFile, sequenceDocument, sequenceFilePath, sequenceSlugOf } from '../../../src/sequence/file.js';
 import { createSequence, createSequenceStep, SEQUENCE_LIMITS } from '../../../src/sequence/model.js';
-import type { Sequence } from '../../../src/sequence/model.js';
+import type { SequenceDef } from '../../../src/sequence/model.js';
 
-function checkout(): Sequence {
+function checkout(): SequenceDef {
   return createSequence('Checkout flow', {
     id: 'S1',
     order: 2,

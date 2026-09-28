@@ -97,7 +97,7 @@ export interface SequenceSettings {
 }
 
 /** A whole sequence, as loaded from (or saved to) `sequences/<slug>.sequence.yaml`. */
-export interface Sequence {
+export interface SequenceDef {
   readonly id: string;
   readonly name: string;
   readonly slug: string;
@@ -123,7 +123,7 @@ export interface CreateSequenceInput extends CreateOptions {
 }
 
 /** Creates a sequence, empty unless `input.steps` says otherwise. */
-export function createSequence(name: string, input: CreateSequenceInput = {}): Sequence {
+export function createSequence(name: string, input: CreateSequenceInput = {}): SequenceDef {
   return {
     id: idOf(input),
     name,

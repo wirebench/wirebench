@@ -12,7 +12,16 @@ import {
   selectRequests,
   workspaceProjectDir,
 } from '@wirebench/engine';
-import type { Environment, Project, RequestResult, RunResult, SecretNeed, SelectedRequest } from '@wirebench/engine';
+import type {
+  Environment,
+  Project,
+  RequestResult,
+  RunContext,
+  RunResult,
+  SecretNeed,
+  SelectedRequest,
+  SequenceDef,
+} from '@wirebench/engine';
 import { UsageError } from '../args.js';
 import type { RunArgs } from '../args.js';
 import { ExitCode, exitCodeFor } from '../exit-codes.js';
@@ -26,6 +35,7 @@ import { renderJunit } from '../reporters/junit.js';
 import { createMaskedReporters } from '../reporters/mask.js';
 import type { Reporter } from '../reporters/types.js';
 import { writeReport } from '../reporters/write.js';
+import { resolveSteps, runSequences, selectSequences } from './sequence.js';
 
 const require = createRequire(import.meta.url);
 
@@ -106,7 +116,10 @@ function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
 export interface LoadedSelection {
   readonly project: Project;
   readonly environment?: Environment;
+  /** The requests to send: the selection's, or every request the sequences' steps name. */
   readonly selected: readonly SelectedRequest[];
+  /** Set when the run is of sequences (`--sequence`). */
+  readonly sequences?: readonly SequenceDef[];
 }
 
 /**
@@ -114,7 +127,12 @@ export interface LoadedSelection {
  * exit code instead when the path is refused; throws `UsageError` for a bad environment or selector.
  */
 export async function loadSelection(
-  args: { readonly path: string; readonly env?: string; readonly selectors: readonly string[] },
+  args: {
+    readonly path: string;
+    readonly env?: string;
+    readonly selectors: readonly string[];
+    readonly sequences?: readonly string[];
+  },
   io: CliIo,
 ): Promise<LoadedSelection | ExitCode> {
   const { path } = args;
@@ -137,6 +155,11 @@ export async function loadSelection(
   }
 
   const environment = pickEnvironment(project, args.env);
+  if (args.sequences !== undefined && args.sequences.length > 0) {
+    const sequences = selectSequences(project, args.sequences);
+    const selected = resolveSteps(project, sequences);
+    return { project, ...(environment !== undefined ? { environment } : {}), selected, sequences };
+  }
   const { selected, unmatched } = selectRequests(project, args.selectors);
   if (unmatched.length > 0) {
     throw new UsageError(`selector matched nothing: ${unmatched.join(', ')}`);
@@ -167,6 +190,19 @@ export function explainMissingSecret(result: RequestResult, needs: readonly Secr
 }
 
 /**
+ * Whether `value` contains one of `known`. Values shorter than the masker's floor are ignored for the
+ * same reason the masker ignores them: that short, a match is more likely chance than a credential.
+ */
+export function knownSecretIn(value: string, known: Iterable<string>): boolean {
+  for (const secret of known) {
+    if (secret.length >= 4 && value.includes(secret)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * `wirebench run`: everything that can be refused is refused before the first send — a workspace
  * for a project, an unloadable project, an unknown environment, a selector that matches nothing —
  * because a pipeline that tested nothing must not be told it passed.
@@ -179,7 +215,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   if (typeof loaded === 'number') {
     return loaded;
   }
-  const { project, environment, selected } = loaded;
+  const { project, environment, selected, sequences } = loaded;
   const needs = secretNeedsOf(selected, project, args.vars);
   const secrets = createEnvSecrets(needs, io.env);
   // OAuth2 access tokens are secrets the run obtains rather than reads: the engine reports each
@@ -196,29 +232,37 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     controller.abort();
   };
   process.once('SIGINT', onSigint);
+  const context: RunContext = {
+    project,
+    projectDir: args.path,
+    ...(environment !== undefined ? { environmentId: environment.id } : {}),
+    overrides: args.vars,
+    getSecret: secrets.getSecret,
+    ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
+    insecure: args.insecure,
+    proxyFor,
+    signal: controller.signal,
+    // An OAuth2 token, and a sequence value that is (or holds) a secret: every mask built after this hides it.
+    onSecretValue: (value) => tokens.add(value),
+  };
   let result: RunResult;
   try {
-    result = await runRequests(
-      selected,
-      {
-        project,
-        projectDir: args.path,
-        ...(environment !== undefined ? { environmentId: environment.id } : {}),
-        overrides: args.vars,
-        getSecret: secrets.getSecret,
-        ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
-        insecure: args.insecure,
-        proxyFor,
-        signal: controller.signal,
-        onSecretValue: (value) => tokens.add(value),
-      },
-      {
-        bail: args.bail,
-        ...(args.slaMs !== undefined ? { defaultSlaMs: args.slaMs } : {}),
-        requireAssertions: args.requireAssertions,
-        onRequestDone: (request) => output.onRequestDone(request),
-      },
-    );
+    result =
+      sequences !== undefined
+        ? await runSequences(sequences, context, {
+            bail: args.bail,
+            requireAssertions: args.requireAssertions,
+            ...(args.slaMs !== undefined ? { slaMs: args.slaMs } : {}),
+            signal: controller.signal,
+            onStepDone: (step) => output.onRequestDone(step),
+            containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
+          })
+        : await runRequests(selected, context, {
+            bail: args.bail,
+            ...(args.slaMs !== undefined ? { defaultSlaMs: args.slaMs } : {}),
+            requireAssertions: args.requireAssertions,
+            onRequestDone: (request) => output.onRequestDone(request),
+          });
   } catch (error) {
     // An unexpected failure is printed by `main`; its message must not carry a value either. Only
     // the message is masked: `main` never prints `error.stack`, which still holds the raw text. A

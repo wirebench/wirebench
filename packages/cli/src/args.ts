@@ -9,6 +9,9 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
                        workspace.yaml).
 [selector…]            Paths below <path>: a request file, an operation, an interface, an API.
                        None = every request in the project.
+    --sequence <name>  Run a sequence (by name, or sequences/<slug>.sequence.yaml) instead of
+                       requests: its steps in order, with their transfers and assertions.
+                       Repeatable; cannot be combined with selectors.
 
 -e, --env <name>       Environment by name or slug. Required when the target defines any.
     --var <k=v>        Override an environment property for this run. Repeatable.
@@ -21,7 +24,7 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --no-color
 -q, --quiet | -v, --verbose
 
-wirebench secrets list <path> [selector…] [-e <name>] [--var <k=v>…]
+wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
                        prints a value. --var as for run, so a token only a --var holds is listed.
@@ -40,6 +43,8 @@ export interface RunArgs {
   readonly command: 'run';
   readonly path: string;
   readonly selectors: readonly string[];
+  /** `--sequence` names; when any are given the run is of those sequences, not of requests. */
+  readonly sequences: readonly string[];
   readonly env?: string;
   readonly vars: Readonly<Record<string, string>>;
   readonly reporters: readonly ReporterSpec[];
@@ -57,6 +62,8 @@ export interface SecretsListArgs {
   readonly command: 'secrets-list';
   readonly path: string;
   readonly selectors: readonly string[];
+  /** `--sequence` names, as `run` takes them: the secrets their steps need are listed. */
+  readonly sequences: readonly string[];
   readonly env?: string;
   /** `--var` overrides, as `run` takes them: a token only one of them holds is listed too. */
   readonly vars: Readonly<Record<string, string>>;
@@ -121,6 +128,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       strict: true,
       options: {
         env: { type: 'string', short: 'e' },
+        sequence: { type: 'string', multiple: true },
         var: { type: 'string', multiple: true },
         reporter: { type: 'string', multiple: true },
         bail: { type: 'boolean' },
@@ -152,6 +160,13 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   }
 
   const [word, ...rest] = positionals;
+  const sequences = values.sequence ?? [];
+  /** A run is of requests or of sequences, never both: which report entry is which would be a guess. */
+  const refuseMixed = (selectors: readonly string[]): void => {
+    if (sequences.length > 0 && selectors.length > 0) {
+      throw new UsageError('--sequence cannot be combined with request selectors');
+    }
+  };
 
   if (word === undefined) {
     return { command: 'help' };
@@ -162,6 +177,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     if (path === undefined) {
       throw new UsageError('wirebench run <path> [selector…] [options]: <path> is required');
     }
+    refuseMixed(selectors);
     const vars = parseVars(values.var);
     const reporterSpecs = values.reporter ?? [];
     const reporters: readonly ReporterSpec[] =
@@ -170,6 +186,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       command: 'run',
       path,
       selectors,
+      sequences,
       ...(values.env !== undefined ? { env: values.env } : {}),
       vars,
       reporters,
@@ -192,10 +209,12 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     if (path === undefined) {
       throw new UsageError('wirebench secrets list <path> [selector…] [-e <name>]: <path> is required');
     }
+    refuseMixed(selectors);
     return {
       command: 'secrets-list',
       path,
       selectors,
+      sequences,
       ...(values.env !== undefined ? { env: values.env } : {}),
       vars: parseVars(values.var),
     };

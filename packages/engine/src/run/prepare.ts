@@ -67,6 +67,8 @@ export interface RunContext {
    * configuration shares a token; a lone `prepareSend` without one gets a fresh source.
    */
   readonly tokenSource?: RunTokenSource;
+  /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
+  readonly sequence?: PropertyMap;
 }
 
 /**
@@ -91,7 +93,12 @@ type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
 
 function scopesFor(context: RunContext): PropertyScopes {
   const scopes = resolveScopes(context.project, context.environmentId, {}, process.env);
-  return { ...scopes, env: { ...(scopes.env ?? {}), ...context.overrides } };
+  return {
+    ...scopes,
+    env: { ...(scopes.env ?? {}), ...context.overrides },
+    // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
+    ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
+  };
 }
 
 /**

@@ -13,7 +13,7 @@ import { isWirebenchError } from '../errors.js';
 import type { PropertyMap, Project } from '../project/model.js';
 import { findStepRequest } from '../run/select.js';
 import type { SelectedRequest } from '../run/select.js';
-import type { Sequence, SequenceStep } from './model.js';
+import type { SequenceDef, SequenceStep } from './model.js';
 import { extractTransfer } from './transfer.js';
 
 /** How one step, or a run, ended. The runner's own outcomes, with `skipped` for a step never sent. */
@@ -119,7 +119,7 @@ function requestAssertionsOf(selected: SelectedRequest): readonly StepAssertion[
  * `stopOnFailure`, or disabled, is `skipped` and never sent.
  */
 export async function runSequence(
-  sequence: Sequence,
+  sequence: SequenceDef,
   project: Project,
   send: SequenceStepSender,
   options: RunSequenceOptions = {},

@@ -12,7 +12,7 @@ import { isWirebenchError } from '../errors.js';
 import { readFileIfExists, readdirIfExists } from '../project/fs.js';
 import type { FsLike } from '../project/fs.js';
 import { SEQUENCES_DIR, parseSequenceFile, sequenceSlugOf } from './file.js';
-import type { Sequence } from './model.js';
+import type { SequenceDef } from './model.js';
 
 /** A sequence file that did not load, and why. */
 export interface SequenceFileProblem {
@@ -25,7 +25,7 @@ export interface SequenceFileProblem {
 /** What {@link readSequences} found. */
 export interface SequenceFiles {
   /** Sequences that loaded, each with the file it came from. */
-  readonly loaded: readonly { readonly file: string; readonly sequence: Sequence }[];
+  readonly loaded: readonly { readonly file: string; readonly sequence: SequenceDef }[];
   readonly problems: readonly SequenceFileProblem[];
 }
 
@@ -39,7 +39,7 @@ export async function readSequences(fs: FsLike, root: string): Promise<SequenceF
     .filter((entry) => entry.isFile && sequenceSlugOf(entry.name) !== undefined)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
-  const loaded: { file: string; sequence: Sequence }[] = [];
+  const loaded: { file: string; sequence: SequenceDef }[] = [];
   const problems: SequenceFileProblem[] = [];
   const seen = new Map<string, string>();
   for (const entry of entries) {
@@ -48,7 +48,7 @@ export async function readSequences(fs: FsLike, root: string): Promise<SequenceF
     if (bytes === undefined) {
       continue;
     }
-    let sequence: Sequence;
+    let sequence: SequenceDef;
     try {
       sequence = parseSequenceFile(bytes, file, sequenceSlugOf(entry.name) ?? entry.name);
     } catch (error) {

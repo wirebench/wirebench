@@ -197,10 +197,11 @@ evaluated even after one fails, as in the runner. A step with no assertions at a
 
 The engine's `sequence/` module holds the model, the file format, loading, transfers and the loop, exported from the
 engine root (the renderer reads sequences through the IPC wire types). Sending stays with the host, because the
-desktop and the CLI send differently: the desktop has the keychain, the browser OAuth2 flow and History, while the CLI has environment-variable secrets and headless OAuth2.
+desktop and the CLI send differently: the desktop has the keychain, the browser OAuth2 flow and History, while the
+CLI has environment-variable secrets and headless OAuth2.
 
 ```ts
-interface Sequence { id; name; slug; order; description?; settings: SequenceSettings; steps: SequenceStep[] }
+interface SequenceDef { id; name; slug; order; description?; settings: SequenceSettings; steps: SequenceStep[] }
 interface SequenceStep { id; name?; requestId; enabled; requestAssertions; transfers: Transfer[];
                          assertions: StepAssertion[] }
 
@@ -210,7 +211,7 @@ interface ResolvedStep { index; step: SequenceStep; selected: SelectedRequest; t
 type SequenceStepSender = (step: ResolvedStep, sequenceScope: PropertyMap, signal: AbortSignal)
   => Promise<{ subject: AssertionSubject; origin?: string } | { error: { code: string; message: string } }>;
 
-function runSequence(sequence: Sequence, project: Project, send: SequenceStepSender,
+function runSequence(sequence: SequenceDef, project: Project, send: SequenceStepSender,
   options?: { signal?: AbortSignal; onStepDone?: (r: SequenceStepResult) => void;
               onSecretValue?: (value: string) => void;
               containsKnownSecret?: (value: string) => boolean; now?: () => Date }): Promise<SequenceRunResult>;
@@ -238,20 +239,30 @@ interface SequenceRunResult { sequenceId; name; startedAt; outcome; steps: Seque
 ## CLI
 
 ```
-wirebench run <project> --sequence "Checkout flow" [--sequence …] [--env staging] [--reporter junit:out.xml]
+wirebench run <project> --sequence "Checkout flow" [--sequence …] [--env staging] [--reporter junit=out.xml]
+wirebench secrets list <project> --sequence "Checkout flow" [--env staging]
 ```
 
 - `--sequence` matches a sequence by name, or by its file path `sequences/<slug>.sequence.yaml`, and can be
-  repeated. It cannot be combined with request selectors, which is a usage error (exit 2). An unmatched name is a
-  usage error too.
-- The CLI's sender reuses `prepareSend` and the send-and-subject half of `runOne`, factored out as `sendPrepared`,
-  with `RunContext` gaining `sequence?: PropertyMap`.
-- Reporters get one group per sequence and one entry per step, reusing the `RequestResult` shape with
-  `group = sequence name`:
+  repeated. Combining it with request selectors is a usage error (exit 2), and so is a name that matches nothing.
+- **Every step is resolved before anything is sent.** A step whose request is missing or cannot run refuses the
+  whole run with exit 2, naming the sequence and the step. That keeps the runner's rule that a pipeline which tested
+  nothing is never told it passed, and it means every reported step has a protocol.
+- The CLI sends each step through `createRunSender`, the half of the runner's `runOne` that prepares, sends and
+  describes a request, now shared by `runRequests`. `RunContext` gains `sequence?: PropertyMap`. A step is therefore
+  sent exactly as a selected request is: the same definitions, schemas, OAuth2 token source and error codes.
+- `--timeout`, `--sla` and `--require-assertions` apply to each step as to a request, and a sequence's
+  `stepTimeoutMs` wins over `--timeout`. `stopOnFailure` decides within a sequence; `--bail` skips the sequences
+  after the first that fails or errors.
+- `secrets list --sequence` lists what the steps' requests need.
+- Reporters get one entry per step, reusing `RequestResult` with `group = sequence name` and
+  `path = <sequence>/<n>. <step>`:
   - JUnit: one `<testsuite>` per sequence.
-  - JSON: each step's entry gains optional `sequence: { id, name, stepId }` and `transfers` fields. That is additive,
-    so the report's `formatVersion` stays `1`.
-  - HTML: the steps grouped per sequence, with the transfers listed.
+  - JSON: each step's entry gains optional `sequence: { id, name, stepId }`, `transfers` and `origin` fields. That is
+    additive, so the report's `formatVersion` stays `1`.
+  - HTML: a transfers table per step.
+  - `cli`: a transfer that found nothing always shows; values show under `--verbose`, a secret one as `(secret)`.
+  - Masking: every transfer value and message goes through the masker.
 - Exit codes are unchanged: 0 all passed, 1 an assertion failed, 3 a step errored, 2 usage, 130 interrupted.
 - As today, a CLI run writes nothing to the project or to History (runner spec, assumption 9).
 

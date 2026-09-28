@@ -27,10 +27,12 @@ import { readDefinitionCache } from '../wsdl/cache.js';
 import type { DefinitionBundle } from '../wsdl/resolver.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
+import { urlOrigin } from '../project/sequence-guards.js';
 import { createRunTokenSource } from './oauth2-token.js';
 import { prepareSend } from './prepare.js';
 import type { RunContext } from './prepare.js';
 import type { SelectedRequest } from './select.js';
+import type { TransferResult } from '../sequence/run.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
@@ -54,6 +56,12 @@ export interface RequestResult {
   readonly unasserted: boolean;
   /** Raw request and response text, kept for failed and errored requests only. NOT yet redacted. */
   readonly exchange?: { readonly request: string; readonly response: string };
+  /** Set when this is a sequence step: which sequence, and which of its steps. */
+  readonly sequence?: { readonly id: string; readonly name: string; readonly stepId: string };
+  /** A sequence step's transfers. A secret one carries no value. */
+  readonly transfers?: readonly TransferResult[];
+  /** Where the request went, for a sequence step. */
+  readonly origin?: string;
 }
 
 export interface RunSummary {
@@ -267,85 +275,26 @@ function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
   return 'passed';
 }
 
-/** Runs one request; a throw anywhere on the way becomes an errored result, never a stopped run. */
-async function runOne(
-  item: SelectedRequest,
-  context: RunContext,
-  options: RunOptions,
-  definitionFor: (iface: SoapSelected['iface']) => Promise<LoadedDefinition | undefined>,
-  protoSetFor: (api: GrpcSelected['api']) => Promise<ProtoSet>,
-): Promise<RequestResult> {
-  try {
-    const loaded = item.kind === 'soap' ? await definitionFor(item.iface) : undefined;
-    // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
-    const protoSet = item.kind === 'grpc' ? await protoSetFor(item.api) : undefined;
-    const prepared = await prepareSend(item, {
-      ...context,
-      ...(loaded !== undefined
-        ? {
-            defaultWsaActionFor: (s: SoapSelected) =>
-              loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '',
-          }
-        : {}),
-    });
-    let subject: AssertionSubject;
-    let raw: { rawRequest: Uint8Array; rawResponse: Uint8Array };
-    if (prepared.kind === 'soap' && item.kind === 'soap') {
-      const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
-      dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
-      subject = soapSubject(exchange, loaded, item);
-      raw = exchange.http;
-    } else if (prepared.kind === 'rest') {
-      const exchange = await sendRest(prepared.input);
-      dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
-      subject = restSubject(exchange);
-      raw = exchange;
-    } else if (prepared.kind === 'grpc' && protoSet !== undefined) {
-      const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
-      dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-      subject = grpcSubject(result);
-      raw = result.exchange;
-    } else {
-      throw new Error('prepareSend returned a send of the wrong protocol');
-    }
-    const own = assertionsOf(item);
-    const withDefault: readonly Assertion[] =
-      options.defaultSlaMs !== undefined && !own.some((a) => a.type === 'sla')
-        ? [...own, { type: 'sla', maxMs: options.defaultSlaMs }]
-        : own;
-    const assertions = await evaluateAssertions(subject, withDefault);
-    const outcome = outcomeOf(assertions);
-    return {
-      ...identity(item),
-      outcome,
-      status: subject.status,
-      durationMs: subject.durationMs,
-      assertions,
-      unasserted: own.length === 0,
-      ...(outcome !== 'passed'
-        ? { exchange: { request: capped(raw.rawRequest), response: capped(raw.rawResponse) } }
-        : {}),
-    };
-  } catch (e) {
-    return erroredResult(item, {
-      code: isWirebenchError(e) ? e.code : 'internal-error',
-      message: e instanceof Error ? e.message : String(e),
-      ...(isWirebenchError(e) && e.details !== undefined ? { details: e.details } : {}),
-    });
-  }
+/** One request as a run sends it: the response as assertions see it, and what a report keeps. */
+export interface SentRequest {
+  readonly subject: AssertionSubject;
+  readonly raw: { readonly rawRequest: Uint8Array; readonly rawResponse: Uint8Array };
+  /** Where the request went: a URL's origin, or a gRPC target. */
+  readonly origin?: string;
 }
 
+/** What a run's sender may change for one request. */
+export type RunSendOverrides = Pick<RunContext, 'sequence' | 'timeoutMs'>;
+
+/** Sends one selected request as a run does. Throws what preparing or sending throws. */
+export type RunRequestSender = (item: SelectedRequest, overrides?: RunSendOverrides) => Promise<SentRequest>;
+
 /**
- * Sends `selected` in order and reports each. A request after an abort, or after the first
- * failure under `bail`, is `skipped` and never sent.
+ * A sender for one run: each interface's definition and each gRPC API's schema is loaded once, and one
+ * OAuth2 token source serves every request behind the same configuration. `runRequests` sends through
+ * it, and so does a sequence run, so a step is sent exactly as a selected request is.
  */
-export async function runRequests(
-  selected: readonly SelectedRequest[],
-  context: RunContext,
-  options: RunOptions = {},
-): Promise<RunResult> {
-  const started = performance.now();
-  const startedAt = new Date().toISOString();
+export function createRunSender(context: RunContext): RunRequestSender {
   const definitions = new Map<string, Promise<LoadedDefinition | undefined>>();
   const definitionFor = (iface: SoapSelected['iface']): Promise<LoadedDefinition | undefined> => {
     let loaded = definitions.get(iface.id);
@@ -379,6 +328,106 @@ export async function runRequests(
         ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
       }),
   };
+
+  return async (item, overrides = {}) => {
+    const itemContext: RunContext = {
+      ...runContext,
+      ...(overrides.sequence !== undefined ? { sequence: overrides.sequence } : {}),
+      ...(overrides.timeoutMs !== undefined ? { timeoutMs: overrides.timeoutMs } : {}),
+    };
+    const loaded = item.kind === 'soap' ? await definitionFor(item.iface) : undefined;
+    // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
+    const protoSet = item.kind === 'grpc' ? await protoSetFor(item.api) : undefined;
+    const prepared = await prepareSend(item, {
+      ...itemContext,
+      ...(loaded !== undefined
+        ? {
+            defaultWsaActionFor: (s: SoapSelected) =>
+              loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '',
+          }
+        : {}),
+    });
+    if (prepared.kind === 'soap' && item.kind === 'soap') {
+      const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
+      dropRefusedToken(itemContext, prepared.input.auth, exchange.http.status === 401);
+      return {
+        subject: soapSubject(exchange, loaded, item),
+        raw: exchange.http,
+        ...originOf(exchange.http.request.url),
+      };
+    }
+    if (prepared.kind === 'rest') {
+      const exchange = await sendRest(prepared.input);
+      dropRefusedToken(itemContext, prepared.input.auth, exchange.status === 401);
+      return { subject: restSubject(exchange), raw: exchange, ...originOf(exchange.request.url) };
+    }
+    if (prepared.kind === 'grpc' && protoSet !== undefined) {
+      const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
+      dropRefusedToken(itemContext, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
+      return { subject: grpcSubject(result), raw: result.exchange, origin: prepared.input.target };
+    }
+    throw new Error('prepareSend returned a send of the wrong protocol');
+  };
+}
+
+function originOf(url: string): { readonly origin?: string } {
+  const origin = urlOrigin(url);
+  return origin !== undefined ? { origin } : {};
+}
+
+/** Runs one request; a throw anywhere on the way becomes an errored result, never a stopped run. */
+async function runOne(item: SelectedRequest, send: RunRequestSender, options: RunOptions): Promise<RequestResult> {
+  try {
+    const { subject, raw } = await send(item);
+    const own = assertionsOf(item);
+    const withDefault: readonly Assertion[] =
+      options.defaultSlaMs !== undefined && !own.some((a) => a.type === 'sla')
+        ? [...own, { type: 'sla', maxMs: options.defaultSlaMs }]
+        : own;
+    const assertions = await evaluateAssertions(subject, withDefault);
+    const outcome = outcomeOf(assertions);
+    return {
+      ...identity(item),
+      outcome,
+      status: subject.status,
+      durationMs: subject.durationMs,
+      assertions,
+      unasserted: own.length === 0,
+      ...(outcome !== 'passed'
+        ? { exchange: { request: capped(raw.rawRequest), response: capped(raw.rawResponse) } }
+        : {}),
+    };
+  } catch (e) {
+    return erroredResult(item, errorOf(e));
+  }
+}
+
+/** A thrown value as a result's `error`, with the engine's code when it has one. */
+export function errorOf(e: unknown): NonNullable<RequestResult['error']> {
+  return {
+    code: isWirebenchError(e) ? e.code : 'internal-error',
+    message: e instanceof Error ? e.message : String(e),
+    ...(isWirebenchError(e) && e.details !== undefined ? { details: e.details } : {}),
+  };
+}
+
+/** A failed or errored exchange as a report keeps it: each side capped, not yet redacted. */
+export function cappedExchange(raw: SentRequest['raw']): NonNullable<RequestResult['exchange']> {
+  return { request: capped(raw.rawRequest), response: capped(raw.rawResponse) };
+}
+
+/**
+ * Sends `selected` in order and reports each. A request after an abort, or after the first
+ * failure under `bail`, is `skipped` and never sent.
+ */
+export async function runRequests(
+  selected: readonly SelectedRequest[],
+  context: RunContext,
+  options: RunOptions = {},
+): Promise<RunResult> {
+  const started = performance.now();
+  const startedAt = new Date().toISOString();
+  const send = createRunSender(context);
   const results: RequestResult[] = [];
   let stopped = false;
   for (const item of selected) {
@@ -393,7 +442,7 @@ export async function runRequests(
     } else if (assertionsOf(item).length === 0 && options.requireAssertions === true) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {
-      result = await runOne(item, runContext, options, definitionFor, protoSetFor);
+      result = await runOne(item, send, options);
     }
     results.push(result);
     options.onRequestDone?.(result);

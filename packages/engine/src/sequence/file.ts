@@ -17,7 +17,7 @@ import { ProjectError } from '../errors.js';
 import { compact, parseYaml, stringifyYaml } from '../project/yaml.js';
 import { SEQUENCE_LIMITS, SEQUENCE_VERSION, TRANSFER_NAME_PATTERN } from './model.js';
 import type { StepAssertion } from '../assert/model.js';
-import type { Sequence, SequenceStep, Transfer } from './model.js';
+import type { SequenceDef, SequenceStep, Transfer } from './model.js';
 
 /** Directory holding every sequence file, beside `interfaces/` and `apis/`. */
 export const SEQUENCES_DIR = 'sequences';
@@ -94,7 +94,7 @@ function refuse(code: string, message: string, file: string, issues?: readonly o
  * @throws ProjectError `sequence-file-invalid` (too large, malformed YAML, not a sequence, or failing the
  * schema or a limit), `sequence-version-too-new` (a `version` above {@link SEQUENCE_VERSION})
  */
-export function parseSequenceFile(bytes: Uint8Array | string, file: string, slug: string): Sequence {
+export function parseSequenceFile(bytes: Uint8Array | string, file: string, slug: string): SequenceDef {
   const size = typeof bytes === 'string' ? Buffer.byteLength(bytes, 'utf8') : bytes.byteLength;
   if (size > SEQUENCE_LIMITS.fileBytes) {
     refuse('sequence-file-invalid', `${file} is larger than ${SEQUENCE_LIMITS.fileBytes} bytes`, file);
@@ -233,7 +233,7 @@ function transferDocument(transfer: Transfer): Record<string, unknown> {
 }
 
 /** Serialises a sequence as its file's content: keys sorted, defaults omitted, steps in order. */
-export function sequenceDocument(sequence: Sequence): string {
+export function sequenceDocument(sequence: SequenceDef): string {
   return stringifyYaml(
     compact({
       kind: 'sequence',

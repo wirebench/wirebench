@@ -20,7 +20,7 @@ import type { WsaConfig } from '../wsa/model.js';
 import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
 import type { RestApi, RestRequestDef } from '../rest/model.js';
 import type { WsApi, WsRequestDef } from '../ws/model.js';
-import type { Sequence } from '../sequence/model.js';
+import type { SequenceDef } from '../sequence/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
@@ -431,7 +431,7 @@ export interface Project {
    * The project's sequences, one file each under `sequences/`. Not a container like the four above: a
    * sequence holds no requests of its own, only references to theirs by id.
    */
-  readonly sequences: readonly Sequence[];
+  readonly sequences: readonly SequenceDef[];
   readonly environments: readonly Environment[];
   /** Id of the environment currently active for this project, if any. */
   readonly activeEnvironmentId?: string;
