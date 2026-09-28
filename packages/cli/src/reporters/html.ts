@@ -45,6 +45,20 @@ function renderAssertions(assertions: readonly AssertionResult[]): string {
   return `<table><thead><tr><th>Assertion</th><th>Outcome</th><th>Expected / actual</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/** A sequence step's transfers. A secret one never carries a value, so it shows as secret. */
+function renderTransfers(result: RequestResult): string {
+  if (result.transfers === undefined || result.transfers.length === 0) {
+    return '';
+  }
+  const rows = result.transfers
+    .map((transfer) => {
+      const shown = transfer.secret ? '(secret)' : (transfer.value ?? transfer.message ?? '');
+      return `<tr><td>${escapeHtml(transfer.name)}</td><td>${escapeHtml(transfer.outcome)}</td><td>${escapeHtml(shown)}</td></tr>`;
+    })
+    .join('');
+  return `<table><thead><tr><th>Transfer</th><th>Outcome</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function renderExchange(result: RequestResult): string {
   if (result.exchange === undefined) {
     return '';
@@ -74,7 +88,7 @@ function renderRequest(result: RequestResult): string {
   const open = result.outcome === 'failed' || result.outcome === 'errored' ? ' open' : '';
   return (
     `<details${open}><summary>${renderSummary(result)}</summary>` +
-    `${renderAssertions(result.assertions)}${renderError(result)}${renderExchange(result)}</details>`
+    `${renderAssertions(result.assertions)}${renderTransfers(result)}${renderError(result)}${renderExchange(result)}</details>`
   );
 }
 

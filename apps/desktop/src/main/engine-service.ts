@@ -22,11 +22,14 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  GrpcCallResult,
   GrpcCallStreamHandle,
   GrpcResponseMessage,
   GrpcSendInput,
   ProtoSet,
+  RestExchange,
   RestSendInput,
+  SoapExchange,
   SoapOwnerAuth,
   GenerateOptions,
   ImportProgress,
@@ -275,6 +278,12 @@ function messageFor(progress: ImportProgress): string {
   }
 }
 
+/** A completed send's engine exchange, unredacted, as {@link EngineService.observe} hands it over. */
+export type ObservedExchange =
+  | { readonly kind: 'soap'; readonly exchange: SoapExchange }
+  | { readonly kind: 'rest'; readonly exchange: RestExchange }
+  | { readonly kind: 'grpc'; readonly result: GrpcCallResult };
+
 /**
  * In-process engine facade for the desktop app: imports definitions (keyed by a generated
  * id), generates sample/empty requests against them, and sends SOAP requests with
@@ -283,6 +292,8 @@ function messageFor(progress: ImportProgress): string {
 export class EngineService {
   private readonly definitions = new Map<string, StoredDefinition>();
   private readonly sends = new Map<string, AbortController>();
+  /** One-shot observers of a send's unredacted engine exchange, keyed by `sendId`; see {@link observe}. */
+  private readonly observers = new Map<string, (exchange: ObservedExchange) => Promise<void> | void>();
   /** The REST sends whose response is an open event stream, by send id, to the request they belong to. */
   private readonly restStreams = new Map<string, string>();
 
@@ -324,6 +335,32 @@ export class EngineService {
    * in tests that never import with auth; `main/index.ts` wires it to `SecretStore.get`.
    */
   constructor(private readonly getSecret?: (ref: string) => Promise<string | undefined>) {}
+
+  /**
+   * Hands the send `sendId`'s unredacted engine exchange to `observer` the moment it arrives, and
+   * waits for it before any summary, log row or History entry is built from that exchange. Main only,
+   * and one-shot: the observer is dropped after it runs, or when the returned function is called.
+   *
+   * A sequence step needs this twice over: its transfers must read what the server sent, not the
+   * redacted summary, and a value it marks secret must be recorded for masking before that same step's
+   * log row and History entry are written, not after.
+   */
+  observe(sendId: string, observer: (exchange: ObservedExchange) => Promise<void> | void): () => void {
+    this.observers.set(sendId, observer);
+    return () => {
+      if (this.observers.get(sendId) === observer) {
+        this.observers.delete(sendId);
+      }
+    };
+  }
+
+  private async notify(sendId: string, exchange: ObservedExchange): Promise<void> {
+    const observer = this.observers.get(sendId);
+    if (observer !== undefined) {
+      this.observers.delete(sendId);
+      await observer(exchange);
+    }
+  }
 
   /** Imports a WSDL definition and stores the full `ImportResult` under a new id. */
   async importDefinition(request: DefinitionImportRequest, hooks: EngineServiceHooks = {}): Promise<InterfaceSummary> {
@@ -654,6 +691,7 @@ export class EngineService {
           ...(options.scopes !== undefined ? { scopes: options.scopes } : {}),
         },
       );
+      await this.notify(request.sendId, { kind: 'soap', exchange });
       // The cache keeps the unredacted summary in main only; what crosses IPC is redacted per
       // the flag as it stands right now (`exchanges.get` re-redacts on a later toggle). The
       // response attachments' BYTES are kept alongside it, never on the wire — `attachments.*`
@@ -749,6 +787,7 @@ export class EngineService {
             }
           : {}),
       });
+      await this.notify(sendId, { kind: 'rest', exchange });
       const context = {
         method: request.input.request.method,
         ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
@@ -846,6 +885,7 @@ export class EngineService {
             }
           : {}),
       });
+      await this.notify(sendId, { kind: 'grpc', result });
       return toGrpcExchangeSummary(result, sendId, { show });
     } finally {
       this.sends.delete(sendId);

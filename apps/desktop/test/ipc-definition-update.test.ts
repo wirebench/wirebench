@@ -74,6 +74,7 @@ const SNAPSHOT = {
   grpcRequests: [],
   wsApis: [],
   wsRequests: [],
+  sequences: [],
   properties: {},
   disabledProperties: [],
   environments: [],

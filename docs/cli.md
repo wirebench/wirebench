@@ -33,6 +33,9 @@ wirebench run <path> [selector…] [options]
                        workspace.yaml).
 [selector…]            Paths below <path>: a request file, an operation, an interface, an API.
                        None = every request in the project.
+    --sequence <name>  Run a sequence (by name, or sequences/<slug>.sequence.yaml) instead of
+                       requests: its steps in order, with their transfers and assertions.
+                       Repeatable; cannot be combined with selectors.
 
 -e, --env <name>       Environment by name, slug or id. Required when the target defines any.
     --var <k=v>        Override an environment property for this run. Repeatable.
@@ -45,7 +48,7 @@ wirebench run <path> [selector…] [options]
     --no-color
 -q, --quiet | -v, --verbose
 
-wirebench secrets list <path> [selector…] [-e <name>] [--var <k=v>…]
+wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [--var <k=v>…]
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
                        prints a value. --var as for run, so a token only a --var holds is listed.
@@ -151,6 +154,35 @@ covered.
 
 Every assertion of a request is evaluated even after one fails, so the report shows everything
 wrong with that response, not just the first.
+
+## Sequences
+
+`--sequence <name>` runs a sequence instead of a selection of requests: its steps in order, each step's
+transfers lifting values out of its response for the steps after it (`${#Sequence#name}`), and each step's
+assertions after its request's own. The file format and the rules are in
+[the Sequences design](specs/2026-09-28-sequences-design.md).
+
+```text
+wirebench run ./shop -e staging --sequence checkout --reporter junit=reports/checkout.xml
+```
+
+- A sequence is named by its name or by its file, `sequences/<slug>.sequence.yaml`. Repeat the flag to run
+  several, in the order given. It cannot be combined with request selectors (exit 2).
+- Every step is checked before anything is sent: a step whose request is gone, is a WebSocket request, or is a
+  streaming gRPC call refuses the run with exit 2, naming the step.
+- Within a sequence, a failed or errored step skips the rest unless the sequence sets `stopOnFailure: false`.
+  `--bail` skips the *sequences* after the first that fails.
+- `--timeout`, `--sla` and `--require-assertions` apply to each step as they do to a request; a sequence's own
+  `stepTimeoutMs` wins over `--timeout`.
+- A step errors, before it is sent, when a response value would choose the scheme, host or port of its URL
+  (`sequence-origin-from-response`) or put a line break into a header or URL (`sequence-value-invalid`).
+- A transfer marked `secret: true`, or one whose value contains a secret the run already resolved, is masked in
+  every report from the moment it is lifted, and no report carries its value at all.
+- There is no cookie jar: a login's cookie reaches a later step only through a `cookie` transfer, sent as
+  `Cookie: sid=${#Sequence#sid}`.
+
+Each step is reported as a request of the run: grouped by its sequence (one JUnit test suite per sequence),
+named `<sequence>/<n>. <step>`.
 
 ## Secrets
 
@@ -303,7 +335,9 @@ The stable machine interface, its own `formatVersion` starting at 1:
 ```
 
 `protocol` is `"soap"`, `"rest"` or `"grpc"`; for a gRPC request `status` is the gRPC status
-code. `exchange` (redacted, raw HTTP) is included for a failed or errored request; a change to this
+code. A sequence step (`--sequence`) carries three more fields, added within `formatVersion` 1:
+`sequence` (`{ id, name, stepId }`), `transfers` (`[{ name, outcome, secret, value?, message? }]`, with no
+`value` for a secret transfer) and `origin`, where the step's request went. `exchange` (redacted, raw HTTP) is included for a failed or errored request; a change to this
 shape after S5 is an ask-first.
 
 ### `html=<file>`

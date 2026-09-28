@@ -104,6 +104,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | gRPC: New Request | — | — |
 | WebSocket: New API | — | — |
 | WebSocket: New Request | — | — |
+| Sequence: New Sequence | — | — |
 
 ## Request
 
@@ -119,6 +120,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | WebSocket: Disconnect | — | — |
 | WebSocket: Send Selected Message | — | — |
 | WebSocket: Copy as Command | — | — |
+| Sequence: Run | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
+| Sequence: Cancel Run | — | — |
 | Send Request | <kbd>⌘⏎</kbd> | <kbd>Ctrl+Enter</kbd> |
 | Cancel Request | <kbd>⎋</kbd> | <kbd>Esc</kbd> |
 | Request: Send to Environments… | — | — |

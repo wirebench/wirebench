@@ -1,0 +1,99 @@
+---
+title: Sequences
+description: Chain saved requests, carry a value from one response into the next request, and check each step — from the app or in CI, with no scripts.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A sequence sends saved requests one after another. Each step can lift values out of its response (a
+token, an id, a cookie) for the steps after it, and check the response with assertions. A login
+followed by a call that needs its token is a two-step sequence.
+
+A sequence runs no code. Everything it does is declared in its file, `sequences/<name>.sequence.yaml`,
+which you review and share like any other file in the project.
+
+## Build a sequence
+
+<Steps>
+
+1. Right-click the project in the explorer and choose **New Sequence**. It opens in its own tab and
+   appears under **Sequences** in the project.
+2. Choose **Add step…** and pick a request. Add as many as you need; each step is a saved SOAP, REST or
+   unary gRPC request. A WebSocket request or a streaming gRPC call can't be a step, and the list says
+   so.
+3. Select a step to give it **transfers** and **assertions**.
+4. Choose **Run** (`Ctrl+Enter`, `⌘↩` on macOS).
+
+</Steps>
+
+Steps run in order, under the active environment. Each one is sent exactly as it would be on its own:
+with its auth, TLS and proxy settings, a row in the HTTP Log, and an entry in History.
+
+## Carry a value to the next step
+
+A transfer lifts one value from a step's response and gives it a name. Any later step uses it as
+`${#Sequence#name}` — in its URL path or query, a header, or its body.
+
+| Source | Takes | Example |
+| --- | --- | --- |
+| Body | The first result of a JSONPath, XPath or XQuery expression | `$.access_token`, `//ns:OrderId` |
+| Header | The first value of a response header | `Location` |
+| Cookie | The value of a cookie the response set | `sid` |
+| Status | The HTTP status, or the gRPC status code | |
+
+For example, a login step with a transfer `token` from `$.access_token` lets the next request send
+`Authorization: Bearer ${#Sequence#token}`.
+
+- A transfer that finds nothing fails its step, unless it is marked **Optional**.
+- Mark a transfer **Secret** when it is a credential. From the moment it is lifted it is masked in the
+  HTTP Log, History and every report, and the run panel shows it only as `(secret)`. A value that
+  contains a credential Wirebench already knows is treated as secret even when it is not marked.
+- Wirebench keeps no shared cookie jar, so a cookie from one step reaches the next only through a
+  **Cookie** transfer: `Cookie: sid=${#Sequence#sid}`.
+- `${#Sequence#name}` must be written out in full. The short form `${name}` never reads a sequence
+  value, so a response can never replace a property a request already uses.
+
+## Check each step
+
+A step runs its request's own assertions first (turn off **Run the request's own assertions too** to
+skip them), then its own: status, a header, a body expression that equals, matches, is present or is
+absent, response time, a SOAP fault, or the schema.
+
+## Read a run
+
+The run panel fills in as each step ends: its outcome, status, time and where it was sent, then its
+assertions and transfers. A step that fails or errors stops the run, and the rest are skipped, unless
+you turn off **Stop on first failure**. **Show in History** lists every entry the run wrote; they are
+tagged `run:<id>` and `sequence:<id>`, so you can also search for them yourself.
+
+## What a response can't do
+
+A value from a response is text a server chose, so Wirebench holds it to four rules:
+
+- It is used exactly as it arrived. `${…}` inside it is never expanded, so a server can't make the
+  next request read one of your secrets.
+- It is escaped for the body it lands in: JSON, XML (quotes included) or HTML. It can't add a field or
+  an element to the next request.
+- It can't decide where the next request goes. A sequence value in the scheme, host or port of a URL,
+  an endpoint or a gRPC target stops the step before it is sent. In the path, the query or a header it
+  is fine.
+- It can't carry a line break into a URL or a header.
+
+## Run in CI
+
+`wirebench run` runs a sequence with `--sequence`:
+
+```text
+wirebench run ./shop -e staging --sequence checkout --reporter junit=reports/checkout.xml
+```
+
+Each step is reported as a test, one test suite per sequence. See the [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#sequences)
+for the details.
+
+## Limits
+
+- A step sends its request as it is saved. Text you are still editing in a request tab is not used.
+- A **Schema** assertion is evaluated by `wirebench run`; in the app it reports that no schema is at
+  hand.
+- A sequence file holds up to 100 steps, each with up to 50 transfers and 50 assertions, and a
+  transferred value is at most 64 KB.

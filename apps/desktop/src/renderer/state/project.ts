@@ -15,6 +15,8 @@ import type {
   GrpcRequestPatchWire,
   GrpcRequestWire,
   WsApiPatchWire,
+  SequencePatch,
+  SequenceWire,
   WsApiWire,
   WsRequestPatchWire,
   WsRequestWire,
@@ -120,6 +122,10 @@ export interface ProjectSnapshot {
   readonly wsRequests: Record<string, WsRequestWire>;
   /** Each project's WebSocket lists, per project for the same reason as `rest`. Folders are in `folders`. */
   readonly ws: Readonly<Record<string, ExplorerWsData>>;
+  /** Sequences by id, flattened across every open project. */
+  readonly sequences: Record<string, SequenceWire>;
+  /** Each project's sequences, in their own `order` (they do not share the containers' ordering). */
+  readonly sequenceLists: Readonly<Record<string, readonly SequenceWire[]>>;
   /** Project order, and each project's interface ids in its own order. */
   readonly order: readonly ProjectOrder[];
   /**
@@ -304,6 +310,13 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly addWsApi: (projectId: string, name: string, url?: string) => Promise<string>;
   readonly updateWsApi: (apiId: string, patch: WsApiPatchWire) => Promise<void>;
   readonly removeWsApi: (apiId: string) => Promise<void>;
+  /** Adds an empty sequence to a project and returns its id. */
+  readonly addSequence: (projectId: string, name: string) => Promise<string>;
+  /** Applies a patch to a sequence; `steps`, when given, replaces the whole list. */
+  readonly updateSequence: (sequenceId: string, patch: SequencePatch) => Promise<void>;
+  readonly removeSequence: (sequenceId: string) => Promise<void>;
+  /** Copies a sequence under a new name and returns the copy's id. */
+  readonly duplicateSequence: (sequenceId: string) => Promise<string>;
   /** Adds a WebSocket request to an API or one of its folders. */
   readonly addWsRequest: (apiId: string, parentId?: string, name?: string, url?: string) => Promise<string>;
   readonly updateWsRequest: (requestId: string, patch: WsRequestPatchWire) => Promise<void>;
@@ -486,6 +499,8 @@ type Indexes = Pick<
   | 'wsApis'
   | 'wsRequests'
   | 'ws'
+  | 'sequences'
+  | 'sequenceLists'
   | 'order'
   | 'projectOf'
   | 'keystores'
@@ -632,6 +647,8 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const wsApis: Record<string, WsApiWire> = {};
   const wsRequests: Record<string, WsRequestWire> = {};
   const ws: Record<string, ExplorerWsData> = {};
+  const sequences: Record<string, SequenceWire> = {};
+  const sequenceLists: Record<string, readonly SequenceWire[]> = {};
   const projectOf: Record<string, string> = {};
   const order: ProjectOrder[] = [];
   const keystores: OfProject<KeystoreWire>[] = [];
@@ -691,6 +708,13 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       apis: project.wsApis ?? [],
       requests: (project.wsRequests ?? []).map((request) => wsRequests[request.id] ?? request),
     };
+    // An older fixture may predate sequences; treat a missing list as empty, as for WebSocket.
+    const projectSequences = [...(project.sequences ?? [])].sort((a, b) => a.order - b.order);
+    for (const sequence of projectSequences) {
+      sequences[sequence.id] = sequence;
+      projectOf[sequence.id] = project.id;
+    }
+    sequenceLists[project.id] = projectSequences;
     for (const environment of project.environments) {
       projectOf[environment.id] = project.id;
     }
@@ -724,6 +748,8 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
     wsApis,
     wsRequests,
     ws,
+    sequences,
+    sequenceLists,
     order,
     projectOf,
     keystores,
@@ -857,6 +883,8 @@ const EMPTY: ProjectSnapshot = {
   wsApis: {},
   wsRequests: {},
   ws: {},
+  sequences: {},
+  sequenceLists: {},
   order: [],
   projectOf: {},
   keystores: [],
@@ -1525,6 +1553,31 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateWsApi: async (apiId, patch) => {
       await mutateEntity(apiId, { kind: 'update-ws-api', apiId, patch });
+    },
+
+    addSequence: async (projectId, name) => {
+      const { createdId } = await mutate(projectId, { kind: 'add-sequence', name });
+      if (createdId === undefined) {
+        throw new Error('add-sequence did not return a sequence id');
+      }
+      return createdId;
+    },
+
+    updateSequence: async (sequenceId, patch) => {
+      await mutateEntity(sequenceId, { kind: 'update-sequence', sequenceId, patch });
+    },
+
+    removeSequence: async (sequenceId) => {
+      await mutateEntity(sequenceId, { kind: 'remove-sequence', sequenceId });
+      useEditorsStore.getState().close(`sequence:${sequenceId}`);
+    },
+
+    duplicateSequence: async (sequenceId) => {
+      const { createdId } = await mutateEntity(sequenceId, { kind: 'duplicate-sequence', sequenceId });
+      if (createdId === undefined) {
+        throw new Error('duplicate-sequence did not return a sequence id');
+      }
+      return createdId;
     },
 
     removeWsApi: async (apiId) => {

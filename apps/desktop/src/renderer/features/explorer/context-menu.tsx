@@ -55,6 +55,7 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'new-api', label: 'New API…', run: () => explorerActions.newApi(projectId) },
         { key: 'new-grpc-api', label: 'New gRPC API…', run: () => explorerActions.newGrpcApi(projectId) },
         { key: 'new-ws-api', label: 'New WebSocket API…', run: () => explorerActions.newWsApi(projectId) },
+        { key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) },
       ],
       [
         { key: 'settings', label: 'Settings…', run: () => projectRowActions.settings(projectId) },
@@ -280,6 +281,24 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
         { key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('grpc-request', requestId) },
       ],
       [{ key: 'delete', label: 'Delete', run: () => explorerActions.deleteGrpcRequest(requestId) }],
+    );
+  }
+
+  if (node.kind === 'sequences' && node.projectId !== undefined) {
+    const projectId = node.projectId;
+    return groups([{ key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) }]);
+  }
+
+  if (node.kind === 'sequence' && node.sequenceId !== undefined) {
+    const sequenceId = node.sequenceId;
+    return groups(
+      [
+        { key: 'open', label: 'Open', run: () => explorerActions.openSequence(sequenceId) },
+        { key: 'run', label: 'Run', run: () => explorerActions.runSequence(sequenceId) },
+        { key: 'duplicate', label: 'Duplicate', run: () => explorerActions.duplicateSequence(sequenceId) },
+      ],
+      [{ key: 'rename', label: 'Rename…', run: () => explorerActions.renameNode('sequence', sequenceId) }],
+      [{ key: 'delete', label: 'Delete', run: () => explorerActions.removeSequence(sequenceId) }],
     );
   }
 

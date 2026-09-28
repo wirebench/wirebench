@@ -127,6 +127,7 @@ import type {
   OperationDef,
   Project,
   ProjectFiles,
+  PropertyMap,
   PropertyScopes,
   RequestDef,
   SendAttachmentOptions,
@@ -214,6 +215,7 @@ import { ProjectWatcher, SELF_WRITE_TTL_MS } from './project-watch.js';
 import { mergeUnsaved, overlayFs } from './unsaved-store.js';
 import type { UnsavedProjectFiles } from './unsaved-store.js';
 import { moveDir } from './rename-dir.js';
+import { refusedSequenceSlugs } from './project-sequence-mutations.js';
 
 /**
  * What a send needs to carry a request's attachments: the attachments themselves plus the
@@ -964,7 +966,9 @@ export class ProjectHost {
    * The saved request's name and owning interface/operation, for labelling a history entry.
    * `undefined` when no project is open or the request is unknown (an ad-hoc/raw send).
    */
-  requestMeta(requestId: string): { requestName: string; interfaceName: string; operationName: string } | undefined {
+  requestMeta(
+    requestId: string,
+  ): { requestName: string; interfaceName: string; operationName: string; tags?: readonly string[] } | undefined {
     if (this.open === undefined) {
       return undefined;
     }
@@ -1372,6 +1376,7 @@ export class ProjectHost {
   }> {
     const open = this.require();
     const result = await applyChange(open.project, change, {
+      reservedSequenceSlugs: refusedSequenceSlugs(open.problems),
       addAttachmentFile: (input) => this.readAttachmentSource(open.dir, input),
       allowsKeystorePath: (path) => allowsReadPath([open.dir], this.picks, resolvePath(open.dir, path)),
       generate: (interfaceId, bindingName, operationName) => {
@@ -1560,7 +1565,12 @@ export class ProjectHost {
    * and the TLS identity is resolved separately, so the same result can feed the cURL export and
    * the preflight badge without touching the keychain.
    */
-  restSend(requestId: string, draft?: RestRequestPatchWire, envId?: string): RestSendResolution | undefined {
+  restSend(
+    requestId: string,
+    draft?: RestRequestPatchWire,
+    envId?: string,
+    sequence?: PropertyMap,
+  ): RestSendResolution | undefined {
     if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
       return undefined;
     }
@@ -1571,7 +1581,8 @@ export class ProjectHost {
       project,
       requestId,
       ...(draft !== undefined ? { draft } : {}),
-      scopes: this.scopesFor(envId),
+      // A sequence step's `${#Sequence#…}` values ride along; the expanders hold them to ADR-0015.
+      scopes: { ...this.scopesFor(envId), ...(sequence !== undefined ? { sequence } : {}) },
       ...(preferences !== undefined ? { preferences } : {}),
       resolveBaseUrl: (api) =>
         context === undefined
@@ -1615,9 +1626,15 @@ export class ProjectHost {
    * row needs no per-protocol branching: the API's name takes the interface's place and the folder
    * path the operation's.
    */
-  restMeta(
-    requestId: string,
-  ): { readonly requestName: string; readonly apiName: string; readonly folderPath: string } | undefined {
+  restMeta(requestId: string):
+    | {
+        readonly requestName: string;
+        readonly apiName: string;
+        readonly folderPath: string;
+        /** History tags; only a sequence run sets them, through its own view of the project. */
+        readonly tags?: readonly string[];
+      }
+    | undefined {
     if (this.open === undefined) {
       return undefined;
     }
@@ -1682,7 +1699,7 @@ export class ProjectHost {
    * expansion, the folder chain's credentials as refs, and the settings ladder. Synchronous and
    * material-free like {@link restSend}; the `.proto` set and the secrets are resolved by the caller.
    */
-  grpcSend(requestId: string, draft?: GrpcRequestPatchWire): GrpcSendResolution | undefined {
+  grpcSend(requestId: string, draft?: GrpcRequestPatchWire, sequence?: PropertyMap): GrpcSendResolution | undefined {
     if (this.open === undefined) {
       return undefined;
     }
@@ -1693,7 +1710,7 @@ export class ProjectHost {
       project,
       requestId,
       ...(draft !== undefined ? { draft } : {}),
-      scopes: this.scopesFor(),
+      scopes: { ...this.scopesFor(), ...(sequence !== undefined ? { sequence } : {}) },
       ...(preferences !== undefined ? { preferences } : {}),
       resolveTarget: (api) => {
         const asApi = { slug: api.slug, baseUrl: api.target };
@@ -1723,9 +1740,15 @@ export class ProjectHost {
   }
 
   /** What History names a gRPC send by: the request, its API, and the folder path inside it. */
-  grpcMeta(
-    requestId: string,
-  ): { readonly requestName: string; readonly apiName: string; readonly folderPath: string } | undefined {
+  grpcMeta(requestId: string):
+    | {
+        readonly requestName: string;
+        readonly apiName: string;
+        readonly folderPath: string;
+        /** History tags; only a sequence run sets them, through its own view of the project. */
+        readonly tags?: readonly string[];
+      }
+    | undefined {
     if (this.open === undefined) {
       return undefined;
     }

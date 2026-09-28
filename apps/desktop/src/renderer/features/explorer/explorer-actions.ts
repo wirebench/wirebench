@@ -17,6 +17,8 @@ import {
   openInterfaceTab,
   updateDefinition,
 } from '../interface-editor/interface-actions.js';
+import { openSequenceTab } from '../sequence/sequence-actions.js';
+import { useSequenceRunsStore } from '../../state/sequence-runs.js';
 
 /**
  * The logic behind every explorer action (right-click menu items and their `explorer.*` command
@@ -533,6 +535,69 @@ export const explorerActions = {
       return;
     }
     useUiStore.getState().requestDeleteNode({ kind: 'ws-api', id: apiId, name: api.name, requestCount });
+  },
+
+  /** Creates a sequence in one project and opens its tab, where its steps are added. */
+  newSequence(projectId: string | undefined): void {
+    if (projectId === undefined) {
+      return;
+    }
+    const state = useProjectStore.getState();
+    const names = (state.sequenceLists[projectId] ?? []).map((sequence) => sequence.name);
+    void state
+      .addSequence(projectId, nextName('Sequence', names))
+      .then((sequenceId) => {
+        openSequenceTab(sequenceId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'New sequence failed');
+      });
+  },
+
+  openSequence(sequenceId: string | undefined): void {
+    if (sequenceId !== undefined) {
+      openSequenceTab(sequenceId);
+    }
+  },
+
+  /** Opens the sequence's tab, where the run shows, and runs it. */
+  runSequence(sequenceId: string | undefined): void {
+    if (sequenceId === undefined) {
+      return;
+    }
+    openSequenceTab(sequenceId);
+    void useSequenceRunsStore.getState().start(sequenceId);
+  },
+
+  duplicateSequence(sequenceId: string | undefined): void {
+    if (sequenceId === undefined) {
+      return;
+    }
+    void useProjectStore
+      .getState()
+      .duplicateSequence(sequenceId)
+      .then((copyId) => {
+        openSequenceTab(copyId);
+      })
+      .catch((error: unknown) => {
+        showToast(error instanceof Error ? error.message : 'Duplicate sequence failed');
+      });
+  },
+
+  /** Deletes a sequence. The requests it names are untouched: a sequence only refers to them. */
+  removeSequence(sequenceId: string | undefined): void {
+    if (sequenceId === undefined) {
+      return;
+    }
+    const sequence = useProjectStore.getState().sequences[sequenceId];
+    if (sequence === undefined) {
+      return;
+    }
+    if (!confirmsDeletes()) {
+      void useProjectStore.getState().removeSequence(sequenceId).catch(reportDeleteFailure);
+      return;
+    }
+    useUiStore.getState().requestDeleteNode({ kind: 'sequence', id: sequenceId, name: sequence.name, requestCount: 0 });
   },
 
   deleteWsRequest(requestId: string | undefined): void {

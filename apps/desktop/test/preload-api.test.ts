@@ -64,6 +64,7 @@ describe('buildApi', () => {
       'search',
       'secretScan',
       'secrets',
+      'sequence',
       'snapshot',
       'ssl',
       'sync',

@@ -104,6 +104,8 @@ export interface RunContext {
    * configuration shares a token; a lone `prepareSend` without one gets a fresh source.
    */
   readonly tokenSource?: RunTokenSource;
+  /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
+  readonly sequence?: PropertyMap;
 }
 
 /**
@@ -137,7 +139,12 @@ function scopesFor(context: RunContext): PropertyScopes {
           globals: {},
           system: process.env,
         });
-  return { ...scopes, env: { ...(scopes.env ?? {}), ...context.overrides } };
+  return {
+    ...scopes,
+    env: { ...(scopes.env ?? {}), ...context.overrides },
+    // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
+    ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
+  };
 }
 
 /** A SOAP request's endpoint, through the workspace's environment when the run has a workspace. */

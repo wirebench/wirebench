@@ -193,6 +193,14 @@ export function registerExplorerCommands(): void {
 
   // The WebSocket creators, gated the same way on their own container.
   registerCommand({
+    ...catalogEntry('sequence.new'),
+    when: (ctx) => ctx.selection?.kind === 'project',
+    whenScope: 'selection.project',
+    run: (ctx) => {
+      explorerActions.newSequence(ctx.selection?.id);
+    },
+  });
+  registerCommand({
     ...catalogEntry('ws.newApi'),
     when: (ctx) => ctx.selection?.kind === 'project',
     whenScope: 'selection.project',

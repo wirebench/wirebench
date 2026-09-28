@@ -36,24 +36,56 @@ const matchSchema = z.looseObject({
 const schemaSchema = z.looseObject({ type: z.literal('schema'), name });
 const slaSchema = z.looseObject({ type: z.literal('sla'), maxMs: z.number().int().positive(), name });
 
+const headerSchema = z.looseObject({
+  type: z.literal('header'),
+  header: z.string().min(1),
+  equals: z.string().optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+  name,
+});
+
+/** A `match` or `header` assertion names exactly one check, and a `matches:` must compile. */
+function refineCheck(
+  value: {
+    readonly type: string;
+    readonly equals?: unknown;
+    readonly matches?: string | undefined;
+    readonly exists?: boolean | undefined;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (value.type !== 'match' && value.type !== 'header') {
+    return;
+  }
+  const given = [value.equals, value.matches, value.exists].filter((v) => v !== undefined).length;
+  if (given !== 1) {
+    ctx.addIssue({ code: 'custom', message: 'exactly one of equals, matches or exists is required' });
+  }
+  if (value.matches !== undefined) {
+    try {
+      // Compiling is linear in the pattern's length; only matching can run away, and that happens on
+      // the evaluation worker (`matchRegexWithTimeout`).
+      new RegExp(value.matches);
+    } catch {
+      ctx.addIssue({ code: 'custom', path: ['matches'], message: 'not a valid regular expression' });
+    }
+  }
+}
+
 const assertionSchema = z
   .discriminatedUnion('type', [statusSchema, soapFaultSchema, matchSchema, schemaSchema, slaSchema])
-  .superRefine((value, ctx) => {
-    if (value.type !== 'match') {
-      return;
-    }
-    const given = [value.equals, value.matches, value.exists].filter((v) => v !== undefined).length;
-    if (given !== 1) {
-      ctx.addIssue({ code: 'custom', message: 'exactly one of equals, matches or exists is required' });
-    }
-    if (value.matches !== undefined) {
-      try {
-        new RegExp(value.matches);
-      } catch {
-        ctx.addIssue({ code: 'custom', path: ['matches'], message: 'not a valid regular expression' });
-      }
-    }
-  });
+  .superRefine(refineCheck);
 
 /** The `assertions:` list of a request file. `looseObject` like every project schema; see `project/schema.ts`. */
 export const assertionsSchema = z.array(assertionSchema);
+
+/**
+ * The `assertions:` list of a sequence step: the request catalogue plus `header`. Kept apart from
+ * {@link assertionsSchema} so a request file never gains a member an older build would refuse.
+ */
+export const stepAssertionsSchema = z.array(
+  z
+    .discriminatedUnion('type', [statusSchema, soapFaultSchema, matchSchema, schemaSchema, slaSchema, headerSchema])
+    .superRefine(refineCheck),
+);

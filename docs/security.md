@@ -307,6 +307,57 @@ Both evaluators also run on a **worker thread** with a five-second budget
 than a frozen window, and neither library is in the renderer bundle: evaluation is an IPC call, and
 the renderer has no evaluator of its own.
 
+An assertion's `matches:` regular expression runs on that same worker, under the same budget
+(`matchRegexWithTimeout`). The pattern comes from a file that may have come from someone else, and a
+backtracking pattern such as `(a+)+$` against a long near-miss runs for minutes. JavaScript cannot interrupt a
+running `RegExp`, so a thread that can be terminated is the only bound. A timeout or an invalid pattern is an
+`errored` assertion (`packages/engine/test/unit/assert/match-regex.test.ts`).
+
+## A response value is data, never a template
+
+A [sequence](specs/2026-09-28-sequences-design.md) lifts values out of one response (a token, an id,
+a cookie) and puts them into the next request as `${#Sequence#name}`. That value is text a server
+chose. Property expansion was built for values the user typed, so a response value is held to
+stricter rules, recorded as [ADR-0015](adr/0015-response-values-are-data.md). Each rule closes a
+specific way for a server to reach further than its own response:
+
+- **Never expanded again.** Expansion is recursive, so a server answering `${secret:prod-db}` would
+  otherwise have the next request resolve and send that keychain value. A Sequence value is
+  substituted literally (`project/properties.ts`), so `${…}` inside one stays as text. A reference
+  whose *name* is built from one (`${${#Sequence#n}}`, `${secret:${#Sequence#n}}`) is refused as
+  `name-from-response`. Tests: `packages/engine/test/unit/project/sequence-scope.test.ts`.
+- **Explicit only.** The `${name}` shorthand never reads the Sequence scope, so a response can't shadow
+  `${baseUrl}` or any value a request already uses.
+- **Escaped where it lands, exactly once.** In a JSON, XML or HTML body, a SOAP envelope and a gRPC
+  message, a Sequence value is escaped (all five XML entities, quotes included), whether or not the
+  request escapes its own values. Otherwise a value such as `x", "admin": true, "y": "` could add
+  fields to the next request (`expandWithSequenceEscaped`, `project/sequence-guards.ts`).
+- **Never the destination.** A step whose scheme, host or port would depend on a Sequence value is
+  refused before it is sent (`sequence-origin-from-response`). The request's auth goes wherever the
+  URL points, so this is what keeps a response from redirecting the next step's credentials. A gRPC
+  target may not hold one at all.
+- **No header splitting.** A Sequence value with CR, LF or NUL is refused in a URL, a header, gRPC
+  metadata, a SOAP action or a WS-Addressing field (`sequence-value-invalid`). Tests for these three
+  rules: `packages/engine/test/unit/project/sequence-guards.test.ts`.
+- **Bounded.** A value over 64 KiB errors its step. A sequence file over 256 KiB, over 100 steps, or over
+  50 transfers or assertions in a step is refused before it is used.
+- **Masked from the moment it exists.** A transfer marked secret, or one holding a credential already
+  recorded, is recorded for masking as soon as it is extracted. In the desktop that happens inside
+  an observer the engine service *awaits* before it builds the step's own summary, so even the
+  step that produced the secret has it masked in its HTTP Log raw response and its History entry. A
+  secret transfer never carries its value to the renderer or into a report. Tests:
+  `apps/desktop/test/sequence-runner.test.ts`, `packages/cli/test/integration/sequence.test.ts`.
+
+A sequence file may come from a teammate, so it is untrusted input too. It is parsed with the
+project's YAML parser after a size check, validated field by field, and names requests only by id,
+never by path. Transfers and assertions evaluate only through the worker-bound, host-isolated
+evaluators above. A file this build cannot read is never deleted or overwritten by a save.
+
+What this does not change: running a sequence someone else wrote sends requests to the hosts its
+requests name, with your credentials. That is the trust any shared *request* already asks for. A
+shared request can already put `${secret:x}` into a URL of its choosing. The rules above make
+sure a *server* gains nothing more.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

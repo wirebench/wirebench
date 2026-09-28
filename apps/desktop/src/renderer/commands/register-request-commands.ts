@@ -16,6 +16,7 @@ import { registerCommand } from '../lib/commands.js';
 import { useEditorsStore } from '../state/editors.js';
 import { useExchangesStore } from '../state/exchanges.js';
 import { useProjectStore } from '../state/project.js';
+import { useSequenceRunsStore } from '../state/sequence-runs.js';
 import { useUiStore } from '../state/ui.js';
 import {
   connectOrSendWs,
@@ -26,6 +27,7 @@ import {
   activeGrpcRequestId,
   activeRequestId,
   activeRestRequestId,
+  activeSequenceId,
   activeWsRequestId,
   onActiveRequest,
   ui,
@@ -92,6 +94,34 @@ export function registerRequestCommands(): void {
   });
   // A WebSocket tab's `Mod+Enter` is its next step: connect a closed session, or send the selected
   // saved message on an open one. The composer handles the chord itself and stops it there.
+  registerCommand({
+    ...catalogEntry('sequence.run'),
+    when: () => {
+      const sequenceId = activeSequenceId();
+      return sequenceId !== undefined && useSequenceRunsStore.getState().runs[sequenceId]?.status !== 'running';
+    },
+    whenScope: 'editor.sequence',
+    run: () => {
+      const sequenceId = activeSequenceId();
+      if (sequenceId !== undefined) {
+        void useSequenceRunsStore.getState().start(sequenceId);
+      }
+    },
+  });
+  registerCommand({
+    ...catalogEntry('sequence.cancel'),
+    when: () => {
+      const sequenceId = activeSequenceId();
+      return sequenceId !== undefined && useSequenceRunsStore.getState().runs[sequenceId]?.status === 'running';
+    },
+    whenScope: 'editor.sequence',
+    run: () => {
+      const sequenceId = activeSequenceId();
+      if (sequenceId !== undefined) {
+        void useSequenceRunsStore.getState().cancel(sequenceId);
+      }
+    },
+  });
   registerCommand({
     ...catalogEntry('ws.connect'),
     when: () => activeWsRequestId() !== undefined,

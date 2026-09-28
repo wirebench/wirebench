@@ -71,6 +71,7 @@ function baseProject(): Project {
     apis: [],
     grpcApis: [],
     wsApis: [],
+    sequences: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

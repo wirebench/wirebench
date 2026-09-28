@@ -77,6 +77,7 @@ function makeProject(
     apis: [],
     grpcApis: [api],
     wsApis: [],
+    sequences: [],
     environments: [],
     wss: { outgoing: [], incoming: [], keystores: [] },
   };

@@ -70,6 +70,7 @@ import {
 } from './schema.js';
 import { KEYSTORES_PATH, MANIFEST_PATH } from './serialize.js';
 import { parseYaml } from './yaml.js';
+import { readSequences } from '../sequence/load.js';
 
 /** A recoverable inconsistency found while loading a project. */
 export interface ProjectProblem {
@@ -85,7 +86,13 @@ export interface ProjectProblem {
     /** A folder nested deeper than {@link MAX_FOLDER_DEPTH}; it and everything below it is skipped. */
     | 'folder-too-deep'
     /** An API and an interface sharing a slug, which would make an endpoint override ambiguous. */
-    | 'api-slug-conflict';
+    | 'api-slug-conflict'
+    /** A sequence file that is malformed, over a limit, or not a sequence; it is skipped and left as it is. */
+    | 'sequence-file-invalid'
+    /** A sequence file written by a newer build; it is skipped and left as it is. */
+    | 'sequence-version-too-new'
+    /** A sequence file whose id another file already has; it is skipped and left as it is. */
+    | 'sequence-duplicate-id';
   readonly message: string;
   /** Path relative to the project root. */
   readonly file: string;
@@ -836,6 +843,9 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
           document: k,
         }));
 
+  const sequenceFiles = await readSequences(fs, root);
+  problems.push(...sequenceFiles.problems);
+
   const project: Project = {
     formatVersion: FORMAT_VERSION,
     id: manifest.id,
@@ -849,6 +859,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
     apis: apis.sort(byOrder),
     grpcApis: grpcApis.sort(byOrder),
     wsApis: wsApis.sort(byOrder),
+    sequences: sequenceFiles.loaded.map((entry) => entry.sequence).sort(byOrder),
     environments: await loadEnvironments(fs, root),
     wss: {
       outgoing: await loadWssRefs(fs, root, 'outgoing'),

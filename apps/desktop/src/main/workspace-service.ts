@@ -2724,6 +2724,10 @@ export class WorkspaceService implements ProjectRouter {
       for (const request of project.wsRequests) {
         add(request.id);
       }
+      // `sequence.run` addresses a sequence by id, so it must route like any other entity.
+      for (const sequence of project.sequences) {
+        add(sequence.id);
+      }
       for (const environment of project.environments) {
         add(environment.id);
       }

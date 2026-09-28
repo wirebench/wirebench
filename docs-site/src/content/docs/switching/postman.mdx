@@ -60,7 +60,7 @@ See [Authentication](/wirebench/guides/auth/) for each scheme's fields.
 | Passwords, tokens, API key values, client secrets | Never copied. The summary counts the auth configurations that need one | Enter each on its **Auth** tab. Wirebench stores it encrypted outside the project |
 | Collection and folder variables, other than the base URL | Not imported. The summary names them; their values are lost | Define each as a project property or an environment variable, with the same name |
 | Dynamic variables such as `{{$guid}}` or `{{$timestamp}}` | Translated to `${$guid}`, but nothing generates a value. The summary names them | Define each as a property |
-| Pre-request and test scripts | Not imported. The summary counts the items that had them | Recreate the checks by hand. Wirebench does not run scripts |
+| Pre-request and test scripts | Not imported. The summary counts the items that had them | Recreate a check as a request's assertions. Where one request uses a value from another's response (a token, an id, a cookie), build a [sequence](/wirebench/guides/sequences/). Wirebench does not run scripts |
 | OAuth 2.0 password or implicit grants | Auth set to none. The summary names the grant | Pick a supported grant on the **Auth** tab, or set the token as Bearer |
 | Other auth types (Digest, AWS Signature, Hawk, OAuth 1.0, Akamai, JWT…) | Auth set to none. The summary names the type | Set the request's auth by hand, or send the header yourself |
 | Items that are neither a folder nor a request | Skipped. The summary counts them | Nothing: there was no request to import |

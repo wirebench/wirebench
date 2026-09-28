@@ -271,6 +271,10 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       resendRest: fail('history.resendRest'),
     },
     validate: { message: fail('validate.message') },
+    sequence: {
+      run: fail('sequence.run'),
+      cancel: fail('sequence.cancel'),
+    },
     wsi: {
       checkWsdl: fail('wsi.checkWsdl'),
       checkExchange: fail('wsi.checkExchange'),

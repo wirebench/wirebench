@@ -741,7 +741,7 @@ export const unresolvedRefWireSchema = z.object({
   expr: z.string(),
   scope: z.string().optional(),
   name: z.string().optional(),
-  code: z.enum(['missing', 'unknown-scope', 'cycle', 'too-deep', 'malformed']),
+  code: z.enum(['missing', 'unknown-scope', 'cycle', 'too-deep', 'malformed', 'name-from-response']),
   start: z.number(),
   end: z.number(),
   via: z.array(z.string()).optional(),
@@ -2318,6 +2318,166 @@ export type LogResendResponse = z.infer<typeof logResendResponseSchema>;
 export const logExportHarRequestSchema = z.object({ entries: z.array(logEntryWireSchema) });
 export type LogExportHarRequest = z.infer<typeof logExportHarRequestSchema>;
 
+// --- Sequences (#62) ---------------------------------------------------------------------------
+// The structure only: main round-trips every edit through the engine's own sequence file parser,
+// so the limits, the transfer-name pattern and the compiled `matches:` are enforced by the same code
+// that guards a file from a teammate.
+
+const assertionNameWire = z.string().optional();
+
+/** One assertion a sequence step may carry: the request catalogue plus `header`. */
+export const stepAssertionWireSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('status'),
+    equals: z.union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))]),
+    name: assertionNameWire,
+  }),
+  z.object({ type: z.literal('soap-fault'), expect: z.enum(['none', 'present']), name: assertionNameWire }),
+  z.object({
+    type: z.literal('match'),
+    language: z.enum(['xpath', 'xquery', 'jsonpath']),
+    expression: z.string(),
+    namespaces: z.record(z.string(), z.string()).optional(),
+    equals: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    matches: z.string().optional(),
+    exists: z.boolean().optional(),
+    name: assertionNameWire,
+  }),
+  z.object({ type: z.literal('schema'), name: assertionNameWire }),
+  z.object({ type: z.literal('sla'), maxMs: z.number().int().positive(), name: assertionNameWire }),
+  z.object({
+    type: z.literal('header'),
+    header: z.string(),
+    equals: z.string().optional(),
+    matches: z.string().optional(),
+    exists: z.boolean().optional(),
+    name: assertionNameWire,
+  }),
+]);
+export type StepAssertionWire = z.infer<typeof stepAssertionWireSchema>;
+
+const transferWireBase = {
+  name: z.string(),
+  secret: z.boolean().optional(),
+  optional: z.boolean().optional(),
+};
+
+/** One value a step lifts from its response, for `${#Sequence#name}` in the steps after it. */
+export const sequenceTransferWireSchema = z.discriminatedUnion('from', [
+  z.object({
+    ...transferWireBase,
+    from: z.literal('body'),
+    language: z.enum(['xpath', 'xquery', 'jsonpath']),
+    expression: z.string(),
+    namespaces: z.record(z.string(), z.string()).optional(),
+  }),
+  z.object({ ...transferWireBase, from: z.literal('header'), header: z.string() }),
+  z.object({ ...transferWireBase, from: z.literal('status') }),
+  z.object({ ...transferWireBase, from: z.literal('cookie'), cookie: z.string() }),
+]);
+export type SequenceTransferWire = z.infer<typeof sequenceTransferWireSchema>;
+
+export const sequenceStepWireSchema = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  requestId: z.string(),
+  enabled: z.boolean(),
+  requestAssertions: z.boolean(),
+  transfers: z.array(sequenceTransferWireSchema),
+  assertions: z.array(stepAssertionWireSchema),
+});
+export type SequenceStepWire = z.infer<typeof sequenceStepWireSchema>;
+
+export const sequenceSettingsWireSchema = z.object({
+  stopOnFailure: z.boolean(),
+  stepTimeoutMs: z.number().int().positive().optional(),
+});
+
+/** A sequence as the renderer sees it: `sequences/<slug>.sequence.yaml`, less nothing. */
+export const sequenceWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  order: z.number(),
+  description: z.string().optional(),
+  settings: sequenceSettingsWireSchema,
+  steps: z.array(sequenceStepWireSchema),
+});
+export type SequenceWire = z.infer<typeof sequenceWireSchema>;
+
+/** What `update-sequence` may change. The steps are replaced whole: they are one ordered list. */
+export const sequencePatchSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  settings: sequenceSettingsWireSchema.optional(),
+  steps: z.array(sequenceStepWireSchema).optional(),
+});
+export type SequencePatch = z.infer<typeof sequencePatchSchema>;
+
+/** One transfer's outcome. A secret one never carries a value across the bridge. */
+export const sequenceTransferResultWireSchema = z.object({
+  name: z.string(),
+  outcome: z.enum(['set', 'missing', 'errored']),
+  secret: z.boolean(),
+  value: z.string().optional(),
+  message: z.string().optional(),
+});
+
+export const sequenceAssertionResultWireSchema = z.object({
+  type: z.string(),
+  label: z.string(),
+  outcome: z.enum(['passed', 'failed', 'errored']),
+  expected: z.string().optional(),
+  actual: z.string().optional(),
+  message: z.string().optional(),
+});
+
+/** One step of a run, as the run panel shows it. Every string in it is masked before it leaves main. */
+export const sequenceStepResultWireSchema = z.object({
+  index: z.number().int(),
+  stepId: z.string(),
+  requestId: z.string(),
+  name: z.string(),
+  protocol: z.enum(['soap', 'rest', 'grpc']).optional(),
+  outcome: z.enum(['passed', 'failed', 'errored', 'skipped']),
+  status: z.number().optional(),
+  durationMs: z.number().optional(),
+  origin: z.string().optional(),
+  assertions: z.array(sequenceAssertionResultWireSchema),
+  transfers: z.array(sequenceTransferResultWireSchema),
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+  skipped: z.enum(['disabled', 'after-failure', 'cancelled']).optional(),
+  /** The send behind the step, for its HTTP Log row; absent for a step never sent. */
+  sendId: z.string().optional(),
+});
+export type SequenceStepResultWire = z.infer<typeof sequenceStepResultWireSchema>;
+
+export const sequenceRunResultWireSchema = z.object({
+  runId: z.string(),
+  sequenceId: z.string(),
+  name: z.string(),
+  startedAt: z.string(),
+  environment: z.string().optional(),
+  outcome: z.enum(['passed', 'failed', 'errored', 'skipped']),
+  steps: z.array(sequenceStepResultWireSchema),
+});
+export type SequenceRunResultWire = z.infer<typeof sequenceRunResultWireSchema>;
+
+/** `sequence.run`: the renderer names the run, so it can cancel it before the first step reports. */
+export const sequenceRunRequestSchema = z.object({ sequenceId: z.string(), runId: z.string().min(1) });
+export type SequenceRunRequest = z.infer<typeof sequenceRunRequestSchema>;
+
+export const sequenceCancelRequestSchema = z.object({ runId: z.string() });
+export const sequenceCancelResponseSchema = z.object({ cancelled: z.boolean() });
+
+/** One step of a running sequence has ended; `sequence.run` resolves with all of them at the end. */
+export const sequenceProgressEventSchema = z.object({
+  runId: z.string(),
+  sequenceId: z.string(),
+  step: sequenceStepResultWireSchema,
+});
+export type SequenceProgressEvent = z.infer<typeof sequenceProgressEventSchema>;
+
 /** Response payload for `log.exportHar`: `saved: false` when the save dialog was cancelled. */
 export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });
 export type LogExportHarResponse = z.infer<typeof logExportHarResponseSchema>;
@@ -2344,6 +2504,8 @@ export const projectWireSchema = z.object({
   wsApis: z.array(wsApiWireSchema),
   /** Every WebSocket request of every WebSocket API, flat. */
   wsRequests: z.array(wsRequestWireSchema),
+  /** The project's sequences (`sequences/`), in `order`. */
+  sequences: z.array(sequenceWireSchema),
   properties: z.record(z.string(), z.string()),
   /** Names in `properties` skipped during resolution, without being deleted. */
   disabledProperties: z.array(z.string()),
@@ -2503,6 +2665,10 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('add-ws-api'), name: z.string(), url: z.string().optional() }),
   z.object({ kind: z.literal('update-ws-api'), apiId: z.string(), patch: wsApiPatchSchema }),
   z.object({ kind: z.literal('remove-ws-api'), apiId: z.string() }),
+  z.object({ kind: z.literal('add-sequence'), name: z.string().min(1) }),
+  z.object({ kind: z.literal('update-sequence'), sequenceId: z.string(), patch: sequencePatchSchema }),
+  z.object({ kind: z.literal('remove-sequence'), sequenceId: z.string() }),
+  z.object({ kind: z.literal('duplicate-sequence'), sequenceId: z.string() }),
   z.object({
     kind: z.literal('add-ws-request'),
     apiId: z.string(),

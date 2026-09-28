@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import type { EvaluateOptions, QueryResult } from './evaluate.js';
+import type { RegexWorkerResult } from './worker.js';
 
 /** Default time budget for one evaluation, matching the brief's 5s ceiling for the scratchpad. */
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -71,12 +72,65 @@ export function evaluateWithTimeout(
 ): Promise<QueryResult> {
   const timeoutMs = timeoutOptions?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const kind = timeoutOptions?.kind ?? 'xml';
+  return runOnWorker<QueryResult>({ job: 'query', text, kind, expression, options }, timeoutMs, (failure) =>
+    failure.kind === 'timeout'
+      ? { kind: 'error', code: 'xpath-timeout', message: `Query timed out after ${timeoutMs}ms` }
+      : { kind: 'error', message: failure.message },
+  );
+}
 
+/** The outcome of {@link matchRegexWithTimeout}. */
+export type RegexMatchResult =
+  | { readonly kind: 'matched'; readonly matched: boolean }
+  | { readonly kind: 'error'; readonly code: 'regex-timeout' | 'regex-invalid'; readonly message: string };
+
+/**
+ * Tests `pattern` against `text` on the same worker thread and time budget as
+ * {@link evaluateWithTimeout}.
+ *
+ * A pattern can come from a file someone else wrote (a request's or a sequence's `matches:`), and a
+ * backtracking pattern such as `(a+)+$` against a long near-miss runs for minutes. JavaScript cannot
+ * interrupt a running `RegExp`, so the only bound is a thread that can be terminated. Never throws
+ * or rejects: an invalid pattern, a timeout and a worker crash are all `{kind: 'error'}`.
+ */
+export function matchRegexWithTimeout(
+  pattern: string,
+  text: string,
+  timeoutOptions?: Pick<EvaluateWithTimeoutOptions, 'timeoutMs'>,
+): Promise<RegexMatchResult> {
+  const timeoutMs = timeoutOptions?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return runOnWorker<RegexWorkerResult, RegexMatchResult>(
+    { job: 'regex', pattern, text },
+    timeoutMs,
+    (failure) =>
+      failure.kind === 'timeout'
+        ? { kind: 'error', code: 'regex-timeout', message: `Regular expression timed out after ${timeoutMs}ms` }
+        : { kind: 'error', code: 'regex-invalid', message: failure.message },
+    (posted) =>
+      'error' in posted
+        ? { kind: 'error', code: 'regex-invalid', message: posted.error }
+        : { kind: 'matched', matched: posted.matched },
+  );
+}
+
+/** Why a worker produced no result of its own. */
+type WorkerFailure = { readonly kind: 'timeout' } | { readonly kind: 'crash'; readonly message: string };
+
+/**
+ * Runs one job on a fresh worker, terminating it after `timeoutMs`. `onFailure` shapes a timeout or
+ * crash into the caller's result type; `map` shapes what the worker posted (identity by default).
+ */
+function runOnWorker<Posted, Result = Posted>(
+  workerData: unknown,
+  timeoutMs: number,
+  onFailure: (failure: WorkerFailure) => Result,
+  map: (posted: Posted) => Result = (posted) => posted as unknown as Result,
+): Promise<Result> {
   return new Promise((resolve) => {
     let settled = false;
-    const worker = new Worker(workerUrl(), { workerData: { text, kind, expression, options } });
+    const worker = new Worker(workerUrl(), { workerData });
 
-    const finish = (result: QueryResult): void => {
+    const finish = (result: Result): void => {
       if (settled) {
         return;
       }
@@ -87,23 +141,17 @@ export function evaluateWithTimeout(
       resolve(result);
     };
 
-    const timer = setTimeout(() => {
-      finish({
-        kind: 'error',
-        code: 'xpath-timeout',
-        message: `Query timed out after ${timeoutMs}ms`,
-      });
-    }, timeoutMs);
+    const timer = setTimeout(() => finish(onFailure({ kind: 'timeout' })), timeoutMs);
     timer.unref?.();
 
-    worker.once('message', (result: QueryResult) => finish(result));
+    worker.once('message', (posted: Posted) => finish(map(posted)));
     worker.once('error', (error: unknown) =>
-      finish({ kind: 'error', message: error instanceof Error ? error.message : String(error) }),
+      finish(onFailure({ kind: 'crash', message: error instanceof Error ? error.message : String(error) })),
     );
     worker.once('exit', (code: number) => {
       /* v8 ignore next 3 -- normal completion always finishes via the 'message' listener first */
       if (!settled) {
-        finish({ kind: 'error', message: `xpath worker exited unexpectedly (code ${code})` });
+        finish(onFailure({ kind: 'crash', message: `xpath worker exited unexpectedly (code ${code})` }));
       }
     });
   });

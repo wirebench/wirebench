@@ -44,6 +44,14 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
         lines.push(`${assertion.label} — ${assertion.message ?? assertion.outcome}`);
       }
     }
+    // A sequence step's transfers: one that found nothing or failed always shows, a value only when verbose.
+    for (const transfer of result.transfers ?? []) {
+      if (transfer.outcome !== 'set') {
+        lines.push(`→ ${transfer.name}: ${transfer.message ?? transfer.outcome}`);
+      } else if (options.verbose) {
+        lines.push(`→ ${transfer.name} = ${transfer.secret ? '(secret)' : (transfer.value ?? '')}`);
+      }
+    }
     return lines;
   };
 
