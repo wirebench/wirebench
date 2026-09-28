@@ -5,6 +5,7 @@ import { SecretReviewDialog } from '../components/secret-review-dialog.js';
 import { SignInDialog } from '../features/account/sign-in-dialog.js';
 import { TeamDialog } from '../features/team/team-dialog.js';
 import { WebhooksDialogs } from '../features/webhooks/webhooks-dialogs.js';
+import { WebhookSettingsDialog } from '../features/webhook-items/webhook-settings-dialog.js';
 import { subscribeToAccounts, useAccountStore } from '../state/account.js';
 import { ToastViewport } from '../components/toast.js';
 import { registerShellCommands } from '../commands/register-shell-commands.js';
@@ -450,6 +451,7 @@ export function AppShell() {
       <SignInDialog />
       <TeamDialog />
       <WebhooksDialogs />
+      <WebhookSettingsDialog />
       <MoveProjectDialog />
       <SyncPanel />
       <ConflictResolver />

@@ -19,6 +19,7 @@ import {
 } from '../interface-editor/interface-actions.js';
 import { openSequenceTab } from '../sequence/sequence-actions.js';
 import { useSequenceRunsStore } from '../../state/sequence-runs.js';
+import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
 
 /**
  * The logic behind every explorer action (right-click menu items and their `explorer.*` command
@@ -324,12 +325,13 @@ export const explorerActions = {
 
   /**
    * Opens the Webhooks settings dialog (target, auth) for a project's collection, or for one of
-   * its folders. Stub: Task 13 fills the dialog in.
+   * its folders.
    */
   openWebhookSettings(projectId: string | undefined, folderId?: string): void {
-    // Task 13 replaces this body with the settings dialog.
-    void projectId;
-    void folderId;
+    if (projectId === undefined) {
+      return;
+    }
+    useWebhookItemsDialogs.getState().openSettings(projectId, folderId);
   },
 
   /**
