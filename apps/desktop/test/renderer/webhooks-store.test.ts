@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readSeen, SEEN_KEY, writeSeen } from '../../src/renderer/state/webhooks-seen.js';
-import { subscribeToWebhooks, useWebhooksStore } from '../../src/renderer/state/webhooks.js';
+import { originOf, subscribeToWebhooks, useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import { useSyncStore } from '../../src/renderer/state/sync.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -141,6 +141,11 @@ describe('the webhooks store (webhook-capture §4.2)', () => {
     useWebhooksStore.getState().markSeen(hook(1, 3).id, id(7));
     expect(useWebhooksStore.getState().unseen[hook(1, 3).id]).toEqual({ count: 0, more: false });
     expect(readSeen(SERVER, hook(1, 3).id)).toBe(id(7));
+  });
+
+  it('keys seen markers by server origin, so a URL spelling change finds the same marker', () => {
+    writeSeen(originOf('https://s.test/'), hook(1, 3).id, id(7));
+    expect(readSeen(originOf('https://s.test'), hook(1, 3).id)).toBe(id(7));
   });
 
   it('drops a recount answer if the open tab marked captures seen before it resolved', async () => {

@@ -127,14 +127,15 @@ export const useWebhooksStore = create<WebhooksStore>((set, get) => {
         return;
       }
       const hooks = result.value.hooks;
+      const origin = originOf(server.url);
       const unseen: Record<string, Unseen> = {};
       const stale: string[] = [];
       for (const hook of hooks) {
         const newest = hook.newestCaptureId ?? '';
-        const seen = readSeen(server.url, hook.id);
+        const seen = readSeen(origin, hook.id);
         if (seen === undefined) {
           // First sight on this device: what came before is history, not news.
-          writeSeen(server.url, hook.id, newest);
+          writeSeen(origin, hook.id, newest);
           unseen[hook.id] = ZERO;
         } else if (seen === newest) {
           unseen[hook.id] = ZERO;
@@ -153,7 +154,8 @@ export const useWebhooksStore = create<WebhooksStore>((set, get) => {
       // Remembered so an answer can be dropped if `markSeen` moved the marker while this was in
       // flight (an open tab marking captures seen meanwhile): the reply no longer matches what
       // this device has now seen, so applying it would resurrect a badge the user just cleared.
-      const seenAtRequest = readSeen(server.url, hookId);
+      const origin = originOf(server.url);
+      const seenAtRequest = readSeen(origin, hookId);
       const result = await ipc().hooks.unseen({
         url: server.url,
         workspaceId: server.workspaceId,
@@ -161,14 +163,14 @@ export const useWebhooksStore = create<WebhooksStore>((set, get) => {
         after: seenAtRequest === undefined || seenAtRequest === '' ? null : seenAtRequest,
       });
       if (!result.ok || !sameServer(get().server, server)) return;
-      if (readSeen(server.url, hookId) !== seenAtRequest) return;
+      if (readSeen(origin, hookId) !== seenAtRequest) return;
       set((state) => ({ unseen: { ...state.unseen, [hookId]: result.value } }));
     },
 
     markSeen: (hookId, captureId) => {
       const server = get().server;
       if (server === undefined) return;
-      writeSeen(server.url, hookId, captureId ?? '');
+      writeSeen(originOf(server.url), hookId, captureId ?? '');
       set((state) => ({ unseen: { ...state.unseen, [hookId]: ZERO } }));
     },
 
