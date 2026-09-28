@@ -260,13 +260,14 @@ established by reading that code (ADR-0003, update of 2026-09-28) rather than by
 ## Task 9 — e2e, docs and changelog
 
 - `e2e/specs/sequences.spec.ts`: a two-step REST sequence (log in → bearer from `${#Sequence#token}`) against the e2e
-  mock. Both steps pass, and the token shows `<redacted>` in the run panel. Run with
+  mock. Both steps pass, and the run panel shows the token only as `(secret)`. Run with
   `pnpm build && xvfb-run -a pnpm test:e2e -- sequences.spec.ts`.
 - Docs:
   - `docs-site/src/content/docs/guides/sequences.mdx`, with an entry in the `astro.config.mjs` sidebar;
   - `reference/project-format.md`, including the version line fix;
+  - `reference/property-syntax.mdx` (the Sequence scope) and `switching/postman.mdx` (scripts point to sequences);
   - the `docs/security.md` section;
   - `docs/success-criteria.md` SC-Q1…;
   - `docs/roadmap.md` item 12 status;
-  - `CHANGELOG.md` under Unreleased/Added.
+  - `CHANGELOG.md` under Unreleased/Added, and the `matches:` time budget under Fixed.
 - `pnpm check`, which includes banned terms and doc paths.
