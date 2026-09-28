@@ -152,9 +152,12 @@ Generation lives in the engine (`packages/engine/src/script/types/`) and is the 
 ### REST (OpenAPI)
 
 - `request.body.json` is typed from the operation's JSON request body schema. With no schema, it is `unknown`.
-- `response` is a union by status: `{ status: 200; json(): Pet; headers: Headers; text: string } | { status: 404; json():
-  Problem; ... } | { status: number; json(): unknown; ... }`. Checking `response.status === 200` narrows `json()`.
-  `default` and ranged responses (`2XX`) fall into the last arm.
+- `response` is a union with one arm per declared status, each with its own `json()` type.
+  - Each arm's `status` is a set of literals: one code (`201`), or a range (`4XX`) minus the codes declared on their
+    own. `default` takes every status left over.
+  - A status the contract does not cover falls into a last arm whose `json()` is `unknown`.
+  - Because every arm's status is literal, checking `response.status === 201` narrows `json()` exactly, and so does
+    `response.status === 418` for a `4XX` arm. A plain `number` arm would stop that narrowing.
 - JSON Schema maps to TypeScript like this:
   - `object` properties become fields, and fields not in `required` are optional.
   - `additionalProperties` becomes an index signature.
@@ -198,10 +201,13 @@ Generation lives in the engine (`packages/engine/src/script/types/`) and is the 
     editor's JSON already shows them.
   - `bytes` is a base64 `string`.
   - An enum is a union of its names.
-  - A `oneof` is a union of objects, each with one of its fields set.
-  - A `map` is an index signature, and `repeated` is an array.
+  - Every field is optional, since the JSON form leaves out a field at its default. A `oneof`'s fields are
+    therefore optional like any other, rather than a union.
+  - A `map` is a `Record<string, …>`, and `repeated` is an array.
+  - A message becomes one alias, so a recursive message is fine.
   - The well-known types (`Timestamp`, `Duration`, wrappers, `Struct`) map to their JSON forms.
-- `response.status` is `{ code: GrpcCode; message: string }`, and `response.metadata` holds the headers and trailers.
+- `response.status` is `{ code: number; name: string; message: string }`. `response.metadata` holds the headers
+  and `response.trailers` the trailers.
 
 ### Type-checking
 

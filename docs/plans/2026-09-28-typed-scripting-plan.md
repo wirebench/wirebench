@@ -108,16 +108,22 @@
 ## Task 4 — Engine: types from JSON Schema and proto
 
 **Files**
-- `packages/engine/src/script/types/json-schema.ts`: `typeFromJsonSchema(schema, names)`. It follows the spec's
-  mapping, uses named aliases for `$ref` and cycles, and widens unknown keywords to `unknown`.
-- `packages/engine/src/script/types/rest.ts`: `restScriptTypes(operation | undefined)`. It produces the request body
-  type and the response union by status.
-- `packages/engine/src/script/types/grpc.ts`: `grpcScriptTypes(protoSet, method)`, built from `describeMessage`,
-  with 64-bit values as strings, `bytes` as base64, and `oneof` as a union.
-- `packages/engine/src/script/types/api.d.ts.ts`: the static API declarations as a string. The pre and post variants
-  share one source.
-- Tests: `packages/engine/test/unit/script/types-{json-schema,rest,grpc}.test.ts`, which compare against pinned
-  `.d.ts` output and compile it with the checker from Task 5 once that lands.
+- `packages/engine/src/script/types/api.ts`:
+  - `apiDeclarations(protocol, phase)`, the static API as ambient declarations;
+  - `secretNameType(secrets)`;
+  - `WbStatus` and the `WbRange1`–`WbRange5` literal unions a REST response's arms are built from.
+- `packages/engine/src/script/types/json-schema.ts`: `JsonSchemaTypes`, JSON Schema to TypeScript.
+  - Resolved `$ref`s are shared, possibly cyclic, objects, so a node reached twice or reaching itself becomes an
+    alias by identity.
+  - Unknown keywords widen to `unknown`, and depth, alias count and output size are bounded.
+- `packages/engine/src/script/types/rest.ts`: `restScriptTypes(operation | undefined)` gives `WbRequestBody` and
+  `WbResponse`, one arm per exact status, range and `default`, plus a last arm for the rest.
+- `packages/engine/src/script/types/grpc.ts`: `grpcScriptTypes(protoSet, inputType, outputType)`.
+  - The types match the JSON form the codec uses: declared names, 64-bit integers and bytes as strings, enum names,
+    every field optional, one alias per message, and the well-known types.
+- Tests: `packages/engine/test/unit/script/types-{rest,grpc}.test.ts`.
+  - They compile the output with a script through the dev-dependency TypeScript (`ts-check.ts`), including a wrong
+    path that must fail and narrowing by status.
 
 ## Task 5 — Engine: types from XSD, and the XML projection
 
