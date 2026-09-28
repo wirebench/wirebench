@@ -197,3 +197,71 @@ export function selectRequests(
     unmatched: selectors.filter((s) => !all.some((c) => matches(s, c))),
   };
 }
+
+/** Where a sequence step's request id leads. */
+export type StepRequestLookup =
+  | { readonly kind: 'found'; readonly selected: SelectedRequest }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'unsupported'; readonly reason: string };
+
+interface RequestTree {
+  readonly folders: readonly RequestTree[];
+  readonly requests: readonly { readonly id: string }[];
+}
+
+function findInTree<R extends { readonly id: string }>(
+  tree: { readonly folders: readonly RequestTree[]; readonly requests: readonly R[] },
+  id: string,
+): R | undefined {
+  const own = tree.requests.find((request) => request.id === id);
+  if (own !== undefined) {
+    return own;
+  }
+  for (const folder of tree.folders) {
+    const found = findInTree(folder as typeof tree, id);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Finds the request a sequence step names by id, among the requests a run can send, with the same
+ * context `selectRequests` gives. A request that exists but cannot run (a WebSocket request, a streaming
+ * gRPC call, one orphaned by its contract) says why, so the step errors with a reason rather than as
+ * missing.
+ */
+export function findStepRequest(project: Project, requestId: string): StepRequestLookup {
+  const runnable = candidates(project).find((candidate) => candidate.item.request.id === requestId);
+  if (runnable !== undefined) {
+    return { kind: 'found', selected: runnable.item };
+  }
+  const orphaned = { kind: 'unsupported', reason: 'The request is no longer in its contract (orphaned)' } as const;
+  for (const iface of project.interfaces) {
+    for (const operation of iface.operations) {
+      if (operation.requests.some((request) => request.id === requestId)) {
+        return orphaned;
+      }
+    }
+  }
+  for (const api of project.apis) {
+    if (findInTree(api, requestId) !== undefined) {
+      return orphaned;
+    }
+  }
+  for (const api of project.grpcApis) {
+    const request = findInTree(api, requestId);
+    if (request !== undefined) {
+      return request.methodKind !== 'unary'
+        ? { kind: 'unsupported', reason: 'A streaming gRPC call cannot be a sequence step; only unary calls can' }
+        : orphaned;
+    }
+  }
+  for (const api of project.wsApis) {
+    if (findInTree(api, requestId) !== undefined) {
+      return { kind: 'unsupported', reason: 'A WebSocket request cannot be a sequence step' };
+    }
+  }
+  return { kind: 'missing' };
+}

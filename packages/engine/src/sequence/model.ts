@@ -58,8 +58,20 @@ export interface StatusTransfer extends TransferBase {
   readonly from: 'status';
 }
 
+/**
+ * Lifts the value of one cookie the response set (`Set-Cookie`; the last one of that name wins).
+ *
+ * Wirebench keeps no shared cookie jar, on purpose (`rest/cookies.ts`), and a sequence does not add
+ * one: a step that needs a login's cookie says so, `Cookie: sid=${#Sequence#sid}`, where it can be
+ * read and where ADR-0015's guards apply.
+ */
+export interface CookieTransfer extends TransferBase {
+  readonly from: 'cookie';
+  readonly cookie: string;
+}
+
 /** One value lifted from a step's response. */
-export type Transfer = BodyTransfer | HeaderTransfer | StatusTransfer;
+export type Transfer = BodyTransfer | HeaderTransfer | StatusTransfer | CookieTransfer;
 
 /** One request in a sequence, and what to take from and check about its response. */
 export interface SequenceStep {

@@ -9,8 +9,11 @@ function truncate(text: string): string {
   return text.length > MAX_ACTUAL_CHARS ? `${text.slice(0, MAX_ACTUAL_CHARS)}…` : text;
 }
 
-/** The result as one string: the first item's text, which is what a scalar comparison means. */
-function firstText(result: QueryResult): string | undefined {
+/**
+ * The result as one string: the first item's text, which is what a scalar comparison means. Shared
+ * with sequence transfers, which lift a value the same way a `match` reads one.
+ */
+export function firstText(result: QueryResult): string | undefined {
   if (result.kind === 'nodes') {
     return result.items[0]?.text;
   }

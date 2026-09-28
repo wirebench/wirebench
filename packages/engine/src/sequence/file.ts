@@ -42,6 +42,7 @@ const transferSchema = z.discriminatedUnion('from', [
   }),
   z.looseObject({ ...transferBase, from: z.literal('header'), header: nonEmpty }),
   z.looseObject({ ...transferBase, from: z.literal('status') }),
+  z.looseObject({ ...transferBase, from: z.literal('cookie'), cookie: nonEmpty }),
 ]);
 
 const stepSchema = z.looseObject({
@@ -211,6 +212,8 @@ function toTransfer(raw: z.infer<typeof transferSchema>): Transfer {
       return { ...base, from: 'header', header: raw.header };
     case 'status':
       return { ...base, from: 'status' };
+    case 'cookie':
+      return { ...base, from: 'cookie', cookie: raw.cookie };
   }
 }
 
@@ -223,6 +226,7 @@ function transferDocument(transfer: Transfer): Record<string, unknown> {
     expression: transfer.from === 'body' ? transfer.expression : undefined,
     namespaces: transfer.from === 'body' ? transfer.namespaces : undefined,
     header: transfer.from === 'header' ? transfer.header : undefined,
+    cookie: transfer.from === 'cookie' ? transfer.cookie : undefined,
     secret: transfer.secret === true ? true : undefined,
     optional: transfer.optional === true ? true : undefined,
   });

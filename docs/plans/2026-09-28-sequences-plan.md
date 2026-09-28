@@ -128,28 +128,35 @@ established by reading that code (ADR-0003, update of 2026-09-28) rather than by
 ## Task 5 — Engine: transfers and `runSequence`
 
 **Files**
-- `packages/engine/src/sequence/{transfer,run}.ts`.
-- `run/select.ts`: `findSelectedRequest(project, requestId)`.
-- `assert/match.ts`: move `firstText` into a shared helper.
+- `packages/engine/src/sequence/{transfer,run}.ts`, exported from the engine root.
+- `run/select.ts`: `findStepRequest(project, requestId)` returns one of:
+  - `found`, with the `SelectedRequest`;
+  - `missing`;
+  - `unsupported`, with a reason (WebSocket, a streaming gRPC call, orphaned).
+- `assert/match.ts`: `firstText` is exported and shared with transfers.
 - Tests: `packages/engine/test/unit/sequence/{transfer,run}.test.ts`, with a fake `SequenceStepSender`.
 
 **Interfaces:** exactly as in the spec's "Engine surface".
 
 **Tests**
 - Each transfer source.
-- Default namespaces.
+- XML with default namespaces; JSON read with XPath.
 - `optional`, and missing → `sequence-transfer-missing`.
+- A wrong body kind or an expression that does not compile → `sequence-transfer-failed`.
 - The 64 KiB cap.
-- Overwrite.
-- A secret value is passed to `onSecretValue` and left out of `value`.
-- A value for which `containsKnownSecret` answers true is treated as secret.
+- A secret value, and one for which `containsKnownSecret` answers true:
+  - is passed to `onSecretValue`;
+  - is absent from the whole result;
+  - still reaches the next step.
 - Outcomes:
+  - the request's own assertions first, then `requestAssertions: false`;
   - stop-on-failure on and off;
   - a disabled step;
-  - `requestAssertions: false`;
-  - a missing request;
-  - a WebSocket or streaming step → `sequence-step-unsupported`;
-  - abort mid-run → the rest `skipped`.
+  - a missing, a WebSocket and a streaming step;
+  - a throwing sender;
+  - abort mid-run → the rest `skipped` as `cancelled`.
+- The step timeout reaches the sender.
+- A transfer named `__proto__`.
 - The scope passed to step *n* holds exactly the values set by steps before it.
 
 ## Task 6 — CLI: `--sequence`
@@ -157,7 +164,7 @@ established by reading that code (ADR-0003, update of 2026-09-28) rather than by
 **Files**
 - `packages/cli/src/args.ts`: a repeatable `--sequence`. Combining it with selectors is a `UsageError`.
 - `commands/run.ts`: select the sequences, then build a sender from `prepareSend` plus a new `sendPrepared`,
-  factored out of `run/run.ts` `runOne`. Each sequence run gets a fresh in-memory cookie jar.
+  factored out of `run/run.ts` `runOne`. There is no cookie jar: a cookie travels only by a `cookie` transfer.
   `containsKnownSecret` answers from the env-secret values and the OAuth2 tokens resolved so far.
 - `run/prepare.ts`: `RunContext.sequence` is merged into the scopes as `sequence`.
 - Reporters: steps as `RequestResult`s with `group = sequence name`, plus the optional `sequence` and `transfers`

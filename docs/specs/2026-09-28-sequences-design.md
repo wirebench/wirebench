@@ -123,7 +123,8 @@ type Transfer =
   | { name: string; from: 'body'; language: 'xpath' | 'xquery' | 'jsonpath'; expression: string;
       namespaces?: Record<string, string>; secret?: boolean; optional?: boolean }
   | { name: string; from: 'header'; header: string; secret?: boolean; optional?: boolean }
-  | { name: string; from: 'status'; secret?: boolean; optional?: boolean };
+  | { name: string; from: 'status'; secret?: boolean; optional?: boolean }
+  | { name: string; from: 'cookie'; cookie: string; secret?: boolean; optional?: boolean };
 ```
 
 - `name` matches `^[A-Za-z_][A-Za-z0-9_.-]{0,63}$`. A later transfer with the same name overwrites the earlier value.
@@ -133,6 +134,8 @@ type Transfer =
 - `header` takes the first value of the named header (the name is case-insensitive). For gRPC, response metadata
   counts as headers and trailers are searched after them.
 - `status` is the HTTP status for SOAP and REST, and the numeric gRPC status for gRPC.
+- `cookie` takes the value of the named cookie from the response's `Set-Cookie` headers. The last one of that name
+  wins, and the attributes are not part of the value.
 - A transfer that finds nothing fails the step with `sequence-transfer-missing`, unless it is `optional`. An
   optional transfer that finds nothing leaves the name unset.
 - Transfers run after the response arrives, whether the assertions pass or not. A value lifted from a failed
@@ -185,42 +188,52 @@ evaluated even after one fails, as in the runner. A step with no assertions at a
 - `stopOnFailure` (default on) skips the steps after the first failed or errored one.
 - Every step send is bounded by the request's timeout, or by `settings.stepTimeoutMs` when set. The run has one
   `AbortSignal`: Cancel in the desktop and SIGINT in the CLI abort the step in flight and skip the rest.
-- **Cookies.** The desktop uses its session jar, as a single send does. The CLI keeps one in-memory jar per
-  sequence run, built with `rest/cookies.ts`, and discards it at the end, so a login step's cookie reaches the next
-  step. The jar is never written anywhere.
+- **Cookies are transferred, never carried.** Wirebench keeps no shared cookie jar, on purpose: one request's send
+  depending on another's is what makes a saved request stop being reproducible (`rest/cookies.ts`). A sequence does
+  not add one, in the desktop or in the CLI. A step that needs a login's cookie takes it with a `cookie` transfer and
+  sends it as `Cookie: sid=${#Sequence#sid}`, where the file shows it and ADR-0015's guards apply.
 
 ### Engine surface
 
-A new engine module, `@wirebench/engine/sequence`, holds the model, the schema, loading and serialising, and the loop.
-Sending stays with the host, because the desktop and the CLI send differently: the desktop has the keychain, the
-browser OAuth2 flow, its session cookie jar and History, while the CLI has environment-variable secrets and headless
-OAuth2.
+The engine's `sequence/` module holds the model, the file format, loading, transfers and the loop, exported from the
+engine root (the renderer reads sequences through the IPC wire types). Sending stays with the host, because the
+desktop and the CLI send differently: the desktop has the keychain, the browser OAuth2 flow and History, while the CLI has environment-variable secrets and headless OAuth2.
 
 ```ts
 interface Sequence { id; name; slug; order; description?; settings: SequenceSettings; steps: SequenceStep[] }
-interface SequenceStep { id; name?; requestId; enabled; requestAssertions; transfers: Transfer[]; assertions: Assertion[] }
+interface SequenceStep { id; name?; requestId; enabled; requestAssertions; transfers: Transfer[];
+                         assertions: StepAssertion[] }
+
+interface ResolvedStep { index; step: SequenceStep; selected: SelectedRequest; timeoutMs? }
 
 /** What a host does for one step: send the request with `sequenceScope` added, and describe the response. */
 type SequenceStepSender = (step: ResolvedStep, sequenceScope: PropertyMap, signal: AbortSignal)
-  => Promise<{ subject: AssertionSubject; origin: string } | { error: { code: string; message: string } }>;
+  => Promise<{ subject: AssertionSubject; origin?: string } | { error: { code: string; message: string } }>;
 
 function runSequence(sequence: Sequence, project: Project, send: SequenceStepSender,
-  options: { signal: AbortSignal; onStepDone?: (r: SequenceStepResult) => void;
-             onSecretValue?: (value: string) => void;
-             containsKnownSecret?: (value: string) => boolean }): Promise<SequenceRunResult>;
+  options?: { signal?: AbortSignal; onStepDone?: (r: SequenceStepResult) => void;
+              onSecretValue?: (value: string) => void;
+              containsKnownSecret?: (value: string) => boolean; now?: () => Date }): Promise<SequenceRunResult>;
 
 interface TransferResult { name; outcome: 'set' | 'missing' | 'errored'; secret: boolean; value?: string; message? }
-interface SequenceStepResult { stepId; requestId; name; protocol?: 'soap' | 'rest' | 'grpc'; outcome; status?;
-  durationMs?; assertions: AssertionResult[]; transfers: TransferResult[]; error?: { code; message } }
-interface SequenceRunResult { sequenceId; name; startedAt; environment?; outcome; steps: SequenceStepResult[] }
+interface SequenceStepResult { index; stepId; requestId; name; protocol?: 'soap' | 'rest' | 'grpc'; outcome;
+  status?; durationMs?; origin?; assertions: AssertionResult[]; transfers: TransferResult[];
+  error?: { code; message }; skipped?: 'disabled' | 'after-failure' | 'cancelled' }
+interface SequenceRunResult { sequenceId; name; startedAt; outcome; steps: SequenceStepResult[] }
 ```
 
-- `ResolvedStep` is the runner's `SelectedRequest` for the step's request id. A new `findSelectedRequest(project, id)`
-  in `run/select.ts` finds it by walking the same candidates `selectRequests` walks.
+- `findStepRequest(project, id)` in `run/select.ts` resolves a step's request among the candidates `selectRequests`
+  walks, with the same `SelectedRequest` context. A request that exists but cannot run says why:
+  - a WebSocket request, a streaming gRPC call, or a request orphaned by its contract is
+    `sequence-step-unsupported`;
+  - an id that exists nowhere is `sequence-step-missing-request`.
+- `runSequence` never throws. A throwing sender becomes an errored step with the error's code.
+- The values are held in a `Map` and handed to the sender as a fresh object each step. A transfer may therefore be
+  named `__proto__` or `constructor` and stays an ordinary value.
+- A body transfer that cannot run is `sequence-transfer-failed`: a JSONPath on a non-JSON body, or an expression
+  that does not compile or times out.
 - `TransferResult.value` is left out when the value is secret. See [Masking](#masking).
-- `Project` gains `sequences: Sequence[]`. `projectFiles()` writes `sequences/<slug>.sequence.yaml`,
-  `listManagedFiles` lists `sequences/*.sequence.yaml` so a deleted sequence's file is removed, and
-  `isManagedPath`/`MANAGED_TOP_DIRS` add the folder so an external edit prompts a reload.
+- A run's `outcome` is the worst of its steps' outcomes. A run whose steps were all skipped is `skipped`.
 
 ## CLI
 
@@ -267,7 +280,7 @@ wirebench run <project> --sequence "Checkout flow" [--sequence …] [--env stagi
   - A run's results stay in the tab for the session and are not persisted.
 - **Sends are ordinary sends.** Each step goes through the protocol's existing main-process send path
   (`sendAndRecordHistory`, `sendRestRequest`, `sendGrpcRequest`), with the Sequence scope added. It therefore gets
-  the same auth, cookies, TLS, proxy, HTTP Log row and History entry as a single send.
+  the same auth, TLS, proxy, HTTP Log row and History entry as a single send.
   - Its History entry is tagged `sequence:<sequenceId>` and `run:<runId>`, using the `tags` field every `record*`
     input already accepts. History search then finds a run's steps.
   - REST, gRPC and SOAP each resolve their scopes differently today, so each path gains an optional
@@ -439,6 +452,7 @@ the desktop, where sequence assertions run in the main process, it would freeze 
   - `sequence-step-missing-request`
   - `sequence-step-unsupported` (a WebSocket or streaming gRPC request)
   - `sequence-transfer-missing`
+  - `sequence-transfer-failed`
   - `sequence-value-too-large`
   - `sequence-value-invalid`
   - `sequence-origin-from-response`

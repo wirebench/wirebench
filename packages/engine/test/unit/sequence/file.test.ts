@@ -21,6 +21,7 @@ function checkout(): Sequence {
           { name: 'token', from: 'body', language: 'jsonpath', expression: '$.access_token', secret: true },
           { name: 'session', from: 'header', header: 'X-Session-Id', optional: true },
           { name: 'code', from: 'status' },
+          { name: 'sid', from: 'cookie', cookie: 'sid' },
         ],
         assertions: [
           { type: 'status', equals: 200 },
