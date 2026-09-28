@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
-import type { GitCli } from '@wirebench/engine';
+import type { GitCli, HooksMeta } from '@wirebench/engine';
 import type { ServerConfig } from './config.js';
 import type { RepoStore } from './repos/repo-store.js';
 
@@ -114,6 +114,7 @@ export class MetaRegistry {
   private readonly methods = { local: false, oidc: false };
   private readonly capabilityNames = new Set<string>();
   private oidcName: string | undefined;
+  private hooksMeta: HooksMeta | undefined;
 
   /** Which sign-in methods the server offers; identity sets them when it registers. Reporting them authorises nothing. */
   setSignInMethods(update: { local?: boolean; oidc?: boolean; oidcDisplayName?: string }): void {
@@ -129,6 +130,13 @@ export class MetaRegistry {
   }
   capabilities(): string[] {
     return [...this.capabilityNames].sort();
+  }
+  /** webhook-capture §3.7: set once by the module, `enabled: false` included; absent without the module. */
+  setHooks(meta: HooksMeta): void {
+    this.hooksMeta = { ...meta };
+  }
+  hooks(): HooksMeta | undefined {
+    return this.hooksMeta === undefined ? undefined : { ...this.hooksMeta };
   }
 }
 

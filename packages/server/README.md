@@ -29,6 +29,13 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` | no | `30` | A device token unused for this long expires. |
 | `WIREBENCH_SERVER_TOKEN_MAX_DAYS` | no | `180` | A device token older than this expires whatever its use. |
 | `WIREBENCH_SERVER_INVITATION_DAYS` | no | `7` | How long an invitation or password-reset link stays valid. |
+| `WIREBENCH_SERVER_HOOKS_ENABLED` | no | `true` | Serve catch URLs: the public `/hooks/…` route and the webhook management API. |
+| `WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB` | no | `1` | How much of a caught request body is stored, in MiB (1–32). A longer body is cut and marked truncated. |
+| `WIREBENCH_SERVER_HOOKS_KEEP` | no | `500` | Captures kept per catch URL (1–10000); the oldest go first. |
+| `WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS` | no | `7` | Captures older than this many days are deleted (1–365). |
+| `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` | no | `10` | Requests per second a catch URL accepts once its burst is spent (1–1000); past it, `429`. |
+| `WIREBENCH_SERVER_HOOKS_BURST` | no | `50` | Requests a catch URL accepts at once before the rate applies (1–10000). |
+| `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` | no | `50` | Catch URLs a workspace may hold (1–1000). |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
