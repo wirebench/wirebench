@@ -199,3 +199,54 @@ The plan checks these against Electron's `userData` for the app name.
 - `docs/security.md`: the gates, redaction, localhost-only HTTP with a bearer token, and the fact
   that no model runs in Wirebench.
 - `CHANGELOG.md`, and the item 4 status in `docs/roadmap.md`.
+
+## Revisions after planning
+
+Checked against the code while writing `docs/plans/2026-09-29-wirebench-mcp-server-plan.md`. The
+decisions above stand; these correct facts.
+
+- **R1 — SSE is not an item kind.** Server-sent events are a response mode of a REST request, not a
+  kind of item, so there is no SSE item to refuse: a REST request is sent as `wirebench run` sends it
+  (which does not stream). `send` refuses gRPC and WebSocket items with `unsupported-kind`.
+  `operations` lists SOAP operations and REST endpoints only; gRPC and WebSocket items are not listed.
+- **R2 — `wirebench run` has no `--project`.** It takes a required positional `<path>` and never
+  defaults to the current directory, and the parser is `node:util` `parseArgs` in strict mode, not a
+  hand-rolled one. The new verbs' `--project <dir>` defaulting to the current directory stands as a
+  decision of its own, not as `run`'s behaviour.
+- **R3 — `userData` is the packaged product name.** The desktop reads `app.getPath('userData')`
+  before it calls `app.setName('Wirebench')`, so the folder comes from electron-builder's
+  `productName`, `Wirebench`, in a packaged build: the paths in §3 hold. A development build uses
+  `<appData>/@wirebench/desktop`, and the e2e suite sets `WIREBENCH_USER_DATA_DIR`; `--history-dir`
+  reaches either. `--history-dir` names the folder that holds `<projectId>.jsonl` (the desktop's
+  `<userData>/history`), not `userData` itself.
+- **R4 — Import into a project is not an engine function.** `importDefinition` and `importOpenApi`
+  return a parsed result; placing it in the project (unique slug, cached definition, endpoints,
+  `Request 1` per operation) is the desktop's `project-host.ts` (`addInterface`, `addApi`). The
+  `import` op does that placement in the CLI, for WSDL and OpenAPI only, and maps no webhook group.
+- **R5 — A run keeps no response for a passing request.** `RequestResult` carries headers and body
+  only for a failed or errored request, and `SentRequest.raw` holds only the raw bytes. The engine
+  gains `SentRequest.exchange` (the SOAP or REST exchange) and `RunOptions.onSent`, so `send` can
+  report a response and build a History entry from a send `runRequests` made. The History entry is
+  built in the CLI, mirroring the desktop's `buildHistoryEntry` and `buildRestHistoryEntry`; a send
+  that got no response writes no entry.
+- **R6 — `validateMessage` is SOAP only.** A REST body is checked with the contract check
+  (`checkRestResponse`, run on its worker through `createRestContractChecker`), which reports a JSON
+  Pointer and a keyword, not a line and column, and checks responses only.
+- **R7 — Entry points under other names.** The sample generator the ops use is
+  `buildSampleRequest` (SOAP) and `sampleFromSchema` (REST), not `generateRequest`; queries run
+  through `evaluateWithTimeout`, the worker-backed form of `evaluate`/`evaluateJson`; the snapshot
+  diff is exported from the `@wirebench/engine/snapshot` subpath; `loadOpenApiDocument` was not
+  exported from the engine's index, and the plan exports it.
+- **R8 — History's lock and reread use `node:fs`.** The engine's `FsLike` has no exclusive create and
+  no modification time, so the lock (`open(…, 'wx')`) and the freshness check use `node:fs`
+  directly. The check compares the inode as well as the size and mtime, since an atomic rewrite
+  replaces the file.
+- **R9 — What the MCP SDK does.** `@modelcontextprotocol/sdk` 1.31.0 accepts zod `^3.25 || ^4`, so the
+  engine's zod 4 schemas serve as `inputSchema` directly. `registerTool` validates arguments before
+  the handler runs and answers a mismatch with its own `isError` text, not `{ code, message }`. One
+  streamable HTTP transport serves one session, so the server keeps a transport and an `McpServer`
+  per session. The transport's `allowedOrigins` option is deprecated, so the `Origin` check is the
+  server's own, made before the token.
+- **R10 — There is no History change event yet.** The desktop has no event for "History changed on
+  disk"; the plan adds `history.changed { projectId }`, sent after the service reloads a file another
+  process wrote.
