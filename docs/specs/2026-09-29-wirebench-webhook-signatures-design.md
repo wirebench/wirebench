@@ -344,3 +344,19 @@ export type WebhookSigning =
 ## 8. Later modules
 
 - `callback-assertion`: can assert that a capture it waited for is `verified`.
+
+## Revisions after planning
+
+- **R1 — redaction.** No `*signature*` header redaction exists today and none is added: history, the
+  HTTP log and cURL export show the signing headers as sent; a resend replays them as recorded, without signing again.
+- **R2 — no stream bodies.** Webhook items have no stream body kind, so `webhook-signing-body` is
+  dropped.
+- **R3 — error codes.** Server problem types carry the `hooks-` prefix (`hooks-signature-key-unset`,
+  `hooks-signature-secret-required`); *Reject unverified* without a scheme is `invalid-request`.
+- **R4 — migrations.** `0005` lives in `migrations/webhook-signatures/`; a server module's
+  `migrationsDir` may be a list.
+- **R5 — viewer.** The capture viewer has no overview tab; the Signature block goes in *Details*.
+- **R6 — hint.** The hint (last 4 characters) is kept only for secrets of 8+ characters and shown to
+  editors and admins only.
+- **R7 — CI-only secret.** A node with only a CI name signs from `WIREBENCH_SECRET_<ENV>`; the desktop
+  reads the keychain `secretRef` only.
