@@ -1,8 +1,10 @@
 import { createRequire } from 'node:module';
+import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
 import { ExitCode } from './exit-codes.js';
 import { HELP_TEXT, UsageError, parseCliArgs } from './args.js';
+import { VERB_HELP } from './args-ops.js';
 
 /** The I/O surface `main` writes through, so tests can capture output without touching the real process. */
 export interface CliIo {
@@ -23,7 +25,8 @@ export async function main(
 
     switch (args.command) {
       case 'help': {
-        io.stdout.write(`${HELP_TEXT}\n`);
+        const topic = args.topic !== undefined ? VERB_HELP[args.topic] : undefined;
+        io.stdout.write(`${topic ?? HELP_TEXT}\n`);
         return ExitCode.Ok;
       }
       case 'version': {
@@ -36,6 +39,9 @@ export async function main(
       }
       case 'secrets-list': {
         return await secretsListCommand(args, io);
+      }
+      case 'op': {
+        return await opCommand(args, io);
       }
     }
   } catch (error) {

@@ -94,3 +94,77 @@ describe('parseCliArgs --sequence', () => {
     expect(() => parseCliArgs(['secrets', 'list', 'p', 'demo/ok', '--sequence', 'a'])).toThrow(UsageError);
   });
 });
+
+describe('parseCliArgs — the op verbs', () => {
+  it('parses each verb into its op and input', () => {
+    expect(parseCliArgs(['import', 'a.wsdl', '--name', 'Calc', '--project', 'p'])).toEqual({
+      command: 'op',
+      op: 'import',
+      project: 'p',
+      json: false,
+      input: { source: 'a.wsdl', name: 'Calc' },
+    });
+    expect(parseCliArgs(['operations', 'Pets', '--json'])).toMatchObject({
+      op: 'operations',
+      project: '.',
+      json: true,
+      input: { container: 'Pets' },
+    });
+    expect(parseCliArgs(['generate', 'Calc/Add', '--optional', 'all'])).toMatchObject({
+      op: 'generate',
+      input: { operation: 'Calc/Add', optional: 'all' },
+    });
+    expect(
+      parseCliArgs(['send', 'Calc/Add/Request 1', '-e', 'local', '--body-file', 'b.xml', '--history-dir', 'h']),
+    ).toEqual({
+      command: 'op',
+      op: 'send',
+      project: '.',
+      historyDir: 'h',
+      json: false,
+      input: { item: 'Calc/Add/Request 1', environment: 'local' },
+      bodyFile: 'b.xml',
+    });
+    expect(parseCliArgs(['validate', 'x.xml', '--operation', 'Calc/Add', '--direction', 'request'])).toMatchObject({
+      op: 'validate',
+      source: 'x.xml',
+      input: { operation: 'Calc/Add', direction: 'request' },
+    });
+    expect(parseCliArgs(['query', '//a', 'x.xml', '--namespace', 'c=urn:c', '--namespace', 'd=urn:d'])).toMatchObject({
+      op: 'query',
+      source: 'x.xml',
+      input: { expression: '//a', namespaces: { c: 'urn:c', d: 'urn:d' } },
+    });
+    expect(parseCliArgs(['history', 'list', '--item', 'Pets', '--limit', '5'])).toMatchObject({
+      op: 'history_list',
+      input: { item: 'Pets', limit: 5 },
+    });
+    expect(parseCliArgs(['history', 'diff', 'a', 'b', '--ignore', '/0/seen'])).toMatchObject({
+      op: 'history_diff',
+      input: { from: 'a', to: 'b', ignore: ['/0/seen'] },
+    });
+  });
+
+  it('gives each verb its own help', () => {
+    expect(parseCliArgs(['send', '--help'])).toEqual({ command: 'help', topic: 'send' });
+    expect(parseCliArgs(['history', 'diff', '--help'])).toEqual({ command: 'help', topic: 'history' });
+    expect(parseCliArgs(['--help'])).toEqual({ command: 'help' });
+  });
+
+  it.each([
+    [['import']],
+    [['import', 'a', 'b']],
+    [['generate']],
+    [['send', 'x', '--body', 'a', '--body-file', 'b']],
+    [['query', '//a']],
+    [['history']],
+    [['history', 'show']],
+    [['history', 'list', '--limit', 'ten']],
+    [['query', '//a', 'x', '--namespace', 'nouri']],
+    [['operations', '--name', 'x']],
+    [['run', './p', '--json']],
+    [['secrets', 'list', './p', '--bail']],
+  ])('rejects %j as a usage error', (argv) => {
+    expect(() => parseCliArgs(argv)).toThrow(UsageError);
+  });
+});

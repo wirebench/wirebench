@@ -1,0 +1,171 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
+import { afterEach, describe, expect, it } from 'vitest';
+import { ExitCode } from '../../src/exit-codes.js';
+import { formatHuman } from '../../src/commands/ops-output.js';
+import { main } from '../../src/main.js';
+import {
+  addEnvironment,
+  CALCULATOR_WSDL,
+  emptyProject,
+  removeTempDirs,
+  SOAP_ITEM,
+  soapProject,
+  startServer,
+  tempDir,
+  updateProject,
+} from './ops/helpers.js';
+import type { TestServer } from './ops/helpers.js';
+
+function sink(): { stream: PassThrough; text: () => string } {
+  const stream = new PassThrough();
+  const chunks: Buffer[] = [];
+  stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+  return { stream, text: () => Buffer.concat(chunks).toString('utf8') };
+}
+
+async function cli(argv: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  const stdout = sink();
+  const stderr = sink();
+  const code = await main(argv, { stdout: stdout.stream, stderr: stderr.stream, env: {} });
+  return { code, stdout: stdout.text(), stderr: stderr.text() };
+}
+
+const envelope = (result: string): string =>
+  '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
+  `<c:AddResponse xmlns:c="urn:wirebench:calculator"><c:result>${result}</c:result></c:AddResponse>` +
+  '</soapenv:Body></soapenv:Envelope>';
+
+let server: TestServer | undefined;
+
+afterEach(async () => {
+  await server?.close();
+  server = undefined;
+  await removeTempDirs();
+});
+
+describe('the op verbs', () => {
+  it('imports, lists and generates', async () => {
+    const fixture = await emptyProject();
+    const imported = await cli(['import', CALCULATOR_WSDL, '--project', fixture.dir]);
+    expect(imported).toMatchObject({ code: ExitCode.Ok, stderr: '' });
+    expect(imported.stdout).toContain('CalculatorService');
+
+    const listed = await cli(['operations', '--project', fixture.dir, '--json']);
+    expect(listed.code).toBe(ExitCode.Ok);
+    const parsed = JSON.parse(listed.stdout) as { operations: { ref: string }[] };
+    expect(parsed.operations.map((row) => row.ref)).toEqual(['CalculatorService/Add']);
+
+    const generated = await cli(['generate', 'CalculatorService/Add', '--project', fixture.dir]);
+    expect(generated.code).toBe(ExitCode.Ok);
+    expect(generated.stdout).toContain('SOAPAction');
+    expect(generated.stdout).toContain('Envelope');
+  });
+
+  it('sends, exits 1 on a failed assertion, and lists the send in History', async () => {
+    const fixture = await soapProject();
+    server = await startServer(() => ({ status: 500, headers: { 'Content-Type': 'text/xml' }, body: envelope('5') }));
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: server.url });
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      interfaces: project.interfaces.map((iface) => ({
+        ...iface,
+        operations: iface.operations.map((operation) => ({
+          ...operation,
+          requests: operation.requests.map((request) => ({
+            ...request,
+            assertions: [{ type: 'status', equals: 200 }],
+          })),
+        })),
+      })),
+    }));
+    const where = ['--project', fixture.dir, '--history-dir', fixture.historyDir];
+
+    const sent = await cli(['send', SOAP_ITEM, '-e', 'local', ...where]);
+    expect(sent.code).toBe(ExitCode.AssertionFailed);
+    expect(sent.stdout).toContain('FAILED');
+    expect(sent.stdout).toContain('500');
+
+    const listed = await cli(['history', 'list', ...where]);
+    expect(listed.code).toBe(ExitCode.Ok);
+    expect(listed.stdout).toContain(SOAP_ITEM);
+  });
+
+  it('validates and queries a file, exiting 1 for an invalid message', async () => {
+    const fixture = await soapProject();
+    const dir = await tempDir();
+    const good = join(dir, 'good.xml');
+    const bad = join(dir, 'bad.xml');
+    await writeFile(good, envelope('5'));
+    await writeFile(bad, envelope('five'));
+    const project = ['--project', fixture.dir];
+
+    expect(await cli(['validate', good, '--operation', 'CalculatorService/Add', ...project])).toMatchObject({
+      code: ExitCode.Ok,
+    });
+    const invalid = await cli(['validate', bad, '--operation', 'CalculatorService/Add', ...project]);
+    expect(invalid.code).toBe(ExitCode.AssertionFailed);
+    expect(invalid.stdout).toContain('invalid');
+
+    expect(await cli(['query', 'string(//*:result)', good, ...project])).toMatchObject({
+      code: ExitCode.Ok,
+      stdout: '5\n',
+    });
+  });
+
+  it('exits 2 with the code on stderr for a refused call, and prints verb help', async () => {
+    const fixture = await soapProject();
+    const missing = await cli(['send', 'Nope', '--project', fixture.dir, '--history-dir', fixture.historyDir]);
+    expect(missing).toMatchObject({ code: ExitCode.Usage, stdout: '' });
+    expect(missing.stderr).toContain('item-not-found:');
+
+    const help = await cli(['send', '--help']);
+    expect(help.code).toBe(ExitCode.Ok);
+    expect(help.stdout).toContain('wirebench send <item>');
+    expect((await cli(['--help'])).stdout).toContain('wirebench history list');
+  });
+});
+
+describe('the op verbs, --json and the human text', () => {
+  it('prints the op result exactly with --json, and a person-readable text without it', async () => {
+    const fixture = await soapProject();
+    const json = await cli([
+      'history',
+      'list',
+      '--project',
+      fixture.dir,
+      '--history-dir',
+      fixture.historyDir,
+      '--json',
+    ]);
+    expect(json.code).toBe(ExitCode.Ok);
+    expect(JSON.parse(json.stdout)).toEqual({ entries: [], total: 0 });
+    const text = await cli(['history', 'list', '--project', fixture.dir, '--history-dir', fixture.historyDir]);
+    expect(text.stdout).toBe('no History entries\n');
+  });
+
+  it('says when output was cut, for query and history diff', () => {
+    expect(formatHuman('query', { language: 'xpath', results: ['a'], truncated: true })).toBe(
+      'a\n(output truncated: results were left out or cut at a size cap)\n',
+    );
+    expect(formatHuman('query', { language: 'xpath', results: ['a'], truncated: false })).toBe('a\n');
+    const diff = {
+      from: { id: 'a', at: 't', item: 'x' },
+      to: { id: 'b', at: 't', item: 'x' },
+      format: 'json',
+      changes: [{ kind: 'changed', path: '/n', expected: '1', actual: '2' }],
+      ignored: 0,
+      truncated: true,
+    };
+    expect(formatHuman('history_diff', diff)).toBe('json: 1 changes\n~ /n: 1 -> 2\n(output cut at 256 KiB)\n');
+    expect(formatHuman('history_diff', { ...diff, truncated: false })).not.toContain('cut at');
+  });
+
+  it('refuses a flag the verb does not take, as a usage error', async () => {
+    const fixture = await soapProject();
+    const foreign = await cli(['operations', '--project', fixture.dir, '--body', 'x']);
+    expect(foreign).toMatchObject({ code: ExitCode.Usage, stdout: '' });
+    expect(foreign.stderr).toContain('--body does not apply to wirebench operations');
+  });
+});
