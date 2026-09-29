@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { mcpCommand } from './commands/mcp.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
@@ -42,6 +43,9 @@ export async function main(
       }
       case 'op': {
         return await opCommand(args, io);
+      }
+      case 'mcp': {
+        return await mcpCommand(args, io);
       }
     }
   } catch (error) {

@@ -183,3 +183,41 @@ describe('parseCliArgs — the op verbs', () => {
     expect(() => parseCliArgs(argv)).toThrow(UsageError);
   });
 });
+
+describe('parseCliArgs — mcp', () => {
+  it('parses the gates, the environment list and the History folder', () => {
+    expect(
+      parseCliArgs([
+        'mcp',
+        '--project',
+        'p',
+        '--allow-write',
+        '--allow-send',
+        '-e',
+        'local, staging',
+        '--history-dir',
+        'h',
+      ]),
+    ).toEqual({
+      command: 'mcp',
+      project: 'p',
+      historyDir: 'h',
+      allowWrite: true,
+      allowSend: true,
+      environments: ['local', 'staging'],
+    });
+    expect(parseCliArgs(['mcp'])).toEqual({ command: 'mcp', project: '.', allowWrite: false, allowSend: false });
+    expect(parseCliArgs(['mcp', '--help'])).toEqual({ command: 'help', topic: 'mcp' });
+  });
+
+  it.each([
+    [['mcp', 'extra']],
+    [['mcp', '--json']],
+    [['mcp', '-e', ' , ']],
+    [['send', 'x', '--allow-send']],
+    [['run', 'p', '--allow-send']],
+    [['run', 'p', '--allow-write']],
+  ])('rejects %j as a usage error', (argv) => {
+    expect(() => parseCliArgs(argv)).toThrow(UsageError);
+  });
+});

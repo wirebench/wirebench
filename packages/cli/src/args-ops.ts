@@ -38,6 +38,8 @@ export const OP_OPTIONS = {
   limit: { type: 'string' },
   ignore: { type: 'string', multiple: true },
   'history-dir': { type: 'string' },
+  'allow-write': { type: 'boolean' },
+  'allow-send': { type: 'boolean' },
 } as const;
 
 export type OptionValues = Readonly<Record<string, string | boolean | readonly string[] | undefined>>;
@@ -61,6 +63,18 @@ const USAGE: Readonly<Record<OpName, string>> = {
 const OP_ONLY_FLAGS: readonly string[] = Object.keys(OP_OPTIONS);
 
 const COMMON = ['project', 'json'] as const;
+
+export interface McpArgs {
+  readonly command: 'mcp';
+  readonly project: string;
+  readonly historyDir?: string;
+  readonly allowWrite: boolean;
+  readonly allowSend: boolean;
+  /** `--env a,b`: the environments `send` may use. Absent: any. */
+  readonly environments?: readonly string[];
+}
+
+const MCP_FLAGS = ['project', 'allow-write', 'allow-send', 'env', 'history-dir'];
 
 const VERB_FLAGS: Readonly<Record<OpName, readonly string[]>> = {
   import: [...COMMON, 'name'],
@@ -92,6 +106,8 @@ wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [
 wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <to-id> [--ignore <path>]…
                        The desktop's History for the project: recent sends, or a semantic diff of two
                        responses.
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>]
+                       Serves these capabilities as MCP tools over stdio.
                        Every verb: --project <dir> (default: the current directory), --json (the result
                        exactly), --history-dir <dir> (default: the desktop's History folder).
                        Exit 0; 1 for a failed assertion or an invalid message; 2 for a refused call;
@@ -128,6 +144,14 @@ Exit 1 when the message is invalid.`,
 
 <history-id|file>      A file when one exists at that path, else a History id.
 XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
+  mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>]
+
+Serves the project's tools to an MCP client over stdio: import, operations, generate, send,
+validate, query, history_list, history_diff. stdout carries only protocol frames.
+--allow-write          Let import add definitions to the project. Off by default.
+--allow-send           Let send make requests. Off by default.
+-e, --env <a,b>        The environments send may use. Default: any.
+Secrets come from WIREBENCH_SECRET_<NAME> variables in the server's environment.`,
   history: `${USAGE.history_list} [--project <dir>] [--history-dir <dir>] [--json]
 ${USAGE.history_diff} [--project <dir>] [--history-dir <dir>] [--json]
 
@@ -312,4 +336,28 @@ export function parseOpVerb(word: string, rest: readonly string[], values: Optio
       return { ...common, input: { from, to, ...(ignore.length > 0 ? { ignore } : {}) } };
     }
   }
+}
+
+/** @throws UsageError */
+export function parseMcp(rest: readonly string[], values: OptionValues): McpArgs {
+  refuseForeign(values, MCP_FLAGS, 'wirebench mcp');
+  if (rest.length > 0) {
+    throw new UsageError('wirebench mcp takes no arguments; the project is --project <dir>');
+  }
+  const environments = str(values, 'env')
+    ?.split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  if (environments?.length === 0) {
+    throw new UsageError('--env needs at least one environment name');
+  }
+  const historyDir = str(values, 'history-dir');
+  return {
+    command: 'mcp',
+    project: str(values, 'project') ?? '.',
+    ...(historyDir !== undefined ? { historyDir } : {}),
+    allowWrite: values['allow-write'] === true,
+    allowSend: values['allow-send'] === true,
+    ...(environments !== undefined ? { environments } : {}),
+  };
 }

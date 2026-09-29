@@ -1,10 +1,10 @@
 import { parseArgs } from 'node:util';
-import { isOpVerb, OP_OPTIONS, OPS_HELP_TEXT, parseOpVerb, refuseOpOnly, VERB_HELP } from './args-ops.js';
-import type { OpArgs } from './args-ops.js';
+import { isOpVerb, OP_OPTIONS, OPS_HELP_TEXT, parseMcp, parseOpVerb, refuseOpOnly, VERB_HELP } from './args-ops.js';
+import type { McpArgs, OpArgs } from './args-ops.js';
 import { UsageError } from './usage-error.js';
 
 export { UsageError };
-export type { OpArgs, OpName } from './args-ops.js';
+export type { McpArgs, OpArgs, OpName } from './args-ops.js';
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
 export const HELP_TEXT = `wirebench run <path> [selector…] [options]
@@ -77,6 +77,7 @@ export type ParsedArgs =
   | RunArgs
   | SecretsListArgs
   | OpArgs
+  | McpArgs
   | { readonly command: 'help'; readonly topic?: string }
   | { readonly command: 'version' };
 
@@ -231,6 +232,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       ...(values.env !== undefined ? { env: values.env } : {}),
       vars: parseVars(values.var),
     };
+  }
+
+  if (word === 'mcp') {
+    return parseMcp(rest, values);
   }
 
   if (isOpVerb(word)) {
