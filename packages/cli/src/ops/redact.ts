@@ -6,10 +6,16 @@ import { createSecretMasker, REDACTED_MARKER, redactStructuredBody, redactUrl, r
 import { maskDeep } from '../reporters/mask.js';
 import { OpsError } from './errors.js';
 
+/** Whether a body is read as XML: its content type says so, or it starts with a tag. */
+export function isXmlBody(text: string, contentType: string | undefined): boolean {
+  return contentType?.toLowerCase().includes('xml') === true || text.trimStart().startsWith('<');
+}
+
 /** A body as an op returns it: a WS-Security password or a JSON/form secret key masked by pattern. */
 export function redactBody(text: string, contentType: string | undefined): string {
-  const xml = contentType?.toLowerCase().includes('xml') === true || text.trimStart().startsWith('<');
-  return xml ? redactXml(text, { show: false }) : redactStructuredBody(text, contentType, { show: false });
+  return isXmlBody(text, contentType)
+    ? redactXml(text, { show: false })
+    : redactStructuredBody(text, contentType, { show: false });
 }
 
 /**
