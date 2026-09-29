@@ -277,10 +277,13 @@ function resendBody(text: string, saved: RestBody): RestBodyWire | undefined {
  *   `history-resend-redacted` when a redacted value has no saved row to fill
  *   it, or the marker is in the URL's path, user info or fragment, or in the body;
  *   `history-resend-truncated` when the body is History's truncated copy.
+ *
+ * A webhook item that signs is resent with signing off (webhook-signatures R1): the entry's own
+ * signing headers are replayed as recorded, never signed again.
  */
 export function restResendDraft(
   entry: HistoryEntryWire,
-  saved: Pick<RestSendResolution, 'request' | 'auth'>,
+  saved: Pick<RestSendResolution, 'request' | 'auth' | 'webhookSigning'>,
   savedOrigin: string | undefined,
 ): RestRequestPatchWire {
   const { request } = saved;
@@ -319,6 +322,7 @@ export function restResendDraft(
     ...url,
     headers,
     ...(body !== undefined ? { body } : {}),
+    ...(saved.webhookSigning !== undefined ? { signing: { mode: 'none' as const } } : {}),
   };
 }
 

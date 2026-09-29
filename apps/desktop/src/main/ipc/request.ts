@@ -73,6 +73,7 @@ import {
   type SendScripts,
 } from '../script-send.js';
 import type { RestSendResolution, WebhookUrlSource } from '../rest-send.js';
+import { webhookSignFor, withSentSigningHeaders } from '../webhook-send.js';
 import type { GrpcSendResolution } from '../grpc-send.js';
 import type { WsSendResolution } from '../ws-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
@@ -858,6 +859,7 @@ export async function sendRestRequest(
     resolved.auth.type === 'api-key' && resolved.auth.in === 'header' ? [resolved.auth.name] : undefined;
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let input: typeof resolved.input;
+  let sign: (typeof resolved.input)['sign'];
   let accessToken: string | undefined;
   let session: ScriptSession | undefined;
   let scripted: RestRequestSnapshot | undefined;
@@ -883,7 +885,15 @@ export async function sendRestRequest(
     const proxyTarget = resolved.input.baseUrl === '' ? resolved.input.request.url : resolved.input.baseUrl;
     const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
     const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
-    input = { ...resolved.input, tls: mergedTls, ...(proxy !== undefined ? { proxy } : {}) };
+    // Signing is computed by the engine over the encoded body (§5.2); here it only gets its secret,
+    // inside the prepare stage so a missing one is logged as a send that never went out.
+    sign = await webhookSignFor(resolved.webhookSigning, getSecret);
+    input = {
+      ...resolved.input,
+      tls: mergedTls,
+      ...(proxy !== undefined ? { proxy } : {}),
+      ...(sign !== undefined ? { sign } : {}),
+    };
 
     // The token is obtained here rather than inside the engine service: it needs a browser, a
     // loopback listener and a cache, none of which the engine may own. A grant that would have to
@@ -959,7 +969,10 @@ export async function sendRestRequest(
       request.requestId,
       summary.cookies.map((cookie) => withoutUndefined<Cookie>(cookie)),
     );
-    await recordRest(deps, request.requestId, resolved, summary, Date.now() - startedAt, keyParams);
+    // History keeps the signing headers as they went out, so its resend replays them (R1).
+    const recorded =
+      sign === undefined ? resolved : withSentSigningHeaders(resolved, sign.scheme, summary.http.request.headers);
+    await recordRest(deps, request.requestId, recorded, summary, Date.now() - startedAt, keyParams);
     return summary;
   } catch (error) {
     const durationMs = Date.now() - startedAt;

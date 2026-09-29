@@ -40,17 +40,16 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       // no cached exchange (an ad-hoc/failure row, which never streamed) falls back to the request's
       // current `Accept` header — the only signal there is when there is no logged exchange to ask.
       const cached = request.sendId !== undefined ? deps.service.exchanges.getRest(request.sendId) : undefined;
+      const saved = deps.request.project.restSend?.(request.requestId);
       const streaming =
         cached !== undefined
           ? cached.stream !== undefined
-          : (deps.request.project
-              .restSend?.(request.requestId)
-              ?.input.request.headers.some(
-                (header) =>
-                  header.enabled &&
-                  header.name.toLowerCase() === 'accept' &&
-                  header.value.toLowerCase().includes('text/event-stream'),
-              ) ?? false);
+          : (saved?.input.request.headers.some(
+              (header) =>
+                header.enabled &&
+                header.name.toLowerCase() === 'accept' &&
+                header.value.toLowerCase().includes('text/event-stream'),
+            ) ?? false);
       if (streaming) {
         throw new WirebenchError('rest-resend-streaming', 'Event streams resend from the editor.', {
           details: { requestId: request.requestId },
@@ -59,7 +58,13 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       return {
         protocol: 'rest' as const,
         // No live hook: nothing on screen registered this send id, so it could not be stopped.
-        exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }),
+        // A resend never signs again (webhook-signatures R1): a webhook item that signs goes out
+        // with signing off for this send only.
+        exchange: await sendRestRequest(deps.service, deps.request, {
+          sendId,
+          requestId: request.requestId,
+          ...(saved?.webhookSigning !== undefined ? { draft: { signing: { mode: 'none' as const } } } : {}),
+        }),
       };
     }
     if (request.protocol === 'grpc') {

@@ -18,6 +18,7 @@ import type {
   AuthConfig,
   BaseUrlSource,
   Cookie,
+  EffectiveSigning,
   Preferences,
   Project,
   ProxyOptions,
@@ -57,6 +58,8 @@ export interface RestSendResolution {
   readonly targetDetail?: string;
   /** The credentials that apply, still as `secretRef`s. */
   readonly auth: AuthConfig;
+  /** A webhook item's signing when it signs (webhook-signatures §5.2); its secret is read at send. */
+  readonly webhookSigning?: EffectiveSigning;
 }
 
 /** Where a webhook item's URL came from: its target, its callback URL, or the target standing in. */

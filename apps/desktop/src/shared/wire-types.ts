@@ -5743,6 +5743,21 @@ export const catchUrlResponseWireSchema = z.object({
   delayMs: z.number(),
 });
 export type CatchUrlResponseWire = z.infer<typeof catchUrlResponseWireSchema>;
+/** The engine's `SignatureFailure`, restated (webhook-signatures §3.3). */
+export const signatureFailureWireSchema = z.enum([
+  'missing-header',
+  'malformed-header',
+  'mismatch',
+  'stale-timestamp',
+  'key-error',
+]);
+export type SignatureFailureWire = z.infer<typeof signatureFailureWireSchema>;
+/** A capture's verdict; absent (or `null`) on a capture means not checked. */
+export const captureSignatureWireSchema = z.object({
+  verdict: z.enum(['verified', 'failed']),
+  reason: signatureFailureWireSchema.optional(),
+});
+export type CaptureSignatureWire = z.infer<typeof captureSignatureWireSchema>;
 export const catchUrlWireSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
@@ -5753,6 +5768,17 @@ export const catchUrlWireSchema = z.object({
   captureCount: z.number(),
   newestCaptureId: z.string().nullable(),
   createdAt: z.string(),
+  /** The scheme and only whether a secret is set; the hint only for editors (§3.4). */
+  signature: z
+    .object({
+      scheme: signatureSchemeWireSchema,
+      secret: z.object({ set: z.literal(true), hint: z.string().nullable() }),
+    })
+    .nullable()
+    .optional(),
+  rejectUnverified: z.boolean().optional(),
+  /** `false` while the server's key is unset. Absent from a server without the module. */
+  signatureAvailable: z.boolean().optional(),
 });
 export type CatchUrlWire = z.infer<typeof catchUrlWireSchema>;
 export const captureSummaryWireSchema = z.object({
@@ -5763,6 +5789,8 @@ export const captureSummaryWireSchema = z.object({
   bodySize: z.number(),
   truncated: z.boolean(),
   sourceIp: z.string(),
+  signature: captureSignatureWireSchema.nullable().optional(),
+  rejected: z.boolean().optional(),
 });
 export type CaptureSummaryWire = z.infer<typeof captureSummaryWireSchema>;
 /** One capture, decoded in main for the viewers the REST response pane already has. */
@@ -5830,6 +5858,9 @@ export const hooksUpdateRequestWireSchema = hooksRefRequestWireSchema.extend({
   name: z.string().optional(),
   enabled: z.boolean().optional(),
   response: catchUrlResponseWireSchema.partial().optional(),
+  /** `null` clears; without `secret` the stored one stays (§3.4). */
+  signature: z.object({ scheme: signatureSchemeWireSchema, secret: z.string().optional() }).nullable().optional(),
+  rejectUnverified: z.boolean().optional(),
 });
 export type HooksUpdateRequestWire = z.infer<typeof hooksUpdateRequestWireSchema>;
 /** `after: null` counts every capture: this device has seen none of them. */
