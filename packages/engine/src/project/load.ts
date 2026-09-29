@@ -400,6 +400,9 @@ async function loadBody(
 ): Promise<RestBody> {
   switch (document.kind) {
     case 'raw': {
+      // The name comes from the request file, which a pull or an import may have written: it must
+      // name a file beside the request, never one elsewhere on the machine (`../…`).
+      assertPathSegment(document.file);
       const relative = `${dir}/${document.file}`;
       const text = await readFileIfExists(fs, abs(root, relative));
       if (text === undefined) {
@@ -534,6 +537,8 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
     unclaimed.delete(fileName);
     let message = '';
     if (parsed.message !== undefined) {
+      // As a REST body file: a name beside the request, never a path out of it.
+      assertPathSegment(parsed.message);
       unclaimed.delete(parsed.message);
       const messageRelative = `${dir}/${parsed.message}`;
       const text = await readFileIfExists(fs, abs(root, messageRelative));

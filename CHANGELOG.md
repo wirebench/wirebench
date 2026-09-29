@@ -166,6 +166,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A request file can't read a file outside its project.** The body file a REST request names, and
+  the message file a gRPC request names, must now be a file beside the request, as a WebSocket
+  request's message files already had to be. A name such as `../../secret.txt` — from a pull, a shared
+  folder or an import — refuses the project with `project-path-invalid` instead of loading that file
+  into the request, where the next send would have carried it to the server.
+
 - **A `matches:` assertion can't hang a run.** Its regular expression now runs off the main thread
   with a time budget, as XPath and JSONPath already did, so a pattern that backtracks badly fails
   the assertion instead of freezing the app or the CLI.

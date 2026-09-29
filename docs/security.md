@@ -134,6 +134,14 @@ Names the user types become path segments only through `slugify`, which cannot p
 traversal segment, strips characters illegal on any supported OS, and refuses Windows device
 names. Full reasoning: [ADR-0005](adr/0005-renderer-path-safety.md).
 
+A project file is input too: it can arrive by a pull, a shared folder or an import. So a file name a
+request file records — a REST request's body file, a gRPC request's message file, a WebSocket
+request's message files — must be a single segment beside the request (`assertPathSegment`), and a
+name that is not, such as `../../secret.txt`, refuses the project (`project-path-invalid`) rather than
+loading a file from elsewhere into a request that would send it. Script files are never named by
+the file at all; their names come from the request's slug. Tests:
+`packages/engine/test/unit/project/{rest-format,grpc-format}.test.ts`.
+
 ## A WSDL is not a file-read primitive
 
 Importing a definition means fetching whatever it references, transitively, so the references

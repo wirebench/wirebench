@@ -313,6 +313,24 @@ describe('problems a damaged apis/ folder reports', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('refuses a body file named outside the request directory', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(apiProject(), dir);
+    // A request file from a pull or an import points its body at a file elsewhere on the machine.
+    await writeFile(join(dir, '..', 'wirebench-outside-body.txt'), "not the project's");
+    const requestFile = join(dir, APIS_DIR, 'Petstore', 'requests', 'Pets', 'Create pet.request.yaml');
+    const text = await readFile(requestFile, 'utf8');
+    expect(text).toContain('file: Create pet.body.json');
+    await writeFile(
+      requestFile,
+      text.replace('file: Create pet.body.json', 'file: ../../../../../wirebench-outside-body.txt'),
+    );
+
+    await expect(loadProject(dir)).rejects.toMatchObject({ code: 'project-path-invalid' });
+    await rm(join(dir, '..', 'wirebench-outside-body.txt'), { force: true });
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('reports a stray file in a request directory', async () => {
     const dir = await tempProjectDir();
     await saveProject(apiProject(), dir);
