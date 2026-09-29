@@ -13,6 +13,7 @@ export { extractTransfer } from './transfer.js';
 export type { ExtractedValue } from './transfer.js';
 export { runSequence } from './run.js';
 export type {
+  CallbackStep,
   ResolvedStep,
   RunSequenceOptions,
   SequenceOutcome,

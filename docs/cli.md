@@ -285,6 +285,30 @@ redaction is unaffected by this floor — `Authorization`/`Proxy-Authorization` 
 underlying value's length. In practice: choose real secret values, not four-character test
 placeholders, if you want the literal-masking guarantee to apply to them.
 
+## Callback assertions
+
+A `callback` assertion (see the
+[Callback assertions guide](https://wirebench.github.io/wirebench/guides/callback-assertions/)) waits
+for a webhook at a catch URL of a Wirebench Server workspace, so `wirebench run` needs to reach that
+server:
+
+- `WIREBENCH_SERVER_URL` is the server's address and `WIREBENCH_SERVER_TOKEN` a CI token of the
+  workspace. Both must be set; a blank value counts as unset. The token is never printed, and never
+  written to a report or an error.
+- Use an `https://` address outside a local network: over `http://` the token crosses the network in
+  clear.
+- Either unset, the request is still sent and each callback assertion is `errored` with `set
+  WIREBENCH_SERVER_URL and WIREBENCH_SERVER_TOKEN to check callbacks`. The rest of the run proceeds.
+- On a terminal only, the `cli` reporter prints a line while an item waits, for example
+  `… demo/pay  waiting for callback orders-hook… (up to 30 s)`. It is not printed to a pipe or with
+  `--quiet`.
+- The `json` reporter gives an assertion that matched a `capture` field, `{ "hookId", "captureId" }`,
+  beside `type`, `label`, `outcome` and `message`. Without a match the field is absent.
+- `junit` writes a callback that could not be checked as an `<error>` and one that failed as a
+  `<failure>`.
+- Exit code 1 when a callback assertion failed; 3 when one could not be checked (no server variables,
+  an unknown catch URL name, a refused token or an unreachable server). Exit 3 takes precedence.
+
 ## Reports
 
 ### `cli` (default)

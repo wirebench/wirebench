@@ -14,7 +14,6 @@ import {
   catchUrlCreateRequestSchema,
   catchUrlParamsSchema,
   catchUrlSchema,
-  catchUrlsResponseSchema,
   catchUrlUpdateRequestSchema,
   HOOKS_LIMITS,
   signatureSchemeSchema,
@@ -28,6 +27,7 @@ import {
   type CatchUrlUpdateRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { announce } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { newId } from '../../identity/tokens.js';
@@ -55,6 +55,19 @@ import { hintOf, seal } from '../secret-box.js';
 export interface CatchUrlView {
   readonly showHint: boolean;
   readonly signatureAvailable: boolean;
+}
+
+/**
+ * The list's response schema, server side only: `url` may be missing, for a CI principal. The
+ * engine's `catchUrlSchema` keeps it required, so every other reader still gets it.
+ */
+const catchUrlsListedSchema = z.array(catchUrlSchema.extend({ url: catchUrlSchema.shape.url.optional() }));
+type ListedCatchUrl = CatchUrl | Omit<CatchUrl, 'url'>;
+
+function withoutUrl(hook: CatchUrl): Omit<CatchUrl, 'url'> {
+  const { url, ...rest } = hook;
+  void url; // dropped on purpose: it holds the catch secret
+  return rest;
 }
 
 /** A row as the wire shows it: the secret only inside the full URL (§5); the signature secret never. */
@@ -135,6 +148,7 @@ export const manageRoutes =
   (app: FastifyInstance): void => {
     const { db, config } = env.ctx;
     const one = jsonSchema(catchUrlSchema);
+    const listed = jsonSchema(catchUrlsListedSchema);
     const workspaceParams = jsonSchema(teamWorkspaceParamsSchema, { io: 'input' });
     const hookParams = jsonSchema(catchUrlParamsSchema, { io: 'input' });
 
@@ -157,11 +171,14 @@ export const manageRoutes =
       '/workspaces/:workspaceId/hooks',
       {
         preHandler: requireWorkspaceRole(db, 'viewer'),
-        schema: { params: workspaceParams, response: { 200: jsonSchema(catchUrlsResponseSchema) } },
+        schema: { params: workspaceParams, response: { 200: listed } },
       },
-      async (request): Promise<CatchUrl[]> => {
+      async (request): Promise<ListedCatchUrl[]> => {
         const rows = await repo.catchUrlsOfWorkspace(db, request.workspaceAccess!.workspaceId);
-        return rows.map((row) => toCatchUrl(row, config.publicUrl, viewOf(request)));
+        const hooks = rows.map((row) => toCatchUrl(row, config.publicUrl, viewOf(request)));
+        // A CI token never sees the catch secret: a leaked one could forge the captures it reads
+        // (callback-assertion §3). It needs a hook's id and name only.
+        return request.ciCaller === undefined ? hooks : hooks.map(withoutUrl);
       },
     );
 

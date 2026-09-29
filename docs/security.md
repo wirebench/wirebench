@@ -427,6 +427,27 @@ is the whole credential.
   while their tab is open (`apps/desktop/src/main/hooks/hooks-service.ts`) and never writes them to
   disk.
 
+### CI tokens
+
+`wirebench run` reads a workspace's captures with a **CI token**, created by an editor or admin in
+Preferences → Devices & tokens. It is a `wbs_…` token with a narrower reach than a device token:
+
+- It is read-only and scoped to one workspace. It never expires and can be revoked; a revoked token is
+  refused on its next request.
+- The server accepts it only on `ci/whoami` and on reading that workspace's hooks list and captures.
+  Every other existing route, including every write and every other workspace, answers 403.
+- The hooks list omits each catch URL (the secret address). A capture can still quote its own URL if
+  the sender or a proxy puts it in a header or the body, so treat a leaked CI token as able to read
+  everything sent to the workspace's catch URLs, and revoke it.
+- Use an `https://` address outside a local network: over `http://` the token crosses the network in
+  clear.
+- Live sockets refuse it.
+- The server stores only a hash, and shows the token once, when it is created.
+- The token list shows each token's name, who created it and when it was last used, so an unused or
+  unexpected one stands out.
+- Callback `equals` and `matches` values are expanded like other assertion values, `${#System#…}`
+  included, and can appear in a failure message. Keep credentials out of them.
+
 ### Signature secrets
 
 A catch URL can check the signature of what it receives, and a webhook item can sign what it sends.

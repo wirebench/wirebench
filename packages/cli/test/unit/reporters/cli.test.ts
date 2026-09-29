@@ -60,3 +60,50 @@ describe('createCliReporter', () => {
     expect(await render({ color: false })).not.toContain('[');
   });
 });
+
+describe('the waiting line', () => {
+  const waiting = [{ label: 'callback orders-hook', catchUrl: 'orders-hook', withinMs: 30_000 }];
+
+  function write(options: Partial<CliReporterOptions>): string {
+    const out = new PassThrough();
+    let text = '';
+    out.on('data', (chunk: Buffer) => (text += chunk.toString()));
+    createCliReporter(out, { color: false, quiet: false, verbose: false, ...options }).onCallbackWaiting?.(
+      'Shop/Pay',
+      waiting,
+    );
+    return text;
+  }
+
+  it('shows on a terminal only', () => {
+    expect(write({ interactive: true })).toBe('… Shop/Pay  waiting for callback orders-hook… (up to 30 s)\n');
+    expect(write({})).toBe('');
+    expect(write({ interactive: true, quiet: true })).toBe('');
+  });
+
+  it('shows a passed callback’s message when verbose', () => {
+    const out = new PassThrough();
+    let text = '';
+    out.on('data', (chunk: Buffer) => (text += chunk.toString()));
+    createCliReporter(out, { color: false, quiet: false, verbose: true }).onRequestDone?.({
+      path: 'Shop/Pay',
+      group: 'Shop',
+      name: 'Pay',
+      protocol: 'rest',
+      outcome: 'passed',
+      status: 201,
+      durationMs: 12,
+      assertions: [
+        {
+          type: 'callback',
+          label: 'callback orders-hook',
+          outcome: 'passed',
+          message: 'matched capture 01K00000000000000000000002 after 1.8 s',
+          capture: { hookId: '01K000000000000000000000H1', captureId: '01K00000000000000000000002' },
+        },
+      ],
+      unasserted: false,
+    });
+    expect(text).toContain('    ✓ callback orders-hook — matched capture 01K00000000000000000000002 after 1.8 s');
+  });
+});

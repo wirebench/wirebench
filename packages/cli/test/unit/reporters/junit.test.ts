@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { RunResult } from '@wirebench/engine';
 import { parseXmlDocument, validateAgainstXsd } from '@wirebench/engine/test-helpers';
 import { describe, expect, it } from 'vitest';
 import { renderJunit } from '../../../src/reporters/junit.js';
@@ -116,5 +117,67 @@ describe('renderJunit', () => {
     const result = await validateAgainstXsd(xml, xsd);
     expect(result.errors).toEqual([]);
     expect(result.valid).toBe(true);
+  });
+
+  it('reports an errored assertion as an error of its own type', () => {
+    const result: RunResult = {
+      startedAt: '2026-09-29T10:00:00.000Z',
+      summary: { total: 1, passed: 0, failed: 0, errored: 1, skipped: 0, durationMs: 10 },
+      requests: [
+        {
+          path: 'Shop/Pay',
+          group: 'Shop',
+          name: 'Pay',
+          protocol: 'rest',
+          outcome: 'errored',
+          status: 201,
+          durationMs: 5,
+          assertions: [
+            { type: 'status', label: 'status is 200', outcome: 'failed', expected: '200', actual: '201' },
+            {
+              type: 'callback',
+              label: 'callback orders-hook',
+              outcome: 'errored',
+              message: 'set WIREBENCH_SERVER_URL and WIREBENCH_SERVER_TOKEN to check callbacks',
+            },
+          ],
+          unasserted: false,
+        },
+      ],
+    };
+    const xml = renderJunit(result);
+    expect(xml).toContain(
+      '<failure message="status is 200 — expected 200, actual 201" type="status"/><error type="callback" message="callback orders-hook — set WIREBENCH_SERVER_URL and WIREBENCH_SERVER_TOKEN to check callbacks"/>',
+    );
+  });
+
+  it('reports only the request’s own error when the request itself errored', () => {
+    const result: RunResult = {
+      startedAt: '2026-09-29T10:00:00.000Z',
+      summary: { total: 1, passed: 0, failed: 0, errored: 1, skipped: 0, durationMs: 10 },
+      requests: [
+        {
+          path: 'Shop/Pay',
+          group: 'Shop',
+          name: 'Pay',
+          protocol: 'rest',
+          outcome: 'errored',
+          assertions: [
+            {
+              type: 'callback',
+              label: 'callback orders-hook',
+              outcome: 'errored',
+              message: 'no Wirebench Server is configured to check callbacks',
+            },
+          ],
+          error: { code: 'network-error', message: 'Could not reach https://shop.example.test' },
+          unasserted: false,
+        },
+      ],
+    };
+    const xml = renderJunit(result);
+    expect(xml).toContain('<error type="network-error" message="Could not reach https://shop.example.test"/>');
+    expect(xml.match(/<error /g)).toHaveLength(1);
+    expect(xml).not.toContain('type="callback"');
   });
 });

@@ -73,6 +73,8 @@ import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
 import { registerTeamChannels } from './ipc/team.js';
 import { HooksService } from './hooks/hooks-service.js';
+import { desktopCaptureSource, linkedServerOf } from './hooks/capture-source.js';
+import { registerCiTokenChannels } from './ipc/ci-tokens.js';
 import { registerHooksChannels } from './ipc/hooks.js';
 import { AccountService } from './account-service.js';
 import { ServerClient } from './server-client.js';
@@ -490,6 +492,13 @@ void app.whenReady().then(() => {
     requests: requestDeps,
     modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
     emit: (event) => broadcast(events.sequence.progress, event),
+    emitWaiting: (event) => broadcast(events.sequence.waiting, event),
+    // Read per run: the workspace, its link and the account can all change between runs.
+    captures: () =>
+      desktopCaptureSource(
+        { client: serverClient, accounts: accountService },
+        linkedServerOf(workspaceService.snapshot()),
+      ),
   });
   registerOAuth2Channels({
     oauth2: oauth2Service,
@@ -504,6 +513,7 @@ void app.whenReady().then(() => {
   });
   registerAccountChannels({ accounts: accountService });
   registerTeamChannels({ client: serverClient, accounts: accountService });
+  registerCiTokenChannels({ client: serverClient, accounts: accountService });
   registerHooksChannels({ hooks: hooksService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed

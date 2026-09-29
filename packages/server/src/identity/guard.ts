@@ -5,8 +5,8 @@
  * `Authorization`.
  */
 import { timingSafeEqual } from 'node:crypto';
-import type { onRequestAsyncHookHandler, preHandlerHookHandler } from 'fastify';
-import { DEVICE_TOKEN_PATTERN } from '@wirebench/engine';
+import type { FastifyRequest, onRequestAsyncHookHandler, preHandlerHookHandler } from 'fastify';
+import { DEVICE_TOKEN_PATTERN, isWirebenchError } from '@wirebench/engine';
 import type { Querier } from '../context.js';
 import type { IdentityEnv, IdentitySettings } from './env.js';
 import { forbidden, unauthenticated, userDisabled } from './errors.js';
@@ -95,12 +95,34 @@ export async function callerForToken(
   };
 }
 
-export function authenticate(env: IdentityEnv): onRequestAsyncHookHandler {
+/**
+ * Another module's bearer credential, tried when no device token matches (callback-assertion §3):
+ * `true` when it recognised the token and set up the request, `false` to let the next one try. It
+ * may throw a problem of its own. Nothing but a fallback ever reads a token a device session refused.
+ */
+export type BearerFallback = (token: string, request: FastifyRequest) => Promise<boolean>;
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Filled by modules registered after identity; read by `authenticate` at request time. */
+    bearerFallbacks: BearerFallback[];
+  }
+}
+
+export function authenticate(env: IdentityEnv, fallbacks: readonly BearerFallback[] = []): onRequestAsyncHookHandler {
   const tokens = { db: env.ctx.db, settings: env.settings, now: env.now };
   return async (request) => {
     const token = bearerToken(request.headers.authorization);
     if (token === undefined) return; // no header (or not a device token): the preHandlers decide
-    request.caller = (await callerForToken(tokens, token)).caller;
+    try {
+      request.caller = (await callerForToken(tokens, token)).caller;
+    } catch (error) {
+      if (!isWirebenchError(error) || error.code !== 'identity-unauthenticated') throw error;
+      for (const fallback of fallbacks) {
+        if (await fallback(token, request)) return;
+      }
+      throw error;
+    }
   };
 }
 

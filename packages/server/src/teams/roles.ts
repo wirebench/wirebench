@@ -6,6 +6,8 @@
  */
 import type { DefaultRole, RoleSource, TeamRole, WorkspaceRole } from '@wirebench/engine';
 import type { preHandlerAsyncHookHandler } from 'fastify';
+import { ciTokenForbidden } from '../ci-tokens/errors.js';
+import type { CiCaller } from '../ci-tokens/principal.js';
 import type { Querier } from '../context.js';
 import { unauthenticated } from '../identity/errors.js';
 import { forbidden, teamNotFound, workspaceNotFound } from './errors.js';
@@ -88,9 +90,17 @@ declare module 'fastify' {
  */
 export function requireWorkspaceRole(db: Querier, min: WorkspaceRole): preHandlerAsyncHookHandler {
   return async (request) => {
+    const { workspaceId } = request.params as { readonly workspaceId: string };
+    const ci: CiCaller | undefined = request.ciCaller;
+    if (ci !== undefined) {
+      // A CI token reads its own workspace as a viewer would, and nothing more (callback-assertion §3).
+      // It holds a read grant in effect, hence `grant`.
+      if (min !== 'viewer' || ci.workspaceId !== workspaceId) throw ciTokenForbidden();
+      request.workspaceAccess = { workspaceId, role: 'viewer', source: 'grant' };
+      return;
+    }
     const caller = request.caller;
     if (caller === undefined) throw unauthenticated();
-    const { workspaceId } = request.params as { readonly workspaceId: string };
     const found = await effectiveRole(db, caller.id, workspaceId);
     if (found.role === 'none') throw workspaceNotFound();
     if (!atLeast(found.role, min)) throw forbidden();

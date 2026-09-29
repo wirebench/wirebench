@@ -125,6 +125,15 @@ export function AccountStatusItem() {
             >
               Manage accounts…
             </DropdownMenu.Item>
+            <DropdownMenu.Item
+              data-testid="account-devices-tokens"
+              className={ITEM_CLASS}
+              onSelect={() => {
+                openPreferences('tokens');
+              }}
+            >
+              Devices & tokens…
+            </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

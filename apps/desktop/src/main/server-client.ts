@@ -8,6 +8,10 @@
 import {
   accessResponseSchema,
   captureSchema,
+  ciTokenCreatedSchema,
+  ciTokensResponseSchema,
+  type CiTokenCreated,
+  type CiTokenSummary,
   capturesResponseSchema,
   catchUrlSchema,
   catchUrlsResponseSchema,
@@ -506,6 +510,36 @@ export class ServerClient {
 
   async clearCaptures(url: string, token: string, workspaceId: string, hookId: string): Promise<void> {
     await this.call<unknown>(url, { method: 'DELETE', path: `${hookPath(workspaceId, hookId)}/captures`, token });
+  }
+
+  // ---- ci-tokens (callback-assertion spec §3): editors and admins, on their own session -----------
+
+  listCiTokens(url: string, token: string, workspaceId: string): Promise<CiTokenSummary[]> {
+    return this.call(url, {
+      method: 'GET',
+      path: `${workspacePath(workspaceId)}/ci-tokens`,
+      token,
+      schema: ciTokensResponseSchema,
+    });
+  }
+
+  /** The one answer that carries the new token; the caller shows it once. */
+  createCiToken(url: string, token: string, workspaceId: string, name: string): Promise<CiTokenCreated> {
+    return this.call(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/ci-tokens`,
+      token,
+      body: { name },
+      schema: ciTokenCreatedSchema,
+    });
+  }
+
+  async revokeCiToken(url: string, token: string, workspaceId: string, tokenId: string): Promise<void> {
+    await this.call<unknown>(url, {
+      method: 'DELETE',
+      path: `${workspacePath(workspaceId)}/ci-tokens/${encodeURIComponent(tokenId)}`,
+      token,
+    });
   }
 
   private async call<T>(url: string, call: Call<T>): Promise<T> {

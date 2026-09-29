@@ -64,6 +64,8 @@ A step runs its request's own assertions first (turn off **Run the request's own
 skip them), then its own: status, a header, a body expression that equals, matches, is present or is
 absent, response time, a SOAP fault, or the schema.
 
+A step can also wait for the webhook its request causes: see [Callback assertions](/wirebench/guides/callback-assertions/).
+
 ## Read a run
 
 The run panel fills in as each step ends: its outcome, status, time and where it was sent, then its

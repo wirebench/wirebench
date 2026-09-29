@@ -17,6 +17,7 @@ import {
   workspaceProjectDir,
 } from '@wirebench/engine';
 import type {
+  CallbackWaiting,
   Environment,
   Project,
   RequestResult,
@@ -34,6 +35,7 @@ import { ExitCode, exitCodeFor } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
 import { createEnvSecrets } from '../env-secrets.js';
 import { proxyFromEnv } from '../proxy-env.js';
+import { captureSourceFromEnv } from '../server-captures.js';
 import { createCliReporter } from '../reporters/cli.js';
 import { renderHtml } from '../reporters/html.js';
 import { renderJson } from '../reporters/json.js';
@@ -164,7 +166,12 @@ function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
   const color = args.color && io.env['NO_COLOR'] === undefined && io.stdout.isTTY === true;
   return args.reporters.map((spec) => {
     if (spec.kind === 'cli') {
-      return createCliReporter(io.stdout, { color, quiet: args.quiet, verbose: args.verbose });
+      return createCliReporter(io.stdout, {
+        color,
+        quiet: args.quiet,
+        verbose: args.verbose,
+        interactive: io.stdout.isTTY === true,
+      });
     }
     if (spec.kind === 'junit') {
       return createFileReporter(spec.file, renderJunit);
@@ -315,6 +322,13 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
   const maskNow = (): ((text: string) => string) => createSecretMasker([...secrets.values(), ...tokens]);
   const output = createMaskedReporters(buildReporters(args, io), maskNow, (raw) => explainMissingSecret(raw, needs));
   const proxyFor = proxyFromEnv(io.env);
+  // Callback assertions read captures with a CI token (callback-assertion §4); masked like every secret.
+  const captures = captureSourceFromEnv(io.env, { proxyFor });
+  if (captures.token !== undefined) {
+    tokens.add(captures.token);
+  }
+  const onCallbackWaiting = (path: string, waiting: readonly CallbackWaiting[]): void =>
+    output.onCallbackWaiting(path, waiting);
 
   const sandbox = createScriptSandbox();
   const checker = createScriptChecker();
@@ -361,12 +375,16 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
             signal: controller.signal,
             onStepDone: (step) => output.onRequestDone(step),
             containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
+            captures: captures.source,
+            onCallbackWaiting,
           })
         : await runRequests(selected, context, {
             bail: args.bail,
             ...(args.slaMs !== undefined ? { defaultSlaMs: args.slaMs } : {}),
             requireAssertions: args.requireAssertions,
             onRequestDone: (request) => output.onRequestDone(request),
+            captures: captures.source,
+            onCallbackWaiting,
           });
   } catch (error) {
     // An unexpected failure is printed by `main`; its message must not carry a value either. Only

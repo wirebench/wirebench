@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { CatchUrlTab } from '../../src/renderer/features/webhooks/catch-url-tab.js';
 import { catchUrlTabId } from '../../src/renderer/features/webhooks/webhooks-actions.js';
+import { useCaptureFocusStore } from '../../src/renderer/state/capture-focus.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
@@ -92,6 +93,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   useEditorsStore.getState().reset();
+  useCaptureFocusStore.setState({ focus: undefined });
   useWebhooksStore.setState({ server: undefined, meta: undefined, hooks: [], loaded: false, unseen: {} });
 });
 
@@ -110,6 +112,19 @@ describe('CatchUrlTab (webhook-capture §4.2, §6)', () => {
     await waitFor(() => expect(screen.getByTestId('capture-viewer')).toBeTruthy());
     expect(api.hooks.capture).toHaveBeenCalledWith({ viewId: 'view-1', captureId: id(2) });
     expect(readSeen(SERVER, HOOK_ID)).toBe(id(2)); // on screen is seen
+  });
+
+  it('selects the capture a run panel link focused, once (callback-assertion §5)', async () => {
+    useCaptureFocusStore.getState().focusCapture(HOOK_ID, id(1));
+    const { api } = setUp();
+    await waitFor(() => expect(api.hooks.capture).toHaveBeenCalledWith({ viewId: 'view-1', captureId: id(1) }));
+    expect(api.hooks.capture).not.toHaveBeenCalledWith({ viewId: 'view-1', captureId: id(2) });
+    expect(useCaptureFocusStore.getState().focus).toBeUndefined();
+
+    // Focused again while the tab is already open.
+    act(() => useCaptureFocusStore.getState().focusCapture(HOOK_ID, id(2)));
+    await waitFor(() => expect(api.hooks.capture).toHaveBeenCalledWith({ viewId: 'view-1', captureId: id(2) }));
+    expect(useCaptureFocusStore.getState().focus).toBeUndefined();
   });
 
   it('streams new captures in on top and loads older ones on request', async () => {

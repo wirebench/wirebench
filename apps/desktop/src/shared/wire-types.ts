@@ -2469,7 +2469,19 @@ export type LogExportHarRequest = z.infer<typeof logExportHarRequestSchema>;
 
 const assertionNameWire = z.string().optional();
 
-/** One assertion a sequence step may carry: the request catalogue plus `header`. */
+const callbackCheckFields = {
+  equals: z.string().optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+};
+const callbackHeaderWire = z.object({ name: z.string(), ...callbackCheckFields });
+const callbackBodyWire = z.object({
+  language: z.enum(['jsonpath', 'xpath']),
+  path: z.string(),
+  ...callbackCheckFields,
+});
+
+/** One assertion a sequence step may carry: the request catalogue plus `header` and `callback`. */
 export const stepAssertionWireSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('status'),
@@ -2495,6 +2507,26 @@ export const stepAssertionWireSchema = z.discriminatedUnion('type', [
     equals: z.string().optional(),
     matches: z.string().optional(),
     exists: z.boolean().optional(),
+    name: assertionNameWire,
+  }),
+  z.object({
+    type: z.literal('callback'),
+    catchUrl: z.string(),
+    withinMs: z.number().int(),
+    match: z.object({
+      method: z.string().optional(),
+      path: z.string().optional(),
+      pathMatches: z.string().optional(),
+      headers: z.array(callbackHeaderWire).optional(),
+      body: callbackBodyWire.optional(),
+    }),
+    expect: z.array(
+      z.union([
+        z.object({ body: callbackBodyWire }),
+        z.object({ header: callbackHeaderWire }),
+        z.object({ signature: z.literal('verified') }),
+      ]),
+    ),
     name: assertionNameWire,
   }),
 ]);
@@ -2574,6 +2606,8 @@ export const sequenceAssertionResultWireSchema = z.object({
   expected: z.string().optional(),
   actual: z.string().optional(),
   message: z.string().optional(),
+  /** A callback assertion's matched capture, for the link to it in the Webhook inbox. */
+  capture: z.object({ hookId: z.string(), captureId: z.string() }).optional(),
 });
 
 /** One step of a run, as the run panel shows it. Every string in it is masked before it leaves main. */
@@ -2625,6 +2659,16 @@ export const sequenceProgressEventSchema = z.object({
   step: sequenceStepResultWireSchema,
 });
 export type SequenceProgressEvent = z.infer<typeof sequenceProgressEventSchema>;
+
+/** A step has sent and now waits for its callback assertions (callback-assertion §5). */
+export const sequenceWaitingEventSchema = z.object({
+  runId: z.string(),
+  sequenceId: z.string(),
+  index: z.number().int(),
+  stepId: z.string(),
+  waiting: z.array(z.object({ label: z.string(), catchUrl: z.string(), withinMs: z.number().int() })),
+});
+export type SequenceWaitingEvent = z.infer<typeof sequenceWaitingEventSchema>;
 
 /** Response payload for `log.exportHar`: `saved: false` when the save dialog was cancelled. */
 export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });
@@ -4738,9 +4782,16 @@ export const preferencesSectionSchema = z.enum([
   'ui',
   'updates',
   'accounts',
+  'tokens',
   'shortcuts',
 ]);
 export type PreferencesSectionWire = z.infer<typeof preferencesSectionSchema>;
+/**
+ * The sections that hold stored preferences — every one but `tokens`, which lists a server
+ * workspace's CI tokens and has nothing to reset.
+ */
+export const preferencesStoredSectionSchema = preferencesSectionSchema.exclude(['tokens']);
+export type PreferencesStoredSectionWire = z.infer<typeof preferencesStoredSectionSchema>;
 
 /**
  * A partial preferences document. Deliberately loose (`z.unknown()` per section, merged and
@@ -4770,7 +4821,7 @@ export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
 /** Request payload for `preferences.update`. */
 export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });
 /** Request payload for `preferences.reset`. */
-export const preferencesResetRequestSchema = z.object({ section: preferencesSectionSchema.optional() });
+export const preferencesResetRequestSchema = z.object({ section: preferencesStoredSectionSchema.optional() });
 
 /**
  * `ssl.pickCaBundle` / `ssl.clearCaBundle`: the *only* ways the CA bundle preference changes.
@@ -5957,3 +6008,23 @@ export const scriptValuesClearResponseSchema = z.object({ cleared: z.number() })
 
 /** Payload for `script.valuesChanged`: a project's session values changed; list them again. */
 export const scriptValuesChangedEventSchema = z.object({ projectId: z.string() });
+
+// --- CI tokens (callback-assertion §3, §5) -------------------------------------------------------
+
+export const ciTokenSummaryWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type CiTokenSummaryWire = z.infer<typeof ciTokenSummaryWireSchema>;
+
+export const ciTokensRequestWireSchema = z.object({ url: z.string(), workspaceId: z.string() });
+export const ciTokensListResponseWireSchema = z.object({ tokens: z.array(ciTokenSummaryWireSchema) });
+export const ciTokenCreateRequestWireSchema = ciTokensRequestWireSchema.extend({ name: z.string().min(1).max(64) });
+/** Crosses the bridge once, for the *Copy* in the create panel; never stored in the renderer's state after it closes. */
+export const ciTokenCreatedWireSchema = z.object({ id: z.string(), name: z.string(), token: z.string() });
+export type CiTokenCreatedWire = z.infer<typeof ciTokenCreatedWireSchema>;
+export const ciTokenRevokeRequestWireSchema = ciTokensRequestWireSchema.extend({ tokenId: z.string() });
+export const ciTokenRevokeResponseWireSchema = z.object({ revoked: z.literal(true) });

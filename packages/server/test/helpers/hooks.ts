@@ -5,11 +5,13 @@
  */
 import { CATCH_URL_DEFAULT_RESPONSE } from '@wirebench/engine';
 import type { SignatureScheme } from '@wirebench/engine';
+import { ciTokensModule } from '../../src/ci-tokens/module.js';
+import * as ciRepo from '../../src/ci-tokens/repo.js';
 import { hooksModule } from '../../src/hooks/module.js';
 import * as repo from '../../src/hooks/repo.js';
 import { hintOf, seal } from '../../src/hooks/secret-box.js';
 import { mintCatchSecret } from '../../src/hooks/secret.js';
-import { newId } from '../../src/identity/tokens.js';
+import { mintToken, newId } from '../../src/identity/tokens.js';
 import { liveModule } from '../../src/live/module.js';
 import { teamsModule } from '../../src/teams/module.js';
 import { identityHarness, type IdentityHarness } from './identity.js';
@@ -81,7 +83,7 @@ export interface HooksHarness extends IdentityHarness {
   readonly timers: ManualTimers;
 }
 
-/** Identity, teams-access, webhook-capture and live-updates on the harness clock, listening on 127.0.0.1:0. */
+/** Identity, teams-access, webhook-capture, ci-tokens and live-updates on the harness clock, listening on 127.0.0.1:0. */
 export async function hooksHarness(
   options: { readonly env?: Record<string, string>; readonly logStream?: NodeJS.WritableStream } = {},
 ): Promise<HooksHarness> {
@@ -91,6 +93,7 @@ export async function hooksHarness(
     modules: (clock) => [
       teamsModule({ now: () => clock.now }),
       hooksModule({ now: () => clock.now, setTimer: timers.setTimer }),
+      ciTokensModule({ now: () => clock.now }),
       liveModule({ now: () => clock.now, setTimer: timers.setTimer }),
     ],
   });
@@ -98,4 +101,17 @@ export async function hooksHarness(
   const address = h.app.server.address();
   if (address === null || typeof address === 'string') throw new Error('the hooks harness is not listening on a port');
   return { ...h, port: address.port, timers };
+}
+
+/** A live CI token in `workspaceId`, straight into the table: `token` is the bearer, never stored. */
+export async function seedCiToken(
+  h: IdentityHarness,
+  workspaceId: string,
+  name: string,
+  createdBy: string | null = null,
+): Promise<{ readonly id: string; readonly token: string }> {
+  const minted = mintToken();
+  const id = newId();
+  await ciRepo.insertCiToken(h.db, { id, workspaceId, name, tokenHash: minted.hash, createdBy, at: h.clock.now });
+  return { id, token: minted.token };
 }

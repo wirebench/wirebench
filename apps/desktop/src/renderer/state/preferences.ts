@@ -3,7 +3,7 @@ import { DEFAULT_PREFERENCES_WIRE } from './preferences-defaults.js';
 import type {
   PreferencesPatchWire,
   PreferencesResponse,
-  PreferencesSectionWire,
+  PreferencesStoredSectionWire,
   PreferencesWire,
 } from '../../shared/wire-types.js';
 import { setKeybindingOverrides } from '../lib/keybindings.js';
@@ -27,7 +27,7 @@ export interface PreferencesStore {
   readonly load: () => Promise<void>;
   /** Deep-merges `patch` into the document. */
   readonly update: (patch: PreferencesPatchWire) => Promise<void>;
-  readonly reset: (section?: PreferencesSectionWire) => Promise<void>;
+  readonly reset: (section?: PreferencesStoredSectionWire) => Promise<void>;
   /** Replaces the mirror wholesale; used by the `preferences.changed` subscription. */
   readonly applyPreferences: (preferences: PreferencesWire) => void;
 }

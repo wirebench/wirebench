@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import {
+  ciTokenCreateRequestWireSchema,
+  ciTokenCreatedWireSchema,
+  ciTokenRevokeRequestWireSchema,
+  ciTokenRevokeResponseWireSchema,
+  ciTokensListResponseWireSchema,
+  ciTokensRequestWireSchema,
   apiCancelImportRequestSchema,
   apiCancelImportResponseSchema,
   apiDefinitionDocumentsResponseSchema,
@@ -340,6 +346,7 @@ import {
   sequenceCancelRequestSchema,
   sequenceCancelResponseSchema,
   sequenceProgressEventSchema,
+  sequenceWaitingEventSchema,
   sequenceRunRequestSchema,
   sequenceRunResultWireSchema,
   scriptCloseModelRequestSchema,
@@ -639,6 +646,12 @@ export const channels = {
     older: defineChannel('hooks.older', hooksViewRequestWireSchema, hooksPageResponseWireSchema),
     capture: defineChannel('hooks.capture', hooksCaptureRequestWireSchema, hooksCaptureResponseWireSchema),
     close: defineChannel('hooks.close', hooksViewRequestWireSchema, hooksDoneResponseWireSchema),
+  },
+  /** CI tokens of a server workspace (callback-assertion §5); main adds the account's token. */
+  ciTokens: {
+    list: defineChannel('ciTokens.list', ciTokensRequestWireSchema, ciTokensListResponseWireSchema),
+    create: defineChannel('ciTokens.create', ciTokenCreateRequestWireSchema, ciTokenCreatedWireSchema),
+    revoke: defineChannel('ciTokens.revoke', ciTokenRevokeRequestWireSchema, ciTokenRevokeResponseWireSchema),
   },
   // An API and the definition it was imported from. Separate from `definition.*` because the two
   // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI
@@ -1128,6 +1141,8 @@ export const events = {
   sequence: {
     /** One step of a running sequence has ended, keyed by the run's id. */
     progress: defineEvent('sequence.progress', sequenceProgressEventSchema),
+    /** A step of a running sequence has sent and waits for its callback assertions. */
+    waiting: defineEvent('sequence.waiting', sequenceWaitingEventSchema),
   },
   script: {
     /** A project's session values changed; `script.listValues` has the new list. */

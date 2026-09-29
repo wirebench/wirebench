@@ -23,11 +23,17 @@ function renderSystemOut(result: RequestResult): string {
 function renderTestcase(result: RequestResult): string {
   const openAttrs = `${attr('classname', result.group)}${attr('name', result.name)}${attr('time', seconds(result.durationMs))}`;
   const body: string[] = [];
+  const errors: string[] = [];
   for (const assertion of result.assertions) {
     if (assertion.outcome === 'failed') {
       body.push(`<failure${attr('message', assertionMessage(assertion))}${attr('type', assertion.type)}/>`);
+    } else if (assertion.outcome === 'errored' && result.error === undefined) {
+      // An assertion that could not be decided (a callback with no server to ask, say) is an error, not a failure.
+      errors.push(`<error${attr('type', assertion.type)}${attr('message', assertionMessage(assertion))}/>`);
     }
   }
+  // The schema sequences every <failure> before every <error>.
+  body.push(...errors);
   if (result.outcome === 'errored' && result.error !== undefined) {
     body.push(`<error${attr('type', result.error.code)}${attr('message', result.error.message)}/>`);
   }

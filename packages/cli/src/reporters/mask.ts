@@ -1,5 +1,5 @@
 import { redactRawHttp } from '@wirebench/engine';
-import type { RequestResult, RunResult } from '@wirebench/engine';
+import type { CallbackWaiting, RequestResult, RunResult } from '@wirebench/engine';
 import type { Reporter } from './types.js';
 
 type Mask = (text: string) => string;
@@ -74,6 +74,7 @@ export function maskRunResult(result: RunResult, mask: Mask): RunResult {
 /** What a run hands its results to: the only way from a raw result to a reporter. */
 export interface MaskedReporters {
   onRequestDone(raw: RequestResult): void;
+  onCallbackWaiting(path: string, waiting: readonly CallbackWaiting[]): void;
   onRunDone(raw: RunResult): Promise<void>;
 }
 
@@ -94,6 +95,13 @@ export function createMaskedReporters(
       const masked = maskRequestResult(prepare(raw), maskNow());
       for (const reporter of held) {
         reporter.onRequestDone?.(masked);
+      }
+    },
+    onCallbackWaiting(path, waiting) {
+      const mask = maskNow();
+      const masked = waiting.map((one) => ({ ...one, label: mask(one.label), catchUrl: mask(one.catchUrl) }));
+      for (const reporter of held) {
+        reporter.onCallbackWaiting?.(mask(path), masked);
       }
     },
     async onRunDone(raw) {

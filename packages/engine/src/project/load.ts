@@ -11,6 +11,7 @@
 
 import { join } from 'node:path';
 import type { Assertion } from '../assert/model.js';
+import { toCallbackAssertion } from '../assert/schema.js';
 import { ProjectError } from '../errors.js';
 import type {
   Attachment,
@@ -274,7 +275,7 @@ async function loadRequests(
       ...optional('wssOutgoingRef', parsed.wssOutgoingRef),
       ...optional('wssIncomingRef', parsed.wssIncomingRef),
       properties: exact<RequestProperties>(parsed.properties),
-      assertions: parsed.assertions.map((a) => exact<Assertion>(a)),
+      assertions: parsed.assertions.map((a) => (a.type === 'callback' ? toCallbackAssertion(a) : exact<Assertion>(a))),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
       ...(scripts !== undefined ? { scripts } : {}),
       envelopeXml: envelope === undefined ? '' : envelope.toString('utf8'),
@@ -506,7 +507,7 @@ function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       body: await loadBody(fs, root, dir, parsed.body, parsed.name, problems),
       auth: authConfig(parsed.auth),
       settings: exact<RestRequestSettings>(parsed.settings),
-      assertions: parsed.assertions.map((a) => exact<Assertion>(a)),
+      assertions: parsed.assertions.map((a) => (a.type === 'callback' ? toCallbackAssertion(a) : exact<Assertion>(a))),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
       ...(parsed.contract !== undefined
         ? { contract: { method: parsed.contract.method, path: parsed.contract.path } }
@@ -591,7 +592,13 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       auth: authConfig(parsed.auth),
       settings: exact<GrpcRequestSettings>(parsed.settings),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
-      ...(parsed.assertions.length > 0 ? { assertions: parsed.assertions.map((a) => exact<Assertion>(a)) } : {}),
+      ...(parsed.assertions.length > 0
+        ? {
+            assertions: parsed.assertions.map((a) =>
+              a.type === 'callback' ? toCallbackAssertion(a) : exact<Assertion>(a),
+            ),
+          }
+        : {}),
       ...(scripts !== undefined ? { scripts } : {}),
     };
   };

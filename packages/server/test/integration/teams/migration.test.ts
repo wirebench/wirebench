@@ -23,6 +23,7 @@ describeDb('0003_teams (§4.1)', () => {
       'teams-access',
       'server-sync',
       'webhook-capture',
+      'ci-tokens',
       'live-updates',
     ]);
   });

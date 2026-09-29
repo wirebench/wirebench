@@ -35,6 +35,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'teams-access',
       'server-sync',
       'webhook-capture',
+      'ci-tokens',
       'live-updates',
     ]);
   });

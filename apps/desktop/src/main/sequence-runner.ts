@@ -26,9 +26,11 @@ import {
   urlOrigin,
   WirebenchError,
   isWirebenchError,
+  unavailableCaptureSource,
 } from '@wirebench/engine';
 import type {
   AssertionSubject,
+  CaptureSource,
   PropertyMap,
   Project,
   SentScripts,
@@ -37,6 +39,7 @@ import type {
 } from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import type { EngineService, ObservedExchange } from './engine-service.js';
+import { UNLINKED_WORKSPACE_MESSAGE } from './hooks/capture-source.js';
 import { sendGrpcRequest, sendRestRequest, withRequestProperties, type RequestChannelDeps } from './ipc/request.js';
 import { containsRecordedSecret, recordSecretValue, redactSecretText } from './redact.js';
 import { sendAndRecordHistory } from './send-with-history.js';
@@ -45,6 +48,7 @@ import type {
   SequenceRunRequest,
   SequenceRunResultWire,
   SequenceStepResultWire,
+  SequenceWaitingEvent,
 } from '../shared/wire-types.js';
 
 /** What a run needs from the app around it. */
@@ -56,6 +60,10 @@ export interface SequenceRunDeps {
   readonly modelOf: (entityId: string) => Project | undefined;
   /** Tells the renderer a step has ended. */
   readonly emit: (event: SequenceProgressEvent) => void;
+  /** The open workspace's capture source, built per run; absent means the workspace has no server. */
+  readonly captures?: () => CaptureSource;
+  /** Tells the renderer a step waits for its callbacks. */
+  readonly emitWaiting?: (event: SequenceWaitingEvent) => void;
 }
 
 interface ActiveRun {
@@ -142,6 +150,7 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
       ...(assertion.expected !== undefined ? { expected: mask(assertion.expected) } : {}),
       ...(assertion.actual !== undefined ? { actual: mask(assertion.actual) } : {}),
       ...(assertion.message !== undefined ? { message: mask(assertion.message) } : {}),
+      ...(assertion.capture !== undefined ? { capture: assertion.capture } : {}),
     })),
     transfers: step.transfers.map((transfer) => ({
       name: transfer.name,
@@ -255,6 +264,21 @@ export class SequenceRunner {
           deps.emit({ runId: request.runId, sequenceId: sequence.id, step: toWire(step, sendIds.get(step.stepId)) }),
         onSecretValue: recordSecretValue,
         containsKnownSecret: containsRecordedSecret,
+        captures: deps.captures?.() ?? unavailableCaptureSource(UNLINKED_WORKSPACE_MESSAGE),
+        // The scopes the step's own send expands against, plus the run's Sequence values; asked
+        // only for a step with callback assertions.
+        callbackScopes: (resolved, sequenceScope) => ({
+          ...deps.requests.project.scopesFor(resolved.selected.request.id),
+          sequence: sequenceScope,
+        }),
+        onCallbackWaiting: (step, waiting) =>
+          deps.emitWaiting?.({
+            runId: request.runId,
+            sequenceId: sequence.id,
+            index: step.index,
+            stepId: step.stepId,
+            waiting: waiting.map((one) => ({ label: mask(one.label), catchUrl: one.catchUrl, withinMs: one.withinMs })),
+          }),
       });
       return {
         runId: request.runId,

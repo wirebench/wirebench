@@ -14,6 +14,7 @@ import { EditorSection, UiSection } from './sections/editor-section.js';
 import { UpdatesSection } from './sections/updates-section.js';
 import { AccountsSection } from './sections/accounts-section.js';
 import { ShortcutsSection } from './sections/shortcuts-section.js';
+import { TokensSection } from './sections/tokens-section.js';
 
 /** The tab id the Preferences editor always opens under, so it is focused rather than duplicated. */
 export const PREFERENCES_TAB_ID = 'preferences';
@@ -35,6 +36,7 @@ const SECTIONS: readonly SectionEntry[] = [
   { id: 'ui', label: 'UI' },
   { id: 'updates', label: 'Updates' },
   { id: 'accounts', label: 'Accounts' },
+  { id: 'tokens', label: 'Devices & tokens' },
   { id: 'shortcuts', label: 'Shortcuts' },
 ];
 
@@ -95,15 +97,17 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
           <h2 className="text-md font-medium text-fg-default">
             {SECTIONS.find((section) => section.id === active)?.label}
           </h2>
-          <button
-            type="button"
-            className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-3 text-sm text-fg-default hover:bg-surface-hover"
-            onClick={() => {
-              void reset(active);
-            }}
-          >
-            Reset section
-          </button>
+          {active !== 'tokens' && (
+            <button
+              type="button"
+              className="h-row shrink-0 rounded-md border border-hairline-strong bg-surface-raised px-3 text-sm text-fg-default hover:bg-surface-hover"
+              onClick={() => {
+                void reset(active);
+              }}
+            >
+              Reset section
+            </button>
+          )}
         </div>
 
         {active === 'http' && <HttpSection {...sectionProps} />}
@@ -117,6 +121,7 @@ export function PreferencesEditor({ initialSection = 'http' }: PreferencesEditor
         {active === 'ui' && <UiSection {...sectionProps} />}
         {active === 'updates' && <UpdatesSection {...sectionProps} />}
         {active === 'accounts' && <AccountsSection {...sectionProps} />}
+        {active === 'tokens' && <TokensSection />}
         {active === 'shortcuts' && <ShortcutsSection context={commandContext} />}
       </div>
     </div>

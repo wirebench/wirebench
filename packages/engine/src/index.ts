@@ -4,6 +4,11 @@ export type {
   AssertionLanguage,
   AssertionResult,
   AssertionSubject,
+  CallbackAssertion,
+  CallbackBodyCheck,
+  CallbackCheck,
+  CallbackHeaderCheck,
+  CallbackMatch,
   HeaderAssertion,
   MatchAssertion,
   SchemaAssertion,
@@ -12,7 +17,44 @@ export type {
   StatusAssertion,
   StepAssertion,
 } from './assert/model.js';
-export { assertionsSchema, stepAssertionsSchema } from './assert/schema.js';
+export { CALLBACK_LIMITS, callbackLabel } from './assert/model.js';
+export {
+  assertionsSchema,
+  callbackAssertionSchema,
+  stepAssertionsSchema,
+  toCallbackAssertion,
+} from './assert/schema.js';
+export {
+  FIRST_CAPTURE_CURSOR,
+  captureDetailView,
+  captureSourceOver,
+  captureSummaryView,
+  unavailableCaptureSource,
+} from './assert/capture-source.js';
+export type {
+  CaptureDetailView,
+  CaptureServerReads,
+  CaptureSource,
+  CaptureSummaryView,
+} from './assert/capture-source.js';
+export {
+  NO_CAPTURE_SOURCE_MESSAGE,
+  awaitCallbacks,
+  expandCallback,
+  isCallbackAssertion,
+  prepareCallbacks,
+  realCallbackClock,
+  seconds,
+  sendAwaitingCallbacks,
+  waitingOf,
+} from './assert/callback.js';
+export type {
+  AwaitCallbacksOptions,
+  CallbackClock,
+  CallbackWiring,
+  CallbackWaiting,
+  PendingCallback,
+} from './assert/callback.js';
 
 export * from './run/index.js';
 
@@ -1603,6 +1645,15 @@ export type {
   CatchUrlUpdateRequest,
   HooksMeta,
 } from './server-api/hooks.js';
+export {
+  CI_TOKEN_NAME_MAX_LENGTH,
+  ciTokenCreatedSchema,
+  ciTokenParamsSchema,
+  ciTokenSummarySchema,
+  ciTokensResponseSchema,
+  ciWhoamiResponseSchema,
+} from './server-api/ci-tokens.js';
+export type { CiTokenCreateRequest, CiTokenCreated, CiTokenSummary, CiWhoamiResponse } from './server-api/ci-tokens.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';
 export * from './sequence/index.js';

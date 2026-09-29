@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
 import { identitySettings, type IdentityEnv } from './env.js';
-import { authenticate } from './guard.js';
+import { authenticate, type BearerFallback } from './guard.js';
 import { discoverOidc, type OidcProvider } from './oidc.js';
 import { RateLimiter } from './rate-limit.js';
 import { authLocalRoutes } from './routes/auth-local.js';
@@ -69,7 +69,10 @@ export function identityModule(options: IdentityOptions = {}): ServerModule {
       });
       ctx.meta.addCapability('identity');
 
-      app.addHook('onRequest', authenticate(identity));
+      const fallbacks: BearerFallback[] = [];
+      // In the shared `/api/v1` scope, so a module registered later (ci-tokens) can add its own.
+      app.decorate('bearerFallbacks', fallbacks);
+      app.addHook('onRequest', authenticate(identity, fallbacks));
       authLocalRoutes(identity)(app);
       authOidcRoutes(identity)(app);
       meRoutes(identity)(app);

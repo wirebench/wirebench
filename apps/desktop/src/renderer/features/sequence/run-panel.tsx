@@ -1,12 +1,17 @@
 /**
  * A sequence's latest run, step by step as each ends: its outcome, status, time and where it was sent,
  * then its assertions and transfers. Everything shown arrived from main masked; a secret transfer
- * never carries a value, so it shows as secret.
+ * never carries a value, so it shows as secret. A step waiting for its callbacks says what it waits
+ * for; a matched callback links to its capture in the catch URL's tab.
  */
+import { useCaptureFocusStore } from '../../state/capture-focus.js';
 import { useHistoryStore } from '../../state/history.js';
 import { useSequenceRunsStore } from '../../state/sequence-runs.js';
 import type { SequenceRunState } from '../../state/sequence-runs.js';
 import { useUiStore } from '../../state/ui.js';
+import { useWebhooksStore } from '../../state/webhooks.js';
+import { openCatchUrlTab } from '../webhooks/webhooks-actions.js';
+import { waitingText } from './callback-text.js';
 import type { SequenceStepResultWire, SequenceWire } from '../../../shared/wire-types.js';
 
 const OUTCOME_TONE: Record<SequenceStepResultWire['outcome'], string> = {
@@ -28,6 +33,37 @@ const SKIPPED_BECAUSE: Record<NonNullable<SequenceStepResultWire['skipped']>, st
   'after-failure': 'after a failure',
   cancelled: 'cancelled',
 };
+
+/**
+ * Opens the catch URL's tab on the matched capture. A catch URL this workspace no longer lists opens
+ * nothing, and must not leave a focus behind for a tab that opens later.
+ */
+function showCapture(hookId: string, captureId: string): void {
+  const known = useWebhooksStore.getState().hooks.some((hook) => hook.id === hookId);
+  if (!known) {
+    useCaptureFocusStore.setState({ focus: undefined });
+    return;
+  }
+  useCaptureFocusStore.getState().focusCapture(hookId, captureId);
+  openCatchUrlTab(hookId);
+}
+
+/** A matched capture's link; disabled, with why, when the catch URL is not in the open workspace. */
+function CaptureLink({ hookId, captureId }: { readonly hookId: string; readonly captureId: string }) {
+  const known = useWebhooksStore((state) => state.hooks.some((hook) => hook.id === hookId));
+  return (
+    <button
+      type="button"
+      data-testid="sequence-run-capture-link"
+      disabled={!known}
+      title={known ? undefined : 'This catch URL isn’t in the open workspace'}
+      className="ml-2 text-accent enabled:hover:underline disabled:cursor-not-allowed disabled:text-fg-subtle"
+      onClick={() => showCapture(hookId, captureId)}
+    >
+      Show capture
+    </button>
+  );
+}
 
 /** Opens History searched for this run's tag, which every step's entry carries. */
 function showInHistory(runId: string): void {
@@ -67,14 +103,23 @@ function StepRow({ step }: { readonly step: SequenceStepResultWire }) {
             </p>
           )}
           {step.assertions.map((assertion, index) => (
-            <p key={`a${index}`} className={OUTCOME_TONE[assertion.outcome]}>
+            <p
+              key={`a${index}`}
+              data-testid="sequence-run-assertion"
+              data-type={assertion.type}
+              data-outcome={assertion.outcome}
+              className={OUTCOME_TONE[assertion.outcome]}
+            >
               {OUTCOME_MARK[assertion.outcome]} {assertion.label}
-              {assertion.outcome !== 'passed' &&
+              {(assertion.outcome !== 'passed' || assertion.type === 'callback') &&
                 (assertion.expected !== undefined || assertion.actual !== undefined
                   ? ` — expected ${assertion.expected ?? ''}, actual ${assertion.actual ?? ''}`
                   : assertion.message !== undefined
                     ? ` — ${assertion.message}`
                     : '')}
+              {assertion.capture !== undefined && (
+                <CaptureLink hookId={assertion.capture.hookId} captureId={assertion.capture.captureId} />
+              )}
             </p>
           ))}
           {step.transfers.map((transfer, index) => (
@@ -138,6 +183,11 @@ export function RunPanel({ sequence }: RunPanelProps) {
           <StepRow key={step.stepId} step={step} />
         ))}
       </ul>
+      {run.status === 'running' && run.waiting !== undefined && (
+        <p data-testid="sequence-run-waiting" className="px-2 py-1 text-sm text-fg-muted">
+          {run.waiting.index + 1}. {waitingText(run.waiting.waiting)}
+        </p>
+      )}
     </section>
   );
 }

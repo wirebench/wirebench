@@ -165,6 +165,12 @@ All notable changes to this project are documented here. The format follows
   still keeping the capture. The server keeps catch URL secrets encrypted under
   `WIREBENCH_SERVER_HOOKS_SECRET_KEY`.
 
+- **Callback assertions.** A sequence step or a CI run waits for the webhook its request causes and
+  checks it; CI tokens in Preferences → Devices & tokens, with `WIREBENCH_SERVER_URL` and
+  `WIREBENCH_SERVER_TOKEN` for `wirebench run`. See
+  [Callback assertions](https://wirebench.github.io/wirebench/guides/callback-assertions/). A
+  `callback` assertion is part of `formatVersion: 6`.
+
 ### Changed
 
 - **The catch-URL root is now Webhook inbox.** The Explorer node for a shared workspace's catch URLs,

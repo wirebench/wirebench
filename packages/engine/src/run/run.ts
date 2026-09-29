@@ -5,6 +5,9 @@
  * picture, not the first thing that went wrong. An errored assertion outranks a failed one for the
  * request's outcome, because "we could not tell" is a different problem from "it is wrong".
  */
+import { isCallbackAssertion, sendAwaitingCallbacks } from '../assert/callback.js';
+import type { CallbackClock, CallbackWaiting } from '../assert/callback.js';
+import type { CaptureSource } from '../assert/capture-source.js';
 import { evaluateAssertions } from '../assert/index.js';
 import type { Assertion, AssertionResult, AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
@@ -119,6 +122,14 @@ export interface RunOptions {
   readonly defaultSlaMs?: number;
   readonly requireAssertions?: boolean;
   readonly onRequestDone?: (result: RequestResult) => void;
+  /** Where callback assertions read captures (callback-assertion §2.2). Absent: they error, and the run goes on. */
+  readonly captures?: CaptureSource;
+  /** The clock callback waits poll by; a test seam. */
+  readonly callbackClock?: CallbackClock;
+  /** How often a waiting callback polls; `CALLBACK_LIMITS.pollIntervalMs` by default. A test seam. */
+  readonly callbackPollMs?: number;
+  /** Called after a request's send when it has callbacks to wait for. */
+  readonly onCallbackWaiting?: (path: string, waiting: readonly CallbackWaiting[]) => void;
 }
 
 type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
@@ -621,16 +632,33 @@ async function runOne(
   send: RunRequestSender,
   options: RunOptions,
   overrides: RunSendOverrides,
+  context: RunContext,
 ): Promise<{ result: RequestResult; sent?: SentRequest }> {
   try {
-    const sent = await send(item, overrides);
-    const { subject, raw, script } = sent;
     const own = assertionsOf(item);
+    // The cursor is taken inside this helper, before the send (§2.3 step 1).
+    const { sent, callbacks } = await sendAwaitingCallbacks(
+      own,
+      () => scopesFor({ ...context, ...(overrides.sequence !== undefined ? { sequence: overrides.sequence } : {}) }),
+      () => send(item, overrides),
+      {
+        ...(options.captures !== undefined ? { captures: options.captures } : {}),
+        ...(options.callbackClock !== undefined ? { clock: options.callbackClock } : {}),
+        ...(options.callbackPollMs !== undefined ? { pollIntervalMs: options.callbackPollMs } : {}),
+        ...(context.signal !== undefined ? { signal: context.signal } : {}),
+        onWaiting: (waiting) => options.onCallbackWaiting?.(item.path, waiting),
+      },
+    );
+    const { subject, raw, script } = sent;
     const withDefault: readonly Assertion[] =
       options.defaultSlaMs !== undefined && !own.some((a) => a.type === 'sla')
         ? [...own, { type: 'sla', maxMs: options.defaultSlaMs }]
         : own;
-    const assertions = [...(await evaluateAssertions(subject, withDefault)), ...scriptAssertions(script?.tests ?? [])];
+    const immediate = await evaluateAssertions(
+      subject,
+      withDefault.filter((assertion) => !isCallbackAssertion(assertion)),
+    );
+    const assertions = [...immediate, ...callbacks, ...scriptAssertions(script?.tests ?? [])];
     const outcome = script?.error !== undefined ? 'errored' : outcomeOf(assertions);
     return {
       sent,
@@ -710,7 +738,7 @@ export async function runRequests(
     ) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {
-      const ran = await runOne(item, send, options, { sequence: Object.fromEntries(runValues) });
+      const ran = await runOne(item, send, options, { sequence: Object.fromEntries(runValues) }, context);
       result = ran.result;
       mergeScriptValues(runValues, ran.sent?.script?.values ?? [], context.onSecretValue, context.containsKnownSecret);
     }

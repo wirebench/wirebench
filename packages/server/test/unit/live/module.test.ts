@@ -14,6 +14,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'teams-access',
       'server-sync',
       'webhook-capture',
+      'ci-tokens',
       'live-updates',
     ]);
   });

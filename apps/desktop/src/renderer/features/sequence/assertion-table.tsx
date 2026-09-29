@@ -1,8 +1,12 @@
 /**
  * A step's own assertions, evaluated after its request's own. The catalogue is the runner's (status,
- * SOAP fault, match, schema, response time) plus `header`, which only a step may use.
+ * SOAP fault, match, schema, response time) plus `header` and `callback`, which only a step may use.
  */
 import type { StepAssertionWire } from '../../../shared/wire-types.js';
+import { useWebhooksStore } from '../../state/webhooks.js';
+import { CallbackFields } from './callback-fields.js';
+import { CALLBACK_BOUNDS } from './callback-text.js';
+import { CheckEditor } from './check-editor.js';
 import { CommitInput, FieldRow, SelectField } from './step-fields.js';
 
 type Kind = StepAssertionWire['type'];
@@ -14,16 +18,7 @@ const KINDS: readonly { value: Kind; label: string }[] = [
   { value: 'sla', label: 'Response time' },
   { value: 'soap-fault', label: 'SOAP fault' },
   { value: 'schema', label: 'Schema' },
-];
-
-/** How a `match` or `header` assertion checks what it found: exactly one of the schema's three. */
-type Check = 'equals' | 'matches' | 'exists' | 'absent';
-
-const CHECKS: readonly { value: Check; label: string }[] = [
-  { value: 'equals', label: 'equals' },
-  { value: 'matches', label: 'matches' },
-  { value: 'exists', label: 'is present' },
-  { value: 'absent', label: 'is absent' },
+  { value: 'callback', label: 'Callback' },
 ];
 
 const LANGUAGES = [
@@ -32,7 +27,8 @@ const LANGUAGES = [
   { value: 'xquery', label: 'XQuery' },
 ] as const;
 
-function defaultOf(kind: Kind): StepAssertionWire {
+/** A new assertion of `kind`; a callback starts from the first catch URL the workspace knows. */
+function defaultOf(kind: Kind, catchUrls: readonly string[]): StepAssertionWire {
   switch (kind) {
     case 'status':
       return { type: 'status', equals: 200 };
@@ -46,17 +42,15 @@ function defaultOf(kind: Kind): StepAssertionWire {
       return { type: 'soap-fault', expect: 'none' };
     case 'schema':
       return { type: 'schema' };
+    case 'callback':
+      return {
+        type: 'callback',
+        catchUrl: catchUrls[0] ?? 'catch-url',
+        withinMs: CALLBACK_BOUNDS.defaultWithinMs,
+        match: { method: 'POST' },
+        expect: [{ body: { language: 'jsonpath', path: '$', exists: true } }],
+      };
   }
-}
-
-function checkOf(assertion: {
-  readonly equals?: unknown;
-  readonly matches?: string | undefined;
-  readonly exists?: boolean | undefined;
-}): Check {
-  if (assertion.matches !== undefined) return 'matches';
-  if (assertion.exists !== undefined) return assertion.exists ? 'exists' : 'absent';
-  return 'equals';
 }
 
 /** `assertion` with none of its check fields, so exactly one can be set again. */
@@ -66,20 +60,6 @@ function withoutCheck(assertion: Extract<StepAssertionWire, { type: 'match' | 'h
   delete copy['matches'];
   delete copy['exists'];
   return copy;
-}
-
-/** The check fields for `check`, with `value` as the compared value where one is compared. */
-function checkFields(check: Check, value: string): { equals?: string; matches?: string; exists?: boolean } {
-  switch (check) {
-    case 'equals':
-      return { equals: value };
-    case 'matches':
-      return { matches: value === '' ? '.*' : value };
-    case 'exists':
-      return { exists: true };
-    case 'absent':
-      return { exists: false };
-  }
 }
 
 /** `201` or `2xx, 304` as the status assertion's `equals`. */
@@ -102,6 +82,8 @@ export interface AssertionTableProps {
 }
 
 export function AssertionTable({ assertions, onChange }: AssertionTableProps) {
+  const hooks = useWebhooksStore((state) => state.hooks);
+  const catchUrls = hooks.map((hook) => hook.name);
   const replace = (index: number, next: StepAssertionWire): void =>
     onChange(assertions.map((assertion, i) => (i === index ? next : assertion)));
 
@@ -123,7 +105,7 @@ export function AssertionTable({ assertions, onChange }: AssertionTableProps) {
                 testId="sequence-assertion-kind"
                 value={assertion.type}
                 options={KINDS}
-                onChange={(kind) => replace(index, defaultOf(kind))}
+                onChange={(kind) => replace(index, defaultOf(kind, catchUrls))}
               />
               {assertion.type === 'status' && (
                 <CommitInput
@@ -184,9 +166,12 @@ export function AssertionTable({ assertions, onChange }: AssertionTableProps) {
                   onCommit={(header) => replace(index, { ...assertion, header })}
                 />
               )}
+              {assertion.type === 'callback' && (
+                <CallbackFields assertion={assertion} onChange={(next) => replace(index, next)} />
+              )}
               {(assertion.type === 'match' || assertion.type === 'header') && (
                 <CheckEditor
-                  assertion={assertion}
+                  value={assertion}
                   onChange={(fields) => replace(index, { ...withoutCheck(assertion), ...fields } as StepAssertionWire)}
                 />
               )}
@@ -198,41 +183,10 @@ export function AssertionTable({ assertions, onChange }: AssertionTableProps) {
         type="button"
         data-testid="sequence-add-assertion"
         className="mt-1 text-sm text-accent hover:underline"
-        onClick={() => onChange([...assertions, defaultOf('status')])}
+        onClick={() => onChange([...assertions, defaultOf('status', catchUrls)])}
       >
         Add assertion
       </button>
     </div>
-  );
-}
-
-/** The check of a `match` or `header` assertion, and the value it compares with. */
-function CheckEditor({
-  assertion,
-  onChange,
-}: {
-  readonly assertion: Extract<StepAssertionWire, { type: 'match' | 'header' }>;
-  readonly onChange: (fields: { equals?: string; matches?: string; exists?: boolean }) => void;
-}) {
-  const check = checkOf(assertion);
-  const value = assertion.matches ?? (assertion.equals !== undefined ? String(assertion.equals) : '');
-  return (
-    <>
-      <SelectField
-        label="Check"
-        value={check}
-        options={CHECKS}
-        onChange={(next) => onChange(checkFields(next, value))}
-      />
-      {(check === 'equals' || check === 'matches') && (
-        <CommitInput
-          label={check === 'equals' ? 'Expected value' : 'Pattern'}
-          monospace
-          className="min-w-32 flex-1"
-          value={value}
-          onCommit={(next) => onChange(checkFields(check, next))}
-        />
-      )}
-    </>
   );
 }
