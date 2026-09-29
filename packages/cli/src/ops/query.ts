@@ -64,9 +64,14 @@ function capped(items: readonly string[]): { readonly results: string[]; readonl
   let left = MAX_TOTAL_CHARS;
   let cut = false;
   for (const item of items) {
-    const keep = Math.min(item.length, MAX_RESULT_CHARS, left);
+    let keep = Math.min(item.length, MAX_RESULT_CHARS, left);
     if (keep < item.length) {
       cut = true;
+      // Not between the halves of a surrogate pair.
+      const last = item.charCodeAt(keep - 1);
+      if (keep > 0 && last >= 0xd800 && last <= 0xdbff) {
+        keep -= 1;
+      }
     }
     results.push(item.slice(0, keep));
     left -= keep;

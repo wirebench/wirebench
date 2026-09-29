@@ -7,8 +7,9 @@
  * query result, nor a validation problem quoting a value, nor a boolean XPath probing one can show
  * what a file or an entry holds. The ops therefore validate and query the redacted message.
  */
-import { readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { constants } from 'node:fs';
+import { open, readdir, realpath, stat } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { openHistory, REDACTED_MARKER, redactStructuredBody, redactXml } from '@wirebench/engine';
 import type { HistoryEntry } from '@wirebench/engine';
 import { z } from 'zod';
@@ -79,9 +80,13 @@ function loaded(message: Omit<LoadedMessage, 'kind'>): LoadedMessage {
     const redacted = redactXml(message.text, { show: false });
     return { ...message, kind: 'xml', text: redacted.replaceAll(MARKER_AS_CONTENT, '>&lt;redacted&gt;$1') };
   }
-  // A declared form type keeps the form redaction; anything else is read as JSON.
-  const type = isFormType(message.contentType) ? message.contentType : 'application/json';
-  return { ...message, kind: 'json', text: redactStructuredBody(message.text, type, { show: false }) };
+  // Read as JSON whatever the declared type. A declared form type adds the form redaction on top: it
+  // leaves JSON that parses unchanged, and a real form body is not JSON, so the two never clash.
+  const json = redactStructuredBody(message.text, 'application/json', { show: false });
+  const text = isFormType(message.contentType)
+    ? redactStructuredBody(json, message.contentType, { show: false })
+    : json;
+  return { ...message, kind: 'json', text };
 }
 
 async function fromHistory(
@@ -115,7 +120,7 @@ async function fromHistory(
 /** Whether `path` is `directory` or lies inside it. */
 function isInside(directory: string, path: string): boolean {
   const from = relative(directory, path);
-  return from === '' || (!from.startsWith('..') && !isAbsolute(from));
+  return from === '' || (from !== '..' && !from.startsWith(`..${sep}`) && !isAbsolute(from));
 }
 
 /** The real path of a path that may not exist (then the path itself: nothing there can be a History file). */
@@ -127,19 +132,65 @@ async function realOrSelf(path: string): Promise<string> {
   }
 }
 
+/** The largest file the `file` source reads. */
+export const MAX_FILE_BYTES = 16 * 1024 * 1024;
+
+const HISTORY_REFUSAL = 'History files are read through historyId, not file';
+
+/** Whether a file with this device and inode is one of the History directory's `*.jsonl` files (a hard link included). */
+async function isHistoryFile(historyDir: string, dev: number, ino: number): Promise<boolean> {
+  let names: string[];
+  try {
+    names = (await readdir(historyDir)).filter((name) => name.endsWith('.jsonl'));
+  } catch {
+    // No History directory, so no History file.
+    return false;
+  }
+  for (const name of names) {
+    try {
+      const found = await stat(join(historyDir, name));
+      if (found.dev === dev && found.ino === ino) {
+        return true;
+      }
+    } catch {
+      // Gone since the listing.
+    }
+  }
+  return false;
+}
+
 /**
  * The text of `file`, resolved against the working directory. It reads any path the process can read,
- * but never a History file: those are read through `historyId`, which redacts by entry. Both sides go
- * through `realpath`, so a symlink into the History directory does not get around this.
+ * but never a History file (those are read through `historyId`, which redacts by entry), and only a
+ * regular file of at most 16 MiB. The path is checked through `realpath`, so a symlink into the History
+ * directory does not get around it; the opened handle is checked by device and inode against the
+ * directory's `*.jsonl` files, so neither a hard link nor a swap between check and read does.
  */
 async function readSourceFile(file: string, context: Pick<OpsContext, 'historyDir'>): Promise<string> {
   const path = resolve(file);
   try {
-    const real = await realpath(path);
-    if (isInside(await realOrSelf(context.historyDir), real)) {
-      throw new OpsError('invalid-input', 'History files are read through historyId, not file', { file: path });
+    if (isInside(await realOrSelf(context.historyDir), await realpath(path))) {
+      throw new OpsError('invalid-input', HISTORY_REFUSAL, { file: path });
     }
-    return await readFile(real, 'utf8');
+    // Non-blocking, so opening a FIFO does not wait for a writer.
+    const handle = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    try {
+      const info = await handle.stat();
+      if (!info.isFile()) {
+        throw new OpsError('file-not-found', `Cannot read ${path}: not a regular file`, { file: path });
+      }
+      if (await isHistoryFile(context.historyDir, info.dev, info.ino)) {
+        throw new OpsError('invalid-input', HISTORY_REFUSAL, { file: path });
+      }
+      if (info.size > MAX_FILE_BYTES) {
+        throw new OpsError('invalid-input', 'the file is larger than 16 MiB', { file: path });
+      }
+      const buffer = Buffer.alloc(info.size);
+      const { bytesRead } = await handle.read(buffer, 0, info.size, 0);
+      return buffer.toString('utf8', 0, bytesRead);
+    } finally {
+      await handle.close();
+    }
   } catch (error) {
     if (error instanceof OpsError) {
       throw error;

@@ -1,5 +1,5 @@
 // packages/cli/test/unit/ops/query.test.ts
-import { symlink, writeFile } from 'node:fs/promises';
+import { link, symlink, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendHistory, REDACTED_MARKER } from '@wirebench/engine';
 import type { HistoryEntry } from '@wirebench/engine';
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { MAX_RESULT_CHARS, MAX_TOTAL_CHARS, queryOp } from '../../../src/ops/query.js';
 import { historyFileFor } from '../../../src/ops/paths.js';
+import { MAX_FILE_BYTES } from '../../../src/ops/sources.js';
 import { emptyProject, removeTempDirs, SECRET, tempDir } from './helpers.js';
 
 afterEach(removeTempDirs);
@@ -268,10 +269,64 @@ describe('op query: kind, size, files and errors', () => {
     }
   });
 
-  it('reports a directory or another unreadable path as file-not-found, with the reason', async () => {
+  it('reports a directory as file-not-found, not a regular file', async () => {
     const fixture = await emptyProject();
     const error = await rejection(runOp(queryOp, { expression: '$', file: await tempDir() }, fixture.base()));
     expect(error).toMatchObject({ code: 'file-not-found' });
-    expect(error.message).toContain('EISDIR');
+    expect(error.message).toContain('not a regular file');
+  });
+
+  it('refuses a hard link to a History file', async () => {
+    const fixture = await emptyProject();
+    const history = historyFileFor(fixture.historyDir, 'mcp-fixture');
+    await appendHistory(history, entryOf(`{"password":"${SECRET}"}`, 'x'));
+    const hard = join(await tempDir(), 'copy.txt');
+    await link(history, hard);
+    const error = await rejection(runOp(queryOp, { expression: '$', file: hard }, fixture.base()));
+    expect(error).toMatchObject({
+      code: 'invalid-input',
+      message: 'History files are read through historyId, not file',
+    });
+  });
+
+  it('reads a file up to 16 MiB and refuses a larger one', async () => {
+    const fixture = await emptyProject();
+    const file = join(await tempDir(), 'big.json');
+    await writeFile(file, '"x"');
+    await truncate(file, MAX_FILE_BYTES + 1);
+    const error = await rejection(runOp(queryOp, { expression: '$', file }, fixture.base()));
+    expect(error).toMatchObject({ code: 'invalid-input', message: 'the file is larger than 16 MiB' });
+  });
+
+  it('masks a JSON body sent under a declared form content type', async () => {
+    const fixture = await emptyProject();
+    const entry: HistoryEntry = {
+      ...entryOf('', 'x'),
+      request: {
+        envelopeXml: `{"password":"${SECRET}","user":"ann"}`,
+        headers: [{ name: 'Content-Type', value: 'application/x-www-form-urlencoded' }],
+      },
+    };
+    await appendHistory(historyFileFor(fixture.historyDir, 'mcp-fixture'), entry);
+    const result = await runOp(
+      queryOp,
+      { expression: '$.password', historyId: entry.id, direction: 'request' },
+      fixture.base(),
+    );
+    expect(result).toEqual({ language: 'jsonpath', results: [REDACTED_MARKER], truncated: false });
+  });
+
+  it('does not cut a result between the halves of a surrogate pair', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(
+      queryOp,
+      { expression: "'x' || string-join((1 to 40000) ! codepoints-to-string(128512))", text: '<a/>' },
+      fixture.base(),
+    );
+    const [item] = result.results;
+    expect(result.truncated).toBe(true);
+    expect(item).toHaveLength(MAX_RESULT_CHARS - 1);
+    const last = item?.charCodeAt((item?.length ?? 1) - 1) ?? 0;
+    expect(last >= 0xd800 && last <= 0xdbff).toBe(false);
   });
 });
