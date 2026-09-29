@@ -419,6 +419,18 @@ is the whole credential.
   while their tab is open (`apps/desktop/src/main/hooks/hooks-service.ts`) and never writes them to
   disk.
 
+### Signature secrets
+
+A catch URL can check the signature of what it receives, and a webhook item can sign what it sends.
+
+- **On the server.** The catch URL's secret is encrypted at rest with AES-256-GCM under
+  `WIREBENCH_SERVER_HOOKS_SECRET_KEY` (32 random bytes, base64) and is never logged. Without the key
+  the server refuses to store one. The secret is write-only over the API: it is never returned, only
+  a hint (its last four characters, for secrets of eight or more) shown to editors and admins.
+- **On the desktop.** A signing secret lives in the OS keychain behind a reference and never in the
+  project file or the repository; the file holds only the reference and a CI name.
+- **In CI.** The CLI reads `WIREBENCH_SECRET_<name>` and masks the value like any other secret.
+
 ## The packaged binary
 
 Six Electron fuses are flipped into the executable at build time

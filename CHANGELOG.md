@@ -158,6 +158,13 @@ All notable changes to this project are documented here. The format follows
   name mentions a signature. The collection is part of `formatVersion: 6`, with request scripts. See
   [Sending webhooks](https://wirebench.github.io/wirebench/guides/sending-webhooks/).
 
+- **Webhook signatures.** Webhook items, their folders and the Webhooks collection can sign what they
+  send — *HMAC of body*, *Timestamped HMAC* or *Standard Webhooks* — with a secret from the keychain,
+  or from `WIREBENCH_SECRET_<name>` in `wirebench run`. A catch URL can check the same schemes: each
+  capture shows ✓ verified or ✗ with the reason, and **Reject unverified requests** answers 401 while
+  still keeping the capture. The server keeps catch URL secrets encrypted under
+  `WIREBENCH_SERVER_HOOKS_SECRET_KEY`.
+
 ### Changed
 
 - **The catch-URL root is now Webhook inbox.** The Explorer node for a shared workspace's catch URLs,

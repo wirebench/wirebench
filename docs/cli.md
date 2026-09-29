@@ -231,6 +231,12 @@ Resolution for a ref, in order:
    turned into `_`.
 
 Neither variable set → the request is `errored` with `secret-missing`, naming the variable to set.
+
+A webhook item that signs what it sends (see the
+[Webhook signatures guide](https://wirebench.github.io/wirebench/guides/webhook-signatures/)) reads its
+signing secret from `WIREBENCH_SECRET_<secretEnv>`, the CI name saved on the item, folder or collection.
+Missing, the item fails and the message names the variable; it is never sent unsigned.
+`wirebench secrets list` lists it like any other secret.
 The CLI never reads the desktop's `secrets.json` and never touches a keychain — a pipeline has no
 user, so it has no keychain to read.
 

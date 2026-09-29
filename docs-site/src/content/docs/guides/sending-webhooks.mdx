@@ -136,9 +136,9 @@ From a capture's tab in the [Webhook inbox](/wirebench/guides/webhooks/), the ca
 
 The new item's method and path come from the capture; its headers are the ones that arrived, minus
 hop-by-hop and transport headers (`Host`, `Content-Length`, `Connection`, and the like) and minus any
-header whose name contains `signature` — a captured signature is stale the moment the body changes,
-so it is left out rather than kept and silently wrong. Signing an outgoing webhook is not yet
-supported; it is planned for a later release. **Save as webhook…** is disabled, with the reason, on a
+header whose name contains `signature`, plus Standard Webhooks' `webhook-id` and `webhook-timestamp` —
+a captured signature is stale the moment the body changes, so it is left out rather than kept and
+silently wrong. To sign what you send, see [Webhook signatures](/wirebench/guides/webhook-signatures/). **Save as webhook…** is disabled, with the reason, on a
 capture whose body was truncated or is binary.
 
 ## In a run
