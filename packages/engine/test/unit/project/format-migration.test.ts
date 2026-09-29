@@ -4,7 +4,7 @@
  * `test/fixtures/format-v2/project` (a 1.1.0 build, before `apis/`),
  * `test/fixtures/format-v3/project` (a version-3 build, before `assertions` and `…Env`), and
  * `test/fixtures/format-v4/project` (a version-4 build, before SOAP owners could take a token
- * auth scheme). Loading
+ * auth scheme), and `test/fixtures/format-v5/project` (a version-5 build, before scripts). Loading
  * any of these must fill the fields it predates with their empty defaults, and saving it straight
  * back must touch nothing but the `formatVersion` line.
  */
@@ -19,6 +19,7 @@ const V1_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v1', 'p
 const V2_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v2', 'project');
 const V3_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v3', 'project');
 const V4_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v4', 'project');
+const V5_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v5', 'project');
 
 async function readAllText(dir: string, prefix = ''): Promise<Map<string, string>> {
   const out = new Map<string, string>();
@@ -145,7 +146,7 @@ describe('loading a version-3 project folder', () => {
 });
 
 describe('loading a version-4 project folder', () => {
-  it('loads at version 5 with no problems, and its SOAP auth intact', async () => {
+  it('loads at the current version with no problems, and its SOAP auth intact', async () => {
     const { project, problems } = await loadProject(V4_DIR);
     expect(problems).toEqual([]);
     expect(project.formatVersion).toBe(6);
@@ -184,6 +185,38 @@ describe('loading a version-4 project folder', () => {
     for (const [file, beforeText] of before) {
       const expected =
         file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 4', 'formatVersion: 6') : beforeText;
+      expect(after.get(file)).toBe(expected);
+    }
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe('loading a version-5 project folder', () => {
+  it('loads at the current version with no problems and no scripts', async () => {
+    const { project, problems } = await loadProject(V5_DIR);
+    expect(problems).toEqual([]);
+    expect(project.formatVersion).toBe(6);
+    const requests = [
+      ...project.interfaces.flatMap((iface) => iface.operations.flatMap((op) => op.requests)),
+      ...project.apis.flatMap((api) => api.requests),
+    ];
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every((request) => request.scripts === undefined)).toBe(true);
+  });
+
+  it('is rewritten with nothing changed but the formatVersion line', async () => {
+    const dir = await tempProjectDir();
+    await cp(V5_DIR, dir, { recursive: true });
+    const before = await readAllText(dir);
+    const { project } = await loadProject(dir);
+    await saveProject(project, dir);
+    const after = await readAllText(dir);
+
+    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+    for (const [file, beforeText] of before) {
+      const expected =
+        file === 'wirebench.yaml' ? beforeText.replace('formatVersion: 5', 'formatVersion: 6') : beforeText;
       expect(after.get(file)).toBe(expected);
     }
 

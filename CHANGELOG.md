@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Request scripts.** A SOAP, REST or gRPC request can have a pre-request script, which runs just
+  before the send and can change it (sign the body, add a header, fill in a field), and a
+  post-response script, which checks the response with tests and keeps values for later requests.
+  Scripts are TypeScript typed from the request's own contract — the operation's XSD elements, its
+  OpenAPI schemas or its `.proto` messages — so the **Scripts** tab completes the message and a wrong
+  path is an error before anything is sent. The response's **Script** tab shows the tests and the log.
+  A value a script keeps is read by later requests as `${#Sequence#name}`: in a sequence run, in
+  `wirebench run`, and — new — by the app's single sends, from the project's session values, listed
+  under **Values** in the explorer. Scripts run in a sandbox with no network, files or keychain, under
+  time and memory limits; they can't change where a request goes, never see its configured
+  credentials, and read a secret only when the request file lists it. `wirebench run` type-checks every
+  script before it sends anything. Postman collections now bring their pre-request and test scripts,
+  run through a `pm` layer and switched off until someone switches them on. Request files move to
+  `formatVersion: 6`; an older build refuses a project this one has saved.
+
 - **Webhook capture.** A workspace shared on Wirebench Server gets catch URLs. Each is a public address
   that records every request sent to it, with a configurable fixed response. Captures appear live in a
   tab under the Explorer's new *Webhooks* node, read with the same body and header viewers as a response,
@@ -140,7 +155,7 @@ All notable changes to this project are documented here. The format follows
   parent request's last recorded exchange, falling back to the target when it does not resolve to an
   absolute URL — the editor's URL bar shows which and why. **Save as webhook…**, on a catch URL
   capture, turns a real delivery into a webhook item, dropping hop-by-hop headers and any header whose
-  name mentions a signature. Project format moves to version 6. See
+  name mentions a signature. The collection is part of `formatVersion: 6`, with request scripts. See
   [Sending webhooks](https://wirebench.github.io/wirebench/guides/sending-webhooks/).
 
 ### Changed

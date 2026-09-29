@@ -377,6 +377,12 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Sequence: Cancel Run',
     category: 'Request',
   },
+  // A project's session values (#63): what single sends' scripts set, kept until the project closes.
+  'script.clearValues': {
+    id: 'script.clearValues',
+    label: 'Scripts: Clear Session Values',
+    category: 'Explorer',
+  },
   'env.switch': {
     id: 'env.switch',
     label: 'Switch Environment…',

@@ -61,6 +61,16 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       clearAccess: fail('team.clearAccess'),
     },
     search: { query: vi.fn().mockResolvedValue({ ok: true, value: { matches: [], truncated: false } }) },
+    // The script checker answers nothing by default, so a script editor mounts quietly.
+    script: {
+      diagnostics: vi.fn().mockResolvedValue({ ok: true, value: { diagnostics: [] } }),
+      completions: vi.fn().mockResolvedValue({ ok: true, value: { items: [] } }),
+      quickInfo: vi.fn().mockResolvedValue({ ok: true, value: {} }),
+      signatureHelp: vi.fn().mockResolvedValue({ ok: true, value: {} }),
+      closeModel: vi.fn().mockResolvedValue({ ok: true, value: {} }),
+      listValues: vi.fn().mockResolvedValue({ ok: true, value: { values: [] } }),
+      clearValues: vi.fn().mockResolvedValue({ ok: true, value: { cleared: 0 } }),
+    },
     api: {
       importOpenApi: fail('api.importOpenApi'),
       importPostman: fail('api.importPostman'),

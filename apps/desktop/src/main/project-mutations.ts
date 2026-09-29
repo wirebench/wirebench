@@ -49,6 +49,7 @@ import {
   updateEnvironment,
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
+import { enableScripts, updateRequestScripts } from './project-script-mutations.js';
 import {
   addGrpcApi,
   addGrpcFolder,
@@ -327,6 +328,7 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
     ...optional('wssIncomingRef'),
     properties: request.properties,
     assertions: request.assertions,
+    ...(request.scripts !== undefined ? { scripts: request.scripts } : {}),
     envelopeXml: patch.envelopeXml ?? request.envelopeXml,
   };
 
@@ -438,6 +440,7 @@ function updateRequestAuth(project: Project, requestId: string, auth: SoapOwnerA
     ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
     properties: request.properties,
     assertions: request.assertions,
+    ...(request.scripts !== undefined ? { scripts: request.scripts } : {}),
     envelopeXml: request.envelopeXml,
   };
   const requests = operation.requests.map((candidate) => (candidate.id === requestId ? next : candidate));
@@ -1012,6 +1015,12 @@ export async function applyChange(
 
     case 'update-request-properties':
       return updateRequestProperties(project, change.requestId, change.patch);
+
+    case 'update-request-scripts':
+      return updateRequestScripts(project, change.requestId, change.scripts);
+
+    case 'enable-scripts':
+      return enableScripts(project, change.requestIds);
 
     case 'update-project-settings':
       return updateProjectSettings(project, change.patch);

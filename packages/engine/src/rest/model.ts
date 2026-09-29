@@ -13,6 +13,7 @@
  */
 
 import type { Assertion } from '../assert/model.js';
+import type { RequestScripts } from '../script/model.js';
 import type { AttachmentSource, AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
@@ -202,6 +203,8 @@ export interface RestRequestDef {
    * `webhooks` or `callbacks` entry: which one, so *Update definition* can keep it in step.
    */
   readonly hook?: HookLink;
+  /** Pre-request and post-response scripts, in files beside the request (#63). */
+  readonly scripts?: RequestScripts;
 }
 
 /** A request's link to an operation of its API's definition. */

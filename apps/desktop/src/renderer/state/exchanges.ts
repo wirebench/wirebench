@@ -32,6 +32,7 @@ import { selectRequestEndpointUrl } from './project-endpoint.js';
 import { useWorkspaceStore } from './workspace.js';
 import { useProjectStore } from './project.js';
 import { useDraftsStore } from './drafts.js';
+import { flushScriptEdits, hasScriptEditors } from './script-edits.js';
 
 /** Newest-last log of every completed exchange, capped so it can't grow unbounded over a session. */
 /** The row limit before preferences load; `ui.logSize` replaces it (Preferences › Behaviour). */
@@ -507,6 +508,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     sendGrpc: async (requestId, options) => {
+      if (hasScriptEditors()) {
+        await flushScriptEdits();
+      }
       const request = useProjectStore.getState().grpcRequests[requestId];
       if (request === undefined) {
         update((draft) => {
@@ -859,6 +863,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     sendRest: async (requestId) => {
+      if (hasScriptEditors()) {
+        await flushScriptEdits();
+      }
       const request = useProjectStore.getState().restRequests[requestId];
       if (request === undefined) {
         update((draft) => {
@@ -1004,6 +1011,9 @@ export const useExchangesStore = create<ExchangesStore>((set, get) => {
     },
 
     send: async (requestId, force) => {
+      if (hasScriptEditors()) {
+        await flushScriptEdits();
+      }
       const projectState = useProjectStore.getState();
       const draftRequest = projectState.requests[requestId];
       if (draftRequest === undefined) {

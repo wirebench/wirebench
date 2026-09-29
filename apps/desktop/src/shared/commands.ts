@@ -75,6 +75,7 @@ export const COMMAND_IDS = [
   'sequence.new',
   'sequence.run',
   'sequence.cancel',
+  'script.clearValues',
   'env.switch',
   'env.next',
   'secrets.toggleShowSecrets',

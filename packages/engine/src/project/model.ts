@@ -22,6 +22,7 @@ import type { RestApi, RestRequestDef } from '../rest/model.js';
 import type { WsApi, WsRequestDef } from '../ws/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { WebhookCollection } from '../webhooks/model.js';
+import type { RequestScripts } from '../script/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
 
@@ -30,10 +31,11 @@ export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '.
  *
  * 4 added `assertions` on a request and the `…Env` name beside each secret reference. 5 let a SOAP
  * interface, endpoint or request carry `bearer`, `api-key` and `oauth2` auth (previously
- * REST-only) — new keys and new enum values on an existing field. 6 added the project's webhook
- * collection under `webhooks/` and `hook` on a request. All are additive, and all still bump the
- * version: this format does not round-trip unknown keys, so an older build would delete them on
- * its next save (see `schema.ts` and ADR-0003).
+ * REST-only) — new keys and new enum values on an existing field. 6 added `scripts` on a SOAP, REST or
+ * gRPC request (#63), the project's webhook collection under `webhooks/`, and `hook` on a request.
+ * All are additive, and all still bump the version: this format does not round-trip unknown keys,
+ * so an older build would delete them on its next save (see `schema.ts` and ADR-0003) — and would
+ * meanwhile send a request without its scripts.
  */
 export const FORMAT_VERSION = 6;
 
@@ -303,6 +305,8 @@ export interface SoapRequestDef {
    * brings the operation back does.
    */
   readonly orphaned?: boolean;
+  /** Pre-request and post-response scripts, in files beside the request (#63). */
+  readonly scripts?: RequestScripts;
   /** Stored verbatim in the sibling `.xml` file, byte for byte. */
   readonly envelopeXml: string;
 }

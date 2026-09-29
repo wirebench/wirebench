@@ -1,0 +1,5 @@
+baseUrl: https://shop.example
+id: 01J00000000000000000000API
+kind: rest
+name: Shop
+order: 0

@@ -28,7 +28,9 @@ built by [`plans/2026-09-26-definition-fetch-auth-plan.md`](plans/2026-09-26-def
 ([`specs/2026-09-26-team-secrets-design.md`](specs/2026-09-26-team-secrets-design.md) §13, issue #38, built by
 [`plans/2026-09-26-team-secrets-plan.md`](plans/2026-09-26-team-secrets-plan.md)), and SC-Q1–SC-Q7 for Sequences
 ([`specs/2026-09-28-sequences-design.md`](specs/2026-09-28-sequences-design.md), issue #62, built by
-[`plans/2026-09-28-sequences-plan.md`](plans/2026-09-28-sequences-plan.md)). The SC1–SC13 rows stay about SOAP; nothing REST weakens them, and the whole SOAP
+[`plans/2026-09-28-sequences-plan.md`](plans/2026-09-28-sequences-plan.md)), and SC-S1–SC-S8 for typed scripting
+([`specs/2026-09-28-typed-scripting-design.md`](specs/2026-09-28-typed-scripting-design.md), issue #63, built by
+[`plans/2026-09-28-typed-scripting-plan.md`](plans/2026-09-28-typed-scripting-plan.md)). The SC1–SC13 rows stay about SOAP; nothing REST weakens them, and the whole SOAP
 suite still runs unchanged.
 
 Every row's evidence runs in `pnpm check` (lint + typecheck + unit/integration + perf) or
@@ -116,6 +118,14 @@ build here rather than going stale silently.
 | SC-Q5 | **Runs in CI**: `wirebench run --sequence` sends each step as the runner sends a request, refuses a broken sequence before any send, reports steps in every reporter, and never shows a secret transfer's value | `packages/cli/test/integration/sequence.test.ts`, `packages/cli/test/unit/{args,reporters/mask}.test.ts` | Met |
 | SC-Q6 | **Runs in the app like a single send**: each step goes through the ordinary send path, is tagged in History, and a secret is masked even in the step that produced it | `apps/desktop/test/{sequence-runner,sequence-mutations}.test.ts` | Met |
 | SC-Q7 | **Built and run from the UI**: explorer, tab, step and transfer editing, run panel | `apps/desktop/test/renderer/sequence-tab.test.tsx`, `apps/desktop/test/renderer/tree-nodes.test.ts`, `e2e/specs/sequences.spec.ts` | Met; e2e run locally under xvfb |
+| SC-S1 | **A script runs with no capabilities** (ADR-0016): QuickJS on a worker, a fresh runtime per run, only functions of strings, and bounded time, memory, stack, log, tests and values | `packages/engine/test/unit/script/{sandbox,execute,strip}.test.ts` | Met |
+| SC-S2 | **Typed from the contract**: a SOAP, REST or gRPC request's script is typed from its XSD elements, OpenAPI operation or `.proto` messages, and a wrong path is a type error before any send | `packages/engine/test/unit/script/{types-rest,types-xsd,types-grpc,check,api}.test.ts` | Met |
+| SC-S3 | **A pre-request script can't redirect or read secrets**: the origin is fixed, CR/LF/NUL are refused, configured auth is applied after it, `${secret:…}` stands behind a placeholder, and `secrets.get` reads only listed names | `packages/engine/test/unit/script/apply.test.ts`, `packages/engine/test/integration/run/scripts.test.ts`, `apps/desktop/test/script-send.test.ts` | Met |
+| SC-S4 | **A script's values are data and masked**: `vars.set` values follow ADR-0015, and a secret one is masked in the summary, the HTTP Log, History and every report, even for the send that set it | `packages/engine/test/integration/run/scripts.test.ts`, `packages/cli/test/integration/scripts.test.ts`, `apps/desktop/test/{script-send,script-host}.test.ts` | Met |
+| SC-S5 | **Scripts are request files, version 6**: `scripts` on SOAP, REST and gRPC request files with sidecar files named from the slug; a version-5 project migrates by stamp, a missing or oversized file is reported and refuses to send, and edits and clones keep them | `packages/engine/test/unit/project/scripts-format.test.ts`, `apps/desktop/test/script-mutations.test.ts` | Met |
+| SC-S6 | **Runs in CI**: `wirebench run` type-checks every selected script before any send (exit 2 on an error), carries values to later requests, and reports tests and the masked log | `packages/cli/test/integration/scripts.test.ts`, `packages/engine/test/integration/run/scripts.test.ts` | Met |
+| SC-S7 | **Postman scripts come across switched off**, through a `pm` layer, with unsupported calls named | `packages/engine/test/unit/rest/postman/scripts.test.ts`, `packages/engine/test/unit/script/postman-layer.test.ts`, `apps/desktop/test/renderer/enable-scripts-dialog.test.tsx` | Met |
+| SC-S8 | **In the app**: the Scripts tab with checker-backed completion and errors, the Script result tab, session values a single send reads, and no TypeScript worker in the renderer | `apps/desktop/test/renderer/scripts-tab.test.tsx`, `apps/desktop/test/renderer/script-language.test.ts`, `apps/desktop/test/build-output.test.ts`, `e2e/specs/scripts.spec.ts` | Met; e2e run locally under xvfb |
 
 ## Shared workspaces (docs/specs/2026-09-13-wirebench-shared-workspaces-design.md §13)
 

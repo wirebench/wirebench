@@ -8,6 +8,7 @@ import type {
   RestFolderWire,
   RestRequestWire,
   WebhookCollectionWire,
+  ScriptValueWire,
   WsApiWire,
   WsRequestWire,
 } from '../../../shared/wire-types.js';
@@ -41,7 +42,10 @@ export type ExplorerNodeKind =
   | 'catch-url'
   /** The group of a project's sequences; a container, not an entity. */
   | 'sequences'
-  | 'sequence';
+  | 'sequence'
+  /** A project's session values (#63): what single sends' scripts set; a container, not an entity. */
+  | 'values'
+  | 'value';
 
 /**
  * What the tree needs to know about one project in the open workspace. Structurally the subset
@@ -138,6 +142,11 @@ export interface ExplorerNode {
    * operation's own contract key (`hook.operation`).
    */
   readonly suffix?: string;
+  /**
+   * Set on an interface, API or folder with requests beneath it whose scripts are switched off
+   * (#63): their ids, for **Switch on scripts…**.
+   */
+  readonly scriptsOff?: readonly string[];
 }
 
 /** What the explorer shows of one sequence. */
@@ -691,7 +700,18 @@ export function buildExplorerTree(
   sequences: Readonly<Record<string, readonly ExplorerSequence[]>> = {},
   webhooks?: ExplorerWebhooks,
   webhookCollections: Readonly<Record<string, WebhookCollectionWire>> = {},
+  values: Readonly<Record<string, readonly ScriptValueWire[]>> = {},
 ): ExplorerNode[] {
+  // Every request whose scripts are switched off, whichever protocol it is.
+  const scriptsOff = new Set(
+    [
+      ...requests,
+      ...Object.values(rest).flatMap((data) => data.requests),
+      ...Object.values(grpc).flatMap((data) => data.requests),
+    ]
+      .filter((request) => request.scripts?.enabled === false)
+      .map((request) => request.id),
+  );
   const roots = projects.map((project) => {
     const broken = project.status === 'missing' || project.status === 'error';
     const children: ExplorerNode[] = broken
@@ -716,8 +736,10 @@ export function buildExplorerTree(
           grpc[project.id],
           ws[project.id],
         )
+          .map((node) => (scriptsOff.size === 0 ? node : withScriptsOff(node, scriptsOff)))
           .concat(webhookCollectionGroup(project.id, webhookCollections[project.id], rest[project.id]))
-          .concat(sequencesGroup(project.id, sequences[project.id] ?? []));
+          .concat(sequencesGroup(project.id, sequences[project.id] ?? []))
+          .concat(valuesGroup(project.id, values[project.id] ?? []));
 
     return {
       id: `proj:${project.id}`,
@@ -791,6 +813,51 @@ function sequencesGroup(projectId: string, sequences: readonly ExplorerSequence[
         label: sequence.name,
         projectId,
         sequenceId: sequence.id,
+      })),
+    },
+  ];
+}
+
+/** The containers **Switch on scripts…** is offered on. */
+const SCRIPT_CONTAINERS: ReadonlySet<ExplorerNodeKind> = new Set(['interface', 'api', 'grpc-api', 'folder']);
+
+/** The ids of the requests under `nodes` whose scripts are off. */
+function scriptsOffUnder(nodes: readonly ExplorerNode[], off: ReadonlySet<string>): string[] {
+  return nodes.flatMap((node) => [
+    ...(node.requestId !== undefined && off.has(node.requestId) ? [node.requestId] : []),
+    ...scriptsOffUnder(node.children ?? [], off),
+  ]);
+}
+
+/** `node` with {@link ExplorerNode.scriptsOff} set on it and on every container beneath it. */
+function withScriptsOff(node: ExplorerNode, off: ReadonlySet<string>): ExplorerNode {
+  if (node.children === undefined) {
+    return node;
+  }
+  const children = node.children.map((child) => withScriptsOff(child, off));
+  const ids = SCRIPT_CONTAINERS.has(node.kind) ? [...new Set(scriptsOffUnder(children, off))] : [];
+  return { ...node, children, ...(ids.length > 0 ? { scriptsOff: ids } : {}) };
+}
+
+/**
+ * A project's Values group, last: the session values single sends' scripts set, masked by main, a
+ * secret one shown without its value. None when there are none.
+ */
+function valuesGroup(projectId: string, values: readonly ScriptValueWire[]): ExplorerNode[] {
+  if (values.length === 0) {
+    return [];
+  }
+  return [
+    {
+      id: `values:${projectId}`,
+      kind: 'values',
+      label: 'Values',
+      projectId,
+      children: values.map((value) => ({
+        id: `value:${projectId}:${value.name}`,
+        kind: 'value' as const,
+        label: value.secret ? `${value.name} (secret)` : `${value.name} = ${value.value ?? ''}`,
+        projectId,
       })),
     },
   ];

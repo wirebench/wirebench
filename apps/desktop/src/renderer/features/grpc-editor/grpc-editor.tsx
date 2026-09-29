@@ -36,6 +36,7 @@ import { MessageTab } from './message-tab.js';
 import { MetadataTab } from './metadata-tab.js';
 import { GrpcResponsePane } from './response-pane.js';
 import { GrpcSettingsTab } from './settings-tab.js';
+import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -44,6 +45,7 @@ const TABS = [
   { id: 'message', label: 'Message' },
   { id: 'metadata', label: 'Metadata' },
   { id: 'auth', label: 'Auth' },
+  { id: 'scripts', label: 'Scripts' },
   { id: 'settings', label: 'Settings' },
 ] as const;
 
@@ -205,7 +207,14 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
 
   const requestTabs = (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <Tabs label="Request tabs" items={TABS} active={tab} onSelect={setTab} />
+      <Tabs
+        label="Request tabs"
+        items={TABS.map((item) =>
+          item.id === 'scripts' && hasScripts(request.scripts) ? { ...item, badge: '●' } : item,
+        )}
+        active={tab}
+        onSelect={setTab}
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {tab === 'message' && (
           <MessageTab
@@ -240,6 +249,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
             }}
           />
         )}
+        {tab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
         {tab === 'settings' && (
           <GrpcSettingsTab
             settings={request.settings}

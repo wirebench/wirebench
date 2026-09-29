@@ -11,7 +11,7 @@ import {
   resolveSoapAuth as resolveSoapAuthValues,
   SECRET_NAME_PATTERN,
 } from '@wirebench/engine';
-import type { GetSecret, PropertyScopes, UnresolvedRef } from '@wirebench/engine';
+import type { GetSecret, PropertyScopes, SecretPlaceholders, UnresolvedRef } from '@wirebench/engine';
 import { recordAuthValues } from './redact.js';
 import type { SecretStore } from './secrets.js';
 
@@ -116,6 +116,9 @@ export function withSecretTokenScope(scopes: PropertyScopes): PropertyScopes {
  * values are read through `getSecret` and the resolution runs again with them in scope. A token
  * with no value refuses the send as `secret-missing` rather than going out empty or as typed.
  *
+ * With `placeholders` — a request whose scripts run (#63) — each token resolves to its placeholder
+ * instead, and no value is read: the send puts the values back after the pre-request script.
+ *
  * The values are in scope only for the duration of that second, synchronous call.
  *
  * @throws WirebenchError `secret-missing`
@@ -123,13 +126,15 @@ export function withSecretTokenScope(scopes: PropertyScopes): PropertyScopes {
 export async function resolveWithStoredValues<R extends { readonly unresolved: readonly UnresolvedRef[] }>(
   resolve: () => R | undefined,
   getSecret: GetSecret,
+  placeholders?: SecretPlaceholders,
 ): Promise<R | undefined> {
   const first = resolve();
   const names = first === undefined ? [] : missingSecretNames(first.unresolved);
   if (names.length === 0) {
     return first;
   }
-  const values = await resolveSecretTokens(names, getSecret);
+  const values =
+    placeholders !== undefined ? placeholders.scopeFor(names) : await resolveSecretTokens(names, getSecret);
   const previous = tokenValues;
   tokenValues = values;
   try {

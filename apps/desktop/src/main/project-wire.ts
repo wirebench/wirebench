@@ -29,6 +29,7 @@ import type {
   OperationDef,
   Project,
   RequestDef,
+  RequestScripts,
   UpdatePlan,
   WebhookCollection,
   WsApi,
@@ -61,6 +62,7 @@ import type {
   OperationSummaryWire,
   ProjectProblemWire,
   ProjectWire,
+  RequestScriptsWire,
   RequestWire,
 } from '../shared/wire-types.js';
 import { toSequenceWire } from './project-sequence-mutations.js';
@@ -188,6 +190,32 @@ function toAttachmentWire(attachment: Attachment): AttachmentWire {
 }
 
 /** Converts one saved request to its wire shape, flattened out of its owning operation. */
+/** A request's scripts as the renderer sees them: their text, and what kept a file from loading. */
+export function toRequestScriptsWire(scripts: RequestScripts | undefined): RequestScriptsWire | undefined {
+  if (scripts === undefined) {
+    return undefined;
+  }
+  const problems = (['pre', 'post'] as const).flatMap((phase) => {
+    const code = scripts[phase]?.problem;
+    return code === undefined ? [] : [{ phase, code }];
+  });
+  return {
+    ...(scripts.pre !== undefined ? { pre: scripts.pre.text } : {}),
+    ...(scripts.post !== undefined ? { post: scripts.post.text } : {}),
+    api: scripts.api,
+    enabled: scripts.enabled,
+    secrets: [...scripts.secrets],
+    ...(scripts.timeoutMs !== undefined ? { timeoutMs: scripts.timeoutMs } : {}),
+    ...(problems.length > 0 ? { problems } : {}),
+  };
+}
+
+/** `{ scripts }` for a wire object, or nothing when the request has none. */
+function scriptsField(scripts: RequestScripts | undefined): { scripts?: RequestScriptsWire } {
+  const wire = toRequestScriptsWire(scripts);
+  return wire === undefined ? {} : { scripts: wire };
+}
+
 export function toRequestWire(iface: Interface, operation: OperationDef, request: RequestDef): RequestWire {
   return {
     id: request.id,
@@ -211,6 +239,7 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     ...(request.wssIncomingRef !== undefined ? { wssIncomingRef: request.wssIncomingRef } : {}),
     attachments: request.attachments.map(toAttachmentWire),
     properties: { ...request.properties },
+    ...scriptsField(request.scripts),
     ...(request.orphaned === true ? { orphaned: true } : {}),
   };
 }
@@ -427,6 +456,7 @@ function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: str
     body: toRestBodyWire(request.body),
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
+    ...scriptsField(request.scripts),
     ...(request.orphaned === true ? { orphaned: true } : {}),
     ...(request.hook !== undefined ? { hook: request.hook } : {}),
   };
@@ -560,6 +590,7 @@ function toGrpcRequestWire(request: GrpcRequestDef, apiId: string, folderId: str
     message: request.message,
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
+    ...scriptsField(request.scripts),
     ...(request.orphaned === true ? { orphaned: true } : {}),
   };
 }

@@ -283,4 +283,50 @@ describe('runSequence', () => {
     expect(Object.hasOwn(calls[1]!.scope, '__proto__')).toBe(true);
     expect(calls[1]!.scope['__proto__']).toBe('x');
   });
+  it("merges a step's script results: values for later steps, tests as assertions, a failure as an error", async () => {
+    const calls: PropertyMap[] = [];
+    const secrets: string[] = [];
+    const send: SequenceStepSender = (resolved, scope) => {
+      calls.push(scope);
+      if (resolved.step.requestId === 'login') {
+        return Promise.resolve({
+          subject: json({ ok: true }),
+          script: {
+            tests: [{ name: 'logged in', passed: true }],
+            values: [
+              { name: 'token', value: 'tok-9', secret: true },
+              { name: 'plain', value: 'p', secret: false },
+            ],
+            log: { lines: ['hello'], truncated: false },
+          },
+        });
+      }
+      return Promise.resolve({
+        subject: json({ ok: true }),
+        scriptsOff: true,
+        script: {
+          tests: [{ name: 'broke', passed: false, message: 'nope' }],
+          values: [],
+          log: { lines: [], truncated: false },
+          error: { code: 'script-error', message: 'Pay.post.ts:1:1: Error: late' },
+        },
+      });
+    };
+    const result = await runSequence(steps(step('login'), step('pay')), project(), send, {
+      onSecretValue: (v) => secrets.push(v),
+    });
+    expect(calls[1]).toEqual({ token: 'tok-9', plain: 'p' });
+    expect(secrets).toEqual(['tok-9']);
+    expect(result.steps[0]).toMatchObject({
+      outcome: 'passed',
+      assertions: [{ type: 'script', label: 'logged in', outcome: 'passed' }],
+      scriptLog: ['hello'],
+    });
+    expect(result.steps[1]).toMatchObject({
+      outcome: 'errored',
+      error: { code: 'script-error' },
+      assertions: [{ type: 'script', label: 'broke', outcome: 'failed', message: 'nope' }],
+      scriptsOff: true,
+    });
+  });
 });

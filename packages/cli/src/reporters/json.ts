@@ -21,6 +21,10 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *     - `sequence`: `{ id, name, stepId }`.
  *     - `transfers[]`: `{ name, outcome, secret, value?, message? }`; a secret transfer has no `value`.
  *     - `origin`: where the step's request went.
+ *   - For a request with scripts (#63), two more optional fields, also added without a version change:
+ *     - `scriptLog[]`: what its scripts logged, masked like every other string.
+ *     - `scriptsOff`: `true` when its scripts are switched off and none ran.
+ *   - A script's tests appear in `assertions[]` with `type: "script"`.
  *
  * An absent optional is omitted from the object entirely, never written as `null`.
  */
@@ -52,11 +56,13 @@ export interface JsonReportRequest {
   readonly sequence?: RequestResult['sequence'];
   readonly transfers?: RequestResult['transfers'];
   readonly origin?: string;
+  readonly scriptLog?: readonly string[];
+  readonly scriptsOff?: true;
 }
 
 function toReportRequest(result: RequestResult): JsonReportRequest {
   const { path, group, name, protocol, outcome, status, durationMs, unasserted, assertions, error, exchange } = result;
-  const { sequence, transfers, origin } = result;
+  const { sequence, transfers, origin, scriptLog, scriptsOff } = result;
   return {
     path,
     group,
@@ -72,6 +78,8 @@ function toReportRequest(result: RequestResult): JsonReportRequest {
     ...(sequence !== undefined ? { sequence } : {}),
     ...(transfers !== undefined ? { transfers } : {}),
     ...(origin !== undefined ? { origin } : {}),
+    ...(scriptLog !== undefined ? { scriptLog } : {}),
+    ...(scriptsOff === true ? { scriptsOff: true as const } : {}),
   };
 }
 

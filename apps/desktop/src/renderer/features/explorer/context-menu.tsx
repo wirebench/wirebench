@@ -46,6 +46,27 @@ export type ExplorerMenuGroup = readonly ExplorerMenuItem[];
  * same handlers the `explorer.*` / `workspace.*` palette commands run.
  */
 export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGroup[] {
+  return withScriptsGroup(node, menuGroupsOf(node));
+}
+
+/**
+ * **Switch on scripts…** (#63) on an interface, API or folder with requests beneath it whose
+ * scripts are off, after the node's own first group.
+ */
+function withScriptsGroup(node: ExplorerNode, menu: readonly ExplorerMenuGroup[]): readonly ExplorerMenuGroup[] {
+  const off = node.scriptsOff;
+  if (off === undefined || off.length === 0) {
+    return menu;
+  }
+  const item: ExplorerMenuItem = {
+    key: 'enable-scripts',
+    label: 'Switch on scripts…',
+    run: () => explorerActions.enableScripts(off),
+  };
+  return [...menu.slice(0, 1), [item], ...menu.slice(1)];
+}
+
+function menuGroupsOf(node: ExplorerNode): readonly ExplorerMenuGroup[] {
   if (node.kind === 'project' && node.projectId !== undefined) {
     const projectId = node.projectId;
     return groups(
@@ -333,6 +354,11 @@ export function explorerMenuGroups(node: ExplorerNode): readonly ExplorerMenuGro
   if (node.kind === 'sequences' && node.projectId !== undefined) {
     const projectId = node.projectId;
     return groups([{ key: 'new-sequence', label: 'New Sequence', run: () => explorerActions.newSequence(projectId) }]);
+  }
+
+  if ((node.kind === 'values' || node.kind === 'value') && node.projectId !== undefined) {
+    const projectId = node.projectId;
+    return groups([{ key: 'clear-values', label: 'Clear values', run: () => explorerActions.clearValues(projectId) }]);
   }
 
   if (node.kind === 'sequence' && node.sequenceId !== undefined) {

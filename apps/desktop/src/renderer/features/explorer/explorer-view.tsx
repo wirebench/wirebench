@@ -47,6 +47,8 @@ import { buildExplorerTree, nodeProjectId } from './tree-nodes.js';
 import { openCatchUrlTab, webhooksActions } from '../webhooks/webhooks-actions.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
+import { useScriptValuesStore } from '../../state/script-values.js';
+import { EnableScriptsDialog } from '../scripts/enable-scripts-dialog.js';
 
 /** Measures a container's box size with `ResizeObserver` so the virtualized tree can fill it. */
 function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, { width: number; height: number }] {
@@ -91,6 +93,7 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'catch-url': Inbox,
   sequences: Folder,
   sequence: ListOrdered,
+  values: Folder,
 };
 
 /**
@@ -127,6 +130,8 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'catch-url': 'catch-url-row',
   sequences: 'sequences-group-row',
   sequence: 'sequence-row',
+  values: 'values-group-row',
+  value: 'value-row',
 };
 
 const INLINE_BUTTON_CLASS =
@@ -385,6 +390,7 @@ export function ExplorerView() {
   const grpc = useProjectStore((state) => state.grpc);
   const ws = useProjectStore((state) => state.ws);
   const sequenceLists = useProjectStore((state) => state.sequenceLists);
+  const scriptValues = useScriptValuesStore((state) => state.byProject);
   const removeInterface = useProjectStore((state) => state.removeInterface);
   const removeRequest = useProjectStore((state) => state.removeRequest);
   const setSelection = useUiStore((state) => state.setSelection);
@@ -445,6 +451,7 @@ export function ExplorerView() {
     sequenceLists,
     webhooks,
     webhookCollections,
+    scriptValues,
   );
 
   useEffect(() => {
@@ -684,8 +691,8 @@ export function ExplorerView() {
                   explorerActions.openSequence(node.data.sequenceId);
                   return;
                 }
-                if (node.data.kind === 'sequences') {
-                  // A group row has nothing to open; a click folds it.
+                if (node.data.kind === 'sequences' || node.data.kind === 'values' || node.data.kind === 'value') {
+                  // A group row has nothing to open; a click folds it. A value has nothing to open either.
                   return;
                 }
                 explorerActions.openRequest(node.data.requestId);
@@ -834,6 +841,8 @@ export function ExplorerView() {
           )
         )}
       </div>
+
+      <EnableScriptsDialog />
 
       <ConfirmDialog
         open={confirmRemoveInterfaceId !== undefined}

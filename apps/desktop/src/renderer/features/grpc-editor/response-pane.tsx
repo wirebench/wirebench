@@ -20,6 +20,7 @@ import type { GrpcExchangeState, GrpcLiveState } from '../../state/exchanges.js'
 import { InspectorIconButton } from '../request-editor/inspectors/inspector-strip.js';
 import { SslInspector } from '../request-editor/inspectors/ssl-inspector.js';
 import { TimingsBar } from '../console/timings-bar.js';
+import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../scripts/script-results.js';
 
 /** The response tabs, in order. */
 const TABS = [
@@ -28,6 +29,7 @@ const TABS = [
   { id: 'timing', label: 'Timing' },
   { id: 'tls', label: 'TLS' },
   { id: 'raw', label: 'Raw' },
+  { id: 'script', label: 'Script' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -127,9 +129,15 @@ export function GrpcResponsePane({ state, onPush, onHalfClose }: GrpcResponsePan
   const headers = exchange?.headers ?? live?.headers;
   const showTabs = exchange !== undefined || live !== undefined;
 
-  const items = TABS.map((item) =>
-    item.id === 'messages' && messages.length > 0 ? { ...item, badge: String(messages.length) } : item,
-  );
+  const items = TABS.filter(
+    (item) => item.id !== 'script' || (exchange !== undefined && hasScriptResults(exchange)),
+  ).map((item) => {
+    if (item.id === 'messages' && messages.length > 0) {
+      return { ...item, badge: String(messages.length) };
+    }
+    const badge = item.id === 'script' ? scriptResultsBadge(exchange?.script) : undefined;
+    return badge !== undefined ? { ...item, badge } : item;
+  });
 
   return (
     <section aria-label="Response" data-testid="grpc-response" className="flex h-full min-h-0 flex-col">
@@ -192,6 +200,9 @@ export function GrpcResponsePane({ state, onPush, onHalfClose }: GrpcResponsePan
               ) : (
                 <RawExchange exchange={exchange} />
               ))}
+            {tab === 'script' && exchange !== undefined && (
+              <ScriptResults script={exchange.script} scriptsOff={exchange.scriptsOff} />
+            )}
           </div>
           {live?.open === true && onPush !== undefined && onHalfClose !== undefined && (
             <StreamComposer sent={live.sent} onPush={onPush} onHalfClose={onHalfClose} />

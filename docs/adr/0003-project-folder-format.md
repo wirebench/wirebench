@@ -133,3 +133,14 @@ project, shows no sequences, and leaves the folder byte for byte as it was, just
 sequence shape bumps that version, and a build refuses only the files that are too new for it, as a
 `sequence-version-too-new` problem, never the whole project. The project's `formatVersion` still moves
 for any change to a file kind an older build reads.
+
+**Update (2026-09-28, typed scripting): `formatVersion: 6`.** A SOAP, REST or gRPC request file may carry a
+`scripts` key (`docs/specs/2026-09-28-typed-scripting-design.md`, #63), and each script lives in a file beside the
+request, `<slug>.pre.ts` / `<slug>.post.ts` (`.js` for the Postman layer). This is the additive case this policy
+exists for, and worse than most: an older build would drop the key, delete the script files on its next save, and
+until then send the request without its scripts. So it bumps the version, and an older build refuses a project this
+build has saved. The 5 → 6 migration is a stamp, proved by a version-5 fixture whose save changes only the
+`formatVersion` line. The loader always opens the script file named from the request's slug and never the name the
+request file records, so a hand-edited name cannot point outside the request's directory. Save treats a script file
+beside a known request as managed, like a body file, so renaming a request moves its scripts and removing a script
+removes its file.

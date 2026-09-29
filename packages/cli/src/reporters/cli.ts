@@ -52,6 +52,12 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
         lines.push(`→ ${transfer.name} = ${transfer.secret ? '(secret)' : (transfer.value ?? '')}`);
       }
     }
+    // A script's log shows when verbose, or always for a request that did not pass (#63).
+    if (options.verbose || result.outcome !== 'passed') {
+      for (const line of result.scriptLog ?? []) {
+        lines.push(`log: ${line}`);
+      }
+    }
     return lines;
   };
 
@@ -69,6 +75,9 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       }
       if (result.unasserted && result.outcome !== 'skipped') {
         parts.push('(no assertions)');
+      }
+      if (result.scriptsOff === true) {
+        parts.push('(scripts off)');
       }
       out.write(`${parts.join('  ')}\n`);
       for (const line of detailLines(result)) {

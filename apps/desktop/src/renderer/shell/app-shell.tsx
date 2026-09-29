@@ -19,6 +19,7 @@ import { useTheme } from '../lib/theme.js';
 import { hydrateUi, useUiStore } from '../state/ui.js';
 import { rememberOpenWorkspaceTabs } from '../state/workspace-tabs.js';
 import { subscribeToGlobals } from '../state/globals.js';
+import { subscribeToScriptValues } from '../state/script-values.js';
 import { subscribeToPreferences, usePreferencesStore } from '../state/preferences.js';
 import { subscribeToHistory } from '../state/history.js';
 import {
@@ -273,6 +274,7 @@ export function AppShell() {
   }, []);
   useEffect(() => subscribeToProject(), []);
   useEffect(() => subscribeToGlobals(), []);
+  useEffect(() => subscribeToScriptValues(), []);
   useEffect(() => subscribeToPreferences(), []);
   useEffect(() => subscribeToHistory(), []);
   useEffect(() => subscribeToExchangeFailures(), []);

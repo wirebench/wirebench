@@ -24,9 +24,10 @@ function maskDeep(value: unknown, mask: Mask): unknown {
  * is hidden as the app's log hides it.
  */
 export function maskRequestResult(result: RequestResult, mask: Mask): RequestResult {
-  const { error, exchange, transfers } = result;
+  const { error, exchange, transfers, scriptLog } = result;
   return {
     ...result,
+    ...(scriptLog !== undefined ? { scriptLog: scriptLog.map((line) => mask(line)) } : {}),
     // A secret transfer carries no value at all; this catches a plain one that happens to hold a credential.
     ...(transfers !== undefined
       ? {

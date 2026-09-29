@@ -15,6 +15,7 @@
  */
 
 import type { Assertion } from '../assert/model.js';
+import type { RequestScripts } from '../script/model.js';
 import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
@@ -83,6 +84,8 @@ export interface GrpcRequestDef {
    * thinking about runs keeps compiling; absent reads as none.
    */
   readonly assertions?: readonly Assertion[];
+  /** Pre-request and post-response scripts, in files beside the request (#63). */
+  readonly scripts?: RequestScripts;
 }
 
 /** A named node in a gRPC API's tree. An import makes one per service. */

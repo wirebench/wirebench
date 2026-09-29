@@ -199,23 +199,33 @@ function sameIdentity(a: WatchDirIdentity, b: WatchDirIdentity): boolean {
  * reload would change. The definition cache is excluded too — it is written by imports, not
  * by hand, and re-reading it is hydration's job rather than the reload prompt's.
  */
+/** A request's script file beside it: `<slug>.pre.ts`, `<slug>.post.ts`, `.pre.js` or `.post.js` (#63). */
+const SCRIPT_FILE = /\.(pre|post)\.(ts|js)$/;
+
 export function isManagedPath(path: string): boolean {
   if (path === 'wirebench.yaml') {
     return true;
   }
   if (path.startsWith('interfaces/')) {
-    return !path.includes('/definition/') && (path.endsWith('.yaml') || path.endsWith('.xml'));
+    return (
+      !path.includes('/definition/') && (path.endsWith('.yaml') || path.endsWith('.xml') || SCRIPT_FILE.test(path))
+    );
   }
   if (path.startsWith('apis/')) {
     // An API's own file, a folder file, a request file — and a raw body, which is edited as the
     // file it is (`Create pet.body.json`), so an external change to one is a change to the request.
-    return !path.includes('/definition/') && (path.endsWith('.yaml') || /\.body\.[A-Za-z0-9]+$/.test(path));
+    // A request's script file (`Create pet.pre.ts`) is edited the same way (#63).
+    return (
+      !path.includes('/definition/') &&
+      (path.endsWith('.yaml') || /\.body\.[A-Za-z0-9]+$/.test(path) || SCRIPT_FILE.test(path))
+    );
   }
   if (path.startsWith('webhooks/')) {
-    // The collection's own file, and a request tree shaped like an API's (bodies included).
+    // The collection's own file, and a request tree shaped like an API's (bodies and scripts included).
     return (
       path === 'webhooks/webhooks.yaml' ||
-      (path.startsWith('webhooks/requests/') && (path.endsWith('.yaml') || /\.body\.[A-Za-z0-9]+$/.test(path)))
+      (path.startsWith('webhooks/requests/') &&
+        (path.endsWith('.yaml') || /\.body\.[A-Za-z0-9]+$/.test(path) || SCRIPT_FILE.test(path)))
     );
   }
   if (path.startsWith('sequences/')) {

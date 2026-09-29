@@ -20,6 +20,8 @@ import {
 import { openSequenceTab } from '../sequence/sequence-actions.js';
 import { useSequenceRunsStore } from '../../state/sequence-runs.js';
 import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
+import { useScriptValuesStore } from '../../state/script-values.js';
+import { useEnableScriptsDialog } from '../scripts/enable-scripts-dialog.js';
 
 /**
  * The logic behind every explorer action (right-click menu items and their `explorer.*` command
@@ -601,6 +603,19 @@ export const explorerActions = {
       return;
     }
     useUiStore.getState().requestDeleteNode({ kind: 'ws-api', id: apiId, name: api.name, requestCount });
+  },
+
+  /** Asks, then switches on the scripts of the given requests (#63): **Switch on scripts…**. */
+  enableScripts(requestIds: readonly string[]): void {
+    useEnableScriptsDialog.getState().open(requestIds);
+  },
+
+  /** Forgets one project's session values (#63), the `script.clearValues` command. */
+  clearValues(projectId: string | undefined): void {
+    if (projectId === undefined) {
+      return;
+    }
+    void useScriptValuesStore.getState().clear(projectId);
   },
 
   /** Creates a sequence in one project and opens its tab, where its steps are added. */

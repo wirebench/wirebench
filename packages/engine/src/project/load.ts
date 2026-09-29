@@ -76,6 +76,10 @@ import {
 import { KEYSTORES_PATH, MANIFEST_PATH } from './serialize.js';
 import { parseYaml } from './yaml.js';
 import { readSequences } from '../sequence/load.js';
+import { SCRIPT_LIMITS } from '../script/sandbox/model.js';
+import { scriptFileName, type RequestScripts, type ScriptPhase, type ScriptSource } from '../script/model.js';
+import type { z } from 'zod';
+import type { scriptsSchema } from './schema.js';
 
 /** A recoverable inconsistency found while loading a project. */
 export interface ProjectProblem {
@@ -97,7 +101,11 @@ export interface ProjectProblem {
     /** A sequence file written by a newer build; it is skipped and left as it is. */
     | 'sequence-version-too-new'
     /** A sequence file whose id another file already has; it is skipped and left as it is. */
-    | 'sequence-duplicate-id';
+    | 'sequence-duplicate-id'
+    /** A script the request names whose file is gone; the request refuses to send until it is back (#63). */
+    | 'script-file-missing'
+    /** A script file over the size limit; kept as it is, and the request refuses to send (#63). */
+    | 'script-too-large';
   readonly message: string;
   /** Path relative to the project root. */
   readonly file: string;
@@ -147,6 +155,63 @@ function exact<T extends object>(value: { readonly [K in keyof T]: T[K] | undefi
   return out as T;
 }
 
+/**
+ * A request's scripts and the text of each script file (#63). The file read is always the name
+ * derived from the slug, never the one the request file records. A missing or oversized file is a
+ * problem on the request; an oversized one keeps its text so a save writes it back untouched.
+ */
+async function loadScripts(
+  fs: FsLike,
+  root: string,
+  dir: string,
+  slug: string,
+  document: z.infer<typeof scriptsSchema> | undefined,
+  requestName: string,
+  problems: ProjectProblem[],
+  claim: (fileName: string) => void,
+): Promise<RequestScripts | undefined> {
+  if (document === undefined) {
+    return undefined;
+  }
+  const read = async (phase: ScriptPhase): Promise<ScriptSource | undefined> => {
+    if ((phase === 'pre' ? document.pre : document.post) === undefined) {
+      return undefined;
+    }
+    const name = scriptFileName(slug, phase, document.api);
+    claim(name);
+    const relative = `${dir}/${name}`;
+    const buffer = await readFileIfExists(fs, abs(root, relative));
+    if (buffer === undefined) {
+      problems.push({
+        code: 'script-file-missing',
+        message: `Request "${requestName}" names a ${phase === 'pre' ? 'pre-request' : 'post-response'} script whose file is missing`,
+        file: relative,
+      });
+      return { text: '', problem: 'script-file-missing' };
+    }
+    const text = buffer.toString('utf8');
+    if (buffer.byteLength > SCRIPT_LIMITS.fileBytes) {
+      problems.push({
+        code: 'script-too-large',
+        message: `Request "${requestName}" has a script over ${String(SCRIPT_LIMITS.fileBytes / 1024)} KiB, which will not run`,
+        file: relative,
+      });
+      return { text, problem: 'script-too-large' };
+    }
+    return { text };
+  };
+  const pre = await read('pre');
+  const post = await read('post');
+  return {
+    ...(pre !== undefined ? { pre } : {}),
+    ...(post !== undefined ? { post } : {}),
+    api: document.api,
+    enabled: document.enabled,
+    secrets: [...document.secrets],
+    ...(document.timeoutMs !== undefined ? { timeoutMs: document.timeoutMs } : {}),
+  };
+}
+
 async function loadRequests(
   fs: FsLike,
   root: string,
@@ -176,6 +241,9 @@ async function loadRequests(
     }
     names.delete(entry.name);
     names.delete(`${slug}.xml`);
+    const scripts = await loadScripts(fs, root, dir, slug, parsed.scripts, parsed.name, problems, (name) =>
+      names.delete(name),
+    );
     requests.push({
       kind: 'soap',
       id: parsed.id,
@@ -196,6 +264,7 @@ async function loadRequests(
       properties: exact<RequestProperties>(parsed.properties),
       assertions: parsed.assertions.map((a) => exact<Assertion>(a)),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
+      ...(scripts !== undefined ? { scripts } : {}),
       envelopeXml: envelope === undefined ? '' : envelope.toString('utf8'),
     });
   }
@@ -403,11 +472,15 @@ function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
     if (parsed.body.kind === 'raw') {
       unclaimed.delete(parsed.body.file);
     }
+    const slug = fileName.slice(0, -REQUEST_SUFFIX.length);
+    const scripts = await loadScripts(fs, root, dir, slug, parsed.scripts, parsed.name, problems, (name) =>
+      unclaimed.delete(name),
+    );
     return {
       kind: 'rest',
       id: parsed.id,
       name: parsed.name,
-      slug: fileName.slice(0, -REQUEST_SUFFIX.length),
+      slug,
       order: parsed.order,
       ...optional('description', parsed.description),
       method: parsed.method,
@@ -424,6 +497,7 @@ function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
         ? { contract: { method: parsed.contract.method, path: parsed.contract.path } }
         : {}),
       ...(parsed.hook !== undefined ? { hook: exact<HookLink>(parsed.hook) } : {}),
+      ...(scripts !== undefined ? { scripts } : {}),
     };
   };
 }
@@ -473,6 +547,16 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
         message = text.toString('utf8');
       }
     }
+    const scripts = await loadScripts(
+      fs,
+      root,
+      dir,
+      fileName.slice(0, -REQUEST_SUFFIX.length),
+      parsed.scripts,
+      parsed.name,
+      problems,
+      (name) => unclaimed.delete(name),
+    );
     return {
       kind: 'grpc',
       id: parsed.id,
@@ -489,6 +573,7 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
       settings: exact<GrpcRequestSettings>(parsed.settings),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
       ...(parsed.assertions.length > 0 ? { assertions: parsed.assertions.map((a) => exact<Assertion>(a)) } : {}),
+      ...(scripts !== undefined ? { scripts } : {}),
     };
   };
 }

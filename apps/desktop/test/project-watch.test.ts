@@ -953,9 +953,23 @@ describe('isManagedPath for webhooks', () => {
     ['webhooks/requests/ping.request.yaml', true],
     ['webhooks/requests/petstore-api/folder.yaml', true],
     ['webhooks/requests/petstore-api/new-pet.body.json', true],
+    ['webhooks/requests/petstore-api/new-pet.pre.ts', true],
     ['webhooks/notes.yaml', false],
     ['webhooks/README.md', false],
     ['webhooks/requests/README.md', false],
+  ])('%s -> %s', (path, expected) => {
+    expect(isManagedPath(path)).toBe(expected);
+  });
+});
+
+describe('isManagedPath for request scripts', () => {
+  it.each([
+    ['apis/shop/requests/Checkout.pre.ts', true],
+    ['apis/shop/requests/Folder/Checkout.post.js', true],
+    ['interfaces/Stock/operations/GetQuote/Request 1.pre.ts', true],
+    ['apis/shop/requests/notes.ts', false],
+    ['apis/shop/definition/Checkout.pre.ts', false],
+    ['sequences/Checkout.pre.ts', false],
   ])('%s -> %s', (path, expected) => {
     expect(isManagedPath(path)).toBe(expected);
   });

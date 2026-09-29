@@ -24,6 +24,7 @@ import { ViewTabs } from './view-tabs.js';
 import type { ViewTabItem } from './view-tabs.js';
 import { FaultOverview, OutlineView, prefetchViews, QueryView, RawView, ViewFallback } from './views/lazy-views.js';
 import type { TextRange } from './views/xml-model.js';
+import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../scripts/script-results.js';
 
 /** Converts a 0-based UTF-16 offset into a 1-based Monaco line/column — mirrors `request-pane.tsx`'s
  * copy: the renderer may only import the browser-safe `xml` subpath, not the Node-only `LineIndex`. */
@@ -47,12 +48,21 @@ function offsetToPosition(text: string, offset: number): { lineNumber: number; c
  * without the badge you would have to open the tab to learn a send brought parts back, or that
  * a signature did not hold.
  */
-function responseInspectors(attachmentCount: number, wssLabel: string): readonly InspectorItem[] {
+function responseInspectors(
+  attachmentCount: number,
+  wssLabel: string,
+  script: ExchangeState['exchange'] | undefined,
+): readonly InspectorItem[] {
+  const scriptBadge = scriptResultsBadge(script?.script);
   return [
     { id: 'headers', label: 'Headers' },
     { id: 'attachments', label: attachmentCount > 0 ? `Attachments (${String(attachmentCount)})` : 'Attachments' },
     { id: 'wss', label: wssLabel },
     { id: 'ssl', label: 'SSL Info' },
+    // What the request's scripts did (#63), only when it has any.
+    ...(script !== undefined && hasScriptResults(script)
+      ? [{ id: 'scripts' as const, label: scriptBadge === undefined ? 'Script' : `Script ${scriptBadge}` }]
+      : []),
   ];
 }
 
@@ -254,7 +264,7 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
         requestId={requestId}
         pane="response"
         label="Response inspectors"
-        items={responseInspectors(response?.attachments.length ?? 0, wssTabLabel(exchange))}
+        items={responseInspectors(response?.attachments.length ?? 0, wssTabLabel(exchange), exchange)}
         render={(inspector) =>
           inspector === 'headers' ? (
             <ResponseHeadersInspector exchange={exchange} />
@@ -262,6 +272,8 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
             <SslInspector http={exchange?.http} />
           ) : inspector === 'attachments' ? (
             <ResponseAttachmentsInspector exchange={exchange} />
+          ) : inspector === 'scripts' ? (
+            <ScriptResults script={exchange?.script} scriptsOff={exchange?.scriptsOff} />
           ) : (
             <WssInspector exchange={exchange} requestId={requestId} />
           )

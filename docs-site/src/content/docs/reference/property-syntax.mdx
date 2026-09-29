@@ -42,13 +42,14 @@ on your machine.
 | `Workspace` | The workspace's `properties` | When the project is inside a workspace |
 | `Global` | Properties set once for the whole app, independent of any project | Always |
 | `System` | The OS process environment (`process.env` by default) | Always, only via the explicit `${#System#name}` form |
-| `Sequence` | Values the earlier steps of a running [sequence](/wirebench/guides/sequences/) lifted from their responses | Only while a sequence runs, only via the explicit `${#Sequence#name}` form |
+| `Sequence` | Values the earlier steps of a running [sequence](/wirebench/guides/sequences/) lifted from their responses, or that a request's [scripts](/wirebench/guides/scripts/) set | Only via the explicit `${#Sequence#name}` form: in a sequence run, in `wirebench run`, and in the app's single sends, which read the project's session values |
 
 A `Sequence` value came from a server, so it follows stricter rules than the others. It is never
 expanded again, so `${…}` inside it stays as it is. It can't form another reference's name: in
 `${${#Sequence#n}}` a response would be choosing which property is read, so the reference is refused.
 It is always escaped for the body it lands in. And it may not supply the scheme, host or port of a
-URL. Outside a run, `${#Sequence#name}` is simply unresolved.
+URL. In the app, a single send reads the values its project's scripts kept this session (the
+explorer lists them under **Values**); with none by that name, `${#Sequence#name}` is unresolved.
 
 ## Precedence
 

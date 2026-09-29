@@ -611,6 +611,7 @@ export function applyRestRequestPatch(
     // could never turn an override back off.
     settings: patch.settings !== undefined ? cleanUndefined<RestRequestSettings>(patch.settings) : request.settings,
     assertions: request.assertions,
+    ...(request.scripts !== undefined ? { scripts: request.scripts } : {}),
     ...(request.orphaned === true ? { orphaned: true } : {}),
     // The contract link is main's record of what the import generated; a patch cannot set it.
     ...(request.contract !== undefined ? { contract: request.contract } : {}),
@@ -676,7 +677,12 @@ export function cloneRestRequest(project: Project, requestId: string): RestMutat
       // Deliberately no `hook`: two items sharing one hook key would confuse *Update definition*
       // about which one an OpenAPI re-import should refresh, so a clone starts unlinked.
     });
-    const withAssertions: RestRequestDef = { ...copy, assertions: original.assertions };
+    // The checks and scripts travel with the copy; its script files are written under its own slug.
+    const withAssertions: RestRequestDef = {
+      ...copy,
+      assertions: original.assertions,
+      ...(original.scripts !== undefined ? { scripts: original.scripts } : {}),
+    };
     createdId = withAssertions.id;
     const requests = [...container.requests];
     requests.splice(index + 1, 0, withAssertions);
