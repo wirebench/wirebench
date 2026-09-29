@@ -74,19 +74,32 @@ function isFormType(contentType: string | undefined): boolean {
   return (contentType?.split(';')[0] ?? '').trim().toLowerCase() === 'application/x-www-form-urlencoded';
 }
 
-/** The message through the engine's redactors, by the kind of its text (see {@link LoadedMessage.kind}). */
-function loaded(message: Omit<LoadedMessage, 'kind'>): LoadedMessage {
-  if (message.text.trimStart().startsWith('<')) {
-    const redacted = redactXml(message.text, { show: false });
-    return { ...message, kind: 'xml', text: redacted.replaceAll(MARKER_AS_CONTENT, '>&lt;redacted&gt;$1') };
+/** A message's text through the engine's redactors, and the kind it was redacted as. */
+export interface RedactedMessage {
+  readonly kind: 'xml' | 'json';
+  readonly text: string;
+}
+
+/**
+ * The message through the engine's redactors, by the kind of its text (see {@link LoadedMessage.kind}).
+ * Every op that reads a message goes through here, so no second redaction path exists.
+ */
+export function redactedMessage(text: string, contentType: string | undefined): RedactedMessage {
+  if (text.trimStart().startsWith('<')) {
+    const redacted = redactXml(text, { show: false });
+    return { kind: 'xml', text: redacted.replaceAll(MARKER_AS_CONTENT, '>&lt;redacted&gt;$1') };
   }
   // Read as JSON whatever the declared type. A declared form type adds the form redaction on top: it
   // leaves JSON that parses unchanged, and a real form body is not JSON, so the two never clash.
-  const json = redactStructuredBody(message.text, 'application/json', { show: false });
-  const text = isFormType(message.contentType)
-    ? redactStructuredBody(json, message.contentType, { show: false })
-    : json;
-  return { ...message, kind: 'json', text };
+  const json = redactStructuredBody(text, 'application/json', { show: false });
+  return {
+    kind: 'json',
+    text: isFormType(contentType) ? redactStructuredBody(json, contentType, { show: false }) : json,
+  };
+}
+
+function loaded(message: Omit<LoadedMessage, 'kind'>): LoadedMessage {
+  return { ...message, ...redactedMessage(message.text, message.contentType) };
 }
 
 async function fromHistory(
