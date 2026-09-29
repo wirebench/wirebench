@@ -12,6 +12,7 @@ import {
   CALCULATOR_WSDL,
   emptyProject,
   removeTempDirs,
+  restProject,
   SOAP_ITEM,
   soapProject,
   startServer,
@@ -114,6 +115,24 @@ describe('the op verbs', () => {
       code: ExitCode.Ok,
       stdout: '5\n',
     });
+  });
+
+  it('exits 0 for a REST body it could not check, saying so, and 1 for an undeclared status', async () => {
+    const fixture = await restProject();
+    const dir = await tempDir();
+    const huge = join(dir, 'huge.json');
+    await writeFile(huge, JSON.stringify([{ id: 1, name: 'x'.repeat(1_100_000) }]));
+    const empty = join(dir, 'empty.json');
+    await writeFile(empty, '[]');
+    const project = ['--project', fixture.dir];
+
+    const unchecked = await cli(['validate', huge, '--operation', 'Pets/listPets', ...project]);
+    expect(unchecked.code).toBe(ExitCode.Ok);
+    expect(unchecked.stdout).toMatch(/^not checked: skipped {2}Pets\//);
+
+    const unmatched = await cli(['validate', empty, '--operation', 'Pets/listPets', '--status', '500', ...project]);
+    expect(unmatched.code).toBe(ExitCode.AssertionFailed);
+    expect(unmatched.stdout).toMatch(/^invalid {2}Pets\//);
   });
 
   it('exits 2 with the code on stderr for a refused call, and prints verb help', async () => {

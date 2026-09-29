@@ -77,6 +77,44 @@ describe('op validate', () => {
     ).rejects.toMatchObject({ code: 'invalid-input' });
   });
 
+  it('calls a REST body it could not check valid but not checked, and an undeclared status invalid', async () => {
+    const fixture = await restProject();
+    const huge = JSON.stringify([{ id: 1, name: 'x'.repeat(1_100_000) }]);
+
+    const skipped = await runOp(validateOp, { operation: 'Pets/listPets', text: huge }, fixture.base());
+    expect(skipped).toMatchObject({ contract: 'skipped', valid: true, checked: false, truncated: false });
+
+    const unmatched = await runOp(validateOp, { operation: 'Pets/listPets', text: '[]', status: 500 }, fixture.base());
+    expect(unmatched).toMatchObject({ contract: 'unmatched', valid: false, checked: true });
+
+    const ok = await runOp(validateOp, { operation: 'Pets/listPets', text: '[]' }, fixture.base());
+    expect(ok).toMatchObject({ contract: 'ok', valid: true, checked: true });
+  });
+
+  it('lists at most 50 problems for REST and SOAP alike, and says when it cut them', async () => {
+    const fixture = await restProject();
+    const many = JSON.stringify(Array.from({ length: 60 }, () => ({ id: 'one' })));
+    const rest = await runOp(validateOp, { operation: 'Pets/listPets', text: many }, fixture.base());
+    expect(rest).toMatchObject({ contract: 'violation', valid: false, truncated: true });
+    expect(rest.problems).toHaveLength(50);
+
+    const soap = await soapProject();
+    // Each wrong body child is a problem of its own.
+    const children = Array.from(
+      { length: 60 },
+      () => '<c:AddResponse xmlns:c="urn:wirebench:calculator"><c:result>five</c:result></c:AddResponse>',
+    ).join('');
+    const text =
+      '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">' +
+      `<soapenv:Body>${children}</soapenv:Body></soapenv:Envelope>`;
+    const broken = await runOp(validateOp, { operation: 'CalculatorService/Add', text }, soap.base());
+    expect(broken).toMatchObject({ kind: 'soap', valid: false, checked: true, truncated: true });
+    expect(broken.problems).toHaveLength(50);
+
+    const fine = await runOp(validateOp, { operation: 'CalculatorService/Add', text: envelope('5') }, soap.base());
+    expect(fine).toMatchObject({ checked: true, truncated: false });
+  });
+
   it('reads a History entry and finds its operation through the saved request', async () => {
     const fixture = await restProject();
     const pets = await startServer(() => ({

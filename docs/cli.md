@@ -504,6 +504,14 @@ Details that are easy to get wrong:
 - **REST.** `validate` checks responses only. The status comes from the History entry, or from
   `--status`, and is 200 when neither gives one. `generate` for a REST operation prints the OpenAPI
   path template (`/pets/{petId}`), not a URL.
+- **`validate` results.** `valid` is false only when the message was found wrong: a SOAP error, or a
+  REST `contract` of `violation` or `unmatched` (the contract declares no response for the status).
+  `checked` is false when a REST body could not be compared with a schema at all, and `contract` says
+  why: `no-schema`, `no-contract`, `skipped` (not JSON, or over 1 MiB) or `not-checked` (the check ran
+  out of time). Such a result is still `valid`, the verb exits 0, and its first line reads
+  `not checked: <contract>`. A SOAP result is always `checked`. At most 50 problems are listed, for
+  SOAP and REST alike, and `truncated` says when there were more (for REST, when the check stopped at
+  50).
 - **`query` caps.** Counted in characters, not bytes: one result keeps at most 64 Ki characters and all
   results together at most 256 Ki characters; `truncated` is set when anything was cut, and also when the engine returned more results than its
   own limit of 1000.
@@ -571,7 +579,7 @@ again on its next write.
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. |
-| 1 | A `send` assertion failed, or `validate` found the message invalid. |
+| 1 | A `send` assertion failed, or `validate` found the message invalid (`valid: false`; a body it could not check exits 0). |
 | 2 | A usage error: a refused or wrong call. Nothing was sent. |
 | 3 | Everything else: a request error (an unset secret, a network or TLS failure, an assertion or script that errored), an unreadable History file, `history-busy`, an internal error. |
 

@@ -1,4 +1,5 @@
 // packages/cli/test/unit/ops/query.test.ts
+import { execFileSync } from 'node:child_process';
 import { link, symlink, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendHistory, REDACTED_MARKER } from '@wirebench/engine';
@@ -229,6 +230,45 @@ describe('op query: kind, size, files and errors', () => {
     expect(await run('count(//redacted)')).toEqual(['2']);
   });
 
+  it('reads a stored entry whose masked secret is the whole text of any element as well-formed XML', async () => {
+    const fixture = await emptyProject();
+    // A send's masker replaced the Token's resolved value; the marker is not a Password's.
+    const xml = `<a><Token>${REDACTED_MARKER}</Token><b>1</b><redacted></redacted></a>`;
+    await appendHistory(historyFileFor(fixture.historyDir, 'mcp-fixture'), entryOf(xml, 'text/xml'));
+    const run = async (expression: string): Promise<readonly string[]> =>
+      (await runOp(queryOp, { expression, historyId: '01J0000000000000000000WXYZ' }, fixture.base())).results;
+
+    expect(await run('string(//b)')).toEqual(['1']);
+    expect(await run('string(//Token)')).toEqual([REDACTED_MARKER]);
+    expect(await run('count(//redacted)')).toEqual(['1']);
+  });
+
+  it('keeps a JSON body declared as a form valid JSON, its strings whole', async () => {
+    const fixture = await emptyProject();
+    await appendHistory(
+      historyFileFor(fixture.historyDir, 'mcp-fixture'),
+      entryOf(JSON.stringify({ q: 'a&token=b', password: SECRET }), 'application/x-www-form-urlencoded'),
+    );
+    const run = async (expression: string): Promise<readonly string[]> =>
+      (await runOp(queryOp, { expression, historyId: '01J0000000000000000000WXYZ' }, fixture.base())).results;
+
+    expect(await run('$.q')).toEqual(['a&token=b']);
+    expect(await run('$.password')).toEqual([REDACTED_MARKER]);
+  });
+
+  it('stops adding results when what is left cannot hold a whole character', async () => {
+    const fixture = await emptyProject();
+    const full = "string-join((1 to 65536) ! 'x')";
+    const expression = `(${full}, ${full}, ${full}, string-join((1 to 65535) ! 'x'), codepoints-to-string((128512, 128512)), 'y')`;
+
+    const result = await runOp(queryOp, { expression, text: '<a/>' }, fixture.base());
+
+    expect(result.truncated).toBe(true);
+    expect(result.results).toHaveLength(4);
+    expect(result.results.every((item) => item.length > 0)).toBe(true);
+    expect(result.results.reduce((sum, item) => sum + item.length, 0)).toBe(MAX_TOTAL_CHARS - 1);
+  });
+
   it('cuts one result at 64 KiB and all results at 256 KiB, and says so', async () => {
     const fixture = await emptyProject();
     const one = await runOp(queryOp, { expression: "string-join((1 to 100000) ! 'x')", text: '<a/>' }, fixture.base());
@@ -299,6 +339,17 @@ describe('op query: kind, size, files and errors', () => {
     expect(error).toMatchObject({
       code: 'invalid-input',
       message: 'History files are read through historyId, not file',
+    });
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a FIFO without opening it, so no writer is waited for', async () => {
+    const fixture = await emptyProject();
+    const fifo = join(await tempDir(), 'pipe.xml');
+    execFileSync('mkfifo', [fifo]);
+
+    await expect(runOp(queryOp, { expression: '//a', file: fifo }, fixture.base())).rejects.toMatchObject({
+      code: 'file-not-found',
+      message: expect.stringContaining('not a regular file') as unknown,
     });
   });
 

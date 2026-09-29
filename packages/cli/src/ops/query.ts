@@ -66,6 +66,11 @@ function capped(items: readonly string[]): { readonly results: string[]; readonl
   let cut = false;
   for (const item of items) {
     const keep = keptLength(item, Math.min(MAX_RESULT_CHARS, left));
+    if (keep === 0 && item.length > 0) {
+      // What is left cannot hold this item's first character: stop rather than add an empty fragment.
+      cut = true;
+      break;
+    }
     if (keep < item.length) {
       cut = true;
     }

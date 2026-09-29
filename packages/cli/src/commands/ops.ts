@@ -64,7 +64,8 @@ function exitCodeOf(op: OpName, result: unknown): ExitCode {
     return outcome === 'failed' ? ExitCode.AssertionFailed : outcome === 'errored' ? ExitCode.RunError : ExitCode.Ok;
   }
   if (op === 'validate') {
-    return (result as ValidateResult).valid ? ExitCode.Ok : ExitCode.AssertionFailed;
+    // A body that could not be checked (`checked: false`) is not a failure.
+    return (result as ValidateResult).valid === false ? ExitCode.AssertionFailed : ExitCode.Ok;
   }
   return ExitCode.Ok;
 }

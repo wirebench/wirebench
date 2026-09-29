@@ -75,7 +75,9 @@ function sendText(result: SendResult): string {
 }
 
 function validateText(result: ValidateResult): string {
-  const head = `${result.valid ? 'valid' : 'invalid'}  ${result.operation} (${result.direction}${result.kind === 'rest' ? `, ${String(result.status)}, ${result.contract}` : ''})`;
+  const verdict =
+    result.kind === 'rest' && !result.checked ? `not checked: ${result.contract}` : result.valid ? 'valid' : 'invalid';
+  const head = `${verdict}  ${result.operation} (${result.direction}${result.kind === 'rest' ? `, ${String(result.status)}, ${result.contract}` : ''})`;
   return lines(
     head,
     ...result.problems.map((problem) => {
@@ -84,6 +86,7 @@ function validateText(result: ValidateResult): string {
       return `  ${problem.severity} ${at}${problem.code}: ${problem.message}${where}`;
     }),
     ...(result.kind === 'rest' ? result.notes.map((note) => `  note: ${note}`) : []),
+    ...(result.truncated ? [`(problems cut at ${String(result.problems.length)}; there are more)`] : []),
   );
 }
 

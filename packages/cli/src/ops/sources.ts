@@ -63,12 +63,13 @@ function headerValue(pairs: readonly (readonly [string, string])[], name: string
 }
 
 /**
- * The redactor's own marker where it stands as a whole `Password` element's content, as text. The
- * marker is `<redacted>`, which inside an element leaves the XML not well formed (a History entry a
- * send stored holds it too). Only that place is escaped: an element of the message that happens to be
- * named `redacted` stays as it is.
+ * The redactor's marker where it stands as an element's whole content, as text. The marker is
+ * `<redacted>`, which inside an element leaves the XML not well formed: a masked WS-Security
+ * `Password`, or any element whose text a send's masker replaced (a History entry holds those). An
+ * element closed right after it by any name but `redacted` cannot be one of the message's own, so it is
+ * escaped; an empty element of the message named `redacted` (`<redacted></redacted>`) stays as it is.
  */
-const MARKER_AS_CONTENT = new RegExp(`>${REDACTED_MARKER}(</(?:[\\w-]+:)?Password>)`, 'gi');
+const MARKER_AS_CONTENT = new RegExp(`>${REDACTED_MARKER}(</(?!redacted>)(?:[\\w.-]+:)?[\\w.-]+>)`, 'g');
 
 function isFormType(contentType: string | undefined): boolean {
   return (contentType?.split(';')[0] ?? '').trim().toLowerCase() === 'application/x-www-form-urlencoded';
@@ -89,13 +90,23 @@ export function redactedMessage(text: string, contentType: string | undefined): 
     const redacted = redactXml(text, { show: false });
     return { kind: 'xml', text: redacted.replaceAll(MARKER_AS_CONTENT, '>&lt;redacted&gt;$1') };
   }
-  // Read as JSON whatever the declared type. A declared form type adds the form redaction on top: it
-  // leaves JSON that parses unchanged, and a real form body is not JSON, so the two never clash.
+  // Read as JSON whatever the declared type. A declared form type adds the form redaction only for a
+  // body that is not JSON: the form pass splits on `&` and `=`, which a JSON string may hold.
   const json = redactStructuredBody(text, 'application/json', { show: false });
   return {
     kind: 'json',
-    text: isFormType(contentType) ? redactStructuredBody(json, contentType, { show: false }) : json,
+    text:
+      isFormType(contentType) && !parsesAsJson(text) ? redactStructuredBody(text, contentType, { show: false }) : json,
   };
+}
+
+function parsesAsJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function loaded(message: Omit<LoadedMessage, 'kind'>): LoadedMessage {
@@ -172,35 +183,63 @@ async function isHistoryFile(historyDir: string, dev: number, ino: number): Prom
   return false;
 }
 
+/** Refuses a file that is not a regular one, is a History file, or is too big. */
+async function checkSourceFile(
+  path: string,
+  info: { isFile(): boolean; readonly dev: number; readonly ino: number; readonly size: number },
+  historyDir: string,
+): Promise<void> {
+  if (!info.isFile()) {
+    throw new OpsError('file-not-found', `Cannot read ${path}: not a regular file`, { file: path });
+  }
+  if (await isHistoryFile(historyDir, info.dev, info.ino)) {
+    throw new OpsError('invalid-input', HISTORY_REFUSAL, { file: path });
+  }
+  if (info.size > MAX_FILE_BYTES) {
+    throw new OpsError('invalid-input', 'the file is larger than 16 MiB', { file: path });
+  }
+}
+
 /**
  * The text of `file`, resolved against the working directory. It reads any path the process can read,
  * but never a History file (those are read through `historyId`, which redacts by entry), and only a
  * regular file of at most 16 MiB. The path is checked through `realpath`, so a symlink into the History
- * directory does not get around it; the opened handle is checked by device and inode against the
- * directory's `*.jsonl` files, so neither a hard link nor a swap between check and read does.
+ * directory does not get around it. The real path is stat'ed before it is opened, so a device or a FIFO
+ * is never opened at all; the opened handle must then be that same regular file (device and inode), and
+ * is checked against the directory's `*.jsonl` files, so neither a hard link nor a swap between the
+ * check and the read gets around it.
  */
 async function readSourceFile(file: string, context: Pick<OpsContext, 'historyDir'>): Promise<string> {
   const path = resolve(file);
   try {
-    if (isInside(await realOrSelf(context.historyDir), await realpath(path))) {
+    const real = await realpath(path);
+    if (isInside(await realOrSelf(context.historyDir), real)) {
       throw new OpsError('invalid-input', HISTORY_REFUSAL, { file: path });
     }
-    // Non-blocking, so opening a FIFO does not wait for a writer.
-    const handle = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    const before = await stat(real);
+    await checkSourceFile(path, before, context.historyDir);
+    // Non-blocking, so a FIFO swapped in after the stat does not wait for a writer.
+    const handle = await open(real, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     try {
       const info = await handle.stat();
-      if (!info.isFile()) {
-        throw new OpsError('file-not-found', `Cannot read ${path}: not a regular file`, { file: path });
+      if (info.dev !== before.dev || info.ino !== before.ino) {
+        throw new OpsError('file-not-found', `Cannot read ${path}: it changed while it was being read`, {
+          file: path,
+        });
       }
-      if (await isHistoryFile(context.historyDir, info.dev, info.ino)) {
-        throw new OpsError('invalid-input', HISTORY_REFUSAL, { file: path });
+      await checkSourceFile(path, info, context.historyDir);
+      // A read may return fewer bytes than asked; never past the stat'ed size, which the check bounds.
+      const size = Math.min(info.size, MAX_FILE_BYTES);
+      const buffer = Buffer.alloc(size);
+      let filled = 0;
+      while (filled < size) {
+        const { bytesRead } = await handle.read(buffer, filled, size - filled, filled);
+        if (bytesRead === 0) {
+          break;
+        }
+        filled += bytesRead;
       }
-      if (info.size > MAX_FILE_BYTES) {
-        throw new OpsError('invalid-input', 'the file is larger than 16 MiB', { file: path });
-      }
-      const buffer = Buffer.alloc(info.size);
-      const { bytesRead } = await handle.read(buffer, 0, info.size, 0);
-      return buffer.toString('utf8', 0, bytesRead);
+      return buffer.toString('utf8', 0, filled);
     } finally {
       await handle.close();
     }

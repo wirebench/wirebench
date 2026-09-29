@@ -2,7 +2,13 @@
  * `validate` (spec §2, R6): a SOAP message against the WSDL's XSD and SOAP rules, with line and
  * column; a REST response body against its OpenAPI response schema, with the JSON path and keyword.
  */
-import { bindingContextFor, createRestContractChecker, findStepRequest, validateMessage } from '@wirebench/engine';
+import {
+  bindingContextFor,
+  createRestContractChecker,
+  findStepRequest,
+  MAX_CONTRACT_PROBLEMS,
+  validateMessage,
+} from '@wirebench/engine';
 import type { HistoryEntry, Project, RestContractStatus } from '@wirebench/engine';
 import { z } from 'zod';
 import { defineOp } from './context.js';
@@ -29,6 +35,10 @@ export type ValidateResult =
       readonly direction: 'request' | 'response';
       /** No error-severity problem. */
       readonly valid: boolean;
+      /** Always true: a SOAP message is always checked. */
+      readonly checked: true;
+      /** At most {@link MAX_CONTRACT_PROBLEMS} problems are listed; `validate` found more. */
+      readonly truncated: boolean;
       readonly problems: readonly ValidateProblem[];
     }
   | {
@@ -36,10 +46,14 @@ export type ValidateResult =
       readonly operation: string;
       readonly direction: 'response';
       readonly status: number;
-      /** `ok` and `violation` were checked; the others say why nothing was. */
+      /** `ok`, `violation` and `unmatched` were checked; the others say why nothing was. */
       readonly contract: RestContractStatus;
-      /** True only when the body was checked and matched. */
+      /** False only for a `violation` or an `unmatched` response; a body that was not checked is not invalid. */
       readonly valid: boolean;
+      /** The body was checked against a schema: false for `no-schema`, `no-contract`, `skipped`, `not-checked`. */
+      readonly checked: boolean;
+      /** The check stopped at {@link MAX_CONTRACT_PROBLEMS} problems; there may be more. */
+      readonly truncated: boolean;
       readonly problems: readonly ValidateProblem[];
       readonly notes: readonly string[];
     };
@@ -64,6 +78,11 @@ const input = z
   })
   .refine(exactlyOneSource, { message: SOURCE_MESSAGE });
 
+/** The contract states that found the body wrong. */
+const INVALID: ReadonlySet<RestContractStatus> = new Set(['violation', 'unmatched']);
+/** The contract states where the body was compared with the contract at all. */
+const CHECKED: ReadonlySet<RestContractStatus> = new Set(['ok', 'violation', 'unmatched']);
+
 /** The operation a History entry's saved request belongs to, when it still exists. */
 function operationOfEntry(project: Project, entry: HistoryEntry | undefined): string | undefined {
   if (entry?.requestId === undefined) {
@@ -85,8 +104,10 @@ export const validateOp = defineOp({
   title: 'Validate a message',
   description:
     'Validates a SOAP message against the WSDL schema (problems with line and column) or a REST response ' +
-    'body against its OpenAPI response schema (problems with JSON path and keyword). Reads a History entry, ' +
-    'a file or the text itself: pass exactly one of historyId, file, text. Reads only.',
+    'body against its OpenAPI response schema (problems with JSON path and keyword). valid is false only when ' +
+    'problems were found; checked is false when the REST body could not be compared with a schema (the contract ' +
+    'field says why). At most 50 problems are listed (truncated says so). Reads a History entry, a file or the ' +
+    'text itself: pass exactly one of historyId, file, text. Reads only.',
   input,
   async run(value, context): Promise<ValidateResult> {
     const { project } = await openProject(context);
@@ -121,7 +142,10 @@ export const validateOp = defineOp({
         operation: resolved.ref,
         direction: message.direction,
         valid: !validated.problems.some((problem) => problem.severity === 'error'),
-        problems: validated.problems.map((problem) => ({
+        checked: true,
+        truncated: validated.problems.length > MAX_CONTRACT_PROBLEMS,
+        // The same cap as a REST check: a broken message must not become an unbounded result.
+        problems: validated.problems.slice(0, MAX_CONTRACT_PROBLEMS).map((problem) => ({
           severity: problem.severity,
           code: problem.code,
           message: problem.message,
@@ -154,7 +178,10 @@ export const validateOp = defineOp({
         direction: 'response',
         status,
         contract: checked.status,
-        valid: checked.status === 'ok',
+        valid: !INVALID.has(checked.status),
+        checked: CHECKED.has(checked.status),
+        // The engine stops collecting at the cap, so reaching it is all that says more were left.
+        truncated: checked.problems.length >= MAX_CONTRACT_PROBLEMS,
         problems: checked.problems.map((problem) => ({
           severity: 'error' as const,
           code: problem.keyword,
