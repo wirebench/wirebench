@@ -1,5 +1,7 @@
+import type { RunResult } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
 import { renderJson } from '../../../src/reporters/json.js';
+import { maskRunResult } from '../../../src/reporters/mask.js';
 import { SAMPLE_RESULT } from './sample-result.js';
 
 const TOOL = { name: 'wirebench', version: '9.9.9' };
@@ -47,5 +49,45 @@ describe('renderJson', () => {
     expect(create['unasserted']).toBe(true);
     expect(create).not.toHaveProperty('error');
     expect(create).not.toHaveProperty('exchange');
+  });
+
+  it('keeps a matched callback’s capture through the mask', () => {
+    const capture = { hookId: '01K000000000000000000000H1', captureId: '01K00000000000000000000002' };
+    const result: RunResult = {
+      startedAt: '2026-09-29T10:00:00.000Z',
+      summary: { total: 1, passed: 1, failed: 0, errored: 0, skipped: 0, durationMs: 10 },
+      requests: [
+        {
+          path: 'Shop/Pay',
+          group: 'Shop',
+          name: 'Pay',
+          protocol: 'rest',
+          outcome: 'passed',
+          status: 201,
+          durationMs: 5,
+          assertions: [
+            {
+              type: 'callback',
+              label: 'callback orders-hook',
+              outcome: 'passed',
+              message: 'matched capture 01K00000000000000000000002 after 2.0 s',
+              capture,
+            },
+          ],
+          unasserted: false,
+        },
+      ],
+    };
+    const masked = maskRunResult(result, (text) => text.split('orders-hook').join('***'));
+    const report = JSON.parse(renderJson(masked, TOOL)) as {
+      requests: { assertions: Record<string, unknown>[] }[];
+    };
+    expect(report.requests[0]?.assertions[0]).toEqual({
+      type: 'callback',
+      label: 'callback ***',
+      outcome: 'passed',
+      message: 'matched capture 01K00000000000000000000002 after 2.0 s',
+      capture,
+    });
   });
 });
