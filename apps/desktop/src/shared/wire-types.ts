@@ -5969,3 +5969,23 @@ export const scriptValuesClearResponseSchema = z.object({ cleared: z.number() })
 
 /** Payload for `script.valuesChanged`: a project's session values changed; list them again. */
 export const scriptValuesChangedEventSchema = z.object({ projectId: z.string() });
+
+// --- CI tokens (callback-assertion §3, §5) -------------------------------------------------------
+
+export const ciTokenSummaryWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  lastUsedAt: z.string().nullable(),
+});
+export type CiTokenSummaryWire = z.infer<typeof ciTokenSummaryWireSchema>;
+
+export const ciTokensRequestWireSchema = z.object({ url: z.string(), workspaceId: z.string() });
+export const ciTokensListResponseWireSchema = z.object({ tokens: z.array(ciTokenSummaryWireSchema) });
+export const ciTokenCreateRequestWireSchema = ciTokensRequestWireSchema.extend({ name: z.string().min(1).max(64) });
+/** Crosses the bridge once, for the *Copy* in the create panel; never stored in the renderer's state after it closes. */
+export const ciTokenCreatedWireSchema = z.object({ id: z.string(), name: z.string(), token: z.string() });
+export type CiTokenCreatedWire = z.infer<typeof ciTokenCreatedWireSchema>;
+export const ciTokenRevokeRequestWireSchema = ciTokensRequestWireSchema.extend({ tokenId: z.string() });
+export const ciTokenRevokeResponseWireSchema = z.object({ revoked: z.literal(true) });

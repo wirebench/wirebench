@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import {
+  ciTokenCreateRequestWireSchema,
+  ciTokenCreatedWireSchema,
+  ciTokenRevokeRequestWireSchema,
+  ciTokenRevokeResponseWireSchema,
+  ciTokensListResponseWireSchema,
+  ciTokensRequestWireSchema,
   apiCancelImportRequestSchema,
   apiCancelImportResponseSchema,
   apiDefinitionDocumentsResponseSchema,
@@ -640,6 +646,12 @@ export const channels = {
     older: defineChannel('hooks.older', hooksViewRequestWireSchema, hooksPageResponseWireSchema),
     capture: defineChannel('hooks.capture', hooksCaptureRequestWireSchema, hooksCaptureResponseWireSchema),
     close: defineChannel('hooks.close', hooksViewRequestWireSchema, hooksDoneResponseWireSchema),
+  },
+  /** CI tokens of a server workspace (callback-assertion §5); main adds the account's token. */
+  ciTokens: {
+    list: defineChannel('ciTokens.list', ciTokensRequestWireSchema, ciTokensListResponseWireSchema),
+    create: defineChannel('ciTokens.create', ciTokenCreateRequestWireSchema, ciTokenCreatedWireSchema),
+    revoke: defineChannel('ciTokens.revoke', ciTokenRevokeRequestWireSchema, ciTokenRevokeResponseWireSchema),
   },
   // An API and the definition it was imported from. Separate from `definition.*` because the two
   // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI
