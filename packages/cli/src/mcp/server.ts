@@ -14,8 +14,10 @@ import { OPS } from '../ops/index.js';
 export const SERVER_INSTRUCTIONS =
   'Wirebench tools over one SOAP/REST project. Start with operations to learn the references the other ' +
   'tools take. send and import may be refused: the user starts the server with --allow-send or ' +
-  '--allow-write to allow them. Secrets never appear in results; they come from the environment ' +
-  'the server was started in.';
+  '--allow-write to allow them. Secrets come from the environment the server was started in, and a ' +
+  'resolved secret is masked wherever it appears in a result. Other values are redacted by pattern: ' +
+  'credential headers, URL credentials and credential-named URL parameters, the WS-Security Password, ' +
+  'and values under secret-looking JSON or form keys. A value outside those patterns is returned as it is.';
 
 function resultOf(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };

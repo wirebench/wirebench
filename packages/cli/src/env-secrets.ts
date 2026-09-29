@@ -1,4 +1,4 @@
-import { envVariablesFor } from '@wirebench/engine';
+import { envVariablesFor, SECRET_ENV_PREFIX } from '@wirebench/engine';
 import type { GetSecret, SecretNeed } from '@wirebench/engine';
 
 export interface EnvSecrets {
@@ -22,4 +22,14 @@ export function createEnvSecrets(needs: readonly SecretNeed[], env: NodeJS.Proce
     return Promise.resolve(undefined);
   };
   return { getSecret, values: () => [...handedOut] };
+}
+
+/** The variable `wirebench mcp --http` reads its bearer token from. */
+export const MCP_TOKEN_VARIABLE = 'WIREBENCH_MCP_TOKEN';
+
+/** Every non-empty `WIREBENCH_SECRET_*` value in `env`, and the MCP bearer token when it is set there. */
+export function secretValuesIn(env: NodeJS.ProcessEnv): string[] {
+  return Object.entries(env)
+    .filter(([name]) => name.startsWith(SECRET_ENV_PREFIX) || name === MCP_TOKEN_VARIABLE)
+    .flatMap(([, value]) => (value !== undefined && value.length > 0 ? [value] : []));
 }

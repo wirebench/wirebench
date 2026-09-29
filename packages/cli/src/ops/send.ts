@@ -30,13 +30,14 @@ import { proxyFromEnv } from '../proxy-env.js';
 import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { defineOp } from './context.js';
+import { cutText } from './cut.js';
 import { OpsError } from './errors.js';
 import { historyEntryFor, MAX_STORED_CHARS } from './history-entry.js';
 import { resolveItem } from './items.js';
 import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
 import { environmentFor, openProject } from './project.js';
-import { redactBody, redactUrlsInText } from './redact.js';
+import { redactAssertions, redactBody, redactUrlsInText } from './redact.js';
 
 export interface SendResult {
   readonly item: string;
@@ -153,9 +154,10 @@ function resultOf(
     statusText: http.statusText,
     durationMs: result.durationMs ?? 0,
     headers: redactHeaders(http.headers, { show: false }),
-    body: body.length > MAX_STORED_CHARS ? body.slice(0, MAX_STORED_CHARS) : body,
+    body: cutText(body, MAX_STORED_CHARS),
     bodyTruncated: http.truncated || body.length > MAX_STORED_CHARS,
-    assertions: result.assertions,
+    // `run` shows the values an assertion read; an op shows a credential's as the marker.
+    assertions: redactAssertions(result.assertions, item.request.assertions ?? []),
     ...(result.error !== undefined
       ? { error: { code: result.error.code, message: redactUrlsInText(result.error.message) } }
       : {}),

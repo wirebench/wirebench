@@ -1,5 +1,5 @@
-import { HttpError, ProjectError } from '@wirebench/engine';
-import type { FailedRequest } from '@wirebench/engine';
+import { HttpError, ProjectError, REDACTED_MARKER } from '@wirebench/engine';
+import type { AssertionResult, FailedRequest, StepAssertion } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ExitCode } from '../../../src/exit-codes.js';
@@ -7,7 +7,7 @@ import { defineOp, runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
 import { exitCodeForError, OpsError, toOpsError } from '../../../src/ops/errors.js';
 import { defaultHistoryDir, defaultUserDataDir, historyFileFor } from '../../../src/ops/paths.js';
-import { redactBody, redactError } from '../../../src/ops/redact.js';
+import { redactAssertions, redactBody, redactError } from '../../../src/ops/redact.js';
 
 const SECRET = 'abc123def456ghi789';
 
@@ -201,5 +201,77 @@ describe('redactBody', () => {
     expect(redactBody(`<wsse:Password>${SECRET}</wsse:Password>`, 'text/xml')).not.toContain(SECRET);
     expect(redactBody(JSON.stringify({ token: SECRET }), 'application/json')).not.toContain(SECRET);
     expect(redactBody('plain text', undefined)).toBe('plain text');
+  });
+});
+
+describe('redactAssertions', () => {
+  it('shows a failed header assertion on Set-Cookie as the marker, and keeps an ordinary header', () => {
+    const assertions: StepAssertion[] = [
+      { type: 'status', equals: 200 },
+      { type: 'header', header: 'Set-Cookie', equals: 'session=expected' },
+      { type: 'header', header: 'Content-Type', equals: 'application/json' },
+    ];
+    const results: AssertionResult[] = [
+      { type: 'status', label: 'status 200', outcome: 'passed' },
+      {
+        type: 'header',
+        label: 'header Set-Cookie',
+        outcome: 'failed',
+        expected: 'session=expected',
+        actual: `session=${SECRET}`,
+      },
+      {
+        type: 'header',
+        label: 'header Content-Type',
+        outcome: 'failed',
+        expected: 'application/json',
+        actual: 'text/xml',
+      },
+    ];
+
+    const redacted = redactAssertions(results, assertions);
+
+    expect(redacted[1]).toMatchObject({ outcome: 'failed', expected: 'session=expected', actual: REDACTED_MARKER });
+    expect(redacted[2]).toMatchObject({ actual: 'text/xml' });
+    expect(JSON.stringify(redacted)).not.toContain(SECRET);
+  });
+
+  it('keeps present or absent, and hides the value of an unpaired header or match result', () => {
+    const assertions: StepAssertion[] = [{ type: 'header', header: 'Set-Cookie', exists: false }];
+    const results: AssertionResult[] = [
+      { type: 'header', label: 'header Set-Cookie', outcome: 'failed', expected: 'absent', actual: 'present' },
+      { type: 'match', label: 'named check', outcome: 'failed', expected: 'x', actual: SECRET },
+    ];
+
+    const redacted = redactAssertions(results, assertions);
+
+    expect(redacted[0]).toMatchObject({ actual: 'present' });
+    expect(redacted[1]).toMatchObject({ actual: REDACTED_MARKER });
+  });
+
+  it("masks the value a callback reason quotes for a sensitive header or a secret key's path", () => {
+    const message =
+      `matched cap-1, but header Set-Cookie: expected "a=1", got "a=${SECRET}"; ` +
+      `$.data.access_token: expected "x", got "${SECRET}"; $.name: expected "Fido", got "Rex"`;
+    const results: AssertionResult[] = [{ type: 'callback', label: 'callback hook', outcome: 'failed', message }];
+
+    const [redacted] = redactAssertions(results, []);
+
+    expect(redacted?.message).toBe(
+      `matched cap-1, but header Set-Cookie: expected "a=1", got ${REDACTED_MARKER}; ` +
+        `$.data.access_token: expected "x", got ${REDACTED_MARKER}; $.name: expected "Fido", got "Rex"`,
+    );
+  });
+
+  it('redacts credential URLs in every text of a result', () => {
+    const url = `https://user:${SECRET}@example.test/path?token=${SECRET}`;
+    const results: AssertionResult[] = [
+      { type: 'script', label: `calls ${url}`, outcome: 'failed', expected: url, actual: url, message: `got ${url}` },
+    ];
+
+    const [redacted] = redactAssertions(results, []);
+
+    expect(JSON.stringify(redacted)).not.toContain(SECRET);
+    expect(redacted?.label).toContain('example.test');
   });
 });

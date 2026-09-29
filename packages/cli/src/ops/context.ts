@@ -3,6 +3,7 @@
  * CLI verb and by an MCP tool alike, so the input check and the redaction are the same for both.
  */
 import type { z } from 'zod';
+import { secretValuesIn } from '../env-secrets.js';
 import { OpsError, toOpsError } from './errors.js';
 import { redactError, redactResult } from './redact.js';
 
@@ -66,7 +67,9 @@ function describeIssues(error: z.ZodError): string {
  * @throws OpsError — always an `OpsError`, already redacted
  */
 export async function runOp<S extends z.ZodType, R>(op: Op<S, R>, raw: unknown, base: OpsBase): Promise<R> {
-  const context: OpsContext = { ...base, revealed: new Set() };
+  // Defence in depth for an agent: every secret the server was started with is masked in every
+  // tool's result, whether or not this call resolved it (a saved `${#System#…}` reads the env too).
+  const context: OpsContext = { ...base, revealed: new Set(base.origin === 'mcp' ? secretValuesIn(base.env) : []) };
   try {
     const parsed = op.input.safeParse(raw);
     if (!parsed.success) {

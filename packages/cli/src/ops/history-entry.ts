@@ -5,6 +5,7 @@
  */
 import { generateHistoryId, redactHeaderPairs, redactHeaders, redactUrl, redactXml } from '@wirebench/engine';
 import type { HistoryEntry, HistoryHeader, SentExchange } from '@wirebench/engine';
+import { cutText } from './cut.js';
 import type { SendableItem } from './items.js';
 
 /** How much of a body a History line keeps, as the desktop. */
@@ -16,7 +17,8 @@ export function storedText(text: string, mask: (text: string) => string): string
   if (masked.length <= MAX_STORED_CHARS) {
     return masked;
   }
-  return `${masked.slice(0, MAX_STORED_CHARS)}\n… truncated, ${String(masked.length - MAX_STORED_CHARS)} more characters`;
+  const kept = cutText(masked, MAX_STORED_CHARS);
+  return `${kept}\n… truncated, ${String(masked.length - kept.length)} more characters`;
 }
 
 /** The body of a reconstructed HTTP message: everything after the blank line. */

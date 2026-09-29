@@ -5,6 +5,7 @@
 import { collectNamespaces, evaluateWithTimeout } from '@wirebench/engine';
 import { z } from 'zod';
 import { defineOp } from './context.js';
+import { keptLength } from './cut.js';
 import { OpsError } from './errors.js';
 import { exactlyOneSource, loadMessage, SOURCE_MESSAGE, sourceFields } from './sources.js';
 
@@ -64,14 +65,9 @@ function capped(items: readonly string[]): { readonly results: string[]; readonl
   let left = MAX_TOTAL_CHARS;
   let cut = false;
   for (const item of items) {
-    let keep = Math.min(item.length, MAX_RESULT_CHARS, left);
+    const keep = keptLength(item, Math.min(MAX_RESULT_CHARS, left));
     if (keep < item.length) {
       cut = true;
-      // Not between the halves of a surrogate pair.
-      const last = item.charCodeAt(keep - 1);
-      if (keep > 0 && last >= 0xd800 && last <= 0xdbff) {
-        keep -= 1;
-      }
     }
     results.push(item.slice(0, keep));
     left -= keep;

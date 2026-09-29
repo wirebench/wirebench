@@ -78,6 +78,16 @@ describe('the MCP server', () => {
     }
   });
 
+  it('tells the agent resolved secrets are masked and other values redacted by pattern, not that none appear', async () => {
+    const fixture = await emptyProject();
+    const client = await connect(fixture.base());
+    const instructions = client.getInstructions() ?? '';
+
+    expect(instructions).not.toContain('never appear');
+    expect(instructions).toContain('resolved secret is masked');
+    expect(instructions).toContain('redacted by pattern');
+  });
+
   it("publishes each op's own schema as the tool's inputSchema", async () => {
     const fixture = await soapProject();
     const client = await connect(fixture.base());

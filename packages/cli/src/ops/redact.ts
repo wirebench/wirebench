@@ -2,7 +2,16 @@
  * The one redaction step every op result passes (spec §2.2): the engine's pattern redactors where a
  * header, URL or body is built, then every secret value the call resolved, masked everywhere.
  */
-import { createSecretMasker, REDACTED_MARKER, redactStructuredBody, redactUrl, redactXml } from '@wirebench/engine';
+import {
+  createSecretMasker,
+  isSensitiveHeaderName,
+  REDACTED_MARKER,
+  redactStructuredBody,
+  redactUrl,
+  redactXml,
+  SECRET_BODY_KEYS,
+} from '@wirebench/engine';
+import type { AssertionResult, StepAssertion } from '@wirebench/engine';
 import { maskDeep } from '../reporters/mask.js';
 import { OpsError } from './errors.js';
 
@@ -61,4 +70,89 @@ export function redactError(error: OpsError, revealed: ReadonlySet<string>): Ops
     details = maskDeep(rest, mask) as Readonly<Record<string, unknown>>;
   }
   return new OpsError(error.code, mask(error.message), details);
+}
+
+const SECRET_KEYS = new Set(SECRET_BODY_KEYS);
+
+/** The last name in a JSONPath or XPath expression: `token` in `$.data.token`, `$['token']`, `//ns:token/text()`. */
+function lastSegment(path: string): string | undefined {
+  return path
+    .replace(/\/text\(\)\s*$/, '')
+    .match(/[A-Za-z_][\w-]*/g)
+    ?.at(-1);
+}
+
+/** Whether a JSONPath or XPath expression reads a value under a secret key (`$.token`, `//Password`). */
+function readsSecretKey(path: string): boolean {
+  const last = lastSegment(path);
+  return last !== undefined && SECRET_KEYS.has(last.toLowerCase());
+}
+
+/** A callback check's label (`header Set-Cookie`, or a body path) names a credential. */
+function secretLabel(label: string): boolean {
+  return label.startsWith('header ') ? isSensitiveHeaderName(label.slice('header '.length)) : readsSecretKey(label);
+}
+
+/**
+ * A callback result's message with each `<label>: expected …, got "<value>"` whose label names a
+ * credential showing the marker for the value. The engine joins its reasons as
+ * `matched <id>, but <reason>; <reason>`.
+ */
+function maskCallbackValues(message: string): string {
+  return message.replace(/, got ("(?:[^"\\]|\\.)*")/g, (whole: string, _quoted: string, offset: number) => {
+    const expectedAt = message.lastIndexOf(': expected ', offset);
+    if (expectedAt < 0) {
+      return whole;
+    }
+    const reason = message.lastIndexOf('; ', expectedAt);
+    const first = message.lastIndexOf(', but ', expectedAt);
+    const start = Math.max(reason < 0 ? 0 : reason + '; '.length, first < 0 ? 0 : first + ', but '.length);
+    return secretLabel(message.slice(start, expectedAt)) ? `, got ${REDACTED_MARKER}` : whole;
+  });
+}
+
+/** Whether a result's `actual` is a credential's value: a sensitive header, or a secret-keyed path. */
+function hidesActual(result: AssertionResult, own: StepAssertion | undefined): boolean {
+  if (result.type === 'header') {
+    // Unpaired, the header's name is unknown: hide it rather than guess.
+    return own?.type !== 'header' || (own.exists === undefined && isSensitiveHeaderName(own.header));
+  }
+  if (result.type === 'match') {
+    return own?.type !== 'match' || (own.exists === undefined && readsSecretKey(own.expression));
+  }
+  return false;
+}
+
+/**
+ * Assertion results as an op returns them (spec §2.2): URLs in every text redacted by pattern, and
+ * the value a header or `match` assertion read shown as the marker when it is a credential — a
+ * sensitive header, or a JSONPath/XPath whose last name is a secret key. `assertions` are the
+ * request's own, in order: the run reports the immediate ones first, then callbacks, then script tests.
+ */
+export function redactAssertions(
+  results: readonly AssertionResult[],
+  assertions: readonly StepAssertion[],
+): AssertionResult[] {
+  const immediate = assertions.filter((assertion) => assertion.type !== 'callback');
+  let next = 0;
+  return results.map((result) => {
+    let own: StepAssertion | undefined;
+    if (result.type !== 'callback' && result.type !== 'script') {
+      own = immediate[next];
+      next += 1;
+    }
+    const message =
+      result.message === undefined
+        ? undefined
+        : redactUrlsInText(result.type === 'callback' ? maskCallbackValues(result.message) : result.message);
+    return {
+      ...result,
+      label: redactUrlsInText(result.label),
+      ...(result.expected !== undefined ? { expected: redactUrlsInText(result.expected) } : {}),
+      ...(result.actual !== undefined
+        ? { actual: hidesActual(result, own) ? REDACTED_MARKER : redactUrlsInText(result.actual) }
+        : {}),
+      ...(message !== undefined ? { message } : {}),
+    };
+  });
 }

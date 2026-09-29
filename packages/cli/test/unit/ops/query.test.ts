@@ -69,6 +69,19 @@ describe('op query', () => {
     });
   });
 
+  it("masks the values of the server's WIREBENCH_SECRET_* variables and its token, for an MCP origin only", async () => {
+    const fixture = await emptyProject();
+    const token = 'abc123def456ghi789abc123def456ghi789';
+    const text = JSON.stringify({ note: `a ${SECRET} b`, other: `c ${token} d` });
+    const env = { WIREBENCH_SECRET_X: SECRET, WIREBENCH_MCP_TOKEN: token, WIREBENCH_SECRET_EMPTY: '' };
+
+    const mcp = await runOp(queryOp, { expression: '$.*', text }, fixture.base({ env, origin: 'mcp' }));
+    const cli = await runOp(queryOp, { expression: '$.*', text }, fixture.base({ env, origin: 'cli' }));
+
+    expect(mcp.results).toEqual([`a ${REDACTED_MARKER} b`, `c ${REDACTED_MARKER} d`]);
+    expect(cli.results).toEqual([`a ${SECRET} b`, `c ${token} d`]);
+  });
+
   it('reports a file that is not there, with the resolved path', async () => {
     const fixture = await emptyProject();
     await expect(

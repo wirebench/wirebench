@@ -10,8 +10,9 @@ import type { AddressInfo } from 'node:net';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { MCP_TOKEN_VARIABLE } from '../env-secrets.js';
 
-export const TOKEN_VARIABLE = 'WIREBENCH_MCP_TOKEN';
+export const TOKEN_VARIABLE = MCP_TOKEN_VARIABLE;
 /** The only address served. There is deliberately no option to change it. */
 const HOST = '127.0.0.1';
 const PATH = '/mcp';

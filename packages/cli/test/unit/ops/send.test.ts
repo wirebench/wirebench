@@ -154,6 +154,37 @@ describe('op send', () => {
     expect(project.interfaces[0]?.operations[0]?.requests[0]?.envelopeXml).not.toBe(body);
   });
 
+  it("shows a failed match on a secret key's value as the marker, not the value", async () => {
+    const fixture = await restProject();
+    const pets = await server(() => ({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: SECRET, name: 'Rex' }),
+    }));
+    await addEnvironment(fixture.dir, 'local', { Pets: pets.url });
+    await updateRestRequest(fixture.dir, 'GET', '/pets', (request) => ({
+      ...request,
+      assertions: [
+        { type: 'match', language: 'jsonpath', expression: '$.token', equals: 'something-else' },
+        { type: 'match', language: 'jsonpath', expression: '$.name', equals: 'Fido' },
+      ],
+    }));
+    const item = await restItem(fixture.dir, 'GET', '/pets');
+
+    const result = await runOp(sendOp, { item, environment: 'local' }, fixture.base({ origin: 'cli' }));
+
+    expect(result.outcome).toBe('failed');
+    expect(result.assertions).toEqual([
+      expect.objectContaining({
+        type: 'match',
+        outcome: 'failed',
+        expected: 'something-else',
+        actual: REDACTED_MARKER,
+      }),
+      expect.objectContaining({ type: 'match', outcome: 'failed', expected: 'Fido', actual: 'Rex' }),
+    ]);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
   it('fails with the engine code when no response came, and writes no History', async () => {
     const fixture = await soapProject();
     const closed = await server(() => ({ body: '' }));
