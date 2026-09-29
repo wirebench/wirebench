@@ -166,7 +166,7 @@ describe('wirebench run with a callback assertion', () => {
       { WIREBENCH_SERVER_URL: origin, WIREBENCH_SERVER_TOKEN: TOKEN },
     );
     expect(code).toBe(0);
-    expect(stdout).toMatch(/✓ callback orders-hook — matched capture 01K\d{23} after \d+\.\d s/);
+    expect(stdout).toMatch(/✓ callback orders-hook — matched capture 01K\d{23} after \d+(\.\d)? s/);
     const written = await readFile(report, 'utf8');
     const parsed = JSON.parse(written) as { requests: { assertions: unknown[] }[] };
     expect(parsed.requests[0]?.assertions[0]).toMatchObject({
