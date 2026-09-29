@@ -5,15 +5,16 @@
  * `/api/v1`, through `registerPublic`. One env is built per server and shared by both.
  */
 import { fileURLToPath } from 'node:url';
-import type { FastifyInstance } from 'fastify';
-import type { ServerContext, ServerModule } from '../context.js';
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
+import type { Querier, ServerContext, ServerModule } from '../context.js';
 import { realTimer } from '../live/module.js';
 import type { HooksEnv, SetTimer } from './env.js';
 import { CatchBuckets } from './rate-limit.js';
+import * as repo from './repo.js';
 import { captureIdFactory } from './repo.js';
 import { manageRoutes } from './routes/manage.js';
 import { publicRoutes } from './routes/public.js';
-import { hooksMetaOf, hooksSettings } from './settings.js';
+import { hooksMetaOf, hooksSettings, type HooksSettings } from './settings.js';
 import { CaptureSweeper } from './sweep.js';
 
 /** Beside `dist/`, like every module's migrations (`ServerModule.migrationsDir`). */
@@ -22,6 +23,25 @@ export const HOOKS_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/webh
 export const SIGNATURES_MIGRATIONS_DIR = fileURLToPath(
   new URL('../../migrations/webhook-signatures/', import.meta.url),
 );
+
+/**
+ * §3.1: once at start-up, when catch URLs check signatures but no key can open their secrets. The
+ * server still starts; their captures are recorded as `failed: key-error` until the key returns.
+ */
+export async function warnUnopenableSignatures(
+  db: Querier,
+  settings: Pick<HooksSettings, 'enabled' | 'secretKey'>,
+  log: Pick<FastifyBaseLogger, 'warn'>,
+): Promise<void> {
+  if (!settings.enabled || settings.secretKey !== undefined) return;
+  const signed = await repo.countSignedCatchUrls(db);
+  if (signed > 0) {
+    log.warn(
+      { signed },
+      'catch URLs check signatures but WIREBENCH_SERVER_HOOKS_SECRET_KEY is unset: their captures are recorded as failed: key-error',
+    );
+  }
+}
 
 export interface HooksOptions {
   /** Injected clock: `received_at`, the buckets' refill and the sweep's cutoff. */
@@ -73,7 +93,7 @@ export function hooksModule(options: HooksOptions = {}): ServerModule {
       app.addHook('onClose', () => sweeper.stop());
       // §3.7: switched off, the management routes do not exist either (the sweep above still runs).
       if (env.settings.enabled) manageRoutes(env)(app);
-      await Promise.resolve();
+      await warnUnopenableSignatures(ctx.db, env.settings, ctx.log);
     },
 
     async registerPublic(root: FastifyInstance, ctx: ServerContext): Promise<void> {

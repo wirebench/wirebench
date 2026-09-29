@@ -244,6 +244,8 @@ describeDb('the management API: captures (§3.5)', () => {
       bodySize: 7,
       truncated: false,
       sourceIp: '127.0.0.1',
+      signature: null,
+      rejected: false,
     });
     const [e3, e2, e1] = all.map((capture) => capture.id) as [string, string, string];
     const ids = async (query: string): Promise<string[]> =>
