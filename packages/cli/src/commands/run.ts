@@ -5,7 +5,6 @@ import {
   createScriptChecker,
   createScriptSandbox,
   createSecretMasker,
-  envVariablesFor,
   isWirebenchError,
   loadProject,
   loadWorkspace,
@@ -19,11 +18,9 @@ import type {
   CallbackWaiting,
   Environment,
   Project,
-  RequestResult,
   RunContext,
   RunResult,
   RunWorkspace,
-  SecretNeed,
   SelectedRequest,
   SequenceDef,
   WorkspaceEnvironment,
@@ -36,6 +33,7 @@ import { createEnvSecrets } from '../env-secrets.js';
 import { pickEnvironment } from '../ops/environment.js';
 import { OpsError } from '../ops/errors.js';
 import { proxyFromEnv } from '../proxy-env.js';
+import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { createCliReporter } from '../reporters/cli.js';
 import { renderHtml } from '../reporters/html.js';
@@ -183,42 +181,6 @@ export async function loadSelection(
     ...(environment !== undefined ? { environment } : {}),
     selected,
   };
-}
-
-/** The refusals that carry a `details.ref` naming a secret the run was not given. */
-const EXPLAINED_CODES: ReadonlySet<string> = new Set(['secret-missing', 'webhook-signing-secret']);
-
-/**
- * `Set A (or B) to run "path".` — the engine's wording is the app's advice, not a pipeline's.
- * Every missing secret reaches here as `secret-missing` with `details.ref`: an auth password, a
- * keystore password and a WS-Security password alike (`run/prepare.ts`'s `requiredSecret`, which
- * the WS-Security context's `secrets` also calls, and nothing on the way wraps it) — and a webhook
- * item's signing secret (`webhook-signing-secret`, webhook-signatures §5.2).
- */
-export function explainMissingSecret(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
-  const ref = EXPLAINED_CODES.has(result.error?.code ?? '') ? result.error?.details?.['ref'] : undefined;
-  if (result.error === undefined || typeof ref !== 'string') {
-    return result;
-  }
-  const [first, ...rest] = envVariablesFor(needs.find((need) => need.ref === ref) ?? { ref });
-  const alternatives = rest.length > 0 ? ` (or ${rest.join(', ')})` : '';
-  return {
-    ...result,
-    error: { ...result.error, message: `Set ${first ?? ''}${alternatives} to run "${result.path}".` },
-  };
-}
-
-/**
- * Whether `value` contains one of `known`. Values shorter than the masker's floor are ignored for the
- * same reason the masker ignores them: that short, a match is more likely chance than a credential.
- */
-export function knownSecretIn(value: string, known: Iterable<string>): boolean {
-  for (const secret of known) {
-    if (secret.length >= 4 && value.includes(secret)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**

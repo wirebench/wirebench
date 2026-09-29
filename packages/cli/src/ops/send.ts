@@ -14,23 +14,20 @@ import {
   redactUrl,
   RequestScripting,
   runRequests,
-  secretNamesIn,
   secretNeedsOf,
 } from '@wirebench/engine';
 import type {
   AssertionResult,
   LocatedSecretNeed,
-  Project,
   RequestResult,
   RunContext,
-  RunWorkspace,
   SentExchange,
   SentRequest,
 } from '@wirebench/engine';
 import { z } from 'zod';
-import { explainMissingSecret, knownSecretIn } from '../commands/run.js';
 import { createEnvSecrets } from '../env-secrets.js';
 import { proxyFromEnv } from '../proxy-env.js';
+import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { defineOp } from './context.js';
 import { OpsError } from './errors.js';
@@ -78,7 +75,7 @@ const input = z.object({
     .optional()
     .describe(
       'Send this envelope (SOAP) or raw body (REST) instead of the saved one; nothing is saved. ' +
-        'Property placeholders in it expand as in a saved request; it may not reference secrets.',
+        "It is sent as written: ${…} placeholders are refused. The saved request's own body still expands as usual.",
     ),
 });
 
@@ -110,21 +107,15 @@ function withBody(item: SendableItem, body: string): SendableItem {
 }
 
 /**
- * The override may not make the send read a secret its saved request does not already use: a
- * `${secret:…}` in it, or a property it names that leads to one, would otherwise reach any
- * `WIREBENCH_SECRET_*` variable. Secrets are only ever loaded for the saved item's needs.
+ * The override is sent as written. A `${…}` in it would expand against the server's own environment
+ * (`${#System#NAME}` reads `process.env`) and its properties, so none is accepted.
  */
-function checkOverride(
-  override: SendableItem,
-  body: string,
-  saved: readonly LocatedSecretNeed[],
-  project: Project,
-  workspace: RunWorkspace | undefined,
-): void {
-  const known = new Set(saved.map((need) => need.ref));
-  const reached = secretNeedsOf([override], project, {}, workspace?.workspace).some((need) => !known.has(need.ref));
-  if (reached || secretNamesIn(body).length > 0) {
-    throw new OpsError('invalid-input', 'body: the body override may not reference secrets');
+function checkOverride(body: string): void {
+  if (body.includes('${')) {
+    throw new OpsError(
+      'invalid-input',
+      'body: the body override is sent as written and may not contain ${…} placeholders',
+    );
   }
 }
 
@@ -190,10 +181,10 @@ export const sendOp = defineOp({
     const { project, workspace } = opened;
     // From the saved item, never from the override: the override adds no secret to read.
     const needs = secretNeedsOf([found], project, {}, workspace?.workspace);
-    const item = value.body === undefined ? found : withBody(found, value.body);
     if (value.body !== undefined) {
-      checkOverride(item, value.body, needs, project, workspace);
+      checkOverride(value.body);
     }
+    const item = value.body === undefined ? found : withBody(found, value.body);
     const secrets = createEnvSecrets(needs, context.env);
     const tokens = new Set<string>();
     const known = (): string[] => [...secrets.values(), ...tokens];

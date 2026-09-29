@@ -222,23 +222,32 @@ describe('op send', () => {
     expect(pets.received).toEqual([]);
   });
 
-  it('refuses a body override that references a secret, and sends nothing', async () => {
+  it('refuses a body override with any placeholder, and sends nothing', async () => {
     const fixture = await soapProject();
     const calculator = await server(() => ({ headers: { 'Content-Type': 'text/xml' }, body: ADD_RESPONSE }));
     await addEnvironment(fixture.dir, 'local', { CalculatorService: calculator.url });
     const base = fixture.base({ env: { WIREBENCH_SECRET_OTHER: SECRET } });
-
-    await expect(
-      runOp(sendOp, { item: SOAP_ITEM, environment: 'local', body: '<a>${secret:other}</a>' }, base),
-    ).rejects.toMatchObject({
-      code: 'invalid-input',
-      message: expect.stringContaining('may not reference secrets') as unknown,
-    });
-    // A property that leads to a secret is a reference to it as well.
-    await updateProject(fixture.dir, (project) => ({ ...project, properties: { viaProperty: '${secret:other}' } }));
-    await expect(
-      runOp(sendOp, { item: SOAP_ITEM, environment: 'local', body: '<a>${viaProperty}</a>' }, base),
-    ).rejects.toMatchObject({ code: 'invalid-input' });
+    const saved = process.env['WIREBENCH_SECRET_OTHER'];
+    process.env['WIREBENCH_SECRET_OTHER'] = SECRET;
+    try {
+      for (const body of [
+        '<a>${#System#WIREBENCH_SECRET_OTHER}</a>',
+        '<a>${secret:other}</a>',
+        '<a>${#Project#x}</a>',
+        '<a>${x}</a>',
+      ]) {
+        await expect(runOp(sendOp, { item: SOAP_ITEM, environment: 'local', body }, base)).rejects.toMatchObject({
+          code: 'invalid-input',
+          message: expect.stringContaining('may not contain ${…} placeholders') as unknown,
+        });
+      }
+    } finally {
+      if (saved === undefined) {
+        delete process.env['WIREBENCH_SECRET_OTHER'];
+      } else {
+        process.env['WIREBENCH_SECRET_OTHER'] = saved;
+      }
+    }
     expect(calculator.received).toEqual([]);
   });
 
