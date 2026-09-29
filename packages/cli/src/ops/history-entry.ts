@@ -100,7 +100,8 @@ export function historyEntryFor(input: HistoryEntryInput): HistoryEntry {
       // A 3xx that was not followed is a good answer, as the desktop counts it.
       ok: rest.status >= 200 && rest.status < 400,
       request: {
-        envelopeXml: storedText(bodyOfRaw(rest.rawRequest), mask),
+        // As the desktop: a body with no text form (form, multipart, binary) is stored as ''.
+        envelopeXml: item.request.body.kind === 'raw' ? storedText(bodyOfRaw(rest.rawRequest), mask) : '',
         headers: headerRows(rest.request.headers, mask),
       },
       response: {

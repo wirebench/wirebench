@@ -33,13 +33,22 @@ export function pickEnvironment<E extends Environment | WorkspaceEnvironment>(
   return found;
 }
 
-/** `wirebench mcp --env a,b`: a send may use only the environments listed (spec §4). */
+/**
+ * `wirebench mcp --env a,b`: a send may use only the environments listed (spec §4). A send under no
+ * environment at all (a project that defines none) is outside every list, so it is refused too.
+ */
 export function checkAllowed(
   environment: Environment | WorkspaceEnvironment | undefined,
   allowed: readonly string[] | undefined,
 ): void {
-  if (allowed === undefined || environment === undefined) {
+  if (allowed === undefined) {
     return;
+  }
+  if (environment === undefined) {
+    throw new OpsError(
+      'environment-not-allowed',
+      `this server's --env list (${allowed.join(', ')}) allows only those environments, and this project defines none to send under`,
+    );
   }
   if (![environment.name, environment.slug, environment.id].some((key) => allowed.includes(key))) {
     throw new OpsError(

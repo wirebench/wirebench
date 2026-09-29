@@ -9,23 +9,26 @@ import {
   createScriptChecker,
   createScriptSandbox,
   createSecretMasker,
-  envVariablesFor,
   isWirebenchError,
   redactHeaders,
   redactUrl,
   RequestScripting,
   runRequests,
+  secretNamesIn,
   secretNeedsOf,
 } from '@wirebench/engine';
 import type {
   AssertionResult,
   LocatedSecretNeed,
+  Project,
   RequestResult,
   RunContext,
+  RunWorkspace,
   SentExchange,
   SentRequest,
 } from '@wirebench/engine';
 import { z } from 'zod';
+import { explainMissingSecret, knownSecretIn } from '../commands/run.js';
 import { createEnvSecrets } from '../env-secrets.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { captureSourceFromEnv } from '../server-captures.js';
@@ -36,7 +39,7 @@ import { resolveItem } from './items.js';
 import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
 import { environmentFor, openProject } from './project.js';
-import { redactBody } from './redact.js';
+import { redactBody, redactUrlsInText } from './redact.js';
 
 export interface SendResult {
   readonly item: string;
@@ -73,7 +76,10 @@ const input = z.object({
   body: z
     .string()
     .optional()
-    .describe('Send this envelope (SOAP) or raw body (REST) instead of the saved one; nothing is saved'),
+    .describe(
+      'Send this envelope (SOAP) or raw body (REST) instead of the saved one; nothing is saved. ' +
+        'Property placeholders in it expand as in a saved request; it may not reference secrets.',
+    ),
 });
 
 /** The request with `body` in place of its saved envelope or body, for this send only. */
@@ -82,14 +88,20 @@ function withBody(item: SendableItem, body: string): SendableItem {
     return { ...item, request: { ...item.request, envelopeXml: body } };
   }
   const saved = item.request.body;
-  const language = saved.kind === 'raw' ? saved.language : 'json';
+  if (saved.kind !== 'none' && saved.kind !== 'raw') {
+    throw new OpsError(
+      'invalid-input',
+      `"${item.path}" has a ${saved.kind} body; the body override replaces a raw or JSON body only`,
+      { item: item.path },
+    );
+  }
   return {
     ...item,
     request: {
       ...item.request,
       body: {
         kind: 'raw',
-        language,
+        language: saved.kind === 'raw' ? saved.language : 'json',
         ...(saved.kind === 'raw' && saved.contentType !== undefined ? { contentType: saved.contentType } : {}),
         text: body,
       },
@@ -97,29 +109,48 @@ function withBody(item: SendableItem, body: string): SendableItem {
   };
 }
 
-function containsAny(value: string, known: readonly string[]): boolean {
-  return known.some((secret) => secret.length >= 4 && value.includes(secret));
+/**
+ * The override may not make the send read a secret its saved request does not already use: a
+ * `${secret:…}` in it, or a property it names that leads to one, would otherwise reach any
+ * `WIREBENCH_SECRET_*` variable. Secrets are only ever loaded for the saved item's needs.
+ */
+function checkOverride(
+  override: SendableItem,
+  body: string,
+  saved: readonly LocatedSecretNeed[],
+  project: Project,
+  workspace: RunWorkspace | undefined,
+): void {
+  const known = new Set(saved.map((need) => need.ref));
+  const reached = secretNeedsOf([override], project, {}, workspace?.workspace).some((need) => !known.has(need.ref));
+  if (reached || secretNamesIn(body).length > 0) {
+    throw new OpsError('invalid-input', 'body: the body override may not reference secrets');
+  }
 }
 
 /** The engine's refusal, with `wirebench run`'s advice for a secret the environment does not set. */
 function failure(result: RequestResult, needs: readonly LocatedSecretNeed[]): OpsError {
-  const error = result.error ?? { code: 'send-failed', message: `"${result.path}" got no response` };
-  const ref = error.details?.['ref'];
-  if (error.code === 'secret-missing' && typeof ref === 'string') {
-    const [first, ...rest] = envVariablesFor(needs.find((need) => need.ref === ref) ?? { ref });
-    const alternatives = rest.length > 0 ? ` (or ${rest.join(', ')})` : '';
-    return new OpsError(error.code, `Set ${first ?? ''}${alternatives} to send "${result.path}".`, error.details);
-  }
-  return new OpsError(error.code, error.message, error.details);
+  const explained = explainMissingSecret(result, needs).error ?? {
+    code: 'send-failed',
+    message: `"${result.path}" got no response`,
+  };
+  return new OpsError(explained.code, explained.message, explained.details);
 }
 
-function resultOf(item: SendableItem, result: RequestResult, exchange: SentExchange, historyId?: string): SendResult {
+function resultOf(
+  item: SendableItem,
+  result: RequestResult,
+  exchange: SentExchange,
+  mask: (text: string) => string,
+  historyId?: string,
+): SendResult {
   const http = exchange.kind === 'soap' ? exchange.soap.http : exchange.rest;
   const text =
     exchange.kind === 'soap'
       ? (exchange.soap.response?.envelopeXml ?? new TextDecoder().decode(http.body))
       : exchange.rest.text;
-  const body = redactBody(text, http.headers['content-type']);
+  // Masked before it is cut: a secret across the cut would otherwise leave its first characters.
+  const body = mask(redactBody(text, http.headers['content-type']));
   return {
     item: item.path,
     kind: item.kind,
@@ -134,7 +165,9 @@ function resultOf(item: SendableItem, result: RequestResult, exchange: SentExcha
     body: body.length > MAX_STORED_CHARS ? body.slice(0, MAX_STORED_CHARS) : body,
     bodyTruncated: http.truncated || body.length > MAX_STORED_CHARS,
     assertions: result.assertions,
-    ...(result.error !== undefined ? { error: { code: result.error.code, message: result.error.message } } : {}),
+    ...(result.error !== undefined
+      ? { error: { code: result.error.code, message: redactUrlsInText(result.error.message) } }
+      : {}),
     ...(historyId !== undefined ? { historyId } : {}),
   };
 }
@@ -154,10 +187,13 @@ export const sendOp = defineOp({
     const opened = await openProject(context);
     const environment = environmentFor(opened, value.environment, context.gates.environments);
     const found = resolveItem(opened.project, value.item);
-    const item = value.body === undefined ? found : withBody(found, value.body);
     const { project, workspace } = opened;
-
-    const needs = secretNeedsOf([item], project, {}, workspace?.workspace);
+    // From the saved item, never from the override: the override adds no secret to read.
+    const needs = secretNeedsOf([found], project, {}, workspace?.workspace);
+    const item = value.body === undefined ? found : withBody(found, value.body);
+    if (value.body !== undefined) {
+      checkOverride(item, value.body, needs, project, workspace);
+    }
     const secrets = createEnvSecrets(needs, context.env);
     const tokens = new Set<string>();
     const known = (): string[] => [...secrets.values(), ...tokens];
@@ -177,7 +213,7 @@ export const sendOp = defineOp({
       getSecret: secrets.getSecret,
       proxyFor,
       onSecretValue: (secret) => tokens.add(secret),
-      containsKnownSecret: (text) => containsAny(text, known()),
+      containsKnownSecret: (text) => knownSecretIn(text, known()),
       scripting: new RequestScripting({ sandbox, checker, onSecretValue: (secret) => tokens.add(secret) }),
     };
     try {
@@ -200,6 +236,7 @@ export const sendOp = defineOp({
       if (exchange === undefined) {
         throw failure(result, needs);
       }
+      const mask = createSecretMasker(known());
       let historyId: string | undefined;
       try {
         const entry = historyEntryFor({
@@ -208,7 +245,7 @@ export const sendOp = defineOp({
           projectId: project.id,
           origin: context.origin,
           durationMs: result.durationMs ?? 0,
-          mask: createSecretMasker(known()),
+          mask,
         });
         await appendHistory(historyFileFor(context.historyDir, project.id), entry);
         historyId = entry.id;
@@ -218,7 +255,7 @@ export const sendOp = defineOp({
           `History not written: ${isWirebenchError(error) ? `${error.code}: ${error.message}` : String(error)}`,
         );
       }
-      return resultOf(item, result, exchange, historyId);
+      return resultOf(item, result, exchange, mask, historyId);
     } finally {
       for (const secret of known()) {
         context.revealed.add(secret);

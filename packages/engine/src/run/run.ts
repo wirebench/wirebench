@@ -131,8 +131,10 @@ export interface RunOptions {
   /** Called after a request's send when it has callbacks to wait for. */
   readonly onCallbackWaiting?: (path: string, waiting: readonly CallbackWaiting[]) => void;
   /**
-   * Called once for each request that got a response, before its assertions are evaluated. A host
-   * that records the send (the command line's `send` writes History) reads the exchange here.
+   * Called once for each request that got a response: after the send and after any callback wait,
+   * before the request's other assertions are evaluated. It is not called when the send throws, nor
+   * when the callback wait throws. A host that records the send (the command line's `send` writes
+   * History) reads the exchange here.
    */
   readonly onSent?: (item: SelectedRequest, sent: SentRequest) => void;
 }
