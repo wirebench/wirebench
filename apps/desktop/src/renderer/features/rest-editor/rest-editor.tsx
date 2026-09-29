@@ -158,8 +158,11 @@ export function RestEditor({ requestId }: RestEditorProps) {
   // A webhook item has no target-missing note until the user has set one, and no inline error
   // until the target resolves to something that is not `http(s)` — the two `webhook-target-*`
   // refusals `preflightRest` reports as an IPC error rather than in its usual value.
-  const sendDisabledReason =
+  const targetMissingReason =
     isWebhookItem && resolved.targetErrorCode === 'webhook-target-missing' ? 'Set the Webhooks target' : undefined;
+  // The Signing tab's inline error: a CI name or scheme field it shows but holds back (§5.2, P5).
+  const [signingProblem, setSigningProblem] = useState<string | undefined>(undefined);
+  const sendDisabledReason = targetMissingReason ?? (isWebhookItem ? signingProblem : undefined);
   useEffect(() => {
     setRestSendBlocked(requestId, sendDisabledReason);
     return () => {
@@ -193,7 +196,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
       ? 'The Webhooks target must start with http:// or https://'
       : undefined;
   const webhookNoteSource: 'target' | 'callback' | 'callback-fallback' | 'missing' =
-    sendDisabledReason !== undefined ? 'missing' : (resolved.target?.source ?? 'target');
+    targetMissingReason !== undefined ? 'missing' : (resolved.target?.source ?? 'target');
   // The folder an imported group's requests hang off; its name is what the header chip shows.
   const webhookGroup = isWebhookItem ? folders.find((folder) => folder.source !== undefined) : undefined;
   const inheritedAuth = [...folders]
@@ -262,6 +265,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
             request={request}
             inherited={inheritedSigningOf(folderMap, request.folderId, webhookCollection)}
             onChange={stage}
+            onProblemChange={setSigningProblem}
           />
         )}
         {shownTab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}

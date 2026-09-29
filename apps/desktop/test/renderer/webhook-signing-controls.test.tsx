@@ -140,6 +140,31 @@ describe('the Signing tab (§5.2)', () => {
     );
   });
 
+  it('reports a refused CI name as a problem, and clears it when fixed or when the tab goes', () => {
+    installWirebenchApi();
+    const onProblemChange = vi.fn();
+    const { unmount } = render(
+      <SigningTab
+        request={restRequestWire({ id: 'w1', name: 'Order paid', signing: HMAC })}
+        inherited={{ signing: { mode: 'none' }, from: 'default' }}
+        onChange={vi.fn()}
+        onProblemChange={onProblemChange}
+      />,
+    );
+    const ciName = screen.getByTestId<HTMLInputElement>('signing-ci-name');
+    fireEvent.change(ciName, { target: { value: '2-orders' } });
+    expect(onProblemChange).toHaveBeenLastCalledWith(
+      'A CI name is upper-case letters, digits and _, starting with a letter.',
+    );
+    fireEvent.change(ciName, { target: { value: 'orders' } });
+    expect(onProblemChange).toHaveBeenLastCalledWith(undefined);
+
+    fireEvent.change(ciName, { target: { value: '2-orders' } });
+    onProblemChange.mockClear();
+    unmount();
+    expect(onProblemChange).toHaveBeenLastCalledWith(undefined);
+  });
+
   it('registers a flush, so a typed but unsaved secret is stored and staged before a send', async () => {
     const replace = vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-orders' } });
     const set = vi.fn().mockResolvedValue({ ok: true, value: { ref: 'ref-new' } });

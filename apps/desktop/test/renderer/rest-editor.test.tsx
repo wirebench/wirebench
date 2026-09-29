@@ -407,6 +407,66 @@ describe('RestEditor for a webhook item', () => {
     expect(screen.getByTestId('rest-auth-source').textContent).toContain('Inherited from Webhooks');
   });
 
+  it('blocks Send while the Signing tab holds a CI name the envName rule refuses, until it is fixed', async () => {
+    const problem = 'A CI name is upper-case letters, digits and _, starting with a letter.';
+    preflightRest.mockReset().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'https://my-app.dev/hooks/newPet',
+        endpointSource: 'interface-default',
+        unresolved: [],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+        target: { source: 'target' },
+      },
+    });
+    useProjectStore.setState({
+      restRequests: {
+        'wh-1': restRequestWire({
+          id: 'wh-1',
+          apiId: 'webhooks:p1',
+          folderId: 'wh-folder',
+          url: '/newPet',
+          signing: { mode: 'sign', scheme: { kind: 'standard', toleranceSec: 300 }, secretEnv: 'ORDERS' },
+        }),
+      },
+    });
+    mount('wh-1');
+    const send = (): HTMLButtonElement => screen.getByTestId<HTMLButtonElement>('rest-send');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Signing' }));
+    expect(send().disabled).toBe(false);
+
+    fireEvent.change(screen.getByTestId('signing-ci-name'), { target: { value: '9-orders' } });
+    await waitFor(() => {
+      expect(send().disabled).toBe(true);
+    });
+    expect(send().title).toBe(problem);
+    expect(restSendBlocked('wh-1')).toBe(problem);
+
+    fireEvent.change(screen.getByTestId('signing-ci-name'), { target: { value: 'orders_9' } });
+    await waitFor(() => {
+      expect(send().disabled).toBe(false);
+    });
+    expect(restSendBlocked('wh-1')).toBeUndefined();
+
+    // Leaving the tab with a refused name still showing unblocks: the box is gone with it.
+    fireEvent.change(screen.getByTestId('signing-ci-name'), { target: { value: '9-orders' } });
+    await waitFor(() => {
+      expect(restSendBlocked('wh-1')).toBe(problem);
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Params' }));
+    await waitFor(() => {
+      expect(restSendBlocked('wh-1')).toBeUndefined();
+    });
+  });
+
+  it('has no Signing tab on an ordinary REST request', () => {
+    seed();
+    mount();
+    expect(screen.queryByRole('tab', { name: 'Signing' })).toBeNull();
+  });
+
   it('shows the inline error for a target that is not http(s)', async () => {
     preflightRest.mockReset().mockResolvedValue({ ok: false, error: { code: 'webhook-target-invalid', message: 'x' } });
     mount('wh-1');
