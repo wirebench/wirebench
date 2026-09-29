@@ -6,6 +6,8 @@
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import type { ServerContext, ServerModule } from '../context.js';
+import { ciBearer } from './principal.js';
+import { ciRoutes } from './routes.js';
 
 /** Beside `dist/`, like every module's migrations (`ServerModule.migrationsDir`). */
 export const CI_TOKENS_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/ci-tokens/', import.meta.url));
@@ -21,9 +23,10 @@ export function ciTokensModule(options: CiTokensOptions = {}): ServerModule {
     name: 'ci-tokens',
     migrationsDir: CI_TOKENS_MIGRATIONS_DIR,
     // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async
-    async register(_app: FastifyInstance, ctx: ServerContext): Promise<void> {
+    async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       ctx.meta.addCapability('ci-tokens');
-      void now; // used by the principal (Task 8) and the routes (Task 9)
+      app.bearerFallbacks.push(ciBearer({ db: ctx.db, now }));
+      ciRoutes({ db: ctx.db, now })(app);
     },
   };
 }
