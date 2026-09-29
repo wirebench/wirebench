@@ -215,6 +215,52 @@ describe('the MCP HTTP server', () => {
     expect(await status(server.url, { ...auth, 'mcp-session-id': third }, '{}')).not.toBe(404);
   });
 
+  it('evicts nobody for a request that is not a real initialize', async () => {
+    const server = await start(1);
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const opened = await post(server.url, auth);
+    await opened.body?.cancel();
+    const live = opened.headers.get('mcp-session-id') ?? '';
+
+    expect(await status(server.url, auth, 'not json')).toBe(400);
+    expect(await status(server.url, auth, JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }))).toBe(400);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': live }, '{}')).not.toBe(404);
+  });
+
+  it('evicts a session with no GET stream open before an idler one that is still listening', async () => {
+    const server = await start(2);
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const open = async (): Promise<string> => {
+      const response = await post(server.url, auth);
+      await response.body?.cancel();
+      return response.headers.get('mcp-session-id') ?? '';
+    };
+    const listening = await open();
+    const stream = new AbortController();
+    const listen = await fetch(server.url, {
+      headers: {
+        ...auth,
+        Accept: 'text/event-stream',
+        'mcp-session-id': listening,
+        'mcp-protocol-version': LATEST_PROTOCOL_VERSION,
+      },
+      signal: stream.signal,
+    });
+    expect(listen.status).toBe(200);
+    try {
+      const quiet = await open();
+      // The quiet session is now the more recently active of the two, yet it has no stream open.
+      expect(await status(server.url, { ...auth, 'mcp-session-id': quiet }, '{}')).not.toBe(404);
+
+      expect(await open()).not.toBe('');
+
+      expect(await status(server.url, { ...auth, 'mcp-session-id': quiet }, '{}')).toBe(404);
+      expect(await status(server.url, { ...auth, 'mcp-session-id': listening }, '{}')).not.toBe(404);
+    } finally {
+      stream.abort();
+    }
+  });
+
   it('answers 503 when there is no live session to make room from', async () => {
     const server = await start(0);
     const response = await post(server.url, { Authorization: `Bearer ${TOKEN}` });

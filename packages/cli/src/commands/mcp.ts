@@ -70,11 +70,37 @@ function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
   };
 }
 
+/** Resolves when `stop` aborts, or, without one, on the process's first SIGINT or SIGTERM. */
+function stopped(stop: AbortSignal | undefined): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (stop !== undefined) {
+      if (stop.aborted) {
+        resolve();
+      } else {
+        stop.addEventListener('abort', () => resolve(), { once: true });
+      }
+      return;
+    }
+    const onSignal = (): void => {
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+      resolve();
+    };
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
+  });
+}
+
 /**
- * Serves Streamable HTTP until SIGINT or SIGTERM. The generated token is printed once, to stderr:
- * stdout stays free of it, and no later line repeats it.
+ * Serves Streamable HTTP until `stop` aborts (SIGINT or SIGTERM when none is given). The generated
+ * token is printed once, to stderr: stdout stays free of it, and no later line repeats it.
  */
-async function serveHttp(port: number, base: OpsBase, io: Pick<CliIo, 'stderr' | 'env'>): Promise<ExitCode> {
+async function serveHttp(
+  port: number,
+  base: OpsBase,
+  io: Pick<CliIo, 'stderr' | 'env'>,
+  stop: AbortSignal | undefined,
+): Promise<ExitCode> {
   let resolved;
   try {
     resolved = resolveToken(io.env);
@@ -102,31 +128,27 @@ async function serveHttp(port: number, base: OpsBase, io: Pick<CliIo, 'stderr' |
   if (generated) {
     io.stderr.write(`bearer token (set ${TOKEN_VARIABLE} to choose your own): ${token}\n`);
   }
-  await new Promise<void>((resolve) => {
-    const stop = (): void => {
-      process.off('SIGINT', stop);
-      process.off('SIGTERM', stop);
-      resolve();
-    };
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
-  });
+  await stopped(stop);
   await running.close();
   return ExitCode.Ok;
 }
 
-export async function mcpCommand(
-  args: McpArgs,
-  io: CliIo,
-  stdin: NodeJS.ReadableStream = process.stdin,
-): Promise<ExitCode> {
+export interface McpCommandOptions {
+  /** Where stdio mode reads frames from; the process's stdin by default. */
+  readonly stdin?: NodeJS.ReadableStream;
+  /** Ends `--http` serving when it aborts; without one, SIGINT or SIGTERM does. */
+  readonly stop?: AbortSignal;
+}
+
+export async function mcpCommand(args: McpArgs, io: CliIo, options: McpCommandOptions = {}): Promise<ExitCode> {
+  const stdin = options.stdin ?? process.stdin;
   const base = mcpBaseFor(args, io);
   const refused = await checkProject(base, io);
   if (refused !== undefined) {
     return refused;
   }
   if (args.httpPort !== undefined) {
-    return await serveHttp(args.httpPort, base, io);
+    return await serveHttp(args.httpPort, base, io, options.stop);
   }
   const restoreConsole = keepConsoleOffStdout(io);
   try {

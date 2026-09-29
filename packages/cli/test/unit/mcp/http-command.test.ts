@@ -26,14 +26,20 @@ async function until(done: () => boolean): Promise<void> {
   expect(done()).toBe(true);
 }
 
-/** Stops the command however the test ends; retried, since the listener may not be registered yet. */
-async function stop(done: Promise<unknown>): Promise<void> {
-  const timer = setInterval(() => process.emit('SIGINT'), 10);
-  try {
-    await done;
-  } finally {
-    clearInterval(timer);
-  }
+/** A command that serves until `stop()`: the test's own stop, never a signal sent to the whole process. */
+function serving(...[args, io]: Parameters<typeof mcpCommand>): {
+  readonly done: Promise<ExitCode>;
+  readonly stop: () => Promise<void>;
+} {
+  const controller = new AbortController();
+  const done = mcpCommand(args, io, { stop: controller.signal });
+  return {
+    done,
+    stop: async () => {
+      controller.abort();
+      await done;
+    },
+  };
 }
 
 describe('wirebench mcp --http', () => {
@@ -57,14 +63,14 @@ describe('wirebench mcp --http', () => {
     const fixture = await soapProject();
     const stdout = capture();
     const stderr = capture();
-    const done = mcpCommand(
+    const { done, stop } = serving(
       { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
       { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: '   ' } },
     );
     try {
       await until(() => stderr.text().includes('bearer token'));
     } finally {
-      await stop(done);
+      await stop();
     }
     expect(await done).toBe(ExitCode.Ok);
   });
@@ -99,7 +105,7 @@ describe('wirebench mcp --http', () => {
     const stdout = capture();
     const stderr = capture();
     const token = 'abc123def456ghi789abc123def456ghi789';
-    const done = mcpCommand(
+    const { done, stop } = serving(
       { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
       { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: token } },
     );
@@ -109,7 +115,7 @@ describe('wirebench mcp --http', () => {
       expect(stderr.text()).not.toContain(token);
       expect(stderr.text()).not.toContain('bearer token');
     } finally {
-      await stop(done);
+      await stop();
     }
     expect(await done).toBe(ExitCode.Ok);
     expect(stdout.text()).toBe('');
@@ -119,7 +125,7 @@ describe('wirebench mcp --http', () => {
     const fixture = await soapProject();
     const stdout = capture();
     const stderr = capture();
-    const done = mcpCommand(
+    const { done, stop } = serving(
       { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
       { stdout: stdout.stream, stderr: stderr.stream, env: {} },
     );
@@ -129,7 +135,7 @@ describe('wirebench mcp --http', () => {
       expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(stderr.text().split(token ?? '?')).toHaveLength(2);
     } finally {
-      await stop(done);
+      await stop();
     }
     expect(await done).toBe(ExitCode.Ok);
     expect(stdout.text()).toBe('');

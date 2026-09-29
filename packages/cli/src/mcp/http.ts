@@ -72,6 +72,8 @@ interface Session {
   readonly server: McpServer;
   /** A counter reading, not a clock: the higher, the more recently a request reached the session. */
   lastActive: number;
+  /** Standalone GET streams open right now: a client listening for server messages is not idle. */
+  streams: number;
 }
 
 /** The body says only what was wrong with the request, never what the request said. */
@@ -102,29 +104,48 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
   let origins: ReadonlySet<string> = new Set();
   let hosts: ReadonlySet<string> = new Set();
 
-  /** The live session that went longest without a request. */
+  /**
+   * The live session that went longest without a request, preferring one with no GET stream open (a
+   * client still listening is in use even when it sends nothing); when every one has a stream, the
+   * idlest of all.
+   */
   const leastRecentlyActive = (): [string, Session] | undefined => {
     let oldest: [string, Session] | undefined;
+    let oldestListening: [string, Session] | undefined;
     for (const entry of sessions) {
-      if (oldest === undefined || entry[1].lastActive < oldest[1].lastActive) {
-        oldest = entry;
+      if (entry[1].streams === 0) {
+        if (oldest === undefined || entry[1].lastActive < oldest[1].lastActive) {
+          oldest = entry;
+        }
+      } else if (oldestListening === undefined || entry[1].lastActive < oldestListening[1].lastActive) {
+        oldestListening = entry;
       }
     }
-    return oldest;
+    return oldest ?? oldestListening;
   };
 
-  const openSession = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    // The SDK client's `close()` never sends DELETE, so a closed agent leaves its session behind.
-    // At the cap the session idle longest makes room; only slots all still initializing refuse.
-    while (sessions.size + opening >= maxSessions) {
+  /**
+   * The SDK client's `close()` never sends DELETE, so a closed agent leaves its session behind: at the
+   * cap, the idlest session makes room. Called only once the transport has accepted a real initialize,
+   * so a malformed request never ends anyone's session.
+   */
+  const makeRoom = async (): Promise<void> => {
+    while (sessions.size >= maxSessions) {
       const victim = leastRecentlyActive();
       if (victim === undefined) {
-        refuse(res, 503, 'Too many sessions; try again shortly');
         return;
       }
       // Out of the map first, so a concurrent initialize picks the next one, not this one again.
       sessions.delete(victim[0]);
       await victim[1].server.close();
+    }
+  };
+
+  const openSession = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // Every slot is being initialized: none can make room.
+    if (opening >= maxSessions) {
+      refuse(res, 503, 'Too many sessions; try again shortly');
+      return;
     }
     opening += 1;
     let counted = true;
@@ -147,9 +168,10 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         maxRequestBodySize: MAX_BODY_BYTES,
-        onsessioninitialized: (id) => {
+        onsessioninitialized: async (id) => {
+          await makeRoom();
           activity += 1;
-          sessions.set(id, { transport, server: opened, lastActive: activity });
+          sessions.set(id, { transport, server: opened, lastActive: activity, streams: 0 });
           settled();
         },
       });
@@ -203,6 +225,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       }
       activity += 1;
       session.lastActive = activity;
+      if (req.method === 'GET') {
+        session.streams += 1;
+        res.once('close', () => {
+          session.streams -= 1;
+        });
+      }
       await session.transport.handleRequest(req, res);
       return;
     }
@@ -210,7 +238,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
   };
 
   // `requireHostHeader: false` lets a request with no Host reach the check above, which refuses it.
-  const http = createServer({ requireHostHeader: false }, (req, res) => {
+  // `connectionsCheckingInterval` is how often Node enforces `headersTimeout` below (30 s by default).
+  const http = createServer({ requireHostHeader: false, connectionsCheckingInterval: 5_000 }, (req, res) => {
     handle(req, res).catch((error: unknown) => {
       options.log(`wirebench mcp: ${error instanceof Error ? error.message : String(error)}`);
       if (!res.headersSent) {
@@ -221,7 +250,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     });
   });
   // A local process can still hold sockets open, and these two bounds keep that to a nuisance: at
-  // most 128 connections, and a connection that never finishes its headers is dropped after 10 s.
+  // most 128 connections, and a connection that never finishes its headers is dropped after about
+  // 10 seconds (the timeout, checked every 5 s, so within about 15 s at worst).
   http.maxConnections = MAX_CONNECTIONS;
   http.headersTimeout = 10_000;
   await new Promise<void>((resolve, reject) => {
@@ -230,6 +260,10 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       http.off('error', reject);
       resolve();
     });
+  });
+  // Past listening, an error on the server (not on one request) is logged; it must not crash the process.
+  http.on('error', (error) => {
+    options.log(`wirebench mcp: ${error.message}`);
   });
   const bound = http.address() as AddressInfo;
   origins = new Set([`http://localhost:${String(bound.port)}`, `http://${HOST}:${String(bound.port)}`]);
