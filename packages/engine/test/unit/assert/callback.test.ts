@@ -186,6 +186,26 @@ describe('awaitCallbacks', () => {
     );
   });
 
+  it('ranks a header or body miss closer than any method or path miss', async () => {
+    const twoHeaders: CallbackAssertion = {
+      ...ORDERS,
+      match: {
+        ...ORDERS.match,
+        headers: [
+          { name: 'x-event', equals: 'order.created' },
+          { name: 'content-type', equals: 'application/xml' },
+        ],
+      },
+    };
+    const { result } = await wait(twoHeaders, [
+      { at: 100, capture: capture(2, { method: 'GET' }) },
+      { at: 200, capture: capture(3, { headers: [['X-Event', 'order.refunded']] }) },
+    ]);
+    expect(result?.message).toBe(
+      'no capture matched within 5 s — 2 arrived; closest: POST /events (header x-event differs)',
+    );
+  });
+
   it('fails a signature check on a capture that was not checked', async () => {
     const { result } = await wait({ ...ORDERS, expect: [{ signature: 'verified' }] }, [
       { at: 1, capture: capture(2, { signature: null }) },

@@ -248,7 +248,12 @@ function signatureHolds(capture: CaptureSummaryView): Held {
 
 type Fit =
   | { readonly kind: 'fits'; readonly detail: CaptureDetailView }
-  | { readonly kind: 'differs'; readonly parts: readonly string[] };
+  | {
+      readonly kind: 'differs';
+      /** `summary`: the method or path differs; `detail`: they fit, and a header or the body differs. */
+      readonly stage: 'summary' | 'detail';
+      readonly parts: readonly string[];
+    };
 
 async function fit(
   match: CallbackMatch,
@@ -263,7 +268,7 @@ async function fit(
     if (matched.kind === 'error' || !matched.matched) parts.push('path');
   }
   // §2.3: a method or path that differs is skipped before its detail is read.
-  if (parts.length > 0) return { kind: 'differs', parts };
+  if (parts.length > 0) return { kind: 'differs', stage: 'summary', parts };
   const full = await detail();
   for (const header of match.headers ?? []) {
     if (!(await headerHolds(header, full.headers)).ok) parts.push(`header ${header.name}`);
@@ -271,7 +276,21 @@ async function fit(
   if (match.body !== undefined && !(await bodyHolds(match.body, full.bodyText)).ok) {
     parts.push(`body ${match.body.path}`);
   }
-  return parts.length === 0 ? { kind: 'fits', detail: full } : { kind: 'differs', parts };
+  return parts.length === 0 ? { kind: 'fits', detail: full } : { kind: 'differs', stage: 'detail', parts };
+}
+
+/**
+ * Whether a miss is closer than the closest so far. A header or body miss (its method and path fit)
+ * beats any method or path miss, whose headers and body were never read; within a stage the fewest
+ * parts win. Captures come oldest first, so `<=` gives a tie to the newer one (§2.4).
+ */
+function closerThan(
+  miss: Extract<Fit, { kind: 'differs' }>,
+  closest: Extract<Fit, { kind: 'differs' }> | undefined,
+): boolean {
+  if (closest === undefined) return true;
+  if (miss.stage !== closest.stage) return miss.stage === 'detail';
+  return miss.parts.length <= closest.parts.length;
 }
 
 /** `30` for whole seconds, `1.5` otherwise: how a callback's wait reads in messages. */
@@ -329,7 +348,7 @@ async function awaitOne(pending: PendingCallback, options: AwaitCallbacksOptions
   const deadline = options.sentAt + assertion.withinMs;
   let cursor = pending.cursor;
   let arrived = 0;
-  let closest: { readonly summary: CaptureSummaryView; readonly parts: readonly string[] } | undefined;
+  let closest: (Extract<Fit, { kind: 'differs' }> & { readonly summary: CaptureSummaryView }) | undefined;
   try {
     for (;;) {
       if (options.signal?.aborted === true) {
@@ -343,10 +362,7 @@ async function awaitOne(pending: PendingCallback, options: AwaitCallbacksOptions
         if (found.kind === 'fits') {
           return await checked(base, assertion, pending.hookId, found.detail, clock.now() - options.sentAt);
         }
-        // Oldest first, so `<=` gives a tie to the newer capture (§2.4).
-        if (closest === undefined || found.parts.length <= closest.parts.length) {
-          closest = { summary, parts: found.parts };
-        }
+        if (closerThan(found, closest)) closest = { ...found, summary };
       }
       const now = clock.now();
       if (now >= deadline) break;
