@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { defineOp } from './context.js';
 import { resolveOperation } from './operation-refs.js';
 import { clarkToQName, openProject } from './project.js';
+import { redactBody } from './redact.js';
 
 export type GenerateResult =
   | {
@@ -58,7 +59,9 @@ export const generateOp = defineOp({
   title: 'Generate a sample request',
   description:
     "Builds a sample request for one operation: a SOAP envelope from the WSDL's XSD, or a JSON body from the " +
-    'OpenAPI schema, with method, path and headers for REST. Reads only; nothing is saved.',
+    'OpenAPI schema, with method, path and headers for REST. Reads only; nothing is saved. For REST, path is the ' +
+    'OpenAPI template (/pets/{petId}), not a URL; the body is left out when the operation declares neither a schema ' +
+    'nor an example, and a declared example takes precedence over optional. Secret-looking values in the body are masked.',
   input,
   async run(value, context): Promise<GenerateResult> {
     const { project } = await openProject(context);
@@ -77,7 +80,7 @@ export const generateOp = defineOp({
         ...(generated.soapAction !== undefined ? { soapAction: generated.soapAction } : {}),
         contentType: generated.contentType,
         headers: generated.headers,
-        body: generated.envelopeXml,
+        body: redactBody(generated.envelopeXml, generated.contentType),
         problems: generated.problems.map((problem) => problem.message),
       };
     }
@@ -100,8 +103,16 @@ export const generateOp = defineOp({
         note: `The body is ${chosen.type}; generate samples JSON bodies only`,
       };
     }
-    const sample =
+    const sample: unknown =
       chosen.media.example ?? sampleFromSchema(chosen.media.schema ?? {}, { includeOptional, sampleValues: true });
-    return { ...base, contentType: chosen.type, headers, body: JSON.stringify(sample, null, 2) };
+    if (sample === undefined || (chosen.media.example === undefined && chosen.media.schema === undefined)) {
+      return { ...base, contentType: chosen.type, headers };
+    }
+    return {
+      ...base,
+      contentType: chosen.type,
+      headers,
+      body: redactBody(JSON.stringify(sample, null, 2), chosen.type),
+    };
   },
 });

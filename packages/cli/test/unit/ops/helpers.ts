@@ -2,7 +2,7 @@
  * Fixture projects for the op tests, built the way a user would: an empty project, then the
  * `import` op. Temp folders are removed by `removeTempDirs` in each file's `afterEach`.
  */
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -193,4 +193,81 @@ export async function startServer(reply: (request: Received) => Reply | Promise<
         server.close((error) => (error ? reject(error) : resolve()));
       }),
   };
+}
+
+/** A copy of the calculator WSDL with a second, SOAP 1.2 binding: two operations named `Add`. */
+export async function twoBindingWsdl(): Promise<string> {
+  const original = await readFile(CALCULATOR_WSDL, 'utf8');
+  const withNamespace = original.replace(
+    'xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"',
+    'xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"\n                  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"',
+  );
+  const binding = `  <wsdl:binding name="CalculatorSoap12" type="tns:CalculatorPort">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Add">
+      <soap12:operation soapAction="urn:wirebench:calculator/Add"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+`;
+  const port = `    <wsdl:port name="CalculatorPort12" binding="tns:CalculatorSoap12">
+      <soap12:address location="http://127.0.0.1:9/calculator12"/>
+    </wsdl:port>
+`;
+  const file = join(await tempDir(), 'calculator-two.wsdl');
+  await writeFile(
+    file,
+    withNamespace
+      .replace('  <wsdl:service', `${binding}  <wsdl:service`)
+      .replace('  </wsdl:service>', `${port}  </wsdl:service>`),
+  );
+  return file;
+}
+
+/** A one-endpoint OpenAPI file whose request body example carries a password and a literal `${secret}`. */
+export async function exampleOpenApi(): Promise<string> {
+  const file = join(await tempDir(), 'login.openapi.yaml');
+  await writeFile(
+    file,
+    `openapi: 3.0.3
+info:
+  title: Login
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:9
+paths:
+  /login:
+    post:
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user]
+              properties:
+                user:
+                  type: string
+                note:
+                  type: string
+            example:
+              user: alice
+              password: ${SECRET}
+              note: '\${secret}'
+      responses:
+        '200':
+          description: ok
+  /ping:
+    post:
+      operationId: ping
+      requestBody:
+        content:
+          application/json: {}
+      responses:
+        '200':
+          description: ok
+`,
+  );
+  return file;
 }

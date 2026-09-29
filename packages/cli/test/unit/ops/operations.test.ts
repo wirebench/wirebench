@@ -1,9 +1,23 @@
 // packages/cli/test/unit/ops/operations.test.ts
+import { loadProject } from '@wirebench/engine';
+import type { RestFolder, RestRequestDef } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
 import { operationsOp } from '../../../src/ops/operations.js';
-import { CALCULATOR_WSDL, removeTempDirs, restItem, restProject, SOAP_ITEM, soapProject } from './helpers.js';
+import {
+  CALCULATOR_WSDL,
+  emptyProject,
+  PETS_OPENAPI,
+  removeTempDirs,
+  restItem,
+  restProject,
+  SECRET,
+  SOAP_ITEM,
+  soapProject,
+  twoBindingWsdl,
+  updateProject,
+} from './helpers.js';
 
 afterEach(removeTempDirs);
 
@@ -53,5 +67,88 @@ describe('op operations', () => {
     await expect(runOp(operationsOp, { container: 'Nope' }, fixture.base())).rejects.toMatchObject({
       code: 'container-not-found',
     });
+  });
+
+  it('lists saved requests by the operation they belong to when two operations share a name', async () => {
+    const fixture = await emptyProject();
+    await runOp(importOp, { source: await twoBindingWsdl() }, fixture.base());
+    const { project } = await loadProject(fixture.dir);
+    const slugs = (project.interfaces[0]?.operations ?? []).map((operation) => operation.slug);
+
+    const result = await runOp(operationsOp, {}, fixture.base());
+    expect(result.operations.map((row) => row.ref)).toEqual(slugs.map((slug) => `CalculatorService/${slug}`));
+    // Each row lists its own operation's one request, not both.
+    expect(result.operations.map((row) => row.items)).toEqual([[SOAP_ITEM], [SOAP_ITEM]]);
+    expect(result.operations.map((row) => (row.kind === 'soap' ? row.binding : ''))).toEqual([
+      'CalculatorSoap',
+      'CalculatorSoap12',
+    ]);
+  });
+
+  it('notes an interface and an API that share a name', async () => {
+    const fixture = await restProject();
+    await runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base());
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      interfaces: project.interfaces.map((iface) => ({ ...iface, name: 'Shared' })),
+      apis: project.apis.map((api) => ({ ...api, name: 'Shared' })),
+    }));
+    const result = await runOp(operationsOp, {}, fixture.base());
+    expect(result.notes).toEqual([expect.stringContaining('"Shared"')]);
+  });
+
+  it('lists the saved requests instead when an API has no cached definition, masking secret query values', async () => {
+    const fixture = await emptyProject();
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      settings: { ...project.settings, cacheDefinitions: false },
+    }));
+    await runOp(importOp, { source: PETS_OPENAPI }, fixture.base());
+    const retargetRequests = (requests: readonly RestRequestDef[]): RestRequestDef[] =>
+      requests.map((request) => {
+        if (request.contract?.method === 'get' && request.contract.path === '/pets') {
+          return { ...request, url: `http://alice:${SECRET}@127.0.0.1:9/pets?api_key=${SECRET}&limit=2` };
+        }
+        if (request.contract?.method === 'post' && request.contract.path === '/pets') {
+          return { ...request, url: `/pets?api_key=${SECRET}&limit=3` };
+        }
+        return request;
+      });
+    const retargetFolder = (folder: RestFolder): RestFolder => ({
+      ...folder,
+      requests: retargetRequests(folder.requests),
+      folders: folder.folders.map(retargetFolder),
+    });
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      apis: project.apis.map((api) => ({
+        ...api,
+        requests: retargetRequests(api.requests),
+        folders: api.folders.map(retargetFolder),
+      })),
+    }));
+
+    const result = await runOp(operationsOp, {}, fixture.base());
+    expect(result.notes).toEqual([expect.stringContaining('Pets: no cached definition')]);
+    expect(result.operations.map((row) => row.kind)).toEqual(['rest', 'rest', 'rest']);
+    const paths = result.operations.map((row) => (row.kind === 'rest' ? row.path : ''));
+    expect(paths[0]).toMatch(/^http:\/\/alice:[^@]*@127\.0\.0\.1:9\/pets\?api_key=[^&]*&limit=2$/);
+    expect(paths[1]).toMatch(/^\/pets\?api_key=[^&]*&limit=3$/);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  it('says so when an interface has no cached definition, and still lists its operations', async () => {
+    const fixture = await emptyProject();
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      settings: { ...project.settings, cacheDefinitions: false },
+    }));
+    await runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base());
+    const result = await runOp(operationsOp, {}, fixture.base());
+    expect(result.notes).toEqual(['CalculatorService: no cached definition, so no SOAP actions']);
+    expect(result.operations).toEqual([
+      expect.objectContaining({ kind: 'soap', ref: 'CalculatorService/Add', items: [SOAP_ITEM] }),
+    ]);
+    expect(result.operations[0]).not.toHaveProperty('soapAction');
   });
 });
