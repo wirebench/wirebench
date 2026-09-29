@@ -146,11 +146,17 @@ not gated: the person typing the command has allowed it. The gates belong to the
   on the redacted text. Those three read a message as XML when its text starts with `<` and as JSON
   otherwise; `send` goes by the response's declared `Content-Type`, so its key-based masking covers XML,
   and JSON or form bodies only when the response declares that type. Any other body is masked only for
-  the secret values resolved for the send. No tool accepts a secret value as input; secrets come from
+  the secret values resolved for the send. `send`'s assertion results are redacted by pattern as well:
+  URLs in them are redacted, and the value a header or `match` assertion read shows as `<redacted>` when
+  the header is one of those above or the JSONPath/XPath ends in one of the secret keys, callback
+  assertion reasons included. No tool accepts a secret value as input; secrets come from
   `WIREBENCH_SECRET_<NAME>` variables in the server's environment, and only the ones the saved request
-  uses are read. History is stored as the desktop stores it and is not an agent-facing surface: the
-  tools read it through the redaction, and the `file` source refuses the `.jsonl` files in the History
-  folder in use.
+  uses are read. As defence in depth, every non-empty `WIREBENCH_SECRET_*` value the server was started
+  with, and `WIREBENCH_MCP_TOKEN`, are masked in every tool's result whether or not the call resolved
+  them. History is stored as the desktop stores it and is not an agent-facing surface: the tools read
+  it through the redaction, and the `file` source refuses any file in the History folder in use. A
+  send from the server never trims History below what the file holds, so it cannot delete entries the
+  user kept under a larger cap than the default; the desktop's own cap applies on its next write.
 - **The `send` body override is sent as written.** A `${…}` placeholder in it is refused, because it
   would expand against the server's own environment (`${#System#NAME}` reads the process
   environment). The saved request's own body still expands placeholders as usual, and the override
@@ -165,18 +171,25 @@ not gated: the person typing the command has allowed it. The gates belong to the
   stop a web page from reaching the server through DNS rebinding. Any path other than
   `/mcp` gets 404, and `--http 80` is refused because clients drop the default port from `Host` and
   `Origin`. A request body is capped at 16 MiB; at most 128 connections are open at once, and one that
-  has not finished its headers in 10 seconds is dropped. One process holds at most 64 live sessions:
-  a new one past that closes the session idle longest, whose client gets 404 on its next request and
-  must initialize again. Every client shares the one token, so any holder of it can close other clients' sessions by opening
+  has not finished its headers is dropped after about 10 seconds. One process holds at most 64 live
+  sessions. Only a request the server has accepted as a real `initialize` makes room past that: it
+  closes the session idle longest, preferring one with no GET stream open, and that client gets 404 on
+  its next request and must initialize again; a malformed or non-initialize request closes nothing.
+  Every client shares the one token, so any holder of it can close other clients' sessions by opening
   new ones. There is no idle timeout below the cap: stop the process to drop them.
+- **On stdio, stdout is frames only, as far as the process's own code goes.** `console.log`, `info` and
+  `debug` are pointed at stderr while the server runs. The engine's worker threads (the XPath and
+  JSONPath evaluator, the REST contract check, the script checker) keep Node's default: their stdout
+  is not guarded. None of them writes to it, but a line one did print would reach the protocol stream.
 - **No model runs in Wirebench.** The server answers tool calls; the agent, its model and its prompts
   live outside the app. Nothing is sent anywhere except the requests the user or the agent asks
   `send` to make.
 - **Files and URLs are reached with the server's rights.** With `--allow-write`, `import` reads any
   local path the process can read, or fetches any http(s) URL the machine's network reaches; the
   desktop's import is limited to project roots and files the user picked, the server's is not.
-  `validate` and `query` read any regular file of 16 MiB or less the process can read (the `.jsonl`
-  files in the History folder in use excepted). A relative path resolves against the working directory, which an MCP client chooses, so
+  `validate` and `query` read any regular file of 16 MiB or less the process can read (any file in the
+  History folder in use excepted). The path is checked before anything is opened, so a device or a
+  named pipe is refused without being opened. A relative path resolves against the working directory, which an MCP client chooses, so
   give absolute paths. Start the server as a user, and in a project, you mean the agent to work on.
 - **Bounded results.** `query` returns at most 64 Ki characters per result and 256 Ki in total, and
   `history_diff` at most 256 Ki characters of changes, and `send` cuts a response body at 256 Ki

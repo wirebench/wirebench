@@ -171,7 +171,9 @@ async function cacheWrite(write: () => Promise<unknown>): Promise<ImportProblemV
     return [
       {
         code: 'definition-cache-write-failed',
-        message: redactUrlsInText(`The definition was imported but not cached: ${reason}`),
+        message: redactUrlsInText(
+          `The definition was imported but not cached: ${reason}; import it again once the folder is writable`,
+        ),
       },
     ];
   }

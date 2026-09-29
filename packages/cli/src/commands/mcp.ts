@@ -54,6 +54,11 @@ export async function checkProject(base: OpsBase, io: Pick<CliIo, 'stderr'>): Pr
 /**
  * Points `console.log`, `console.info` and `console.debug` at stderr, so a stray log call in any
  * dependency cannot put a non-frame line on stdout. Returns the restore.
+ *
+ * This covers the main thread only. The engine's worker threads (XPath/JSONPath evaluation, the REST
+ * contract check, the script checker) keep Node's default, where a worker's stdout is piped to the
+ * process's: their output is not guarded here. None of them writes to stdout today; docs/security.md
+ * says the same.
  */
 function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
   const saved = { log: console.log, info: console.info, debug: console.debug };

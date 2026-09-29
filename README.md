@@ -198,7 +198,8 @@ repository. It is what the opt-in update feed is derived from.
 - [User guide](https://wirebench.github.io/wirebench/) — install, a ten-minute walkthrough, a guide per feature, the
   command reference, troubleshooting and FAQ
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
-- [CLI reference](docs/cli.md) — `wirebench run`/`secrets list`, assertions, secrets, reports and exit codes
+- [CLI reference](docs/cli.md) — `wirebench run`/`secrets list`, assertions, secrets, reports and exit codes,
+  and `wirebench mcp` with its verbs
 - [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
 - [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0008
 - [Success criteria and their evidence](docs/success-criteria.md) — every criterion, SOAP and REST, and what proves it
@@ -232,7 +233,10 @@ sizes, the detail per theme, and what a review of the surrounding tools changed 
    a published benchmark are still to come.
 3. **CLI runner** — `wirebench run` with assertions, JUnit and JSON reports, CI recipes, and a baseline mode that
    compares responses with committed golden files.
-4. **MCP server** — the engine driven by coding agents, with CLI parity and no AI inside the app.
+4. **MCP server** — `wirebench mcp` is on `main`: a coding agent imports, lists, generates, sends, validates,
+   queries and diffs History over stdio or local HTTP, each tool also a CLI verb, with sends and writes behind
+   flags and no AI inside the app ([CLI reference](docs/cli.md#wirebench-mcp)). Contract operations as MCP tools
+   are next ([#33](https://github.com/wirebench/wirebench/issues/33)).
 5. **Snapshot regression** — send to several environments at once, diff semantically, replay baselines in CI.
 6. **Secrets** — resolved from external secret managers at send time; encrypted team secrets in shared workspaces.
 7. **Enterprise authentication** — Kerberos/SPNEGO and WS-Trust for STS-issued SAML tokens.

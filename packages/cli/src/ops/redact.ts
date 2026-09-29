@@ -45,7 +45,9 @@ function stripMalformedUrl(url: string): string {
  * and a credential-named query parameter masked). Transport errors quote the URL they failed on.
  */
 export function redactUrlsInText(text: string): string {
-  return text.replace(/\b(?:https?|wss?):\/\/\S+/gi, (found) => {
+  // A URL ends at a quote, an angle bracket, a backslash or a backtick too: in JSON, XML or code it is
+  // followed by the text around it, which must not be taken for part of it.
+  return text.replace(/\b(?:https?|wss?):\/\/[^\s"'<>\\`]+/gi, (found) => {
     try {
       new URL(found);
     } catch {

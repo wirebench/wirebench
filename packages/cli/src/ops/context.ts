@@ -64,6 +64,11 @@ function describeIssues(error: z.ZodError): string {
  * Checks `raw` against the op's schema, runs the op with a fresh secret set, and passes the result
  * or the error through the redaction step (spec §2.2) before anything leaves.
  *
+ * The step shared here is the literal mask: every secret value the call revealed, wherever it appears
+ * (and a URL quoted in an error). Pattern redaction (credential headers, URL credentials and parameters,
+ * the WS-Security password, secret-keyed JSON and form values) is each op's own job, applied to what it
+ * returns where it builds it, since only the op knows which text is a header, a URL or a body.
+ *
  * @throws OpsError — always an `OpsError`, already redacted
  */
 export async function runOp<S extends z.ZodType, R>(op: Op<S, R>, raw: unknown, base: OpsBase): Promise<R> {

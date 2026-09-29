@@ -7,7 +7,7 @@ import { defineOp, runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
 import { exitCodeForError, OpsError, toOpsError } from '../../../src/ops/errors.js';
 import { defaultHistoryDir, defaultUserDataDir, historyFileFor } from '../../../src/ops/paths.js';
-import { redactAssertions, redactBody, redactError } from '../../../src/ops/redact.js';
+import { redactAssertions, redactBody, redactError, redactUrlsInText } from '../../../src/ops/redact.js';
 
 const SECRET = 'abc123def456ghi789';
 
@@ -273,5 +273,31 @@ describe('redactAssertions', () => {
 
     expect(JSON.stringify(redacted)).not.toContain(SECRET);
     expect(redacted?.label).toContain('example.test');
+  });
+});
+
+describe('redactUrlsInText', () => {
+  it('ends a credential URL at the closing quote of a JSON string, keeping the keys after it', () => {
+    const text = JSON.stringify({ url: `https://ada:${SECRET}@h.example.test/x?token=${SECRET}`, next: 'kept' });
+
+    const redacted = redactUrlsInText(text);
+
+    expect(redacted).not.toContain(SECRET);
+    const parsed = JSON.parse(redacted) as { url: string; next: string };
+    expect(parsed.next).toBe('kept');
+    expect(parsed.url).toContain('h.example.test/x?token=');
+  });
+
+  it('ends a URL inside a nested object, and at quotes, angle brackets, backslashes and backticks', () => {
+    const inner = JSON.stringify({ a: { b: `http://h.example.test/?token=${SECRET}` }, c: [1, 2] });
+    expect(JSON.parse(redactUrlsInText(inner))).toEqual({
+      a: { b: 'http://h.example.test/?token=%3Credacted%3E' },
+      c: [1, 2],
+    });
+    for (const end of ["'", '<', '>', '\\', '`']) {
+      const redacted = redactUrlsInText(`see http://h.example.test/?token=${SECRET}${end}after`);
+      expect(redacted).not.toContain(SECRET);
+      expect(redacted.endsWith(`${end}after`)).toBe(true);
+    }
   });
 });

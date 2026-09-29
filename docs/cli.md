@@ -497,9 +497,9 @@ Details that are easy to get wrong:
 - **`validate` and `query` sources.** `<history-id|file>` is a file when one exists at that path,
   otherwise a History id. On MCP the same choice is the `historyId`, `file` and `text` inputs, of
   which exactly one is passed. A `file` is read from any path the process can read, resolved against
-  the working directory. It must be a regular file of at most 16 MiB, and the `.jsonl` files in the
-  History folder in use (`--history-dir`, or the default) are refused, whatever path or link reaches
-  them; read History with `historyId`. `--direction` says which side of a History entry to read and
+  the working directory. It must be a regular file of at most 16 MiB, and any file in the History
+  folder in use (`--history-dir`, or the default) is refused, whatever path or link reaches it; read
+  History with `historyId`. `--direction` says which side of a History entry to read and
   which side of the contract to check (default `response`).
 - **REST.** `validate` checks responses only. The status comes from the History entry, or from
   `--status`, and is 200 when neither gives one. `generate` for a REST operation prints the OpenAPI
@@ -536,7 +536,15 @@ Every result and every error passes one step before anything is printed or retur
      `token`, `access_token`, `refresh_token`, `client_secret`, `api_key`, `authorization` and the like).
      A value under any other name, such as `<ApiToken>`, stays readable.
 2. Then every secret value the call resolved is masked wherever it appears, with the masker `run`
-   uses (including its floor: a value of fewer than 4 characters is not masked literally).
+   uses (including its floor: a value of fewer than 4 characters is not masked literally). Under
+   `wirebench mcp`, every non-empty `WIREBENCH_SECRET_*` value in the server's environment and
+   `WIREBENCH_MCP_TOKEN` are masked in every tool's result as well, whether or not the call resolved them.
+
+`send`'s assertion results get the pattern redaction too: URLs in every label, expected and actual
+value and message are redacted, and the value an assertion read is shown as `<redacted>` when it is a
+credential: a header assertion on one of the headers above, a `match` whose JSONPath or XPath ends in
+one of the secret keys above (`$.token`, `//Password`), and the same checks inside a callback
+assertion's reasons. `wirebench run` shows those values as they are.
 
 `validate`, `query` and `history diff` apply the same pattern redaction to the message before they read
 it, so the password and secret-keyed values above never appear in what they return. That is the whole
@@ -551,7 +559,8 @@ to a JSON or form body only when the response declares that type. A body with an
 text for one, is masked only for the secret values resolved for the send.
 
 History itself is not an agent-facing surface: an agent reads it through `history_list`,
-`history_diff` and the `historyId` inputs, which redact, and `file` refuses the History files.
+`history_diff` and the `historyId` inputs, which redact, and `file` refuses any file in the History
+folder in use.
 
 ### History location
 
@@ -617,7 +626,9 @@ you what to pass.
 
 On stdio, stdout carries protocol frames only; the startup line and every warning go to stderr.
 The server ends when stdin closes or when the client closes the transport. Secrets come from `WIREBENCH_SECRET_<NAME>` variables in the server's
-own environment, as for `run`, are masked in every result, and are never an input of any tool.
+own environment, as for `run`, are masked in every result, and are never an input of any tool. Every
+`WIREBENCH_SECRET_*` value the server was started with is masked in every result, not only the ones a
+call used.
 
 ### Streamable HTTP
 
@@ -636,12 +647,16 @@ else; there is no flag to bind another address.
   the second guard against DNS rebinding.
 - Any path other than `/mcp` gets 404.
 - Each session has its own server, all with the same gates. One process holds at most 64 live
-  sessions: when a new one would be the 65th, the session that went longest without a request is
-  closed to make room. That client gets 404 on its next request and must initialize again. Every
-  client shares the one token, so any holder of it can close other clients' sessions by opening new
-  ones. There is no idle timeout below the cap: stop the process to drop every session.
+  sessions. Only a real `initialize` request makes room: once the server has accepted it as one and the
+  cap is reached, it closes the session that went longest without a request, preferring one with no
+  open GET stream (a client listening for server messages is in use even when it sends nothing); when
+  every session has a stream open, the idlest of all is closed. That client gets 404 on its next
+  request and must initialize again. A malformed request, or one that is not an initialize, closes
+  nobody's session. When every slot is a session still initializing, a new one gets 503. Every client
+  shares the one token, so any holder of it can close other clients' sessions by opening new ones.
+  There is no idle timeout below the cap: stop the process to drop every session.
 - A request body is capped at 16 MiB. The server accepts at most 128 connections at once, and drops a
-  connection that has not finished its headers within 10 seconds.
+  connection that has not finished its headers after about 10 seconds.
 
 ## Run in CI
 

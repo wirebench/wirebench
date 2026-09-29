@@ -52,8 +52,9 @@ you set must be at least 16 characters with no spaces; a shorter one stops the s
 
 A request without the token gets 401, and one from a web page on another origin, or with a `Host` other
 than `127.0.0.1` or `localhost` on that port, gets 403. Each client session has its own server with the
-same gates. One process holds at most 64 live sessions: past that, the session idle longest is closed,
-and its client must initialize again. All clients share the one token, so treat it as one identity. Any path other than `/mcp` gets 404, and `--http 80` is refused
+same gates. One process holds at most 64 live sessions: past that, a new client's `initialize` closes
+the session idle longest (one with no GET stream open first), and that client must initialize again. A
+request that is not a real `initialize` closes nobody's session. All clients share the one token, so treat it as one identity. Any path other than `/mcp` gets 404, and `--http 80` is refused
 (a port from 1 to 65535 otherwise).
 
 ## Tools
@@ -74,8 +75,8 @@ agent can tell you what to allow. `-e local,staging` limits the environments `se
 `-e` a send that would use no environment is refused.
 
 `validate` and `query` read a History entry (`historyId`), a file (`file`) or the text itself (`text`);
-pass exactly one. A `file` is any regular file of 16 MiB or less that the server process can read; the `.jsonl`
-files in the History folder in use are refused, so read those through `historyId`. `send` also takes a `body` that replaces the saved
+pass exactly one. A `file` is any regular file of 16 MiB or less that the server process can read; any
+file in the History folder in use is refused, so read History through `historyId`. `send` also takes a `body` that replaces the saved
 body for that one send. It is sent as written, so a placeholder such as `${…}` in it is refused; the saved
 request's own body still expands placeholders as usual.
 
@@ -90,6 +91,9 @@ returns 20 entries unless asked for more, up to 200.
 
 REST is covered in part: `validate` checks responses only, using the status from the History entry
 (or the `status` you pass, else 200), and `generate` gives a REST operation's OpenAPI path template.
+A REST body `validate` could not compare with a schema (none declared, over 1 MiB, or out of time)
+comes back `valid` with `checked: false`, and its `contract` says why; `valid` is false only when
+problems were found. Both SOAP and REST list at most 50 problems and say `truncated` when there were more.
 gRPC and WebSocket requests are listed in the project but `send` refuses them with `unsupported-kind`.
 
 <Aside type="note" title="What the agent sees">
@@ -98,7 +102,10 @@ Results are redacted by pattern, as the app's HTTP log is. That masks the `Autho
 stays) and the value of a query parameter from a fixed list such as `api_key`, `token`, `key` and
 `signature`; the text of a WS-Security `Password` element; and the values under secret-looking JSON or
 form keys such as `password`, `secret`, `token` and `api_key`. It also masks every secret value the
-call resolved. A value under any other name, such as an `ApiToken` element, stays readable. `validate`,
+call resolved, and every `WIREBENCH_SECRET_*` value (and `WIREBENCH_MCP_TOKEN`) the server was started
+with. `send`'s assertion results are redacted the same way: the value a header or `match` assertion read
+shows as `<redacted>` when it is a credential header or sits under one of those secret keys. A value
+under any other name, such as an `ApiToken` element, stays readable. `validate`,
 `query` and `history_diff` apply the pattern redaction to a message before they read it, so those
 values never appear in their results; that does not stop a query from reading a secret the patterns
 miss. They read a message as XML when it starts with `<` and as JSON otherwise, while `send` goes by
@@ -112,7 +119,9 @@ server was started in, and only the ones the saved request uses; no tool takes a
 A send from an agent lands in the same History as the app's, tagged `mcp`, and an open History panel
 shows it at once. `history_list` and `history_diff` read it back, so an agent can compare today's
 response with yesterday's. A send that got no response is not written. If the History file is busy,
-the send's result still comes back, without a `historyId`, together with a warning.
+the send's result still comes back, without a `historyId`, together with a warning. An agent's send
+never trims History below what the file already holds, so it cannot drop entries you keep under a
+larger History cap than the default; the app's own cap applies again on its next write.
 
 By default the server uses the desktop's History folder. Point `--history-dir` at another folder to keep
 an agent's sends apart from the app's, or to reach the folder of a development build.
@@ -120,8 +129,9 @@ an agent's sends apart from the app's, or to reach the folder of a development b
 ## Exit codes on the command line
 
 The same capabilities are terminal verbs (`wirebench send`, `validate` and the rest). They exit 0 on
-success, 1 when a `send` assertion failed or `validate` found the message invalid, 2 for a refused or
-wrong call, and 3 for everything else.
+success, 1 when a `send` assertion failed or `validate` found the message invalid (a REST body it could
+not check exits 0 and prints `not checked: <reason>`), 2 for a refused or wrong call, and 3 for
+everything else.
 
 See the [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md#wirebench-mcp) for
 every flag, and [the security notes](https://github.com/wirebench/wirebench/blob/main/docs/security.md#the-mcp-server-is-gated-redacted-and-local)

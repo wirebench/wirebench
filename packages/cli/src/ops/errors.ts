@@ -1,5 +1,6 @@
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import { ExitCode } from '../exit-codes.js';
+import { UsageError } from '../usage-error.js';
 
 /** An op's refusal or failure (spec §2.1): an engine-style code and a message a person or an agent can act on. */
 export class OpsError extends WirebenchError {
@@ -39,6 +40,10 @@ export function toOpsError(error: unknown): OpsError {
   }
   if (isWirebenchError(error)) {
     return new OpsError(error.code, error.message, error.details);
+  }
+  if (error instanceof UsageError) {
+    // A malformed proxy variable, read on the first fetch: the user's input, not a fault here.
+    return new OpsError('invalid-input', error.message);
   }
   return new OpsError('internal-error', error instanceof Error ? error.message : String(error));
 }

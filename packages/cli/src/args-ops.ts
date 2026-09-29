@@ -143,7 +143,8 @@ Secrets come from WIREBENCH_SECRET_<NAME> variables, as for run. Exit 1 when an 
 <history-id|file>      A file when one exists at that path, else a History id.
 --operation <ref>      Required unless the History entry is a send of a saved request.
 --status <n>           REST: the status whose response schema applies (default: the entry's, or 200).
-Exit 1 when the message is invalid.`,
+Exit 1 when the message is invalid; a REST body that could not be checked prints
+"not checked: <reason>" and exits 0.`,
   query: `${USAGE.query} [--project <dir>] [--history-dir <dir>] [--json]
 
 <history-id|file>      A file when one exists at that path, else a History id.

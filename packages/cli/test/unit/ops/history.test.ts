@@ -4,9 +4,9 @@ import { appendHistory } from '@wirebench/engine';
 import type { HistoryEntry } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
-import { historyDiffOp, historyListOp, MAX_DIFF_CHARS } from '../../../src/ops/history.js';
+import { historyDiffOp, historyItemOf, historyListOp, MAX_DIFF_CHARS } from '../../../src/ops/history.js';
 import { sendOp } from '../../../src/ops/send.js';
-import { addEnvironment, removeTempDirs, restItem, restProject, SECRET, startServer } from './helpers.js';
+import { addEnvironment, emptyProject, removeTempDirs, restItem, restProject, SECRET, startServer } from './helpers.js';
 import type { Fixture, TestServer } from './helpers.js';
 
 let pets: TestServer | undefined;
@@ -68,6 +68,83 @@ describe('op history_list', () => {
   it('lists nothing for a project with no History file yet', async () => {
     const fixture = await restProject();
     expect(await runOp(historyListOp, {}, fixture.base())).toEqual({ entries: [], total: 0 });
+  });
+});
+
+/** A SOAP entry as the desktop writes one: no `kind`, no `tags`. */
+function desktopEntry(index: number, overrides: Partial<HistoryEntry> = {}): HistoryEntry {
+  return {
+    id: `01KD${String(index).padStart(22, '0')}`,
+    at: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+    projectId: 'mcp-fixture',
+    requestName: 'Request 1',
+    interfaceName: 'CalculatorService',
+    operationName: 'Add',
+    endpoint: 'http://127.0.0.1:9/calculator',
+    soapVersion: '1.1',
+    status: 200,
+    durationMs: 3,
+    ok: true,
+    sizeBytes: 0,
+    request: { envelopeXml: '<Envelope/>', headers: [] },
+    response: { envelopeXml: '<Envelope/>', rawHeaders: [], status: 200, statusText: 'OK' },
+    ...overrides,
+  };
+}
+
+describe('historyItemOf', () => {
+  it('joins a nested REST folder chain into the path send takes', () => {
+    const entry = desktopEntry(1, {
+      kind: 'rest',
+      interfaceName: 'Pets',
+      operationName: 'Admin / Owners / Archive',
+      requestName: 'List',
+    });
+    expect(historyItemOf(entry)).toBe('Pets/Admin/Owners/Archive/List');
+    expect(historyItemOf({ ...entry, operationName: '' })).toBe('Pets/List');
+  });
+
+  it('keeps a SOAP operation one segment, whatever its name holds, with or without a kind', () => {
+    expect(historyItemOf(desktopEntry(1))).toBe('CalculatorService/Add/Request 1');
+    expect(historyItemOf(desktopEntry(1, { kind: 'soap', operationName: 'Add / Sub' }))).toBe(
+      'CalculatorService/Add / Sub/Request 1',
+    );
+  });
+});
+
+describe('op history_list over entries the desktop wrote', () => {
+  it('lists an entry with no tags or kind as SOAP, without tags', async () => {
+    const fixture = await emptyProject();
+    await appendHistory(join(fixture.historyDir, 'mcp-fixture.jsonl'), desktopEntry(1));
+
+    const result = await runOp(historyListOp, {}, fixture.base());
+
+    expect(result.total).toBe(1);
+    expect(result.entries[0]).toEqual({
+      id: desktopEntry(1).id,
+      at: desktopEntry(1).at,
+      item: 'CalculatorService/Add/Request 1',
+      kind: 'soap',
+      status: 200,
+      ok: true,
+      durationMs: 3,
+    });
+  });
+
+  it('lists 20 entries by default, and takes a limit of 200', async () => {
+    const fixture = await emptyProject();
+    const file = join(fixture.historyDir, 'mcp-fixture.jsonl');
+    for (let index = 0; index < 25; index += 1) {
+      await appendHistory(file, desktopEntry(index));
+    }
+
+    const byDefault = await runOp(historyListOp, {}, fixture.base());
+    expect(byDefault.total).toBe(25);
+    expect(byDefault.entries).toHaveLength(20);
+    expect(byDefault.entries[0]?.id).toBe(desktopEntry(24).id);
+
+    const most = await runOp(historyListOp, { limit: 200 }, fixture.base());
+    expect(most.entries).toHaveLength(25);
   });
 });
 

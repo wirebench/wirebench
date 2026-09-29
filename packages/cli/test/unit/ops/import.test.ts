@@ -128,13 +128,24 @@ describe('op import', () => {
     expect(result.added).toHaveLength(1);
   });
 
+  it('refuses a URL import under a malformed proxy variable as invalid input, not an internal error', async () => {
+    const fixture = await emptyProject();
+    const call = runOp(
+      importOp,
+      { source: 'http://127.0.0.1:9/calculator.wsdl' },
+      fixture.base({ env: { HTTP_PROXY: 'not a url' } }),
+    );
+    await expect(call).rejects.toMatchObject({ code: 'invalid-input', message: 'HTTP_PROXY is not a valid URL' });
+  });
+
   it('reports a definition cache it could not write and keeps the import', async () => {
     const fixture = await emptyProject();
     // A file where the cache folder should be lets the save through and fails the cache write.
     await mkdir(join(fixture.dir, 'interfaces', 'CalculatorService'), { recursive: true });
     await writeFile(join(fixture.dir, 'interfaces', 'CalculatorService', 'definition'), 'in the way');
     const result = await runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base());
-    expect(result.problems.map((problem) => problem.code)).toContain('definition-cache-write-failed');
+    const problem = result.problems.find((found) => found.code === 'definition-cache-write-failed');
+    expect(problem?.message).toMatch(/; import it again once the folder is writable$/);
     const { project } = await loadProject(fixture.dir);
     expect(project.interfaces).toHaveLength(1);
   });

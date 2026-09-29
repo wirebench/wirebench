@@ -2,7 +2,7 @@
  * Runs one op for a CLI verb (spec §5): with every gate open, since the user typed the command;
  * the result printed for a person or, with `--json`, exactly; an error as `code: message` on stderr.
  */
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type { OpArgs, OpName } from '../args.js';
@@ -15,6 +15,7 @@ import { OPS } from '../ops/index.js';
 import { defaultHistoryDir } from '../ops/paths.js';
 import type { SendResult } from '../ops/send.js';
 import type { ValidateResult } from '../ops/validate.js';
+import { exists } from '../workspace-lookup.js';
 import { formatHuman } from './ops-output.js';
 
 /** The base every op of this process runs on; warnings go to stderr, never stdout. */
@@ -38,15 +39,6 @@ export function opsBaseFor(
     origin: options.origin,
     warn: (line) => io.stderr.write(`warning: ${line}\n`),
   };
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function readBodyFile(file: string): Promise<string> {
