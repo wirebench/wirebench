@@ -355,9 +355,14 @@ export {
   WEBHOOK_TARGET_PROPERTY,
   createWebhookCollection,
   createWebhookFolder,
+  effectiveSigning,
   effectiveTarget,
   findWebhookRequest,
   hookKey,
+  signingAlong,
+  signingSecretMissing,
+  signingSecretRef,
+  signingSourceLabel,
   webhookFolders,
   webhookPath,
   webhookRequests,
@@ -365,9 +370,11 @@ export {
 export type {
   CreateWebhookCollectionInput,
   CreateWebhookFolderInput,
+  EffectiveSigning,
   HookLink,
   WebhookCollection,
   WebhookFolder,
+  WebhookSigning,
 } from './webhooks/model.js';
 export {
   DEFAULT_SIGNATURE_TOLERANCE_SEC,
