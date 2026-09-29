@@ -232,6 +232,23 @@ describe('problems a damaged gRPC API reports', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it('refuses a message file named outside the request directory', async () => {
+    const dir = await tempProjectDir();
+    await saveProject(project(), dir);
+    await writeFile(join(dir, '..', 'wirebench-outside-message.txt'), '{"not": "the project\'s"}');
+    const requestFile = join(dir, APIS_DIR, 'Greeter', 'requests', 'Health.request.yaml');
+    const text = await readFile(requestFile, 'utf8');
+    expect(text).toContain('message: Health.body.json');
+    await writeFile(
+      requestFile,
+      text.replace('message: Health.body.json', 'message: ../../../wirebench-outside-message.txt'),
+    );
+
+    await expect(loadProject(dir)).rejects.toMatchObject({ code: 'project-path-invalid' });
+    await rm(join(dir, '..', 'wirebench-outside-message.txt'), { force: true });
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it('defaults an older request file without a methodKind to unary', async () => {
     const dir = await tempProjectDir();
     await saveProject(project(), dir);
