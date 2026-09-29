@@ -1,6 +1,6 @@
 export { findStepRequest, selectRequests } from './select.js';
 export type { SelectedRequest, StepRequestLookup } from './select.js';
-export { prepareSend } from './prepare.js';
+export { prepareSend, scopesFor } from './prepare.js';
 export type { PreparedSend, RunContext, RunWorkspace } from './prepare.js';
 export {
   cappedExchange,

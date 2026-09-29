@@ -45,9 +45,16 @@ export {
   prepareCallbacks,
   realCallbackClock,
   seconds,
+  sendAwaitingCallbacks,
   waitingOf,
 } from './assert/callback.js';
-export type { AwaitCallbacksOptions, CallbackClock, CallbackWaiting, PendingCallback } from './assert/callback.js';
+export type {
+  AwaitCallbacksOptions,
+  CallbackClock,
+  CallbackWiring,
+  CallbackWaiting,
+  PendingCallback,
+} from './assert/callback.js';
 
 export * from './run/index.js';
 

@@ -374,3 +374,48 @@ export function awaitCallbacks(
 ): Promise<AssertionResult[]> {
   return Promise.all(pending.map((one) => awaitOne(one, options)));
 }
+
+/** How a run waits for callbacks; the same for a selected request and a sequence step. */
+export interface CallbackWiring {
+  readonly captures?: CaptureSource;
+  readonly clock?: CallbackClock;
+  /** `CALLBACK_LIMITS.pollIntervalMs` unless a test says otherwise. */
+  readonly pollIntervalMs?: number;
+  readonly signal?: AbortSignal;
+  /** Called after the send, before the wait, when there is something to wait for. */
+  readonly onWaiting?: (waiting: readonly CallbackWaiting[]) => void;
+}
+
+/**
+ * The prepare → send → await wiring of §2.3, shared by `runRequests` and a sequence run so the
+ * cursor is always taken before the send. `scopes` is asked only when `assertions` hold a callback
+ * assertion, so a request without one does no extra work. `send` may throw; a throw before or in it
+ * abandons the wait. The callers evaluate their other assertions from `sent`, then merge `callbacks`.
+ */
+export async function sendAwaitingCallbacks<T>(
+  assertions: readonly StepAssertion[],
+  scopes: () => PropertyScopes,
+  send: () => Promise<T>,
+  wiring: CallbackWiring,
+): Promise<{ readonly sent: T; readonly callbacks: AssertionResult[] }> {
+  const own = assertions.filter(isCallbackAssertion);
+  if (own.length === 0) return { sent: await send(), callbacks: [] };
+  const clock = wiring.clock ?? realCallbackClock;
+  const resolved = scopes();
+  const pending = await prepareCallbacks(
+    own.map((assertion) => expandCallback(assertion, resolved)),
+    wiring.captures,
+  );
+  const sent = await send();
+  const sentAt = clock.now();
+  const waiting = waitingOf(pending);
+  if (waiting.length > 0) wiring.onWaiting?.(waiting);
+  const callbacks = await awaitCallbacks(pending, {
+    captures: wiring.captures,
+    sentAt,
+    clock,
+    ...(wiring.pollIntervalMs !== undefined ? { pollIntervalMs: wiring.pollIntervalMs } : {}),
+    ...(wiring.signal !== undefined ? { signal: wiring.signal } : {}),
+  });
+  return { sent, callbacks };
+}
