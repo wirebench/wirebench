@@ -13,6 +13,13 @@ import { parseSecretPseudoRef, secretEnvName } from './secret-token.js';
 /** The prefix every secret-carrying environment variable name starts with. */
 export const SECRET_ENV_PREFIX = 'WIREBENCH_SECRET_';
 
+/**
+ * The pseudo-ref a webhook signing secret is asked for when its node names only a CI variable
+ * (webhook-signatures §5.2): `webhook-signing:<secretEnv>`. Like a `${secret:name}` token's, its
+ * name is already stable, so only `WIREBENCH_SECRET_<secretEnv>` is read.
+ */
+export const SIGNING_PSEUDO_REF_PREFIX = 'webhook-signing:';
+
 /** One secret a run must be given, and the friendlier name the file declares for it, if any. */
 export interface SecretNeed {
   /** The opaque reference in the file. */
@@ -54,6 +61,9 @@ export function secretNeedsOfAuth(auth: AuthConfig | EndpointAuth | undefined): 
  * `WIREBENCH_SECRET_<NAME>` alone.
  */
 export function envVariablesFor(secret: Pick<SecretNeed, 'ref' | 'envName'>): string[] {
+  if (secret.ref.startsWith(SIGNING_PSEUDO_REF_PREFIX)) {
+    return [`${SECRET_ENV_PREFIX}${secret.envName ?? secret.ref.slice(SIGNING_PSEUDO_REF_PREFIX.length)}`];
+  }
   const name = parseSecretPseudoRef(secret.ref);
   if (name !== undefined) {
     return [`${SECRET_ENV_PREFIX}${secretEnvName(name)}`];

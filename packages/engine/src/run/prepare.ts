@@ -497,7 +497,7 @@ async function signFor(selected: RestSelected, context: RunContext): Promise<Res
   if (effective === undefined || effective.signing.mode !== 'sign') return undefined;
   const ref = signingSecretRef(effective.signing);
   const secret = ref === undefined ? undefined : await context.getSecret(ref);
-  if (secret === undefined || secret === '') throw signingSecretMissing(effective);
+  if (secret === undefined || secret === '') throw signingSecretMissing(effective, ref);
   return { scheme: effective.signing.scheme, secret };
 }
 

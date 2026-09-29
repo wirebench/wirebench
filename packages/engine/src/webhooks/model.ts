@@ -7,6 +7,7 @@ import { WirebenchError } from '../errors.js';
 import type { AuthConfig, CreateOptions } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
+import { SIGNING_PSEUDO_REF_PREFIX } from '../secrets/env-names.js';
 import type { RestFolder, RestRequestDef } from '../rest/model.js';
 import type { SignatureScheme } from './signature.js';
 
@@ -209,16 +210,21 @@ export function signingSourceLabel(effective: EffectiveSigning): string {
  */
 export function signingSecretRef(signing: Extract<WebhookSigning, { mode: 'sign' }>): string | undefined {
   if (signing.secretRef !== undefined && signing.secretRef !== '') return signing.secretRef;
-  return signing.secretEnv !== undefined ? `webhook-signing:${signing.secretEnv}` : undefined;
+  return signing.secretEnv !== undefined ? `${SIGNING_PSEUDO_REF_PREFIX}${signing.secretEnv}` : undefined;
 }
 
 /** The refusal when signing is set but its secret is not: a send never goes out unsigned (§5.2). */
-export function signingSecretMissing(effective: EffectiveSigning): WirebenchError {
+export function signingSecretMissing(effective: EffectiveSigning, ref?: string): WirebenchError {
   return new WirebenchError(
     'webhook-signing-secret',
     `Signing is set on ${signingSourceLabel(effective)} but its secret is not set`,
     {
-      details: { from: effective.from, ...(effective.fromName !== undefined ? { fromName: effective.fromName } : {}) },
+      details: {
+        from: effective.from,
+        ...(effective.fromName !== undefined ? { fromName: effective.fromName } : {}),
+        // The CLI names the variable to set from this (`explainMissingSecret`).
+        ...(ref !== undefined ? { ref } : {}),
+      },
     },
   );
 }

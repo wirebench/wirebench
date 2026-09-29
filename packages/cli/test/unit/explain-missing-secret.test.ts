@@ -35,6 +35,24 @@ describe('explainMissingSecret', () => {
     );
   });
 
+  it('rewrites a missing webhook signing secret to its CI variable', () => {
+    const raw = errored({
+      code: 'webhook-signing-secret',
+      message: 'Signing is set on the Webhooks collection but its secret is not set',
+      details: { from: 'collection', ref: 'webhook-signing:HOOKS_SIGNING' },
+    });
+    const needs = [
+      {
+        ref: 'webhook-signing:HOOKS_SIGNING',
+        envName: 'HOOKS_SIGNING',
+        purpose: 'webhook signing secret (the Webhooks collection)',
+      },
+    ];
+    expect(explainMissingSecret(raw, needs).error?.message).toBe(
+      'Set WIREBENCH_SECRET_HOOKS_SIGNING to run "Echo/Echo/Secured hello".',
+    );
+  });
+
   it('leaves any other error alone', () => {
     const raw = errored({ code: 'keystore-unreadable', message: 'unreadable', details: { id: 'k' } });
     expect(explainMissingSecret(raw, [])).toBe(raw);
