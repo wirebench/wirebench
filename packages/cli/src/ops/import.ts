@@ -39,6 +39,7 @@ import { defineOp } from './context.js';
 import type { OpsContext } from './context.js';
 import { OpsError } from './errors.js';
 import { openProject } from './project.js';
+import { redactUrlsInText } from './redact.js';
 
 export interface ImportedItem {
   readonly kind: 'soap' | 'rest';
@@ -82,9 +83,11 @@ const input = z.object({
 
 /** The fetcher for URLs and for the documents a definition references, through the proxy the environment names. */
 function fetcherFor(env: NodeJS.ProcessEnv): FetchDocument {
-  const proxyFor = proxyFromEnv(env);
+  // Read on the first network fetch: a malformed proxy variable must not fail an import from a file.
+  let proxyFor: ReturnType<typeof proxyFromEnv> | undefined;
   return createHttpFetchDocument({
     network: (url) => {
+      proxyFor ??= proxyFromEnv(env);
       const proxy = proxyFor(url);
       return Promise.resolve(proxy !== undefined ? { proxy } : {});
     },
@@ -154,6 +157,26 @@ function operationsOf(result: ImportResult, endpointId: string | undefined): Ope
   });
 }
 
+/**
+ * Writes a definition cache after the project is saved, so a failed save leaves no orphan folder. A
+ * failed write does not undo the import (the definition is already in the project, as on the
+ * desktop): it is reported as a problem.
+ */
+async function cacheWrite(write: () => Promise<unknown>): Promise<ImportProblemView[]> {
+  try {
+    await write();
+    return [];
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return [
+      {
+        code: 'definition-cache-write-failed',
+        message: redactUrlsInText(`The definition was imported but not cached: ${reason}`),
+      },
+    ];
+  }
+}
+
 async function addWsdl(
   context: OpsContext,
   project: Project,
@@ -166,9 +189,6 @@ async function addWsdl(
     name ?? result.definition.services[0]?.name.localName ?? read.filename ?? basename(new URL(read.location).pathname);
   const slug = uniqueSlug(interfaceName, new Set(project.interfaces.map((iface) => iface.slug)));
   const cache = project.settings.cacheDefinitions;
-  if (cache) {
-    await writeDefinitionCache(result.bundle, definitionCacheDir(context.projectDir, slug));
-  }
   const endpoints = endpointsOf(result);
   const iface: Interface = {
     ...createInterface(interfaceName, {
@@ -185,6 +205,9 @@ async function addWsdl(
     wsa: { ...DEFAULT_WSA_CONFIG, enabled: result.wsa.enabled, version: result.wsa.version },
   };
   await saveProject({ ...project, interfaces: [...project.interfaces, iface] }, context.projectDir);
+  const cacheProblems = cache
+    ? await cacheWrite(() => writeDefinitionCache(result.bundle, definitionCacheDir(context.projectDir, slug)))
+    : [];
   return {
     format: 'wsdl',
     added: [
@@ -196,13 +219,20 @@ async function addWsdl(
         requests: iface.operations.length,
       },
     ],
-    problems: result.problems.map((problem) => ({
-      code: problem.code,
-      message: problem.message,
-      ...(problem.location !== undefined
-        ? { where: problem.line !== undefined ? `${problem.location}:${String(problem.line)}` : problem.location }
-        : {}),
-    })),
+    problems: [
+      ...result.problems.map((problem) => ({
+        code: problem.code,
+        message: redactUrlsInText(problem.message),
+        ...(problem.location !== undefined
+          ? {
+              where: redactUrlsInText(
+                problem.line !== undefined ? `${problem.location}:${String(problem.line)}` : problem.location,
+              ),
+            }
+          : {}),
+      })),
+      ...cacheProblems,
+    ],
   };
 }
 
@@ -226,13 +256,15 @@ async function addOpenApi(
   const slug = uniqueSlug(imported.api.name, taken);
   const cache = project.settings.cacheDefinitions;
   const version = imported.summary.declaredVersion;
-  if (cache) {
-    await writeApiDefinitionCache(imported.documents, apiDefinitionDir(context.projectDir, slug), {
-      declaredVersion: version,
-    });
-  }
   const api: RestApi = { ...imported.api, slug, definition: { source: read.source, cache, version } };
   await saveProject({ ...project, apis: [...project.apis, api] }, context.projectDir);
+  const cacheProblems = cache
+    ? await cacheWrite(() =>
+        writeApiDefinitionCache(imported.documents, apiDefinitionDir(context.projectDir, slug), {
+          declaredVersion: version,
+        }),
+      )
+    : [];
   return {
     format: 'openapi',
     added: [
@@ -244,11 +276,14 @@ async function addOpenApi(
         requests: imported.summary.requests,
       },
     ],
-    problems: imported.summary.skipped.map((skipped) => ({
-      code: `skipped-${skipped.kind}`,
-      message: skipped.reason,
-      where: skipped.where,
-    })),
+    problems: [
+      ...imported.summary.skipped.map((skipped) => ({
+        code: `skipped-${skipped.kind}`,
+        message: redactUrlsInText(skipped.reason),
+        where: redactUrlsInText(skipped.where),
+      })),
+      ...cacheProblems,
+    ],
   };
 }
 

@@ -155,7 +155,7 @@ export interface TestServer {
 }
 
 /** A local HTTP server that answers every request with `reply` and records what it received. */
-export async function startServer(reply: (request: Received) => Reply): Promise<TestServer> {
+export async function startServer(reply: (request: Received) => Reply | Promise<Reply>): Promise<TestServer> {
   const received: Received[] = [];
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -168,9 +168,18 @@ export async function startServer(reply: (request: Received) => Reply): Promise<
         body: Buffer.concat(chunks).toString('utf8'),
       };
       received.push(request);
-      const answer = reply(request);
-      res.writeHead(answer.status ?? 200, answer.headers ?? {});
-      res.end(answer.body);
+      Promise.resolve()
+        .then(() => reply(request))
+        .then(
+          (answer) => {
+            res.writeHead(answer.status ?? 200, answer.headers ?? {});
+            res.end(answer.body);
+          },
+          () => {
+            res.writeHead(500);
+            res.end();
+          },
+        );
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

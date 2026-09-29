@@ -29,7 +29,7 @@ function stripMalformedUrl(url: string): string {
  * `text` with every `http(s)://` and `ws(s)://` URL in it redacted as the engine redacts a logged URL (a password
  * and a credential-named query parameter masked). Transport errors quote the URL they failed on.
  */
-function redactUrlsIn(text: string): string {
+export function redactUrlsInText(text: string): string {
   return text.replace(/\b(?:https?|wss?):\/\/\S+/gi, (found) => {
     try {
       new URL(found);
@@ -48,7 +48,7 @@ function redactUrlsIn(text: string): string {
  */
 export function redactError(error: OpsError, revealed: ReadonlySet<string>): OpsError {
   const secrets = createSecretMasker([...revealed]);
-  const mask = (text: string): string => secrets(redactUrlsIn(text));
+  const mask = (text: string): string => secrets(redactUrlsInText(text));
   let details: Readonly<Record<string, unknown>> | undefined;
   if (error.details !== undefined) {
     const rest = Object.fromEntries(Object.entries(error.details).filter(([key]) => key !== 'request'));

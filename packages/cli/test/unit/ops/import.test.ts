@@ -1,10 +1,19 @@
-import { access, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { apiDefinitionDir, definitionCacheDir, loadProject } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
-import { CALCULATOR_WSDL, emptyProject, PETS_OPENAPI, removeTempDirs, tempDir, updateProject } from './helpers.js';
+import {
+  CALCULATOR_WSDL,
+  emptyProject,
+  PETS_OPENAPI,
+  removeTempDirs,
+  SECRET,
+  startServer,
+  tempDir,
+  updateProject,
+} from './helpers.js';
 
 afterEach(removeTempDirs);
 
@@ -59,8 +68,13 @@ describe('op import', () => {
 
   it('refuses without the write gate and leaves the project alone', async () => {
     const fixture = await emptyProject();
+    // A source that does not exist: the gate answers first, so nothing was read.
     await expect(
-      runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base({ gates: { write: false, send: true } })),
+      runOp(
+        importOp,
+        { source: join(fixture.dir, 'missing.wsdl') },
+        fixture.base({ gates: { write: false, send: true } }),
+      ),
     ).rejects.toMatchObject({
       code: 'write-not-allowed',
       message: expect.stringContaining('--allow-write') as unknown,
@@ -80,5 +94,48 @@ describe('op import', () => {
     await expect(runOp(importOp, { source: join(fixture.dir, 'missing.wsdl') }, fixture.base())).rejects.toMatchObject({
       code: 'file-not-found',
     });
+  });
+
+  it('imports by URL and redacts the URLs its problems quote', async () => {
+    const fixture = await emptyProject();
+    const wsdl = (await readFile(CALCULATOR_WSDL, 'utf8')).replace(
+      '<wsdl:types>',
+      `<wsdl:types><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:import namespace="urn:wirebench:other" schemaLocation="http://127.0.0.1:9/x.xsd?api_key=${SECRET}"/></xs:schema>`,
+    );
+    const server = await startServer(() => ({ body: wsdl }));
+    try {
+      const source = `${server.url}/calculator.wsdl`;
+      const result = await runOp(importOp, { source }, fixture.base());
+
+      expect(server.received.map((request) => request.url)).toContain('/calculator.wsdl');
+      expect(result.added[0]).toMatchObject({ kind: 'soap', name: 'CalculatorService' });
+      expect(result.problems.length).toBeGreaterThan(0);
+      expect(JSON.stringify(result)).not.toContain(SECRET);
+      const { project } = await loadProject(fixture.dir);
+      expect(project.interfaces[0]?.definitionUrl).toBe(source);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('does not read the proxy variables for a file import', async () => {
+    const fixture = await emptyProject();
+    const result = await runOp(
+      importOp,
+      { source: CALCULATOR_WSDL },
+      fixture.base({ env: { HTTP_PROXY: 'not a url', HTTPS_PROXY: 'not a url' } }),
+    );
+    expect(result.added).toHaveLength(1);
+  });
+
+  it('reports a definition cache it could not write and keeps the import', async () => {
+    const fixture = await emptyProject();
+    // A file where the cache folder should be lets the save through and fails the cache write.
+    await mkdir(join(fixture.dir, 'interfaces', 'CalculatorService'), { recursive: true });
+    await writeFile(join(fixture.dir, 'interfaces', 'CalculatorService', 'definition'), 'in the way');
+    const result = await runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base());
+    expect(result.problems.map((problem) => problem.code)).toContain('definition-cache-write-failed');
+    const { project } = await loadProject(fixture.dir);
+    expect(project.interfaces).toHaveLength(1);
   });
 });
