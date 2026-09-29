@@ -1,6 +1,7 @@
 /**
  * A catch URL's settings (webhook-capture spec §4.2): its name, whether it answers, and the fixed
  * response every sender gets. Create and edit share it; a viewer sees it read only.
+ * Editing an existing catch URL also shows its Signature section (webhook-signatures §4).
  */
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -9,6 +10,8 @@ import { ipc } from '../../state/ipc-client.js';
 import { useSyncStore } from '../../state/sync.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
 import { INPUT_CLASS } from '../team/roles.js';
+import { SignatureSection, signatureFormOf, signatureProblemOf, signatureRequestOf } from './catch-url-signature.js';
+import type { SignatureForm } from './catch-url-signature.js';
 import { CATCH_URL_LIMITS, PRINTABLE_ASCII } from './limits.js';
 import { openCatchUrlTab } from './webhooks-actions.js';
 import { useWebhooksDialogs } from './webhooks-dialogs-state.js';
@@ -82,6 +85,8 @@ export function CatchUrlSettingsDialog() {
   const role = useSyncStore((state) => state.status.role);
   const readOnly = role !== 'editor' && role !== 'admin';
   const [form, setForm] = useState<CatchUrlForm>(() => formOf(undefined));
+  const [signature, setSignature] = useState<SignatureForm>(() => signatureFormOf(undefined));
+  const [hook, setHook] = useState<CatchUrlWire | undefined>(undefined);
   const [refused, setRefused] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const hookId = settings?.hookId;
@@ -94,12 +99,19 @@ export function CatchUrlSettingsDialog() {
         ? undefined
         : useWebhooksStore.getState().hooks.find((candidate) => candidate.id === settings.hookId);
     setForm(formOf(hook));
+    setSignature(signatureFormOf(hook));
+    setHook(hook);
     setRefused(undefined);
   }, [settings]);
 
-  const problem = problemOf(form);
+  const problem = problemOf(form) ?? (hookId === undefined ? undefined : signatureProblemOf(signature, hook));
   const edit = (patch: Partial<CatchUrlForm>): void => {
     setForm((current) => ({ ...current, ...patch }));
+    setRefused(undefined);
+  };
+
+  const editSignature = (patch: Partial<SignatureForm>): void => {
+    setSignature((current) => ({ ...current, ...patch }));
     setRefused(undefined);
   };
 
@@ -111,7 +123,7 @@ export function CatchUrlSettingsDialog() {
     const result =
       hookId === undefined
         ? await ipc().hooks.create({ ...server, ...request })
-        : await ipc().hooks.update({ ...server, hookId, ...request });
+        : await ipc().hooks.update({ ...server, hookId, ...request, ...signatureRequestOf(signature, hook) });
     setBusy(false);
     if (!result.ok) {
       setRefused(result.error.message);
@@ -229,6 +241,9 @@ export function CatchUrlSettingsDialog() {
               onChange={(event) => edit({ body: event.target.value })}
               className={`${INPUT_CLASS} font-mono`}
             />
+            {hookId !== undefined && hook?.signatureAvailable !== undefined && (
+              <SignatureSection form={signature} onChange={editSignature} hook={hook} readOnly={readOnly} />
+            )}
             {shownProblem !== undefined && (
               <p role="alert" data-testid="catch-url-settings-problem" className="mt-2 text-sm text-status-danger">
                 {shownProblem}

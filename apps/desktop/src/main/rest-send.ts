@@ -18,6 +18,7 @@ import type {
   AuthConfig,
   BaseUrlSource,
   Cookie,
+  EffectiveSigning,
   Preferences,
   Project,
   ProxyOptions,
@@ -33,6 +34,7 @@ import {
   authChainFor,
   findRestRequest,
   toEngineAuthConfig,
+  toEngineSigning,
   toEngineBody,
   toEngineRows,
 } from './project-rest-mutations.js';
@@ -56,6 +58,8 @@ export interface RestSendResolution {
   readonly targetDetail?: string;
   /** The credentials that apply, still as `secretRef`s. */
   readonly auth: AuthConfig;
+  /** A webhook item's signing when it signs (webhook-signatures §5.2); its secret is read at send. */
+  readonly webhookSigning?: EffectiveSigning;
 }
 
 /** Where a webhook item's URL came from: its target, its callback URL, or the target standing in. */
@@ -95,7 +99,7 @@ export function withDraft(request: RestRequestDef, draft: RestRequestPatchWire |
   if (draft === undefined) {
     return request;
   }
-  return {
+  const merged: RestRequestDef = {
     ...request,
     ...(draft.method !== undefined ? { method: draft.method } : {}),
     ...(draft.url !== undefined ? { url: draft.url } : {}),
@@ -105,7 +109,15 @@ export function withDraft(request: RestRequestDef, draft: RestRequestPatchWire |
     ...(draft.body !== undefined ? { body: toEngineBody(draft.body) } : {}),
     ...(draft.auth !== undefined ? { auth: toEngineAuthConfig(draft.auth) } : {}),
     ...(draft.settings !== undefined ? { settings: cleanSettings(draft.settings) } : {}),
+    ...(draft.signing !== undefined && draft.signing !== null ? { signing: toEngineSigning(draft.signing) } : {}),
   };
+  if (draft.signing !== null) {
+    return merged;
+  }
+  // An unsaved *Inherit* on the Signing tab: send as the parents would sign.
+  const inherited: Record<string, unknown> = { ...merged };
+  delete inherited['signing'];
+  return inherited as unknown as RestRequestDef;
 }
 
 /** Settings from the wire, with the keys the sender left undefined dropped (they mean *inherit*). */

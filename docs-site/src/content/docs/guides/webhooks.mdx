@@ -48,6 +48,9 @@ Select a capture to read it:
 - **Form** shows the fields of an `application/x-www-form-urlencoded` body.
 - **Details** shows the method, subpath, query, source address, time received and size.
 
+A catch URL with a signature scheme marks each capture ✓ (verified) or ✗ (with the reason), and *401*
+when it rejected the request. See [Webhook signatures](/wirebench/guides/webhook-signatures/).
+
 **Save as webhook…**, on the capture viewer, turns a capture into a webhook item in a project's
 Webhooks collection — useful for replaying a real event on demand. See
 [Sending webhooks](/wirebench/guides/sending-webhooks/#replay-a-real-event).

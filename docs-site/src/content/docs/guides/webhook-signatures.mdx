@@ -1,0 +1,110 @@
+---
+title: Webhook signatures
+description: Sign the webhooks you send and check the signatures of the ones you catch.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A webhook signature lets a receiver prove that a delivery came from someone who knows a shared
+secret and that the body was not changed on the way. Wirebench uses one implementation for both
+directions: a **webhook item** can *sign* what it sends, and a **catch URL** can *check* what it
+receives.
+
+## The three schemes
+
+| Scheme | What is sent | What is signed |
+| --- | --- | --- |
+| **HMAC of body** | One header (default `X-Signature`) holding the hex or base64 digest, with an optional prefix such as `sha256=`. | The exact body bytes. |
+| **Timestamped HMAC** | One header (default `X-Signature`) reading `t=<unix>,v1=<hex>`. | `<t>.<body>`. The receiver rejects a timestamp outside a tolerance (default ±300 s). |
+| **Standard Webhooks** | Three headers: `webhook-id`, `webhook-timestamp` and `webhook-signature: v1,<base64>`. | The [Standard Webhooks](https://www.standardwebhooks.com/) message. A `whsec_` secret is base64 key bytes; timestamp tolerance is ±300 s. |
+
+The digest is HMAC-SHA256. For example, with the secret `abc123def456ghi789` and the body
+`{"event":"order.created"}`, *HMAC of body* in hex gives:
+
+```text
+e4d262af7821275e8ec7f51f7999a4a239fa3ee155f413fd980c39c4ed5864ab
+```
+
+## Check signatures at a catch URL
+
+Checking needs a [catch URL](/wirebench/guides/webhooks/) on a Wirebench Server that has a signature
+key configured (see [Server setup](#server-setup)).
+
+<Steps>
+
+1. Open the catch URL's **Settings…**.
+2. In **Signature**, choose a scheme and adjust its header, prefix or tolerance if the sender differs
+   from the defaults.
+3. Enter the secret. It is write-only: afterwards the dialog shows it only as *● set …i789*, the last
+   four characters, and only for a secret of eight or more characters and only to editors and admins.
+   Leaving the field empty on a later save keeps the stored secret; changing only the scheme does not
+   need a new one.
+4. Optionally tick **Reject unverified requests (401)**, then save.
+
+</Steps>
+
+Each capture is then marked **✓** when the signature verified, or **✗** with the reason:
+
+- *missing header*: the signature header is not there.
+- *malformed header*: it is there but cannot be read as the scheme's format.
+- *digest mismatch*: the digest is not the one the secret and body produce.
+- *timestamp outside tolerance*: the signature is valid but too old or too new.
+- *server key error*: the server could not open the stored secret, for example because its key changed.
+
+The verdict appears in the row and in the **Signature** block of the capture's **Details**, next to
+the signature headers that arrived. The check runs over the whole body as received, so a body larger
+than the storage limit is still verified in full and only then truncated for storage.
+
+With **Reject unverified requests (401)** on, a request that fails the check gets a `401` instead of
+the configured response. It is still stored, marked *401*, so you can see what was refused.
+
+## Sign what you send
+
+Open a webhook item's **Signing** tab, or choose **Settings…** on a folder (the dialog titled
+*Target for …*) or on the Webhooks collection (the **Webhooks settings** dialog), and choose
+**Inherit**, **None**, or a scheme. An item inherits from its nearest folder that sets
+signing, then the collection.
+
+- **Secret.** Kept in the OS keychain, never in the project file. **Set…** stores it; **Replace…**
+  changes it.
+- **CI name.** An upper-case name (`A–Z`, `0-9`, `_`) that `wirebench run` uses to find the secret in the
+  environment. It is prefilled from the item's name. An invalid name blocks **Send** in the Signing tab
+  until you fix it.
+
+A send with signing set and no secret is refused with a message, never sent unsigned. The signature
+covers the exact bytes on the wire, after scripts and property expansion have run.
+
+History, the HTTP Log and *Copy as cURL* show the signing headers exactly as they were sent. A
+**History** resend replays the recorded headers, signature included, because a replay is a record of
+what went out; an entry with no signing headers is signed fresh. An **HTTP Log** resend signs fresh.
+
+<Aside>
+Use secrets of ordinary length. Wirebench masks a known secret's value wherever it could reach an
+output, but not a value shorter than four characters.
+</Aside>
+
+## In CI
+
+`wirebench run` never reads the keychain. It reads the secret from `WIREBENCH_SECRET_<CI name>`:
+
+```bash
+WIREBENCH_SECRET_ORDERS_SIGNING=abc123def456ghi789 wirebench run ./project Webhooks/Orders
+```
+
+If the variable is not set, the item fails with a message naming it, and the run exits 3. `wirebench secrets list` shows the variable for each signed item.
+
+## Server setup
+
+Checking signatures needs one setting on Wirebench Server:
+
+```bash
+export WIREBENCH_SERVER_HOOKS_SECRET_KEY="$(openssl rand -base64 32)"
+```
+
+The key is 32 random bytes, base64-encoded. The server encrypts every catch URL's signature secret
+under it (AES-256-GCM) and never logs it. See the
+[server README](https://github.com/wirebench/wirebench/blob/main/packages/server/README.md) for the full list.
+
+- Unset, the server refuses to store signature settings and the dialog says so.
+- Losing or changing the key turns every check into *server key error* until the secrets are entered
+  again. Rotating the key in place is not supported yet.

@@ -12,6 +12,7 @@
  * `max` on `body` here is in characters, which is only a cheap first bound.
  */
 import { z } from 'zod';
+import { SIGNATURE_FAILURES, signatureSchemeSchema } from '../webhooks/signature.js';
 import { teamsIdSchema } from './teams.js';
 
 /** §3.5's validation limits and page sizes, shared so the desktop never sends what the server refuses. */
@@ -69,6 +70,24 @@ export const CATCH_URL_DEFAULT_RESPONSE: CatchUrlResponse = Object.freeze({
   delayMs: 0,
 });
 
+/** A catch URL's signature secret, in characters (webhook-signatures §3.4). */
+export const SIGNATURE_SECRET_MAX_LENGTH = 512;
+
+/** What a read shows of a catch URL's signature: the scheme, and only that a secret is set (§3.4). */
+export const catchUrlSignatureSchema = z.object({
+  scheme: signatureSchemeSchema,
+  /** Write-only: never the secret, only that one is set and, to editors, its last four characters. */
+  secret: z.object({ set: z.literal(true), hint: z.string().nullable() }),
+});
+export type CatchUrlSignature = z.infer<typeof catchUrlSignatureSchema>;
+
+/** A capture's verdict, fixed on receipt (§3.3); `null` on the capture means not checked. */
+export const captureSignatureSchema = z.object({
+  verdict: z.enum(['verified', 'failed']),
+  reason: z.enum(SIGNATURE_FAILURES).optional(),
+});
+export type CaptureSignature = z.infer<typeof captureSignatureSchema>;
+
 const nameSchema = z.string().min(1).max(HOOKS_LIMITS.maxNameLength);
 
 export const catchUrlSchema = z.object({
@@ -83,6 +102,11 @@ export const catchUrlSchema = z.object({
   /** The newest capture's id, `null` with none: the desktop's unseen badge compares it with the last one seen. */
   newestCaptureId: teamsIdSchema.nullable(),
   createdAt: z.string(),
+  /** webhook-signatures §3.4; absent from an older server. */
+  signature: catchUrlSignatureSchema.nullable().optional(),
+  rejectUnverified: z.boolean().optional(),
+  /** `false` while `WIREBENCH_SERVER_HOOKS_SECRET_KEY` is unset, so the desktop can explain why. */
+  signatureAvailable: z.boolean().optional(),
 });
 export type CatchUrl = z.infer<typeof catchUrlSchema>;
 export const catchUrlsResponseSchema = z.array(catchUrlSchema);
@@ -99,6 +123,12 @@ export const catchUrlUpdateRequestSchema = z.object({
   name: nameSchema.optional(),
   enabled: z.boolean().optional(),
   response: catchUrlResponseSchema.partial().optional(),
+  /** `null` clears; a scheme without `secret` keeps the stored one (§3.4). */
+  signature: z
+    .object({ scheme: signatureSchemeSchema, secret: z.string().min(1).max(SIGNATURE_SECRET_MAX_LENGTH).optional() })
+    .nullable()
+    .optional(),
+  rejectUnverified: z.boolean().optional(),
 });
 export type CatchUrlUpdateRequest = z.infer<typeof catchUrlUpdateRequestSchema>;
 
@@ -132,6 +162,8 @@ export const captureSummarySchema = z.object({
   bodySize: z.number().int().min(0),
   truncated: z.boolean(),
   sourceIp: z.string(),
+  signature: captureSignatureSchema.nullable().optional(),
+  rejected: z.boolean().optional(),
 });
 export type CaptureSummary = z.infer<typeof captureSummarySchema>;
 /** Newest first. */

@@ -52,6 +52,8 @@ export async function identityHarness(
     readonly modules?: readonly ServerModule[] | ((clock: TestClock) => readonly ServerModule[]);
     /** Overrides the repository store's git client — a test forcing `RepoStore.create` to fail. */
     readonly git?: GitCli;
+    /** Where the server's log lines go, for a test reading them. */
+    readonly logStream?: NodeJS.WritableStream;
   } = {},
 ): Promise<IdentityHarness> {
   const db = await testDatabase();
@@ -89,7 +91,10 @@ export async function identityHarness(
   // repository store, so no developer gitconfig or hook reaches a server test. `options.git` still
   // overrides only the store, for tests that force RepoStore.create to fail.
   const ctx = await testContext({ dataDir, db, config, repos, git: testGit(join(dataDir, NO_HOOKS_DIR)) });
-  const app = await buildServer(ctx, { modules });
+  const app = await buildServer(ctx, {
+    modules,
+    ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+  });
   return {
     app,
     db,

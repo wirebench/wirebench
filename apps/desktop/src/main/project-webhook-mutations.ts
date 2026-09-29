@@ -23,8 +23,15 @@ import {
   webhookFolders,
   WEBHOOK_TARGET_PROPERTY,
 } from '@wirebench/engine';
-import type { Project, PropertyMap, RestRequestDef, WebhookCollection, WebhookFolder } from '@wirebench/engine';
-import type { AuthConfigWire, RestRequestPatchWire } from '../shared/wire-types.js';
+import type {
+  Project,
+  PropertyMap,
+  RestRequestDef,
+  WebhookCollection,
+  WebhookFolder,
+  WebhookSigning,
+} from '@wirebench/engine';
+import type { AuthConfigWire, RestRequestPatchWire, WebhookSigningWire } from '../shared/wire-types.js';
 import {
   applyRestRequestPatch,
   cleanUndefined,
@@ -34,6 +41,7 @@ import {
   notFound,
   takenSlugs,
   toEngineAuthConfig,
+  toEngineSigning,
   type Container,
   type RestMutationResult,
 } from './project-rest-mutations.js';
@@ -63,7 +71,11 @@ export function ensureWebhooks(project: Project, workspaceProperties?: PropertyM
 /** Applies a patch to the collection itself: its target, or its own default credentials. */
 export function updateWebhooks(
   project: Project,
-  patch: { readonly target?: string; readonly auth?: AuthConfigWire | null },
+  patch: {
+    readonly target?: string;
+    readonly auth?: AuthConfigWire | null;
+    readonly signing?: WebhookSigningWire | null;
+  },
   workspaceProperties?: PropertyMap,
 ): RestMutationResult {
   const ensured = ensureWebhooks(project, workspaceProperties).project;
@@ -71,6 +83,12 @@ export function updateWebhooks(
   const next = cleanUndefined<WebhookCollection>({
     target: patch.target ?? webhooks.target,
     auth: patch.auth === null ? undefined : patch.auth !== undefined ? toEngineAuthConfig(patch.auth) : webhooks.auth,
+    signing:
+      patch.signing === null
+        ? undefined
+        : patch.signing !== undefined
+          ? toEngineSigning(patch.signing)
+          : webhooks.signing,
     folders: webhooks.folders,
     requests: webhooks.requests,
   });
@@ -131,18 +149,26 @@ export function addWebhookFolder(
   return { project: { ...ensured, webhooks: next }, createdId };
 }
 
-/** Sets, or clears with `target: null`, one folder's own target override. */
-export function setWebhookFolderTarget(project: Project, folderId: string, target: string | null): RestMutationResult {
+/**
+ * Sets, or with `undefined` removes, one own field of a webhook folder: the shared body of the
+ * folder-level overrides (`target`, `signing`), which differ only in the key.
+ */
+function setWebhookFolderField(
+  project: Project,
+  folderId: string,
+  key: 'target' | 'signing',
+  value: string | WebhookSigning | undefined,
+): RestMutationResult {
   const webhooks = project.webhooks;
   if (webhooks === undefined) {
     notFound('folder', folderId);
   }
   const folders = mapFolder(webhooks.folders, folderId, (folder) => {
     const rest: Record<string, unknown> = { ...folder };
-    if (target === null) {
-      delete rest['target'];
+    if (value === undefined) {
+      delete rest[key];
     } else {
-      rest['target'] = target;
+      rest[key] = value;
     }
     return rest as unknown as WebhookFolder;
   });
@@ -150,6 +176,20 @@ export function setWebhookFolderTarget(project: Project, folderId: string, targe
     notFound('folder', folderId);
   }
   return { project: { ...project, webhooks: { ...webhooks, folders } } };
+}
+
+/** Sets, or clears with `target: null`, one folder's own target override. */
+export function setWebhookFolderTarget(project: Project, folderId: string, target: string | null): RestMutationResult {
+  return setWebhookFolderField(project, folderId, 'target', target ?? undefined);
+}
+
+/** Sets, or clears with `signing: null`, one folder's own signing override (§5.1). */
+export function setWebhookFolderSigning(
+  project: Project,
+  folderId: string,
+  signing: WebhookSigningWire | null,
+): RestMutationResult {
+  return setWebhookFolderField(project, folderId, 'signing', signing === null ? undefined : toEngineSigning(signing));
 }
 
 /**

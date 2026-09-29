@@ -5,6 +5,7 @@
  * never disagree. Values are never echoed: a problem names the variable and the rule it broke.
  */
 import { isAbsolute, resolve } from 'node:path';
+import { isCanonicalBase64 } from '@wirebench/engine';
 import { z } from 'zod';
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const;
@@ -34,6 +35,14 @@ const originText = z
     const url = new URL(value);
     return url.pathname === '/' && url.search === '' && url.hash === '' && !value.endsWith('/');
   }, 'must be an origin such as https://wirebench.example.com, with no path, query or trailing slash');
+
+/** An AES-256 key: 32 bytes, base64-encoded (webhook-signatures §3.1). */
+const keyText = z
+  .string()
+  .refine(
+    (value) => isCanonicalBase64(value) && Buffer.from(value, 'base64').length === 32,
+    'must be 32 bytes, base64-encoded',
+  );
 
 const inputSchema = z.object({
   databaseUrl: z.string().min(1),
@@ -66,6 +75,7 @@ const inputSchema = z.object({
   hooksRatePerSecond: integerText(1, 1_000, '10'),
   hooksBurst: integerText(1, 10_000, '50'),
   hooksPerWorkspace: integerText(1, 1_000, '50'),
+  hooksSecretKey: keyText.optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -290,6 +300,14 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     defaultText: '50',
     secret: false,
     description: 'Catch URLs a workspace may hold (1–1000).',
+  },
+  {
+    env: 'WIREBENCH_SERVER_HOOKS_SECRET_KEY',
+    key: 'hooksSecretKey',
+    required: false,
+    secret: true,
+    description:
+      'Encrypts catch URL signature secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, signature settings are refused.',
   },
 ];
 

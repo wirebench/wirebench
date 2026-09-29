@@ -1492,6 +1492,37 @@ export const hookLinkWireSchema = z.discriminatedUnion('kind', [
 ]);
 export type HookLinkWire = z.infer<typeof hookLinkWireSchema>;
 
+/**
+ * The engine's `SignatureScheme` restated (webhook-signatures §2). Main re-validates with the
+ * engine's schema (`toEngineSigning`); these only check the shape crossing the bridge.
+ */
+export const signatureSchemeWireSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('hmac'),
+    algorithm: z.enum(['sha1', 'sha256', 'sha512']),
+    encoding: z.enum(['hex', 'base64']),
+    header: z.string(),
+    prefix: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('timestamped'), header: z.string(), toleranceSec: z.number() }),
+  z.object({ kind: z.literal('standard'), toleranceSec: z.number() }),
+]);
+export type SignatureSchemeWire = z.infer<typeof signatureSchemeWireSchema>;
+
+/** The engine's `WebhookSigning` restated (§5.1): absent on a node means inherit. */
+export const webhookSigningWireSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('none') }),
+  z.object({
+    mode: z.literal('sign'),
+    scheme: signatureSchemeWireSchema,
+    /** A keychain reference, never the secret. */
+    secretRef: z.string().optional(),
+    /** The CI name: `WIREBENCH_SECRET_<secretEnv>`. */
+    secretEnv: z.string().optional(),
+  }),
+]);
+export type WebhookSigningWire = z.infer<typeof webhookSigningWireSchema>;
+
 /** One project's webhook collection, as the renderer sees it; its tree travels with the REST one. */
 export const webhookCollectionWireSchema = z.object({
   /** Synthetic: `webhooks:<projectId>`, never a real API id. */
@@ -1499,6 +1530,7 @@ export const webhookCollectionWireSchema = z.object({
   projectId: z.string(),
   target: z.string(),
   auth: authConfigWireSchema.optional(),
+  signing: webhookSigningWireSchema.optional(),
 });
 export type WebhookCollectionWire = z.infer<typeof webhookCollectionWireSchema>;
 
@@ -1525,6 +1557,8 @@ export const restRequestWireSchema = z.object({
   orphaned: z.boolean().optional(),
   /** Set only on a webhook collection item imported from an OpenAPI definition. */
   hook: hookLinkWireSchema.optional(),
+  /** Webhook items only: overrides the inherited signing. */
+  signing: webhookSigningWireSchema.optional(),
 });
 export type RestRequestWire = z.infer<typeof restRequestWireSchema>;
 
@@ -1542,6 +1576,8 @@ export const restFolderWireSchema = z.object({
   target: z.string().optional(),
   /** Webhook folder only: set on a group imported from an API's definition. */
   source: z.object({ apiId: z.string() }).optional(),
+  /** Webhook folder only. */
+  signing: webhookSigningWireSchema.optional(),
 });
 export type RestFolderWire = z.infer<typeof restFolderWireSchema>;
 
@@ -1601,6 +1637,8 @@ export const restRequestPatchSchema = z.object({
   body: restBodyWireSchema.optional(),
   auth: authConfigWireSchema.optional(),
   settings: restSettingsWireSchema.optional(),
+  /** Webhook items only; `null` removes the item's own signing, back to inherit (§5.1). */
+  signing: webhookSigningWireSchema.nullable().optional(),
 });
 export type RestRequestPatchWire = z.infer<typeof restRequestPatchSchema>;
 
@@ -2762,6 +2800,8 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
       target: z.string().optional(),
       /** `null` clears the collection's own credentials, back to `inherit` having nothing above it. */
       auth: authConfigWireSchema.nullable().optional(),
+      /** `null` clears the collection's signing: nothing inherits any. */
+      signing: webhookSigningWireSchema.nullable().optional(),
     }),
   }),
   z.object({
@@ -2783,6 +2823,12 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     folderId: z.string(),
     /** `null` clears the folder's own target, back to inheriting the collection's (or a parent's). */
     target: z.string().nullable(),
+  }),
+  z.object({
+    kind: z.literal('set-webhook-folder-signing'),
+    folderId: z.string(),
+    /** `null` clears the folder's own signing, back to inheriting. */
+    signing: webhookSigningWireSchema.nullable(),
   }),
   z.object({
     kind: z.literal('move-node'),
@@ -5697,6 +5743,21 @@ export const catchUrlResponseWireSchema = z.object({
   delayMs: z.number(),
 });
 export type CatchUrlResponseWire = z.infer<typeof catchUrlResponseWireSchema>;
+/** The engine's `SignatureFailure`, restated (webhook-signatures §3.3). */
+export const signatureFailureWireSchema = z.enum([
+  'missing-header',
+  'malformed-header',
+  'mismatch',
+  'stale-timestamp',
+  'key-error',
+]);
+export type SignatureFailureWire = z.infer<typeof signatureFailureWireSchema>;
+/** A capture's verdict; absent (or `null`) on a capture means not checked. */
+export const captureSignatureWireSchema = z.object({
+  verdict: z.enum(['verified', 'failed']),
+  reason: signatureFailureWireSchema.optional(),
+});
+export type CaptureSignatureWire = z.infer<typeof captureSignatureWireSchema>;
 export const catchUrlWireSchema = z.object({
   id: z.string(),
   workspaceId: z.string(),
@@ -5707,6 +5768,17 @@ export const catchUrlWireSchema = z.object({
   captureCount: z.number(),
   newestCaptureId: z.string().nullable(),
   createdAt: z.string(),
+  /** The scheme and only whether a secret is set; the hint only for editors (§3.4). */
+  signature: z
+    .object({
+      scheme: signatureSchemeWireSchema,
+      secret: z.object({ set: z.literal(true), hint: z.string().nullable() }),
+    })
+    .nullable()
+    .optional(),
+  rejectUnverified: z.boolean().optional(),
+  /** `false` while the server's key is unset. Absent from a server without the module. */
+  signatureAvailable: z.boolean().optional(),
 });
 export type CatchUrlWire = z.infer<typeof catchUrlWireSchema>;
 export const captureSummaryWireSchema = z.object({
@@ -5717,6 +5789,8 @@ export const captureSummaryWireSchema = z.object({
   bodySize: z.number(),
   truncated: z.boolean(),
   sourceIp: z.string(),
+  signature: captureSignatureWireSchema.nullable().optional(),
+  rejected: z.boolean().optional(),
 });
 export type CaptureSummaryWire = z.infer<typeof captureSummaryWireSchema>;
 /** One capture, decoded in main for the viewers the REST response pane already has. */
@@ -5784,6 +5858,9 @@ export const hooksUpdateRequestWireSchema = hooksRefRequestWireSchema.extend({
   name: z.string().optional(),
   enabled: z.boolean().optional(),
   response: catchUrlResponseWireSchema.partial().optional(),
+  /** `null` clears; without `secret` the stored one stays (§3.4). */
+  signature: z.object({ scheme: signatureSchemeWireSchema, secret: z.string().optional() }).nullable().optional(),
+  rejectUnverified: z.boolean().optional(),
 });
 export type HooksUpdateRequestWire = z.infer<typeof hooksUpdateRequestWireSchema>;
 /** `after: null` counts every capture: this device has seen none of them. */

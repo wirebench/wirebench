@@ -109,6 +109,7 @@ import {
   addWebhookFolder,
   addWebhookRequest,
   ensureWebhooks,
+  setWebhookFolderSigning,
   setWebhookFolderTarget,
   updateWebhooks,
 } from './project-webhook-mutations.js';
@@ -849,6 +850,7 @@ export async function applyChange(
         {
           ...(change.patch.target !== undefined ? { target: change.patch.target } : {}),
           ...(change.patch.auth !== undefined ? { auth: change.patch.auth } : {}),
+          ...(change.patch.signing !== undefined ? { signing: change.patch.signing } : {}),
         },
         deps.workspaceProperties,
       );
@@ -876,6 +878,9 @@ export async function applyChange(
 
     case 'set-webhook-folder-target':
       return setWebhookFolderTarget(project, change.folderId, change.target);
+
+    case 'set-webhook-folder-signing':
+      return setWebhookFolderSigning(project, change.folderId, change.signing);
 
     case 'move-node':
       return (

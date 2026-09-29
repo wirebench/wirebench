@@ -59,6 +59,7 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       return {
         protocol: 'rest' as const,
         // No live hook: nothing on screen registered this send id, so it could not be stopped.
+        // The saved request, not the row's headers, so a webhook item that signs is signed fresh.
         exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }),
       };
     }

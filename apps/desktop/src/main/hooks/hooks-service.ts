@@ -142,6 +142,8 @@ export function toCaptureView(capture: Capture): CaptureViewWire {
     bodySize: capture.bodySize,
     truncated: capture.truncated,
     sourceIp: capture.sourceIp,
+    ...(capture.signature !== undefined && capture.signature !== null ? { signature: capture.signature } : {}),
+    ...(capture.rejected === true ? { rejected: true } : {}),
     query: capture.query,
     headers: capture.headers,
     bodyBase64: capture.body,

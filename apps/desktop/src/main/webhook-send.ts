@@ -12,18 +12,25 @@ import {
   effectiveTarget,
   evaluateRuntimeTemplate,
   resolveAuthChain,
+  signatureHeaderNames,
+  signingAlong,
+  signingSecretMissing,
   webhookPath,
   webhookRequests,
   WirebenchError,
 } from '@wirebench/engine';
 import type {
   Cookie,
+  EffectiveSigning,
+  GetSecret,
   Preferences,
   Project,
   PropertyScopes,
   ProxyOptions,
   RestRequestDef,
+  RestSendInput,
   RuntimeExchange,
+  SignatureScheme,
   TlsOptions,
 } from '@wirebench/engine';
 import { expandedSendInput, withDraft } from './rest-send.js';
@@ -156,7 +163,8 @@ function assertTarget(baseUrl: string, url: string, unresolved: boolean): void {
  * Resolves one send of a webhook item. The draft is applied first; a callback's URL, when it
  * resolves, is sent verbatim with no base URL; otherwise the effective target is the base URL,
  * expanded with the rest of the request. Credentials climb item → folders (leaf to root) → the
- * collection. `undefined` when the project's collection holds no such item.
+ * collection. Signing climbs the same way: item → nearest folder → collection. `undefined` when
+ * the project's collection holds no such item.
  *
  * @throws WirebenchError `webhook-target-missing` / `webhook-target-invalid` for a target that
  * expands to nothing sendable.
@@ -175,6 +183,7 @@ export function resolveWebhookSend(args: ResolveWebhookSendArgs): RestSendResolu
     ...[...path.chain].reverse().map((folder) => folder.auth),
     collection.auth,
   ]);
+  const signing = signingAlong(collection, path.chain, request);
 
   const { input, unresolved } =
     callback?.url !== undefined
@@ -192,5 +201,55 @@ export function resolveWebhookSend(args: ResolveWebhookSendArgs): RestSendResolu
     baseUrlSource: callback?.source ?? 'target',
     ...(callback !== undefined ? { targetDetail: callback.detail } : {}),
     auth,
+    ...(signing.signing.mode === 'sign' ? { webhookSigning: signing } : {}),
+  };
+}
+
+/**
+ * The signing to put on the send input, its secret read through the keychain lookup auth uses
+ * (§5.2). Never sends unsigned: signing set with nothing in the keychain refuses the send.
+ *
+ * Only `secretRef` is read (R7): the desktop has a keychain, and `secretEnv` is for CI, so a node
+ * with only a CI name refuses here rather than asking for the CLI's pseudo-ref.
+ *
+ * @throws WirebenchError `webhook-signing-secret`
+ */
+export async function webhookSignFor(
+  effective: EffectiveSigning | undefined,
+  getSecret: GetSecret,
+): Promise<RestSendInput['sign']> {
+  if (effective === undefined || effective.signing.mode !== 'sign') return undefined;
+  const ref = effective.signing.secretRef;
+  const secret = ref === undefined || ref === '' ? undefined : await getSecret(ref);
+  if (secret === undefined || secret === '') throw signingSecretMissing(effective);
+  return { scheme: effective.signing.scheme, secret };
+}
+
+/**
+ * The resolution History records for a signed send: its header rows with the signing headers
+ * appended as they went out (read from the sent request), replacing any typed row of the same name.
+ */
+export function withSentSigningHeaders(
+  resolved: RestSendResolution,
+  scheme: SignatureScheme,
+  sent: Readonly<Record<string, string>>,
+): RestSendResolution {
+  const lowerSent = new Map(Object.entries(sent).map(([name, value]) => [name.toLowerCase(), value]));
+  const names = signatureHeaderNames(scheme);
+  const signed = names.flatMap((name) => {
+    const value = lowerSent.get(name.toLowerCase());
+    return value === undefined ? [] : [{ name, value, enabled: true }];
+  });
+  const replaced = new Set(signed.map((header) => header.name.toLowerCase()));
+  const request = resolved.input.request;
+  return {
+    ...resolved,
+    input: {
+      ...resolved.input,
+      request: {
+        ...request,
+        headers: [...request.headers.filter((header) => !replaced.has(header.name.toLowerCase())), ...signed],
+      },
+    },
   };
 }

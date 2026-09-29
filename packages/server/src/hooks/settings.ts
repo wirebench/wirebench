@@ -16,6 +16,8 @@ export interface HooksSettings {
   readonly burst: number;
   /** Catch URLs per workspace. */
   readonly perWorkspace: number;
+  /** The signature-secret key (§3.1); absent, signature settings are refused and nothing can be opened. */
+  readonly secretKey?: Buffer;
 }
 
 export function hooksSettings(config: ServerConfig): HooksSettings {
@@ -27,6 +29,7 @@ export function hooksSettings(config: ServerConfig): HooksSettings {
     ratePerSecond: config.hooksRatePerSecond,
     burst: config.hooksBurst,
     perWorkspace: config.hooksPerWorkspace,
+    ...(config.hooksSecretKey !== undefined ? { secretKey: Buffer.from(config.hooksSecretKey, 'base64') } : {}),
   };
 }
 

@@ -51,6 +51,7 @@ export default defineConfig({
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
             { label: 'Webhook inbox', slug: 'guides/webhooks' },
             { label: 'Sending webhooks', slug: 'guides/sending-webhooks' },
+            { label: 'Webhook signatures', slug: 'guides/webhook-signatures' },
             { label: 'Preferences and layout', slug: 'guides/preferences' },
             { label: 'Run in CI', slug: 'guides/run-in-ci' },
           ],

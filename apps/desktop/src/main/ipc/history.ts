@@ -9,7 +9,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { WebContents } from 'electron';
-import { joinBase, splitQuery, WirebenchError } from '@wirebench/engine';
+import { joinBase, signatureHeaderNames, splitQuery, WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type {
   FailedExchangeWire,
@@ -277,10 +277,14 @@ function resendBody(text: string, saved: RestBody): RestBodyWire | undefined {
  *   `history-resend-redacted` when a redacted value has no saved row to fill
  *   it, or the marker is in the URL's path, user info or fragment, or in the body;
  *   `history-resend-truncated` when the body is History's truncated copy.
+ *
+ * A webhook item that signs is resent with signing off when the entry holds its signing headers
+ * (webhook-signatures R1): they are replayed as recorded, never signed again. An entry without them
+ * is signed fresh, so a resend never goes out unsigned.
  */
 export function restResendDraft(
   entry: HistoryEntryWire,
-  saved: Pick<RestSendResolution, 'request' | 'auth'>,
+  saved: Pick<RestSendResolution, 'request' | 'auth' | 'webhookSigning'>,
   savedOrigin: string | undefined,
 ): RestRequestPatchWire {
   const { request } = saved;
@@ -319,7 +323,17 @@ export function restResendDraft(
     ...url,
     headers,
     ...(body !== undefined ? { body } : {}),
+    ...(carriesSignature(entry, saved.webhookSigning) ? { signing: { mode: 'none' as const } } : {}),
   };
+}
+
+/** Whether `entry` recorded every header the item's signing scheme writes (names case-insensitive). */
+function carriesSignature(entry: HistoryEntryWire, signing: RestSendResolution['webhookSigning']): boolean {
+  if (signing === undefined || signing.signing.mode !== 'sign') {
+    return false;
+  }
+  const recorded = new Set(entry.request.headers.map((header) => header.name.toLowerCase()));
+  return signatureHeaderNames(signing.signing.scheme).every((name) => recorded.has(name.toLowerCase()));
 }
 
 /**

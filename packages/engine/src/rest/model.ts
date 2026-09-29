@@ -17,7 +17,7 @@ import type { RequestScripts } from '../script/model.js';
 import type { AttachmentSource, AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
-import type { HookLink } from '../webhooks/model.js';
+import type { HookLink, WebhookSigning } from '../webhooks/model.js';
 
 /**
  * An HTTP method. The seven a REST client needs are spelled out so the common case is
@@ -203,6 +203,11 @@ export interface RestRequestDef {
    * `webhooks` or `callbacks` entry: which one, so *Update definition* can keep it in step.
    */
   readonly hook?: HookLink;
+  /**
+   * Only on an item of a project's webhook collection: how it signs what it sends, overriding its
+   * folders and the collection (spec `2026-09-29-…-webhook-signatures-design.md` §5.1).
+   */
+  readonly signing?: WebhookSigning;
   /** Pre-request and post-response scripts, in files beside the request (#63). */
   readonly scripts?: RequestScripts;
 }
@@ -335,6 +340,7 @@ export interface CreateRestRequestInput extends CreateOptions {
   readonly settings?: RestRequestSettings;
   readonly contract?: RestContractLink;
   readonly hook?: HookLink;
+  readonly signing?: WebhookSigning;
 }
 
 /** Creates a `GET` request with an empty URL, no body and inherited credentials. */
@@ -357,6 +363,7 @@ export function createRestRequest(name: string, input: CreateRestRequestInput = 
     assertions: [],
     ...(input.contract !== undefined ? { contract: { method: input.contract.method, path: input.contract.path } } : {}),
     ...(input.hook !== undefined ? { hook: { ...input.hook } } : {}),
+    ...(input.signing !== undefined ? { signing: input.signing } : {}),
   };
 }
 

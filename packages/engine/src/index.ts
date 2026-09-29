@@ -355,9 +355,14 @@ export {
   WEBHOOK_TARGET_PROPERTY,
   createWebhookCollection,
   createWebhookFolder,
+  effectiveSigning,
   effectiveTarget,
   findWebhookRequest,
   hookKey,
+  signingAlong,
+  signingSecretMissing,
+  signingSecretRef,
+  signingSourceLabel,
   webhookFolders,
   webhookPath,
   webhookRequests,
@@ -365,10 +370,23 @@ export {
 export type {
   CreateWebhookCollectionInput,
   CreateWebhookFolderInput,
+  EffectiveSigning,
   HookLink,
   WebhookCollection,
   WebhookFolder,
+  WebhookSigning,
 } from './webhooks/model.js';
+export {
+  DEFAULT_SIGNATURE_TOLERANCE_SEC,
+  SIGNATURE_FAILURES,
+  isCanonicalBase64,
+  signWebhook,
+  signatureHeaderNames,
+  signatureSchemeSchema,
+  toSignatureScheme,
+  verifyWebhook,
+} from './webhooks/signature.js';
+export type { SignatureAlgorithm, SignatureFailure, SignatureScheme, SignatureVerdict } from './webhooks/signature.js';
 export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
 export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
@@ -1179,7 +1197,12 @@ export {
   toSendAuth,
 } from './secrets/resolve.js';
 export type { GetSecret, ResolvedAuth } from './secrets/resolve.js';
-export { envVariablesFor, secretNeedsOfAuth, SECRET_ENV_PREFIX } from './secrets/env-names.js';
+export {
+  envVariablesFor,
+  secretNeedsOfAuth,
+  SECRET_ENV_PREFIX,
+  SIGNING_PSEUDO_REF_PREFIX,
+} from './secrets/env-names.js';
 export type { SecretNeed } from './secrets/env-names.js';
 export {
   SECRET_NAME_PATTERN,
@@ -1555,23 +1578,28 @@ export {
   captureSchema,
   capturesQuerySchema,
   capturesResponseSchema,
+  captureSignatureSchema,
   captureSummarySchema,
   catchUrlCreateRequestSchema,
   catchUrlParamsSchema,
   catchUrlResponseSchema,
   catchUrlSchema,
+  catchUrlSignatureSchema,
   catchUrlsResponseSchema,
   catchUrlUpdateRequestSchema,
   HOOKS_LIMITS,
   hooksMetaSchema,
+  SIGNATURE_SECRET_MAX_LENGTH,
 } from './server-api/hooks.js';
 export type {
   Capture,
+  CaptureSignature,
   CapturesQuery,
   CaptureSummary,
   CatchUrl,
   CatchUrlCreateRequest,
   CatchUrlResponse,
+  CatchUrlSignature,
   CatchUrlUpdateRequest,
   HooksMeta,
 } from './server-api/hooks.js';

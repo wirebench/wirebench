@@ -7,8 +7,8 @@ import type { Interface, OperationDef, Project, SoapRequestDef } from '../projec
 import { WEBHOOKS_DIR, REQUESTS_DIR } from '../project/paths.js';
 import type { RestApi, RestFolder, RestRequestDef } from '../rest/model.js';
 import { createApi } from '../rest/model.js';
-import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
-import { effectiveTarget } from '../webhooks/model.js';
+import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
+import { effectiveSigning, effectiveTarget } from '../webhooks/model.js';
 
 /** One saved request selected for a run, with enough context to send and report it. */
 export type SelectedRequest =
@@ -27,6 +27,8 @@ export type SelectedRequest =
       readonly api: RestApi;
       readonly chain: readonly RestFolder[];
       readonly request: RestRequestDef;
+      /** A webhook item's effective signing (webhook-signatures §5.2); absent for an API request. */
+      readonly signing?: EffectiveSigning;
     }
   | {
       readonly kind: 'grpc';
@@ -169,6 +171,7 @@ function walkWebhooks(collection: WebhookCollection, out: Candidate[]): void {
           api,
           chain: chain as unknown as readonly RestFolder[],
           request,
+          signing: effectiveSigning(collection, request.id),
         },
         diskPath: `${dir}/${request.slug}`,
         webhook: true,

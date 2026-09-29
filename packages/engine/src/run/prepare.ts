@@ -47,6 +47,7 @@ import {
   withActiveEnvironment,
 } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
+import { signingSecretMissing, signingSecretRef } from '../webhooks/model.js';
 import { effectiveWsa } from '../wsa/model.js';
 import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
 import type { Keystore } from '../wss/keystore/index.js';
@@ -484,6 +485,22 @@ export async function authFor(
   return resolveAuthConfig(configured, context.getSecret, { accessToken });
 }
 
+/**
+ * A webhook item's signing with its secret, or `undefined` when it signs nothing. The secret is
+ * read through the run's `GetSecret` (the CLI: `WIREBENCH_SECRET_<secretEnv>`), so it is masked
+ * like every other secret the run hands out.
+ *
+ * @throws WirebenchError `webhook-signing-secret` when signing is set and the secret is not given
+ */
+async function signFor(selected: RestSelected, context: RunContext): Promise<RestSendInput['sign']> {
+  const effective = selected.signing;
+  if (effective === undefined || effective.signing.mode !== 'sign') return undefined;
+  const ref = signingSecretRef(effective.signing);
+  const secret = ref === undefined ? undefined : await context.getSecret(ref);
+  if (secret === undefined || secret === '') throw signingSecretMissing(effective, ref);
+  return { scheme: effective.signing.scheme, secret };
+}
+
 async function prepareRest(selected: RestSelected, context: RunContext): Promise<PreparedSend> {
   const { api, request } = selected;
   const scopes = scopesFor(context);
@@ -514,6 +531,7 @@ async function prepareRest(selected: RestSelected, context: RunContext): Promise
   if (unresolved.length > 0) {
     throw unresolvedError(selected.path, unresolved);
   }
+  const sign = await signFor(selected, context);
   // As the app does: the proxy is chosen for the base URL, or the request's own when it has none.
   const proxy = context.proxyFor?.(input.baseUrl === '' ? input.request.url : input.baseUrl);
   return {
@@ -521,6 +539,7 @@ async function prepareRest(selected: RestSelected, context: RunContext): Promise
     input: {
       ...input,
       ...(proxy !== undefined ? { proxy } : {}),
+      ...(sign !== undefined ? { sign } : {}),
       ...(context.timeoutMs !== undefined ? { settings: { ...input.settings, timeoutMs: context.timeoutMs } } : {}),
     },
   };
@@ -572,7 +591,7 @@ async function prepareGrpc(selected: GrpcSelected, context: RunContext): Promise
 
 /**
  * @throws WirebenchError `unresolved-properties` | `endpoint-unresolved` | `secret-missing` |
- * `auth-grant-unsupported` | `wss-config-missing` | `keystore-missing`
+ * `auth-grant-unsupported` | `wss-config-missing` | `keystore-missing` | `webhook-signing-secret`
  */
 export function prepareSend(selected: SelectedRequest, context: RunContext): Promise<PreparedSend> {
   switch (selected.kind) {

@@ -16,6 +16,7 @@ import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
 import { activeScripts } from '../script/request-scripts.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
+import { signingSecretRef, signingSourceLabel } from '../webhooks/model.js';
 import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
@@ -143,12 +144,28 @@ function tokenNeeds(selected: SelectedRequest, scopeSets: readonly PropertyScope
   }));
 }
 
+/** A webhook item's signing secret, read from `WIREBENCH_SECRET_<secretEnv>` (§5.2). */
+function signingNeeds(selected: Extract<SelectedRequest, { kind: 'rest' }>): SecretNeed[] {
+  const effective = selected.signing;
+  if (effective === undefined || effective.signing.mode !== 'sign') return [];
+  const ref = signingSecretRef(effective.signing);
+  if (ref === undefined) return [];
+  return [
+    {
+      ref,
+      ...(effective.signing.secretEnv !== undefined ? { envName: effective.signing.secretEnv } : {}),
+      purpose: `webhook signing secret (${signingSourceLabel(effective)})`,
+    },
+  ];
+}
+
 function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
   if (selected.kind === 'rest') {
     return [
       ...tokenNeeds(selected, scopeSets),
       ...secretNeedsOfAuth(restEffectiveAuth(selected)),
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
+      ...signingNeeds(selected),
     ];
   }
   if (selected.kind === 'grpc') {

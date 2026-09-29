@@ -36,6 +36,8 @@ import { ParamsTab } from './params-tab.js';
 import { RestBreadcrumb } from './rest-breadcrumb.js';
 import { restSendBlocked, setRestSendBlocked } from './send-blocked.js';
 import { SettingsTab } from './settings-tab.js';
+import { SigningTab } from './signing-tab.js';
+import { inheritedSigningOf } from '../webhook-items/signing.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
 import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
@@ -57,6 +59,8 @@ const TABS = [
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
+  // Webhook items only (webhook-signatures §5.2).
+  { id: 'signing', label: 'Signing' },
   { id: 'scripts', label: 'Scripts' },
   { id: 'settings', label: 'Settings' },
 ] as const;
@@ -142,7 +146,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [requestId, url, activeEnvironment]);
+    // A webhook item's target lives on its collection and folders, so a target set in Webhooks
+    // settings while the item is open has to re-run the preflight too.
+  }, [requestId, url, activeEnvironment, webhookCollection, folders]);
 
   const stage = useCallback(
     (patch: RestRequestPatchWire) => {
@@ -154,8 +160,11 @@ export function RestEditor({ requestId }: RestEditorProps) {
   // A webhook item has no target-missing note until the user has set one, and no inline error
   // until the target resolves to something that is not `http(s)` — the two `webhook-target-*`
   // refusals `preflightRest` reports as an IPC error rather than in its usual value.
-  const sendDisabledReason =
+  const targetMissingReason =
     isWebhookItem && resolved.targetErrorCode === 'webhook-target-missing' ? 'Set the Webhooks target' : undefined;
+  // The Signing tab's inline error: a CI name or scheme field it shows but holds back (§5.2, P5).
+  const [signingProblem, setSigningProblem] = useState<string | undefined>(undefined);
+  const sendDisabledReason = targetMissingReason ?? (isWebhookItem ? signingProblem : undefined);
   useEffect(() => {
     setRestSendBlocked(requestId, sendDisabledReason);
     return () => {
@@ -180,6 +189,8 @@ export function RestEditor({ requestId }: RestEditorProps) {
   }
 
   const sending = exchange?.status === 'sending';
+  // Only a webhook item has a Signing tab; any other request shows Params rather than nothing.
+  const shownTab: TabId = tab === 'signing' && !isWebhookItem ? 'params' : tab;
   const orientation = groupOrientation(layout);
   const relative = !isAbsoluteUrl(request.url);
   const invalidTargetMessage =
@@ -187,7 +198,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
       ? 'The Webhooks target must start with http:// or https://'
       : undefined;
   const webhookNoteSource: 'target' | 'callback' | 'callback-fallback' | 'missing' =
-    sendDisabledReason !== undefined ? 'missing' : (resolved.target?.source ?? 'target');
+    targetMissingReason !== undefined ? 'missing' : (resolved.target?.source ?? 'target');
   // The folder an imported group's requests hang off; its name is what the header chip shows.
   const webhookGroup = isWebhookItem ? folders.find((folder) => folder.source !== undefined) : undefined;
   const inheritedAuth = [...folders]
@@ -214,20 +225,20 @@ export function RestEditor({ requestId }: RestEditorProps) {
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <Tabs
         label="Request tabs"
-        items={TABS.map((item) =>
+        items={TABS.filter((item) => item.id !== 'signing' || isWebhookItem).map((item) =>
           item.id === 'scripts' && hasScripts(request.scripts) ? { ...item, badge: '●' } : item,
         )}
-        active={tab}
+        active={shownTab}
         onSelect={setTab}
       />
       {/* A flex column, so a tab that fills the pane (the raw body's editor) is given a height
           rather than collapsing to its content. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {tab === 'params' && (
+        {shownTab === 'params' && (
           <ParamsTab url={request.url} pathParams={request.pathParams} query={request.query} onChange={stage} />
         )}
-        {tab === 'headers' && <HeadersTab headers={request.headers} body={request.body} onChange={stage} />}
-        {tab === 'body' && (
+        {shownTab === 'headers' && <HeadersTab headers={request.headers} body={request.body} onChange={stage} />}
+        {shownTab === 'body' && (
           <BodyTab
             requestId={requestId}
             method={request.method}
@@ -241,7 +252,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
             }}
           />
         )}
-        {tab === 'auth' && (
+        {shownTab === 'auth' && (
           <RestAuthTab
             requestId={requestId}
             auth={request.auth}
@@ -251,8 +262,16 @@ export function RestEditor({ requestId }: RestEditorProps) {
             }}
           />
         )}
-        {tab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
-        {tab === 'settings' && (
+        {shownTab === 'signing' && isWebhookItem && (
+          <SigningTab
+            request={request}
+            inherited={inheritedSigningOf(folderMap, request.folderId, webhookCollection)}
+            onChange={stage}
+            onProblemChange={setSigningProblem}
+          />
+        )}
+        {shownTab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
+        {shownTab === 'settings' && (
           <SettingsTab
             settings={request.settings}
             inherited={{

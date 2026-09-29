@@ -257,14 +257,18 @@ export async function loadSelection(
   };
 }
 
+/** The refusals that carry a `details.ref` naming a secret the run was not given. */
+const EXPLAINED_CODES: ReadonlySet<string> = new Set(['secret-missing', 'webhook-signing-secret']);
+
 /**
  * `Set A (or B) to run "path".` — the engine's wording is the app's advice, not a pipeline's.
  * Every missing secret reaches here as `secret-missing` with `details.ref`: an auth password, a
  * keystore password and a WS-Security password alike (`run/prepare.ts`'s `requiredSecret`, which
- * the WS-Security context's `secrets` also calls, and nothing on the way wraps it).
+ * the WS-Security context's `secrets` also calls, and nothing on the way wraps it) — and a webhook
+ * item's signing secret (`webhook-signing-secret`, webhook-signatures §5.2).
  */
 export function explainMissingSecret(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
-  const ref = result.error?.code === 'secret-missing' ? result.error.details?.['ref'] : undefined;
+  const ref = EXPLAINED_CODES.has(result.error?.code ?? '') ? result.error?.details?.['ref'] : undefined;
   if (result.error === undefined || typeof ref !== 'string') {
     return result;
   }

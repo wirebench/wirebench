@@ -4,7 +4,8 @@
  * back aliased to camelCase; timestamps leave as ISO-8601 strings, headers as parsed pairs (jsonb) and
  * bodies as Buffers (bytea).
  */
-import type { CatchUrlResponse } from '@wirebench/engine';
+import { signatureSchemeSchema, toSignatureScheme } from '@wirebench/engine';
+import type { CatchUrlResponse, SignatureFailure, SignatureScheme, SignatureVerdict } from '@wirebench/engine';
 import { monotonicFactory } from 'ulidx';
 import type { Querier } from '../context.js';
 
@@ -24,6 +25,12 @@ export interface CatchUrlRow {
   readonly response: CatchUrlResponse;
   readonly createdBy: string | null;
   readonly createdAt: string;
+  /** The scheme, or `null` with none. The sealed secret is never selected with a row. */
+  readonly signature: SignatureScheme | null;
+  readonly secretSet: boolean;
+  /** The last four characters of the secret (§3.2), or `null`. */
+  readonly signatureHint: string | null;
+  readonly rejectUnverified: boolean;
 }
 
 export interface CatchUrlListRow extends CatchUrlRow {
@@ -37,15 +44,28 @@ export interface PublicCatchUrl {
   readonly workspaceId: string;
   readonly enabled: boolean;
   readonly response: CatchUrlResponse;
+  /** Set when the catch URL checks signatures. `scheme` is `undefined` when the stored one no longer parses. */
+  readonly signature?: { readonly scheme: SignatureScheme | undefined; readonly sealedSecret: Buffer };
+  readonly rejectUnverified: boolean;
 }
 
 /** Every field optional, and explicitly `| undefined` (not just absent) so a zod `.partial()` shape assigns directly. */
 export type ResponsePatch = { readonly [K in keyof CatchUrlResponse]?: CatchUrlResponse[K] | undefined };
 
+/** A scheme to store; with a new secret, its sealed bytes and hint. Without one, the stored secret stays. */
+export interface SignaturePatch {
+  readonly scheme: SignatureScheme;
+  readonly sealedSecret?: Buffer;
+  readonly hint?: string | null;
+}
+
 export interface CatchUrlPatch {
   readonly name?: string;
   readonly enabled?: boolean;
   readonly response?: ResponsePatch;
+  /** `null` clears the scheme, the secret, the hint and *Reject unverified* (§3.4). */
+  readonly signature?: SignaturePatch | null;
+  readonly rejectUnverified?: boolean;
 }
 
 export interface NewCapture {
@@ -60,6 +80,8 @@ export interface NewCapture {
   readonly bodySize: number;
   readonly truncated: boolean;
   readonly sourceIp: string;
+  readonly signature?: SignatureVerdict | null;
+  readonly rejected?: boolean;
 }
 
 export interface CaptureSummaryRow {
@@ -70,6 +92,8 @@ export interface CaptureSummaryRow {
   readonly bodySize: number;
   readonly truncated: boolean;
   readonly sourceIp: string;
+  readonly signature: SignatureVerdict | null;
+  readonly rejected: boolean;
 }
 
 export interface CaptureRow extends CaptureSummaryRow {
@@ -97,12 +121,14 @@ const iso = (value: unknown): string =>
 
 const CATCH_URL_COLUMNS = `h.id, h.workspace_id as "workspaceId", h.name, h.secret, h.enabled,
   h.response_status as "status", h.response_content_type as "contentType", h.response_body as "body",
-  h.response_delay_ms as "delayMs", h.created_by as "createdBy", h.created_at as "createdAt"`;
+  h.response_delay_ms as "delayMs", h.created_by as "createdBy", h.created_at as "createdAt",
+  h.signature, h.signature_secret is not null as "secretSet", h.signature_hint as "signatureHint",
+  h.reject_unverified as "rejectUnverified"`;
 const LISTED_COLUMNS = `${CATCH_URL_COLUMNS},
   (select count(*)::int from captures c where c.catch_url_id = h.id) as "captureCount",
   (select max(c.id) from captures c where c.catch_url_id = h.id) as "newestCaptureId"`;
 const SUMMARY_COLUMNS = `id, received_at as "receivedAt", method, subpath, body_size as "bodySize", truncated,
-  source_ip as "sourceIp"`;
+  source_ip as "sourceIp", signature_verdict as "signatureVerdict", signature_reason as "signatureReason", rejected`;
 
 function responseOf(row: Raw): CatchUrlResponse {
   return {
@@ -111,6 +137,20 @@ function responseOf(row: Raw): CatchUrlResponse {
     body: row.body as string | null,
     delayMs: row.delayMs as number,
   };
+}
+
+/** A stored scheme, or `undefined` when it no longer parses (written by another build). */
+function schemeOf(value: unknown): SignatureScheme | undefined {
+  const parsed = signatureSchemeSchema.safeParse(value);
+  return parsed.success ? toSignatureScheme(parsed.data) : undefined;
+}
+
+function verdictOf(row: Raw): SignatureVerdict | null {
+  if (row.signatureVerdict === 'verified') return { verdict: 'verified' };
+  if (row.signatureVerdict === 'failed') {
+    return { verdict: 'failed', reason: (row.signatureReason ?? 'key-error') as SignatureFailure };
+  }
+  return null;
 }
 
 function catchUrlOf(row: Raw): CatchUrlRow {
@@ -123,6 +163,10 @@ function catchUrlOf(row: Raw): CatchUrlRow {
     response: responseOf(row),
     createdBy: row.createdBy as string | null,
     createdAt: iso(row.createdAt),
+    signature: row.signature === null ? null : (schemeOf(row.signature) ?? null),
+    secretSet: row.secretSet as boolean,
+    signatureHint: row.signatureHint as string | null,
+    rejectUnverified: row.rejectUnverified as boolean,
   };
 }
 
@@ -143,6 +187,8 @@ function summaryOf(row: Raw): CaptureSummaryRow {
     bodySize: row.bodySize as number,
     truncated: row.truncated as boolean,
     sourceIp: row.sourceIp as string,
+    signature: verdictOf(row),
+    rejected: row.rejected as boolean,
   };
 }
 
@@ -232,7 +278,8 @@ export async function catchUrlBySecret(db: Querier, secret: string): Promise<Pub
   const row = (
     await db.query(
       `select h.id, h.workspace_id as "workspaceId", h.enabled, h.response_status as "status",
-         h.response_content_type as "contentType", h.response_body as "body", h.response_delay_ms as "delayMs"
+         h.response_content_type as "contentType", h.response_body as "body", h.response_delay_ms as "delayMs",
+         h.signature, h.signature_secret as "signatureSecret", h.reject_unverified as "rejectUnverified"
        from catch_urls h where h.secret = $1`,
       [secret],
     )
@@ -243,6 +290,10 @@ export async function catchUrlBySecret(db: Querier, secret: string): Promise<Pub
     workspaceId: row.workspaceId as string,
     enabled: row.enabled as boolean,
     response: responseOf(row),
+    rejectUnverified: row.rejectUnverified as boolean,
+    ...(row.signature !== null && row.signatureSecret !== null
+      ? { signature: { scheme: schemeOf(row.signature), sealedSecret: row.signatureSecret as Buffer } }
+      : {}),
   };
 }
 
@@ -262,6 +313,23 @@ export async function updateCatchUrl(db: Querier, id: string, patch: CatchUrlPat
   if (response.contentType !== undefined) set('response_content_type', response.contentType);
   if (response.body !== undefined) set('response_body', response.body);
   if (response.delayMs !== undefined) set('response_delay_ms', response.delayMs);
+  if (patch.signature === null) {
+    set('signature', null);
+    set('signature_secret', null);
+    set('signature_hint', null);
+    set('reject_unverified', false);
+  } else if (patch.signature !== undefined) {
+    params.push(JSON.stringify(patch.signature.scheme));
+    sets.push(`signature = $${params.length}::jsonb`);
+    if (patch.signature.sealedSecret !== undefined) {
+      set('signature_secret', patch.signature.sealedSecret);
+      set('signature_hint', patch.signature.hint ?? null);
+    }
+  }
+  // Clearing the signature has already cleared this; assigning a column twice is an SQL error.
+  if (patch.rejectUnverified !== undefined && patch.signature !== null) {
+    set('reject_unverified', patch.rejectUnverified);
+  }
   if (sets.length === 0) return ((await db.query('select id from catch_urls where id = $1', [id])).rowCount ?? 0) > 0;
   return ((await db.query(`update catch_urls set ${sets.join(', ')} where id = $1`, params)).rowCount ?? 0) > 0;
 }
@@ -269,6 +337,13 @@ export async function updateCatchUrl(db: Querier, id: string, patch: CatchUrlPat
 /** `false` when there was no row to rotate (deleted out from under the caller). */
 export async function rotateSecret(db: Querier, id: string, secret: string): Promise<boolean> {
   return ((await db.query('update catch_urls set secret = $2 where id = $1', [id, secret])).rowCount ?? 0) > 0;
+}
+
+/** Catch URLs that check signatures: start-up warns when there are some and no key to open them (§3.1). */
+export async function countSignedCatchUrls(db: Querier): Promise<number> {
+  const row = (await db.query<{ n: number }>('select count(*)::int as n from catch_urls where signature is not null'))
+    .rows[0];
+  return row?.n ?? 0;
 }
 
 /** `false` when there was nothing to delete. Its captures go with it (cascade). */
@@ -279,10 +354,11 @@ export async function deleteCatchUrl(db: Querier, id: string): Promise<boolean> 
 // ---- captures -----------------------------------------------------------------------------
 
 export async function insertCapture(tx: Querier, capture: NewCapture): Promise<void> {
+  const signature = capture.signature ?? null;
   await tx.query(
     `insert into captures (id, catch_url_id, received_at, method, subpath, query, headers, body, body_size, truncated,
-       source_ip)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)`,
+       source_ip, signature_verdict, signature_reason, rejected)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)`,
     [
       capture.id,
       capture.catchUrlId,
@@ -295,6 +371,9 @@ export async function insertCapture(tx: Querier, capture: NewCapture): Promise<v
       capture.bodySize,
       capture.truncated,
       capture.sourceIp,
+      signature?.verdict ?? null,
+      signature?.verdict === 'failed' ? signature.reason : null,
+      capture.rejected ?? false,
     ],
   );
 }

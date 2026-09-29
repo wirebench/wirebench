@@ -33,9 +33,12 @@ const DROPPED_EXACT: ReadonlySet<string> = new Set([
   'trailer',
   'forwarded',
   'x-request-id',
+  'webhook-id',
+  'webhook-timestamp',
 ]);
 
-/** The Global Constraints drop list: transport, proxy, forwarding and signature headers. */
+/** The Global Constraints drop list: transport, proxy, forwarding and signature headers, Standard Webhooks' id and timestamp
+ * included: a replay signs afresh. */
 export function droppedHeader(name: string): boolean {
   const lower = name.toLowerCase();
   return (

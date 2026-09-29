@@ -3,7 +3,7 @@
  * in a scope of its own: the catch-all byte parser below never reaches `/api/v1`, and identity's
  * `onRequest` hook never runs here. The secret is the only credential.
  *
- * Every answer is one of: the configured response, a bare `404` (unknown and disabled look alike),
+ * Every answer is one of: the configured response, a bare `401` (*Reject unverified*), a bare `404` (unknown and disabled look alike),
  * `413` (Fastify, past the server's general body limit), `429` (the bucket is empty) or `503` (the
  * capture was not stored, so the sender must retry). Nothing from the request is echoed.
  */
@@ -13,6 +13,7 @@ import { announce } from '../../context.js';
 import { headerPairs, splitTarget, subpathOf, truncateBody } from '../capture.js';
 import type { HooksEnv } from '../env.js';
 import * as repo from '../repo.js';
+import { verifyCapture } from '../verify.js';
 
 const EMPTY = Buffer.alloc(0);
 
@@ -44,6 +45,14 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
   if (!env.buckets.take(hook.id)) return reply.code(429).header('retry-after', '1').send();
 
   const { path, query } = splitTarget(request.url);
+  const body = Buffer.isBuffer(request.body) ? request.body : EMPTY;
+  const headers = headerPairs(request.raw.rawHeaders);
+  // webhook-signatures §3.3 step 1: on the full body, before truncation, so a correctly signed body
+  // over the storage limit is still `verified`.
+  const signature = verifyCapture(env, hook, headers, body, request.log);
+  // Step 2: *Reject unverified* is only ever set beside a scheme (a check constraint), so a catch URL
+  // with no scheme is never rejected.
+  const rejected = hook.rejectUnverified && signature !== null && signature.verdict !== 'verified';
   const capture: repo.NewCapture = {
     id: env.newCaptureId(),
     catchUrlId: hook.id,
@@ -51,10 +60,12 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
     method: request.method,
     subpath: subpathOf(path),
     query,
-    headers: headerPairs(request.raw.rawHeaders),
-    ...truncateBody(Buffer.isBuffer(request.body) ? request.body : EMPTY, env.settings.bodyLimitBytes),
+    headers,
+    ...truncateBody(body, env.settings.bodyLimitBytes),
     // `request.ip` follows `trustProxy` (§3.3).
     sourceIp: request.ip,
+    signature,
+    rejected,
   };
   try {
     await env.ctx.db.transaction(async (tx) => {
@@ -70,6 +81,9 @@ async function receive(env: HooksEnv, request: FastifyRequest, reply: FastifyRep
     { workspaceId: hook.workspaceId, hookId: hook.id, captureId: capture.id },
     request.log,
   );
+
+  // Step 4: at once, with no body and no configured delay; the capture is already stored.
+  if (rejected) return reply.code(401).send();
 
   await delay(env, hook.response.delayMs);
   void reply.code(hook.response.status);

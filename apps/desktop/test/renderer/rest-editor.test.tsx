@@ -7,7 +7,7 @@
  * and its draft, and a relative URL says where it is actually going.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestEditor, mergeQuery } from '../../src/renderer/features/rest-editor/rest-editor.js';
 import { restSendBlocked } from '../../src/renderer/features/rest-editor/send-blocked.js';
@@ -373,6 +373,37 @@ describe('RestEditor for a webhook item', () => {
     expect(screen.getByText('Set the Webhooks target')).toBeTruthy();
   });
 
+  it('enables Send once the target is set in Webhooks settings while the item is open', async () => {
+    preflightRest
+      .mockReset()
+      .mockResolvedValue({ ok: false, error: { code: 'webhook-target-missing', message: 'Set the Webhooks target' } });
+    mount('wh-1');
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLButtonElement>('rest-send').disabled).toBe(true);
+    });
+
+    preflightRest.mockReset().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'https://my-app.dev/hooks/newPet',
+        endpointSource: 'interface-default',
+        unresolved: [],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+        target: { source: 'target' },
+      },
+    });
+    act(() => {
+      useProjectStore.setState({
+        webhooks: { p1: { id: 'webhooks:p1', projectId: 'p1', target: 'https://my-app.dev/hooks' } },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLButtonElement>('rest-send').disabled).toBe(false);
+    });
+  });
+
   it('refuses the rest.send shortcut while the target is missing', async () => {
     preflightRest
       .mockReset()
@@ -405,6 +436,66 @@ describe('RestEditor for a webhook item', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Auth' }));
     expect(screen.getByTestId('rest-auth-source').textContent).toContain('Inherited from Webhooks');
+  });
+
+  it('blocks Send while the Signing tab holds a CI name the envName rule refuses, until it is fixed', async () => {
+    const problem = 'A CI name is upper-case letters, digits and _, starting with a letter.';
+    preflightRest.mockReset().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'https://my-app.dev/hooks/newPet',
+        endpointSource: 'interface-default',
+        unresolved: [],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+        target: { source: 'target' },
+      },
+    });
+    useProjectStore.setState({
+      restRequests: {
+        'wh-1': restRequestWire({
+          id: 'wh-1',
+          apiId: 'webhooks:p1',
+          folderId: 'wh-folder',
+          url: '/newPet',
+          signing: { mode: 'sign', scheme: { kind: 'standard', toleranceSec: 300 }, secretEnv: 'ORDERS' },
+        }),
+      },
+    });
+    mount('wh-1');
+    const send = (): HTMLButtonElement => screen.getByTestId<HTMLButtonElement>('rest-send');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Signing' }));
+    expect(send().disabled).toBe(false);
+
+    fireEvent.change(screen.getByTestId('signing-ci-name'), { target: { value: '9-orders' } });
+    await waitFor(() => {
+      expect(send().disabled).toBe(true);
+    });
+    expect(send().title).toBe(problem);
+    expect(restSendBlocked('wh-1')).toBe(problem);
+
+    fireEvent.change(screen.getByTestId('signing-ci-name'), { target: { value: 'orders_9' } });
+    await waitFor(() => {
+      expect(send().disabled).toBe(false);
+    });
+    expect(restSendBlocked('wh-1')).toBeUndefined();
+
+    // Leaving the tab with a refused name still showing unblocks: the box is gone with it.
+    fireEvent.change(screen.getByTestId('signing-ci-name'), { target: { value: '9-orders' } });
+    await waitFor(() => {
+      expect(restSendBlocked('wh-1')).toBe(problem);
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Params' }));
+    await waitFor(() => {
+      expect(restSendBlocked('wh-1')).toBeUndefined();
+    });
+  });
+
+  it('has no Signing tab on an ordinary REST request', () => {
+    seed();
+    mount();
+    expect(screen.queryByRole('tab', { name: 'Signing' })).toBeNull();
   });
 
   it('shows the inline error for a target that is not http(s)', async () => {

@@ -24,11 +24,11 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
   });
   afterEach(() => h.close());
 
-  it('0004 follows teams-access across modules, and production runs it before live-updates', async () => {
+  it('0004 and 0005 follow teams-access across modules, and production runs them before live-updates', async () => {
     const list = (await allMigrations([identityModule(), teamsModule(), syncModule(), hooksModule()])).map(
       (m) => `${m.version}_${m.name}`,
     );
-    expect(list).toEqual(['1_init', '2_identity', '3_teams', '4_webhook-capture']);
+    expect(list).toEqual(['1_init', '2_identity', '3_teams', '4_webhook-capture', '5_webhook-signatures']);
     const { BUILTIN_MODULES } = await import('../../../src/modules.js');
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
@@ -67,6 +67,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       workspaceId,
       enabled: true,
       response: CATCH_URL_DEFAULT_RESPONSE,
+      rejectUnverified: false,
     });
     expect(await repo.catchUrlBySecret(h.db, 'X'.repeat(26))).toBeUndefined();
   });
@@ -143,6 +144,8 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       bodySize: 9,
       truncated: true,
       sourceIp: '203.0.113.9',
+      signature: null,
+      rejected: false,
     });
     expect(await repo.captureById(h.db, newId(), capture.id)).toBeUndefined();
   });

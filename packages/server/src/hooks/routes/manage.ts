@@ -17,7 +17,9 @@ import {
   catchUrlsResponseSchema,
   catchUrlUpdateRequestSchema,
   HOOKS_LIMITS,
+  signatureSchemeSchema,
   teamWorkspaceParamsSchema,
+  toSignatureScheme,
   type Capture,
   type CaptureSummary,
   type CapturesQuery,
@@ -40,13 +42,23 @@ import {
   catchUrlNameTaken,
   catchUrlNotFound,
   cursorConflict,
+  rejectNeedsSignature,
   responseBodyTooLarge,
+  signatureKeyUnset,
+  signatureSecretRequired,
 } from '../errors.js';
 import * as repo from '../repo.js';
 import { mintCatchSecret } from '../secret.js';
+import { hintOf, seal } from '../secret-box.js';
 
-/** A row as the wire shows it: the secret only inside the full URL (§5). */
-export function toCatchUrl(row: repo.CatchUrlListRow, publicUrl: string): CatchUrl {
+/** Who is reading, for what a row shows (§3.4): the hint only to editors, and whether signatures work. */
+export interface CatchUrlView {
+  readonly showHint: boolean;
+  readonly signatureAvailable: boolean;
+}
+
+/** A row as the wire shows it: the secret only inside the full URL (§5); the signature secret never. */
+export function toCatchUrl(row: repo.CatchUrlListRow, publicUrl: string, view: CatchUrlView): CatchUrl {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -57,6 +69,12 @@ export function toCatchUrl(row: repo.CatchUrlListRow, publicUrl: string): CatchU
     captureCount: row.captureCount,
     newestCaptureId: row.newestCaptureId,
     createdAt: row.createdAt,
+    signature:
+      row.signature === null
+        ? null
+        : { scheme: row.signature, secret: { set: true, hint: view.showHint ? row.signatureHint : null } },
+    rejectUnverified: row.rejectUnverified,
+    signatureAvailable: view.signatureAvailable,
   };
 }
 
@@ -73,6 +91,36 @@ function checkResponse(response: repo.ResponsePatch | undefined): void {
   if (typeof body === 'string' && Buffer.byteLength(body, 'utf8') > HOOKS_LIMITS.maxResponseBodyBytes) {
     throw responseBodyTooLarge();
   }
+}
+
+/**
+ * What a `PATCH`'s `signature` and `rejectUnverified` do to the row (§3.4): `undefined` leaves the
+ * signature alone, `null` clears it, a patch sets it. The scheme is re-parsed with zod: Ajv applies
+ * no defaults inside a union, and the stored scheme must be exactly what the engine reads back.
+ *
+ * @throws problems `hooks-signature-key-unset`, `hooks-signature-secret-required`, `invalid-request`
+ */
+export function signaturePatchOf(
+  body: Pick<CatchUrlUpdateRequest, 'signature' | 'rejectUnverified'>,
+  current: Pick<repo.CatchUrlRow, 'signature' | 'secretSet'>,
+  key: Buffer | undefined,
+): repo.SignaturePatch | null | undefined {
+  if (body.signature === null) {
+    if (body.rejectUnverified === true) throw rejectNeedsSignature();
+    return null;
+  }
+  if (body.signature === undefined) {
+    if (body.rejectUnverified === true && current.signature === null) throw rejectNeedsSignature();
+    return undefined;
+  }
+  if (key === undefined) throw signatureKeyUnset();
+  const scheme = toSignatureScheme(signatureSchemeSchema.parse(body.signature.scheme));
+  const secret = body.signature.secret;
+  if (secret === undefined) {
+    if (!current.secretSet) throw signatureSecretRequired();
+    return { scheme };
+  }
+  return { scheme, sealedSecret: seal(key, secret), hint: hintOf(secret) };
 }
 
 /** A racing duplicate answers like the name rule; a racing workspace delete like the guard. */
@@ -100,6 +148,11 @@ export const manageRoutes =
       hookId: (request.params as { readonly hookId: string }).hookId,
     });
 
+    const viewOf = (request: FastifyRequest): CatchUrlView => ({
+      showHint: request.workspaceAccess!.role !== 'viewer',
+      signatureAvailable: env.settings.secretKey !== undefined,
+    });
+
     app.get(
       '/workspaces/:workspaceId/hooks',
       {
@@ -108,7 +161,7 @@ export const manageRoutes =
       },
       async (request): Promise<CatchUrl[]> => {
         const rows = await repo.catchUrlsOfWorkspace(db, request.workspaceAccess!.workspaceId);
-        return rows.map((row) => toCatchUrl(row, config.publicUrl));
+        return rows.map((row) => toCatchUrl(row, config.publicUrl, viewOf(request)));
       },
     );
 
@@ -154,7 +207,7 @@ export const manageRoutes =
           conflictOr(error);
         }
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return reply.code(201).send(toCatchUrl(await found(workspaceId, id), config.publicUrl));
+        return reply.code(201).send(toCatchUrl(await found(workspaceId, id), config.publicUrl, viewOf(request)));
       },
     );
 
@@ -171,21 +224,24 @@ export const manageRoutes =
       async (request): Promise<CatchUrl> => {
         const { workspaceId, hookId } = hookOf(request);
         const body = request.body as CatchUrlUpdateRequest;
-        await found(workspaceId, hookId);
+        const current = await found(workspaceId, hookId);
         checkResponse(body.response);
+        const signature = signaturePatchOf(body, current, env.settings.secretKey);
         let updated: boolean;
         try {
           updated = await repo.updateCatchUrl(db, hookId, {
             ...(body.name !== undefined ? { name: cleanName(body.name) } : {}),
             ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
             ...(body.response !== undefined ? { response: body.response } : {}),
+            ...(signature !== undefined ? { signature } : {}),
+            ...(body.rejectUnverified !== undefined ? { rejectUnverified: body.rejectUnverified } : {}),
           });
         } catch (error) {
           conflictOr(error);
         }
         if (!updated) throw catchUrlNotFound();
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl);
+        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl, viewOf(request));
       },
     );
 
@@ -199,7 +255,7 @@ export const manageRoutes =
         const rotated = await repo.rotateSecret(db, hookId, mintCatchSecret());
         if (!rotated) throw catchUrlNotFound();
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
-        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl);
+        return toCatchUrl(await found(workspaceId, hookId), config.publicUrl, viewOf(request));
       },
     );
 

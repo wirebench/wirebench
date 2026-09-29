@@ -25,6 +25,7 @@ import { ProjectError } from '../errors.js';
 import { FORMAT_VERSION } from './model.js';
 import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import { DEFAULT_WSS_ENCRYPTION_PARTS, DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
+import { signatureSchemeSchema } from '../webhooks/signature.js';
 
 const nonEmpty = z.string().min(1);
 const propertyMapSchema = z.record(z.string(), z.string());
@@ -399,10 +400,31 @@ export const hookLinkSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+/**
+ * A webhook collection's, folder's or item's `signing` key (webhook-signatures §5.1). References
+ * only: a plaintext `secret` is refused outright, as auth refuses its value keys.
+ */
+export const webhookSigningSchema = z.union([
+  z.looseObject({ mode: z.literal('none') }),
+  z
+    .looseObject({
+      mode: z.literal('sign'),
+      scheme: signatureSchemeSchema,
+      secretRef: z.string().optional(),
+      secretEnv: envName,
+    })
+    .refine((value) => !('secret' in value), {
+      message: 'signing must not contain a plaintext "secret" field; use secretRef',
+      path: ['secret'],
+    }),
+]);
+export type WebhookSigningFile = z.output<typeof webhookSigningSchema>;
+
 /** `webhooks/webhooks.yaml`. */
 export const webhooksFileSchema = z.looseObject({
   target: z.string(),
   auth: authConfigSchema.optional(),
+  signing: webhookSigningSchema.optional(),
 });
 
 /** `apis/<slug>/requests/[<folder>/…]<name>.request.yaml`. */
@@ -426,6 +448,8 @@ export const restRequestFileSchema = z.looseObject({
   contract: z.looseObject({ method: nonEmpty, path: nonEmpty }).optional(),
   /** Only under `webhooks/`: the imported `webhooks`/`callbacks` entry; refused elsewhere by the loader. */
   hook: hookLinkSchema.optional(),
+  /** Only under `webhooks/`; refused elsewhere by the loader. */
+  signing: webhookSigningSchema.optional(),
   scripts: scriptsSchema.optional(),
 });
 
@@ -442,6 +466,7 @@ export const restFolderFileSchema = z.looseObject({
 export const webhookFolderFileSchema = restFolderFileSchema.extend({
   target: z.string().optional(),
   source: z.looseObject({ apiId: nonEmpty }).optional(),
+  signing: webhookSigningSchema.optional(),
 });
 
 /** `apis/<slug>/api.yaml`. */

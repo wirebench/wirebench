@@ -8,8 +8,13 @@ import {
   LIVE_CLOSE,
   LIVE_PATH,
   liveClientMessageSchema,
+  signatureSchemeSchema,
+  toSignatureScheme,
+  verifyWebhook,
   type LiveClientMessage,
   type LiveServerMessage,
+  type SignatureScheme,
+  type SignatureVerdict,
 } from '@wirebench/engine';
 import { startTestWsServer, type TestWsServerOptions } from '@wirebench/engine/test-helpers';
 
@@ -238,20 +243,30 @@ interface FakeCapture {
   readonly headers: [string, string][];
   readonly body: Buffer;
   readonly sourceIp: string;
+  /** Fixed on receipt; `null` when the catch URL has no signature scheme. */
+  readonly signature: SignatureVerdict | null;
+  /** Answered 401 because the signature did not verify and the catch URL rejects unverified requests. */
+  readonly rejected: boolean;
 }
 
 interface FakeCatchUrl {
   readonly id: string;
   readonly workspaceId: string;
-  readonly name: string;
+  name: string;
   readonly secret: string;
-  readonly enabled: boolean;
-  readonly response: {
+  enabled: boolean;
+  response: {
     readonly status: number;
     readonly contentType: string | null;
     readonly body: string | null;
     readonly delayMs: number;
   };
+  /**
+   * The signature scheme and its secret, kept plainly in memory: this is a test double of the API,
+   * not of the server's encrypted storage.
+   */
+  signature: { readonly scheme: SignatureScheme; readonly secret: string } | null;
+  rejectUnverified: boolean;
   readonly createdAt: string;
   /** Oldest first. */
   readonly captures: FakeCapture[];
@@ -869,7 +884,8 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
 
   /*
    * Catch URLs (webhook-capture spec §3.3, §3.5), with `hooks: true`: enough of the management API for
-   * `server-webhooks.spec.ts`, and the public route. The real routes are covered by `packages/server`'s
+   * `server-webhooks.spec.ts` and `webhook-signatures.spec.ts`, and the public route, which verifies a
+   * signature on receipt (webhook-signatures §3.3). The real routes are covered by `packages/server`'s
    * integration suite.
    */
   const catchUrls = new Map<string, FakeCatchUrl>();
@@ -886,6 +902,15 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     captureCount: hook.captures.length,
     newestCaptureId: hook.captures.at(-1)?.id ?? null,
     createdAt: hook.createdAt,
+    signature:
+      hook.signature === null
+        ? null
+        : {
+            scheme: hook.signature.scheme,
+            secret: { set: true, hint: hook.signature.secret.length >= 8 ? hook.signature.secret.slice(-4) : null },
+          },
+    rejectUnverified: hook.rejectUnverified,
+    signatureAvailable: true,
   });
   const toSummary = (capture: FakeCapture) => ({
     id: capture.id,
@@ -895,6 +920,8 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     bodySize: capture.body.length,
     truncated: false,
     sourceIp: capture.sourceIp,
+    signature: capture.signature,
+    rejected: capture.rejected,
   });
 
   const hooksApi = async (
@@ -929,6 +956,8 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         secret: generateId(),
         enabled: body.enabled ?? true,
         response: { status: 200, contentType: null, body: null, delayMs: 0, ...body.response },
+        signature: null,
+        rejectUnverified: false,
         createdAt: at(),
         captures: [],
       };
@@ -939,6 +968,34 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     }
     const hook = hookId === undefined ? undefined : catchUrls.get(hookId);
     if (hook === undefined || hook.workspaceId !== ws.id) return problem(response, 404, 'hooks-not-found');
+    if (sub === undefined && method === 'PATCH') {
+      if (role === 'viewer') return problem(response, 403, 'teams-forbidden');
+      const body = (await readJson(request)) as {
+        name?: string;
+        enabled?: boolean;
+        response?: Partial<FakeCatchUrl['response']>;
+        signature?: { scheme: unknown; secret?: string } | null;
+        rejectUnverified?: boolean;
+      };
+      if (body.name !== undefined) hook.name = body.name.trim();
+      if (body.enabled !== undefined) hook.enabled = body.enabled;
+      if (body.response !== undefined) hook.response = { ...hook.response, ...body.response };
+      if (body.signature === null) {
+        hook.signature = null;
+        hook.rejectUnverified = false;
+      } else if (body.signature !== undefined) {
+        const scheme = toSignatureScheme(signatureSchemeSchema.parse(body.signature.scheme));
+        const secret = body.signature.secret ?? hook.signature?.secret;
+        if (secret === undefined) return problem(response, 400, 'hooks-signature-secret-required');
+        hook.signature = { scheme, secret };
+      }
+      if (body.rejectUnverified !== undefined) {
+        if (body.rejectUnverified && hook.signature === null) return problem(response, 400, 'invalid-request');
+        hook.rejectUnverified = body.rejectUnverified;
+      }
+      liveSendTo(subscribersOf(ws.id), { type: 'hooks', workspaceId: ws.id });
+      return send(response, 200, toCatchUrl(hook));
+    }
     if (sub === 'captures' && captureId === undefined && method === 'GET') {
       const limit = Number(query.get('limit') ?? '50');
       const before = query.get('before');
@@ -968,7 +1025,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     problem(response, 404, 'not-found');
   };
 
-  /** `ANY /hooks/<secret>[/<subpath>]` (§3.3): store, nudge the workspace, answer the configured response. */
+  /**
+   * `ANY /hooks/<secret>[/<subpath>]` (§3.3): verify the signature when a scheme is set, store, nudge the
+   * workspace, and answer the configured response — or 401 for an unverified one the catch URL rejects.
+   */
   const catchPublic = async (request: IncomingMessage, response: ServerResponse, path: URL): Promise<void> => {
     const [, , secret, ...rest] = path.pathname.split('/');
     const body = await readBody(request);
@@ -981,6 +1041,9 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     const headers: [string, string][] = [];
     for (let index = 0; index + 1 < request.rawHeaders.length; index += 2)
       headers.push([request.rawHeaders[index]!, request.rawHeaders[index + 1]!]);
+    const signature =
+      hook.signature === null ? null : verifyWebhook(hook.signature.scheme, hook.signature.secret, headers, body);
+    const rejected = hook.rejectUnverified && signature !== null && signature.verdict !== 'verified';
     const capture: FakeCapture = {
       id: nextCaptureId(),
       receivedAt: at(),
@@ -990,6 +1053,8 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       headers,
       body,
       sourceIp: request.socket.remoteAddress ?? '',
+      signature,
+      rejected,
     };
     hook.captures.push(capture);
     liveSendTo(subscribersOf(hook.workspaceId), {
@@ -998,6 +1063,11 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       hookId: hook.id,
       captureId: capture.id,
     });
+    if (rejected) {
+      response.writeHead(401, { 'content-length': '0' });
+      response.end();
+      return;
+    }
     const answer = hook.response;
     response.writeHead(answer.status, answer.contentType === null ? {} : { 'content-type': answer.contentType });
     response.end(answer.body ?? undefined);
