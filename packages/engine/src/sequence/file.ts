@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import { stepAssertionsSchema } from '../assert/schema.js';
+import { stepAssertionsSchema, toCallbackAssertion } from '../assert/schema.js';
 import { ProjectError } from '../errors.js';
 import { compact, parseYaml, stringifyYaml } from '../project/yaml.js';
 import { SEQUENCE_LIMITS, SEQUENCE_VERSION, TRANSFER_NAME_PATTERN } from './model.js';
@@ -181,6 +181,8 @@ function knownAssertionFields(raw: StepAssertion | z.infer<typeof stepAssertions
         ...(raw.exists !== undefined ? { exists: raw.exists } : {}),
         ...name,
       };
+    case 'callback':
+      return toCallbackAssertion(raw);
     case 'header':
       return {
         type: 'header',

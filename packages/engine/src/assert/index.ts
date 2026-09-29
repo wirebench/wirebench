@@ -1,3 +1,4 @@
+import { callbackLabel } from './model.js';
 import type { AssertionResult, AssertionSubject, StepAssertion } from './model.js';
 import { evaluateContract } from './contract.js';
 import { evaluateHeader } from './header.js';
@@ -20,6 +21,14 @@ function evaluateOne(subject: AssertionSubject, assertion: StepAssertion): Promi
       return evaluateContract(subject, assertion);
     case 'header':
       return evaluateHeader(subject, assertion);
+    case 'callback':
+      // Waiting needs the send's moment and a capture source: only a run has them (`assert/callback.ts`).
+      return {
+        type: 'callback',
+        label: callbackLabel(assertion),
+        outcome: 'errored',
+        message: 'a callback assertion is checked by a run, after its send',
+      };
   }
 }
 

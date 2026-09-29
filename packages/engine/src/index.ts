@@ -4,6 +4,11 @@ export type {
   AssertionLanguage,
   AssertionResult,
   AssertionSubject,
+  CallbackAssertion,
+  CallbackBodyCheck,
+  CallbackCheck,
+  CallbackHeaderCheck,
+  CallbackMatch,
   HeaderAssertion,
   MatchAssertion,
   SchemaAssertion,
@@ -12,7 +17,13 @@ export type {
   StatusAssertion,
   StepAssertion,
 } from './assert/model.js';
-export { assertionsSchema, stepAssertionsSchema } from './assert/schema.js';
+export { CALLBACK_LIMITS } from './assert/model.js';
+export {
+  assertionsSchema,
+  callbackAssertionSchema,
+  stepAssertionsSchema,
+  toCallbackAssertion,
+} from './assert/schema.js';
 
 export * from './run/index.js';
 

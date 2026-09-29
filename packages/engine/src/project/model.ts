@@ -32,11 +32,11 @@ export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '.
  * 4 added `assertions` on a request and the `…Env` name beside each secret reference. 5 let a SOAP
  * interface, endpoint or request carry `bearer`, `api-key` and `oauth2` auth (previously
  * REST-only) — new keys and new enum values on an existing field. 6 added `scripts` on a SOAP, REST or
- * gRPC request (#63), the project's webhook collection under `webhooks/`, `hook` on a request, and `signing` on the
- * collection, its folders and its items.
- * All are additive, and all still bump the version: this format does not round-trip unknown keys,
- * so an older build would delete them on its next save (see `schema.ts` and ADR-0003) — and would
- * meanwhile send a request without its scripts.
+ * gRPC request (#63), the project's webhook collection under `webhooks/`, `hook` on a request, `signing` on the
+ * collection, its folders and its items, and the `callback` assertion kind (callback-assertion spec §2.1).
+ * 6 is not yet released, so these share it.
+ * All are additive; this format does not round-trip unknown keys, so an older build would delete them on
+ * its next save (see `schema.ts` and ADR-0003) — and would meanwhile send a request without its scripts.
  */
 export const FORMAT_VERSION = 6;
 

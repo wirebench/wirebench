@@ -48,16 +48,81 @@ export interface SlaAssertion {
   readonly name?: string;
 }
 
+/** Bounds on a callback assertion (spec §2.1) and the engine's poll interval (§2.3). */
+export const CALLBACK_LIMITS = Object.freeze({
+  defaultWithinMs: 30_000,
+  minWithinMs: 1_000,
+  maxWithinMs: 300_000,
+  /** How often a waiting callback asks for new captures. A constant; tests inject their own. */
+  pollIntervalMs: 1_000,
+  /** A catch URL's name, as the server bounds it (`HOOKS_LIMITS.maxNameLength`). */
+  maxCatchUrlLength: 100,
+  maxHeaderChecks: 20,
+  maxExpectChecks: 20,
+});
+
+/** One header of a capture: its name ignores case; exactly one of `equals`, `matches`, `exists`. */
+export interface CallbackHeaderCheck {
+  readonly name: string;
+  readonly equals?: string;
+  readonly matches?: string;
+  readonly exists?: boolean;
+}
+
+/** An expression over a capture's body text; exactly one of `equals`, `matches`, `exists`. */
+export interface CallbackBodyCheck {
+  readonly language: 'jsonpath' | 'xpath';
+  readonly path: string;
+  readonly equals?: string;
+  readonly matches?: string;
+  readonly exists?: boolean;
+}
+
+/** What picks the capture (spec §2.3): every part given must hold. */
+export interface CallbackMatch {
+  /** Compared without regard to case. */
+  readonly method?: string;
+  /** Exact, against the decoded subpath (leading `/`). At most one of `path` and `pathMatches`. */
+  readonly path?: string;
+  readonly pathMatches?: string;
+  readonly headers?: readonly CallbackHeaderCheck[];
+  readonly body?: CallbackBodyCheck;
+}
+
+/** What is checked on the matched capture; every check is reported. */
+export type CallbackCheck =
+  { readonly body: CallbackBodyCheck } | { readonly header: CallbackHeaderCheck } | { readonly signature: 'verified' };
+
+/**
+ * Waits after the send for the first capture at `catchUrl` that fits `match`, then checks it with
+ * `expect` (spec §2). Only a run evaluates it: a desktop Send and `evaluateAssertions` alone cannot.
+ */
+export interface CallbackAssertion {
+  readonly type: 'callback';
+  /** The catch URL's name in the server workspace (unique there, case-insensitive). */
+  readonly catchUrl: string;
+  /** How long to wait after the send finished: {@link CALLBACK_LIMITS}. */
+  readonly withinMs: number;
+  readonly match: CallbackMatch;
+  readonly expect: readonly CallbackCheck[];
+  readonly name?: string;
+}
+
 /** The union of every declarative check a request file may carry under `assertions:`. */
-export type Assertion = StatusAssertion | SoapFaultAssertion | MatchAssertion | SchemaAssertion | SlaAssertion;
+export type Assertion =
+  StatusAssertion | SoapFaultAssertion | MatchAssertion | SchemaAssertion | SlaAssertion | CallbackAssertion;
+
+/** The label of a callback assertion's result: its `name`, else the catch URL it waits on. */
+export function callbackLabel(assertion: CallbackAssertion): string {
+  return assertion.name ?? `callback ${assertion.catchUrl}`;
+}
 
 /**
  * Checks a response header (gRPC: response metadata, then trailers). Name matching ignores case; the
  * first value found is compared.
  *
- * A sequence step may carry it; a request file may not. The request `assertions:` schema is a closed
- * union an older build reads, and a new member there would be a new enum value, which ADR-0003 makes
- * a `formatVersion` bump.
+ * A sequence step may carry it; a request file may not (it reads the response, which a request file's own
+ * assertions already cover by `match`).
  */
 export interface HeaderAssertion {
   readonly type: 'header';
@@ -100,4 +165,6 @@ export interface AssertionResult {
   readonly actual?: string;
   /** Why it errored: an expression that does not compile, a timeout, no contract to validate against. */
   readonly message?: string;
+  /** A callback assertion's matched capture, for a link to it (spec §5). */
+  readonly capture?: { readonly hookId: string; readonly captureId: string };
 }

@@ -1,8 +1,11 @@
 import { cp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { CallbackAssertion } from '../../../src/assert/model.js';
 import { loadProject } from '../../../src/project/load.js';
+import { createProject } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
+import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { tempProjectDir } from './fixture.js';
 
 const V3_DIR = join(import.meta.dirname, '..', '..', 'fixtures', 'format-v3', 'project');
@@ -64,5 +67,37 @@ describe('assertions on a request file', () => {
     const file = await firstRequestFile(dir);
     await writeFile(file, `${await readFile(file, 'utf8')}assertions:\n  - type: script\n`);
     await expect(loadProject(dir)).rejects.toThrow(/project file/i);
+  });
+});
+
+describe('a callback assertion on a request file', () => {
+  it('survives save → load → save byte for byte', async () => {
+    const dir = await tempProjectDir();
+    const callback: CallbackAssertion = {
+      type: 'callback',
+      catchUrl: 'orders-hook',
+      withinMs: 10_000,
+      match: { method: 'POST', pathMatches: '^/events/' },
+      expect: [{ header: { name: 'X-Event', equals: 'order.paid' } }, { signature: 'verified' }],
+    };
+    const project = {
+      ...createProject('Shop', { id: 'P1' }),
+      apis: [
+        createApi('Shop API', {
+          id: 'A1',
+          requests: [
+            { ...createRestRequest('Pay', { id: 'R1', method: 'POST', url: '/pay' }), assertions: [callback] },
+          ],
+        }),
+      ],
+    };
+    await saveProject(project, dir);
+    const { project: loaded, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    expect(loaded.apis[0]?.requests[0]?.assertions).toEqual([callback]);
+    const file = join(dir, 'apis', 'Shop API', 'requests', 'Pay.request.yaml');
+    const first = await readFile(file, 'utf8');
+    await saveProject(loaded, dir);
+    expect(await readFile(file, 'utf8')).toBe(first);
   });
 });
