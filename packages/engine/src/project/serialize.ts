@@ -13,7 +13,7 @@ import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
 import type { WsApi, WsDefinitionRef, WsRequestDef } from '../ws/model.js';
 import { wsMessageFileName } from '../ws/model.js';
 import { RAW_LANGUAGE_EXTENSIONS } from '../rest/model.js';
-import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
+import type { WebhookCollection, WebhookFolder, WebhookSigning } from '../webhooks/model.js';
 import {
   API_FILE,
   APIS_DIR,
@@ -66,6 +66,18 @@ export function authDocument(auth: AuthConfig): Record<string, unknown> {
     return compact({ ...auth, scopes: auth.scopes.length > 0 ? [...auth.scopes] : undefined });
   }
   return compact({ ...auth });
+}
+
+/** A `signing` key as written: the scheme's own fields, and references only. */
+function signingDocument(signing: WebhookSigning | undefined): Record<string, unknown> | undefined {
+  if (signing === undefined) return undefined;
+  if (signing.mode === 'none') return { mode: 'none' };
+  return compact({
+    mode: 'sign',
+    scheme: compact({ ...signing.scheme }),
+    secretRef: signing.secretRef,
+    secretEnv: signing.secretEnv,
+  });
 }
 
 /**
@@ -242,6 +254,7 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
     contract:
       request.contract === undefined ? undefined : { method: request.contract.method, path: request.contract.path },
     hook: request.hook === undefined ? undefined : { ...request.hook },
+    signing: signingDocument(request.signing),
     scripts: scriptsDocument(request.scripts, request.slug).document,
   });
 }
@@ -490,6 +503,7 @@ function addWebhookFiles(files: Map<string, string>, webhooks: WebhookCollection
       compact({
         target: webhooks.target,
         auth: webhooks.auth === undefined ? undefined : authDocument(webhooks.auth),
+        signing: signingDocument(webhooks.signing),
       }),
     ),
   );
@@ -498,6 +512,7 @@ function addWebhookFiles(files: Map<string, string>, webhooks: WebhookCollection
     return {
       target: hook.target,
       source: hook.source === undefined ? undefined : { apiId: hook.source.apiId },
+      signing: signingDocument(hook.signing),
     };
   });
 }

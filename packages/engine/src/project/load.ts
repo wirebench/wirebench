@@ -35,7 +35,8 @@ import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists } from './fs.js';
 import { migrate } from './migrate.js';
 import { normalizeWsa } from '../wsa/model.js';
-import type { HookLink, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
+import type { HookLink, WebhookCollection, WebhookFolder, WebhookSigning } from '../webhooks/model.js';
+import { toSignatureScheme } from '../webhooks/signature.js';
 import {
   API_FILE,
   APIS_DIR,
@@ -51,7 +52,7 @@ import {
   WEBHOOKS_FILE,
   WSS_DIR,
 } from './paths.js';
-import type { KeyValueEntryFile } from './schema.js';
+import type { KeyValueEntryFile, WebhookSigningFile } from './schema.js';
 import {
   apiFileSchema,
   apiKindOf,
@@ -144,6 +145,17 @@ function optional<T>(key: string, value: T | undefined): Record<string, T> {
  * Drops `undefined`-valued keys from a zod result, so an absent optional field
  * is truly absent rather than present-and-undefined (`exactOptionalPropertyTypes`).
  */
+/** A parsed `signing` key as the model holds it. */
+function signingOf(parsed: WebhookSigningFile): WebhookSigning {
+  if (parsed.mode === 'none') return { mode: 'none' };
+  return {
+    mode: 'sign',
+    scheme: toSignatureScheme(parsed.scheme),
+    ...optional('secretRef', parsed.secretRef),
+    ...optional('secretEnv', parsed.secretEnv),
+  };
+}
+
 function exact<T extends object>(value: { readonly [K in keyof T]: T[K] | undefined }): T {
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(value)) {
@@ -497,23 +509,25 @@ function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
         ? { contract: { method: parsed.contract.method, path: parsed.contract.path } }
         : {}),
       ...(parsed.hook !== undefined ? { hook: exact<HookLink>(parsed.hook) } : {}),
+      ...(parsed.signing !== undefined ? { signing: signingOf(parsed.signing) } : {}),
       ...(scripts !== undefined ? { scripts } : {}),
     };
   };
 }
 
-/** A REST request under `apis/`: the same as {@link restRequestReader}, but a `hook` has no place there. */
+/** A REST request under `apis/`: the same as {@link restRequestReader}, but a `hook` or `signing` has no place there. */
 function apiRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): RequestReader<RestRequestDef> {
   const read = restRequestReader(fs, root, problems);
   return async (dir, fileName, unclaimed) => {
     const request = await read(dir, fileName, unclaimed);
-    if (request.hook !== undefined) {
+    const misplaced = request.hook !== undefined ? 'hook' : request.signing !== undefined ? 'signing' : undefined;
+    if (misplaced !== undefined) {
       const file = `${dir}/${fileName}`;
       throw new ProjectError(
         'project-file-invalid',
-        `Invalid project file ${file}: hook is only allowed under ${WEBHOOKS_DIR}/`,
+        `Invalid project file ${file}: ${misplaced} is only allowed under ${WEBHOOKS_DIR}/`,
         {
-          details: { file, issues: [{ path: 'hook', message: `only allowed under ${WEBHOOKS_DIR}/` }] },
+          details: { file, issues: [{ path: misplaced, message: `only allowed under ${WEBHOOKS_DIR}/` }] },
         },
       );
     }
@@ -907,12 +921,14 @@ async function loadWebhooks(
       return {
         ...optional('target', folder.target),
         ...(folder.source !== undefined ? { source: { apiId: folder.source.apiId } } : {}),
+        ...(folder.signing !== undefined ? { signing: signingOf(folder.signing) } : {}),
       };
     },
   );
   return {
     target: parsed.target,
     ...(parsed.auth !== undefined ? { auth: authConfig(parsed.auth) } : {}),
+    ...(parsed.signing !== undefined ? { signing: signingOf(parsed.signing) } : {}),
     folders: contents.folders as unknown as WebhookFolder[],
     requests: contents.requests,
   };
