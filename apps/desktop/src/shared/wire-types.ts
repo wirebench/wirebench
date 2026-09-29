@@ -4782,9 +4782,16 @@ export const preferencesSectionSchema = z.enum([
   'ui',
   'updates',
   'accounts',
+  'tokens',
   'shortcuts',
 ]);
 export type PreferencesSectionWire = z.infer<typeof preferencesSectionSchema>;
+/**
+ * The sections that hold stored preferences — every one but `tokens`, which lists a server
+ * workspace's CI tokens and has nothing to reset.
+ */
+export const preferencesStoredSectionSchema = preferencesSectionSchema.exclude(['tokens']);
+export type PreferencesStoredSectionWire = z.infer<typeof preferencesStoredSectionSchema>;
 
 /**
  * A partial preferences document. Deliberately loose (`z.unknown()` per section, merged and
@@ -4814,7 +4821,7 @@ export type PreferencesResponse = z.infer<typeof preferencesResponseSchema>;
 /** Request payload for `preferences.update`. */
 export const preferencesUpdateRequestSchema = z.object({ patch: preferencesPatchWireSchema });
 /** Request payload for `preferences.reset`. */
-export const preferencesResetRequestSchema = z.object({ section: preferencesSectionSchema.optional() });
+export const preferencesResetRequestSchema = z.object({ section: preferencesStoredSectionSchema.optional() });
 
 /**
  * `ssl.pickCaBundle` / `ssl.clearCaBundle`: the *only* ways the CA bundle preference changes.

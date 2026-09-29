@@ -7,7 +7,7 @@ import {
   waitingText,
   withinMsOf,
 } from '../src/renderer/features/sequence/callback-text.js';
-import { CI_TOKEN_NAME_MAX } from '../src/renderer/state/ci-tokens.js';
+import { CI_TOKEN_NAME_MAX } from '../src/renderer/state/ci-token-bounds.js';
 
 describe('values the renderer restates (callback-assertion §5)', () => {
   it('match the engine', () => {
