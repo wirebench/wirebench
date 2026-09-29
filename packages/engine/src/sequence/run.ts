@@ -7,10 +7,14 @@
  * its expanders, where ADR-0015's rules apply: literal, explicit, escaped, never the origin.
  */
 
+import { isCallbackAssertion, sendAwaitingCallbacks } from '../assert/callback.js';
+import type { CallbackClock, CallbackWaiting } from '../assert/callback.js';
+import type { CaptureSource } from '../assert/capture-source.js';
 import { evaluateAssertions } from '../assert/index.js';
 import type { AssertionResult, AssertionSubject, StepAssertion } from '../assert/model.js';
 import { isWirebenchError } from '../errors.js';
 import type { PropertyMap, Project } from '../project/model.js';
+import type { PropertyScopes } from '../project/properties.js';
 import { findStepRequest } from '../run/select.js';
 import type { SelectedRequest } from '../run/select.js';
 import type { SequenceDef, SequenceStep } from './model.js';
@@ -95,6 +99,13 @@ export interface SequenceRunResult {
   readonly steps: readonly SequenceStepResult[];
 }
 
+/** Which step waits: for the run panel's waiting row and the CLI's waiting line. */
+export interface CallbackStep {
+  readonly index: number;
+  readonly stepId: string;
+  readonly name: string;
+}
+
 /** Options for {@link runSequence}. */
 export interface RunSequenceOptions {
   readonly signal?: AbortSignal;
@@ -106,6 +117,26 @@ export interface RunSequenceOptions {
   readonly containsKnownSecret?: (value: string) => boolean;
   /** Injectable clock for `startedAt`. */
   readonly now?: () => Date;
+  /** Where callback assertions read captures (callback-assertion §2.2). */
+  readonly captures?: CaptureSource;
+  /** The clock callback waits poll by; a test seam. */
+  readonly callbackClock?: CallbackClock;
+  /** A test seam; `CALLBACK_LIMITS.pollIntervalMs` by default. */
+  readonly callbackPollMs?: number;
+  /**
+   * The scopes a step's callback values expand against: the host's own for that request, with
+   * `sequence` set. Absent: the Sequence values alone.
+   */
+  readonly callbackScopes?: (step: ResolvedStep, sequenceScope: PropertyMap) => PropertyScopes;
+  /** Called after a step's send when it has callbacks to wait for. */
+  readonly onCallbackWaiting?: (step: CallbackStep, waiting: readonly CallbackWaiting[]) => void;
+}
+
+/** Carries a step the host could not send out of `sendAwaitingCallbacks`, so no wait follows it. */
+class NotSent extends Error {
+  constructor(readonly failure: SequenceStepNotSent) {
+    super(failure.error.message);
+  }
 }
 
 const RANK: Record<SequenceOutcome, number> = { skipped: 0, passed: 1, failed: 2, errored: 3 };
@@ -181,25 +212,55 @@ export async function runSequence(
       continue;
     }
 
+    const resolved: ResolvedStep = {
+      index,
+      step,
+      selected: target.selected,
+      ...(sequence.settings.stepTimeoutMs !== undefined ? { timeoutMs: sequence.settings.stepTimeoutMs } : {}),
+    };
+    const sequenceScope = Object.fromEntries(values);
+    const stepAssertions: readonly StepAssertion[] = [
+      ...(step.requestAssertions ? requestAssertionsOf(target.selected) : []),
+      ...step.assertions,
+    ];
     let sent: SequenceStepSent | SequenceStepNotSent;
+    let callbacks: AssertionResult[] = [];
     try {
-      sent = await send(
+      // The cursor is taken inside this helper, before the send (§2.3 step 1).
+      const awaited = await sendAwaitingCallbacks(
+        stepAssertions,
+        () =>
+          options.callbackScopes?.(resolved, sequenceScope) ?? {
+            project: {},
+            global: {},
+            system: {},
+            sequence: sequenceScope,
+          },
+        async () => {
+          const result = await send(resolved, sequenceScope, signal);
+          if ('error' in result) throw new NotSent(result);
+          return result;
+        },
         {
-          index,
-          step,
-          selected: target.selected,
-          ...(sequence.settings.stepTimeoutMs !== undefined ? { timeoutMs: sequence.settings.stepTimeoutMs } : {}),
+          ...(options.captures !== undefined ? { captures: options.captures } : {}),
+          ...(options.callbackClock !== undefined ? { clock: options.callbackClock } : {}),
+          ...(options.callbackPollMs !== undefined ? { pollIntervalMs: options.callbackPollMs } : {}),
+          signal,
+          onWaiting: (waiting) => options.onCallbackWaiting?.({ index, stepId: step.id, name: base.name }, waiting),
         },
-        Object.fromEntries(values),
-        signal,
       );
+      sent = awaited.sent;
+      callbacks = awaited.callbacks;
     } catch (error) {
-      sent = {
-        error: {
-          code: isWirebenchError(error) ? error.code : 'internal-error',
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
+      sent =
+        error instanceof NotSent
+          ? error.failure
+          : {
+              error: {
+                code: isWirebenchError(error) ? error.code : 'internal-error',
+                message: error instanceof Error ? error.message : String(error),
+              },
+            };
     }
     if ('error' in sent) {
       finish({ ...base, outcome: 'errored', error: sent.error });
@@ -237,13 +298,11 @@ export async function runSequence(
       transferError ??= { code: found.code, message: `${transfer.name}: ${found.message}` };
     }
 
-    const assertions = [
-      ...(await evaluateAssertions(subject, [
-        ...(step.requestAssertions ? requestAssertionsOf(target.selected) : []),
-        ...step.assertions,
-      ])),
-      ...scriptAssertions(script?.tests ?? []),
-    ];
+    const immediate = await evaluateAssertions(
+      subject,
+      stepAssertions.filter((assertion) => !isCallbackAssertion(assertion)),
+    );
+    const assertions = [...immediate, ...callbacks, ...scriptAssertions(script?.tests ?? [])];
     transferError ??= script?.error;
     const outcome: SequenceOutcome =
       transferError !== undefined || assertions.some((a) => a.outcome === 'errored')
