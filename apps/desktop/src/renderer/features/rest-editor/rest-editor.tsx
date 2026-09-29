@@ -146,7 +146,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [requestId, url, activeEnvironment]);
+    // A webhook item's target lives on its collection and folders, so a target set in Webhooks
+    // settings while the item is open has to re-run the preflight too.
+  }, [requestId, url, activeEnvironment, webhookCollection, folders]);
 
   const stage = useCallback(
     (patch: RestRequestPatchWire) => {

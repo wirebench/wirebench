@@ -7,7 +7,7 @@
  * and its draft, and a relative URL says where it is actually going.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestEditor, mergeQuery } from '../../src/renderer/features/rest-editor/rest-editor.js';
 import { restSendBlocked } from '../../src/renderer/features/rest-editor/send-blocked.js';
@@ -371,6 +371,37 @@ describe('RestEditor for a webhook item', () => {
     });
     expect(screen.getByTestId<HTMLButtonElement>('rest-send').title).toBe('Set the Webhooks target');
     expect(screen.getByText('Set the Webhooks target')).toBeTruthy();
+  });
+
+  it('enables Send once the target is set in Webhooks settings while the item is open', async () => {
+    preflightRest
+      .mockReset()
+      .mockResolvedValue({ ok: false, error: { code: 'webhook-target-missing', message: 'Set the Webhooks target' } });
+    mount('wh-1');
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLButtonElement>('rest-send').disabled).toBe(true);
+    });
+
+    preflightRest.mockReset().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'https://my-app.dev/hooks/newPet',
+        endpointSource: 'interface-default',
+        unresolved: [],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+        target: { source: 'target' },
+      },
+    });
+    act(() => {
+      useProjectStore.setState({
+        webhooks: { p1: { id: 'webhooks:p1', projectId: 'p1', target: 'https://my-app.dev/hooks' } },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLButtonElement>('rest-send').disabled).toBe(false);
+    });
   });
 
   it('refuses the rest.send shortcut while the target is missing', async () => {
