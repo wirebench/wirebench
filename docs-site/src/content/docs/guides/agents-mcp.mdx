@@ -20,13 +20,15 @@ Most MCP clients start a local server as a command. Give it the project folder a
   "mcpServers": {
     "wirebench": {
       "command": "npx",
-      "args": ["-y", "@wirebench/cli", "mcp", "--project", "/path/to/project", "--allow-send", "-e", "local"]
+      "args": ["-y", "@wirebench/cli", "mcp", "--project", "/path/to/project", "--allow-send", "-e", "<environment>"]
     }
   }
 }
 ```
 
-The client starts the process, so it chooses the working directory. A relative path in a tool call
+Replace `<environment>` with the name of an environment your project defines; `send` may then use only
+that one (a comma-separated list names several, and leaving `-e` out allows any). The client starts the
+process, so it chooses the working directory, and it ends the server by closing its input. A relative path in a tool call
 (an `import` source, a `file` to validate) resolves against that directory: tell the agent to use
 absolute paths.
 
@@ -42,7 +44,7 @@ you set must be at least 16 characters with no spaces; a shorter one stops the s
   "mcpServers": {
     "wirebench": {
       "url": "http://127.0.0.1:8931/mcp",
-      "headers": { "Authorization": "Bearer abc123def456ghi789abc123def456ghi789" }
+      "headers": { "Authorization": "Bearer <token>" }
     }
   }
 }
@@ -50,7 +52,9 @@ you set must be at least 16 characters with no spaces; a shorter one stops the s
 
 A request without the token gets 401, and one from a web page on another origin, or with a `Host` other
 than `127.0.0.1` or `localhost` on that port, gets 403. Each client session has its own server with the
-same gates. One process holds at most 64 live sessions, and sessions last until you stop the process.
+same gates. One process holds at most 64 live sessions: past that, the session idle longest is closed,
+and its client must initialize again. All clients share the one token, so treat it as one identity. Any path other than `/mcp` gets 404, and `--http 80` is refused
+(a port from 1 to 65535 otherwise).
 
 ## Tools
 
@@ -70,8 +74,8 @@ agent can tell you what to allow. `-e local,staging` limits the environments `se
 `-e` a send that would use no environment is refused.
 
 `validate` and `query` read a History entry (`historyId`), a file (`file`) or the text itself (`text`);
-pass exactly one. A `file` is any regular file of 16 MiB or less that the server process can read; History
-files are refused, so read those through `historyId`. `send` also takes a `body` that replaces the saved
+pass exactly one. A `file` is any regular file of 16 MiB or less that the server process can read; the `.jsonl`
+files in the History folder in use are refused, so read those through `historyId`. `send` also takes a `body` that replaces the saved
 body for that one send. It is sent as written, so a placeholder such as `${…}` in it is refused; the saved
 request's own body still expands placeholders as usual.
 
@@ -79,8 +83,9 @@ request's own body still expands placeholders as usual.
 reach, so allow it only for a project and a machine you are content to have the agent work on. The
 desktop is stricter (it imports from project roots and files you pick); the server is not.
 
-A few limits keep a result small: `query` returns at most 64 KiB per result and 256 KiB in all,
-`history_diff` at most 256 KiB of changes, and both say `truncated` when they cut. `history_list`
+A few limits keep a result small: `query` returns at most 64 Ki characters per result and 256 Ki in all,
+`history_diff` at most 256 Ki characters of changes, and both say `truncated` when they cut. `send`
+cuts a response body at 256 Ki characters and sets `bodyTruncated`. `history_list`
 returns 20 entries unless asked for more, up to 200.
 
 REST is covered in part: `validate` checks responses only, using the status from the History entry
@@ -88,12 +93,18 @@ REST is covered in part: `validate` checks responses only, using the status from
 gRPC and WebSocket requests are listed in the project but `send` refuses them with `unsupported-kind`.
 
 <Aside type="note" title="What the agent sees">
-Results are redacted the way the app's HTTP log is: authorization headers, cookies and API keys are
-masked, and so is every secret value the call resolved. `validate`, `query` and `history_diff` redact
-a message before they read it, so a query cannot probe a secret. A plain-text body that is neither XML nor
-JSON is masked only for resolved secrets, not by key name. Secrets come from `WIREBENCH_SECRET_<NAME>`
-variables in the environment the server was started in, and only the ones the saved request uses; no
-tool takes a secret as input.
+Results are redacted by pattern, as the app's HTTP log is. That masks the `Authorization`,
+`Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-API-Key` headers; a URL's password (its user name
+stays) and the value of a query parameter from a fixed list such as `api_key`, `token`, `key` and
+`signature`; the text of a WS-Security `Password` element; and the values under secret-looking JSON or
+form keys such as `password`, `secret`, `token` and `api_key`. It also masks every secret value the
+call resolved. A value under any other name, such as an `ApiToken` element, stays readable. `validate`,
+`query` and `history_diff` apply the pattern redaction to a message before they read it, so those
+values never appear in their results; that does not stop a query from reading a secret the patterns
+miss. They read a message as XML when it starts with `<` and as JSON otherwise, while `send` goes by
+the response's declared `Content-Type`: a body of any other type is masked only for the secret values
+resolved for that send. Secrets come from `WIREBENCH_SECRET_<NAME>` variables in the environment the
+server was started in, and only the ones the saved request uses; no tool takes a secret as input.
 </Aside>
 
 ## History

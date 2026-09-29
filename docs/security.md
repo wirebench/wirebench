@@ -132,16 +132,25 @@ not gated: the person typing the command has allowed it. The gates belong to the
   lists when it is given; under `--env`, a send that resolves no environment is refused. `import`
   writes the project only with `--allow-write`. A gated tool is still listed and answers
   `send-not-allowed` or `write-not-allowed`, naming the flag.
-- **Redaction.** Every tool result and every error passes one step before it leaves: the engine's
-  header, URL, XML and structured-body redactors, then every secret value the call resolved, masked
-  with the same masker as `wirebench run`. `validate`, `query` and `history_diff` redact the message
-  before they read it, so a query cannot probe a secret and a diff never shows one. Column numbers in
-  a validation problem count on the redacted text. A plain-text body that is neither XML nor JSON gets
-  no key-based masking, only the masking of resolved secrets. No tool accepts a secret value as input;
-  secrets come from `WIREBENCH_SECRET_<NAME>` variables in the server's environment, and only the
-  ones the saved request uses are read. History is stored as the desktop stores it and is not an
-  agent-facing surface: the tools read it through the redaction, and the `file` source refuses the
-  History files.
+- **Redaction, by pattern.** Every tool result and every error passes one step before it leaves: the
+  engine's header, URL, XML and structured-body redactors, then every secret value the call resolved,
+  masked with the same masker as `wirebench run`. The patterns mask the `Authorization`,
+  `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-API-Key` headers; a URL's password and the value of
+  a query parameter from a fixed list (`api_key`, `token`, `key`, `signature` and the like; the user name
+  stays); the text of a WS-Security `Password` element; and the values under secret-looking JSON or form
+  keys from the engine's fixed list (`password`, `secret`, `token`, `api_key`, `authorization` and the
+  like). A value under any other name, such as `<ApiToken>`, stays readable unless it is a secret the
+  call resolved. `validate`, `query` and `history_diff` apply the pattern redaction to the message before
+  they read it, so those values are never in what they return; that is all it promises, not that a
+  query cannot learn a secret the patterns do not cover. Column numbers in a validation problem count
+  on the redacted text. Those three read a message as XML when its text starts with `<` and as JSON
+  otherwise; `send` goes by the response's declared `Content-Type`, so its key-based masking covers XML,
+  and JSON or form bodies only when the response declares that type. Any other body is masked only for
+  the secret values resolved for the send. No tool accepts a secret value as input; secrets come from
+  `WIREBENCH_SECRET_<NAME>` variables in the server's environment, and only the ones the saved request
+  uses are read. History is stored as the desktop stores it and is not an agent-facing surface: the
+  tools read it through the redaction, and the `file` source refuses the `.jsonl` files in the History
+  folder in use.
 - **The `send` body override is sent as written.** A `${…}` placeholder in it is refused, because it
   would expand against the server's own environment (`${#System#NAME}` reads the process
   environment). The saved request's own body still expands placeholders as usual, and the override
@@ -153,20 +162,25 @@ not gated: the person typing the command has allowed it. The gates belong to the
   no spaces, or the server refuses to start (exit 2). A request whose `Origin` is not
   `http://localhost:<port>` or `http://127.0.0.1:<port>` is refused with 403 before the token is looked
   at, and so is one whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>`; together they
-  stop a web page from reaching the server through DNS rebinding. A request body is capped at 16 MiB.
-  One process holds at most 64 live sessions (an initialize beyond that gets 503), and sessions have no
-  idle timeout: stop the process to drop them.
+  stop a web page from reaching the server through DNS rebinding. Any path other than
+  `/mcp` gets 404, and `--http 80` is refused because clients drop the default port from `Host` and
+  `Origin`. A request body is capped at 16 MiB; at most 128 connections are open at once, and one that
+  has not finished its headers in 10 seconds is dropped. One process holds at most 64 live sessions:
+  a new one past that closes the session idle longest, whose client gets 404 on its next request and
+  must initialize again. Every client shares the one token, so any holder of it can close other clients' sessions by opening
+  new ones. There is no idle timeout below the cap: stop the process to drop them.
 - **No model runs in Wirebench.** The server answers tool calls; the agent, its model and its prompts
   live outside the app. Nothing is sent anywhere except the requests the user or the agent asks
   `send` to make.
 - **Files and URLs are reached with the server's rights.** With `--allow-write`, `import` reads any
   local path the process can read, or fetches any http(s) URL the machine's network reaches; the
   desktop's import is limited to project roots and files the user picked, the server's is not.
-  `validate` and `query` read any regular file of 16 MiB or less the process can read (History files
-  excepted). A relative path resolves against the working directory, which an MCP client chooses, so
+  `validate` and `query` read any regular file of 16 MiB or less the process can read (the `.jsonl`
+  files in the History folder in use excepted). A relative path resolves against the working directory, which an MCP client chooses, so
   give absolute paths. Start the server as a user, and in a project, you mean the agent to work on.
-- **Bounded results.** `query` returns at most 64 KiB per result and 256 KiB in total, and
-  `history_diff` at most 256 KiB of changes, so a large response cannot flood the agent's context; both
+- **Bounded results.** `query` returns at most 64 Ki characters per result and 256 Ki in total, and
+  `history_diff` at most 256 Ki characters of changes, and `send` cuts a response body at 256 Ki
+  characters (`bodyTruncated`), so a large response cannot flood the agent's context; both
   set `truncated`.
 
 ## Paths from the renderer are proven, not trusted
