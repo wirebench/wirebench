@@ -99,4 +99,33 @@ describe('the Callback assertion kind (callback-assertion §5)', () => {
     expect(label('sequence-callback-expect-kind')).toBe('Expect');
     expect(screen.getByLabelText('Regex')).toBe(screen.getByTestId('sequence-callback-path-regex'));
   });
+
+  it('stops adding header matches and checks at the engine limits', () => {
+    const header = { name: 'X-Event', exists: true };
+    const check = { header: { name: 'X-Event', exists: true } };
+    mount([
+      {
+        ...CALLBACK,
+        match: { method: 'POST', headers: Array.from({ length: 20 }, () => header) },
+        expect: Array.from({ length: 20 }, () => check),
+      },
+    ]);
+    expect(screen.getByTestId('sequence-callback-add-header')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('sequence-callback-add-expect')).toHaveProperty('disabled', true);
+  });
+
+  it('can still add a header match and a check below the limits', () => {
+    mount([CALLBACK]);
+    expect(screen.getByTestId('sequence-callback-add-header')).toHaveProperty('disabled', false);
+    expect(screen.getByTestId('sequence-callback-add-expect')).toHaveProperty('disabled', false);
+  });
+
+  it('gives each catch URL input its own suggestion list', () => {
+    mount([CALLBACK, { ...CALLBACK, catchUrl: 'refunds-hook' }]);
+    const inputs = screen.getAllByTestId('sequence-callback-catch-url');
+    const lists = screen.getAllByTestId('sequence-callback-catch-urls');
+    expect(lists).toHaveLength(2);
+    expect(new Set(lists.map((list) => list.id)).size).toBe(2);
+    expect(inputs.map((input) => input.getAttribute('list'))).toEqual(lists.map((list) => list.id));
+  });
 });

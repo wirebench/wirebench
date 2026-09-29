@@ -2,9 +2,10 @@
  * A callback assertion's fields (callback-assertion spec §5): which catch URL, how long, what picks
  * the capture, and what is checked on it. Every edit replaces the assertion whole; main validates.
  */
+import { useId } from 'react';
 import type { StepAssertionWire } from '../../../shared/wire-types.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
-import { withinMsOf } from './callback-text.js';
+import { CALLBACK_BOUNDS, withinMsOf } from './callback-text.js';
 import { CheckEditor, type CheckFields } from './check-editor.js';
 import { CheckField, CommitInput, FieldRow, SelectField } from './step-fields.js';
 
@@ -87,6 +88,8 @@ export interface CallbackFieldsProps {
 
 export function CallbackFields({ assertion, onChange }: CallbackFieldsProps) {
   const hooks = useWebhooksStore((state) => state.hooks);
+  // One suggestion list per input: two callbacks in a step must not share a DOM id.
+  const catchUrlListId = useId();
   const { match } = assertion;
   const { body } = match;
   const method = match.method ?? '';
@@ -106,11 +109,11 @@ export function CallbackFields({ assertion, onChange }: CallbackFieldsProps) {
           label="Catch URL"
           testId="sequence-callback-catch-url"
           className="w-40"
-          list="sequence-callback-catch-urls"
+          list={catchUrlListId}
           value={assertion.catchUrl}
           onCommit={(catchUrl) => onChange({ ...assertion, catchUrl: catchUrl.trim() })}
         />
-        <datalist id="sequence-callback-catch-urls">
+        <datalist id={catchUrlListId} data-testid="sequence-callback-catch-urls">
           {hooks.map((hook) => (
             <option key={hook.id} value={hook.name} />
           ))}
@@ -207,7 +210,8 @@ export function CallbackFields({ assertion, onChange }: CallbackFieldsProps) {
         <button
           type="button"
           data-testid="sequence-callback-add-header"
-          className="text-sm text-accent hover:underline"
+          className="text-sm text-accent hover:underline disabled:text-fg-subtle disabled:no-underline"
+          disabled={headers.length >= CALLBACK_BOUNDS.maxHeaderChecks}
           onClick={() => setHeaders([...headers, DEFAULT_HEADER])}
         >
           Match a header
@@ -288,7 +292,8 @@ export function CallbackFields({ assertion, onChange }: CallbackFieldsProps) {
       <button
         type="button"
         data-testid="sequence-callback-add-expect"
-        className="self-start text-sm text-accent hover:underline"
+        className="self-start text-sm text-accent hover:underline disabled:text-fg-subtle disabled:no-underline"
+        disabled={assertion.expect.length >= CALLBACK_BOUNDS.maxExpectChecks}
         onClick={() => setExpect([...assertion.expect, DEFAULT_EXPECT.body])}
       >
         Add a check
