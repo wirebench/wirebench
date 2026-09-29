@@ -238,7 +238,8 @@ export const sendOp = defineOp({
           durationMs: result.durationMs ?? 0,
           mask,
         });
-        await appendHistory(historyFileFor(context.historyDir, project.id), entry);
+        // The desktop may keep more than the default cap: a send from here never drops a kept entry.
+        await appendHistory(historyFileFor(context.historyDir, project.id), entry, { keepAtLeastCurrent: true });
         historyId = entry.id;
       } catch (error) {
         // The send happened; a busy or unwritable History must not hide its result.

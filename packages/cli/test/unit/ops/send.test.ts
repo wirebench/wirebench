@@ -181,6 +181,39 @@ describe('op send', () => {
     expect(fixture.warnings).toEqual([expect.stringContaining('history-busy') as unknown]);
   }, 15_000);
 
+  it('keeps every History entry already held, even past the default cap of 1000', async () => {
+    const fixture = await soapProject();
+    const calculator = await server(() => ({ headers: { 'Content-Type': 'text/xml' }, body: ADD_RESPONSE }));
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: calculator.url });
+    // The desktop's cap preference can exceed 1000; these 1500 are entries the user kept.
+    const kept = Array.from({ length: 1500 }, (_, index) =>
+      JSON.stringify({
+        id: `kept-${String(index).padStart(4, '0')}`,
+        at: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+        projectId: 'mcp-fixture',
+        requestName: 'Kept',
+        interfaceName: 'CalculatorService',
+        operationName: 'Add',
+        endpoint: calculator.url,
+        soapVersion: '1.1',
+        durationMs: 1,
+        ok: true,
+        status: 200,
+        request: { envelopeXml: '<Envelope/>', headers: [] },
+        response: { envelopeXml: '<Envelope/>', rawHeaders: [], status: 200, statusText: 'OK' },
+        sizeBytes: 11,
+      }),
+    );
+    await writeFile(join(fixture.historyDir, 'mcp-fixture.jsonl'), `${kept.join('\n')}\n`);
+
+    const result = await runOp(sendOp, { item: SOAP_ITEM, environment: 'local' }, fixture.base());
+
+    const lines = (await historyText(fixture.historyDir)).trim().split('\n');
+    expect(lines).toHaveLength(1501);
+    expect(lines[0]).toContain('"kept-0000"');
+    expect(lines[1500]).toContain(`"${String(result.historyId)}"`);
+  });
+
   it('masks a secret across the 256 KiB cut, so no prefix of it survives', async () => {
     const fixture = await restProject();
     const pets = await server((request) => ({

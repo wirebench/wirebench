@@ -561,6 +561,11 @@ that holds the `.jsonl` files (the desktop's `<userData>/history`), not `userDat
 the terminal or agent write the same file under a lock, and an open History panel refreshes when
 another process writes it. Each entry is tagged `cli` or `mcp` by whichever sent it.
 
+The desktop keeps as many entries as its History preference allows, which can be more than 1000. A
+send from the terminal or an agent never trims History below what the file already holds: it adds its
+entry and drops nothing, so the file can grow past the desktop's cap. The desktop's own cap applies
+again on its next write.
+
 ### Exit codes of the verbs
 
 | Code | Meaning |

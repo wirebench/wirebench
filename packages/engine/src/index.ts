@@ -852,6 +852,7 @@ export {
   openHistory,
 } from './project/history.js';
 export type {
+  AppendHistoryOptions,
   HistoryEntry,
   HistoryError,
   HistoryFault,

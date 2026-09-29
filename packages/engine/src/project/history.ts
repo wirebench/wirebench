@@ -242,6 +242,16 @@ export interface HistoryOptions {
   readonly lock?: HistoryLockOptions;
 }
 
+/** Options accepted by {@link appendHistory}. */
+export interface AppendHistoryOptions extends HistoryOptions {
+  /**
+   * Never drop an entry the file already holds: the cap trims only down to the current count, so
+   * the file may grow past `cap`. For a writer that does not know the cap the user chose (the
+   * desktop's own cap applies again on its next write).
+   */
+  readonly keepAtLeastCurrent?: boolean;
+}
+
 /** Filters accepted by {@link HistoryFile.list}. */
 export interface HistoryListQuery {
   /** Case-insensitive substring match over name/operation/interface/endpoint/status/fault/tags. */
@@ -450,14 +460,23 @@ async function withLock<T>(file: string, options: HistoryLockOptions | undefined
 
 /**
  * Appends one entry to `file` under the file's lock, rotating so at most `cap` (default 1000)
- * entries remain — the oldest are dropped first. Stateless: rereads the whole file first, so prefer
- * {@link openHistory} when appending more than once (it keeps the entries cached in memory).
+ * entries remain — the oldest are dropped first. With `keepAtLeastCurrent`, no entry already in the
+ * file is dropped. Stateless: rereads the whole file first, so prefer {@link openHistory} when
+ * appending more than once (it keeps the entries cached in memory).
  */
-export async function appendHistory(file: string, entry: HistoryEntry, options: HistoryOptions = {}): Promise<void> {
+export async function appendHistory(
+  file: string,
+  entry: HistoryEntry,
+  options: AppendHistoryOptions = {},
+): Promise<void> {
   const fs = options.fs ?? nodeFs;
-  const cap = options.cap ?? DEFAULT_CAP;
   await withLock(file, options.lock, async () => {
     const { entries } = await readAll(fs, file);
+    // Decided after the reread, inside the lock: every entry held now, plus the new one, stays.
+    const cap =
+      options.keepAtLeastCurrent === true
+        ? Math.max(options.cap ?? DEFAULT_CAP, entries.length + 1)
+        : (options.cap ?? DEFAULT_CAP);
     entries.push(entry);
     const capped = entries.length > cap ? entries.slice(entries.length - cap) : entries;
     await writeFileAtomic(fs, file, serialise(capped));
