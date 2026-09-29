@@ -36,6 +36,8 @@ import { ParamsTab } from './params-tab.js';
 import { RestBreadcrumb } from './rest-breadcrumb.js';
 import { restSendBlocked, setRestSendBlocked } from './send-blocked.js';
 import { SettingsTab } from './settings-tab.js';
+import { SigningTab } from './signing-tab.js';
+import { inheritedSigningOf } from '../webhook-items/signing.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
 import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
@@ -57,6 +59,8 @@ const TABS = [
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
+  // Webhook items only (webhook-signatures §5.2).
+  { id: 'signing', label: 'Signing' },
   { id: 'scripts', label: 'Scripts' },
   { id: 'settings', label: 'Settings' },
 ] as const;
@@ -180,6 +184,8 @@ export function RestEditor({ requestId }: RestEditorProps) {
   }
 
   const sending = exchange?.status === 'sending';
+  // Only a webhook item has a Signing tab; any other request shows Params rather than nothing.
+  const shownTab: TabId = tab === 'signing' && !isWebhookItem ? 'params' : tab;
   const orientation = groupOrientation(layout);
   const relative = !isAbsoluteUrl(request.url);
   const invalidTargetMessage =
@@ -214,20 +220,20 @@ export function RestEditor({ requestId }: RestEditorProps) {
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <Tabs
         label="Request tabs"
-        items={TABS.map((item) =>
+        items={TABS.filter((item) => item.id !== 'signing' || isWebhookItem).map((item) =>
           item.id === 'scripts' && hasScripts(request.scripts) ? { ...item, badge: '●' } : item,
         )}
-        active={tab}
+        active={shownTab}
         onSelect={setTab}
       />
       {/* A flex column, so a tab that fills the pane (the raw body's editor) is given a height
           rather than collapsing to its content. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {tab === 'params' && (
+        {shownTab === 'params' && (
           <ParamsTab url={request.url} pathParams={request.pathParams} query={request.query} onChange={stage} />
         )}
-        {tab === 'headers' && <HeadersTab headers={request.headers} body={request.body} onChange={stage} />}
-        {tab === 'body' && (
+        {shownTab === 'headers' && <HeadersTab headers={request.headers} body={request.body} onChange={stage} />}
+        {shownTab === 'body' && (
           <BodyTab
             requestId={requestId}
             method={request.method}
@@ -241,7 +247,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
             }}
           />
         )}
-        {tab === 'auth' && (
+        {shownTab === 'auth' && (
           <RestAuthTab
             requestId={requestId}
             auth={request.auth}
@@ -251,8 +257,15 @@ export function RestEditor({ requestId }: RestEditorProps) {
             }}
           />
         )}
-        {tab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
-        {tab === 'settings' && (
+        {shownTab === 'signing' && isWebhookItem && (
+          <SigningTab
+            request={request}
+            inherited={inheritedSigningOf(folderMap, request.folderId, webhookCollection)}
+            onChange={stage}
+          />
+        )}
+        {shownTab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
+        {shownTab === 'settings' && (
           <SettingsTab
             settings={request.settings}
             inherited={{

@@ -3,6 +3,9 @@
  * a save made inside that pause must not go out without it: main's copy of the request is what is
  * sent and saved. So every open script editor registers a flush here, and the send and save
  * actions wait for {@link flushScriptEdits} before they start.
+ *
+ * A webhook item's **Signing** tab registers here too: a signing secret typed but not saved on its
+ * own is stored, and its ref staged, before the send or save reads the request.
  */
 
 const flushes = new Set<() => Promise<void>>();

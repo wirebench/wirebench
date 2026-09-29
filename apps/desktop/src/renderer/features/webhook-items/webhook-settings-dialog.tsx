@@ -7,6 +7,10 @@
  * uses — rather than a plain text box, so a `${…}` in a webhook target is as visible here as it is
  * in a request's own URL bar.
  *
+ * Both carry the signing controls (webhook-signatures §5.2): the collection's scheme, or a folder's
+ * own override of what it inherits. The collection has nothing above it, so it offers no *Inherit*,
+ * and an unset collection signing reads — and, once touched, saves — as *None*.
+ *
  * A folder has no Auth block: its *Auth…* item (the same {@link AuthFields} form as everywhere
  * else) already covers it, the way a REST folder's credentials live in `folder-auth-dialog.tsx`
  * rather than here.
@@ -20,8 +24,10 @@ import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { PropertyHighlightInput } from '../rest-editor/property-highlight-input.js';
 import { folderChainOf, useProjectStore } from '../../state/project.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
+import { SigningFields } from './signing-fields.js';
+import { inheritedSigningOf, signingSummary } from './signing.js';
 import { useWebhookItemsDialogs } from './webhook-items-state.js';
-import type { AuthConfigWire, RestFolderWire } from '../../../shared/wire-types.js';
+import type { AuthConfigWire, RestFolderWire, WebhookSigningWire } from '../../../shared/wire-types.js';
 
 const ITEM_CLASS =
   'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-fg-default outline-none data-[highlighted]:bg-accent-muted';
@@ -63,6 +69,14 @@ export function WebhookSettingsDialog() {
   const registerAuthFlush = useCallback((flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => {
     authFlush.current = flush;
   }, []);
+  const [signing, setSigning] = useState<WebhookSigningWire | undefined>(undefined);
+  const [signingTouched, setSigningTouched] = useState(false);
+  // What would make main refuse the signing (a CI name or a scheme field); Save waits until it is fixed.
+  const [signingProblem, setSigningProblem] = useState<string | undefined>(undefined);
+  const signingFlush = useRef<(() => Promise<string | undefined>) | undefined>(undefined);
+  const registerSigningFlush = useCallback((flush: (() => Promise<string | undefined>) | undefined) => {
+    signingFlush.current = flush;
+  }, []);
 
   // Filled once per opening, like the catch URL settings dialog: a store update while this is open
   // (another tab editing the same target) must not undo what the user is typing.
@@ -77,6 +91,8 @@ export function WebhookSettingsDialog() {
     setHasOverride(openedFolder?.target !== undefined);
     setAuth(collection?.auth);
     setAuthTouched(false);
+    setSigning(settings.folderId === undefined ? collection?.signing : openedFolder?.signing);
+    setSigningTouched(false);
   }, [settings]);
 
   if (settings === undefined) {
@@ -97,13 +113,32 @@ export function WebhookSettingsDialog() {
   const showsCatchUrlMenu = server !== undefined && meta?.enabled === true;
 
   const save = async (): Promise<void> => {
+    if (signingProblem !== undefined) {
+      return;
+    }
+    // A signing secret typed but not saved on its own is stored now, and its fresh ref saved.
+    const flushedRef = await signingFlush.current?.();
+    const signingNow =
+      signing?.mode === 'sign' && flushedRef !== undefined && flushedRef !== signing.secretRef
+        ? { ...signing, secretRef: flushedRef }
+        : signing;
+    const signingChanged = signingTouched || signingNow !== signing;
     if (folderId !== undefined) {
       await useProjectStore.getState().setWebhookFolderTarget(projectId, folderId, hasOverride ? targetDraft : null);
+      if (signingChanged) {
+        await useProjectStore.getState().setWebhookFolderSigning(projectId, folderId, signingNow ?? null);
+      }
     } else {
-      const patch: { target?: string; auth?: AuthConfigWire | null } = { target: targetDraft };
+      const patch: { target?: string; auth?: AuthConfigWire | null; signing?: WebhookSigningWire | null } = {
+        target: targetDraft,
+      };
       const flushed = await authFlush.current?.();
       if (authTouched || (flushed !== undefined && flushed !== auth)) {
         patch.auth = flushed ?? auth ?? null;
+      }
+      if (signingChanged) {
+        // The collection has no Inherit: an unset signing it was shown as None saves as None.
+        patch.signing = signingNow ?? { mode: 'none' };
       }
       await useProjectStore.getState().updateWebhooks(projectId, patch);
     }
@@ -140,7 +175,7 @@ export function WebhookSettingsDialog() {
           <Dialog.Description className="mt-1 text-xs text-fg-subtle">
             {isFolder
               ? 'Overrides the target for every webhook item in this folder.'
-              : 'Where a webhook item sends by default, and the credentials it sends with.'}
+              : 'Where a webhook item sends by default, the credentials it sends with, and how it signs.'}
           </Dialog.Description>
 
           <form
@@ -231,11 +266,35 @@ export function WebhookSettingsDialog() {
               </div>
             )}
 
+            <div className="mt-4 border-t border-hairline pt-3">
+              {isFolder && signing === undefined && (
+                <p data-testid="webhook-settings-signing-source" className="text-xs text-fg-subtle">
+                  {signingSummary(inheritedSigningOf(foldersMap, folder?.parentId, collection))}
+                </p>
+              )}
+              <SigningFields
+                value={signing ?? (isFolder ? undefined : { mode: 'none' })}
+                inherit={isFolder}
+                nodeName={isFolder ? (folder?.name ?? '') : 'Webhooks'}
+                registerFlush={registerSigningFlush}
+                onProblemChange={setSigningProblem}
+                onChange={(next) => {
+                  setSigning(next);
+                  setSigningTouched(true);
+                }}
+              />
+            </div>
+
             <div className="mt-4 flex justify-end gap-2">
               <Dialog.Close asChild>
                 <Button data-testid="webhook-settings-cancel">Cancel</Button>
               </Dialog.Close>
-              <Button type="submit" data-testid="webhook-settings-save" variant="primary">
+              <Button
+                type="submit"
+                data-testid="webhook-settings-save"
+                variant="primary"
+                disabled={signingProblem !== undefined}
+              >
                 Save
               </Button>
             </div>

@@ -54,6 +54,7 @@ import type {
   RestRequestPatchWire,
   RestRequestWire,
   WebhookCollectionWire,
+  WebhookSigningWire,
 } from '../../shared/wire-types.js';
 import type { ExplorerGrpcData, ExplorerRestData, ExplorerWsData } from '../features/explorer/tree-nodes.js';
 import { useDraftsStore } from './drafts.js';
@@ -324,6 +325,12 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly addWebhookFolder: (projectId: string, parentId?: string, name?: string) => Promise<string>;
   /** Overrides (or, with `null`, clears) one webhook folder's own target. */
   readonly setWebhookFolderTarget: (projectId: string, folderId: string, target: string | null) => Promise<void>;
+  /** Sets (or, with `null`, clears back to inheriting) one webhook folder's own signing. */
+  readonly setWebhookFolderSigning: (
+    projectId: string,
+    folderId: string,
+    signing: WebhookSigningWire | null,
+  ) => Promise<void>;
   /** Adds a gRPC API to one project and returns its id. */
   readonly addGrpcApi: (projectId: string, name: string, target?: string) => Promise<string>;
   /** Imports a `.proto` set as a new gRPC API; main reads, maps, caches and saves in one call. */
@@ -592,7 +599,7 @@ export function layerRestEdits(
   if (draftPatch === undefined) {
     return request;
   }
-  return {
+  const layered: RestRequestWire = {
     ...request,
     ...(draftPatch.name !== undefined ? { name: draftPatch.name } : {}),
     ...(draftPatch.description !== undefined ? { description: draftPatch.description ?? undefined } : {}),
@@ -604,7 +611,15 @@ export function layerRestEdits(
     ...(draftPatch.body !== undefined ? { body: draftPatch.body } : {}),
     ...(draftPatch.auth !== undefined ? { auth: draftPatch.auth } : {}),
     ...(draftPatch.settings !== undefined ? { settings: draftPatch.settings } : {}),
+    ...(draftPatch.signing !== undefined && draftPatch.signing !== null ? { signing: draftPatch.signing } : {}),
   };
+  // A staged `null` puts a webhook item back to inheriting its signing: no key at all.
+  if (draftPatch.signing !== null) {
+    return layered;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+  const { signing: _inherit, ...rest } = layered;
+  return rest;
 }
 
 /** One gRPC request's staged-but-unsaved patch, or `undefined` when it is clean. */
@@ -1011,6 +1026,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       apply(projectId, result.value.project);
     }
     return result.value;
+  };
+
+  /** One webhook folder's own target or signing; a `null` in the change clears it back to inheriting. */
+  const setWebhookFolderField = async (
+    projectId: string,
+    change: Extract<ProjectChange, { kind: 'set-webhook-folder-target' | 'set-webhook-folder-signing' }>,
+  ): Promise<void> => {
+    await mutate(projectId, change);
   };
 
   /** `mutate`, for a change addressed at an entity rather than at a project. */
@@ -1855,7 +1878,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     setWebhookFolderTarget: async (projectId, folderId, target) => {
-      await mutate(projectId, { kind: 'set-webhook-folder-target', folderId, target });
+      await setWebhookFolderField(projectId, { kind: 'set-webhook-folder-target', folderId, target });
+    },
+
+    setWebhookFolderSigning: async (projectId, folderId, signing) => {
+      await setWebhookFolderField(projectId, { kind: 'set-webhook-folder-signing', folderId, signing });
     },
 
     addEnvironment: async (projectId, name) => {
