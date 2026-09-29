@@ -1,0 +1,59 @@
+---
+title: Callback assertions
+description: Check the webhook a request causes, in a sequence step or a CI run.
+---
+
+A **callback assertion** passes when a request's send causes a webhook. After the send, Wirebench
+waits for a capture at one of the workspace's [catch URLs](/wirebench/guides/webhooks/), takes the
+first one that fits, and checks it.
+
+## Add one
+
+1. Point the system under test at a catch URL of the server workspace, for example `orders-hook`.
+2. In a sequence step, choose **Add assertion**, then **Callback**.
+3. Choose the **Catch URL** and how long to wait in **Within (s)**: 1 to 300 seconds, 30 by default.
+4. Narrow which capture counts: a **Method**, a **Path** (exact, or a pattern with **Regex**), headers, a body value.
+5. Add what is checked on it under **Expect**: a body value, a header, or **Signature verified**.
+
+Only captures that arrive after the send count. When a step runs twice, the second run never reuses the first run's callback.
+
+```yaml
+assertions:
+  - type: callback
+    catchUrl: orders-hook
+    withinMs: 30000
+    match:
+      method: POST
+      path: /events/order-paid
+      body: { language: jsonpath, path: $.orderId, equals: '${#Sequence#orderId}' }
+    expect:
+      - body: { language: jsonpath, path: $.status, equals: paid }
+      - signature: verified
+```
+
+`equals` and `matches` values expand properties like the values of other assertions do: a value an
+earlier step transferred, an environment property, `${#System#…}`. Names, paths and the method are
+used as written. An expanded value can appear in a failure message, so keep credentials out of
+callback assertions.
+
+## What the result says
+
+| Result  | Message                                                                                  |
+| ------- | ---------------------------------------------------------------------------------------- |
+| Passed  | `matched capture 01K… after 2.0 s`                                                       |
+| Failed  | `matched 01K…, but $.status: expected "paid", got "failed"`                              |
+| Failed  | `no capture matched within 5 s — 2 arrived; closest: POST /events/refund (path differs)` |
+| Failed  | `no capture arrived at orders-hook within 5 s`                                           |
+| Errored | the workspace has no server, or no catch URL has that name                               |
+
+While a step waits, its row in the run panel reads `waiting for orders-hook… (up to 30 s)`. In the
+desktop app, **Show capture** opens the matched capture in its catch URL tab.
+
+## In CI
+
+`wirebench run` checks callbacks when `WIREBENCH_SERVER_URL` and `WIREBENCH_SERVER_TOKEN` are set.
+The token is a **CI token**. An editor or admin creates one with **Create CI token…** in
+**Preferences → Devices & tokens**. It is read-only and belongs to one workspace: it can read that
+workspace's catch URL list and captures, and nothing else. Without the two variables, the request
+still runs and each callback assertion is reported as errored (exit code 3). See
+[Run in CI](/wirebench/guides/run-in-ci/).

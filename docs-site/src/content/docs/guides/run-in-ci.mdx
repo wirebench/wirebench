@@ -129,6 +129,18 @@ A token with no variable set fails that request with `secret-missing` — *Set
 WIREBENCH_SECRET_BILLING_KEY to run "…"* — rather than sending an empty value. See [Secret tokens and scanning](/wirebench/guides/secrets/#secret-tokens-and-scanning) for
 how a value ends up behind a token.
 
+## Callback assertions
+
+A step or request with a [callback assertion](/wirebench/guides/callback-assertions/) waits for a
+webhook at a catch URL of a Wirebench Server workspace. To check it in a pipeline:
+
+- Set `WIREBENCH_SERVER_URL` to the server, and `WIREBENCH_SERVER_TOKEN` to a CI token of the
+  workspace, stored as a pipeline secret. An editor or admin creates the token in **Preferences →
+  Devices & tokens**. A blank value counts as unset.
+- The token never appears in the output or the reports.
+- A wrong or revoked token errors every callback assertion with the server's answer, and the run exits 3.
+  With the variables unset, callback assertions error the same way and the rest of the run goes on.
+
 ## What comes back
 
 Every recipe above is the same CLI underneath, so the outcome is identical whichever one runs it:
