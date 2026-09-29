@@ -258,7 +258,7 @@ describe('callback assertions in the run panel (callback-assertion §5)', () => 
     expect(assertion.dataset['outcome']).toBe('passed');
     expect(assertion.textContent).toContain(`matched capture ${CAPTURE} after 2.0 s`);
 
-    useWebhooksStore.setState({ hooks: [{ id: HOOK, name: 'orders-hook' } as CatchUrlWire] });
+    act(() => useWebhooksStore.setState({ hooks: [{ id: HOOK, name: 'orders-hook' } as CatchUrlWire] }));
     fireEvent.click(screen.getByTestId('sequence-run-capture-link'));
     expect(useCaptureFocusStore.getState().focus).toEqual({ hookId: HOOK, captureId: CAPTURE });
     expect(JSON.stringify(useEditorsStore.getState())).toContain(`catch-url:${HOOK}`);
@@ -277,7 +277,7 @@ describe('callback assertions in the run panel (callback-assertion §5)', () => 
     unsubscribe();
   });
 
-  it('drops a waiting event for another run, and a stale focus when the catch URL is not known (P10)', async () => {
+  it('drops a waiting event for another run, and disables the link for a catch URL not in the workspace (P10)', async () => {
     const unsubscribe = subscribeToSequenceProgress();
     mount();
     fireEvent.click(screen.getByTestId('sequence-run'));
@@ -295,10 +295,19 @@ describe('callback assertions in the run panel (callback-assertion §5)', () => 
     expect(screen.queryByTestId('sequence-run-waiting')).toBeNull();
 
     act(() => listeners.get('sequence.progress')?.({ runId, sequenceId: 'seq-1', step: CALLBACK_STEP }));
-    useCaptureFocusStore.getState().focusCapture('01K000000000000000000000H2', CAPTURE);
-    fireEvent.click(screen.getByTestId('sequence-run-capture-link'));
+    // The catch URL is not in the open workspace: the link is disabled and says why; the id stays.
+    const link = screen.getByTestId<HTMLButtonElement>('sequence-run-capture-link');
+    expect(link.disabled).toBe(true);
+    expect(link.title).toBe('This catch URL isn’t in the open workspace');
+    expect(screen.getByTestId('sequence-run-assertion').textContent).toContain(CAPTURE);
+    fireEvent.click(link);
     expect(useCaptureFocusStore.getState().focus).toBeUndefined();
     expect(JSON.stringify(useEditorsStore.getState())).not.toContain(`catch-url:${HOOK}`);
+
+    // Once the workspace lists it, the link works.
+    act(() => useWebhooksStore.setState({ hooks: [{ id: HOOK, name: 'orders-hook' } as CatchUrlWire] }));
+    expect(link.disabled).toBe(false);
+    expect(link.title).toBe('');
 
     await act(async () => {
       resolveRun?.({

@@ -48,6 +48,23 @@ function showCapture(hookId: string, captureId: string): void {
   openCatchUrlTab(hookId);
 }
 
+/** A matched capture's link; disabled, with why, when the catch URL is not in the open workspace. */
+function CaptureLink({ hookId, captureId }: { readonly hookId: string; readonly captureId: string }) {
+  const known = useWebhooksStore((state) => state.hooks.some((hook) => hook.id === hookId));
+  return (
+    <button
+      type="button"
+      data-testid="sequence-run-capture-link"
+      disabled={!known}
+      title={known ? undefined : 'This catch URL isn’t in the open workspace'}
+      className="ml-2 text-accent enabled:hover:underline disabled:cursor-not-allowed disabled:text-fg-subtle"
+      onClick={() => showCapture(hookId, captureId)}
+    >
+      Show capture
+    </button>
+  );
+}
+
 /** Opens History searched for this run's tag, which every step's entry carries. */
 function showInHistory(runId: string): void {
   useUiStore.getState().setSidebarView('history');
@@ -101,18 +118,7 @@ function StepRow({ step }: { readonly step: SequenceStepResultWire }) {
                     ? ` — ${assertion.message}`
                     : '')}
               {assertion.capture !== undefined && (
-                <button
-                  type="button"
-                  data-testid="sequence-run-capture-link"
-                  className="ml-2 text-accent hover:underline"
-                  onClick={() => {
-                    if (assertion.capture !== undefined) {
-                      showCapture(assertion.capture.hookId, assertion.capture.captureId);
-                    }
-                  }}
-                >
-                  Show capture
-                </button>
+                <CaptureLink hookId={assertion.capture.hookId} captureId={assertion.capture.captureId} />
               )}
             </p>
           ))}
