@@ -48,6 +48,24 @@ describe('allMigrations', () => {
     expect(combined.map((m) => `${m.version}_${m.name}`)).toEqual(['1_init', '2_identity', '3_teams', '4_access']);
   });
 
+  it('reads every folder of a module that brings more than one', async () => {
+    const identity = await folder('0002_identity.sql');
+    const capture = await folder('0003_capture.sql');
+    const signatures = await folder('0004_signatures.sql');
+    const hooks: ServerModule = {
+      name: 'webhook-capture',
+      migrationsDir: [capture, signatures],
+      register: () => Promise.resolve(),
+    };
+    const combined = await allMigrations([moduleWith(identity), hooks]);
+    expect(combined.map((m) => `${m.version}_${m.name}`)).toEqual([
+      '1_init',
+      '2_identity',
+      '3_capture',
+      '4_signatures',
+    ]);
+  });
+
   it('refuses a gap across folders', async () => {
     const error = await refusal([moduleWith(await folder('0003_teams.sql'))]);
     expect(error.exitCode).toBe(3);

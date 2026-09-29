@@ -180,7 +180,7 @@ export interface ServerModule {
    * `migrations/identity/0002_identity.sql`): the package ships `migrations/` beside `dist/`, and
    * `tsc` copies no `.sql` files, so a folder under `src/` would be missing from the image.
    */
-  readonly migrationsDir?: string;
+  readonly migrationsDir?: string | readonly string[];
   register(app: FastifyInstance, ctx: ServerContext): Promise<void>;
   /**
    * Routes served at the root, outside `/api/v1` and outside every module hook: a page a browser

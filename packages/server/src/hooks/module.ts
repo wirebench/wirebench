@@ -18,6 +18,10 @@ import { CaptureSweeper } from './sweep.js';
 
 /** Beside `dist/`, like every module's migrations (`ServerModule.migrationsDir`). */
 export const HOOKS_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/webhook-capture/', import.meta.url));
+/** webhook-signatures' columns (capability map, third slice): the same module owns the tables. */
+export const SIGNATURES_MIGRATIONS_DIR = fileURLToPath(
+  new URL('../../migrations/webhook-signatures/', import.meta.url),
+);
 
 export interface HooksOptions {
   /** Injected clock: `received_at`, the buckets' refill and the sweep's cutoff. */
@@ -51,7 +55,7 @@ export function hooksModule(options: HooksOptions = {}): ServerModule {
 
   return {
     name: 'webhook-capture',
-    migrationsDir: HOOKS_MIGRATIONS_DIR,
+    migrationsDir: [HOOKS_MIGRATIONS_DIR, SIGNATURES_MIGRATIONS_DIR],
 
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       const env = envFor(ctx);

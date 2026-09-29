@@ -90,7 +90,9 @@ export async function allMigrations(
   modules: readonly ServerModule[],
   hostDir: string = MIGRATIONS_DIR,
 ): Promise<readonly Migration[]> {
-  const moduleDirs = modules.flatMap((m) => (m.migrationsDir !== undefined ? [m.migrationsDir] : []));
+  const moduleDirs = modules.flatMap((m) =>
+    m.migrationsDir === undefined ? [] : typeof m.migrationsDir === 'string' ? [m.migrationsDir] : [...m.migrationsDir],
+  );
   let perFolder: (readonly Migration[])[];
   try {
     perFolder = await Promise.all([
