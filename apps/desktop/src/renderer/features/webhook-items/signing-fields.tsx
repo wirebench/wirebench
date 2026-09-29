@@ -6,6 +6,8 @@
  * name is upper-cased as it is typed and held back while it breaks the project file's `envName`
  * rule — shown with an inline error, and reported through `onProblemChange` so a dialog can refuse
  * to save — since main would refuse it anyway and a saved one would make the project unloadable.
+ * A scheme field main would refuse (a bad header name, a tolerance out of range) is held back the
+ * same way: the fields show the draft, and only a scheme `schemeProblemOf` accepts is passed on.
  */
 import { useEffect, useState } from 'react';
 import { SecretField } from '../../components/secret-field.js';
@@ -15,6 +17,8 @@ import { defaultScheme, SCHEME_KINDS, SCHEME_LABELS, schemeProblemOf } from '../
 import type { SchemeKind } from '../webhooks/signature-text.js';
 import { ciNameOf, ciNameProblemOf } from './signing.js';
 import type { WebhookSigningWire } from '../../../shared/wire-types.js';
+
+type WebhookSigningScheme = Extract<WebhookSigningWire, { mode: 'sign' }>['scheme'];
 
 const LABEL_CLASS = 'mt-2 block text-sm text-fg-subtle';
 
@@ -47,8 +51,16 @@ export function SigningFields({
     setCiDraft(secretEnv);
   }, [secretEnv]);
 
+  const savedScheme = value?.mode === 'sign' ? value.scheme : undefined;
+  // What the scheme fields show: the saved scheme, or an edit of it `schemeProblemOf` refuses.
+  const [schemeDraft, setSchemeDraft] = useState(savedScheme);
+  const savedSchemeKey = JSON.stringify(savedScheme ?? null);
+  useEffect(() => {
+    setSchemeDraft((JSON.parse(savedSchemeKey) as WebhookSigningScheme | null) ?? undefined);
+  }, [savedSchemeKey]);
+
   const ciProblem = value?.mode === 'sign' ? ciNameProblemOf(ciDraft) : undefined;
-  const schemeProblem = value?.mode === 'sign' ? schemeProblemOf(value.scheme) : undefined;
+  const schemeProblem = value?.mode === 'sign' && schemeDraft !== undefined ? schemeProblemOf(schemeDraft) : undefined;
   const problem = ciProblem ?? schemeProblem;
   useEffect(() => {
     onProblemChange?.(problem);
@@ -93,8 +105,11 @@ export function SigningFields({
       {value?.mode === 'sign' && (
         <>
           <SchemeFields
-            scheme={value.scheme}
-            onChange={(scheme) => onChange({ ...value, scheme })}
+            scheme={schemeDraft ?? value.scheme}
+            onChange={(scheme) => {
+              setSchemeDraft(scheme);
+              if (schemeProblemOf(scheme) === undefined) onChange({ ...value, scheme });
+            }}
             disabled={disabled}
             prefix="signing"
           />
@@ -103,8 +118,10 @@ export function SigningFields({
               {schemeProblem}
             </p>
           )}
-          <span className={LABEL_CLASS}>Signing secret</span>
-          <div className="mt-1">
+          <span id="signing-secret-label" className={LABEL_CLASS}>
+            Signing secret
+          </span>
+          <div role="group" aria-labelledby="signing-secret-label" className="mt-1">
             <SecretField
               label="Signing secret"
               value={value.secretRef}

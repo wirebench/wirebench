@@ -123,21 +123,6 @@ export function signaturePatchOf(
   return { scheme, sealedSecret: seal(key, secret), hint: hintOf(secret) };
 }
 
-/**
- * Fastify's Ajv runs in strict mode and refuses a `default` inside a `oneOf` branch, which the scheme
- * union's tolerance carries. Defaults are applied by `signaturePatchOf`'s zod re-parse instead, so
- * the request schema is emitted without them.
- */
-function withoutDefaults(schema: unknown): unknown {
-  if (Array.isArray(schema)) return schema.map(withoutDefaults);
-  if (typeof schema !== 'object' || schema === null) return schema;
-  return Object.fromEntries(
-    Object.entries(schema)
-      .filter(([key]) => key !== 'default')
-      .map(([key, value]) => [key, withoutDefaults(value)]),
-  );
-}
-
 /** A racing duplicate answers like the name rule; a racing workspace delete like the guard. */
 function conflictOr(error: unknown): never {
   if (isUniqueViolation(error, repo.CATCH_URL_NAME_INDEX)) throw catchUrlNameTaken();
@@ -232,7 +217,7 @@ export const manageRoutes =
         preHandler: requireWorkspaceRole(db, 'editor'),
         schema: {
           params: hookParams,
-          body: withoutDefaults(jsonSchema(catchUrlUpdateRequestSchema, { io: 'input' })),
+          body: jsonSchema(catchUrlUpdateRequestSchema, { io: 'input' }),
           response: { 200: one },
         },
       },

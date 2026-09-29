@@ -230,7 +230,7 @@ describe('WebhookSettingsDialog signing (§5.2)', () => {
 
     fireEvent.change(mode(), { target: { value: 'standard' } });
     await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
-    await userEvent.type(screen.getByLabelText('Signing secret'), 'abc123def456ghi789');
+    await userEvent.type(screen.getByLabelText('Signing secret', { selector: 'input' }), 'abc123def456ghi789');
     save();
 
     await waitFor(() =>

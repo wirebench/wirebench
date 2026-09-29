@@ -147,7 +147,10 @@ describe('the Signature section in the settings dialog (§4)', () => {
     expect(screen.getByTestId('catch-url-signature-unavailable').textContent).toContain(
       'WIREBENCH_SERVER_HOOKS_SECRET_KEY',
     );
-    expect(screen.getByTestId<HTMLSelectElement>('catch-url-signature-scheme').disabled).toBe(true);
+    const scheme = screen.getByTestId<HTMLSelectElement>('catch-url-signature-scheme');
+    expect(scheme.disabled).toBe(false);
+    expect([...scheme.options].filter((option) => !option.disabled).map((option) => option.value)).toEqual(['none']);
+    expect(scheme.getAttribute('aria-describedby')).toBe('catch-url-signature-unavailable');
     cleanup();
     const older: CatchUrlWire = { ...PLAIN };
     delete older.signature;
@@ -157,5 +160,60 @@ describe('the Signature section in the settings dialog (§4)', () => {
     expect(screen.getByTestId('catch-url-settings')).toBeTruthy();
     expect(screen.getByTestId('catch-url-name')).toBeTruthy();
     expect(screen.queryByTestId('catch-url-signature')).toBeNull();
+  });
+
+  it('lets an editor untick Reject while the server has no key, and sends only that', async () => {
+    const api = setUp('editor', { ...SIGNED, signatureAvailable: false });
+    expect(screen.getByTestId<HTMLInputElement>('catch-url-signature-header').disabled).toBe(true);
+    const reject = screen.getByTestId<HTMLInputElement>('catch-url-reject-unverified');
+    expect(reject.disabled).toBe(false);
+    expect(reject.getAttribute('aria-describedby')).toBe('catch-url-signature-unavailable');
+    fireEvent.click(reject);
+    fireEvent.click(screen.getByTestId('catch-url-save'));
+    await waitFor(() => expect(api.hooks.update).toHaveBeenCalledTimes(1));
+    const sent = vi.mocked(api.hooks.update).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent.rejectUnverified).toBe(false);
+    expect('signature' in sent).toBe(false);
+  });
+
+  it('lets an editor choose None while the server has no key, which clears the signature', async () => {
+    const api = setUp('editor', { ...SIGNED, signatureAvailable: false });
+    fireEvent.change(screen.getByTestId('catch-url-signature-scheme'), { target: { value: 'none' } });
+    fireEvent.click(screen.getByTestId('catch-url-save'));
+    await waitFor(() => expect(api.hooks.update).toHaveBeenCalledTimes(1));
+    const sent = vi.mocked(api.hooks.update).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent.signature).toBeNull();
+    expect(sent.rejectUnverified).not.toBe(true);
+  });
+
+  it('disables Reject for a viewer, and for an unticked one while the server has no key', () => {
+    setUp('viewer', SIGNED);
+    expect(screen.getByTestId<HTMLInputElement>('catch-url-reject-unverified').disabled).toBe(true);
+    cleanup();
+    setUp('editor', { ...SIGNED, rejectUnverified: false, signatureAvailable: false });
+    expect(screen.getByTestId<HTMLInputElement>('catch-url-reject-unverified').disabled).toBe(true);
+  });
+
+  it('names the stored secret by its visible label, and points no label at a missing control', () => {
+    setUp('editor', SIGNED);
+    const group = screen.getByRole('group', { name: 'Secret' });
+    expect(group.textContent).toContain('● set …i789');
+    for (const label of document.querySelectorAll('label[for]')) {
+      expect(document.getElementById(label.getAttribute('for') ?? '')).not.toBeNull();
+    }
+  });
+
+  it('shows a cleared tolerance as empty, and refuses to save until it is a number again', () => {
+    setUp('editor', PLAIN);
+    fireEvent.change(screen.getByTestId('catch-url-signature-scheme'), { target: { value: 'standard' } });
+    fireEvent.change(screen.getByTestId('catch-url-signature-secret'), { target: { value: 'abc123def456ghi789' } });
+    const tolerance = screen.getByTestId<HTMLInputElement>('catch-url-signature-tolerance');
+    fireEvent.change(tolerance, { target: { value: '' } });
+    expect(tolerance.value).toBe('');
+    expect(screen.getByTestId<HTMLButtonElement>('catch-url-save').disabled).toBe(true);
+    expect(screen.getByTestId('catch-url-settings-problem').textContent).toBe('The tolerance is 1 to 86400 seconds.');
+    fireEvent.change(tolerance, { target: { value: '60' } });
+    expect(tolerance.value).toBe('60');
+    expect(screen.getByTestId<HTMLButtonElement>('catch-url-save').disabled).toBe(false);
   });
 });

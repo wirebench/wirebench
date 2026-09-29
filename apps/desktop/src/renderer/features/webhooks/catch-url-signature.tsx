@@ -2,7 +2,9 @@
  * A catch URL's *Signature* section (webhook-signatures §4): the scheme, a write-only secret shown
  * only as *● set …f789*, and *Reject unverified requests (401)*. Shown when editing an existing
  * catch URL on a server that has the module; the server refuses signature settings until its key
- * is set, and the section says so rather than letting a save fail.
+ * is set, and the section says so rather than letting a save fail. Without the key an editor can
+ * still switch a signature off — choose *None*, or untick *Reject* — since the server takes both
+ * without it, so a catch URL that answers 401 is never stuck.
  */
 import { INPUT_CLASS } from '../team/roles.js';
 import { Button } from '../../components/button.js';
@@ -58,6 +60,9 @@ export function signatureRequestOf(
   return out;
 }
 
+const UNAVAILABLE_ID = 'catch-url-signature-unavailable';
+const SECRET_LABEL_ID = 'catch-url-signature-secret-label';
+
 export function SignatureSection({
   form,
   onChange,
@@ -70,13 +75,17 @@ export function SignatureSection({
   readonly readOnly: boolean;
 }) {
   const unavailable = hook.signatureAvailable === false;
+  // Setting or changing a scheme or secret needs the server key; switching one off does not.
   const disabled = readOnly || unavailable;
+  const rejectDisabled = readOnly || (unavailable && hook.rejectUnverified !== true);
+  const describedBy = unavailable ? UNAVAILABLE_ID : undefined;
   const hint = hook.signature?.secret.hint ?? null;
+  const secretStored = hook.signature !== null && hook.signature !== undefined;
   return (
     <fieldset data-testid="catch-url-signature" className="mt-4 border-t border-hairline pt-3">
       <legend className="text-sm font-medium text-fg-default">Signature</legend>
       {unavailable && (
-        <p data-testid="catch-url-signature-unavailable" className="mt-1 text-xs text-fg-subtle">
+        <p id={UNAVAILABLE_ID} data-testid="catch-url-signature-unavailable" className="mt-1 text-xs text-fg-subtle">
           The server has no WIREBENCH_SERVER_HOOKS_SECRET_KEY, so it cannot keep a signature secret. Ask its
           administrator to set one.
         </p>
@@ -87,7 +96,8 @@ export function SignatureSection({
       <select
         id="catch-url-signature-scheme"
         data-testid="catch-url-signature-scheme"
-        disabled={disabled}
+        disabled={readOnly}
+        aria-describedby={describedBy}
         value={form.scheme?.kind ?? 'none'}
         onChange={(event) =>
           onChange(
@@ -100,7 +110,7 @@ export function SignatureSection({
       >
         <option value="none">None</option>
         {SCHEME_KINDS.map((kind) => (
-          <option key={kind} value={kind}>
+          <option key={kind} value={kind} disabled={unavailable}>
             {SCHEME_LABELS[kind]}
           </option>
         ))}
@@ -112,23 +122,31 @@ export function SignatureSection({
             onChange={(scheme) => onChange({ scheme })}
             disabled={disabled}
             prefix="catch-url-signature"
+            describedBy={describedBy}
           />
-          <label className="mt-2 block text-sm text-fg-subtle" htmlFor="catch-url-signature-secret">
-            Secret
-          </label>
-          {form.replacing || hook.signature === null || hook.signature === undefined ? (
+          {form.replacing || !secretStored ? (
+            <label className="mt-2 block text-sm text-fg-subtle" htmlFor="catch-url-signature-secret">
+              Secret
+            </label>
+          ) : (
+            <span id={SECRET_LABEL_ID} className="mt-2 block text-sm text-fg-subtle">
+              Secret
+            </span>
+          )}
+          {form.replacing || !secretStored ? (
             <input
               id="catch-url-signature-secret"
               data-testid="catch-url-signature-secret"
               type="password"
               autoComplete="off"
               disabled={disabled}
+              aria-describedby={describedBy}
               value={form.secret}
               onChange={(event) => onChange({ secret: event.target.value })}
               className={INPUT_CLASS}
             />
           ) : (
-            <div className="mt-1 flex items-center gap-2">
+            <div role="group" aria-labelledby={SECRET_LABEL_ID} className="mt-1 flex items-center gap-2">
               <span data-testid="catch-url-signature-secret-set" className="text-sm text-fg-default">
                 {hint === null ? '● set' : `● set …${hint}`}
               </span>
@@ -143,7 +161,8 @@ export function SignatureSection({
             <input
               type="checkbox"
               data-testid="catch-url-reject-unverified"
-              disabled={disabled}
+              disabled={rejectDisabled}
+              aria-describedby={describedBy}
               checked={form.rejectUnverified}
               onChange={(event) => onChange({ rejectUnverified: event.target.checked })}
             />

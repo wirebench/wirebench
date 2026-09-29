@@ -112,7 +112,7 @@ describe('the Signing tab (§5.2)', () => {
     );
     expect(screen.getByTestId<HTMLSelectElement>('signing-mode').value).toBe('hmac');
     expect(screen.getByTestId<HTMLInputElement>('signing-ci-name').value).toBe('ORDERS_SIGNING');
-    expect(screen.getByText('Signing secret')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Signing secret' }).textContent).toContain('Replace…');
     expect(screen.queryByTestId('rest-signing-source')).toBeNull();
   });
 
@@ -180,7 +180,7 @@ describe('the Signing tab (§5.2)', () => {
     expect(hasScriptEditors()).toBe(true);
 
     await userEvent.click(screen.getByRole('button', { name: 'Set…' }));
-    await userEvent.type(screen.getByLabelText('Signing secret'), 'abc123def456ghi789');
+    await userEvent.type(screen.getByLabelText('Signing secret', { selector: 'input' }), 'abc123def456ghi789');
     await act(async () => {
       await flushScriptEdits();
     });
@@ -190,5 +190,54 @@ describe('the Signing tab (§5.2)', () => {
 
     cleanup();
     expect(hasScriptEditors()).toBe(false);
+  });
+
+  it('holds back a scheme field main would refuse, reports it, and stages it once fixed', () => {
+    installWirebenchApi();
+    const onChange = vi.fn();
+    const onProblemChange = vi.fn();
+    render(
+      <SigningTab
+        request={restRequestWire({ id: 'w1', name: 'Order paid', signing: HMAC })}
+        inherited={{ signing: { mode: 'none' }, from: 'default' }}
+        onChange={onChange}
+        onProblemChange={onProblemChange}
+      />,
+    );
+    const header = screen.getByTestId<HTMLInputElement>('signing-header');
+    fireEvent.change(header, { target: { value: 'X Sig' } });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(header.value).toBe('X Sig');
+    expect(screen.getByTestId('signing-scheme-problem').textContent).toBe(
+      'The header name has a character a header name cannot have.',
+    );
+    expect(onProblemChange).toHaveBeenLastCalledWith('The header name has a character a header name cannot have.');
+    fireEvent.change(header, { target: { value: 'X-Sig' } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      signing: { ...HMAC, scheme: { ...(HMAC.mode === 'sign' ? HMAC.scheme : {}), header: 'X-Sig' } },
+    });
+    expect(onProblemChange).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it('shows a cleared tolerance as empty and stages nothing until it is valid', () => {
+    installWirebenchApi();
+    const onChange = vi.fn();
+    const standard: WebhookSigningWire = { mode: 'sign', scheme: { kind: 'standard', toleranceSec: 300 } };
+    render(
+      <SigningTab
+        request={restRequestWire({ id: 'w1', name: 'Order paid', signing: standard })}
+        inherited={{ signing: { mode: 'none' }, from: 'default' }}
+        onChange={onChange}
+      />,
+    );
+    const tolerance = screen.getByTestId<HTMLInputElement>('signing-tolerance');
+    fireEvent.change(tolerance, { target: { value: '' } });
+    expect(tolerance.value).toBe('');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('signing-scheme-problem').textContent).toBe('The tolerance is 1 to 86400 seconds.');
+    fireEvent.change(tolerance, { target: { value: '60' } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      signing: { mode: 'sign', scheme: { kind: 'standard', toleranceSec: 60 } },
+    });
   });
 });

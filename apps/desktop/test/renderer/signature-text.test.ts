@@ -31,6 +31,28 @@ describe('the renderer restates the signature rules (webhook-signatures §2, §4
       expect(schemeProblemOf({ kind: 'timestamped', header, toleranceSec: 300 }) === undefined).toBe(engine);
       expect(HEADER_NAME_PATTERN.test(header)).toBe(engine);
     }
+    for (const header of [
+      'X'.repeat(SIGNATURE_LIMITS.maxHeaderLength),
+      'X'.repeat(SIGNATURE_LIMITS.maxHeaderLength + 1),
+    ]) {
+      const engine = signatureSchemeSchema.safeParse({ kind: 'timestamped', header, toleranceSec: 300 }).success;
+      expect(schemeProblemOf({ kind: 'timestamped', header, toleranceSec: 300 }) === undefined).toBe(engine);
+    }
+    expect(
+      signatureSchemeSchema.safeParse({ kind: 'timestamped', header: 'X'.repeat(100), toleranceSec: 300 }).success,
+    ).toBe(true);
+    expect(
+      signatureSchemeSchema.safeParse({ kind: 'timestamped', header: 'X'.repeat(101), toleranceSec: 300 }).success,
+    ).toBe(false);
+    for (const prefix of [
+      'p'.repeat(SIGNATURE_LIMITS.maxPrefixLength),
+      'p'.repeat(SIGNATURE_LIMITS.maxPrefixLength + 1),
+    ]) {
+      const scheme = { ...defaultScheme('hmac'), prefix } as const;
+      expect(schemeProblemOf(scheme) === undefined).toBe(signatureSchemeSchema.safeParse(scheme).success);
+    }
+    expect(signatureSchemeSchema.safeParse({ ...defaultScheme('hmac'), prefix: 'p'.repeat(32) }).success).toBe(true);
+    expect(signatureSchemeSchema.safeParse({ ...defaultScheme('hmac'), prefix: 'p'.repeat(33) }).success).toBe(false);
     for (const toleranceSec of [0, 1, 86_400, 86_401]) {
       const engine = signatureSchemeSchema.safeParse({ kind: 'standard', toleranceSec }).success;
       expect(schemeProblemOf({ kind: 'standard', toleranceSec }) === undefined).toBe(engine);

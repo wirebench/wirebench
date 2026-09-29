@@ -1,21 +1,40 @@
-/** The fields of one signature scheme, shared by the catch URL section and the signing controls. */
+/**
+ * The fields of one signature scheme, shared by the catch URL section and the signing controls.
+ *
+ * The tolerance box keeps what was typed: text that is not a whole number reaches `onChange` as
+ * `NaN`, so `schemeProblemOf` reports it and the box is not snapped to a number the user never typed.
+ */
+import { useState } from 'react';
 import { INPUT_CLASS } from '../team/roles.js';
 import type { SignatureSchemeWire } from '../../../shared/wire-types.js';
 
 const LABEL_CLASS = 'mt-2 block text-xs text-fg-subtle';
+
+/** A typed tolerance as seconds; `NaN` for anything but a whole number. */
+const toleranceOf = (text: string): number => (/^\d+$/.test(text.trim()) ? Number(text.trim()) : Number.NaN);
 
 export function SchemeFields({
   scheme,
   onChange,
   disabled,
   prefix,
+  describedBy,
 }: {
   readonly scheme: SignatureSchemeWire;
   readonly onChange: (next: SignatureSchemeWire) => void;
   readonly disabled: boolean;
   /** Test-id and element-id prefix, e.g. `catch-url-signature`. */
   readonly prefix: string;
+  /** Ids of elements that describe the fields (e.g. why they are disabled). */
+  readonly describedBy?: string | undefined;
 }) {
+  const committed = scheme.kind === 'hmac' ? undefined : scheme.toleranceSec;
+  const [toleranceDraft, setToleranceDraft] = useState({ text: String(committed ?? ''), value: committed });
+  // A tolerance set from outside (another scheme kind, a reset) replaces the typed text; the NaN a
+  // bad entry sent up comes back as the same value and leaves the text alone.
+  if (!Object.is(toleranceDraft.value, committed)) {
+    setToleranceDraft({ text: String(committed ?? ''), value: committed });
+  }
   const tolerance =
     scheme.kind === 'hmac' ? null : (
       <div className="w-32">
@@ -27,8 +46,13 @@ export function SchemeFields({
           data-testid={`${prefix}-tolerance`}
           inputMode="numeric"
           disabled={disabled}
-          value={String(scheme.toleranceSec)}
-          onChange={(event) => onChange({ ...scheme, toleranceSec: Number(event.target.value) })}
+          aria-describedby={describedBy}
+          value={toleranceDraft.text}
+          onChange={(event) => {
+            const toleranceSec = toleranceOf(event.target.value);
+            setToleranceDraft({ text: event.target.value, value: toleranceSec });
+            onChange({ ...scheme, toleranceSec });
+          }}
           className={INPUT_CLASS}
         />
       </div>
@@ -43,6 +67,7 @@ export function SchemeFields({
           id={`${prefix}-header`}
           data-testid={`${prefix}-header`}
           disabled={disabled}
+          aria-describedby={describedBy}
           value={scheme.header}
           onChange={(event) => onChange({ ...scheme, header: event.target.value })}
           className={INPUT_CLASS}
@@ -67,6 +92,7 @@ export function SchemeFields({
           id={`${prefix}-algorithm`}
           data-testid={`${prefix}-algorithm`}
           disabled={disabled}
+          aria-describedby={describedBy}
           value={scheme.algorithm}
           onChange={(event) => onChange({ ...scheme, algorithm: event.target.value as typeof scheme.algorithm })}
           className={INPUT_CLASS}
@@ -84,6 +110,7 @@ export function SchemeFields({
           id={`${prefix}-encoding`}
           data-testid={`${prefix}-encoding`}
           disabled={disabled}
+          aria-describedby={describedBy}
           value={scheme.encoding}
           onChange={(event) => onChange({ ...scheme, encoding: event.target.value as typeof scheme.encoding })}
           className={INPUT_CLASS}
@@ -102,6 +129,7 @@ export function SchemeFields({
           data-testid={`${prefix}-prefix`}
           placeholder="None"
           disabled={disabled}
+          aria-describedby={describedBy}
           value={scheme.prefix ?? ''}
           onChange={(event) => {
             const { kind, algorithm, encoding, header } = scheme;
