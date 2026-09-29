@@ -124,21 +124,34 @@ function pathParam(url: string, template: string | undefined, name: string): str
   } catch {
     return undefined;
   }
-  const names: string[] = [];
-  const pattern = template
-    .split(/(\{[^}]+\})/)
-    .map((piece) => {
-      const param = /^\{([^}]+)\}$/.exec(piece);
-      if (param !== null) {
-        names.push(param[1] as string);
-        return '([^/]+)';
-      }
-      return piece.replace(/[.*+?^$()|[\]\\{}]/g, '\\$&');
-    })
-    .join('');
-  const match = new RegExp(`${pattern}$`).exec(path);
-  const at = names.indexOf(name);
-  const found = match === null || at < 0 ? undefined : match[at + 1];
+  // Segment by segment, aligned from the end so a server base path in front still matches. No
+  // regular expression: the template comes from a document and must not be able to stall a send.
+  const templateSegments = template.split('/');
+  const pathSegments = path.split('/');
+  const offset = pathSegments.length - templateSegments.length;
+  if (offset < 0) return undefined;
+  let found: string | undefined;
+  for (let index = 0; index < templateSegments.length; index += 1) {
+    const expected = templateSegments[index] as string;
+    const actual = pathSegments[offset + index] as string;
+    if (index === 0 && expected === '') continue;
+    const open = expected.indexOf('{');
+    if (open < 0) {
+      if (expected !== actual) return undefined;
+      continue;
+    }
+    const close = expected.indexOf('}', open);
+    // One parameter per segment, with optional literal text around it (`{name}.json`).
+    if (close < 0 || expected.includes('{', close)) return undefined;
+    const prefix = expected.slice(0, open);
+    const suffix = expected.slice(close + 1);
+    if (actual.length <= prefix.length + suffix.length || !actual.startsWith(prefix) || !actual.endsWith(suffix)) {
+      return undefined;
+    }
+    if (expected.slice(open + 1, close) === name) {
+      found = actual.slice(prefix.length, actual.length - suffix.length);
+    }
+  }
   if (found === undefined) return undefined;
   try {
     return decodeURIComponent(found);

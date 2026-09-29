@@ -54,6 +54,27 @@ describe('runtime expressions', () => {
     expect(result).toEqual({ ok: false, reason: '$request.path.id has no value' });
   });
 
+  it('matches path parameters behind a base path and with literal text around them', () => {
+    const at = (url: string, pathTemplate: string, key: string) => {
+      const result = evaluateRuntimeTemplate(key, { ...exchange, url, pathTemplate });
+      return result.ok ? result.value : undefined;
+    };
+    expect(at('https://api.test/v1/subscriptions/42', '/subscriptions/{id}', '{$request.path.id}')).toBe('42');
+    expect(at('https://api.test/files/report.json', '/files/{name}.json', '{$request.path.name}')).toBe('report');
+    expect(at('https://api.test/orders/42', '/subscriptions/{id}', '{$request.path.id}')).toBeUndefined();
+    expect(at('https://api.test/a', '/a/{id}', '{$request.path.id}')).toBeUndefined();
+  });
+
+  it('answers quickly and with no value for a pathological template', () => {
+    const started = Date.now();
+    const result = evaluateRuntimeTemplate('{$request.path.id}', {
+      ...exchange,
+      pathTemplate: `/${'{'.repeat(50_000)}`,
+    });
+    expect(result.ok).toBe(false);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it('reads bodies through a JSON pointer, with ~0 and ~1 escapes and array indexes', () => {
     expect(value('{$request.body#/callbackUrl}')).toBe('https://my-app.dev/subs/cb-91');
     expect(value('{$request.body#/a~1b/c~0d}')).toBe('x');
