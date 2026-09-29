@@ -369,6 +369,16 @@ export type {
   WebhookCollection,
   WebhookFolder,
 } from './webhooks/model.js';
+export {
+  DEFAULT_SIGNATURE_TOLERANCE_SEC,
+  SIGNATURE_FAILURES,
+  isCanonicalBase64,
+  signWebhook,
+  signatureSchemeSchema,
+  toSignatureScheme,
+  verifyWebhook,
+} from './webhooks/signature.js';
+export type { SignatureAlgorithm, SignatureFailure, SignatureScheme, SignatureVerdict } from './webhooks/signature.js';
 export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
 export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
