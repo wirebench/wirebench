@@ -196,7 +196,10 @@ export const watchHistoryFile: HistoryWatch = (file, onChange) => {
       onChange();
     }
   });
-  watcher.on('error', () => watcher.close());
+  watcher.on('error', (error) => {
+    console.warn(`[history] the watch on "${file}" failed and was closed: ${error.message}`);
+    watcher.close();
+  });
   return { close: () => watcher.close() };
 };
 
@@ -542,7 +545,8 @@ export class HistoryService {
       return;
     }
     const cap = this.cap?.();
-    const file = await openHistory(historyFilePath(this.userDataDir, projectId), {
+    const path = historyFilePath(this.userDataDir, projectId);
+    const file = await openHistory(path, {
       ...(cap !== undefined ? { cap } : {}),
     });
     // Re-check: a concurrent `open` for the same project may have won the race while we awaited.
@@ -550,10 +554,19 @@ export class HistoryService {
       this.files.set(projectId, file);
       const watch = this.options.watch;
       if (watch !== undefined) {
-        this.watchers.set(
-          projectId,
-          watch(historyFilePath(this.userDataDir, projectId), () => this.scheduleReload(projectId)),
-        );
+        try {
+          this.watchers.set(
+            projectId,
+            watch(path, () => this.scheduleReload(projectId)),
+          );
+        } catch (error) {
+          // The file is open and usable; without a watch another process's writes just show up late.
+          console.warn(
+            `[history] project "${projectId}": could not watch the History file, continuing unwatched: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
       }
     }
   }
@@ -586,7 +599,13 @@ export class HistoryService {
           this.options.onChanged?.(projectId);
         }
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        console.warn(
+          `[history] project "${projectId}": reloading the History file failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   /** Resolves once every reload scheduled so far has run. */

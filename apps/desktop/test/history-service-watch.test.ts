@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { appendHistory } from '@wirebench/engine';
@@ -46,6 +46,7 @@ describe('HistoryService watching its files', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(userDataDir, { recursive: true, force: true });
   });
 
@@ -82,6 +83,8 @@ describe('HistoryService watching its files', () => {
       durationMs: 4,
       error: { code: 'http-connect-failed', message: 'connection refused' },
     });
+    // One write fires the watch more than once; none of the burst is another process's.
+    fake.fire(historyFilePath(userDataDir, 'proj-1'));
     fake.fire(historyFilePath(userDataDir, 'proj-1'));
     await history.whenReloaded();
 
@@ -98,5 +101,55 @@ describe('HistoryService watching its files', () => {
     expect(fake.closed).toEqual([historyFilePath(userDataDir, 'proj-1')]);
     history.closeAll();
     expect(fake.closed).toEqual([historyFilePath(userDataDir, 'proj-1'), historyFilePath(userDataDir, 'proj-2')]);
+  });
+
+  it('carries on unwatched, with a warning, when the watch cannot start', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const watch: HistoryWatch = () => {
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    };
+    const history = new HistoryService(userDataDir, undefined, { watch });
+
+    await expect(history.open('proj-1')).resolves.toBeUndefined();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/proj-1.*ENOSPC/);
+    expect(history.openProjectIds()).toEqual(['proj-1']);
+    const recorded = await history.recordRestSend('proj-1', {
+      requestId: 'req-1',
+      requestName: 'List pets',
+      apiName: 'Pets',
+      folderPath: '',
+      method: 'GET',
+      url: 'http://127.0.0.1:9/pets',
+      requestHeaders: {},
+      requestBody: '',
+      durationMs: 4,
+      error: { code: 'http-connect-failed', message: 'connection refused' },
+    });
+    expect(recorded).toBeDefined();
+    expect(history.list().entries).toHaveLength(1);
+    // Closing a project that never got a watcher is still safe.
+    history.close('proj-1');
+    expect(history.openProjectIds()).toEqual([]);
+  });
+
+  it('warns, and keeps the reload chain alive, when a reload fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fake = fakeWatch();
+    const onChanged = vi.fn();
+    const history = new HistoryService(userDataDir, undefined, { watch: fake.watch, onChanged });
+    await history.open('proj-1');
+    const file = historyFilePath(userDataDir, 'proj-1');
+    // A directory where the file should be makes the reread fail.
+    await mkdir(file, { recursive: true });
+    await appendHistory(join(userDataDir, 'other.jsonl'), externalEntry('01K00000000000000000000001'));
+
+    fake.fire(file);
+    await expect(history.whenReloaded()).resolves.toBeUndefined();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/proj-1.*reloading/);
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });

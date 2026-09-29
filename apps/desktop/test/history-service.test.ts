@@ -326,6 +326,31 @@ describe('HistoryService when another writer holds the History lock', () => {
     expect(warn.mock.calls[0]?.[0]).toMatch(/proj-1.*skipped.*History file was busy/);
     expect(history.list().entries).toEqual([]);
   }, 15_000);
+
+  it('rethrows any other append error, without a busy warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+    // A directory where the file should be makes the append's reread fail with something other than a busy lock.
+    await mkdir(historyFilePath(userDataDir, 'proj-1'), { recursive: true });
+
+    await expect(
+      history.recordRestSend('proj-1', {
+        requestId: 'req-1',
+        requestName: 'List pets',
+        apiName: 'Pets',
+        folderPath: '',
+        method: 'GET',
+        url: 'http://127.0.0.1:9/pets',
+        requestHeaders: {},
+        requestBody: '',
+        durationMs: 4,
+        error: { code: 'http-connect-failed', message: 'connection refused' },
+      }),
+    ).rejects.toThrow();
+
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 /**
