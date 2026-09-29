@@ -65,9 +65,12 @@ describe('wirebench mcp on stdio', () => {
   it('refuses a folder that is not a project before serving anything', async () => {
     const child = spawnCli(['mcp', '--project', historyDir]);
     let stdout = '';
+    let stderr = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
     const code = await new Promise<number>((resolve) => child.on('close', (exit) => resolve(exit ?? -1)));
     expect(code).toBe(2);
     expect(stdout).toBe('');
+    expect(stderr).toMatch(/^project-not-found: .+/m);
   });
 });

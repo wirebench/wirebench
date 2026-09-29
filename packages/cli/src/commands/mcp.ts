@@ -3,7 +3,7 @@
  * server starts, so a wrong `--project` fails in the terminal rather than in every tool call.
  * Only protocol frames go to stdout; the startup line and every warning go to stderr.
  */
-import { createRequire } from 'node:module';
+import { format } from 'node:util';
 import type { Readable, Writable } from 'node:stream';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { McpArgs } from '../args.js';
@@ -13,13 +13,8 @@ import { createMcpServer } from '../mcp/server.js';
 import type { OpsBase } from '../ops/context.js';
 import { exitCodeForError, toOpsError } from '../ops/errors.js';
 import { openProject } from '../ops/project.js';
+import { cliVersion } from '../version.js';
 import { opsBaseFor } from './ops.js';
-
-const require = createRequire(import.meta.url);
-
-export function cliVersion(): string {
-  return (require('../../package.json') as { readonly version: string }).version;
-}
 
 export function mcpBaseFor(args: McpArgs, io: Pick<CliIo, 'stderr' | 'env'>): OpsBase {
   return opsBaseFor(
@@ -55,6 +50,25 @@ export async function checkProject(base: OpsBase, io: Pick<CliIo, 'stderr'>): Pr
   }
 }
 
+/**
+ * Points `console.log`, `console.info` and `console.debug` at stderr, so a stray log call in any
+ * dependency cannot put a non-frame line on stdout. Returns the restore.
+ */
+function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
+  const saved = { log: console.log, info: console.info, debug: console.debug };
+  const toStderr = (...parts: unknown[]): void => {
+    io.stderr.write(`${format(...parts)}\n`);
+  };
+  console.log = toStderr;
+  console.info = toStderr;
+  console.debug = toStderr;
+  return () => {
+    console.log = saved.log;
+    console.info = saved.info;
+    console.debug = saved.debug;
+  };
+}
+
 export async function mcpCommand(
   args: McpArgs,
   io: CliIo,
@@ -65,14 +79,26 @@ export async function mcpCommand(
   if (refused !== undefined) {
     return refused;
   }
-  const server = createMcpServer(base, cliVersion());
-  const ended = new Promise<void>((resolve) => {
-    stdin.once('end', resolve);
-    stdin.once('close', resolve);
-  });
-  await server.connect(new StdioServerTransport(stdin as Readable, io.stdout as Writable));
-  io.stderr.write(`wirebench mcp: serving ${base.projectDir} on stdio (${describeGates(base)})\n`);
-  await ended;
-  await server.close();
-  return ExitCode.Ok;
+  const restoreConsole = keepConsoleOffStdout(io);
+  try {
+    const server = createMcpServer(base, cliVersion());
+    // Serving ends when stdin does, or when the transport closes itself (the SDK's stdio transport
+    // does so for a line over 10 MiB). Calls still in flight at that point are dropped, as MCP's
+    // shutdown semantics allow.
+    const ended = new Promise<void>((resolve) => {
+      stdin.once('end', resolve);
+      stdin.once('close', resolve);
+      server.server.onclose = resolve;
+    });
+    server.server.onerror = (error) => {
+      io.stderr.write(`mcp: ${error.message}\n`);
+    };
+    await server.connect(new StdioServerTransport(stdin as Readable, io.stdout as Writable));
+    io.stderr.write(`wirebench mcp: serving ${base.projectDir} on stdio (${describeGates(base)})\n`);
+    await ended;
+    await server.close();
+    return ExitCode.Ok;
+  } finally {
+    restoreConsole();
+  }
 }

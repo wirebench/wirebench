@@ -89,7 +89,8 @@ export const queryOp = defineOp({
   description:
     'Runs XPath on an XML message or JSONPath on a JSON one and returns the matches as text, each cut at 64 KiB ' +
     'characters and all together at 256 KiB (truncated says so). Reads a History entry, a file or the text ' +
-    'itself; a password or secret-keyed value in the message reads as <redacted>. Reads only.',
+    'itself: pass exactly one of historyId, file, text. A password or secret-keyed value in the message reads as ' +
+    '<redacted>. Reads only.',
   input,
   async run(value, context): Promise<QueryOutput> {
     const message = await loadMessage(value, context);

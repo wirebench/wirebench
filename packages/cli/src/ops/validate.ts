@@ -86,7 +86,7 @@ export const validateOp = defineOp({
   description:
     'Validates a SOAP message against the WSDL schema (problems with line and column) or a REST response ' +
     'body against its OpenAPI response schema (problems with JSON path and keyword). Reads a History entry, ' +
-    'a file or the text itself. Reads only.',
+    'a file or the text itself: pass exactly one of historyId, file, text. Reads only.',
   input,
   async run(value, context): Promise<ValidateResult> {
     const { project } = await openProject(context);

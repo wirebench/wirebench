@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import {
   checkRunScripts,
@@ -42,15 +41,13 @@ import { renderJunit } from '../reporters/junit.js';
 import { createMaskedReporters } from '../reporters/mask.js';
 import type { Reporter } from '../reporters/types.js';
 import { writeReport } from '../reporters/write.js';
+import { cliVersion } from '../version.js';
 import { enclosingWorkspace, exists } from '../workspace-lookup.js';
 import { resolveSteps, runSequences, selectSequences } from './sequence.js';
 
-const require = createRequire(import.meta.url);
-
 /** `{ name, version }` for the `json` report's `tool` field, read from the CLI's own `package.json`. */
 function cliTool(): { readonly name: string; readonly version: string } {
-  const { version } = require('../../package.json') as { readonly version: string };
-  return { name: 'wirebench', version };
+  return { name: 'wirebench', version: cliVersion() };
 }
 
 /** A file reporter's `onRunDone` renders once the whole result is in, then writes it — the path

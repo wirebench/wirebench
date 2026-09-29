@@ -1,8 +1,13 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { parseCliArgs } from '../../../src/args.js';
+import type { McpArgs } from '../../../src/args.js';
+import { mcpBaseFor } from '../../../src/commands/mcp.js';
 import { createMcpServer } from '../../../src/mcp/server.js';
 import type { OpsBase } from '../../../src/ops/context.js';
+import { OPS } from '../../../src/ops/index.js';
 import {
   addEnvironment,
   CALCULATOR_WSDL,
@@ -73,6 +78,18 @@ describe('the MCP server', () => {
     }
   });
 
+  it("publishes each op's own schema as the tool's inputSchema", async () => {
+    const fixture = await soapProject();
+    const client = await connect(fixture.base());
+    const { tools } = await client.listTools();
+
+    for (const tool of tools) {
+      const op = OPS[tool.name as keyof typeof OPS];
+      const expected = z.toJSONSchema(op.input, { io: 'input' }) as { properties?: Record<string, unknown> };
+      expect(Object.keys(tool.inputSchema.properties ?? {}), tool.name).toEqual(Object.keys(expected.properties ?? {}));
+    }
+  });
+
   it('answers the read-only tools with JSON results', async () => {
     const fixture = await soapProject();
     const client = await connect(fixture.base({ gates: { write: false, send: false } }));
@@ -131,5 +148,22 @@ describe('the MCP server', () => {
     expect((sent.json as { historyId?: string }).historyId).toMatch(/^[0-9A-Z]{26}$/);
 
     expect((await call(client, 'generate', {})).isError).toBe(true);
+  });
+});
+
+describe('mcpBaseFor', () => {
+  const io = { stderr: { write: () => true } as unknown as NodeJS.WritableStream, env: {} };
+  const parse = (argv: string[]): McpArgs => parseCliArgs(argv) as McpArgs;
+
+  it('turns --allow-send and -e into the send gate and the environment list', () => {
+    const base = mcpBaseFor(parse(['mcp', '--allow-send', '-e', 'a,b']), io);
+    expect(base.gates).toEqual({ write: false, send: true, environments: ['a', 'b'] });
+    expect(base.origin).toBe('mcp');
+  });
+
+  it('turns --allow-write alone into the write gate only', () => {
+    const base = mcpBaseFor(parse(['mcp', '--allow-write']), io);
+    expect(base.gates).toEqual({ write: true, send: false });
+    expect(base.origin).toBe('mcp');
   });
 });

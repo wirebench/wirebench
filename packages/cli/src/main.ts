@@ -1,9 +1,9 @@
-import { createRequire } from 'node:module';
 import { mcpCommand } from './commands/mcp.js';
 import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
 import { ExitCode } from './exit-codes.js';
+import { cliVersion } from './version.js';
 import { HELP_TEXT, UsageError, parseCliArgs } from './args.js';
 import { VERB_HELP } from './args-ops.js';
 
@@ -13,8 +13,6 @@ export interface CliIo {
   readonly stderr: NodeJS.WritableStream;
   readonly env: NodeJS.ProcessEnv;
 }
-
-const require = createRequire(import.meta.url);
 
 /** Entry point shared by `bin.ts` and tests. Returns the process exit code; never throws. */
 export async function main(
@@ -31,8 +29,7 @@ export async function main(
         return ExitCode.Ok;
       }
       case 'version': {
-        const { version } = require('../package.json') as { readonly version: string };
-        io.stdout.write(`${version}\n`);
+        io.stdout.write(`${cliVersion()}\n`);
         return ExitCode.Ok;
       }
       case 'run': {

@@ -106,12 +106,12 @@ wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [
 wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <to-id> [--ignore <path>]…
                        The desktop's History for the project: recent sends, or a semantic diff of two
                        responses.
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>]
-                       Serves these capabilities as MCP tools over stdio.
-                       Every verb: --project <dir> (default: the current directory), --json (the result
-                       exactly), --history-dir <dir> (default: the desktop's History folder).
+                       Every verb above: --project <dir> (default: the current directory), --json (the
+                       result exactly), --history-dir <dir> (default: the desktop's History folder).
                        Exit 0; 1 for a failed assertion or an invalid message; 2 for a refused call;
-                       3 for a run error.`;
+                       3 for a run error.
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>]
+                       Serves these capabilities as MCP tools over stdio (see wirebench mcp --help).`;
 
 /** `wirebench <verb> --help`. */
 export const VERB_HELP: Readonly<Record<string, string>> = {
@@ -148,6 +148,8 @@ XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
 
 Serves the project's tools to an MCP client over stdio: import, operations, generate, send,
 validate, query, history_list, history_diff. stdout carries only protocol frames.
+--project <dir>        The project to serve. Default: the current directory.
+--history-dir <dir>    Where send records History. Default: the desktop's History folder for this OS.
 --allow-write          Let import add definitions to the project. Off by default.
 --allow-send           Let send make requests. Off by default.
 -e, --env <a,b>        The environments send may use. Default: any.
