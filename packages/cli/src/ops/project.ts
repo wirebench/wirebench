@@ -76,7 +76,7 @@ export interface LoadedWsdl {
 /**
  * Reads `interfaces/<slug>/definition/` offline, as `wirebench run` does: the ops never fetch a WSDL.
  *
- * @throws OpsError `definition-cache-missing`
+ * @throws OpsError `definition-cache-missing`; WsdlParseError (`wsdl-invalid` and the parser's other codes) unchanged
  */
 export async function readWsdl(projectDir: string, iface: Interface): Promise<LoadedWsdl> {
   let bundle: DefinitionBundle;

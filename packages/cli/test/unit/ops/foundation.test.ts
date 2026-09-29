@@ -7,7 +7,7 @@ import { defineOp, runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
 import { exitCodeForError, OpsError, toOpsError } from '../../../src/ops/errors.js';
 import { defaultHistoryDir, defaultUserDataDir, historyFileFor } from '../../../src/ops/paths.js';
-import { redactBody } from '../../../src/ops/redact.js';
+import { redactBody, redactError } from '../../../src/ops/redact.js';
 
 const SECRET = 'abc123def456ghi789';
 
@@ -113,6 +113,24 @@ describe('runOp error redaction', () => {
     ).catch((e: unknown) => e)) as OpsError;
     expect(error.message).toBe('Invalid URL: http://[bad/x?api_key=<redacted>&page=<redacted>');
     expect(error.details).toEqual({ url: 'http://[bad/x?api_key=<redacted>&page=<redacted>' });
+  });
+
+  it('redacts the credentials and query of a ws or wss URL, whatever its case', async () => {
+    const thrown = new HttpError('network', `refused WSS://ada:pw@h.example.test/x?token=${SECRET}`);
+    const error = (await runOp(
+      failing(() => thrown),
+      {},
+      base,
+    ).catch((e: unknown) => e)) as OpsError;
+    expect(error.message).not.toContain(SECRET);
+    expect(error.message).not.toContain('ada:pw');
+  });
+
+  it('redacts a long run of query marks in linear time', () => {
+    const started = performance.now();
+    const redacted = redactError(new OpsError('invalid-url', `Invalid URL: http://[${'?'.repeat(200_000)}`), new Set());
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(redacted.code).toBe('invalid-url');
   });
 
   it("keeps each call's revealed secrets to that call", async () => {

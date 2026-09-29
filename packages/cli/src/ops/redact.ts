@@ -22,15 +22,15 @@ export function redactResult<R>(value: R, revealed: ReadonlySet<string>): R {
 
 /** A URL `new URL` cannot parse: its `user:pass@` and its query values are stripped by pattern. */
 function stripMalformedUrl(url: string): string {
-  return url.replace(/(\/\/)[^/?#@\s]*@/, '$1').replace(/([?&][^=&#\s]*=)[^&#\s]*/g, `$1${REDACTED_MARKER}`);
+  return url.replace(/(\/\/)[^/?#@\s]*@/, '$1').replace(/([?&][^=&#?\s]*=)[^&#\s]*/g, `$1${REDACTED_MARKER}`);
 }
 
 /**
- * `text` with every `http(s)://` URL in it redacted as the engine redacts a logged URL (a password
+ * `text` with every `http(s)://` and `ws(s)://` URL in it redacted as the engine redacts a logged URL (a password
  * and a credential-named query parameter masked). Transport errors quote the URL they failed on.
  */
 function redactUrlsIn(text: string): string {
-  return text.replace(/https?:\/\/\S+/g, (found) => {
+  return text.replace(/\b(?:https?|wss?):\/\/\S+/gi, (found) => {
     try {
       new URL(found);
     } catch {
