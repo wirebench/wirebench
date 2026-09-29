@@ -44,10 +44,13 @@ Right-click the **Webhooks** node or a folder and choose **Settings…**:
   bar (there is no property autocomplete in the app, on this field or the URL bar). A folder shows
   *inherits: `<value>`* until it sets its own target; **Reset** removes the override. The nearest
   folder's target wins over the collection's, from the item's own folder up to the root.
-- A **Catch URLs ▸** menu lists the workspace's catch URLs and writes the picked one's full address
-  into the field. It only appears when the project's workspace is shared on a Wirebench Server with
+- A **Catch URLs ▸** menu, on the collection's settings and on a folder's alike, lists the
+  workspace's catch URLs and writes the picked one's full address into the field (for a folder, as
+  its own override). It only appears when the project's workspace is shared on a Wirebench Server with
   capture enabled — see [Webhook inbox](/wirebench/guides/webhooks/) for setting one up.
-- **Auth** on the collection's own settings: what an item whose auth is *inherit* uses.
+- **Auth** on the collection's own settings: what an item whose auth is *inherit* uses when no
+  folder above it configures credentials. OAuth2 works here as on an API: once saved, the token
+  status panel appears under it.
 
 The target is an ordinary property (`webhookTarget`) resolved through the usual Environment →
 Project → Workspace chain — see [Environments and properties](/wirebench/guides/environments/). The
@@ -100,6 +103,13 @@ the operation the callback belongs to — reading its request URL, method, heade
 response status, headers and body. When that evaluates to an absolute `http://` or `https://` URL, the
 send goes there, used exactly as evaluated: a value taken from a real exchange is never expanded
 again, the same rule History re-sends follow.
+
+<Aside type="caution">
+A resolved callback URL receives the same credentials as any other send of that item: its own auth,
+or whatever it inherits from its folders and the collection. Since the URL comes from a recorded
+exchange rather than from you, keep callbacks pointing at receivers you trust — or give the callback
+item its own auth (for example *None*) so nothing inherited goes with it.
+</Aside>
 
 Otherwise — no linked API, no parent request, the parent was never sent, or the expression does not
 resolve to an absolute URL — the send falls back to the collection's target plus the callback's path.
