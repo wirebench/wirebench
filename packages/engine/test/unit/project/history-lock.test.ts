@@ -1,7 +1,9 @@
-import { access, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendHistory, openHistory } from '../../../src/project/history.js';
+import { nodeFs } from '../../../src/project/fs.js';
+import type { FsLike } from '../../../src/project/fs.js';
 import type { HistoryEntry } from '../../../src/project/history.js';
 import { tempProjectDir } from './fixture.js';
 
@@ -114,5 +116,42 @@ describe('History shared by two writers', () => {
 
     expect(await mine.clear()).toBe(1);
     expect((await openHistory(file)).count()).toBe(0);
+  });
+
+  it('refresh finds nothing new after the handle’s own append and clear', async () => {
+    const mine = await openHistory(file);
+    await mine.append(entry('mine'));
+    expect(await mine.refresh()).toBe(false);
+
+    await mine.clear();
+    expect(await mine.refresh()).toBe(false);
+  });
+
+  it('problems follows a reload that meets a corrupt line another writer wrote', async () => {
+    const mine = await openHistory(file);
+    expect(mine.problems).toBe(0);
+
+    await appendHistory(file, entry('external'));
+    await appendFile(file, 'not json\n');
+    expect(await mine.refresh()).toBe(true);
+
+    expect(mine.problems).toBe(1);
+    expect(mine.count()).toBe(1);
+  });
+
+  it('leaves a lock alone when it no longer holds this writer’s token', async () => {
+    // While this writer is inside its critical section, another writer breaks its lock and takes
+    // its own: the write's rename is the moment that happens here.
+    const fs: FsLike = {
+      ...nodeFs,
+      async rename(from, to) {
+        await nodeFs.rename(from, to);
+        await writeFile(`${file}.lock`, 'the next holder');
+      },
+    };
+    const handle = await openHistory(file, { fs });
+    await handle.append(entry('mine'));
+
+    expect(await readFile(`${file}.lock`, 'utf8')).toBe('the next holder');
   });
 });

@@ -10,7 +10,8 @@
  * `<file>.lock` and rereads the file first when another writer changed it.
  */
 
-import { mkdir, open, rm, stat } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ulid } from 'ulidx';
@@ -231,6 +232,10 @@ export interface HistoryLockOptions {
 
 /** Options accepted by {@link appendHistory} and {@link openHistory}. */
 export interface HistoryOptions {
+  /**
+   * Reads and writes the History file. The lock file and the freshness check always use the real
+   * disk through `node:fs`, whatever `fs` is injected.
+   */
   readonly fs?: FsLike;
   /** Oldest entries are dropped once the file holds more than this many. Defaults to 1000. */
   readonly cap?: number;
@@ -375,11 +380,15 @@ function sameSignature(a: FileSignature | undefined, b: FileSignature | undefine
   return a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs;
 }
 
-/** Creates the lock file if nobody holds it. */
-async function createLock(lockFile: string): Promise<boolean> {
+/** Creates the lock file holding `token` if nobody holds it. */
+async function createLock(lockFile: string, token: string): Promise<boolean> {
   try {
     const handle = await open(lockFile, 'wx');
-    await handle.close();
+    try {
+      await handle.writeFile(token);
+    } finally {
+      await handle.close();
+    }
     return true;
   } catch (error) {
     if ((error as { code?: string }).code === 'EEXIST') {
@@ -389,17 +398,35 @@ async function createLock(lockFile: string): Promise<boolean> {
   }
 }
 
+/** Removes the lock only when it still holds `token`: a lock broken as stale is the next holder's. */
+async function releaseLock(lockFile: string, token: string): Promise<void> {
+  try {
+    if ((await readFile(lockFile, 'utf8')) === token) {
+      await rm(lockFile, { force: true });
+    }
+  } catch (error) {
+    if (!isNotFound(error)) {
+      throw error;
+    }
+  }
+}
+
 /**
- * Runs `task` holding `<file>.lock`. A lock older than `staleMs` is a crashed writer's and is
- * removed; otherwise the writer retries every `retryMs` until `timeoutMs`, then fails with
- * `history-busy`. Only a writer that created the lock removes it.
+ * Runs `task` holding `<file>.lock`, which carries an owner token (pid plus random bytes). A lock
+ * older than `staleMs` is a crashed writer's and is removed; otherwise the writer retries every
+ * `retryMs` until `timeoutMs`, then fails with `history-busy`. Release is owner-checked: the lock
+ * is removed only while it still holds this writer's token, so a holder whose lock was broken
+ * never deletes the next holder's. Breaking a stale lock can still race between two waiters who
+ * both see it as stale; that is accepted, because a critical section is a reread plus one atomic
+ * write.
  */
 async function withLock<T>(file: string, options: HistoryLockOptions | undefined, task: () => Promise<T>): Promise<T> {
   const { timeoutMs, staleMs, retryMs } = { ...LOCK_DEFAULTS, ...options };
   const lockFile = `${file}.lock`;
+  const token = `${String(process.pid)}-${randomBytes(8).toString('hex')}`;
   await mkdir(dirname(file), { recursive: true });
   const deadline = Date.now() + timeoutMs;
-  while (!(await createLock(lockFile))) {
+  while (!(await createLock(lockFile, token))) {
     const held = await signatureOf(lockFile);
     if (held !== undefined && Date.now() - held.mtimeMs > staleMs) {
       await rm(lockFile, { force: true });
@@ -408,7 +435,7 @@ async function withLock<T>(file: string, options: HistoryLockOptions | undefined
     if (Date.now() >= deadline) {
       throw new ProjectError(
         'history-busy',
-        `Another writer has held the History file for over ${String(timeoutMs)} ms; try again`,
+        `This writer waited ${String(timeoutMs)} ms for the History lock and gave up; try again`,
         { details: { file, lock: lockFile } },
       );
     }
@@ -417,7 +444,7 @@ async function withLock<T>(file: string, options: HistoryLockOptions | undefined
   try {
     return await task();
   } finally {
-    await rm(lockFile, { force: true });
+    await releaseLock(lockFile, token);
   }
 }
 
