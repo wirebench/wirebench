@@ -3,7 +3,8 @@ import { OpsError } from './errors.js';
 
 /**
  * The environment by name first, then by slug or id; required as soon as there is any. Inside a
- * workspace the environments are the workspace's, as in the app. Shared with `wirebench run`.
+ * workspace the environments are the workspace's, as in the app: a project environment applies
+ * through the workspace environment of the same slug, never on its own. Shared with `wirebench run`.
  */
 export function pickEnvironment<E extends Environment | WorkspaceEnvironment>(
   environments: readonly E[],

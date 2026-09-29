@@ -1,4 +1,5 @@
-import { ProjectError } from '@wirebench/engine';
+import { HttpError, ProjectError } from '@wirebench/engine';
+import type { FailedRequest } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ExitCode } from '../../../src/exit-codes.js';
@@ -57,6 +58,87 @@ describe('runOp', () => {
   });
 });
 
+const failing = (make: () => Error): ReturnType<typeof defineOp> =>
+  defineOp({
+    name: 'failing',
+    title: 'Failing',
+    description: 'Throws what it is given.',
+    input: z.object({}),
+    run(_input, context) {
+      context.revealed.add(SECRET);
+      return Promise.reject(make());
+    },
+  });
+
+describe('runOp error redaction', () => {
+  it('masks a revealed secret in a plain Error message', async () => {
+    const error = await runOp(
+      failing(() => new Error(`boom ${SECRET}`)),
+      {},
+      base,
+    ).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'internal-error', message: 'boom <redacted>' });
+  });
+
+  it('drops the failed request and redacts the URLs an HttpError quotes', async () => {
+    const request: FailedRequest = {
+      url: `https://api.example.test/v1?token=${SECRET}`,
+      method: 'POST',
+      headers: { authorization: `Bearer ${SECRET}` },
+      bodyBase64: Buffer.from(`{"token":"${SECRET}"}`).toString('base64'),
+      bodyTruncated: false,
+    };
+    const thrown = new HttpError('network', `connect failed for https://api.example.test/v1?token=${SECRET}`, {
+      details: { request, attempts: 2 },
+    });
+    const error = (await runOp(
+      failing(() => thrown),
+      {},
+      base,
+    ).catch((e: unknown) => e)) as OpsError;
+    expect(error.code).toBe('network');
+    expect(error.details).toEqual({ attempts: 2 });
+    expect(error.message).toBe('connect failed for https://api.example.test/v1?token=%3Credacted%3E');
+    expect(JSON.stringify([error.message, error.details])).not.toContain(SECRET);
+    expect(JSON.stringify([error.message, error.details])).not.toContain(Buffer.from(SECRET).toString('base64'));
+  });
+
+  it('redacts the URL of an invalid-url message and detail, credentials and query included', async () => {
+    const url = `http://ada:${SECRET}@[bad/x?api_key=${SECRET}&page=2`;
+    const thrown = new HttpError('invalid-url', `Invalid URL: ${url}`, { details: { url } });
+    const error = (await runOp(
+      failing(() => thrown),
+      {},
+      base,
+    ).catch((e: unknown) => e)) as OpsError;
+    expect(error.message).toBe('Invalid URL: http://[bad/x?api_key=<redacted>&page=<redacted>');
+    expect(error.details).toEqual({ url: 'http://[bad/x?api_key=<redacted>&page=<redacted>' });
+  });
+
+  it("keeps each call's revealed secrets to that call", async () => {
+    const reveals = defineOp({
+      name: 'reveals',
+      title: 'Reveals',
+      description: 'Reveals a secret and returns it.',
+      input: z.object({}),
+      run: (_input, context) => {
+        context.revealed.add(SECRET);
+        return Promise.resolve(`has ${SECRET}`);
+      },
+    });
+    const quiet = defineOp({
+      name: 'quiet',
+      title: 'Quiet',
+      description: 'Reveals nothing and returns the same text.',
+      input: z.object({}),
+      run: () => Promise.resolve(`has ${SECRET}`),
+    });
+    const [first, second] = await Promise.all([runOp(reveals, {}, base), runOp(quiet, {}, base)]);
+    expect(first).toBe('has <redacted>');
+    expect(second).toBe(`has ${SECRET}`);
+  });
+});
+
 describe('errors', () => {
   it('keeps an engine code and details', () => {
     const mapped = toOpsError(new ProjectError('project-not-found', 'No wirebench.yaml', { details: { root: '/x' } }));
@@ -86,7 +168,13 @@ describe('paths', () => {
 
   it('refuses a project id that is not one path segment', () => {
     expect(historyFileFor('/h', 'proj-1')).toMatch(/proj-1\.jsonl$/);
-    expect(() => historyFileFor('/h', '../elsewhere')).toThrow();
+    let code: string | undefined;
+    try {
+      historyFileFor('/h', '../elsewhere');
+    } catch (error) {
+      code = (error as { code?: string }).code;
+    }
+    expect(code).toBe('workspace-path-invalid');
   });
 });
 

@@ -79,16 +79,18 @@ export interface LoadedWsdl {
  * @throws OpsError `definition-cache-missing`
  */
 export async function readWsdl(projectDir: string, iface: Interface): Promise<LoadedWsdl> {
+  let bundle: DefinitionBundle;
   try {
-    const bundle = await readDefinitionCache(definitionCacheDir(projectDir, iface.slug));
-    return { definition: parseWsdlBundle(bundle), bundle, schemaSet: buildSchemaSet(bundle) };
+    bundle = await readDefinitionCache(definitionCacheDir(projectDir, iface.slug));
   } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
     throw new OpsError(
       'definition-cache-missing',
-      `The interface "${iface.name}" has no readable cached definition; import it again with definitions cached`,
-      { interface: iface.name, reason: cause instanceof Error ? cause.message : String(cause) },
+      `The interface "${iface.name}" has no readable cached definition (${reason}); import it again with definitions cached`,
+      { interface: iface.name, reason },
     );
   }
+  return { definition: parseWsdlBundle(bundle), bundle, schemaSet: buildSchemaSet(bundle) };
 }
 
 /** @throws OpsError `definition-cache-missing` */
