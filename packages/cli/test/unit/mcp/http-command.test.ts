@@ -26,7 +26,49 @@ async function until(done: () => boolean): Promise<void> {
   expect(done()).toBe(true);
 }
 
+/** Stops the command however the test ends; retried, since the listener may not be registered yet. */
+async function stop(done: Promise<unknown>): Promise<void> {
+  const timer = setInterval(() => process.emit('SIGINT'), 10);
+  try {
+    await done;
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 describe('wirebench mcp --http', () => {
+  it.each(['short', 'has spaces inside the token value'])(
+    'refuses the unusable token %j with exit 2, before listening',
+    async (bad) => {
+      const fixture = await soapProject();
+      const stdout = capture();
+      const stderr = capture();
+      const code = await mcpCommand(
+        { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
+        { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: bad } },
+      );
+      expect(code).toBe(ExitCode.Usage);
+      expect(stderr.text()).toBe('WIREBENCH_MCP_TOKEN must be at least 16 characters with no spaces\n');
+      expect(stdout.text()).toBe('');
+    },
+  );
+
+  it('makes a token when the variable is only whitespace', async () => {
+    const fixture = await soapProject();
+    const stdout = capture();
+    const stderr = capture();
+    const done = mcpCommand(
+      { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
+      { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: '   ' } },
+    );
+    try {
+      await until(() => stderr.text().includes('bearer token'));
+    } finally {
+      await stop(done);
+    }
+    expect(await done).toBe(ExitCode.Ok);
+  });
+
   it('says so and exits 3 when the port is taken', async () => {
     const fixture = await soapProject();
     const taken = createServer();
@@ -61,11 +103,14 @@ describe('wirebench mcp --http', () => {
       { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
       { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: token } },
     );
-    await until(() => stderr.text().includes('serving'));
-    expect(stderr.text()).toMatch(/at http:\/\/127\.0\.0\.1:\d+\/mcp \(write off, send off\)/);
-    expect(stderr.text()).not.toContain(token);
-    expect(stderr.text()).not.toContain('bearer token');
-    process.emit('SIGINT');
+    try {
+      await until(() => stderr.text().includes('serving'));
+      expect(stderr.text()).toMatch(/at http:\/\/127\.0\.0\.1:\d+\/mcp \(write off, send off\)/);
+      expect(stderr.text()).not.toContain(token);
+      expect(stderr.text()).not.toContain('bearer token');
+    } finally {
+      await stop(done);
+    }
     expect(await done).toBe(ExitCode.Ok);
     expect(stdout.text()).toBe('');
   });
@@ -78,11 +123,14 @@ describe('wirebench mcp --http', () => {
       { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
       { stdout: stdout.stream, stderr: stderr.stream, env: {} },
     );
-    await until(() => stderr.text().includes('bearer token'));
-    const [, token] = /bearer token \(set WIREBENCH_MCP_TOKEN to choose your own\): (\S+)/.exec(stderr.text()) ?? [];
-    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(stderr.text().split(token ?? '?')).toHaveLength(2);
-    process.emit('SIGINT');
+    try {
+      await until(() => stderr.text().includes('bearer token'));
+      const [, token] = /bearer token \(set WIREBENCH_MCP_TOKEN to choose your own\): (\S+)/.exec(stderr.text()) ?? [];
+      expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(stderr.text().split(token ?? '?')).toHaveLength(2);
+    } finally {
+      await stop(done);
+    }
     expect(await done).toBe(ExitCode.Ok);
     expect(stdout.text()).toBe('');
   });

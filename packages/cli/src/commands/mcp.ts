@@ -9,7 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { McpArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
-import { resolveToken, startHttpServer, TOKEN_VARIABLE } from '../mcp/http.js';
+import { InvalidTokenError, resolveToken, startHttpServer, TOKEN_VARIABLE } from '../mcp/http.js';
 import { createMcpServer } from '../mcp/server.js';
 import type { OpsBase } from '../ops/context.js';
 import { exitCodeForError, toOpsError } from '../ops/errors.js';
@@ -75,7 +75,17 @@ function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
  * stdout stays free of it, and no later line repeats it.
  */
 async function serveHttp(port: number, base: OpsBase, io: Pick<CliIo, 'stderr' | 'env'>): Promise<ExitCode> {
-  const { token, generated } = resolveToken(io.env);
+  let resolved;
+  try {
+    resolved = resolveToken(io.env);
+  } catch (error) {
+    if (error instanceof InvalidTokenError) {
+      io.stderr.write(`${error.message}\n`);
+      return ExitCode.Usage;
+    }
+    throw error;
+  }
+  const { token, generated } = resolved;
   let running;
   try {
     running = await startHttpServer({

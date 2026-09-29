@@ -18,12 +18,32 @@ const PATH = '/mcp';
 /** The largest request body a client may send; the SDK answers 413 beyond it. */
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
-export function resolveToken(env: NodeJS.ProcessEnv): { readonly token: string; readonly generated: boolean } {
-  const set = env[TOKEN_VARIABLE];
-  if (set !== undefined && set.length > 0) {
-    return { token: set, generated: false };
+/** A chosen token shorter than this is too easy to guess. */
+const MIN_TOKEN_LENGTH = 16;
+const MAX_SESSIONS = 64;
+const MAX_CONNECTIONS = 128;
+
+/** The chosen token is unusable; the message is what the user is told. */
+export class InvalidTokenError extends Error {
+  constructor() {
+    super(`${TOKEN_VARIABLE} must be at least ${String(MIN_TOKEN_LENGTH)} characters with no spaces`);
+    this.name = 'InvalidTokenError';
   }
-  return { token: randomBytes(32).toString('base64url'), generated: true };
+}
+
+/**
+ * The variable, trimmed; unset or blank means a fresh random token.
+ * @throws InvalidTokenError when a set token is short or has whitespace inside.
+ */
+export function resolveToken(env: NodeJS.ProcessEnv): { readonly token: string; readonly generated: boolean } {
+  const set = env[TOKEN_VARIABLE]?.trim();
+  if (set === undefined || set.length === 0) {
+    return { token: randomBytes(32).toString('base64url'), generated: true };
+  }
+  if (set.length < MIN_TOKEN_LENGTH || /\s/.test(set)) {
+    throw new InvalidTokenError();
+  }
+  return { token: set, generated: false };
 }
 
 export interface HttpServerOptions {
@@ -33,6 +53,8 @@ export interface HttpServerOptions {
   /** A fresh server for each session. */
   readonly createServer: () => McpServer;
   readonly log: (line: string) => void;
+  /** Live sessions allowed at once; an initialize beyond it gets 503. Default 64. */
+  readonly maxSessions?: number;
 }
 
 export interface RunningHttpServer {
@@ -70,10 +92,29 @@ function tokenMatches(header: string | undefined, token: string): boolean {
 
 export async function startHttpServer(options: HttpServerOptions): Promise<RunningHttpServer> {
   const sessions = new Map<string, Session>();
+  const maxSessions = options.maxSessions ?? MAX_SESSIONS;
+  // Sessions being opened right now, so a burst of initializes cannot overshoot the cap.
+  let opening = 0;
   let origins: ReadonlySet<string> = new Set();
+  let hosts: ReadonlySet<string> = new Set();
 
   const openSession = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (sessions.size + opening >= maxSessions) {
+      refuse(res, 503, 'Too many sessions; end one and try again');
+      return;
+    }
+    opening += 1;
+    let counted = true;
+    const settled = (): void => {
+      if (counted) {
+        counted = false;
+        opening -= 1;
+      }
+    };
     const server = options.createServer();
+    // The SDK's 400 for a bad `mcp-protocol-version` reflects that header back to the authenticated
+    // caller only, which is fine. Log the error message alone: never `extra.requestInfo` in a message
+    // handler, because it carries the request's `authorization` header.
     server.server.onerror = (error) => {
       options.log(`wirebench mcp: ${error.message}`);
     };
@@ -82,6 +123,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       maxRequestBodySize: MAX_BODY_BYTES,
       onsessioninitialized: (id) => {
         sessions.set(id, { transport, server });
+        settled();
       },
     });
     // Set before `connect`, which chains onto it: a session ends however its transport closes
@@ -93,8 +135,12 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     };
     // The SDK's class declares optional members its `Transport` interface requires, which
     // `exactOptionalPropertyTypes` rejects; it is the SDK's documented pairing.
-    await server.connect(transport as Transport);
-    await transport.handleRequest(req, res);
+    try {
+      await server.connect(transport as Transport);
+      await transport.handleRequest(req, res);
+    } finally {
+      settled();
+    }
     if (transport.sessionId === undefined) {
       // Not a valid initialize: the transport has answered, and there is no session to keep.
       await server.close();
@@ -105,6 +151,10 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     const origin = req.headers.origin;
     if (origin !== undefined && !origins.has(origin)) {
       refuse(res, 403, 'Origin not allowed');
+      return;
+    }
+    if (req.headers.host === undefined || !hosts.has(req.headers.host.toLowerCase())) {
+      refuse(res, 403, 'Host not allowed');
       return;
     }
     if (!tokenMatches(req.headers.authorization, options.token)) {
@@ -128,7 +178,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
     await openSession(req, res);
   };
 
-  const http = createServer((req, res) => {
+  // `requireHostHeader: false` lets a request with no Host reach the check above, which refuses it.
+  const http = createServer({ requireHostHeader: false }, (req, res) => {
     handle(req, res).catch((error: unknown) => {
       options.log(`wirebench mcp: ${error instanceof Error ? error.message : String(error)}`);
       if (!res.headersSent) {
@@ -138,6 +189,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       }
     });
   });
+  http.maxConnections = MAX_CONNECTIONS;
   await new Promise<void>((resolve, reject) => {
     http.once('error', reject);
     http.listen(options.port, HOST, () => {
@@ -147,6 +199,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
   });
   const bound = http.address() as AddressInfo;
   origins = new Set([`http://localhost:${String(bound.port)}`, `http://${HOST}:${String(bound.port)}`]);
+  hosts = new Set([`localhost:${String(bound.port)}`, `${HOST}:${String(bound.port)}`]);
 
   return {
     url: `http://${HOST}:${String(bound.port)}${PATH}`,
