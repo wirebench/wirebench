@@ -10,6 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestEditor, mergeQuery } from '../../src/renderer/features/rest-editor/rest-editor.js';
+import { restSendBlocked } from '../../src/renderer/features/rest-editor/send-blocked.js';
+import { registerRequestCommands } from '../../src/renderer/commands/register-request-commands.js';
+import { getCommand, resetCommands } from '../../src/renderer/lib/commands.js';
 import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
@@ -368,6 +371,40 @@ describe('RestEditor for a webhook item', () => {
     });
     expect(screen.getByTestId<HTMLButtonElement>('rest-send').title).toBe('Set the Webhooks target');
     expect(screen.getByText('Set the Webhooks target')).toBeTruthy();
+  });
+
+  it('refuses the rest.send shortcut while the target is missing', async () => {
+    preflightRest
+      .mockReset()
+      .mockResolvedValue({ ok: false, error: { code: 'webhook-target-missing', message: 'Set the Webhooks target' } });
+    resetCommands();
+    registerRequestCommands();
+    useEditorsStore.setState({
+      tabs: [{ id: 'tab-wh', kind: 'rest-request', restRequestId: 'wh-1' } as never],
+      activeId: 'tab-wh',
+    });
+    const store = vi.fn();
+    const original = useExchangesStore.getState().sendRest;
+    useExchangesStore.setState({ sendRest: store });
+    mount('wh-1');
+
+    await waitFor(() => {
+      expect(restSendBlocked('wh-1')).toBe('Set the Webhooks target');
+    });
+    await getCommand('rest.send')?.run({} as never);
+    expect(store).not.toHaveBeenCalled();
+    useExchangesStore.setState({ sendRest: original });
+    resetCommands();
+  });
+
+  it('names the collection as the level a webhook item inherits its credentials from', () => {
+    useProjectStore.setState({
+      webhooks: { p1: { id: 'webhooks:p1', projectId: 'p1', target: '', auth: { type: 'bearer', tokenRef: 'sec' } } },
+    });
+    mount('wh-1');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Auth' }));
+    expect(screen.getByTestId('rest-auth-source').textContent).toContain('Inherited from Webhooks');
   });
 
   it('shows the inline error for a target that is not http(s)', async () => {

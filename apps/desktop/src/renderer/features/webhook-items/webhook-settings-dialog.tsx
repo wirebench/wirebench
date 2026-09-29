@@ -11,11 +11,12 @@
  * else) already covers it, the way a REST folder's credentials live in `folder-auth-dialog.tsx`
  * rather than here.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { AuthFields } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
+import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { PropertyHighlightInput } from '../rest-editor/property-highlight-input.js';
 import { folderChainOf, useProjectStore } from '../../state/project.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
@@ -56,6 +57,12 @@ export function WebhookSettingsDialog() {
   const [hasOverride, setHasOverride] = useState(false);
   const [auth, setAuth] = useState<AuthConfigWire | undefined>(undefined);
   const [authTouched, setAuthTouched] = useState(false);
+  // A secret typed into the Auth block but not saved on its own is stored when the dialog saves,
+  // so Save (or Enter) keeps it rather than the unmount flush landing after the patch went out.
+  const authFlush = useRef<(() => Promise<AuthConfigWire | undefined>) | undefined>(undefined);
+  const registerAuthFlush = useCallback((flush: (() => Promise<AuthConfigWire | undefined>) | undefined) => {
+    authFlush.current = flush;
+  }, []);
 
   // Filled once per opening, like the catch URL settings dialog: a store update while this is open
   // (another tab editing the same target) must not undo what the user is typing.
@@ -86,15 +93,17 @@ export function WebhookSettingsDialog() {
     ? inheritedTargetOf(foldersMap, folder?.parentId, collection?.target ?? '')
     : undefined;
 
-  const showsCatchUrlMenu = !isFolder && server !== undefined && meta?.enabled === true;
+  // Offered on a folder's override as well as the collection's target (spec §3.2).
+  const showsCatchUrlMenu = server !== undefined && meta?.enabled === true;
 
   const save = async (): Promise<void> => {
     if (folderId !== undefined) {
       await useProjectStore.getState().setWebhookFolderTarget(projectId, folderId, hasOverride ? targetDraft : null);
     } else {
       const patch: { target?: string; auth?: AuthConfigWire | null } = { target: targetDraft };
-      if (authTouched) {
-        patch.auth = auth ?? null;
+      const flushed = await authFlush.current?.();
+      if (authTouched || (flushed !== undefined && flushed !== auth)) {
+        patch.auth = flushed ?? auth ?? null;
       }
       await useProjectStore.getState().updateWebhooks(projectId, patch);
     }
@@ -211,6 +220,13 @@ export function WebhookSettingsDialog() {
                     setAuth(next ?? undefined);
                     setAuthTouched(true);
                   }}
+                  registerFlush={registerAuthFlush}
+                  oauth2Status={
+                    // The panel reads the saved configuration, so it appears once OAuth2 is saved here.
+                    auth?.type === 'oauth2' && collection?.auth?.type === 'oauth2' ? (
+                      <OAuth2StatusPanel ownerId={collection.id} grant={collection.auth.grant} />
+                    ) : undefined
+                  }
                 />
               </div>
             )}

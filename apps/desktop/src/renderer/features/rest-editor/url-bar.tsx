@@ -128,7 +128,10 @@ export function UrlBar({
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
               event.preventDefault();
-              onSend();
+              // Enter is the Send button's keyboard twin, so it is disabled with it.
+              if (sendDisabledReason === undefined) {
+                onSend();
+              }
             }
           }}
         />

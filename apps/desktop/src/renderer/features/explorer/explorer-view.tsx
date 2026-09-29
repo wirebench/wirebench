@@ -576,10 +576,13 @@ export function ExplorerView() {
                 node.kind !== 'rest-request' &&
                 node.kind !== 'grpc-request' &&
                 node.kind !== 'ws-request' &&
-                node.kind !== 'folder'
+                node.kind !== 'folder' &&
+                node.kind !== 'webhook-request' &&
+                node.kind !== 'webhook-folder'
               }
               // Reordering and moving happen inside the same API: a request or folder belongs to its
-              // own API definition, and cannot move into another API or project.
+              // own API definition, and cannot move into another API or project. A webhook item or
+              // folder likewise stays inside its own project's webhook collection.
               disableDrop={({ parentNode, dragNodes, index }) => {
                 const ancestors: ExplorerNode[] = [];
                 for (let node = parentNode?.parent ?? null; node !== null; node = node.parent) {
@@ -601,11 +604,14 @@ export function ExplorerView() {
                   (parent.kind !== 'api' &&
                     parent.kind !== 'grpc-api' &&
                     parent.kind !== 'ws-api' &&
-                    parent.kind !== 'folder')
+                    parent.kind !== 'folder' &&
+                    parent.kind !== 'webhook-collection' &&
+                    parent.kind !== 'webhook-folder')
                 ) {
                   return;
                 }
-                const targetFolderId = parent.kind === 'folder' ? parent.folderId : undefined;
+                const targetFolderId =
+                  parent.kind === 'folder' || parent.kind === 'webhook-folder' ? parent.folderId : undefined;
                 const plan = planMoves(
                   (parentNode?.children ?? []).map((child) => child.data),
                   dragNodes.map((node) => node.data),

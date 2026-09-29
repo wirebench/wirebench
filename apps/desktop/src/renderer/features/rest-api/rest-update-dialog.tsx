@@ -344,7 +344,7 @@ export function RestUpdateDialog({ apiId, open, onOpenChange }: RestUpdateDialog
                 plan.webhooks.removed.length > 0 ||
                 plan.webhooks.changed.length > 0) && (
                 <div data-testid="rest-update-webhooks" className="flex flex-col gap-2 border-t border-hairline pt-3">
-                  {!plan.webhooks.linked && plan.webhooks.added.length > 0 ? (
+                  {!plan.webhooks.linked ? (
                     <p className="text-xs text-fg-default">
                       Webhooks not imported —{' '}
                       <button

@@ -34,6 +34,7 @@ import { BodyTab } from './body-tab.js';
 import { HeadersTab } from './headers-tab.js';
 import { ParamsTab } from './params-tab.js';
 import { RestBreadcrumb } from './rest-breadcrumb.js';
+import { restSendBlocked, setRestSendBlocked } from './send-blocked.js';
 import { SettingsTab } from './settings-tab.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
@@ -88,6 +89,10 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const request = useProjectStore((state) => state.restRequests[requestId]);
   const isWebhookItem = isWebhookRequest(request?.apiId);
   const api = useProjectStore((state) => selectApiOf(state, requestId));
+  const webhookCollection = useProjectStore((state) => {
+    const projectId = state.projectOf[requestId];
+    return isWebhookItem && projectId !== undefined ? state.webhooks[projectId] : undefined;
+  });
   const projectId = useProjectStore((state) => state.projectOf[requestId]);
   // The map, then the chain in a memo: the chain is a fresh array, and building one inside a
   // selector would hand React a new reference on every render.
@@ -144,9 +149,25 @@ export function RestEditor({ requestId }: RestEditorProps) {
     [editRestRequest, requestId],
   );
 
+  // A webhook item has no target-missing note until the user has set one, and no inline error
+  // until the target resolves to something that is not `http(s)` — the two `webhook-target-*`
+  // refusals `preflightRest` reports as an IPC error rather than in its usual value.
+  const sendDisabledReason =
+    isWebhookItem && resolved.targetErrorCode === 'webhook-target-missing' ? 'Set the Webhooks target' : undefined;
+  useEffect(() => {
+    setRestSendBlocked(requestId, sendDisabledReason);
+    return () => {
+      setRestSendBlocked(requestId, undefined);
+    };
+  }, [requestId, sendDisabledReason]);
+
   const onSend = useCallback(() => {
-    // Enter in the URL field reaches here too: a send already in flight is stopped, not doubled.
-    if (useExchangesStore.getState().restByRequest[requestId]?.status === 'sending') {
+    // Enter in the URL field reaches here too: a send already in flight is stopped, not doubled,
+    // and one the disabled Send button refuses is refused here as well.
+    if (
+      useExchangesStore.getState().restByRequest[requestId]?.status === 'sending' ||
+      restSendBlocked(requestId) !== undefined
+    ) {
       return;
     }
     void sendRest(requestId);
@@ -159,11 +180,6 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const sending = exchange?.status === 'sending';
   const orientation = groupOrientation(layout);
   const relative = !isAbsoluteUrl(request.url);
-  // A webhook item has no target-missing note until the user has set one, and no inline error
-  // until the target resolves to something that is not `http(s)` — the two `webhook-target-*`
-  // refusals `preflightRest` reports as an IPC error rather than in its usual value.
-  const sendDisabledReason =
-    isWebhookItem && resolved.targetErrorCode === 'webhook-target-missing' ? 'Set the Webhooks target' : undefined;
   const invalidTargetMessage =
     isWebhookItem && resolved.targetErrorCode === 'webhook-target-invalid'
       ? 'The Webhooks target must start with http:// or https://'
@@ -175,11 +191,19 @@ export function RestEditor({ requestId }: RestEditorProps) {
   const inheritedAuth = [...folders]
     .reverse()
     .find((folder) => folder.auth !== undefined && folder.auth.type !== 'inherit');
+  // Above the folders: the API's own credentials, or for a webhook item the collection's.
+  const topAuth = isWebhookItem
+    ? webhookCollection?.auth !== undefined
+      ? { label: 'Webhooks', auth: webhookCollection.auth }
+      : undefined
+    : api?.auth !== undefined
+      ? { label: api.name, auth: api.auth }
+      : undefined;
   const inheritedFrom =
     inheritedAuth?.auth !== undefined
       ? { label: inheritedAuth.name, type: inheritedAuth.auth.type }
-      : api?.auth !== undefined && api.auth.type !== 'inherit'
-        ? { label: api.name, type: api.auth.type }
+      : topAuth !== undefined && topAuth.auth.type !== 'inherit'
+        ? { label: topAuth.label, type: topAuth.auth.type }
         : undefined;
 
   const requestTabs = (

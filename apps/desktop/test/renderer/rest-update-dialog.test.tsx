@@ -559,6 +559,20 @@ describe('RestUpdateDialog', () => {
     expect(useWebhookItemsDialogs.getState().importFor).toEqual({ apiId: DEFINED.id });
   });
 
+  it('says webhooks were not imported when the unlinked plan only removes or changes some', async () => {
+    const plan = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { ...PLAN, webhooks: { added: [], removed: [WEBHOOK_REMOVED], changed: [], linked: false } },
+    });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+
+    const block = await screen.findByTestId('rest-update-webhooks');
+    expect(block.textContent).toContain('Webhooks not imported');
+    expect(screen.queryByTestId('rest-update-webhooks-removed')).toBeNull();
+  });
+
   it('shows no webhooks block, and no empty state, when the source added nothing but webhooks are absent', async () => {
     const plan = vi.fn().mockResolvedValue({
       ok: true,

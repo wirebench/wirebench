@@ -52,6 +52,17 @@ describe('UrlBar', () => {
     expect(send.title).toBe('Set the Webhooks target');
   });
 
+  it('does not send on Enter while Send is disabled, and does once it is not', () => {
+    const onSend = vi.fn();
+    const { rerender } = render(<UrlBar {...props({ onSend, sendDisabledReason: 'Set the Webhooks target' })} />);
+    fireEvent.keyDown(screen.getByTestId('rest-url'), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+
+    rerender(<UrlBar {...props({ onSend })} />);
+    fireEvent.keyDown(screen.getByTestId('rest-url'), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
   it('sends on click when nothing disables it', () => {
     const onSend = vi.fn();
     render(<UrlBar {...props({ onSend })} />);
