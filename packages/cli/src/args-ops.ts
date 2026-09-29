@@ -364,6 +364,10 @@ export function parseMcp(rest: readonly string[], values: OptionValues): McpArgs
   if (httpPort !== undefined && (httpPort < 1 || httpPort > 65535)) {
     throw new UsageError(`--http must be a port from 1 to 65535, got ${String(httpPort)}`);
   }
+  if (httpPort === 80) {
+    // Clients leave the default port out of Host and Origin, which the server would then refuse.
+    throw new UsageError('--http 80 is not supported; pick another port');
+  }
   const historyDir = str(values, 'history-dir');
   return {
     command: 'mcp',

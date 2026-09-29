@@ -53,7 +53,7 @@ export interface HttpServerOptions {
   /** A fresh server for each session. */
   readonly createServer: () => McpServer;
   readonly log: (line: string) => void;
-  /** Live sessions allowed at once; an initialize beyond it gets 503. Default 64. */
+  /** Live sessions allowed at once; past it the least recently active one is closed. Default 64. */
   readonly maxSessions?: number;
 }
 
@@ -69,6 +69,8 @@ export interface RunningHttpServer {
 interface Session {
   readonly transport: StreamableHTTPServerTransport;
   readonly server: McpServer;
+  /** A counter reading, not a clock: the higher, the more recently a request reached the session. */
+  lastActive: number;
 }
 
 /** The body says only what was wrong with the request, never what the request said. */
@@ -95,13 +97,33 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
   const maxSessions = options.maxSessions ?? MAX_SESSIONS;
   // Sessions being opened right now, so a burst of initializes cannot overshoot the cap.
   let opening = 0;
+  let activity = 0;
   let origins: ReadonlySet<string> = new Set();
   let hosts: ReadonlySet<string> = new Set();
 
+  /** The live session that went longest without a request. */
+  const leastRecentlyActive = (): [string, Session] | undefined => {
+    let oldest: [string, Session] | undefined;
+    for (const entry of sessions) {
+      if (oldest === undefined || entry[1].lastActive < oldest[1].lastActive) {
+        oldest = entry;
+      }
+    }
+    return oldest;
+  };
+
   const openSession = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    if (sessions.size + opening >= maxSessions) {
-      refuse(res, 503, 'Too many sessions; end one and try again');
-      return;
+    // The SDK client's `close()` never sends DELETE, so a closed agent leaves its session behind.
+    // At the cap the session idle longest makes room; only slots all still initializing refuse.
+    while (sessions.size + opening >= maxSessions) {
+      const victim = leastRecentlyActive();
+      if (victim === undefined) {
+        refuse(res, 503, 'Too many sessions; try again shortly');
+        return;
+      }
+      // Out of the map first, so a concurrent initialize picks the next one, not this one again.
+      sessions.delete(victim[0]);
+      await victim[1].server.close();
     }
     opening += 1;
     let counted = true;
@@ -111,39 +133,45 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         opening -= 1;
       }
     };
-    const server = options.createServer();
-    // The SDK's 400 for a bad `mcp-protocol-version` reflects that header back to the authenticated
-    // caller only, which is fine. Log the error message alone: never `extra.requestInfo` in a message
-    // handler, because it carries the request's `authorization` header.
-    server.server.onerror = (error) => {
-      options.log(`wirebench mcp: ${error.message}`);
-    };
-    const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      maxRequestBodySize: MAX_BODY_BYTES,
-      onsessioninitialized: (id) => {
-        sessions.set(id, { transport, server });
-        settled();
-      },
-    });
-    // Set before `connect`, which chains onto it: a session ends however its transport closes
-    // (the client's DELETE, or this server closing it), so the map cannot outgrow the live sessions.
-    transport.onclose = () => {
-      if (transport.sessionId !== undefined) {
-        sessions.delete(transport.sessionId);
-      }
-    };
-    // The SDK's class declares optional members its `Transport` interface requires, which
-    // `exactOptionalPropertyTypes` rejects; it is the SDK's documented pairing.
+    let server: McpServer | undefined;
     try {
-      await server.connect(transport as Transport);
+      server = options.createServer();
+      const opened = server;
+      // The SDK's 400 for a bad `mcp-protocol-version` reflects that header back to the authenticated
+      // caller only, which is fine. Log the error message alone: never `extra.requestInfo` in a message
+      // handler, because it carries the request's `authorization` header.
+      opened.server.onerror = (error) => {
+        options.log(`wirebench mcp: ${error.message}`);
+      };
+      const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        maxRequestBodySize: MAX_BODY_BYTES,
+        onsessioninitialized: (id) => {
+          activity += 1;
+          sessions.set(id, { transport, server: opened, lastActive: activity });
+          settled();
+        },
+      });
+      // Set before `connect`, which chains onto it: a session ends however its transport closes
+      // (the client's DELETE, or this server closing it), so the map cannot outgrow the live sessions.
+      transport.onclose = () => {
+        if (transport.sessionId !== undefined) {
+          sessions.delete(transport.sessionId);
+        }
+      };
+      // The SDK's class declares optional members its `Transport` interface requires, which
+      // `exactOptionalPropertyTypes` rejects; it is the SDK's documented pairing.
+      await opened.connect(transport as Transport);
       await transport.handleRequest(req, res);
+      if (transport.sessionId === undefined) {
+        // Not a valid initialize: the transport has answered, and there is no session to keep.
+        await opened.close();
+      }
+    } catch (error) {
+      await server?.close().catch(() => undefined);
+      throw error;
     } finally {
       settled();
-    }
-    if (transport.sessionId === undefined) {
-      // Not a valid initialize: the transport has answered, and there is no session to keep.
-      await server.close();
     }
   };
 
@@ -172,6 +200,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         refuse(res, 404, 'Unknown session; initialize a new one');
         return;
       }
+      activity += 1;
+      session.lastActive = activity;
       await session.transport.handleRequest(req, res);
       return;
     }
@@ -189,7 +219,10 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
       }
     });
   });
+  // A local process can still hold sockets open, and these two bounds keep that to a nuisance: at
+  // most 128 connections, and a connection that never finishes its headers is dropped after 10 s.
   http.maxConnections = MAX_CONNECTIONS;
+  http.headersTimeout = 10_000;
   await new Promise<void>((resolve, reject) => {
     http.once('error', reject);
     http.listen(options.port, HOST, () => {

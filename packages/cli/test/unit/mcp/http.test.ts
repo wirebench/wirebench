@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { request } from 'node:http';
@@ -28,13 +29,16 @@ afterEach(async () => {
   await removeTempDirs();
 });
 
-async function start(maxSessions?: number): Promise<RunningHttpServer> {
+async function start(
+  maxSessions?: number,
+  wrap: (create: () => McpServer) => () => McpServer = (create) => create,
+): Promise<RunningHttpServer> {
   const fixture = await soapProject();
   running = await startHttpServer({
     port: 0,
     ...(maxSessions !== undefined ? { maxSessions } : {}),
     token: TOKEN,
-    createServer: () => createMcpServer(fixture.base({ gates: { write: false, send: false } }), '0.0.0-test'),
+    createServer: wrap(() => createMcpServer(fixture.base({ gates: { write: false, send: false } }), '0.0.0-test')),
     log: (line) => logged.push(line),
   });
   return running;
@@ -158,9 +162,9 @@ describe('the MCP HTTP server', () => {
     expect((await postWithHost(server, `127.0.0.1:${String(server.port + 1)}`, auth)).status).toBe(403);
     expect((await postWithHost(server, '127.0.0.1', auth)).status).toBe(403);
     expect((await postWithHost(server, undefined, auth)).status).toBe(403);
-    expect(
-      (await postWithHost(server, `evil.example:${port}`, { ...auth, Origin: 'http://evil.example' })).status,
-    ).toBe(403);
+    const both = await postWithHost(server, `evil.example:${port}`, { ...auth, Origin: 'http://evil.example' });
+    expect(both.status).toBe(403);
+    expect(both.body).toContain('Origin not allowed');
     const refused = await postWithHost(server, `evil.example:${port}`, auth);
     expect(refused.body).not.toContain('evil.example');
     expect((await postWithHost(server, `127.0.0.1:${port}`, auth)).status).toBe(200);
@@ -168,23 +172,72 @@ describe('the MCP HTTP server', () => {
     expect((await postWithHost(server, `LOCALHOST:${port}`, auth)).status).toBe(200);
   });
 
-  it('refuses an initialize beyond the session cap, and takes one again when a session ends', async () => {
+  it('makes room for a new client when closed ones left their sessions behind', async () => {
+    const server = await start(2);
+    const connect = async (): Promise<Client> => {
+      const client = new Client({ name: 'wirebench-test', version: '0.0.0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(server.url), {
+          requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } },
+        }) as Transport,
+      );
+      return client;
+    };
+    // The SDK client's close() does not end the session, so each one stays in the server's map.
+    for (let i = 0; i < 2; i += 1) {
+      await (await connect()).close();
+    }
+    const next = await connect();
+    try {
+      expect((await next.listTools()).tools).toHaveLength(8);
+    } finally {
+      await next.close();
+    }
+  });
+
+  it('evicts the least recently active session, which then answers 404', async () => {
     const server = await start(2);
     const auth = { Authorization: `Bearer ${TOKEN}` };
-    const first = await post(server.url, auth);
-    await first.body?.cancel();
-    const second = await post(server.url, auth);
-    await second.body?.cancel();
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
-    const third = await post(server.url, auth);
-    const body = await third.text();
-    expect(third.status).toBe(503);
+    const open = async (): Promise<string> => {
+      const response = await post(server.url, auth);
+      await response.body?.cancel();
+      expect(response.status).toBe(200);
+      return response.headers.get('mcp-session-id') ?? '';
+    };
+    const older = await open();
+    const newer = await open();
+    // A request reaching the older session makes the newer one the idle one.
+    expect(await status(server.url, { ...auth, 'mcp-session-id': older }, '{}')).not.toBe(404);
+    const third = await open();
+    expect(third).not.toBe('');
+    expect(await status(server.url, { ...auth, 'mcp-session-id': newer }, '{}')).toBe(404);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': older }, '{}')).not.toBe(404);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': third }, '{}')).not.toBe(404);
+  });
+
+  it('answers 503 when there is no live session to make room from', async () => {
+    const server = await start(0);
+    const response = await post(server.url, { Authorization: `Bearer ${TOKEN}` });
+    const body = await response.text();
+    expect(response.status).toBe(503);
     expect(body).not.toContain(TOKEN);
-    const firstId = first.headers.get('mcp-session-id') ?? '';
-    expect(
-      (await fetch(server.url, { method: 'DELETE', headers: { ...auth, 'mcp-session-id': firstId } })).status,
-    ).toBe(200);
+  });
+
+  it('does not leak a slot when creating the server throws', async () => {
+    let failed = false;
+    const server = await start(1, (create) => () => {
+      if (!failed) {
+        failed = true;
+        throw new Error('no server for you');
+      }
+      return create();
+    });
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const first = await post(server.url, auth);
+    const body = await first.text();
+    expect(first.status).toBe(500);
+    expect(body).not.toContain('no server for you');
+    // With the slot leaked, the single slot would be "opening" and this would be 503.
     expect(await status(server.url, auth)).toBe(200);
   });
 

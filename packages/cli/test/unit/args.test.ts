@@ -217,6 +217,12 @@ describe('parseCliArgs — mcp', () => {
     expect(() => parseCliArgs(['mcp', '--http', 'x'])).toThrow(UsageError);
   });
 
+  it('refuses --http 80, which clients leave out of Host and Origin', () => {
+    expect(() => parseCliArgs(['mcp', '--http', '80'])).toThrow('--http 80 is not supported; pick another port');
+    expect(() => parseCliArgs(['mcp', '--http', '80'])).toThrow(UsageError);
+    expect(parseCliArgs(['mcp', '--http', '8080'])).toMatchObject({ httpPort: 8080 });
+  });
+
   it('refuses --http on the other verbs', () => {
     expect(() => parseCliArgs(['run', 'p', '--http', '8931'])).toThrow(UsageError);
     expect(() => parseCliArgs(['send', 'x', '--http', '8931'])).toThrow(UsageError);
