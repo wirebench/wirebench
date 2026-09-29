@@ -121,4 +121,36 @@ describe('Preferences → Devices & tokens (callback-assertion §5)', () => {
     expect(screen.getByRole('alert').textContent).toBe('A CI token named "nightly" already exists.');
     expect(screen.queryByTestId('ci-token-created')).toBeNull();
   });
+
+  it('sends one create while a create is in flight', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    create.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    mount('editor');
+    await waitFor(() => expect(screen.getAllByTestId('ci-token-row')).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('ci-token-create'));
+    fireEvent.change(screen.getByTestId('ci-token-name'), { target: { value: 'nightly' } });
+    await clickSettled('ci-token-create-submit');
+    expect(screen.getByTestId<HTMLButtonElement>('ci-token-create-submit').disabled).toBe(true);
+    await clickSettled('ci-token-create-submit');
+    expect(create).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      answer(ok({ id: NIGHTLY.id, name: 'nightly', token: CI_TOKEN }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screen.getByTestId('ci-token-created')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('shows a failed list as an error, not as an empty list', async () => {
+    list.mockResolvedValue({ ok: false, error: { code: 'network', message: 'Could not reach the server.' } });
+    mount('editor');
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Could not reach the server.'));
+    expect(screen.queryByText('No CI tokens yet.')).toBeNull();
+  });
+
+  it('says there are no CI tokens when the list is empty', async () => {
+    list.mockResolvedValue(ok({ tokens: [] }));
+    mount('editor');
+    await waitFor(() => expect(screen.getByText('No CI tokens yet.')).toBeTruthy());
+  });
 });

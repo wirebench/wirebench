@@ -34,6 +34,8 @@ export function TokensSection() {
   const reset = useCiTokensStore((state) => state.reset);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
+  // A second submit while the first create is out would be refused as a taken name.
+  const [pending, setPending] = useState(false);
   const [revoking, setRevoking] = useState<{ readonly id: string; readonly name: string } | undefined>(undefined);
   const canManage = role === 'editor' || role === 'admin';
   const url = server?.url;
@@ -61,10 +63,15 @@ export function TokensSection() {
   }
 
   const submit = async (): Promise<void> => {
-    if (name.trim() === '') return;
-    if (await create(server, name)) {
-      setNaming(false);
-      setName('');
+    if (pending || name.trim() === '') return;
+    setPending(true);
+    try {
+      if (await create(server, name)) {
+        setNaming(false);
+        setName('');
+      }
+    } finally {
+      setPending(false);
     }
   };
 
@@ -113,7 +120,7 @@ export function TokensSection() {
             </div>
           </div>
         )}
-        {loaded && tokens.length === 0 ? (
+        {loaded && error === undefined && tokens.length === 0 ? (
           <p className="mb-2 text-sm text-fg-subtle">No CI tokens yet.</p>
         ) : (
           <ul className="mb-2 divide-y divide-hairline">
@@ -154,7 +161,7 @@ export function TokensSection() {
               onChange={(event) => setName(event.target.value)}
               className={`${INPUT} flex-1`}
             />
-            <Button data-testid="ci-token-create-submit" type="submit" disabled={name.trim() === ''}>
+            <Button data-testid="ci-token-create-submit" type="submit" disabled={pending || name.trim() === ''}>
               Create
             </Button>
           </form>
