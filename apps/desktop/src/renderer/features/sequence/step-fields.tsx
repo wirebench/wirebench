@@ -16,6 +16,8 @@ export interface CommitInputProps {
   readonly monospace?: boolean;
   readonly testId?: string;
   readonly className?: string;
+  /** The id of a `<datalist>` to suggest values from; free text stays allowed. */
+  readonly list?: string;
 }
 
 /** A text field that reports its value when the user is done with it, not on every keystroke. */
@@ -27,6 +29,7 @@ export function CommitInput({
   monospace,
   testId,
   className = '',
+  list,
 }: CommitInputProps) {
   return (
     <input
@@ -34,6 +37,7 @@ export function CommitInput({
       key={value}
       aria-label={label}
       data-testid={testId}
+      list={list}
       defaultValue={value}
       placeholder={placeholder}
       className={`${FIELD} ${monospace === true ? 'font-mono' : ''} ${className}`}

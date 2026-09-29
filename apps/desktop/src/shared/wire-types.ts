@@ -2469,7 +2469,19 @@ export type LogExportHarRequest = z.infer<typeof logExportHarRequestSchema>;
 
 const assertionNameWire = z.string().optional();
 
-/** One assertion a sequence step may carry: the request catalogue plus `header`. */
+const callbackCheckFields = {
+  equals: z.string().optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+};
+const callbackHeaderWire = z.object({ name: z.string(), ...callbackCheckFields });
+const callbackBodyWire = z.object({
+  language: z.enum(['jsonpath', 'xpath']),
+  path: z.string(),
+  ...callbackCheckFields,
+});
+
+/** One assertion a sequence step may carry: the request catalogue plus `header` and `callback`. */
 export const stepAssertionWireSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('status'),
@@ -2495,6 +2507,26 @@ export const stepAssertionWireSchema = z.discriminatedUnion('type', [
     equals: z.string().optional(),
     matches: z.string().optional(),
     exists: z.boolean().optional(),
+    name: assertionNameWire,
+  }),
+  z.object({
+    type: z.literal('callback'),
+    catchUrl: z.string(),
+    withinMs: z.number().int(),
+    match: z.object({
+      method: z.string().optional(),
+      path: z.string().optional(),
+      pathMatches: z.string().optional(),
+      headers: z.array(callbackHeaderWire).optional(),
+      body: callbackBodyWire.optional(),
+    }),
+    expect: z.array(
+      z.union([
+        z.object({ body: callbackBodyWire }),
+        z.object({ header: callbackHeaderWire }),
+        z.object({ signature: z.literal('verified') }),
+      ]),
+    ),
     name: assertionNameWire,
   }),
 ]);
