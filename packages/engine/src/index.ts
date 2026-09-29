@@ -858,6 +858,7 @@ export type {
   HistoryGrpc,
   HistoryHeader,
   HistoryListQuery,
+  HistoryLockOptions,
   HistoryOptions,
   HistorySse,
   HistoryWs,
