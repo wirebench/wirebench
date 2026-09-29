@@ -459,6 +459,7 @@ function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: str
     ...scriptsField(request.scripts),
     ...(request.orphaned === true ? { orphaned: true } : {}),
     ...(request.hook !== undefined ? { hook: request.hook } : {}),
+    ...(request.signing !== undefined ? { signing: request.signing } : {}),
   };
 }
 
@@ -507,6 +508,7 @@ function toWebhookCollectionWire(project: Project): ProjectWire['webhooks'] {
     projectId: project.id,
     target: webhooks.target,
     ...(webhooks.auth !== undefined ? { auth: toAuthConfigWire(webhooks.auth) } : {}),
+    ...(webhooks.signing !== undefined ? { signing: webhooks.signing } : {}),
   };
 }
 
@@ -536,6 +538,7 @@ function toWebhookTreeWires(
         ...(folder.auth !== undefined ? { auth: toAuthConfigWire(folder.auth) } : {}),
         ...(folder.target !== undefined ? { target: folder.target } : {}),
         ...(folder.source !== undefined ? { source: { apiId: folder.source.apiId } } : {}),
+        ...(folder.signing !== undefined ? { signing: folder.signing } : {}),
       });
       walk(folder, folder.id);
     }

@@ -33,6 +33,7 @@ import {
   authChainFor,
   findRestRequest,
   toEngineAuthConfig,
+  toEngineSigning,
   toEngineBody,
   toEngineRows,
 } from './project-rest-mutations.js';
@@ -95,7 +96,7 @@ export function withDraft(request: RestRequestDef, draft: RestRequestPatchWire |
   if (draft === undefined) {
     return request;
   }
-  return {
+  const merged: RestRequestDef = {
     ...request,
     ...(draft.method !== undefined ? { method: draft.method } : {}),
     ...(draft.url !== undefined ? { url: draft.url } : {}),
@@ -105,7 +106,15 @@ export function withDraft(request: RestRequestDef, draft: RestRequestPatchWire |
     ...(draft.body !== undefined ? { body: toEngineBody(draft.body) } : {}),
     ...(draft.auth !== undefined ? { auth: toEngineAuthConfig(draft.auth) } : {}),
     ...(draft.settings !== undefined ? { settings: cleanSettings(draft.settings) } : {}),
+    ...(draft.signing !== undefined && draft.signing !== null ? { signing: toEngineSigning(draft.signing) } : {}),
   };
+  if (draft.signing !== null) {
+    return merged;
+  }
+  // An unsaved *Inherit* on the Signing tab: send as the parents would sign.
+  const inherited: Record<string, unknown> = { ...merged };
+  delete inherited['signing'];
+  return inherited as unknown as RestRequestDef;
 }
 
 /** Settings from the wire, with the keys the sender left undefined dropped (they mean *inherit*). */

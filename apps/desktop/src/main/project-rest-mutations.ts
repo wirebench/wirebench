@@ -11,7 +11,14 @@
  * must not become one file.
  */
 
-import { createApi, createFolder, createRestRequest, uniqueSlug } from '@wirebench/engine';
+import {
+  createApi,
+  createFolder,
+  createRestRequest,
+  signatureSchemeSchema,
+  toSignatureScheme,
+  uniqueSlug,
+} from '@wirebench/engine';
 import type {
   AuthConfig,
   KeyValueEntry,
@@ -24,6 +31,7 @@ import type {
   RestServer,
   WebhookCollection,
   WebhookFolder,
+  WebhookSigning,
 } from '@wirebench/engine';
 import { ProjectError } from '@wirebench/engine';
 import type {
@@ -33,6 +41,7 @@ import type {
   RestBodyWire,
   RestFolderPatchWire,
   RestRequestPatchWire,
+  WebhookSigningWire,
 } from '../shared/wire-types.js';
 
 /** What a mutation produced: the next model, and anything the caller has to do about it. */
@@ -309,6 +318,43 @@ export function toEngineAuthConfig(auth: AuthConfigWire): AuthConfig {
   return Object.fromEntries(entries) as unknown as AuthConfig;
 }
 
+/** What the project file schema accepts as a CI secret name (`WIREBENCH_SECRET_<name>`). */
+const SECRET_ENV_NAME = /^[A-Z][A-Z0-9_]*$/;
+
+/**
+ * A wire signing as the engine's (webhook-signatures §5.1). The scheme is re-parsed with the
+ * engine's schema, which applies the tolerance default and the header-name rule the files enforce,
+ * and the CI name is held to the file schema's pattern: main never saves what the loader would
+ * then refuse, which would leave the project unloadable.
+ *
+ * @throws ProjectError `webhook-signing-invalid`
+ */
+export function toEngineSigning(wire: WebhookSigningWire): WebhookSigning {
+  if (wire.mode === 'none') {
+    return { mode: 'none' };
+  }
+  const parsed = signatureSchemeSchema.safeParse(wire.scheme);
+  if (!parsed.success) {
+    throw new ProjectError('webhook-signing-invalid', 'The signing scheme is not valid', {
+      details: { issues: parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })) },
+    });
+  }
+  const secretEnv = wire.secretEnv !== undefined && wire.secretEnv !== '' ? wire.secretEnv : undefined;
+  if (secretEnv !== undefined && !SECRET_ENV_NAME.test(secretEnv)) {
+    throw new ProjectError(
+      'webhook-signing-invalid',
+      'The CI secret name must be upper case letters, digits and underscores, starting with a letter',
+      { details: { secretEnv } },
+    );
+  }
+  return {
+    mode: 'sign',
+    scheme: toSignatureScheme(parsed.data),
+    ...(wire.secretRef !== undefined && wire.secretRef !== '' ? { secretRef: wire.secretRef } : {}),
+    ...(secretEnv !== undefined ? { secretEnv } : {}),
+  };
+}
+
 /** One table row from the wire, with an absent description absent rather than undefined. */
 export function toEngineRows(rows: readonly KeyValueWire[]): KeyValueEntry[] {
   return rows.map((row) => ({
@@ -474,14 +520,15 @@ export function addFolder(
 }
 
 /**
- * The `target`/`source` a webhook folder carries beyond a plain `RestFolder`, passed through
+ * The `target`/`source`/`signing` a webhook folder carries beyond a plain `RestFolder`, passed through
  * untouched by a patch that only ever names REST fields.
  */
-function webhookFolderExtras(folder: RestFolder): Pick<WebhookFolder, 'target' | 'source'> {
+function webhookFolderExtras(folder: RestFolder): Pick<WebhookFolder, 'target' | 'source' | 'signing'> {
   const asWebhookFolder = folder as WebhookFolder;
   return {
     ...(asWebhookFolder.target !== undefined ? { target: asWebhookFolder.target } : {}),
     ...(asWebhookFolder.source !== undefined ? { source: asWebhookFolder.source } : {}),
+    ...(asWebhookFolder.signing !== undefined ? { signing: asWebhookFolder.signing } : {}),
   };
 }
 
@@ -617,6 +664,14 @@ export function applyRestRequestPatch(
     ...(request.contract !== undefined ? { contract: request.contract } : {}),
     // Same for a webhook collection item's link back to the OpenAPI entry it came from.
     ...(request.hook !== undefined ? { hook: request.hook } : {}),
+    // Webhook items only (`updateRestRequest` refuses it elsewhere); `null` returns to inherit.
+    ...(patch.signing === null
+      ? {}
+      : patch.signing !== undefined
+        ? { signing: toEngineSigning(patch.signing) }
+        : request.signing !== undefined
+          ? { signing: request.signing }
+          : {}),
   });
 }
 
@@ -626,6 +681,14 @@ export function updateRestRequest(
   requestId: string,
   patch: RestRequestPatchWire,
 ): RestMutationResult {
+  if (patch.signing !== undefined) {
+    const owner = restTreeOwnerOf(project, requestId);
+    if (owner !== undefined && !isWebhookOwner(owner)) {
+      throw new ProjectError('webhook-signing-not-webhook', 'Only a webhook item can sign what it sends', {
+        details: { requestId },
+      });
+    }
+  }
   const apply = (container: Container): Container => ({
     ...container,
     requests: container.requests.map((request) =>
@@ -682,6 +745,8 @@ export function cloneRestRequest(project: Project, requestId: string): RestMutat
       ...copy,
       assertions: original.assertions,
       ...(original.scripts !== undefined ? { scripts: original.scripts } : {}),
+      // A clone signs like its original; only `hook` is deliberately dropped.
+      ...(original.signing !== undefined ? { signing: original.signing } : {}),
     };
     createdId = withAssertions.id;
     const requests = [...container.requests];
