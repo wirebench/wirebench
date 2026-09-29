@@ -154,4 +154,49 @@ describe('runSequence with a callback assertion', () => {
       'no capture matched within 2 s — 1 arrived; closest: POST / (body $.orderId differs)',
     );
   });
+
+  it('errors a step the host could not send, after the prepare and without waiting', async () => {
+    const calls: string[] = [];
+    const send: SequenceStepSender = () => Promise.resolve({ error: { code: 'x', message: 'refused' } });
+    const source: CaptureSource = {
+      resolve: () => {
+        calls.push('resolve');
+        return Promise.resolve({ hookId: HOOK });
+      },
+      cursor: () => {
+        calls.push('cursor');
+        return Promise.resolve(null);
+      },
+      after: () => {
+        calls.push('after');
+        return Promise.resolve([]);
+      },
+      detail: () => Promise.resolve(capture('A-17')),
+    };
+    let now = 0;
+    const sleeps: number[] = [];
+    const clock: CallbackClock = {
+      now: () => now,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        now += ms;
+        return Promise.resolve();
+      },
+    };
+    const waited: CallbackStep[] = [];
+    const result = await runSequence(
+      createSequence('Checkout', {
+        id: 'S',
+        steps: [createSequenceStep('pay', { id: 'T-pay', assertions: [CALLBACK] })],
+      }),
+      project(),
+      send,
+      { captures: source, callbackClock: clock, onCallbackWaiting: (step) => waited.push(step) },
+    );
+
+    expect(result.steps[0]).toMatchObject({ outcome: 'errored', error: { code: 'x', message: 'refused' } });
+    expect(calls).toEqual(['resolve', 'cursor']);
+    expect(waited).toEqual([]);
+    expect(sleeps).toEqual([]);
+  });
 });
