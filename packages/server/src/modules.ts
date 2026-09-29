@@ -1,4 +1,5 @@
 import type { ServerModule } from './context.js';
+import { ciTokensModule } from './ci-tokens/module.js';
 import { hooksModule } from './hooks/module.js';
 import { identityModule } from './identity/module.js';
 import { liveModule } from './live/module.js';
@@ -10,6 +11,7 @@ import { teamsModule } from './teams/module.js';
  * server-sync comes after teams-access: its routes are guarded by teams-access's role rule.
  * webhook-capture comes next: its routes use the same guard, and the hub listens to its
  * announcements (webhook-capture §3.1).
+ * ci-tokens comes after webhook-capture: a CI token may call only that module's capture reads.
  * live-updates comes last. It resolves roles through teams-access, and `@fastify/websocket` wraps
  * only the routes registered after it in the shared scope.
  */
@@ -18,5 +20,6 @@ export const BUILTIN_MODULES: readonly ServerModule[] = [
   teamsModule(),
   syncModule(),
   hooksModule(),
+  ciTokensModule(),
   liveModule(),
 ];

@@ -173,7 +173,7 @@ export interface ServerContext {
 }
 
 export interface ServerModule {
-  readonly name: 'identity' | 'teams-access' | 'server-sync' | 'webhook-capture' | 'live-updates';
+  readonly name: 'identity' | 'teams-access' | 'server-sync' | 'webhook-capture' | 'ci-tokens' | 'live-updates';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.
