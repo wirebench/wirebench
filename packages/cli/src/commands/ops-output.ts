@@ -89,7 +89,7 @@ function validateText(result: ValidateResult): string {
 
 function queryText(result: QueryOutput): string {
   const cut = result.truncated ? ['(output truncated: results were left out or cut at a size cap)'] : [];
-  return result.results.length === 0 && cut.length === 0 ? '' : lines(...result.results, ...cut);
+  return lines(...(result.results.length === 0 ? ['(no results)'] : result.results), ...cut);
 }
 
 function historyListText(result: HistoryListResult): string {

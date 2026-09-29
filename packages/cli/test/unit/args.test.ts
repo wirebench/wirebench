@@ -145,6 +145,20 @@ describe('parseCliArgs — the op verbs', () => {
     });
   });
 
+  it('still accepts and ignores every run option on secrets list, as before the verbs', () => {
+    expect(
+      parseCliArgs(['secrets', 'list', './p', '--no-color', '-q', '-v', '--insecure', '--bail', '--reporter', 'cli']),
+    ).toMatchObject({ command: 'secrets-list', path: './p' });
+    expect(
+      parseCliArgs(['secrets', 'list', './p', '--timeout', '5', '--sla', '5', '--require-assertions']),
+    ).toMatchObject({ command: 'secrets-list' });
+  });
+
+  it('does not look a help topic up on the prototype', () => {
+    expect(parseCliArgs(['toString', '--help'])).toEqual({ command: 'help' });
+    expect(parseCliArgs(['constructor', '--help'])).toEqual({ command: 'help' });
+  });
+
   it('gives each verb its own help', () => {
     expect(parseCliArgs(['send', '--help'])).toEqual({ command: 'help', topic: 'send' });
     expect(parseCliArgs(['history', 'diff', '--help'])).toEqual({ command: 'help', topic: 'history' });
@@ -163,7 +177,8 @@ describe('parseCliArgs — the op verbs', () => {
     [['query', '//a', 'x', '--namespace', 'nouri']],
     [['operations', '--name', 'x']],
     [['run', './p', '--json']],
-    [['secrets', 'list', './p', '--bail']],
+    [['secrets', 'list', './p', '--json']],
+    [['run', './p', '--project', 'x']],
   ])('rejects %j as a usage error', (argv) => {
     expect(() => parseCliArgs(argv)).toThrow(UsageError);
   });

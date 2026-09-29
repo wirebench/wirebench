@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ExitCode } from '../../src/exit-codes.js';
+import { OPS_HELP_TEXT, VERB_HELP } from '../../src/args-ops.js';
+import type { OpName } from '../../src/args-ops.js';
 import { formatHuman } from '../../src/commands/ops-output.js';
 import { main } from '../../src/main.js';
 import {
@@ -167,5 +169,97 @@ describe('the op verbs, --json and the human text', () => {
     const foreign = await cli(['operations', '--project', fixture.dir, '--body', 'x']);
     expect(foreign).toMatchObject({ code: ExitCode.Usage, stdout: '' });
     expect(foreign.stderr).toContain('--body does not apply to wirebench operations');
+  });
+});
+
+describe('the op verbs, exit codes, warnings and help', () => {
+  it('exits 3 for an errored send and for an op error that is not a usage code', async () => {
+    const fixture = await soapProject();
+    server = await startServer(() => ({ status: 200, headers: { 'Content-Type': 'text/xml' }, body: envelope('5') }));
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: server.url });
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      interfaces: project.interfaces.map((iface) => ({
+        ...iface,
+        operations: iface.operations.map((operation) => ({
+          ...operation,
+          requests: operation.requests.map((request) => ({
+            ...request,
+            assertions: [{ type: 'match', language: 'xpath', expression: '((', equals: '1' }],
+          })),
+        })),
+      })),
+    }));
+    const where = ['--project', fixture.dir, '--history-dir', fixture.historyDir];
+    const errored = await cli(['send', SOAP_ITEM, '-e', 'local', ...where]);
+    expect(errored.code).toBe(ExitCode.RunError);
+    expect(errored.stdout).toContain('ERRORED');
+
+    await server.close();
+    const refused = await cli(['send', SOAP_ITEM, '-e', 'local', ...where]);
+    expect(refused).toMatchObject({ code: ExitCode.RunError, stdout: '' });
+    expect(refused.stderr).toContain('connection-refused:');
+    server = undefined;
+  });
+
+  it('sends the History-busy warning to stderr and keeps stdout pure JSON under --json', async () => {
+    const fixture = await soapProject();
+    server = await startServer(() => ({ status: 200, headers: { 'Content-Type': 'text/xml' }, body: envelope('5') }));
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: server.url });
+    // A fresh lock file is a live writer's: the append waits for it, then gives up.
+    await writeFile(join(fixture.historyDir, 'mcp-fixture.jsonl.lock'), 'held-by-a-test');
+
+    const sent = await cli([
+      'send',
+      SOAP_ITEM,
+      '-e',
+      'local',
+      '--project',
+      fixture.dir,
+      '--history-dir',
+      fixture.historyDir,
+      '--json',
+    ]);
+
+    expect(sent.code).toBe(ExitCode.Ok);
+    const parsed = JSON.parse(sent.stdout) as Record<string, unknown>;
+    expect(parsed).toMatchObject({ outcome: 'passed', status: 200 });
+    expect(parsed).not.toHaveProperty('historyId');
+    expect(sent.stderr).toMatch(/^warning: History not written: history-busy/);
+  }, 15_000);
+
+  it('says no file exists either when a path-shaped source is no History id', async () => {
+    const fixture = await soapProject();
+    const where = ['--project', fixture.dir, '--history-dir', fixture.historyDir];
+    const path = await cli(['query', '//a', join(fixture.dir, 'missing.xml'), ...where]);
+    expect(path.code).toBe(ExitCode.Usage);
+    expect(path.stderr).toContain('history-entry-not-found:');
+    expect(path.stderr).toContain(' (no file exists at that path either)');
+    const id = await cli(['query', '//a', 'deadbeef', ...where]);
+    expect(id.code).toBe(ExitCode.Usage);
+    expect(id.stderr).toContain('history-entry-not-found:');
+    expect(id.stderr).not.toContain('no file exists');
+  });
+
+  it('prints no results for an empty query result', () => {
+    expect(formatHuman('query', { language: 'xpath', results: [], truncated: false })).toBe('(no results)\n');
+  });
+
+  it('has help for every verb and lists every op in the overview', () => {
+    const ops: OpName[] = [
+      'import',
+      'operations',
+      'generate',
+      'send',
+      'validate',
+      'query',
+      'history_list',
+      'history_diff',
+    ];
+    for (const op of ops) {
+      const verb = op.startsWith('history_') ? 'history' : op;
+      expect(Object.hasOwn(VERB_HELP, verb)).toBe(true);
+      expect(OPS_HELP_TEXT).toContain(op.startsWith('history_') ? `history ${op.slice(8)}` : `wirebench ${op}`);
+    }
   });
 });

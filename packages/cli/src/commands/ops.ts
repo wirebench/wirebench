@@ -71,10 +71,12 @@ function exitCodeOf(op: OpName, result: unknown): ExitCode {
 
 export async function opCommand(args: OpArgs, io: CliIo): Promise<ExitCode> {
   const base = opsBaseFor({ project: args.project, historyDir: args.historyDir, gates: OPEN_GATES, origin: 'cli' }, io);
+  let triedAsHistoryId = false;
   try {
     let input: Record<string, unknown> = { ...args.input };
     if (args.source !== undefined) {
       const isFile = await exists(resolve(args.source));
+      triedAsHistoryId = !isFile && /[/\\.]/.test(args.source);
       input = { ...input, ...(isFile ? { file: args.source } : { historyId: args.source }) };
     }
     if (args.bodyFile !== undefined) {
@@ -84,7 +86,11 @@ export async function opCommand(args: OpArgs, io: CliIo): Promise<ExitCode> {
     io.stdout.write(args.json ? `${JSON.stringify(result, null, 2)}\n` : formatHuman(args.op, result));
     return exitCodeOf(args.op, result);
   } catch (error) {
-    const failure = toOpsError(error);
+    let failure = toOpsError(error);
+    if (triedAsHistoryId && failure.code === 'history-entry-not-found') {
+      // A path-shaped argument that is no History id was most likely meant as a file.
+      failure = new OpsError(failure.code, `${failure.message} (no file exists at that path either)`, failure.details);
+    }
     io.stderr.write(`${failure.code}: ${failure.message}\n`);
     return exitCodeForError(failure);
   }

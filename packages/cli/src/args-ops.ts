@@ -53,6 +53,13 @@ const USAGE: Readonly<Record<OpName, string>> = {
   history_diff: 'wirebench history diff <from-id> <to-id> [--ignore <path>]…',
 };
 
+/**
+ * The options only the op verbs take. `run` and `secrets list` refuse exactly these: every other
+ * registered option (`--no-color`, `-q`, `--bail`, …) they accepted before the verbs existed, and
+ * still accept and ignore.
+ */
+const OP_ONLY_FLAGS: readonly string[] = Object.keys(OP_OPTIONS);
+
 const COMMON = ['project', 'json'] as const;
 
 const VERB_FLAGS: Readonly<Record<OpName, readonly string[]>> = {
@@ -77,9 +84,11 @@ wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--project
                        Sends a saved SOAP or REST request as run does, prints the response and the
                        assertion results, and records it in the desktop's History.
 wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
-                       Validates a message against the WSDL schema or the OpenAPI response schema.
+                       Validates a message against the WSDL schema or the OpenAPI response schema. The
+                       source is a file when one exists at that path, else a History id.
 wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction …]
-                       XPath 3.1 on XML, JSONPath on JSON; prints each result on its own line.
+                       XPath 3.1 on XML, JSONPath on JSON; prints each result on its own line. The
+                       source is a file when one exists at that path, else a History id.
 wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <to-id> [--ignore <path>]…
                        The desktop's History for the project: recent sends, or a semantic diff of two
                        responses.
@@ -117,6 +126,7 @@ Secrets come from WIREBENCH_SECRET_<NAME> variables, as for run. Exit 1 when an 
 Exit 1 when the message is invalid.`,
   query: `${USAGE.query} [--project <dir>] [--history-dir <dir>] [--json]
 
+<history-id|file>      A file when one exists at that path, else a History id.
 XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
   history: `${USAGE.history_list} [--project <dir>] [--history-dir <dir>] [--json]
 ${USAGE.history_diff} [--project <dir>] [--history-dir <dir>] [--json]
@@ -143,6 +153,15 @@ export function isOpVerb(word: string): boolean {
 export function refuseForeign(values: OptionValues, allowed: readonly string[], verb: string): void {
   for (const [key, value] of Object.entries(values)) {
     if (value !== undefined && key !== 'help' && key !== 'version' && !allowed.includes(key)) {
+      throw new UsageError(`--${key} does not apply to ${verb}`);
+    }
+  }
+}
+
+/** `run` and `secrets list`: an op-only option is a usage error; the rest parse as they always did. */
+export function refuseOpOnly(values: OptionValues, verb: string): void {
+  for (const key of OP_ONLY_FLAGS) {
+    if (values[key] !== undefined) {
       throw new UsageError(`--${key} does not apply to ${verb}`);
     }
   }

@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { isOpVerb, OP_OPTIONS, OPS_HELP_TEXT, parseOpVerb, refuseForeign, VERB_HELP } from './args-ops.js';
+import { isOpVerb, OP_OPTIONS, OPS_HELP_TEXT, parseOpVerb, refuseOpOnly, VERB_HELP } from './args-ops.js';
 import type { OpArgs } from './args-ops.js';
 import { UsageError } from './usage-error.js';
 
@@ -81,23 +81,6 @@ export type ParsedArgs =
   | { readonly command: 'version' };
 
 const REPORTER_KINDS = new Set(['junit', 'json', 'html']);
-
-/** `run`'s and `secrets list`'s own options: the op verbs' options are refused there, as before they existed. */
-const RUN_FLAGS = [
-  'env',
-  'sequence',
-  'var',
-  'reporter',
-  'bail',
-  'timeout',
-  'sla',
-  'require-assertions',
-  'insecure',
-  'no-color',
-  'quiet',
-  'verbose',
-];
-const SECRETS_FLAGS = ['env', 'sequence', 'var'];
 
 /** Parses `--reporter <spec>`, one of `cli` or `<kind>=<file>`. */
 function parseReporter(spec: string): ReporterSpec {
@@ -181,7 +164,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
 
   if (values.help) {
     const [topic] = positionals;
-    return topic !== undefined && topic in VERB_HELP ? { command: 'help', topic } : { command: 'help' };
+    return topic !== undefined && Object.hasOwn(VERB_HELP, topic) ? { command: 'help', topic } : { command: 'help' };
   }
   if (values.version) {
     return { command: 'version' };
@@ -201,7 +184,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   }
 
   if (word === 'run') {
-    refuseForeign(values, RUN_FLAGS, 'wirebench run');
+    refuseOpOnly(values, 'wirebench run');
     const [path, ...selectors] = rest;
     if (path === undefined) {
       throw new UsageError('wirebench run <path> [selector…] [options]: <path> is required');
@@ -231,7 +214,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   }
 
   if (word === 'secrets') {
-    refuseForeign(values, SECRETS_FLAGS, 'wirebench secrets list');
+    refuseOpOnly(values, 'wirebench secrets list');
     const [sub, path, ...selectors] = rest;
     if (sub !== 'list') {
       throw new UsageError(`wirebench secrets list <path> [selector…] [-e <name>]: unknown subcommand "${sub ?? ''}"`);
