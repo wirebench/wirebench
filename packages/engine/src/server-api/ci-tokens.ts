@@ -11,9 +11,13 @@ import { teamsIdSchema } from './teams.js';
 
 export const CI_TOKEN_NAME_MAX_LENGTH = 64;
 
-/** `POST …/ci-tokens`. The handler trims the name and refuses a blank one. */
-export const ciTokenCreateRequestSchema = z.object({ name: z.string().min(1).max(CI_TOKEN_NAME_MAX_LENGTH) });
-export type CiTokenCreateRequest = z.infer<typeof ciTokenCreateRequestSchema>;
+/**
+ * `POST …/ci-tokens`. The server validates with its own route schema, which trims the name before it
+ * bounds it by `CI_TOKEN_NAME_MAX_LENGTH` and refuses a blank one.
+ */
+export interface CiTokenCreateRequest {
+  readonly name: string;
+}
 
 /** The one answer that holds the token: the desktop shows it once, with *Copy*. */
 export const ciTokenCreatedSchema = z.object({

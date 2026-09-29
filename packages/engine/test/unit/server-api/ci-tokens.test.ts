@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CI_TOKEN_NAME_MAX_LENGTH,
-  ciTokenCreateRequestSchema,
   ciTokenCreatedSchema,
   ciTokenParamsSchema,
   ciTokensResponseSchema,
@@ -44,9 +43,6 @@ describe('CI token wire shapes (callback-assertion §3)', () => {
 
   it('bounds the name and the ids', () => {
     expect(CI_TOKEN_NAME_MAX_LENGTH).toBe(64);
-    expect(ciTokenCreateRequestSchema.safeParse({ name: '' }).success).toBe(false);
-    expect(ciTokenCreateRequestSchema.safeParse({ name: 'x'.repeat(64) }).success).toBe(true);
-    expect(ciTokenCreateRequestSchema.safeParse({ name: 'x'.repeat(65) }).success).toBe(false);
     expect(ciTokenParamsSchema.safeParse({ workspaceId: WS, tokenId: ID }).success).toBe(true);
     expect(ciTokenParamsSchema.safeParse({ workspaceId: WS, tokenId: 'not-an-id' }).success).toBe(false);
   });

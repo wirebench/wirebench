@@ -1647,7 +1647,6 @@ export type {
 } from './server-api/hooks.js';
 export {
   CI_TOKEN_NAME_MAX_LENGTH,
-  ciTokenCreateRequestSchema,
   ciTokenCreatedSchema,
   ciTokenParamsSchema,
   ciTokenSummarySchema,
