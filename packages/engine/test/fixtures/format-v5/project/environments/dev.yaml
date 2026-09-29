@@ -1,0 +1,9 @@
+disabled:
+  - region
+endpoints:
+  CountryInfo: http://localhost:8080/country
+id: ID0009
+name: dev
+order: 0
+properties:
+  region: local

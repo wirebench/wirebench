@@ -183,13 +183,13 @@ describe('Postman importer review fixes', () => {
     ]);
   });
 
-  it('7: warns when scripts are dropped and when credentials must be re-entered', () => {
+  it('7: warns when scripts are imported switched off and when credentials must be re-entered', () => {
     const { summary } = importDoc({
       event: [{ listen: 'prerequest', script: { exec: ['1'] } }],
       auth: { type: 'bearer', bearer: [{ key: 'token', value: 'secret' }] },
       item: [{ name: 'R', event: [{ listen: 'test', script: { exec: ['2'] } }], request: '/x' }],
     });
-    expect(summary.warnings?.some((w) => /script/i.test(w) && w.includes('2'))).toBe(true);
+    expect(summary.warnings?.some((w) => /^Scripts on 1 request was imported switched off/.test(w))).toBe(true);
     expect(summary.warnings?.some((w) => /re-enter/i.test(w))).toBe(true);
   });
 

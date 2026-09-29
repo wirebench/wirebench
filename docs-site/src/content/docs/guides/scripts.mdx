@@ -1,0 +1,156 @@
+---
+title: Scripts
+description: Run a typed script before a request is sent and after its response arrives — to sign it, check it, or carry a value to the next request.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+A SOAP, REST or gRPC request can have two scripts. The **pre-request** script runs just before the
+request is sent and can change it: add a header, sign the body, fill in a field. The **post-response**
+script runs when the response arrives and can check it with tests and keep a value for later
+requests — a log-in's token, say.
+
+Scripts are TypeScript, and their types come from the request's own contract. A SOAP request's body
+is typed from the operation's XSD elements, a REST request's from its OpenAPI operation, and a gRPC
+request's from its `.proto` messages. So the editor completes `response.json().orderId`, and a path
+that does not exist is an error before anything is sent.
+
+## Write a script
+
+<Steps>
+
+1. Open a request and choose the **Scripts** tab. On a SOAP request it is the **Scripts** inspector
+   under the envelope.
+2. Choose **Pre-request** or **Post-response** and write the script. Completion, hover and signature
+   help come from the request's types; errors are underlined, and counted under the editor.
+3. Send the request. The response's **Script** tab shows the tests, whether each passed, and what the
+   scripts logged.
+
+</Steps>
+
+A script is saved beside its request, as `<request>.pre.ts` or `<request>.post.ts`, and the request
+file names it under `scripts`. See the [project folder format](/wirebench/reference/project-format/).
+
+```ts
+// Log in.post.ts: keep the token for the next request, as a secret.
+if (response.status === 200) {
+  // Typed from the operation's 200 response; `unknown` for a request with no contract, so say what it is.
+  const body = response.json() as { access_token: string };
+  vars.set('token', body.access_token, { secret: true });
+}
+test('logged in', () => expect(response.status).toBe(200));
+```
+
+```ts
+// Checkout.pre.ts: sign the body with a key the request lists under Secrets.
+const signature = crypto.hmac('sha256', secrets.get('signing_key'), request.body.text, 'base64');
+request.headers.set('X-Signature', signature);
+```
+
+The whole API, per protocol and phase, is in the [script API reference](/wirebench/reference/script-api/).
+
+## What a pre-request script can change
+
+A pre-request script runs after `${…}` properties are expanded and before the configured auth,
+WS-Addressing, WS-Security and signing are applied. So a script's change is signed with the rest of the
+request, and the script never sees the configured credentials.
+
+| Protocol | Can change | Cannot change |
+| --- | --- | --- |
+| REST | method, path, query, headers, body (`body.json`, typed, or `body.text`) | scheme, host, port |
+| SOAP | the SOAP body (`body`, typed, or the `envelope` text), headers, SOAPAction | the endpoint's scheme, host, port |
+| gRPC | the message (typed), metadata | target, method |
+
+A script that sends the request somewhere else fails with `script-origin-change`, and a header value
+with a line break fails with `script-value-invalid`. Either way nothing is sent.
+
+## Tests
+
+`test(name, () => …)` records a test, and `expect` checks a value inside it: `toBe`, `toEqual`,
+`toContain`, `toMatch`, `toBeGreaterThan`, `toHaveProperty` and the rest, each with `.not`. A failed
+`expect` fails its test and the script carries on. Tests count as the request's assertions, in the app,
+in a sequence and in `wirebench run`.
+
+## Values for later requests
+
+`vars.set(name, value)` keeps a value that later requests read as `${#Sequence#name}`:
+
+- **A single send in the app** keeps it in the project's session, in memory, until the project closes.
+  The explorer lists the session's values under **Values**, with **Clear values** (the
+  `Scripts: Clear Session Values` command does the same).
+- **A sequence run** keeps it for the steps after it, as a transfer would.
+- **`wirebench run`** keeps it for the requests after it, in run order.
+
+A value from a script comes from a response, so it is held to the same rules as a sequence's
+transfers: it is used exactly as set, escaped where it lands, can't choose where a request goes, and
+can't carry a line break into a URL or header. Mark it `{ secret: true }` when it is a credential: it is
+masked in the log, History, reports and the Values list, which shows it only as `(secret)`.
+
+## Secrets
+
+- Credentials configured on the request, folder or API are applied after the pre-request script. A
+  script never sees them.
+- A `${secret:name}` in the request's text reaches the server as its value, but the script sees a
+  placeholder in its place.
+- `secrets.get(name)` returns a secret's value only when the request lists that name under **Secrets**
+  on the Scripts tab (`scripts.secrets` in the file). Listing one is a change a reviewer sees. Every value
+  a script reads this way is masked everywhere it could appear.
+
+## What a script can't do
+
+A script is code from the project, and it runs with no capabilities. It can't reach the network, read
+a file or the keychain, or touch another project or the app. It runs in a sandbox on its own thread,
+fresh for each run, with limits:
+
+| Limit | Default |
+| --- | --- |
+| Time | 1 second per script (**Timeout**, up to 10 seconds) |
+| Memory | 64 MiB |
+| Log | 1,000 lines, 64 KiB |
+| Tests | 1,000 |
+| Values | 100, each up to 64 KiB |
+| Script file | 256 KiB |
+
+TypeScript's erasable syntax only: no `enum`, `namespace`, parameter properties or decorators. There is
+no `setTimeout`, `fetch` or `require`.
+
+## When a script fails
+
+- **The pre-request script** throws, times out or breaks a rule: the request is not sent, and the error
+  names the script's file, line and column.
+- **The post-response script** throws: the response is kept and shown, and the request is reported as
+  errored, with the error on the **Script** tab.
+- **A type error** stops the send before anything is resolved or sent (`script-type-error`).
+- **A missing script file** stops the send too (`script-file-missing`): the request says it has a script
+  that is not there.
+
+## Switch scripts off
+
+Clear **Run these scripts** to keep a request's scripts without running them. The request is sent as if
+it had none, isn't type-checked, and its result says its scripts were off.
+
+## Postman scripts
+
+A Postman collection's `prerequest` and `test` scripts are imported with its requests: the collection's,
+then each folder's, then the request's own, in one file per phase. They are JavaScript, run through a
+`pm` layer, and are checked for syntax only.
+
+**Imported scripts are switched off.** A collection from elsewhere is code nobody on the team has read
+yet. A request with them shows a banner — "These scripts are off. Read them, then switch them on." — and
+**Switch on**. **Switch on scripts…** on an API, a folder or an interface switches on every request
+beneath it, after a confirmation that names them.
+
+The layer covers what collections mostly use: `pm.test`, `pm.expect` with the common chai chains,
+`pm.response` (`code`, `status`, `headers.get`, `json()`, `text()`, `responseTime`,
+`to.have.status`), `pm.request` (`url`, headers, `body.raw`), `pm.info.requestName`, the `pm.*.get`
+and `pm.*.set` variable calls (all kept as the run's values), `CryptoJS` hashes, HMACs and Base64,
+`btoa` and `atob`. Anything else — `pm.sendRequest`, `pm.cookies.jar()`, `pm.visualizer`, `require`,
+`setNextRequest` — fails when it is called, with `script-unsupported` naming it. The import summary
+lists the requests that call one.
+
+## In CI
+
+`wirebench run` runs every selected request's scripts, with and without `--sequence`. It type-checks
+them all before it sends anything, and a type error exits 2 with the file, line and column. Script tests
+appear in every reporter as assertions, and the log goes to stderr with `--verbose` and into the JSON
+report as `scriptLog`.

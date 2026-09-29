@@ -59,6 +59,14 @@ function renderTransfers(result: RequestResult): string {
   return `<table><thead><tr><th>Transfer</th><th>Outcome</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/** What a request's scripts logged, already masked. */
+function renderScriptLog(result: RequestResult): string {
+  if (result.scriptLog === undefined || result.scriptLog.length === 0) {
+    return '';
+  }
+  return `<pre class="script-log">${escapeHtml(result.scriptLog.join('\n'))}</pre>`;
+}
+
 function renderExchange(result: RequestResult): string {
   if (result.exchange === undefined) {
     return '';
@@ -88,7 +96,7 @@ function renderRequest(result: RequestResult): string {
   const open = result.outcome === 'failed' || result.outcome === 'errored' ? ' open' : '';
   return (
     `<details${open}><summary>${renderSummary(result)}</summary>` +
-    `${renderAssertions(result.assertions)}${renderTransfers(result)}${renderError(result)}${renderExchange(result)}</details>`
+    `${renderAssertions(result.assertions)}${renderTransfers(result)}${renderScriptLog(result)}${renderError(result)}${renderExchange(result)}</details>`
   );
 }
 

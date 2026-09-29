@@ -338,6 +338,18 @@ import {
   sequenceProgressEventSchema,
   sequenceRunRequestSchema,
   sequenceRunResultWireSchema,
+  scriptCloseModelRequestSchema,
+  scriptCloseModelResponseSchema,
+  scriptCompletionsResponseSchema,
+  scriptDiagnosticsResponseSchema,
+  scriptPositionRequestSchema,
+  scriptQuickInfoResponseSchema,
+  scriptSignatureHelpResponseSchema,
+  scriptSourceRequestSchema,
+  scriptValuesChangedEventSchema,
+  scriptValuesClearResponseSchema,
+  scriptValuesListResponseSchema,
+  scriptValuesRequestSchema,
 } from './wire-types.js';
 
 /**
@@ -940,6 +952,23 @@ export const channels = {
     /** Stops a run: the step in flight is cancelled and the rest are skipped. */
     cancel: defineChannel('sequence.cancel', sequenceCancelRequestSchema, sequenceCancelResponseSchema),
   },
+  // A request's scripts (#63): the editor's language features, answered by main's checker against
+  // the request's own types, and a project's session values. Edits go through `project.mutate`.
+  script: {
+    diagnostics: defineChannel('script.diagnostics', scriptSourceRequestSchema, scriptDiagnosticsResponseSchema),
+    completions: defineChannel('script.completions', scriptPositionRequestSchema, scriptCompletionsResponseSchema),
+    quickInfo: defineChannel('script.quickInfo', scriptPositionRequestSchema, scriptQuickInfoResponseSchema),
+    signatureHelp: defineChannel(
+      'script.signatureHelp',
+      scriptPositionRequestSchema,
+      scriptSignatureHelpResponseSchema,
+    ),
+    /** An editor closed: its language service can go. */
+    closeModel: defineChannel('script.closeModel', scriptCloseModelRequestSchema, scriptCloseModelResponseSchema),
+    /** A project's session values, masked, a secret one without its value. */
+    listValues: defineChannel('script.listValues', scriptValuesRequestSchema, scriptValuesListResponseSchema),
+    clearValues: defineChannel('script.clearValues', scriptValuesRequestSchema, scriptValuesClearResponseSchema),
+  },
   // A request's golden response, kept beside its files as `<slug>.golden.yaml`.
   snapshot: {
     read: defineChannel('snapshot.read', snapshotRequestSchema, snapshotReadResponseSchema),
@@ -1087,6 +1116,10 @@ export const events = {
   sequence: {
     /** One step of a running sequence has ended, keyed by the run's id. */
     progress: defineEvent('sequence.progress', sequenceProgressEventSchema),
+  },
+  script: {
+    /** A project's session values changed; `script.listValues` has the new list. */
+    valuesChanged: defineEvent('script.valuesChanged', scriptValuesChangedEventSchema),
   },
   exchange: {
     /** A send failed before a response arrived; the console's HTTP Log records it as a failure row. */

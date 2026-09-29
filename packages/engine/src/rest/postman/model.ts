@@ -101,9 +101,17 @@ export interface PostmanRequest {
   readonly description?: string;
 }
 
+/** One of an item's scripts: `prerequest` or `test`, with its source joined into one text. */
+export interface PostmanEvent {
+  readonly listen: 'prerequest' | 'test';
+  readonly exec: string;
+}
+
 export interface PostmanItem {
   readonly name: string;
   readonly description?: string;
+  /** The item's scripts, kept as source (#63). */
+  readonly event?: readonly PostmanEvent[];
   readonly item?: readonly PostmanItem[];
   readonly request?: PostmanRequest | string;
   readonly auth?: PostmanAuth;
@@ -113,6 +121,8 @@ export interface PostmanItem {
 export interface PostmanCollection {
   readonly info: PostmanInfo;
   readonly item: readonly PostmanItem[];
+  /** The collection's own scripts, which run around every request in it. */
+  readonly event?: readonly PostmanEvent[];
   readonly auth?: PostmanAuth;
   readonly variable?: readonly PostmanVariable[];
   /** Problems found while parsing that the import summary should report. */

@@ -1,0 +1,15 @@
+auth:
+  type: inherit
+body:
+  file: Create cart.body.json
+  kind: raw
+  language: json
+headers:
+  - name: Accept
+    value: application/json
+id: 01J0000000000000000000REST
+kind: rest
+method: POST
+name: Create cart
+order: 0
+url: /carts

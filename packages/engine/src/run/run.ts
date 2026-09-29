@@ -29,10 +29,40 @@ import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 import { urlOrigin } from '../project/sequence-guards.js';
 import { createRunTokenSource } from './oauth2-token.js';
-import { prepareSend } from './prepare.js';
+import { prepareSend, scopesFor } from './prepare.js';
 import type { RunContext } from './prepare.js';
 import type { SelectedRequest } from './select.js';
 import type { TransferResult } from '../sequence/run.js';
+import { expandSendInput } from '../project/properties.js';
+import type { OpenApiDocument } from '../rest/openapi/model.js';
+import { loadOpenApiDocument } from '../script/contracts.js';
+import { scriptProperties } from '../script/props.js';
+import {
+  activeScripts,
+  type RequestScripting,
+  type ScriptedRequest,
+  type ScriptRunValues,
+} from '../script/request-scripts.js';
+import {
+  SecretPlaceholders,
+  applyGrpcSnapshot,
+  applyRestSnapshot,
+  applySoapSnapshot,
+  grpcRequestSnapshot,
+  grpcResponseSnapshot,
+  restRequestSnapshot,
+  restResponseSnapshot,
+  soapRequestSnapshot,
+  soapResponseSnapshot,
+} from '../script/send.js';
+import {
+  listedSecrets,
+  mergeScriptValues,
+  scriptAssertions,
+  scriptSession,
+  scriptTypesFor,
+  type SentScripts,
+} from './script-support.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
@@ -62,6 +92,10 @@ export interface RequestResult {
   readonly transfers?: readonly TransferResult[];
   /** Where the request went, for a sequence step. */
   readonly origin?: string;
+  /** What the request's scripts logged, capped. NOT yet redacted. */
+  readonly scriptLog?: readonly string[];
+  /** True when the request has scripts and they are switched off, so none ran. */
+  readonly scriptsOff?: boolean;
 }
 
 export interface RunSummary {
@@ -89,6 +123,7 @@ export interface RunOptions {
 
 type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
 type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
+type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
 
 /** A request's own assertions; a gRPC request that never had any carries none. */
 const assertionsOf = (item: SelectedRequest): readonly Assertion[] => item.request.assertions ?? [];
@@ -294,6 +329,10 @@ export interface SentRequest {
   readonly raw: { readonly rawRequest: Uint8Array; readonly rawResponse: Uint8Array };
   /** Where the request went: a URL's origin, or a gRPC target. */
   readonly origin?: string;
+  /** What the request's scripts produced (#63). */
+  readonly script?: SentScripts;
+  /** True when the request has scripts and they are switched off. */
+  readonly scriptsOff?: boolean;
 }
 
 /** What a run's sender may change for one request. */
@@ -342,6 +381,17 @@ export function createRunSender(context: RunContext): RunRequestSender {
       }),
   };
 
+  // Each REST API's OpenAPI document is read once per run, for its requests' script types.
+  const openApiDocuments = new Map<string, Promise<OpenApiDocument | undefined>>();
+  const openApiFor = (api: RestSelected['api']): Promise<OpenApiDocument | undefined> => {
+    let loading = openApiDocuments.get(api.id);
+    if (loading === undefined) {
+      loading = loadOpenApiDocument(context.projectDir, api.slug);
+      openApiDocuments.set(api.id, loading);
+    }
+    return loading;
+  };
+
   return async (item, overrides = {}) => {
     const itemContext: RunContext = {
       ...runContext,
@@ -351,7 +401,7 @@ export function createRunSender(context: RunContext): RunRequestSender {
     const loaded = item.kind === 'soap' ? await definitionFor(item.iface) : undefined;
     // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
     const protoSet = item.kind === 'grpc' ? await protoSetFor(item.api) : undefined;
-    const prepared = await prepareSend(item, {
+    const withWsa: RunContext = {
       ...itemContext,
       ...(loaded !== undefined
         ? {
@@ -359,7 +409,29 @@ export function createRunSender(context: RunContext): RunRequestSender {
               loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '',
           }
         : {}),
-    });
+    };
+
+    const scripts = activeScripts(item.request.scripts);
+    if (scripts !== undefined) {
+      if (context.scripting === undefined) {
+        throw new WirebenchError('script-unavailable', `"${item.path}" has scripts, and this run cannot run them`, {
+          details: { path: item.path },
+        });
+      }
+      const openApi = item.kind === 'rest' ? await openApiFor(item.api) : undefined;
+      const scripted: ScriptedRequest = {
+        protocol: item.kind,
+        path: item.path,
+        name: item.request.name,
+        slug: item.request.slug,
+        scripts,
+        types: scriptTypesFor(item, loaded, protoSet, openApi),
+      };
+      return sendScripted(item, scripted, context.scripting, withWsa, loaded, protoSet);
+    }
+
+    const scriptsOff = item.request.scripts !== undefined ? { scriptsOff: true as const } : {};
+    const prepared = await prepareSend(item, withWsa);
     if (prepared.kind === 'soap' && item.kind === 'soap') {
       const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
       dropRefusedToken(itemContext, prepared.input.auth, exchange.http.status === 401);
@@ -367,20 +439,117 @@ export function createRunSender(context: RunContext): RunRequestSender {
         subject: soapSubject(exchange, loaded, item),
         raw: exchange.http,
         ...originOf(exchange.http.request.url),
+        ...scriptsOff,
       };
     }
     if (prepared.kind === 'rest') {
       const exchange = await sendRest(prepared.input);
       dropRefusedToken(itemContext, prepared.input.auth, exchange.status === 401);
-      return { subject: restSubject(exchange), raw: exchange, ...originOf(exchange.request.url) };
+      return { subject: restSubject(exchange), raw: exchange, ...originOf(exchange.request.url), ...scriptsOff };
     }
     if (prepared.kind === 'grpc' && protoSet !== undefined) {
       const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
       dropRefusedToken(itemContext, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-      return { subject: grpcSubject(result), raw: result.exchange, origin: prepared.input.target };
+      return { subject: grpcSubject(result), raw: result.exchange, origin: prepared.input.target, ...scriptsOff };
     }
     throw new Error('prepareSend returned a send of the wrong protocol');
   };
+}
+
+/**
+ * Sends a request that has scripts (#63). It is prepared with its secrets behind placeholders, the
+ * pre-request script runs on that, the secrets are put back, and the post-response script sees the
+ * request as the script left it — placeholders and all — and the response.
+ *
+ * @throws WirebenchError what preparing or sending throws, `script-type-error`, or a pre-request
+ * script's failure; a post-response script's failure is returned with the response
+ */
+async function sendScripted(
+  item: SelectedRequest,
+  scripted: ScriptedRequest,
+  scripting: RequestScripting,
+  context: RunContext,
+  loaded: LoadedDefinition | undefined,
+  protoSet: ProtoSet | undefined,
+): Promise<SentRequest> {
+  await scripting.check(scripted);
+  const placeholders = new SecretPlaceholders();
+  const prepared = await prepareSend(item, { ...context, secretPlaceholders: placeholders });
+  const values: ScriptRunValues = {
+    vars: context.sequence ?? {},
+    props: scriptProperties(scopesFor(context)),
+    secrets: await listedSecrets(scripted.scripts.secrets, context.getSecret),
+  };
+  // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is shown
+  // before that.
+  const { pre, post } = scriptSession(scripting, scripted, values);
+
+  if (prepared.kind === 'soap' && item.kind === 'soap') {
+    const expanded = expandSendInput(prepared.input, prepared.scopes, {
+      entitize: prepared.input.entitize ?? false,
+    }).input;
+    const before = soapRequestSnapshot(expanded);
+    const sent = await pre(before);
+    const changed = applySoapSnapshot(expanded, sent);
+    const restored = await placeholders.restore(
+      {
+        endpoint: changed.endpoint,
+        headers: changed.headers ?? {},
+        envelopeXml: changed.envelopeXml,
+        ...(changed.soapAction !== undefined ? { soapAction: changed.soapAction } : {}),
+      },
+      context.getSecret,
+    );
+    // Already expanded: sent without scopes, so nothing the script wrote is expanded again.
+    const exchange = await sendSoapRequest({ ...changed, ...restored });
+    dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
+    return {
+      subject: soapSubject(exchange, loaded, item),
+      raw: exchange.http,
+      ...originOf(exchange.http.request.url),
+      script: await post(sent, soapResponseSnapshot(exchange)),
+    };
+  }
+  if (prepared.kind === 'rest') {
+    const before = restRequestSnapshot(prepared.input);
+    const sent = await pre(before);
+    const changed = applyRestSnapshot(prepared.input, before, sent);
+    const restored = await placeholders.restore(
+      { baseUrl: changed.baseUrl, request: changed.request },
+      context.getSecret,
+    );
+    const exchange = await sendRest({ ...changed, ...restored });
+    dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
+    return {
+      subject: restSubject(exchange),
+      raw: exchange,
+      ...originOf(exchange.request.url),
+      script: await post(sent, restResponseSnapshot(exchange)),
+    };
+  }
+  if (prepared.kind === 'grpc' && protoSet !== undefined) {
+    const before = grpcRequestSnapshot(prepared.input, prepared.messageText);
+    const sent = await pre(before);
+    const changed = applyGrpcSnapshot(prepared.input, prepared.messageText, before, sent);
+    const restored = await placeholders.restore(
+      { metadata: changed.input.metadata, messageText: changed.messageText },
+      context.getSecret,
+    );
+    const result = await callGrpc({
+      ...changed.input,
+      metadata: restored.metadata,
+      set: protoSet,
+      messageText: restored.messageText,
+    });
+    dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
+    return {
+      subject: grpcSubject(result),
+      raw: result.exchange,
+      origin: prepared.input.target,
+      script: await post(sent, grpcResponseSnapshot(result)),
+    };
+  }
+  throw new Error('prepareSend returned a send of the wrong protocol');
 }
 
 function originOf(url: string): { readonly origin?: string } {
@@ -388,31 +557,111 @@ function originOf(url: string): { readonly origin?: string } {
   return origin !== undefined ? { origin } : {};
 }
 
+/**
+ * Type-checks the scripts of every selected request before a run sends anything (spec
+ * §Type-checking): each request whose scripts are switched on, against its own contract's types.
+ * Returns one error per request that fails, in selection order; empty when all pass.
+ */
+export async function checkRunScripts(
+  selected: readonly SelectedRequest[],
+  context: RunContext,
+): Promise<readonly WirebenchError[]> {
+  const scripting = context.scripting;
+  const errors: WirebenchError[] = [];
+  if (scripting === undefined) return errors;
+  const definitions = new Map<string, Promise<LoadedDefinition | undefined>>();
+  const protoSets = new Map<string, Promise<ProtoSet | undefined>>();
+  const documents = new Map<string, Promise<OpenApiDocument | undefined>>();
+  const once = <T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
+    let found = cache.get(key);
+    if (found === undefined) {
+      found = load();
+      cache.set(key, found);
+    }
+    return found;
+  };
+  for (const item of selected) {
+    const scripts = activeScripts(item.request.scripts);
+    if (scripts === undefined) continue;
+    const loaded =
+      item.kind === 'soap'
+        ? await once(definitions, item.iface.id, () => loadDefinition(context.projectDir, item.iface))
+        : undefined;
+    const protoSet =
+      item.kind === 'grpc'
+        ? await once(protoSets, item.api.id, () => loadProtoSetFor(context.projectDir, item.api).catch(() => undefined))
+        : undefined;
+    const openApi =
+      item.kind === 'rest'
+        ? await once(documents, item.api.id, () => loadOpenApiDocument(context.projectDir, item.api.slug))
+        : undefined;
+    try {
+      await scripting.check({
+        protocol: item.kind,
+        path: item.path,
+        name: item.request.name,
+        slug: item.request.slug,
+        scripts,
+        types: scriptTypesFor(item, loaded, protoSet, openApi),
+      });
+    } catch (error) {
+      errors.push(
+        isWirebenchError(error)
+          ? error
+          : new WirebenchError('script-type-error', error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  return errors;
+}
+
 /** Runs one request; a throw anywhere on the way becomes an errored result, never a stopped run. */
-async function runOne(item: SelectedRequest, send: RunRequestSender, options: RunOptions): Promise<RequestResult> {
+async function runOne(
+  item: SelectedRequest,
+  send: RunRequestSender,
+  options: RunOptions,
+  overrides: RunSendOverrides,
+): Promise<{ result: RequestResult; sent?: SentRequest }> {
   try {
-    const { subject, raw } = await send(item);
+    const sent = await send(item, overrides);
+    const { subject, raw, script } = sent;
     const own = assertionsOf(item);
     const withDefault: readonly Assertion[] =
       options.defaultSlaMs !== undefined && !own.some((a) => a.type === 'sla')
         ? [...own, { type: 'sla', maxMs: options.defaultSlaMs }]
         : own;
-    const assertions = await evaluateAssertions(subject, withDefault);
-    const outcome = outcomeOf(assertions);
+    const assertions = [...(await evaluateAssertions(subject, withDefault)), ...scriptAssertions(script?.tests ?? [])];
+    const outcome = script?.error !== undefined ? 'errored' : outcomeOf(assertions);
     return {
-      ...identity(item),
-      outcome,
-      status: subject.status,
-      durationMs: subject.durationMs,
-      assertions,
-      unasserted: own.length === 0,
-      ...(outcome !== 'passed'
-        ? { exchange: { request: capped(raw.rawRequest), response: capped(raw.rawResponse) } }
-        : {}),
+      sent,
+      result: {
+        ...identity(item),
+        outcome,
+        status: subject.status,
+        durationMs: subject.durationMs,
+        assertions,
+        unasserted: own.length === 0 && (script?.tests.length ?? 0) === 0,
+        ...(script?.error !== undefined ? { error: script.error } : {}),
+        ...scriptReport(script, sent.scriptsOff === true),
+        ...(outcome !== 'passed'
+          ? { exchange: { request: capped(raw.rawRequest), response: capped(raw.rawResponse) } }
+          : {}),
+      },
     };
   } catch (e) {
-    return erroredResult(item, errorOf(e));
+    return { result: erroredResult(item, errorOf(e)) };
   }
+}
+
+/** What a result reports of a request's scripts: their log, or that they were switched off. */
+export function scriptReport(
+  script: SentScripts | undefined,
+  scriptsOff: boolean,
+): Pick<RequestResult, 'scriptLog' | 'scriptsOff'> {
+  return {
+    ...(script !== undefined && script.log.lines.length > 0 ? { scriptLog: script.log.lines } : {}),
+    ...(scriptsOff ? { scriptsOff: true } : {}),
+  };
 }
 
 /** A thrown value as a result's `error`, with the engine's code when it has one. */
@@ -442,6 +691,8 @@ export async function runRequests(
   const startedAt = new Date().toISOString();
   const send = createRunSender(context);
   const results: RequestResult[] = [];
+  // Values scripts set, which later requests of the run read as `${#Sequence#name}` (#63).
+  const runValues = new Map<string, string>(Object.entries(context.sequence ?? {}));
   let stopped = false;
   for (const item of selected) {
     let result: RequestResult;
@@ -452,10 +703,16 @@ export async function runRequests(
         assertions: [],
         unasserted: assertionsOf(item).length === 0,
       };
-    } else if (assertionsOf(item).length === 0 && options.requireAssertions === true) {
+    } else if (
+      assertionsOf(item).length === 0 &&
+      activeScripts(item.request.scripts)?.post === undefined &&
+      options.requireAssertions === true
+    ) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {
-      result = await runOne(item, send, options);
+      const ran = await runOne(item, send, options, { sequence: Object.fromEntries(runValues) });
+      result = ran.result;
+      mergeScriptValues(runValues, ran.sent?.script?.values ?? [], context.onSecretValue, context.containsKnownSecret);
     }
     results.push(result);
     options.onRequestDone?.(result);

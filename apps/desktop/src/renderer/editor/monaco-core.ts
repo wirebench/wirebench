@@ -9,7 +9,8 @@
  * So this module reproduces `editor.main`'s editor-feature imports verbatim (find, folding,
  * suggest, hover, multi-cursor, the diff editor, the standalone quick-access widgets…) while
  * leaving out the language-service registrations and the ~80 basic-language definitions, and
- * then registers only the languages Wirebench uses: XML, plus Monaco's built-in plaintext fallback.
+ * then registers only the languages Wirebench uses: XML, TypeScript and JavaScript (grammars only),
+ * plus Monaco's built-in plaintext fallback.
  *
  * Keep the block below in sync with `editor.main.js` when `monaco-editor` is upgraded — a new
  * editor feature added there has to be added here too or it silently disappears from the app.
@@ -98,7 +99,7 @@ import 'monaco-editor/editor/contrib/semanticTokens/browser/documentSemanticToke
 import 'monaco-editor/editor/contrib/suggest/browser/suggestController.js';
 import 'monaco-editor/editor/common/standaloneStrings.js';
 
-// The only language Wirebench ever puts in a model — every editor passes `XML_LANGUAGE_ID`.
+// XML is the language nearly every editor passes (`XML_LANGUAGE_ID`).
 // `plaintext` needs no registration: Monaco defines it itself as the fallback language for any
 // model without a language id.
 //
@@ -106,5 +107,12 @@ import 'monaco-editor/editor/common/standaloneStrings.js';
 // full `languages/features/json` language service, so registering it would drag `json.worker`
 // (863 KB) back in to colour documents the app never opens.
 import 'monaco-editor/languages/definitions/xml/register.js';
+
+// Request scripts (#63) are TypeScript, or JavaScript for an imported Postman script. These two are
+// the `basic-languages` Monarch grammars — tokenisers only, each a small lazily loaded chunk — not
+// the TypeScript language service, which would bring `ts.worker` back. Completion, hover, signature
+// help and diagnostics come from main's checker instead (`script-language.ts`).
+import 'monaco-editor/languages/definitions/typescript/register.js';
+import 'monaco-editor/languages/definitions/javascript/register.js';
 
 export { monaco };

@@ -31,6 +31,7 @@ import { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './serialize.js';
 import { readSequences } from '../sequence/load.js';
 import { ProjectError } from '../errors.js';
 import { SEQUENCES_DIR } from '../sequence/file.js';
+import { isScriptFileOf } from '../script/model.js';
 
 /** What a {@link saveProject} call did, as relative `/`-separated paths. */
 export interface SaveResult {
@@ -170,6 +171,8 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
           if (requestSlugs.has(slug)) {
             managed.push(`${opDir}/${fileEntry.name}`);
           }
+        } else if (fileEntry.isFile && [...requestSlugs].some((slug) => isScriptFileOf(fileEntry.name, slug))) {
+          managed.push(`${opDir}/${fileEntry.name}`);
         }
       }
     }
@@ -203,6 +206,7 @@ function isWsMessageSibling(name: string, requestSlug: string): boolean {
  * - `<slug>.body.<ext>` — a REST raw body or a gRPC message, one file for the whole request.
  * - `<slug>.msg-<message-slug>.<ext>` — one WebSocket saved message, one file per message
  *   ({@link isWsMessageSibling}).
+ * - `<slug>.pre.ts`, `<slug>.post.ts`, `<slug>.pre.js`, `<slug>.post.js` — a request's scripts (#63).
  *
  * Claiming only a sibling of a *known* request slug (rather than every file matching either
  * pattern) means a hand-placed file — notes, a `.body.json` or `.msg-x.txt` with no matching
@@ -235,7 +239,7 @@ async function listApiTreeFiles(fs: FsLike, root: string, dir: string): Promise<
       continue;
     }
     for (const slug of requestSlugs) {
-      if (isWsMessageSibling(entry.name, slug)) {
+      if (isWsMessageSibling(entry.name, slug) || isScriptFileOf(entry.name, slug)) {
         managed.push(`${dir}/${entry.name}`);
         break;
       }

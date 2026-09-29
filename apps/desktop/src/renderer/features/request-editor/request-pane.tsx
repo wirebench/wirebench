@@ -37,6 +37,7 @@ import { goToSchemaDefinition } from './schema-navigation.js';
 import { ViewTabs } from './view-tabs.js';
 import { FormView, OutlineView, prefetchViews, RawView, ViewFallback } from './views/lazy-views.js';
 import { applyValueEdit, type TextRange } from './views/xml-model.js';
+import { ScriptsTab } from '../scripts/scripts-tab.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
@@ -50,6 +51,7 @@ const REQUEST_INSPECTORS: readonly InspectorItem[] = [
   { id: 'auth', label: 'Auth' },
   { id: 'wsa', label: 'WS-A' },
   { id: 'ssl', label: 'SSL' },
+  { id: 'scripts', label: 'Scripts' },
 ];
 
 const VIEWS = [
@@ -398,6 +400,8 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
             <AttachmentsInspector requestId={requestId} />
           ) : inspector === 'auth' ? (
             <AuthInspector requestId={requestId} />
+          ) : inspector === 'scripts' ? (
+            <SoapScriptsInspector requestId={requestId} />
           ) : (
             <WsaInspector requestId={requestId} />
           )
@@ -406,3 +410,13 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
     </div>
   );
 });
+
+/** The Scripts inspector: the request's scripts, as the REST and gRPC editors' Scripts tab shows them. */
+function SoapScriptsInspector({ requestId }: { readonly requestId: string }) {
+  const scripts = useProjectStore((state) => state.requests[requestId]?.scripts);
+  return (
+    <div className="h-80 min-h-0">
+      <ScriptsTab requestId={requestId} scripts={scripts} />
+    </div>
+  );
+}

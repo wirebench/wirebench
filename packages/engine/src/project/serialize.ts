@@ -31,6 +31,7 @@ import {
 } from './paths.js';
 import { compact, stringifyYaml } from './yaml.js';
 import { sequenceDocument, sequenceFilePath } from '../sequence/file.js';
+import { scriptFileName, type RequestScripts } from '../script/model.js';
 
 /** A project's files, keyed by path relative to the project root (always `/`-separated). */
 export type ProjectFiles = ReadonlyMap<string, string>;
@@ -72,6 +73,55 @@ function definitionDocument(definition: RestDefinitionRef | WsDefinitionRef): Re
   return compact({ ...definition, auth: definition.auth === undefined ? undefined : authDocument(definition.auth) });
 }
 
+/**
+ * A request's `scripts` key as written, plus the script files beside it (#63). Each file is named
+ * from the slug; the key records the name only so the YAML reads on its own.
+ */
+function scriptsDocument(
+  scripts: RequestScripts | undefined,
+  slug: string,
+): { readonly document?: Record<string, unknown>; readonly files: readonly (readonly [string, string])[] } {
+  if (scripts === undefined) {
+    return { files: [] };
+  }
+  const files: [string, string][] = [];
+  const nameOf = (phase: 'pre' | 'post'): string | undefined => {
+    const source = scripts[phase];
+    if (source === undefined) {
+      return undefined;
+    }
+    const name = scriptFileName(slug, phase, scripts.api);
+    assertPathSegment(name);
+    files.push([name, source.text]);
+    return name;
+  };
+  const pre = nameOf('pre');
+  const post = nameOf('post');
+  return {
+    document: compact({
+      pre,
+      post,
+      api: scripts.api === 'wirebench' ? undefined : scripts.api,
+      enabled: scripts.enabled ? undefined : false,
+      secrets: scripts.secrets.length > 0 ? [...scripts.secrets] : undefined,
+      timeoutMs: scripts.timeoutMs,
+    }),
+    files,
+  };
+}
+
+/** Writes a request's script files into `files` under `dir`. */
+function writeScriptFiles(
+  files: Map<string, string>,
+  dir: string,
+  scripts: RequestScripts | undefined,
+  slug: string,
+): void {
+  for (const [name, text] of scriptsDocument(scripts, slug).files) {
+    files.set(`${dir}/${name}`, text);
+  }
+}
+
 function requestDocument(request: RequestDef): Record<string, unknown> {
   return compact({
     kind: request.kind,
@@ -92,6 +142,7 @@ function requestDocument(request: RequestDef): Record<string, unknown> {
     properties: compact({ ...request.properties }),
     assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
     orphaned: request.orphaned === true ? true : undefined,
+    scripts: scriptsDocument(request.scripts, request.slug).document,
   });
 }
 
@@ -187,6 +238,7 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
     orphaned: request.orphaned === true ? true : undefined,
     contract:
       request.contract === undefined ? undefined : { method: request.contract.method, path: request.contract.path },
+    scripts: scriptsDocument(request.scripts, request.slug).document,
   });
 }
 
@@ -211,6 +263,7 @@ const writeRestRequest: RequestWriter<RestRequestDef> = (files, dir, request) =>
   if (body.file !== undefined) {
     files.set(`${dir}/${body.file[0]}`, body.file[1]);
   }
+  writeScriptFiles(files, dir, request.scripts, request.slug);
 };
 
 /**
@@ -241,10 +294,12 @@ const writeGrpcRequest: RequestWriter<GrpcRequestDef> = (files, dir, request) =>
           request.assertions !== undefined && request.assertions.length > 0
             ? request.assertions.map((a) => compact({ ...a }))
             : undefined,
+        scripts: scriptsDocument(request.scripts, request.slug).document,
       }),
     ),
   );
   files.set(`${dir}/${messageFile}`, request.message);
+  writeScriptFiles(files, dir, request.scripts, request.slug);
 };
 
 /**
@@ -503,6 +558,7 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
         assertPathSegment(request.slug);
         files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(requestDocument(request)));
         files.set(`${dir}/${request.slug}.xml`, request.envelopeXml);
+        writeScriptFiles(files, dir, request.scripts, request.slug);
       }
     }
   }

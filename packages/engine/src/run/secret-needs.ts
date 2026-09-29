@@ -13,6 +13,7 @@ import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
+import { activeScripts } from '../script/request-scripts.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
 import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
@@ -128,7 +129,13 @@ function incomingNeeds(project: Project, config: WssIncomingConfig): SecretNeed[
 }
 
 function tokenNeeds(selected: SelectedRequest, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
-  const names = new Set(scopeSets.flatMap((scopes) => secretNamesInValue(selected.request, scopes)));
+  // A script's own text is code, not a template: nothing in it is a reference. The secrets its
+  // request lists for `secrets.get` are needed instead (#63).
+  const { scripts, ...request } = selected.request;
+  const names = new Set(scopeSets.flatMap((scopes) => secretNamesInValue(request, scopes)));
+  for (const name of activeScripts(scripts)?.secrets ?? []) {
+    names.add(name);
+  }
   return [...names].map((name) => ({
     ref: secretPseudoRef(name),
     envName: secretEnvName(name),

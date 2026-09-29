@@ -21,8 +21,8 @@ type RawManifest = Record<string, unknown>;
  * with the current `formatVersion` so schema validation (which pins
  * `formatVersion` to a literal) accepts a document written by an older build.
  * The next save then writes the file back at the current version. Versions
- * 2 → 3 → 4 are the same kind of step: fields an older file simply lacks,
- * which the loader defaults.
+ * 2 → 3 → 4 → 5 → 6 are the same kind of step: fields an older file simply
+ * lacks, which the loader defaults.
  *
  * @throws ProjectError `project-format-too-new` when the file was written by a
  * newer Wirebench, `project-file-invalid` when `formatVersion` is missing,

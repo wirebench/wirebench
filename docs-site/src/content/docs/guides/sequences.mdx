@@ -1,6 +1,6 @@
 ---
 title: Sequences
-description: Chain saved requests, carry a value from one response into the next request, and check each step — from the app or in CI, with no scripts.
+description: Chain saved requests, carry a value from one response into the next request, and check each step — from the app or in CI, with no code.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -10,7 +10,9 @@ token, an id, a cookie) for the steps after it, and check the response with asse
 followed by a call that needs its token is a two-step sequence.
 
 A sequence runs no code. Everything it does is declared in its file, `sequences/<name>.sequence.yaml`,
-which you review and share like any other file in the project.
+which you review and share like any other file in the project. A step's request can still have
+[scripts](/wirebench/guides/scripts/) of its own: they run in the step as they would on a single send,
+and a value a script sets with `vars.set` reaches the later steps just as a transfer does.
 
 ## Build a sequence
 
@@ -52,6 +54,9 @@ For example, a login step with a transfer `token` from `$.access_token` lets the
   **Cookie** transfer: `Cookie: sid=${#Sequence#sid}`.
 - `${#Sequence#name}` must be written out in full. The short form `${name}` never reads a sequence
   value, so a response can never replace a property a request already uses.
+- Outside a run, a single send in the app reads the values its project's scripts kept this session
+  (the explorer's **Values**), so a request that uses `${#Sequence#token}` can be sent on its own after
+  its log-in request.
 
 ## Check each step
 

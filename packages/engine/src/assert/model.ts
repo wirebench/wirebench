@@ -92,7 +92,8 @@ export interface AssertionSubject {
 
 /** The outcome of evaluating one assertion against a subject. */
 export interface AssertionResult {
-  readonly type: StepAssertion['type'];
+  /** `script` for a test a post-response script recorded (#63). */
+  readonly type: StepAssertion['type'] | 'script';
   readonly label: string;
   readonly outcome: 'passed' | 'failed' | 'errored';
   readonly expected?: string;

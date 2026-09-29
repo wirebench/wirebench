@@ -441,8 +441,12 @@ export function cloneGrpcRequest(project: Project, requestId: string): GrpcMutat
       settings: original.settings,
       ...(original.description !== undefined ? { description: original.description } : {}),
     });
-    // The checks a run makes travel with the copy, as a REST request's do.
-    const copy = original.assertions !== undefined ? { ...created, assertions: original.assertions } : created;
+    // The checks a run makes, and the scripts, travel with the copy, as a REST request's do.
+    const copy = {
+      ...created,
+      ...(original.assertions !== undefined ? { assertions: original.assertions } : {}),
+      ...(original.scripts !== undefined ? { scripts: original.scripts } : {}),
+    };
     createdId = copy.id;
     const requests = [...container.requests];
     requests.splice(index + 1, 0, copy);

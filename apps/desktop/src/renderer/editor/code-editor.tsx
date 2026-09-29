@@ -24,18 +24,25 @@ configureMonaco();
 const JSON_LANGUAGE_ID = 'json';
 
 /**
- * The languages an editor may ask for. `text` is Monaco's built-in plaintext; `html` and
- * `javascript` fall back to it, because this build carries no grammar for either and a body in one
- * of them is rare enough that a missing colour beats another bundled language service.
+ * The languages an editor may ask for. `text` is Monaco's built-in plaintext; `html` falls back to
+ * it, because this build carries no grammar for it and a body in it is rare enough that a missing
+ * colour beats another bundled language. `typescript` and `javascript` are grammars only (#63).
  */
-export type EditorLanguage = 'xml' | 'json' | 'text' | 'html' | 'javascript';
+export type EditorLanguage = 'xml' | 'json' | 'text' | 'html' | 'javascript' | 'typescript';
 
 /** The Monaco language id for one of ours. */
 export function monacoLanguageId(language: EditorLanguage): string {
-  if (language === 'xml') {
-    return XML_LANGUAGE_ID;
+  switch (language) {
+    case 'xml':
+      return XML_LANGUAGE_ID;
+    case 'json':
+      return JSON_LANGUAGE_ID;
+    case 'javascript':
+    case 'typescript':
+      return language;
+    default:
+      return 'plaintext';
   }
-  return language === 'json' ? JSON_LANGUAGE_ID : 'plaintext';
 }
 
 export interface CodeEditorProps {
@@ -50,6 +57,11 @@ export interface CodeEditorProps {
   readonly lineNumbers?: boolean;
   /** Whether Monaco shows its own right-click menu. Defaults to `true`. */
   readonly contextMenu?: boolean;
+  /**
+   * The model's URI path. Two editors with the same path share one model; a language feature keyed
+   * by model (a request script's, #63) needs one it can recognise.
+   */
+  readonly path?: string;
 }
 
 /** A Monaco editor in `language`. */
@@ -62,6 +74,7 @@ export function CodeEditor({
   onMount,
   lineNumbers = true,
   contextMenu = true,
+  path,
 }: CodeEditorProps) {
   const preference = useUiStore((state) => state.theme);
   const theme = monacoThemeName(useResolvedTheme(preference));
@@ -88,6 +101,7 @@ export function CodeEditor({
   return (
     <Editor
       language={monacoLanguageId(language)}
+      {...(path !== undefined ? { path } : {})}
       theme={theme}
       value={value}
       options={options}

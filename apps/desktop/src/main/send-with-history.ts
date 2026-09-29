@@ -6,19 +6,31 @@
  */
 
 import {
+  SecretPlaceholders,
+  applySoapSnapshot,
   failedRequestOf,
   isEndpointAuth,
   isWirebenchError,
   resolveSecretTokens,
   secretNamesInValue,
+  soapRequestSnapshot,
+  soapResponseSnapshot,
 } from '@wirebench/engine';
-import type { OAuth2Auth } from '@wirebench/engine';
+import type { OAuth2Auth, ScriptSession, SentScripts, SoapRequestSnapshot, SoapSendInput } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { resolveSoapAuth } from './secret-resolver.js';
 import { failedExchangeOf } from './failed-exchange.js';
 import type { HistoryService } from './history-service.js';
 import type { OAuth2Service } from './oauth2.js';
 import type { ProjectRouter } from './project-router.js';
+import {
+  finishScripts,
+  scriptsFailed,
+  scriptsForSend,
+  sessionValuesFor,
+  startScripts,
+  type ScriptSendDeps,
+} from './script-send.js';
 import type { GetSecret, PropertyScopes } from '@wirebench/engine';
 import type {
   ExchangeSummary,
@@ -41,8 +53,8 @@ export type HistorySendProject = Pick<ProjectRouter, 'scopesFor' | 'authFor' | '
   // `tlsFor` is optional too: it only feeds the OAuth2 token request, which then uses the defaults.
   Partial<Pick<ProjectRouter, 'sendAttachmentsFor' | 'wssFor' | 'proxyFor' | 'tlsFor'>>;
 
-/** Dependencies for {@link sendAndRecordHistory}. */
-export interface SendWithHistoryDeps {
+/** Dependencies for {@link sendAndRecordHistory}; `scripts` and `onScriptsRan` run a request's scripts (#63). */
+export interface SendWithHistoryDeps extends ScriptSendDeps {
   readonly project: HistorySendProject;
   /**
    * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
@@ -122,15 +134,32 @@ export async function sendAndRecordHistory(
   const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
   let wss: Awaited<ReturnType<NonNullable<HistorySendProject['wssFor']>>> | undefined;
   let proxy: Awaited<ReturnType<NonNullable<HistorySendProject['proxyFor']>>> | undefined;
+  // Type-checked before anything is resolved: a script that does not check never reaches the wire.
+  const scripts = await scriptsForSend(deps, requestId);
+  const getSecret = deps.secretsFor?.(owner) ?? (() => Promise.resolve(undefined));
+  // With scripts, the secrets stand behind placeholders until the pre-request script has run.
+  const placeholders = scripts.kind === 'on' ? new SecretPlaceholders() : undefined;
   let scopes = requestId === undefined ? (deps.adHocScopes?.() ?? EMPTY_SCOPES) : deps.project.scopesFor(requestId);
+  // A single send reads its project's session values as `${#Sequence#…}`; a sequence step, its run's.
+  const sessionValues = scopes.sequence === undefined ? sessionValuesFor(deps, owner) : undefined;
+  if (sessionValues !== undefined) {
+    scopes = { ...scopes, sequence: sessionValues };
+  }
   let accessToken: string | undefined;
+  let session: ScriptSession | undefined;
   try {
     // The engine expands the input with these scopes; every `${secret:name}` it will reach is
     // resolved here first, and a missing one refuses the send before anything is built.
     const names = secretNamesInValue(request.input, scopes);
     if (names.length > 0) {
-      const getSecret = deps.secretsFor?.(owner) ?? (() => Promise.resolve(undefined));
-      scopes = { ...scopes, secrets: await resolveSecretTokens(names, getSecret) };
+      scopes = {
+        ...scopes,
+        secrets:
+          placeholders !== undefined ? placeholders.scopeFor(names) : await resolveSecretTokens(names, getSecret),
+      };
+    }
+    if (scripts.kind === 'on') {
+      session = await startScripts(deps, scripts, scopes, getSecret);
     }
     wss = requestId !== undefined ? await deps.project.wssFor?.(requestId) : undefined;
     // Resolved per send rather than per session: the exclude list is evaluated against *this*
@@ -176,9 +205,40 @@ export async function sendAndRecordHistory(
     );
     throw error;
   }
+  // The pre-request script runs inside the send, on the envelope as expanded and before auth,
+  // WS-Addressing and WS-Security; the post-response script before the summary, the log row and
+  // the History entry are built from the exchange.
+  let scripted: SoapRequestSnapshot | undefined;
+  let ran: SentScripts | undefined;
+  const active = session !== undefined && placeholders !== undefined ? { session, placeholders } : undefined;
+  const beforeSend =
+    active === undefined
+      ? undefined
+      : async (expanded: SoapSendInput): Promise<SoapSendInput> => {
+          const before = soapRequestSnapshot(expanded);
+          scripted = await active.session.pre(before);
+          const changed = applySoapSnapshot(expanded, scripted);
+          const restored = await active.placeholders.restore(
+            {
+              endpoint: changed.endpoint,
+              headers: changed.headers ?? {},
+              envelopeXml: changed.envelopeXml,
+              ...(changed.soapAction !== undefined ? { soapAction: changed.soapAction } : {}),
+            },
+            getSecret,
+          );
+          return { ...changed, ...restored };
+        };
+  const stopObserving =
+    active === undefined
+      ? undefined
+      : service.observe(request.sendId, async (observed) => {
+          if (observed.kind !== 'soap' || scripted === undefined) return;
+          ran = await active.session.post(scripted, soapResponseSnapshot(observed.exchange)).catch(scriptsFailed);
+        });
   const startedAt = Date.now();
   try {
-    const result = await service.send(request, {
+    const sent = await service.send(request, {
       scopes,
       showSecrets: deps.showSecrets?.get() ?? false,
       ...(auth !== undefined ? { auth } : {}),
@@ -188,7 +248,13 @@ export async function sendAndRecordHistory(
       ...(attachments !== undefined ? { attachments } : {}),
       ...(wss !== undefined ? { wss } : {}),
       ...(proxy !== undefined ? { proxy } : {}),
+      ...(beforeSend !== undefined ? { beforeSend } : {}),
     });
+    const result: ExchangeSummary = {
+      ...sent,
+      ...(ran !== undefined ? finishScripts(deps, owner, ran) : {}),
+      ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
+    };
     await record(service, deps, request, fallback, { durationMs: Date.now() - startedAt });
     return result;
   } catch (error) {
@@ -214,6 +280,8 @@ export async function sendAndRecordHistory(
       }),
     );
     throw error;
+  } finally {
+    stopObserving?.();
   }
 }
 

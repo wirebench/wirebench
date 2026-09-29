@@ -21,12 +21,14 @@ my-service/
     operations/<Operation>/
       <Request>.request.yaml  # endpointRef, headers, attachments, auth, WS-Addressing, properties
       <Request>.xml           # the SOAP envelope, exactly as edited
+      <Request>.pre.ts        # a pre-request script, when the request has one (.post.ts after the response)
   apis/<Api>/
     api.yaml                  # kind: rest, baseUrl, auth (refs only), settings, definition ref
     definition/                # the imported OpenAPI document, byte-exact, plus manifest.yaml
     requests/
       <Request>.request.yaml  # kind: rest, method, url, path params, query, headers, body, auth
       <Request>.body.json     # a raw body, in a file of its own language (.json/.xml/.txt/…)
+      <Request>.pre.ts        # the request's scripts, as for SOAP (.js when imported from Postman)
       <Request>.golden.yaml   # the request's snapshot, when one is saved (SOAP requests have one too)
       <Folder>/folder.yaml    # a folder's own name, order and inherited auth
   sequences/
@@ -52,6 +54,7 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `interfaces/<Interface>/interface.yaml` | A SOAP interface: its WSDL/XSD reference, endpoints, WS-Addressing policy and auth (a reference, never a credential) |
 | `apis/<Api>/api.yaml` | A REST API: its OpenAPI reference, base URL, settings and auth reference |
 | `<Request>.request.yaml` + `<Request>.xml` (SOAP) or `<Request>.body.json` (REST) | One saved request: metadata in YAML, the payload in a file of its own kind |
+| `<Request>.pre.ts`, `<Request>.post.ts` | A request's pre-request and post-response scripts, named by its `scripts` key. They are TypeScript, or JavaScript (`.pre.js`, `.post.js`) for scripts imported from Postman. Renaming or moving the request moves them |
 | `<Request>.golden.yaml` | A request's snapshot: the golden response body, its content type, when it was saved and the ignore rules. It sits beside the request's own file, outside the project model, so an older build leaves it alone and it needs no format-version change. Renaming or moving the request leaves it behind. See [Snapshot regression](/wirebench/guides/snapshot-regression/) |
 | `sequences/<Sequence>.sequence.yaml` | One [sequence](/wirebench/guides/sequences/): its steps in order, each naming a saved request by id, with the step's transfers and assertions and the run settings. It carries `kind: sequence` and its own `version` (see below) |
 | `definition/` | The fetched or imported API definition (WSDL, XSD, OpenAPI), kept byte-exact, plus a manifest mapping each URL to its cached file and checksum |
@@ -93,7 +96,7 @@ guessing:
 
 > Project was created by a newer version of Wirebench (format N, this build supports M)
 
-The project format is currently **version 5**:
+The project format is currently **version 6**:
 
 1. **Version 1** — the original layout described above, without APIs or per-variable disabling.
 2. **Version 2** — every property scope gained a per-variable `disabled` list, so a variable can be
@@ -105,6 +108,8 @@ The project format is currently **version 5**:
    environment variable a CI run reads it from (`…Env`).
 5. **Version 5** — a SOAP interface, endpoint or request can use bearer, API-key and OAuth2 auth,
    previously REST-only.
+6. **Version 6** — a SOAP, REST or gRPC request can carry a `scripts` key, with its pre-request and
+   post-response scripts in files beside it.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it

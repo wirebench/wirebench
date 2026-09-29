@@ -58,6 +58,8 @@ import { registerProjectChannels } from './ipc/project.js';
 import { registerWorkspaceChannels } from './ipc/workspace.js';
 import { registerSequenceChannels } from './ipc/sequence.js';
 import { SequenceRunner } from './sequence-runner.js';
+import { ScriptHost } from './script-host.js';
+import { registerScriptChannels } from './ipc/script.js';
 import {
   registerRequestChannels,
   sendGrpcRequest,
@@ -139,6 +141,8 @@ const secretsFor = (projectId: string | undefined) =>
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
+/** The request scripts' host (#63), created with the request channels once the app is ready. */
+let scriptHost: ScriptHost | undefined;
 
 /** The user's application preferences, shared by every project and every window. */
 const preferencesService = new PreferencesService(app.getPath('userData'));
@@ -449,6 +453,17 @@ void app.whenReady().then(() => {
     picks: dialogPicks,
     projectDirs: openProjectDirs,
   });
+  // Request scripts (#63): one sandbox and one checker for the app, started on first use.
+  const scripts = new ScriptHost({
+    modelOf: (entityId) =>
+      workspaceService.projectId(entityId) === undefined ? undefined : workspaceService.hostOfEntity(entityId).model(),
+    openApiDocumentFor: async (apiId) => await workspaceService.hostOfEntity(apiId).openApiDocumentFor(apiId),
+    grpcProtoSetFor: async (apiId) => await workspaceService.grpcProtoSetFor(apiId),
+    soapDefinitionFor: (interfaceId) => engineService.resultFor(interfaceId),
+    onValuesChanged: (projectId) => broadcast(events.script.valuesChanged, { projectId }),
+  });
+  scriptHost = scripts;
+  registerScriptChannels(scripts);
   const requestDeps: RequestChannelDeps = {
     project: workspaceService,
     adHocScopes: () => {
@@ -466,6 +481,7 @@ void app.whenReady().then(() => {
     getSecret: secretsFor(undefined),
     storeSecret: (value, label) => secretStore.set(value, { label }),
     secretsFor,
+    scripts,
   };
   registerRequestChannels(engineService, requestDeps);
   // A sequence's steps go through the very paths a single send takes, with the same dependencies.
@@ -517,7 +533,11 @@ void app.whenReady().then(() => {
   registerProjectChannels({
     router: workspaceService,
     addProject: async (name) => await workspaceService.addProject(name),
-    removeProject: async (projectId, options) => await workspaceService.removeProject(projectId, options),
+    removeProject: async (projectId, options) => {
+      // A closed project's session values go with it.
+      scripts.clearValues(projectId);
+      return await workspaceService.removeProject(projectId, options);
+    },
     projectDirs: openProjectDirs,
     picks: dialogPicks,
     ensureWorkspaceEnvironments: async (names) => await workspaceService.ensureEnvironments(names),
@@ -528,7 +548,11 @@ void app.whenReady().then(() => {
     asyncApiImports: openApiImports,
     protoImports,
     addProject: async (name) => await workspaceService.addProject(name),
-    removeProject: async (projectId, options) => await workspaceService.removeProject(projectId, options),
+    removeProject: async (projectId, options) => {
+      // A closed project's session values go with it.
+      scripts.clearValues(projectId);
+      return await workspaceService.removeProject(projectId, options);
+    },
     projectDirs: openProjectDirs,
     picks: dialogPicks,
   });
@@ -734,6 +758,13 @@ app.on('before-quit', (event) => {
   } catch (error) {
     console.warn('[rest] aborting streams on quit failed', error instanceof Error ? error.message : String(error));
   }
+  // Nor may the script sandbox's and checker's.
+  void scriptHost?.dispose().catch((error: unknown) => {
+    console.warn(
+      '[script] ending the script workers on quit failed',
+      error instanceof Error ? error.message : String(error),
+    );
+  });
   // The REST contract checker's worker thread must not keep the process alive past quit.
   void engineService.disposeRestContractChecker().catch((error: unknown) => {
     console.warn(
