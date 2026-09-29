@@ -9,7 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createProject, loadProject, saveProject, selectRequests, upsertEnvironment } from '@wirebench/engine';
-import type { Project, RestRequestDef } from '@wirebench/engine';
+import type { Project, RestFolder, RestRequestDef } from '@wirebench/engine';
 import { runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
@@ -81,24 +81,47 @@ export async function updateProject(dir: string, change: (project: Project) => P
   await saveProject(change(project), dir);
 }
 
-/** Changes the REST request an import made for `method path` (the fixture's requests sit at the API root). */
+/**
+ * Changes the REST request an import made for `method path`, wherever it sits: imported requests
+ * are inside folders.
+ *
+ * @throws Error when no request matched, so a test can never silently change nothing
+ */
 export async function updateRestRequest(
   dir: string,
   method: string,
   path: string,
   change: (request: RestRequestDef) => RestRequestDef,
 ): Promise<void> {
-  await updateProject(dir, (project) => ({
-    ...project,
-    apis: project.apis.map((api) => ({
-      ...api,
-      requests: api.requests.map((request) =>
-        request.contract?.method.toLowerCase() === method.toLowerCase() && request.contract.path === path
-          ? change(request)
-          : request,
-      ),
-    })),
-  }));
+  let matched = 0;
+  const inRequests = (requests: readonly RestRequestDef[]): RestRequestDef[] =>
+    requests.map((request) => {
+      if (request.contract?.method.toLowerCase() !== method.toLowerCase() || request.contract.path !== path) {
+        return request;
+      }
+      matched += 1;
+      return change(request);
+    });
+  const inFolders = (folders: readonly RestFolder[]): RestFolder[] =>
+    folders.map((folder) => ({
+      ...folder,
+      folders: inFolders(folder.folders),
+      requests: inRequests(folder.requests),
+    }));
+  await updateProject(dir, (project) => {
+    const changed = {
+      ...project,
+      apis: project.apis.map((api) => ({
+        ...api,
+        folders: inFolders(api.folders),
+        requests: inRequests(api.requests),
+      })),
+    };
+    if (matched === 0) {
+      throw new Error(`no request for ${method} ${path}`);
+    }
+    return changed;
+  });
 }
 
 /** Adds a project environment whose endpoints map interface and API slugs to URLs. */

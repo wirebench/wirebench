@@ -206,6 +206,30 @@ describe('runRequests', () => {
     expect(result.requests.map((r) => r.name)).toEqual(seen);
   });
 
+  it('hands onSent each request that got a response, with its SOAP or REST exchange', async () => {
+    const project = makeProject(
+      [soapRequest('dead', 0, await deadUrl(), OK_SOAP), soapRequest('a', 1, '/soap', OK_SOAP)],
+      [restRequest('b', 0, '/echo', OK_REST)],
+    );
+    const seen: (readonly [string, string | undefined, number | undefined])[] = [];
+    await runRequests(all(project), contextFor(project), {
+      onSent: (item, sent) => {
+        const exchange = sent.exchange;
+        const status =
+          exchange === undefined
+            ? undefined
+            : exchange.kind === 'soap'
+              ? exchange.soap.http.status
+              : exchange.rest.status;
+        seen.push([item.request.name, exchange?.kind, status]);
+      },
+    });
+    expect(seen).toEqual([
+      ['a', 'soap', 200],
+      ['b', 'rest', 200],
+    ]);
+  });
+
   describe('with the definition cached in the project', () => {
     beforeAll(async () => {
       await importDefinition(

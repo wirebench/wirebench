@@ -21,6 +21,7 @@ export type {
   RunResult,
   RunSendOverrides,
   RunSummary,
+  SentExchange,
   SentRequest,
 } from './run.js';
 export { secretNamesInValue, secretNeedsOf } from './secret-needs.js';
