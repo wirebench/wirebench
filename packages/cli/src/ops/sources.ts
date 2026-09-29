@@ -7,16 +7,15 @@
  * query result, nor a validation problem quoting a value, nor a boolean XPath probing one can show
  * what a file or an entry holds. The ops therefore validate and query the redacted message.
  */
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { openHistory, REDACTED_MARKER } from '@wirebench/engine';
+import { readFile, realpath } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
+import { openHistory, REDACTED_MARKER, redactStructuredBody, redactXml } from '@wirebench/engine';
 import type { HistoryEntry } from '@wirebench/engine';
 import { z } from 'zod';
 import type { OpsContext } from './context.js';
 import { OpsError } from './errors.js';
 import { historyFileFor } from './paths.js';
 import { openProject } from './project.js';
-import { isXmlBody, redactBody } from './redact.js';
 
 export const sourceFields = {
   historyId: z.string().min(1).optional().describe('A History entry id, as history_list or send returns it'),
@@ -45,40 +44,44 @@ export function exactlyOneSource(value: {
 export interface LoadedMessage {
   /** Redacted: see the module comment. */
   readonly text: string;
+  /**
+   * What the text is, decided once here from the text itself (a leading `<` is XML, anything else is
+   * read as JSON) and never from a declared content type, which a server or a file name can get wrong.
+   * The redaction below and the ops after it all go by this.
+   */
+  readonly kind: 'xml' | 'json';
+  /** The content type the message was declared with, when it had one. */
   readonly contentType?: string;
   readonly direction: 'request' | 'response';
   /** Set when the message came from History. */
   readonly entry?: HistoryEntry;
 }
 
-function escapeXml(text: string): string {
-  return text.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-}
-
 function headerValue(pairs: readonly (readonly [string, string])[], name: string): string | undefined {
   return pairs.find(([key]) => key.toLowerCase() === name)?.[1];
 }
 
-/** The content type the redactors go by: the message's own, else JSON when the text looks like it. */
-function redactionType(text: string, contentType: string | undefined): string | undefined {
-  if (contentType !== undefined) {
-    return contentType;
-  }
-  return /^\s*[[{]/.test(text) ? 'application/json' : undefined;
+/**
+ * The redactor's own marker where it stands as a whole `Password` element's content, as text. The
+ * marker is `<redacted>`, which inside an element leaves the XML not well formed (a History entry a
+ * send stored holds it too). Only that place is escaped: an element of the message that happens to be
+ * named `redacted` stays as it is.
+ */
+const MARKER_AS_CONTENT = new RegExp(`>${REDACTED_MARKER}(</(?:[\\w-]+:)?Password>)`, 'gi');
+
+function isFormType(contentType: string | undefined): boolean {
+  return (contentType?.split(';')[0] ?? '').trim().toLowerCase() === 'application/x-www-form-urlencoded';
 }
 
-/**
- * The message through the engine's redactors. The XML marker is `<redacted>`, a tag inside an element
- * and so no longer well-formed (a History entry stored by a send holds it too), so in XML it is
- * escaped to text: the parsers below then read a password element whose text is the marker.
- */
-function loaded(message: LoadedMessage): LoadedMessage {
-  const type = redactionType(message.text, message.contentType);
-  const redacted = redactBody(message.text, type);
-  return {
-    ...message,
-    text: isXmlBody(redacted, type) ? redacted.replaceAll(REDACTED_MARKER, escapeXml(REDACTED_MARKER)) : redacted,
-  };
+/** The message through the engine's redactors, by the kind of its text (see {@link LoadedMessage.kind}). */
+function loaded(message: Omit<LoadedMessage, 'kind'>): LoadedMessage {
+  if (message.text.trimStart().startsWith('<')) {
+    const redacted = redactXml(message.text, { show: false });
+    return { ...message, kind: 'xml', text: redacted.replaceAll(MARKER_AS_CONTENT, '>&lt;redacted&gt;$1') };
+  }
+  // A declared form type keeps the form redaction; anything else is read as JSON.
+  const type = isFormType(message.contentType) ? message.contentType : 'application/json';
+  return { ...message, kind: 'json', text: redactStructuredBody(message.text, type, { show: false }) };
 }
 
 async function fromHistory(
@@ -109,11 +112,52 @@ async function fromHistory(
   return loaded({ text, direction, entry, ...(contentType !== undefined ? { contentType } : {}) });
 }
 
+/** Whether `path` is `directory` or lies inside it. */
+function isInside(directory: string, path: string): boolean {
+  const from = relative(directory, path);
+  return from === '' || (!from.startsWith('..') && !isAbsolute(from));
+}
+
+/** The real path of a path that may not exist (then the path itself: nothing there can be a History file). */
+async function realOrSelf(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * The text of `file`, resolved against the working directory. It reads any path the process can read,
+ * but never a History file: those are read through `historyId`, which redacts by entry. Both sides go
+ * through `realpath`, so a symlink into the History directory does not get around this.
+ */
+async function readSourceFile(file: string, context: Pick<OpsContext, 'historyDir'>): Promise<string> {
+  const path = resolve(file);
+  try {
+    const real = await realpath(path);
+    if (isInside(await realOrSelf(context.historyDir), real)) {
+      throw new OpsError('invalid-input', 'History files are read through historyId, not file', { file: path });
+    }
+    return await readFile(real, 'utf8');
+  } catch (error) {
+    if (error instanceof OpsError) {
+      throw error;
+    }
+    const code = (error as NodeJS.ErrnoException).code;
+    throw new OpsError(
+      'file-not-found',
+      code === 'ENOENT' ? `No file at ${path}` : `Cannot read ${path}: ${code ?? 'read failed'}`,
+      { file: path },
+    );
+  }
+}
+
 /**
  * The `file` source resolves against the process's working directory and reads any path the process
- * can read: it is not confined to the project.
+ * can read: it is not confined to the project (History files excepted, see {@link readSourceFile}).
  *
- * @throws OpsError `history-entry-not-found`, `history-no-response`, `file-not-found`
+ * @throws OpsError `history-entry-not-found`, `history-no-response`, `file-not-found`, `invalid-input`
  */
 export async function loadMessage(
   value: {
@@ -128,15 +172,7 @@ export async function loadMessage(
     return fromHistory(value.historyId, value.direction, context);
   }
   if (value.file !== undefined) {
-    const path = resolve(value.file);
-    try {
-      return loaded({ text: await readFile(path, 'utf8'), direction: value.direction });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new OpsError('file-not-found', `No file at ${path}`, { file: path });
-      }
-      throw error;
-    }
+    return loaded({ text: await readSourceFile(value.file, context), direction: value.direction });
   }
   return loaded({ text: value.text ?? '', direction: value.direction });
 }

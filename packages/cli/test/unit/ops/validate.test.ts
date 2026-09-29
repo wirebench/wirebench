@@ -1,16 +1,19 @@
 // packages/cli/test/unit/ops/validate.test.ts
 import { appendHistory } from '@wirebench/engine';
 import type { HistoryEntry } from '@wirebench/engine';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { generateOp } from '../../../src/ops/generate.js';
+import { importOp } from '../../../src/ops/import.js';
 import { sendOp } from '../../../src/ops/send.js';
 import { historyFileFor } from '../../../src/ops/paths.js';
 import { validateOp } from '../../../src/ops/validate.js';
 import {
   addEnvironment,
+  CALCULATOR_WSDL,
+  emptyProject,
   removeTempDirs,
   restItem,
   restProject,
@@ -148,14 +151,22 @@ describe('op validate', () => {
       ...overrides,
     });
 
-    it('never returns a message value a redactor masks, in a problem or anywhere else', async () => {
-      const fixture = await soapProject();
-      const withPassword = envelope('five').replace(
-        '<soapenv:Body>',
-        `<soapenv:Header><wsse:Security xmlns:wsse="urn:wsse"><wsse:Password>${SECRET}</wsse:Password></wsse:Security></soapenv:Header><soapenv:Body>`,
+    it('never returns a message value a redactor masks, even where a problem quotes the value', async () => {
+      // A response schema whose Password element allows one value only: a violation quotes the value.
+      const wsdl = (await readFile(CALCULATOR_WSDL, 'utf8')).replace(
+        '<xs:element name="result" type="xs:int"/>',
+        '<xs:element name="result" type="xs:int"/>' +
+          '<xs:element name="Password"><xs:simpleType><xs:restriction base="xs:string">' +
+          '<xs:enumeration value="ok"/></xs:restriction></xs:simpleType></xs:element>',
       );
-      const soap = await runOp(validateOp, { operation: 'CalculatorService/Add', text: withPassword }, fixture.base());
+      const file = join(await tempDir(), 'calculator-password.wsdl');
+      await writeFile(file, wsdl);
+      const fixture = await emptyProject();
+      await runOp(importOp, { source: file }, fixture.base());
+      const bad = envelope('5').replace('</c:result>', `</c:result><c:Password>${SECRET}</c:Password>`);
+      const soap = await runOp(validateOp, { operation: 'CalculatorService/Add', text: bad }, fixture.base());
       expect(soap.valid).toBe(false);
+      expect(soap.problems.map((problem) => problem.message).join('\n')).toContain('redacted');
       expect(JSON.stringify(soap)).not.toContain(SECRET);
 
       const rest = await runOp(

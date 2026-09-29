@@ -1,15 +1,25 @@
 // packages/cli/test/unit/ops/query.test.ts
-import { writeFile } from 'node:fs/promises';
+import { symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { appendHistory, REDACTED_MARKER } from '@wirebench/engine';
 import type { HistoryEntry } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
-import { queryOp } from '../../../src/ops/query.js';
+import { MAX_RESULT_CHARS, MAX_TOTAL_CHARS, queryOp } from '../../../src/ops/query.js';
 import { historyFileFor } from '../../../src/ops/paths.js';
 import { emptyProject, removeTempDirs, SECRET, tempDir } from './helpers.js';
 
 afterEach(removeTempDirs);
+
+/** The error a call rejects with; the test fails when it does not reject. */
+async function rejection(call: Promise<unknown>): Promise<Error> {
+  try {
+    await call;
+  } catch (error) {
+    return error as Error;
+  }
+  throw new Error('expected the call to reject');
+}
 
 const ADD_RESPONSE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
@@ -128,5 +138,140 @@ describe('op query', () => {
         expect(result.results).toEqual([REDACTED_MARKER]);
       }
     });
+  });
+});
+
+describe('op query: kind, size, files and errors', () => {
+  const entryOf = (response: string, contentType: string): HistoryEntry => ({
+    id: '01J0000000000000000000WXYZ',
+    kind: 'rest',
+    at: new Date().toISOString(),
+    projectId: 'mcp-fixture',
+    requestName: 'Get',
+    interfaceName: 'Api',
+    operationName: 'Get',
+    endpoint: 'http://localhost/api',
+    soapVersion: 'none',
+    status: 200,
+    durationMs: 1,
+    ok: true,
+    sizeBytes: 0,
+    request: { envelopeXml: '', headers: [] },
+    response: { envelopeXml: response, rawHeaders: [['Content-Type', contentType]], status: 200, statusText: 'OK' },
+  });
+
+  it('decides JSON from the text, whatever content type the message declares', async () => {
+    const fixture = await emptyProject();
+    const body = JSON.stringify({ user: 'ann', password: SECRET });
+    for (const contentType of ['text/plain', 'application/xml', 'text/html']) {
+      await appendHistory(historyFileFor(fixture.historyDir, 'mcp-fixture'), entryOf(body, contentType));
+      const result = await runOp(
+        queryOp,
+        { expression: '$.password', historyId: '01J0000000000000000000WXYZ' },
+        fixture.base(),
+      );
+      expect(result).toEqual({ language: 'jsonpath', results: [REDACTED_MARKER], truncated: false });
+      await runOp(queryOp, { expression: '$.user', historyId: '01J0000000000000000000WXYZ' }, fixture.base());
+    }
+  });
+
+  it('decides XML from the text too, and still masks its password under a JSON content type', async () => {
+    const fixture = await emptyProject();
+    const xml = `<a><Password>${SECRET}</Password></a>`;
+    await appendHistory(historyFileFor(fixture.historyDir, 'mcp-fixture'), entryOf(xml, 'application/json'));
+    const result = await runOp(
+      queryOp,
+      { expression: 'string(//Password)', historyId: '01J0000000000000000000WXYZ' },
+      fixture.base(),
+    );
+    expect(result).toEqual({ language: 'xpath', results: [REDACTED_MARKER], truncated: false });
+  });
+
+  it('keeps form redaction for a declared form type', async () => {
+    const fixture = await emptyProject();
+    const file = join(await tempDir(), 'form.txt');
+    await writeFile(file, `user=ann&password=${SECRET}`);
+    await expect(runOp(queryOp, { expression: '$.user', file }, fixture.base())).rejects.toMatchObject({
+      code: 'query-failed',
+    });
+    await appendHistory(
+      historyFileFor(fixture.historyDir, 'mcp-fixture'),
+      entryOf(`user=ann&password=${SECRET}`, 'application/x-www-form-urlencoded'),
+    );
+    // Not JSON, so the query fails, and the error does not echo the form.
+    const error = await rejection(
+      runOp(queryOp, { expression: '$.user', historyId: '01J0000000000000000000WXYZ' }, fixture.base()),
+    );
+    expect(error.message).not.toContain(SECRET);
+  });
+
+  it('escapes only the redactor marker, leaving an element named redacted intact', async () => {
+    const fixture = await emptyProject();
+    const xml = `<a><Password>${SECRET}</Password><redacted>keep</redacted><redacted></redacted></a>`;
+    const run = async (expression: string): Promise<readonly string[]> =>
+      (await runOp(queryOp, { expression, text: xml }, fixture.base())).results;
+    expect(await run('string(//Password)')).toEqual([REDACTED_MARKER]);
+    expect(await run('string(//redacted[1])')).toEqual(['keep']);
+    expect(await run('count(//redacted)')).toEqual(['2']);
+  });
+
+  it('cuts one result at 64 KiB and all results at 256 KiB, and says so', async () => {
+    const fixture = await emptyProject();
+    const one = await runOp(queryOp, { expression: "string-join((1 to 100000) ! 'x')", text: '<a/>' }, fixture.base());
+    expect(one.truncated).toBe(true);
+    expect(one.results).toHaveLength(1);
+    expect(one.results[0]).toHaveLength(MAX_RESULT_CHARS);
+
+    const many = await runOp(
+      queryOp,
+      { expression: "(1 to 10) ! string-join((1 to 40000) ! 'x')", text: '<a/>' },
+      fixture.base(),
+    );
+    expect(many.truncated).toBe(true);
+    expect(many.results.reduce((sum, item) => sum + item.length, 0)).toBe(MAX_TOTAL_CHARS);
+
+    const small = await runOp(queryOp, { expression: "(1 to 3) ! 'x'", text: '<a/>' }, fixture.base());
+    expect(small).toEqual({ language: 'xpath', results: ['x', 'x', 'x'], truncated: false });
+  });
+
+  it('does not echo a message that does not parse', async () => {
+    const fixture = await emptyProject();
+    const json = await rejection(
+      runOp(queryOp, { expression: '$.password', text: `{"password": ${SECRET}}` }, fixture.base()),
+    );
+    expect(json).toMatchObject({ code: 'query-failed', message: 'the message is not well-formed JSON' });
+    const xml = await rejection(runOp(queryOp, { expression: '//a', text: `<a><b>${SECRET}</a>` }, fixture.base()));
+    expect(xml).toMatchObject({ code: 'query-failed', message: 'the message is not well-formed XML' });
+  });
+
+  it('keeps a bad expression on a good message as the evaluator says it', async () => {
+    const fixture = await emptyProject();
+    const error = await rejection(runOp(queryOp, { expression: '//[', text: '<a/>' }, fixture.base()));
+    expect(error).toMatchObject({ code: 'query-failed' });
+    expect(error.message).not.toContain('not well-formed');
+  });
+
+  it('refuses a History file as a file source, through a symlink too', async () => {
+    const fixture = await emptyProject();
+    await appendHistory(historyFileFor(fixture.historyDir, 'mcp-fixture'), entryOf(`{"password":"${SECRET}"}`, 'x'));
+    const history = historyFileFor(fixture.historyDir, 'mcp-fixture');
+    const link = join(await tempDir(), 'link.jsonl');
+    await symlink(history, link);
+    const dirLink = join(await tempDir(), 'dir-link');
+    await symlink(fixture.historyDir, dirLink);
+    for (const file of [history, link, join(dirLink, 'mcp-fixture.jsonl'), fixture.historyDir]) {
+      const error = await rejection(runOp(queryOp, { expression: '$', file }, fixture.base()));
+      expect(error).toMatchObject({
+        code: 'invalid-input',
+        message: 'History files are read through historyId, not file',
+      });
+    }
+  });
+
+  it('reports a directory or another unreadable path as file-not-found, with the reason', async () => {
+    const fixture = await emptyProject();
+    const error = await rejection(runOp(queryOp, { expression: '$', file: await tempDir() }, fixture.base()));
+    expect(error).toMatchObject({ code: 'file-not-found' });
+    expect(error.message).toContain('EISDIR');
   });
 });

@@ -1,15 +1,8 @@
-// packages/cli/src/ops/validate.ts
 /**
  * `validate` (spec §2, R6): a SOAP message against the WSDL's XSD and SOAP rules, with line and
  * column; a REST response body against its OpenAPI response schema, with the JSON path and keyword.
  */
-import {
-  bindingContextFor,
-  createRestContractChecker,
-  detectLanguage,
-  findStepRequest,
-  validateMessage,
-} from '@wirebench/engine';
+import { bindingContextFor, createRestContractChecker, findStepRequest, validateMessage } from '@wirebench/engine';
 import type { HistoryEntry, Project, RestContractStatus } from '@wirebench/engine';
 import { z } from 'zod';
 import { defineOp } from './context.js';
@@ -23,6 +16,7 @@ export interface ValidateProblem {
   readonly code: string;
   readonly message: string;
   readonly line?: number;
+  /** Counted on the redacted text the message was read as, so after a masked password on its line it is off by the marker's length. */
   readonly column?: number;
   /** An element path (SOAP) or a JSON Pointer (REST). */
   readonly path?: string;
@@ -148,7 +142,8 @@ export const validateOp = defineOp({
         status,
         contentType: message.contentType,
         bodyText: message.text,
-        language: detectLanguage(message.contentType, new TextEncoder().encode(message.text)),
+        // The kind sources.ts decided from the text; the declared media type still picks the response schema.
+        language: message.kind,
         streamed: false,
         operation: { method: resolved.operation.method, path: resolved.operation.path },
         responses: resolved.operation.responses,
