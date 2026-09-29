@@ -24,6 +24,19 @@ export {
   stepAssertionsSchema,
   toCallbackAssertion,
 } from './assert/schema.js';
+export {
+  FIRST_CAPTURE_CURSOR,
+  captureDetailView,
+  captureSourceOver,
+  captureSummaryView,
+  unavailableCaptureSource,
+} from './assert/capture-source.js';
+export type {
+  CaptureDetailView,
+  CaptureServerReads,
+  CaptureSource,
+  CaptureSummaryView,
+} from './assert/capture-source.js';
 
 export * from './run/index.js';
 
