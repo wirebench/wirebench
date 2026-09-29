@@ -17,7 +17,7 @@ export type {
   StatusAssertion,
   StepAssertion,
 } from './assert/model.js';
-export { CALLBACK_LIMITS } from './assert/model.js';
+export { CALLBACK_LIMITS, callbackLabel } from './assert/model.js';
 export {
   assertionsSchema,
   callbackAssertionSchema,
@@ -37,6 +37,17 @@ export type {
   CaptureSource,
   CaptureSummaryView,
 } from './assert/capture-source.js';
+export {
+  NO_CAPTURE_SOURCE_MESSAGE,
+  awaitCallbacks,
+  expandCallback,
+  isCallbackAssertion,
+  prepareCallbacks,
+  realCallbackClock,
+  seconds,
+  waitingOf,
+} from './assert/callback.js';
+export type { AwaitCallbacksOptions, CallbackClock, CallbackWaiting, PendingCallback } from './assert/callback.js';
 
 export * from './run/index.js';
 
