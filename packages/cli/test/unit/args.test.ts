@@ -210,6 +210,18 @@ describe('parseCliArgs — mcp', () => {
     expect(parseCliArgs(['mcp', '--help'])).toEqual({ command: 'help', topic: 'mcp' });
   });
 
+  it('parses --http, and refuses a port out of range', () => {
+    expect(parseCliArgs(['mcp', '--http', '8931'])).toMatchObject({ command: 'mcp', httpPort: 8931 });
+    expect(() => parseCliArgs(['mcp', '--http', '0'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['mcp', '--http', '70000'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['mcp', '--http', 'x'])).toThrow(UsageError);
+  });
+
+  it('refuses --http on the other verbs', () => {
+    expect(() => parseCliArgs(['run', 'p', '--http', '8931'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['send', 'x', '--http', '8931'])).toThrow(UsageError);
+  });
+
   it.each([
     [['mcp', 'extra']],
     [['mcp', '--json']],

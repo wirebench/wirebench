@@ -9,6 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { McpArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
+import { resolveToken, startHttpServer, TOKEN_VARIABLE } from '../mcp/http.js';
 import { createMcpServer } from '../mcp/server.js';
 import type { OpsBase } from '../ops/context.js';
 import { exitCodeForError, toOpsError } from '../ops/errors.js';
@@ -69,6 +70,41 @@ function keepConsoleOffStdout(io: Pick<CliIo, 'stderr'>): () => void {
   };
 }
 
+/**
+ * Serves Streamable HTTP until SIGINT or SIGTERM. The generated token is printed once, to stderr:
+ * stdout stays free of it, and no later line repeats it.
+ */
+async function serveHttp(port: number, base: OpsBase, io: Pick<CliIo, 'stderr' | 'env'>): Promise<ExitCode> {
+  const { token, generated } = resolveToken(io.env);
+  let running;
+  try {
+    running = await startHttpServer({
+      port,
+      token,
+      createServer: () => createMcpServer(base, cliVersion()),
+      log: (line) => io.stderr.write(`${line}\n`),
+    });
+  } catch (error) {
+    io.stderr.write(`wirebench mcp: cannot listen on 127.0.0.1:${String(port)}: ${(error as Error).message}\n`);
+    return ExitCode.RunError;
+  }
+  io.stderr.write(`wirebench mcp: serving ${base.projectDir} at ${running.url} (${describeGates(base)})\n`);
+  if (generated) {
+    io.stderr.write(`bearer token (set ${TOKEN_VARIABLE} to choose your own): ${token}\n`);
+  }
+  await new Promise<void>((resolve) => {
+    const stop = (): void => {
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      resolve();
+    };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+  });
+  await running.close();
+  return ExitCode.Ok;
+}
+
 export async function mcpCommand(
   args: McpArgs,
   io: CliIo,
@@ -78,6 +114,9 @@ export async function mcpCommand(
   const refused = await checkProject(base, io);
   if (refused !== undefined) {
     return refused;
+  }
+  if (args.httpPort !== undefined) {
+    return await serveHttp(args.httpPort, base, io);
   }
   const restoreConsole = keepConsoleOffStdout(io);
   try {

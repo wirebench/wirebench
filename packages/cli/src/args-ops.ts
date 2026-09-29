@@ -40,6 +40,7 @@ export const OP_OPTIONS = {
   'history-dir': { type: 'string' },
   'allow-write': { type: 'boolean' },
   'allow-send': { type: 'boolean' },
+  http: { type: 'string' },
 } as const;
 
 export type OptionValues = Readonly<Record<string, string | boolean | readonly string[] | undefined>>;
@@ -72,9 +73,11 @@ export interface McpArgs {
   readonly allowSend: boolean;
   /** `--env a,b`: the environments `send` may use. Absent: any. */
   readonly environments?: readonly string[];
+  /** `--http <port>`: Streamable HTTP on 127.0.0.1 instead of stdio. */
+  readonly httpPort?: number;
 }
 
-const MCP_FLAGS = ['project', 'allow-write', 'allow-send', 'env', 'history-dir'];
+const MCP_FLAGS = ['project', 'allow-write', 'allow-send', 'env', 'history-dir', 'http'];
 
 const VERB_FLAGS: Readonly<Record<OpName, readonly string[]>> = {
   import: [...COMMON, 'name'],
@@ -110,8 +113,9 @@ wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <t
                        result exactly), --history-dir <dir> (default: the desktop's History folder).
                        Exit 0; 1 for a failed assertion or an invalid message; 2 for a refused call;
                        3 for a run error.
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>]
-                       Serves these capabilities as MCP tools over stdio (see wirebench mcp --help).`;
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>]
+                       Serves these capabilities as MCP tools over stdio, or on 127.0.0.1 with --http
+                       (see wirebench mcp --help).`;
 
 /** `wirebench <verb> --help`. */
 export const VERB_HELP: Readonly<Record<string, string>> = {
@@ -144,15 +148,18 @@ Exit 1 when the message is invalid.`,
 
 <history-id|file>      A file when one exists at that path, else a History id.
 XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
-  mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>]
+  mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>]
 
-Serves the project's tools to an MCP client over stdio: import, operations, generate, send,
+Serves the project's tools to an MCP client, over stdio unless --http is given: import, operations, generate, send,
 validate, query, history_list, history_diff. stdout carries only protocol frames.
 --project <dir>        The project to serve. Default: the current directory.
 --history-dir <dir>    Where send records History. Default: the desktop's History folder for this OS.
 --allow-write          Let import add definitions to the project. Off by default.
 --allow-send           Let send make requests. Off by default.
 -e, --env <a,b>        The environments send may use. Default: any.
+--http <port>          Serve Streamable HTTP on http://127.0.0.1:<port>/mcp instead of stdio. Every
+                       request needs "Authorization: Bearer <token>": WIREBENCH_MCP_TOKEN, or one
+                       made at start and printed once to stderr.
 Secrets come from WIREBENCH_SECRET_<NAME> variables in the server's environment.`,
   history: `${USAGE.history_list} [--project <dir>] [--history-dir <dir>] [--json]
 ${USAGE.history_diff} [--project <dir>] [--history-dir <dir>] [--json]
@@ -353,6 +360,10 @@ export function parseMcp(rest: readonly string[], values: OptionValues): McpArgs
   if (environments?.length === 0) {
     throw new UsageError('--env needs at least one environment name');
   }
+  const httpPort = integer(values, 'http');
+  if (httpPort !== undefined && (httpPort < 1 || httpPort > 65535)) {
+    throw new UsageError(`--http must be a port from 1 to 65535, got ${String(httpPort)}`);
+  }
   const historyDir = str(values, 'history-dir');
   return {
     command: 'mcp',
@@ -361,5 +372,6 @@ export function parseMcp(rest: readonly string[], values: OptionValues): McpArgs
     allowWrite: values['allow-write'] === true,
     allowSend: values['allow-send'] === true,
     ...(environments !== undefined ? { environments } : {}),
+    ...(httpPort !== undefined ? { httpPort } : {}),
   };
 }
