@@ -282,3 +282,21 @@ the first part it failed is named.
     hashed, revocable), `CHANGELOG.md`, and the capability map row.
   - No product that inspired the feature is named (`pnpm check:banned-terms`). Fixtures use neutral
     values such as `abc123def456ghi789`.
+
+## Revisions after planning
+
+- **R1 — model shape.** A callback assertion carries `name?` like the rest of the catalogue, not
+  `id`/`enabled`. `withinMs` is always written.
+- **R2 — expansion.** Only `equals`/`matches` values are expanded. Names, paths and the method stay
+  literal. Values from an earlier step are written `${#Sequence#orderId}` (ADR-0015).
+- **R3 — result order.** Callback results come after the other assertions and before script tests.
+  "After X s" is timed on the local clock from the end of the send.
+- **R4 — shared adapter.** `captureSourceOver` lives in the engine; the CLI and desktop supply only
+  the HTTP calls. A poll reads at most 25 pages of 200.
+- **R5 — server module.** CI tokens are their own `ci-tokens` module (migration 0006, registered after
+  hooks). They authenticate by a bearer fallback plus a per-request allow-list, get `source: 'grant'`,
+  and are refused on live sockets. `ci/whoami` answers 403 `ci-token-required` to a device token.
+  Revoked tokens are hidden, and their names can be used again.
+- **R6 — CLI.** A blank variable counts as unset. JUnit writes an errored assertion as `<error>`.
+- **R7 — desktop.** The run panel's waiting state comes from a new `sequence.waiting` event. CI tokens
+  live in a new Preferences section, **Devices & tokens**, with inline create.
