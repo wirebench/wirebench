@@ -2574,6 +2574,8 @@ export const sequenceAssertionResultWireSchema = z.object({
   expected: z.string().optional(),
   actual: z.string().optional(),
   message: z.string().optional(),
+  /** A callback assertion's matched capture, for the link to it in the Webhook inbox. */
+  capture: z.object({ hookId: z.string(), captureId: z.string() }).optional(),
 });
 
 /** One step of a run, as the run panel shows it. Every string in it is masked before it leaves main. */
@@ -2625,6 +2627,16 @@ export const sequenceProgressEventSchema = z.object({
   step: sequenceStepResultWireSchema,
 });
 export type SequenceProgressEvent = z.infer<typeof sequenceProgressEventSchema>;
+
+/** A step has sent and now waits for its callback assertions (callback-assertion §5). */
+export const sequenceWaitingEventSchema = z.object({
+  runId: z.string(),
+  sequenceId: z.string(),
+  index: z.number().int(),
+  stepId: z.string(),
+  waiting: z.array(z.object({ label: z.string(), catchUrl: z.string(), withinMs: z.number().int() })),
+});
+export type SequenceWaitingEvent = z.infer<typeof sequenceWaitingEventSchema>;
 
 /** Response payload for `log.exportHar`: `saved: false` when the save dialog was cancelled. */
 export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });

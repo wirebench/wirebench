@@ -22,13 +22,20 @@ import {
   entry,
   expandRestSendInput,
 } from '@wirebench/engine';
-import type { PropertyMap, Project, RestSendInput, SequenceStep } from '@wirebench/engine';
+import type {
+  CallbackAssertion,
+  CaptureSource,
+  PropertyMap,
+  Project,
+  RestSendInput,
+  SequenceStep,
+} from '@wirebench/engine';
 import type { WebContents } from 'electron';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService, historyFilePath } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { SequenceRunner } from '../src/main/sequence-runner.js';
-import type { RestExchangeSummary, SequenceProgressEvent } from '../src/shared/wire-types.js';
+import type { RestExchangeSummary, SequenceProgressEvent, SequenceWaitingEvent } from '../src/shared/wire-types.js';
 import { restApiWire } from './helpers/wire-defaults.js';
 
 /** Under a JSON key no redaction rule knows, so only the recorded value can mask it. */
@@ -203,6 +210,72 @@ describe('SequenceRunner', () => {
     const { runner, deps } = await harness([], 'P-none');
     await expect(runner.run({ sequenceId: 'nope', runId: 'R4' }, deps, sender)).rejects.toMatchObject({
       code: 'unknown-entity',
+    });
+  });
+});
+
+describe('callback assertions (callback-assertion §5)', () => {
+  const CALLBACK: CallbackAssertion = {
+    type: 'callback',
+    catchUrl: 'orders-hook',
+    withinMs: 5_000,
+    match: { method: 'POST' },
+    expect: [{ body: { language: 'jsonpath', path: '$.status', equals: 'paid' } }],
+  };
+  const CAPTURE = {
+    id: '01K00000000000000000000002',
+    receivedAt: '2026-09-29T10:00:00.000Z',
+    method: 'POST',
+    path: '/events',
+    signature: null,
+    headers: [],
+    bodyText: '{"status":"paid"}',
+    truncated: false,
+  } as const;
+
+  it('waits through the capture source it is given, and says so first', async () => {
+    const source: CaptureSource = {
+      resolve: () => Promise.resolve({ hookId: '01K000000000000000000000H1' }),
+      cursor: () => Promise.resolve(null),
+      after: (_hook, cursor) => Promise.resolve(cursor === null ? [CAPTURE] : []),
+      detail: () => Promise.resolve(CAPTURE),
+    };
+    const { runner, deps } = await harness(
+      [createSequenceStep('login', { id: 'T1', assertions: [CALLBACK] })],
+      'P-callback',
+    );
+    const waiting: SequenceWaitingEvent[] = [];
+    const result = await runner.run(
+      { sequenceId: 'S1', runId: 'R-callback' },
+      { ...deps, captures: () => source, emitWaiting: (event: SequenceWaitingEvent) => waiting.push(event) },
+      sender,
+    );
+    expect(waiting).toEqual([
+      {
+        runId: 'R-callback',
+        sequenceId: 'S1',
+        index: 0,
+        stepId: 'T1',
+        waiting: [{ label: 'callback orders-hook', catchUrl: 'orders-hook', withinMs: 5_000 }],
+      },
+    ]);
+    expect(result.steps[0]?.assertions[0]).toMatchObject({
+      type: 'callback',
+      outcome: 'passed',
+      message: expect.stringMatching(/^matched capture 01K00000000000000000000002 after \d+\.\d s$/) as unknown,
+      capture: { hookId: '01K000000000000000000000H1', captureId: '01K00000000000000000000002' },
+    });
+  });
+
+  it('errors the callback in a workspace with no server', async () => {
+    const { runner, deps } = await harness(
+      [createSequenceStep('login', { id: 'T1', assertions: [CALLBACK] })],
+      'P-callback-2',
+    );
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R-unlinked' }, deps, sender);
+    expect(result.steps[0]?.assertions[0]).toMatchObject({
+      outcome: 'errored',
+      message: 'this workspace is not linked to a Wirebench Server',
     });
   });
 });

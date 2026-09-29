@@ -340,6 +340,7 @@ import {
   sequenceCancelRequestSchema,
   sequenceCancelResponseSchema,
   sequenceProgressEventSchema,
+  sequenceWaitingEventSchema,
   sequenceRunRequestSchema,
   sequenceRunResultWireSchema,
   scriptCloseModelRequestSchema,
@@ -1128,6 +1129,8 @@ export const events = {
   sequence: {
     /** One step of a running sequence has ended, keyed by the run's id. */
     progress: defineEvent('sequence.progress', sequenceProgressEventSchema),
+    /** A step of a running sequence has sent and waits for its callback assertions. */
+    waiting: defineEvent('sequence.waiting', sequenceWaitingEventSchema),
   },
   script: {
     /** A project's session values changed; `script.listValues` has the new list. */
