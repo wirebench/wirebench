@@ -101,4 +101,24 @@ describe('secretReferencesIn', () => {
     expect([...secretReferencesIn(SOAP)]).toEqual(['two']);
     expect([...secretReferencesIn(GRPC)]).toEqual(['three']);
   });
+
+  it('reads each name up to the first closing brace, and ignores an unclosed one', () => {
+    const body = (text: string) => ({
+      ...REST,
+      url: '/x',
+      headers: [],
+      body: { kind: 'text' as const, text, language: 'text' },
+    });
+    expect([...secretReferencesIn(body('${secret:a}${secret:b'))]).toEqual(['a']);
+    expect([...secretReferencesIn(body('${secret:${secret:x}} ${secret:}'))]).toEqual(['${secret:x', '']);
+  });
+
+  it('takes linear time on text a server chose to be slow', () => {
+    const text = '${secret:'.repeat(200_000);
+    const started = performance.now();
+    expect([
+      ...secretReferencesIn({ ...REST, url: '/x', headers: [], body: { kind: 'text', text, language: 'text' } }),
+    ]).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });

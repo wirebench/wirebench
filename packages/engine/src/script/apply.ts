@@ -54,7 +54,7 @@ export type ApplyResult =
 
 const CONTROL = /[\r\n\0]/;
 const METHOD = /^[A-Z][A-Z0-9_-]{0,31}$/;
-const SECRET_REFERENCE = /\$\{secret:([^}]*)\}/g;
+const SECRET_OPEN = '${secret:';
 
 const refuse = (code: ScriptFailure['code'], message: string): ApplyResult => ({ ok: false, error: { code, message } });
 
@@ -75,11 +75,28 @@ export function secretReferencesIn(request: RequestSnapshot): Set<string> {
   }
   const names = new Set<string>();
   for (const text of texts) {
-    for (const match of text.matchAll(SECRET_REFERENCE)) {
-      names.add(match[1] ?? '');
-    }
+    addSecretNames(text, names);
   }
   return names;
+}
+
+/**
+ * Adds the name of every `${secret:name}` in `text` to `names`: the text from each `${secret:` to
+ * the first `}` after it. A scan rather than a regex, so text a server chose — many `${secret:`
+ * with no closing brace — costs linear time, never quadratic.
+ */
+function addSecretNames(text: string, names: Set<string>): void {
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf(SECRET_OPEN, from);
+    if (open === -1) return;
+    const start = open + SECRET_OPEN.length;
+    const close = text.indexOf('}', start);
+    // No `}` after this opening means none after any later one either.
+    if (close === -1) return;
+    names.add(text.slice(start, close));
+    from = close + 1;
+  }
 }
 
 function badPair(pairs: readonly (readonly [string, string])[]): string | undefined {
