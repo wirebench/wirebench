@@ -435,9 +435,12 @@ Preferences → Devices & tokens. It is a `wbs_…` token with a narrower reach 
 - It is read-only and scoped to one workspace. It never expires and can be revoked; a revoked token is
   refused on its next request.
 - The server accepts it only on `ci/whoami` and on reading that workspace's hooks list and captures.
-  Every other route, including every write and every other workspace, answers 403.
-- The hooks list it receives omits each catch URL itself, the secret address, so a leaked token can
-  read captures but cannot forge them.
+  Every other existing route, including every write and every other workspace, answers 403.
+- The hooks list omits each catch URL (the secret address). A capture can still quote its own URL if
+  the sender or a proxy puts it in a header or the body, so treat a leaked CI token as able to read
+  everything sent to the workspace's catch URLs, and revoke it.
+- Use an `https://` address outside a local network: over `http://` the token crosses the network in
+  clear.
 - Live sockets refuse it.
 - The server stores only a hash, and shows the token once, when it is created.
 - The token list shows each token's name, who created it and when it was last used, so an unused or

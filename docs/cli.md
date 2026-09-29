@@ -295,6 +295,8 @@ server:
 - `WIREBENCH_SERVER_URL` is the server's address and `WIREBENCH_SERVER_TOKEN` a CI token of the
   workspace. Both must be set; a blank value counts as unset. The token is never printed, and never
   written to a report or an error.
+- Use an `https://` address outside a local network: over `http://` the token crosses the network in
+  clear.
 - Either unset, the request is still sent and each callback assertion is `errored` with `set
   WIREBENCH_SERVER_URL and WIREBENCH_SERVER_TOKEN to check callbacks`. The rest of the run proceeds.
 - On a terminal only, the `cli` reporter prints a line while an item waits, for example
