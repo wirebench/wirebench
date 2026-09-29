@@ -9,6 +9,9 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { SequenceTab } from '../../src/renderer/features/sequence/sequence-tab.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { subscribeToSequenceProgress, useSequenceRunsStore } from '../../src/renderer/state/sequence-runs.js';
+import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
+import { useCaptureFocusStore } from '../../src/renderer/state/capture-focus.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import {
   NO_REST,
@@ -20,6 +23,7 @@ import {
   wsRequestWire,
 } from '../helpers/wire-defaults.js';
 import type {
+  CatchUrlWire,
   ProjectWire,
   SequenceRunResultWire,
   SequenceStepResultWire,
@@ -194,6 +198,119 @@ describe('SequenceTab', () => {
     });
     expect(screen.getByTestId('sequence-run-status').textContent).toBe('Run passed');
     expect(screen.getByTestId('sequence-run')).toBeTruthy();
+    unsubscribe();
+  });
+});
+
+describe('callback assertions in the run panel (callback-assertion §5)', () => {
+  const HOOK = '01K000000000000000000000H1';
+  const CAPTURE = '01K00000000000000000000002';
+  const CALLBACK_STEP: SequenceStepResultWire = {
+    index: 0,
+    stepId: 'step-login',
+    requestId: 'rest-login',
+    name: 'Log in',
+    protocol: 'rest',
+    outcome: 'passed',
+    status: 200,
+    durationMs: 12,
+    origin: 'https://shop.test',
+    assertions: [
+      {
+        type: 'callback',
+        label: 'callback orders-hook',
+        outcome: 'passed',
+        message: `matched capture ${CAPTURE} after 2.0 s`,
+        capture: { hookId: HOOK, captureId: CAPTURE },
+      },
+    ],
+    transfers: [],
+  };
+
+  afterEach(() => {
+    useWebhooksStore.setState({ hooks: [] });
+    useCaptureFocusStore.setState({ focus: undefined });
+    useEditorsStore.getState().reset();
+  });
+
+  it('says what a step waits for, then shows the passed callback with its message and a link', async () => {
+    const unsubscribe = subscribeToSequenceProgress();
+    mount();
+    fireEvent.click(screen.getByTestId('sequence-run'));
+    const runId = (run.mock.calls[0]![0] as { runId: string }).runId;
+
+    act(() =>
+      listeners.get('sequence.waiting')?.({
+        runId,
+        sequenceId: 'seq-1',
+        index: 0,
+        stepId: 'step-login',
+        waiting: [{ label: 'callback orders-hook', catchUrl: 'orders-hook', withinMs: 30_000 }],
+      }),
+    );
+    // P7: the row names the catch URL, not the assertion's label.
+    expect(screen.getByTestId('sequence-run-waiting').textContent).toBe('1. waiting for orders-hook… (up to 30 s)');
+
+    act(() => listeners.get('sequence.progress')?.({ runId, sequenceId: 'seq-1', step: CALLBACK_STEP }));
+    expect(screen.queryByTestId('sequence-run-waiting')).toBeNull();
+    const assertion = screen.getByTestId('sequence-run-assertion');
+    expect(assertion.dataset['type']).toBe('callback');
+    expect(assertion.dataset['outcome']).toBe('passed');
+    expect(assertion.textContent).toContain(`matched capture ${CAPTURE} after 2.0 s`);
+
+    useWebhooksStore.setState({ hooks: [{ id: HOOK, name: 'orders-hook' } as CatchUrlWire] });
+    fireEvent.click(screen.getByTestId('sequence-run-capture-link'));
+    expect(useCaptureFocusStore.getState().focus).toEqual({ hookId: HOOK, captureId: CAPTURE });
+    expect(JSON.stringify(useEditorsStore.getState())).toContain(`catch-url:${HOOK}`);
+
+    await act(async () => {
+      resolveRun?.({
+        runId,
+        sequenceId: 'seq-1',
+        name: 'Checkout',
+        startedAt: '',
+        outcome: 'passed',
+        steps: [CALLBACK_STEP],
+      });
+      await Promise.resolve();
+    });
+    unsubscribe();
+  });
+
+  it('drops a waiting event for another run, and a stale focus when the catch URL is not known (P10)', async () => {
+    const unsubscribe = subscribeToSequenceProgress();
+    mount();
+    fireEvent.click(screen.getByTestId('sequence-run'));
+    const runId = (run.mock.calls[0]![0] as { runId: string }).runId;
+
+    act(() =>
+      listeners.get('sequence.waiting')?.({
+        runId: 'other',
+        sequenceId: 'seq-1',
+        index: 0,
+        stepId: 'step-login',
+        waiting: [{ label: 'callback orders-hook', catchUrl: 'orders-hook', withinMs: 30_000 }],
+      }),
+    );
+    expect(screen.queryByTestId('sequence-run-waiting')).toBeNull();
+
+    act(() => listeners.get('sequence.progress')?.({ runId, sequenceId: 'seq-1', step: CALLBACK_STEP }));
+    useCaptureFocusStore.getState().focusCapture('01K000000000000000000000H2', CAPTURE);
+    fireEvent.click(screen.getByTestId('sequence-run-capture-link'));
+    expect(useCaptureFocusStore.getState().focus).toBeUndefined();
+    expect(JSON.stringify(useEditorsStore.getState())).not.toContain(`catch-url:${HOOK}`);
+
+    await act(async () => {
+      resolveRun?.({
+        runId,
+        sequenceId: 'seq-1',
+        name: 'Checkout',
+        startedAt: '',
+        outcome: 'passed',
+        steps: [CALLBACK_STEP],
+      });
+      await Promise.resolve();
+    });
     unsubscribe();
   });
 });

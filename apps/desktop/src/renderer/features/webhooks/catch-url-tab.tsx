@@ -8,6 +8,7 @@ import { Copy } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { showToast } from '../../components/toast.js';
 import { formatBytes } from '../../lib/format-size.js';
+import { useCaptureFocusStore } from '../../state/capture-focus.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { ipc } from '../../state/ipc-client.js';
 import { originOf, useWebhooksStore } from '../../state/webhooks.js';
@@ -43,6 +44,13 @@ export function CatchUrlTab({ hookId }: { readonly hookId: string }) {
   const { state, retry, older } = useCaptureView(server, hookId);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [detail, setDetail] = useState<Detail>({ kind: 'none' });
+
+  // A run's "Show capture" link: select that capture, once, whether the tab was already open or not.
+  const focused = useCaptureFocusStore((focus) => (focus.focus?.hookId === hookId ? focus.focus.captureId : undefined));
+  useEffect(() => {
+    if (focused === undefined) return;
+    setSelectedId(useCaptureFocusStore.getState().take(hookId));
+  }, [focused, hookId]);
 
   const viewId = state.phase === 'open' ? state.viewId : undefined;
   const newest = state.phase === 'open' ? (state.captures[0]?.id ?? null) : undefined;
