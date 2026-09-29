@@ -19,7 +19,7 @@ import { saveOverride } from './native-dialogs.js';
 import { DialogPicks } from './dialog-picks.js';
 import { EngineService } from './engine-service.js';
 import { GlobalProperties } from './global-properties.js';
-import { HistoryService } from './history-service.js';
+import { HistoryService, watchHistoryFile } from './history-service.js';
 import {
   gitLocatorOptions,
   PreferencesService,
@@ -271,8 +271,11 @@ function applyWindowTitle(workspace: WorkspaceWire | null): void {
 /** The user's `${#Global#name}` scope, shared by every project and every window. */
 const globalProperties = new GlobalProperties(app.getPath('userData'));
 
-/** Persistent request history — one jsonl file per open project under `userData`. */
-const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap);
+/** Persistent request history — one jsonl file per open project under `userData`, watched for other writers. */
+const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap, {
+  watch: watchHistoryFile,
+  onChanged: (projectId) => broadcast(events.history.changed, { projectId }),
+});
 
 /**
  * Where a deleted workspace (or project folder) goes. `shell.trashItem` in a real run; under

@@ -112,8 +112,10 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
  * (`buildHistoryEntry`), which reuses the same `redact.ts` helpers as the HTTP log.
  */
 
-import { join } from 'node:path';
+import { mkdirSync, watch } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import {
+  ProjectError,
   normalizeHistoryEntry,
   assertPathSegment,
   generateHistoryId,
@@ -176,6 +178,34 @@ export function toHistoryEntryWire(entry: HistoryEntry): HistoryEntryWire {
 export function historyFilePath(userDataDir: string, projectId: string): string {
   assertPathSegment(projectId);
   return join(userDataDir, 'history', `${projectId}.jsonl`);
+}
+
+/** Starts watching one History file. `onChange` may fire more than once for one write. */
+export type HistoryWatch = (file: string, onChange: () => void) => { close(): void };
+
+/**
+ * Watches the file's folder rather than the file: every write replaces the file (write a temp file,
+ * rename it over), which a watch on the file itself would stop following. Temp and lock files in the
+ * same folder are filtered out by name.
+ */
+export const watchHistoryFile: HistoryWatch = (file, onChange) => {
+  const name = basename(file);
+  mkdirSync(dirname(file), { recursive: true });
+  const watcher = watch(dirname(file), (_event, changed) => {
+    if (changed === null || changed === name) {
+      onChange();
+    }
+  });
+  watcher.on('error', () => watcher.close());
+  return { close: () => watcher.close() };
+};
+
+/** What a `HistoryService` does when another process writes one of its files (spec §3). */
+export interface HistoryServiceOptions {
+  /** Starts a watch per open file. Absent: no watching (tests, and anything that never shares). */
+  readonly watch?: HistoryWatch;
+  /** Called after a watched file changed on disk and was reloaded; main broadcasts `history.changed`. */
+  readonly onChanged?: (projectId: string) => void;
 }
 
 /** What `HistoryService.recordSend` needs to build one entry, beyond the wire input it sent. */
@@ -490,6 +520,12 @@ export class HistoryService {
   /** Open history files, in the order their projects were opened. */
   private readonly files = new Map<string, HistoryFile>();
 
+  /** The watch on each open file, keyed by project id. */
+  private readonly watchers = new Map<string, { close(): void }>();
+
+  /** Reloads run one after another, so two change events never race one handle. */
+  private reloads: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly userDataDir: string,
     /**
@@ -497,6 +533,7 @@ export class HistoryService {
      * `preferences.ui.historyCap` takes effect on the next append instead of at next launch.
      */
     private readonly cap?: () => number,
+    private readonly options: HistoryServiceOptions = {},
   ) {}
 
   /** Opens (or reuses, if already open) the history file for `projectId`. */
@@ -511,17 +548,69 @@ export class HistoryService {
     // Re-check: a concurrent `open` for the same project may have won the race while we awaited.
     if (!this.files.has(projectId)) {
       this.files.set(projectId, file);
+      const watch = this.options.watch;
+      if (watch !== undefined) {
+        this.watchers.set(
+          projectId,
+          watch(historyFilePath(this.userDataDir, projectId), () => this.scheduleReload(projectId)),
+        );
+      }
     }
   }
 
   /** Detaches from one project's history. Safe to call when it is not open. */
   close(projectId: string): void {
+    this.watchers.get(projectId)?.close();
+    this.watchers.delete(projectId);
     this.files.delete(projectId);
   }
 
   /** Detaches from every open history file. */
   closeAll(): void {
+    for (const watcher of this.watchers.values()) {
+      watcher.close();
+    }
+    this.watchers.clear();
     this.files.clear();
+  }
+
+  /**
+   * Reloads one project's file after its watch fired, and tells `onChanged` only when the file was
+   * not the version this process last wrote — its own appends fire the watch too.
+   */
+  private scheduleReload(projectId: string): void {
+    this.reloads = this.reloads
+      .then(async () => {
+        const file = this.files.get(projectId);
+        if (file !== undefined && (await file.refresh())) {
+          this.options.onChanged?.(projectId);
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  /** Resolves once every reload scheduled so far has run. */
+  whenReloaded(): Promise<void> {
+    return this.reloads;
+  }
+
+  /**
+   * Appends `entry`, or skips it when another writer holds the History lock: a busy file must not
+   * turn a send that succeeded into a failed one. Any other error is the caller's.
+   */
+  private async appendOrSkip(projectId: string, file: HistoryFile, entry: HistoryEntry): Promise<boolean> {
+    try {
+      await file.append(entry);
+      return true;
+    } catch (error) {
+      if (error instanceof ProjectError && error.code === 'history-busy') {
+        console.warn(
+          `[history] project "${projectId}": the History entry was skipped because the History file was busy`,
+        );
+        return false;
+      }
+      throw error;
+    }
   }
 
   /** The ids of the projects whose history is currently open, in open order. */
@@ -548,8 +637,7 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildHistoryEntry(projectId, record);
-    await file.append(entry);
-    return toHistoryEntryWire(entry);
+    return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
   /** Appends one gRPC send's entry to its project's file, returning the wire shape it wrote. */
@@ -559,8 +647,7 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildGrpcHistoryEntry(projectId, record);
-    await file.append(entry);
-    return toHistoryEntryWire(entry);
+    return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
   /** Appends one WebSocket session's entry to its project's file, returning the wire shape it wrote. */
@@ -570,8 +657,7 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildWsHistoryEntry(projectId, record);
-    await file.append(entry);
-    return toHistoryEntryWire(entry);
+    return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
   /** Appends one REST send's entry to its project's file, returning the wire shape it wrote. */
@@ -581,8 +667,7 @@ export class HistoryService {
       return undefined;
     }
     const entry = buildRestHistoryEntry(projectId, record);
-    await file.append(entry);
-    return toHistoryEntryWire(entry);
+    return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
   }
 
   /**

@@ -4123,6 +4123,10 @@ export const historyResendRestRequestSchema = z.object({ id: z.string() });
 export const historyAppendedEventSchema = z.object({ entry: historyEntrySchema });
 export type HistoryAppendedEvent = z.infer<typeof historyAppendedEventSchema>;
 
+/** Payload for the `history.changed` event: another process wrote this project's History file. */
+export const historyChangedEventSchema = z.object({ projectId: z.string() });
+export type HistoryChangedEvent = z.infer<typeof historyChangedEventSchema>;
+
 // ---------------------------------------------------------------------------
 // Snapshot regression: a golden response kept beside a saved request as `<slug>.golden.yaml`.
 // ---------------------------------------------------------------------------

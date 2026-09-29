@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -281,6 +281,51 @@ describe('HistoryService', () => {
       vi.useRealTimers();
     }
   });
+});
+
+/**
+ * Another writer (`wirebench mcp`, a CLI send) may hold the History lock when a desktop send
+ * finishes. The send succeeded; a busy History file must not turn it into a failed one.
+ */
+describe('HistoryService when another writer holds the History lock', () => {
+  let userDataDir: string;
+
+  beforeEach(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'wirebench-history-busy-'));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(userDataDir, { recursive: true, force: true });
+  });
+
+  it('skips the entry and warns, instead of failing the send', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+    const file = historyFilePath(userDataDir, 'proj-1');
+    // A lock file with a fresh mtime is a live writer's: the append waits the engine's default 2 s.
+    await mkdir(join(userDataDir, 'history'), { recursive: true });
+    await writeFile(`${file}.lock`, 'other-writer');
+
+    const recorded = await history.recordRestSend('proj-1', {
+      requestId: 'req-1',
+      requestName: 'List pets',
+      apiName: 'Pets',
+      folderPath: '',
+      method: 'GET',
+      url: 'http://127.0.0.1:9/pets',
+      requestHeaders: {},
+      requestBody: '',
+      durationMs: 4,
+      error: { code: 'http-connect-failed', message: 'connection refused' },
+    });
+
+    expect(recorded).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/proj-1.*skipped.*History file was busy/);
+    expect(history.list().entries).toEqual([]);
+  }, 15_000);
 });
 
 /**
