@@ -4,7 +4,11 @@
  */
 import type { GrpcApi, GrpcFolder, GrpcRequestDef } from '../grpc/model.js';
 import type { Interface, OperationDef, Project, SoapRequestDef } from '../project/model.js';
+import { WEBHOOKS_DIR, REQUESTS_DIR } from '../project/paths.js';
 import type { RestApi, RestFolder, RestRequestDef } from '../rest/model.js';
+import { createApi } from '../rest/model.js';
+import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
+import { effectiveTarget } from '../webhooks/model.js';
 
 /** One saved request selected for a run, with enough context to send and report it. */
 export type SelectedRequest =
@@ -37,6 +41,8 @@ interface Candidate {
   readonly item: SelectedRequest;
   /** The request's path on disk, without the `.request.yaml` suffix. */
   readonly diskPath: string;
+  /** A webhook item: a run sends it only when a selector names it. */
+  readonly webhook?: true;
 }
 
 const byOrder = <T extends { readonly order: number; readonly name: string }>(a: T, b: T): number =>
@@ -135,6 +141,44 @@ function walkGrpc(api: GrpcApi, out: Candidate[]): void {
   );
 }
 
+/**
+ * The project's webhook items, as REST items against a synthetic API whose base URL is each item's
+ * effective target (plan R3). A run has no history, so a callback uses the target.
+ */
+function walkWebhooks(collection: WebhookCollection, out: Candidate[]): void {
+  const visit = (
+    folders: readonly WebhookFolder[],
+    requests: readonly RestRequestDef[],
+    chain: readonly WebhookFolder[],
+  ): void => {
+    const group = ['Webhooks', ...chain.map((folder) => folder.name)].join('/');
+    const dir = [WEBHOOKS_DIR, REQUESTS_DIR, ...chain.map((folder) => folder.slug)].join('/');
+    const api = createApi('Webhooks', {
+      id: 'webhooks',
+      slug: 'webhooks',
+      baseUrl: effectiveTarget(collection, chain),
+      ...(collection.auth !== undefined ? { auth: collection.auth } : {}),
+    });
+    for (const request of [...requests].sort(byOrder)) {
+      if (request.orphaned === true) continue;
+      out.push({
+        item: {
+          kind: 'rest',
+          path: `${group}/${request.name}`,
+          group,
+          api,
+          chain: chain as unknown as readonly RestFolder[],
+          request,
+        },
+        diskPath: `${dir}/${request.slug}`,
+        webhook: true,
+      });
+    }
+    for (const folder of [...folders].sort(byOrder)) visit(folder.folders, folder.requests, [...chain, folder]);
+  };
+  visit(collection.folders, collection.requests, []);
+}
+
 function candidates(project: Project): Candidate[] {
   const out: Candidate[] = [];
   for (const container of [...project.interfaces, ...project.apis, ...project.grpcApis].sort(byOrder)) {
@@ -158,6 +202,7 @@ function candidates(project: Project): Candidate[] {
       }
     }
   }
+  if (project.webhooks !== undefined) walkWebhooks(project.webhooks, out);
   return out;
 }
 
@@ -174,7 +219,9 @@ const covers = (selector: string, candidate: string): boolean =>
 
 /**
  * Resolves `selectors` (display paths or on-disk paths, matched at a `/` boundary) against the
- * project's requests, in explorer order. An empty `selectors` list selects everything. A WebSocket
+ * project's requests, in explorer order. An empty `selectors` list selects everything but the webhook
+ * items: those deliver to a receiver rather than test an API, so a run sends one only when a selector
+ * covers it (`Webhooks/…` or `webhooks/requests/…`). A WebSocket
  * API, and a gRPC request that streams, are skipped: neither is runnable from the command line yet,
  * and there is no per-selector reason to report — a selector naming one simply matches nothing and
  * surfaces through `unmatched`, same as a typo would. `unmatched` lists every selector that covered no
@@ -186,7 +233,7 @@ export function selectRequests(
 ): { selected: SelectedRequest[]; unmatched: string[] } {
   const all = candidates(project);
   if (selectors.length === 0) {
-    return { selected: all.map((c) => c.item), unmatched: [] };
+    return { selected: all.filter((c) => c.webhook !== true).map((c) => c.item), unmatched: [] };
   }
   const matches = (selector: string, c: Candidate): boolean => {
     const s = normalise(selector);
@@ -233,6 +280,9 @@ function findInTree<R extends { readonly id: string }>(
  * missing.
  */
 export function findStepRequest(project: Project, requestId: string): StepRequestLookup {
+  if (project.webhooks !== undefined && findInTree(project.webhooks, requestId) !== undefined) {
+    return { kind: 'unsupported', reason: 'A webhook cannot be a sequence step' };
+  }
   const runnable = candidates(project).find((candidate) => candidate.item.request.id === requestId);
   if (runnable !== undefined) {
     return { kind: 'found', selected: runnable.item };

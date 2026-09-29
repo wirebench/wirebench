@@ -179,6 +179,10 @@ export const ATTACHMENTS_DIR = 'attachments';
 export const REQUEST_SUFFIX = '.request.yaml';
 /** Directory holding every REST API, beside `interfaces/`. */
 export const APIS_DIR = 'apis';
+/** Directory holding the project's webhook collection (`webhooks.yaml` and a `requests/` tree). */
+export const WEBHOOKS_DIR = 'webhooks';
+/** File describing the webhook collection: its target and default credentials. */
+export const WEBHOOKS_FILE = 'webhooks.yaml';
 /** Per-API directory holding the request tree: request files and folder directories. */
 export const REQUESTS_DIR = 'requests';
 /** File naming a folder inside an API's request tree. */

@@ -9,7 +9,7 @@
 
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { importPostmanCollection, WirebenchError } from '@wirebench/engine';
+import { importPostmanCollection, webhookItemsOf, WirebenchError } from '@wirebench/engine';
 import type {
   AsyncApiOpRef,
   AsyncApiUpdatePlan,
@@ -17,6 +17,7 @@ import type {
   OpenApiSource,
   RestOpRef,
   RestUpdatePlan,
+  WebhookItemRef,
 } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type {
@@ -25,6 +26,7 @@ import type {
   OpenApiSourceWire,
   RestUpdatePlanWire,
   RestUpdateSourceWire,
+  WebhookItemWire,
 } from '../../shared/wire-types.js';
 import { MAX_DOCUMENT_TEXT_BYTES } from '../../shared/wire-types.js';
 import type { ReadPicks } from '../dialog-picks.js';
@@ -52,6 +54,8 @@ export interface ApiChannelDeps {
     | 'restSource'
     | 'restPlanUpdate'
     | 'restApplyUpdate'
+    | 'webhookItems'
+    | 'importWebhooks'
     | 'apiDefinitionDocuments'
     | 'apiDefinitionText'
     | 'exportApiDefinitionTo'
@@ -120,8 +124,13 @@ function toAsyncApiUpdatePlanWire(plan: AsyncApiUpdatePlan): AsyncApiUpdatePlanW
   };
 }
 
+/** A webhook/callback item onto the wire: the engine's ref, minus the fields the wire has no use for. */
+function toWebhookItemWire(item: WebhookItemRef): WebhookItemWire {
+  return { key: item.key, kind: item.kind, name: item.name, method: item.method, label: item.label };
+}
+
 /** A REST update plan onto the wire: the engine's read-only arrays copied into the schema's own. */
-function toRestUpdatePlanWire(plan: RestUpdatePlan): RestUpdatePlanWire {
+function toRestUpdatePlanWire(plan: RestUpdatePlan, linked: boolean): RestUpdatePlanWire {
   const ref = (op: RestOpRef) => ({
     method: op.method,
     path: op.path,
@@ -132,6 +141,15 @@ function toRestUpdatePlanWire(plan: RestUpdatePlan): RestUpdatePlanWire {
     removed: plan.removed.map(ref),
     changed: plan.changed.map((change) => ({ op: ref(change.op), reasons: [...change.reasons] })),
     api: [...plan.api],
+    webhooks: {
+      added: plan.webhooks.added.map(toWebhookItemWire),
+      removed: plan.webhooks.removed.map(toWebhookItemWire),
+      changed: plan.webhooks.changed.map((change) => ({
+        item: toWebhookItemWire(change.item),
+        reasons: [...change.reasons],
+      })),
+      linked,
+    },
   };
 }
 
@@ -202,6 +220,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
         ...(request.name !== undefined ? { name: request.name } : {}),
         ...(request.baseUrl !== undefined ? { baseUrl: request.baseUrl } : {}),
         ...(request.securityScheme !== undefined ? { securityScheme: request.securityScheme } : {}),
+        ...(request.webhooks !== undefined ? { webhooks: request.webhooks } : {}),
       },
       {
         onProgress: (progress) => {
@@ -209,6 +228,20 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
         },
       },
     );
+    // Full order, no `only`: the mapped folder's requests line up one to one with the document's
+    // own webhook/callback list, so a label is pulled from there rather than the plain request name.
+    const webhookItems = imported.webhooks !== undefined ? webhookItemsOf(imported.document) : [];
+    const webhookGroup =
+      imported.webhooks !== undefined
+        ? {
+            folderId: imported.webhooks.id,
+            name: imported.webhooks.name,
+            items: imported.webhooks.requests.map((item, index) => ({
+              id: item.id,
+              label: webhookItems[index]?.label ?? item.name,
+            })),
+          }
+        : undefined;
     const summary = {
       ...imported.summary,
       servers: imported.summary.servers.map((server) => ({ ...server })),
@@ -231,11 +264,17 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       declaredVersion: imported.document.declaredVersion,
       ...(auth !== undefined ? { auth } : {}),
       ...(request.cache !== undefined ? { cache: request.cache } : {}),
+      ...(imported.webhooks !== undefined ? { webhooks: imported.webhooks } : {}),
     };
 
     if ('projectId' in request.target) {
       const added = await router.addApi(request.target.projectId, place);
-      return { ...added, projectId: request.target.projectId, summary };
+      return {
+        ...added,
+        projectId: request.target.projectId,
+        summary,
+        ...(webhookGroup !== undefined ? { webhookGroup } : {}),
+      };
     }
     // A `newProjectName` target creates the project only once the document has been read, so a
     // document that cannot be imported never leaves a project behind; if placing it fails anyway,
@@ -243,7 +282,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     const { projectId } = await deps.addProject(request.target.newProjectName);
     try {
       const added = await router.addApi(projectId, place);
-      return { ...added, projectId, summary };
+      return { ...added, projectId, summary, ...(webhookGroup !== undefined ? { webhookGroup } : {}) };
     } catch (error) {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
@@ -424,12 +463,12 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   registerHandler(channels.api.restPlanUpdate, async (request) => {
     const { parsed, label } = await readRestSource(request.apiId, request.source);
-    const { plan, cached } = await router.restPlanUpdate(request.apiId, parsed.document);
+    const { plan, cached, linked } = await router.restPlanUpdate(request.apiId, parsed.document);
     // Both halves of the diff: a cache rewritten since (another update) changes the plan too.
     // The label says what was actually read, so the dialog can name the recorded source it planned
     // against — which the renderer does not otherwise know, having passed no source at all.
     return {
-      ...toRestUpdatePlanWire(plan),
+      ...toRestUpdatePlanWire(plan, linked),
       source: label,
       fingerprint: fingerprintOf([...cached, ...parsed.documents]),
     };
@@ -437,7 +476,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
 
   registerHandler(channels.api.restApplyUpdate, async (request) => {
     const { parsed, label, auth } = await readRestSource(request.apiId, request.source);
-    const { project, plan, applied, warning } = await router.restApplyUpdate(request.apiId, parsed, {
+    const { project, plan, linked, applied, warning } = await router.restApplyUpdate(request.apiId, parsed, {
       // A chosen source brings its own credentials, or none: a file, or a URL given without any.
       ...(request.source !== undefined ? { source: label, ...(auth !== undefined ? { auth } : {}) } : {}),
       // The user agreed to the plan they were shown; a source or cache changed since would apply
@@ -454,10 +493,20 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
     });
     return {
       project,
-      plan: toRestUpdatePlanWire(plan),
-      applied: { ...applied },
+      plan: toRestUpdatePlanWire(plan, linked),
+      applied: { ...applied, webhooks: { ...applied.webhooks } },
       ...(warning !== undefined ? { warning } : {}),
     };
+  });
+
+  registerHandler(channels.api.webhookItems, async (request) => {
+    const { items, imported } = await router.webhookItems(request.apiId);
+    return { items: items.map(toWebhookItemWire), imported: [...imported] };
+  });
+
+  registerHandler(channels.api.importWebhooks, async (request) => {
+    const { folderId, added } = await router.importWebhooks(request.apiId, request.keys);
+    return { folderId, added };
   });
 
   registerHandler(channels.api.importPostman, async (request) => {

@@ -142,6 +142,28 @@ All notable changes to this project are documented here. The format follows
   for `text/event-stream`. Re-send from the HTTP Log is refused for a row whose response streamed.
   Reconnecting with `Last-Event-ID`, honouring `retry:`, and the CLI runner are out of scope.
 
+- **Sending webhooks.** Each project gets a **Webhooks** collection, alongside its APIs: outbound
+  requests that play a provider calling your own receiver, built by hand, imported from an OpenAPI
+  document, or saved from a captured request. A webhook item is an ordinary REST request — edited in
+  the same editor, with the same auth, params, body, assertions and history — sent to a **target** set
+  on the collection or overridden per folder, itself an ordinary project property (`webhookTarget`)
+  that an environment or the workspace can override. Importing an OpenAPI 3.1+ document's root
+  `webhooks`, or an OpenAPI 3.0+ operation's `callbacks`, offers an **Import webhooks & callbacks**
+  checkbox; **Import webhooks…** on an API brings in items an earlier import left out, or ones the
+  document has grown since; **Update Definition** keeps imported items in step without ever deleting
+  a hand-made one. A callback's URL is resolved from the standard's runtime expressions against the
+  parent request's last recorded exchange, falling back to the target when it does not resolve to an
+  absolute URL — the editor's URL bar shows which and why. **Save as webhook…**, on a catch URL
+  capture, turns a real delivery into a webhook item, dropping hop-by-hop headers and any header whose
+  name mentions a signature. The collection is part of `formatVersion: 6`, with request scripts. See
+  [Sending webhooks](https://wirebench.github.io/wirebench/guides/sending-webhooks/).
+
+### Changed
+
+- **The catch-URL root is now Webhook inbox.** The Explorer node for a shared workspace's catch URLs,
+  previously labelled *Webhooks*, is now **Webhook inbox** — the new per-project *Webhooks* node is
+  for the webhook items described above. Nothing about catch URLs themselves changes.
+
 ### Fixed
 
 - **A `matches:` assertion can't hang a run.** Its regular expression now runs off the main thread

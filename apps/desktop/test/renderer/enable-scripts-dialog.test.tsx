@@ -54,6 +54,7 @@ function tree(): ExplorerNode[] {
     {},
     {},
     undefined,
+    {},
     {
       p1: [
         { name: 'token', secret: true },

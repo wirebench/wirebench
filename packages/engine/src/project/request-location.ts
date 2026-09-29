@@ -6,7 +6,7 @@
 
 import type { Project } from './model.js';
 import type { RestFolder } from '../rest/model.js';
-import { APIS_DIR, INTERFACES_DIR, OPERATIONS_DIR, REQUESTS_DIR } from './paths.js';
+import { APIS_DIR, INTERFACES_DIR, OPERATIONS_DIR, REQUESTS_DIR, WEBHOOKS_DIR } from './paths.js';
 
 /** Where a request's files live: `dir` and `slug` such that `${dir}/${slug}.request.yaml` is a project file. */
 export interface RequestFileLocation {
@@ -39,8 +39,8 @@ function findInFolders(
 /**
  * Locates the request identified by `requestId`: the folder it lives under and its file slug.
  *
- * Only SOAP and REST requests have file locations today — a gRPC or WebSocket request, or an
- * unknown id, returns `undefined`. `dir` and `slug` are derived the same way `serialize.ts`
+ * Only SOAP, REST and webhook requests have file locations today — a gRPC or WebSocket request, or
+ * an unknown id, returns `undefined`. `dir` and `slug` are derived the same way `serialize.ts`
  * builds its keys, so `${dir}/${slug}.request.yaml` is always a key of `projectFiles(project)`.
  */
 export function requestFileLocation(project: Project, requestId: string): RequestFileLocation | undefined {
@@ -65,6 +65,14 @@ export function requestFileLocation(project: Project, requestId: string): Reques
     if (found !== undefined) {
       return found;
     }
+  }
+
+  if (project.webhooks !== undefined) {
+    const base = `${WEBHOOKS_DIR}/${REQUESTS_DIR}`;
+    const root = project.webhooks.requests.find((request) => request.id === requestId);
+    if (root !== undefined) return { dir: base, slug: root.slug };
+    const found = findInFolders(project.webhooks.folders, base, requestId);
+    if (found !== undefined) return found;
   }
 
   return undefined;

@@ -11,9 +11,11 @@ import {
   Folder,
   FolderPlus,
   FoldVertical,
+  Forward,
   ListOrdered,
   Globe,
   Inbox,
+  Link,
   Link2,
   Loader2,
   Network,
@@ -84,6 +86,9 @@ const NODE_ICON: Partial<Record<ExplorerNode['kind'], React.ComponentType<{ size
   'grpc-api': Radio,
   'ws-api': Cable,
   folder: Folder,
+  'webhook-collection': Forward,
+  'webhook-folder': Folder,
+  'webhook-request': Forward,
   webhooks: Webhook,
   'catch-url': Inbox,
   sequences: Folder,
@@ -118,6 +123,9 @@ const ROW_TESTID: Partial<Record<ExplorerNode['kind'], string>> = {
   'grpc-request': 'grpc-request-row',
   'ws-api': 'ws-api-row',
   'ws-request': 'ws-request-row',
+  'webhook-collection': 'webhook-collection-row',
+  'webhook-folder': 'webhook-folder-row',
+  'webhook-request': 'webhook-request-row',
   webhooks: 'webhooks-row',
   'catch-url': 'catch-url-row',
   sequences: 'sequences-group-row',
@@ -167,6 +175,7 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             node.data.kind === 'rest-request' ||
             node.data.kind === 'grpc-request' ||
             node.data.kind === 'ws-request' ||
+            node.data.kind === 'webhook-request' ||
             node.data.kind === 'catch-url' ||
             node.data.kind === 'sequence'
           ) {
@@ -216,7 +225,8 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             hard against the name. Right-aligning it lines the method labels up with each other and
             every name in the tree with every other, however wide GET, DELETE or PROPFIND is. */}
         <span className="flex w-6 shrink-0 items-center justify-end overflow-hidden" data-testid="explorer-row-gutter">
-          {node.data.kind === 'rest-request' && node.data.method !== undefined ? (
+          {(node.data.kind === 'rest-request' || node.data.kind === 'webhook-request') &&
+          node.data.method !== undefined ? (
             <MethodBadge
               method={node.data.method}
               title={`${node.data.method} ${node.data.label}`}
@@ -253,6 +263,11 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
             className={`min-w-0 flex-1 truncate pl-1 ${node.data.kind === 'project-missing' ? 'text-status-danger' : ''}`}
           >
             {node.data.label}
+          </span>
+        )}
+        {node.data.suffix !== undefined && (
+          <span className="shrink-0 truncate pl-1 text-xs text-fg-subtle" data-testid="explorer-row-suffix">
+            · {node.data.suffix}
           </span>
         )}
         {node.data.kind === 'project-missing' && node.data.projectId !== undefined && (
@@ -295,6 +310,18 @@ function NodeRow({ node, style, dragHandle }: NodeRendererProps<ExplorerNode>) {
           >
             <Link2 size={11} aria-hidden="true" />
             linked
+          </span>
+        )}
+        {/* A webhook folder imported from an OpenAPI document (§3.1): a quiet cue, not the
+            project-level "linked" pill above — this folder is not a linked *project*. */}
+        {node.data.kind === 'webhook-folder' && node.data.linked === true && (
+          <span
+            data-testid="webhook-folder-imported-badge"
+            title="Imported from an API definition"
+            aria-label="Imported from an API definition"
+            className="flex shrink-0 items-center text-fg-subtle"
+          >
+            <Link size={11} aria-hidden="true" />
           </span>
         )}
         {node.data.kind === 'project' && node.data.loading === true && (
@@ -359,6 +386,7 @@ export function ExplorerView() {
   const order = useProjectStore((state) => state.order);
   const requests = useProjectStore((state) => state.requests);
   const rest = useProjectStore((state) => state.rest);
+  const webhookCollections = useProjectStore((state) => state.webhooks);
   const grpc = useProjectStore((state) => state.grpc);
   const ws = useProjectStore((state) => state.ws);
   const sequenceLists = useProjectStore((state) => state.sequenceLists);
@@ -422,6 +450,7 @@ export function ExplorerView() {
     ws,
     sequenceLists,
     webhooks,
+    webhookCollections,
     scriptValues,
   );
 
@@ -554,10 +583,13 @@ export function ExplorerView() {
                 node.kind !== 'rest-request' &&
                 node.kind !== 'grpc-request' &&
                 node.kind !== 'ws-request' &&
-                node.kind !== 'folder'
+                node.kind !== 'folder' &&
+                node.kind !== 'webhook-request' &&
+                node.kind !== 'webhook-folder'
               }
               // Reordering and moving happen inside the same API: a request or folder belongs to its
-              // own API definition, and cannot move into another API or project.
+              // own API definition, and cannot move into another API or project. A webhook item or
+              // folder likewise stays inside its own project's webhook collection.
               disableDrop={({ parentNode, dragNodes, index }) => {
                 const ancestors: ExplorerNode[] = [];
                 for (let node = parentNode?.parent ?? null; node !== null; node = node.parent) {
@@ -579,11 +611,14 @@ export function ExplorerView() {
                   (parent.kind !== 'api' &&
                     parent.kind !== 'grpc-api' &&
                     parent.kind !== 'ws-api' &&
-                    parent.kind !== 'folder')
+                    parent.kind !== 'folder' &&
+                    parent.kind !== 'webhook-collection' &&
+                    parent.kind !== 'webhook-folder')
                 ) {
                   return;
                 }
-                const targetFolderId = parent.kind === 'folder' ? parent.folderId : undefined;
+                const targetFolderId =
+                  parent.kind === 'folder' || parent.kind === 'webhook-folder' ? parent.folderId : undefined;
                 const plan = planMoves(
                   (parentNode?.children ?? []).map((child) => child.data),
                   dragNodes.map((node) => node.data),
@@ -633,6 +668,16 @@ export function ExplorerView() {
                 }
                 if (node.data.kind === 'ws-request') {
                   explorerActions.openWsRequest(node.data.requestId);
+                  return;
+                }
+                if (node.data.kind === 'webhook-request') {
+                  // No new tab kind: a webhook item is a REST request on the wire.
+                  explorerActions.openRestRequest(node.data.requestId);
+                  return;
+                }
+                if (node.data.kind === 'webhook-collection' || node.data.kind === 'webhook-folder') {
+                  // Nothing to open; a click folds/unfolds the row, same as an interface's other
+                  // grouping rows.
                   return;
                 }
                 if (node.data.kind === 'webhooks') {
@@ -732,6 +777,20 @@ export function ExplorerView() {
                     .updateWsRequest(node.requestId, { name: trimmed })
                     .catch(reportRenameFailure);
                 }
+                // openapi-webhooks-import §3.1: a webhook folder/request is a REST folder/request
+                // on the wire, so the same update reaches it.
+                if (node.kind === 'webhook-folder' && node.folderId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateFolder(node.folderId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
+                if (node.kind === 'webhook-request' && node.requestId !== undefined) {
+                  void useProjectStore
+                    .getState()
+                    .updateRestRequest(node.requestId, { name: trimmed })
+                    .catch(reportRenameFailure);
+                }
                 if (node.kind === 'sequence' && node.sequenceId !== undefined) {
                   void useProjectStore
                     .getState()
@@ -761,6 +820,10 @@ export function ExplorerView() {
                     explorerActions.removeWsApi(node.data.apiId);
                   } else if (node.data.kind === 'ws-request') {
                     explorerActions.deleteWsRequest(node.data.requestId);
+                  } else if (node.data.kind === 'webhook-folder') {
+                    explorerActions.removeFolder(node.data.folderId);
+                  } else if (node.data.kind === 'webhook-request') {
+                    explorerActions.deleteRestRequest(node.data.requestId);
                   } else if (
                     node.data.kind === 'catch-url' &&
                     node.data.canEdit === true &&

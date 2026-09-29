@@ -32,10 +32,10 @@ const capture = (patch: Partial<CaptureViewWire> = {}): CaptureViewWire => ({
   ...patch,
 });
 
-function mount(value: CaptureViewWire): void {
+function mount(value: CaptureViewWire, onSaveAsWebhook?: () => void): void {
   render(
     <TooltipPrimitive.Provider>
-      <CaptureViewer capture={value} />
+      <CaptureViewer capture={value} {...(onSaveAsWebhook !== undefined ? { onSaveAsWebhook } : {})} />
     </TooltipPrimitive.Provider>,
   );
 }
@@ -113,5 +113,42 @@ describe('CaptureViewer (webhook-capture §4.2)', () => {
       false,
       false,
     ]);
+  });
+
+  it('offers Save as webhook… when a handler is given, and calls it', () => {
+    const onSaveAsWebhook = vi.fn();
+    mount(capture(), onSaveAsWebhook);
+    const button = screen.getByTestId<HTMLButtonElement>('capture-save-as-webhook');
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onSaveAsWebhook).toHaveBeenCalledOnce();
+  });
+
+  it('has no Save as webhook… button without a handler', () => {
+    mount(capture());
+    expect(screen.queryByTestId('capture-save-as-webhook')).toBeNull();
+  });
+
+  it('disables Save as webhook… for a truncated capture', () => {
+    mount(capture({ truncated: true, bodySize: 3_565_158, bodyBase64: b64('x'.repeat(1024)) }), vi.fn());
+    const button = screen.getByTestId<HTMLButtonElement>('capture-save-as-webhook');
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("The body was cut at the server's limit, so it cannot be replayed.");
+  });
+
+  it('disables Save as webhook… for a binary capture', () => {
+    mount(
+      capture({
+        contentType: 'application/octet-stream',
+        bodyBase64: 'AJ+Slg==',
+        bodySize: 4,
+        text: '',
+        language: 'binary',
+      }),
+      vi.fn(),
+    );
+    const button = screen.getByTestId<HTMLButtonElement>('capture-save-as-webhook');
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe('A binary body cannot be saved as a webhook.');
   });
 });

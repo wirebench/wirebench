@@ -1,6 +1,15 @@
 import { REQUEST_PROPERTIES } from './helpers/wire-defaults.js';
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest, createWsApi, createWsRequest } from '@wirebench/engine';
+import {
+  createInterface,
+  createProject,
+  createRequest,
+  createRestRequest,
+  createWebhookCollection,
+  createWebhookFolder,
+  createWsApi,
+  createWsRequest,
+} from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
 import type { InterfaceSummary } from '../src/shared/wire-types.js';
 import {
@@ -170,6 +179,47 @@ describe('project-wire', () => {
     expect(wire.wsRequests).toMatchObject([
       { kind: 'websocket', id: 'ws-req-1', apiId: 'ws-1', url: '/lobby', messages: [{ name: 'Hi', content: 'hi' }] },
     ]);
+  });
+
+  it('wires the webhook collection and its tree into the flat arrays', () => {
+    const project: Project = {
+      ...createProject('Demo', { id: 'p1' }),
+      webhooks: createWebhookCollection({
+        folders: [
+          createWebhookFolder('Payments', {
+            id: 'wf-1',
+            target: 'https://payments.test',
+            source: { apiId: 'api-1' },
+            requests: [
+              createRestRequest('payment.succeeded', {
+                id: 'wr-1',
+                method: 'POST',
+                hook: { kind: 'webhook', name: 'payment.succeeded' },
+              }),
+            ],
+          }),
+        ],
+      }),
+    };
+    const wire = toProjectWire(project, { dir: '/tmp/demo', dirty: false, problems: [], runtime: new Map() });
+
+    expect(wire.webhooks).toEqual({ id: 'webhooks:p1', projectId: 'p1', target: '${webhookTarget}' });
+    expect(wire.folders).toContainEqual(
+      expect.objectContaining({
+        id: 'wf-1',
+        apiId: 'webhooks:p1',
+        target: 'https://payments.test',
+        source: { apiId: 'api-1' },
+      }),
+    );
+    expect(wire.restRequests).toContainEqual(
+      expect.objectContaining({
+        id: 'wr-1',
+        apiId: 'webhooks:p1',
+        folderId: 'wf-1',
+        hook: { kind: 'webhook', name: 'payment.succeeded' },
+      }),
+    );
   });
 });
 

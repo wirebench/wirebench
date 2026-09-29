@@ -597,7 +597,7 @@ describe('buildExplorerTree — webhooks (webhook-capture §4.2)', () => {
       {
         id: 'webhooks',
         kind: 'webhooks',
-        label: 'Webhooks',
+        label: 'Webhook inbox',
         canEdit: false,
         children: [
           {
@@ -627,6 +627,108 @@ describe('buildExplorerTree — webhooks (webhook-capture §4.2)', () => {
 
   it('leaves the tree as it was without webhooks', () => {
     expect(buildExplorerTree([], [], {}, [])).toEqual([]);
+  });
+});
+
+describe('buildExplorerTree — webhook collection (openapi-webhooks-import §3.1)', () => {
+  const project = { id: 'p1', name: 'Demo', source: 'internal', dir: '/ws/demo', status: 'ready' } as const;
+  const HOOKS = {
+    canEdit: false,
+    hooks: [{ id: 'h1', name: 'Payments', enabled: true, unseen: { count: 0, more: false } }],
+  };
+
+  it('appends the collection after the other containers and before Sequences, with its folders and requests', () => {
+    const collection = { id: 'webhooks:p1', projectId: 'p1', target: '${webhookTarget}' };
+    const rootRequest = restRequestWire({
+      id: 'wr-1',
+      apiId: 'webhooks:p1',
+      name: 'Order paid',
+      method: 'POST',
+      url: '/orders',
+    });
+    const folder = restFolderWire({
+      id: 'wf-1',
+      apiId: 'webhooks:p1',
+      name: 'Petstore',
+      source: { apiId: 'api-1' },
+    });
+    const callbackRequest = restRequestWire({
+      id: 'wr-2',
+      apiId: 'webhooks:p1',
+      folderId: 'wf-1',
+      name: 'onPetEvent',
+      method: 'POST',
+      url: '/callbacks/pet-event',
+      hook: {
+        kind: 'callback',
+        operation: 'post /subscriptions',
+        name: 'onPetEvent',
+        expression: '{$request.body#/callbackUrl}',
+      },
+    });
+
+    const tree = buildExplorerTree(
+      [project],
+      [{ projectId: 'p1', interfaceIds: [] }],
+      {},
+      [],
+      { p1: { apis: [], folders: [folder], requests: [rootRequest, callbackRequest] } },
+      undefined,
+      {},
+      {},
+      { p1: [{ id: 's1', name: 'Checkout' }] },
+      HOOKS,
+      { p1: collection },
+    );
+
+    const [root, inbox] = tree;
+    expect(root?.children?.map((child) => child.kind)).toEqual(['webhook-collection', 'sequences']);
+    const [webhooks] = root?.children ?? [];
+    expect(webhooks).toMatchObject({
+      id: 'webhook-collection:p1',
+      kind: 'webhook-collection',
+      label: 'Webhooks',
+      projectId: 'p1',
+    });
+    expect(webhooks?.children).toEqual([
+      {
+        id: 'webhook-folder:wf-1',
+        kind: 'webhook-folder',
+        label: 'Petstore',
+        projectId: 'p1',
+        folderId: 'wf-1',
+        linked: true,
+        children: [
+          {
+            id: 'webhook-request:wr-2',
+            kind: 'webhook-request',
+            label: 'onPetEvent',
+            projectId: 'p1',
+            requestId: 'wr-2',
+            method: 'POST',
+            folderId: 'wf-1',
+            suffix: 'post /subscriptions',
+          },
+        ],
+      },
+      {
+        id: 'webhook-request:wr-1',
+        kind: 'webhook-request',
+        label: 'Order paid',
+        projectId: 'p1',
+        requestId: 'wr-1',
+        method: 'POST',
+      },
+    ]);
+    // R2: the workspace's own catch-URL root is relabelled now that each project has its own.
+    expect(inbox).toMatchObject({ kind: 'webhooks', label: 'Webhook inbox' });
+  });
+
+  it('shows no Webhooks node for a project without a collection', () => {
+    const tree = buildExplorerTree([project], [{ projectId: 'p1', interfaceIds: [] }], {}, [], {
+      p1: { apis: [], folders: [], requests: [] },
+    });
+    expect(tree[0]?.children).toEqual([]);
   });
 });
 

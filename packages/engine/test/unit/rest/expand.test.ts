@@ -140,6 +140,18 @@ describe('expandRestSendInput', () => {
     expect(byHash.request.body).toMatchObject({ source: { kind: 'cache', sha256: 'abc' } });
   });
 
+  it('leaves a literal URL exactly as given, still expanding the rest', () => {
+    const { input: expanded, unresolved } = expandRestSendInput(
+      input({ url: 'https://cb.test/subs/${notAProperty}', pathParams: [], headers: [entry('X-Tier', '${tier}')] }, ''),
+      scopes,
+      { literalUrl: true },
+    );
+
+    expect(expanded.request.url).toBe('https://cb.test/subs/${notAProperty}');
+    expect(expanded.request.headers).toEqual([{ name: 'X-Tier', value: 'gold', enabled: true }]);
+    expect(unresolved).toEqual([]);
+  });
+
   it('leaves the method and the settings alone', () => {
     const { input: expanded } = expandRestSendInput(input({ method: 'PURGE' }), scopes);
     expect(expanded.request.method).toBe('PURGE');

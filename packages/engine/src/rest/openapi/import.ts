@@ -10,8 +10,9 @@
 
 import { OpenApiError } from '../../errors.js';
 import type { FetchDocument } from '../../wsdl/resolver.js';
-import type { MapApiOptions, MappedApi } from './map.js';
-import { apiFromDocument } from './map.js';
+import type { WebhookFolder } from '../../webhooks/model.js';
+import type { MapApiOptions, MappedApi, MapWebhooksOptions } from './map.js';
+import { apiFromDocument, webhooksFromDocument } from './map.js';
 import type { OpenApiDocument } from './model.js';
 import { parseOpenApiDocument } from './parse.js';
 import { resolveRefs, type RefProblem, type ResolvedDocument } from './refs.js';
@@ -97,7 +98,12 @@ export async function parseOpenApi(source: OpenApiSource, options: ParseOpenApiO
 }
 
 /** Options for {@link importOpenApi}: how to fetch, and how to map what was fetched. */
-export interface ImportOpenApiOptions extends ParseOpenApiOptions, MapApiOptions {}
+export interface ImportOpenApiOptions extends ParseOpenApiOptions, MapApiOptions {
+  /** Also map the document's webhooks and callbacks into a group. Defaults to `true`. */
+  readonly webhooks?: boolean;
+  /** The id the webhook group links back to. Defaults to the imported API's own id. */
+  readonly apiId?: string;
+}
 
 /** An imported API, every document it was made of, and what the mapping could not use. */
 export interface ImportedOpenApi extends MappedApi {
@@ -107,6 +113,8 @@ export interface ImportedOpenApi extends MappedApi {
   readonly refProblems: readonly RefProblem[];
   /** The document itself, for a caller that wants to offer a choice and map again. */
   readonly document: OpenApiDocument;
+  /** The document's webhooks and callbacks, mapped into one group, when there were any to map. */
+  readonly webhooks?: WebhookFolder;
 }
 
 /**
@@ -120,8 +128,11 @@ export interface ImportedOpenApi extends MappedApi {
 export async function importOpenApi(source: OpenApiSource, options: ImportOpenApiOptions): Promise<ImportedOpenApi> {
   const parsed = await parseOpenApi(source, options);
   const mapped = apiFromDocument(parsed.document, options);
+  const webhookOptions: MapWebhooksOptions = { ...options, apiId: options.apiId ?? mapped.api.id };
+  const hooks = options.webhooks === false ? undefined : webhooksFromDocument(parsed.document, webhookOptions);
   const skipped = [
     ...mapped.summary.skipped,
+    ...(hooks?.skipped ?? []),
     ...parsed.refProblems.map((problem) => ({
       kind: 'reference',
       where: problem.at,
@@ -134,5 +145,6 @@ export async function importOpenApi(source: OpenApiSource, options: ImportOpenAp
     documents: parsed.documents,
     refProblems: parsed.refProblems,
     document: parsed.document,
+    ...(hooks !== undefined ? { webhooks: hooks.folder } : {}),
   };
 }

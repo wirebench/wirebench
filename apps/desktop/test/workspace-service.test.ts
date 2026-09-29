@@ -682,6 +682,27 @@ describe('WorkspaceService saving', () => {
 
     await service.close();
   }, 60_000);
+
+  it("routes a project's webhook collection id, so its OAuth2 channels find the host", async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Webhook routing');
+    await bootstrap.close();
+
+    const dir = workspaceDir(root, created.id);
+    const hooks = await seedProject(dir, 'hooks', 'Hooks');
+    await registerProjects(dir, [hooks]);
+
+    const service = newService();
+    await service.open(created.id);
+    const host = service.hostFor(hooks.id);
+    await host.mutate({ kind: 'update-webhooks', patch: { auth: { type: 'basic', username: 'u', passwordRef: 'p' } } });
+
+    const collectionId = `webhooks:${hooks.id}`;
+    expect(service.hostOfEntity(collectionId)).toBe(host);
+    expect(service.restAuthOf(collectionId)).toMatchObject({ type: 'basic', username: 'u' });
+
+    await service.close();
+  }, 60_000);
 });
 
 describe('active environment: machine-local, via local.yaml', () => {

@@ -21,6 +21,7 @@ import { registerShellCommands } from '../../src/renderer/commands/register-shel
 import { getCommand, type CommandContext } from '../../src/renderer/lib/commands.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
+import { useWebhookItemsDialogs } from '../../src/renderer/features/webhook-items/webhook-items-state.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { restApiWire } from '../helpers/wire-defaults.js';
 import type { RestApiWire } from '../../src/shared/wire-types.js';
@@ -35,8 +36,46 @@ const PLAN = {
   removed: [{ method: 'delete', path: '/pets/{id}' }],
   changed: [{ op: { method: 'get', path: '/pets/{id}' }, reasons: ['parameters' as const, 'responses' as const] }],
   api: ['version' as const],
+  webhooks: { added: [], removed: [], changed: [], linked: false },
   source: RECORDED_SOURCE,
   fingerprint: FP1,
+};
+
+const WEBHOOK_ADDED = {
+  key: 'webhook newPet post',
+  kind: 'webhook' as const,
+  name: 'newPet',
+  method: 'post',
+  label: 'webhook newPet POST',
+};
+const WEBHOOK_REMOVED = {
+  key: 'webhook oldPet post',
+  kind: 'webhook' as const,
+  name: 'oldPet',
+  method: 'post',
+  label: 'webhook oldPet POST',
+};
+const WEBHOOK_CHANGED = {
+  key: 'callback subEvent post',
+  kind: 'callback' as const,
+  name: 'subEvent',
+  method: 'post',
+  label: 'callback subEvent POST',
+};
+
+const PLAN_WITH_LINKED_WEBHOOKS = {
+  ...PLAN,
+  webhooks: {
+    added: [WEBHOOK_ADDED],
+    removed: [WEBHOOK_REMOVED],
+    changed: [{ item: WEBHOOK_CHANGED, reasons: ['request-body' as const] }],
+    linked: true,
+  },
+};
+
+const PLAN_WITH_UNLINKED_WEBHOOKS = {
+  ...PLAN,
+  webhooks: { added: [WEBHOOK_ADDED], removed: [], changed: [], linked: false },
 };
 
 const APPLIED = {
@@ -50,6 +89,7 @@ const APPLIED = {
     requestsRewritten: 2,
     rowsAdded: 0,
     rowsRemoved: 0,
+    webhooks: { added: 0, orphaned: 0, restored: 0, rewritten: 0 },
   },
 };
 
@@ -71,6 +111,7 @@ function seed(api: RestApiWire, applySnapshot = vi.fn()): void {
 beforeEach(() => {
   showToast.mockReset();
   useRestUpdateStore.getState().close();
+  useWebhookItemsDialogs.getState().close();
   useEditorsStore.setState({ tabs: [], activeId: undefined });
 });
 
@@ -136,7 +177,15 @@ describe('RestUpdateDialog', () => {
       api: {
         restPlanUpdate: vi.fn().mockResolvedValue({
           ok: true,
-          value: { added: [], removed: [], changed: [], api: [], source: RECORDED_SOURCE, fingerprint: FP1 },
+          value: {
+            added: [],
+            removed: [],
+            changed: [],
+            api: [],
+            webhooks: { added: [], removed: [], changed: [], linked: false },
+            source: RECORDED_SOURCE,
+            fingerprint: FP1,
+          },
         }),
       },
     });
@@ -475,6 +524,118 @@ describe('RestUpdateDialog', () => {
     await waitFor(() => expect(screen.getByTestId<HTMLButtonElement>('rest-update-apply').disabled).toBe(true));
     expect(apply).toHaveBeenCalledTimes(1);
     answer({ ok: true, value: APPLIED });
+  });
+
+  it('shows the webhooks block with its +/~/− title, three op lists and the note', async () => {
+    const plan = vi.fn().mockResolvedValue({ ok: true, value: PLAN_WITH_LINKED_WEBHOOKS });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+
+    const block = await screen.findByTestId('rest-update-webhooks');
+    expect(block.textContent).toContain('Webhooks +1 ~1 −1');
+    expect(screen.getByTestId('rest-update-webhooks-added').textContent).toContain('webhook newPet POST');
+    expect(screen.getByTestId('rest-update-webhooks-removed').textContent).toContain('webhook oldPet POST');
+    expect(screen.getByTestId('rest-update-webhooks-changed').textContent).toContain(
+      'callback subEvent POST: request-body',
+    );
+    expect(block.textContent).toContain(
+      'Removed webhooks are kept and badged orphaned; hand-made webhooks are never changed.',
+    );
+    expect(screen.queryByTestId('rest-update-webhooks-import')).toBeNull();
+  });
+
+  it('offers to import webhooks instead of a diff when nothing is linked yet', async () => {
+    const plan = vi.fn().mockResolvedValue({ ok: true, value: PLAN_WITH_UNLINKED_WEBHOOKS });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+
+    const block = await screen.findByTestId('rest-update-webhooks');
+    expect(block.textContent).toContain('Webhooks not imported');
+    expect(screen.queryByTestId('rest-update-webhooks-added')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('rest-update-webhooks-import'));
+    expect(useWebhookItemsDialogs.getState().importFor).toEqual({ apiId: DEFINED.id });
+  });
+
+  it('says webhooks were not imported when the unlinked plan only removes or changes some', async () => {
+    const plan = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { ...PLAN, webhooks: { added: [], removed: [WEBHOOK_REMOVED], changed: [], linked: false } },
+    });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+
+    const block = await screen.findByTestId('rest-update-webhooks');
+    expect(block.textContent).toContain('Webhooks not imported');
+    expect(screen.queryByTestId('rest-update-webhooks-removed')).toBeNull();
+  });
+
+  it('shows no webhooks block, and no empty state, when the source added nothing but webhooks are absent', async () => {
+    const plan = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { ...PLAN, added: [], removed: [], changed: [], api: [] },
+    });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+
+    expect((await screen.findByTestId('rest-update-empty')).textContent).toContain('already matches its source');
+    expect(screen.queryByTestId('rest-update-webhooks')).toBeNull();
+  });
+
+  it('treats a plan whose only changes are webhooks as non-empty', async () => {
+    const plan = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { ...PLAN, added: [], removed: [], changed: [], api: [], webhooks: PLAN_WITH_LINKED_WEBHOOKS.webhooks },
+    });
+    installWirebenchApi({ api: { restPlanUpdate: plan } });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+
+    expect(await screen.findByTestId('rest-update-webhooks')).toBeTruthy();
+    expect(screen.queryByTestId('rest-update-empty')).toBeNull();
+  });
+
+  it('appends the webhook counts to the toast when the applied webhook group changed too', async () => {
+    const apply = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        ...APPLIED,
+        applied: { ...APPLIED.applied, webhooks: { added: 1, orphaned: 1, restored: 0, rewritten: 0 } },
+      },
+    });
+    installWirebenchApi({
+      api: {
+        restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN_WITH_LINKED_WEBHOOKS }),
+        restApplyUpdate: apply,
+      },
+    });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('rest-update-apply'));
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'Definition updated — 1 added, 2 rewritten, 1 orphaned, 0 restored, 1 webhook added, 1 webhook orphaned',
+      ),
+    );
+  });
+
+  it('says nothing about webhooks in the toast when the applied webhook counts are all zero', async () => {
+    const apply = vi.fn().mockResolvedValue({ ok: true, value: APPLIED });
+    installWirebenchApi({
+      api: { restPlanUpdate: vi.fn().mockResolvedValue({ ok: true, value: PLAN }), restApplyUpdate: apply },
+    });
+    seed(DEFINED);
+    render(<RestUpdateDialog apiId={DEFINED.id} open onOpenChange={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('rest-update-apply'));
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Definition updated — 1 added, 2 rewritten, 1 orphaned, 0 restored'),
+    );
   });
 
   it('still records an apply that lands after the dialog unmounted, but no longer drives the dialog', async () => {

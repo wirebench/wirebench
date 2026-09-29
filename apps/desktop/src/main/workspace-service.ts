@@ -208,7 +208,7 @@ export interface WorkspaceServiceDeps {
   /** Answers Chromium's PAC-style proxy string for a URL; omitted in tests. */
   readonly resolveSystemProxy?: (url: string) => Promise<string | undefined>;
   /** One history file per open project. */
-  readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'>;
+  readonly history: Pick<HistoryService, 'open' | 'close' | 'closeAll'> & Partial<Pick<HistoryService, 'newestFor'>>;
   /**
    * Closes every WebSocket session belonging to `projectId` — all of them when it is omitted —
    * and resolves once each has written its History entry.
@@ -978,6 +978,7 @@ export class WorkspaceService implements ProjectRouter {
         onProgress: (event) => {
           this.deps.hooks?.onProgress?.(event);
         },
+        newestRest: (projectId, requestId) => this.deps.history.newestFor?.(projectId, requestId),
       },
       this.deps.fs,
       this.deps.globals,
@@ -2712,6 +2713,11 @@ export class WorkspaceService implements ProjectRouter {
       for (const request of project.restRequests) {
         add(request.id);
       }
+      // The webhook collection's folders and items already ride the two lists above (as REST rows
+      // whose `apiId` is the collection's); the collection itself owns auth too, OAuth2 included.
+      if (project.webhooks !== undefined) {
+        add(project.webhooks.id);
+      }
       for (const api of project.grpcApis) {
         add(api.id);
       }
@@ -3001,6 +3007,16 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   restApplyUpdate(...args: Parameters<ProjectRouter['restApplyUpdate']>): ReturnType<ProjectRouter['restApplyUpdate']> {
     return this.hostOfEntity(args[0]).applyRestUpdate(...args);
+  }
+
+  /** @inheritdoc */
+  webhookItems(...args: Parameters<ProjectRouter['webhookItems']>): ReturnType<ProjectRouter['webhookItems']> {
+    return this.hostOfEntity(args[0]).webhookItems(...args);
+  }
+
+  /** @inheritdoc */
+  importWebhooks(...args: Parameters<ProjectRouter['importWebhooks']>): ReturnType<ProjectRouter['importWebhooks']> {
+    return this.hostOfEntity(args[0]).importWebhooks(...args);
   }
 
   /** @inheritdoc */

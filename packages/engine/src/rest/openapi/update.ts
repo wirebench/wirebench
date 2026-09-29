@@ -21,9 +21,12 @@
 import type { IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { uniqueSlug } from '../../project/paths.js';
+import type { WebhookFolder } from '../../webhooks/model.js';
+import { hookKey } from '../../webhooks/model.js';
 import type { KeyValueEntry, RestApi, RestFolder, RestRequestDef } from '../model.js';
 import { createFolder } from '../model.js';
-import { apiFromDocument } from './map.js';
+import type { WebhookItemRef } from './map.js';
+import { apiFromDocument, webhookSourcesOf, webhooksFromDocument } from './map.js';
 import type { OpenApiDocument, OpenApiOperation, OpenApiParameter } from './model.js';
 
 export type RestChangeReason = 'parameters' | 'request-body' | 'responses' | 'security' | 'servers';
@@ -36,11 +39,19 @@ export interface RestOpRef {
   readonly summary?: string;
 }
 
+/** What moving from one document to the next would do to its webhooks and callbacks. */
+export interface WebhookUpdatePlan {
+  readonly added: readonly WebhookItemRef[];
+  readonly removed: readonly WebhookItemRef[];
+  readonly changed: readonly { readonly item: WebhookItemRef; readonly reasons: readonly RestChangeReason[] }[];
+}
+
 export interface RestUpdatePlan {
   readonly added: readonly RestOpRef[];
   readonly removed: readonly RestOpRef[];
   readonly changed: readonly { readonly op: RestOpRef; readonly reasons: readonly RestChangeReason[] }[];
   readonly api: readonly RestApiChangeReason[];
+  readonly webhooks: WebhookUpdatePlan;
 }
 
 /**
@@ -139,7 +150,28 @@ export function planRestUpdate(old: OpenApiDocument, next: OpenApiDocument): Res
   }
   const removed = [...before.entries()].filter(([key]) => !after.has(key)).map(([, op]) => opRef(op));
 
-  return { added, removed, changed, api: apiReasons(old, next) };
+  return { added, removed, changed, api: apiReasons(old, next), webhooks: planWebhookUpdate(old, next) };
+}
+
+/**
+ * What moving from `old` to `next` would change among webhooks and callbacks: added and changed
+ * items keyed as {@link hookKey} matches them, removed ones the same way. Mirrors
+ * {@link planRestUpdate}'s per-operation comparison, over {@link webhookSourcesOf} instead of
+ * `document.operations`.
+ */
+export function planWebhookUpdate(old: OpenApiDocument, next: OpenApiDocument): WebhookUpdatePlan {
+  const before = new Map(webhookSourcesOf(old).map((source) => [source.ref.key, source] as const));
+  const after = new Map(webhookSourcesOf(next).map((source) => [source.ref.key, source] as const));
+  const added = [...after.values()].filter((source) => !before.has(source.ref.key)).map((source) => source.ref);
+  const removed = [...before.values()].filter((source) => !after.has(source.ref.key)).map((source) => source.ref);
+  const changed: { item: WebhookItemRef; reasons: RestChangeReason[] }[] = [];
+  for (const [key, source] of after) {
+    const previous = before.get(key);
+    if (previous === undefined) continue;
+    const reasons = reasonsFor(previous.operation, source.operation);
+    if (reasons.length > 0) changed.push({ item: source.ref, reasons });
+  }
+  return { added, removed, changed };
 }
 
 /** What {@link applyRestUpdate} changed, counted for the toast. */
@@ -161,6 +193,10 @@ export interface RestApplyResult {
 
 export interface ApplyRestUpdateOptions {
   readonly newId?: IdGenerator;
+  /** Passed to the sampler for a body a generated field follows into, as the importer would. */
+  readonly includeOptional?: boolean;
+  /** Passed to the sampler for a body a generated field follows into, as the importer would. */
+  readonly sampleValues?: boolean;
 }
 
 const contractKey = (request: RestRequestDef): string | undefined =>
@@ -252,6 +288,67 @@ function mergeRows(
   return { rows, added, removed, changed };
 }
 
+/** Running counts {@link followRequest} adds to as it follows requests, shared across a whole apply. */
+interface FollowCounters {
+  orphaned: number;
+  restored: number;
+  rewritten: number;
+  rowsAdded: number;
+  rowsRemoved: number;
+}
+
+/**
+ * One request as *Update definition* follows it: orphaned when `target` is gone, restored when it
+ * came back, and otherwise the per-row and whole-field follow rule against `before` (what the old
+ * document mapped it to) and `target` (what the new one does) — untouched url/body/auth follow the
+ * new document, `pathParams`/`query`/`headers` merge row by row. Shared by an API's own requests and
+ * a webhook group's, which is why `before` may be absent (an API row with no operation to compare
+ * against) as well as `target` (an orphan).
+ */
+function followRequest(
+  request: RestRequestDef,
+  before: RestRequestDef | undefined,
+  target: RestRequestDef | undefined,
+  counters: FollowCounters,
+): RestRequestDef {
+  if (target === undefined) {
+    if (request.orphaned === true) return request;
+    counters.orphaned += 1;
+    return { ...request, orphaned: true };
+  }
+  let out: RestRequestDef = request;
+  if (request.orphaned === true) {
+    counters.restored += 1;
+    const { orphaned, ...rest } = request;
+    void orphaned;
+    out = rest;
+  }
+  if (before === undefined) return out;
+  let rewritten = false;
+  if (out.url === before.url && out.url !== target.url) {
+    out = { ...out, url: target.url };
+    rewritten = true;
+  }
+  for (const table of ['pathParams', 'query', 'headers'] as const) {
+    const merged = mergeRows(out[table], before[table], target[table], table === 'headers');
+    if (!merged.changed) continue;
+    out = { ...out, [table]: merged.rows };
+    counters.rowsAdded += merged.added;
+    counters.rowsRemoved += merged.removed;
+    rewritten = true;
+  }
+  if (sameStructure(out.body, before.body) && !sameStructure(out.body, target.body)) {
+    out = { ...out, body: target.body };
+    rewritten = true;
+  }
+  if (sameStructure(out.auth, before.auth) && !sameStructure(out.auth, target.auth)) {
+    out = { ...out, auth: target.auth };
+    rewritten = true;
+  }
+  if (rewritten) counters.rewritten += 1;
+  return out;
+}
+
 /**
  * Applies `next` to an API imported from `old`: the request of every operation still in `next`
  * follows it where untouched, the request of every operation gone is orphaned, and every new
@@ -266,58 +363,17 @@ export function applyRestUpdate(
 ): RestApplyResult {
   const newId = options.newId ?? generateId;
   // The old mapping's ids are never kept: only its generated values are compared.
-  const oldMapped = apiFromDocument(old, { newId: () => 'old' }).api;
-  const nextMapped = apiFromDocument(next, { newId }).api;
+  const oldMapped = apiFromDocument(old, { ...options, newId: () => 'old' }).api;
+  const nextMapped = apiFromDocument(next, { ...options, newId }).api;
   const oldReqs = byContract(oldMapped);
   const nextReqs = byContract(nextMapped);
 
-  let requestsOrphaned = 0;
-  let requestsRestored = 0;
-  let requestsRewritten = 0;
-  let rowsAdded = 0;
-  let rowsRemoved = 0;
+  const counters: FollowCounters = { orphaned: 0, restored: 0, rewritten: 0, rowsAdded: 0, rowsRemoved: 0 };
 
   const update = (request: RestRequestDef): RestRequestDef => {
     const key = contractKey(request);
     if (key === undefined) return request;
-    const target = nextReqs.get(key);
-    if (target === undefined) {
-      if (request.orphaned === true) return request;
-      requestsOrphaned += 1;
-      return { ...request, orphaned: true };
-    }
-    let out: RestRequestDef = request;
-    if (request.orphaned === true) {
-      requestsRestored += 1;
-      const { orphaned, ...rest } = request;
-      void orphaned;
-      out = rest;
-    }
-    const before = oldReqs.get(key);
-    if (before === undefined) return out;
-    let rewritten = false;
-    if (out.url === before.url && out.url !== target.url) {
-      out = { ...out, url: target.url };
-      rewritten = true;
-    }
-    for (const table of ['pathParams', 'query', 'headers'] as const) {
-      const merged = mergeRows(out[table], before[table], target[table], table === 'headers');
-      if (!merged.changed) continue;
-      out = { ...out, [table]: merged.rows };
-      rowsAdded += merged.added;
-      rowsRemoved += merged.removed;
-      rewritten = true;
-    }
-    if (sameStructure(out.body, before.body) && !sameStructure(out.body, target.body)) {
-      out = { ...out, body: target.body };
-      rewritten = true;
-    }
-    if (sameStructure(out.auth, before.auth) && !sameStructure(out.auth, target.auth)) {
-      out = { ...out, auth: target.auth };
-      rewritten = true;
-    }
-    if (rewritten) requestsRewritten += 1;
-    return out;
+    return followRequest(request, oldReqs.get(key), nextReqs.get(key), counters);
   };
 
   const updateFolder = (folder: RestFolder): RestFolder => ({
@@ -393,11 +449,11 @@ export function applyRestUpdate(
     api: result,
     requestsAdded,
     requestsAlreadyPresent,
-    requestsOrphaned,
-    requestsRestored,
-    requestsRewritten,
-    rowsAdded,
-    rowsRemoved,
+    requestsOrphaned: counters.orphaned,
+    requestsRestored: counters.restored,
+    requestsRewritten: counters.rewritten,
+    rowsAdded: counters.rowsAdded,
+    rowsRemoved: counters.rowsRemoved,
   };
 }
 
@@ -417,4 +473,81 @@ function folderFor(api: RestApi, home: RestFolder): RestFolder | undefined {
       return key !== undefined && keys.has(key);
     }),
   );
+}
+
+/** What {@link applyWebhookUpdate} changed, counted for the toast. */
+export interface WebhookApplyResult {
+  readonly folder: WebhookFolder;
+  readonly added: number;
+  readonly orphaned: number;
+  readonly restored: number;
+  readonly rewritten: number;
+}
+
+/**
+ * Applies `next` to a webhook group imported from `old`: the same follow rule as
+ * {@link applyRestUpdate}, matched by {@link hookKey} across the group's whole tree instead of by
+ * contract. A request with no `hook` (added by hand) is left untouched; an item's `hook` — including
+ * a callback's `expression` — follows the new document, since a renamed expression is not a new
+ * item. A new webhook or callback method is appended to the group root with a unique slug and an
+ * increasing `order` — but only one truly new to `next`: an item `old` already offered and the group
+ * never held (an import that used `only` to leave it unticked) stays absent rather than coming back.
+ * Never deletes a request or a folder.
+ */
+export function applyWebhookUpdate(
+  folder: WebhookFolder,
+  old: OpenApiDocument,
+  next: OpenApiDocument,
+  options: ApplyRestUpdateOptions = {},
+): WebhookApplyResult {
+  const newId = options.newId ?? generateId;
+  const index = (document: OpenApiDocument, ids: IdGenerator): Map<string, RestRequestDef> => {
+    const mapped = webhooksFromDocument(document, { ...options, apiId: folder.source?.apiId ?? '', newId: ids });
+    const map = new Map<string, RestRequestDef>();
+    for (const request of mapped?.folder.requests ?? []) {
+      if (request.hook !== undefined) map.set(hookKey(request.hook, request.method), request);
+    }
+    return map;
+  };
+  // The old mapping's ids are never kept: only its generated values are compared.
+  const before = index(old, () => 'old');
+  const after = index(next, newId);
+  const counters: FollowCounters = { orphaned: 0, restored: 0, rewritten: 0, rowsAdded: 0, rowsRemoved: 0 };
+  const seen = new Set<string>();
+
+  const follow = (request: RestRequestDef): RestRequestDef => {
+    if (request.hook === undefined) return request;
+    const key = hookKey(request.hook, request.method);
+    seen.add(key);
+    const target = after.get(key);
+    const followed = followRequest(request, before.get(key), target, counters);
+    return target?.hook !== undefined ? { ...followed, hook: target.hook } : followed;
+  };
+  const walk = (node: WebhookFolder): WebhookFolder => ({
+    ...node,
+    folders: node.folders.map(walk),
+    requests: node.requests.map(follow),
+  });
+  const walked = walk(folder);
+
+  const requests = [...walked.requests];
+  const taken = new Set(requests.map((request) => request.slug));
+  let order = requests.reduce((max, request) => Math.max(max, request.order + 1), 0);
+  let added = 0;
+  for (const [key, fresh] of after) {
+    if (seen.has(key) || before.has(key)) continue;
+    const slug = uniqueSlug(fresh.name, taken);
+    taken.add(slug);
+    requests.push({ ...fresh, slug, order });
+    order += 1;
+    added += 1;
+  }
+
+  return {
+    folder: { ...walked, requests },
+    added,
+    orphaned: counters.orphaned,
+    restored: counters.restored,
+    rewritten: counters.rewritten,
+  };
 }

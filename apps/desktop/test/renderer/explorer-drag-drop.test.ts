@@ -140,3 +140,62 @@ describe('isDropDisabled', () => {
     expect(isDropDisabled({ ...base, parent: api, children: [], dragged: wsRequest('a'), index: 0 })).toBe(true);
   });
 });
+
+describe('webhook items', () => {
+  const collection: ExplorerNode = {
+    id: 'webhook-collection:p1',
+    kind: 'webhook-collection',
+    label: 'Webhooks',
+    projectId: 'p1',
+  };
+  const hookFolder = (id: string): ExplorerNode => ({
+    id: `webhook-folder:${id}`,
+    kind: 'webhook-folder',
+    label: id,
+    projectId: 'p1',
+    folderId: id,
+  });
+  const hook = (id: string, folderId?: string): ExplorerNode => ({
+    id: `webhook-request:${id}`,
+    kind: 'webhook-request',
+    label: id,
+    projectId: 'p1',
+    requestId: id,
+    ...(folderId !== undefined ? { folderId } : {}),
+  });
+  const drop = (
+    parent: ExplorerNode,
+    children: ExplorerNode[],
+    dragged: ExplorerNode,
+    index: number,
+    ancestors: ExplorerNode[] = [],
+  ) => isDropDisabled({ parent, children, dragged, index, sameProject: true, ancestors });
+
+  it('moves a webhook item or folder within its own collection', () => {
+    const g = hookFolder('g');
+    expect(drop(collection, [g, hook('a')], hook('b', 'g'), 2)).toBe(false);
+    expect(drop(g, [hook('b', 'g')], hook('a'), 0)).toBe(false);
+    expect(drop(collection, [g, hook('a')], hookFolder('h'), 0)).toBe(false);
+  });
+
+  it('keeps webhook nodes inside the collection and REST nodes out of it', () => {
+    expect(drop(api, [request('r1')], hook('a'), 0)).toBe(true);
+    expect(drop(folder('f1'), [], hook('a'), 0)).toBe(true);
+    expect(drop(collection, [hook('a')], request('r1'), 0)).toBe(true);
+    expect(drop(hookFolder('g'), [], folder('f1'), 0)).toBe(true);
+  });
+
+  it('refuses a webhook folder dropped into itself, and folders among requests', () => {
+    const g = hookFolder('g');
+    const inner = hookFolder('inner');
+    expect(drop(inner, [], g, 0, [g, collection])).toBe(true);
+    expect(drop(collection, [g, hook('a')], hookFolder('h'), 2)).toBe(true);
+    expect(drop(collection, [g, hook('a')], hook('b'), 0)).toBe(true);
+  });
+
+  it('plans webhook moves in the collection’s own lists', () => {
+    const children = [hookFolder('g'), hook('a'), hook('b')];
+    expect(planMoves(children, [hook('b')], 1)).toEqual([{ entityId: 'b', kind: 'webhook-request', index: 0 }]);
+    expect(planMoves(children, [hookFolder('h')], 1)).toEqual([{ entityId: 'h', kind: 'webhook-folder', index: 1 }]);
+  });
+});

@@ -23,6 +23,7 @@ import {
   copyWsCommand,
   sendSelectedWsMessageReporting,
 } from '../features/ws-editor/ws-session-actions.js';
+import { restSendBlocked } from '../features/rest-editor/send-blocked.js';
 import {
   activeGrpcRequestId,
   activeRequestId,
@@ -75,7 +76,8 @@ export function registerRequestCommands(): void {
     whenScope: 'editor.rest',
     run: () => {
       const requestId = activeRestRequestId();
-      if (requestId !== undefined) {
+      // Refused while the tab's Send button is disabled (a webhook item with no target).
+      if (requestId !== undefined && restSendBlocked(requestId) === undefined) {
         void useExchangesStore.getState().sendRest(requestId);
       }
     },

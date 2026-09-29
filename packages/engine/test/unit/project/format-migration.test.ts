@@ -134,7 +134,7 @@ describe('loading a version-3 project folder', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('refuses a version-6 folder as too new', async () => {
+  it('refuses a version-7 folder as too new', async () => {
     const dir = await tempProjectDir();
     await cp(V3_DIR, dir, { recursive: true });
     const manifest = join(dir, 'wirebench.yaml');

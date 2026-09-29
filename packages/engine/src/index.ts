@@ -349,6 +349,26 @@ export {
   entry,
   folderRequests,
 } from './rest/model.js';
+export {
+  DEFAULT_WEBHOOK_TARGET,
+  WEBHOOKS_COLLECTION_PREFIX,
+  WEBHOOK_TARGET_PROPERTY,
+  createWebhookCollection,
+  createWebhookFolder,
+  effectiveTarget,
+  findWebhookRequest,
+  hookKey,
+  webhookFolders,
+  webhookPath,
+  webhookRequests,
+} from './webhooks/model.js';
+export type {
+  CreateWebhookCollectionInput,
+  CreateWebhookFolderInput,
+  HookLink,
+  WebhookCollection,
+  WebhookFolder,
+} from './webhooks/model.js';
 export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
 export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
@@ -423,8 +443,22 @@ export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/f
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
-export { apiFromDocument, authFromScheme, mapScheme } from './rest/openapi/map.js';
-export type { MapApiOptions, MappedApi, OpenApiImportSummary, OpenApiSchemeCandidate } from './rest/openapi/map.js';
+export {
+  apiFromDocument,
+  authFromScheme,
+  mapScheme,
+  webhookItemsOf,
+  webhookSourcesOf,
+  webhooksFromDocument,
+} from './rest/openapi/map.js';
+export type {
+  MapApiOptions,
+  MappedApi,
+  MapWebhooksOptions,
+  OpenApiImportSummary,
+  OpenApiSchemeCandidate,
+  WebhookItemRef,
+} from './rest/openapi/map.js';
 export { createCachedApiFetch, readApiDefinitionCache, writeApiDefinitionCache } from './rest/openapi/cache.js';
 export type {
   ApiDefinitionCacheOptions,
@@ -435,7 +469,13 @@ export type { OpenApiSource, ParsedOpenApi, ParseOpenApiOptions } from './rest/o
 export { parseDocumentText, parseOpenApiDocument, parseSchema, versionOf } from './rest/openapi/parse.js';
 export { selectResponse } from './rest/openapi/responses.js';
 export type { ResponseSelection } from './rest/openapi/responses.js';
-export { applyRestUpdate, planRestUpdate, sameStructure } from './rest/openapi/update.js';
+export {
+  applyRestUpdate,
+  applyWebhookUpdate,
+  planRestUpdate,
+  planWebhookUpdate,
+  sameStructure,
+} from './rest/openapi/update.js';
 export type {
   ApplyRestUpdateOptions,
   RestApiChangeReason,
@@ -443,9 +483,23 @@ export type {
   RestChangeReason,
   RestOpRef,
   RestUpdatePlan,
+  WebhookApplyResult,
+  WebhookUpdatePlan,
 } from './rest/openapi/update.js';
 export { matchOperation } from './rest/openapi/match.js';
 export type { RestOperationRef } from './rest/openapi/match.js';
+export {
+  evaluateRuntimeTemplate,
+  parseRuntimeExpression,
+  parseRuntimeTemplate,
+  resolveJsonPointer,
+} from './rest/openapi/runtime-expression.js';
+export type {
+  RuntimeExchange,
+  RuntimeExpression,
+  RuntimeSource,
+  TemplatePart,
+} from './rest/openapi/runtime-expression.js';
 export {
   checkRestResponse,
   DEFAULT_REST_CHECK_BUDGET_MS,
@@ -478,8 +532,10 @@ export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
 export type {
   JsonSchema,
   JsonValue,
+  OpenApiCallback,
   OpenApiDocument,
   OpenApiExample,
+  OpenApiHook,
   OpenApiInfo,
   OpenApiMediaType,
   OpenApiOAuthFlow,
@@ -611,6 +667,8 @@ export {
   restRequestFile,
   slugify,
   uniqueSlug,
+  WEBHOOKS_DIR,
+  WEBHOOKS_FILE,
   wssFile,
 } from './project/paths.js';
 export type { RequestFilePair } from './project/paths.js';
@@ -639,6 +697,9 @@ export {
   grpcMethodKindSchema,
   protoDefinitionCacheManifestSchema,
   apiKindOf,
+  hookLinkSchema,
+  webhookFolderFileSchema,
+  webhooksFileSchema,
   wssIncomingFileSchema,
   wssEntrySchema,
   wssOutgoingFileSchema,

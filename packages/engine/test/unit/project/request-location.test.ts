@@ -6,6 +6,7 @@ import { projectFiles } from '../../../src/project/serialize.js';
 import { createApi, createFolder, createRestRequest } from '../../../src/rest/model.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
 import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+import { hooksProject } from '../webhooks/fixture.js';
 
 function projectWith(patch: Partial<Project>): Project {
   return { ...createProject('Demo', { id: 'P1' }), ...patch };
@@ -49,6 +50,11 @@ describe('requestFileLocation', () => {
     expect(location).toEqual({ dir: 'apis/Pets/requests/Internal/Orders v2', slug: 'List orders' });
     const files = projectFiles(project);
     expect(files.has(`${location!.dir}/${location!.slug}.request.yaml`)).toBe(true);
+  });
+
+  it('locates a webhook item under webhooks/requests', () => {
+    expect(requestFileLocation(hooksProject(), 'w1')).toEqual({ dir: 'webhooks/requests', slug: 'ping' });
+    expect(requestFileLocation(hooksProject(), 'w2')).toEqual({ dir: 'webhooks/requests/group', slug: 'inner' });
   });
 
   it('returns undefined for an unknown id', () => {

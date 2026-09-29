@@ -18,6 +18,10 @@ import {
   apiRestApplyUpdateResponseSchema,
   apiRestPlanUpdateRequestSchema,
   apiRestPlanUpdateResponseSchema,
+  apiWebhookItemsRequestSchema,
+  apiWebhookItemsResponseSchema,
+  apiImportWebhooksRequestSchema,
+  apiImportWebhooksResponseSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
@@ -676,6 +680,14 @@ export const channels = {
       'api.restApplyUpdate',
       apiRestApplyUpdateRequestSchema,
       apiRestApplyUpdateResponseSchema,
+    ),
+    /** An API's webhooks and callbacks, for the *Import webhooks…* picker. */
+    webhookItems: defineChannel('api.webhookItems', apiWebhookItemsRequestSchema, apiWebhookItemsResponseSchema),
+    /** Places the chosen webhooks/callbacks into the API's linked webhook group, creating it if needed. */
+    importWebhooks: defineChannel(
+      'api.importWebhooks',
+      apiImportWebhooksRequestSchema,
+      apiImportWebhooksResponseSchema,
     ),
     importProto: defineChannel('api.importProto', apiImportProtoRequestSchema, apiImportProtoResponseSchema),
     /** The services and files of a gRPC API's cached `.proto` set, for the method picker. */

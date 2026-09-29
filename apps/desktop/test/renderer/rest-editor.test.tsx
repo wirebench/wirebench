@@ -10,6 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestEditor, mergeQuery } from '../../src/renderer/features/rest-editor/rest-editor.js';
+import { restSendBlocked } from '../../src/renderer/features/rest-editor/send-blocked.js';
+import { registerRequestCommands } from '../../src/renderer/commands/register-request-commands.js';
+import { getCommand, resetCommands } from '../../src/renderer/lib/commands.js';
 import { useDraftsStore } from '../../src/renderer/state/drafts.js';
 import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
@@ -282,6 +285,135 @@ describe('RestEditor', () => {
   it('says so, rather than throwing, for a request that no longer exists', () => {
     mount('gone');
     expect(screen.getByText('This request no longer exists.')).toBeTruthy();
+  });
+});
+
+describe('RestEditor for a webhook item', () => {
+  /** A webhook item: `apiId` names the project's collection, its folder carries an import `source`. */
+  function seedWebhook(): void {
+    useProjectStore.setState({
+      apis: {},
+      folders: {
+        'wh-folder': restFolderWire({
+          id: 'wh-folder',
+          apiId: 'webhooks:p1',
+          name: 'Orders',
+          source: { apiId: 'api-1' },
+        }),
+      },
+      restRequests: {
+        'wh-1': restRequestWire({ id: 'wh-1', apiId: 'webhooks:p1', folderId: 'wh-folder', url: '/newPet' }),
+      },
+      rest: {},
+      projects: {},
+      projectOf: { 'wh-folder': 'p1', 'wh-1': 'p1' },
+    });
+  }
+
+  beforeEach(() => {
+    sendRest.mockReset().mockResolvedValue({ ok: false, error: { code: 'not-asserted', message: 'x' } });
+    cancel.mockReset().mockResolvedValue({ ok: true, value: { cancelled: true } });
+    installWirebenchApi({ request: { sendRest, preflightRest, cancel } });
+    useDraftsStore.getState().reset();
+    useEditorsStore.getState().reset();
+    useExchangesStore.setState({ byRequest: {}, restByRequest: {}, log: [] });
+    seedWebhook();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows Target rather than an API base, the resolved URL, and the group chip', async () => {
+    preflightRest.mockReset().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'https://my-app.dev/hooks/newPet',
+        endpointSource: 'interface-default',
+        unresolved: [],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+        target: { source: 'target' },
+      },
+    });
+    mount('wh-1');
+
+    expect(screen.getByTestId('webhook-chip').textContent).toBe('webhook · Orders');
+    expect(screen.getByTestId('rest-url-base').textContent).toBe('Target ·');
+    expect(await screen.findByText('→ https://my-app.dev/hooks/newPet')).toBeTruthy();
+  });
+
+  it('says where a callback URL came from', async () => {
+    preflightRest.mockReset().mockResolvedValue({
+      ok: true,
+      value: {
+        endpoint: 'https://my-app.dev/subs/cb-91',
+        endpointSource: 'interface-default',
+        unresolved: [],
+        auth: { type: 'none', source: 'none' },
+        wsa: { enabled: false },
+        target: { source: 'callback', detail: 'from your last POST /subscriptions (10:42)' },
+      },
+    });
+    mount('wh-1');
+
+    expect(await screen.findByText(/from your last POST \/subscriptions \(10:42\)/)).toBeTruthy();
+  });
+
+  it('disables Send and offers to set the target when it is missing', async () => {
+    preflightRest
+      .mockReset()
+      .mockResolvedValue({ ok: false, error: { code: 'webhook-target-missing', message: 'Set the Webhooks target' } });
+    mount('wh-1');
+
+    await waitFor(() => {
+      expect(screen.getByTestId<HTMLButtonElement>('rest-send').disabled).toBe(true);
+    });
+    expect(screen.getByTestId<HTMLButtonElement>('rest-send').title).toBe('Set the Webhooks target');
+    expect(screen.getByText('Set the Webhooks target')).toBeTruthy();
+  });
+
+  it('refuses the rest.send shortcut while the target is missing', async () => {
+    preflightRest
+      .mockReset()
+      .mockResolvedValue({ ok: false, error: { code: 'webhook-target-missing', message: 'Set the Webhooks target' } });
+    resetCommands();
+    registerRequestCommands();
+    useEditorsStore.setState({
+      tabs: [{ id: 'tab-wh', kind: 'rest-request', restRequestId: 'wh-1' } as never],
+      activeId: 'tab-wh',
+    });
+    const store = vi.fn();
+    const original = useExchangesStore.getState().sendRest;
+    useExchangesStore.setState({ sendRest: store });
+    mount('wh-1');
+
+    await waitFor(() => {
+      expect(restSendBlocked('wh-1')).toBe('Set the Webhooks target');
+    });
+    await getCommand('rest.send')?.run({} as never);
+    expect(store).not.toHaveBeenCalled();
+    useExchangesStore.setState({ sendRest: original });
+    resetCommands();
+  });
+
+  it('names the collection as the level a webhook item inherits its credentials from', () => {
+    useProjectStore.setState({
+      webhooks: { p1: { id: 'webhooks:p1', projectId: 'p1', target: '', auth: { type: 'bearer', tokenRef: 'sec' } } },
+    });
+    mount('wh-1');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Auth' }));
+    expect(screen.getByTestId('rest-auth-source').textContent).toContain('Inherited from Webhooks');
+  });
+
+  it('shows the inline error for a target that is not http(s)', async () => {
+    preflightRest.mockReset().mockResolvedValue({ ok: false, error: { code: 'webhook-target-invalid', message: 'x' } });
+    mount('wh-1');
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'The Webhooks target must start with http:// or https://',
+    );
   });
 });
 

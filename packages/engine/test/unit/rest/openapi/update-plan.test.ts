@@ -57,7 +57,13 @@ describe('planRestUpdate', () => {
 
   it('finds nothing between a document and itself, cyclic schemas included', async () => {
     const plan = planRestUpdate(await load('petstore-update-old.yaml'), await load('petstore-update-old.yaml'));
-    expect(plan).toEqual({ added: [], removed: [], changed: [], api: [] });
+    expect(plan).toEqual({
+      added: [],
+      removed: [],
+      changed: [],
+      api: [],
+      webhooks: { added: [], removed: [], changed: [] },
+    });
   });
 
   it('compares cyclic schemas built separately without throwing or a false change', () => {

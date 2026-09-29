@@ -7,6 +7,7 @@ import type {
   RestApiWire,
   RestFolderWire,
   RestRequestWire,
+  WebhookCollectionWire,
   ScriptValueWire,
   WsApiWire,
   WsRequestWire,
@@ -32,6 +33,10 @@ export type ExplorerNodeKind =
   | 'grpc-request'
   | 'ws-api'
   | 'ws-request'
+  /** A project's webhook collection (openapi-webhooks-import §3.1): its root, one per project. */
+  | 'webhook-collection'
+  | 'webhook-folder'
+  | 'webhook-request'
   /** The open workspace's catch URLs on its server (webhook-capture §4.2); a root after the projects. */
   | 'webhooks'
   | 'catch-url'
@@ -131,6 +136,12 @@ export interface ExplorerNode {
   readonly unseenMore?: boolean;
   /** Set on `sequence` nodes: the sequence the row stands for. */
   readonly sequenceId?: string;
+  /**
+   * Set on a `webhook-request` node imported as a callback: its parent operation, rendered muted
+   * after the label — the linked API's request for that operation when one is found, else the
+   * operation's own contract key (`hook.operation`).
+   */
+  readonly suffix?: string;
   /**
    * Set on an interface, API or folder with requests beneath it whose scripts are switched off
    * (#63): their ids, for **Switch on scripts…**.
@@ -480,6 +491,139 @@ export interface ExplorerRestData {
   readonly requests: readonly RestRequestWire[];
 }
 
+/**
+ * The folders and requests directly inside one webhook collection (or a folder in it), interleaved
+ * like a REST API's: they ride in the same `folders`/`requests` lists REST does — told apart by
+ * `apiId` (`webhooks:<projectId>`, never a real API id) — so this mirrors {@link restChildren}.
+ */
+function webhookChildren(
+  collectionId: string,
+  projectId: string,
+  parentId: string | undefined,
+  folders: readonly RestFolderWire[],
+  requests: readonly RestRequestWire[],
+): ExplorerNode[] {
+  const folderNodes = folders
+    .filter((folder) => folder.apiId === collectionId && folder.parentId === parentId)
+    .sort((a, b) => a.order - b.order)
+    .map((folder) => webhookFolderNode(collectionId, projectId, folder, folders, requests));
+
+  const requestNodes = requests
+    .filter((request) => request.apiId === collectionId && request.folderId === parentId)
+    .sort((a, b) => a.order - b.order)
+    .map((request) => webhookRequestNode(projectId, request, folders, requests));
+
+  return [...folderNodes, ...requestNodes];
+}
+
+function webhookFolderNode(
+  collectionId: string,
+  projectId: string,
+  folder: RestFolderWire,
+  folders: readonly RestFolderWire[],
+  requests: readonly RestRequestWire[],
+): ExplorerNode {
+  return {
+    id: `webhook-folder:${folder.id}`,
+    kind: 'webhook-folder',
+    label: folder.name,
+    projectId,
+    folderId: folder.id,
+    ...(folder.source !== undefined ? { linked: true } : {}),
+    children: webhookChildren(collectionId, projectId, folder.id, folders, requests),
+  };
+}
+
+function webhookRequestNode(
+  projectId: string,
+  request: RestRequestWire,
+  folders: readonly RestFolderWire[],
+  requests: readonly RestRequestWire[],
+): ExplorerNode {
+  const suffix = webhookSuffix(request, folders, requests);
+  return {
+    id: `webhook-request:${request.id}`,
+    kind: 'webhook-request',
+    label: request.name,
+    projectId,
+    requestId: request.id,
+    method: request.method,
+    ...(request.folderId !== undefined ? { folderId: request.folderId } : {}),
+    ...(request.orphaned === true ? { orphaned: true } : {}),
+    ...(suffix !== undefined ? { suffix } : {}),
+  };
+}
+
+/**
+ * A callback request's muted suffix: the imported API's own request for `hook.operation` (its
+ * contract key, e.g. `post /subscriptions`) when one is found among the project's REST requests,
+ * else the operation key itself. `undefined` for a webhook (not a callback) item.
+ */
+function webhookSuffix(
+  request: RestRequestWire,
+  folders: readonly RestFolderWire[],
+  requests: readonly RestRequestWire[],
+): string | undefined {
+  const hook = request.hook;
+  if (hook === undefined || hook.kind !== 'callback') {
+    return undefined;
+  }
+  const sourceApiId = webhookSourceApiId(request.folderId, folders);
+  const parent =
+    sourceApiId === undefined
+      ? undefined
+      : requests.find(
+          (candidate) =>
+            candidate.apiId === sourceApiId && `${candidate.method.toLowerCase()} ${candidate.url}` === hook.operation,
+        );
+  return parent?.name ?? hook.operation;
+}
+
+/** The nearest ancestor folder's `source.apiId`, walking up from `folderId` — undefined off a chain with none. */
+function webhookSourceApiId(folderId: string | undefined, folders: readonly RestFolderWire[]): string | undefined {
+  let at = folderId;
+  const seen = new Set<string>();
+  while (at !== undefined && !seen.has(at)) {
+    seen.add(at);
+    const folder = folders.find((candidate) => candidate.id === at);
+    if (folder === undefined) {
+      return undefined;
+    }
+    if (folder.source !== undefined) {
+      return folder.source.apiId;
+    }
+    at = folder.parentId;
+  }
+  return undefined;
+}
+
+function webhookCollectionNode(
+  projectId: string,
+  collection: WebhookCollectionWire,
+  folders: readonly RestFolderWire[],
+  requests: readonly RestRequestWire[],
+): ExplorerNode {
+  return {
+    id: `webhook-collection:${projectId}`,
+    kind: 'webhook-collection',
+    label: 'Webhooks',
+    projectId,
+    children: webhookChildren(collection.id, projectId, undefined, folders, requests),
+  };
+}
+
+/** A project's Webhooks group: one node when it has a collection, none when it does not. */
+function webhookCollectionGroup(
+  projectId: string,
+  collection: WebhookCollectionWire | undefined,
+  rest: ExplorerRestData | undefined,
+): ExplorerNode[] {
+  if (collection === undefined) {
+    return [];
+  }
+  return [webhookCollectionNode(projectId, collection, rest?.folders ?? [], rest?.requests ?? [])];
+}
+
 /** The Webhooks root's input: present only when the workspace's server offers catch URLs. */
 export interface ExplorerWebhooks {
   readonly canEdit: boolean;
@@ -493,11 +637,12 @@ export interface ExplorerWebhooks {
 
 export const WEBHOOKS_ROOT_ID = 'webhooks';
 
+/** The workspace's catch-URL inbox root — R2: relabelled from *Webhooks* now that each project has its own. */
 export function webhooksNode(webhooks: ExplorerWebhooks): ExplorerNode {
   return {
     id: WEBHOOKS_ROOT_ID,
     kind: 'webhooks',
-    label: 'Webhooks',
+    label: 'Webhook inbox',
     canEdit: webhooks.canEdit,
     children: webhooks.hooks.map((hook) => ({
       id: `catch-url:${hook.id}`,
@@ -539,6 +684,9 @@ export function webhooksNode(webhooks: ExplorerWebhooks): ExplorerNode {
  * @param sequences each project's sequences, in order, by project id. A project with none shows no
  *   Sequences group at all.
  * @param webhooks the Webhooks root's catch URLs; omitted when the workspace's server offers none.
+ * @param webhookCollections each project's webhook collection, by project id (openapi-webhooks-import
+ *   §3.1). A project with none shows no Webhooks node. Its folders and requests are read from `rest`
+ *   (they ride in the same `folders`/`requests` lists, told apart by `apiId`).
  */
 export function buildExplorerTree(
   projects: readonly ExplorerProject[],
@@ -551,6 +699,7 @@ export function buildExplorerTree(
   ws: Readonly<Record<string, ExplorerWsData>> = {},
   sequences: Readonly<Record<string, readonly ExplorerSequence[]>> = {},
   webhooks?: ExplorerWebhooks,
+  webhookCollections: Readonly<Record<string, WebhookCollectionWire>> = {},
   values: Readonly<Record<string, readonly ScriptValueWire[]>> = {},
 ): ExplorerNode[] {
   // Every request whose scripts are switched off, whichever protocol it is.
@@ -588,6 +737,7 @@ export function buildExplorerTree(
           ws[project.id],
         )
           .map((node) => (scriptsOff.size === 0 ? node : withScriptsOff(node, scriptsOff)))
+          .concat(webhookCollectionGroup(project.id, webhookCollections[project.id], rest[project.id]))
           .concat(sequencesGroup(project.id, sequences[project.id] ?? []))
           .concat(valuesGroup(project.id, values[project.id] ?? []));
 
@@ -725,10 +875,15 @@ export function restEntityId(node: ExplorerNode | undefined): string | undefined
   if (node.kind === 'api' || node.kind === 'grpc-api' || node.kind === 'ws-api') {
     return node.apiId;
   }
-  if (node.kind === 'folder') {
+  if (node.kind === 'folder' || node.kind === 'webhook-folder') {
     return node.folderId;
   }
-  if (node.kind === 'rest-request' || node.kind === 'grpc-request' || node.kind === 'ws-request') {
+  if (
+    node.kind === 'rest-request' ||
+    node.kind === 'grpc-request' ||
+    node.kind === 'ws-request' ||
+    node.kind === 'webhook-request'
+  ) {
     return node.requestId;
   }
   return undefined;

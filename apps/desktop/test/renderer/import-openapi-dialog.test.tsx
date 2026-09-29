@@ -46,6 +46,7 @@ function summary(overrides: Partial<OpenApiImportSummaryWire> = {}): OpenApiImpo
     deprecated: 1,
     securitySchemes: [],
     skipped: [],
+    webhooks: 0,
     ...overrides,
   };
 }
@@ -131,6 +132,40 @@ describe('ImportOpenApiDialog', () => {
     });
     // No name typed: the document's own title is what names the API, so none is sent.
     expect(importOpenApi.mock.calls[0]?.[0]).not.toHaveProperty('name');
+  });
+
+  it('offers to import webhooks and callbacks, ticked by default, and sends the choice', async () => {
+    mount();
+
+    const checkbox = screen.getByTestId<HTMLInputElement>('import-openapi-webhooks');
+    expect(checkbox.checked).toBe(true);
+
+    await userEvent.type(screen.getByTestId('import-openapi-url'), 'https://api.test/openapi.yaml');
+    await userEvent.click(screen.getByTestId('import-openapi-submit'));
+
+    await waitFor(() => {
+      expect(importOpenApi).toHaveBeenCalled();
+    });
+    expect(importOpenApi.mock.calls[0]?.[0]).toMatchObject({ webhooks: true });
+  });
+
+  it('sends webhooks: false once the checkbox is unticked', async () => {
+    mount();
+
+    await userEvent.click(screen.getByTestId('import-openapi-webhooks'));
+    await userEvent.type(screen.getByTestId('import-openapi-url'), 'https://api.test/openapi.yaml');
+    await userEvent.click(screen.getByTestId('import-openapi-submit'));
+
+    await waitFor(() => {
+      expect(importOpenApi).toHaveBeenCalled();
+    });
+    expect(importOpenApi.mock.calls[0]?.[0]).toMatchObject({ webhooks: false });
+  });
+
+  it('has no webhooks checkbox for another format', async () => {
+    mount();
+    await userEvent.selectOptions(screen.getByTestId('import-format-select'), 'wsdl');
+    expect(screen.queryByTestId('import-openapi-webhooks')).toBeNull();
   });
 
   it('sends a typed name, trimmed, and a cleared caching flag', async () => {
@@ -274,6 +309,55 @@ describe('the import summary', () => {
     await importAndSummarise(summary({ requests: 1, folders: 1, deprecated: 0 }));
 
     expect(screen.getByTestId('import-openapi-counts').textContent).toBe('1 request in 1 folder.');
+  });
+
+  it('ends the counts line with the webhook count when the document offered any', async () => {
+    await importAndSummarise(summary({ webhooks: 3 }));
+
+    expect(screen.getByTestId('import-openapi-counts').textContent).toBe(
+      '7 requests in 2 folders, 1 deprecated, 3 webhooks.',
+    );
+  });
+
+  it('reads naturally for a single webhook', async () => {
+    await importAndSummarise(summary({ webhooks: 1, deprecated: 0 }));
+
+    expect(screen.getByTestId('import-openapi-counts').textContent).toBe('7 requests in 2 folders, 1 webhook.');
+  });
+
+  it('says nothing about webhooks when the document offered none', async () => {
+    await importAndSummarise(summary());
+
+    expect(screen.getByTestId('import-openapi-counts').textContent).not.toContain('webhook');
+  });
+
+  it('shows where the webhooks landed when the import made a group, with the item labels', async () => {
+    importOpenApi.mockResolvedValue({
+      apiId: 'api-1',
+      projectId: 'proj-1',
+      summary: summary({ webhooks: 2 }),
+      webhookGroup: {
+        folderId: 'folder-1',
+        name: 'Petstore webhooks',
+        items: [
+          { id: 'req-1', label: 'webhook newPet POST' },
+          { id: 'req-2', label: 'callback subscriptionEvent POST' },
+        ],
+      },
+    });
+    mount();
+    await userEvent.type(screen.getByTestId('import-openapi-url'), 'https://api.test/openapi.yaml');
+    await userEvent.click(screen.getByTestId('import-openapi-submit'));
+
+    const block = await screen.findByTestId('import-openapi-webhooks-result');
+    expect(block.textContent).toContain('2 webhooks & callbacks → added to Demo ▸ Webhooks ▸ Petstore webhooks');
+    expect(block.textContent).toContain('webhook newPet POST');
+    expect(block.textContent).toContain('callback subscriptionEvent POST');
+  });
+
+  it('shows no webhooks-result block when the import made no group', async () => {
+    await importAndSummarise(summary());
+    expect(screen.queryByTestId('import-openapi-webhooks-result')).toBeNull();
   });
 
   it('displays OpenAPI 3.2 or Swagger 3.x declared versions in the summary header', async () => {

@@ -209,6 +209,10 @@ export interface ProjectRouter {
   restSource(...args: Parameters<ProjectHost['restSource']>): ReturnType<ProjectHost['restSource']>;
   restPlanUpdate(...args: Parameters<ProjectHost['planRestUpdate']>): ReturnType<ProjectHost['planRestUpdate']>;
   restApplyUpdate(...args: Parameters<ProjectHost['applyRestUpdate']>): ReturnType<ProjectHost['applyRestUpdate']>;
+  /** An API's webhooks and callbacks, and which of their keys the group linked to it already holds. */
+  webhookItems(...args: Parameters<ProjectHost['webhookItems']>): ReturnType<ProjectHost['webhookItems']>;
+  /** Places the chosen webhooks/callbacks into the API's linked webhook group, creating it if needed. */
+  importWebhooks(...args: Parameters<ProjectHost['importWebhooks']>): ReturnType<ProjectHost['importWebhooks']>;
 
   // — routed by keystore id ———————————————————————————————————————————————————————————————
 

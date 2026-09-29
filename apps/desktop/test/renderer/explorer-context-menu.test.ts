@@ -34,6 +34,7 @@ describe('explorerMenuItems', () => {
       'New API…',
       'New gRPC API…',
       'New WebSocket API…',
+      'New Webhook',
       'New Sequence',
       'Settings…',
       REVEAL,
@@ -62,6 +63,7 @@ describe('explorerMenuItems', () => {
       'New API…',
       'New gRPC API…',
       'New WebSocket API…',
+      'New Webhook',
       'New Sequence',
       'Settings…',
       'Project environments (linked project)',
@@ -135,7 +137,7 @@ describe('explorerMenuItems', () => {
 
     expect(internal.every((group) => group.length > 0)).toBe(true);
     expect(internal.map((group) => group.map((i) => i.key))).toEqual([
-      ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-sequence'],
+      ['import', 'new-api', 'new-grpc-api', 'new-ws-api', 'new-webhook', 'new-sequence'],
       ['settings'],
       ['reveal', 'export'],
       ['move-to-workspace'],
@@ -184,12 +186,20 @@ describe('explorerMenuItems on a REST row', () => {
     const imported = explorerMenuGroups(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true }));
     expect(imported.map((group) => group.map((item) => item.label))).toEqual([
       ['Open', 'New folder', 'New request', 'Import cURL…'],
-      ['Update Definition…'],
+      ['Update Definition…', 'Import webhooks…'],
       ['Rename…'],
       ['Delete'],
     ]);
     const byHand = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1' }));
     expect(byHand.map((item) => item.label)).not.toContain('Update Definition…');
+    expect(byHand.map((item) => item.label)).not.toContain('Import webhooks…');
+  });
+
+  it('offers Import webhooks… right after Update Definition…', () => {
+    const labels = explorerMenuItems(node({ kind: 'api', id: 'api:a1', apiId: 'a1', hasDefinition: true })).map(
+      (item) => item.label,
+    );
+    expect(labels.indexOf('Import webhooks…')).toBe(labels.indexOf('Update Definition…') + 1);
   });
 
   it('offers a folder the two creators, a rename, its credentials and a delete', () => {
@@ -315,5 +325,47 @@ describe('explorerMenuItems on a WebSocket row', () => {
       );
     expect(labels(false)).toEqual(['Copy URL, Settings…']);
     expect(labels(true)).toEqual(['Copy URL, Settings…', 'Rotate URL…, Clear captures', 'Delete']);
+  });
+});
+
+describe('explorerMenuItems on a project’s webhook collection (openapi-webhooks-import §3.1)', () => {
+  it('offers New Webhook on a project', () => {
+    const labels = explorerMenuItems(node({ kind: 'project', id: 'proj:p1', projectId: 'p1' })).map(
+      (item) => item.label,
+    );
+    expect(labels.indexOf('New Webhook')).toBe(labels.indexOf('New WebSocket API…') + 1);
+  });
+
+  it('offers the collection’s own operations', () => {
+    const items = explorerMenuItems(node({ kind: 'webhook-collection', id: 'webhook-collection:p1', projectId: 'p1' }));
+    expect(items.map((item) => item.label)).toEqual(['New Webhook', 'New Folder', 'Settings…']);
+  });
+
+  it('offers folder and request operations on webhook items', () => {
+    expect(
+      explorerMenuItems(node({ kind: 'webhook-folder', id: 'webhook-folder:f1', projectId: 'p1', folderId: 'f1' })).map(
+        (item) => item.label,
+      ),
+    ).toEqual(['New Webhook', 'New Folder', 'Settings…', 'Rename…', 'Auth…', 'Delete']);
+    expect(
+      explorerMenuItems(
+        node({ kind: 'webhook-request', id: 'webhook-request:r1', projectId: 'p1', requestId: 'r1' }),
+      ).map((item) => item.label),
+    ).toEqual(['Duplicate', 'Rename…', 'Delete']);
+  });
+
+  it('offers nothing for a webhook row whose ids are missing', () => {
+    expect(explorerMenuItems(node({ kind: 'webhook-collection' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'webhook-folder', projectId: 'p1' }))).toEqual([]);
+    expect(explorerMenuItems(node({ kind: 'webhook-request' }))).toEqual([]);
+  });
+
+  it('Auth… on a webhook folder opens the same credentials dialog a REST folder uses', () => {
+    const items = explorerMenuItems(
+      node({ kind: 'webhook-folder', id: 'webhook-folder:f1', projectId: 'p1', folderId: 'f1' }),
+    );
+    items.find((item) => item.label === 'Auth…')?.run();
+
+    expect(useUiStore.getState().folderAuthId).toBe('f1');
   });
 });

@@ -6,6 +6,7 @@ import type { IpcError } from '../../shared/ipc.js';
 import type {
   ApiImportAsyncApiRequest,
   ApiImportOpenApiRequest,
+  ApiImportOpenApiResponse,
   AsyncApiImportSummaryWire,
   ApiGrpcRefreshRequest,
   ApiGrpcRefreshResponse,
@@ -52,6 +53,7 @@ import type {
   RestFolderWire,
   RestRequestPatchWire,
   RestRequestWire,
+  WebhookCollectionWire,
 } from '../../shared/wire-types.js';
 import type { ExplorerGrpcData, ExplorerRestData, ExplorerWsData } from '../features/explorer/tree-nodes.js';
 import { useDraftsStore } from './drafts.js';
@@ -112,6 +114,12 @@ export interface ProjectSnapshot {
    * root's children come from exactly one project.
    */
   readonly rest: Readonly<Record<string, ExplorerRestData>>;
+  /**
+   * Each project's webhook collection, by project id. Absent for a project that has not created
+   * one yet. Its folders and requests are not repeated here — they ride in `folders`/`restRequests`
+   * (and `rest`) alongside the REST ones, told apart by their `apiId` (`webhooks:<projectId>`).
+   */
+  readonly webhooks: Readonly<Record<string, WebhookCollectionWire>>;
   /** gRPC APIs by id, flattened across every open project. */
   readonly grpcApis: Record<string, GrpcApiWire>;
   /** gRPC requests by id, flattened across every open project. */
@@ -245,9 +253,13 @@ export interface ProjectStore extends ProjectSnapshot {
    * Imports an OpenAPI document as a new API. Unlike {@link addApi} this is not a mutation: main
    * fetches, maps, caches and saves in one call, so the mirror takes the project it answers with.
    */
-  readonly importOpenApi: (
-    request: ApiImportOpenApiRequest,
-  ) => Promise<{ readonly apiId: string; readonly projectId: string; readonly summary: OpenApiImportSummaryWire }>;
+  readonly importOpenApi: (request: ApiImportOpenApiRequest) => Promise<{
+    readonly apiId: string;
+    readonly projectId: string;
+    readonly summary: OpenApiImportSummaryWire;
+    /** The webhook group the import placed, when the document offered anything to place. */
+    readonly webhookGroup?: ApiImportOpenApiResponse['webhookGroup'];
+  }>;
   /**
    * Imports an AsyncAPI document as a new WebSocket API. Like {@link importOpenApi}, main reads,
    * maps, caches and saves in one call, and the mirror takes the project it answers with.
@@ -290,6 +302,28 @@ export interface ProjectStore extends ProjectSnapshot {
    * absent). What a drag-and-drop in the explorer commits.
    */
   readonly moveNode: (nodeId: string, parentId: string | undefined, index: number) => Promise<void>;
+  /** Creates a project's webhook collection if it does not have one yet. A no-op once it does. */
+  readonly ensureWebhooks: (projectId: string) => Promise<void>;
+  /** Merges a patch into one project's webhook collection (its target and/or its own credentials). */
+  readonly updateWebhooks: (
+    projectId: string,
+    patch: Extract<ProjectChange, { kind: 'update-webhooks' }>['patch'],
+  ) => Promise<void>;
+  /**
+   * Adds a webhook request to a project's collection, at its root or inside one of its folders.
+   * Returns the new request's id. `draft` seeds the request the way `add-rest-request`'s own
+   * patch does, for *Save as webhook…* (Task 15).
+   */
+  readonly addWebhookRequest: (
+    projectId: string,
+    parentId?: string,
+    name?: string,
+    draft?: RestRequestPatchWire,
+  ) => Promise<string>;
+  /** Adds a folder to a project's webhook collection, at its root or inside another folder. */
+  readonly addWebhookFolder: (projectId: string, parentId?: string, name?: string) => Promise<string>;
+  /** Overrides (or, with `null`, clears) one webhook folder's own target. */
+  readonly setWebhookFolderTarget: (projectId: string, folderId: string, target: string | null) => Promise<void>;
   /** Adds a gRPC API to one project and returns its id. */
   readonly addGrpcApi: (projectId: string, name: string, target?: string) => Promise<string>;
   /** Imports a `.proto` set as a new gRPC API; main reads, maps, caches and saves in one call. */
@@ -505,6 +539,7 @@ type Indexes = Pick<
   | 'folders'
   | 'restRequests'
   | 'rest'
+  | 'webhooks'
   | 'grpcApis'
   | 'grpcRequests'
   | 'grpc'
@@ -653,6 +688,7 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
   const folders: Record<string, RestFolderWire> = {};
   const restRequests: Record<string, RestRequestWire> = {};
   const rest: Record<string, ExplorerRestData> = {};
+  const webhooks: Record<string, WebhookCollectionWire> = {};
   const grpcApis: Record<string, GrpcApiWire> = {};
   const grpcRequests: Record<string, GrpcRequestWire> = {};
   const grpc: Record<string, ExplorerGrpcData> = {};
@@ -694,6 +730,9 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
       folders: project.folders,
       requests: project.restRequests.map((request) => restRequests[request.id] ?? request),
     };
+    if (project.webhooks !== undefined) {
+      webhooks[project.id] = project.webhooks;
+    }
     for (const api of project.grpcApis) {
       grpcApis[api.id] = api;
       projectOf[api.id] = project.id;
@@ -754,6 +793,7 @@ function indexesOf(projects: Readonly<Record<string, ProjectWire>>): Indexes {
     folders,
     restRequests,
     rest,
+    webhooks,
     grpcApis,
     grpcRequests,
     grpc,
@@ -826,6 +866,12 @@ export function selectApiOf(state: ProjectSnapshot, entityId: string): RestApiWi
   return apiId === undefined ? undefined : state.apis[apiId];
 }
 
+/** The webhook collection owning a project, folder or request id (including a project id itself). */
+export function selectWebhooksOf(state: ProjectSnapshot, entityId: string): WebhookCollectionWire | undefined {
+  const projectId = state.projectOf[entityId] ?? entityId;
+  return state.webhooks[projectId];
+}
+
 /**
  * The folders from an API's root down to `folderId`, outermost first — what a breadcrumb shows and
  * what the credentials chain climbs.
@@ -889,6 +935,7 @@ const EMPTY: ProjectSnapshot = {
   folders: {},
   restRequests: {},
   rest: {},
+  webhooks: {},
   grpcApis: {},
   grpcRequests: {},
   grpc: {},
@@ -1352,7 +1399,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         throw asError(result.error);
       }
       apply(result.value.projectId, result.value.project);
-      return { apiId: result.value.apiId, projectId: result.value.projectId, summary: result.value.summary };
+      return {
+        apiId: result.value.apiId,
+        projectId: result.value.projectId,
+        summary: result.value.summary,
+        ...(result.value.webhookGroup !== undefined ? { webhookGroup: result.value.webhookGroup } : {}),
+      };
     },
 
     importAsyncApi: async (request) => {
@@ -1767,6 +1819,43 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         ...(parentId !== undefined ? { parentId } : {}),
         index,
       });
+    },
+
+    ensureWebhooks: async (projectId) => {
+      await mutate(projectId, { kind: 'ensure-webhooks' });
+    },
+
+    updateWebhooks: async (projectId, patch) => {
+      await mutate(projectId, { kind: 'update-webhooks', patch });
+    },
+
+    addWebhookRequest: async (projectId, parentId, name, draft) => {
+      const { createdId } = await mutate(projectId, {
+        kind: 'add-webhook-request',
+        ...(parentId !== undefined ? { parentId } : {}),
+        ...(name !== undefined ? { name } : {}),
+        ...(draft !== undefined ? { draft } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-webhook-request did not return a request id');
+      }
+      return createdId;
+    },
+
+    addWebhookFolder: async (projectId, parentId, name) => {
+      const { createdId } = await mutate(projectId, {
+        kind: 'add-webhook-folder',
+        ...(parentId !== undefined ? { parentId } : {}),
+        ...(name !== undefined ? { name } : {}),
+      });
+      if (createdId === undefined) {
+        throw new Error('add-webhook-folder did not return a folder id');
+      }
+      return createdId;
+    },
+
+    setWebhookFolderTarget: async (projectId, folderId, target) => {
+      await mutate(projectId, { kind: 'set-webhook-folder-target', folderId, target });
     },
 
     addEnvironment: async (projectId, name) => {

@@ -34,6 +34,7 @@ import type {
   EndpointSourceWire,
   ExpansionField,
   RequestAuthSourceWire,
+  RequestPreflightResponse,
   UnresolvedRefWire,
 } from '../shared/wire-types.js';
 import { findRequest } from './project-wire.js';
@@ -52,6 +53,8 @@ export interface PreflightResult {
     readonly to?: string;
     readonly messageId?: string;
   };
+  /** A webhook item's URL source and its editor note; see `requestPreflightResponseSchema`. */
+  readonly target?: RequestPreflightResponse['target'];
 }
 
 /**

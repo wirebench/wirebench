@@ -153,6 +153,8 @@ beforeEach(async () => {
       restSource: unused,
       restPlanUpdate: unused,
       restApplyUpdate: unused,
+      webhookItems: unused,
+      importWebhooks: unused,
       apiDefinitionDocuments: unused,
       apiDefinitionText: unused,
       exportApiDefinitionTo: unused,

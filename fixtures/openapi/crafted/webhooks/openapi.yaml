@@ -1,0 +1,51 @@
+openapi: 3.1.0
+info: { title: Petstore API, version: 1.0.0 }
+servers: [{ url: https://api.petstore.test }]
+paths:
+  /subscriptions:
+    post:
+      operationId: createSubscription
+      tags: [Subscriptions]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                callbackUrl: { type: string, format: uri }
+      responses: { '201': { description: Created } }
+      callbacks:
+        onPetEvent:
+          '{$request.body#/callbackUrl}':
+            post:
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      type: object
+                      properties:
+                        event: { type: string, example: pet.updated }
+                        petId: { type: integer, example: 42 }
+              responses: { '200': { description: Received } }
+        broken:
+          '{$nope}':
+            post:
+              responses: { '200': { description: ok } }
+webhooks:
+  newPet:
+    post:
+      summary: A pet was added
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name]
+              properties:
+                id: { type: integer, example: 7 }
+                name: { type: string, example: Rex }
+      responses: { '200': { description: Received } }
+    put:
+      operationId: newPetReplayed
+      responses: { '200': { description: Received } }
+  x-internal: { post: { responses: { '200': { description: ok } } } }

@@ -191,6 +191,9 @@ export function applySecretMoves(project: Project, moves: readonly SecretMove[])
       }),
     ),
     apis: mapShared(project.apis, (api) => mapTree(api, (request: RestRequestDef) => restRequest(rw, request))),
+    ...(project.webhooks === undefined
+      ? {}
+      : { webhooks: mapTree(project.webhooks, (request: RestRequestDef) => restRequest(rw, request)) }),
     grpcApis: mapShared(project.grpcApis, (api) =>
       mapTree(
         patch(api, { metadata: keyedEntries(rw, 'grpc-api-metadata', { apiId: api.id }, api.metadata) }),

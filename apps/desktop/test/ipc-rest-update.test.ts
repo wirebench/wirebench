@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -191,6 +191,8 @@ beforeEach(async () => {
       restSource: (apiId) => host.restSource(apiId),
       restPlanUpdate: (apiId, next) => host.planRestUpdate(apiId, next),
       restApplyUpdate: (apiId, next, options) => host.applyRestUpdate(apiId, next, options),
+      webhookItems: (apiId) => host.webhookItems(apiId),
+      importWebhooks: (apiId, keys) => host.importWebhooks(apiId, keys),
       apiDefinitionDocuments: unused,
       apiDefinitionText: unused,
       exportApiDefinitionTo: unused,
@@ -543,5 +545,66 @@ describe('an update reads the definition with the credentials it was imported wi
 
     expect(error.code).toBe('secret-missing');
     expect(fetched).toEqual([]);
+  });
+});
+
+describe('a webhook group linked to the API is updated in the same change as the API', () => {
+  const updateFixtures = fileURLToPath(new URL('../../../fixtures/openapi/crafted/update/', import.meta.url));
+
+  it('plans webhook/callback changes alongside the REST ones, and applies them in one save', async () => {
+    const old = await readFile(join(updateFixtures, 'webhooks-old.yaml'), 'utf8');
+    const next = await readFile(join(updateFixtures, 'webhooks-next.yaml'), 'utf8');
+    await writeFile(docPath, old);
+
+    const imported = await value<{ apiId: string; webhookGroup?: { folderId: string; items: unknown[] } }>(
+      'api.importOpenApi',
+      { source: { kind: 'file', path: docPath }, target: { projectId: 'p1' }, cache: true },
+    );
+    const apiId = imported.apiId;
+    expect(imported.webhookGroup?.items).toHaveLength(2);
+
+    await writeFile(docPath, next);
+    const plan = apiRestPlanUpdateResponseSchema.parse(await value('api.restPlanUpdate', { apiId }));
+    expect(plan.webhooks.linked).toBe(true);
+    expect(plan.webhooks.added.map((item) => item.key)).toEqual(['webhook petDeleted post']);
+    expect(plan.webhooks.removed.map((item) => item.key)).toEqual(['callback post /subscriptions onPetEvent post']);
+    expect(plan.webhooks.changed.map((change) => ({ key: change.item.key, reasons: change.reasons }))).toEqual([
+      { key: 'webhook newPet post', reasons: ['request-body'] },
+    ]);
+
+    const applied = apiRestApplyUpdateResponseSchema.parse(
+      await value('api.restApplyUpdate', { apiId, fingerprint: plan.fingerprint }),
+    );
+    expect(applied.applied.webhooks).toEqual({ added: 1, orphaned: 1, restored: 0, rewritten: 1 });
+
+    const folderId = imported.webhookGroup?.folderId ?? '';
+    const webhooksFolder = applied.project.folders.find((folder) => folder.id === folderId);
+    expect(webhooksFolder).toBeDefined();
+    const items = applied.project.restRequests.filter((request) => request.folderId === folderId);
+    expect(items.some((request) => request.name === 'petDeleted')).toBe(true);
+    expect(items.find((request) => request.name === 'onPetEvent')?.orphaned).toBe(true);
+  });
+
+  it('reports no linked group, and applies nothing to webhooks, when the import skipped them', async () => {
+    const old = await readFile(join(updateFixtures, 'webhooks-old.yaml'), 'utf8');
+    const next = await readFile(join(updateFixtures, 'webhooks-next.yaml'), 'utf8');
+    await writeFile(docPath, old);
+
+    const imported = await value<{ apiId: string; webhookGroup?: unknown }>('api.importOpenApi', {
+      source: { kind: 'file', path: docPath },
+      target: { projectId: 'p1' },
+      cache: true,
+      webhooks: false,
+    });
+    expect(imported.webhookGroup).toBeUndefined();
+
+    await writeFile(docPath, next);
+    const plan = apiRestPlanUpdateResponseSchema.parse(await value('api.restPlanUpdate', { apiId: imported.apiId }));
+    expect(plan.webhooks.linked).toBe(false);
+
+    const applied = apiRestApplyUpdateResponseSchema.parse(
+      await value('api.restApplyUpdate', { apiId: imported.apiId, fingerprint: plan.fingerprint }),
+    );
+    expect(applied.applied.webhooks).toEqual({ added: 0, orphaned: 0, restored: 0, rewritten: 0 });
   });
 });

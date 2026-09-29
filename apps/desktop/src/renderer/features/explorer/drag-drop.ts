@@ -8,14 +8,28 @@
  */
 import type { ExplorerNode } from './tree-nodes.js';
 
-/** A folder or request movable within an API (REST, gRPC or WebSocket). */
-type MovableKind = 'folder' | 'rest-request' | 'grpc-request' | 'ws-request';
+/**
+ * A folder or request movable within an API (REST, gRPC or WebSocket), or within a project's
+ * webhook collection.
+ */
+type MovableKind = 'folder' | 'rest-request' | 'grpc-request' | 'ws-request' | 'webhook-folder' | 'webhook-request';
+
+const MOVABLE_KINDS: ReadonlySet<string> = new Set<MovableKind>([
+  'folder',
+  'rest-request',
+  'grpc-request',
+  'ws-request',
+  'webhook-folder',
+  'webhook-request',
+]);
 
 function isMovable(node: ExplorerNode): node is ExplorerNode & { readonly kind: MovableKind } {
-  return (
-    node.kind === 'folder' || node.kind === 'rest-request' || node.kind === 'grpc-request' || node.kind === 'ws-request'
-  );
+  return MOVABLE_KINDS.has(node.kind);
 }
+
+const isWebhookKind = (kind: string): boolean => kind === 'webhook-folder' || kind === 'webhook-request';
+
+const isFolderKind = (kind: string): boolean => kind === 'folder' || kind === 'webhook-folder';
 
 /** One `moveNode` call: where one dragged node goes, in its kind's list under the target parent. */
 export interface PlannedMove {
@@ -25,11 +39,8 @@ export interface PlannedMove {
 }
 
 function movableId(node: ExplorerNode): string | undefined {
-  if (node.kind === 'folder') return node.folderId;
-  if (node.kind === 'rest-request' || node.kind === 'grpc-request' || node.kind === 'ws-request') {
-    return node.requestId;
-  }
-  return undefined;
+  if (!isMovable(node)) return undefined;
+  return isFolderKind(node.kind) ? node.folderId : node.requestId;
 }
 
 /**
@@ -52,12 +63,16 @@ export function planMoves(
     'rest-request': [],
     'grpc-request': [],
     'ws-request': [],
+    'webhook-folder': [],
+    'webhook-request': [],
   };
   const anchors: Record<MovableKind, string | undefined> = {
     folder: undefined,
     'rest-request': undefined,
     'grpc-request': undefined,
     'ws-request': undefined,
+    'webhook-folder': undefined,
+    'webhook-request': undefined,
   };
 
   children.forEach((child, position) => {
@@ -103,27 +118,30 @@ export interface DropCandidate {
 
 /**
  * Whether the tree should refuse a drop. A request or folder moves only within its own API,
- * never into another API or project. A folder never moves into itself or its own subtree. Folders
- * drop only among folders, and requests only among requests.
+ * never into another API or project; a webhook item or folder only within its own project's
+ * webhook collection, and nothing else into it. A folder never moves into itself or its own
+ * subtree. Folders drop only among folders, and requests only among requests.
  */
 export function isDropDisabled({ parent, children, dragged, index, sameProject, ancestors }: DropCandidate): boolean {
-  if (dragged === undefined || !isMovable(dragged)) return true;
-  if (
-    parent === undefined ||
-    (parent.kind !== 'api' && parent.kind !== 'grpc-api' && parent.kind !== 'ws-api' && parent.kind !== 'folder')
-  ) {
-    return true;
+  if (dragged === undefined || !isMovable(dragged) || parent === undefined || !sameProject) return true;
+  if (isWebhookKind(dragged.kind)) {
+    // The collection has one per project, so `sameProject` already pins it down.
+    if (parent.kind !== 'webhook-collection' && parent.kind !== 'webhook-folder') return true;
+  } else {
+    if (parent.kind !== 'api' && parent.kind !== 'grpc-api' && parent.kind !== 'ws-api' && parent.kind !== 'folder') {
+      return true;
+    }
+    if (parent.apiId !== dragged.apiId) return true;
   }
-  if (!sameProject || parent.apiId !== dragged.apiId) return true;
 
-  if (dragged.kind === 'folder') {
+  if (isFolderKind(dragged.kind)) {
     const intoItself = [parent, ...ancestors].some(
-      (node) => node.kind === 'folder' && node.folderId === dragged.folderId,
+      (node) => isFolderKind(node.kind) && node.folderId === dragged.folderId,
     );
     if (intoItself) return true;
   }
 
-  const folderCount = children.filter((child) => child.kind === 'folder').length;
-  if (dragged.kind === 'folder') return index > folderCount;
+  const folderCount = children.filter((child) => isFolderKind(child.kind)).length;
+  if (isFolderKind(dragged.kind)) return index > folderCount;
   return index < folderCount;
 }

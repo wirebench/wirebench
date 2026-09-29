@@ -13,6 +13,7 @@ import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
 import type { WsApi, WsDefinitionRef, WsRequestDef } from '../ws/model.js';
 import { wsMessageFileName } from '../ws/model.js';
 import { RAW_LANGUAGE_EXTENSIONS } from '../rest/model.js';
+import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import {
   API_FILE,
   APIS_DIR,
@@ -26,6 +27,8 @@ import {
   REQUEST_SUFFIX,
   REQUESTS_DIR,
   restBodyFileName,
+  WEBHOOKS_DIR,
+  WEBHOOKS_FILE,
   WSS_DIR,
   slugify,
 } from './paths.js';
@@ -238,6 +241,7 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
     orphaned: request.orphaned === true ? true : undefined,
     contract:
       request.contract === undefined ? undefined : { method: request.contract.method, path: request.contract.path },
+    hook: request.hook === undefined ? undefined : { ...request.hook },
     scripts: scriptsDocument(request.scripts, request.slug).document,
   });
 }
@@ -362,9 +366,10 @@ const writeWsRequest: RequestWriter<WsRequestDef> = (files, dir, request) => {
 function addFolderFiles<R extends { readonly slug: string }>(
   files: Map<string, string>,
   dir: string,
-  node: FolderNode<R>,
+  node: Pick<FolderNode<R>, 'folders' | 'requests'>,
   depth: number,
   writeRequest: RequestWriter<R>,
+  folderExtra?: (folder: FolderNode<R>) => Record<string, unknown>,
 ): void {
   for (const request of node.requests) {
     assertPathSegment(request.slug);
@@ -389,10 +394,11 @@ function addFolderFiles<R extends { readonly slug: string }>(
           order: folder.order,
           description: folder.description,
           auth: folder.auth === undefined ? undefined : authDocument(folder.auth),
+          ...(folderExtra?.(folder) ?? {}),
         }),
       ),
     );
-    addFolderFiles(files, childDir, folder, depth + 1, writeRequest);
+    addFolderFiles(files, childDir, folder, depth + 1, writeRequest, folderExtra);
   }
 }
 
@@ -474,6 +480,26 @@ function addWsApiFiles(files: Map<string, string>, api: WsApi): void {
     ),
   );
   addFolderFiles<WsRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeWsRequest);
+}
+
+/** The webhook collection's files: `webhooks/webhooks.yaml` and the request tree under it. */
+function addWebhookFiles(files: Map<string, string>, webhooks: WebhookCollection): void {
+  files.set(
+    `${WEBHOOKS_DIR}/${WEBHOOKS_FILE}`,
+    stringifyYaml(
+      compact({
+        target: webhooks.target,
+        auth: webhooks.auth === undefined ? undefined : authDocument(webhooks.auth),
+      }),
+    ),
+  );
+  addFolderFiles<RestRequestDef>(files, `${WEBHOOKS_DIR}/${REQUESTS_DIR}`, webhooks, 0, writeRestRequest, (folder) => {
+    const hook = folder as Partial<WebhookFolder>;
+    return {
+      target: hook.target,
+      source: hook.source === undefined ? undefined : { apiId: hook.source.apiId },
+    };
+  });
 }
 
 function wssDocument(ref: WssRef): string {
@@ -575,6 +601,9 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
   for (const sequence of project.sequences) {
     assertPathSegment(sequence.slug);
     files.set(sequenceFilePath(sequence.slug), sequenceDocument(sequence));
+  }
+  if (project.webhooks !== undefined) {
+    addWebhookFiles(files, project.webhooks);
   }
 
   for (const [direction, refs] of [
