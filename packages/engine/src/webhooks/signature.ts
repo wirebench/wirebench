@@ -103,6 +103,14 @@ function standardKey(secret: string): Buffer | undefined {
 const unixSeconds = (now: Date): number => Math.floor(now.getTime() / 1000);
 
 /**
+ * The names of the headers {@link signWebhook} writes under `scheme`, in order: what a record of a
+ * signed send holds, so a replay can tell whether it carries a signature.
+ */
+export function signatureHeaderNames(scheme: SignatureScheme): readonly string[] {
+  return scheme.kind === 'standard' ? ['webhook-id', 'webhook-timestamp', 'webhook-signature'] : [scheme.header];
+}
+
+/**
  * The headers that sign `body`. Every value is computed over the exact bytes given, so the caller
  * signs what goes on the wire, after every expansion and encoding.
  *

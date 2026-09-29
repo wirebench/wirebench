@@ -5,6 +5,7 @@ import {
   SIGNATURE_FAILURES,
   isCanonicalBase64,
   signWebhook,
+  signatureHeaderNames,
   signatureSchemeSchema,
   toSignatureScheme,
   verifyWebhook,
@@ -239,5 +240,20 @@ describe('isCanonicalBase64', () => {
     expect(isCanonicalBase64('YQ')).toBe(false);
     expect(isCanonicalBase64('not*base64')).toBe(false);
     expect(isCanonicalBase64('YQ== ')).toBe(false);
+  });
+});
+
+describe('signatureHeaderNames', () => {
+  it('names exactly the headers signWebhook writes, in order', () => {
+    const schemes: SignatureScheme[] = [
+      { kind: 'hmac', algorithm: 'sha256', encoding: 'hex', header: 'X-Signature' },
+      { kind: 'timestamped', header: 'X-Hook-Signature', toleranceSec: 300 },
+      { kind: 'standard', toleranceSec: 300 },
+    ];
+    for (const scheme of schemes) {
+      const secret = scheme.kind === 'standard' ? STANDARD_SECRET : SECRET;
+      const written = signWebhook(scheme, secret, BODY, { now: AT }).map(([name]) => name);
+      expect(signatureHeaderNames(scheme)).toEqual(written);
+    }
   });
 });

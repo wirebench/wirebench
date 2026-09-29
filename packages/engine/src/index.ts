@@ -381,6 +381,7 @@ export {
   SIGNATURE_FAILURES,
   isCanonicalBase64,
   signWebhook,
+  signatureHeaderNames,
   signatureSchemeSchema,
   toSignatureScheme,
   verifyWebhook,

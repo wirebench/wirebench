@@ -2,8 +2,9 @@
 /**
  * Signing a webhook item's send in main, end to end against the test server (webhook-signatures
  * §5.2, R1, R7): a fresh send signs with the keychain secret and History records the signing
- * headers as sent; a missing secret refuses the send; a resend — from History or from the HTTP
- * Log — never signs again, so History's resend replays the recorded headers byte for byte.
+ * headers as sent; a missing secret refuses the send. History's resend replays the recorded
+ * headers byte for byte and never signs again — unless the entry holds none, when it signs fresh;
+ * the HTTP Log's resend replays the saved request, so it always signs fresh.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
@@ -90,6 +91,8 @@ function project(target: string, signing: WebhookSigning = SIGNING): Project {
 
 /** Main's REST send path over `model` with a keychain of `keychain`, History kept newest first. */
 function harness(model: Project, keychain: Record<string, string>) {
+  // Held in a box so a test can change the project between a send and its resend.
+  const box = { model };
   const asked: string[] = [];
   const secrets = (ref: string) => {
     asked.push(ref);
@@ -107,7 +110,7 @@ function harness(model: Project, keychain: Record<string, string>) {
   };
   const restSend = (requestId: string, draft?: RestRequestPatchWire) =>
     resolveWebhookSend({
-      project: model,
+      project: box.model,
       projectId: 'p1',
       requestId,
       scopes: { project: {}, global: {}, system: {} },
@@ -141,7 +144,7 @@ function harness(model: Project, keychain: Record<string, string>) {
     picks: { rememberWrite: () => undefined },
     appVersion: '0.0.0-test',
   });
-  return { engine, requestDeps, entries, asked, keychain };
+  return { engine, requestDeps, entries, asked, keychain, box };
 }
 
 function signingHeadersOf(headers: Readonly<Record<string, string | string[] | undefined>>): Record<string, string> {
@@ -207,15 +210,39 @@ describe('signing a webhook send in main', () => {
     expect(h.asked).not.toContain('ref-orders');
   });
 
-  it('an HTTP Log resend never signs again either (R1)', async () => {
+  it('an HTTP Log resend replays the saved request, so it signs fresh — never unsigned', async () => {
     const h = harness(project(server.url), { 'ref-orders': SECRET });
     await sendRestRequest(h.engine, h.requestDeps, { sendId: 's5', requestId: 'w1' });
+    const first = signingHeadersOf(server.requests.at(-1)!.headers);
     h.asked.length = 0;
 
     const result = await invoke('log.resend', { protocol: 'rest', requestId: 'w1', sendId: 's5' });
 
     expect(result).toMatchObject({ ok: true, value: { protocol: 'rest', exchange: { http: { status: 200 } } } });
-    expect(h.asked).not.toContain('ref-orders');
+    expect(h.asked).toContain('ref-orders');
+    const last = server.requests.at(-1)!;
+    const pairs = SIGNING_HEADERS.map((name) => [name, String(last.headers[name])] as const);
+    expect(verifyWebhook(SIGNING.mode === 'sign' ? SIGNING.scheme : never(), SECRET, pairs, last.body)).toEqual({
+      verdict: 'verified',
+    });
+    expect(signingHeadersOf(last.headers)['webhook-id']).not.toBe(first['webhook-id']);
+  });
+
+  it('a History entry without signing headers, for an item that now signs, is resent signed', async () => {
+    const h = harness(project(server.url, { mode: 'none' }), { 'ref-orders': SECRET });
+    await sendRestRequest(h.engine, h.requestDeps, { sendId: 's6', requestId: 'w1' });
+    expect(h.entries[0]!.request.headers.map((header) => header.name.toLowerCase())).not.toContain('webhook-signature');
+    h.box.model = project(server.url);
+
+    const result = await invoke('history.resendRest', { id: h.entries[0]!.id });
+
+    expect(result).toMatchObject({ ok: true, value: { http: { status: 200 } } });
+    expect(h.asked).toContain('ref-orders');
+    const last = server.requests.at(-1)!;
+    const pairs = SIGNING_HEADERS.map((name) => [name, String(last.headers[name])] as const);
+    expect(verifyWebhook(SIGNING.mode === 'sign' ? SIGNING.scheme : never(), SECRET, pairs, last.body)).toEqual({
+      verdict: 'verified',
+    });
   });
 });
 

@@ -12,6 +12,7 @@ import {
   effectiveTarget,
   evaluateRuntimeTemplate,
   resolveAuthChain,
+  signatureHeaderNames,
   signingAlong,
   signingSecretMissing,
   webhookPath,
@@ -225,14 +226,6 @@ export async function webhookSignFor(
 }
 
 /**
- * The headers a scheme signs with, as `signWebhook` writes them: History records these from the
- * exchange as sent, so a resend replays them rather than signing again (R1).
- */
-export function signingHeaderNames(scheme: SignatureScheme): readonly string[] {
-  return scheme.kind === 'standard' ? ['webhook-id', 'webhook-timestamp', 'webhook-signature'] : [scheme.header];
-}
-
-/**
  * The resolution History records for a signed send: its header rows with the signing headers
  * appended as they went out (read from the sent request), replacing any typed row of the same name.
  */
@@ -242,7 +235,7 @@ export function withSentSigningHeaders(
   sent: Readonly<Record<string, string>>,
 ): RestSendResolution {
   const lowerSent = new Map(Object.entries(sent).map(([name, value]) => [name.toLowerCase(), value]));
-  const names = signingHeaderNames(scheme);
+  const names = signatureHeaderNames(scheme);
   const signed = names.flatMap((name) => {
     const value = lowerSent.get(name.toLowerCase());
     return value === undefined ? [] : [{ name, value, enabled: true }];

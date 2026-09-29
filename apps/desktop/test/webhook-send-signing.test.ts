@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  createProject,
-  createRestRequest,
-  createWebhookCollection,
-  createWebhookFolder,
-  signWebhook,
-} from '@wirebench/engine';
-import type { Project, PropertyScopes, SignatureScheme, WebhookSigning } from '@wirebench/engine';
-import { resolveWebhookSend, signingHeaderNames, webhookSignFor } from '../src/main/webhook-send.js';
+import { createProject, createRestRequest, createWebhookCollection, createWebhookFolder } from '@wirebench/engine';
+import type { Project, PropertyScopes, WebhookSigning } from '@wirebench/engine';
+import { resolveWebhookSend, webhookSignFor } from '../src/main/webhook-send.js';
 
 const scopes: PropertyScopes = { project: {}, global: {}, system: {} };
 const SIGNING: WebhookSigning = {
@@ -79,17 +73,5 @@ describe('signing a webhook send (§5.2)', () => {
       }),
     ).rejects.toMatchObject({ code: 'webhook-signing-secret' });
     expect(asked).toEqual([]);
-  });
-
-  it('names the headers each scheme signs with, as the engine writes them', () => {
-    const schemes: SignatureScheme[] = [
-      { kind: 'hmac', algorithm: 'sha256', encoding: 'hex', header: 'X-Signature' },
-      { kind: 'timestamped', header: 'X-Hook-Signature', toleranceSec: 300 },
-      { kind: 'standard', toleranceSec: 300 },
-    ];
-    for (const scheme of schemes) {
-      const written = signWebhook(scheme, 'abc123def456ghi789', new Uint8Array()).map(([name]) => name);
-      expect(signingHeaderNames(scheme)).toEqual(written);
-    }
   });
 });
