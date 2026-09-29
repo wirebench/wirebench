@@ -10,7 +10,8 @@ import { Tabs, type TabItem } from '../../components/tabs.js';
 import { base64ByteLength, formatBytes } from '../../lib/format-size.js';
 import { BodyView, type BodyViewExchange } from '../rest-editor/response/body-view.js';
 import { ResponseHeadersView } from '../rest-editor/response/headers-view.js';
-import type { CaptureViewWire } from '../../../shared/wire-types.js';
+import { schemeSummary, signatureHeadersOf, verdictText } from './signature-text.js';
+import type { CaptureViewWire, SignatureSchemeWire } from '../../../shared/wire-types.js';
 
 type ViewerTab = 'headers' | 'body' | 'form' | 'details';
 
@@ -49,7 +50,17 @@ function FormFields({ text }: { readonly text: string }) {
   );
 }
 
-function CaptureDetails({ capture }: { readonly capture: CaptureViewWire }) {
+/**
+ * The scheme shown is the catch URL's current one: a capture stores its verdict, not the scheme it
+ * was checked under.
+ */
+function CaptureDetails({
+  capture,
+  signatureScheme,
+}: {
+  readonly capture: CaptureViewWire;
+  readonly signatureScheme?: SignatureSchemeWire;
+}) {
   return (
     <div data-testid="capture-details" className="p-2">
       <SettingsGroup title="Request">
@@ -60,6 +71,24 @@ function CaptureDetails({ capture }: { readonly capture: CaptureViewWire }) {
         <ReadOnlySetting label="Received" value={new Date(capture.receivedAt).toLocaleString()} />
         <ReadOnlySetting label="Size" value={formatBytes(capture.bodySize)} />
       </SettingsGroup>
+      {capture.signature !== undefined && capture.signature !== null && (
+        <div data-testid="capture-signature" className="mt-3">
+          <SettingsGroup title="Signature">
+            <ReadOnlySetting
+              label="Verdict"
+              testId="capture-signature-verdict"
+              value={verdictText(capture.signature)}
+            />
+            <ReadOnlySetting
+              label="Scheme"
+              value={signatureScheme === undefined ? '—' : schemeSummary(signatureScheme)}
+            />
+            {signatureHeadersOf(capture.headers, signatureScheme).map(([name, value], index) => (
+              <ReadOnlySetting key={`${name}:${String(index)}`} label={name} value={value} />
+            ))}
+          </SettingsGroup>
+        </div>
+      )}
     </div>
   );
 }
@@ -78,8 +107,11 @@ function saveAsWebhookDisabledReason(capture: CaptureViewWire): string | undefin
 export function CaptureViewer({
   capture,
   onSaveAsWebhook,
+  signatureScheme,
 }: {
   readonly capture: CaptureViewWire;
+  /** The catch URL's scheme, for the Details Signature group. */
+  readonly signatureScheme?: SignatureSchemeWire;
   /** Kept store-free on purpose: the caller (`catch-url-tab.tsx`) owns opening the dialog. */
   readonly onSaveAsWebhook?: () => void;
 }) {
@@ -117,6 +149,15 @@ export function CaptureViewer({
           {`Body cut at ${formatBytes(base64ByteLength(capture.bodyBase64))} of ${formatBytes(capture.bodySize)}`}
         </p>
       )}
+      {capture.rejected === true && (
+        <p
+          role="status"
+          data-testid="capture-rejected-note"
+          className="shrink-0 border-b border-hairline bg-surface-sunken px-3 py-1.5 text-sm text-status-danger"
+        >
+          Answered 401 (rejected: unverified)
+        </p>
+      )}
       <Tabs label="Capture tabs" items={items} active={active} onSelect={setTab} />
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
         {active === 'headers' ? (
@@ -126,7 +167,7 @@ export function CaptureViewer({
         ) : active === 'form' ? (
           <FormFields text={capture.text} />
         ) : (
-          <CaptureDetails capture={capture} />
+          <CaptureDetails capture={capture} {...(signatureScheme !== undefined ? { signatureScheme } : {})} />
         )}
       </div>
     </div>

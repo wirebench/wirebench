@@ -15,6 +15,7 @@ import { InspectorIconButton } from '../request-editor/inspectors/inspector-stri
 import { rememberCapture } from '../webhook-items/save-as-webhook.js';
 import { useWebhookItemsDialogs } from '../webhook-items/webhook-items-state.js';
 import { CaptureViewer } from './capture-viewer.js';
+import { SignatureBadge } from './signature-badge.js';
 import { useCaptureView, type Problem } from './use-capture-view.js';
 import { catchUrlTabId } from './webhooks-actions.js';
 import type { CaptureViewWire } from '../../../shared/wire-types.js';
@@ -173,6 +174,7 @@ export function CatchUrlTab({ hookId }: { readonly hookId: string }) {
                   <span className="min-w-0 flex-1 truncate font-mono">
                     {capture.subpath === '' ? '/' : capture.subpath}
                   </span>
+                  <SignatureBadge signature={capture.signature} rejected={capture.rejected} />
                   <span className="shrink-0 text-fg-subtle">{new Date(capture.receivedAt).toLocaleTimeString()}</span>
                   <span className="shrink-0 text-fg-subtle">{formatBytes(capture.bodySize)}</span>
                 </button>
@@ -191,6 +193,7 @@ export function CatchUrlTab({ hookId }: { readonly hookId: string }) {
             <CaptureViewer
               key={detail.capture.id}
               capture={detail.capture}
+              {...(hook?.signature?.scheme !== undefined ? { signatureScheme: hook.signature.scheme } : {})}
               onSaveAsWebhook={() => useWebhookItemsDialogs.getState().openSaveAs(detail.capture.id)}
             />
           ) : detail.kind === 'failed' ? (
