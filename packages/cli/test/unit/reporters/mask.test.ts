@@ -92,4 +92,15 @@ describe('maskRequestResult for a sequence step', () => {
       { name: 'token', outcome: 'set', secret: true },
     ]);
   });
+  it('masks the waiting line before any reporter sees it', () => {
+    const seen: string[] = [];
+    const reporter: Reporter = {
+      onRunDone: () => undefined,
+      onCallbackWaiting: (path, waiting) => seen.push(path, ...waiting.map((w) => `${w.label} ${w.catchUrl}`)),
+    };
+    createMaskedReporters([reporter], () => mask).onCallbackWaiting(`Shop/${SECRET}`, [
+      { label: `callback ${SECRET}`, catchUrl: SECRET, withinMs: 1_000 },
+    ]);
+    expect(seen).toEqual(['Shop/***', 'callback *** ***']);
+  });
 });

@@ -5,9 +5,12 @@ import {
   errorOf,
   findStepRequest,
   runSequence,
+  scopesFor,
   sequenceFilePath,
 } from '@wirebench/engine';
 import type {
+  CallbackWaiting,
+  CaptureSource,
   Project,
   RequestResult,
   RunContext,
@@ -107,6 +110,10 @@ export interface RunSequencesOptions {
   readonly onStepDone: (result: RequestResult) => void;
   /** Whether `value` contains a credential the run already knows. */
   readonly containsKnownSecret: (value: string) => boolean;
+  /** Where callback assertions read captures; one that errors when the server is not configured. */
+  readonly captures: CaptureSource;
+  /** A step has sent and waits for callbacks; `path` is the step's report path. */
+  readonly onCallbackWaiting: (path: string, waiting: readonly CallbackWaiting[]) => void;
 }
 
 /**
@@ -167,6 +174,11 @@ export async function runSequences(
         onStepDone: (step) => options.onStepDone(toResult(step)),
         ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
         containsKnownSecret: options.containsKnownSecret,
+        captures: options.captures,
+        // The same scopes the step's request expands against, with the run's Sequence values.
+        callbackScopes: (_step, sequenceScope) => scopesFor({ ...context, sequence: sequenceScope }),
+        onCallbackWaiting: (step, waiting) =>
+          options.onCallbackWaiting(`${sequence.name}/${step.index + 1}. ${step.name}`, waiting),
       });
       results.push(...run.steps.map(toResult));
       if (options.bail && (run.outcome === 'failed' || run.outcome === 'errored')) {

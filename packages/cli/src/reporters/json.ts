@@ -13,7 +13,8 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *   - `path`, `group`, `name`, `protocol`, `outcome` as the engine reports them.
  *   - `status`, `durationMs`: present only when the request was sent.
  *   - `unasserted`: `true` when the request declares no assertions.
- *   - `assertions[]`: `{ type, label, outcome, expected?, actual?, message? }`, in order.
+ *   - `assertions[]`: `{ type, label, outcome, expected?, actual?, message?, capture? }`, in order. A
+ *     `callback` assertion that matched carries `capture: { hookId, captureId }`, added without a version change.
  *   - `error`: `{ code, message, details? }`, present only for an errored request.
  *   - `exchange`: `{ request, response }`, present only for a failed or errored request.
  *   - For a sequence step only (`--sequence`), three more fields, added without a version change

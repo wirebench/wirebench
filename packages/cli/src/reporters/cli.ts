@@ -1,3 +1,4 @@
+import { seconds } from '@wirebench/engine';
 import type { RequestOutcome, RequestResult, RunResult } from '@wirebench/engine';
 import type { Reporter } from './types.js';
 
@@ -5,6 +6,8 @@ export interface CliReporterOptions {
   readonly color: boolean;
   readonly quiet: boolean;
   readonly verbose: boolean;
+  /** stdout is a terminal: progress lines such as the callback wait are shown. */
+  readonly interactive?: boolean;
 }
 
 const MARK: Readonly<Record<RequestOutcome, string>> = { passed: '✓', failed: '✗', errored: '!', skipped: '-' };
@@ -34,7 +37,10 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
     for (const assertion of result.assertions) {
       if (assertion.outcome === 'passed') {
         if (options.verbose) {
-          lines.push(`✓ ${assertion.label}`);
+          // A callback's message says which capture matched; other kinds have none when they pass.
+          lines.push(
+            `✓ ${assertion.label}${assertion.type === 'callback' && assertion.message !== undefined ? ` — ${assertion.message}` : ''}`,
+          );
         }
         continue;
       }
@@ -62,6 +68,14 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
   };
 
   return {
+    onCallbackWaiting(path, waiting) {
+      if (options.interactive !== true || options.quiet) {
+        return;
+      }
+      for (const one of waiting) {
+        out.write(`… ${path}  waiting for callback ${one.catchUrl}… (up to ${seconds(one.withinMs)} s)\n`);
+      }
+    },
     onRequestDone(result) {
       if (options.quiet && result.outcome === 'passed') {
         return;
