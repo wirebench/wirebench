@@ -30,6 +30,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@wirebench/engine": "workspace:*"
+    "@wirebench/engine": "workspace:*",
+    "zod": "^4.6.1"
   }
 }

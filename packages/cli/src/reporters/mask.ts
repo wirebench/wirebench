@@ -5,7 +5,7 @@ import type { Reporter } from './types.js';
 type Mask = (text: string) => string;
 
 /** Error details are free-form: every string inside them, at any depth, goes through the mask. */
-function maskDeep(value: unknown, mask: Mask): unknown {
+export function maskDeep(value: unknown, mask: Mask): unknown {
   if (typeof value === 'string') {
     return mask(value);
   }

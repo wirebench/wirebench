@@ -502,6 +502,7 @@ export {
 export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/frame-check-worker-host.js';
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
+export { loadOpenApiDocument } from './script/contracts.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
 export {
   apiFromDocument,
