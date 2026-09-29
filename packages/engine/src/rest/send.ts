@@ -13,6 +13,8 @@ import { WirebenchError } from '../errors.js';
 import { sendWithAuth } from '../http/auth/apply.js';
 import type { HttpExchange, HttpRequest, HttpStreamSink, ProxyOptions, TlsOptions } from '../http/types.js';
 import type { AuthSummary, SendAuth } from '../types.js';
+import type { SignatureScheme } from '../webhooks/signature.js';
+import { signWebhook } from '../webhooks/signature.js';
 import { applyAuth } from './auth.js';
 import type { AppliedAuth } from './auth.js';
 import { encodeRestBody } from './body.js';
@@ -73,6 +75,12 @@ export interface RestSendInput {
   readonly resolveFile?: FileResolver;
   /** Fixed multipart boundary; tests inject it. */
   readonly boundary?: string;
+  /**
+   * A webhook item's signing (webhook-signatures §5.2), its secret already resolved. Applied last,
+   * over the encoded body bytes and the merged headers, so the signature covers exactly what goes
+   * on the wire. A signing header replaces a merged header of the same name.
+   */
+  readonly sign?: { readonly scheme: SignatureScheme; readonly secret: string };
   readonly signal?: AbortSignal;
   /**
    * Opt-in event-stream handling: when set and the response's `Content-Type` is `text/event-stream`,
@@ -161,6 +169,22 @@ function mergeRequestHeaders(input: {
   return Object.fromEntries([...merged.values()]);
 }
 
+/** `headers` with the signing headers set over `body`, replacing any header of the same name. */
+function withSignature(
+  headers: Record<string, string>,
+  sign: NonNullable<RestSendInput['sign']>,
+  body: Uint8Array,
+): Record<string, string> {
+  const out = { ...headers };
+  for (const [name, value] of signWebhook(sign.scheme, sign.secret, body)) {
+    for (const key of Object.keys(out)) {
+      if (key.toLowerCase() === name.toLowerCase()) delete out[key];
+    }
+    out[name] = value;
+  }
+  return out;
+}
+
 /**
  * The credentials `applyAuth` put on the request, for `sendHttp` to keep to the request's origin
  * across redirects. `Authorization` is dropped on a cross-origin hop anyway; an API key's custom
@@ -193,6 +217,7 @@ function methodFor(method: RestMethod): HttpRequest['method'] {
  * status is not a failure: it is a response, and the caller inspects it.
  *
  * @throws WirebenchError `rest-url-incomplete` when the URL could not be completed
+ * @throws WirebenchError `webhook-signing-secret` when a `standard` signing secret cannot be decoded
  */
 export async function sendRest(input: RestSendInput): Promise<RestExchange> {
   const { request, settings } = input;
@@ -213,7 +238,7 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
   });
 
   const cookies = cookieHeader(input.cookies ?? []);
-  const headers = mergeRequestHeaders({
+  const merged = mergeRequestHeaders({
     defaults: input.defaultHeaders ?? {},
     computed: {
       ...applied.headers,
@@ -222,6 +247,9 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
     },
     typed: request.headers,
   });
+  // Signing runs last (§5.2): after auth, encoding and merging, so it signs the bytes that go out.
+  const headers =
+    input.sign === undefined ? merged : withSignature(merged, input.sign, encoded.bytes ?? new Uint8Array());
 
   const onStream = input.onStream;
   const sseState = onStream !== undefined ? createSseState() : undefined;
