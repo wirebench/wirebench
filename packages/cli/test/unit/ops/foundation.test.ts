@@ -1,5 +1,12 @@
-import { HttpError, ProjectError, REDACTED_MARKER } from '@wirebench/engine';
-import type { AssertionResult, FailedRequest, StepAssertion } from '@wirebench/engine';
+import { awaitCallbacks, HttpError, prepareCallbacks, ProjectError, REDACTED_MARKER } from '@wirebench/engine';
+import type {
+  AssertionResult,
+  CallbackAssertion,
+  CaptureDetailView,
+  CaptureSource,
+  FailedRequest,
+  StepAssertion,
+} from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { ExitCode } from '../../../src/exit-codes.js';
@@ -261,6 +268,66 @@ describe('redactAssertions', () => {
       `matched cap-1, but header Set-Cookie: expected "a=1", got ${REDACTED_MARKER}; ` +
         `$.data.access_token: expected "x", got ${REDACTED_MARKER}; $.name: expected "Fido", got "Rex"`,
     );
+  });
+
+  it('hides a match value cut short when it still holds a quoted secret key or an open Password', () => {
+    const assertions: StepAssertion[] = [
+      { type: 'match', language: 'jsonpath', expression: '$.auth', equals: 'x' },
+      { type: 'match', language: 'xpath', expression: '//Header', equals: 'x' },
+      { type: 'match', language: 'jsonpath', expression: '$.note', equals: 'x' },
+    ];
+    const results: AssertionResult[] = [
+      { type: 'match', label: 'a', outcome: 'failed', expected: 'x', actual: `{"user":"ann","token":"${SECRET}…` },
+      { type: 'match', label: 'b', outcome: 'failed', expected: 'x', actual: `<Header><Password>${SECRET}…` },
+      { type: 'match', label: 'c', outcome: 'failed', expected: 'x', actual: 'plain text, cut…' },
+    ];
+
+    const redacted = redactAssertions(results, assertions);
+
+    expect(redacted.map((result) => result.actual)).toEqual([REDACTED_MARKER, REDACTED_MARKER, 'plain text, cut…']);
+  });
+
+  it("masks the values in a real callback failure reason from the engine's evaluator", async () => {
+    const capture: CaptureDetailView = {
+      id: '01J00000000000000000000001',
+      receivedAt: new Date().toISOString(),
+      method: 'POST',
+      path: '/',
+      signature: null,
+      headers: [['Set-Cookie', `session=${SECRET}`]],
+      bodyText: JSON.stringify({ token: SECRET, auth: { token: SECRET, user: 'ann' }, name: 'Rex' }),
+      truncated: false,
+    };
+    const source: CaptureSource = {
+      resolve: () => Promise.resolve({ hookId: 'hook-1' }),
+      cursor: () => Promise.resolve(null),
+      after: (_hookId, cursor) => Promise.resolve(cursor === null ? [capture] : []),
+      detail: () => Promise.resolve(capture),
+    };
+    const assertion: CallbackAssertion = {
+      type: 'callback',
+      catchUrl: 'orders',
+      withinMs: 1_000,
+      match: { method: 'POST' },
+      expect: [
+        { header: { name: 'Set-Cookie', equals: 'session=expected' } },
+        { body: { language: 'jsonpath', path: '$.token', equals: 'expected' } },
+        { body: { language: 'jsonpath', path: '$.auth', equals: 'expected' } },
+        { body: { language: 'jsonpath', path: '$.name', equals: 'Fido' } },
+      ],
+    };
+    const pending = await prepareCallbacks([assertion], source);
+    const results = await awaitCallbacks(pending, { captures: source, sentAt: performance.now() });
+    expect(results[0]?.message).toContain(SECRET);
+
+    const [redacted] = redactAssertions(results, [assertion]);
+
+    expect(redacted?.outcome).toBe('failed');
+    expect(redacted?.message).not.toContain(SECRET);
+    expect(redacted?.message).toContain(`header Set-Cookie: expected "session=expected", got ${REDACTED_MARKER}`);
+    expect(redacted?.message).toContain(`$.token: expected "expected", got ${REDACTED_MARKER}`);
+    expect(redacted?.message).toContain('ann');
+    expect(redacted?.message).toContain('$.name: expected "Fido", got "Rex"');
   });
 
   it('redacts credential URLs in every text of a result', () => {

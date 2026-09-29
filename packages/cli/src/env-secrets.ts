@@ -27,9 +27,20 @@ export function createEnvSecrets(needs: readonly SecretNeed[], env: NodeJS.Proce
 /** The variable `wirebench mcp --http` reads its bearer token from. */
 export const MCP_TOKEN_VARIABLE = 'WIREBENCH_MCP_TOKEN';
 
-/** Every non-empty `WIREBENCH_SECRET_*` value in `env`, and the MCP bearer token when it is set there. */
+/**
+ * The shortest value {@link secretValuesIn} seeds. It masks a value whether or not a call used it, so
+ * a short one (`1`, `true`) would mask ordinary text everywhere; a secret a call resolves keeps the
+ * masker's own, lower floor.
+ */
+export const MIN_SEEDED_SECRET_LENGTH = 8;
+
+/**
+ * Every `WIREBENCH_SECRET_*` value in `env` of at least {@link MIN_SEEDED_SECRET_LENGTH} characters,
+ * and the MCP bearer token, trimmed, when it is set there that long (`--http` refuses one under 16).
+ */
 export function secretValuesIn(env: NodeJS.ProcessEnv): string[] {
-  return Object.entries(env)
-    .filter(([name]) => name.startsWith(SECRET_ENV_PREFIX) || name === MCP_TOKEN_VARIABLE)
-    .flatMap(([, value]) => (value !== undefined && value.length > 0 ? [value] : []));
+  return Object.entries(env).flatMap(([name, value]) => {
+    const seeded = name === MCP_TOKEN_VARIABLE ? value?.trim() : name.startsWith(SECRET_ENV_PREFIX) ? value : undefined;
+    return seeded !== undefined && seeded.length >= MIN_SEEDED_SECRET_LENGTH ? [seeded] : [];
+  });
 }

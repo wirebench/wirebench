@@ -185,6 +185,64 @@ describe('op send', () => {
     expect(JSON.stringify(result)).not.toContain(SECRET);
   });
 
+  it('masks a credential inside the object a failed JSONPath match read', async () => {
+    const fixture = await restProject();
+    const pets = await server(() => ({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auth: { token: SECRET, user: 'ann' } }),
+    }));
+    await addEnvironment(fixture.dir, 'local', { Pets: pets.url });
+    await updateRestRequest(fixture.dir, 'GET', '/pets', (request) => ({
+      ...request,
+      assertions: [{ type: 'match', language: 'jsonpath', expression: '$.auth', equals: 'x' }],
+    }));
+    const item = await restItem(fixture.dir, 'GET', '/pets');
+
+    const result = await runOp(sendOp, { item, environment: 'local' }, fixture.base({ origin: 'cli' }));
+
+    expect(result.assertions[0]).toMatchObject({ outcome: 'failed' });
+    expect(JSON.parse(result.assertions[0]?.actual ?? '')).toEqual({ token: REDACTED_MARKER, user: 'ann' });
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  it('masks a WS-Security password inside the node a failed XPath match read', async () => {
+    const fixture = await soapProject();
+    const calculator = await server(() => ({
+      headers: { 'Content-Type': 'text/xml' },
+      body: ADD_RESPONSE.replace(
+        '<soapenv:Body>',
+        '<soapenv:Header><wsse:Security xmlns:wsse="urn:wsse"><wsse:UsernameToken><wsse:Username>ann</wsse:Username>' +
+          `<wsse:Password>${SECRET}</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header><soapenv:Body>`,
+      ),
+    }));
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: calculator.url });
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      interfaces: project.interfaces.map((iface) => ({
+        ...iface,
+        operations: iface.operations.map((operation) => ({
+          ...operation,
+          requests: operation.requests.map((request) => ({
+            ...request,
+            assertions: [
+              { type: 'match', language: 'xpath', expression: '//*:Header', equals: 'x' },
+              { type: 'match', language: 'xpath', expression: '//*:Security', equals: 'x' },
+            ],
+          })),
+        })),
+      })),
+    }));
+
+    const result = await runOp(sendOp, { item: SOAP_ITEM, environment: 'local' }, fixture.base({ origin: 'cli' }));
+
+    // The Header serialised is cut at 200 characters inside the Password: nothing of it can show.
+    expect(result.assertions[0]).toMatchObject({ outcome: 'failed', actual: REDACTED_MARKER });
+    // The Security element fits whole: only the Password's text is masked.
+    expect(result.assertions[1]?.actual).toContain('<wsse:Username>ann</wsse:Username>');
+    expect(result.assertions[1]?.actual).toContain(`<wsse:Password>${REDACTED_MARKER}</wsse:Password>`);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
   it('fails with the engine code when no response came, and writes no History', async () => {
     const fixture = await soapProject();
     const closed = await server(() => ({ body: '' }));

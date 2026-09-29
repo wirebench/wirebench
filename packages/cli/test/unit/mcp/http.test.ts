@@ -261,6 +261,53 @@ describe('the MCP HTTP server', () => {
     }
   });
 
+  it('never holds more live sessions than the cap when initializes race', async () => {
+    // A slow close leaves room for a second initialize to finish while the first is still evicting.
+    const server = await start(2, (create) => () => {
+      const created = create();
+      const close = created.close.bind(created);
+      created.close = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await close();
+      };
+      return created;
+    });
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const open = async (): Promise<string> => {
+      const response = await post(server.url, auth);
+      await response.body?.cancel();
+      return response.headers.get('mcp-session-id') ?? '';
+    };
+    /** An initialize on its own connection, so two of them really run at once. */
+    const openAlone = (): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const req = request(
+          server.url,
+          {
+            method: 'POST',
+            agent: false,
+            headers: { ...auth, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+          },
+          (res) => {
+            resolve(String(res.headers['mcp-session-id'] ?? ''));
+            res.destroy();
+          },
+        );
+        req.on('error', reject);
+        req.end(JSON.stringify(INITIALIZE));
+      });
+    const first = [await open(), await open()];
+    const raced = await Promise.all([openAlone(), openAlone()]);
+    expect(raced.every((id) => id !== '')).toBe(true);
+
+    const live = await Promise.all(
+      [...first, ...raced].map(
+        async (id) => (await status(server.url, { ...auth, 'mcp-session-id': id }, '{}')) !== 404,
+      ),
+    );
+    expect(live.filter(Boolean)).toHaveLength(2);
+  });
+
   it('answers 503 when there is no live session to make room from', async () => {
     const server = await start(0);
     const response = await post(server.url, { Authorization: `Bearer ${TOKEN}` });

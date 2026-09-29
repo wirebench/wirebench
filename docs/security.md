@@ -149,11 +149,14 @@ not gated: the person typing the command has allowed it. The gates belong to the
   the secret values resolved for the send. `send`'s assertion results are redacted by pattern as well:
   URLs in them are redacted, and the value a header or `match` assertion read shows as `<redacted>` when
   the header is one of those above or the JSONPath/XPath ends in one of the secret keys, callback
-  assertion reasons included. No tool accepts a secret value as input; secrets come from
+  assertion reasons included; a node or object a `match` read is passed through the XML or JSON
+  redaction, and one cut short that still holds a secret key or an unclosed `Password` shows as
+  `<redacted>` whole. No tool accepts a secret value as input; secrets come from
   `WIREBENCH_SECRET_<NAME>` variables in the server's environment, and only the ones the saved request
-  uses are read. As defence in depth, every non-empty `WIREBENCH_SECRET_*` value the server was started
-  with, and `WIREBENCH_MCP_TOKEN`, are masked in every tool's result whether or not the call resolved
-  them. History is stored as the desktop stores it and is not an agent-facing surface: the tools read
+  uses are read. As defence in depth, every `WIREBENCH_SECRET_*` value of at least 8 characters the
+  server was started with, and `WIREBENCH_MCP_TOKEN` (at least 16), are masked in every tool's result
+  whether or not the call resolved them; a shorter secret is masked where a call resolves it, under the
+  masker's own floor, since seeding a value like `true` would mask ordinary text everywhere. History is stored as the desktop stores it and is not an agent-facing surface: the tools read
   it through the redaction, and the `file` source refuses any file in the History folder in use. A
   send from the server never trims History below what the file holds, so it cannot delete entries the
   user kept under a larger cap than the default; the desktop's own cap applies on its next write.

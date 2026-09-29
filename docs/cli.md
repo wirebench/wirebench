@@ -537,14 +537,18 @@ Every result and every error passes one step before anything is printed or retur
      A value under any other name, such as `<ApiToken>`, stays readable.
 2. Then every secret value the call resolved is masked wherever it appears, with the masker `run`
    uses (including its floor: a value of fewer than 4 characters is not masked literally). Under
-   `wirebench mcp`, every non-empty `WIREBENCH_SECRET_*` value in the server's environment and
-   `WIREBENCH_MCP_TOKEN` are masked in every tool's result as well, whether or not the call resolved them.
+   `wirebench mcp`, every `WIREBENCH_SECRET_*` value of at least 8 characters in the server's
+   environment, and `WIREBENCH_MCP_TOKEN`, are masked in every tool's result as well, whether or not the
+   call resolved them. A shorter value is masked only where a call resolved it, under the floor above.
 
 `send`'s assertion results get the pattern redaction too: URLs in every label, expected and actual
 value and message are redacted, and the value an assertion read is shown as `<redacted>` when it is a
 credential: a header assertion on one of the headers above, a `match` whose JSONPath or XPath ends in
 one of the secret keys above (`$.token`, `//Password`), and the same checks inside a callback
-assertion's reasons. `wirebench run` shows those values as they are.
+assertion's reasons. A node or object a `match` read (`$.auth`, `//Header`) goes through the XML or
+JSON redaction above, so a password or secret key inside it is masked too; one the engine cut short at
+200 characters that still holds a secret key or an unclosed `Password` shows as `<redacted>` whole.
+`wirebench run` shows those values as they are.
 
 `validate`, `query` and `history diff` apply the same pattern redaction to the message before they read
 it, so the password and secret-keyed values above never appear in what they return. That is the whole
@@ -581,7 +585,8 @@ another process writes it. Each entry is tagged `cli` or `mcp` by whichever sent
 The desktop keeps as many entries as its History preference allows, which can be more than 1000. A
 send from the terminal or an agent never trims History below what the file already holds: it adds its
 entry and drops nothing, so the file can grow past the desktop's cap. The desktop's own cap applies
-again on its next write.
+again on its next write. Without the desktop, then, the terminal and agents never trim History: the
+file grows until the desktop next writes it and trims it to its own cap.
 
 ### Exit codes of the verbs
 
@@ -627,8 +632,8 @@ you what to pass.
 On stdio, stdout carries protocol frames only; the startup line and every warning go to stderr.
 The server ends when stdin closes or when the client closes the transport. Secrets come from `WIREBENCH_SECRET_<NAME>` variables in the server's
 own environment, as for `run`, are masked in every result, and are never an input of any tool. Every
-`WIREBENCH_SECRET_*` value the server was started with is masked in every result, not only the ones a
-call used.
+`WIREBENCH_SECRET_*` value of 8 characters or more that the server was started with is masked in every
+result, not only the ones a call used.
 
 ### Streamable HTTP
 

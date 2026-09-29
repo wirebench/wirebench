@@ -102,8 +102,8 @@ Results are redacted by pattern, as the app's HTTP log is. That masks the `Autho
 stays) and the value of a query parameter from a fixed list such as `api_key`, `token`, `key` and
 `signature`; the text of a WS-Security `Password` element; and the values under secret-looking JSON or
 form keys such as `password`, `secret`, `token` and `api_key`. It also masks every secret value the
-call resolved, and every `WIREBENCH_SECRET_*` value (and `WIREBENCH_MCP_TOKEN`) the server was started
-with. `send`'s assertion results are redacted the same way: the value a header or `match` assertion read
+call resolved, and every `WIREBENCH_SECRET_*` value of 8 characters or more (and `WIREBENCH_MCP_TOKEN`)
+the server was started with. `send`'s assertion results are redacted the same way: the value a header or `match` assertion read
 shows as `<redacted>` when it is a credential header or sits under one of those secret keys. A value
 under any other name, such as an `ApiToken` element, stays readable. `validate`,
 `query` and `history_diff` apply the pattern redaction to a message before they read it, so those

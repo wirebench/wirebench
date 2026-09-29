@@ -125,14 +125,18 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
   };
 
   /**
-   * The SDK client's `close()` never sends DELETE, so a closed agent leaves its session behind: at the
-   * cap, the idlest session makes room. Called only once the transport has accepted a real initialize,
-   * so a malformed request never ends anyone's session.
+   * Adds a new session, making room first. The SDK client's `close()` never sends DELETE, so a closed
+   * agent leaves its session behind: at the cap, the idlest session is closed. Called only once the
+   * transport has accepted a real initialize, so a malformed request never ends anyone's session. The
+   * last check and the insert run in one synchronous step, so a concurrent initialize that finished
+   * while a victim was closing cannot push the map past the cap.
    */
-  const makeRoom = async (): Promise<void> => {
-    while (sessions.size >= maxSessions) {
-      const victim = leastRecentlyActive();
+  const admit = async (id: string, session: Omit<Session, 'lastActive'>): Promise<void> => {
+    for (;;) {
+      const victim = sessions.size >= maxSessions ? leastRecentlyActive() : undefined;
       if (victim === undefined) {
+        activity += 1;
+        sessions.set(id, { ...session, lastActive: activity });
         return;
       }
       // Out of the map first, so a concurrent initialize picks the next one, not this one again.
@@ -169,9 +173,7 @@ export async function startHttpServer(options: HttpServerOptions): Promise<Runni
         sessionIdGenerator: () => randomUUID(),
         maxRequestBodySize: MAX_BODY_BYTES,
         onsessioninitialized: async (id) => {
-          await makeRoom();
-          activity += 1;
-          sessions.set(id, { transport, server: opened, lastActive: activity, streams: 0 });
+          await admit(id, { transport, server: opened, streams: 0 });
           settled();
         },
       });

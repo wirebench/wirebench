@@ -90,6 +90,38 @@ function readsSecretKey(path: string): boolean {
   return last !== undefined && SECRET_KEYS.has(last.toLowerCase());
 }
 
+/** A secret key from the engine's list, in quotes: what is left of a JSON object cut short. */
+const QUOTED_SECRET_KEY = new RegExp(`["'](?:${SECRET_BODY_KEYS.join('|')})["']`, 'i');
+
+function parsesAsJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A value an assertion read, through the body redactors: a node or object it matched can hold a
+ * credential below it (`$.auth` is `{"token":"…"}`, `//Header` holds a `wsse:Password`). XML goes by
+ * a leading `<`, JSON by parsing. What neither reads whole, such as a value the engine cut at 200
+ * characters, is shown as the marker when it still has a `Password` element left open or a quoted
+ * secret key in it.
+ */
+function redactValue(text: string): string {
+  if (text.trimStart().startsWith('<')) {
+    const xml = redactXml(text, { show: false });
+    const opened = xml.match(/<(?:[\w-]+:)?Password\b/gi)?.length ?? 0;
+    const closed = xml.match(/<\/(?:[\w-]+:)?Password>/gi)?.length ?? 0;
+    return opened > closed ? REDACTED_MARKER : xml;
+  }
+  if (parsesAsJson(text)) {
+    return redactStructuredBody(text, 'application/json', { show: false });
+  }
+  return QUOTED_SECRET_KEY.test(text) ? REDACTED_MARKER : text;
+}
+
 /** A callback check's label (`header Set-Cookie`, or a body path) names a credential. */
 function secretLabel(label: string): boolean {
   return label.startsWith('header ') ? isSensitiveHeaderName(label.slice('header '.length)) : readsSecretKey(label);
@@ -101,7 +133,7 @@ function secretLabel(label: string): boolean {
  * `matched <id>, but <reason>; <reason>`.
  */
 function maskCallbackValues(message: string): string {
-  return message.replace(/, got ("(?:[^"\\]|\\.)*")/g, (whole: string, _quoted: string, offset: number) => {
+  return message.replace(/, got ("(?:[^"\\]|\\.)*")/g, (whole: string, quoted: string, offset: number) => {
     const expectedAt = message.lastIndexOf(': expected ', offset);
     if (expectedAt < 0) {
       return whole;
@@ -109,7 +141,13 @@ function maskCallbackValues(message: string): string {
     const reason = message.lastIndexOf('; ', expectedAt);
     const first = message.lastIndexOf(', but ', expectedAt);
     const start = Math.max(reason < 0 ? 0 : reason + '; '.length, first < 0 ? 0 : first + ', but '.length);
-    return secretLabel(message.slice(start, expectedAt)) ? `, got ${REDACTED_MARKER}` : whole;
+    if (secretLabel(message.slice(start, expectedAt))) {
+      return `, got ${REDACTED_MARKER}`;
+    }
+    // The value may be an object or a node holding a credential further down.
+    const value = JSON.parse(quoted) as string;
+    const redacted = redactValue(value);
+    return redacted === value ? whole : `, got ${JSON.stringify(redacted)}`;
   });
 }
 
@@ -123,6 +161,14 @@ function hidesActual(result: AssertionResult, own: StepAssertion | undefined): b
     return own?.type !== 'match' || (own.exists === undefined && readsSecretKey(own.expression));
   }
   return false;
+}
+
+/** The value an assertion read, as an op shows it. */
+function actualOf(result: AssertionResult, own: StepAssertion | undefined, actual: string): string {
+  if (hidesActual(result, own)) {
+    return REDACTED_MARKER;
+  }
+  return redactUrlsInText(result.type === 'match' ? redactValue(actual) : actual);
 }
 
 /**
@@ -151,9 +197,7 @@ export function redactAssertions(
       ...result,
       label: redactUrlsInText(result.label),
       ...(result.expected !== undefined ? { expected: redactUrlsInText(result.expected) } : {}),
-      ...(result.actual !== undefined
-        ? { actual: hidesActual(result, own) ? REDACTED_MARKER : redactUrlsInText(result.actual) }
-        : {}),
+      ...(result.actual !== undefined ? { actual: actualOf(result, own, result.actual) } : {}),
       ...(message !== undefined ? { message } : {}),
     };
   });
