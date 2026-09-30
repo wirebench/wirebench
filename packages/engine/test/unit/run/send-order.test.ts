@@ -54,8 +54,8 @@ vi.mock('../../../src/grpc/cache.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../../../src/script/contracts.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/script/contracts.js')>()),
+vi.mock('../../../src/rest/script-types.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/rest/script-types.js')>()),
   loadOpenApiDocument: () => {
     events.push('load openapi');
     return Promise.resolve(undefined);

@@ -6,8 +6,13 @@
  * their own, or everything left for `default` — so `response.status === 200` narrows `json()` exactly,
  * and a status the contract does not declare falls into a last arm whose body is `unknown`.
  */
-import type { OpenApiOperation } from '../../rest/openapi/model.js';
-import { JsonSchemaTypes } from './json-schema.js';
+import { ProjectError } from '../errors.js';
+import { apiDefinitionDir } from '../project/paths.js';
+import { JsonSchemaTypes } from '../script/types/json-schema.js';
+import type { RestContractLink } from './model.js';
+import { createCachedApiFetch, readApiDefinitionCache } from './openapi/cache.js';
+import { parseOpenApi } from './openapi/import.js';
+import type { OpenApiDocument, OpenApiOperation } from './openapi/model.js';
 
 /** The JSON media type among a content map's keys, if any. */
 function jsonMedia(
@@ -64,4 +69,34 @@ export function restScriptTypes(operation: OpenApiOperation | undefined): string
     `type WbResponse =\n  | ${arms.join('\n  | ')};`,
     '',
   ].join('\n');
+}
+
+/** The operation a REST request is linked to, by its method and templated path. */
+export function restOperationFor(
+  document: OpenApiDocument | undefined,
+  contract: RestContractLink | undefined,
+): OpenApiOperation | undefined {
+  if (document === undefined || contract === undefined) return undefined;
+  return document.operations.find(
+    (op) => op.method.toLowerCase() === contract.method.toLowerCase() && op.path === contract.path,
+  );
+}
+
+/** An API's cached OpenAPI document, read offline; `undefined` when it has none or it cannot be read. */
+export async function loadOpenApiDocument(projectDir: string, apiSlug: string): Promise<OpenApiDocument | undefined> {
+  const dir = apiDefinitionDir(projectDir, apiSlug);
+  try {
+    const cached = await readApiDefinitionCache(dir);
+    const offline = createCachedApiFetch(cached.manifest, dir, (location) =>
+      Promise.reject(
+        new ProjectError('definition-cache-missing', `"${location}" is not in this API's definition cache`, {
+          details: { location },
+        }),
+      ),
+    );
+    const parsed = await parseOpenApi({ kind: 'url', url: cached.manifest.rootLocation }, { fetchDocument: offline });
+    return parsed.document;
+  } catch {
+    return undefined;
+  }
 }

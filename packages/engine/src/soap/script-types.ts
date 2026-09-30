@@ -15,15 +15,16 @@
  * numbers, and `xs:long`, `xs:integer` and `xs:decimal` stay strings, since a number would lose
  * precision. An enumeration is a union of literals. Mixed content is not projected.
  */
-import type { QName } from '../../wsdl/qname.js';
-import { qnameToString } from '../../wsdl/qname.js';
-import type { ComplexType, ElementDecl, Occurs, Particle, ResolvedAttribute, SimpleType } from '../../xsd/model.js';
-import { resolveType } from '../../xsd/sample-types.js';
-import { builtinBaseOf, facetsOf } from '../../xsd/sample-values.js';
-import type { SchemaSet } from '../../xsd/schema-set.js';
-import { scanXml, type ScannedElement } from '../../xsd/xml-scan.js';
-import { NS } from '../../xml/namespaces.js';
-import { propertyKey } from './json-schema.js';
+import type { QName } from '../wsdl/qname.js';
+import { qnameToString } from '../wsdl/qname.js';
+import { findBinding, findMessage, findPortType, type WsdlDefinition } from '../wsdl/model.js';
+import type { ComplexType, ElementDecl, Occurs, Particle, ResolvedAttribute, SimpleType } from '../xsd/model.js';
+import { resolveType } from '../xsd/sample-types.js';
+import { builtinBaseOf, facetsOf } from '../xsd/sample-values.js';
+import type { SchemaSet } from '../xsd/schema-set.js';
+import { scanXml, type ScannedElement } from '../xsd/xml-scan.js';
+import { NS } from '../xml/namespaces.js';
+import { propertyKey } from '../script/types/json-schema.js';
 
 /** Past these the projection widens to `unknown`, and the walk stops. */
 const LIMITS = { depth: 32, aliases: 500 } as const;
@@ -400,4 +401,36 @@ export function replaceSoapBody(set: SchemaSet, element: QName, envelope: string
   if (decl === undefined || body === undefined) throw new TypeError('the envelope has no body element to replace');
   const xml = serializeElement(set, decl, value, undefined);
   return envelope.slice(0, body.range.start) + xml + envelope.slice(body.range.end);
+}
+
+/** `{namespace}local` as a QName. */
+export function qnameFromClark(clark: string): QName {
+  const match = /^\{([^}]*)\}(.*)$/.exec(clark);
+  return match === null ? { namespaceUri: '', localName: clark } : { namespaceUri: match[1]!, localName: match[2]! };
+}
+
+/**
+ * The elements a document-style SOAP operation's input and output messages name, when each message
+ * has exactly one element part — the shape a typed body needs. An RPC-style operation, or a message
+ * of type parts, has none.
+ */
+export function soapOperationElements(
+  definition: WsdlDefinition,
+  bindingName: string,
+  operationName: string,
+): { readonly input?: QName; readonly output?: QName } {
+  const binding = findBinding(definition, qnameFromClark(bindingName));
+  if (binding === undefined) return {};
+  const bindingOperation = binding.operations.find((op) => op.name === operationName);
+  // An operation's own style overrides its binding's.
+  if ((bindingOperation?.style ?? binding.style) === 'rpc') return {};
+  const operation = findPortType(definition, binding.type)?.operations.find((op) => op.name === operationName);
+  const elementOf = (ref: { readonly message: QName } | undefined): QName | undefined => {
+    const message = ref === undefined ? undefined : findMessage(definition, ref.message);
+    const elements = message?.parts.filter((part) => part.element !== undefined) ?? [];
+    return elements.length === 1 ? elements[0]!.element : undefined;
+  };
+  const input = elementOf(operation?.input);
+  const output = elementOf(operation?.output);
+  return { ...(input !== undefined ? { input } : {}), ...(output !== undefined ? { output } : {}) };
 }

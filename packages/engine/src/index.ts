@@ -503,7 +503,7 @@ export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/f
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
-export { loadOpenApiDocument } from './script/contracts.js';
+export { loadOpenApiDocument } from './rest/script-types.js';
 export {
   apiFromDocument,
   authFromScheme,

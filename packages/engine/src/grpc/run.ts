@@ -21,9 +21,8 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, findInTree, walkTree } from '../run/tree.js';
-import { grpcMessageTypes } from '../script/contracts.js';
 import { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from '../script/send.js';
-import { grpcScriptTypes } from '../script/types/grpc.js';
+import { grpcMessageTypes, grpcScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import { toGrpcSendInput } from '../send-options.js';
 import { readGrpcDefinitionCache } from './cache.js';

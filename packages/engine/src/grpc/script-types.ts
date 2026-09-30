@@ -7,9 +7,9 @@
  * type becomes one alias, so a recursive message is fine. The well-known types map to their JSON
  * forms.
  */
-import { describeMessage, type MessageFieldDescriptor } from '../../grpc/proto/describe.js';
-import type { ProtoSet } from '../../grpc/proto/load.js';
-import { propertyKey } from './json-schema.js';
+import { describeMessage, describeMethod, type MessageFieldDescriptor } from './proto/describe.js';
+import type { ProtoSet } from './proto/load.js';
+import { propertyKey } from '../script/types/json-schema.js';
 
 const SCALARS: Readonly<Record<string, string>> = {
   double: 'number',
@@ -144,4 +144,19 @@ export function grpcScriptTypes(set: ProtoSet | undefined, inputType: string, ou
     `type WbResponseMessage = ${response};`,
     '',
   ].join('\n');
+}
+
+/** A gRPC method's request and response message types, when the set has the method. */
+export function grpcMessageTypes(
+  set: ProtoSet | undefined,
+  service: string,
+  method: string,
+): { readonly input: string; readonly output: string } | undefined {
+  if (set === undefined) return undefined;
+  try {
+    const described = describeMethod(set, service, method);
+    return { input: described.requestType, output: described.responseType };
+  } catch {
+    return undefined;
+  }
 }

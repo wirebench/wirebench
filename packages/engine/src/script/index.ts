@@ -61,17 +61,16 @@ export {
   soapRequestSnapshot,
   soapResponseSnapshot,
 } from './send.js';
+export { loadOpenApiDocument, restOperationFor, restScriptTypes } from '../rest/script-types.js';
+export { grpcMessageTypes, grpcScriptTypes } from '../grpc/script-types.js';
 export {
-  grpcMessageTypes,
-  loadOpenApiDocument,
+  projectSoapBody,
   qnameFromClark,
-  restOperationFor,
+  replaceSoapBody,
   soapOperationElements,
-} from './contracts.js';
+  soapScriptTypes,
+} from '../soap/script-types.js';
 export { scriptProperties } from './props.js';
 export { apiDeclarations, apiReference, scriptDeclarations, secretNameType } from './types/api.js';
 export type { ApiReferenceSection } from './types/api.js';
-export { restScriptTypes } from './types/rest.js';
-export { grpcScriptTypes } from './types/grpc.js';
-export { projectSoapBody, replaceSoapBody, soapScriptTypes } from './types/xsd.js';
 export { stripTypes, StripError } from './strip.js';

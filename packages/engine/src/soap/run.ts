@@ -43,9 +43,8 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
-import { soapOperationElements } from '../script/contracts.js';
 import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from '../script/send.js';
-import { soapScriptTypes } from '../script/types/xsd.js';
+import { soapOperationElements, soapScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveSoapAuth } from '../secrets/resolve.js';

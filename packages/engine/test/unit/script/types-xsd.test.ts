@@ -7,7 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
-import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } from '../../../src/script/types/xsd.js';
+import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } from '../../../src/soap/script-types.js';
 import type { SoapRequestSnapshot } from '../../../src/script/model.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import { typeErrors } from './ts-check.js';

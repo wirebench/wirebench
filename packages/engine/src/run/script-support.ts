@@ -7,7 +7,9 @@ import type { AssertionResult } from '../assert/model.js';
 import type { ProtoSet } from '../grpc/proto/load.js';
 import type { OpenApiDocument } from '../rest/openapi/model.js';
 import { resolveSecretTokens, type GetSecret } from '../secrets/resolve.js';
-import { grpcMessageTypes, restOperationFor, soapOperationElements } from '../script/contracts.js';
+import { grpcMessageTypes, grpcScriptTypes } from '../grpc/script-types.js';
+import { restOperationFor, restScriptTypes } from '../rest/script-types.js';
+import { soapOperationElements, soapScriptTypes } from '../soap/script-types.js';
 import type {
   RequestSnapshot,
   ResponseSnapshot,
@@ -23,9 +25,6 @@ import {
   type ScriptedRequest,
   type ScriptRunValues,
 } from '../script/request-scripts.js';
-import { grpcScriptTypes } from '../script/types/grpc.js';
-import { restScriptTypes } from '../script/types/rest.js';
-import { soapScriptTypes } from '../script/types/xsd.js';
 import type { WsdlDefinition } from '../wsdl/model.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 import type { SelectedRequest } from './select.js';

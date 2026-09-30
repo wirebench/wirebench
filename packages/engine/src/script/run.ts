@@ -26,7 +26,7 @@ import {
 import type { ScriptSandbox } from './sandbox/host.js';
 import type { SandboxError } from './sandbox/model.js';
 import { StripError, stripTypes } from './strip.js';
-import { projectSoapBody, replaceSoapBody } from './types/xsd.js';
+import { projectSoapBody, replaceSoapBody } from '../soap/script-types.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 import type { QName } from '../wsdl/qname.js';
 
