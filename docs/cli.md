@@ -685,7 +685,7 @@ walkthrough.
 ### GitHub Actions
 
 ```yaml
-- uses: wirebench/wirebench/action@v2.3.0
+- uses: wirebench/wirebench/action@v3.0.0
   with:
     project: ./api-tests
     env: staging
@@ -703,12 +703,12 @@ output. Every input arrives through `env:`, never interpolated into the step's s
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v2.3.0/templates/gitlab/wirebench.gitlab-ci.yml
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v3.0.0/templates/gitlab/wirebench.gitlab-ci.yml
 
 api-tests:
   extends: .wirebench-run
   variables:
-    WIREBENCH_VERSION: '2.3.0'
+    WIREBENCH_VERSION: '3.0.0'
     WIREBENCH_PROJECT: api-tests
     WIREBENCH_ENV: staging
 ```
@@ -725,7 +725,7 @@ rather than relying on the `latest` default. Map a CI/CD variable to
 ```bash
 docker run --rm -v "$PWD:/work" \
   -e WIREBENCH_SECRET_BILLING_PASSWORD \
-  ghcr.io/wirebench/wirebench-cli:2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  ghcr.io/wirebench/wirebench-cli:3.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 The image (`linux/amd64` and `linux/arm64`) runs as the non-root `node` user with `WORKDIR /work`
@@ -737,7 +737,7 @@ secrets with `-e`.
 
 ```bash
 WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
-  npx --yes @wirebench/cli@2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  npx --yes @wirebench/cli@3.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 Works on any CI runner with Node 24 already available and no other setup — the same package the

@@ -171,8 +171,8 @@ The same tag that triggers the desktop packaging jobs also runs two more jobs in
 
 | Tag | Image tags on `ghcr.io/wirebench/wirebench-cli` | npm dist-tag |
 | --- | --- | --- |
-| `v2.3.0` | `2.3.0`, `2.3`, `latest` | `2.3.0` under `latest` |
-| `v2.3.0-rc.1` (pre-release, contains `-`) | `2.3.0-rc.1` only | `2.3.0-rc.1` under `next`, never `latest` |
+| `v3.0.0` | `3.0.0`, `3.0`, `latest` | `3.0.0` under `latest` |
+| `v3.0.0-rc.1` (pre-release, contains `-`) | `3.0.0-rc.1` only | `3.0.0-rc.1` under `next`, never `latest` |
 
 ### Rehearsal
 
