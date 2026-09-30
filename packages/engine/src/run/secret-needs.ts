@@ -5,8 +5,6 @@
  * and the WS-Security configurations it selects, with the keystores those lead to.
  */
 import { resolveScopes } from '../project/environments.js';
-import { toKeystoreDef } from '../project/keystores.js';
-import { secretNamesIn } from '../project/properties.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { Project, PropertyMap } from '../project/model.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
@@ -20,62 +18,14 @@ import { signingSecretRef, signingSourceLabel } from '../webhooks/model.js';
 import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
+import { keystoreNeeds, present, secretNamesInValue } from './send-helpers.js';
 
-/**
- * The `${secret:name}` names anywhere in `value`'s strings — a send input or a saved request —
- * following property values through `scopes`, in first-use order. Binary data is skipped.
- */
-export function secretNamesInValue(value: unknown, scopes?: PropertyScopes): string[] {
-  const found = new Set<string>();
-  const visit = (current: unknown): void => {
-    if (typeof current === 'string') {
-      if (current.includes('${')) {
-        for (const name of secretNamesIn(current, scopes)) {
-          found.add(name);
-        }
-      }
-    } else if (Array.isArray(current)) {
-      current.forEach(visit);
-    } else if (current !== null && typeof current === 'object' && !ArrayBuffer.isView(current)) {
-      Object.values(current).forEach(visit);
-    }
-  };
-  visit(value);
-  return [...found];
-}
+export { secretNamesInValue } from './send-helpers.js';
 
 /** One secret a run needs, and which requests need it. */
 export interface LocatedSecretNeed extends SecretNeed {
   /** Display paths of the requests that need it. */
   readonly usedBy: readonly string[];
-}
-
-const present = (id: string | undefined): id is string => id !== undefined && id.length > 0;
-
-/** A keystore's password, when the registry entry has one; an unreadable entry needs nothing here. */
-function keystoreNeeds(project: Project, keystoreId: string | undefined): SecretNeed[] {
-  if (!present(keystoreId)) {
-    return [];
-  }
-  const ref = project.wss.keystores.find((candidate) => candidate.id === keystoreId);
-  if (ref === undefined) {
-    return [];
-  }
-  try {
-    const def = toKeystoreDef(ref);
-    return present(def.passwordSecretRef)
-      ? [
-          {
-            ref: def.passwordSecretRef,
-            ...(def.passwordEnv !== undefined ? { envName: def.passwordEnv } : {}),
-            purpose: `keystore password for "${def.name}"`,
-          },
-        ]
-      : [];
-  } catch {
-    // `prepareSend` refuses such a request with its own error; it needs no secret before then.
-    return [];
-  }
 }
 
 /** Parses a WS-Security configuration by id; missing or unreadable is prepare's error, not a need. */

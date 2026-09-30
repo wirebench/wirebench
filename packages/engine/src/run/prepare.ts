@@ -12,52 +12,41 @@
 import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 import { WirebenchError } from '../errors.js';
-import { isInsideRealDir } from '../fs.js';
 import { expandGrpcInput } from '../grpc/expand.js';
 import type { GrpcSendInput } from '../grpc/send.js';
-import type { TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
-import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
-import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
-import { toKeystoreDef } from '../project/keystores.js';
-import type {
-  Attachment,
-  AttachmentSource,
-  AuthConfig,
-  Endpoint,
-  Interface,
-  Project,
-  RequestDef,
-} from '../project/model.js';
-import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
+import { resolveEndpoint } from '../project/environments.js';
+import type { EndpointSource } from '../project/environments.js';
+import type { Attachment, AttachmentSource, Endpoint, Interface, Project, RequestDef } from '../project/model.js';
+import type { PropertyScopes } from '../project/properties.js';
 import { expandSendInput } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
 import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
-import { resolveAuthConfig, resolveSecretTokens, resolveSoapAuth } from '../secrets/resolve.js';
-import type { GetSecret } from '../secrets/resolve.js';
+import { resolveSoapAuth } from '../secrets/resolve.js';
 import { toGrpcSendInput, toRestSendInput, toSendInput } from '../send-options.js';
 import type { AttachmentResolvers } from '../send-options.js';
 import type { SoapSendInput, SoapSendWss } from '../types.js';
-import {
-  resolveWorkspaceApiBaseUrl,
-  resolveWorkspaceEndpoint,
-  withActiveEnvironment,
-} from '../workspace/environments.js';
+import { resolveWorkspaceEndpoint, withActiveEnvironment } from '../workspace/environments.js';
 import { signingSecretMissing, signingSecretRef } from '../webhooks/model.js';
 import { effectiveWsa } from '../wsa/model.js';
-import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
-import type { Keystore } from '../wss/keystore/index.js';
 import { createWssContext } from '../wss/model.js';
 import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
-import { createRunTokenSource, requiredSecret } from './oauth2-token.js';
-import type { RunTokenSource } from './oauth2-token.js';
-import { secretNamesInValue } from './secret-needs.js';
-import type { SecretPlaceholders } from '../script/send.js';
+import { requiredSecret } from './oauth2-token.js';
+import {
+  authFor,
+  baseUrlFor,
+  insideProject,
+  loadKeystoreById,
+  tlsFor,
+  unresolvedError,
+  withSecrets,
+} from './send-helpers.js';
 import type { SelectedRequest } from './select.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
 
+export { authFor } from './send-helpers.js';
 export { scopesFor } from './context.js';
 export type { RunContext, RunWorkspace } from './context.js';
 
@@ -97,112 +86,6 @@ function endpointFor(
         iface,
         request,
       });
-}
-
-/** A REST API's base URL (or a gRPC API's target), through the workspace's environment likewise. */
-function baseUrlFor(context: RunContext, api: { readonly slug: string; readonly baseUrl: string }): string {
-  const { project, environmentId, workspace } = context;
-  const resolved: { url: string; source: BaseUrlSource } =
-    workspace === undefined
-      ? resolveApiBaseUrl(project, environmentId, api)
-      : resolveWorkspaceApiBaseUrl({
-          workspace: withActiveEnvironment(workspace.workspace, environmentId),
-          project,
-          projectSlug: workspace.projectSlug,
-          api,
-        });
-  return resolved.url;
-}
-
-/**
- * `scopes` with the value of every `${secret:name}` token `input` reaches. Each value comes from
- * `getSecret`, so a host that masks what it hands out (the CLI's `createEnvSecrets`) masks these too.
- */
-async function withSecrets(
-  input: unknown,
-  scopes: PropertyScopes,
-  getSecret: GetSecret,
-  placeholders?: SecretPlaceholders,
-): Promise<PropertyScopes> {
-  const names = secretNamesInValue(input, scopes);
-  if (names.length === 0) return scopes;
-  return {
-    ...scopes,
-    secrets: placeholders !== undefined ? placeholders.scopeFor(names) : await resolveSecretTokens(names, getSecret),
-  };
-}
-
-function unresolvedError(path: string, unresolved: readonly UnresolvedRef[]): WirebenchError {
-  const exprs = unresolved.map((ref) => ref.expr);
-  return new WirebenchError(
-    'unresolved-properties',
-    `"${path}" has property references nothing resolves: ${exprs.join(', ')}`,
-    { details: { path, unresolved: exprs } },
-  );
-}
-
-/**
- * `path` resolved against the project folder, refused when it lands outside it. The app also
- * accepts a file its user picked through a dialog; a pipeline has no such user, so the project
- * folder is the whole boundary.
- */
-async function insideProject(context: RunContext, path: string, code: string, name: string): Promise<string> {
-  const resolved = resolvePath(context.projectDir, path);
-  if (!(await isInsideRealDir(context.projectDir, resolved))) {
-    throw new WirebenchError(code, `"${name}" resolves outside the project folder.`, { details: { path } });
-  }
-  return resolved;
-}
-
-/** Mirrors the app's keystore loading, minus its cache: a run loads each keystore it needs. */
-async function loadKeystoreById(context: RunContext, keystoreId: string): Promise<Keystore | undefined> {
-  const ref = context.project.wss.keystores.find((candidate) => candidate.id === keystoreId);
-  if (ref === undefined) {
-    return undefined;
-  }
-  const def = toKeystoreDef(ref);
-  const path = await insideProject(context, def.path, 'keystore-outside-project', def.name);
-  try {
-    await stat(path);
-  } catch (error) {
-    throw new WirebenchError('keystore-unreadable', `The keystore file "${def.path}" could not be read.`, {
-      details: { id: def.id },
-      cause: error,
-    });
-  }
-  const password =
-    def.passwordSecretRef === undefined ? undefined : await requiredSecret(def.passwordSecretRef, context.getSecret);
-  return loadKeystore(await readFile(path), { type: def.type, ...(password !== undefined ? { password } : {}) });
-}
-
-/** The `cert`/`key` a request's own keystore presents; there is no global keystore in a run. */
-async function clientIdentityFor(context: RunContext, keystoreId: string | undefined): Promise<TlsOptions | undefined> {
-  if (keystoreId === undefined || keystoreId.length === 0) {
-    return undefined;
-  }
-  const keystore = await loadKeystoreById(context, keystoreId);
-  const def = context.project.wss.keystores.find((candidate) => candidate.id === keystoreId);
-  if (keystore === undefined || def === undefined) {
-    throw new WirebenchError('keystore-missing', 'This request selects a keystore the project no longer has.', {
-      details: { keystoreId },
-    });
-  }
-  const identity = toTlsClientIdentity(keystore, toKeystoreDef(def).defaultAlias);
-  return { cert: identity.cert, key: identity.key };
-}
-
-/** Identity, then the only two trust opt-outs a run honours: `--insecure` and the file's own flag. */
-async function tlsFor(
-  context: RunContext,
-  keystoreId: string | undefined,
-  trustInvalid: boolean,
-): Promise<TlsOptions | undefined> {
-  const identity = await clientIdentityFor(context, keystoreId);
-  const skipVerify = context.insecure === true || trustInvalid;
-  if (identity === undefined && !skipVerify) {
-    return undefined;
-  }
-  return { ...identity, ...(skipVerify ? { rejectUnauthorized: false } : {}) };
 }
 
 /**
@@ -355,52 +238,6 @@ async function prepareSoap(selected: SoapSelected, context: RunContext): Promise
     throw unresolvedError(selected.path, unresolved);
   }
   return { kind: 'soap', input, scopes: withTokens };
-}
-
-/** The run's shared token source, or a fresh one for a `prepareSend` called on its own. */
-function tokenSourceOf(context: RunContext): RunTokenSource {
-  return (
-    context.tokenSource ??
-    createRunTokenSource({
-      getSecret: context.getSecret,
-      ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
-      ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
-    })
-  );
-}
-
-/**
- * A request's effective auth with its secrets resolved. OAuth2 client credentials obtains a token
- * (the token request uses the request's own TLS, the proxy for the token URL and the run's
- * timeout); the authorization-code grant needs a browser a pipeline does not have, and is refused.
- *
- * @throws WirebenchError `auth-grant-unsupported` | `secret-missing` | `unresolved-properties` |
- * `oauth2-token-error` | `oauth2-token-malformed`
- */
-export async function authFor(
-  configured: AuthConfig,
-  path: string,
-  context: RunContext,
-  tls: TlsOptions | undefined,
-): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
-  if (configured.type !== 'oauth2') {
-    return resolveAuthConfig(configured, context.getSecret);
-  }
-  if (configured.grant === 'authorization-code') {
-    throw new WirebenchError(
-      'auth-grant-unsupported',
-      'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
-      { details: { path, grant: configured.grant } },
-    );
-  }
-  const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
-    scopes: scopesFor(context),
-    ...(tls !== undefined ? { tls } : {}),
-    ...(context.proxyFor !== undefined ? { proxy: context.proxyFor } : {}),
-    ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
-    ...(context.signal !== undefined ? { signal: context.signal } : {}),
-  });
-  return resolveAuthConfig(configured, context.getSecret, { accessToken });
 }
 
 /**

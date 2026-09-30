@@ -9,6 +9,7 @@ import type { RestApi, RestFolder, RestRequestDef } from '../rest/model.js';
 import { createApi } from '../rest/model.js';
 import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import { effectiveSigning, effectiveTarget } from '../webhooks/model.js';
+import { ORPHANED_STEP_REASON, byOrder, findInTree, walkTree } from './tree.js';
 
 /** One saved request selected for a run, with enough context to send and report it. */
 export type SelectedRequest =
@@ -47,75 +48,8 @@ interface Candidate {
   readonly webhook?: true;
 }
 
-const byOrder = <T extends { readonly order: number; readonly name: string }>(a: T, b: T): number =>
-  a.order - b.order || a.name.localeCompare(b.name);
-
-/** What a REST or gRPC request tree's nodes have in common, as far as the walk below cares. */
-interface TreeRequest {
-  readonly order: number;
-  readonly name: string;
-  readonly slug: string;
-}
-interface TreeFolder<F, R> {
-  readonly order: number;
-  readonly name: string;
-  readonly slug: string;
-  readonly folders: readonly F[];
-  readonly requests: readonly R[];
-}
-
-/** A folder's request or sub-folder child, tagged so the sort below need not narrow a union. */
-type TreeChild<F, R> =
-  | { readonly tag: 'request'; readonly order: number; readonly name: string; readonly request: R }
-  | { readonly tag: 'folder'; readonly order: number; readonly name: string; readonly folder: F };
-
-/**
- * Walks a REST or gRPC API's request tree in explorer order. `make` turns a request the protocol
- * can run into its selection, or answers `undefined` for one it skips (orphaned, streaming).
- */
-function walkTree<F extends TreeFolder<F, R>, R extends TreeRequest>(
-  node: { readonly folders: readonly F[]; readonly requests: readonly R[] },
-  chain: readonly F[],
-  group: string,
-  diskDir: string,
-  make: (request: R, chain: readonly F[], group: string) => SelectedRequest | undefined,
-  out: Candidate[],
-): void {
-  const children: TreeChild<F, R>[] = [
-    ...node.requests.map((request): TreeChild<F, R> => ({
-      tag: 'request',
-      order: request.order,
-      name: request.name,
-      request,
-    })),
-    ...node.folders.map((folder): TreeChild<F, R> => ({
-      tag: 'folder',
-      order: folder.order,
-      name: folder.name,
-      folder,
-    })),
-  ].sort(byOrder);
-  for (const child of children) {
-    if (child.tag === 'request') {
-      const item = make(child.request, chain, group);
-      if (item !== undefined) {
-        out.push({ item, diskPath: `${diskDir}/${child.request.slug}` });
-      }
-    } else {
-      walkTree(
-        child.folder,
-        [...chain, child.folder],
-        `${group}/${child.folder.name}`,
-        `${diskDir}/${child.folder.slug}`,
-        make,
-        out,
-      );
-    }
-  }
-}
-
 function walkRest(api: RestApi, out: Candidate[]): void {
-  walkTree<RestFolder, RestRequestDef>(
+  walkTree<RestFolder, RestRequestDef, SelectedRequest>(
     api,
     [],
     api.name,
@@ -130,7 +64,7 @@ function walkRest(api: RestApi, out: Candidate[]): void {
 
 /** Unary calls only: a stream needs an assertion model of its own, which a run does not have yet. */
 function walkGrpc(api: GrpcApi, out: Candidate[]): void {
-  walkTree<GrpcFolder, GrpcRequestDef>(
+  walkTree<GrpcFolder, GrpcRequestDef, SelectedRequest>(
     api,
     [],
     api.name,
@@ -254,28 +188,6 @@ export type StepRequestLookup =
   | { readonly kind: 'missing' }
   | { readonly kind: 'unsupported'; readonly reason: string };
 
-interface RequestTree {
-  readonly folders: readonly RequestTree[];
-  readonly requests: readonly { readonly id: string }[];
-}
-
-function findInTree<R extends { readonly id: string }>(
-  tree: { readonly folders: readonly RequestTree[]; readonly requests: readonly R[] },
-  id: string,
-): R | undefined {
-  const own = tree.requests.find((request) => request.id === id);
-  if (own !== undefined) {
-    return own;
-  }
-  for (const folder of tree.folders) {
-    const found = findInTree(folder as typeof tree, id);
-    if (found !== undefined) {
-      return found;
-    }
-  }
-  return undefined;
-}
-
 /**
  * Finds the request a sequence step names by id, among the requests a run can send, with the same
  * context `selectRequests` gives. A request that exists but cannot run (a WebSocket request, a streaming
@@ -290,7 +202,7 @@ export function findStepRequest(project: Project, requestId: string): StepReques
   if (runnable !== undefined) {
     return { kind: 'found', selected: runnable.item };
   }
-  const orphaned = { kind: 'unsupported', reason: 'The request is no longer in its contract (orphaned)' } as const;
+  const orphaned = { kind: 'unsupported', reason: ORPHANED_STEP_REASON } as const;
   for (const iface of project.interfaces) {
     for (const operation of iface.operations) {
       if (operation.requests.some((request) => request.id === requestId)) {

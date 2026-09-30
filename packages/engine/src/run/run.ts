@@ -21,7 +21,7 @@ import { apiDefinitionDir, definitionCacheDir } from '../project/paths.js';
 import { sendRest } from '../rest/send.js';
 import type { RestExchange } from '../rest/send.js';
 import { sendSoapRequest } from '../send.js';
-import type { SendAuth, SoapExchange } from '../types.js';
+import type { SoapExchange } from '../types.js';
 import { bindingContextFor, validateMessage } from '../validate/index.js';
 import { summarizeWsa } from '../wsa/policy-detect.js';
 import { parseWsdlBundle } from '../wsdl/merge.js';
@@ -30,8 +30,8 @@ import { readDefinitionCache } from '../wsdl/cache.js';
 import type { DefinitionBundle } from '../wsdl/resolver.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
-import { urlOrigin } from '../project/sequence-guards.js';
 import { createRunTokenSource } from './oauth2-token.js';
+import { dropRefusedToken, originOf } from './send-helpers.js';
 import { prepareSend, scopesFor } from './prepare.js';
 import type { RunContext } from './prepare.js';
 import type { SelectedRequest } from './select.js';
@@ -324,17 +324,6 @@ export function grpcSubject(result: GrpcCallResult): AssertionSubject {
 /** gRPC's `UNAUTHENTICATED`: the server's word for a credential it will not accept. */
 const GRPC_UNAUTHENTICATED = 16;
 
-/**
- * After a server refused the credentials a send carried, drops the run's OAuth2 token among them,
- * so the next request behind that configuration fetches a new one instead of repeating the refusal.
- * The refused request itself is never sent again.
- */
-function dropRefusedToken(context: RunContext, auth: SendAuth | undefined, refused: boolean): void {
-  if (refused && auth?.type === 'oauth2') {
-    context.tokenSource?.reject(auth.accessToken);
-  }
-}
-
 function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
   if (assertions.some((a) => a.outcome === 'errored')) return 'errored';
   if (assertions.some((a) => a.outcome === 'failed')) return 'failed';
@@ -583,11 +572,6 @@ async function sendScripted(
     };
   }
   throw new Error('prepareSend returned a send of the wrong protocol');
-}
-
-function originOf(url: string): { readonly origin?: string } {
-  const origin = urlOrigin(url);
-  return origin !== undefined ? { origin } : {};
 }
 
 /**
