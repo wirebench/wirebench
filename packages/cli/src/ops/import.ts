@@ -190,7 +190,10 @@ async function addWsdl(
   const result = await importDefinition({ kind: 'text', text: read.text, location: read.location }, { fetchDocument });
   const interfaceName =
     name ?? result.definition.services[0]?.name.localName ?? read.filename ?? basename(new URL(read.location).pathname);
-  const slug = uniqueSlug(interfaceName, takenContainerSlugs(project, 'interfaces'));
+  // Every top-level slug, APIs' too: an interface sharing an API's slug makes the next load skip that
+  // API (`api-slug-conflict`), and the save after it would delete its folder.
+  const taken = new Set([...takenContainerSlugs(project, 'interfaces'), ...takenContainerSlugs(project, 'apis')]);
+  const slug = uniqueSlug(interfaceName, taken);
   const cache = project.settings.cacheDefinitions;
   const endpoints = endpointsOf(result);
   const iface: Interface = {

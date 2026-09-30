@@ -150,6 +150,34 @@ paths:
     expect(after?.definition).toMatchObject({ auth });
   });
 
+  it('gives a new interface another slug than an API, so the next save keeps the API', async () => {
+    const dir = join(tempDir('project'), 'Clash Project');
+    const service = newService();
+    await service.create({ dir, name: 'Clash Project' });
+    const imported = await importOpenApi(
+      { kind: 'text', text: "openapi: 3.0.3\ninfo: { title: Pets, version: '1' }\npaths: {}\n", location: 'mem:pets' },
+      { fetchDocument: createDefaultFetchDocument() },
+    );
+    // An API named as the WSDL's interface is, so the interface's first choice of slug is taken.
+    await service.addApi({
+      api: { ...imported.api, name: 'Calculator' },
+      documents: imported.documents,
+      source: 'mem:pets',
+      declaredVersion: '3.0.3',
+      cache: false,
+    });
+
+    const { project } = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+    await service.save({ reason: 'test' });
+    await service.close();
+
+    expect(project.interfaces.map((iface) => iface.slug)).toEqual(['Calculator-2']);
+    const reopened = await loadProject(dir);
+    expect(reopened.problems.map((problem) => problem.code)).not.toContain('api-slug-conflict');
+    expect(reopened.project.apis.map((api) => api.slug)).toEqual(['Calculator']);
+    expect(existsSync(join(dir, 'apis', 'Calculator', 'api.yaml'))).toBe(true);
+  });
+
   it('creates, imports, mutates, saves and reopens a project from disk', async () => {
     const dir = join(tempDir('project'), 'Calculator Project');
     const service = newService();

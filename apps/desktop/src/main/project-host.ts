@@ -64,7 +64,6 @@ import {
   resolveWorkspaceScopes,
   saveProject,
   toSendInput,
-  takenContainerSlugs,
   uniqueSlug,
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
@@ -2646,7 +2645,9 @@ export class ProjectHost {
   }): Promise<{ project: ProjectWire; interfaceId: string }> {
     const open = this.require();
     const interfaceId = generateId();
-    const taken = new Set(takenContainerSlugs(open.project, 'interfaces'));
+    // Every top-level slug, APIs' too: an interface sharing an API's slug makes the next load skip
+    // that API (`api-slug-conflict`), and the save after it would delete its folder.
+    const taken = takenApiSlugs(open.project);
 
     const resolvedAuth =
       input.auth !== undefined
@@ -2767,7 +2768,9 @@ export class ProjectHost {
     token?: string;
   }): Promise<{ project: ProjectWire; report: LegacyImportReport; environmentNames: string[] }> {
     const open = this.require();
-    const taken = new Set(takenContainerSlugs(open.project, 'interfaces'));
+    // Every top-level slug, APIs' too: an interface sharing an API's slug makes the next load skip
+    // that API (`api-slug-conflict`), and the save after it would delete its folder.
+    const taken = takenApiSlugs(open.project);
     const network = createDefaultFetchDocument();
     const summaries = new Map<string, InterfaceSummary>();
 
