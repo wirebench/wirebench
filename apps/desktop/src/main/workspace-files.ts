@@ -11,10 +11,11 @@ import {
   definitionCacheDir,
   INTERFACES_DIR,
   loadShare,
+  unsupportedOf,
   WorkspaceError,
   workspaceTreeDir,
 } from '@wirebench/engine';
-import type { FsLike, WorkspaceShare } from '@wirebench/engine';
+import type { FsLike, Project, WorkspaceShare } from '@wirebench/engine';
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -62,16 +63,27 @@ export async function copyTreeIfPresent(source: string, target: string): Promise
 
 /**
  * Copies the parts of a project folder that `projectFiles` does not describe: the attachment
- * blobs and every interface's `definition/` cache.
+ * blobs, every interface's `definition/` cache, and each placeholder's whole directory.
  *
  * `saveProject` writes the *model* — the YAML the project is defined by. The bytes the user
  * attached and the WSDL/XSD documents the definition cache holds are not in that model, so a
  * copy made with `saveProject` alone would open with every interface un-hydrated and every
  * attachment gone. They are copied byte-for-byte rather than re-fetched: an export must not
  * depend on the original service still being reachable.
+ *
+ * A placeholder — a container of a kind this build does not read (spec §6) — is not written by
+ * `saveProject` at all, so its directory under `interfaces/` or `apis/` is copied here, recursively
+ * and byte-for-byte, from the list `model` holds. Without it a move (which then removes the
+ * source) would lose the container.
  */
-export async function copyProjectPayload(source: string, target: string): Promise<void> {
+export async function copyProjectPayload(source: string, target: string, model: Project): Promise<void> {
   await copyTreeIfPresent(attachmentsDir(source), attachmentsDir(target));
+  for (const placeholder of unsupportedOf(model)) {
+    await copyTreeIfPresent(
+      join(source, placeholder.dir, placeholder.slug),
+      join(target, placeholder.dir, placeholder.slug),
+    );
+  }
   let interfaces: string[];
   try {
     interfaces = (await readdir(join(source, INTERFACES_DIR), { withFileTypes: true }))
