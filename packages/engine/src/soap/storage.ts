@@ -15,13 +15,17 @@ import type {
   Endpoint,
   Interface,
   OperationDef,
+  RequestDef,
   RequestProperties,
   SoapOwnerAuth,
   SoapRequestDef,
 } from '../project/model.js';
-import { INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX } from '../project/paths.js';
+import { assertPathSegment, INTERFACES_DIR, OPERATIONS_DIR, REQUEST_SUFFIX } from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
+import { authDocument, scriptsDocument, writeScriptFiles } from '../project/serialize-helpers.js';
+import { compact, stringifyYaml } from '../project/yaml.js';
 import type { ProtocolStorage } from '../protocol/module.js';
+import { isScriptFileOf } from '../script/model.js';
 import { normalizeWsa } from '../wsa/model.js';
 import { interfaceFileSchema, requestFileSchema } from './files.js';
 
@@ -102,6 +106,54 @@ async function loadRequests(
   return requests.sort(byOrder);
 }
 
+function requestDocument(request: RequestDef): Record<string, unknown> {
+  return compact({
+    kind: request.kind,
+    id: request.id,
+    name: request.name,
+    order: request.order,
+    description: request.description,
+    endpointId: request.endpointId,
+    endpointUrl: request.endpointUrl,
+    soapVersion: request.soapVersion,
+    soapAction: request.soapAction,
+    headers: request.headers.map((h) => ({ name: h.name, value: h.value })),
+    attachments: request.attachments.map((a) => compact({ ...a })),
+    auth: request.auth === undefined ? undefined : authDocument(request.auth),
+    wsa: request.wsa === undefined ? undefined : compact({ ...request.wsa }),
+    wssOutgoingRef: request.wssOutgoingRef,
+    wssIncomingRef: request.wssIncomingRef,
+    properties: compact({ ...request.properties }),
+    assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
+    orphaned: request.orphaned === true ? true : undefined,
+    scripts: scriptsDocument(request.scripts, request.slug).document,
+  });
+}
+
+function interfaceDocument(iface: Interface): Record<string, unknown> {
+  return compact({
+    kind: iface.kind,
+    id: iface.id,
+    name: iface.name,
+    order: iface.order,
+    definitionUrl: iface.definitionUrl,
+    cacheDefinition: iface.cacheDefinition,
+    targetNamespace: iface.targetNamespace,
+    endpoints: iface.endpoints.map((e) =>
+      compact({ ...e, auth: e.auth === undefined ? undefined : authDocument(e.auth) }),
+    ),
+    defaultEndpointId: iface.defaultEndpointId,
+    wsa: compact({ ...iface.wsa }),
+    auth: iface.auth === undefined ? undefined : authDocument(iface.auth),
+    operations: iface.operations.map((op) => ({
+      name: op.name,
+      bindingName: op.bindingName,
+      slug: op.slug,
+      order: op.order,
+    })),
+  });
+}
+
 /** SOAP's storage facet. */
 export const soapStorage: ProtocolStorage<Interface> = {
   dir: INTERFACES_DIR,
@@ -156,12 +208,62 @@ export const soapStorage: ProtocolStorage<Interface> = {
     };
   },
 
-  // Task 3.3 moves the writer here. Until then core writes this protocol's files itself.
-  files() {
-    throw new Error('soapStorage.files is not implemented yet');
+  files(iface) {
+    const files = new Map<string, string>();
+    assertPathSegment(iface.slug);
+    const base = `${INTERFACES_DIR}/${iface.slug}`;
+    files.set(`${base}/interface.yaml`, stringifyYaml(interfaceDocument(iface)));
+    for (const operation of iface.operations) {
+      assertPathSegment(operation.slug);
+      const dir = `${base}/${OPERATIONS_DIR}/${operation.slug}`;
+      for (const request of operation.requests) {
+        assertPathSegment(request.slug);
+        files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(requestDocument(request)));
+        files.set(`${dir}/${request.slug}.xml`, request.envelopeXml);
+        writeScriptFiles(files, dir, request.scripts, request.slug);
+      }
+    }
+    return files;
   },
-  managed() {
-    return Promise.reject(new Error('soapStorage.managed is not implemented yet'));
+
+  /**
+   * `interface.yaml`, every `operations/<slug>/*.request.yaml`, and the `.xml` and script files
+   * that sit beside a request file of the same slug. An envelope with no request file, the
+   * definition cache and anything else in the folder are not Wirebench's to delete.
+   */
+  async managed(fs, root, slug) {
+    const managed: string[] = [];
+    const base = `${INTERFACES_DIR}/${slug}`;
+    const ifaceFile = `${base}/interface.yaml`;
+    if ((await readFileIfExists(fs, abs(root, ifaceFile))) !== undefined) {
+      managed.push(ifaceFile);
+    }
+    const opsDir = `${base}/${OPERATIONS_DIR}`;
+    for (const opEntry of await readdirIfExists(fs, abs(root, opsDir))) {
+      if (!opEntry.isDirectory) {
+        continue;
+      }
+      const opDir = `${opsDir}/${opEntry.name}`;
+      const requestSlugs = new Set<string>();
+      const opFiles = await readdirIfExists(fs, abs(root, opDir));
+      for (const fileEntry of opFiles) {
+        if (fileEntry.isFile && fileEntry.name.endsWith(REQUEST_SUFFIX)) {
+          requestSlugs.add(fileEntry.name.slice(0, -REQUEST_SUFFIX.length));
+          managed.push(`${opDir}/${fileEntry.name}`);
+        }
+      }
+      for (const fileEntry of opFiles) {
+        if (fileEntry.isFile && fileEntry.name.endsWith('.xml')) {
+          const requestSlug = fileEntry.name.slice(0, -'.xml'.length);
+          if (requestSlugs.has(requestSlug)) {
+            managed.push(`${opDir}/${fileEntry.name}`);
+          }
+        } else if (fileEntry.isFile && [...requestSlugs].some((known) => isScriptFileOf(fileEntry.name, known))) {
+          managed.push(`${opDir}/${fileEntry.name}`);
+        }
+      }
+    }
+    return managed;
   },
 
   containers: (project) => project.interfaces,

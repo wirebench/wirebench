@@ -20,8 +20,25 @@ import {
 } from '../project/load-helpers.js';
 import type { RequestReader } from '../project/load-helpers.js';
 import type { ProjectProblem } from '../project/load.js';
-import { API_FILE, APIS_DIR, assertPathSegment, REQUEST_SUFFIX, REQUESTS_DIR } from '../project/paths.js';
+import { apiManagedFiles } from '../project/managed-files.js';
+import {
+  API_FILE,
+  APIS_DIR,
+  assertPathSegment,
+  REQUEST_SUFFIX,
+  REQUESTS_DIR,
+  restBodyFileName,
+} from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
+import {
+  addFolderFiles,
+  authDocument,
+  keyValueDocuments,
+  scriptsDocument,
+  writeScriptFiles,
+} from '../project/serialize-helpers.js';
+import type { RequestWriter } from '../project/serialize-helpers.js';
+import { compact, stringifyYaml } from '../project/yaml.js';
 import type { ProtocolStorage } from '../protocol/module.js';
 import { grpcApiFileSchema, grpcRequestFileSchema } from './files.js';
 import type { GrpcApi, GrpcRequestDef, GrpcRequestSettings } from './model.js';
@@ -91,6 +108,76 @@ function grpcRequestReader(fs: FsLike, root: string, problems: ProjectProblem[])
   };
 }
 
+/**
+ * A gRPC request as written: the message text goes to `<slug>.body.json` beside the document, the
+ * same convention as a REST raw body, so a message is a JSON file in git.
+ */
+const writeGrpcRequest: RequestWriter<GrpcRequestDef> = (files, dir, request) => {
+  const messageFile = restBodyFileName(request.slug, 'json');
+  assertPathSegment(messageFile);
+  files.set(
+    `${dir}/${request.slug}${REQUEST_SUFFIX}`,
+    stringifyYaml(
+      compact({
+        kind: request.kind,
+        id: request.id,
+        name: request.name,
+        order: request.order,
+        description: request.description,
+        service: request.service,
+        method: request.method,
+        methodKind: request.methodKind,
+        metadata: request.metadata.length > 0 ? keyValueDocuments(request.metadata) : undefined,
+        message: messageFile,
+        auth: authDocument(request.auth),
+        settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
+        orphaned: request.orphaned === true ? true : undefined,
+        assertions:
+          request.assertions !== undefined && request.assertions.length > 0
+            ? request.assertions.map((a) => compact({ ...a }))
+            : undefined,
+        scripts: scriptsDocument(request.scripts, request.slug).document,
+      }),
+    ),
+  );
+  files.set(`${dir}/${messageFile}`, request.message);
+  writeScriptFiles(files, dir, request.scripts, request.slug);
+};
+
+/** Every file one gRPC API occupies. It shares `apis/` with the REST ones; its `kind` says which it is. */
+function addGrpcApiFiles(files: Map<string, string>, api: GrpcApi): void {
+  assertPathSegment(api.slug);
+  const base = `${APIS_DIR}/${api.slug}`;
+  files.set(
+    `${base}/${API_FILE}`,
+    stringifyYaml(
+      compact({
+        kind: api.kind,
+        id: api.id,
+        name: api.name,
+        order: api.order,
+        description: api.description,
+        target: api.target,
+        tls: api.tls,
+        metadata: api.metadata.length > 0 ? keyValueDocuments(api.metadata) : undefined,
+        auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        definition:
+          api.definition === undefined
+            ? undefined
+            : compact({
+                kind: api.definition.kind,
+                source: api.definition.source,
+                cache: api.definition.cache,
+                roots: [...api.definition.roots],
+                reflectionVersion: api.definition.reflectionVersion,
+                trustInvalid: api.definition.trustInvalid,
+              }),
+      }),
+    ),
+  );
+  addFolderFiles<GrpcRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeGrpcRequest);
+}
+
 /** gRPC's storage facet. */
 export const grpcStorage: ProtocolStorage<GrpcApi> = {
   dir: APIS_DIR,
@@ -134,13 +221,12 @@ export const grpcStorage: ProtocolStorage<GrpcApi> = {
     };
   },
 
-  // Task 3.3 moves the writer here. Until then core writes this protocol's files itself.
-  files() {
-    throw new Error('grpcStorage.files is not implemented yet');
+  files(api) {
+    const files = new Map<string, string>();
+    addGrpcApiFiles(files, api);
+    return files;
   },
-  managed() {
-    return Promise.reject(new Error('grpcStorage.managed is not implemented yet'));
-  },
+  managed: (fs, root, slug) => apiManagedFiles(fs, root, slug),
 
   containers: (project) => project.grpcApis,
   withContainers: (project, grpcApis) => ({ ...project, grpcApis }),

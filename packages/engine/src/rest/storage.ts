@@ -25,13 +25,33 @@ import {
 } from '../project/load-helpers.js';
 import type { RequestReader } from '../project/load-helpers.js';
 import type { ProjectProblem } from '../project/load.js';
-import { API_FILE, APIS_DIR, assertPathSegment, REQUEST_SUFFIX, REQUESTS_DIR, WEBHOOKS_DIR } from '../project/paths.js';
+import { apiManagedFiles } from '../project/managed-files.js';
+import {
+  API_FILE,
+  APIS_DIR,
+  assertPathSegment,
+  REQUEST_SUFFIX,
+  REQUESTS_DIR,
+  restBodyFileName,
+  WEBHOOKS_DIR,
+} from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
 import type { WebhookSigningFile } from '../project/schema-parts.js';
+import {
+  addFolderFiles,
+  authDocument,
+  definitionDocument,
+  keyValueDocuments,
+  scriptsDocument,
+  writeScriptFiles,
+} from '../project/serialize-helpers.js';
+import type { RequestWriter } from '../project/serialize-helpers.js';
+import { compact, stringifyYaml } from '../project/yaml.js';
 import type { ProtocolStorage } from '../protocol/module.js';
 import type { HookLink, WebhookSigning } from '../webhooks/model.js';
 import { toSignatureScheme } from '../webhooks/signature.js';
 import { apiFileSchema, restRequestFileSchema } from './files.js';
+import { RAW_LANGUAGE_EXTENSIONS } from './model.js';
 import type { RestApi, RestBody, RestRequestDef, RestRequestSettings } from './model.js';
 
 /** A parsed `signing` key as the model holds it. */
@@ -162,6 +182,113 @@ function apiRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]):
   };
 }
 
+/** A `signing` key as written: the scheme's own fields, and references only. */
+export function signingDocument(signing: WebhookSigning | undefined): Record<string, unknown> | undefined {
+  if (signing === undefined) return undefined;
+  if (signing.mode === 'none') return { mode: 'none' };
+  return compact({
+    mode: 'sign',
+    scheme: compact({ ...signing.scheme }),
+    secretRef: signing.secretRef,
+    secretEnv: signing.secretEnv,
+  });
+}
+
+/**
+ * A body as written, plus the sibling file a raw body needs.
+ *
+ * The text of a raw body is deliberately *not* in the request document: it goes to
+ * `<slug>.body.<ext>` beside it, so a JSON payload is a JSON file in git — reviewable, searchable
+ * and mergeable — rather than a quoted blob inside YAML.
+ */
+function bodyDocument(
+  body: RestBody,
+  requestSlug: string,
+): { readonly document: Record<string, unknown>; readonly file?: readonly [string, string] } {
+  switch (body.kind) {
+    case 'raw': {
+      const name = restBodyFileName(requestSlug, RAW_LANGUAGE_EXTENSIONS[body.language]);
+      assertPathSegment(name);
+      return {
+        document: compact({ kind: 'raw', language: body.language, contentType: body.contentType, file: name }),
+        file: [name, body.text],
+      };
+    }
+    case 'form':
+      return { document: { kind: 'form', fields: keyValueDocuments(body.fields) } };
+    case 'multipart':
+      return {
+        document: {
+          kind: 'multipart',
+          parts: body.parts.map((part) => compact({ ...part, enabled: part.enabled ? undefined : false })),
+        },
+      };
+    case 'binary':
+      return { document: { kind: 'binary', source: { ...body.source }, contentType: body.contentType } };
+    default:
+      return { document: { kind: 'none' } };
+  }
+}
+
+function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
+  const body = bodyDocument(request.body, request.slug);
+  return compact({
+    kind: request.kind,
+    id: request.id,
+    name: request.name,
+    order: request.order,
+    description: request.description,
+    method: request.method,
+    url: request.url,
+    pathParams: request.pathParams.length > 0 ? keyValueDocuments(request.pathParams) : undefined,
+    query: request.query.length > 0 ? keyValueDocuments(request.query) : undefined,
+    headers: request.headers.length > 0 ? keyValueDocuments(request.headers) : undefined,
+    body: body.document,
+    auth: authDocument(request.auth),
+    settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
+    assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
+    orphaned: request.orphaned === true ? true : undefined,
+    contract:
+      request.contract === undefined ? undefined : { method: request.contract.method, path: request.contract.path },
+    hook: request.hook === undefined ? undefined : { ...request.hook },
+    signing: signingDocument(request.signing),
+    scripts: scriptsDocument(request.scripts, request.slug).document,
+  });
+}
+
+/** A REST request as written: its document, its raw body file and its script files. Core writes the webhook collection's items with it. */
+export const writeRestRequest: RequestWriter<RestRequestDef> = (files, dir, request) => {
+  const body = bodyDocument(request.body, request.slug);
+  files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(restRequestDocument(request)));
+  if (body.file !== undefined) {
+    files.set(`${dir}/${body.file[0]}`, body.file[1]);
+  }
+  writeScriptFiles(files, dir, request.scripts, request.slug);
+};
+
+/** Every file one REST API occupies, keyed by path relative to the project root. */
+function addApiFiles(files: Map<string, string>, api: RestApi): void {
+  assertPathSegment(api.slug);
+  const base = `${APIS_DIR}/${api.slug}`;
+  files.set(
+    `${base}/${API_FILE}`,
+    stringifyYaml(
+      compact({
+        kind: api.kind,
+        id: api.id,
+        name: api.name,
+        order: api.order,
+        description: api.description,
+        baseUrl: api.baseUrl,
+        servers: api.servers.length > 0 ? api.servers.map((server) => compact({ ...server })) : undefined,
+        auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
+      }),
+    ),
+  );
+  addFolderFiles<RestRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeRestRequest);
+}
+
 /** REST's storage facet. */
 export const restStorage: ProtocolStorage<RestApi> = {
   dir: APIS_DIR,
@@ -202,13 +329,12 @@ export const restStorage: ProtocolStorage<RestApi> = {
     };
   },
 
-  // Task 3.3 moves the writer here. Until then core writes this protocol's files itself.
-  files() {
-    throw new Error('restStorage.files is not implemented yet');
+  files(api) {
+    const files = new Map<string, string>();
+    addApiFiles(files, api);
+    return files;
   },
-  managed() {
-    return Promise.reject(new Error('restStorage.managed is not implemented yet'));
-  },
+  managed: (fs, root, slug) => apiManagedFiles(fs, root, slug),
 
   containers: (project) => project.apis,
   withContainers: (project, apis) => ({ ...project, apis }),

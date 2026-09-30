@@ -22,7 +22,7 @@ import type { RestApi, RestRequestDef } from '../rest/model.js';
 import type { WsApi, WsRequestDef } from '../ws/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { WebhookCollection } from '../webhooks/model.js';
-import type { ContainerBase } from '../protocol/module.js';
+import type { ContainerBase, ContainerDir } from '../protocol/module.js';
 import type { RequestScripts } from '../script/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
@@ -482,6 +482,30 @@ export function unsupportedOf(project: Project): readonly UnsupportedContainer[]
 /** The project's containers of `kind` kept in {@link Project.extraContainers}. */
 export function extraContainersOf(project: Project, kind: string): readonly ContainerBase[] {
   return project.extraContainers?.[kind] ?? [];
+}
+
+/**
+ * Every slug in use under one of the two container directories: the containers the project holds
+ * there, and the placeholders (spec §6). A save keeps exactly these directories, whatever its
+ * registry can write. Hand it to `uniqueSlug` when naming a new container, so a save never has to
+ * refuse it with `container-slug-conflict`.
+ */
+export function takenContainerSlugs(project: Project, dir: ContainerDir): ReadonlySet<string> {
+  const containers: readonly ContainerBase[] =
+    dir === 'interfaces'
+      ? project.interfaces
+      : [
+          ...project.apis,
+          ...project.grpcApis,
+          ...project.wsApis,
+          ...Object.values(project.extraContainers ?? {}).flat(),
+        ];
+  return new Set([
+    ...containers.map((container) => container.slug),
+    ...unsupportedOf(project)
+      .filter((placeholder) => placeholder.dir === dir)
+      .map((placeholder) => placeholder.slug),
+  ]);
 }
 
 /** Generates entity ids; injectable so tests can produce deterministic projects. */

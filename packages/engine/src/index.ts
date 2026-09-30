@@ -346,6 +346,7 @@ export {
   createRequest,
   defaultContentId,
   generateId,
+  takenContainerSlugs,
 } from './project/model.js';
 export type {
   AnyRequestDef,

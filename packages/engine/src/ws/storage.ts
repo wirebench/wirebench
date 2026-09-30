@@ -4,6 +4,7 @@
  * message in a sibling `<slug>.msg-<message slug>.<ext>`.
  */
 
+import { ProjectError } from '../errors.js';
 import type { FsLike } from '../project/fs.js';
 import { readFileIfExists } from '../project/fs.js';
 import {
@@ -18,10 +19,15 @@ import {
 } from '../project/load-helpers.js';
 import type { RequestReader } from '../project/load-helpers.js';
 import type { ProjectProblem } from '../project/load.js';
+import { apiManagedFiles } from '../project/managed-files.js';
 import { API_FILE, APIS_DIR, assertPathSegment, REQUEST_SUFFIX, REQUESTS_DIR } from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
+import { addFolderFiles, authDocument, definitionDocument, keyValueDocuments } from '../project/serialize-helpers.js';
+import type { RequestWriter } from '../project/serialize-helpers.js';
+import { compact, stringifyYaml } from '../project/yaml.js';
 import type { ProtocolStorage } from '../protocol/module.js';
 import { wsApiFileSchema, wsRequestFileSchema } from './files.js';
+import { wsMessageFileName } from './model.js';
 import type { WsApi, WsRequestDef, WsRequestSettings, WsSavedMessage } from './model.js';
 
 /**
@@ -82,6 +88,79 @@ function wsRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): 
   };
 }
 
+/**
+ * A WebSocket request as written: each saved message goes to a sibling file, so a JSON message is a
+ * JSON file in git. Siblings rather than a directory, because every directory here loads as a folder.
+ *
+ * @throws ProjectError `duplicate-slug` when two of the request's messages share a slug.
+ */
+const writeWsRequest: RequestWriter<WsRequestDef> = (files, dir, request) => {
+  const messages = request.messages.map((message) => {
+    const file = wsMessageFileName(request.slug, message);
+    assertPathSegment(file);
+    if (files.has(`${dir}/${file}`)) {
+      throw new ProjectError('duplicate-slug', `Request "${request.name}" has two messages named "${message.slug}"`, {
+        details: { file: `${dir}/${file}` },
+      });
+    }
+    files.set(`${dir}/${file}`, message.content);
+    return compact({
+      id: message.id,
+      name: message.name,
+      format: message.format === 'binary' ? 'binary' : undefined,
+      file,
+      contract:
+        message.contract === undefined
+          ? undefined
+          : { message: message.contract.message, generated: message.contract.generated },
+    });
+  });
+  files.set(
+    `${dir}/${request.slug}${REQUEST_SUFFIX}`,
+    stringifyYaml(
+      compact({
+        kind: request.kind,
+        id: request.id,
+        name: request.name,
+        order: request.order,
+        description: request.description,
+        url: request.url,
+        query: request.query.length > 0 ? keyValueDocuments(request.query) : undefined,
+        headers: request.headers.length > 0 ? keyValueDocuments(request.headers) : undefined,
+        subprotocols: request.subprotocols.length > 0 ? [...request.subprotocols] : undefined,
+        auth: authDocument(request.auth),
+        settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
+        messages: messages.length > 0 ? messages : undefined,
+        contract: request.contract === undefined ? undefined : { channel: request.contract.channel },
+        orphaned: request.orphaned === true ? true : undefined,
+      }),
+    ),
+  );
+};
+
+/** Every file one WebSocket API occupies. It shares `apis/` with the others; its `kind` says which it is. */
+function addWsApiFiles(files: Map<string, string>, api: WsApi): void {
+  assertPathSegment(api.slug);
+  const base = `${APIS_DIR}/${api.slug}`;
+  files.set(
+    `${base}/${API_FILE}`,
+    stringifyYaml(
+      compact({
+        kind: api.kind,
+        id: api.id,
+        name: api.name,
+        order: api.order,
+        description: api.description,
+        url: api.url,
+        headers: api.headers.length > 0 ? keyValueDocuments(api.headers) : undefined,
+        auth: api.auth === undefined ? undefined : authDocument(api.auth),
+        definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
+      }),
+    ),
+  );
+  addFolderFiles<WsRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeWsRequest);
+}
+
 /** WebSocket's storage facet. */
 export const wsStorage: ProtocolStorage<WsApi> = {
   dir: APIS_DIR,
@@ -123,13 +202,12 @@ export const wsStorage: ProtocolStorage<WsApi> = {
     };
   },
 
-  // Task 3.3 moves the writer here. Until then core writes this protocol's files itself.
-  files() {
-    throw new Error('wsStorage.files is not implemented yet');
+  files(api) {
+    const files = new Map<string, string>();
+    addWsApiFiles(files, api);
+    return files;
   },
-  managed() {
-    return Promise.reject(new Error('wsStorage.managed is not implemented yet'));
-  },
+  managed: (fs, root, slug) => apiManagedFiles(fs, root, slug),
 
   containers: (project) => project.wsApis,
   withContainers: (project, wsApis) => ({ ...project, wsApis }),
