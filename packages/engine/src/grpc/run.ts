@@ -117,7 +117,7 @@ export async function prepareGrpc(selected: GrpcSelected, context: RunContext): 
  * @throws WirebenchError `grpc-definition-missing` when there is no cache; whatever the loaders
  * throw for one that does not load
  */
-export async function loadProtoSetFor(projectDir: string, api: GrpcSelected['api']): Promise<ProtoSet> {
+async function loadProtoSetFor(projectDir: string, api: GrpcSelected['api']): Promise<ProtoSet> {
   let cache: Awaited<ReturnType<typeof readGrpcDefinitionCache>>;
   try {
     cache = await readGrpcDefinitionCache(apiDefinitionDir(projectDir, api.slug));
@@ -156,7 +156,7 @@ export function grpcSubject(result: GrpcCallResult): AssertionSubject {
 }
 
 /** gRPC's `UNAUTHENTICATED`: the server's word for a credential it will not accept. */
-export const GRPC_UNAUTHENTICATED = 16;
+const GRPC_UNAUTHENTICATED = 16;
 
 /** The API's schema, read once per run; a failed load is remembered. */
 function protoSetFor(api: GrpcApi, scope: RunScope): Promise<ProtoSet> {

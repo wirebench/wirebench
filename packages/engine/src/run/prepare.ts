@@ -6,7 +6,7 @@
  */
 import { prepareGrpc } from '../grpc/run.js';
 import type { PreparedGrpc } from '../grpc/run.js';
-import type { SelectedRequest } from './select.js';
+import type { SelectedRequest } from '../protocols.js';
 import { prepareRest } from '../rest/run.js';
 import type { PreparedRest } from '../rest/run.js';
 import { prepareSoap } from '../soap/run.js';

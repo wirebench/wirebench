@@ -15,6 +15,7 @@ import type { AssertionResult, AssertionSubject, StepAssertion } from '../assert
 import { isWirebenchError } from '../errors.js';
 import type { PropertyMap, Project } from '../project/model.js';
 import type { PropertyScopes } from '../project/properties.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
 import { findStepRequest } from '../run/select.js';
 import type { SelectedRequest } from '../run/select.js';
 import type { SequenceDef, SequenceStep } from './model.js';
@@ -130,6 +131,11 @@ export interface RunSequenceOptions {
   readonly callbackScopes?: (step: ResolvedStep, sequenceScope: PropertyMap) => PropertyScopes;
   /** Called after a step's send when it has callbacks to wait for. */
   readonly onCallbackWaiting?: (step: CallbackStep, waiting: readonly CallbackWaiting[]) => void;
+  /**
+   * The protocol modules a step's request is looked up in. Absent: the built-in ones. A host that
+   * sends with `createRunSender` passes the registry of its `RunContext` here too.
+   */
+  readonly registry?: ProtocolRegistry;
 }
 
 /** Carries a step the host could not send out of `sendAwaitingCallbacks`, so no wait follows it. */
@@ -180,7 +186,7 @@ export async function runSequence(
   };
 
   for (const [index, step] of sequence.steps.entries()) {
-    const target = findStepRequest(project, step.requestId);
+    const target = findStepRequest(project, step.requestId, options.registry);
     const selected = target.kind === 'found' ? target.selected : undefined;
     const base = {
       index,

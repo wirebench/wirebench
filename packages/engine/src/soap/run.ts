@@ -258,7 +258,7 @@ export async function prepareSoap(selected: SoapSelected, context: RunContext): 
 }
 
 /** An interface's cached definition, compiled once per run. */
-export interface LoadedDefinition {
+interface LoadedDefinition {
   readonly definition: WsdlDefinition;
   readonly bundle: DefinitionBundle;
   readonly schemaSet: SchemaSet;
@@ -277,7 +277,7 @@ function parseClark(clark: string): { namespaceUri: string; localName: string } 
  * with `prefer-cache` — minus the network fallback: a run never fetches a WSDL. An interface that
  * does not cache its definition, or whose cache is absent or unreadable, has no contract here.
  */
-export async function loadDefinition(projectDir: string, iface: Interface): Promise<LoadedDefinition | undefined> {
+async function loadDefinition(projectDir: string, iface: Interface): Promise<LoadedDefinition | undefined> {
   if (!iface.cacheDefinition) {
     return undefined;
   }
@@ -317,7 +317,7 @@ export function soapResponseSubject(exchange: SoapExchange): AssertionSubject {
 }
 
 /** A SOAP response as assertions see it, validated against the contract when the run has the definition. */
-export function soapSubject(
+function soapSubject(
   exchange: SoapExchange,
   loaded: LoadedDefinition | undefined,
   item: SoapSelected,
