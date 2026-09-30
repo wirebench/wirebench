@@ -20,7 +20,11 @@ import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting
 import type { SoapExchange } from './soap/types.js';
 import { wsProtocol } from './ws/module.js';
 
-/** The four built-in protocols, in the order their containers tie-break in the explorer. */
+/**
+ * The four built-in protocols, in the order their containers tie-break in the explorer.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export const BUILTIN_PROTOCOLS: readonly ProtocolModule[] = [soapProtocol, restProtocol, grpcProtocol, wsProtocol];
 
 /** The feature that switches request scripts (#63). Not a protocol, so the registry is told of it. */
@@ -32,7 +36,11 @@ export const SCRIPTS_FEATURE: FeatureDescriptor = {
   requires: [],
 };
 
-/** A registry of the built-in protocols and the `scripts` feature, with `switches` applied. */
+/**
+ * A registry of the built-in protocols and the `scripts` feature, with `switches` applied.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export function createBuiltinRegistry(switches?: Readonly<Record<string, boolean>>): ProtocolRegistry {
   return createProtocolRegistry(BUILTIN_PROTOCOLS, {
     features: [SCRIPTS_FEATURE],

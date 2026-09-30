@@ -6,17 +6,17 @@ import { loadProject } from '../../../src/project/load.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
 import { stringifyYaml } from '../../../src/project/yaml.js';
-import type { Project, RequestDef } from '../../../src/project/model.js';
+import type { Project, SoapRequestDef } from '../../../src/project/model.js';
 import { CRLF_ENVELOPE, listTree, readBytes, sampleProject, tempProjectDir } from './fixture.js';
 
-function withRequests(project: Project, map: (r: RequestDef) => RequestDef | undefined): Project {
+function withRequests(project: Project, map: (r: SoapRequestDef) => SoapRequestDef | undefined): Project {
   return {
     ...project,
     interfaces: project.interfaces.map((i) => ({
       ...i,
       operations: i.operations.map((o) => ({
         ...o,
-        requests: o.requests.map(map).filter((r): r is RequestDef => r !== undefined),
+        requests: o.requests.map(map).filter((r): r is SoapRequestDef => r !== undefined),
       })),
     })),
   };

@@ -15,7 +15,7 @@
  * carries one.
  */
 
-import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from '../project/model.js';
+import type { Endpoint, Environment, Interface, Project, PropertyMap, SoapRequestDef } from '../project/model.js';
 import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
 import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
 import type { PropertyScopes } from '../project/properties.js';
@@ -114,7 +114,7 @@ export function resolveWorkspaceEndpoint(input: {
   readonly project: Project;
   readonly projectSlug: string;
   readonly iface: Interface;
-  readonly request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>;
+  readonly request: Pick<SoapRequestDef, 'endpointId' | 'endpointUrl'>;
 }): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
   const { workspace, project, projectSlug, iface, request } = input;
   const activeWorkspaceEnv = activeWorkspaceEnvironment(workspace);

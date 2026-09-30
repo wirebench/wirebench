@@ -9,7 +9,7 @@ import type { Interface, Project, SoapRequestDef } from '../../../src/project/mo
 import { definitionCacheDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/prepare.js';
+import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import type { RequestResult } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';

@@ -1,6 +1,6 @@
 /**
  * Running a sequence: the loop, the transfers and the assertions, with the same semantics wherever it
- * runs. Sending stays with the host (the CLI through `prepareSend`, the desktop through its own send
+ * runs. Sending stays with the host (the CLI through `createRunSender`, the desktop through its own send
  * paths and History), because the two send with different secrets, auth flows and cookie jars.
  *
  * Values lifted from responses reach the next step only through the `sequence` scope the host passes to

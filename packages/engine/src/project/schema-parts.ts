@@ -239,6 +239,8 @@ const SUPPORTED_KINDS = ['soap', 'rest', 'grpc', 'websocket'];
  * and so a project written by a future build fails loudly rather than losing its requests to a
  * dropped unknown key. `grpc` was the reserved name this guard existed for until the gRPC client
  * arrived; it stays for whatever comes next.
+ * Internal since 3.0: a module's request reader calls it; a container of an unknown kind loads
+ * as a placeholder instead (`Project.unsupported`), and a host asks `ProtocolRegistry.status`.
  *
  * @throws ProjectError `project-kind-not-supported`
  */

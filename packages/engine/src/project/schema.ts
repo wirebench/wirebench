@@ -29,8 +29,8 @@ import { FORMAT_VERSION } from './model.js';
 import { DEFAULT_WSS_ENCRYPTION_PARTS, DEFAULT_WSS_SIGNATURE_PARTS } from '../wss/model.js';
 import { authConfigSchema, envName, nonEmpty, restFolderFileSchema, webhookSigningSchema } from './schema-parts.js';
 
-// Everything that moved out keeps its old name here until the public exports change (slice 5 of
-// the protocol modules plan), so no importer of this file had to change with the move.
+// The pieces the protocols' file schemas share are declared in `schema-parts.ts` and keep their
+// old names here. A protocol's own file schemas are exported from its folder.
 export {
   assertSupportedKind,
   attachmentSourceSchema,
@@ -46,14 +46,6 @@ export {
   webhookSigningSchema,
 } from './schema-parts.js';
 export type { KeyValueEntryFile, RestFolderFile, WebhookSigningFile } from './schema-parts.js';
-export { interfaceFileSchema, requestFileSchema } from '../soap/files.js';
-export type { InterfaceFile, RequestFile } from '../soap/files.js';
-export { apiFileSchema, restBodySchema, restRequestFileSchema } from '../rest/files.js';
-export type { ApiFile, RestRequestFile } from '../rest/files.js';
-export { grpcApiFileSchema, grpcMethodKindSchema, grpcRequestFileSchema } from '../grpc/files.js';
-export type { GrpcApiFile, GrpcRequestFile } from '../grpc/files.js';
-export { wsApiFileSchema, wsRequestFileSchema } from '../ws/files.js';
-export type { WsApiFile, WsRequestFile } from '../ws/files.js';
 
 const propertyMapSchema = z.record(z.string(), z.string());
 
@@ -90,16 +82,6 @@ export const webhookFolderFileSchema = restFolderFileSchema.extend({
   source: z.looseObject({ apiId: nonEmpty }).optional(),
   signing: webhookSigningSchema.optional(),
 });
-
-/** The `kind` of an `api.yaml`, read ahead of full validation so the loader knows which schema applies. */
-export function apiKindOf(document: unknown): 'rest' | 'grpc' | 'websocket' {
-  const kind =
-    typeof document === 'object' && document !== null ? (document as Record<string, unknown>)['kind'] : undefined;
-  if (kind === 'grpc' || kind === 'websocket') {
-    return kind;
-  }
-  return 'rest';
-}
 
 /** `environments/<slug>.yaml`. */
 export const environmentFileSchema = z.looseObject({

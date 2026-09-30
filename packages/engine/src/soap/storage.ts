@@ -15,7 +15,6 @@ import type {
   Endpoint,
   Interface,
   OperationDef,
-  RequestDef,
   RequestProperties,
   SoapOwnerAuth,
   SoapRequestDef,
@@ -106,7 +105,7 @@ async function loadRequests(
   return requests.sort(byOrder);
 }
 
-function requestDocument(request: RequestDef): Record<string, unknown> {
+function requestDocument(request: SoapRequestDef): Record<string, unknown> {
   return compact({
     kind: request.kind,
     id: request.id,

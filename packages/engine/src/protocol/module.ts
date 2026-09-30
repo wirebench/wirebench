@@ -18,10 +18,18 @@ import type { SecretPlaceholders } from '../script/send.js';
 import type { ApiReferenceSection } from '../script/types/api.js';
 import type { FeatureDescriptor } from './features.js';
 
-/** The two top-level directories a project keeps containers in (ADR-0003, ADR-0007). */
+/**
+ * The two top-level directories a project keeps containers in (ADR-0003, ADR-0007).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export type ContainerDir = 'interfaces' | 'apis';
 
-/** What every container has, whatever its protocol. */
+/**
+ * What every container has, whatever its protocol.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ContainerBase {
   readonly kind: string;
   readonly id: string;
@@ -30,7 +38,11 @@ export interface ContainerBase {
   readonly order: number;
 }
 
-/** What a module's loader is given. Problems that do not stop the load are pushed to `problems`. */
+/**
+ * What a module's loader is given. Problems that do not stop the load are pushed to `problems`.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface LoadContext {
   readonly fs: FsLike;
   /** The project folder. */
@@ -38,7 +50,11 @@ export interface LoadContext {
   readonly problems: ProjectProblem[];
 }
 
-/** How a protocol's containers are read from and written to a project folder (spec §3.2). */
+/**
+ * How a protocol's containers are read from and written to a project folder (spec §3.2).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ProtocolStorage<C extends ContainerBase = ContainerBase> {
   /** Where its containers live: `interfaces` (SOAP) or `apis` (every other protocol). */
   readonly dir: ContainerDir;
@@ -59,7 +75,11 @@ export interface ProtocolStorage<C extends ContainerBase = ContainerBase> {
   withContainers(project: Project, containers: readonly C[]): Project;
 }
 
-/** What every selected request has, whatever its protocol. */
+/**
+ * What every selected request has, whatever its protocol.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface SelectedBase {
   readonly kind: string;
   /** The display path, `<group>/<request name>`. */
@@ -74,7 +94,11 @@ export interface SelectedBase {
   };
 }
 
-/** One container's runnable requests, in explorer order. */
+/**
+ * One container's runnable requests, in explorer order.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface RunGroup<S extends SelectedBase = SelectedBase> {
   readonly order: number;
   readonly name: string;
@@ -87,7 +111,11 @@ export interface RunGroup<S extends SelectedBase = SelectedBase> {
   readonly explicitOnly?: true;
 }
 
-/** What a module is given for one run. */
+/**
+ * What a module is given for one run.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface RunScope {
   readonly context: RunContext;
   /**
@@ -97,13 +125,21 @@ export interface RunScope {
   memo<T>(key: string, load: () => Promise<T>): Promise<T>;
 }
 
-/** The scripts of one send, when the request has active scripts. */
+/**
+ * The scripts of one send, when the request has active scripts.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ScriptedSend {
   readonly session: ScriptSession;
   readonly placeholders: SecretPlaceholders;
 }
 
-/** How a protocol's requests run (spec §3.3). */
+/**
+ * How a protocol's requests run (spec §3.3).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ProtocolRun<S extends SelectedBase = SelectedBase> {
   /** The requests a run can send, one group per container (and any `explicitOnly` group). */
   groups(project: Project): readonly RunGroup<S>[];
@@ -121,17 +157,29 @@ export interface ProtocolRun<S extends SelectedBase = SelectedBase> {
   secretNeeds(selected: S, project: Project): readonly SecretNeed[];
 }
 
-/** What every request snapshot carries. */
+/**
+ * What every request snapshot carries.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface RequestSnapshotBase {
   readonly protocol: string;
 }
 
-/** What every response snapshot carries. */
+/**
+ * What every response snapshot carries.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ResponseSnapshotBase {
   readonly protocol: string;
 }
 
-/** What core's script rules check on a request snapshot (spec §3.4). */
+/**
+ * What core's script rules check on a request snapshot (spec §3.4).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface SnapshotFacts {
   /** Where the request goes. A URL keeps its scheme, host and port; anything else stays identical. */
   readonly destination: string;
@@ -145,7 +193,11 @@ export interface SnapshotFacts {
   readonly texts: readonly string[];
 }
 
-/** What a script sees of a protocol's requests and responses (spec §3.4). */
+/**
+ * What a script sees of a protocol's requests and responses (spec §3.4).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ProtocolScripting<
   Q extends RequestSnapshotBase = RequestSnapshotBase,
   R extends ResponseSnapshotBase = ResponseSnapshotBase,
@@ -175,7 +227,11 @@ export interface ProtocolScripting<
   };
 }
 
-/** One protocol (spec §3). */
+/**
+ * One protocol (spec §3).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ProtocolModule {
   /** The `kind` written on the container file and on every request file under it. */
   readonly kind: string;
@@ -200,6 +256,7 @@ function assertKind(module: string, item: { readonly kind: string }): void {
  * guard on every call that takes a selected request, so a wrong pairing fails loudly.
  *
  * @throws Error when the feature's id is not the module's kind
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export function defineProtocol<S extends SelectedBase>(module: {
   readonly kind: string;

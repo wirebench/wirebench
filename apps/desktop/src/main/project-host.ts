@@ -136,7 +136,7 @@ import type {
   ProjectFiles,
   PropertyMap,
   PropertyScopes,
-  RequestDef,
+  SoapRequestDef,
   SoapAttachmentOptions,
   Workspace,
 } from '@wirebench/engine';
@@ -515,7 +515,7 @@ export class ProjectHost {
   private resolveEndpointFor(
     project: Project,
     iface: Interface,
-    request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+    request: Pick<SoapRequestDef, 'endpointId' | 'endpointUrl'>,
     envId?: string,
   ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
     const context = this.workspaceContextFor(envId);

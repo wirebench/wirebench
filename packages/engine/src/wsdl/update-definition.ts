@@ -11,14 +11,14 @@
  * itself.
  *
  * Nothing is ever deleted. Requests belonging to an operation the new definition
- * no longer has are kept and flagged {@link RequestDef.orphaned} rather than
+ * no longer has are kept and flagged {@link SoapRequestDef.orphaned} rather than
  * removed — the user decides whether a vanished operation means "clean
  * this up" or "the new WSDL is wrong".
  */
 
 import { generateSoapRequest } from '../soap/generate.js';
 import { createRequest, generateId } from '../project/model.js';
-import type { Endpoint, IdGenerator, Interface, OperationDef, Project, RequestDef } from '../project/model.js';
+import type { Endpoint, IdGenerator, Interface, OperationDef, Project, SoapRequestDef } from '../project/model.js';
 import { INTERFACES_DIR, OPERATIONS_DIR, uniqueSlug } from '../project/paths.js';
 import { recreateRequest } from '../soap/recreate.js';
 import type { OperationRef } from '../soap/request-builder.js';
@@ -261,7 +261,7 @@ function requireInterface(project: Project, interfaceId: string): Interface {
 }
 
 /** The `.xml.bak` path of one saved request, relative to the project root. */
-function backupPath(iface: Interface, operation: OperationDef, request: RequestDef): string {
+function backupPath(iface: Interface, operation: OperationDef, request: SoapRequestDef): string {
   return `${INTERFACES_DIR}/${iface.slug}/${OPERATIONS_DIR}/${operation.slug}/${request.slug}.xml.bak`;
 }
 
@@ -329,7 +329,7 @@ export function applyUpdate(
     const orphaned = removedKeys.has(key);
     const recreate = options.recreateRequests && changedByKey.has(key);
     const requests = operation.requests.map((request) => {
-      let next: RequestDef = request;
+      let next: SoapRequestDef = request;
       if (orphaned) {
         if (request.orphaned !== true) {
           requestsOrphaned.push(request.id);
@@ -337,7 +337,7 @@ export function applyUpdate(
         next = { ...next, orphaned: true };
       } else if (request.orphaned === true) {
         // `exactOptionalPropertyTypes`: the flag is *absent* again, not `undefined`.
-        next = Object.fromEntries(Object.entries(next).filter(([key]) => key !== 'orphaned')) as RequestDef;
+        next = Object.fromEntries(Object.entries(next).filter(([key]) => key !== 'orphaned')) as SoapRequestDef;
       }
       if (recreate) {
         const summary = summaryFor(newImport, key);

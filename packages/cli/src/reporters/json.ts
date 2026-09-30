@@ -42,7 +42,8 @@ export interface JsonReportRequest {
   readonly path: string;
   readonly group: string;
   readonly name: string;
-  readonly protocol: 'soap' | 'rest' | 'grpc';
+  /** The request's kind: `soap`, `rest` or `grpc` for the built-in protocols. */
+  readonly protocol: string;
   readonly outcome: RequestResult['outcome'];
   readonly status?: number;
   readonly durationMs?: number;

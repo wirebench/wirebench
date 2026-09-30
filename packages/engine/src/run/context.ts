@@ -60,7 +60,7 @@ export interface RunContext {
   readonly fetchToken?: (request: HttpRequest) => Promise<HttpExchange>;
   /**
    * The run's OAuth2 token cache. `runRequests` creates one per run so every request behind a
-   * configuration shares a token; a lone `prepareSend` without one gets a fresh source.
+   * configuration shares a token; a send outside a run gets a fresh source.
    */
   readonly tokenSource?: RunTokenSource;
   /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */

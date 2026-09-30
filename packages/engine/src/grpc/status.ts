@@ -12,7 +12,11 @@ export function grpcStatusName(code: number): string {
   return GRPC_STATUS_NAMES[code] ?? `UNKNOWN (${String(code)})`;
 }
 
-/** The status codes by name and back, as a gRPC answer's assertion subject carries them (spec §3.5). */
+/**
+ * The status codes by name and back, as a gRPC answer's assertion subject carries them (spec §3.5).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export const grpcStatusNames: StatusNames = Object.freeze({
   byName: new Map(Object.entries(GRPC_STATUS_NAMES).map(([code, name]) => [name, Number(code)])),
   nameOf: grpcStatusName,

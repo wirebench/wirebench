@@ -59,6 +59,60 @@ export type {
 
 export * from './run/index.js';
 
+// Protocol modules, the registry and features (ADR-0017). Exported for the engine's own hosts and
+// tagged `@internal` where they are declared: they are not yet a plugin API.
+export { createFeatureSet } from './protocol/features.js';
+export type { FeatureDescriptor, FeatureSet, WhyDisabled } from './protocol/features.js';
+export { defineProtocol } from './protocol/module.js';
+export type {
+  ContainerBase,
+  ContainerDir,
+  LoadContext,
+  ProtocolModule,
+  ProtocolRun,
+  ProtocolScripting,
+  ProtocolStorage,
+  RequestSnapshotBase,
+  ResponseSnapshotBase,
+  RunGroup,
+  RunScope,
+  ScriptedSend,
+  SelectedBase,
+  SnapshotFacts,
+} from './protocol/module.js';
+export { createProtocolRegistry } from './protocol/registry.js';
+export type { ProtocolRegistry, ProtocolRegistryOptions } from './protocol/registry.js';
+export { BUILTIN_PROTOCOLS, createBuiltinRegistry } from './protocols.js';
+export { extraContainersOf, unsupportedOf } from './project/model.js';
+export type { UnsupportedContainer } from './project/model.js';
+
+// What three core files re-exported until 3.0, from the module that declares it.
+export { soapResponseSubject } from './soap/run.js';
+export { restSubject } from './rest/run.js';
+export { grpcSubject } from './grpc/run.js';
+export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
+export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
+export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
+export {
+  projectSoapBody,
+  qnameFromClark,
+  replaceSoapBody,
+  soapOperationElements,
+  soapScriptTypes,
+} from './soap/script-types.js';
+export { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './rest/scripting.js';
+export type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
+export { restOperationFor, restScriptTypes } from './rest/script-types.js';
+export { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from './grpc/scripting.js';
+export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
+export { grpcMessageTypes, grpcScriptTypes } from './grpc/script-types.js';
+export { interfaceFileSchema, requestFileSchema } from './soap/files.js';
+export type { InterfaceFile, RequestFile } from './soap/files.js';
+export { apiFileSchema, restBodySchema, restRequestFileSchema } from './rest/files.js';
+export type { ApiFile, RestRequestFile } from './rest/files.js';
+export { grpcApiFileSchema, grpcMethodKindSchema, grpcRequestFileSchema } from './grpc/files.js';
+export type { GrpcApiFile, GrpcRequestFile } from './grpc/files.js';
+
 export {
   WirebenchError,
   WsdlParseError,
@@ -373,7 +427,6 @@ export type {
   Project,
   ProjectSettings,
   PropertyMap,
-  RequestDef,
   RequestProperties,
   SoapOwnerAuth,
   SoapRequestDef,
@@ -741,30 +794,20 @@ export {
 } from './project/paths.js';
 export type { RequestFilePair } from './project/paths.js';
 export {
-  apiFileSchema,
-  assertSupportedKind,
   attachmentSourceSchema,
   authConfigSchema,
   definitionAuthSchema,
   definitionCacheManifestSchema,
   environmentFileSchema,
   keyValueEntrySchema,
-  interfaceFileSchema,
   soapOwnerAuthSchema,
   keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
-  requestFileSchema,
-  restBodySchema,
   apiDefinitionCacheManifestSchema,
   restFolderFileSchema,
-  restRequestFileSchema,
-  grpcApiFileSchema,
-  grpcRequestFileSchema,
-  grpcMethodKindSchema,
   protoDefinitionCacheManifestSchema,
-  apiKindOf,
   hookLinkSchema,
   webhookFolderFileSchema,
   webhooksFileSchema,
@@ -775,18 +818,12 @@ export {
 export type {
   ApiDefinitionCacheDocument,
   ApiDefinitionCacheManifest,
-  ApiFile,
   DefinitionCacheDocument,
   DefinitionCacheManifest,
   EnvironmentFile,
-  InterfaceFile,
   KeyValueEntryFile,
   ManifestFile,
-  RequestFile,
   RestFolderFile,
-  RestRequestFile,
-  GrpcApiFile,
-  GrpcRequestFile,
   ProtoDefinitionCacheManifest,
 } from './project/schema.js';
 export {

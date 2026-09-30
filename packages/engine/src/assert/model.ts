@@ -164,6 +164,8 @@ export interface AssertionSubject {
   /**
    * Set when the protocol's statuses have names. A status assertion then accepts a name and
    * compares codes exactly; without it the HTTP rules apply (a number, or an `Nxx` class).
+   *
+   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
    */
   readonly statusNames?: StatusNames;
 }

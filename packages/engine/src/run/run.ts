@@ -33,12 +33,7 @@ import {
   type SentScripts,
 } from './script-support.js';
 
-// The subjects are each protocol's own; they stay exported from here until the public exports move
-// to the modules (slice 5 of the protocol modules plan).
-export { grpcSubject } from '../grpc/run.js';
 export type { SentExchange } from '../protocols.js';
-export { restSubject } from '../rest/run.js';
-export { soapResponseSubject } from '../soap/run.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
@@ -47,7 +42,8 @@ export interface RequestResult {
   readonly path: string;
   readonly group: string;
   readonly name: string;
-  readonly protocol: 'soap' | 'rest' | 'grpc';
+  /** The request's kind, as its module registered it. */
+  readonly protocol: string;
   readonly outcome: RequestOutcome;
   readonly status?: number;
   readonly durationMs?: number;

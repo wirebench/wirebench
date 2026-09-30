@@ -314,12 +314,6 @@ export interface SoapRequestDef {
 }
 
 /**
- * The name this type had before REST requests existed, kept as an alias for one release so
- * callers that only ever mean a SOAP request need not be touched. Prefer {@link SoapRequestDef}.
- */
-export type RequestDef = SoapRequestDef;
-
-/**
  * A saved request of either protocol, which is what a lookup by request id can return: the id
  * space is one (ULIDs), so `kind` is how a caller finds out what it has.
  */
@@ -406,7 +400,11 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = Object.freeze({
   prettyPrintResponses: true,
 });
 
-/** A container whose kind has no enabled module: kept on disk exactly as it is (spec §6). */
+/**
+ * A container whose kind has no enabled module: kept on disk exactly as it is (spec §6).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface UnsupportedContainer {
   readonly dir: 'interfaces' | 'apis';
   readonly slug: string;
@@ -450,9 +448,15 @@ export interface Project {
   /**
    * Containers of a kind that has no list of its own above, keyed by kind. Absent means none.
    * Read with {@link extraContainersOf}.
+   *
+   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
    */
   readonly extraContainers?: Readonly<Record<string, readonly ContainerBase[]>>;
-  /** Containers this build could not load and left untouched on disk. Absent means none. */
+  /**
+   * Containers this build could not load and left untouched on disk. Absent means none.
+   *
+   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+   */
   readonly unsupported?: readonly UnsupportedContainer[];
   /**
    * The project's sequences, one file each under `sequences/`. Not a container like the four above: a
@@ -474,12 +478,20 @@ export interface Project {
   };
 }
 
-/** The project's placeholders; empty when it has none. */
+/**
+ * The project's placeholders; empty when it has none.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export function unsupportedOf(project: Project): readonly UnsupportedContainer[] {
   return project.unsupported ?? [];
 }
 
-/** The project's containers of `kind` kept in {@link Project.extraContainers}. */
+/**
+ * The project's containers of `kind` kept in {@link Project.extraContainers}.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export function extraContainersOf(project: Project, kind: string): readonly ContainerBase[] {
   return project.extraContainers?.[kind] ?? [];
 }
@@ -489,6 +501,8 @@ export function extraContainersOf(project: Project, kind: string): readonly Cont
  * there, and the placeholders (spec §6). A save keeps exactly these directories, whatever its
  * registry can write. Hand it to `uniqueSlug` when naming a new container, so a save never has to
  * refuse it with `container-slug-conflict`.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export function takenContainerSlugs(project: Project, dir: ContainerDir): ReadonlySet<string> {
   const containers: readonly ContainerBase[] =
@@ -590,7 +604,7 @@ export interface CreateRequestInput extends CreateOptions {
 }
 
 /** Creates a request with the default request properties applied. */
-export function createRequest(name: string, input: CreateRequestInput): RequestDef {
+export function createRequest(name: string, input: CreateRequestInput): SoapRequestDef {
   return {
     kind: 'soap',
     id: idOf(input),

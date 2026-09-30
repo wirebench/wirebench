@@ -3,7 +3,11 @@
  * that is not. A feature set is immutable: a host that changes a switch creates a new set.
  */
 
-/** One switchable feature. */
+/**
+ * One switchable feature.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface FeatureDescriptor {
   readonly id: string;
   readonly title: string;
@@ -14,11 +18,19 @@ export interface FeatureDescriptor {
   readonly requires: readonly string[];
 }
 
-/** Why a feature is off. */
+/**
+ * Why a feature is off.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export type WhyDisabled =
   { readonly by: 'switch' } | { readonly by: 'requires'; readonly feature: string } | { readonly by: 'unknown' };
 
-/** The features of one host, with its switches applied. */
+/**
+ * The features of one host, with its switches applied.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface FeatureSet {
   readonly descriptors: readonly FeatureDescriptor[];
   isEnabled(id: string): boolean;
@@ -47,6 +59,7 @@ function assertNoCycle(byId: ReadonlyMap<string, FeatureDescriptor>): void {
  * it may belong to a module this build does not have.
  *
  * @throws Error for a duplicate id or a `requires` cycle; both are programming errors
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export function createFeatureSet(
   descriptors: readonly FeatureDescriptor[],

@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { importWsdl } from '../../../src/soap/import.js';
 import type { WsdlImportResult } from '../../../src/soap/types.js';
 import { createInterface, createProject, createRequest } from '../../../src/project/model.js';
-import type { OperationDef, Project, RequestDef } from '../../../src/project/model.js';
+import type { OperationDef, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { generateSoapRequest } from '../../../src/soap/generate.js';
 import { applyUpdate, planUpdate } from '../../../src/wsdl/update-definition.js';
@@ -43,7 +43,7 @@ function operationOf(result: WsdlImportResult, name: string, envelopeXml?: strin
     bindingName: { namespaceUri: 'urn:wb:versioned', localName: 'VersionedBinding' },
     operationName: name,
   });
-  const request: RequestDef = createRequest('Request 1', {
+  const request: SoapRequestDef = createRequest('Request 1', {
     id: `req-${name}`,
     slug: 'request-1',
     envelopeXml: envelopeXml ?? generated.envelopeXml,

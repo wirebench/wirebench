@@ -1,6 +1,6 @@
 /**
- * The file schemas live with their protocols, and `project/schema.ts` still exports every one of
- * them under its old name (spec §3.2), so nothing that imports it had to change.
+ * The file schemas live with their protocols and are exported from there. `project/schema.ts`
+ * holds the core documents, and still exports the shared pieces of `schema-parts.ts` (spec §3.2).
  */
 import { describe, expect, it } from 'vitest';
 import * as grpcFiles from '../../../src/grpc/files.js';
@@ -39,7 +39,6 @@ const MOVED: readonly (readonly [string, Exports, readonly string[]])[] = [
 
 const CORE = [
   'apiDefinitionCacheManifestSchema',
-  'apiKindOf',
   'definitionCacheManifestSchema',
   'descriptorDefinitionCacheManifestSchema',
   'environmentFileSchema',
@@ -74,10 +73,12 @@ describe('the file schemas after the split', () => {
   const old: Exports = { ...schema };
 
   for (const [file, module, names] of MOVED) {
-    it(`project/schema.ts still exports what moved to ${file}, as the same object`, () => {
+    const shared = file === 'project/schema-parts.ts';
+    const title = shared ? `still exports what moved to ${file}, as the same object` : `no longer re-exports ${file}`;
+    it(`project/schema.ts ${title}`, () => {
       for (const name of names) {
         expect(module[name], name).toBeDefined();
-        expect(old[name], name).toBe(module[name]);
+        expect(old[name], name).toBe(shared ? module[name] : undefined);
       }
     });
   }

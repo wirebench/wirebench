@@ -6,8 +6,6 @@
 import type { RequestSnapshotBase } from '../protocol/module.js';
 import type { ScriptPosition } from './sandbox/model.js';
 
-/** The three built-in protocols that have scripts. Core takes any protocol's `kind`; this name goes in 3.0 (spec §8). */
-export type ScriptProtocol = 'rest' | 'soap' | 'grpc';
 export type ScriptPhase = 'pre' | 'post';
 /** Which API a script is written against: the typed one, or the Postman layer (§Postman). */
 export type ScriptApi = 'wirebench' | 'postman';

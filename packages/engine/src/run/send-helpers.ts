@@ -146,7 +146,7 @@ export async function tlsFor(
   return { ...identity, ...(skipVerify ? { rejectUnauthorized: false } : {}) };
 }
 
-/** The run's shared token source, or a fresh one for a `prepareSend` called on its own. */
+/** The run's shared token source, or a fresh one for a send outside a run. */
 export function tokenSourceOf(context: RunContext): RunTokenSource {
   return (
     context.tokenSource ??
@@ -248,7 +248,7 @@ export function keystoreNeeds(project: Project, keystoreId: string | undefined):
         ]
       : [];
   } catch {
-    // `prepareSend` refuses such a request with its own error; it needs no secret before then.
+    // The module's send refuses such a request with its own error; it needs no secret before then.
     return [];
   }
 }

@@ -96,7 +96,7 @@ async function signFor(selected: RestSelected, context: RunContext): Promise<Res
 
 /**
  * One REST request as a send input, with its secrets resolved (or behind `context.secretPlaceholders`).
- * Exported for this module's tests and for `prepareSend`; not part of the run facet.
+ * Exported for this module's tests; not part of the run facet.
  *
  * @throws WirebenchError `unresolved-properties` | `secret-missing` | `auth-grant-unsupported` |
  * `keystore-missing` | `webhook-signing-secret`

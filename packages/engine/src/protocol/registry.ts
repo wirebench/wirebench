@@ -4,7 +4,11 @@ import { createFeatureSet } from './features.js';
 import type { FeatureDescriptor, FeatureSet } from './features.js';
 import type { ProtocolModule } from './module.js';
 
-/** The modules of one host. */
+/**
+ * The modules of one host.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ProtocolRegistry {
   readonly features: FeatureSet;
   /** The enabled modules, in registration order. */
@@ -16,7 +20,11 @@ export interface ProtocolRegistry {
   require(kind: string): ProtocolModule;
 }
 
-/** What a registry is built with besides its modules. */
+/**
+ * What a registry is built with besides its modules.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
 export interface ProtocolRegistryOptions {
   /** Descriptors for features that are not protocols (`scripts`). */
   readonly features?: readonly FeatureDescriptor[];
@@ -42,6 +50,7 @@ export function featureDisabled(features: FeatureSet, id: string): WirebenchErro
  * `options.features`, with `options.switches` applied.
  *
  * @throws Error for two modules of one kind; what `createFeatureSet` throws
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
  */
 export function createProtocolRegistry(
   modules: readonly ProtocolModule[],

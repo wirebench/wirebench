@@ -47,10 +47,9 @@ export const GROUP_FOLDERS = Object.freeze({
 /**
  * The imports core makes of a protocol group (spec §7.2, rule 2). Rule 1 has no exceptions.
  *
- * Three kinds, told apart by `until`: the two files that are what they are (`protocols.ts`,
- * `index.ts`); the barrels that keep an old import path working until the public exports change;
- * and the project model, History, the loader and the writer, which hold protocol types until the
- * phases of #184 that split them.
+ * Two kinds, told apart by `until`: the two files that are what they are (`protocols.ts`,
+ * `index.ts`); and the project model, History, the loader and the writer, which hold protocol
+ * types until the phases of #184 that split them.
  *
  * The spec's table also names `project/save.ts`; it imports no protocol folder, so it has no entry
  * here, and an entry nothing uses fails the check.
@@ -60,16 +59,6 @@ export const GROUP_FOLDERS = Object.freeze({
 export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'protocols.ts', to: '*', until: 'stays: the composition file' },
   { from: 'index.ts', to: '*', until: 'stays: the public exports' },
-  { from: 'run/prepare.ts', to: '*', until: 'slice 5 deletes the file' },
-  { from: 'run/run.ts', to: 'soap/run.ts', until: 'slice 5: the re-export of soapResponseSubject' },
-  { from: 'run/run.ts', to: 'rest/run.ts', until: 'slice 5: the re-export of restSubject' },
-  { from: 'run/run.ts', to: 'grpc/run.ts', until: 'slice 5: the re-export of grpcSubject' },
-  { from: 'run/script-support.ts', to: '*', until: 'slice 5 removes scriptTypesFor' },
-  { from: 'script/index.ts', to: '*', until: 'slice 5: the re-exports of the scripting facets' },
-  { from: 'project/schema.ts', to: 'soap/files.ts', until: 'slice 5: the re-exports of the file schemas' },
-  { from: 'project/schema.ts', to: 'rest/files.ts', until: 'slice 5: the re-exports of the file schemas' },
-  { from: 'project/schema.ts', to: 'grpc/files.ts', until: 'slice 5: the re-exports of the file schemas' },
-  { from: 'project/schema.ts', to: 'ws/files.ts', until: 'slice 5: the re-exports of the file schemas' },
   { from: 'project/schema.ts', to: 'wss/model.ts', until: 'phase 3' },
   { from: 'project/model.ts', to: 'rest/model.ts', typeOnly: true, until: 'phase 3' },
   { from: 'project/model.ts', to: 'grpc/model.ts', typeOnly: true, until: 'phase 3' },

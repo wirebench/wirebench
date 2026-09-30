@@ -15,7 +15,7 @@ import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { DEFAULT_PROJECT_SETTINGS, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { AuthConfig, Project } from '../../../src/project/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
-import type { RunContext } from '../../../src/run/prepare.js';
+import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';

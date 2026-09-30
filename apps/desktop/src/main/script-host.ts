@@ -38,7 +38,6 @@ import type {
   ScriptDiagnostic,
   ScriptModel,
   ScriptPhase,
-  ScriptProtocol,
   ScriptQuickInfo,
   ScriptSandbox,
   ScriptSignatureHelp,
@@ -80,7 +79,7 @@ export interface SessionValueListing {
 
 /** A request, wherever it is, with what its script types are built from. */
 interface Located {
-  readonly protocol: ScriptProtocol;
+  readonly protocol: string;
   readonly path: string;
   readonly name: string;
   readonly slug: string;

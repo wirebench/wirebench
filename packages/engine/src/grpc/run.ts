@@ -66,7 +66,7 @@ export function grpcEffectiveAuth(selected: GrpcSelected): AuthConfig {
  * expansion pass over target, metadata and message, then the request's own TLS identity and trust
  * decision and the chain's credentials. There is no proxy: the app sends gRPC direct as well.
  *
- * Exported for this module's tests and for `prepareSend`; not part of the run facet.
+ * Exported for this module's tests; not part of the run facet.
  *
  * @throws WirebenchError `unresolved-properties` | `secret-missing` | `auth-grant-unsupported` |
  * `keystore-missing`

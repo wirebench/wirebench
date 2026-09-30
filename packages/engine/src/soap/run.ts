@@ -18,7 +18,6 @@ import type {
   Interface,
   OperationDef,
   Project,
-  RequestDef,
   SoapOwnerAuth,
   SoapRequestDef,
 } from '../project/model.js';
@@ -93,7 +92,7 @@ export function soapEffectiveAuth(selected: SoapSelected): SoapOwnerAuth | undef
 function endpointFor(
   context: RunContext,
   iface: Interface,
-  request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+  request: Pick<SoapRequestDef, 'endpointId' | 'endpointUrl'>,
 ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
   const { project, environmentId, workspace } = context;
   return workspace === undefined
@@ -197,7 +196,7 @@ function attachmentResolvers(context: RunContext): AttachmentResolvers {
 
 /**
  * One SOAP request as a send input, with its secrets resolved (or behind `context.secretPlaceholders`).
- * Exported for this module's tests and for `prepareSend`; not part of the run facet.
+ * Exported for this module's tests; not part of the run facet.
  *
  * @throws WirebenchError `unresolved-properties` | `endpoint-unresolved` | `secret-missing` |
  * `auth-grant-unsupported` | `wss-config-missing` | `keystore-missing`

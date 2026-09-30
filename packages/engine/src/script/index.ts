@@ -23,7 +23,6 @@ export type {
   ScriptLog,
   ScriptOutcome,
   ScriptPhase,
-  ScriptProtocol,
   ScriptSource,
   ScriptTest,
   ScriptValue,
@@ -46,22 +45,3 @@ export { scriptProperties } from './props.js';
 export { apiDeclarations, apiReference, scriptDeclarations, secretNameType } from './types/api.js';
 export type { ApiReferenceSection } from './types/api.js';
 export { stripTypes, StripError } from './strip.js';
-
-// What lives in the protocol folders since the scripting facet, under the names it always had.
-// These lines are the only place `script/` names a protocol; slice 5 moves them to `index.ts`.
-export type { RequestSnapshot, ResponseSnapshot } from '../protocols.js';
-export { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from '../rest/scripting.js';
-export type { RestRequestSnapshot, RestResponseSnapshot } from '../rest/scripting.js';
-export { loadOpenApiDocument, restOperationFor, restScriptTypes } from '../rest/script-types.js';
-export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from '../soap/scripting.js';
-export type { SoapRequestSnapshot, SoapResponseSnapshot } from '../soap/scripting.js';
-export {
-  projectSoapBody,
-  qnameFromClark,
-  replaceSoapBody,
-  soapOperationElements,
-  soapScriptTypes,
-} from '../soap/script-types.js';
-export { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from '../grpc/scripting.js';
-export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from '../grpc/scripting.js';
-export { grpcMessageTypes, grpcScriptTypes } from '../grpc/script-types.js';
