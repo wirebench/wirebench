@@ -98,9 +98,9 @@ becomes an entry in `Project.unsupported` and a `container-unsupported` problem.
 save counts its directory as live and manages none of its files, so nothing in it is rewritten or deleted, and a save
 that would write into it is refused with `container-slug-conflict`. A save never deletes what its registry cannot
 write: a container the project holds in memory whose kind has no enabled module in the save's registry is left on disk
-the same way. Switching the feature back on, or opening the
-project in a build that has the module, gives the container back as it was. Using a feature that is off is refused in
-the engine with `feature-disabled`, so a host cannot bypass the switch by not showing it.
+the same way. Switching the feature back on, or opening the project in a build that has the module, gives the
+container back as it was. Using a feature that is off is refused in the engine with `feature-disabled`, so a host
+cannot bypass the switch by not showing it.
 
 **The exports are for the engine's own hosts.** `ProtocolModule`, the registry and the feature set are exported from
 `@wirebench/engine` and tagged `@internal`. They are not a plugin API: nothing loads third-party code, and the
@@ -135,8 +135,8 @@ interface may change in any release. Phase 7 decides what of it is promised.
   module that is not imported would silently be `never`, and it does not survive the package split, where core must
   compile without any protocol.
 - **Splitting the engine into packages first**, and letting package boundaries enforce the rules. Rejected: the import
-  cycles had to be cut before any package could be carved out, and cutting them needed the interface. The import-graph check gives
-  the same enforcement inside one package, and the split (phase 5) becomes a move of folders.
+  cycles had to be cut before any package could be carved out, and cutting them needed the interface. The
+  import-graph check gives the same enforcement inside one package, and the split (phase 5) becomes a move of folders.
 - **A `prepare` and a `send` on the interface.** Rejected, as above: it fixes one order of steps for protocols that do
   not share one.
 - **Refusing a project that holds an unknown or disabled kind**, as the loader did. Rejected: switching a protocol off

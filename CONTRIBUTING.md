@@ -96,8 +96,9 @@ work, and until then the app does not show its containers.
 The checklist, with `packages/engine/test/helpers/echo-protocol.ts` as the smallest complete example:
 
 1. **A folder**, `packages/engine/src/<name>/`, holding the model and a file per facet. Leave a facet
-   out when the protocol has none: no `run.ts` means its requests cannot be run, no `scripting.ts`
-   means they cannot have scripts.
+   out when the protocol has none: a module that leaves the `run` facet out cannot run its requests
+   (WebSocket defines a run facet inline in `ws/module.ts` that offers no requests), and one that
+   leaves out `scripting` cannot have scripts.
    - `files.ts`: the zod schemas of the container file and the request files.
    - `storage.ts`: a `ProtocolStorage`. `load` reads one container directory and pushes problems that
      do not stop the load; `files` returns every file a container is written as, deterministically;

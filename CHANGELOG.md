@@ -8,9 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 This release is 3.0.0. The major version is `@wirebench/engine`'s public exports: the names that
 dated from the SOAP-only engine are renamed, and what the new protocol registry replaces is removed,
-with no deprecated aliases. Projects, workspaces and the `wirebench` command line are not affected by
-that change: a project loads, runs and saves as before. (The project format does move in this
-release, to `formatVersion: 6`, for request scripts: see below.)
+with no deprecated aliases. Projects and workspaces keep their format, and the `wirebench` command line
+keeps its flags and report shape; the behaviour changes this release does make are listed under Changed
+and Fixed. (The project format does move in this release, to `formatVersion: 6`, for request scripts:
+see below.)
 
 ### Breaking
 

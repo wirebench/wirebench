@@ -13,12 +13,10 @@
  * no import uses any more breaks it too, so the list cannot outlive its reasons. `--json` prints the
  * same as JSON. `--src <dir>` reads another tree (the test's fixture).
  *
- * Wired into `pnpm check` as `pnpm check:engine-layers`. `eslint.config.js` builds its
- * `no-restricted-imports` blocks from the same {@link GROUP_FOLDERS} and {@link CORE_EXCEPTIONS}, so
- * an editor flags a wrong import as it is typed; this script is the exact gate, because it resolves
- * each import to a file, tells a type-only import from a value import, and sees `import()` types.
- *
- * A plain `.mjs` file so that `eslint.config.js` can import it under any Node version.
+ * Wired into `pnpm check` as `pnpm check:engine-layers`, which is the only enforcement: there is no
+ * lint rule for these imports, so an editor does not flag a wrong import. The script is exact because
+ * it resolves each import to a file, tells a type-only import from a value import, and sees
+ * `import()` types.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
