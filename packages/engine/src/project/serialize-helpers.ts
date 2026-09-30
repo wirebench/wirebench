@@ -8,7 +8,7 @@
  */
 
 import { ProjectError } from '../errors.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import { scriptFileName } from '../script/model.js';
 import type { RequestScripts } from '../script/model.js';
 import type { AuthConfig, DefinitionAuth } from './model.js';

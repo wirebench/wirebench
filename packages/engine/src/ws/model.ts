@@ -19,7 +19,7 @@ import type { AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import type { JsonSchemaProblem } from '../json/schema-validate.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import type { SslInfo } from '../http/tls.js';
 
 // The pure tree and naming rules live in `shape.ts`, which imports nothing but `pretty.ts`, so the

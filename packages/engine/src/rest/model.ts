@@ -13,6 +13,8 @@
  */
 
 import type { Assertion } from '../assert/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
+import type { RawLanguage } from '../http/escape.js';
 import type { RequestScripts } from '../script/model.js';
 import type { AttachmentSource, AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
@@ -37,38 +39,10 @@ export const COMMON_METHODS: readonly RestMethod[] = Object.freeze([
   'OPTIONS',
 ]);
 
-/**
- * One row of a params, query, headers or form table: a name, a value, and whether it takes part
- * in the next send. Rows keep author order and may repeat a name — two `X-Trace` headers and two
- * `tag=` parameters are both legal on the wire, so neither is deduplicated here.
- *
- * `enabled` is always present in memory and written to disk only when `false`, so a file stays
- * quiet about the common case (see `project/serialize.ts`).
- */
-export interface KeyValueEntry {
-  readonly name: string;
-  readonly value: string;
-  readonly enabled: boolean;
-  /** Free-form note, carried over from an imported definition's parameter description. */
-  readonly description?: string;
-}
-
-/** Creates an enabled {@link KeyValueEntry}. */
-export function entry(
-  name: string,
-  value: string,
-  options?: { readonly enabled?: boolean; readonly description?: string },
-): KeyValueEntry {
-  return {
-    name,
-    value,
-    enabled: options?.enabled ?? true,
-    ...(options?.description !== undefined ? { description: options.description } : {}),
-  };
-}
-
-/** The languages a raw body can be edited and sent as. Picks the editor mode and a default type. */
-export type RawLanguage = 'json' | 'xml' | 'text' | 'html' | 'javascript';
+// Declared in `http/`, which the gRPC and WebSocket folders share with this one; re-exported so REST
+// code and the public exports keep reading them from here.
+export { entry } from '../http/entries.js';
+export type { KeyValueEntry, RawLanguage };
 
 /** The `Content-Type` each {@link RawLanguage} implies when the request sets no header itself. */
 export const RAW_LANGUAGE_CONTENT_TYPES: Readonly<Record<RawLanguage, string>> = Object.freeze({

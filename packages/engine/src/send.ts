@@ -13,7 +13,7 @@ import type { PropertyScopes, UnresolvedRef } from './project/properties.js';
 import { sendWithAuth } from './http/auth/apply.js';
 import { applySoapAuth } from './soap/auth.js';
 import { headerValue, mergeHeaders } from './http/headers.js';
-import { charsetOf } from './soap/charset.js';
+import { charsetOf } from './http/charset.js';
 import {
   packageRequestBody,
   readResponseBody,

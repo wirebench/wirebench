@@ -12,7 +12,7 @@
 
 import type { SendAuth } from '../types.js';
 import { applyAuth } from '../rest/auth.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import type { ProxyOptions, TlsOptions } from '../http/types.js';
 import { WsError } from '../errors.js';
 import { resolveWsUrl } from './url.js';

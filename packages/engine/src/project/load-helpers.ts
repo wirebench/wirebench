@@ -9,7 +9,7 @@
 
 import { join } from 'node:path';
 import type { z } from 'zod';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import { scriptFileName } from '../script/model.js';
 import type { RequestScripts, ScriptPhase, ScriptSource } from '../script/model.js';
 import { SCRIPT_LIMITS } from '../script/sandbox/model.js';

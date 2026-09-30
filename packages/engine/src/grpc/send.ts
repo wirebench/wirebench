@@ -22,7 +22,7 @@ import { toHttpError } from '../http/errors.js';
 import { captureSslInfo } from '../http/tls.js';
 import type { SslInfo, TlsSocketLike } from '../http/tls.js';
 import type { Timings, TlsOptions } from '../http/types.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import type { SendAuth } from '../types.js';
 import { encodeGrpcFrame, GrpcFrameParser } from './framing.js';
 import { grpcMethodPath } from './model.js';

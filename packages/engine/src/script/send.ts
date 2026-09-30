@@ -12,7 +12,7 @@
  * own folder (`<protocol>/scripting.ts`); the helpers at the end of this file are what they share.
  */
 import { randomUUID } from 'node:crypto';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import { resolveSecretTokens, type GetSecret } from '../secrets/resolve.js';
 import type { HeaderPair } from './model.js';
 

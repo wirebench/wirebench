@@ -1,5 +1,5 @@
 import { WsError } from '../errors.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 
 const SCHEME: Readonly<Record<string, string>> = { 'ws:': 'ws:', 'wss:': 'wss:', 'http:': 'ws:', 'https:': 'wss:' };
 

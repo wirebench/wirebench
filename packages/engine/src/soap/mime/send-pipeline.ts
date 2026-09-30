@@ -7,7 +7,7 @@
  */
 
 import { headerValue, setHeader } from '../../http/headers.js';
-import { decodeBody, encodeBody } from '../charset.js';
+import { decodeBody, encodeBody } from '../../http/charset.js';
 import type { SoapExchange, SoapSendInput } from '../../types.js';
 import { inlineFiles } from './inline-files.js';
 import { expandMtomResponse, prepareMtomRequest, xopContentType } from './mtom.js';
