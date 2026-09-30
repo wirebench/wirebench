@@ -1,6 +1,6 @@
 import type { RequestResult } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
-import { explainMissingSecret } from '../../src/commands/run.js';
+import { explainMissingSecret } from '../../src/secret-advice.js';
 
 const errored = (error: NonNullable<RequestResult['error']>): RequestResult => ({
   path: 'Echo/Echo/Secured hello',

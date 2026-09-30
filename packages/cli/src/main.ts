@@ -1,8 +1,11 @@
-import { createRequire } from 'node:module';
+import { mcpCommand } from './commands/mcp.js';
+import { opCommand } from './commands/ops.js';
 import { runCommand } from './commands/run.js';
 import { secretsListCommand } from './commands/secrets-list.js';
 import { ExitCode } from './exit-codes.js';
+import { cliVersion } from './version.js';
 import { HELP_TEXT, UsageError, parseCliArgs } from './args.js';
+import { VERB_HELP } from './args-ops.js';
 
 /** The I/O surface `main` writes through, so tests can capture output without touching the real process. */
 export interface CliIo {
@@ -10,8 +13,6 @@ export interface CliIo {
   readonly stderr: NodeJS.WritableStream;
   readonly env: NodeJS.ProcessEnv;
 }
-
-const require = createRequire(import.meta.url);
 
 /** Entry point shared by `bin.ts` and tests. Returns the process exit code; never throws. */
 export async function main(
@@ -23,12 +24,12 @@ export async function main(
 
     switch (args.command) {
       case 'help': {
-        io.stdout.write(`${HELP_TEXT}\n`);
+        const topic = args.topic !== undefined ? VERB_HELP[args.topic] : undefined;
+        io.stdout.write(`${topic ?? HELP_TEXT}\n`);
         return ExitCode.Ok;
       }
       case 'version': {
-        const { version } = require('../package.json') as { readonly version: string };
-        io.stdout.write(`${version}\n`);
+        io.stdout.write(`${cliVersion()}\n`);
         return ExitCode.Ok;
       }
       case 'run': {
@@ -36,6 +37,12 @@ export async function main(
       }
       case 'secrets-list': {
         return await secretsListCommand(args, io);
+      }
+      case 'op': {
+        return await opCommand(args, io);
+      }
+      case 'mcp': {
+        return await mcpCommand(args, io);
       }
     }
   } catch (error) {

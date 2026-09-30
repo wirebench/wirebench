@@ -136,4 +136,24 @@ describe('useHistoryStore', () => {
     off();
     expect(listeners.size).toBe(0);
   });
+
+  it('reloads when another process changes a History file', async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    const list = vi.fn().mockResolvedValue({ ok: true, value: { entries: [], total: 0 } });
+    installWirebenchApi({
+      history: { list },
+      on: ((name: string, listener: (payload: unknown) => void) => {
+        listeners.set(name, listener);
+        return () => listeners.delete(name);
+      }) as unknown as Window['wirebench']['on'],
+    });
+
+    const off = subscribeToHistory();
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    listeners.get('history.changed')?.({ projectId: 'p1' });
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+
+    off();
+    expect(listeners.size).toBe(0);
+  });
 });

@@ -122,6 +122,83 @@ elements and the JSON/form secret-key list (`SECRET_BODY_KEYS`) are always redac
 regardless of the value's length. Choose secret values of ordinary length (not four-character test
 placeholders) to get the literal-masking guarantee as well.
 
+## The MCP server is gated, redacted and local
+
+`wirebench mcp` (issue #32) lets a coding agent drive one project. What the agent can do is what the
+person who started the server allowed. The CLI verbs (`wirebench send`, `import` and the rest) are
+not gated: the person typing the command has allowed it. The gates belong to the server.
+
+- **Gates.** `send` makes requests only with `--allow-send`, and only under the environments `--env`
+  lists when it is given; under `--env`, a send that resolves no environment is refused. `import`
+  writes the project only with `--allow-write`. A gated tool is still listed and answers
+  `send-not-allowed` or `write-not-allowed`, naming the flag.
+- **Redaction, by pattern.** Every tool result and every error passes one step before it leaves: the
+  engine's header, URL, XML and structured-body redactors, then every secret value the call resolved,
+  masked with the same masker as `wirebench run`. The patterns mask the `Authorization`,
+  `Proxy-Authorization`, `Cookie`, `Set-Cookie` and `X-API-Key` headers; a URL's password and the value of
+  a query parameter from a fixed list (`api_key`, `token`, `key`, `signature` and the like; the user name
+  stays); the text of a WS-Security `Password` element; and the values under secret-looking JSON or form
+  keys from the engine's fixed list (`password`, `secret`, `token`, `api_key`, `authorization` and the
+  like). A value under any other name, such as `<ApiToken>`, stays readable unless it is a secret the
+  call resolved. `validate`, `query` and `history_diff` apply the pattern redaction to the message before
+  they read it, so those values are never in what they return; that is all it promises, not that a
+  query cannot learn a secret the patterns do not cover. Column numbers in a validation problem count
+  on the redacted text. Those three read a message as XML when its text starts with `<` and as JSON
+  otherwise; `send` goes by the response's declared `Content-Type`, so its key-based masking covers XML,
+  and JSON or form bodies only when the response declares that type. Any other body is masked only for
+  the secret values resolved for the send. `send`'s assertion results are redacted by pattern as well:
+  URLs in them are redacted, and the value a header or `match` assertion read shows as `<redacted>` when
+  the header is one of those above or the JSONPath/XPath ends in one of the secret keys, callback
+  assertion reasons included; a node or object a `match` read is passed through the XML or JSON
+  redaction, and one cut short that still holds a secret key or an unclosed `Password` shows as
+  `<redacted>` whole. No tool accepts a secret value as input; secrets come from
+  `WIREBENCH_SECRET_<NAME>` variables in the server's environment, and only the ones the saved request
+  uses are read. As defence in depth, every `WIREBENCH_SECRET_*` value of at least 8 characters the
+  server was started with, and `WIREBENCH_MCP_TOKEN` (at least 16), are masked in every tool's result
+  whether or not the call resolved them; a shorter secret is masked where a call resolves it, under the
+  masker's own floor, since seeding a value like `true` would mask ordinary text everywhere. History is stored as the desktop stores it and is not an agent-facing surface: the tools read
+  it through the redaction, and the `file` source refuses any file in the History folder in use. A
+  send from the server never trims History below what the file holds, so it cannot delete entries the
+  user kept under a larger cap than the default; the desktop's own cap applies on its next write.
+- **The `send` body override is sent as written.** A `${…}` placeholder in it is refused, because it
+  would expand against the server's own environment (`${#System#NAME}` reads the process
+  environment). The saved request's own body still expands placeholders as usual, and the override
+  reaches no secret the saved request does not already use.
+- **Local HTTP only.** `--http` binds `127.0.0.1` and nothing else. Every request needs
+  `Authorization: Bearer <token>` (`WIREBENCH_MCP_TOKEN`, or 32 random bytes made at start and
+  printed once to stderr), compared in constant time; a missing or wrong token gets 401. The variable
+  is trimmed, an empty value counts as unset, and a token you set must be at least 16 characters with
+  no spaces, or the server refuses to start (exit 2). A request whose `Origin` is not
+  `http://localhost:<port>` or `http://127.0.0.1:<port>` is refused with 403 before the token is looked
+  at, and so is one whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>`; together they
+  stop a web page from reaching the server through DNS rebinding. Any path other than
+  `/mcp` gets 404, and `--http 80` is refused because clients drop the default port from `Host` and
+  `Origin`. A request body is capped at 16 MiB; at most 128 connections are open at once, and one that
+  has not finished its headers is dropped after about 10 seconds. One process holds at most 64 live
+  sessions. Only a request the server has accepted as a real `initialize` makes room past that: it
+  closes the session idle longest, preferring one with no GET stream open, and that client gets 404 on
+  its next request and must initialize again; a malformed or non-initialize request closes nothing.
+  Every client shares the one token, so any holder of it can close other clients' sessions by opening
+  new ones. There is no idle timeout below the cap: stop the process to drop them.
+- **On stdio, stdout is frames only, as far as the process's own code goes.** `console.log`, `info` and
+  `debug` are pointed at stderr while the server runs. The engine's worker threads (the XPath and
+  JSONPath evaluator, the REST contract check, the script checker) keep Node's default: their stdout
+  is not guarded. None of them writes to it, but a line one did print would reach the protocol stream.
+- **No model runs in Wirebench.** The server answers tool calls; the agent, its model and its prompts
+  live outside the app. Nothing is sent anywhere except the requests the user or the agent asks
+  `send` to make.
+- **Files and URLs are reached with the server's rights.** With `--allow-write`, `import` reads any
+  local path the process can read, or fetches any http(s) URL the machine's network reaches; the
+  desktop's import is limited to project roots and files the user picked, the server's is not.
+  `validate` and `query` read any regular file of 16 MiB or less the process can read (any file in the
+  History folder in use excepted). The path is checked before anything is opened, so a device or a
+  named pipe is refused without being opened. A relative path resolves against the working directory, which an MCP client chooses, so
+  give absolute paths. Start the server as a user, and in a project, you mean the agent to work on.
+- **Bounded results.** `query` returns at most 64 Ki characters per result and 256 Ki in total, and
+  `history_diff` at most 256 Ki characters of changes, and `send` cuts a response body at 256 Ki
+  characters (`bodyTruncated`), so a large response cannot flood the agent's context; both
+  set `truncated`.
+
 ## Paths from the renderer are proven, not trusted
 
 Main never opens a path just because the renderer named one. A path is usable only if it is

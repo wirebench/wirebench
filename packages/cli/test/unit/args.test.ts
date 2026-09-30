@@ -94,3 +94,148 @@ describe('parseCliArgs --sequence', () => {
     expect(() => parseCliArgs(['secrets', 'list', 'p', 'demo/ok', '--sequence', 'a'])).toThrow(UsageError);
   });
 });
+
+describe('parseCliArgs — the op verbs', () => {
+  it('parses each verb into its op and input', () => {
+    expect(parseCliArgs(['import', 'a.wsdl', '--name', 'Calc', '--project', 'p'])).toEqual({
+      command: 'op',
+      op: 'import',
+      project: 'p',
+      json: false,
+      input: { source: 'a.wsdl', name: 'Calc' },
+    });
+    expect(parseCliArgs(['operations', 'Pets', '--json'])).toMatchObject({
+      op: 'operations',
+      project: '.',
+      json: true,
+      input: { container: 'Pets' },
+    });
+    expect(parseCliArgs(['generate', 'Calc/Add', '--optional', 'all'])).toMatchObject({
+      op: 'generate',
+      input: { operation: 'Calc/Add', optional: 'all' },
+    });
+    expect(
+      parseCliArgs(['send', 'Calc/Add/Request 1', '-e', 'local', '--body-file', 'b.xml', '--history-dir', 'h']),
+    ).toEqual({
+      command: 'op',
+      op: 'send',
+      project: '.',
+      historyDir: 'h',
+      json: false,
+      input: { item: 'Calc/Add/Request 1', environment: 'local' },
+      bodyFile: 'b.xml',
+    });
+    expect(parseCliArgs(['validate', 'x.xml', '--operation', 'Calc/Add', '--direction', 'request'])).toMatchObject({
+      op: 'validate',
+      source: 'x.xml',
+      input: { operation: 'Calc/Add', direction: 'request' },
+    });
+    expect(parseCliArgs(['query', '//a', 'x.xml', '--namespace', 'c=urn:c', '--namespace', 'd=urn:d'])).toMatchObject({
+      op: 'query',
+      source: 'x.xml',
+      input: { expression: '//a', namespaces: { c: 'urn:c', d: 'urn:d' } },
+    });
+    expect(parseCliArgs(['history', 'list', '--item', 'Pets', '--limit', '5'])).toMatchObject({
+      op: 'history_list',
+      input: { item: 'Pets', limit: 5 },
+    });
+    expect(parseCliArgs(['history', 'diff', 'a', 'b', '--ignore', '/0/seen'])).toMatchObject({
+      op: 'history_diff',
+      input: { from: 'a', to: 'b', ignore: ['/0/seen'] },
+    });
+  });
+
+  it('still accepts and ignores every run option on secrets list, as before the verbs', () => {
+    expect(
+      parseCliArgs(['secrets', 'list', './p', '--no-color', '-q', '-v', '--insecure', '--bail', '--reporter', 'cli']),
+    ).toMatchObject({ command: 'secrets-list', path: './p' });
+    expect(
+      parseCliArgs(['secrets', 'list', './p', '--timeout', '5', '--sla', '5', '--require-assertions']),
+    ).toMatchObject({ command: 'secrets-list' });
+  });
+
+  it('does not look a help topic up on the prototype', () => {
+    expect(parseCliArgs(['toString', '--help'])).toEqual({ command: 'help' });
+    expect(parseCliArgs(['constructor', '--help'])).toEqual({ command: 'help' });
+  });
+
+  it('gives each verb its own help', () => {
+    expect(parseCliArgs(['send', '--help'])).toEqual({ command: 'help', topic: 'send' });
+    expect(parseCliArgs(['history', 'diff', '--help'])).toEqual({ command: 'help', topic: 'history' });
+    expect(parseCliArgs(['--help'])).toEqual({ command: 'help' });
+  });
+
+  it.each([
+    [['import']],
+    [['import', 'a', 'b']],
+    [['generate']],
+    [['send', 'x', '--body', 'a', '--body-file', 'b']],
+    [['query', '//a']],
+    [['history']],
+    [['history', 'show']],
+    [['history', 'list', '--limit', 'ten']],
+    [['query', '//a', 'x', '--namespace', 'nouri']],
+    [['operations', '--name', 'x']],
+    [['run', './p', '--json']],
+    [['secrets', 'list', './p', '--json']],
+    [['run', './p', '--project', 'x']],
+  ])('rejects %j as a usage error', (argv) => {
+    expect(() => parseCliArgs(argv)).toThrow(UsageError);
+  });
+});
+
+describe('parseCliArgs — mcp', () => {
+  it('parses the gates, the environment list and the History folder', () => {
+    expect(
+      parseCliArgs([
+        'mcp',
+        '--project',
+        'p',
+        '--allow-write',
+        '--allow-send',
+        '-e',
+        'local, staging',
+        '--history-dir',
+        'h',
+      ]),
+    ).toEqual({
+      command: 'mcp',
+      project: 'p',
+      historyDir: 'h',
+      allowWrite: true,
+      allowSend: true,
+      environments: ['local', 'staging'],
+    });
+    expect(parseCliArgs(['mcp'])).toEqual({ command: 'mcp', project: '.', allowWrite: false, allowSend: false });
+    expect(parseCliArgs(['mcp', '--help'])).toEqual({ command: 'help', topic: 'mcp' });
+  });
+
+  it('parses --http, and refuses a port out of range', () => {
+    expect(parseCliArgs(['mcp', '--http', '8931'])).toMatchObject({ command: 'mcp', httpPort: 8931 });
+    expect(() => parseCliArgs(['mcp', '--http', '0'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['mcp', '--http', '70000'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['mcp', '--http', 'x'])).toThrow(UsageError);
+  });
+
+  it('refuses --http 80, which clients leave out of Host and Origin', () => {
+    expect(() => parseCliArgs(['mcp', '--http', '80'])).toThrow('--http 80 is not supported; pick another port');
+    expect(() => parseCliArgs(['mcp', '--http', '80'])).toThrow(UsageError);
+    expect(parseCliArgs(['mcp', '--http', '8080'])).toMatchObject({ httpPort: 8080 });
+  });
+
+  it('refuses --http on the other verbs', () => {
+    expect(() => parseCliArgs(['run', 'p', '--http', '8931'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['send', 'x', '--http', '8931'])).toThrow(UsageError);
+  });
+
+  it.each([
+    [['mcp', 'extra']],
+    [['mcp', '--json']],
+    [['mcp', '-e', ' , ']],
+    [['send', 'x', '--allow-send']],
+    [['run', 'p', '--allow-send']],
+    [['run', 'p', '--allow-write']],
+  ])('rejects %j as a usage error', (argv) => {
+    expect(() => parseCliArgs(argv)).toThrow(UsageError);
+  });
+});

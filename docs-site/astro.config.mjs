@@ -55,6 +55,7 @@ export default defineConfig({
             { label: 'Callback assertions', slug: 'guides/callback-assertions' },
             { label: 'Preferences and layout', slug: 'guides/preferences' },
             { label: 'Run in CI', slug: 'guides/run-in-ci' },
+            { label: 'Agents (MCP)', slug: 'guides/agents-mcp' },
           ],
         },
         {

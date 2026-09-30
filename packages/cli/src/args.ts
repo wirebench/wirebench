@@ -1,4 +1,10 @@
 import { parseArgs } from 'node:util';
+import { isOpVerb, OP_OPTIONS, OPS_HELP_TEXT, parseMcp, parseOpVerb, refuseOpOnly, VERB_HELP } from './args-ops.js';
+import type { McpArgs, OpArgs } from './args-ops.js';
+import { UsageError } from './usage-error.js';
+
+export { UsageError };
+export type { McpArgs, OpArgs, OpName } from './args-ops.js';
 
 /** Spec §3.1: `wirebench run <path> [selector…] [options]`. */
 export const HELP_TEXT = `wirebench run <path> [selector…] [options]
@@ -29,12 +35,10 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
                        prints a value. --var as for run, so a token only a --var holds is listed.
 
-wirebench --version | --help`;
+${OPS_HELP_TEXT}
 
-/** Thrown for any command-line mistake; `main` turns it into exit code 2. */
-export class UsageError extends Error {
-  readonly code = 'usage-error';
-}
+wirebench --version | --help
+wirebench <verb> --help`;
 
 export type ReporterSpec =
   { readonly kind: 'cli' } | { readonly kind: 'junit' | 'json' | 'html'; readonly file: string };
@@ -69,7 +73,13 @@ export interface SecretsListArgs {
   readonly vars: Readonly<Record<string, string>>;
 }
 
-export type ParsedArgs = RunArgs | SecretsListArgs | { readonly command: 'help' } | { readonly command: 'version' };
+export type ParsedArgs =
+  | RunArgs
+  | SecretsListArgs
+  | OpArgs
+  | McpArgs
+  | { readonly command: 'help'; readonly topic?: string }
+  | { readonly command: 'version' };
 
 const REPORTER_KINDS = new Set(['junit', 'json', 'html']);
 
@@ -141,6 +151,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         verbose: { type: 'boolean', short: 'v' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean' },
+        ...OP_OPTIONS,
       },
     });
   } catch (error) {
@@ -153,7 +164,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   const { values, positionals } = parsed;
 
   if (values.help) {
-    return { command: 'help' };
+    const [topic] = positionals;
+    return topic !== undefined && Object.hasOwn(VERB_HELP, topic) ? { command: 'help', topic } : { command: 'help' };
   }
   if (values.version) {
     return { command: 'version' };
@@ -173,6 +185,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   }
 
   if (word === 'run') {
+    refuseOpOnly(values, 'wirebench run');
     const [path, ...selectors] = rest;
     if (path === undefined) {
       throw new UsageError('wirebench run <path> [selector…] [options]: <path> is required');
@@ -202,6 +215,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   }
 
   if (word === 'secrets') {
+    refuseOpOnly(values, 'wirebench secrets list');
     const [sub, path, ...selectors] = rest;
     if (sub !== 'list') {
       throw new UsageError(`wirebench secrets list <path> [selector…] [-e <name>]: unknown subcommand "${sub ?? ''}"`);
@@ -218,6 +232,14 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       ...(values.env !== undefined ? { env: values.env } : {}),
       vars: parseVars(values.var),
     };
+  }
+
+  if (word === 'mcp') {
+    return parseMcp(rest, values);
+  }
+
+  if (isOpVerb(word)) {
+    return parseOpVerb(word, rest, values);
   }
 
   throw new UsageError(`unknown command "${word}"`);

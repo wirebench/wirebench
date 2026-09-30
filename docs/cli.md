@@ -1,4 +1,4 @@
-# CLI reference: `wirebench run`
+# CLI reference: `wirebench`
 
 `@wirebench/cli` runs the requests already saved in a Wirebench project from a terminal or a
 pipeline, and turns the result into an exit code and a report a CI system understands. It ships
@@ -9,6 +9,11 @@ This page documents S1–S7: SOAP, REST and unary gRPC requests, all four assert
 to them, all four reporters, environment-variable secrets and OAuth2 client credentials — see the
 [design spec](specs/2026-09-18-cli-runner-design.md) and, for S7,
 [its own spec](specs/2026-09-22-cli-runner-design.md).
+
+`wirebench run` and `wirebench secrets list` run a project in a pipeline. The verbs under
+[Work with a project](#work-with-a-project) and [`wirebench mcp`](#wirebench-mcp) (issue #32, see the
+[design spec](specs/2026-09-29-wirebench-mcp-server-design.md)) work on one project from a terminal or
+an agent: import a definition, list and generate, send one request, validate, query and diff.
 
 ## Install and build
 
@@ -52,6 +57,21 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
                        prints a value. --var as for run, so a token only a --var holds is listed.
+
+wirebench import <source> [--name <name>]
+wirebench operations [<interface-or-api>]
+wirebench generate <operation> [--optional all|required]
+wirebench send <item> [-e <env>] [--body <text> | --body-file <file>]
+wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
+wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]
+wirebench history list [--item <text>] [--limit <n>]
+wirebench history diff <from-id> <to-id> [--ignore <path>]…
+                       Work on one project: see "Work with a project" below. Each takes --project <dir>
+                       (default: the current directory) and --json; the ones that touch History take
+                       --history-dir <dir>.
+
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>]
+                       Serves those verbs as MCP tools to a coding agent, over stdio or on 127.0.0.1.
 
 wirebench --version | --help
 ```
@@ -435,6 +455,213 @@ conventions every other tool on the runner already obeys:
 - A client certificate comes from the request's own keystore, not from an environment variable; its
   password resolves through §Secrets above.
 - `--insecure` skips TLS verification, the CLI equivalent of the desktop's per-environment switch.
+
+## Work with a project
+
+Every verb takes `--project <dir>` (default: the current directory) and `--json`, which prints the
+result exactly as the MCP tool of the same name returns it. The verbs that read or write History
+take `--history-dir <dir>`; by default they use the desktop's own History folder, so a send from the
+terminal shows in the app's History panel and the other way round. The verbs are not gated: the
+person typing the command has allowed it, so `import` and `send` need no flag. The gates below belong
+to [`wirebench mcp`](#wirebench-mcp).
+
+| Verb | Does |
+| --- | --- |
+| `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
+| `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action) and REST endpoints (API, method, path, operationId), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC and WebSocket items are in the project but not listed. |
+| `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
+| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP or REST request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
+| `wirebench validate <history-id\|file> [--operation <ref>] [--direction request\|response] [--status <n>]` | Validates a SOAP message against the WSDL's XSD and SOAP rules (line and column), or a REST response body against its OpenAPI response schema (JSON path and keyword). |
+| `wirebench query <expression> <history-id\|file> [--namespace <prefix>=<uri>]… [--direction request\|response]` | XPath 3.1 on XML (the document's own prefixes are known), JSONPath on JSON; one result per line. |
+| `wirebench history list [--item <text>] [--limit <n>]` | The project's History, newest first: id, time, item, status and duration. `--item` matches part of the item path, in any case. `--limit` is 1 to 200 and defaults to 20. |
+| `wirebench history diff <from-id> <to-id> [--ignore <path>]…` | The semantic XML or JSON diff of two responses, as the desktop's snapshot diff reports it. |
+
+Details that are easy to get wrong:
+
+- **`import`.** `<source>` is a local file or an http(s) URL. A relative path resolves against the
+  working directory, so give an absolute path when a program (an MCP client) chooses the working
+  directory. `import` reads any local path the process can read and fetches any http(s) URL the
+  machine's network reaches, through `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`. The desktop limits an
+  import to project roots and files the user picked; this does not. A WSDL import takes
+  `cacheDefinitions` from the project's own settings, not from the desktop's preferences.
+- **`send`.** `--body` (or `--body-file`) replaces the saved SOAP envelope, or the saved raw or JSON
+  body of a REST request, for this send only; nothing is saved. It is sent as written, so a `${…}`
+  placeholder in it is refused with `invalid-input`. The saved request's own body still expands
+  placeholders as usual. Secrets come only from `WIREBENCH_SECRET_<NAME>` variables, and only the ones
+  the saved request uses. gRPC and WebSocket items are in the project, but `operations` does not list
+  them and `send` refuses them with `unsupported-kind`. Server-sent events are a response mode of a REST
+  request, not an item kind. The response body in the result is cut at 256 Ki characters, and
+  `bodyTruncated` says when it was (the same cut applies to the History entry).
+  A send that got no response is not written to History. When the History file is busy (another
+  process holds it), the result comes back without `historyId`, and a warning says why on stderr.
+- **`validate` and `query` sources.** `<history-id|file>` is a file when one exists at that path,
+  otherwise a History id. On MCP the same choice is the `historyId`, `file` and `text` inputs, of
+  which exactly one is passed. A `file` is read from any path the process can read, resolved against
+  the working directory. It must be a regular file of at most 16 MiB, and any file in the History
+  folder in use (`--history-dir`, or the default) is refused, whatever path or link reaches it; read
+  History with `historyId`. `--direction` says which side of a History entry to read and
+  which side of the contract to check (default `response`).
+- **REST.** `validate` checks responses only. The status comes from the History entry, or from
+  `--status`, and is 200 when neither gives one. `generate` for a REST operation prints the OpenAPI
+  path template (`/pets/{petId}`), not a URL.
+- **`validate` results.** `valid` is false only when the message was found wrong: a SOAP error, or a
+  REST `contract` of `violation` or `unmatched` (the contract declares no response for the status).
+  `checked` is false when a REST body could not be compared with a schema at all, and `contract` says
+  why: `no-schema`, `no-contract`, `skipped` (not JSON, or over 1 MiB) or `not-checked` (the check ran
+  out of time). Such a result is still `valid`, the verb exits 0, and its first line reads
+  `not checked: <contract>`. A SOAP result is always `checked`. At most 50 problems are listed, for
+  SOAP and REST alike, and `truncated` says when there were more (for REST, when the check stopped at
+  50).
+- **`query` caps.** Counted in characters, not bytes: one result keeps at most 64 Ki characters and all
+  results together at most 256 Ki characters; `truncated` is set when anything was cut, and also when the engine returned more results than its
+  own limit of 1000.
+- **`history diff` cap.** The paths and values of the changes returned add up to at most 256 Ki
+  characters; `truncated` says when more were left out.
+
+A `<history-id|file>` argument that looks like a path but matches no file is tried as a History id,
+and the error then says no file exists at that path either.
+
+### Redaction
+
+Every result and every error passes one step before anything is printed or returned:
+
+1. The engine's own redactors run first, and they work by pattern:
+   - Headers: the values of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and
+     `X-API-Key`.
+   - URLs: a password in the URL, and the value of a query parameter named `api_key`, `apikey`,
+     `api-key`, `access_token`, `token`, `key`, `auth`, `signature` or `sig`. A URL's user name is not
+     masked.
+   - XML: the text of a WS-Security `Password` element (a `#PasswordDigest` value is a hash and stays).
+   - JSON and form bodies: the value under a key from a fixed list (`password`, `passwd`, `secret`,
+     `token`, `access_token`, `refresh_token`, `client_secret`, `api_key`, `authorization` and the like).
+     A value under any other name, such as `<ApiToken>`, stays readable.
+2. Then every secret value the call resolved is masked wherever it appears, with the masker `run`
+   uses (including its floor: a value of fewer than 4 characters is not masked literally). Under
+   `wirebench mcp`, every `WIREBENCH_SECRET_*` value of at least 8 characters in the server's
+   environment, and `WIREBENCH_MCP_TOKEN`, are masked in every tool's result as well, whether or not the
+   call resolved them. A shorter value is masked only where a call resolved it, under the floor above.
+
+`send`'s assertion results get the pattern redaction too: URLs in every label, expected and actual
+value and message are redacted, and the value an assertion read is shown as `<redacted>` when it is a
+credential: a header assertion on one of the headers above, a `match` whose JSONPath or XPath ends in
+one of the secret keys above (`$.token`, `//Password`), and the same checks inside a callback
+assertion's reasons. A node or object a `match` read (`$.auth`, `//Header`) goes through the XML or
+JSON redaction above, so a password or secret key inside it is masked too; one the engine cut short at
+200 characters that still holds a secret key or an unclosed `Password` shows as `<redacted>` whole.
+`wirebench run` shows those values as they are.
+
+`validate`, `query` and `history diff` apply the same pattern redaction to the message before they read
+it, so the password and secret-keyed values above never appear in what they return. That is the whole
+guarantee: it is not a promise that no query can learn a secret, because a secret in a value the patterns
+do not cover is read as it is. Two responses that differ only in a masked value compare equal. Column
+numbers in a `validate` problem count on the redacted text.
+
+The three read the message as XML when its text starts with `<`, and as JSON otherwise; they never go by
+a declared content type (a form-encoded History entry is the one place the declared type adds form
+masking). `send` goes by the response's declared `Content-Type`: key-based masking applies to XML, and
+to a JSON or form body only when the response declares that type. A body with any other type, plain
+text for one, is masked only for the secret values resolved for the send.
+
+History itself is not an agent-facing surface: an agent reads it through `history_list`,
+`history_diff` and the `historyId` inputs, which redact, and `file` refuses any file in the History
+folder in use.
+
+### History location
+
+History is the desktop's `<userData>/history/<projectId>.jsonl`, one file per project. `<userData>` is:
+
+| OS | Folder |
+| --- | --- |
+| macOS | `~/Library/Application Support/Wirebench` |
+| Windows | `%APPDATA%\Wirebench` |
+| Linux | `$XDG_CONFIG_HOME/Wirebench`, or `~/.config/Wirebench` |
+
+A development build of the desktop uses `<appData>/@wirebench/desktop` instead, and the end-to-end
+suite sets `WIREBENCH_USER_DATA_DIR`; `--history-dir` reaches either. `--history-dir` names the folder
+that holds the `.jsonl` files (the desktop's `<userData>/history`), not `userData` itself. The app and
+the terminal or agent write the same file under a lock, and an open History panel refreshes when
+another process writes it. Each entry is tagged `cli` or `mcp` by whichever sent it.
+
+The desktop keeps as many entries as its History preference allows, which can be more than 1000. A
+send from the terminal or an agent never trims History below what the file already holds: it adds its
+entry and drops nothing, so the file can grow past the desktop's cap. The desktop's own cap applies
+again on its next write. Without the desktop, then, the terminal and agents never trim History: the
+file grows until the desktop next writes it and trims it to its own cap.
+
+### Exit codes of the verbs
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success. |
+| 1 | A `send` assertion failed, or `validate` found the message invalid (`valid: false`; a body it could not check exits 0). |
+| 2 | A usage error: a refused or wrong call. Nothing was sent. |
+| 3 | Everything else: a request error (an unset secret, a network or TLS failure, an assertion or script that errored), an unreadable History file, `history-busy`, an internal error. |
+
+The error goes to stderr as `code: message`. Exit 2 is exactly these codes: `invalid-input`,
+`project-not-found`, `workspace-not-project`, `file-not-found`, `item-not-found`, `item-ambiguous`,
+`operation-not-found`, `container-not-found`, `environment-required`, `environment-not-found`,
+`environment-not-allowed`, `history-entry-not-found`, `history-no-response`, `unsupported-kind`,
+`unsupported-format`, `write-not-allowed`, `send-not-allowed`, `definition-cache-missing` and
+`query-failed`.
+
+## `wirebench mcp`
+
+```text
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>]
+```
+
+Serves the verbs above as MCP tools to a coding agent: `import`, `operations`, `generate`, `send`,
+`validate`, `query`, `history_list` and `history_diff`. Each tool takes the same input as its verb and
+returns the same JSON as `--json`; a refusal is a tool result with `isError` and `{ "code", "message" }`.
+No model runs inside Wirebench, and nothing is sent anywhere except the requests you or the agent ask
+`send` to make.
+
+| Flag | Meaning |
+| --- | --- |
+| `--project <dir>` | The project the tools work on (default: the current directory). Checked at start: a folder that is not a project exits 2. |
+| `--allow-write` | Lets `import` write the project. Off: `import` answers `write-not-allowed`. |
+| `--allow-send` | Lets `send` make requests. Off: `send` answers `send-not-allowed`. |
+| `-e, --env <a,b>` | The environments `send` may use, by name, slug or id; any other is `environment-not-allowed`. Under `-e`, a send that resolves no environment (a project that defines none) is refused too. |
+| `--history-dir <dir>` | The folder that holds the History `.jsonl` files (default: the desktop's, see [History location](#history-location)). |
+| `--http <port>` | Streamable HTTP on `http://127.0.0.1:<port>/mcp` instead of stdio. A port from 1 to 65535, except 80: clients drop the default port from `Host` and `Origin`, so `--http 80` is refused. See below. |
+
+The gates apply to `wirebench mcp` only. Every tool is always listed, whatever the flags: a gated tool
+whose gate is off refuses, and its error names the flag that would allow it, so the agent can tell
+you what to pass.
+
+On stdio, stdout carries protocol frames only; the startup line and every warning go to stderr.
+The server ends when stdin closes or when the client closes the transport. Secrets come from `WIREBENCH_SECRET_<NAME>` variables in the server's
+own environment, as for `run`, are masked in every result, and are never an input of any tool. Every
+`WIREBENCH_SECRET_*` value of 8 characters or more that the server was started with is masked in every
+result, not only the ones a call used.
+
+### Streamable HTTP
+
+`--http <port>` serves the same tools to clients that connect by URL. It binds `127.0.0.1` and nothing
+else; there is no flag to bind another address.
+
+- Every request needs `Authorization: Bearer <token>`. The token is `WIREBENCH_MCP_TOKEN` when that is
+  set; otherwise the server generates one at start (32 random bytes, base64url) and prints it once to
+  stderr. The variable is trimmed, and an empty value counts as unset. A token you set must be at least
+  16 characters with no spaces, or the server refuses to start (exit 2). A missing or wrong token gets 401.
+- A request with an `Origin` other than `http://localhost:<port>` or `http://127.0.0.1:<port>` gets
+  403, and this is checked before the token. It guards against a web page reaching the server through
+  DNS rebinding. A request with no `Origin` header (a command-line client) is not refused on this
+  ground.
+- The `Host` header must be `127.0.0.1:<port>` or `localhost:<port>`; anything else gets 403. This is
+  the second guard against DNS rebinding.
+- Any path other than `/mcp` gets 404.
+- Each session has its own server, all with the same gates. One process holds at most 64 live
+  sessions. Only a real `initialize` request makes room: once the server has accepted it as one and the
+  cap is reached, it closes the session that went longest without a request, preferring one with no
+  open GET stream (a client listening for server messages is in use even when it sends nothing); when
+  every session has a stream open, the idlest of all is closed. That client gets 404 on its next
+  request and must initialize again. A malformed request, or one that is not an initialize, closes
+  nobody's session. When every slot is a session still initializing, a new one gets 503. Every client
+  shares the one token, so any holder of it can close other clients' sessions by opening new ones.
+  There is no idle timeout below the cap: stop the process to drop every session.
+- A request body is capped at 16 MiB. The server accepts at most 128 connections at once, and drops a
+  connection that has not finished its headers after about 10 seconds.
 
 ## Run in CI
 

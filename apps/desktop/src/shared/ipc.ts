@@ -144,6 +144,7 @@ import {
   exchangesSaveRestBodyResponseSchema,
   globalsStateSchema,
   historyAppendedEventSchema,
+  historyChangedEventSchema,
   historyClearResponseSchema,
   historyGetRequestSchema,
   historyGetResponseSchema,
@@ -1137,6 +1138,8 @@ export const events = {
   },
   history: {
     appended: defineEvent('history.appended', historyAppendedEventSchema),
+    /** Another process (`wirebench mcp`, `wirebench send`) wrote a project's History file. */
+    changed: defineEvent('history.changed', historyChangedEventSchema),
   },
   sequence: {
     /** One step of a running sequence has ended, keyed by the run's id. */

@@ -1,4 +1,4 @@
-import { readFile, rm } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { appendHistory, openHistory } from '../../../src/project/history.js';
@@ -168,6 +168,21 @@ describe('appendHistory / openHistory', () => {
 
     const handle = await openHistory(file);
     expect(handle.list().map((e) => e.requestName)).toEqual(['Three', 'Two']);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('appendHistory with keepAtLeastCurrent drops no entry the file already holds, even past the cap', async () => {
+    const dir = await tempProjectDir();
+    const file = join(dir, 'history.jsonl');
+    const kept = Array.from({ length: 1500 }, () => makeEntry());
+    await writeFile(file, kept.map((e) => `${JSON.stringify(e)}\n`).join(''), 'utf8');
+
+    await appendHistory(file, makeEntry({ requestName: 'Newest' }), { keepAtLeastCurrent: true });
+
+    const handle = await openHistory(file, { cap: 5000 });
+    expect(handle.count()).toBe(1501);
+    expect(handle.list({ limit: 1 })[0]?.requestName).toBe('Newest');
+    expect(handle.get(kept[0]?.id ?? '')).toBeDefined();
     await rm(dir, { recursive: true, force: true });
   });
 });

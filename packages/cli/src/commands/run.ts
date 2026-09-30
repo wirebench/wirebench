@@ -1,12 +1,9 @@
-import { access, realpath } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { join } from 'node:path';
 import {
   checkRunScripts,
   createScriptChecker,
   createScriptSandbox,
   createSecretMasker,
-  envVariablesFor,
   isWirebenchError,
   loadProject,
   loadWorkspace,
@@ -20,11 +17,9 @@ import type {
   CallbackWaiting,
   Environment,
   Project,
-  RequestResult,
   RunContext,
   RunResult,
   RunWorkspace,
-  SecretNeed,
   SelectedRequest,
   SequenceDef,
   WorkspaceEnvironment,
@@ -34,7 +29,10 @@ import type { RunArgs } from '../args.js';
 import { ExitCode, exitCodeFor } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
 import { createEnvSecrets } from '../env-secrets.js';
+import { pickEnvironment } from '../ops/environment.js';
+import { OpsError } from '../ops/errors.js';
 import { proxyFromEnv } from '../proxy-env.js';
+import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { createCliReporter } from '../reporters/cli.js';
 import { renderHtml } from '../reporters/html.js';
@@ -43,14 +41,13 @@ import { renderJunit } from '../reporters/junit.js';
 import { createMaskedReporters } from '../reporters/mask.js';
 import type { Reporter } from '../reporters/types.js';
 import { writeReport } from '../reporters/write.js';
+import { cliVersion } from '../version.js';
+import { enclosingWorkspace, exists } from '../workspace-lookup.js';
 import { resolveSteps, runSequences, selectSequences } from './sequence.js';
-
-const require = createRequire(import.meta.url);
 
 /** `{ name, version }` for the `json` report's `tool` field, read from the CLI's own `package.json`. */
 function cliTool(): { readonly name: string; readonly version: string } {
-  const { version } = require('../../package.json') as { readonly version: string };
-  return { name: 'wirebench', version };
+  return { name: 'wirebench', version: cliVersion() };
 }
 
 /** A file reporter's `onRunDone` renders once the whole result is in, then writes it — the path
@@ -58,15 +55,6 @@ function cliTool(): { readonly name: string; readonly version: string } {
  * never against the project directory. */
 function createFileReporter(file: string, render: (result: RunResult) => string): Reporter {
   return { onRunDone: (result) => writeReport(file, render(result)) };
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** A workspace where a project was expected: name the projects instead of guessing which one. */
@@ -79,87 +67,6 @@ async function refuseWorkspace(path: string, io: CliIo): Promise<ExitCode> {
     );
   }
   return ExitCode.Usage;
-}
-
-/** The directory's real path, or its resolved one when it has none (a path that does not exist). */
-async function realOrResolved(path: string): Promise<string> {
-  try {
-    return await realpath(path);
-  } catch {
-    return resolve(path);
-  }
-}
-
-/**
- * The workspace `projectDir` sits inside: the nearest `workspace.yaml` above it, provided that
- * workspace lists this folder among its projects (an internal one under its `projects/`, or a
- * linked one by path). A `workspace.yaml` that does not list it, or is not a workspace at all (the
- * name is common enough for another tool's file), is reported and applies nothing.
- */
-async function enclosingWorkspace(projectDir: string, io: CliIo): Promise<RunWorkspace | undefined> {
-  const project = await realOrResolved(projectDir);
-  for (let dir = dirname(project); ; dir = dirname(dir)) {
-    const manifest = join(dir, 'workspace.yaml');
-    if (await exists(manifest)) {
-      let loaded: Awaited<ReturnType<typeof loadWorkspace>>;
-      try {
-        loaded = await loadWorkspace(dir);
-      } catch (error) {
-        if (!isWirebenchError(error)) {
-          throw error;
-        }
-        io.stderr.write(
-          `warning: ${manifest} is not a workspace this run can read (${error.code}: ${error.message}); its environments and properties do not apply\n`,
-        );
-        return undefined;
-      }
-      for (const problem of loaded.problems) {
-        io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
-      }
-      for (const ref of loaded.workspace.projects) {
-        const refDir =
-          ref.source === 'linked' && ref.path !== undefined ? ref.path : workspaceProjectDir(dir, ref.slug);
-        if ((await realOrResolved(refDir)) === project) {
-          return { workspace: loaded.workspace, projectSlug: ref.slug };
-        }
-      }
-      io.stderr.write(
-        `warning: ${manifest} does not list this project; its environments and properties do not apply\n`,
-      );
-      return undefined;
-    }
-    if (dirname(dir) === dir) {
-      return undefined;
-    }
-  }
-}
-
-/**
- * `--env` by name first, then by slug or id; required as soon as there is any environment. Inside a
- * workspace the environments are the workspace's, as in the app: a project environment applies
- * through the workspace environment of the same slug, never on its own.
- */
-function pickEnvironment<E extends Environment | WorkspaceEnvironment>(
-  environments: readonly E[],
-  owner: 'project' | 'workspace',
-  wanted: string | undefined,
-): E | undefined {
-  if (environments.length === 0) {
-    if (wanted !== undefined) {
-      throw new UsageError(`unknown environment "${wanted}": this ${owner} defines none`);
-    }
-    return undefined;
-  }
-  const names = environments.map((e) => e.name).join(', ');
-  if (wanted === undefined) {
-    throw new UsageError(`an environment is required (--env <name>); environments: ${names}`);
-  }
-  const found =
-    environments.find((e) => e.name === wanted) ?? environments.find((e) => e.slug === wanted || e.id === wanted);
-  if (found === undefined) {
-    throw new UsageError(`unknown environment "${wanted}"; environments: ${names}`);
-  }
-  return found;
 }
 
 function buildReporters(args: RunArgs, io: CliIo): Reporter[] {
@@ -225,7 +132,7 @@ export async function loadSelection(
     for (const problem of loaded.problems) {
       io.stderr.write(`warning: ${problem.code}: ${problem.message} (${problem.file})\n`);
     }
-    workspace = await enclosingWorkspace(path, io);
+    workspace = await enclosingWorkspace(path, (line) => io.stderr.write(`warning: ${line}\n`));
   } catch (error) {
     if (isWirebenchError(error)) {
       io.stderr.write(`${error.code}: ${error.message}\n`);
@@ -234,10 +141,19 @@ export async function loadSelection(
     throw error;
   }
 
-  const environment =
-    workspace === undefined
-      ? pickEnvironment(project.environments, 'project', args.env)
-      : pickEnvironment(workspace.workspace.environments, 'workspace', args.env);
+  let environment: Environment | WorkspaceEnvironment | undefined;
+  try {
+    environment =
+      workspace === undefined
+        ? pickEnvironment(project.environments, 'project', args.env)
+        : pickEnvironment(workspace.workspace.environments, 'workspace', args.env);
+  } catch (error) {
+    // `wirebench run` reports a bad environment as a usage error, as it always has.
+    if (error instanceof OpsError) {
+      throw new UsageError(error.message);
+    }
+    throw error;
+  }
   if (args.sequences !== undefined && args.sequences.length > 0) {
     const sequences = selectSequences(project, args.sequences);
     const selected = resolveSteps(project, sequences);
@@ -262,42 +178,6 @@ export async function loadSelection(
     ...(environment !== undefined ? { environment } : {}),
     selected,
   };
-}
-
-/** The refusals that carry a `details.ref` naming a secret the run was not given. */
-const EXPLAINED_CODES: ReadonlySet<string> = new Set(['secret-missing', 'webhook-signing-secret']);
-
-/**
- * `Set A (or B) to run "path".` — the engine's wording is the app's advice, not a pipeline's.
- * Every missing secret reaches here as `secret-missing` with `details.ref`: an auth password, a
- * keystore password and a WS-Security password alike (`run/prepare.ts`'s `requiredSecret`, which
- * the WS-Security context's `secrets` also calls, and nothing on the way wraps it) — and a webhook
- * item's signing secret (`webhook-signing-secret`, webhook-signatures §5.2).
- */
-export function explainMissingSecret(result: RequestResult, needs: readonly SecretNeed[]): RequestResult {
-  const ref = EXPLAINED_CODES.has(result.error?.code ?? '') ? result.error?.details?.['ref'] : undefined;
-  if (result.error === undefined || typeof ref !== 'string') {
-    return result;
-  }
-  const [first, ...rest] = envVariablesFor(needs.find((need) => need.ref === ref) ?? { ref });
-  const alternatives = rest.length > 0 ? ` (or ${rest.join(', ')})` : '';
-  return {
-    ...result,
-    error: { ...result.error, message: `Set ${first ?? ''}${alternatives} to run "${result.path}".` },
-  };
-}
-
-/**
- * Whether `value` contains one of `known`. Values shorter than the masker's floor are ignored for the
- * same reason the masker ignores them: that short, a match is more likely chance than a credential.
- */
-export function knownSecretIn(value: string, known: Iterable<string>): boolean {
-  for (const secret of known) {
-    if (secret.length >= 4 && value.includes(secret)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**

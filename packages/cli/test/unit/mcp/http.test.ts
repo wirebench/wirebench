@@ -1,0 +1,445 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
+import { request } from 'node:http';
+import { afterEach, describe, expect, it } from 'vitest';
+import { InvalidTokenError, resolveToken, startHttpServer } from '../../../src/mcp/http.js';
+import type { RunningHttpServer } from '../../../src/mcp/http.js';
+import { createMcpServer } from '../../../src/mcp/server.js';
+import { removeTempDirs, soapProject } from '../ops/helpers.js';
+
+const TOKEN = 'abc123def456ghi789abc123def456ghi789';
+
+const INITIALIZE = {
+  jsonrpc: '2.0',
+  id: 1,
+  method: 'initialize',
+  params: { protocolVersion: LATEST_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'test', version: '0' } },
+};
+
+let running: RunningHttpServer | undefined;
+let logged: string[] = [];
+
+afterEach(async () => {
+  await running?.close();
+  running = undefined;
+  logged = [];
+  await removeTempDirs();
+});
+
+async function start(
+  maxSessions?: number,
+  wrap: (create: () => McpServer) => () => McpServer = (create) => create,
+): Promise<RunningHttpServer> {
+  const fixture = await soapProject();
+  running = await startHttpServer({
+    port: 0,
+    ...(maxSessions !== undefined ? { maxSessions } : {}),
+    token: TOKEN,
+    createServer: wrap(() => createMcpServer(fixture.base({ gates: { write: false, send: false } }), '0.0.0-test')),
+    log: (line) => logged.push(line),
+  });
+  return running;
+}
+
+async function post(
+  url: string,
+  headers: Record<string, string>,
+  body: string = JSON.stringify(INITIALIZE),
+): Promise<Response> {
+  return await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...headers },
+    body,
+  });
+}
+
+async function status(url: string, headers: Record<string, string>, body?: string): Promise<number> {
+  const response = await post(url, headers, body);
+  await response.body?.cancel();
+  return response.status;
+}
+
+/** A POST with the given Host header, or none: `fetch` will not let a test choose its Host. */
+async function postWithHost(
+  server: RunningHttpServer,
+  host: string | undefined,
+  headers: Record<string, string>,
+): Promise<{ status: number; body: string }> {
+  return await new Promise((resolve, reject) => {
+    const req = request(
+      server.url,
+      {
+        method: 'POST',
+        setHost: false,
+        headers: {
+          ...(host !== undefined ? { Host: host } : {}),
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          ...headers,
+        },
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk: Buffer) => {
+          body += chunk.toString();
+          // An initialize answers with a stream that stays open; the status is all a test needs.
+          if (res.statusCode === 200) {
+            res.destroy();
+            resolve({ status: 200, body });
+          }
+        });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+        res.on('error', () => resolve({ status: res.statusCode ?? 0, body }));
+      },
+    );
+    req.on('error', reject);
+    req.end(JSON.stringify(INITIALIZE));
+  });
+}
+
+describe('the MCP HTTP server', () => {
+  it('binds 127.0.0.1 and serves /mcp', async () => {
+    const server = await start();
+    expect(server.host).toBe('127.0.0.1');
+    expect(server.url).toBe(`http://127.0.0.1:${String(server.port)}/mcp`);
+  });
+
+  it('answers 401 without the token or with a wrong one', async () => {
+    const server = await start();
+    const none = await post(server.url, {});
+    await none.body?.cancel();
+    expect(none.status).toBe(401);
+    expect(none.headers.get('www-authenticate')).toBe('Bearer');
+    expect(await status(server.url, { Authorization: 'Bearer abc123def456ghi789' })).toBe(401);
+    expect(await status(server.url, { Authorization: `Bearer ${TOKEN}x` })).toBe(401);
+    expect(await status(server.url, { Authorization: `Basic ${TOKEN}` })).toBe(401);
+  });
+
+  it('answers 403 to a foreign Origin, even with the token, and serves a local one', async () => {
+    const server = await start();
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    expect(await status(server.url, { ...auth, Origin: 'http://evil.example' })).toBe(403);
+    expect(await status(server.url, { ...auth, Origin: 'http://localhost:1' })).toBe(403);
+    expect(await status(server.url, { ...auth, Origin: 'null' })).toBe(403);
+    expect(await status(server.url, { ...auth, Origin: `http://localhost:${String(server.port)}` })).toBe(200);
+    expect(await status(server.url, { ...auth, Origin: `http://127.0.0.1:${String(server.port)}` })).toBe(200);
+  });
+
+  it('compares the Origin exactly: an uppercase host or a trailing slash is refused', async () => {
+    const server = await start();
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const port = String(server.port);
+    expect(await status(server.url, { ...auth, Origin: `http://LOCALHOST:${port}` })).toBe(403);
+    expect(await status(server.url, { ...auth, Origin: `http://localhost:${port}/` })).toBe(403);
+    expect(await status(server.url, { ...auth, Origin: `http://127.0.0.1:${port}/` })).toBe(403);
+  });
+
+  it.each(['GET', 'POST', 'DELETE', 'OPTIONS', 'HEAD'])(
+    'checks Origin then token for every method (%s)',
+    async (method) => {
+      const server = await start();
+      const send = async (headers: Record<string, string>): Promise<number> => {
+        const response = await fetch(server.url, { method, headers });
+        await response.body?.cancel();
+        return response.status;
+      };
+      expect(await send({ Authorization: `Bearer ${TOKEN}`, Origin: 'http://evil.example' })).toBe(403);
+      expect(await send({ Origin: 'http://evil.example' })).toBe(403);
+      expect(await send({})).toBe(401);
+      expect(await send({ Authorization: 'Bearer wrong-wrong-wrong-wrong' })).toBe(401);
+    },
+  );
+
+  it('allows only its own Host, checked after the Origin and before the token', async () => {
+    const server = await start();
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const port = String(server.port);
+    expect((await postWithHost(server, `evil.example:${port}`, auth)).status).toBe(403);
+    expect((await postWithHost(server, `evil.example:${port}`, {})).status).toBe(403);
+    expect((await postWithHost(server, `127.0.0.1:${String(server.port + 1)}`, auth)).status).toBe(403);
+    expect((await postWithHost(server, '127.0.0.1', auth)).status).toBe(403);
+    expect((await postWithHost(server, undefined, auth)).status).toBe(403);
+    const both = await postWithHost(server, `evil.example:${port}`, { ...auth, Origin: 'http://evil.example' });
+    expect(both.status).toBe(403);
+    expect(both.body).toContain('Origin not allowed');
+    const refused = await postWithHost(server, `evil.example:${port}`, auth);
+    expect(refused.body).not.toContain('evil.example');
+    expect((await postWithHost(server, `127.0.0.1:${port}`, auth)).status).toBe(200);
+    expect((await postWithHost(server, `localhost:${port}`, auth)).status).toBe(200);
+    expect((await postWithHost(server, `LOCALHOST:${port}`, auth)).status).toBe(200);
+  });
+
+  it('makes room for a new client when closed ones left their sessions behind', async () => {
+    const server = await start(2);
+    const connect = async (): Promise<Client> => {
+      const client = new Client({ name: 'wirebench-test', version: '0.0.0' });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(server.url), {
+          requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } },
+        }) as Transport,
+      );
+      return client;
+    };
+    // The SDK client's close() does not end the session, so each one stays in the server's map.
+    for (let i = 0; i < 2; i += 1) {
+      await (await connect()).close();
+    }
+    const next = await connect();
+    try {
+      expect((await next.listTools()).tools).toHaveLength(8);
+    } finally {
+      await next.close();
+    }
+  });
+
+  it('evicts the least recently active session, which then answers 404', async () => {
+    const server = await start(2);
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const open = async (): Promise<string> => {
+      const response = await post(server.url, auth);
+      await response.body?.cancel();
+      expect(response.status).toBe(200);
+      return response.headers.get('mcp-session-id') ?? '';
+    };
+    const older = await open();
+    const newer = await open();
+    // A request reaching the older session makes the newer one the idle one.
+    expect(await status(server.url, { ...auth, 'mcp-session-id': older }, '{}')).not.toBe(404);
+    const third = await open();
+    expect(third).not.toBe('');
+    expect(await status(server.url, { ...auth, 'mcp-session-id': newer }, '{}')).toBe(404);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': older }, '{}')).not.toBe(404);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': third }, '{}')).not.toBe(404);
+  });
+
+  it('evicts nobody for a request that is not a real initialize', async () => {
+    const server = await start(1);
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const opened = await post(server.url, auth);
+    await opened.body?.cancel();
+    const live = opened.headers.get('mcp-session-id') ?? '';
+
+    expect(await status(server.url, auth, 'not json')).toBe(400);
+    expect(await status(server.url, auth, JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }))).toBe(400);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': live }, '{}')).not.toBe(404);
+  });
+
+  it('evicts a session with no GET stream open before an idler one that is still listening', async () => {
+    const server = await start(2);
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const open = async (): Promise<string> => {
+      const response = await post(server.url, auth);
+      await response.body?.cancel();
+      return response.headers.get('mcp-session-id') ?? '';
+    };
+    const listening = await open();
+    const stream = new AbortController();
+    const listen = await fetch(server.url, {
+      headers: {
+        ...auth,
+        Accept: 'text/event-stream',
+        'mcp-session-id': listening,
+        'mcp-protocol-version': LATEST_PROTOCOL_VERSION,
+      },
+      signal: stream.signal,
+    });
+    expect(listen.status).toBe(200);
+    try {
+      const quiet = await open();
+      // The quiet session is now the more recently active of the two, yet it has no stream open.
+      expect(await status(server.url, { ...auth, 'mcp-session-id': quiet }, '{}')).not.toBe(404);
+
+      expect(await open()).not.toBe('');
+
+      expect(await status(server.url, { ...auth, 'mcp-session-id': quiet }, '{}')).toBe(404);
+      expect(await status(server.url, { ...auth, 'mcp-session-id': listening }, '{}')).not.toBe(404);
+    } finally {
+      stream.abort();
+    }
+  });
+
+  it('never holds more live sessions than the cap when initializes race', async () => {
+    // A slow close leaves room for a second initialize to finish while the first is still evicting.
+    const server = await start(2, (create) => () => {
+      const created = create();
+      const close = created.close.bind(created);
+      created.close = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await close();
+      };
+      return created;
+    });
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const open = async (): Promise<string> => {
+      const response = await post(server.url, auth);
+      await response.body?.cancel();
+      return response.headers.get('mcp-session-id') ?? '';
+    };
+    /** An initialize on its own connection, so two of them really run at once. */
+    const openAlone = (): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const req = request(
+          server.url,
+          {
+            method: 'POST',
+            agent: false,
+            headers: { ...auth, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+          },
+          (res) => {
+            resolve(String(res.headers['mcp-session-id'] ?? ''));
+            res.destroy();
+          },
+        );
+        req.on('error', reject);
+        req.end(JSON.stringify(INITIALIZE));
+      });
+    const first = [await open(), await open()];
+    const raced = await Promise.all([openAlone(), openAlone()]);
+    expect(raced.every((id) => id !== '')).toBe(true);
+
+    const live = await Promise.all(
+      [...first, ...raced].map(
+        async (id) => (await status(server.url, { ...auth, 'mcp-session-id': id }, '{}')) !== 404,
+      ),
+    );
+    expect(live.filter(Boolean)).toHaveLength(2);
+  });
+
+  it('answers 503 when there is no live session to make room from', async () => {
+    const server = await start(0);
+    const response = await post(server.url, { Authorization: `Bearer ${TOKEN}` });
+    const body = await response.text();
+    expect(response.status).toBe(503);
+    expect(body).not.toContain(TOKEN);
+  });
+
+  it('does not leak a slot when creating the server throws', async () => {
+    let failed = false;
+    const server = await start(1, (create) => () => {
+      if (!failed) {
+        failed = true;
+        throw new Error('no server for you');
+      }
+      return create();
+    });
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const first = await post(server.url, auth);
+    const body = await first.text();
+    expect(first.status).toBe(500);
+    expect(body).not.toContain('no server for you');
+    // With the slot leaked, the single slot would be "opening" and this would be 503.
+    expect(await status(server.url, auth)).toBe(200);
+  });
+
+  it('checks the Origin before the token', async () => {
+    const server = await start();
+    expect(await status(server.url, { Origin: 'http://evil.example' })).toBe(403);
+  });
+
+  it('answers 404 off /mcp and for an unknown session', async () => {
+    const server = await start();
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    expect(await status(server.url.replace('/mcp', '/other'), auth)).toBe(404);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': 'nope' })).toBe(404);
+  });
+
+  it('checks the token before the path', async () => {
+    const server = await start();
+    expect(await status(server.url.replace('/mcp', '/other'), {})).toBe(401);
+  });
+
+  it('serves a client that sends the token', async () => {
+    const server = await start();
+    const client = new Client({ name: 'wirebench-test', version: '0.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+      requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } },
+    });
+    await client.connect(transport as Transport);
+    try {
+      expect((await client.listTools()).tools).toHaveLength(8);
+      const result = await client.callTool({ name: 'operations', arguments: {} });
+      expect(result.isError).not.toBe(true);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('gives each client its own session, and forgets a session when the client ends it', async () => {
+    const server = await start();
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const first = await post(server.url, auth);
+    await first.body?.cancel();
+    const second = await post(server.url, auth);
+    await second.body?.cancel();
+    const firstId = first.headers.get('mcp-session-id');
+    const secondId = second.headers.get('mcp-session-id');
+    expect(firstId).toBeTruthy();
+    expect(secondId).toBeTruthy();
+    expect(firstId).not.toBe(secondId);
+
+    const ended = await fetch(server.url, {
+      method: 'DELETE',
+      headers: { ...auth, 'mcp-session-id': firstId ?? '' },
+    });
+    expect(ended.status).toBe(200);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': firstId ?? '' })).toBe(404);
+    expect(await status(server.url, { ...auth, 'mcp-session-id': secondId ?? '' }, '{}')).not.toBe(404);
+  });
+
+  it('refuses a request body over 16 MiB', async () => {
+    const server = await start();
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const big = JSON.stringify({ ...INITIALIZE, padding: 'x'.repeat(17 * 1024 * 1024) });
+    expect(await status(server.url, auth, big)).toBe(413);
+  });
+
+  it('never puts the token or a request header in an error body', async () => {
+    const server = await start();
+    const secretHeader = 'abc123def456ghi789-header';
+    const bodies: string[] = [];
+    for (const headers of [
+      { Authorization: 'Bearer wrong', 'X-Probe': secretHeader },
+      { Authorization: `Bearer ${TOKEN}`, Origin: `http://evil.example/${secretHeader}` },
+      { Authorization: `Bearer ${TOKEN}`, 'mcp-session-id': secretHeader },
+    ]) {
+      bodies.push(await (await post(server.url, headers)).text());
+    }
+    bodies.push(await (await post(server.url.replace('/mcp', '/other'), { Authorization: `Bearer ${TOKEN}` })).text());
+    for (const body of bodies) {
+      expect(body).not.toContain(TOKEN);
+      expect(body).not.toContain(secretHeader);
+    }
+    expect(logged.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('frees the port when closed', async () => {
+    const server = await start();
+    await server.close();
+    running = undefined;
+    await expect(fetch(server.url)).rejects.toThrow();
+  });
+
+  it('takes the token from WIREBENCH_MCP_TOKEN, or makes one', () => {
+    expect(resolveToken({ WIREBENCH_MCP_TOKEN: TOKEN })).toEqual({ token: TOKEN, generated: false });
+    const made = resolveToken({});
+    expect(made.generated).toBe(true);
+    expect(made.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(resolveToken({ WIREBENCH_MCP_TOKEN: '' }).generated).toBe(true);
+    expect(resolveToken({}).token).not.toBe(made.token);
+  });
+
+  it('trims the token, treats a blank one as unset, and refuses a short or spaced one', () => {
+    expect(resolveToken({ WIREBENCH_MCP_TOKEN: `  ${TOKEN}\n` })).toEqual({ token: TOKEN, generated: false });
+    expect(resolveToken({ WIREBENCH_MCP_TOKEN: ' \t\n ' }).generated).toBe(true);
+    for (const bad of ['short', 'abc123def456ghi', `${TOKEN} ${TOKEN}`, 'abc123def456ghi7\n89012345678']) {
+      expect(() => resolveToken({ WIREBENCH_MCP_TOKEN: bad })).toThrow(InvalidTokenError);
+    }
+    expect(() => resolveToken({ WIREBENCH_MCP_TOKEN: ' short ' })).toThrow(
+      'WIREBENCH_MCP_TOKEN must be at least 16 characters with no spaces',
+    );
+    expect(resolveToken({ WIREBENCH_MCP_TOKEN: 'abc123def456ghi7' }).generated).toBe(false);
+  });
+});

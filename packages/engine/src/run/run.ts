@@ -130,6 +130,13 @@ export interface RunOptions {
   readonly callbackPollMs?: number;
   /** Called after a request's send when it has callbacks to wait for. */
   readonly onCallbackWaiting?: (path: string, waiting: readonly CallbackWaiting[]) => void;
+  /**
+   * Called once for each request that got a response: after the send and after any callback wait,
+   * before the request's other assertions are evaluated. It is not called when the send throws, nor
+   * when the callback wait throws. A host that records the send (the command line's `send` writes
+   * History) reads the exchange here.
+   */
+  readonly onSent?: (item: SelectedRequest, sent: SentRequest) => void;
 }
 
 type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
@@ -334,10 +341,16 @@ function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
   return 'passed';
 }
 
+/** The exchange a request travelled as, for a host that keeps more of it than a report does. */
+export type SentExchange =
+  { readonly kind: 'soap'; readonly soap: SoapExchange } | { readonly kind: 'rest'; readonly rest: RestExchange };
+
 /** One request as a run sends it: the response as assertions see it, and what a report keeps. */
 export interface SentRequest {
   readonly subject: AssertionSubject;
   readonly raw: { readonly rawRequest: Uint8Array; readonly rawResponse: Uint8Array };
+  /** The whole SOAP or REST exchange; absent for a gRPC call. */
+  readonly exchange?: SentExchange;
   /** Where the request went: a URL's origin, or a gRPC target. */
   readonly origin?: string;
   /** What the request's scripts produced (#63). */
@@ -449,6 +462,7 @@ export function createRunSender(context: RunContext): RunRequestSender {
       return {
         subject: soapSubject(exchange, loaded, item),
         raw: exchange.http,
+        exchange: { kind: 'soap', soap: exchange },
         ...originOf(exchange.http.request.url),
         ...scriptsOff,
       };
@@ -456,7 +470,13 @@ export function createRunSender(context: RunContext): RunRequestSender {
     if (prepared.kind === 'rest') {
       const exchange = await sendRest(prepared.input);
       dropRefusedToken(itemContext, prepared.input.auth, exchange.status === 401);
-      return { subject: restSubject(exchange), raw: exchange, ...originOf(exchange.request.url), ...scriptsOff };
+      return {
+        subject: restSubject(exchange),
+        raw: exchange,
+        exchange: { kind: 'rest', rest: exchange },
+        ...originOf(exchange.request.url),
+        ...scriptsOff,
+      };
     }
     if (prepared.kind === 'grpc' && protoSet !== undefined) {
       const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
@@ -517,6 +537,7 @@ async function sendScripted(
     return {
       subject: soapSubject(exchange, loaded, item),
       raw: exchange.http,
+      exchange: { kind: 'soap', soap: exchange },
       ...originOf(exchange.http.request.url),
       script: await post(sent, soapResponseSnapshot(exchange)),
     };
@@ -534,6 +555,7 @@ async function sendScripted(
     return {
       subject: restSubject(exchange),
       raw: exchange,
+      exchange: { kind: 'rest', rest: exchange },
       ...originOf(exchange.request.url),
       script: await post(sent, restResponseSnapshot(exchange)),
     };
@@ -649,6 +671,7 @@ async function runOne(
         onWaiting: (waiting) => options.onCallbackWaiting?.(item.path, waiting),
       },
     );
+    options.onSent?.(item, sent);
     const { subject, raw, script } = sent;
     const withDefault: readonly Assertion[] =
       options.defaultSlaMs !== undefined && !own.some((a) => a.type === 'sla')

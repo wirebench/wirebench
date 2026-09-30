@@ -125,6 +125,8 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
  * open project and `history.list` merges them, so opening or closing a workspace — or adding,
  * removing or reloading a project inside one — changes what the list should show, and waiting
  * for the next send would leave it stale.
+ *
+ * Also reloads on `history.changed`: another process (`wirebench mcp`, a CLI send) wrote a History file.
  */
 export function subscribeToHistory(): () => void {
   void useHistoryStore.getState().load();
@@ -136,9 +138,11 @@ export function subscribeToHistory(): () => void {
   };
   const offProjectChanged = window.wirebench.on('project.changed', reload);
   const offWorkspaceChanged = window.wirebench.on('workspace.changed', reload);
+  const offHistoryChanged = window.wirebench.on('history.changed', reload);
   return () => {
     offAppended();
     offProjectChanged();
     offWorkspaceChanged();
+    offHistoryChanged();
   };
 }

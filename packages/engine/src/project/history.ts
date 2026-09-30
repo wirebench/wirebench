@@ -4,12 +4,19 @@
  * itself is deleted, moved, or never saved. Entries are appended already redacted — this module
  * never sees a secret, it only stores and reads back whatever the caller hands it.
  *
- * Pure and `FsLike`-injectable, like the rest of `project/*`: no knowledge of Electron's
- * `userData`, no knowledge of the wire format's redaction rules.
+ * Reads and writes go through an injectable `FsLike`, like the rest of `project/*`. The lock and the
+ * freshness check use `node:fs` directly, because `FsLike` has neither an exclusive create nor an
+ * mtime: two processes (the desktop app and `wirebench mcp`) may write one file, so every write takes
+ * `<file>.lock` and rereads the file first when another writer changed it.
  */
 
+import { randomBytes } from 'node:crypto';
+import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { ulid } from 'ulidx';
-import { nodeFs, readFileIfExists, writeFileAtomic } from './fs.js';
+import { ProjectError } from '../errors.js';
+import { isNotFound, nodeFs, readFileIfExists, writeFileAtomic } from './fs.js';
 import type { FsLike } from './fs.js';
 import type { WsExchange, WsFrame } from '../ws/model.js';
 import { capFrames } from '../ws/transcript.js';
@@ -213,11 +220,36 @@ export function historyContractOf(result: RestContractResult): RestContractResul
   };
 }
 
+/** How long a writer waits for the file's lock, and when a lock counts as a crashed writer's. */
+export interface HistoryLockOptions {
+  /** How long a writer waits before failing with `history-busy`. Default 2000 ms. */
+  readonly timeoutMs?: number;
+  /** A lock older than this was left by a crashed writer and is broken. Default 5000 ms. */
+  readonly staleMs?: number;
+  /** How often a waiting writer tries again. Default 25 ms. */
+  readonly retryMs?: number;
+}
+
 /** Options accepted by {@link appendHistory} and {@link openHistory}. */
 export interface HistoryOptions {
+  /**
+   * Reads and writes the History file. The lock file and the freshness check always use the real
+   * disk through `node:fs`, whatever `fs` is injected.
+   */
   readonly fs?: FsLike;
   /** Oldest entries are dropped once the file holds more than this many. Defaults to 1000. */
   readonly cap?: number;
+  readonly lock?: HistoryLockOptions;
+}
+
+/** Options accepted by {@link appendHistory}. */
+export interface AppendHistoryOptions extends HistoryOptions {
+  /**
+   * Never drop an entry the file already holds: the cap trims only down to the current count, so
+   * the file may grow past `cap`. For a writer that does not know the cap the user chose (the
+   * desktop's own cap applies again on its next write).
+   */
+  readonly keepAtLeastCurrent?: boolean;
 }
 
 /** Filters accepted by {@link HistoryFile.list}. */
@@ -239,6 +271,11 @@ export interface HistoryFile {
   /** Empties the file and the cache. Returns the number of entries that were cleared. */
   clear(): Promise<number>;
   count(): number;
+  /**
+   * Rereads the file when it is not the version this handle last read or wrote — another process
+   * wrote it. Resolves `true` when it reread. Serialised with `append` and `clear`.
+   */
+  refresh(): Promise<boolean>;
   /** Corrupt lines skipped while loading the file. */
   readonly problems: number;
 }
@@ -325,31 +362,141 @@ function serialise(entries: readonly HistoryEntry[]): string {
   return entries.map((entry) => JSON.stringify(entry)).join('\n') + (entries.length > 0 ? '\n' : '');
 }
 
-/**
- * Appends one entry to `file`, rotating so at most `cap` (default 1000) entries remain — the
- * oldest are dropped first. Stateless: rereads the whole file first, so prefer {@link openHistory}
- * when appending more than once (it keeps the entries cached in memory).
- */
-export async function appendHistory(file: string, entry: HistoryEntry, options: HistoryOptions = {}): Promise<void> {
-  const fs = options.fs ?? nodeFs;
-  const cap = options.cap ?? DEFAULT_CAP;
-  const { entries } = await readAll(fs, file);
-  entries.push(entry);
-  const capped = entries.length > cap ? entries.slice(entries.length - cap) : entries;
-  await writeFileAtomic(fs, file, serialise(capped));
+const LOCK_DEFAULTS = { timeoutMs: 2_000, staleMs: 5_000, retryMs: 25 } as const;
+
+/** One version of the file. An atomic write replaces the inode; size and mtime catch the rest. */
+interface FileSignature {
+  readonly ino: number;
+  readonly size: number;
+  readonly mtimeMs: number;
+}
+
+async function signatureOf(file: string): Promise<FileSignature | undefined> {
+  try {
+    const found = await stat(file);
+    return { ino: found.ino, size: found.size, mtimeMs: found.mtimeMs };
+  } catch (error) {
+    if (isNotFound(error)) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function sameSignature(a: FileSignature | undefined, b: FileSignature | undefined): boolean {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  return a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs;
+}
+
+/** Creates the lock file holding `token` if nobody holds it. */
+async function createLock(lockFile: string, token: string): Promise<boolean> {
+  try {
+    const handle = await open(lockFile, 'wx');
+    try {
+      await handle.writeFile(token);
+    } finally {
+      await handle.close();
+    }
+    return true;
+  } catch (error) {
+    if ((error as { code?: string }).code === 'EEXIST') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/** Removes the lock only when it still holds `token`: a lock broken as stale is the next holder's. */
+async function releaseLock(lockFile: string, token: string): Promise<void> {
+  try {
+    if ((await readFile(lockFile, 'utf8')) === token) {
+      await rm(lockFile, { force: true });
+    }
+  } catch (error) {
+    if (!isNotFound(error)) {
+      throw error;
+    }
+  }
 }
 
 /**
- * Opens a live handle on `file`'s history: loads the current entries into memory once, then
- * serves `list`/`get`/`count` from that cache and keeps it (and the file) in sync on `append`/
- * `clear`. Concurrent `append`/`clear` calls on the same handle are serialised.
+ * Runs `task` holding `<file>.lock`, which carries an owner token (pid plus random bytes). A lock
+ * older than `staleMs` is a crashed writer's and is removed; otherwise the writer retries every
+ * `retryMs` until `timeoutMs`, then fails with `history-busy`. Release is owner-checked: the lock
+ * is removed only while it still holds this writer's token, so a holder whose lock was broken
+ * never deletes the next holder's. Breaking a stale lock can still race between two waiters who
+ * both see it as stale; that is accepted, because a critical section is a reread plus one atomic
+ * write.
+ */
+async function withLock<T>(file: string, options: HistoryLockOptions | undefined, task: () => Promise<T>): Promise<T> {
+  const { timeoutMs, staleMs, retryMs } = { ...LOCK_DEFAULTS, ...options };
+  const lockFile = `${file}.lock`;
+  const token = `${String(process.pid)}-${randomBytes(8).toString('hex')}`;
+  await mkdir(dirname(file), { recursive: true });
+  const deadline = Date.now() + timeoutMs;
+  while (!(await createLock(lockFile, token))) {
+    const held = await signatureOf(lockFile);
+    if (held !== undefined && Date.now() - held.mtimeMs > staleMs) {
+      await rm(lockFile, { force: true });
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      throw new ProjectError(
+        'history-busy',
+        `This writer waited ${String(timeoutMs)} ms for the History lock and gave up; try again`,
+        { details: { file, lock: lockFile } },
+      );
+    }
+    await delay(retryMs);
+  }
+  try {
+    return await task();
+  } finally {
+    await releaseLock(lockFile, token);
+  }
+}
+
+/**
+ * Appends one entry to `file` under the file's lock, rotating so at most `cap` (default 1000)
+ * entries remain — the oldest are dropped first. With `keepAtLeastCurrent`, no entry already in the
+ * file is dropped. Stateless: rereads the whole file first, so prefer {@link openHistory} when
+ * appending more than once (it keeps the entries cached in memory).
+ */
+export async function appendHistory(
+  file: string,
+  entry: HistoryEntry,
+  options: AppendHistoryOptions = {},
+): Promise<void> {
+  const fs = options.fs ?? nodeFs;
+  await withLock(file, options.lock, async () => {
+    const { entries } = await readAll(fs, file);
+    // Decided after the reread, inside the lock: every entry held now, plus the new one, stays.
+    const cap =
+      options.keepAtLeastCurrent === true
+        ? Math.max(options.cap ?? DEFAULT_CAP, entries.length + 1)
+        : (options.cap ?? DEFAULT_CAP);
+    entries.push(entry);
+    const capped = entries.length > cap ? entries.slice(entries.length - cap) : entries;
+    await writeFileAtomic(fs, file, serialise(capped));
+  });
+}
+
+/**
+ * Opens a live handle on `file`'s history: loads the entries into memory, serves `list`/`get`/`count`
+ * from that cache, and on `append`/`clear` takes the file's lock, rereads the file when another
+ * writer changed it, and writes it back. Calls on one handle are serialised.
  */
 export async function openHistory(file: string, options: HistoryOptions = {}): Promise<HistoryFile> {
   const fs = options.fs ?? nodeFs;
   const cap = options.cap ?? DEFAULT_CAP;
-  const { entries, problems } = await readAll(fs, file);
+  // Taken before the read: a write that lands in between makes the next check reread, never miss.
+  let seen = await signatureOf(file);
+  const initial = await readAll(fs, file);
   // Oldest-first in memory (matches on-disk order); newest-first is only materialised for `list`.
-  let cache: HistoryEntry[] = entries;
+  let cache: HistoryEntry[] = initial.entries;
+  let problems = initial.problems;
   let queue: Promise<unknown> = Promise.resolve();
 
   const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
@@ -360,17 +507,39 @@ export async function openHistory(file: string, options: HistoryOptions = {}): P
     return result;
   };
 
+  const reload = async (): Promise<boolean> => {
+    const current = await signatureOf(file);
+    if (sameSignature(current, seen)) {
+      return false;
+    }
+    const read = await readAll(fs, file);
+    cache = read.entries;
+    problems = read.problems;
+    seen = current;
+    return true;
+  };
+
+  const write = async (text: string): Promise<void> => {
+    await writeFileAtomic(fs, file, text);
+    seen = await signatureOf(file);
+  };
+
   return {
-    problems,
+    get problems() {
+      return problems;
+    },
 
     append(entry) {
-      return enqueue(async () => {
-        cache.push(entry);
-        if (cache.length > cap) {
-          cache = cache.slice(cache.length - cap);
-        }
-        await writeFileAtomic(fs, file, serialise(cache));
-      });
+      return enqueue(() =>
+        withLock(file, options.lock, async () => {
+          await reload();
+          cache.push(entry);
+          if (cache.length > cap) {
+            cache = cache.slice(cache.length - cap);
+          }
+          await write(serialise(cache));
+        }),
+      );
     },
 
     list(query) {
@@ -391,16 +560,23 @@ export async function openHistory(file: string, options: HistoryOptions = {}): P
     },
 
     clear() {
-      return enqueue(async () => {
-        const cleared = cache.length;
-        cache = [];
-        await writeFileAtomic(fs, file, '');
-        return cleared;
-      });
+      return enqueue(() =>
+        withLock(file, options.lock, async () => {
+          await reload();
+          const cleared = cache.length;
+          cache = [];
+          await write('');
+          return cleared;
+        }),
+      );
     },
 
     count() {
       return cache.length;
+    },
+
+    refresh() {
+      return enqueue(reload);
     },
   };
 }
