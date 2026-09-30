@@ -22,7 +22,7 @@ import { readSequences } from '../sequence/load.js';
 import type { FsLike } from './fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from './fs.js';
 import { listApiTreeFiles, toAbsolute } from './managed-files.js';
-import { takenContainerSlugs } from './model.js';
+import { takenContainerSlugs, unsupportedOf } from './model.js';
 import type { Project } from './model.js';
 import {
   APIS_DIR,
@@ -30,6 +30,7 @@ import {
   INTERFACES_DIR,
   REQUESTS_DIR,
   WEBHOOKS_DIR,
+  WEBHOOKS_FEATURE,
   WEBHOOKS_FILE,
   WSS_DIR,
 } from './paths.js';
@@ -96,15 +97,16 @@ export interface SaveProjectOptions {
  * - `environments/*.yaml`
  * - `wss/{outgoing,incoming}/*.yaml`
  * - `wss/keystores.yaml`
- * - `webhooks/webhooks.yaml`
- * - `webhooks/requests/**` (the collection's own request tree, same layout as an API's)
+ * - `webhooks/webhooks.yaml`, while the `rest` feature is on
+ * - `webhooks/requests/**` (the collection's own request tree, same layout as an API's), while the
+ *   `rest` feature is on
  * - the `sequences/*.sequence.yaml` this build loaded
  *
  * A container's files are its protocol's to list (`storage.managed`). Anything else on disk — a
  * README, a `.gitkeep`, notes — is a foreign file and is never a deletion candidate, even when it
  * sits inside a directory Wirebench otherwise manages.
  */
-async function listCoreManagedFiles(fs: FsLike, root: string): Promise<string[]> {
+async function listCoreManagedFiles(fs: FsLike, root: string, registry: ProtocolRegistry): Promise<string[]> {
   const managed: string[] = [];
   if ((await readFileIfExists(fs, toAbsolute(root, MANIFEST_PATH))) !== undefined) {
     managed.push(MANIFEST_PATH);
@@ -128,9 +130,13 @@ async function listCoreManagedFiles(fs: FsLike, root: string): Promise<string[]>
     managed.push(KEYSTORES_PATH);
   }
 
-  // The request tree is managed only beside its `webhooks.yaml`, as an API's is beside its `api.yaml`.
+  // The request tree is managed only beside its `webhooks.yaml`, as an API's is beside its `api.yaml`,
+  // and only while REST is on: with it off the collection was not loaded, and is not this save's.
   const webhooksFile = `${WEBHOOKS_DIR}/${WEBHOOKS_FILE}`;
-  if ((await readFileIfExists(fs, toAbsolute(root, webhooksFile))) !== undefined) {
+  if (
+    registry.features.isEnabled(WEBHOOKS_FEATURE) &&
+    (await readFileIfExists(fs, toAbsolute(root, webhooksFile))) !== undefined
+  ) {
     managed.push(webhooksFile);
     managed.push(...(await listApiTreeFiles(fs, root, `${WEBHOOKS_DIR}/${REQUESTS_DIR}`)));
   }
@@ -196,9 +202,52 @@ async function refuseOverwritingForeignSequences(
 }
 
 /**
+ * Refuses a save that would write a container into a placeholder's directory (spec §6): the files
+ * there belong to a container this build could not read, and none of them may be replaced. Slugs
+ * are compared without case, as `uniqueSlug` compares them, because on most machines two names
+ * that differ only in case are one directory. A host that names containers with
+ * `takenContainerSlugs` never gets here.
+ *
+ * @throws ProjectError `container-slug-conflict`
+ */
+function refusePlaceholderConflicts(project: Project, registry: ProtocolRegistry): void {
+  const placeholders = unsupportedOf(project);
+  if (placeholders.length === 0) {
+    return;
+  }
+  for (const module of registry.modules) {
+    const storage = module.storage;
+    if (storage === undefined) {
+      continue;
+    }
+    for (const container of storage.containers(project)) {
+      const placeholder = placeholders.find(
+        (candidate) => candidate.dir === storage.dir && candidate.slug.toLowerCase() === container.slug.toLowerCase(),
+      );
+      if (placeholder !== undefined) {
+        throw new ProjectError(
+          'container-slug-conflict',
+          `"${container.name}" would be saved to ${storage.dir}/${placeholder.slug}, which holds a "${placeholder.kind}" container this build did not load; give it another name`,
+          {
+            details: {
+              dir: storage.dir,
+              slug: container.slug,
+              kind: placeholder.kind,
+              reason: placeholder.reason,
+            },
+          },
+        );
+      }
+    }
+  }
+}
+
+/**
  * Saves `project` into the directory `root`, creating it if needed.
  *
  * @returns which files were written, removed and left untouched.
+ * @throws ProjectError `container-slug-conflict` when a container has the slug of a placeholder in
+ * its directory; `sequence-file-conflict`; what {@link projectFiles} throws
  */
 export async function saveProject(project: Project, root: string, options?: SaveProjectOptions): Promise<SaveResult> {
   const fs = options?.fs ?? nodeFs;
@@ -207,6 +256,7 @@ export async function saveProject(project: Project, root: string, options?: Save
     registry,
     ...(options?.writer !== undefined ? { writer: options.writer } : {}),
   });
+  refusePlaceholderConflicts(project, registry);
 
   // Which container directories are alive: every container the project holds and every placeholder,
   // whatever this save's registry can write (spec R6). A save never deletes what it cannot write.
@@ -215,9 +265,9 @@ export async function saveProject(project: Project, root: string, options?: Save
     apis: takenContainerSlugs(project, 'apis'),
   };
   // What this save may delete: core's own files, then each module's word on each of its containers
-  // (spec §5.2). A container no enabled module answers for has no managed file, so nothing under
-  // its directory is removed, and `projectFiles` wrote nothing for it.
-  const existing = await listCoreManagedFiles(fs, root);
+  // (spec §5.2). A placeholder, and a container no enabled module answers for, has no managed file,
+  // so nothing under its directory is removed or touched (spec §6).
+  const existing = await listCoreManagedFiles(fs, root, registry);
   for (const module of registry.modules) {
     const storage = module.storage;
     if (storage === undefined) {

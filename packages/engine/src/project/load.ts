@@ -25,7 +25,7 @@ import { nodeFs, readdirIfExists } from './fs.js';
 import { abs, authConfig, byOrder, exact, loadFolderContents, optional, readYaml } from './load-helpers.js';
 import { migrate } from './migrate.js';
 import { FORMAT_VERSION } from './model.js';
-import type { Environment, Project, ProjectSettings, WssRef } from './model.js';
+import type { Environment, Project, ProjectSettings, UnsupportedContainer, WssRef } from './model.js';
 import {
   API_FILE,
   APIS_DIR,
@@ -33,10 +33,11 @@ import {
   INTERFACES_DIR,
   REQUESTS_DIR,
   WEBHOOKS_DIR,
+  WEBHOOKS_FEATURE,
   WEBHOOKS_FILE,
   WSS_DIR,
 } from './paths.js';
-import { assertSupportedKind, parseFile } from './schema-parts.js';
+import { parseFile } from './schema-parts.js';
 import {
   environmentFileSchema,
   keystoresFileSchema,
@@ -72,10 +73,14 @@ export interface ProjectProblem {
     /** A script the request names whose file is gone; the request refuses to send until it is back (#63). */
     | 'script-file-missing'
     /** A script file over the size limit; kept as it is, and the request refuses to send (#63). */
-    | 'script-too-large';
+    | 'script-too-large'
+    /** A container whose kind has no enabled module; it is a placeholder and is left as it is (spec §6). */
+    | 'container-unsupported';
   readonly message: string;
   /** Path relative to the project root. */
   readonly file: string;
+  /** For `container-unsupported`: `kind`, `reason`, `dir` and `slug`. */
+  readonly details?: Readonly<Record<string, unknown>>;
 }
 
 /** The result of {@link loadProject}: the model plus anything odd about the folder. */
@@ -182,45 +187,68 @@ function kindOf(document: unknown, fallback: string): string {
 }
 
 /**
- * The storage that reads the container file `document`, found in `layout.dir`: the enabled module
- * its `kind` names, when that module keeps its containers in this directory.
- *
- * Anything else is refused as it was before the registry: an unknown kind by name, and a known kind
- * in the wrong directory by the schema of the directory's first protocol.
- *
- * @throws ProjectError `project-kind-not-supported`; WirebenchError `feature-disabled`
+ * The storage that reads a container file found in `layout.dir`: the enabled module its `kind`
+ * names, when that module keeps its containers in this directory. Undefined makes a placeholder.
  */
 function storageFor(
   registry: ProtocolRegistry,
   layout: ContainerLayout,
   document: unknown,
-  relative: string,
-): ProtocolStorage {
+): ProtocolStorage | undefined {
+  const storage = registry.find(kindOf(document, layout.defaultKind))?.storage;
+  return storage !== undefined && storage.dir === layout.dir ? storage : undefined;
+}
+
+/**
+ * What is kept of a container no enabled module reads (spec §6): where it is, its kind as written,
+ * why it was not loaded, and its name and order when the file has them as a string and a number.
+ */
+function placeholderOf(
+  registry: ProtocolRegistry,
+  layout: ContainerLayout,
+  slug: string,
+  document: unknown,
+): UnsupportedContainer {
   const kind = kindOf(document, layout.defaultKind);
-  const storage = registry.find(kind)?.storage;
-  if (storage !== undefined && storage.dir === layout.dir) {
-    return storage;
-  }
-  assertSupportedKind(document, relative);
-  const fallback = registry.require(storage === undefined ? kind : layout.defaultKind).storage;
-  if (fallback === undefined) {
-    throw new ProjectError(
-      'project-kind-not-supported',
-      `${relative} is a "${kind}" document, which this build cannot open`,
-      { details: { file: relative, kind } },
-    );
-  }
-  return fallback;
+  const fields = typeof document === 'object' && document !== null ? (document as Record<string, unknown>) : {};
+  const name = fields['name'];
+  const order = fields['order'];
+  return {
+    dir: layout.dir,
+    slug,
+    kind,
+    // A kind the registry has a module for but in the other directory is unknown here.
+    reason: registry.status(kind) === 'disabled' ? 'feature-disabled' : 'unknown-kind',
+    ...(typeof name === 'string' ? { name } : {}),
+    ...(typeof order === 'number' ? { order } : {}),
+  };
+}
+
+/** The problem a placeholder is reported with. */
+function unsupportedProblem(placeholder: UnsupportedContainer, file: string): ProjectProblem {
+  const why =
+    placeholder.reason === 'feature-disabled'
+      ? 'that protocol is switched off'
+      : `this build has no such protocol for ${placeholder.dir}/`;
+  return {
+    code: 'container-unsupported',
+    message: `${file} is a "${placeholder.kind}" container, and ${why}; it was not loaded and is left as it is`,
+    file,
+    details: { kind: placeholder.kind, reason: placeholder.reason, dir: placeholder.dir, slug: placeholder.slug },
+  };
 }
 
 /**
  * Loads the project stored in the directory `root`. Each container directory under `interfaces/`
- * and `apis/` is read by the protocol module its container file's `kind` names (spec §5.1).
+ * and `apis/` is read by the protocol module its container file's `kind` names (spec §5.1). A
+ * container whose kind has no enabled module in that directory becomes a placeholder in
+ * `project.unsupported` and a `container-unsupported` problem; nothing below its directory is read
+ * but its container file, and a save leaves all of it as it is (spec §6).
  *
  * @throws ProjectError `project-not-found` when there is no `wirebench.yaml`,
  * `project-format-too-new` for a newer format version, `project-file-invalid`
  * for malformed or schema-violating YAML (with the offending file in `details`),
- * `project-kind-not-supported` for a container or request of a kind this build has no module for.
+ * `project-kind-not-supported` for a request file of a kind this build has no module for.
  */
 export async function loadProject(root: string, options?: LoadProjectOptions): Promise<LoadResult> {
   const fs = options?.fs ?? nodeFs;
@@ -236,6 +264,7 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
   const problems: ProjectProblem[] = [];
   const ctx: LoadContext = { fs, root, problems };
   const loaded = new Map<ProtocolStorage, ContainerBase[]>();
+  const unsupported: UnsupportedContainer[] = [];
   const interfaceSlugs = new Set<string>();
   for (const layout of CONTAINER_DIRS) {
     for (const entry of await readdirIfExists(fs, abs(root, layout.dir))) {
@@ -252,7 +281,15 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
         });
         continue;
       }
-      const storage = storageFor(registry, layout, document, relative);
+      const storage = storageFor(registry, layout, document);
+      if (storage === undefined) {
+        // Kept whatever its slug: a placeholder that was skipped would not be live, and the next
+        // save would delete the directory this build could not read.
+        const placeholder = placeholderOf(registry, layout, entry.name, document);
+        unsupported.push(placeholder);
+        problems.push(unsupportedProblem(placeholder, relative));
+        continue;
+      }
       const container = await storage.load(ctx, entry.name, document);
       if (container === undefined) {
         continue;
@@ -289,7 +326,8 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
   const sequenceFiles = await readSequences(fs, root);
   problems.push(...sequenceFiles.problems);
 
-  const webhooks = await loadWebhooks(fs, root, problems);
+  // The collection is REST requests: with REST off it is not read, and a save leaves it alone.
+  const webhooks = registry.features.isEnabled(WEBHOOKS_FEATURE) ? await loadWebhooks(fs, root, problems) : undefined;
 
   const core: Project = {
     formatVersion: FORMAT_VERSION,
@@ -312,6 +350,10 @@ export async function loadProject(root: string, options?: LoadProjectOptions): P
       incoming: await loadWssRefs(fs, root, 'incoming'),
       keystores,
     },
+    // Absent when there is none, as every project written before placeholders is.
+    ...(unsupported.length > 0
+      ? { unsupported: unsupported.sort((a, b) => a.dir.localeCompare(b.dir) || a.slug.localeCompare(b.slug)) }
+      : {}),
   };
   // A module that loaded nothing is not asked: the four built-in lists are already empty, and a
   // kind kept in `extraContainers` must not appear there when the project holds none of it.

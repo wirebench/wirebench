@@ -502,15 +502,19 @@ describe('a kind this build does not support', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('refuses an api.yaml of an unknown kind the same way', async () => {
+  it('loads an api.yaml of an unknown kind as a placeholder, and the rest of the project with it', async () => {
     const dir = await tempProjectDir();
     await saveProject(apiProject(), dir);
     const file = join(dir, APIS_DIR, 'Orders', 'api.yaml');
     await writeFile(file, (await readFile(file, 'utf8')).replace('kind: rest', 'kind: graphql'));
 
-    const error = (await loadProject(dir).catch((e: unknown) => e)) as ProjectError;
+    const { project, problems } = await loadProject(dir);
 
-    expect(error.code).toBe('project-kind-not-supported');
+    expect(project.apis.map((api) => api.slug)).toEqual(['Petstore']);
+    expect(project.unsupported).toEqual([
+      { dir: 'apis', slug: 'Orders', kind: 'graphql', reason: 'unknown-kind', name: 'Orders', order: 1 },
+    ]);
+    expect(problems.map((problem) => problem.code)).toEqual(['container-unsupported']);
     await rm(dir, { recursive: true, force: true });
   });
 });

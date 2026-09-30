@@ -16,6 +16,7 @@ import {
   createFolder,
   createRestRequest,
   signatureSchemeSchema,
+  takenContainerSlugs,
   toSignatureScheme,
   uniqueSlug,
 } from '@wirebench/engine';
@@ -406,14 +407,34 @@ export function toEngineBody(body: RestBodyWire): RestBody {
   }
 }
 
+/**
+ * Every slug in use at the project's top level: the APIs of every kind (they share `apis/`), the
+ * interfaces and the placeholders (spec R3, §6). Hand it to `uniqueSlug` when naming an API.
+ *
+ * With `exceptApiId`, that API's own slug is left out so a rename may keep it — unless another API,
+ * an interface or a placeholder holds the same slug too: the slug is dropped by leaving the API out,
+ * never by deleting it from the set, so it is never freed while someone else still has it.
+ */
+export function takenApiSlugs(project: Project, exceptApiId?: string): Set<string> {
+  const others: Project =
+    exceptApiId === undefined
+      ? project
+      : {
+          ...project,
+          apis: project.apis.filter((api) => api.id !== exceptApiId),
+          grpcApis: project.grpcApis.filter((api) => api.id !== exceptApiId),
+          wsApis: project.wsApis.filter((api) => api.id !== exceptApiId),
+        };
+  return new Set([...takenContainerSlugs(others, 'apis'), ...takenContainerSlugs(others, 'interfaces')]);
+}
+
 /** Adds an API to the project, ordered after every interface and API it already has. */
 export function addApi(
   project: Project,
   input: { readonly name: string; readonly baseUrl: string },
 ): RestMutationResult {
-  const taken = new Set([...project.apis.map((api) => api.slug), ...project.interfaces.map((iface) => iface.slug)]);
   const api = createApi(input.name, {
-    slug: uniqueSlug(input.name, taken),
+    slug: uniqueSlug(input.name, takenApiSlugs(project)),
     baseUrl: input.baseUrl,
     order: project.interfaces.length + project.apis.length,
   });
@@ -423,10 +444,7 @@ export function addApi(
 /** Applies a patch to an API. A `null` clears an optional field; an absent one leaves it alone. */
 export function updateApi(project: Project, apiId: string, patch: ApiPatchWire): RestMutationResult {
   const api = requireApi(project, apiId);
-  const taken = new Set([
-    ...project.apis.filter((other) => other.id !== apiId).map((other) => other.slug),
-    ...project.interfaces.map((iface) => iface.slug),
-  ]);
+  const taken = takenApiSlugs(project, apiId);
   const name = patch.name ?? api.name;
   const next = {
     kind: 'rest' as const,

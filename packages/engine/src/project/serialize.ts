@@ -20,6 +20,7 @@ import {
   REQUESTS_DIR,
   slugify,
   WEBHOOKS_DIR,
+  WEBHOOKS_FEATURE,
   WEBHOOKS_FILE,
   WSS_DIR,
 } from './paths.js';
@@ -163,7 +164,8 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
     assertPathSegment(sequence.slug);
     files.set(sequenceFilePath(sequence.slug), sequenceDocument(sequence));
   }
-  if (project.webhooks !== undefined) {
+  // REST requests in a tree of their own: written only while REST is on (spec §3.2).
+  if (project.webhooks !== undefined && registry.features.isEnabled(WEBHOOKS_FEATURE)) {
     addWebhookFiles(files, project.webhooks);
   }
 

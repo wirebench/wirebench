@@ -64,6 +64,7 @@ import {
   resolveWorkspaceScopes,
   saveProject,
   toSendInput,
+  takenContainerSlugs,
   uniqueSlug,
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
@@ -200,7 +201,7 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
-import { findRestFolder, findRestRequest, mapFolder, restApiOwning } from './project-rest-mutations.js';
+import { findRestFolder, findRestRequest, mapFolder, restApiOwning, takenApiSlugs } from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
 import {
   addWebhookGroup,
@@ -215,7 +216,7 @@ import type { RestSendResolution } from './rest-send.js';
 import { resolveGrpcSend } from './grpc-send.js';
 import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
-import { findWsRequest, locateWsRequest, takenApiSlugs, wsApiOwning } from './project-ws-mutations.js';
+import { findWsRequest, locateWsRequest, wsApiOwning } from './project-ws-mutations.js';
 import { resolveWsSend } from './ws-send.js';
 import type { WsSendResolution } from './ws-send.js';
 import type { SecretStore } from './secrets.js';
@@ -2067,12 +2068,7 @@ export class ProjectHost {
     } & GrpcDefinitionInput,
   ): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
-    const taken = new Set([
-      ...open.project.apis.map((api) => api.slug),
-      ...open.project.grpcApis.map((api) => api.slug),
-      ...open.project.interfaces.map((iface) => iface.slug),
-    ]);
-    const slug = uniqueSlug(input.api.name, taken);
+    const slug = uniqueSlug(input.api.name, takenApiSlugs(open.project));
     const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
     if (cache) {
       await this.writeGrpcDefinition(apiDefinitionDir(open.dir, slug), input.source, input.roots, input);
@@ -2650,7 +2646,7 @@ export class ProjectHost {
   }): Promise<{ project: ProjectWire; interfaceId: string }> {
     const open = this.require();
     const interfaceId = generateId();
-    const taken = new Set(open.project.interfaces.map((iface) => iface.slug));
+    const taken = new Set(takenContainerSlugs(open.project, 'interfaces'));
 
     const resolvedAuth =
       input.auth !== undefined
@@ -2771,7 +2767,7 @@ export class ProjectHost {
     token?: string;
   }): Promise<{ project: ProjectWire; report: LegacyImportReport; environmentNames: string[] }> {
     const open = this.require();
-    const taken = new Set(open.project.interfaces.map((iface) => iface.slug));
+    const taken = new Set(takenContainerSlugs(open.project, 'interfaces'));
     const network = createDefaultFetchDocument();
     const summaries = new Map<string, InterfaceSummary>();
 
@@ -3034,11 +3030,7 @@ export class ProjectHost {
     readonly webhooks?: WebhookFolder;
   }): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
-    const taken = new Set([
-      ...open.project.apis.map((api) => api.slug),
-      ...open.project.interfaces.map((iface) => iface.slug),
-    ]);
-    const slug = uniqueSlug(input.api.name, taken);
+    const slug = uniqueSlug(input.api.name, takenApiSlugs(open.project));
     const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
 
     if (cache) {

@@ -20,6 +20,7 @@ import {
   importOpenApi,
   qnameToString,
   saveProject,
+  takenContainerSlugs,
   uniqueSlug,
   writeApiDefinitionCache,
   writeDefinitionCache,
@@ -189,7 +190,7 @@ async function addWsdl(
   const result = await importDefinition({ kind: 'text', text: read.text, location: read.location }, { fetchDocument });
   const interfaceName =
     name ?? result.definition.services[0]?.name.localName ?? read.filename ?? basename(new URL(read.location).pathname);
-  const slug = uniqueSlug(interfaceName, new Set(project.interfaces.map((iface) => iface.slug)));
+  const slug = uniqueSlug(interfaceName, takenContainerSlugs(project, 'interfaces'));
   const cache = project.settings.cacheDefinitions;
   const endpoints = endpointsOf(result);
   const iface: Interface = {
@@ -254,7 +255,7 @@ async function addOpenApi(
       ...(name !== undefined ? { name } : {}),
     },
   );
-  const taken = new Set([...project.apis.map((api) => api.slug), ...project.interfaces.map((iface) => iface.slug)]);
+  const taken = new Set([...takenContainerSlugs(project, 'apis'), ...takenContainerSlugs(project, 'interfaces')]);
   const slug = uniqueSlug(imported.api.name, taken);
   const cache = project.settings.cacheDefinitions;
   const version = imported.summary.declaredVersion;
