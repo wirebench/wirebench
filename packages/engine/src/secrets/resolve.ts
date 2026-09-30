@@ -1,6 +1,6 @@
 /**
  * Resolves an `EndpointAuth` (which only ever carries a `passwordRef`) into the plaintext shape
- * the engine's `importDefinition`/send path expects. Kept pure — the secret getter is injected —
+ * the engine's `importWsdl`/send path expects. Kept pure — the secret getter is injected —
  * so it needs no Electron and is trivially testable without a real `SecretStore`.
  */
 

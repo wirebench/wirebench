@@ -316,23 +316,23 @@ export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
 export { captureSslInfo, splitPemBundle } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
 
-export { importDefinition } from './soap/import.js';
+export { importWsdl } from './soap/import.js';
 export { sendSoapRequest } from './soap/send.js';
-export { generateEmptyRequest, generateRequest } from './soap/generate.js';
-export { summarizeOperations } from './soap/operations.js';
+export { generateEmptySoapRequest, generateSoapRequest } from './soap/generate.js';
+export { summarizeSoapOperations } from './soap/operations.js';
 export type {
-  ImportCacheOptions,
-  ImportOptions,
-  ImportProblem,
-  ImportProgress,
-  ImportResult,
-  ImportSource,
-  OperationSummary,
-  SendAttachmentOptions,
+  SoapAttachmentOptions,
   SoapExchange,
+  SoapOperationSummary,
   SoapSendInput,
   SoapSendWsa,
   SoapSendWss,
+  WsdlImportCacheOptions,
+  WsdlImportOptions,
+  WsdlImportProblem,
+  WsdlImportProgress,
+  WsdlImportResult,
+  WsdlImportSource,
 } from './soap/types.js';
 export type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
 
@@ -812,10 +812,10 @@ export type {
   RestPreferences,
   WsiPreferences,
 } from './project/preferences.js';
-export { toSendInput } from './soap/send-input.js';
+export { toSoapSendInput } from './soap/send-input.js';
 export { toRestSendInput } from './rest/send-input.js';
 export { toGrpcSendInput } from './grpc/send-input.js';
-export type { AttachmentResolvers, SendRequestInput, ToSendInputArgs } from './soap/send-input.js';
+export type { AttachmentResolvers, SoapSendRequestInput, ToSoapSendInputArgs } from './soap/send-input.js';
 export type { RestSendRequestInput, ToRestSendInputArgs } from './rest/send-input.js';
 export type { GrpcSendRequestInput, ToGrpcSendInputArgs } from './grpc/send-input.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';

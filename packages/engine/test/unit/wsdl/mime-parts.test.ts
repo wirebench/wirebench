@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { findBinding } from '../../../src/wsdl/model.js';
 import { parseWsdlDocument } from '../../../src/wsdl/parse-wsdl.js';
 import { parseXml } from '../../../src/xml/parse.js';
-import { summarizeOperations } from '../../../src/soap/operations.js';
+import { summarizeSoapOperations } from '../../../src/soap/operations.js';
 import type { WsdlDefinition } from '../../../src/wsdl/model.js';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
@@ -39,7 +39,7 @@ describe('WSDL mime:multipartRelated parts', () => {
   });
 
   it('surfaces the input mime parts on the operation summary', () => {
-    const summaries = summarizeOperations(definition);
+    const summaries = summarizeSoapOperations(definition);
     const upload = summaries.find((summary) => summary.operationName === 'Upload');
     const sendRef = summaries.find((summary) => summary.operationName === 'SendRef');
     expect(upload?.inputMimeParts).toEqual([{ part: 'file', type: 'application/octet-stream' }]);

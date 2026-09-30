@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/soap/import.js';
-import type { ImportResult } from '../../../src/soap/types.js';
+import { importWsdl } from '../../../src/soap/import.js';
+import type { WsdlImportResult } from '../../../src/soap/types.js';
 import { generateDocs, sourceSnippet } from '../../../src/wsdl/docs-generator.js';
 import { SOURCE_SNIPPET_CASES } from '../../helpers/source-snippet-cases.js';
 
@@ -12,11 +12,11 @@ const fixtureRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/', impor
  * Imports a fixture from its text at a *fixed* location, so the generated document — which
  * names the definition it documents — is byte-stable across machines and checkouts.
  */
-async function importAt(relative: string, location: string): Promise<ImportResult> {
-  return importDefinition({ kind: 'text', text: readFileSync(`${fixtureRoot}${relative}`, 'utf-8'), location });
+async function importAt(relative: string, location: string): Promise<WsdlImportResult> {
+  return importWsdl({ kind: 'text', text: readFileSync(`${fixtureRoot}${relative}`, 'utf-8'), location });
 }
 
-let calculator: ImportResult;
+let calculator: WsdlImportResult;
 
 beforeAll(async () => {
   calculator = await importAt('public/calculator/service.wsdl', 'http://example.invalid/calculator.wsdl');
@@ -141,7 +141,7 @@ describe('generateDocs — other definition shapes', () => {
   });
 
   it('lists every document of a multi-document bundle', async () => {
-    const result = await importDefinition({
+    const result = await importWsdl({
       kind: 'file',
       path: `${fixtureRoot}crafted/nested-imports/service.wsdl`,
     });
@@ -157,7 +157,7 @@ describe('generateDocs — other definition shapes', () => {
       '  <wsdl:documentation>Nothing at all.</wsdl:documentation>',
       '</wsdl:definitions>',
     ].join('\n');
-    const result = await importDefinition({ kind: 'text', text, location: 'http://example.invalid/empty.wsdl' });
+    const result = await importWsdl({ kind: 'text', text, location: 'http://example.invalid/empty.wsdl' });
     const markdown = generateDocs(result, { format: 'markdown' });
     expect(markdown.startsWith('# empty.wsdl')).toBe(true);
     expect(markdown).toContain('Nothing at all.');

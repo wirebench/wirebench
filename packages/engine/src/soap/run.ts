@@ -48,7 +48,7 @@ import { soapOperationElements, soapScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveSoapAuth } from '../secrets/resolve.js';
-import { toSendInput } from './send-input.js';
+import { toSoapSendInput } from './send-input.js';
 import type { AttachmentResolvers } from './send-input.js';
 import { sendSoapRequest } from './send.js';
 import type { SoapExchange, SoapSendInput, SoapSendWss } from './types.js';
@@ -211,7 +211,7 @@ export async function prepareSoap(selected: SoapSelected, context: RunContext): 
     });
   }
   const owner = soapEffectiveAuth(selected);
-  const base = toSendInput({
+  const base = toSoapSendInput({
     request: {
       properties: request.properties,
       soapVersion: request.soapVersion,

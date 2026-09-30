@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../src/soap/import.js';
-import { generateRequest } from '../../src/soap/generate.js';
+import { importWsdl } from '../../src/soap/import.js';
+import { generateSoapRequest } from '../../src/soap/generate.js';
 import { sendSoapRequest } from '../../src/soap/send.js';
 import { messageBindingFor, runMessageAssertions } from '../../src/validate/wsi/run-message.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
@@ -23,7 +23,7 @@ describe('WS-I message assertions over a real exchange', () => {
 
   it('reports no failure for an echo exchange the engine itself produced', async () => {
     server = await startTestSoapServer();
-    const result = await importDefinition({ kind: 'file', path: calculator });
+    const result = await importWsdl({ kind: 'file', path: calculator });
     const binding = messageBindingFor(result.definition, OPERATION);
     expect(binding).toEqual({
       soapVersion: '1.1',
@@ -33,7 +33,7 @@ describe('WS-I message assertions over a real exchange', () => {
       soapAction: 'http://tempuri.org/Add',
     });
 
-    const envelopeXml = generateRequest(result, OPERATION).envelopeXml;
+    const envelopeXml = generateSoapRequest(result, OPERATION).envelopeXml;
     const exchange = await sendSoapRequest({
       endpoint: `${server.url}/soap`,
       envelopeXml,
@@ -57,7 +57,7 @@ describe('WS-I message assertions over a real exchange', () => {
   });
 
   it('derives no binding for an operation the binding does not have', async () => {
-    const result = await importDefinition({ kind: 'file', path: calculator });
+    const result = await importWsdl({ kind: 'file', path: calculator });
     expect(messageBindingFor(result.definition, { ...OPERATION, operationName: 'Nope' })).toBeUndefined();
     expect(
       messageBindingFor(result.definition, {

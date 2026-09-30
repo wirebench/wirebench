@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../../src/soap/import.js';
+import { importWsdl } from '../../../../src/soap/import.js';
 import { WSI_WSDL_ASSERTIONS } from '../../../../src/validate/wsi/assertions/index.js';
 import { runWsdlAssertions, wsiProblems, wsiWsdlContext } from '../../../../src/validate/wsi/run-wsdl.js';
 import type { WsiWsdlContext } from '../../../../src/validate/wsi/types.js';
@@ -8,7 +8,7 @@ import type { WsiWsdlContext } from '../../../../src/validate/wsi/types.js';
 const fixtureRoot = fileURLToPath(new URL('../../../../../../fixtures/wsdl/crafted/', import.meta.url));
 
 async function contextFor(path: string): Promise<WsiWsdlContext> {
-  const result = await importDefinition({ kind: 'file', path });
+  const result = await importWsdl({ kind: 'file', path });
   return wsiWsdlContext(result);
 }
 
@@ -71,7 +71,7 @@ describe('WS-I BP 1.1 WSDL assertions', () => {
 
   it('fails R2105 for an inline schema whose targetNamespace is empty', async () => {
     const context = await contextFor(`${fixtureRoot}wsi-compliant/service.wsdl`);
-    const empty = await importDefinition({
+    const empty = await importWsdl({
       kind: 'text',
       location: 'inline:empty-tns.wsdl',
       text: `<?xml version="1.0" encoding="UTF-8"?>

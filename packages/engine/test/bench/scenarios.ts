@@ -11,9 +11,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { generateRequest } from '../../src/soap/generate.js';
-import { importDefinition } from '../../src/soap/import.js';
-import type { ImportResult } from '../../src/soap/types.js';
+import { generateSoapRequest } from '../../src/soap/generate.js';
+import { importWsdl } from '../../src/soap/import.js';
+import type { WsdlImportResult } from '../../src/soap/types.js';
 import { sendSoapRequest } from '../../src/soap/send.js';
 import { buildMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { prepareMtomRequest } from '../../src/soap/mime/mtom.js';
@@ -52,12 +52,12 @@ const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
 /** Imports a WSDL from disk and generates a sample request for its first operation. */
 async function importAndGenerate(path: string): Promise<void> {
-  const result: ImportResult = await importDefinition({ kind: 'file', path });
+  const result: WsdlImportResult = await importWsdl({ kind: 'file', path });
   const operation = result.operations[0];
   if (operation === undefined) {
     throw new Error(`no operations in ${path}`);
   }
-  generateRequest(result, { bindingName: operation.bindingName, operationName: operation.operationName });
+  generateSoapRequest(result, { bindingName: operation.bindingName, operationName: operation.operationName });
 }
 
 function fileScenario(path: string): PreparedScenario {

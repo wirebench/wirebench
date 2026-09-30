@@ -18,8 +18,8 @@
  * a read-only demo too and belongs in the table below.
  */
 import { expect, it } from 'vitest';
-import { generateRequest } from '../../src/soap/generate.js';
-import { importDefinition } from '../../src/soap/import.js';
+import { generateSoapRequest } from '../../src/soap/generate.js';
+import { importWsdl } from '../../src/soap/import.js';
 import { sendSoapRequest } from '../../src/soap/send.js';
 import { describeNetwork } from '../helpers/network-gate.js';
 import type { GenerateOptions } from '../../src/xsd/sample-generator.js';
@@ -117,7 +117,7 @@ describeNetwork.each(SERVICES)('interop: $name', (service) => {
   it(
     `imports, generates and sends ${service.operationName}`,
     async () => {
-      const imported = await importDefinition({ kind: 'url', url: service.wsdlUrl });
+      const imported = await importWsdl({ kind: 'url', url: service.wsdlUrl });
       expect(imported.problems).toEqual([]);
 
       const operation = imported.operations.find(
@@ -130,7 +130,7 @@ describeNetwork.each(SERVICES)('interop: $name', (service) => {
       expect(advertised, 'the service port has no address').toBeDefined();
       const endpoint = service.endpoint ?? advertised;
 
-      const generated = generateRequest(
+      const generated = generateSoapRequest(
         imported,
         { bindingName: operation!.bindingName, operationName: service.operationName },
         service.generateOptions,

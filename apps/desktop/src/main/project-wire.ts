@@ -71,7 +71,7 @@ import { webhookCollectionId } from './webhook-ids.js';
 /** What the main process knows about one interface beyond the saved model. */
 export interface InterfaceRuntime {
   readonly hydration: HydrationStatus;
-  /** The summary produced from the engine `ImportResult`, once the definition is loaded. */
+  /** The summary produced from the engine `WsdlImportResult`, once the definition is loaded. */
   readonly summary?: InterfaceSummary;
 }
 

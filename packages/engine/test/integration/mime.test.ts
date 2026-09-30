@@ -8,7 +8,7 @@ import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
 import { mergePreferences } from '../../src/project/preferences.js';
 import { parseMultipartRelated } from '../../src/soap/mime/multipart.js';
 import type { AttachmentResolver } from '../../src/soap/mime/types.js';
-import { toSendInput } from '../../src/soap/send-input.js';
+import { toSoapSendInput } from '../../src/soap/send-input.js';
 import { sendSoapRequest } from '../../src/soap/send.js';
 import {
   MIME_FIXTURE_CID,
@@ -67,7 +67,7 @@ function send(
   attachments: readonly Attachment[],
   extra: { readonly envelopeXml?: string; readonly gzip?: boolean; readonly resourceRoot?: string } = {},
 ) {
-  const input = toSendInput({
+  const input = toSoapSendInput({
     request: {
       properties: { ...DEFAULT_REQUEST_PROPERTIES, ...properties },
       soapVersion: '1.1',
@@ -143,7 +143,7 @@ describe('MTOM over the wire', () => {
 
   it('names the SOAP 1.2 action on the root part instead of the multipart type', async () => {
     server = await startTestSoapServer();
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: {
         properties: { ...DEFAULT_REQUEST_PROPERTIES, enableMtom: true },
         soapVersion: '1.2',
@@ -241,7 +241,7 @@ describe('response attachment handling', () => {
   });
 
   async function fixtureSend(properties: Partial<typeof DEFAULT_REQUEST_PROPERTIES>) {
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: {
         properties: { ...DEFAULT_REQUEST_PROPERTIES, ...properties },
         soapVersion: '1.1',

@@ -1,7 +1,7 @@
 /**
  * Zod schemas (and their inferred types) for the `definition.*`/`request.*` IPC channels
  * and the `engine.progress` event. Kept separate from `ipc.ts` because these shapes — the
- * JSON-serialisable projection of the engine's `ImportResult`/`SoapExchange` types — are
+ * JSON-serialisable projection of the engine's `WsdlImportResult`/`SoapExchange` types — are
  * large enough to crowd the channel registry.
  *
  * Every shape here must be plain JSON: no DOM nodes, no `Uint8Array` (bytes cross the wire
@@ -19,7 +19,7 @@ export const MAX_IMPORT_TEXT_CHARS = 50_000_000;
 export const MAX_IMPORT_NAME_CHARS = 200;
 
 /**
- * Where a WSDL definition comes from — mirrors the engine's `ImportSource`.
+ * Where a WSDL definition comes from — mirrors the engine's `WsdlImportSource`.
  *
  * A `file` path is *not* authorized by passing this schema: main additionally requires it to
  * be inside the open project folder or to have been picked through the Browse… dialog this
@@ -150,7 +150,7 @@ const importProblemSchema = z.object({
 });
 export type ImportProblemWire = z.infer<typeof importProblemSchema>;
 
-/** Response payload for `definition.import`: a JSON-serialisable projection of `ImportResult`. */
+/** Response payload for `definition.import`: a JSON-serialisable projection of `WsdlImportResult`. */
 export const interfaceSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -367,7 +367,7 @@ export const requestGenerateRequestSchema = z.object({
   bindingName: z.string(),
   operationName: z.string(),
   options: generateOptionsSchema.optional(),
-  /** When true, build an empty envelope (`generateEmptyRequest`) instead of a sample one. */
+  /** When true, build an empty envelope (`generateEmptySoapRequest`) instead of a sample one. */
   empty: z.boolean().optional(),
 });
 export type RequestGenerateRequest = z.infer<typeof requestGenerateRequestSchema>;

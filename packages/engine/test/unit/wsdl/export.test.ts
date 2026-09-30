@@ -7,7 +7,7 @@ import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js'
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';
 import { parseWsdlBundle } from '../../../src/wsdl/merge.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
-import { summarizeOperations } from '../../../src/soap/operations.js';
+import { summarizeSoapOperations } from '../../../src/soap/operations.js';
 import { exportDefinition } from '../../../src/wsdl/export-definition.js';
 
 const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/', import.meta.url));
@@ -22,11 +22,11 @@ async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'wirebench-definition-export-'));
 }
 
-/** Summarizes a bundle the same way `importDefinition` would, for equality comparisons. */
+/** Summarizes a bundle the same way `importWsdl` would, for equality comparisons. */
 function summarize(bundle: Awaited<ReturnType<typeof resolveFile>>) {
   const definition = parseWsdlBundle(bundle);
   const schemaSet = buildSchemaSet(bundle);
-  const operations = summarizeOperations(definition);
+  const operations = summarizeSoapOperations(definition);
   return {
     operationNames: operations.map((o) => o.operationName).sort(),
     messageNames: definition.messages.map((m) => `${m.name.namespaceUri}#${m.name.localName}`).sort(),

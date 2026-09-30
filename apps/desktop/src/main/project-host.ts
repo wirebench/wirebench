@@ -63,7 +63,7 @@ import {
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   saveProject,
-  toSendInput,
+  toSoapSendInput,
   uniqueSlug,
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
@@ -137,7 +137,7 @@ import type {
   PropertyMap,
   PropertyScopes,
   RequestDef,
-  SendAttachmentOptions,
+  SoapAttachmentOptions,
   Workspace,
 } from '@wirebench/engine';
 import {
@@ -243,7 +243,7 @@ import { refusedSequenceSlugs } from './project-sequence-mutations.js';
  */
 export interface SendAttachmentInput {
   readonly attachments: readonly Attachment[];
-  readonly attachmentOptions: SendAttachmentOptions;
+  readonly attachmentOptions: SoapAttachmentOptions;
 }
 
 /** How long an edit sits before autosave writes it out. */
@@ -628,7 +628,7 @@ export class ProjectHost {
   /**
    * Folds a request's saved properties, the project's settings and the user's preferences into
    * the send input for `requestId` — the single place those three layers meet (see the engine's
-   * `toSendInput`). `overrides` carries what the *editor* currently holds (an envelope the user
+   * `toSoapSendInput`). `overrides` carries what the *editor* currently holds (an envelope the user
    * has typed but that has not been autosaved yet, and the endpoint the renderer resolved), so
    * a send always puts the visible request on the wire, with the saved knobs applied to it.
    *
@@ -660,7 +660,7 @@ export class ProjectHost {
         ? Object.entries(overrides.headers).map(([name, value]) => ({ name, value }))
         : request.headers;
     const wsa = this.wsaFor(requestId);
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: {
         properties: request.properties,
         soapVersion: request.soapVersion,
@@ -712,10 +712,10 @@ export class ProjectHost {
       return undefined;
     }
     const { request } = location;
-    // Built through `toSendInput` rather than by mapping the seven MTOM flags here a second
+    // Built through `toSoapSendInput` rather than by mapping the seven MTOM flags here a second
     // time: that mapping is the engine's, and duplicating it is how the two drift apart. Only
     // the attachment fields of the result are used; the rest is rebuilt by `sendInputFor`.
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: {
         properties: request.properties,
         soapVersion: request.soapVersion,
@@ -2963,7 +2963,7 @@ export class ProjectHost {
     const iface = this.requireInterface(interfaceId);
     const previous = this.engine.resultFor(interfaceId);
     const auth = await this.importAuthFor(iface);
-    // Fetched into a scratch result only: nothing about the live `ImportResult` or the
+    // Fetched into a scratch result only: nothing about the live `WsdlImportResult` or the
     // definition cache changes here. If the save below fails, the interface must look exactly
     // as it did before this call — see the fix1 finding on this method.
     const next = await this.engine.importPreview(await this.updateSource(source), auth);
@@ -2980,7 +2980,7 @@ export class ProjectHost {
       // very save that overwrites them rather than written out of band afterwards.
       saveResult = await this.save({ reason: 'update-definition', backups: applied.backups });
     } catch (error) {
-      // Roll the in-memory model back: the live `ImportResult`/definition cache were never
+      // Roll the in-memory model back: the live `WsdlImportResult`/definition cache were never
       // touched, so undoing `open.project`/`open.dirty` is enough to leave everything as it
       // was before this call.
       open.project = priorProject;

@@ -16,8 +16,8 @@ import { soapActionHeaders } from './soap-action.js';
 import { prettyPrint, removeEmptyContent, stripWhitespaces } from './transforms.js';
 import type { SoapSendInput } from './types.js';
 
-/** The parts of a request {@link toSendInput} reads. */
-export interface SendRequestInput {
+/** The parts of a request {@link toSoapSendInput} reads. */
+export interface SoapSendRequestInput {
   readonly properties: RequestProperties;
   readonly soapVersion: '1.1' | '1.2';
   readonly soapAction?: string;
@@ -38,9 +38,9 @@ export interface AttachmentResolvers {
   readonly resourceRoot?: string;
 }
 
-/** Everything {@link toSendInput} needs beyond the request itself. */
-export interface ToSendInputArgs {
-  readonly request: SendRequestInput;
+/** Everything {@link toSoapSendInput} needs beyond the request itself. */
+export interface ToSoapSendInputArgs {
+  readonly request: SoapSendRequestInput;
   /** The already-resolved endpoint URL (environment overrides applied). */
   readonly endpoint: string;
   readonly preferences?: Preferences;
@@ -98,7 +98,7 @@ function transformEnvelope(xml: string, properties: RequestProperties, indentWid
  *
  * @param args the request, its resolved endpoint, and the preferences/project settings around it
  */
-export function toSendInput(args: ToSendInputArgs): SoapSendInput {
+export function toSoapSendInput(args: ToSoapSendInputArgs): SoapSendInput {
   const preferences = args.preferences ?? DEFAULT_PREFERENCES;
   const { properties } = args.request;
 

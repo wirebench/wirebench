@@ -6,9 +6,15 @@
 
 import { pathToFileURL } from 'node:url';
 import { HttpError, ProjectError, WsdlParseError } from '../errors.js';
-import { summarizeOperations } from './operations.js';
+import { summarizeSoapOperations } from './operations.js';
 import { summarizeWsa } from '../wsa/policy-detect.js';
-import type { ImportCacheOptions, ImportOptions, ImportProblem, ImportResult, ImportSource } from './types.js';
+import type {
+  WsdlImportCacheOptions,
+  WsdlImportOptions,
+  WsdlImportProblem,
+  WsdlImportResult,
+  WsdlImportSource,
+} from './types.js';
 import { readDefinitionCache, writeDefinitionCache } from '../wsdl/cache.js';
 import { createDefaultFetchDocument } from '../http/fetch-document.js';
 import { parseWsdlBundle } from '../wsdl/merge.js';
@@ -16,8 +22,8 @@ import type { DefinitionBundle, DefinitionSource, FetchDocument } from '../wsdl/
 import { resolveDefinition } from '../wsdl/resolver.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 
-/** Turns an {@link ImportSource} into the `DefinitionSource` the resolver understands. */
-function toDefinitionSource(source: ImportSource): DefinitionSource {
+/** Turns an {@link WsdlImportSource} into the `DefinitionSource` the resolver understands. */
+function toDefinitionSource(source: WsdlImportSource): DefinitionSource {
   if (source.kind === 'file') {
     return { location: pathToFileURL(source.path).href };
   }
@@ -73,7 +79,11 @@ function resolveFromNetwork(
  * import (the caller already has a usable bundle from the network) — it is
  * reported as a `definition-cache-write-failed` problem instead.
  */
-async function writeCacheSafely(bundle: DefinitionBundle, dir: string, cacheProblems: ImportProblem[]): Promise<void> {
+async function writeCacheSafely(
+  bundle: DefinitionBundle,
+  dir: string,
+  cacheProblems: WsdlImportProblem[],
+): Promise<void> {
   try {
     await writeDefinitionCache(bundle, dir);
   } catch (error) {
@@ -100,8 +110,8 @@ async function resolveWithCache(
   definitionSource: DefinitionSource,
   fetchDocument: FetchDocument,
   signal: AbortSignal | undefined,
-  cache: ImportCacheOptions | undefined,
-  cacheProblems: ImportProblem[],
+  cache: WsdlImportCacheOptions | undefined,
+  cacheProblems: WsdlImportProblem[],
 ): Promise<{ bundle: DefinitionBundle; fromCache: boolean }> {
   if (cache === undefined || cache.mode === 'none') {
     const bundle = await resolveFromNetwork(definitionSource, fetchDocument, signal);
@@ -142,21 +152,21 @@ async function resolveWithCache(
  * and summarizes its operations for a picker UI.
  *
  * Never throws for a modelling problem in the definition itself — those are
- * reported in {@link ImportResult.problems}. It does throw for a malformed
- * `ImportSource` (an invalid URL) or when the root document cannot be
+ * reported in {@link WsdlImportResult.problems}. It does throw for a malformed
+ * `WsdlImportSource` (an invalid URL) or when the root document cannot be
  * fetched at all.
  *
  * @param source where the WSDL comes from
  * @param options fetch override, Basic auth for fetching, abort signal, progress callback, definition cache
  */
-export async function importDefinition(source: ImportSource, options?: ImportOptions): Promise<ImportResult> {
+export async function importWsdl(source: WsdlImportSource, options?: WsdlImportOptions): Promise<WsdlImportResult> {
   const signal = options?.signal;
   const baseFetch = options?.fetchDocument ?? createDefaultFetchDocument();
   const fetchDocument = options?.auth !== undefined ? withBasicAuth(baseFetch, options.auth) : baseFetch;
   const definitionSource = toDefinitionSource(source);
 
   options?.onProgress?.({ phase: 'fetch', location: definitionSource.location });
-  const cacheProblems: ImportProblem[] = [];
+  const cacheProblems: WsdlImportProblem[] = [];
   const { bundle, fromCache } = await resolveWithCache(
     definitionSource,
     fetchDocument,
@@ -171,14 +181,14 @@ export async function importDefinition(source: ImportSource, options?: ImportOpt
   options?.onProgress?.({ phase: 'schema' });
   const schemaSet = buildSchemaSet(bundle);
 
-  const problems: ImportProblem[] = [
+  const problems: WsdlImportProblem[] = [
     ...cacheProblems,
-    ...bundle.problems.map((p): ImportProblem => ({ source: 'resolve', ...p })),
-    ...definition.problems.map((p): ImportProblem => ({ source: 'wsdl', ...p })),
-    ...schemaSet.problems.map((p): ImportProblem => ({ source: 'schema', ...p })),
+    ...bundle.problems.map((p): WsdlImportProblem => ({ source: 'resolve', ...p })),
+    ...definition.problems.map((p): WsdlImportProblem => ({ source: 'wsdl', ...p })),
+    ...schemaSet.problems.map((p): WsdlImportProblem => ({ source: 'schema', ...p })),
   ];
 
-  const operations = summarizeOperations(definition);
+  const operations = summarizeSoapOperations(definition);
 
   options?.onProgress?.({ phase: 'done' });
 

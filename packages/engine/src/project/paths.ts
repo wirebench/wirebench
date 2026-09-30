@@ -227,7 +227,7 @@ export function definitionDir(root: string, interfaceSlug: string): string {
 
 /**
  * Alias of {@link definitionDir} under the name the desktop facade (Task 21)
- * calls it by: the directory passed as `cache.dir` to `importDefinition`.
+ * calls it by: the directory passed as `cache.dir` to `importWsdl`.
  */
 export const definitionCacheDir = definitionDir;
 

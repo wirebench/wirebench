@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { importDefinition } from '../../../src/soap/import.js';
-import type { ImportResult } from '../../../src/soap/types.js';
+import { importWsdl } from '../../../src/soap/import.js';
+import type { WsdlImportResult } from '../../../src/soap/types.js';
 import { validateAgainstSchemaSet } from '../../../src/validate/schema-validator.js';
 import type { ValidationProblem } from '../../../src/validate/types.js';
 
@@ -38,10 +38,10 @@ const ADD_BODY = [
 ].join('\n');
 
 describe('validateAgainstSchemaSet — Calculator (document/literal)', () => {
-  let calculator: ImportResult;
+  let calculator: WsdlImportResult;
 
   beforeAll(async () => {
-    calculator = await importDefinition({ kind: 'file', path: publicPath('calculator') });
+    calculator = await importWsdl({ kind: 'file', path: publicPath('calculator') });
   });
 
   const validate = (xml: string) =>
@@ -154,7 +154,7 @@ describe('validateAgainstSchemaSet — performance', () => {
       '  <service name="S"><port name="P" binding="tns:B"><soap:address location="http://example.invalid/"/></port></service>',
       '</definitions>',
     ].join('\n');
-    const perf = await importDefinition({ kind: 'text', text: nodeWsdl });
+    const perf = await importWsdl({ kind: 'text', text: nodeWsdl });
     const target = { schemaSet: perf.schemaSet, bundle: perf.bundle };
     const children = '<tns:child/>'.repeat(25_000);
     const xml = [
@@ -173,14 +173,14 @@ describe('validateAgainstSchemaSet — performance', () => {
 });
 
 describe('validateAgainstSchemaSet — degenerate inputs', () => {
-  let calculator: ImportResult;
+  let calculator: WsdlImportResult;
 
   beforeAll(async () => {
-    calculator = await importDefinition({ kind: 'file', path: publicPath('calculator') });
+    calculator = await importWsdl({ kind: 'file', path: publicPath('calculator') });
   });
 
   it('skips a schema set with no components at all', async () => {
-    const empty = { elements: new Map(), types: new Map() } as unknown as ImportResult['schemaSet'];
+    const empty = { elements: new Map(), types: new Map() } as unknown as WsdlImportResult['schemaSet'];
     await expect(
       validateAgainstSchemaSet(envelope(ADD_BODY), { schemaSet: empty, bundle: calculator.bundle }),
     ).resolves.toEqual([]);
@@ -208,10 +208,10 @@ describe('validateAgainstSchemaSet — degenerate inputs', () => {
 });
 
 describe('validateAgainstSchemaSet — rpc/literal', () => {
-  let rpc: ImportResult;
+  let rpc: WsdlImportResult;
 
   beforeAll(async () => {
-    rpc = await importDefinition({ kind: 'file', path: craftedPath('rpc-literal') });
+    rpc = await importWsdl({ kind: 'file', path: craftedPath('rpc-literal') });
   });
 
   const binding = {
@@ -313,7 +313,7 @@ describe('validateAgainstSchemaSet — rpc/literal', () => {
 
 describe('validateAgainstSchemaSet — chameleon include', () => {
   it('resolves a type pulled in through a chameleon include', async () => {
-    const chameleon = await importDefinition({ kind: 'file', path: craftedPath('chameleon-include') });
+    const chameleon = await importWsdl({ kind: 'file', path: craftedPath('chameleon-include') });
     const target = { schemaSet: chameleon.schemaSet, bundle: chameleon.bundle };
     const ok =
       '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Ping xmlns="urn:wb:chameleon">PING</Ping></soapenv:Body></soapenv:Envelope>';
@@ -328,7 +328,7 @@ describe('validateAgainstSchemaSet — chameleon include', () => {
 
 describe('validateAgainstSchemaSet — nested imports', () => {
   it('resolves element declarations across imported schema documents', async () => {
-    const nested = await importDefinition({ kind: 'file', path: craftedPath('nested-imports') });
+    const nested = await importWsdl({ kind: 'file', path: craftedPath('nested-imports') });
     const target = { schemaSet: nested.schemaSet, bundle: nested.bundle };
     const problems = await validateAgainstSchemaSet(
       '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Unknown xmlns="urn:nope"/></soapenv:Body></soapenv:Envelope>',
@@ -345,7 +345,7 @@ describe('validateAgainstSchemaSet — diagnostics never leak synthetic file nam
     // `schema-constructs`'s `StringArray` type references `soapenc:Array` without importing
     // its namespace, so the whole set fails to compile — libxml2's message names the synthetic
     // glue file it was compiling at the time, which a user has no way to make sense of.
-    const constructs = await importDefinition({ kind: 'file', path: craftedPath('schema-constructs') });
+    const constructs = await importWsdl({ kind: 'file', path: craftedPath('schema-constructs') });
     const xml = [
       '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="urn:wb:sc">',
       '   <soapenv:Body>',
@@ -394,7 +394,7 @@ describe('validateAgainstSchemaSet — quote-aware synthesis', () => {
       '  <service name="S"><port name="P" binding="tns:B"><soap:address location="http://example.invalid/"/></port></service>',
       '</definitions>',
     ].join('\n');
-    const quote = await importDefinition({ kind: 'text', text: quoteWsdl });
+    const quote = await importWsdl({ kind: 'text', text: quoteWsdl });
     const target = { schemaSet: quote.schemaSet, bundle: quote.bundle };
     const xml =
       '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Ping xmlns="urn:wb:quote">hi</Ping></soapenv:Body></soapenv:Envelope>';
@@ -416,7 +416,7 @@ describe('validateAgainstSchemaSet — timeout guard', () => {
     vi.doMock('xmllint-wasm', () => ({ validateXML: fakeValidateXML }));
 
     const { validateAgainstSchemaSet: validateWithFake } = await import('../../../src/validate/schema-validator.js');
-    const { importDefinition: importWithFake } = await import('../../../src/soap/import.js');
+    const { importWsdl: importWithFake } = await import('../../../src/soap/import.js');
     const calculator = await importWithFake({ kind: 'file', path: publicPath('calculator') });
     const target = { schemaSet: calculator.schemaSet, bundle: calculator.bundle };
 

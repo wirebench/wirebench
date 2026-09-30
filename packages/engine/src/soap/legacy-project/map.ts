@@ -17,7 +17,7 @@ import type {
 } from '../../project/model.js';
 import { createInterface, createRequest, generateId } from '../../project/model.js';
 import { slugify, uniqueSlug } from '../../project/paths.js';
-import type { OperationSummary } from '../types.js';
+import type { SoapOperationSummary } from '../types.js';
 import { DEFAULT_WSA_CONFIG } from '../../wsa/model.js';
 import { qnameToString } from '../../wsdl/qname.js';
 import { rewriteProjectRefsToEnv } from './env-refs.js';
@@ -33,7 +33,7 @@ export interface ResolvedOperation {
 }
 
 /** The engine's operation summaries, as {@link ResolvedOperation}s. */
-export function resolvedOperationsOf(summaries: readonly OperationSummary[]): ResolvedOperation[] {
+export function resolvedOperationsOf(summaries: readonly SoapOperationSummary[]): ResolvedOperation[] {
   return summaries.map((summary) => ({
     bindingName: qnameToString(summary.bindingName),
     name: summary.operationName,

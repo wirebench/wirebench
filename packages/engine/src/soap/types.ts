@@ -23,7 +23,7 @@ import type { WsaConfig } from '../wsa/model.js';
 import type { WsaSummary } from '../wsa/policy-detect.js';
 
 /** Where a WSDL definition comes from. */
-export type ImportSource =
+export type WsdlImportSource =
   | { readonly kind: 'url'; readonly url: string }
   | { readonly kind: 'file'; readonly path: string }
   | {
@@ -33,40 +33,40 @@ export type ImportSource =
       readonly location?: string;
     };
 
-/** One phase of an in-progress {@link ImportSource} import. */
-export type ImportProgress =
+/** One phase of an in-progress {@link WsdlImportSource} import. */
+export type WsdlImportProgress =
   | { readonly phase: 'fetch'; readonly location: string }
   | { readonly phase: 'parse' }
   | { readonly phase: 'schema' }
   | { readonly phase: 'done' };
 
 /**
- * Definition-cache behaviour for `importDefinition`: `'prefer-cache'` resolves
+ * Definition-cache behaviour for `importWsdl`: `'prefer-cache'` resolves
  * entirely from a valid cache with no network access (falling back to the
  * network, with a problem reported, if the cache is missing or corrupt);
  * `'refresh'` always resolves from the network and then (re)writes the
  * cache; `'none'` ignores the cache entirely.
  */
-export interface ImportCacheOptions {
+export interface WsdlImportCacheOptions {
   /** Absolute path of the interface's `definition/` directory (see `definitionCacheDir`). */
   readonly dir: string;
   readonly mode: 'prefer-cache' | 'refresh' | 'none';
 }
 
-/** Options accepted by `importDefinition`. */
-export interface ImportOptions {
+/** Options accepted by `importWsdl`. */
+export interface WsdlImportOptions {
   /** Overrides the default `file://`/`http(s)://` fetcher, e.g. for tests. */
   readonly fetchDocument?: FetchDocument;
   /** Basic auth credentials added to every `http(s)://` fetch made while importing. */
   readonly auth?: { readonly username: string; readonly password: string };
   readonly signal?: AbortSignal;
-  readonly onProgress?: (event: ImportProgress) => void;
-  /** Definition-cache behaviour; see {@link ImportCacheOptions}. Omitted/absent means no caching. */
-  readonly cache?: ImportCacheOptions;
+  readonly onProgress?: (event: WsdlImportProgress) => void;
+  /** Definition-cache behaviour; see {@link WsdlImportCacheOptions}. Omitted/absent means no caching. */
+  readonly cache?: WsdlImportCacheOptions;
 }
 
 /** A non-fatal problem encountered while importing a definition, tagged by the stage that raised it. */
-export interface ImportProblem {
+export interface WsdlImportProblem {
   readonly source: 'resolve' | 'wsdl' | 'schema';
   readonly code: string;
   readonly message: string;
@@ -76,7 +76,7 @@ export interface ImportProblem {
 }
 
 /** One binding operation's port bindings, as summarized for a picker UI. */
-export interface OperationSummary {
+export interface SoapOperationSummary {
   readonly bindingName: QName;
   readonly operationName: string;
   readonly soapVersion: '1.1' | '1.2' | 'none';
@@ -92,12 +92,12 @@ export interface OperationSummary {
 }
 
 /** The full result of importing a WSDL definition: parsed model, schema set, problems and an operation picker list. */
-export interface ImportResult {
+export interface WsdlImportResult {
   readonly definition: WsdlDefinition;
   readonly bundle: DefinitionBundle;
   readonly schemaSet: SchemaSet;
-  readonly problems: readonly ImportProblem[];
-  readonly operations: readonly OperationSummary[];
+  readonly problems: readonly WsdlImportProblem[];
+  readonly operations: readonly SoapOperationSummary[];
   /** What the definition itself says about WS-Addressing; see `summarizeWsa`. */
   readonly wsa: WsaSummary;
   /** True when this result was resolved entirely from the definition cache, with no network access. */
@@ -139,7 +139,7 @@ export interface SoapSendInput {
   /** Attachments to send; only acted on when {@link attachmentOptions} says how. */
   readonly attachments?: readonly Attachment[];
   /** MTOM/SwA/inline-file behaviour plus the resolvers that turn references into bytes. */
-  readonly attachmentOptions?: SendAttachmentOptions;
+  readonly attachmentOptions?: SoapAttachmentOptions;
   /**
    * WS-Security applied to the envelope after property expansion and inline-file substitution
    * and before attachment packaging, so the header is part of the envelope that actually goes
@@ -183,7 +183,7 @@ export interface SoapSendWss {
  * referenced part's base64, the second keeps those parts listed as attachments even
  * once they have been expanded into the envelope.
  */
-export interface SendAttachmentOptions {
+export interface SoapAttachmentOptions {
   /** Rewrite `cid:` references as `xop:Include` and send an MTOM package. */
   readonly enableMtom: boolean;
   /** Send an MTOM package even when nothing was optimised. */

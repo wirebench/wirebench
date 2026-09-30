@@ -26,7 +26,7 @@ import {
   soapScriptTypes,
 } from '@wirebench/engine';
 import type {
-  ImportResult,
+  WsdlImportResult,
   OpenApiDocument,
   Project,
   PropertyMap,
@@ -59,7 +59,7 @@ export interface ScriptHostDeps {
   readonly openApiDocumentFor: (apiId: string) => Promise<OpenApiDocument>;
   readonly grpcProtoSetFor: (apiId: string) => Promise<ProtoSet>;
   /** The interface's loaded definition; throws, or returns `undefined`, when it is not loaded. */
-  readonly soapDefinitionFor: (interfaceId: string) => ImportResult | undefined;
+  readonly soapDefinitionFor: (interfaceId: string) => WsdlImportResult | undefined;
   /** A project's session values changed. */
   readonly onValuesChanged?: (projectId: string) => void;
   /** Tests substitute these; the app uses the engine's workers. */
@@ -146,7 +146,7 @@ export class ScriptHost {
         slug: request.slug,
         scripts: request.scripts,
         types: () => {
-          let loaded: ImportResult | undefined;
+          let loaded: WsdlImportResult | undefined;
           try {
             loaded = this.deps.soapDefinitionFor(iface.id);
           } catch {

@@ -1,6 +1,6 @@
 // packages/cli/src/ops/operations.ts
-import { loadOpenApiDocument, redactUrl, selectRequests, summarizeOperations } from '@wirebench/engine';
-import type { Interface, OperationSummary } from '@wirebench/engine';
+import { loadOpenApiDocument, redactUrl, selectRequests, summarizeSoapOperations } from '@wirebench/engine';
+import type { Interface, SoapOperationSummary } from '@wirebench/engine';
 import { z } from 'zod';
 import { defineOp } from './context.js';
 import { OpsError } from './errors.js';
@@ -47,9 +47,9 @@ async function soapSummaries(
   projectDir: string,
   iface: Interface,
   notes: string[],
-): Promise<readonly OperationSummary[] | undefined> {
+): Promise<readonly SoapOperationSummary[] | undefined> {
   try {
-    return summarizeOperations((await readWsdl(projectDir, iface)).definition);
+    return summarizeSoapOperations((await readWsdl(projectDir, iface)).definition);
   } catch (error) {
     if (error instanceof OpsError && error.code === 'definition-cache-missing') {
       notes.push(`${iface.name}: no cached definition, so no SOAP actions`);

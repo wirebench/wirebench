@@ -218,7 +218,7 @@ export function runMessageAssertions(exchange: SoapExchange, options: RunMessage
 
 /**
  * Derives the {@link WsiMessageBinding} one operation implies, so a caller holding an
- * `ImportResult` does not have to walk the model itself. Returns `undefined` when the binding is
+ * `WsdlImportResult` does not have to walk the model itself. Returns `undefined` when the binding is
  * not a SOAP binding, or has no such operation.
  *
  * @param definition the merged description
