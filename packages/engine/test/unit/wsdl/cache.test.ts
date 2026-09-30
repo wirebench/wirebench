@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { importDefinition } from '../../../src/import.js';
 import { ProjectError } from '../../../src/errors.js';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';
 import type { DefinitionBundle, FetchDocument, FetchedDocument } from '../../../src/wsdl/resolver.js';
 import { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from '../../../src/wsdl/cache.js';

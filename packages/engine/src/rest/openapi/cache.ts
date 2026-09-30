@@ -16,8 +16,8 @@ import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from '../.
 import type { ApiDefinitionCacheDocument, ApiDefinitionCacheManifest } from '../../project/schema.js';
 import { apiDefinitionCacheManifestSchema, parseFile } from '../../project/schema.js';
 import { parseYaml, stringifyYaml } from '../../project/yaml.js';
-import { assignFileNames } from '../../wsdl/cache-naming.js';
-import type { FetchDocument, FetchedDocument } from '../../wsdl/resolver.js';
+import { assignFileNames } from '../../project/cache-naming.js';
+import type { FetchDocument, FetchedDocument } from '../../http/fetch-document.js';
 import type { ResolvedDocument } from './refs.js';
 
 const MANIFEST_FILE = 'manifest.yaml';

@@ -11,7 +11,7 @@
  * of being written as-is.
  */
 
-import { isReservedFileName, sanitiseFileName } from '../project/paths.js';
+import { isReservedFileName, sanitiseFileName } from './paths.js';
 
 /** Extracts the last path segment of a location's pathname, ignoring any query/fragment. */
 function lastPathSegment(location: string): string | undefined {

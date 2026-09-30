@@ -134,11 +134,11 @@ export type {
   ResolveOptions,
   ResolveProblem,
 } from './wsdl/resolver.js';
-export { createDefaultFetchDocument } from './wsdl/fetch.js';
+export { createDefaultFetchDocument } from './http/fetch-document.js';
 export { createHttpFetchDocument } from './http/document-fetch.js';
 export type { DocumentFetchOptions } from './http/document-fetch.js';
-export { assignFileNames } from './wsdl/cache-naming.js';
-export type { NamedDocument } from './wsdl/cache-naming.js';
+export { assignFileNames } from './project/cache-naming.js';
+export type { NamedDocument } from './project/cache-naming.js';
 export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
 export type { DefinitionCacheOptions, WriteDefinitionCacheOptions } from './wsdl/cache.js';
 export { exportDefinition } from './wsdl/export-definition.js';

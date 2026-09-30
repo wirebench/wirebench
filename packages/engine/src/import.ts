@@ -10,7 +10,7 @@ import { summarizeOperations } from './operations.js';
 import { summarizeWsa } from './wsa/policy-detect.js';
 import type { ImportCacheOptions, ImportOptions, ImportProblem, ImportResult, ImportSource } from './types.js';
 import { readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
-import { createDefaultFetchDocument } from './wsdl/fetch.js';
+import { createDefaultFetchDocument } from './http/fetch-document.js';
 import { parseWsdlBundle } from './wsdl/merge.js';
 import type { DefinitionBundle, DefinitionSource, FetchDocument } from './wsdl/resolver.js';
 import { resolveDefinition } from './wsdl/resolver.js';

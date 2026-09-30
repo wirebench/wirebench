@@ -9,7 +9,7 @@
  */
 
 import { OpenApiError } from '../../errors.js';
-import type { FetchDocument } from '../../wsdl/resolver.js';
+import type { FetchDocument } from '../../http/fetch-document.js';
 import type { WebhookFolder } from '../../webhooks/model.js';
 import type { MapApiOptions, MappedApi, MapWebhooksOptions } from './map.js';
 import { apiFromDocument, webhooksFromDocument } from './map.js';

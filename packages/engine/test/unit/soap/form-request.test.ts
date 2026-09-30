@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import { applyForm } from '../../../src/xsd/form-model.js';

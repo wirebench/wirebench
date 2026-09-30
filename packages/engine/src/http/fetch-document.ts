@@ -1,27 +1,29 @@
+/**
+ * Fetching one document by its location: what a fetcher is, and the default one.
+ *
+ * In `http/` because the WSDL, OpenAPI and AsyncAPI imports all take a {@link FetchDocument}, and a
+ * protocol folder imports core and itself, never another protocol (protocol modules spec §7.2).
+ * `wsdl/resolver.ts` re-exports the two types.
+ */
+
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { HttpError } from '../errors.js';
-import type { FetchDocument, FetchedDocument } from './resolver.js';
+import { decodeXmlBytes } from '../xml/decode.js';
+
+/** A fetched document's canonical location (post-redirect) and raw content. */
+export interface FetchedDocument {
+  /** The final absolute location after following any redirects. */
+  readonly location: string;
+  readonly bytes: Uint8Array;
+  readonly text: string;
+}
+
+/** Fetches a single document by absolute location, honouring an optional abort signal. */
+export type FetchDocument = (location: string, signal?: AbortSignal) => Promise<FetchedDocument>;
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const USER_AGENT = 'wirebench/0.1';
-
-/**
- * Decodes bytes as UTF-8, honouring an `<?xml ... encoding="iso-8859-1" ?>`
- * declaration when present (single-byte, so it is safely sniffable by
- * decoding the head as UTF-8 first). A `utf-16` declaration would require a
- * BOM/byte-order sniff before the declaration itself is even legible, which
- * does not fit a small helper like this — such documents fall back to (and
- * garble under) UTF-8; use a pre-fetched `text` in that case instead.
- */
-export function decodeXmlBytes(bytes: Uint8Array): string {
-  const head = new TextDecoder('utf-8').decode(bytes.subarray(0, 200));
-  const match = /^\s*<\?xml[^>]*\bencoding=["']([^"']+)["']/i.exec(head);
-  if (match?.[1]?.toLowerCase() === 'iso-8859-1') {
-    return new TextDecoder('iso-8859-1').decode(bytes);
-  }
-  return new TextDecoder('utf-8').decode(bytes);
-}
 
 async function fetchFile(location: string): Promise<FetchedDocument> {
   const bytes = await readFile(fileURLToPath(location));

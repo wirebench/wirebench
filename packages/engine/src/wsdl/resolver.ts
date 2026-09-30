@@ -1,9 +1,10 @@
 import type { Document, Element } from '@xmldom/xmldom';
 import { WsdlParseError } from '../errors.js';
+import type { FetchDocument, FetchedDocument } from '../http/fetch-document.js';
 import { NS } from '../xml/namespaces.js';
 import { getPosition, parseXml } from '../xml/parse.js';
 import { childElements, firstChildElement, optionalAttribute } from './dom-utils.js';
-import { MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS, referencePolicyFor } from './ref-policy.js';
+import { MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS, referencePolicyFor } from '../http/ref-policy.js';
 
 /** The root document to resolve, plus an optional pre-fetched body (avoids a redundant fetch of the root). */
 export interface DefinitionSource {
@@ -13,16 +14,7 @@ export interface DefinitionSource {
   readonly text?: string;
 }
 
-/** A fetched document's canonical location (post-redirect) and raw content. */
-export interface FetchedDocument {
-  /** The final absolute location after following any redirects. */
-  readonly location: string;
-  readonly bytes: Uint8Array;
-  readonly text: string;
-}
-
-/** Fetches a single document by absolute location, honouring an optional abort signal. */
-export type FetchDocument = (location: string, signal?: AbortSignal) => Promise<FetchedDocument>;
+export type { FetchDocument, FetchedDocument };
 
 /** Options for {@link resolveDefinition}. */
 export interface ResolveOptions {
@@ -55,7 +47,7 @@ export interface ResolveProblem {
     | 'fetch-failed'
     | 'unresolved-import'
     | 'not-xml'
-    /** A reference the {@link ReferencePolicy} refused; see `wsdl/ref-policy.ts`. */
+    /** A reference the {@link ReferencePolicy} refused; see `http/ref-policy.ts`. */
     | 'import-ref-refused'
     /** The graph hit the depth or document cap; everything resolved so far is still returned. */
     | 'import-limit';
@@ -268,7 +260,7 @@ function checkAborted(signal: AbortSignal | undefined): void {
  * location) through the injected `fetchDocument`.
  *
  * Every nested reference is first judged against the root document's world (see
- * `wsdl/ref-policy.ts`): a `file:` root may only reference `file:` documents inside its own
+ * `http/ref-policy.ts`): a `file:` root may only reference `file:` documents inside its own
  * folder, an `http(s):` root may only reference `http(s):` documents, and a pasted/dropped
  * root may only reference `http(s):` documents. A refused reference becomes an
  * `import-ref-refused` problem and the import continues with what did resolve — so a WSDL
@@ -310,7 +302,7 @@ export async function resolveDefinition(source: DefinitionSource, options: Resol
   canonicalDocs.set(rootFetched.location, rootDoc);
   const documents: BundledDocument[] = [rootDoc];
 
-  // Every nested reference is judged against the *root* document's world; see `ref-policy.ts`.
+  // Every nested reference is judged against the *root* document's world; see `http/ref-policy.ts`.
   const policy = referencePolicyFor(rootFetched.location);
 
   const queue: ImportJob[] = [];

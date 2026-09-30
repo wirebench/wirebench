@@ -237,7 +237,7 @@ world: a definition imported from a file may reference only files inside that fi
 may reference any `http(s)` host but never `file:`; a pasted or dropped one may never reach
 the disk at all. A refused reference becomes an `import-ref-refused` problem and the import
 completes with what did resolve. The graph is capped at 32 levels and 500 documents
-(`import-limit`). Implementation: `packages/engine/src/wsdl/ref-policy.ts`.
+(`import-limit`). Implementation: `packages/engine/src/http/ref-policy.ts`.
 
 A legacy SOAP project import (`project.importLegacy`) adds three rules of its own, because the project
 file is untrusted input that names further locations. Its definitions are served from the copy the file

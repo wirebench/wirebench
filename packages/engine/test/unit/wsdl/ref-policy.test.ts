@@ -1,5 +1,5 @@
 /**
- * The import-reference policy (`wsdl/ref-policy.ts`), exercised adversarially through
+ * The import-reference policy (`http/ref-policy.ts`), exercised adversarially through
  * `resolveDefinition` with the *real* file fetcher wired in: every "refused" assertion also
  * asserts that `node:fs/promises`' `readFile` was never called for the refused path, so a
  * policy that reported a problem *after* reading the file would still fail here.
@@ -15,8 +15,8 @@ import {
   MAX_IMPORT_DOCUMENTS,
   classifyLocation,
   referencePolicyFor,
-} from '../../../src/wsdl/ref-policy.js';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+} from '../../../src/http/ref-policy.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import type { FetchDocument, FetchedDocument } from '../../../src/wsdl/resolver.js';
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';
 

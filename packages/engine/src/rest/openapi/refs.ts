@@ -6,15 +6,15 @@
  * lets the definition be exported byte-exact later.
  *
  * Two rules keep this from being a file-read primitive handed to whoever wrote the document. The
- * *reference policy* is the one WSDL import already uses (`wsdl/ref-policy.ts`): a `file:` root may
+ * *reference policy* is the one WSDL import already uses (`http/ref-policy.ts`): a `file:` root may
  * only reference files inside its own folder tree, an `http(s):` root may never reach a local file.
  * And the walk is bounded — a visited set per pointer, a depth cap, and a document cap — because a
  * cyclic or fan-out document must end in a diagnostic, not a hang.
  */
 
 import { OpenApiError } from '../../errors.js';
-import { referencePolicyFor, MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS } from '../../wsdl/ref-policy.js';
-import type { FetchDocument } from '../../wsdl/resolver.js';
+import { referencePolicyFor, MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS } from '../../http/ref-policy.js';
+import type { FetchDocument } from '../../http/fetch-document.js';
 import { parseDocumentText } from './parse.js';
 
 /** How deep a chain of `$ref`s may nest before the graph is treated as runaway. */

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseXml } from '../../../src/xml/parse.js';
 import { NS } from '../../../src/xml/namespaces.js';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import type { WsdlDefinition } from '../../../src/wsdl/model.js';
