@@ -11,13 +11,9 @@ import type { CaptureSource } from '../assert/capture-source.js';
 import { evaluateAssertions } from '../assert/index.js';
 import type { Assertion, AssertionResult, AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
-import { readGrpcDefinitionCache } from '../grpc/cache.js';
 import { callGrpc } from '../grpc/call.js';
-import type { GrpcCallResult } from '../grpc/call.js';
-import { loadProtoSet } from '../grpc/proto/load.js';
+import { GRPC_UNAUTHENTICATED, grpcSubject, loadProtoSetFor } from '../grpc/run.js';
 import type { ProtoSet } from '../grpc/proto/load.js';
-import { protoSetFromDescriptorSet } from '../grpc/reflection/descriptors.js';
-import { apiDefinitionDir } from '../project/paths.js';
 import { restSubject } from '../rest/run.js';
 import { sendRest } from '../rest/send.js';
 import type { RestExchange } from '../rest/send.js';
@@ -62,6 +58,7 @@ import {
   type SentScripts,
 } from './script-support.js';
 
+export { grpcSubject } from '../grpc/run.js';
 export { restSubject } from '../rest/run.js';
 export { soapResponseSubject } from '../soap/run.js';
 
@@ -167,55 +164,6 @@ function erroredResult(item: SelectedRequest, error: NonNullable<RequestResult['
     unasserted: assertionsOf(item).length === 0,
   };
 }
-
-/**
- * Reads a gRPC API's schema from `apis/<slug>/definition/`, as the app's `grpcProtoSetFor` does:
- * the `.proto` sources an import cached, or the descriptor set reflection cached. A run never
- * reflects against a server, so an API with no cache has no schema and none of its calls can run.
- *
- * @throws WirebenchError `grpc-definition-missing` when there is no cache; whatever the loaders
- * throw for one that does not load
- */
-async function loadProtoSetFor(projectDir: string, api: GrpcSelected['api']): Promise<ProtoSet> {
-  let cache: Awaited<ReturnType<typeof readGrpcDefinitionCache>>;
-  try {
-    cache = await readGrpcDefinitionCache(apiDefinitionDir(projectDir, api.slug));
-  } catch (error) {
-    if (isWirebenchError(error) && error.code === 'definition-cache-missing') {
-      throw new WirebenchError(
-        'grpc-definition-missing',
-        `The gRPC API "${api.name}" has no cached definition; import its .proto files or discover it in the app first.`,
-        { details: { api: api.name }, cause: error },
-      );
-    }
-    throw error;
-  }
-  return cache.kind === 'proto'
-    ? loadProtoSet(cache.sources, { roots: cache.manifest.roots })
-    : protoSetFromDescriptorSet(cache.descriptors, { roots: cache.manifest.roots });
-}
-
-/**
- * A unary call's answer as assertions see it: the gRPC status code (0 = OK), and the one response
- * message as JSON. No message, or one that did not decode, leaves nothing a `match` can read.
- * Exported for its unit test; not part of the run module's public surface.
- */
-export function grpcSubject(result: GrpcCallResult): AssertionSubject {
-  const first = result.responseMessages[0];
-  const decoded = first !== undefined && first.json !== undefined;
-  return {
-    protocol: 'grpc',
-    status: result.exchange.status,
-    durationMs: result.exchange.durationMs,
-    bodyText: decoded ? JSON.stringify(first.json) : '',
-    bodyKind: decoded ? 'json' : 'other',
-    // Metadata first, then trailers: a header assertion or transfer takes the first value it finds.
-    headers: [...Object.entries(result.exchange.headers), ...Object.entries(result.exchange.trailers)],
-  };
-}
-
-/** gRPC's `UNAUTHENTICATED`: the server's word for a credential it will not accept. */
-const GRPC_UNAUTHENTICATED = 16;
 
 function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
   if (assertions.some((a) => a.outcome === 'errored')) return 'errored';

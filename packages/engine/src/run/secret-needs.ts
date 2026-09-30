@@ -4,10 +4,10 @@
  * read. It walks the same sources `prepareSend` resolves: effective auth, the request's keystore,
  * and the WS-Security configurations it selects, with the keystores those lead to.
  */
+import { grpcRun } from '../grpc/run.js';
 import { resolveScopes } from '../project/environments.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { Project, PropertyMap } from '../project/model.js';
-import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
 import { restRun } from '../rest/run.js';
@@ -15,9 +15,8 @@ import { activeScripts } from '../script/request-scripts.js';
 import { soapRun } from '../soap/run.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
-import { grpcEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
-import { keystoreNeeds, secretNamesInValue } from './send-helpers.js';
+import { secretNamesInValue } from './send-helpers.js';
 
 export { secretNamesInValue } from './send-helpers.js';
 
@@ -47,11 +46,7 @@ function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonl
     return [...tokenNeeds(selected, scopeSets), ...restRun.secretNeeds(selected, project)];
   }
   if (selected.kind === 'grpc') {
-    return [
-      ...tokenNeeds(selected, scopeSets),
-      ...secretNeedsOfAuth(grpcEffectiveAuth(selected)),
-      ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
-    ];
+    return [...tokenNeeds(selected, scopeSets), ...grpcRun.secretNeeds(selected, project)];
   }
   return [...tokenNeeds(selected, scopeSets), ...soapRun.secretNeeds(selected, project)];
 }
