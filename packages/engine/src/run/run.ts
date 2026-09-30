@@ -12,6 +12,7 @@ import { evaluateAssertions } from '../assert/index.js';
 import type { Assertion, AssertionResult, AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
 import type { ProtocolRun, SelectedBase } from '../protocol/module.js';
+import { featureDisabled } from '../protocol/registry.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocols.js';
 import type { SelectedRequest, SentExchange } from '../protocols.js';
@@ -199,6 +200,30 @@ function deferredSession(scripting: RequestScripting, scripted: ScriptedRequest,
 }
 
 /**
+ * Why a request's active scripts cannot run in this registry, as the error its send reports (spec
+ * §5.3, §9): the `scripts` feature is off, or the request's protocol has no scripting facet.
+ * Undefined when they can run, and for a protocol the registry does not hold: looking its module up
+ * refuses that request first, with the protocol's own `feature-disabled`.
+ */
+function scriptsRefusal(item: SelectedBase, registry: ProtocolRegistry): WirebenchError | undefined {
+  const module = registry.find(item.kind);
+  if (module === undefined) return undefined;
+  if (!registry.features.isEnabled('scripts')) {
+    return featureDisabled(registry.features, 'scripts');
+  }
+  if (module.scripting === undefined) {
+    return new WirebenchError(
+      'script-unsupported',
+      `"${item.path}" has scripts, and ${item.kind} requests cannot have them`,
+      {
+        details: { path: item.path, protocol: item.kind },
+      },
+    );
+  }
+  return undefined;
+}
+
+/**
  * A sender for one run: whatever a protocol loads for a container (a definition, a schema, an
  * OpenAPI document) is loaded once, and one OAuth2 token source serves every request behind the same
  * configuration. `runRequests` sends through it, and so does a sequence run, so a step is sent
@@ -237,6 +262,9 @@ export function createRunSender(context: RunContext): RunRequestSender {
       const sent = await run.send(item, itemScope);
       return item.request.scripts !== undefined ? { ...sent, scriptsOff: true } : sent;
     }
+
+    const refused = scriptsRefusal(item, registry);
+    if (refused !== undefined) throw refused;
 
     const scripting = context.scripting;
     if (scripting === undefined) {
@@ -277,6 +305,11 @@ export async function checkRunScripts(
   for (const item of selected) {
     const scripts = activeScripts(item.request.scripts);
     if (scripts === undefined) continue;
+    const refused = scriptsRefusal(item, registry);
+    if (refused !== undefined) {
+      errors.push(refused);
+      continue;
+    }
     try {
       await scripting.check({
         protocol: item.kind,
