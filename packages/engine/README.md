@@ -4,7 +4,7 @@
 
 ## Migrating to 3.0
 
-3.0 puts every protocol behind one interface ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). The main entry's exports changed; nothing was kept as a deprecated alias. The subpaths (`./xml`, `./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) did not change.
+3.0 puts every protocol behind one interface ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). The main entry's exports changed; nothing was kept as a deprecated alias. The subpaths (`./xml`, `./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./ws`, `./detect`) did not change.
 
 ### Renamed
 
@@ -105,6 +105,6 @@ for (const item of selected) {
 
 ### Added
 
-`ProtocolModule` and its facets (`ProtocolStorage`, `ProtocolRun`, `ProtocolScripting`), `defineProtocol`, `ProtocolRegistry`, `createProtocolRegistry`, `createBuiltinRegistry`, `BUILTIN_PROTOCOLS`, `FeatureDescriptor`, `FeatureSet`, `createFeatureSet`, `UnsupportedContainer`, `unsupportedOf`, `extraContainersOf`, `takenContainerSlugs`, `grpcStatusNames`, `SnapshotFacts`, `SelectedBase`, `RunGroup`, `RunScope`, `ScriptedSend`, `ContainerBase`, `ContainerDir`, `LoadContext`, `RequestSnapshotBase`, `ResponseSnapshotBase`, `ProtocolRegistryOptions`, `WhyDisabled`, `Project.unsupported`, `Project.extraContainers`, `RunContext.registry` and `AssertionSubject.statusNames`. They are exported for Wirebench's own hosts and tagged `@internal`: they are not a plugin API, and they may change in any release.
+`ProtocolModule` and its facets (`ProtocolStorage`, `ProtocolRun`, `ProtocolScripting`), `defineProtocol`, `ProtocolRegistry`, `createProtocolRegistry`, `createBuiltinRegistry`, `BUILTIN_PROTOCOLS`, `FeatureDescriptor`, `FeatureSet`, `createFeatureSet`, `UnsupportedContainer`, `unsupportedOf`, `extraContainersOf`, `takenContainerSlugs`, `grpcStatusNames`, `StatusNames`, `SnapshotFacts`, `SelectedBase`, `RunGroup`, `RunScope`, `ScriptedSend`, `ContainerBase`, `ContainerDir`, `LoadContext`, `RequestSnapshotBase`, `ResponseSnapshotBase`, `ProtocolRegistryOptions`, `WhyDisabled`, `Project.unsupported`, `Project.extraContainers` and `AssertionSubject.statusNames`. They are exported for Wirebench's own hosts and tagged `@internal`: they are not a plugin API, and they may change in any release. `RunContext` also gains an optional `registry`; it is not tagged, as `RunContext` stays part of the run API.
 
 A project can now hold containers the engine did not load: one whose `kind` has no module in the build, or whose protocol is switched off. `loadProject` reports each as a `container-unsupported` problem and lists it in `Project.unsupported`; `saveProject` leaves its files untouched. A host that lists a project's containers should list these too, as not loaded.

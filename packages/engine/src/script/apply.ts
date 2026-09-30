@@ -18,8 +18,9 @@
  *    (`script-secret-denied`) — otherwise a script could read any secret by naming it;
  * 7. the module's own rules (`validate`), when it has any.
  *
- * The order is the one in which the three built-in protocols have always reported a request that
- * breaks two rules at once.
+ * The order is fixed for every protocol, so a request that breaks two rules at once is reported the
+ * same way whatever its protocol. It is not quite the order of 2.x: REST used to check first that
+ * the method is an HTTP method, and that check now runs last, in its `validate` (spec R5).
  */
 import { z } from 'zod';
 import type { ProtocolScripting, RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/module.js';

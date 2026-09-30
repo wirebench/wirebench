@@ -66,7 +66,7 @@ function basenameOf(location: string): string {
   return segments.at(-1) ?? location;
 }
 
-/** Converts an `WsdlImportResult` plus its assigned id into the `InterfaceSummary` sent over IPC. */
+/** Converts a `WsdlImportResult` plus its assigned id into the `InterfaceSummary` sent over IPC. */
 export function toInterfaceSummary(result: WsdlImportResult, id: string, definitionUrl: string): InterfaceSummary {
   const { definition } = result;
 

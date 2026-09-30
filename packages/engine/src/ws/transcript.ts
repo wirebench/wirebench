@@ -6,8 +6,7 @@ import { capByEnds, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } fro
 import type { CapLimits } from '../http/transcript-cap.js';
 import type { WsFrame } from './model.js';
 
-export { capByEnds, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL };
-export type { CapLimits };
+export { WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL };
 
 export interface WsTranscript {
   readonly frames: readonly WsFrame[];

@@ -104,6 +104,7 @@ const INTERNAL: Readonly<Record<string, readonly string[]>> = {
   ],
   'protocol/registry.ts': ['ProtocolRegistry', 'ProtocolRegistryOptions', 'createProtocolRegistry'],
   'grpc/status.ts': ['grpcStatusNames'],
+  'assert/model.ts': ['StatusNames'],
   'protocols.ts': ['BUILTIN_PROTOCOLS', 'createBuiltinRegistry'],
   'project/model.ts': ['UnsupportedContainer', 'unsupportedOf', 'extraContainersOf', 'takenContainerSlugs'],
 };

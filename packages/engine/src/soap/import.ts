@@ -22,7 +22,7 @@ import type { DefinitionBundle, DefinitionSource, FetchDocument } from '../wsdl/
 import { resolveDefinition } from '../wsdl/resolver.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 
-/** Turns an {@link WsdlImportSource} into the `DefinitionSource` the resolver understands. */
+/** Turns a {@link WsdlImportSource} into the `DefinitionSource` the resolver understands. */
 function toDefinitionSource(source: WsdlImportSource): DefinitionSource {
   if (source.kind === 'file') {
     return { location: pathToFileURL(source.path).href };

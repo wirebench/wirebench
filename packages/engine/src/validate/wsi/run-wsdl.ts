@@ -18,7 +18,7 @@ import type {
 } from './types.js';
 import { isNotApplicable } from './types.js';
 
-/** What {@link wsiWsdlContext} needs: exactly the interesting half of an `WsdlImportResult`. */
+/** What {@link wsiWsdlContext} needs: exactly the interesting half of a `WsdlImportResult`. */
 export interface WsiWsdlContextInput {
   readonly definition: WsdlDefinition;
   readonly bundle: DefinitionBundle;
@@ -28,7 +28,7 @@ export interface WsiWsdlContextInput {
 /**
  * Builds the context the assertions run against, indexing the bundle's documents by location.
  *
- * @param input the parsed definition, its bundle and its schema set (an `WsdlImportResult` fits)
+ * @param input the parsed definition, its bundle and its schema set (a `WsdlImportResult` fits)
  */
 export function wsiWsdlContext(input: WsiWsdlContextInput): WsiWsdlContext {
   const documents = new Map<string, Document>();

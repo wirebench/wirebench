@@ -70,8 +70,12 @@ an editor does not flag a wrong import, and `pnpm check` (and CI) does.
 
 The groups are: SOAP (`soap/`, `wsdl/`, `xsd/`, `wss/`, `wsa/`, `validate/`), REST (`rest/`, `webhooks/`), gRPC
 (`grpc/`), WebSocket (`ws/`, `asyncapi/`), and core, which is everything else. What two protocols shared moved into
-core: header entries, escaping, applying a configured auth, cookies, charsets and the document fetcher into `http/`;
-`$ref` resolution, parsing and sampling into `json/schema/`; keystores into `keystore/`.
+core: header entries, escaping, applying a configured auth, cookies, charsets and the document fetcher into `http/`,
+with media types (`http/media-type.ts`), the transcript cap (`http/transcript-cap.ts`), webhook signatures
+(`http/webhook-signature.ts`) and the OAuth2 messages (`http/auth/oauth2.ts`); QNames, locating a node, decoding,
+entitizing and namespace prefixes into `xml/` (`qname.ts`, `locate.ts`, `decode.ts`, `entitize.ts`, `prefixes.ts`);
+status names into `assert/status-names.ts`; `$ref` resolution, parsing and sampling into `json/schema/`; keystores
+into `keystore/`.
 
 **The four container lists stay for now.** `Project.interfaces`, `apis`, `grpcApis` and `wsApis` are referenced about
 250 times in source and 700 times in tests across the engine, the CLI and the desktop. The storage facet's
@@ -108,7 +112,10 @@ interface may change in any release. Phase 7 decides what of it is promised.
 
 ## Consequences
 
-- Adding a protocol to the engine is one folder and one line in `protocols.ts`. A test-only fifth protocol goes through
+- Adding a protocol to the engine is one folder plus registration edits: the module in `BUILTIN_PROTOCOLS` and its
+  types in the `SelectedRequest`, `RequestSnapshot` and `ResponseSnapshot` unions of `protocols.ts`, its exports in
+  `index.ts`, and its folder in `GROUP_FOLDERS` in `scripts/engine-import-graph.mjs`. No other core file names it. A
+  test-only fifth protocol goes through
   load, select, run with scripts, secret needs and save without a core file knowing it, and that test is what keeps the
   claim true.
 - ADR-0007's consequence that every protocol-neutral surface needs a `kind` branch no longer holds for the engine. It

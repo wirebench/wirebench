@@ -43,18 +43,41 @@ flowchart TB
 
   subgraph E["@wirebench/engine — Node only, zero Electron/DOM/React"]
     direction LR
+    Pr["project/<br/>folder format · environments · properties"]
+    Mo["protocol/ · protocols.ts<br/>modules · registry · features"]
     W["wsdl/ · xsd/<br/>parse · resolve · schema set"]
     S["soap/<br/>envelope · sample request · MTOM/SwA · fault"]
-    H["http/<br/>undici · auth · TLS · proxy · timings"]
     Sx["wss/ · wsa/<br/>signature · encryption · tokens · addressing"]
     V["validate/ · xpath/ · xml/<br/>schema · WS-I · XPath/XQuery 3.1 · JSONPath"]
-    Pr["project/<br/>folder format · environments · properties"]
-    Re["rest/<br/>url · body · send · auth · oauth2 · cookies"]
-    Oa["rest/openapi/<br/>parse · refs · map · sample · cache"]
-    Mo["protocol/ · protocols.ts<br/>modules · registry · features"]
+    Re["rest/<br/>url · body · send · cookies · SSE"]
+    Oa["rest/openapi/<br/>parse · map · update · cache"]
+    G["grpc/<br/>.proto sets · reflection · codec · call"]
+    Wk["ws/ · asyncapi/<br/>session · transcript · AsyncAPI import"]
+    H["http/<br/>undici · auth · oauth2 · TLS · proxy · timings"]
+    J["json/<br/>schema refs · sample · cursor"]
+    K["keystore/<br/>PKCS#12 · PEM"]
+
+    Pr --> Mo
+    Mo --> S
+    Mo --> Re
+    Mo --> G
+    Mo --> Wk
+    S --> W
+    S --> Sx
+    S --> V
+    Oa --> Re
+    Oa --> J
+    Re --> J
+    Wk --> J
+    S --> H
+    Re --> H
+    G --> H
+    Wk --> H
+    Sx --> K
+    Pr --> K
   end
 
-  Net(["Remote SOAP or REST service"])
+  Net(["Remote service<br/>SOAP · REST · gRPC · WebSocket"])
   Disk[("Workspace folder<br/>workspace.yaml · environments/ · projects/<slug>/")]
   Key[("OS keychain<br/>userData/secrets.json")]
 
@@ -252,12 +275,12 @@ introduced.
 | The protocol interface, the registry, features | `packages/engine/src/protocol` |
 | The built-in modules composed; the default registry | `packages/engine/src/protocols.ts` |
 | WSDL import, sample requests, the SOAP send, envelopes, faults, MTOM/SwA | `packages/engine/src/soap` |
-| REST URL, bodies, send, OAuth2, the cookie jar, cURL; webhook items | `packages/engine/src/rest`, `packages/engine/src/webhooks` |
+| REST URL, bodies, send, the cookie jar, cURL; webhook items | `packages/engine/src/rest`, `packages/engine/src/webhooks` |
 | OpenAPI import, mapping, Update Definition, the definition cache | `packages/engine/src/rest/openapi` |
 | gRPC calls, `.proto` sets, server reflection | `packages/engine/src/grpc` |
 | WebSocket sessions; AsyncAPI import | `packages/engine/src/ws`, `packages/engine/src/asyncapi` |
 | JSON Schema `$ref` resolution, parsing and sampling | `packages/engine/src/json/schema` |
-| HTTP, auth (Basic, NTLMv2, applying a configured scheme), header entries, cookies, charsets, TLS, proxy, timings | `packages/engine/src/http` |
+| HTTP, auth (Basic, NTLMv2, OAuth2 token requests and PKCE, applying a configured scheme), header entries, cookies, charsets, TLS, proxy, timings | `packages/engine/src/http` |
 | WS-Security, WS-Addressing | `packages/engine/src/wss`, `packages/engine/src/wsa` |
 | Keystores (PKCS#12, PEM) | `packages/engine/src/keystore` |
 | Selection, the run loop, secret needs | `packages/engine/src/run` |

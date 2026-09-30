@@ -76,7 +76,7 @@ describe('importWsdl — invalid WsdlImportSource', () => {
 });
 
 describe('generateSoapRequest / generateEmptySoapRequest — WsdlImportResult convenience wrappers', () => {
-  it('build the same envelopes as buildSampleRequest/buildEmptyRequest given an WsdlImportResult', async () => {
+  it('build the same envelopes as buildSampleRequest/buildEmptyRequest given a WsdlImportResult', async () => {
     const result = await importWsdl({ kind: 'text', text: readPublicFixture('calculator') });
     const op = {
       bindingName: { namespaceUri: result.definition.targetNamespace, localName: 'CalculatorSoap' },

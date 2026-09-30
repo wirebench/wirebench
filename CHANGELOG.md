@@ -8,10 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 This release is 3.0.0. The major version is `@wirebench/engine`'s public exports: the names that
 dated from the SOAP-only engine are renamed, and what the new protocol registry replaces is removed,
-with no deprecated aliases. Projects and workspaces keep their format, and the `wirebench` command line
-keeps its flags and report shape; the behaviour changes this release does make are listed under Changed
-and Fixed. (The project format does move in this release, to `formatVersion: 6`, for request scripts:
-see below.)
+with no deprecated aliases. Existing projects and workspaces open unchanged, and the `wirebench`
+command line keeps its flags and report shape; the behaviour changes this release does make are listed
+under Changed and Fixed. The project format version does move, to `formatVersion: 6`, because of request
+scripts (see Added): a project this build saves opens only in a build that has them. The protocol
+modules themselves do not change the project folder format.
 
 ### Breaking
 
@@ -32,7 +33,7 @@ see below.)
 
 [`packages/engine/README.md`](packages/engine/README.md#migrating-to-30) has the full tables and a
 before and after for the two changes that need more than a rename. The package's subpaths (`./xml`,
-`./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) are unchanged.
+`./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./ws`, `./detect`) are unchanged.
 
 ### Added
 

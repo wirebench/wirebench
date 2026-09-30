@@ -82,7 +82,9 @@ it waits for. The milestones carry no dates, for the reason the legend gives. Th
 intentions, and they were renumbered on 2026-09-30: 3.0.0 is the release that renames the engine's public
 exports (#184, [ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)), so the milestone that
 held that number moved. 4.0 is a major because mock stubs are a new file kind, which is the kind of one-way
-door 2.0 was. No issue sits in an earlier milestone than one it is blocked by.
+door 2.0 was. No issue sits in an earlier milestone than one it is blocked by. An item that has shipped
+but sits under a later milestone is already in 3.0.0 — the WebSocket request kind (#98, item 17), for one,
+sits under 4.0; the milestone records where it was planned, not the release it arrived in.
 
 | Milestone | Roadmap items | Issues |
 | --- | --- | --- |

@@ -85,7 +85,10 @@ test touches the network except `packages/engine/test/interop`.
 
 A protocol is one module behind the `ProtocolModule` interface
 ([ADR-0017](docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). Adding one to the engine
-changes its own folder and one line of `packages/engine/src/protocols.ts`; if a change needs any other
+changes its own folder, plus registration edits that are expected: the module in `BUILTIN_PROTOCOLS`
+and its types in the `SelectedRequest`, `RequestSnapshot` and `ResponseSnapshot` unions of
+`packages/engine/src/protocols.ts`, its exports in `packages/engine/src/index.ts`, and its folder in
+`GROUP_FOLDERS` in `scripts/engine-import-graph.mjs` (steps 3 and 4 below). If a change needs any other
 core file to know the protocol's name, the interface is missing something, and that is worth an issue
 before the code.
 

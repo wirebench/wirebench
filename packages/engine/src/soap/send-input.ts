@@ -116,7 +116,7 @@ export function toSoapSendInput(args: ToSoapSendInputArgs): SoapSendInput {
     headers['Connection'] = 'close';
   }
   // A non-default `encoding` property changes what bytes actually go on the wire (see
-  // `encodeBody` in `send.ts`), so the `Content-Type` charset must say the same thing — a
+  // `encodeBody` in `http/charset.ts`), so the `Content-Type` charset must say the same thing — a
   // request sent as ISO-8859-1 but declared UTF-8 would decode wrong at the far end. This is
   // skipped for the default encoding so a request with no opinion keeps getting the transport's
   // own `UTF-8` charset, computed downstream exactly as it always has been.

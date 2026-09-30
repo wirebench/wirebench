@@ -28,6 +28,7 @@ export type Added = [
   Engine.FeatureSet,
   Engine.WhyDisabled,
   Engine.UnsupportedContainer,
+  Engine.StatusNames,
 ];
 
 /** Every type 3.0 renames, under its new name. */

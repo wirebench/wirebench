@@ -1,6 +1,6 @@
 /**
  * Convenience wrappers around `buildSampleRequest`/`buildEmptyRequest` that
- * take an {@link WsdlImportResult} directly, so callers don't have to thread
+ * take a {@link WsdlImportResult} directly, so callers don't have to thread
  * `definition`/`schemaSet` through by hand.
  */
 

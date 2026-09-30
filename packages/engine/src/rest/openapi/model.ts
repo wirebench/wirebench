@@ -12,9 +12,9 @@
  * legitimately have.
  */
 
-import type { JsonSchema, JsonValue, OpenApiDiscriminator, OpenApiXml } from '../../json/schema/model.js';
+import type { JsonSchema, JsonValue, OpenApiXml } from '../../json/schema/model.js';
 
-export type { JsonSchema, JsonValue, OpenApiDiscriminator, OpenApiXml };
+export type { JsonSchema, JsonValue, OpenApiXml };
 
 /** Which specification version a document declares. */
 export type OpenApiVersion = '1.0' | '1.1' | '1.2' | '2.0' | '3.0' | '3.1' | '3.2';
