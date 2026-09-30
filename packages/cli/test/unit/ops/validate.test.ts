@@ -113,7 +113,8 @@ describe('op validate', () => {
 
     const fine = await runOp(validateOp, { operation: 'CalculatorService/Add', text: envelope('5') }, soap.base());
     expect(fine).toMatchObject({ checked: true, truncated: false });
-  });
+    // Two fixture imports and three validations: over 5 s on the Windows runner.
+  }, 20_000);
 
   it('reads a History entry and finds its operation through the saved request', async () => {
     const fixture = await restProject();
