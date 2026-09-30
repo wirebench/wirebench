@@ -69,8 +69,7 @@ function isJson(text: string): boolean {
 /** The echo as assertions see it: always `200`; JSON when the text is JSON, so a `match` can read it. */
 function echoSubject(text: string): AssertionSubject {
   return {
-    // `AssertionSubject.protocol` is a closed union until Task 2.3 of the protocol modules plan widens it.
-    protocol: 'echo' as AssertionSubject['protocol'],
+    protocol: 'echo',
     status: 200,
     durationMs: 0,
     bodyText: text,

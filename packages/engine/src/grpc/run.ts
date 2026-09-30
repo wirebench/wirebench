@@ -34,6 +34,7 @@ import { loadProtoSet } from './proto/load.js';
 import type { ProtoSet } from './proto/load.js';
 import { protoSetFromDescriptorSet } from './reflection/descriptors.js';
 import type { GrpcSendInput } from './send.js';
+import { grpcStatusNames } from './status.js';
 
 /** One saved gRPC request selected for a run. */
 export interface GrpcSelected {
@@ -151,6 +152,7 @@ export function grpcSubject(result: GrpcCallResult): AssertionSubject {
     bodyKind: decoded ? 'json' : 'other',
     // Metadata first, then trailers: a header assertion or transfer takes the first value it finds.
     headers: [...Object.entries(result.exchange.headers), ...Object.entries(result.exchange.trailers)],
+    statusNames: grpcStatusNames,
   };
 }
 

@@ -2,6 +2,7 @@
  * gRPC status codes, as the protocol's status specification numbers and names them, and the
  * `grpc-message` percent-encoding that carries a status message in an HTTP/2 trailer.
  */
+import type { StatusNames } from '../assert/model.js';
 
 /** The seventeen status codes. `0` is the only success. */
 export const GRPC_STATUS_NAMES: Readonly<Record<number, string>> = Object.freeze({
@@ -28,6 +29,12 @@ export const GRPC_STATUS_NAMES: Readonly<Record<number, string>> = Object.freeze
 export function grpcStatusName(code: number): string {
   return GRPC_STATUS_NAMES[code] ?? `UNKNOWN (${String(code)})`;
 }
+
+/** The status codes by name and back, as a gRPC answer's assertion subject carries them (spec §3.5). */
+export const grpcStatusNames: StatusNames = Object.freeze({
+  byName: new Map(Object.entries(GRPC_STATUS_NAMES).map(([code, name]) => [name, Number(code)])),
+  nameOf: grpcStatusName,
+});
 
 /**
  * Decodes a `grpc-message` trailer value. The specification percent-encodes anything outside

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluateAssertions } from '../../../src/assert/index.js';
 import type { GrpcCallResult, GrpcResponseMessage } from '../../../src/grpc/call.js';
 import type { GrpcExchange } from '../../../src/grpc/send.js';
+import { grpcStatusNames } from '../../../src/grpc/status.js';
 import { grpcSubject } from '../../../src/run/run.js';
 
 function result(messages: readonly GrpcResponseMessage[], status = 0): GrpcCallResult {
@@ -40,6 +41,7 @@ describe('grpcSubject', () => {
         ['content-type', 'application/grpc'],
         ['grpc-status', '0'],
       ],
+      statusNames: grpcStatusNames,
     });
   });
 

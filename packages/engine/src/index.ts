@@ -15,6 +15,7 @@ export type {
   SlaAssertion,
   SoapFaultAssertion,
   StatusAssertion,
+  StatusNames,
   StepAssertion,
 } from './assert/model.js';
 export { CALLBACK_LIMITS, callbackLabel } from './assert/model.js';
@@ -1149,6 +1150,7 @@ export {
   encodeGrpcMessage,
   formatGrpcTimeout,
   grpcStatusName,
+  grpcStatusNames,
 } from './grpc/status.js';
 export { encodeGrpcFrame, GrpcFrameParser } from './grpc/framing.js';
 export type { GrpcFrame } from './grpc/framing.js';
