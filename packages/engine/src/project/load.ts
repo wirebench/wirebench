@@ -196,7 +196,7 @@ function storageFor(
   document: unknown,
 ): ProtocolStorage | undefined {
   const storage = registry.find(kindOf(document, layout.defaultKind))?.storage;
-  return storage !== undefined && storage.dir === layout.dir ? storage : undefined;
+  return storage?.dir === layout.dir ? storage : undefined;
 }
 
 /**

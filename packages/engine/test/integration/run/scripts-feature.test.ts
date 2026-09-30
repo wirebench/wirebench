@@ -20,7 +20,7 @@ import { selectRequests } from '../../../src/run/select.js';
 import type { RequestScripts } from '../../../src/script/model.js';
 import { RequestScripting } from '../../../src/script/request-scripts.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
-import { echoProtocol, echoRun, echoScripting } from '../../helpers/echo-protocol.js';
+import { echoProtocol, echoRun, echoScripting, echoStorage } from '../../helpers/echo-protocol.js';
 import type { EchoApi, EchoRequest, EchoSelected } from '../../helpers/echo-protocol.js';
 
 const sandbox = createScriptSandbox();
@@ -47,10 +47,11 @@ const counted: ProtocolRun<EchoSelected> = {
 const scriptable = defineProtocol({
   kind: 'echo',
   feature: echoProtocol.feature,
+  storage: echoStorage,
   run: counted,
   scripting: echoScripting,
 });
-const scriptless = defineProtocol({ kind: 'echo', feature: echoProtocol.feature, run: counted });
+const scriptless = defineProtocol({ kind: 'echo', feature: echoProtocol.feature, storage: echoStorage, run: counted });
 
 const registryOf = (echo: ProtocolModule, switches: Readonly<Record<string, boolean>> = {}): ProtocolRegistry =>
   createProtocolRegistry([...BUILTIN_PROTOCOLS, echo], { features: [SCRIPTS_FEATURE], switches });

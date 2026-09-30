@@ -1,14 +1,17 @@
 /**
  * A fifth protocol registered beside the built-in ones goes through select, run and secret needs
- * without any core file knowing it (protocol modules spec §10). The run half: storage and scripts
- * join in later slices.
+ * without any core file knowing it (protocol modules spec §10), and its containers live in a project
+ * folder the way the built-in ones do.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createProject } from '../../src/project/model.js';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { loadProject } from '../../src/project/load.js';
+import { createProject, unsupportedOf } from '../../src/project/model.js';
 import type { Project } from '../../src/project/model.js';
+import { saveProject } from '../../src/project/save.js';
 import { createProtocolRegistry } from '../../src/protocol/registry.js';
 import { BUILTIN_PROTOCOLS, SCRIPTS_FEATURE } from '../../src/protocols.js';
 import { createApi, createRestRequest } from '../../src/rest/model.js';
@@ -16,7 +19,11 @@ import type { RunContext } from '../../src/run/context.js';
 import { runRequests } from '../../src/run/run.js';
 import { secretNeedsOf } from '../../src/run/secret-needs.js';
 import { findStepRequest, selectRequests } from '../../src/run/select.js';
+import { createScriptChecker } from '../../src/script/check/host.js';
+import { RequestScripting } from '../../src/script/request-scripts.js';
+import { createScriptSandbox } from '../../src/script/sandbox/host.js';
 import { echoApi, echoProtocol, echoRequest, withEchoApis } from '../helpers/echo-protocol.js';
+import type { EchoApi } from '../helpers/echo-protocol.js';
 import { startTestRestServer } from '../helpers/test-rest-server.js';
 import type { TestRestServer } from '../helpers/test-rest-server.js';
 
@@ -135,5 +142,143 @@ describe('the echo protocol beside the built-in ones', () => {
       'echo',
       'Mirror/Greeting',
     ]);
+  });
+});
+
+describe('an echo API in a project folder', () => {
+  const secretNames = { echo_token: 'abc123def456ghi789', echo_extra: 'zyx987wvu654tsr321' };
+  const mirror: EchoApi = {
+    kind: 'echo',
+    id: 'echo-api-1',
+    name: 'Mirror',
+    slug: 'Mirror',
+    order: 0,
+    requests: [
+      { id: 'echo-req-1', name: 'First', slug: 'First', text: 'hello' },
+      {
+        id: 'echo-req-2',
+        name: 'Second',
+        slug: 'Second',
+        text: 'token=${secret:echo_token}',
+        scripts: {
+          api: 'wirebench',
+          enabled: true,
+          secrets: ['echo_extra'],
+          pre: { text: "request.text = request.text + ' scripted';\n" },
+          post: { text: "test('echoed', () => expect(response.text).toContain(' scripted'));\n" },
+        },
+      },
+    ],
+  };
+  const onDisk: Project = {
+    ...createProject('Echo on disk', { id: 'echo-project' }),
+    extraContainers: { echo: [mirror] },
+  };
+  const sandbox = createScriptSandbox();
+  const checker = createScriptChecker();
+  let folder: string;
+
+  beforeEach(async () => {
+    folder = await mkdtemp(join(tmpdir(), 'wirebench-echo-'));
+  });
+
+  afterEach(async () => {
+    await rm(folder, { recursive: true, force: true });
+  });
+
+  afterAll(async () => {
+    await sandbox.dispose();
+    await checker.dispose();
+  });
+
+  const filesOf = async (): Promise<Buffer[]> =>
+    Promise.all(
+      [
+        'wirebench.yaml',
+        'apis/Mirror/api.yaml',
+        'apis/Mirror/requests/First.request.yaml',
+        'apis/Mirror/requests/Second.request.yaml',
+      ].map((file) => readFile(join(folder, file))),
+    );
+
+  it(
+    'is written as its module says, then loaded, selected, run with its script and secrets, and saved byte for byte',
+    { timeout: 30_000 },
+    async () => {
+      const first = await saveProject(onDisk, folder, { registry });
+      expect(first.written).toEqual([
+        'apis/Mirror/api.yaml',
+        'apis/Mirror/requests/First.request.yaml',
+        'apis/Mirror/requests/Second.request.yaml',
+        'wirebench.yaml',
+      ]);
+      expect(await readFile(join(folder, 'apis', 'Mirror', 'api.yaml'), 'utf8')).toBe(
+        'id: echo-api-1\nkind: echo\nname: Mirror\norder: 0\n',
+      );
+      expect(await readFile(join(folder, 'apis', 'Mirror', 'requests', 'First.request.yaml'), 'utf8')).toBe(
+        'id: echo-req-1\nkind: echo\nname: First\ntext: hello\n',
+      );
+      const before = await filesOf();
+
+      const loaded = await loadProject(folder, { registry });
+      expect(loaded.problems).toEqual([]);
+      expect(loaded.project.extraContainers).toEqual({ echo: [mirror] });
+
+      const { selected, unmatched } = selectRequests(loaded.project, [], registry);
+      expect(unmatched).toEqual([]);
+      expect(selected.map((item) => item.path)).toEqual(['Mirror/First', 'Mirror/Second']);
+      expect(secretNeedsOf(selected, loaded.project, {}, undefined, registry).map((need) => need.ref)).toEqual([
+        'secret:echo_token',
+        'secret:echo_extra',
+      ]);
+
+      const run = await runRequests(selected, {
+        project: loaded.project,
+        projectDir: folder,
+        overrides: {},
+        getSecret: (ref) => Promise.resolve((secretNames as Record<string, string>)[ref.replace(/^secret:/, '')]),
+        scripting: new RequestScripting({ sandbox, checker, registry }),
+        registry,
+      });
+      expect(run.summary).toMatchObject({ total: 2, passed: 2, errored: 0, failed: 0 });
+      expect(run.requests[1]).toMatchObject({
+        outcome: 'passed',
+        assertions: [{ type: 'script', label: 'echoed', outcome: 'passed' }],
+      });
+
+      const second = await saveProject(loaded.project, folder, { registry });
+      expect(second.written).toEqual([]);
+      expect(second.removed).toEqual([]);
+      expect(await filesOf()).toEqual(before);
+    },
+  );
+
+  it('removes the file of a request that is gone, and nothing else', async () => {
+    await saveProject(onDisk, folder, { registry });
+    const shorterMirror: EchoApi = { ...mirror, requests: mirror.requests.slice(0, 1) };
+    const shorter: Project = { ...onDisk, extraContainers: { echo: [shorterMirror] } };
+
+    const result = await saveProject(shorter, folder, { registry });
+
+    expect(result.removed).toEqual(['apis/Mirror/requests/Second.request.yaml']);
+    expect(result.written).toEqual([]);
+  });
+
+  it('is a placeholder to a registry with no echo module, and is left as it is', async () => {
+    await saveProject(onDisk, folder, { registry });
+    const apiFile = join(folder, 'apis', 'Mirror', 'api.yaml');
+    const before = await readFile(apiFile);
+
+    const loaded = await loadProject(folder);
+    expect(loaded.project.extraContainers).toBeUndefined();
+    expect(unsupportedOf(loaded.project)).toEqual([
+      { dir: 'apis', slug: 'Mirror', kind: 'echo', reason: 'unknown-kind', name: 'Mirror', order: 0 },
+    ]);
+    expect(loaded.problems.map((problem) => problem.code)).toEqual(['container-unsupported']);
+
+    const saved = await saveProject(loaded.project, folder);
+    expect(saved.written).toEqual([]);
+    expect(saved.removed).toEqual([]);
+    expect((await readFile(apiFile)).equals(before)).toBe(true);
   });
 });

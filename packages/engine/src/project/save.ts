@@ -215,11 +215,7 @@ function refusePlaceholderConflicts(project: Project, registry: ProtocolRegistry
   if (placeholders.length === 0) {
     return;
   }
-  for (const module of registry.modules) {
-    const storage = module.storage;
-    if (storage === undefined) {
-      continue;
-    }
+  for (const { storage } of registry.modules) {
     for (const container of storage.containers(project)) {
       const placeholder = placeholders.find(
         (candidate) => candidate.dir === storage.dir && candidate.slug.toLowerCase() === container.slug.toLowerCase(),
@@ -268,11 +264,7 @@ export async function saveProject(project: Project, root: string, options?: Save
   // (spec §5.2). A placeholder, and a container no enabled module answers for, has no managed file,
   // so nothing under its directory is removed or touched (spec §6).
   const existing = await listCoreManagedFiles(fs, root, registry);
-  for (const module of registry.modules) {
-    const storage = module.storage;
-    if (storage === undefined) {
-      continue;
-    }
+  for (const { storage } of registry.modules) {
     for (const container of storage.containers(project)) {
       existing.push(...(await storage.managed(fs, root, container.slug)));
     }

@@ -181,8 +181,8 @@ export interface ProtocolModule {
   readonly kind: string;
   /** The feature that switches this protocol; its `id` equals `kind`. */
   readonly feature: FeatureDescriptor;
-  /** Optional until slice 3 of the plan lands; every built-in module has one after it. */
-  readonly storage?: ProtocolStorage;
+  /** How its containers are read from and written to a project folder. */
+  readonly storage: ProtocolStorage;
   /** Absent: the protocol's requests cannot be run. */
   readonly run?: ProtocolRun;
   /** Absent: the protocol's requests cannot have scripts. */
@@ -204,7 +204,7 @@ function assertKind(module: string, item: { readonly kind: string }): void {
 export function defineProtocol<S extends SelectedBase>(module: {
   readonly kind: string;
   readonly feature: FeatureDescriptor;
-  readonly storage?: ProtocolStorage;
+  readonly storage: ProtocolStorage;
   readonly run?: ProtocolRun<S>;
   readonly scripting?: ProtocolScripting;
 }): ProtocolModule {
@@ -215,7 +215,7 @@ export function defineProtocol<S extends SelectedBase>(module: {
   return {
     kind: module.kind,
     feature: module.feature,
-    ...(module.storage !== undefined ? { storage: module.storage } : {}),
+    storage: module.storage,
     ...(module.scripting !== undefined ? { scripting: module.scripting } : {}),
     ...(run !== undefined
       ? {

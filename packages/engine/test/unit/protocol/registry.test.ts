@@ -3,11 +3,13 @@ import { ProjectError, WirebenchError } from '../../../src/errors.js';
 import type { FeatureDescriptor } from '../../../src/protocol/features.js';
 import type { ProtocolModule } from '../../../src/protocol/module.js';
 import { createProtocolRegistry, featureDisabled } from '../../../src/protocol/registry.js';
+import { emptyStorage } from '../../helpers/empty-storage.js';
 
 function module(kind: string, feature: Partial<FeatureDescriptor> = {}): ProtocolModule {
   return {
     kind,
     feature: { id: kind, title: kind.toUpperCase(), default: true, stage: 'stable', requires: [], ...feature },
+    storage: emptyStorage(kind),
   };
 }
 

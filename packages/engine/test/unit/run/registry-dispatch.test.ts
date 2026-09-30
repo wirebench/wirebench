@@ -17,6 +17,7 @@ import type { ScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { runSequence } from '../../../src/sequence/run.js';
 import type { SequenceDef } from '../../../src/sequence/model.js';
 import { createWsApi, createWsRequest } from '../../../src/ws/model.js';
+import { emptyStorage } from '../../helpers/empty-storage.js';
 
 const project: Project = {
   ...createProject('Dispatch', { id: 'proj-dispatch' }),
@@ -170,6 +171,7 @@ describe('the order of groups', () => {
     defineProtocol({
       kind,
       feature: { id: kind, title: kind, default: true, stage: 'stable', requires: [] },
+      storage: emptyStorage(kind),
       run: {
         groups: () => groups,
         whyNotRunnable: () => undefined,

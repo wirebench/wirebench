@@ -3,15 +3,21 @@
  * registered beside the built-in protocols to prove that no core file has to know a protocol
  * (protocol modules spec §10). Its containers live in `project.extraContainers.echo`.
  *
- * This file holds the run and scripting halves. `send` reaches no network.
+ * This file holds all three facets. `send` reaches no network.
  */
+import { join } from 'node:path';
 import { z } from 'zod';
 import type { Assertion, AssertionSubject } from '../../src/assert/model.js';
+import { readFileIfExists, readdirIfExists } from '../../src/project/fs.js';
+import { readYaml } from '../../src/project/load-helpers.js';
 import { extraContainersOf } from '../../src/project/model.js';
 import type { Project } from '../../src/project/model.js';
+import { API_FILE, APIS_DIR, assertPathSegment, REQUEST_SUFFIX, REQUESTS_DIR } from '../../src/project/paths.js';
 import { expand } from '../../src/project/properties.js';
+import { nonEmpty, parseFile } from '../../src/project/schema-parts.js';
+import { stringifyYaml } from '../../src/project/yaml.js';
 import { defineProtocol } from '../../src/protocol/module.js';
-import type { ProtocolRun, ProtocolScripting, RunScope } from '../../src/protocol/module.js';
+import type { ProtocolRun, ProtocolScripting, ProtocolStorage, RunScope } from '../../src/protocol/module.js';
 import { scopesFor } from '../../src/run/context.js';
 import type { SentRequest } from '../../src/run/run.js';
 import { unresolvedError, withSecrets } from '../../src/run/send-helpers.js';
@@ -196,10 +202,130 @@ export const echoRun: ProtocolRun<EchoSelected> = {
   },
 };
 
+const echoScriptsFileSchema = z.looseObject({
+  api: z.enum(['wirebench', 'postman']),
+  enabled: z.boolean(),
+  secrets: z.array(z.string()),
+  pre: z.string().optional(),
+  post: z.string().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
+
+const echoApiFileSchema = z.looseObject({
+  kind: z.literal('echo'),
+  id: nonEmpty,
+  name: z.string(),
+  order: z.number().int(),
+});
+
+const echoRequestFileSchema = z.looseObject({
+  kind: z.literal('echo'),
+  id: nonEmpty,
+  name: z.string(),
+  text: z.string(),
+  scripts: echoScriptsFileSchema.optional(),
+});
+
+function scriptsFromFile(file: z.infer<typeof echoScriptsFileSchema>): RequestScripts {
+  return {
+    api: file.api,
+    enabled: file.enabled,
+    secrets: file.secrets,
+    ...(file.pre !== undefined ? { pre: { text: file.pre } } : {}),
+    ...(file.post !== undefined ? { post: { text: file.post } } : {}),
+    ...(file.timeoutMs !== undefined ? { timeoutMs: file.timeoutMs } : {}),
+  };
+}
+
+function scriptsToFile(scripts: RequestScripts): Record<string, unknown> {
+  return {
+    api: scripts.api,
+    enabled: scripts.enabled,
+    secrets: scripts.secrets,
+    ...(scripts.pre !== undefined ? { pre: scripts.pre.text } : {}),
+    ...(scripts.post !== undefined ? { post: scripts.post.text } : {}),
+    ...(scripts.timeoutMs !== undefined ? { timeoutMs: scripts.timeoutMs } : {}),
+  };
+}
+
+/**
+ * How the echo protocol is stored: `apis/<slug>/api.yaml` with `kind: echo`, and one
+ * `requests/<slug>.request.yaml` per request holding its text and, inline, its scripts. Its
+ * containers have no list of their own on `Project`, so they are kept in `extraContainers.echo`.
+ * Assertions are not stored: the run tests build those requests in memory.
+ */
+export const echoStorage: ProtocolStorage<EchoApi> = {
+  dir: APIS_DIR,
+
+  async load(ctx, slug, document) {
+    const base = `${APIS_DIR}/${slug}`;
+    const api = parseFile(echoApiFileSchema, document, `${base}/${API_FILE}`);
+    const requests: EchoRequest[] = [];
+    const entries = await readdirIfExists(ctx.fs, join(ctx.root, APIS_DIR, slug, REQUESTS_DIR));
+    for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isFile || !entry.name.endsWith(REQUEST_SUFFIX)) {
+        continue;
+      }
+      const relative = `${base}/${REQUESTS_DIR}/${entry.name}`;
+      const parsed = parseFile(echoRequestFileSchema, await readYaml(ctx.fs, ctx.root, relative), relative);
+      requests.push({
+        id: parsed.id,
+        name: parsed.name,
+        slug: entry.name.slice(0, -REQUEST_SUFFIX.length),
+        text: parsed.text,
+        ...(parsed.scripts !== undefined ? { scripts: scriptsFromFile(parsed.scripts) } : {}),
+      });
+    }
+    return { kind: 'echo', id: api.id, name: api.name, slug, order: api.order, requests };
+  },
+
+  files(api) {
+    const files = new Map<string, string>();
+    assertPathSegment(api.slug);
+    const base = `${APIS_DIR}/${api.slug}`;
+    files.set(`${base}/${API_FILE}`, stringifyYaml({ kind: api.kind, id: api.id, name: api.name, order: api.order }));
+    for (const request of api.requests) {
+      assertPathSegment(request.slug);
+      files.set(
+        `${base}/${REQUESTS_DIR}/${request.slug}${REQUEST_SUFFIX}`,
+        stringifyYaml({
+          kind: 'echo',
+          id: request.id,
+          name: request.name,
+          text: request.text,
+          ...(request.scripts !== undefined ? { scripts: scriptsToFile(request.scripts) } : {}),
+        }),
+      );
+    }
+    return files;
+  },
+
+  async managed(fs, root, slug) {
+    const base = `${APIS_DIR}/${slug}`;
+    const managed: string[] = [];
+    if ((await readFileIfExists(fs, join(root, APIS_DIR, slug, API_FILE))) !== undefined) {
+      managed.push(`${base}/${API_FILE}`);
+    }
+    for (const entry of await readdirIfExists(fs, join(root, APIS_DIR, slug, REQUESTS_DIR))) {
+      if (entry.isFile && entry.name.endsWith(REQUEST_SUFFIX)) {
+        managed.push(`${base}/${REQUESTS_DIR}/${entry.name}`);
+      }
+    }
+    return managed;
+  },
+
+  containers: (project) => extraContainersOf(project, 'echo') as readonly EchoApi[],
+  withContainers: (project, containers) => ({
+    ...project,
+    extraContainers: { ...project.extraContainers, echo: containers },
+  }),
+};
+
 /** The echo protocol, to register beside the built-in ones. */
 export const echoProtocol = defineProtocol({
   kind: 'echo',
   feature: { id: 'echo', title: 'Echo', default: true, stage: 'experimental', requires: [] },
+  storage: echoStorage,
   run: echoRun,
   scripting: echoScripting,
 });

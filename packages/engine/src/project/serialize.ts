@@ -148,11 +148,7 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
 
   // In registration order, which is the order these files always had: interfaces, then each kind
   // of API.
-  for (const module of registry.modules) {
-    const storage = module.storage;
-    if (storage === undefined) {
-      continue;
-    }
+  for (const { storage } of registry.modules) {
     for (const container of storage.containers(project)) {
       for (const [relative, content] of storage.files(container)) {
         files.set(relative, content);
