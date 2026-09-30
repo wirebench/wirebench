@@ -3,76 +3,45 @@
  * script can change; ADR-0016).
  *
  * The request a script hands back is untrusted input: a script can call `__finish` itself and
- * return any shape. So it is parsed against a schema first, then held to the rules:
+ * return any shape. So it is parsed against its protocol's schema first, then held to the rules.
+ * The rules are the same for every protocol. A module says what its snapshot holds
+ * (`ProtocolScripting.inspect`) and this file decides, so a module cannot forget a rule:
  *
- * - the scheme, host and port stay what they were (`script-origin-change`), and a gRPC method stays
- *   the one the request calls;
- * - no header, metadata, URL or SOAPAction holds CR, LF or NUL (`script-value-invalid`);
- * - a body the script cannot edit (form, multipart, binary) comes back unchanged;
- * - no `${secret:…}` reference appears that the request's own text did not already hold
- *   (`script-secret-denied`) — otherwise a script could read any secret by naming it.
+ * 1. the value parses against the module's `requestSchema` and keeps its `protocol`
+ *    (`script-error`);
+ * 2. no single-line value holds CR, LF or NUL (`script-value-invalid`);
+ * 3. the destination keeps its scheme, host and port, and one that is not a URL stays exactly as it
+ *    was (`script-origin-change`);
+ * 4. what the module calls fixed comes back unchanged (`script-error`);
+ * 5. no header or metadata pair holds CR, LF or NUL (`script-value-invalid`);
+ * 6. no `${secret:…}` reference appears that the request's own text did not already hold
+ *    (`script-secret-denied`) — otherwise a script could read any secret by naming it;
+ * 7. the module's own rules (`validate`), when it has any.
+ *
+ * The order is the one in which the three built-in protocols have always reported a request that
+ * breaks two rules at once.
  */
 import { z } from 'zod';
-import { urlOrigin } from '../project/sequence-guards.js';
-import type { RequestSnapshot, ScriptFailure } from './model.js';
+import type { ProtocolScripting, RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/module.js';
+import type { HeaderPair, ScriptFailure } from './model.js';
 
-const pair = z.tuple([z.string(), z.string()]);
+/** A header or metadata pair as a script hands it back; every module's `requestSchema` uses it. */
+export const headerPairSchema = z.tuple([z.string(), z.string()]);
 
-const restBody = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('none') }),
-  z.object({ kind: z.literal('text'), text: z.string(), language: z.string() }),
-  z.object({ kind: z.literal('other'), description: z.string() }),
-]);
-
-const snapshotSchema = z.discriminatedUnion('protocol', [
-  z.object({
-    protocol: z.literal('rest'),
-    method: z.string(),
-    url: z.string(),
-    headers: z.array(pair),
-    body: restBody,
-  }),
-  z.object({
-    protocol: z.literal('soap'),
-    endpoint: z.string(),
-    soapAction: z.string(),
-    headers: z.array(pair),
-    envelope: z.string(),
-    body: z.unknown().optional(),
-  }),
-  z.object({
-    protocol: z.literal('grpc'),
-    target: z.string(),
-    method: z.string(),
-    metadata: z.array(pair),
-    message: z.unknown(),
-  }),
-]);
-
-export type ApplyResult =
-  { readonly ok: true; readonly request: RequestSnapshot } | { readonly ok: false; readonly error: ScriptFailure };
+/** The checked request a pre-request script hands back, or why it is refused. */
+export type ApplyResult<Q extends RequestSnapshotBase = RequestSnapshotBase> =
+  { readonly ok: true; readonly request: Q } | { readonly ok: false; readonly error: ScriptFailure };
 
 const CONTROL = /[\r\n\0]/;
-const METHOD = /^[A-Z][A-Z0-9_-]{0,31}$/;
 const SECRET_OPEN = '${secret:';
 
-const refuse = (code: ScriptFailure['code'], message: string): ApplyResult => ({ ok: false, error: { code, message } });
+const refuse = (
+  code: ScriptFailure['code'],
+  message: string,
+): { readonly ok: false; readonly error: ScriptFailure } => ({ ok: false, error: { code, message } });
 
-/** Every `${secret:name}` a request's text names. */
-export function secretReferencesIn(request: RequestSnapshot): Set<string> {
-  const texts: string[] = [];
-  switch (request.protocol) {
-    case 'rest':
-      texts.push(request.method, request.url, ...request.headers.flat());
-      if (request.body.kind === 'text') texts.push(request.body.text);
-      break;
-    case 'soap':
-      texts.push(request.endpoint, request.soapAction, request.envelope, ...request.headers.flat());
-      break;
-    case 'grpc':
-      texts.push(request.target, ...request.metadata.flat(), JSON.stringify(request.message) ?? '');
-      break;
-  }
+/** Every `${secret:name}` that `texts` name: a module's `inspect(snapshot).texts`. */
+export function secretReferencesIn(texts: readonly string[]): Set<string> {
   const names = new Set<string>();
   for (const text of texts) {
     addSecretNames(text, names);
@@ -99,83 +68,74 @@ function addSecretNames(text: string, names: Set<string>): void {
   }
 }
 
-function badPair(pairs: readonly (readonly [string, string])[]): string | undefined {
+function badPair(pairs: readonly HeaderPair[]): string | undefined {
   return pairs.find(([name, value]) => CONTROL.test(name) || CONTROL.test(value))?.[0];
 }
 
-function sameOrigin(before: string, after: string): boolean {
-  const was = urlOrigin(before);
-  const now = urlOrigin(after);
-  // A destination that was not a URL (a relative one resolved later) has to stay exactly as it was.
-  return was === undefined ? before === after : was === now;
+/**
+ * The origin of a destination that is a URL with a host; undefined for anything else. A gRPC
+ * `host:port` target parses as a scheme and a path with no host, and so does `localhost:8080/x`:
+ * neither has an origin a path could change under, so both have to stay exactly as they were.
+ */
+function originOf(destination: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(destination);
+  } catch {
+    return undefined;
+  }
+  if (url.host === '') return undefined;
+  // A non-special scheme (`grpc:`) has an opaque `origin` of "null"; host and port still say where
+  // the request goes.
+  return url.origin !== 'null' ? url.origin : `${url.protocol}//${url.host}`;
 }
 
-/** The checked request a pre-request script hands back, or why it is refused. */
-export function applyRequestChanges(before: RequestSnapshot, returned: unknown): ApplyResult {
-  const parsed = snapshotSchema.safeParse(returned);
+function sameDestination(before: string, after: string): boolean {
+  const was = originOf(before);
+  return was === undefined ? before === after : was === originOf(after);
+}
+
+/**
+ * The checked request a pre-request script hands back, or why it is refused. `scripting` is the
+ * facet of the protocol `before` belongs to.
+ */
+export function applyRequestChanges<Q extends RequestSnapshotBase, R extends ResponseSnapshotBase>(
+  scripting: ProtocolScripting<Q, R>,
+  before: Q,
+  returned: unknown,
+): ApplyResult<Q> {
+  const parsed = scripting.requestSchema.safeParse(returned);
   if (!parsed.success || parsed.data.protocol !== before.protocol) {
     return refuse('script-error', 'The script handed back a request the engine cannot read');
   }
-  const after = parsed.data as RequestSnapshot;
+  const after = parsed.data;
+  const was = scripting.inspect(before);
+  const now = scripting.inspect(after);
 
-  switch (after.protocol) {
-    case 'rest': {
-      const was = before as Extract<RequestSnapshot, { protocol: 'rest' }>;
-      if (!METHOD.test(after.method)) {
-        return refuse('script-value-invalid', `"${after.method}" is not an HTTP method`);
-      }
-      if (CONTROL.test(after.url)) {
-        return refuse('script-value-invalid', 'The URL may not hold CR, LF or NUL');
-      }
-      if (!sameOrigin(was.url, after.url)) {
-        return refuse('script-origin-change', 'A script cannot change the scheme, host or port of the request');
-      }
-      const header = badPair(after.headers);
-      if (header !== undefined) {
-        return refuse('script-value-invalid', `The header "${header}" may not hold CR, LF or NUL`);
-      }
-      if (was.body.kind === 'other' && JSON.stringify(after.body) !== JSON.stringify(was.body)) {
-        return refuse('script-error', `A script cannot change a body that is ${was.body.description}`);
-      }
-      break;
-    }
-    case 'soap': {
-      const was = before as Extract<RequestSnapshot, { protocol: 'soap' }>;
-      if (CONTROL.test(after.endpoint) || CONTROL.test(after.soapAction)) {
-        return refuse('script-value-invalid', 'The endpoint and SOAPAction may not hold CR, LF or NUL');
-      }
-      if (!sameOrigin(was.endpoint, after.endpoint)) {
-        return refuse('script-origin-change', 'A script cannot change the scheme, host or port of the endpoint');
-      }
-      const header = badPair(after.headers);
-      if (header !== undefined) {
-        return refuse('script-value-invalid', `The header "${header}" may not hold CR, LF or NUL`);
-      }
-      break;
-    }
-    case 'grpc': {
-      const was = before as Extract<RequestSnapshot, { protocol: 'grpc' }>;
-      if (after.target !== was.target) {
-        return refuse('script-origin-change', 'A script cannot change the target of a gRPC call');
-      }
-      if (after.method !== was.method) {
-        return refuse('script-error', 'A script cannot change which gRPC method is called');
-      }
-      const entry = badPair(after.metadata);
-      if (entry !== undefined) {
-        return refuse('script-value-invalid', `The metadata "${entry}" may not hold CR, LF or NUL`);
-      }
-      break;
-    }
+  if (now.lines.some((line) => CONTROL.test(line))) {
+    return refuse('script-value-invalid', 'A single-line value of the request may not hold CR, LF or NUL');
   }
-
-  const allowed = secretReferencesIn(before);
-  const added = [...secretReferencesIn(after)].filter((name) => !allowed.has(name));
+  if (!sameDestination(was.destination, now.destination)) {
+    return refuse('script-origin-change', 'A script cannot change the scheme, host or port the request is sent to');
+  }
+  if (JSON.stringify(now.fixed) !== JSON.stringify(was.fixed)) {
+    return refuse('script-error', 'A script cannot change a part of the request that is fixed');
+  }
+  const pair = badPair(now.pairs);
+  if (pair !== undefined) {
+    return refuse('script-value-invalid', `The header or metadata entry "${pair}" may not hold CR, LF or NUL`);
+  }
+  const allowed = secretReferencesIn(was.texts);
+  const added = [...secretReferencesIn(now.texts)].filter((name) => !allowed.has(name));
   if (added.length > 0) {
     return refuse(
       'script-secret-denied',
       `A script cannot add a reference to a secret the request does not already use: ${added.join(', ')}`,
     );
+  }
+  const failure = scripting.validate?.(before, after);
+  if (failure !== undefined) {
+    return { ok: false, error: failure };
   }
   return { ok: true, request: after };
 }

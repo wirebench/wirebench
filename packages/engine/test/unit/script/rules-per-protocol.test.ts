@@ -8,19 +8,22 @@
  * these.
  */
 import { describe, expect, it } from 'vitest';
+import type { GrpcRequestSnapshot } from '../../../src/grpc/scripting.js';
+import { defaultRegistry } from '../../../src/protocols.js';
+import type { RequestSnapshot } from '../../../src/protocols.js';
+import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
 import { applyRequestChanges } from '../../../src/script/apply.js';
-import type {
-  GrpcRequestSnapshot,
-  RequestSnapshot,
-  RestRequestSnapshot,
-  ScriptFailure,
-  SoapRequestSnapshot,
-} from '../../../src/script/model.js';
+import type { ScriptFailure } from '../../../src/script/model.js';
+import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
 
 type Snapshot = RequestSnapshot;
 
-/** The one place this file calls the rules. */
-const apply = (before: Snapshot, returned: unknown) => applyRequestChanges(before, returned);
+/** The one place this file calls the rules: with the facet the registry holds for the protocol. */
+const apply = (before: Snapshot, returned: unknown) => {
+  const scripting = defaultRegistry().find(before.protocol)?.scripting;
+  if (scripting === undefined) throw new Error(`The registry has no scripting facet for "${before.protocol}"`);
+  return applyRequestChanges(scripting, before, returned);
+};
 
 const REST: RestRequestSnapshot = {
   protocol: 'rest',

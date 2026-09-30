@@ -10,14 +10,8 @@ import { resolveSecretTokens, type GetSecret } from '../secrets/resolve.js';
 import { grpcMessageTypes, grpcScriptTypes } from '../grpc/script-types.js';
 import { restOperationFor, restScriptTypes } from '../rest/script-types.js';
 import { soapOperationElements, soapScriptTypes } from '../soap/script-types.js';
-import type {
-  RequestSnapshot,
-  ResponseSnapshot,
-  ScriptLog,
-  ScriptOutcome,
-  ScriptTest,
-  ScriptValue,
-} from '../script/model.js';
+import type { RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/module.js';
+import type { ScriptLog, ScriptOutcome, ScriptTest, ScriptValue } from '../script/model.js';
 import {
   scriptError,
   type RequestScripting,
@@ -59,7 +53,7 @@ export function scriptTypesFor(
       const elements = soapOperationElements(loaded.definition, item.operation.bindingName, item.operation.name);
       return {
         generated: soapScriptTypes(loaded.schemaSet, elements.input, elements.output),
-        soap: {
+        binding: {
           schemas: loaded.schemaSet,
           ...(elements.input !== undefined ? { input: elements.input } : {}),
           ...(elements.output !== undefined ? { output: elements.output } : {}),
@@ -107,12 +101,12 @@ export interface ScriptSession {
    *
    * @throws WirebenchError the script's failure: the request is not sent
    */
-  readonly pre: <S extends RequestSnapshot>(before: S) => Promise<S>;
+  readonly pre: <S extends RequestSnapshotBase>(before: S) => Promise<S>;
   /**
    * Runs the post-response script, if there is one, and returns what both scripts did. The
    * post-response script sees the pre-request script's values; its failure is returned, not thrown.
    */
-  readonly post: (sent: RequestSnapshot, response: ResponseSnapshot) => Promise<SentScripts>;
+  readonly post: (sent: RequestSnapshotBase, response: ResponseSnapshotBase) => Promise<SentScripts>;
 }
 
 export interface ScriptSessionOptions {

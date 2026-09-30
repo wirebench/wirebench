@@ -8,7 +8,7 @@ import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
 import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } from '../../../src/soap/script-types.js';
-import type { SoapRequestSnapshot } from '../../../src/script/model.js';
+import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import { typeErrors } from './ts-check.js';
 
@@ -181,7 +181,7 @@ describe('SOAP scripts with the projection', () => {
       props: {},
       secrets: {},
       requestName: 'Order',
-      soap: { schemas: set, input: INPUT, output: OUTPUT },
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
     });
     expect(outcome.ok).toBe(true);
     const sent = outcome.ok ? (outcome.request as SoapRequestSnapshot) : undefined;
@@ -204,7 +204,7 @@ describe('SOAP scripts with the projection', () => {
       props: {},
       secrets: {},
       requestName: 'Order',
-      soap: { schemas: set, input: INPUT, output: OUTPUT },
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
     });
     expect(outcome).toMatchObject({ ok: true, request: { envelope: ENVELOPE }, log: { lines: ['3'] } });
   });
@@ -227,7 +227,7 @@ describe('SOAP scripts with the projection', () => {
       props: {},
       secrets: {},
       requestName: 'Order',
-      soap: { schemas: set, input: INPUT, output: OUTPUT },
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
     });
     expect(outcome).toMatchObject({
       ok: true,

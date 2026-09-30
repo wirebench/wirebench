@@ -158,7 +158,7 @@ export class ScriptHost {
               const elements = soapOperationElements(loaded.definition, operation.bindingName, operation.name);
               return {
                 generated: soapScriptTypes(loaded.schemaSet, elements.input, elements.output),
-                soap: {
+                binding: {
                   schemas: loaded.schemaSet,
                   ...(elements.input !== undefined ? { input: elements.input } : {}),
                   ...(elements.output !== undefined ? { output: elements.output } : {}),

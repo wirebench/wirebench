@@ -24,7 +24,7 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, byOrder, findInTree, walkTree } from '../run/tree.js';
-import { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from '../script/send.js';
+import { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './scripting.js';
 import { loadOpenApiDocument, restOperationFor, restScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';

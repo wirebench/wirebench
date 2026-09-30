@@ -43,7 +43,7 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
-import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from '../script/send.js';
+import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './scripting.js';
 import { soapOperationElements, soapScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
@@ -498,7 +498,7 @@ export const soapRun: ProtocolRun<SoapSelected> = {
     const elements = soapOperationElements(loaded.definition, selected.operation.bindingName, selected.operation.name);
     return {
       generated: soapScriptTypes(loaded.schemaSet, elements.input, elements.output),
-      soap: {
+      binding: {
         schemas: loaded.schemaSet,
         ...(elements.input !== undefined ? { input: elements.input } : {}),
         ...(elements.output !== undefined ? { output: elements.output } : {}),

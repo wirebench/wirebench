@@ -3,8 +3,21 @@
  * sandbox hands back is untrusted, so each rule has to hold without the prelude's help.
  */
 import { describe, expect, it } from 'vitest';
-import { applyRequestChanges, secretReferencesIn } from '../../../src/script/apply.js';
-import type { GrpcRequestSnapshot, RestRequestSnapshot, SoapRequestSnapshot } from '../../../src/script/model.js';
+import { grpcScripting } from '../../../src/grpc/scripting.js';
+import type { GrpcRequestSnapshot } from '../../../src/grpc/scripting.js';
+import type { ProtocolScripting } from '../../../src/protocol/module.js';
+import { restScripting } from '../../../src/rest/scripting.js';
+import type { RestRequestSnapshot } from '../../../src/rest/scripting.js';
+import { applyRequestChanges as applyChanges, secretReferencesIn as referencesIn } from '../../../src/script/apply.js';
+import { soapScripting } from '../../../src/soap/scripting.js';
+import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
+
+type Snapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;
+const FACETS = { rest: restScripting, soap: soapScripting, grpc: grpcScripting } as const;
+const facetOf = (request: Snapshot): ProtocolScripting => FACETS[request.protocol];
+// The rules take the protocol's facet since they became generic; these keep the tests as written.
+const applyRequestChanges = (before: Snapshot, returned: unknown) => applyChanges(facetOf(before), before, returned);
+const secretReferencesIn = (request: Snapshot) => referencesIn(facetOf(request).inspect(request).texts);
 
 const REST: RestRequestSnapshot = {
   protocol: 'rest',

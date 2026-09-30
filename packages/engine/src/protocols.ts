@@ -5,15 +5,18 @@
  */
 import { grpcProtocol } from './grpc/module.js';
 import type { GrpcSelected } from './grpc/run.js';
+import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
 import { createProtocolRegistry } from './protocol/registry.js';
 import type { ProtocolRegistry } from './protocol/registry.js';
 import { restProtocol } from './rest/module.js';
 import type { RestSelected } from './rest/run.js';
+import type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
 import type { RestExchange } from './rest/send.js';
 import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
+import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
 import type { SoapExchange } from './types.js';
 import { wsProtocol } from './ws/module.js';
 
@@ -55,3 +58,9 @@ export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected;
 /** The exchange a request travelled as, for a host that keeps more of it than a report does. */
 export type SentExchange =
   { readonly kind: 'soap'; readonly soap: SoapExchange } | { readonly kind: 'rest'; readonly rest: RestExchange };
+
+/** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
+export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;
+
+/** The response snapshot of any built-in protocol that has scripts (spec §3.1). */
+export type ResponseSnapshot = RestResponseSnapshot | SoapResponseSnapshot | GrpcResponseSnapshot;

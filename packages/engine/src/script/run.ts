@@ -7,14 +7,16 @@
  * set it as a value, write it into the request — is masked downstream.
  */
 import { z } from 'zod';
+import type { RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/module.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
+import type { ResponseSnapshot } from '../protocols.js';
 import { TRANSFER_NAME_PATTERN } from '../sequence/model.js';
 import { applyRequestChanges } from './apply.js';
 import { buildPrelude } from './api/prelude.js';
 import { POSTMAN_LAYER } from './api/postman.js';
+import { scriptingOf } from './lookup.js';
 import {
   SCRIPT_OUTPUT_LIMITS,
-  type RequestSnapshot,
-  type ResponseSnapshot,
   type ScriptApi,
   type ScriptErrorCode,
   type ScriptFailure,
@@ -23,12 +25,10 @@ import {
   type ScriptTest,
   type ScriptValue,
 } from './model.js';
+import type { RequestScriptTypes } from './request-scripts.js';
 import type { ScriptSandbox } from './sandbox/host.js';
 import type { SandboxError } from './sandbox/model.js';
 import { StripError, stripTypes } from './strip.js';
-import { projectSoapBody, replaceSoapBody } from '../soap/script-types.js';
-import type { SchemaSet } from '../xsd/schema-set.js';
-import type { QName } from '../wsdl/qname.js';
 
 export interface ScriptRunInput {
   readonly sandbox: ScriptSandbox;
@@ -40,9 +40,12 @@ export interface ScriptRunInput {
   readonly filename: string;
   readonly timeoutMs?: number;
   /** For a pre-request script, the request it may change; for a post-response one, what was sent. */
-  readonly request: RequestSnapshot;
-  /** Required for a post-response script. */
-  readonly response?: ResponseSnapshot;
+  readonly request: RequestSnapshotBase;
+  /**
+   * Required for a post-response script. Any module's response snapshot; the built-in union is
+   * named only so that a literal of one of its members type-checks.
+   */
+  readonly response?: ResponseSnapshot | ResponseSnapshotBase;
   /** The run's values so far (spec §Values). */
   readonly vars: Readonly<Record<string, string>>;
   /** Resolved properties, secrets excluded. */
@@ -56,11 +59,13 @@ export interface ScriptRunInput {
   /** Called with each secret value before the script runs, so it is masked wherever it lands. */
   readonly onSecretValue?: (value: string) => void;
   /**
-   * For a SOAP request: the schema and the operation's input and output elements, which give the
-   * script a typed `request.body` / `response.body` (`types/xsd.ts`). Without it the body is only
-   * reachable as `envelope`.
+   * What the request's module put on its script types for typed views (`RequestScriptTypes.binding`).
+   * For SOAP: the schema and the operation's elements, which give the script a typed `request.body`
+   * and `response.body`. Without it the body is only reachable as `envelope`.
    */
-  readonly soap?: { readonly schemas: SchemaSet; readonly input?: QName; readonly output?: QName };
+  readonly binding?: unknown;
+  /** Where the request's protocol is looked up; the built-in registry when absent. */
+  readonly registry?: ProtocolRegistry;
 }
 
 /** A rule's error, raised in the sandbox by name (`api/prelude.ts`), mapped to its code. */
@@ -107,10 +112,25 @@ function readOutput(output: unknown): Output | undefined {
 const cleanTests = (tests: Output['tests']): ScriptTest[] =>
   tests.map((t) => ({ name: t.name, passed: t.passed, ...(t.message !== undefined ? { message: t.message } : {}) }));
 
+/**
+ * Runs one script. A request whose protocol has no scripting facet in the registry fails with
+ * `script-unsupported`, and nothing runs.
+ */
 export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
   const empty = { tests: [], values: [], log: { lines: [], truncated: false } } as const;
   if (input.phase === 'post' && input.response === undefined) {
     throw new Error('runScript: a post-response script needs the response');
+  }
+  const scripting = scriptingOf(input.request.protocol, input.registry);
+  if (scripting === undefined) {
+    return {
+      ok: false,
+      error: {
+        code: 'script-unsupported',
+        message: `Requests of the "${input.request.protocol}" protocol cannot have scripts`,
+      },
+      ...empty,
+    };
   }
 
   let code: string;
@@ -128,15 +148,18 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     input.onSecretValue?.(value);
   }
 
-  const request = withSoapBody(input.request, input.soap?.schemas, input.soap?.input);
+  // The views read only the binding; a script's generated types are the checker's business.
+  const types: RequestScriptTypes = {
+    generated: '',
+    ...(input.binding !== undefined ? { binding: input.binding } : {}),
+  };
+  const request = scripting.views?.request(input.request, types) ?? input.request;
   const response =
-    input.response?.protocol === 'soap' && input.soap !== undefined
-      ? withBody(input.response, projectSoapBody(input.soap.schemas, input.soap.output, input.response.text))
-      : input.response;
+    input.response === undefined ? undefined : (scripting.views?.response(input.response, types) ?? input.response);
 
   const result = await input.sandbox.run({
     prelude: buildPrelude(
-      input.request.protocol,
+      scripting,
       input.phase,
       input.api,
       input.layer ?? (input.api === 'postman' ? POSTMAN_LAYER : undefined),
@@ -171,60 +194,18 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     };
   }
   if (input.phase === 'pre') {
-    const applied = applyRequestChanges(request, output.request);
+    const applied = applyRequestChanges(scripting, request, output.request);
     if (!applied.ok) {
       return { ok: false, error: applied.error, tests, values, log: result.log };
     }
-    const written = writeSoapBody(request, applied.request, input.soap);
+    const written = scripting.views?.writeBack(request, applied.request, types) ?? {
+      ok: true as const,
+      request: applied.request,
+    };
     if (!written.ok) {
       return { ok: false, error: written.error, tests, values, log: result.log };
     }
     return { ok: true, request: written.request, tests, values, log: result.log };
   }
   return { ok: true, tests, values, log: result.log };
-}
-
-function withBody<T extends object>(snapshot: T, body: unknown): T {
-  return body === undefined ? snapshot : { ...snapshot, body };
-}
-
-/** A SOAP request with its body projected, when the schema describes the body element. */
-function withSoapBody(
-  request: RequestSnapshot,
-  schemas: SchemaSet | undefined,
-  element: QName | undefined,
-): RequestSnapshot {
-  if (request.protocol !== 'soap' || schemas === undefined) {
-    return request;
-  }
-  return withBody(request, projectSoapBody(schemas, element, request.envelope));
-}
-
-/**
- * Writes a changed `request.body` back into the envelope, replacing the body element. The body wins
- * over an envelope the script also edited, since it is written into that edited envelope.
- */
-function writeSoapBody(
-  before: RequestSnapshot,
-  after: RequestSnapshot,
-  soap: ScriptRunInput['soap'],
-): { ok: true; request: RequestSnapshot } | { ok: false; error: ScriptFailure } {
-  if (before.protocol !== 'soap' || after.protocol !== 'soap') {
-    return { ok: true, request: after };
-  }
-  const { body, ...rest } = after;
-  if (body === undefined || JSON.stringify(body) === JSON.stringify(before.body) || soap?.input === undefined) {
-    return { ok: true, request: rest };
-  }
-  try {
-    return { ok: true, request: { ...rest, envelope: replaceSoapBody(soap.schemas, soap.input, rest.envelope, body) } };
-  } catch (error) {
-    return {
-      ok: false,
-      error: {
-        code: 'script-error',
-        message: `request.body could not be written: ${error instanceof Error ? error.message : String(error)}`,
-      },
-    };
-  }
 }

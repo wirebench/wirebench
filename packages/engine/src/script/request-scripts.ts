@@ -5,26 +5,29 @@
  */
 import { createHash } from 'node:crypto';
 import { WirebenchError } from '../errors.js';
+import type { RequestSnapshotBase, ResponseSnapshotBase } from '../protocol/module.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
 import type { ScriptChecker, ScriptDiagnostic } from './check/host.js';
 import {
   scriptFileName,
   type RequestScripts,
-  type RequestSnapshot,
-  type ResponseSnapshot,
   type ScriptFailure,
   type ScriptOutcome,
   type ScriptPhase,
-  type ScriptProtocol,
   type ScriptSource,
 } from './model.js';
-import { runScript, type ScriptRunInput } from './run.js';
+import { runScript } from './run.js';
 import type { ScriptSandbox } from './sandbox/host.js';
 import { scriptDeclarations } from './types/api.js';
 
-/** The generated half of a request's script types, and what a SOAP body needs to be typed. */
+/** The generated half of a request's script types, and what its module needs for typed views. */
 export interface RequestScriptTypes {
   readonly generated: string;
-  readonly soap?: ScriptRunInput['soap'];
+  /**
+   * Opaque to everything but the module that produced it, which reads it back in its scripting
+   * facet's `views` (SOAP: `SoapScriptBinding`).
+   */
+  readonly binding?: unknown;
 }
 
 /** The scripts of a request that will run: none when there are none or they are switched off. */
@@ -95,11 +98,13 @@ export interface RequestScriptingOptions {
   readonly checker?: ScriptChecker;
   /** Told every secret value a script may read, before it runs. */
   readonly onSecretValue?: (value: string) => void;
+  /** Where a request's protocol is looked up; the built-in registry when absent. */
+  readonly registry?: ProtocolRegistry;
 }
 
 /** One request's scripts, with the facts every run of them shares. */
 export interface ScriptedRequest {
-  readonly protocol: ScriptProtocol;
+  readonly protocol: string;
   /** The request's path, for messages. */
   readonly path: string;
   readonly name: string;
@@ -135,7 +140,13 @@ export class RequestScripting {
     const declarations =
       request.scripts.api === 'postman'
         ? ''
-        : scriptDeclarations(request.protocol, phase, request.scripts.secrets, request.types.generated);
+        : scriptDeclarations(
+            request.protocol,
+            phase,
+            request.scripts.secrets,
+            request.types.generated,
+            this.options.registry,
+          );
     const key = createHash('sha256')
       .update(request.scripts.api)
       .update('\0')
@@ -179,8 +190,8 @@ export class RequestScripting {
   private run(
     request: ScriptedRequest,
     phase: ScriptPhase,
-    snapshot: RequestSnapshot,
-    response: ResponseSnapshot | undefined,
+    snapshot: RequestSnapshotBase,
+    response: ResponseSnapshotBase | undefined,
     values: ScriptRunValues,
     layer?: string,
   ): Promise<ScriptOutcome> {
@@ -201,7 +212,8 @@ export class RequestScripting {
       requestName: request.name,
       ...(layer !== undefined ? { layer } : {}),
       ...(this.options.onSecretValue !== undefined ? { onSecretValue: this.options.onSecretValue } : {}),
-      ...(request.types.soap !== undefined ? { soap: request.types.soap } : {}),
+      ...(request.types.binding !== undefined ? { binding: request.types.binding } : {}),
+      ...(this.options.registry !== undefined ? { registry: this.options.registry } : {}),
     });
   }
 
@@ -212,7 +224,7 @@ export class RequestScripting {
    */
   async pre(
     request: ScriptedRequest,
-    snapshot: RequestSnapshot,
+    snapshot: RequestSnapshotBase,
     values: ScriptRunValues,
     layer?: string,
   ): Promise<Extract<ScriptOutcome, { ok: true }>> {
@@ -224,8 +236,8 @@ export class RequestScripting {
   /** The post-response script's outcome; a failure is returned, since the response is kept. */
   post(
     request: ScriptedRequest,
-    sent: RequestSnapshot,
-    response: ResponseSnapshot,
+    sent: RequestSnapshotBase,
+    response: ResponseSnapshotBase,
     values: ScriptRunValues,
     layer?: string,
   ): Promise<ScriptOutcome> {
