@@ -9,42 +9,22 @@
  * workspace it sits inside (if any) and its command line. Trust anchors beyond Node's own come from
  * `NODE_EXTRA_CA_CERTS`.
  */
-import { readFile, stat } from 'node:fs/promises';
-import { isAbsolute, resolve as resolvePath } from 'node:path';
-import { WirebenchError } from '../errors.js';
+import { readFile } from 'node:fs/promises';
 import { expandGrpcInput } from '../grpc/expand.js';
 import type { GrpcSendInput } from '../grpc/send.js';
-import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
-import { resolveEndpoint } from '../project/environments.js';
-import type { EndpointSource } from '../project/environments.js';
-import type { Attachment, AttachmentSource, Endpoint, Interface, Project, RequestDef } from '../project/model.js';
-import type { PropertyScopes } from '../project/properties.js';
-import { expandSendInput } from '../project/properties.js';
-import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
+import { readAttachment } from '../project/attachments-cache.js';
+import type { AttachmentSource } from '../project/model.js';
 import { expandRestSendInput } from '../rest/expand.js';
 import type { RestSendInput } from '../rest/send.js';
-import { resolveSoapAuth } from '../secrets/resolve.js';
-import { toGrpcSendInput, toRestSendInput, toSendInput } from '../send-options.js';
-import type { AttachmentResolvers } from '../send-options.js';
-import type { SoapSendInput, SoapSendWss } from '../types.js';
-import { resolveWorkspaceEndpoint, withActiveEnvironment } from '../workspace/environments.js';
+import { toGrpcSendInput, toRestSendInput } from '../send-options.js';
 import { signingSecretMissing, signingSecretRef } from '../webhooks/model.js';
-import { effectiveWsa } from '../wsa/model.js';
-import { createWssContext } from '../wss/model.js';
-import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
-import { requiredSecret } from './oauth2-token.js';
-import {
-  authFor,
-  baseUrlFor,
-  insideProject,
-  loadKeystoreById,
-  tlsFor,
-  unresolvedError,
-  withSecrets,
-} from './send-helpers.js';
+import { grpcEffectiveAuth, restEffectiveAuth } from './effective-auth.js';
+import { prepareSoap } from '../soap/run.js';
+import type { PreparedSoap } from '../soap/run.js';
 import type { SelectedRequest } from './select.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
+import { authFor, baseUrlFor, insideProject, tlsFor, unresolvedError, withSecrets } from './send-helpers.js';
 
 export { authFor } from './send-helpers.js';
 export { scopesFor } from './context.js';
@@ -57,7 +37,7 @@ export type { RunContext, RunWorkspace } from './context.js';
  * handed out (see `GetSecret`).
  */
 export type PreparedSend =
-  | { readonly kind: 'soap'; readonly input: SoapSendInput; readonly scopes: PropertyScopes }
+  | PreparedSoap
   | { readonly kind: 'rest'; readonly input: RestSendInput }
   | {
       readonly kind: 'grpc';
@@ -66,115 +46,8 @@ export type PreparedSend =
       readonly messageText: string;
     };
 
-type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
 type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
 type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
-
-/** A SOAP request's endpoint, through the workspace's environment when the run has a workspace. */
-function endpointFor(
-  context: RunContext,
-  iface: Interface,
-  request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
-): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
-  const { project, environmentId, workspace } = context;
-  return workspace === undefined
-    ? resolveEndpoint(project, environmentId, iface, request)
-    : resolveWorkspaceEndpoint({
-        workspace: withActiveEnvironment(workspace.workspace, environmentId),
-        project,
-        projectSlug: workspace.projectSlug,
-        iface,
-        request,
-      });
-}
-
-/**
- * WS-Addressing as the app's `wsaFor` builds it. The WSDL-derived default action comes from the
- * host's `defaultWsaActionFor`; without one it is empty, as it is in the app for an interface not
- * yet hydrated, and an explicit `wsa:Action` or the request's SOAPAction still applies.
- */
-function wsaFor(selected: SoapSelected, context: RunContext): SoapSendInput['wsa'] {
-  const config = effectiveWsa(selected.iface.wsa, selected.request.wsa);
-  return config.enabled ? { config, defaultAction: context.defaultWsaActionFor?.(selected) ?? '' } : undefined;
-}
-
-/** The app's `wssFor`: a selected configuration the project no longer has refuses the send. */
-function wssFor(selected: SoapSelected, context: RunContext): SoapSendWss | undefined {
-  const { request } = selected;
-  const pick = (id: string | undefined): string | undefined => (id === undefined || id.length === 0 ? undefined : id);
-  const outgoingId = pick(request.wssOutgoingRef);
-  const incomingId = pick(request.wssIncomingRef);
-  if (outgoingId === undefined && incomingId === undefined) {
-    return undefined;
-  }
-  const find = <T>(refs: Project['wss']['outgoing'], id: string, convert: (ref: (typeof refs)[number]) => T): T => {
-    const ref = refs.find((candidate) => candidate.id === id);
-    if (ref !== undefined) {
-      try {
-        return convert(ref);
-      } catch {
-        // An unreadable configuration is treated as the app treats it: as missing.
-      }
-    }
-    throw new WirebenchError(
-      'wss-config-missing',
-      'This request selects a WS-Security configuration the project no longer has.',
-      { details: { configId: id } },
-    );
-  };
-  const outgoing =
-    outgoingId === undefined ? undefined : find(context.project.wss.outgoing, outgoingId, toWssOutgoingConfig);
-  const incoming =
-    incomingId === undefined ? undefined : find(context.project.wss.incoming, incomingId, toWssIncomingConfig);
-  const { properties } = request;
-  return {
-    ...(outgoing !== undefined ? { outgoing } : {}),
-    ...(incoming !== undefined ? { incoming } : {}),
-    ctx: createWssContext({
-      keystores: (ref) => loadKeystoreById(context, ref),
-      secrets: (ref) => requiredSecret(ref, context.getSecret),
-    }),
-    requestProperties: {
-      ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),
-      ...(properties.wssTimeToLive !== undefined ? { wssTimeToLive: properties.wssTimeToLive } : {}),
-    },
-  };
-}
-
-/**
- * The app's `attachmentResolvers`, with the project folder as the only read boundary: a `cache`
- * attachment comes out of `attachments/`, a `path` one from its first existing candidate (resource
- * root, then the project), and an inline `file:` reference from the project folder.
- */
-function attachmentResolvers(context: RunContext): AttachmentResolvers {
-  const { projectDir } = context;
-  const resourceRoot = context.project.settings.resourceRoot;
-  const read = createFileAttachmentResolver(projectDir, resourceRoot);
-  return {
-    resolver: async (attachment: Attachment): Promise<Uint8Array> => {
-      if (attachment.source.kind === 'path') {
-        const { path } = attachment.source;
-        const candidates = isAbsolute(path)
-          ? [path]
-          : [...(resourceRoot !== undefined ? [resolvePath(resourceRoot, path)] : []), resolvePath(projectDir, path)];
-        for (const candidate of candidates) {
-          const exists = await stat(candidate).then(
-            () => true,
-            () => false,
-          );
-          if (exists) {
-            await insideProject(context, candidate, 'attachment-outside-project', attachment.name);
-            return new Uint8Array(await readFile(candidate));
-          }
-        }
-      }
-      return read(attachment);
-    },
-    resolveFile: async (path: string): Promise<Uint8Array> =>
-      new Uint8Array(await readFile(await insideProject(context, path, 'inline-file-outside-project', path))),
-    resourceRoot: projectDir,
-  };
-}
 
 /** A REST multipart file part or binary body, read from inside the project folder. */
 function restFileResolver(context: RunContext): (source: AttachmentSource) => Promise<Uint8Array> {
@@ -184,60 +57,6 @@ function restFileResolver(context: RunContext): (source: AttachmentSource) => Pr
       : new Uint8Array(
           await readFile(await insideProject(context, source.path, 'rest-file-outside-project', source.path)),
         );
-}
-
-async function prepareSoap(selected: SoapSelected, context: RunContext): Promise<PreparedSend> {
-  const { iface, request } = selected;
-  const resolved = endpointFor(context, iface, request);
-  if (resolved.url === undefined) {
-    throw new WirebenchError('endpoint-unresolved', `No endpoint resolves for "${selected.path}"`, {
-      details: { path: selected.path },
-    });
-  }
-  const owner = soapEffectiveAuth(selected);
-  const base = toSendInput({
-    request: {
-      properties: request.properties,
-      soapVersion: request.soapVersion,
-      ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
-      headers: request.headers,
-      envelopeXml: request.envelopeXml,
-    },
-    endpoint: resolved.url,
-    projectSettings: context.project.settings,
-    attachments: request.attachments,
-    attachmentResolvers: attachmentResolvers(context),
-  });
-  const scopes = scopesFor(context);
-  const tls = await tlsFor(context, request.properties.sslKeystoreRef, resolved.endpoint?.trustInvalid === true);
-  const proxy = context.proxyFor?.(resolved.url);
-  const wsa = wsaFor(selected, context);
-  const wss = wssFor(selected, context);
-  // An owner's OAuth2 gets its token as a REST one does (client credentials; the browser grant is
-  // refused); the endpoint schemes resolve through the SOAP path.
-  const sendAuth =
-    owner !== undefined && owner.type === 'oauth2'
-      ? await authFor(owner, selected.path, context, tls)
-      : await resolveSoapAuth(owner, context.getSecret);
-  // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
-  const input: SoapSendInput = {
-    ...base,
-    ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
-    ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
-    ...(tls !== undefined ? { tls: { ...base.tls, ...tls } } : {}),
-    ...(proxy !== undefined ? { proxy } : {}),
-    ...(wsa !== undefined ? { wsa } : {}),
-    ...(wss !== undefined ? { wss } : {}),
-    ...(context.signal !== undefined ? { signal: context.signal } : {}),
-  };
-  const withTokens = await withSecrets(input, scopes, context.getSecret, context.secretPlaceholders);
-  // Refused here, before the wire: the engine would report the same refs on the exchange, but by
-  // then a half-expanded envelope has already been sent to somebody's service.
-  const { unresolved } = expandSendInput(input, withTokens);
-  if (unresolved.length > 0) {
-    throw unresolvedError(selected.path, unresolved);
-  }
-  return { kind: 'soap', input, scopes: withTokens };
 }
 
 /**

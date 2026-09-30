@@ -7,18 +7,17 @@
 import { resolveScopes } from '../project/environments.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { Project, PropertyMap } from '../project/model.js';
-import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
 import { activeScripts } from '../script/request-scripts.js';
+import { soapRun } from '../soap/run.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
 import { signingSecretRef, signingSourceLabel } from '../webhooks/model.js';
-import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
-import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
+import { grpcEffectiveAuth, restEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
-import { keystoreNeeds, present, secretNamesInValue } from './send-helpers.js';
+import { keystoreNeeds, secretNamesInValue } from './send-helpers.js';
 
 export { secretNamesInValue } from './send-helpers.js';
 
@@ -26,57 +25,6 @@ export { secretNamesInValue } from './send-helpers.js';
 export interface LocatedSecretNeed extends SecretNeed {
   /** Display paths of the requests that need it. */
   readonly usedBy: readonly string[];
-}
-
-/** Parses a WS-Security configuration by id; missing or unreadable is prepare's error, not a need. */
-function findConfig<T>(
-  refs: Project['wss']['outgoing'],
-  id: string | undefined,
-  convert: (ref: (typeof refs)[number]) => T,
-): T | undefined {
-  if (!present(id)) {
-    return undefined;
-  }
-  const ref = refs.find((candidate) => candidate.id === id);
-  if (ref === undefined) {
-    return undefined;
-  }
-  try {
-    return convert(ref);
-  } catch {
-    return undefined;
-  }
-}
-
-/** WS-Security passwords carry no `…Env` name: they resolve through their ref-derived variable. */
-function outgoingNeeds(project: Project, config: WssOutgoingConfig): SecretNeed[] {
-  const needs: SecretNeed[] = [];
-  for (const entry of config.entries) {
-    if (entry.kind === 'username-token') {
-      const ref = entry.passwordRef ?? config.defaultPasswordRef;
-      if (entry.passwordType !== 'none' && present(ref)) {
-        needs.push({ ref, purpose: `WS-Security password for "${entry.username}"` });
-      }
-    } else if (entry.kind === 'signature') {
-      needs.push(...keystoreNeeds(project, entry.keystoreRef));
-      if (present(entry.keyPasswordRef)) {
-        needs.push({ ref: entry.keyPasswordRef, purpose: `WS-Security signing key password ("${config.name}")` });
-      }
-    } else if (entry.kind === 'encryption') {
-      needs.push(...keystoreNeeds(project, entry.keystoreRef));
-    }
-  }
-  return needs;
-}
-
-function incomingNeeds(project: Project, config: WssIncomingConfig): SecretNeed[] {
-  return [
-    ...keystoreNeeds(project, config.decryptKeystoreRef),
-    ...(present(config.decryptKeyPasswordRef)
-      ? [{ ref: config.decryptKeyPasswordRef, purpose: `WS-Security decryption key password ("${config.name}")` }]
-      : []),
-    ...keystoreNeeds(project, config.signatureKeystoreRef),
-  ];
 }
 
 function tokenNeeds(selected: SelectedRequest, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
@@ -125,16 +73,7 @@ function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonl
       ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
     ];
   }
-  const { request } = selected;
-  const outgoing = findConfig(project.wss.outgoing, request.wssOutgoingRef, toWssOutgoingConfig);
-  const incoming = findConfig(project.wss.incoming, request.wssIncomingRef, toWssIncomingConfig);
-  return [
-    ...tokenNeeds(selected, scopeSets),
-    ...secretNeedsOfAuth(soapEffectiveAuth(selected)),
-    ...keystoreNeeds(project, request.properties.sslKeystoreRef),
-    ...(outgoing !== undefined ? outgoingNeeds(project, outgoing) : []),
-    ...(incoming !== undefined ? incomingNeeds(project, incoming) : []),
-  ];
+  return [...tokenNeeds(selected, scopeSets), ...soapRun.secretNeeds(selected, project)];
 }
 
 /** A workspace's scopes with no environment active, then under each of its environments in turn. */

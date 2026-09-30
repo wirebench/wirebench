@@ -17,22 +17,16 @@ import type { GrpcCallResult } from '../grpc/call.js';
 import { loadProtoSet } from '../grpc/proto/load.js';
 import type { ProtoSet } from '../grpc/proto/load.js';
 import { protoSetFromDescriptorSet } from '../grpc/reflection/descriptors.js';
-import { apiDefinitionDir, definitionCacheDir } from '../project/paths.js';
+import { apiDefinitionDir } from '../project/paths.js';
 import { sendRest } from '../rest/send.js';
 import type { RestExchange } from '../rest/send.js';
 import { sendSoapRequest } from '../send.js';
+import { loadDefinition, soapSubject } from '../soap/run.js';
+import type { LoadedDefinition } from '../soap/run.js';
 import type { SoapExchange } from '../types.js';
-import { bindingContextFor, validateMessage } from '../validate/index.js';
-import { summarizeWsa } from '../wsa/policy-detect.js';
-import { parseWsdlBundle } from '../wsdl/merge.js';
-import type { WsdlDefinition } from '../wsdl/model.js';
-import { readDefinitionCache } from '../wsdl/cache.js';
-import type { DefinitionBundle } from '../wsdl/resolver.js';
-import { buildSchemaSet } from '../xsd/schema-set.js';
-import type { SchemaSet } from '../xsd/schema-set.js';
 import { createRunTokenSource } from './oauth2-token.js';
-import { dropRefusedToken, originOf } from './send-helpers.js';
 import { prepareSend, scopesFor } from './prepare.js';
+import { dropRefusedToken, originOf } from './send-helpers.js';
 import type { RunContext } from './prepare.js';
 import type { SelectedRequest } from './select.js';
 import type { TransferResult } from '../sequence/run.js';
@@ -66,6 +60,8 @@ import {
   scriptTypesFor,
   type SentScripts,
 } from './script-support.js';
+
+export { soapResponseSubject } from '../soap/run.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
@@ -146,14 +142,6 @@ type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
 /** A request's own assertions; a gRPC request that never had any carries none. */
 const assertionsOf = (item: SelectedRequest): readonly Assertion[] => item.request.assertions ?? [];
 
-/** An interface's cached definition, compiled once per run. */
-interface LoadedDefinition {
-  readonly definition: WsdlDefinition;
-  readonly bundle: DefinitionBundle;
-  readonly schemaSet: SchemaSet;
-  readonly defaultActionByOperation: Readonly<Record<string, string>>;
-}
-
 /** Enough of each exchange to keep for a report: a failing response can be megabytes. */
 const EXCHANGE_CAP_BYTES = 64 * 1024;
 
@@ -175,91 +163,6 @@ function erroredResult(item: SelectedRequest, error: NonNullable<RequestResult['
     assertions: [],
     error,
     unasserted: assertionsOf(item).length === 0,
-  };
-}
-
-function parseClark(clark: string): { namespaceUri: string; localName: string } {
-  const match = /^\{([^}]*)\}(.*)$/.exec(clark);
-  return match === null
-    ? { namespaceUri: '', localName: clark }
-    : { namespaceUri: match[1] ?? '', localName: match[2] ?? '' };
-}
-
-/**
- * Reads the interface's definition from `interfaces/<slug>/definition/`, as the app hydrates it
- * with `prefer-cache` — minus the network fallback: a run never fetches a WSDL. An interface that
- * does not cache its definition, or whose cache is absent or unreadable, has no contract here.
- */
-async function loadDefinition(projectDir: string, iface: SoapSelected['iface']): Promise<LoadedDefinition | undefined> {
-  if (!iface.cacheDefinition) {
-    return undefined;
-  }
-  try {
-    const bundle = await readDefinitionCache(definitionCacheDir(projectDir, iface.slug));
-    const definition = parseWsdlBundle(bundle);
-    return {
-      definition,
-      bundle,
-      schemaSet: buildSchemaSet(bundle),
-      defaultActionByOperation: summarizeWsa(definition).defaultActionByOperation,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * A SOAP response as assertions and sequence transfers see it, without contract validation: what a
- * host that has no compiled definition at hand (the desktop's sequence runner) can build from the
- * exchange alone.
- */
-export function soapResponseSubject(exchange: SoapExchange): AssertionSubject {
-  const fault = exchange.response?.fault;
-  return {
-    protocol: 'soap',
-    status: exchange.http.status,
-    durationMs: exchange.durationMs,
-    bodyText: exchange.response?.envelopeXml ?? new TextDecoder().decode(exchange.http.body),
-    bodyKind: exchange.response?.isSoap === true ? 'xml' : 'other',
-    headers: exchange.http.rawHeaders,
-    fault: {
-      present: fault !== undefined,
-      ...(fault !== undefined ? { summary: [fault.code, fault.reason].filter((s) => s.length > 0).join(' — ') } : {}),
-    },
-  };
-}
-
-function soapSubject(
-  exchange: SoapExchange,
-  loaded: LoadedDefinition | undefined,
-  item: SoapSelected,
-): AssertionSubject {
-  const base = soapResponseSubject(exchange);
-  const bodyText = base.bodyText;
-  const binding =
-    loaded === undefined
-      ? undefined
-      : bindingContextFor(
-          loaded.definition,
-          { bindingName: parseClark(item.operation.bindingName), operationName: item.operation.name },
-          'response',
-        );
-  const contentType = exchange.http.headers['content-type'];
-  return {
-    ...base,
-    ...(loaded !== undefined && binding !== undefined
-      ? {
-          validateContract: () =>
-            validateMessage({
-              xml: bodyText,
-              direction: 'response',
-              schemaSet: loaded.schemaSet,
-              bundle: loaded.bundle,
-              binding,
-              http: { ...(contentType !== undefined ? { contentType } : {}) },
-            }).then((r) => r.problems),
-        }
-      : {}),
   };
 }
 
