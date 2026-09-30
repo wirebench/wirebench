@@ -15,9 +15,9 @@ import { WirebenchError } from '../errors.js';
 import { isInsideRealDir } from '../fs.js';
 import { expandGrpcInput } from '../grpc/expand.js';
 import type { GrpcSendInput } from '../grpc/send.js';
-import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '../http/types.js';
+import type { TlsOptions } from '../http/types.js';
 import { createFileAttachmentResolver, readAttachment } from '../project/attachments-cache.js';
-import { resolveApiBaseUrl, resolveEndpoint, resolveScopes } from '../project/environments.js';
+import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
 import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
 import { toKeystoreDef } from '../project/keystores.js';
 import type {
@@ -27,7 +27,6 @@ import type {
   Endpoint,
   Interface,
   Project,
-  PropertyMap,
   RequestDef,
 } from '../project/model.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
@@ -43,10 +42,8 @@ import type { SoapSendInput, SoapSendWss } from '../types.js';
 import {
   resolveWorkspaceApiBaseUrl,
   resolveWorkspaceEndpoint,
-  resolveWorkspaceScopes,
   withActiveEnvironment,
 } from '../workspace/environments.js';
-import type { Workspace } from '../workspace/model.js';
 import { signingSecretMissing, signingSecretRef } from '../webhooks/model.js';
 import { effectiveWsa } from '../wsa/model.js';
 import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
@@ -57,71 +54,12 @@ import { createRunTokenSource, requiredSecret } from './oauth2-token.js';
 import type { RunTokenSource } from './oauth2-token.js';
 import { secretNamesInValue } from './secret-needs.js';
 import type { SecretPlaceholders } from '../script/send.js';
-import type { RequestScripting } from '../script/request-scripts.js';
 import type { SelectedRequest } from './select.js';
+import { scopesFor } from './context.js';
+import type { RunContext } from './context.js';
 
-/**
- * The workspace a project is run inside, and the slug its manifest addresses the project by (the
- * first half of a workspace environment's `<projectSlug>/<interfaceSlug>` endpoint key).
- */
-export interface RunWorkspace {
-  readonly workspace: Workspace;
-  readonly projectSlug: string;
-}
-
-/** Everything a run supplies around the saved requests it sends. */
-export interface RunContext {
-  readonly project: Project;
-  /** The project folder: keystores, attachments and file bodies are read from inside it only. */
-  readonly projectDir: string;
-  /**
-   * The environment the run resolves under. Inside a workspace it is a *workspace* environment's
-   * id, as it is in the app: the project's own environments apply only through the one linked to
-   * it by slug.
-   */
-  readonly environmentId?: string;
-  /**
-   * The workspace the project sits inside. Its properties become the `${#Workspace#…}` scope, and
-   * its environment (with the linked project one laid over it) the `${…}` shorthand's.
-   */
-  readonly workspace?: RunWorkspace;
-  /** `--var` overrides, laid over the environment's properties. */
-  readonly overrides: PropertyMap;
-  readonly getSecret: GetSecret;
-  readonly timeoutMs?: number;
-  readonly insecure?: boolean;
-  readonly proxyFor?: (url: string) => ProxyOptions | undefined;
-  readonly signal?: AbortSignal;
-  /**
-   * The WSDL-derived default `wsa:Action` for a SOAP request, as the app takes it from the
-   * interface's imported definition. Absent (or returning `''`) when no definition is at hand:
-   * an explicit `wsa:Action` or the request's SOAPAction then still applies.
-   */
-  readonly defaultWsaActionFor?: (selected: Extract<SelectedRequest, { kind: 'soap' }>) => string;
-  /** Told every OAuth2 access token the run obtains, so the host can mask it in all it prints. */
-  readonly onSecretValue?: (value: string) => void;
-  /** Sends an OAuth2 token request; the engine's `sendHttp` by default. A test seam. */
-  readonly fetchToken?: (request: HttpRequest) => Promise<HttpExchange>;
-  /**
-   * The run's OAuth2 token cache. `runRequests` creates one per run so every request behind a
-   * configuration shares a token; a lone `prepareSend` without one gets a fresh source.
-   */
-  readonly tokenSource?: RunTokenSource;
-  /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
-  readonly sequence?: PropertyMap;
-  /**
-   * Set for a request with a pre-request script: every `${secret:…}` in the request's text becomes
-   * one of these placeholders, and the script's host puts the values back after it (#63).
-   */
-  readonly secretPlaceholders?: SecretPlaceholders;
-  /**
-   * Runs requests' scripts (#63). A run without it refuses a request whose scripts are switched on,
-   * rather than send it without them.
-   */
-  readonly scripting?: RequestScripting;
-  /** True when a value holds a credential the run knows; such a script value is treated as secret. */
-  readonly containsKnownSecret?: (value: string) => boolean;
-}
+export { scopesFor } from './context.js';
+export type { RunContext, RunWorkspace } from './context.js';
 
 /**
  * One request, ready for `sendSoapRequest` (with `scopes`), `sendRest`, or `callGrpc` (with the
@@ -142,26 +80,6 @@ export type PreparedSend =
 type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
 type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
 type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
-
-/** The property scopes a request of this run expands against, secrets not yet added. */
-export function scopesFor(context: RunContext): PropertyScopes {
-  const { project, environmentId, workspace } = context;
-  const scopes =
-    workspace === undefined
-      ? resolveScopes(project, environmentId, {}, process.env)
-      : resolveWorkspaceScopes({
-          workspace: withActiveEnvironment(workspace.workspace, environmentId),
-          project,
-          globals: {},
-          system: process.env,
-        });
-  return {
-    ...scopes,
-    env: { ...(scopes.env ?? {}), ...context.overrides },
-    // A sequence step's `${#Sequence#…}` values: literal, explicit-only and guarded (ADR-0015).
-    ...(context.sequence !== undefined ? { sequence: context.sequence } : {}),
-  };
-}
 
 /** A SOAP request's endpoint, through the workspace's environment when the run has a workspace. */
 function endpointFor(

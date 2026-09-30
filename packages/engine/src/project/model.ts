@@ -22,6 +22,7 @@ import type { RestApi, RestRequestDef } from '../rest/model.js';
 import type { WsApi, WsRequestDef } from '../ws/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { WebhookCollection } from '../webhooks/model.js';
+import type { ContainerBase } from '../protocol/module.js';
 import type { RequestScripts } from '../script/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
@@ -405,6 +406,18 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = Object.freeze({
   prettyPrintResponses: true,
 });
 
+/** A container whose kind has no enabled module: kept on disk exactly as it is (spec §6). */
+export interface UnsupportedContainer {
+  readonly dir: 'interfaces' | 'apis';
+  readonly slug: string;
+  /** As written in the container file. */
+  readonly kind: string;
+  readonly reason: 'unknown-kind' | 'feature-disabled';
+  /** Read from the container file when present, for a placeholder row. */
+  readonly name?: string;
+  readonly order?: number;
+}
+
 /** A whole Wirebench project, as loaded from (or saved to) a project folder. */
 export interface Project {
   readonly formatVersion: typeof FORMAT_VERSION;
@@ -435,6 +448,13 @@ export interface Project {
    */
   readonly wsApis: readonly WsApi[];
   /**
+   * Containers of a kind that has no list of its own above, keyed by kind. Absent means none.
+   * Read with {@link extraContainersOf}.
+   */
+  readonly extraContainers?: Readonly<Record<string, readonly ContainerBase[]>>;
+  /** Containers this build could not load and left untouched on disk. Absent means none. */
+  readonly unsupported?: readonly UnsupportedContainer[];
+  /**
    * The project's sequences, one file each under `sequences/`. Not a container like the four above: a
    * sequence holds no requests of its own, only references to theirs by id.
    */
@@ -452,6 +472,16 @@ export interface Project {
     readonly incoming: readonly WssRef[];
     readonly keystores: readonly WssRef[];
   };
+}
+
+/** The project's placeholders; empty when it has none. */
+export function unsupportedOf(project: Project): readonly UnsupportedContainer[] {
+  return project.unsupported ?? [];
+}
+
+/** The project's containers of `kind` kept in {@link Project.extraContainers}. */
+export function extraContainersOf(project: Project, kind: string): readonly ContainerBase[] {
+  return project.extraContainers?.[kind] ?? [];
 }
 
 /** Generates entity ids; injectable so tests can produce deterministic projects. */
