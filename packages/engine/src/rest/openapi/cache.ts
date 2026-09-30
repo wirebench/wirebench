@@ -18,7 +18,7 @@ import { apiDefinitionCacheManifestSchema, parseFile } from '../../project/schem
 import { parseYaml, stringifyYaml } from '../../project/yaml.js';
 import { assignFileNames } from '../../project/cache-naming.js';
 import type { FetchDocument, FetchedDocument } from '../../http/fetch-document.js';
-import type { ResolvedDocument } from './refs.js';
+import type { ResolvedDocument } from '../../json/schema/refs.js';
 
 const MANIFEST_FILE = 'manifest.yaml';
 

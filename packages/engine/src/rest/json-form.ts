@@ -13,7 +13,13 @@
  */
 
 import type { JsonSchema, JsonValue } from './openapi/model.js';
-import { effectiveType, MAX_SAMPLE_DEPTH, MAX_SAMPLE_NODES, mergeAllOf, sampleFromSchema } from './openapi/sample.js';
+import {
+  effectiveType,
+  MAX_SAMPLE_DEPTH,
+  MAX_SAMPLE_NODES,
+  mergeAllOf,
+  sampleFromSchema,
+} from '../json/schema/sample.js';
 
 /** What a node renders as. */
 export type JsonFormKind = 'field' | 'object' | 'array' | 'choice' | 'any';

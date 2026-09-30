@@ -40,7 +40,7 @@ import type {
   OpenApiSkipped,
 } from './model.js';
 import { HTTP_METHODS, serverUrl } from './model.js';
-import { sampleFromSchema, sampleXml } from './sample.js';
+import { sampleFromSchema, sampleXml } from '../../json/schema/sample.js';
 
 /** How the caller wants the document read. Every field has a documented default. */
 export interface MapApiOptions {

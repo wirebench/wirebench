@@ -21,7 +21,7 @@ import type { Attachment } from '../../src/project/model.js';
 import { evaluate } from '../../src/xpath/evaluate.js';
 import { importOpenApi, parseOpenApi } from '../../src/rest/openapi/import.js';
 import type { JsonSchema } from '../../src/rest/openapi/model.js';
-import { sampleFromSchema, sampleXml } from '../../src/rest/openapi/sample.js';
+import { sampleFromSchema, sampleXml } from '../../src/json/schema/sample.js';
 import { prettyBody } from '../../src/rest/response.js';
 import { sendRest } from '../../src/rest/send.js';
 import { createSseParser } from '../../src/rest/sse.js';

@@ -15,7 +15,7 @@
 import { OpenApiError } from '../../errors.js';
 import { referencePolicyFor, MAX_IMPORT_DEPTH, MAX_IMPORT_DOCUMENTS } from '../../http/ref-policy.js';
 import type { FetchDocument } from '../../http/fetch-document.js';
-import { parseDocumentText } from './parse.js';
+import { parseDocumentText } from './parse-text.js';
 
 /** How deep a chain of `$ref`s may nest before the graph is treated as runaway. */
 export const MAX_REF_DEPTH = MAX_IMPORT_DEPTH;

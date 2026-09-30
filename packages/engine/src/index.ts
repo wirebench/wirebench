@@ -589,10 +589,10 @@ export {
 export type { RestContractChecker, RestContractCheckerOptions } from './rest/contract-check-worker-host.js';
 export { pointerRange } from './json/pointer-range.js';
 export type { PointerTextRange } from './json/pointer-range.js';
-export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
-export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
-export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
-export type { SampleOptions, SampleXmlOptions } from './rest/openapi/sample.js';
+export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './json/schema/refs.js';
+export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './json/schema/refs.js';
+export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './json/schema/sample.js';
+export type { SampleOptions, SampleXmlOptions } from './json/schema/sample.js';
 export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
 export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
 export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';

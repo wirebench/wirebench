@@ -17,7 +17,7 @@ import {
   writeApiDefinitionCache,
 } from '../../../../src/rest/openapi/cache.js';
 import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
-import type { ResolvedDocument } from '../../../../src/rest/openapi/refs.js';
+import type { ResolvedDocument } from '../../../../src/json/schema/refs.js';
 import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
 
 const craftedDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/', import.meta.url));

@@ -10,19 +10,15 @@
 
 import { OpenApiError } from '../../errors.js';
 import type { FetchDocument } from '../../http/fetch-document.js';
+import type { OpenApiSource } from '../../json/schema/source.js';
 import type { WebhookFolder } from '../../webhooks/model.js';
 import type { MapApiOptions, MappedApi, MapWebhooksOptions } from './map.js';
 import { apiFromDocument, webhooksFromDocument } from './map.js';
 import type { OpenApiDocument } from './model.js';
 import { parseOpenApiDocument } from './parse.js';
-import { resolveRefs, type RefProblem, type ResolvedDocument } from './refs.js';
+import { resolveRefs, type RefProblem, type ResolvedDocument } from '../../json/schema/refs.js';
 
-/** Where a document comes from: a location to fetch, or text the user already has. */
-export type OpenApiSource =
-  | { readonly kind: 'url'; readonly url: string }
-  | { readonly kind: 'file'; readonly path: string }
-  /** Text with a location to resolve relative references against — a paste, or a test. */
-  | { readonly kind: 'text'; readonly text: string; readonly location?: string };
+export type { OpenApiSource };
 
 export interface ParseOpenApiOptions {
   readonly fetchDocument: FetchDocument;

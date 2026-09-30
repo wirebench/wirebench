@@ -8,11 +8,10 @@
  * YAML, and a document that does not declare a supported OpenAPI or Swagger version. Swagger 1.x
  * and 2.0 documents are converted into the intermediate OpenAPI representation.
  *
- * The parser reads a document that is already resolved: `refs.ts` inlines every `$ref` first, so
+ * The parser reads a document that is already resolved: `json/schema/refs.ts` inlines every `$ref` first, so
  * nothing here has to fetch anything.
  */
 
-import { parse as parseYamlDocument } from 'yaml';
 import { OpenApiError } from '../../errors.js';
 import type {
   JsonSchema,
@@ -71,33 +70,7 @@ function asJson(value: unknown): JsonValue | undefined {
   return value === undefined ? undefined : (value as JsonValue);
 }
 
-/**
- * Parses text as JSON when it looks like JSON, and as YAML otherwise.
- *
- * JSON is a subset of YAML, so one parser would do — but a JSON document with a syntax error gets a
- * far better message from `JSON.parse`, and that message is what the user has to act on.
- *
- * @throws OpenApiError `openapi-malformed` when the text parses as neither.
- */
-export function parseDocumentText(text: string, where = 'the document'): unknown {
-  const trimmed = text.replace(/^﻿/, '').trimStart();
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try {
-      return JSON.parse(trimmed);
-    } catch (error) {
-      throw new OpenApiError('openapi-malformed', `${where} is not valid JSON: ${messageOf(error)}`, { cause: error });
-    }
-  }
-  try {
-    return parseYamlDocument(trimmed);
-  } catch (error) {
-    throw new OpenApiError('openapi-malformed', `${where} is not valid YAML: ${messageOf(error)}`, { cause: error });
-  }
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+export { parseDocumentText } from '../../json/schema/parse-text.js';
 
 function asVersionString(v: unknown): string | undefined {
   if (typeof v === 'string') return v;
@@ -189,7 +162,7 @@ const IGNORED_ROOT_KEYS: Readonly<Record<string, string>> = {
 /**
  * Reads a resolved OpenAPI document.
  *
- * @param root the parsed document, with every `$ref` already inlined (see `refs.ts`)
+ * @param root the parsed document, with every `$ref` already inlined (see `json/schema/refs.ts`)
  * @throws OpenApiError `openapi-not-a-document` / `openapi-unsupported-version` as {@link versionOf} does
  */
 export function parseOpenApiDocument(root: unknown): OpenApiDocument {
@@ -598,7 +571,7 @@ function parseRequestBody(value: unknown, where: string, skipped: OpenApiSkipped
 /**
  * One parsed schema per resolved node, keyed by the node itself.
  *
- * A `$ref`-resolved description is a *graph*: `refs.ts` hands back one object per reference target,
+ * A `$ref`-resolved description is a *graph*: `json/schema/refs.ts` hands back one object per reference target,
  * shared by every place that referenced it. Rebuilding that graph as a tree — which is what a plain
  * recursive parse does — revisits a shared node once per path to it, so a document whose schemas
  * reference each other costs `breadth ^ depth`. Keyed on identity because that is exactly the
