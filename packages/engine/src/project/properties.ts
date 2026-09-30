@@ -15,7 +15,7 @@
  * passes in (default `process.env`).
  */
 
-import { entitizeValue } from '../soap/transforms.js';
+import { entitizeValue } from '../xml/entitize.js';
 import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
 import type { PropertyMap } from './model.js';
 import type { SoapSendInput } from '../types.js';

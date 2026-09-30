@@ -224,7 +224,7 @@ export type {
 
 export { createEnvelope, detectEnvelopeVersion, envelopeNamespace, SOAP_ENVELOPE_PREFIX } from './soap/envelope.js';
 export type { EnvelopeParts, SoapEnvelopeVersion } from './soap/envelope.js';
-export { prefixForNamespace, RESERVED_PREFIXES } from './soap/prefixes.js';
+export { prefixForNamespace, RESERVED_PREFIXES } from './xml/prefixes.js';
 export { NamespaceScope } from './soap/namespace-scope.js';
 export { soapActionHeaders } from './soap/soap-action.js';
 export type { SoapActionHeaders, SoapActionOptions } from './soap/soap-action.js';

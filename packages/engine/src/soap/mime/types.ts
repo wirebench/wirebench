@@ -8,10 +8,7 @@
  * `project/attachments-cache.ts` for the file-backed implementation.
  */
 
-import type { Attachment } from '../../project/model.js';
-
-/** Resolves one attachment's bytes. Rejects when the attachment cannot be read. */
-export type AttachmentResolver = (attachment: Attachment) => Promise<Uint8Array>;
+export type { AttachmentResolver } from '../../project/attachments-cache.js';
 
 /** Content transfer encodings this layer writes or understands. */
 export type TransferEncoding = 'binary' | 'base64' | '8bit' | '7bit' | 'quoted-printable';

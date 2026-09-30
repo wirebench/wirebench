@@ -18,7 +18,6 @@
 import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from '../project/model.js';
 import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
 import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
-import type { RestApi } from '../rest/model.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { enabledProperties } from '../project/properties.js';
 import type { Workspace, WorkspaceEnvironment } from './model.js';
@@ -150,7 +149,7 @@ export function resolveWorkspaceApiBaseUrl(input: {
   readonly workspace: Workspace;
   readonly project: Project;
   readonly projectSlug: string;
-  readonly api: Pick<RestApi, 'slug' | 'baseUrl'>;
+  readonly api: { readonly slug: string; readonly baseUrl: string };
 }): { url: string; source: BaseUrlSource } {
   const { workspace, project, projectSlug, api } = input;
   const activeWorkspaceEnv = activeWorkspaceEnvironment(workspace);

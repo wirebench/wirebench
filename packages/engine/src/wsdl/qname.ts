@@ -1,10 +1,7 @@
 import type { Element } from '@xmldom/xmldom';
+import type { QName } from '../xml/qname.js';
 
-/** A namespace-qualified name: an expanded `{namespaceUri}localName` pair. */
-export interface QName {
-  readonly namespaceUri: string;
-  readonly localName: string;
-}
+export type { QName };
 
 /**
  * Resolves a (possibly prefixed) QName string against the namespaces in

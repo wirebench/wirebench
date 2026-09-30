@@ -11,7 +11,6 @@
  */
 
 import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from './model.js';
-import type { RestApi } from '../rest/model.js';
 import type { PropertyScopes } from './properties.js';
 import { enabledProperties } from './properties.js';
 
@@ -90,7 +89,7 @@ export type BaseUrlSource = 'environment' | 'workspace-environment' | 'api';
 export function resolveApiBaseUrl(
   project: Project,
   envId: string | undefined,
-  api: Pick<RestApi, 'slug' | 'baseUrl'>,
+  api: { readonly slug: string; readonly baseUrl: string },
 ): { url: string; source: BaseUrlSource } {
   const environment = findEnvironment(project, envId);
   const override = environment?.endpoints[api.slug];
