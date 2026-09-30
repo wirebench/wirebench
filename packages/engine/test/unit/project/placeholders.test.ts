@@ -19,6 +19,7 @@ import { createProtocolRegistry } from '../../../src/protocol/registry.js';
 import { BUILTIN_PROTOCOLS, createBuiltinRegistry, SCRIPTS_FEATURE } from '../../../src/protocols.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { createWebhookCollection } from '../../../src/webhooks/model.js';
+import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
 import { sampleProject, tempProjectDir } from './fixture.js';
 
 /** One REST API and one gRPC API, both with a request. */
@@ -378,6 +379,7 @@ describe.each([
   { kind: 'soap', containers: (project: Project) => project.interfaces },
   { kind: 'rest', containers: (project: Project) => project.apis },
   { kind: 'grpc', containers: (project: Project) => project.grpcApis },
+  { kind: 'websocket', containers: (project: Project) => project.wsApis },
 ])('the project with $kind switched off', ({ kind, containers }) => {
   let dir: string;
 
@@ -387,6 +389,19 @@ describe.each([
       ...sampleProject(),
       apis: baseProject().apis,
       grpcApis: baseProject().grpcApis,
+      wsApis: [
+        createWsApi('Live', {
+          id: 'W1',
+          order: 2,
+          url: 'wss://live.test/feed',
+          requests: [
+            createWsRequest('Feed', {
+              id: 'WR1',
+              messages: [createWsSavedMessage('Subscribe', { id: 'WM1', content: '{"op":"sub"}' })],
+            }),
+          ],
+        }),
+      ],
       webhooks: createWebhookCollection({
         target: 'https://hooks.test',
         requests: [createRestRequest('order.created', { id: 'H1', slug: 'order-created', url: '/orders' })],
