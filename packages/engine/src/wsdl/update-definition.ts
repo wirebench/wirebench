@@ -16,13 +16,13 @@
  * this up" or "the new WSDL is wrong".
  */
 
-import { generateRequest } from '../generate.js';
+import { generateRequest } from '../soap/generate.js';
 import { createRequest, generateId } from '../project/model.js';
 import type { Endpoint, IdGenerator, Interface, OperationDef, Project, RequestDef } from '../project/model.js';
 import { INTERFACES_DIR, OPERATIONS_DIR, uniqueSlug } from '../project/paths.js';
 import { recreateRequest } from '../soap/recreate.js';
 import type { OperationRef } from '../soap/request-builder.js';
-import type { ImportResult, OperationSummary } from '../types.js';
+import type { ImportResult, OperationSummary } from '../soap/types.js';
 import { generateElement, generateType } from '../xsd/sample-generator.js';
 import { findBinding, findPortType } from './model.js';
 import type { MessageRef, WsdlDefinition } from './model.js';

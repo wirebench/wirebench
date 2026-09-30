@@ -112,7 +112,7 @@ export const NO_BODY: RestBody = Object.freeze({ kind: 'none' });
 /**
  * Per-request transport settings. Every field is optional and an absent one means *inherit*, not
  * *off*: the send resolves request → API → project → preference, exactly as a SOAP request's
- * properties do (`send-options.ts`).
+ * properties do (`send-input.ts`).
  */
 export interface RestRequestSettings {
   readonly timeoutMs?: number;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { grpcToCommand, GRPC_COMMAND_REDACTED } from '../../../src/grpc/command.js';
 import { expandGrpcInput } from '../../../src/grpc/expand.js';
 import { entry } from '../../../src/rest/model.js';
-import { toGrpcSendInput } from '../../../src/send-options.js';
+import { toGrpcSendInput } from '../../../src/grpc/send-input.js';
 import { DEFAULT_PREFERENCES } from '../../../src/project/preferences.js';
 
 describe('expandGrpcInput', () => {

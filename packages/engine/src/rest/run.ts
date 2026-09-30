@@ -28,7 +28,7 @@ import { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './
 import { loadOpenApiDocument, restOperationFor, restScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
-import { toRestSendInput } from '../send-options.js';
+import { toRestSendInput } from './send-input.js';
 import {
   effectiveSigning,
   effectiveTarget,

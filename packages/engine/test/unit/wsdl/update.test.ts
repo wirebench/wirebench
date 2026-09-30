@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
-import type { ImportResult } from '../../../src/types.js';
+import { importDefinition } from '../../../src/soap/import.js';
+import type { ImportResult } from '../../../src/soap/types.js';
 import { createInterface, createProject, createRequest } from '../../../src/project/model.js';
 import type { OperationDef, Project, RequestDef } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
-import { generateRequest } from '../../../src/generate.js';
+import { generateRequest } from '../../../src/soap/generate.js';
 import { applyUpdate, planUpdate } from '../../../src/wsdl/update-definition.js';
 
 const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/', import.meta.url));

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
 import { mergePreferences } from '../../src/project/preferences.js';
-import { toSendInput } from '../../src/send-options.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { toSendInput } from '../../src/soap/send-input.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 
 const ENVELOPE =

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
-import type { ImportResult } from '../../../src/types.js';
+import { importDefinition } from '../../../src/soap/import.js';
+import type { ImportResult } from '../../../src/soap/types.js';
 import { generateDocs, sourceSnippet } from '../../../src/wsdl/docs-generator.js';
 import { SOURCE_SNIPPET_CASES } from '../../helpers/source-snippet-cases.js';
 

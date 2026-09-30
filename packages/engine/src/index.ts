@@ -237,9 +237,10 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
 export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
-export { fromCurl, soapToCurl, toCurl } from './http/curl.js';
-export type { CurlBody, CurlCommand, CurlHeader, CurlPart } from './http/curl.js';
-export type { FromCurlResult, ToCurlOptions } from './http/curl.js';
+export { toCurl } from './http/curl.js';
+export type { CurlBody, CurlCommand, CurlHeader, CurlPart, ToCurlOptions } from './http/curl.js';
+export { fromCurl, soapToCurl } from './soap/curl.js';
+export type { FromCurlResult } from './soap/curl.js';
 export { parseSoapResponse } from './soap/response-parser.js';
 export type { ParsedSoapResponse } from './soap/response-parser.js';
 
@@ -315,10 +316,10 @@ export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
 export { captureSslInfo, splitPemBundle } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
 
-export { importDefinition } from './import.js';
-export { sendSoapRequest } from './send.js';
-export { generateEmptyRequest, generateRequest } from './generate.js';
-export { summarizeOperations } from './operations.js';
+export { importDefinition } from './soap/import.js';
+export { sendSoapRequest } from './soap/send.js';
+export { generateEmptyRequest, generateRequest } from './soap/generate.js';
+export { summarizeOperations } from './soap/operations.js';
 export type {
   ImportCacheOptions,
   ImportOptions,
@@ -332,7 +333,7 @@ export type {
   SoapSendInput,
   SoapSendWsa,
   SoapSendWss,
-} from './types.js';
+} from './soap/types.js';
 export type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
 
 export {
@@ -811,16 +812,12 @@ export type {
   RestPreferences,
   WsiPreferences,
 } from './project/preferences.js';
-export { toGrpcSendInput, toRestSendInput, toSendInput } from './send-options.js';
-export type {
-  AttachmentResolvers,
-  GrpcSendRequestInput,
-  RestSendRequestInput,
-  SendRequestInput,
-  ToGrpcSendInputArgs,
-  ToRestSendInputArgs,
-  ToSendInputArgs,
-} from './send-options.js';
+export { toSendInput } from './soap/send-input.js';
+export { toRestSendInput } from './rest/send-input.js';
+export { toGrpcSendInput } from './grpc/send-input.js';
+export type { AttachmentResolvers, SendRequestInput, ToSendInputArgs } from './soap/send-input.js';
+export type { RestSendRequestInput, ToRestSendInputArgs } from './rest/send-input.js';
+export type { GrpcSendRequestInput, ToGrpcSendInputArgs } from './grpc/send-input.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
 export { jsonCompletionContextAt } from './json/cursor.js';
 export type { JsonCompletionContext, JsonTextRange } from './json/cursor.js';
@@ -872,7 +869,8 @@ export type {
   HistoryWs,
   RestEventStreamLike,
 } from './project/history.js';
-export { enabledProperties, expand, expandSendInput, hasExpansions, secretNamesIn } from './project/properties.js';
+export { enabledProperties, expand, hasExpansions, secretNamesIn } from './project/properties.js';
+export { expandSendInput } from './soap/expand.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';

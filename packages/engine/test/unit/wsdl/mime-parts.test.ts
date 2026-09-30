@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { findBinding } from '../../../src/wsdl/model.js';
 import { parseWsdlDocument } from '../../../src/wsdl/parse-wsdl.js';
 import { parseXml } from '../../../src/xml/parse.js';
-import { summarizeOperations } from '../../../src/operations.js';
+import { summarizeOperations } from '../../../src/soap/operations.js';
 import type { WsdlDefinition } from '../../../src/wsdl/model.js';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));

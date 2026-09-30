@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
-import type { ImportResult } from '../../../src/types.js';
+import { importDefinition } from '../../../src/soap/import.js';
+import type { ImportResult } from '../../../src/soap/types.js';
 import { validateAgainstSchemaSet } from '../../../src/validate/schema-validator.js';
 import type { ValidationProblem } from '../../../src/validate/types.js';
 
@@ -416,7 +416,7 @@ describe('validateAgainstSchemaSet — timeout guard', () => {
     vi.doMock('xmllint-wasm', () => ({ validateXML: fakeValidateXML }));
 
     const { validateAgainstSchemaSet: validateWithFake } = await import('../../../src/validate/schema-validator.js');
-    const { importDefinition: importWithFake } = await import('../../../src/import.js');
+    const { importDefinition: importWithFake } = await import('../../../src/soap/import.js');
     const calculator = await importWithFake({ kind: 'file', path: publicPath('calculator') });
     const target = { schemaSet: calculator.schemaSet, bundle: calculator.bundle };
 

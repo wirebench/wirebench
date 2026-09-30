@@ -12,8 +12,8 @@ import { normalizeWsa } from '../../../src/wsa/model.js';
 
 const { events } = vi.hoisted(() => ({ events: [] as string[] }));
 
-vi.mock('../../../src/send.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/send.js')>()),
+vi.mock('../../../src/soap/send.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/soap/send.js')>()),
   sendSoapRequest: (input: { readonly endpoint: string }) => {
     events.push(`send ${input.endpoint}`);
     return Promise.resolve({

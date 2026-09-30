@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
-import type { ImportResult } from '../../../src/types.js';
+import { importDefinition } from '../../../src/soap/import.js';
+import type { ImportResult } from '../../../src/soap/types.js';
 import { bindingContextFor, validateMessage } from '../../../src/validate/index.js';
 import type { ValidationBinding } from '../../../src/validate/index.js';
 

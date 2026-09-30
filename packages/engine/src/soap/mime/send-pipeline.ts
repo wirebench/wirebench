@@ -8,7 +8,7 @@
 
 import { headerValue, setHeader } from '../../http/headers.js';
 import { decodeBody, encodeBody } from '../../http/charset.js';
-import type { SoapExchange, SoapSendInput } from '../../types.js';
+import type { SoapExchange, SoapSendInput } from '../types.js';
 import { inlineFiles } from './inline-files.js';
 import { expandMtomResponse, prepareMtomRequest, xopContentType } from './mtom.js';
 import { DEFAULT_ROOT_CONTENT_ID, buildMultipartRelated, mediaTypeOf, parseMultipartRelated } from './multipart.js';

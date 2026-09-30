@@ -10,7 +10,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../../src/send.js';
+import { sendSoapRequest } from '../../../src/soap/send.js';
 import { createWssContext } from '../../../src/wss/model.js';
 import { verifySignature } from '../../../src/wss/outgoing/signature.js';
 import { NS } from '../../../src/xml/namespaces.js';

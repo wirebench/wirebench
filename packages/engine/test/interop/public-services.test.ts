@@ -18,9 +18,9 @@
  * a read-only demo too and belongs in the table below.
  */
 import { expect, it } from 'vitest';
-import { generateRequest } from '../../src/generate.js';
-import { importDefinition } from '../../src/import.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { generateRequest } from '../../src/soap/generate.js';
+import { importDefinition } from '../../src/soap/import.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import { describeNetwork } from '../helpers/network-gate.js';
 import type { GenerateOptions } from '../../src/xsd/sample-generator.js';
 

@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpError } from '../../src/errors.js';
-import { generateRequest } from '../../src/generate.js';
-import { importDefinition } from '../../src/import.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { generateRequest } from '../../src/soap/generate.js';
+import { importDefinition } from '../../src/soap/import.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import { fileUrl } from '../helpers/fixtures.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 

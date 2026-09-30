@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
+import { importDefinition } from '../../../src/soap/import.js';
 import { ProjectError } from '../../../src/errors.js';
 import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';

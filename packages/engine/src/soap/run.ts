@@ -23,7 +23,7 @@ import type {
   SoapRequestDef,
 } from '../project/model.js';
 import { definitionCacheDir } from '../project/paths.js';
-import { expandSendInput } from '../project/properties.js';
+import { expandSendInput } from './expand.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../wss/configs.js';
 import type { ProtocolRun, RunScope } from '../protocol/module.js';
@@ -48,10 +48,10 @@ import { soapOperationElements, soapScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveSoapAuth } from '../secrets/resolve.js';
-import { toSendInput } from '../send-options.js';
-import type { AttachmentResolvers } from '../send-options.js';
-import { sendSoapRequest } from '../send.js';
-import type { SoapExchange, SoapSendInput, SoapSendWss } from '../types.js';
+import { toSendInput } from './send-input.js';
+import type { AttachmentResolvers } from './send-input.js';
+import { sendSoapRequest } from './send.js';
+import type { SoapExchange, SoapSendInput, SoapSendWss } from './types.js';
 import { bindingContextFor, validateMessage } from '../validate/index.js';
 import { resolveWorkspaceEndpoint, withActiveEnvironment } from '../workspace/environments.js';
 import { effectiveWsa } from '../wsa/model.js';

@@ -4,7 +4,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../../src/send.js';
+import { sendSoapRequest } from '../../../src/soap/send.js';
 import { createWssContext } from '../../../src/wss/model.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 

@@ -10,7 +10,7 @@
  */
 
 import type { SchemaSet } from '../xsd/schema-set.js';
-import type { ImportResult } from '../types.js';
+import type { ImportResult } from '../soap/types.js';
 import type { Binding, BindingOperation, Message, Operation, Part, WsdlDefinition } from './model.js';
 import { findBinding, findMessage, findPortType } from './model.js';
 import type { QName } from './qname.js';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateEmptyRequest, generateRequest } from '../../src/generate.js';
-import { importDefinition } from '../../src/import.js';
-import { summarizeOperations } from '../../src/operations.js';
+import { generateEmptyRequest, generateRequest } from '../../src/soap/generate.js';
+import { importDefinition } from '../../src/soap/import.js';
+import { summarizeOperations } from '../../src/soap/operations.js';
 import { parseWsdlDocument } from '../../src/wsdl/parse-wsdl.js';
 import { parseXml } from '../../src/xml/parse.js';
 import { readPublicFixture } from '../helpers/fixtures.js';

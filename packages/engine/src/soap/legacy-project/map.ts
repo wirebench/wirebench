@@ -17,7 +17,7 @@ import type {
 } from '../../project/model.js';
 import { createInterface, createRequest, generateId } from '../../project/model.js';
 import { slugify, uniqueSlug } from '../../project/paths.js';
-import type { OperationSummary } from '../../types.js';
+import type { OperationSummary } from '../types.js';
 import { DEFAULT_WSA_CONFIG } from '../../wsa/model.js';
 import { qnameToString } from '../../wsdl/qname.js';
 import { rewriteProjectRefsToEnv } from './env-refs.js';

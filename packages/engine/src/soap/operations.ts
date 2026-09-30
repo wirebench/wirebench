@@ -4,9 +4,9 @@
  * (and their services) that expose it.
  */
 
-import type { Binding, Operation, Service, WsdlDefinition } from './wsdl/model.js';
-import { findPortType } from './wsdl/model.js';
-import { qnameEquals } from './wsdl/qname.js';
+import type { Binding, Operation, Service, WsdlDefinition } from '../wsdl/model.js';
+import { findPortType } from '../wsdl/model.js';
+import { qnameEquals } from '../wsdl/qname.js';
 import type { OperationSummary } from './types.js';
 
 /** The services/ports that bind to `binding`, across every service in the definition. */

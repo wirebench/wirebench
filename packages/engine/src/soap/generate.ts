@@ -4,9 +4,9 @@
  * `definition`/`schemaSet` through by hand.
  */
 
-import { buildEmptyRequest, buildSampleRequest } from './soap/request-builder.js';
-import type { GeneratedRequest, OperationRef, RequestBuildOptions } from './soap/request-builder.js';
-import type { GenerateOptions } from './xsd/sample-generator.js';
+import { buildEmptyRequest, buildSampleRequest } from './request-builder.js';
+import type { GeneratedRequest, OperationRef, RequestBuildOptions } from './request-builder.js';
+import type { GenerateOptions } from '../xsd/sample-generator.js';
 import type { ImportResult } from './types.js';
 
 /** Builds the sample SOAP request for one operation of an imported definition. */

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Assertion } from '../../../src/assert/model.js';
-import { importDefinition } from '../../../src/import.js';
+import { importDefinition } from '../../../src/soap/import.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Interface, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { definitionCacheDir } from '../../../src/project/paths.js';

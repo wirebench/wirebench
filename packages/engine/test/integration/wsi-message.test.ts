@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../src/import.js';
-import { generateRequest } from '../../src/generate.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { importDefinition } from '../../src/soap/import.js';
+import { generateRequest } from '../../src/soap/generate.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import { messageBindingFor, runMessageAssertions } from '../../src/validate/wsi/run-message.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 

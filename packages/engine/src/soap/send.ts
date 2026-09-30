@@ -6,27 +6,22 @@
 import { randomUUID } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import type { Dispatcher } from 'undici';
-import { WirebenchError } from './errors.js';
-import type { HttpExchange, HttpRequest } from './http/types.js';
-import { expandSendInput } from './project/properties.js';
-import type { PropertyScopes, UnresolvedRef } from './project/properties.js';
-import { sendWithAuth } from './http/auth/apply.js';
-import { applySoapAuth } from './soap/auth.js';
-import { headerValue, mergeHeaders } from './http/headers.js';
-import { charsetOf } from './http/charset.js';
-import {
-  packageRequestBody,
-  readResponseBody,
-  substituteInlineFiles,
-  type SoapProblem,
-} from './soap/mime/send-pipeline.js';
-import { parseSoapResponse } from './soap/response-parser.js';
-import { soapActionHeaders } from './soap/soap-action.js';
-import { applyWsaHeaders, effectiveAction } from './wsa/headers.js';
-import { applyOutgoingWss } from './wss/apply.js';
-import { processIncomingWss } from './wss/incoming/index.js';
-import type { WssResult } from './wss/incoming/index.js';
-import type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
+import { WirebenchError } from '../errors.js';
+import type { HttpExchange, HttpRequest } from '../http/types.js';
+import { expandSendInput } from './expand.js';
+import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
+import { sendWithAuth } from '../http/auth/apply.js';
+import { applySoapAuth } from './auth.js';
+import { headerValue, mergeHeaders } from '../http/headers.js';
+import { charsetOf } from '../http/charset.js';
+import { packageRequestBody, readResponseBody, substituteInlineFiles, type SoapProblem } from './mime/send-pipeline.js';
+import { parseSoapResponse } from './response-parser.js';
+import { soapActionHeaders } from './soap-action.js';
+import { applyWsaHeaders, effectiveAction } from '../wsa/headers.js';
+import { applyOutgoingWss } from '../wss/apply.js';
+import { processIncomingWss } from '../wss/incoming/index.js';
+import type { WssResult } from '../wss/incoming/index.js';
+import type { AuthSummary, SendAuth } from '../http/auth/send-auth.js';
 import type { SoapExchange, SoapSendInput } from './types.js';
 
 /**

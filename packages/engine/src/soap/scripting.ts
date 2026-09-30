@@ -9,7 +9,7 @@ import { headerPairSchema } from '../script/apply.js';
 import type { HeaderPair } from '../script/model.js';
 import type { RequestScriptTypes } from '../script/request-scripts.js';
 import { recordPairs } from '../script/send.js';
-import type { SoapExchange, SoapSendInput } from '../types.js';
+import type { SoapExchange, SoapSendInput } from './types.js';
 import type { QName } from '../wsdl/qname.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 import { projectSoapBody, replaceSoapBody } from './script-types.js';

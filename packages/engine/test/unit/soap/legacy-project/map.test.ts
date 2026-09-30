@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../../src/import.js';
+import { importDefinition } from '../../../../src/soap/import.js';
 import { definitionRootOf, fetchDocumentFromCache } from '../../../../src/soap/legacy-project/definition-fetcher.js';
 import type { LegacyMapContext, ResolvedLegacyInterface } from '../../../../src/soap/legacy-project/map.js';
 import {

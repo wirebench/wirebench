@@ -9,7 +9,7 @@
 import type { Document, Element } from '@xmldom/xmldom';
 import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
-import type { SoapExchange } from '../../types.js';
+import type { SoapExchange } from '../../soap/types.js';
 import type { WsdlDefinition } from '../../wsdl/model.js';
 import { findBinding } from '../../wsdl/model.js';
 import type { OperationRef } from '../../soap/request-builder.js';

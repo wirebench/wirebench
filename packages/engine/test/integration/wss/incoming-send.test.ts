@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { sendSoapRequest } from '../../../src/send.js';
+import { sendSoapRequest } from '../../../src/soap/send.js';
 import { loadKeystore } from '../../../src/keystore/index.js';
 import { createWssContext } from '../../../src/wss/model.js';
 import type { Keystore } from '../../../src/keystore/model.js';

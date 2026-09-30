@@ -8,8 +8,8 @@ import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
 import { mergePreferences } from '../../src/project/preferences.js';
 import { parseMultipartRelated } from '../../src/soap/mime/multipart.js';
 import type { AttachmentResolver } from '../../src/soap/mime/types.js';
-import { toSendInput } from '../../src/send-options.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { toSendInput } from '../../src/soap/send-input.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import {
   MIME_FIXTURE_CID,
   MIME_FIXTURE_PNG,

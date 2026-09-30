@@ -62,8 +62,8 @@ vi.mock('../../../src/rest/script-types.js', async (importOriginal) => ({
   },
 }));
 
-vi.mock('../../../src/send.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../src/send.js')>()),
+vi.mock('../../../src/soap/send.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/soap/send.js')>()),
   sendSoapRequest: () => {
     events.push('send');
     return Promise.resolve({

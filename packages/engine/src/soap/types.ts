@@ -4,23 +4,23 @@
  * consumes directly.
  */
 
-import type { FetchDocument } from './wsdl/resolver.js';
-import type { QName } from './wsdl/qname.js';
-import type { DefinitionBundle } from './wsdl/resolver.js';
-import type { MimePartInfo, WsdlDefinition } from './wsdl/model.js';
-import type { SchemaSet } from './xsd/schema-set.js';
-import type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
-import type { HttpExchange, ProxyOptions, TlsOptions } from './http/types.js';
-import type { SoapEnvelopeVersion } from './soap/envelope.js';
-import type { SoapFault } from './soap/fault.js';
-import type { UnresolvedRef } from './project/properties.js';
-import type { Attachment } from './project/model.js';
-import type { AttachmentResolver, ResponseAttachment } from './soap/mime/types.js';
-import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from './wss/model.js';
-import type { WssResult } from './wss/incoming/index.js';
-import type { WssRequestProperties } from './wss/apply.js';
-import type { WsaConfig } from './wsa/model.js';
-import type { WsaSummary } from './wsa/policy-detect.js';
+import type { FetchDocument } from '../wsdl/resolver.js';
+import type { QName } from '../wsdl/qname.js';
+import type { DefinitionBundle } from '../wsdl/resolver.js';
+import type { MimePartInfo, WsdlDefinition } from '../wsdl/model.js';
+import type { SchemaSet } from '../xsd/schema-set.js';
+import type { AuthSummary, SendAuth } from '../http/auth/send-auth.js';
+import type { HttpExchange, ProxyOptions, TlsOptions } from '../http/types.js';
+import type { SoapEnvelopeVersion } from './envelope.js';
+import type { SoapFault } from './fault.js';
+import type { UnresolvedRef } from '../project/properties.js';
+import type { Attachment } from '../project/model.js';
+import type { AttachmentResolver, ResponseAttachment } from './mime/types.js';
+import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
+import type { WssResult } from '../wss/incoming/index.js';
+import type { WssRequestProperties } from '../wss/apply.js';
+import type { WsaConfig } from '../wsa/model.js';
+import type { WsaSummary } from '../wsa/policy-detect.js';
 
 /** Where a WSDL definition comes from. */
 export type ImportSource =

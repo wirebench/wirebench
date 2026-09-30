@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../../src/import.js';
+import { importDefinition } from '../../../../src/soap/import.js';
 import { WSI_WSDL_ASSERTIONS } from '../../../../src/validate/wsi/assertions/index.js';
 import { runWsdlAssertions, wsiProblems, wsiWsdlContext } from '../../../../src/validate/wsi/run-wsdl.js';
 import type { WsiWsdlContext } from '../../../../src/validate/wsi/types.js';

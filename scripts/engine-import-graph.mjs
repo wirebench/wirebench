@@ -34,13 +34,6 @@ export const GROUP_FOLDERS = Object.freeze({
 });
 
 /**
- * Root files that are SOAP's until they move under `soap/`. Removed by the task that moves them.
- *
- * @type {readonly string[]}
- */
-export const SOAP_ROOT_FILES = Object.freeze(['import.ts', 'send.ts', 'generate.ts', 'operations.ts', 'types.ts']);
-
-/**
  * One import core is allowed to make of a protocol group.
  *
  * @typedef {object} CoreException
@@ -121,10 +114,7 @@ export const CORE_EXCEPTIONS = Object.freeze([
  */
 export function groupOf(file) {
   const slash = file.indexOf('/');
-  if (slash === -1) {
-    return SOAP_ROOT_FILES.includes(file) ? 'soap' : 'core';
-  }
-  const top = file.slice(0, slash);
+  const top = slash === -1 ? '' : file.slice(0, slash);
   for (const [group, folders] of Object.entries(GROUP_FOLDERS)) {
     if (folders.includes(top)) {
       return group;

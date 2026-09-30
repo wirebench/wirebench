@@ -17,7 +17,7 @@ import type { RestExchange } from './rest/send.js';
 import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
 import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
-import type { SoapExchange } from './types.js';
+import type { SoapExchange } from './soap/types.js';
 import { wsProtocol } from './ws/module.js';
 
 /** The four built-in protocols, in the order their containers tie-break in the explorer. */

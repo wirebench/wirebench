@@ -4,7 +4,7 @@
  *
  * Everything here is deliberately plain data — the engine never reads a file for it. The
  * desktop's `PreferencesService` loads/merges/persists a document; the engine consumes the
- * merged object (see `send-options.ts`).
+ * merged object (see `soap/send-input.ts`).
  *
  * Some sections are persisted and shown before they are wired to behaviour: `proxy` and `ssl`
  * become effective with the connection settings task.
