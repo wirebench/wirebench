@@ -25,7 +25,7 @@ import type {
 import { definitionCacheDir } from '../project/paths.js';
 import { expandSendInput } from '../project/properties.js';
 import type { PropertyScopes } from '../project/properties.js';
-import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
+import { toWssIncomingConfig, toWssOutgoingConfig } from '../wss/configs.js';
 import type { ProtocolRun, RunScope } from '../protocol/module.js';
 import { scopesFor } from '../run/context.js';
 import type { RunContext } from '../run/context.js';

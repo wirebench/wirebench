@@ -48,7 +48,7 @@ import {
 } from '../key-identifiers.js';
 import { childElement, findElement, securityHeaders, securityIndex } from '../security-header.js';
 import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
-import type { Keystore, KeystoreAlias } from '../keystore/model.js';
+import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type {
   WssContext,
   WssEncryptionEntry,

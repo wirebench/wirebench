@@ -15,7 +15,7 @@ import { buildTimestamp } from './outgoing/timestamp.js';
 import { buildUsernameToken } from './outgoing/username-token.js';
 import { signEnvelope } from './outgoing/signature.js';
 import { encryptEnvelope } from './outgoing/encryption.js';
-import { selectAlias } from './keystore/index.js';
+import { selectAlias } from '../keystore/index.js';
 import {
   actorAttribute,
   childElement,
@@ -23,7 +23,7 @@ import {
   securityHeaders,
   securityActor,
 } from './security-header.js';
-import type { Keystore, KeystoreAlias } from './keystore/model.js';
+import type { Keystore, KeystoreAlias } from '../keystore/model.js';
 import type {
   WssContext,
   WssEncryptionEntry,

@@ -876,7 +876,7 @@ export { enabledProperties, expand, expandSendInput, hasExpansions, secretNamesI
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
-export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './project/wss-configs.js';
+export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './wss/configs.js';
 // ---------------------------------------------------------------------------
 // WS-Addressing (Task 41)
 // ---------------------------------------------------------------------------
@@ -966,7 +966,7 @@ export {
   loadPkcs12,
   selectAlias,
   toTlsClientIdentity,
-} from './wss/keystore/index.js';
+} from './keystore/index.js';
 export type {
   Keystore,
   KeystoreAlias,
@@ -974,7 +974,7 @@ export type {
   KeystoreType,
   LoadKeystoreOptions,
   TlsClientIdentity,
-} from './wss/keystore/index.js';
+} from './keystore/index.js';
 export {
   findEnvironment,
   removeEnvironment,

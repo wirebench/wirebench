@@ -9,10 +9,10 @@
  */
 
 import { isWirebenchError } from '../../errors.js';
-import { selectAlias } from '../keystore/index.js';
+import { selectAlias } from '../../keystore/index.js';
 import { decryptIncoming } from './decrypt.js';
 import { verifyIncoming } from './verify.js';
-import type { Keystore } from '../keystore/model.js';
+import type { Keystore } from '../../keystore/model.js';
 import type { WssContext, WssIncomingConfig } from '../model.js';
 
 /** Which of the three incoming steps an action reports on. */

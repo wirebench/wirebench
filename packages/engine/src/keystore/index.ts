@@ -4,7 +4,7 @@
  * `toTlsClientIdentity` shapes it for `TlsOptions`.
  */
 
-import { WssError } from '../../errors.js';
+import { WssError } from '../errors.js';
 import { loadPem } from './pem.js';
 import { loadPkcs12 } from './pkcs12.js';
 import type { Keystore, KeystoreAlias, LoadKeystoreOptions, TlsClientIdentity } from './model.js';

@@ -6,10 +6,10 @@
  */
 
 import { ProjectError } from '../errors.js';
-import { wssEntrySchema, wssIncomingFileSchema, wssOutgoingFileSchema } from './schema.js';
-import type { WssRef } from './model.js';
-import { DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS } from '../wss/model.js';
-import type { WssEntry, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
+import { wssEntrySchema, wssIncomingFileSchema, wssOutgoingFileSchema } from '../project/schema.js';
+import type { WssRef } from '../project/model.js';
+import { DEFAULT_WSS_TIMESTAMP_SKEW_SECONDS } from './model.js';
+import type { WssEntry, WssIncomingConfig, WssOutgoingConfig } from './model.js';
 
 /**
  * One stored entry as a typed {@link WssEntry}. An entry this build does not understand (a

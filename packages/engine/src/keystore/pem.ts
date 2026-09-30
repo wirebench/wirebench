@@ -9,7 +9,7 @@
  */
 
 import forge from 'node-forge';
-import { WssError } from '../../errors.js';
+import { WssError } from '../errors.js';
 import { buildChain, commonNameOf, describeCertificate, keyPemMatchesCertificate } from './certificate.js';
 import type { Keystore, KeystoreAlias } from './model.js';
 

@@ -21,7 +21,7 @@ import { detectEnvelopeVersion, envelopeNamespace } from '../../soap/envelope.js
 import { buildKeyIdentifier } from '../key-identifiers.js';
 import { inclusiveNamespacePrefixList } from '../c14n-prefixes.js';
 import { childElement, findElement, securityIndex } from '../security-header.js';
-import type { Keystore, KeystoreAlias } from '../keystore/model.js';
+import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 import type { WssContext, WssPart, WssSignatureEntry } from '../model.js';
 
 /** Exclusive XML canonicalization, the only form this build emits. */
