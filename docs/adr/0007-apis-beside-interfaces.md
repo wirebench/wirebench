@@ -1,6 +1,6 @@
 # ADR-0007: A REST API is a sibling container to a SOAP interface, not a second app
 
-- Status: accepted; updated 2026-09-16 when gRPC landed (see *Update* below)
+- Status: accepted; updated 2026-09-16 when gRPC landed, and 2026-09-30 by ADR-0017 (see the *Updates* below)
 - Date: 2026-09-14
 - Context: `docs/specs/2026-09-13-wirebench-rest-client-design.md` (spec §2, §8, §14), built by
   `docs/plans/2026-09-13-wirebench-rest-client-plan.md`; extends ADR-0003 (project folder format)
@@ -162,3 +162,18 @@ changing the container's shape:
   rule the gRPC update established.
 - **No format bump.** `formatVersion` stays at 3: every new field is optional, and a project saved without them is
   byte-identical to one saved before this change.
+
+## Update (2026-09-30): the `kind` branches moved behind an interface
+
+[ADR-0017](0017-a-protocol-is-a-module-behind-one-interface.md) (#184) keeps this ADR's shape — sibling containers,
+`kind` on every file, `apis/` beside `interfaces/` — and changes two things it said about the engine:
+
+- **The engine no longer branches on `kind` per layer.** Each protocol is a module behind one interface, and the
+  loader, the writer, the run loop and the script host ask a registry for the module. The *Consequences* point about
+  a `kind` branch on every protocol-neutral surface now describes the desktop only.
+- **An unknown `kind` on a container no longer refuses the project.** The container loads as a placeholder, reported
+  as a `container-unsupported` problem, and a save leaves its files untouched. A request file whose `kind` its
+  container's module does not accept is still refused by name with `project-kind-not-supported`, as this ADR
+  reserved.
+
+The four in-memory lists (`interfaces`, `apis`, `grpcApis`, `wsApis`) stay until the desktop's per-kind code moves.

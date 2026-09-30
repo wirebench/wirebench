@@ -300,8 +300,12 @@ renderer. Two extensions (item 6):
   legacy SOAP service without writing XML; the cloud platforms generate MCP servers from REST definitions, none from a WSDL. Later, an
   MCP request kind for testing MCP servers, decided together with gRPC (item 17),
   since both need a multi-message response record.
-- **Plugin API.** An idea only, and deliberately after the CLI and MCP surfaces have settled: those two give
-  extensibility without committing to an internal API for years.
+- **Plugin API.** Still an idea (#82), and still after the CLI and MCP surfaces have settled: those two give
+  extensibility without committing to an internal API for years. Its groundwork has started (#184): in 3.0.0 every
+  built-in protocol is a module behind one interface, held in a registry with feature switches
+  ([ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)). That interface is for the engine's own
+  modules and may change in any release. Whether any of it becomes a public plugin API is decided at the end of
+  that epic, not before.
 
 ### REST client — shipped in 2.0.0
 
@@ -431,7 +435,9 @@ design, and the shipped shared workspaces embody the first two:
 - **Every protocol.** GraphQL when asked; MQTT, Kafka and JMS are a different buyer with a different tool
   budget, and so are the messaging layers that ride on WebSocket (Socket.IO, STOMP, MQTT over WebSocket).
   Raw WebSocket and Server-Sent Events are in: see [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions).
-- **A plugin API before the CLI and MCP surfaces are stable.**
+- **A plugin API before the CLI and MCP surfaces are stable.** The protocol modules of 3.0.0 (#184) are groundwork
+  inside the engine, not a plugin API: nothing loads third-party code, and the module interface carries no
+  stability promise.
 
 ### Deferred (phase 4)
 
