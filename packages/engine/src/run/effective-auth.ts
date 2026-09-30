@@ -6,12 +6,6 @@
 import type { AuthConfig } from '../project/model.js';
 import { resolveAuthChain } from '../rest/auth.js';
 import type { SelectedRequest } from './select.js';
-/** Innermost first, as the app's `authChainFor` builds it: request, its folders inside-out, the API. */
-export function restEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'rest' }>): AuthConfig {
-  const { api, chain, request } = selected;
-  return resolveAuthChain([request.auth, ...[...chain].reverse().map((folder) => folder.auth), api.auth]);
-}
-
 /** The same chain for a gRPC request: request, its folders inside-out, the API. */
 export function grpcEffectiveAuth(selected: Extract<SelectedRequest, { kind: 'grpc' }>): AuthConfig {
   const { api, chain, request } = selected;

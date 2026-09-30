@@ -10,12 +10,12 @@ import type { Project, PropertyMap } from '../project/model.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
+import { restRun } from '../rest/run.js';
 import { activeScripts } from '../script/request-scripts.js';
 import { soapRun } from '../soap/run.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
-import { signingSecretRef, signingSourceLabel } from '../webhooks/model.js';
-import { grpcEffectiveAuth, restEffectiveAuth } from './effective-auth.js';
+import { grpcEffectiveAuth } from './effective-auth.js';
 import type { SelectedRequest } from './select.js';
 import { keystoreNeeds, secretNamesInValue } from './send-helpers.js';
 
@@ -42,29 +42,9 @@ function tokenNeeds(selected: SelectedRequest, scopeSets: readonly PropertyScope
   }));
 }
 
-/** A webhook item's signing secret, read from `WIREBENCH_SECRET_<secretEnv>` (§5.2). */
-function signingNeeds(selected: Extract<SelectedRequest, { kind: 'rest' }>): SecretNeed[] {
-  const effective = selected.signing;
-  if (effective === undefined || effective.signing.mode !== 'sign') return [];
-  const ref = signingSecretRef(effective.signing);
-  if (ref === undefined) return [];
-  return [
-    {
-      ref,
-      ...(effective.signing.secretEnv !== undefined ? { envName: effective.signing.secretEnv } : {}),
-      purpose: `webhook signing secret (${signingSourceLabel(effective)})`,
-    },
-  ];
-}
-
 function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
   if (selected.kind === 'rest') {
-    return [
-      ...tokenNeeds(selected, scopeSets),
-      ...secretNeedsOfAuth(restEffectiveAuth(selected)),
-      ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
-      ...signingNeeds(selected),
-    ];
+    return [...tokenNeeds(selected, scopeSets), ...restRun.secretNeeds(selected, project)];
   }
   if (selected.kind === 'grpc') {
     return [

@@ -18,6 +18,7 @@ import { loadProtoSet } from '../grpc/proto/load.js';
 import type { ProtoSet } from '../grpc/proto/load.js';
 import { protoSetFromDescriptorSet } from '../grpc/reflection/descriptors.js';
 import { apiDefinitionDir } from '../project/paths.js';
+import { restSubject } from '../rest/run.js';
 import { sendRest } from '../rest/send.js';
 import type { RestExchange } from '../rest/send.js';
 import { sendSoapRequest } from '../send.js';
@@ -61,6 +62,7 @@ import {
   type SentScripts,
 } from './script-support.js';
 
+export { restSubject } from '../rest/run.js';
 export { soapResponseSubject } from '../soap/run.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
@@ -163,18 +165,6 @@ function erroredResult(item: SelectedRequest, error: NonNullable<RequestResult['
     assertions: [],
     error,
     unasserted: assertionsOf(item).length === 0,
-  };
-}
-
-/** A REST response as assertions and sequence transfers see it. */
-export function restSubject(exchange: RestExchange): AssertionSubject {
-  return {
-    protocol: 'rest',
-    status: exchange.status,
-    durationMs: exchange.durationMs,
-    bodyText: exchange.text,
-    bodyKind: exchange.language === 'json' ? 'json' : exchange.language === 'xml' ? 'xml' : 'other',
-    headers: exchange.rawHeaders,
   };
 }
 
