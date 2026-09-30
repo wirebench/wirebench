@@ -8,6 +8,7 @@ import type { SentRequest } from '../run/run.js';
 import { findInTree } from '../run/tree.js';
 import type { RequestScriptTypes } from '../script/request-scripts.js';
 import type { SecretNeed } from '../secrets/env-names.js';
+import { wsStorage } from './storage.js';
 
 const NOT_RUNNABLE = 'A run cannot send a WebSocket request';
 
@@ -40,5 +41,6 @@ const wsRun: ProtocolRun<SelectedBase> = {
 export const wsProtocol = defineProtocol({
   kind: 'websocket',
   feature: { id: 'websocket', title: 'WebSocket', default: true, stage: 'stable', requires: [] },
+  storage: wsStorage,
   run: wsRun,
 });
