@@ -624,3 +624,80 @@ remove or rename no public export, so the branch can be reviewed slice by slice.
 - **Desktop drift.** Until phase 2 the desktop still sends through its own path, so a switch turned
   off in code would not stop a desktop send. No host can turn one off through any user-facing means
   until phase 4, which depends on phase 2.
+
+## Revisions after planning
+
+Writing the plan (`docs/plans/2026-09-30-wirebench-protocol-modules-plan.md`) meant reading every
+file the design touches. Where the code disagreed with a section above, the plan follows these
+revisions and the section is superseded.
+
+- **R1 (§1.1, §3).** WebSocket's module has a run facet that offers no candidates and only answers
+  why its requests cannot run. Without it a sequence step that names a WebSocket request would turn
+  from "cannot be a sequence step" into "missing".
+- **R2 (§4.1).** `WhyDisabled` has a third case, `{ by: 'unknown' }`, for an id with no descriptor.
+- **R3 (§3.2, §6).** `Project.unsupported` is optional, and so is a new `Project.extraContainers`,
+  which holds the containers of a kind that has no list of its own, keyed by kind. The fifth test
+  protocol needs it, and so will the first protocol added after this phase. Absent means none, so no
+  existing `Project` literal changes. A new `takenContainerSlugs(project, dir)` replaces the slug
+  sets each host built by hand; the engine had no helper to extend.
+- **R4 (§5.3).** A gRPC request with active scripts and no cached definition fails with the script
+  host's error (`script-unavailable`, `script-type-error`) where it failed with
+  `grpc-definition-missing`. It is an error either way and nothing is sent.
+- **R5 (§3.4).** Three things about the script rules:
+  - `project` and `writeBack` became one optional `views` member (`request`, `response`,
+    `writeBack`).
+  - A destination that is not a URL with a host must stay identical. A gRPC target such as
+    `host:443` is not one, and an origin comparison would have let a script change its port.
+    gRPC's `validate` also keeps the exact-target check.
+  - Five refusal messages change wording; the plan's Task 2.1 lists them and no test pins them. A
+    forged script result that breaks two REST rules at once may report a different one of the two,
+    and a REST body handed back as uneditable when it was editable is now refused.
+- **R6 (§5.2, §6).** A save never deletes what its registry cannot write. Live container directories
+  are every container the project holds in memory plus every placeholder, whatever the registry; a
+  container whose kind has no enabled module in the save's registry is left untouched like a
+  placeholder.
+- **R7 (§4.3).** `runSequence` has no `RunContext`; it takes the registry in `RunSequenceOptions`.
+- **R8 (§5.3).** Core hands `send` a script session that opens on the first `pre`, so the script's
+  listed secrets are read after the module prepares, as today. `findStepRequest` asks every module's
+  `whyNotRunnable` before it looks among the candidates; a request of a disabled protocol is
+  `missing`.
+- **R9 (§6, §9).** `ProjectProblem` gains an optional `details`. One existing test changes its
+  expected value: an unknown-kind `api.yaml` was refused and is now a placeholder. A disabled kind is
+  `feature-disabled` even in the wrong directory. A placeholder under `apis/` is kept even when an
+  interface has its slug.
+- **R10 (§7.2).** The exception table is wider than written. Added, each type-only unless noted:
+  `project/model.ts` to the webhook and WS-Addressing models (the latter a value), until phase 3;
+  `project/history.ts` to three transcript and contract caps (values), until phase 2;
+  `project/schema.ts` to the WS-Security model, and `project/request-location.ts` and
+  `secrets/scan/` to the request types, until phase 3. `project/save.ts` imports no protocol and
+  leaves the table. Five edges exist only until slice 5 removes them: `run/prepare.ts`, the
+  subject re-exports of `run/run.ts`, `scriptTypesFor` in `run/script-support.ts`, the protocol
+  re-exports of `script/index.ts`, and those of `project/schema.ts`.
+- **R11 (§7.3).** Corrections to the move table: `rest/auth.ts` goes to `http/auth/apply-auth.ts`
+  (`apply.ts` exists); `RawLanguage` moves with `escapeForLanguage` and `Cookie` with
+  `parseSetCookie`; `wsdl/ref-policy.ts` and `wsdl/cache-naming.ts` move to core with
+  `FetchDocument`; `soapActionHeaders` is used by the cURL export, whose SOAP half moves to
+  `soap/curl.ts`; `wss/keystore/` becomes core `keystore/`, because REST and gRPC use it for TLS
+  client identity; `rest/oauth2.ts` and `webhooks/signature.ts` move under `http/`. The plan's
+  Task 4.1 holds the full edge inventory: 402 cross-group imports, 230 of them the public exports.
+- **R12 (§3.5).** The file schema of a status assertion needs the gRPC status names when no subject
+  exists, so the table moves to core `assert/status-names.ts` and gRPC imports it from there.
+  `AssertionSubject.statusNames` stays as designed for evaluation. How a module contributes
+  assertion vocabulary is left to phase 6. One edge changes: on an HTTP subject, a status assertion
+  that names an all-capitals word which is no status name now errors where it failed. A request
+  file cannot hold one, because its schema refuses it.
+- **R13 (§7.2).** The gate is `pnpm check:engine-layers`, a script that resolves every engine import
+  and fails on an edge outside the allow-list or on a stale exception. The ESLint blocks are built
+  from the same lists for editor feedback; alone they cannot hold an exception to one import.
+- **R14 (§8).** Eleven supporting names are exported beside the listed ones (`defineProtocol`,
+  `unsupportedOf`, `extraContainersOf`, `takenContainerSlugs`, `grpcStatusNames`, and the types the
+  listed interfaces name). `SequenceStepResult.protocol` keeps its union. `docs/cli.md` has no error-code table; the
+  three new codes get a table of their own there. The engine README's "no stability promise until
+  3.0" sentence goes.
+- **R15 (§10).** No perf test covers project load or a 50-request run. The plan's final task
+  measures both on the branch and on `main` with a script and compares.
+- **R16 (§12).** `RequestScriptTypes.soap` becomes `binding` in slice 2, with the desktop's one call
+  site, not in slice 5.
+- **R17 (§8).** Milestones (owner, 2026-09-30): 2.3 becomes 3.0, 2.4 becomes 3.1, 2.5 becomes 3.2,
+  and "Contracts, mocks and testing" becomes 4.0. CI recipes that pin `v2.3.0` are changed to
+  `v3.0.0`.
