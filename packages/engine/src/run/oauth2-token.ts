@@ -14,8 +14,8 @@ import type { HttpExchange, HttpRequest, ProxyOptions, TlsOptions } from '../htt
 import type { OAuth2Auth } from '../project/model.js';
 import { expand } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
-import { buildTokenRequest, needsRefresh, parseTokenResponse } from '../rest/oauth2.js';
-import type { TokenSet } from '../rest/oauth2.js';
+import { buildTokenRequest, needsRefresh, parseTokenResponse } from '../http/auth/oauth2.js';
+import type { TokenSet } from '../http/auth/oauth2.js';
 import type { GetSecret } from '../secrets/resolve.js';
 
 export interface RunTokenSourceOptions {

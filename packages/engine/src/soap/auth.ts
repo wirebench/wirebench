@@ -6,8 +6,8 @@
  * trip that only the transport (`http/auth/*`) can run.
  */
 
-import { applyAuth } from '../rest/auth.js';
-import type { SendAuth } from '../types.js';
+import { applyAuth } from '../http/auth/apply-auth.js';
+import type { SendAuth } from '../http/auth/send-auth.js';
 
 /** A SOAP send's endpoint and headers with token credentials applied. */
 export interface SoapAppliedAuth {

@@ -19,7 +19,7 @@ import type { SecretPlaceholders } from '../script/send.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { resolveAuthConfig, resolveSecretTokens } from '../secrets/resolve.js';
 import type { GetSecret } from '../secrets/resolve.js';
-import type { SendAuth } from '../types.js';
+import type { SendAuth } from '../http/auth/send-auth.js';
 import { resolveWorkspaceApiBaseUrl, withActiveEnvironment } from '../workspace/environments.js';
 import { loadKeystore, toTlsClientIdentity } from '../wss/keystore/index.js';
 import type { Keystore } from '../wss/keystore/index.js';

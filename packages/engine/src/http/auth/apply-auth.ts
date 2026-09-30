@@ -1,5 +1,5 @@
 /**
- * Working out which credentials a REST request uses, and turning them into what goes on the wire.
+ * Working out which credentials a request uses, and turning them into what goes on the wire.
  *
  * Two halves, both pure. {@link resolveAuthChain} walks the inheritance chain — request, then each
  * folder outwards, then the API — and answers with the first configuration that is not `inherit`.
@@ -10,9 +10,9 @@
  * is the transport's job (`http/auth/*`), and this module never touches the network.
  */
 
-import type { AuthConfig } from '../project/model.js';
-import type { SendAuth } from '../types.js';
-import type { KeyValueEntry } from './model.js';
+import type { AuthConfig } from '../../project/model.js';
+import type { SendAuth } from './send-auth.js';
+import type { KeyValueEntry } from '../entries.js';
 
 /** Nothing configured anywhere in a chain means no credentials at all. */
 const NO_AUTH: AuthConfig = { type: 'none' };

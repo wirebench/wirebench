@@ -8,7 +8,7 @@ import { isWirebenchError, WirebenchError } from '../errors.js';
 import type { AuthConfig } from '../project/model.js';
 import { apiDefinitionDir } from '../project/paths.js';
 import type { ProtocolRun, RunGroup, RunScope } from '../protocol/module.js';
-import { resolveAuthChain } from '../rest/auth.js';
+import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { scopesFor } from '../run/context.js';
 import type { RunContext } from '../run/context.js';
 import {

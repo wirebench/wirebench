@@ -26,7 +26,8 @@ import { applyWsaHeaders, effectiveAction } from './wsa/headers.js';
 import { applyOutgoingWss } from './wss/apply.js';
 import { processIncomingWss } from './wss/incoming/index.js';
 import type { WssResult } from './wss/incoming/index.js';
-import type { AuthSummary, SendAuth, SoapExchange, SoapSendInput } from './types.js';
+import type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
+import type { SoapExchange, SoapSendInput } from './types.js';
 
 /**
  * Sends `input.envelopeXml` to `input.endpoint` over HTTP, computing the

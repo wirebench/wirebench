@@ -13,7 +13,7 @@ import type { Dispatcher } from 'undici';
 import { sendHttp } from '../client.js';
 import { headerValue } from '../headers.js';
 import type { HttpExchange, HttpRequest } from '../types.js';
-import type { AuthSummary, SendAuth } from '../../types.js';
+import type { AuthSummary, SendAuth } from './send-auth.js';
 import { basicAuthorization, isBasicChallenge } from './basic.js';
 import { ntlmHandshake } from './ntlm-transport.js';
 

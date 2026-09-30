@@ -49,7 +49,7 @@ import type { RequestWriter } from '../project/serialize-helpers.js';
 import { compact, stringifyYaml } from '../project/yaml.js';
 import type { ProtocolStorage } from '../protocol/module.js';
 import type { HookLink, WebhookSigning } from '../webhooks/model.js';
-import { toSignatureScheme } from '../webhooks/signature.js';
+import { toSignatureScheme } from '../http/webhook-signature.js';
 import { apiFileSchema, restRequestFileSchema } from './files.js';
 import { RAW_LANGUAGE_EXTENSIONS } from './model.js';
 import type { RestApi, RestBody, RestRequestDef, RestRequestSettings } from './model.js';

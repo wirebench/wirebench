@@ -23,7 +23,7 @@ import { captureSslInfo } from '../http/tls.js';
 import type { SslInfo, TlsSocketLike } from '../http/tls.js';
 import type { Timings, TlsOptions } from '../http/types.js';
 import type { KeyValueEntry } from '../http/entries.js';
-import type { SendAuth } from '../types.js';
+import type { SendAuth } from '../http/auth/send-auth.js';
 import { encodeGrpcFrame, GrpcFrameParser } from './framing.js';
 import { grpcMethodPath } from './model.js';
 import { decodeGrpcMessage, formatGrpcTimeout, grpcStatusName } from './status.js';

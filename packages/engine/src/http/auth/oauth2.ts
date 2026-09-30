@@ -12,9 +12,9 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
-import { WirebenchError } from '../errors.js';
-import type { OAuth2Auth } from '../project/model.js';
-import type { HttpRequest } from '../http/types.js';
+import { WirebenchError } from '../../errors.js';
+import type { OAuth2Auth } from '../../project/model.js';
+import type { HttpRequest } from '../types.js';
 
 /** The credential values the host resolved for one OAuth2 configuration. */
 export interface OAuth2Secrets {

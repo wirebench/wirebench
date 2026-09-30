@@ -18,7 +18,7 @@ import {
   newState,
   parseTokenResponse,
   pkce,
-} from '../../../src/rest/oauth2.js';
+} from '../../../src/http/auth/oauth2.js';
 
 const NOW = new Date('2026-09-13T12:00:00Z');
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
 import { sendSoapRequest } from '../../../src/send.js';
-import type { SendAuth } from '../../../src/types.js';
+import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { startNtlmServer, type NtlmServer } from '../../helpers/ntlm-server.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 

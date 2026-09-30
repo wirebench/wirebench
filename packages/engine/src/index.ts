@@ -327,14 +327,13 @@ export type {
   ImportResult,
   ImportSource,
   OperationSummary,
-  AuthSummary,
   SendAttachmentOptions,
-  SendAuth,
   SoapExchange,
   SoapSendInput,
   SoapSendWsa,
   SoapSendWss,
 } from './types.js';
+export type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
 
 export {
   DEFAULT_OAUTH2_AUTH,
@@ -429,12 +428,17 @@ export {
   signatureSchemeSchema,
   toSignatureScheme,
   verifyWebhook,
-} from './webhooks/signature.js';
-export type { SignatureAlgorithm, SignatureFailure, SignatureScheme, SignatureVerdict } from './webhooks/signature.js';
+} from './http/webhook-signature.js';
+export type {
+  SignatureAlgorithm,
+  SignatureFailure,
+  SignatureScheme,
+  SignatureVerdict,
+} from './http/webhook-signature.js';
 export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
-export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
-export type { AppliedAuth } from './rest/auth.js';
+export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './http/auth/apply-auth.js';
+export type { AppliedAuth } from './http/auth/apply-auth.js';
 export { applySoapAuth } from './soap/auth.js';
 export type { SoapAppliedAuth } from './soap/auth.js';
 export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
@@ -449,7 +453,7 @@ export {
   newState,
   parseTokenResponse,
   pkce,
-} from './rest/oauth2.js';
+} from './http/auth/oauth2.js';
 export type {
   AuthorizationUrlInput,
   OAuth2Secrets,
@@ -458,7 +462,7 @@ export type {
   TokenRequestOptions,
   TokenResponseInput,
   TokenSet,
-} from './rest/oauth2.js';
+} from './http/auth/oauth2.js';
 export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';

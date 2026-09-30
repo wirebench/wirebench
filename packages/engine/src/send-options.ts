@@ -14,7 +14,8 @@ import type { Attachment, HeaderEntry, ProjectSettings, RequestProperties } from
 import type { AttachmentResolver } from './soap/mime/types.js';
 import { soapActionHeaders } from './soap/soap-action.js';
 import { prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
-import type { SendAuth, SoapSendInput } from './types.js';
+import type { SendAuth } from './http/auth/send-auth.js';
+import type { SoapSendInput } from './types.js';
 import type { ProxyOptions, TlsOptions } from './http/types.js';
 import type { FileResolver } from './rest/body.js';
 import type { KeyValueEntry, RestBody, RestMethod, RestRequestSettings } from './rest/model.js';

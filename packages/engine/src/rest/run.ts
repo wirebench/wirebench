@@ -37,7 +37,7 @@ import {
   signingSourceLabel,
 } from '../webhooks/model.js';
 import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
-import { resolveAuthChain } from './auth.js';
+import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { expandRestSendInput } from './expand.js';
 import { createApi } from './model.js';
 import type { RestApi, RestFolder, RestRequestDef } from './model.js';

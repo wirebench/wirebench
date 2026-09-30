@@ -72,7 +72,7 @@ export interface EndpointAuth {
 /**
  * "Whatever the thing above me uses." Only a REST request or folder may say this; resolution
  * walks request → folder chain → API and takes the first configuration that is not `inherit`
- * (see `rest/auth.ts`).
+ * (see `http/auth/apply-auth.ts`).
  */
 export interface InheritAuth {
   readonly type: 'inherit';

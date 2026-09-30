@@ -10,14 +10,14 @@
  * other, and whichever loaded second would read a binding that is not initialised yet.
  *
  * The strictness policy is `schema.ts`'s: every object is `z.looseObject`, and any additive field
- * bumps `formatVersion` (ADR-0003). This file imports no protocol folder but `webhooks/signature.ts`:
+ * bumps `formatVersion` (ADR-0003). This file imports no protocol folder but `http/webhook-signature.ts`:
  * the webhook collection is core's until phase 3 of #184.
  */
 
 import { z } from 'zod';
 import { ProjectError } from '../errors.js';
 import { SECRET_NAME_PATTERN } from '../secrets/secret-token.js';
-import { signatureSchemeSchema } from '../webhooks/signature.js';
+import { signatureSchemeSchema } from '../http/webhook-signature.js';
 
 /** A string with at least one character: an id, a slug, a file name. */
 export const nonEmpty = z.string().min(1);

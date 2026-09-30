@@ -7,7 +7,7 @@
 import { WirebenchError } from '../errors.js';
 import { isEndpointAuth } from '../project/endpoints.js';
 import type { AuthConfig, SoapOwnerAuth, EndpointAuth } from '../project/model.js';
-import type { SendAuth } from '../types.js';
+import type { SendAuth } from '../http/auth/send-auth.js';
 import { secretPseudoRef } from './secret-token.js';
 
 /**
