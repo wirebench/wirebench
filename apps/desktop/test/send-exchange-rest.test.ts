@@ -246,9 +246,28 @@ describe('sendThroughEngine for a REST request', () => {
 
   it('refuses a reference nothing resolves as rest-unresolved-properties', async () => {
     const model = seeded([createRestRequest('Nope', { id: 'req-1', url: '/echo', headers: [entry('x', '${nope}')] })]);
-    await expect(
-      sendThroughEngine(sendDepsFor(model, { getSecret: secrets }), 's1', 'req-1', { draft: { kind: 'rest' } }),
-    ).rejects.toMatchObject({ code: 'rest-unresolved-properties' });
+    const failures: FailedExchangeWire[] = [];
+    const appended: HistoryEntryWire[] = [];
+    const deps = sendDepsFor(model, {
+      getSecret: secrets,
+      history: await openHistory(),
+      onHistoryAppended: (wire) => appended.push(wire),
+      onSendFailed: (failure) => failures.push(failure),
+    });
+    await expect(sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } })).rejects.toMatchObject({
+      code: 'rest-unresolved-properties',
+    });
+    // Refused before the wire, as SOAP is: a prepare row with no headers, and no History entry.
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      protocol: 'rest',
+      requestId: 'req-1',
+      stage: 'prepare',
+      request: { method: 'GET', headers: {} },
+      error: { code: 'rest-unresolved-properties' },
+    });
+    expect(failures[0]?.request.url).toContain(`${server.url}/echo`);
+    expect(appended).toEqual([]);
   });
 
   it('refuses a request no project holds as unknown-entity', async () => {

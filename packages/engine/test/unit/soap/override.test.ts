@@ -169,4 +169,24 @@ describe('SoapSelected.override', () => {
     expect(saved.compressBody).toBeUndefined();
     expect(saved.allowH2).toBeUndefined();
   });
+
+  it("puts the host's default wsa:Action on the wire for an interface whose definition is not cached", async () => {
+    const base = projectWith({ soapAction: '', envelopeXml: ENVELOPE_WITH('a') });
+    const iface = {
+      ...base.interfaces[0]!,
+      cacheDefinition: false,
+      wsa: normalizeWsa({ enabled: true, version: '2005/08' }),
+    };
+    const project: Project = { ...base, interfaces: [iface] };
+    const item: SoapSelected = { ...soapItem(project), override: { endpoint: `${server.url}/soap` } };
+    const context: RunContext = {
+      project,
+      projectDir: dir,
+      overrides: {},
+      host: testHost(),
+      defaultWsaActionFor: (selected) => (selected.request.id === 'req-1' ? 'urn:wb:DefaultAction' : ''),
+    };
+    const sent = await openExchange(item, testHost(), { scope: createRunScope(context), interactive: false }).result;
+    expect(decode(sent.raw.rawRequest)).toMatch(/<wsa:Action[^>]*>urn:wb:DefaultAction<\/wsa:Action>/);
+  });
 });

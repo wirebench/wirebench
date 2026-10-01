@@ -302,37 +302,44 @@ function attemptedOf(input: RestSendInput): AttemptedRequest {
 }
 
 /**
- * Connects and sends one resolved input, telling the host when either stage fails, then hands the
- * response's cookies and its contract result to the host.
+ * Resolves, connects and sends one request, telling the host when either stage fails, then hands
+ * the response's cookies and its contract result to the host. A reference nothing resolves is
+ * refused in the prepare stage, with what would have been sent; a failure before resolve has an
+ * input is reported with nothing attempted.
  */
 async function connectAndSend(
   selected: RestSelected,
   context: RunContext,
-  input: RestSendInput,
+  resolve: () => Promise<Resolved<RestSendInput>>,
   controller: ExchangeController<RestLiveEvent>,
   live: boolean,
   /** The pre-request script's step, inside the prepare stage so its failure is reported with it. */
-  script?: () => Promise<RestSendInput>,
+  script?: (input: RestSendInput) => Promise<RestSendInput>,
 ): Promise<{ readonly connected: RestSendInput; readonly sent: SentRequest }> {
   const startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
-  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: RestSendInput): void => {
+  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: RestSendInput | undefined): void => {
     try {
       context.host.events?.onFailed?.(selected, {
         stage,
         error,
         startedAt,
         durationMs: Date.now() - startedAt,
-        attempted: attemptedOf(attempted),
-        input: attempted,
+        ...(attempted !== undefined ? { attempted: attemptedOf(attempted), input: attempted } : {}),
       });
     } catch {
       // Deliberately ignored — see above.
     }
   };
+  let input: RestSendInput | undefined;
   let connected: RestSendInput;
   try {
-    connected = await connectRest(selected, context, script !== undefined ? await script() : input);
+    const resolved = await resolve();
+    input = resolved.input;
+    if (resolved.unresolved.length > 0) {
+      throw unresolvedError('rest-unresolved-properties', selected.path, resolved.unresolved);
+    }
+    connected = await connectRest(selected, context, script !== undefined ? await script(input) : input);
   } catch (error) {
     failed('prepare', error, input);
     throw error;
@@ -385,17 +392,14 @@ async function sendRestItem(
   live: boolean,
 ): Promise<SentRequest> {
   if (scripts === undefined) {
-    const { input, unresolved } = await resolveRest(selected, context);
-    if (unresolved.length > 0) throw unresolvedError('rest-unresolved-properties', selected.path, unresolved);
-    return (await connectAndSend(selected, context, input, controller, live)).sent;
+    return (await connectAndSend(selected, context, () => resolveRest(selected, context), controller, live)).sent;
   }
 
   // Resolved with its secrets behind placeholders; the URL is rebuilt only when the script changed it.
-  const { input, unresolved } = await resolveRest(selected, { ...context, secretPlaceholders: scripts.placeholders });
-  if (unresolved.length > 0) throw unresolvedError('rest-unresolved-properties', selected.path, unresolved);
-  const before = restRequestSnapshot(input);
+  const resolve = () => resolveRest(selected, { ...context, secretPlaceholders: scripts.placeholders });
   let sent: RestRequestSnapshot | undefined;
-  const result = await connectAndSend(selected, context, input, controller, live, async () => {
+  const result = await connectAndSend(selected, context, resolve, controller, live, async (input) => {
+    const before = restRequestSnapshot(input);
     sent = await scripts.session.pre(before);
     const changed = applyRestSnapshot(input, before, sent);
     const restored = await scripts.placeholders.restore(

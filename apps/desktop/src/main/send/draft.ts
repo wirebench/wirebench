@@ -3,7 +3,15 @@
  * unsaved draft laid over it for this send only. Nothing here is persisted. Unlike a run, a person
  * may send a request its contract no longer has (orphaned), as the app always let them.
  */
-import { createInterface, createRequest, restItemFor, signingAlong, soapItemFor, webhookPath } from '@wirebench/engine';
+import {
+  createInterface,
+  createRequest,
+  normalizeWsa,
+  restItemFor,
+  signingAlong,
+  soapItemFor,
+  webhookPath,
+} from '@wirebench/engine';
 import type {
   Project,
   RequestProperties,
@@ -13,6 +21,7 @@ import type {
   SelectedRequest,
   SoapOverride,
   SoapSelected,
+  WsaConfigPatch,
 } from '@wirebench/engine';
 import { toEngineAuthConfig, toEngineBody, toEngineRows, toEngineSigning } from '../project-rest-mutations.js';
 import type { HistoryNameFallback } from './record.js';
@@ -60,7 +69,8 @@ export function soapOverrideOf(input: ResolvedSendInputWire): SoapOverride {
  * as an engine item: an interface of its own with no definition and no endpoints, one operation
  * named as History names it, and a request holding the input — its envelope, version, SOAPAction,
  * headers and the properties `toSoapSendInput` reads back — sent to the input's endpoint with the
- * input's own TLS floor, compression and HTTP/2 offer, as the renderer built it.
+ * input's own TLS floor, compression, HTTP/2 offer and WS-Addressing, as the renderer built it (the
+ * WS-Addressing default action rides on the ad-hoc context).
  */
 export function adHocSoapItem(input: ResolvedSendInputWire, names: HistoryNameFallback): SoapSelected {
   const request = createRequest(names.requestName, {
@@ -71,7 +81,14 @@ export function adHocSoapItem(input: ResolvedSendInputWire, names: HistoryNameFa
     headers: Object.entries(input.headers ?? {}).map(([name, value]) => ({ name, value })),
     properties: adHocProperties(input),
   });
-  const operation = { name: names.operationName, bindingName: '', slug: 'ad-hoc', order: 0, requests: [request] };
+  const wsa = input.wsa === undefined ? undefined : normalizeWsa(definedOnly(input.wsa.config));
+  const operation = {
+    name: names.operationName,
+    bindingName: '',
+    slug: 'ad-hoc',
+    order: 0,
+    requests: [wsa === undefined ? request : { ...request, wsa }],
+  };
   const iface = createInterface(names.interfaceName, {
     id: AD_HOC_ID,
     definitionUrl: '',
@@ -85,7 +102,7 @@ export function adHocSoapItem(input: ResolvedSendInputWire, names: HistoryNameFa
     group,
     iface,
     operation,
-    request,
+    request: operation.requests[0] ?? request,
     override: {
       endpoint: input.endpoint,
       ...(input.tls?.minVersion !== undefined ? { tlsMinVersion: input.tls.minVersion } : {}),
@@ -93,6 +110,11 @@ export function adHocSoapItem(input: ResolvedSendInputWire, names: HistoryNameFa
       ...(input.allowH2 !== undefined ? { allowH2: input.allowH2 } : {}),
     },
   };
+}
+
+/** A wire configuration without the keys a zod-parsed optional leaves explicitly `undefined`. */
+function definedOnly(config: NonNullable<ResolvedSendInputWire['wsa']>['config']): WsaConfigPatch {
+  return Object.fromEntries(Object.entries(config).filter(([, value]) => value !== undefined));
 }
 
 /** The request properties an input's own settings stand for, as `toSoapSendInput` reads them back. */

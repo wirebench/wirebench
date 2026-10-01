@@ -165,6 +165,8 @@ export type RequestChannelProject = Pick<
       | 'clientIdentityFor'
       | 'restCookiesFor'
       | 'runContextFor'
+      // The default `wsa:Action` of a SOAP request's operation, from the definition loaded in memory.
+      | 'defaultWsaActionFor'
       // Read after a REST send, to check the response against its OpenAPI operation.
       | 'restContractFor'
       // Read by the body editor's form view.

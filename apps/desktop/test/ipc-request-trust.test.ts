@@ -18,8 +18,8 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   generateServerCert,
+  generateSecondTestCa,
   generateTestCa,
-  generateUntrustedCert,
   startTestSoapServer,
 } from '@wirebench/engine/test-helpers';
 import type { TestSoapServer } from '@wirebench/engine/test-helpers';
@@ -41,20 +41,28 @@ const scopes: PropertyScopes = { project: {}, global: {}, env: {} };
 /** The CA the TLS servers below are signed by: trusted only when a send is given it. */
 const ANCHOR = generateTestCa().certPem;
 
+/** A second, unrelated CA: what the CA-bundle preference trusts in the union case. */
+const OWN = generateSecondTestCa().certPem;
+
 let server: TestSoapServer;
 /** The same CA's server, capped at TLS 1.2: a send whose floor is 1.3 cannot reach it. */
 let tls12: TestSoapServer;
+/** A server signed by the second CA only. */
+let own: TestSoapServer;
 
 beforeAll(async () => {
   const ca = generateTestCa();
   const leaf = generateServerCert(ca);
   server = await startTestSoapServer({ tls: { cert: leaf.certPem, key: leaf.keyPem } });
   tls12 = await startTestSoapServer({ tls: { cert: leaf.certPem, key: leaf.keyPem, maxVersion: 'TLSv1.2' } });
+  const ownLeaf = generateServerCert(generateSecondTestCa());
+  own = await startTestSoapServer({ tls: { cert: ownLeaf.certPem, key: ownLeaf.keyPem } });
 });
 
 afterAll(async () => {
   await server.close();
   await tls12.close();
+  await own.close();
 });
 
 const dirs: string[] = [];
@@ -159,14 +167,14 @@ describe('WIREBENCH_E2E_EXTRA_CA_FILE', () => {
   });
 
   it('keeps the anchors main already resolved and adds to them', async () => {
-    // The file names some other authority; the server's CA comes from `trustAnchorsFor` — the
-    // CA-bundle preference — never from the renderer, which cannot name `ca` at all.
-    process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile(generateUntrustedCert().certPem);
-    await register({ trustAnchorsFor: () => Promise.resolve([ANCHOR]) });
+    // `OWN` comes from `trustAnchorsFor` — the CA-bundle preference — never from the renderer,
+    // which cannot name `ca` at all; `ANCHOR` from the file. Each server is trusted by one of them
+    // only, so both sends succeeding means the send verifies against the two combined.
+    process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile();
+    await register({ trustAnchorsFor: () => Promise.resolve([OWN]) });
 
-    const result = await sendOnce(saved());
-
-    expect(result).toMatchObject({ ok: true, value: { http: { status: 200 } } });
+    expect(await sendOnce(saved(`${own.url}/soap`))).toMatchObject({ ok: true, value: { http: { status: 200 } } });
+    expect(await sendOnce(saved())).toMatchObject({ ok: true, value: { http: { status: 200 } } });
   });
 
   it('changes nothing when the variable is unset', async () => {
@@ -224,6 +232,6 @@ describe('the send wire cannot loosen TLS', () => {
     // The floor went out: a server that stops at TLS 1.2 cannot meet it.
     const refused = await sendOnce(floor(`${tls12.url}/soap`));
     expect(refused.ok).toBe(false);
-    expect(refused.error?.code).not.toBe('ipc-invalid-request');
+    expect(refused.error?.code).toBe('tls');
   });
 });

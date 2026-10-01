@@ -146,8 +146,14 @@ async function startOkServer(): Promise<OkServer> {
     req.on('end', () => {
       bodies.push(Buffer.concat(chunks).toString('latin1'));
       contentTypes.push(req.headers['content-type'] ?? '');
-      res.writeHead(200, { 'content-type': 'text/xml' });
-      res.end(OK);
+      // `/slow` answers after half a second: longer than a 100 ms timeout.
+      setTimeout(
+        () => {
+          res.writeHead(200, { 'content-type': 'text/xml' });
+          res.end(OK);
+        },
+        req.url === '/slow' ? 500 : 0,
+      );
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -258,6 +264,15 @@ describe('registerRequestChannels', () => {
     });
     expect(server.bodies.at(-1)).toBe('<a>globals</a>');
     expect(runContextFor).toHaveBeenCalledTimes(1);
+
+    // The ad-hoc scopes are all it reads: the project's own properties are not among them.
+    const before = server.bodies.length;
+    const refused = await invoke('request.send', {
+      sendId: 'send-3',
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a>${#Project#stage}</a>', soapVersion: '1.1' },
+    });
+    expect(refused).toMatchObject({ ok: false, error: { code: 'unresolved-properties' } });
+    expect(server.bodies.length).toBe(before);
   });
 
   it('returns secret-missing (not an unhandled rejection) when auth references a deleted ref', async () => {
@@ -347,7 +362,10 @@ describe('request.send applies the saved request properties', () => {
       Promise.resolve(undefined),
     );
     registerOver(
-      seeded({ envelopeXml: '<saved/>', properties: { ...DEFAULT_REQUEST_PROPERTIES, encoding: 'ISO-8859-1' } }),
+      seeded({
+        envelopeXml: '<saved/>',
+        properties: { ...DEFAULT_REQUEST_PROPERTIES, encoding: 'ISO-8859-1', timeoutMs: 100 },
+      }),
       {},
       { history: { recordSend } as never },
     );
@@ -360,6 +378,14 @@ describe('request.send applies the saved request properties', () => {
     const [, record] = recordSend.mock.calls[0]!;
     expect(record.input).toMatchObject({ endpoint: `${server.url}/soap`, envelopeXml: '<raw/>', soapVersion: '1.1' });
     expect(record.input.headers?.['Content-Type']).toMatch(/charset=ISO-8859-1/i);
+
+    // And the saved timeout: a response slower than 100 ms is not waited for.
+    const slow = await invoke('request.send', {
+      sendId: 'send-slow',
+      requestId: 'req-1',
+      input: { endpoint: `${server.url}/slow`, envelopeXml: '<raw/>', soapVersion: '1.1' },
+    });
+    expect(slow).toMatchObject({ ok: false, error: { code: 'timeout' } });
   });
 
   it('sends an ad-hoc request exactly as the renderer built it', async () => {

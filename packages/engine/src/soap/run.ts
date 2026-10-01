@@ -470,12 +470,22 @@ async function soapContextFor(
   base: RunContext,
 ): Promise<{ context: RunContext; loaded: Awaited<ReturnType<typeof definitionFor>> }> {
   const loaded = await definitionFor(selected.iface, scope);
+  // A host's own answer wins (the app's definition in memory, cached on disk or not); the cached
+  // definition answers when the host has none.
+  const lent = base.defaultWsaActionFor;
+  const cached =
+    loaded === undefined
+      ? undefined
+      : (s: SoapSelected): string =>
+          loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '';
   const context: RunContext = {
     ...base,
-    ...(loaded !== undefined
+    ...(lent !== undefined || cached !== undefined
       ? {
-          defaultWsaActionFor: (s: SoapSelected) =>
-            loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '',
+          defaultWsaActionFor: (s: SoapSelected): string => {
+            const own = lent?.(s) ?? '';
+            return own.length > 0 ? own : (cached?.(s) ?? '');
+          },
         }
       : {}),
   };

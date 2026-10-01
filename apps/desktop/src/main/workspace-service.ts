@@ -2941,6 +2941,13 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  defaultWsaActionFor(
+    ...args: Parameters<ProjectRouter['defaultWsaActionFor']>
+  ): ReturnType<ProjectRouter['defaultWsaActionFor']> {
+    return this.hostOfEntity(args[0]).defaultWsaActionFor(...args);
+  }
+
+  /** @inheritdoc */
   rememberRestCookies(
     ...args: Parameters<ProjectRouter['rememberRestCookies']>
   ): ReturnType<ProjectRouter['rememberRestCookies']> {

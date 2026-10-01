@@ -16,12 +16,13 @@ import {
   createProject,
   createRequest,
   DEFAULT_PREFERENCES,
+  normalizeWsa,
   toSoapSendInput,
   WirebenchError,
 } from '@wirebench/engine';
 import type { HeaderEntry, Project, PropertyScopes, SoapRequestDef } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { HistoryService } from '../src/main/history-service.js';
+import { HistoryService, type RecordSendInput } from '../src/main/history-service.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { soapOverrideOf } from '../src/main/send/draft.js';
 import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
@@ -279,10 +280,15 @@ describe('sendThroughEngine for a SOAP request', () => {
     const model = seeded(`${server.url}/calc`);
     const appended: HistoryEntryWire[] = [];
     const recordSend = vi.fn();
+    const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
     const before = server.bodies.length;
     await expect(
       sendThroughEngine(
-        depsFor(model, { history: { recordSend } as never, onHistoryAppended: (wire) => appended.push(wire) }),
+        depsFor(model, {
+          history: { recordSend } as never,
+          onHistoryAppended: (wire) => appended.push(wire),
+          onSendFailed,
+        }),
         's1',
         'req-1',
         { draft: { kind: 'soap', override: soapOverrideOf(editorInput(`${server.url}/calc`, '<a>${nope}</a>')) } },
@@ -291,6 +297,54 @@ describe('sendThroughEngine for a SOAP request', () => {
     expect(recordSend).not.toHaveBeenCalled();
     expect(appended).toEqual([]);
     expect(server.bodies.length).toBe(before);
+    // Refused before the wire: the HTTP Log gets a prepare row, with no headers.
+    expect(onSendFailed).toHaveBeenCalledTimes(1);
+    expect(onSendFailed.mock.calls[0]![0]).toMatchObject({
+      protocol: 'soap',
+      requestId: 'req-1',
+      stage: 'prepare',
+      request: { url: `${server.url}/calc`, method: 'POST', headers: {} },
+      error: { code: 'unresolved-properties' },
+    });
+  });
+
+  it("puts the operation's default wsa:Action, from the app's loaded definition, on the wire when the interface does not cache it", async () => {
+    const base = seeded(`${server.url}/wsa`, {
+      envelopeXml:
+        '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header/><soap:Body/></soap:Envelope>',
+    });
+    // No SOAPAction: the default action is the only one WS-Addressing can add.
+    const request = Object.fromEntries(
+      Object.entries(base.interfaces[0]!.operations[0]!.requests[0]!).filter(([key]) => key !== 'soapAction'),
+    ) as unknown as SoapRequestDef;
+    const iface = {
+      ...base.interfaces[0]!,
+      cacheDefinition: false,
+      wsa: normalizeWsa({ enabled: true, version: '2005/08' }),
+      operations: [{ ...base.interfaces[0]!.operations[0]!, requests: [request] }],
+    };
+    const model: Project = { ...base, interfaces: [iface] };
+    const defaultWsaActionFor = vi.fn((requestId: string) => (requestId === 'req-1' ? 'urn:calc:AddDefault' : ''));
+    await sendThroughEngine(depsFor(model, { project: { defaultWsaActionFor } }), 's1', 'req-1', {
+      draft: { kind: 'soap' },
+    });
+    expect(defaultWsaActionFor).toHaveBeenCalledWith('req-1');
+    expect(server.bodies.at(-1)).toMatch(/<wsa:Action[^>]*>urn:calc:AddDefault<\/wsa:Action>/);
+  });
+
+  it("sends an ad-hoc input's own WS-Addressing, with its default action", async () => {
+    const input: ResolvedSendInputWire = {
+      endpoint: `${server.url}/adhoc-wsa`,
+      envelopeXml:
+        '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header/><soap:Body/></soap:Envelope>',
+      soapVersion: '1.1',
+      wsa: { config: { enabled: true, version: '2005/08' }, defaultAction: 'urn:adhoc:Act' },
+    };
+    await sendThroughEngine(depsFor(seeded(server.url)), 's1', 'ad-hoc', {
+      draft: { kind: 'soap' },
+      adHoc: { input, names: AD_HOC_NAME },
+    });
+    expect(server.bodies.at(-1)).toMatch(/<wsa:Action[^>]*>urn:adhoc:Act<\/wsa:Action>/);
   });
 
   it('refuses a request no project holds as unknown-entity', async () => {
@@ -391,6 +445,82 @@ describe('sendThroughEngine (SOAP) → onSendFailed', () => {
       { draft: { kind: 'soap' } },
     );
 
+    expect(result.http.status).toBe(200);
+    expect(onSendFailed).not.toHaveBeenCalled();
+  });
+});
+
+describe('sendThroughEngine (SOAP) → an ad-hoc send that fails', () => {
+  const input: ResolvedSendInputWire = {
+    endpoint: 'http://127.0.0.1:1/nope',
+    envelopeXml: '<Envelope/>',
+    soapVersion: '1.1',
+    timeoutMs: 2_000,
+  };
+
+  it('reports a row with no requestId, and records History only for a resend of a known project', async () => {
+    const resend = { ...META, requestName: 'Gone', projectId: 'p1' };
+    for (const [names, recorded] of [
+      [AD_HOC_NAME, 0],
+      [resend, 1],
+    ] as const) {
+      const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
+      const recordSend = vi.fn<(projectId: string, record: RecordSendInput) => Promise<undefined>>(() =>
+        Promise.resolve(undefined),
+      );
+      await expect(
+        sendThroughEngine(
+          depsFor(seeded(server.url), { onSendFailed, history: { recordSend } as never }),
+          'send-adhoc-err',
+          'ad-hoc',
+          { draft: { kind: 'soap' }, adHoc: { input, names } },
+        ),
+      ).rejects.toMatchObject({ code: 'connection-refused' });
+
+      expect(onSendFailed).toHaveBeenCalledTimes(1);
+      const failure = onSendFailed.mock.calls[0]![0];
+      expect(failure).toMatchObject({
+        sendId: 'send-adhoc-err',
+        protocol: 'soap',
+        error: { code: 'connection-refused' },
+      });
+      expect(failure).not.toHaveProperty('requestId');
+      expect(recordSend).toHaveBeenCalledTimes(recorded);
+      if (recorded === 1) {
+        const [projectId, record] = recordSend.mock.calls[0]!;
+        expect(projectId).toBe('p1');
+        expect(record).toMatchObject({ requestName: 'Gone', error: { code: 'connection-refused' } });
+        expect(record).not.toHaveProperty('requestId');
+      }
+    }
+  });
+
+  it('keeps the send error when onSendFailed itself throws', async () => {
+    const onSendFailed = vi.fn(() => {
+      throw new Error('listener broke');
+    });
+    await expect(
+      sendThroughEngine(depsFor(seeded(server.url), { onSendFailed }), 'send-adhoc-err-2', 'ad-hoc', {
+        draft: { kind: 'soap' },
+        adHoc: { input, names: AD_HOC_NAME },
+      }),
+    ).rejects.toMatchObject({ code: 'connection-refused' });
+    expect(onSendFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet when the send succeeds', async () => {
+    const onSendFailed = vi.fn();
+    const result = await sendThroughEngine(depsFor(seeded(server.url), { onSendFailed }), 'send-adhoc-ok', 'ad-hoc', {
+      draft: { kind: 'soap' },
+      adHoc: {
+        input: {
+          endpoint: `${server.url}/soap`,
+          envelopeXml: '<soap:Envelope><soap:Body/></soap:Envelope>',
+          soapVersion: '1.1',
+        },
+        names: AD_HOC_NAME,
+      },
+    });
     expect(result.http.status).toBe(200);
     expect(onSendFailed).not.toHaveBeenCalled();
   });

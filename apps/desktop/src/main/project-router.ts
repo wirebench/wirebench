@@ -128,6 +128,10 @@ export interface ProjectRouter {
   restCookiesFor(...args: Parameters<ProjectHost['restCookiesFor']>): ReturnType<ProjectHost['restCookiesFor']>;
   /** What the engine runs a send of one request in: its project, folder, environment and workspace. */
   runContextFor(...args: Parameters<ProjectHost['runContextFor']>): ReturnType<ProjectHost['runContextFor']>;
+  /** The WSDL-derived default `wsa:Action` of a SOAP request's operation, from the loaded definition. */
+  defaultWsaActionFor(
+    ...args: Parameters<ProjectHost['defaultWsaActionFor']>
+  ): ReturnType<ProjectHost['defaultWsaActionFor']>;
 
   /** Remembers what a REST response set, for the next send of that same request. */
   rememberRestCookies(

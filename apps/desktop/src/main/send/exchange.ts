@@ -168,7 +168,7 @@ async function sendItem(
   const { adHoc } = options;
   // Type-checked before anything is resolved: a script that does not check never reaches the wire.
   const scripts = await scriptsForSend(deps, adHoc === undefined ? requestId : undefined);
-  const located = adHoc === undefined ? deps.project.runContextFor?.(requestId, options.envId) : adHocContext(deps);
+  const located = adHoc === undefined ? savedContext(deps, requestId, options.envId) : adHocContext(deps, adHoc.input);
   const item =
     located === undefined
       ? undefined
@@ -247,6 +247,8 @@ async function sendItem(
 type Located = NonNullable<ReturnType<NonNullable<SendThroughEngineDeps['project']['runContextFor']>>> & {
   /** The `${…}` shorthand's values laid over the environment's (`RunContext.overrides`). */
   readonly overrides?: PropertyMap;
+  /** A SOAP request's default `wsa:Action`, from the definition the app has loaded. */
+  readonly defaultWsaActionFor?: RunContext['defaultWsaActionFor'];
 };
 
 /** The run context a send of the located request runs in: its project, environment and globals. */
@@ -259,17 +261,34 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     // The `${#Global#…}` scope: without it a global property stays unresolved.
     ...(located.globals !== undefined ? { globals: located.globals } : {}),
     overrides: located.overrides ?? {},
+    ...(located.defaultWsaActionFor !== undefined ? { defaultWsaActionFor: located.defaultWsaActionFor } : {}),
     host,
   };
+}
+
+/**
+ * Where a send of a saved request runs: its project, environment and globals, and the default
+ * `wsa:Action` of its operation from the definition the app has loaded — whether or not the
+ * interface caches it on disk, which is all the engine can read for itself.
+ */
+function savedContext(deps: SendThroughEngineDeps, requestId: string, envId: string | undefined): Located | undefined {
+  const located = deps.project.runContextFor?.(requestId, envId);
+  const defaultAction = deps.project.defaultWsaActionFor;
+  return located === undefined || defaultAction === undefined
+    ? located
+    : { ...located, defaultWsaActionFor: (selected) => defaultAction.call(deps.project, selected.request.id) };
 }
 
 /**
  * Where an ad-hoc send runs: a project of its own, holding nothing, with the scopes the app gives
  * such a send (`adHocScopes`: the user's globals and the process env) as its properties.
  */
-function adHocContext(deps: SendThroughEngineDeps): Located {
+function adHocContext(deps: SendThroughEngineDeps, input: ResolvedSendInputWire): Located {
   const scopes = deps.adHocScopes?.();
+  const defaultAction = input.wsa?.defaultAction;
   return {
+    // The input's own WS-Addressing names its default action: the item has no definition.
+    ...(defaultAction !== undefined ? { defaultWsaActionFor: () => defaultAction } : {}),
     project: { ...createProject('Ad hoc', { id: AD_HOC_ID }), properties: { ...scopes?.project } },
     // Nothing is read from it: the item has no attachments, keystore or cached definition.
     projectDir: tmpdir(),

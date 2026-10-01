@@ -239,6 +239,10 @@ before and after for the two changes that need more than a rename. The package's
   refuse a webhook item whose target is empty (`webhook-target-missing`) or is not an `http(s)` URL
   (`webhook-target-invalid`), before anything is sent, as the app always has. They used to try the
   send and fail later with another code.
+- **A send refused for an unresolved reference is logged.** A REST or SOAP send with a `${…}` reference
+  nothing resolves is refused before anything is sent, and the HTTP Log now shows it as a row that
+  never went out (`rest-unresolved-properties`, `unresolved-properties`), with no History entry. A SOAP
+  send with such a reference used to go out with the reference left in it.
 
 ### Fixed
 

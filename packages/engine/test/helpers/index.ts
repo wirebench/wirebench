@@ -35,6 +35,7 @@ export { startTestProxy, type ProxiedRequest, type TestProxy, type TestProxyOpti
 export { secureResponse, type TestWssMode, type TestWssOptions } from './wss-responses.js';
 export {
   generateTestCa,
+  generateSecondTestCa,
   generateServerCert,
   generateClientCert,
   generateClientPkcs12,

@@ -336,6 +336,30 @@ describe('the failures a REST send reports to the host', () => {
     expect(events).not.toContain('send');
   });
 
+  it('reports stage prepare, with what would have gone, for a reference nothing resolves', async () => {
+    const { failures, done } = sendWith({}, { restUrl: '/invoices/${nope}' });
+    await expect(done).rejects.toMatchObject({ code: 'rest-unresolved-properties' });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      stage: 'prepare',
+      error: { code: 'rest-unresolved-properties' },
+      attempted: { method: 'GET', headers: { 'X-A': 'a' } },
+    });
+    expect(failures[0]?.attempted?.url).toContain('https://api.example.test/invoices/');
+    expect(events).not.toContain('send');
+  });
+
+  it('reports stage prepare with nothing attempted when resolving itself throws', async () => {
+    const { failures, done } = sendWith(
+      { getSecret: () => Promise.resolve(undefined) },
+      { restUrl: '/invoices/${secret:gone}' },
+    );
+    await expect(done).rejects.toMatchObject({ code: 'secret-missing' });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ stage: 'prepare', error: { code: 'secret-missing' } });
+    expect(failures[0]?.attempted).toBeUndefined();
+  });
+
   it('reports stage prepare when the pre-request script throws', async () => {
     const p = project();
     const base = contextFor(p);
