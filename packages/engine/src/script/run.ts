@@ -205,7 +205,17 @@ export async function runScript(input: ScriptRunInput): Promise<ScriptOutcome> {
     if (!written.ok) {
       return { ok: false, error: written.error, tests, values, log: result.log };
     }
-    return { ok: true, request: written.request, tests, values, log: result.log };
+    if (scripting.views === undefined) {
+      return { ok: true, request: written.request, tests, values, log: result.log };
+    }
+    // A view (SOAP's `request.body`) is written back after the rules ran, so what it wrote has not
+    // been checked yet: hold the request that is sent to the rules again, against the one the
+    // script was given. Otherwise a script could name any secret through the view.
+    const checked = applyRequestChanges(scripting, input.request, written.request);
+    if (!checked.ok) {
+      return { ok: false, error: checked.error, tests, values, log: result.log };
+    }
+    return { ok: true, request: checked.request, tests, values, log: result.log };
   }
   return { ok: true, tests, values, log: result.log };
 }

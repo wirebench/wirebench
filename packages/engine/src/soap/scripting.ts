@@ -220,7 +220,8 @@ export const soapScripting: ProtocolScripting<SoapRequestSnapshot, SoapResponseS
       fixed: null,
       pairs: snapshot.headers,
       lines: [snapshot.endpoint, snapshot.soapAction],
-      // Not `body`: it is a view of the envelope, written back into it after the rules have run.
+      // Not `body`: it is a view of the envelope. Core runs the rules again on the envelope it is
+      // written back into, so a secret added through the body is caught there.
       texts: [snapshot.endpoint, snapshot.soapAction, snapshot.envelope, ...snapshot.headers.flat()],
     };
   },
