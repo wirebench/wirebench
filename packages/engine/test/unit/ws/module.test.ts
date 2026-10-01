@@ -5,6 +5,7 @@ import type { Project } from '../../../src/project/model.js';
 import type { RunScope, SelectedBase } from '../../../src/protocol/module.js';
 import { createWsApi, createWsFolder, createWsRequest } from '../../../src/ws/model.js';
 import { wsProtocol } from '../../../src/ws/module.js';
+import { testHost } from '../../helpers/send-host.js';
 
 const project: Project = {
   ...createProject('WebSocket module', { id: 'proj-ws' }),
@@ -24,6 +25,7 @@ const selected: SelectedBase = {
   request: { id: 'ws-ticker', name: 'Ticker', slug: 'ticker' },
 };
 
+const host = testHost();
 const scope = { context: { project, projectDir: '/nowhere', overrides: {} } } as RunScope;
 
 describe('wsProtocol', () => {
@@ -50,7 +52,10 @@ describe('wsProtocol', () => {
 
   it('cannot send, type or list needs: nothing ever reaches it', async () => {
     const message = 'A run cannot send a WebSocket request';
-    await expect(wsProtocol.run?.send(selected, scope)).rejects.toThrow(message);
+    await expect(wsProtocol.run?.open(selected, scope, host, { scope, interactive: false }).result).rejects.toThrow(
+      message,
+    );
+    await expect(wsProtocol.run?.resolve(selected, scope, host)).rejects.toThrow(message);
     await expect(wsProtocol.run?.scriptTypes(selected, scope)).rejects.toThrow(message);
     expect(() => wsProtocol.run?.secretNeeds(selected, project)).toThrow(message);
   });

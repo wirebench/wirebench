@@ -1,6 +1,6 @@
 /**
  * One send, whoever sends it (spec §3.2): the desktop, a run, a sequence step. A protocol's run facet
- * builds its handle with `exchangeController`; `openExchange` (below, Task 3) hands an item to its
+ * builds its handle with `exchangeController`; `openExchange` (run/open.ts) hands an item to its
  * facet. Core code: it names no protocol.
  */
 import { WirebenchError } from '../errors.js';
@@ -61,9 +61,10 @@ export function exchangeController<E extends LiveEventBase>(
 ): ExchangeController<E> {
   const abort = new AbortController();
   const outer = options.scope.context.signal;
+  const follow = (): void => abort.abort(outer?.reason);
   if (outer !== undefined) {
     if (outer.aborted) abort.abort(outer.reason);
-    else outer.addEventListener('abort', () => abort.abort(outer.reason), { once: true });
+    else outer.addEventListener('abort', follow, { once: true });
   }
   const queue = new EventQueue<E>(options.live === true);
   let settled = false;
@@ -76,6 +77,7 @@ export function exchangeController<E extends LiveEventBase>(
           return await run();
         } finally {
           settled = true;
+          outer?.removeEventListener('abort', follow);
           queue.end();
         }
       })();

@@ -9,8 +9,10 @@ import type { AssertionSubject } from '../assert/model.js';
 import { readAttachment } from '../project/attachments-cache.js';
 import type { AttachmentSource, AuthConfig } from '../project/model.js';
 import { REQUESTS_DIR, WEBHOOKS_DIR } from '../project/paths.js';
-import type { ProtocolRun, RunGroup } from '../protocol/module.js';
+import type { ProtocolRun, RunGroup, ScriptedSend } from '../protocol/module.js';
 import { scopesFor } from '../run/context.js';
+import { exchangeController } from '../run/exchange.js';
+import type { SentRequest } from '../run/run.js';
 import type { RunContext } from '../run/context.js';
 import {
   authFor,
@@ -231,6 +233,44 @@ function webhookCandidates(collection: WebhookCollection): RestCandidate[] {
   return out;
 }
 
+/** One REST request as a run sends it: prepare, run its scripts when `scripts` is given, send. */
+async function sendRestItem(
+  selected: RestSelected,
+  context: RunContext,
+  scripts: ScriptedSend | undefined,
+): Promise<SentRequest> {
+  if (scripts === undefined) {
+    const prepared = await prepareRest(selected, context);
+    const exchange = await sendRest(prepared.input);
+    dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
+    return {
+      subject: restSubject(exchange),
+      raw: exchange,
+      exchange: { kind: 'rest', rest: exchange },
+      ...originOf(exchange.request.url),
+    };
+  }
+
+  // Prepared with its secrets behind placeholders; the URL is rebuilt only when the script changed it.
+  const prepared = await prepareRest(selected, { ...context, secretPlaceholders: scripts.placeholders });
+  const before = restRequestSnapshot(prepared.input);
+  const sent = await scripts.session.pre(before);
+  const changed = applyRestSnapshot(prepared.input, before, sent);
+  const restored = await scripts.placeholders.restore(
+    { baseUrl: changed.baseUrl, request: changed.request },
+    context.host.getSecret,
+  );
+  const exchange = await sendRest({ ...changed, ...restored });
+  dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
+  return {
+    subject: restSubject(exchange),
+    raw: exchange,
+    exchange: { kind: 'rest', rest: exchange },
+    ...originOf(exchange.request.url),
+    script: await scripts.session.post(sent, restResponseSnapshot(exchange)),
+  };
+}
+
 /** REST's run facet. */
 export const restRun: ProtocolRun<RestSelected> = {
   groups(project) {
@@ -258,38 +298,14 @@ export const restRun: ProtocolRun<RestSelected> = {
     return undefined;
   },
 
-  async send(selected, scope, scripts) {
-    const { context } = scope;
-    if (scripts === undefined) {
-      const prepared = await prepareRest(selected, context);
-      const exchange = await sendRest(prepared.input);
-      dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
-      return {
-        subject: restSubject(exchange),
-        raw: exchange,
-        exchange: { kind: 'rest', rest: exchange },
-        ...originOf(exchange.request.url),
-      };
-    }
+  open(selected, scope, host, options) {
+    const controller = exchangeController('rest', options);
+    const context: RunContext = { ...scope.context, host, signal: controller.signal };
+    return controller.handle(() => sendRestItem(selected, context, options.scripts));
+  },
 
-    // Prepared with its secrets behind placeholders; the URL is rebuilt only when the script changed it.
-    const prepared = await prepareRest(selected, { ...context, secretPlaceholders: scripts.placeholders });
-    const before = restRequestSnapshot(prepared.input);
-    const sent = await scripts.session.pre(before);
-    const changed = applyRestSnapshot(prepared.input, before, sent);
-    const restored = await scripts.placeholders.restore(
-      { baseUrl: changed.baseUrl, request: changed.request },
-      context.host.getSecret,
-    );
-    const exchange = await sendRest({ ...changed, ...restored });
-    dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
-    return {
-      subject: restSubject(exchange),
-      raw: exchange,
-      exchange: { kind: 'rest', rest: exchange },
-      ...originOf(exchange.request.url),
-      script: await scripts.session.post(sent, restResponseSnapshot(exchange)),
-    };
+  async resolve(selected, scope, host) {
+    return (await prepareRest(selected, { ...scope.context, host })).input;
   },
 
   async scriptTypes(selected, scope) {

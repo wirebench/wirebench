@@ -7,9 +7,11 @@ import type { AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
 import type { AuthConfig } from '../project/model.js';
 import { apiDefinitionDir } from '../project/paths.js';
-import type { ProtocolRun, RunGroup, RunScope } from '../protocol/module.js';
+import type { ProtocolRun, RunGroup, RunScope, ScriptedSend } from '../protocol/module.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { scopesFor } from '../run/context.js';
+import { exchangeController } from '../run/exchange.js';
+import type { SentRequest } from '../run/run.js';
 import type { RunContext } from '../run/context.js';
 import {
   authFor,
@@ -166,6 +168,45 @@ function protoSetFor(api: GrpcApi, scope: RunScope): Promise<ProtoSet> {
 
 const STREAMING_STEP_REASON = 'A streaming gRPC call cannot be a sequence step; only unary calls can';
 
+/** One gRPC request as a run sends it: prepare, run its scripts when `scripts` is given, call. */
+async function sendGrpcItem(
+  selected: GrpcSelected,
+  scope: RunScope,
+  context: RunContext,
+  scripts: ScriptedSend | undefined,
+): Promise<SentRequest> {
+  // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
+  const protoSet = await protoSetFor(selected.api, scope);
+  if (scripts === undefined) {
+    const prepared = await prepareGrpc(selected, context);
+    const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
+    dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
+    return { subject: grpcSubject(result), raw: result.exchange, origin: prepared.input.target };
+  }
+
+  const prepared = await prepareGrpc(selected, { ...context, secretPlaceholders: scripts.placeholders });
+  const before = grpcRequestSnapshot(prepared.input, prepared.messageText);
+  const sent = await scripts.session.pre(before);
+  const changed = applyGrpcSnapshot(prepared.input, prepared.messageText, before, sent);
+  const restored = await scripts.placeholders.restore(
+    { metadata: changed.input.metadata, messageText: changed.messageText },
+    context.host.getSecret,
+  );
+  const result = await callGrpc({
+    ...changed.input,
+    metadata: restored.metadata,
+    set: protoSet,
+    messageText: restored.messageText,
+  });
+  dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
+  return {
+    subject: grpcSubject(result),
+    raw: result.exchange,
+    origin: prepared.input.target,
+    script: await scripts.session.post(sent, grpcResponseSnapshot(result)),
+  };
+}
+
 /** gRPC's run facet. */
 export const grpcRun: ProtocolRun<GrpcSelected> = {
   groups(project) {
@@ -199,38 +240,15 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     return undefined;
   },
 
-  async send(selected, scope, scripts) {
-    // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
-    const protoSet = await protoSetFor(selected.api, scope);
-    const { context } = scope;
-    if (scripts === undefined) {
-      const prepared = await prepareGrpc(selected, context);
-      const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
-      dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-      return { subject: grpcSubject(result), raw: result.exchange, origin: prepared.input.target };
-    }
+  open(selected, scope, host, options) {
+    const controller = exchangeController('grpc', options);
+    const context: RunContext = { ...scope.context, host, signal: controller.signal };
+    return controller.handle(() => sendGrpcItem(selected, scope, context, options.scripts));
+  },
 
-    const prepared = await prepareGrpc(selected, { ...context, secretPlaceholders: scripts.placeholders });
-    const before = grpcRequestSnapshot(prepared.input, prepared.messageText);
-    const sent = await scripts.session.pre(before);
-    const changed = applyGrpcSnapshot(prepared.input, prepared.messageText, before, sent);
-    const restored = await scripts.placeholders.restore(
-      { metadata: changed.input.metadata, messageText: changed.messageText },
-      context.host.getSecret,
-    );
-    const result = await callGrpc({
-      ...changed.input,
-      metadata: restored.metadata,
-      set: protoSet,
-      messageText: restored.messageText,
-    });
-    dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-    return {
-      subject: grpcSubject(result),
-      raw: result.exchange,
-      origin: prepared.input.target,
-      script: await scripts.session.post(sent, grpcResponseSnapshot(result)),
-    };
+  async resolve(selected, scope, host) {
+    const { input, messageText } = await prepareGrpc(selected, { ...scope.context, host });
+    return { input, messageText };
   },
 
   async scriptTypes(selected, scope) {

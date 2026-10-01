@@ -58,4 +58,17 @@ describe('exchangeController', () => {
     outer.abort();
     expect(controller.signal.aborted).toBe(true);
   });
+
+  it('lets go of the run signal once the exchange has settled', async () => {
+    const outer = new AbortController();
+    const removed: string[] = [];
+    const remove = outer.signal.removeEventListener.bind(outer.signal);
+    outer.signal.removeEventListener = ((type: string, ...rest: [never]) => {
+      removed.push(type);
+      return remove(type, ...rest);
+    }) as typeof outer.signal.removeEventListener;
+    const controller = exchangeController('x', { scope: scopeWithSignal(outer.signal), interactive: false });
+    await controller.handle(() => Promise.resolve(sent)).result;
+    expect(removed).toEqual(['abort']);
+  });
 });

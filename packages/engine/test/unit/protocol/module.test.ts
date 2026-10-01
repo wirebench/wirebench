@@ -3,8 +3,10 @@ import { createProject } from '../../../src/project/model.js';
 import type { FeatureDescriptor } from '../../../src/protocol/features.js';
 import { defineProtocol } from '../../../src/protocol/module.js';
 import type { ProtocolRun, RunScope, SelectedBase } from '../../../src/protocol/module.js';
+import { exchangeController } from '../../../src/run/exchange.js';
 import type { SentRequest } from '../../../src/run/run.js';
 import { emptyStorage } from '../../helpers/empty-storage.js';
+import { testHost } from '../../helpers/send-host.js';
 
 interface PingSelected extends SelectedBase {
   readonly kind: 'ping';
@@ -28,12 +30,14 @@ const ping = selected('ping') as PingSelected;
 const run: ProtocolRun<PingSelected> = {
   groups: () => [{ order: 0, name: 'Group', candidates: [{ item: ping, diskPath: 'apis/group/requests/one' }] }],
   whyNotRunnable: (_project, requestId) => (requestId === 'gone' ? 'gone' : undefined),
-  send: () => Promise.resolve(SENT),
+  open: (_selected, _scope, _host, options) => exchangeController('ping', options).handle(() => Promise.resolve(SENT)),
+  resolve: () => Promise.resolve({ resolved: true }),
   scriptTypes: () => Promise.resolve({ generated: '' }),
   secretNeeds: () => [{ ref: 'ref-1', purpose: 'ping secret' }],
 };
 
 const project = createProject('P', { id: 'p1' });
+const host = testHost();
 const scope = { context: { project, projectDir: '/nowhere', overrides: {} } } as RunScope;
 
 describe('defineProtocol', () => {
@@ -53,7 +57,8 @@ describe('defineProtocol', () => {
     const module = defineProtocol({ kind: 'ping', feature: FEATURE, storage: STORAGE, run });
     expect(module.run?.groups(project)[0]?.candidates[0]?.item).toBe(ping);
     expect(module.run?.whyNotRunnable(project, 'gone')).toBe('gone');
-    expect(await module.run?.send(ping, scope)).toBe(SENT);
+    expect(await module.run?.open(ping, scope, host, { scope, interactive: false }).result).toBe(SENT);
+    expect(await module.run?.resolve(ping, scope, host)).toEqual({ resolved: true });
     expect(await module.run?.scriptTypes(ping, scope)).toEqual({ generated: '' });
     expect(module.run?.secretNeeds(ping, project)).toEqual([{ ref: 'ref-1', purpose: 'ping secret' }]);
   });
@@ -62,7 +67,8 @@ describe('defineProtocol', () => {
     const module = defineProtocol({ kind: 'ping', feature: FEATURE, storage: STORAGE, run });
     const other = selected('rest');
     const message = 'The "ping" protocol was handed a "rest" request';
-    expect(() => module.run?.send(other, scope)).toThrow(message);
+    expect(() => module.run?.open(other, scope, host, { scope, interactive: false })).toThrow(message);
+    expect(() => module.run?.resolve(other, scope, host)).toThrow(message);
     expect(() => module.run?.scriptTypes(other, scope)).toThrow(message);
     expect(() => module.run?.secretNeeds(other, project)).toThrow(message);
   });

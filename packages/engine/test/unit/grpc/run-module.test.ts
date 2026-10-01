@@ -8,6 +8,7 @@ import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src
 import { grpcProtocol } from '../../../src/grpc/module.js';
 import { grpcRun } from '../../../src/grpc/run.js';
 import { createProject } from '../../../src/project/model.js';
+import type { RunScope } from '../../../src/protocol/module.js';
 import type { Project } from '../../../src/project/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import type { RunContext } from '../../../src/run/context.js';
@@ -158,10 +159,13 @@ describe('grpcRun.secretNeeds', () => {
   });
 });
 
-describe('grpcRun.send', () => {
+const sendGrpc = (item: Parameters<typeof grpcRun.open>[0], scope: RunScope) =>
+  grpcRun.open(item, scope, scope.context.host, { scope, interactive: false }).result;
+
+describe('grpcRun.open', () => {
   it('loads the schema, prepares, calls once, and reports a gRPC subject with the target as origin', async () => {
     const hello = itemAt('Greeter/Hello');
-    const sent = hello && (await grpcRun.send(hello, createRunScope(context())));
+    const sent = hello && (await sendGrpc(hello, createRunScope(context())));
     expect(events).toEqual([
       'secret ref-token',
       'secret secret:tenant',
@@ -175,8 +179,8 @@ describe('grpcRun.send', () => {
   it('refuses a call whose API has no cached definition before it asks for anything, and remembers', async () => {
     const hello = itemAt('Uncached/Hello');
     const scope = createRunScope(context());
-    await expect(hello && grpcRun.send(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
-    await expect(hello && grpcRun.send(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
+    await expect(hello && sendGrpc(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
+    await expect(hello && sendGrpc(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
     expect(events).toEqual([]);
   });
 });

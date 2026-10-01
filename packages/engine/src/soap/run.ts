@@ -25,10 +25,12 @@ import { definitionCacheDir } from '../project/paths.js';
 import { expandSendInput } from './expand.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { toWssIncomingConfig, toWssOutgoingConfig } from '../wss/configs.js';
-import type { ProtocolRun, RunScope } from '../protocol/module.js';
+import type { ProtocolRun, RunScope, ScriptedSend } from '../protocol/module.js';
 import { scopesFor } from '../run/context.js';
 import type { RunContext } from '../run/context.js';
+import { exchangeController } from '../run/exchange.js';
 import { requiredSecret } from '../run/oauth2-token.js';
+import type { SentRequest } from '../run/run.js';
 import {
   authFor,
   dropRefusedToken,
@@ -404,6 +406,75 @@ function definitionFor(iface: Interface, scope: RunScope): Promise<LoadedDefinit
   return scope.memo(`soap:${iface.id}:definition`, () => loadDefinition(scope.context.projectDir, iface));
 }
 
+/** The run's context for one SOAP item: the WSDL's default `wsa:Action`, when the run has the definition. */
+async function soapContextFor(
+  selected: SoapSelected,
+  scope: RunScope,
+  base: RunContext,
+): Promise<{ context: RunContext; loaded: Awaited<ReturnType<typeof definitionFor>> }> {
+  const loaded = await definitionFor(selected.iface, scope);
+  const context: RunContext = {
+    ...base,
+    ...(loaded !== undefined
+      ? {
+          defaultWsaActionFor: (s: SoapSelected) =>
+            loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '',
+        }
+      : {}),
+  };
+  return { context, loaded };
+}
+
+/** One SOAP request as a run sends it: prepare, run its scripts when `scripts` is given, send. */
+async function sendSoapItem(
+  selected: SoapSelected,
+  scope: RunScope,
+  base: RunContext,
+  scripts: ScriptedSend | undefined,
+): Promise<SentRequest> {
+  const { context, loaded } = await soapContextFor(selected, scope, base);
+  if (scripts === undefined) {
+    const prepared = await prepareSoap(selected, context);
+    const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
+    dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
+    return {
+      subject: soapSubject(exchange, loaded, selected),
+      raw: exchange.http,
+      exchange: { kind: 'soap', soap: exchange },
+      ...originOf(exchange.http.request.url),
+    };
+  }
+
+  // Prepared with its secrets behind placeholders; the pre-request script runs on the expanded
+  // request, the secrets are put back, and the post-response script sees what the script left.
+  const prepared = await prepareSoap(selected, { ...context, secretPlaceholders: scripts.placeholders });
+  const expanded = expandSendInput(prepared.input, prepared.scopes, {
+    entitize: prepared.input.entitize ?? false,
+  }).input;
+  const before = soapRequestSnapshot(expanded);
+  const sent = await scripts.session.pre(before);
+  const changed = applySoapSnapshot(expanded, sent);
+  const restored = await scripts.placeholders.restore(
+    {
+      endpoint: changed.endpoint,
+      headers: changed.headers ?? {},
+      envelopeXml: changed.envelopeXml,
+      ...(changed.soapAction !== undefined ? { soapAction: changed.soapAction } : {}),
+    },
+    context.host.getSecret,
+  );
+  // Already expanded: sent without scopes, so nothing the script wrote is expanded again.
+  const exchange = await sendSoapRequest({ ...changed, ...restored });
+  dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
+  return {
+    subject: soapSubject(exchange, loaded, selected),
+    raw: exchange.http,
+    exchange: { kind: 'soap', soap: exchange },
+    ...originOf(exchange.http.request.url),
+    script: await scripts.session.post(sent, soapResponseSnapshot(exchange)),
+  };
+}
+
 /** SOAP's run facet. */
 export const soapRun: ProtocolRun<SoapSelected> = {
   groups(project) {
@@ -435,58 +506,15 @@ export const soapRun: ProtocolRun<SoapSelected> = {
     return undefined;
   },
 
-  async send(selected, scope, scripts) {
-    const loaded = await definitionFor(selected.iface, scope);
-    // The WSDL's default `wsa:Action`, when the run has the definition; else the host's, if any.
-    const context: RunContext = {
-      ...scope.context,
-      ...(loaded !== undefined
-        ? {
-            defaultWsaActionFor: (s: SoapSelected) =>
-              loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '',
-          }
-        : {}),
-    };
-    if (scripts === undefined) {
-      const prepared = await prepareSoap(selected, context);
-      const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
-      dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
-      return {
-        subject: soapSubject(exchange, loaded, selected),
-        raw: exchange.http,
-        exchange: { kind: 'soap', soap: exchange },
-        ...originOf(exchange.http.request.url),
-      };
-    }
+  open(selected, scope, host, options) {
+    const controller = exchangeController('soap', options);
+    const context: RunContext = { ...scope.context, host, signal: controller.signal };
+    return controller.handle(() => sendSoapItem(selected, scope, context, options.scripts));
+  },
 
-    // Prepared with its secrets behind placeholders; the pre-request script runs on the expanded
-    // request, the secrets are put back, and the post-response script sees what the script left.
-    const prepared = await prepareSoap(selected, { ...context, secretPlaceholders: scripts.placeholders });
-    const expanded = expandSendInput(prepared.input, prepared.scopes, {
-      entitize: prepared.input.entitize ?? false,
-    }).input;
-    const before = soapRequestSnapshot(expanded);
-    const sent = await scripts.session.pre(before);
-    const changed = applySoapSnapshot(expanded, sent);
-    const restored = await scripts.placeholders.restore(
-      {
-        endpoint: changed.endpoint,
-        headers: changed.headers ?? {},
-        envelopeXml: changed.envelopeXml,
-        ...(changed.soapAction !== undefined ? { soapAction: changed.soapAction } : {}),
-      },
-      context.host.getSecret,
-    );
-    // Already expanded: sent without scopes, so nothing the script wrote is expanded again.
-    const exchange = await sendSoapRequest({ ...changed, ...restored });
-    dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
-    return {
-      subject: soapSubject(exchange, loaded, selected),
-      raw: exchange.http,
-      exchange: { kind: 'soap', soap: exchange },
-      ...originOf(exchange.http.request.url),
-      script: await scripts.session.post(sent, soapResponseSnapshot(exchange)),
-    };
+  async resolve(selected, scope, host) {
+    const { context } = await soapContextFor(selected, scope, { ...scope.context, host });
+    return (await prepareSoap(selected, context)).input;
   },
 
   async scriptTypes(selected, scope) {

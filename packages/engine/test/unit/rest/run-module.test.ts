@@ -171,7 +171,7 @@ describe('restRun.secretNeeds', () => {
   });
 });
 
-describe('restRun.send', () => {
+describe('restRun.open', () => {
   it('prepares, sends once, and reports a REST subject with its exchange and origin', async () => {
     const context: RunContext = {
       project,
@@ -185,7 +185,8 @@ describe('restRun.send', () => {
       },
     };
     const list = itemAt('Billing/Invoices/List');
-    const sent = list && (await restRun.send(list, createRunScope(context)));
+    const scope = createRunScope(context);
+    const sent = list && (await restRun.open(list, scope, context.host, { scope, interactive: false }).result);
     expect(events).toEqual(['secret ref-token', 'secret secret:tenant', 'send https://api.example.test/invoices']);
     expect(sent?.subject).toMatchObject({ protocol: 'rest', status: 200, bodyKind: 'json' });
     expect(sent?.exchange?.kind).toBe('rest');

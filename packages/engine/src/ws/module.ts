@@ -4,7 +4,7 @@
  */
 import { defineProtocol } from '../protocol/module.js';
 import type { ProtocolRun, SelectedBase } from '../protocol/module.js';
-import type { SentRequest } from '../run/run.js';
+import { exchangeController } from '../run/exchange.js';
 import { findInTree } from '../run/tree.js';
 import type { RequestScriptTypes } from '../script/request-scripts.js';
 import type { SecretNeed } from '../secrets/env-names.js';
@@ -12,7 +12,7 @@ import { wsStorage } from './storage.js';
 
 const NOT_RUNNABLE = 'A run cannot send a WebSocket request';
 
-/** WebSocket's run facet: nothing to select, so nothing ever reaches `send`. */
+/** WebSocket's run facet: nothing to select, so nothing ever reaches `open`. */
 const wsRun: ProtocolRun<SelectedBase> = {
   groups() {
     return [];
@@ -24,7 +24,11 @@ const wsRun: ProtocolRun<SelectedBase> = {
       : undefined;
   },
 
-  send(): Promise<SentRequest> {
+  open(_selected, _scope, _host, options) {
+    return exchangeController('websocket', options).handle(() => Promise.reject(new Error(NOT_RUNNABLE)));
+  },
+
+  resolve(): Promise<unknown> {
     return Promise.reject(new Error(NOT_RUNNABLE));
   },
 

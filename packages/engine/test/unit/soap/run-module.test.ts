@@ -142,7 +142,7 @@ describe('soapRun.secretNeeds', () => {
   });
 });
 
-describe('soapRun.send', () => {
+describe('soapRun.open', () => {
   it('prepares, sends once, and reports a SOAP subject with its exchange and origin', async () => {
     const context: RunContext = {
       project,
@@ -156,7 +156,8 @@ describe('soapRun.send', () => {
       },
     };
     const [get] = items();
-    const sent = get && (await soapRun.send(get, createRunScope(context)));
+    const scope = createRunScope(context);
+    const sent = get && (await soapRun.open(get, scope, context.host, { scope, interactive: false }).result);
     expect(events).toEqual(['secret ref-iface', 'secret secret:tenant', 'send https://soap.example.test/billing']);
     expect(sent?.subject).toMatchObject({ protocol: 'soap', status: 200 });
     expect(sent?.exchange?.kind).toBe('soap');

@@ -23,6 +23,7 @@ import type { TransferResult } from '../sequence/run.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
 import type { SendHost } from './host.js';
+import { openExchange } from './open.js';
 import { createRunTokenSource } from './oauth2-token.js';
 import { createRunScope, scopeWith } from './scope.js';
 import {
@@ -174,9 +175,13 @@ function runOf(registry: ProtocolRegistry, item: SelectedBase): ProtocolRun {
 /**
  * The scripts of one send, opened when the module first runs one. The secrets a request lists for
  * its scripts are read then and not before, so they are asked for after everything preparing the
- * request asks for, as they always were.
+ * request asks for, as they always were. Exported for the desktop's sends.
  */
-function deferredSession(scripting: RequestScripting, scripted: ScriptedRequest, context: RunContext): ScriptSession {
+export function deferredSession(
+  scripting: RequestScripting,
+  scripted: ScriptedRequest,
+  context: RunContext,
+): ScriptSession {
   let opening: Promise<ScriptSession> | undefined;
   const open = (): Promise<ScriptSession> => {
     opening ??= listedSecrets(scripted.scripts.secrets, context.host.getSecret).then((secrets) =>
@@ -256,7 +261,7 @@ export function createRunSender(context: RunContext): RunRequestSender {
 
     const scripts = activeScripts(item.request.scripts);
     if (scripts === undefined) {
-      const sent = await run.send(item, itemScope);
+      const sent = await openExchange(item, itemContext.host, { scope: itemScope, interactive: false }).result;
       return item.request.scripts !== undefined ? { ...sent, scriptsOff: true } : sent;
     }
 
@@ -278,10 +283,11 @@ export function createRunSender(context: RunContext): RunRequestSender {
       types: await run.scriptTypes(item, itemScope),
     };
     await scripting.check(scripted);
-    return run.send(item, itemScope, {
-      session: deferredSession(scripting, scripted, itemContext),
-      placeholders: new SecretPlaceholders(),
-    });
+    return openExchange(item, itemContext.host, {
+      scope: itemScope,
+      interactive: false,
+      scripts: { session: deferredSession(scripting, scripted, itemContext), placeholders: new SecretPlaceholders() },
+    }).result;
   };
 }
 
