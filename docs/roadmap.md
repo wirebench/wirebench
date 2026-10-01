@@ -67,6 +67,7 @@ is picked up.
 | 14 | Full functional testing: suites, data-driven runs, callback listener | Both | XL | phase 2 | Suites, CSV and XLSX data sources, and a listener for WS-Addressing callbacks, after Sequences and scripting have proved the model. |
 | 15 | Self-hosted Wirebench Server: sign-in, teams, SSO | Ent | XL | new | Spec 2 of the shared-workspaces design (§5.4): the same repository with the server running git, live updates, presence and OIDC-first sign-in; SCIM and audit second. The enterprise offer, with data inside their own network. |
 | 16 | JKS keystores, WS-ReliableMessaging | Ent | S each | spec 1.1 | Build when a customer asks; each is a niche. SAML tokens moved into item 7. |
+| 18 | Editions and compliance on the server: license boundary, audit log | Ent | M + M | specs approved 2026-10-01 | The feature list is already enterprise-shaped; what no enterprise can do yet is buy it. A signed offline license file sets the edition (Community, Team, Enterprise) and caps free seats; an audit log is the first gated feature and the first thing a compliance reviewer asks for. Everything stays Apache-2.0 ([ADR-0017](adr/0017-licensing-is-a-product-boundary.md)). See [Editions and compliance](#editions-and-compliance). |
 | 17 | gRPC (shipped), streaming over HTTP and WebSocket (shipped), and GraphQL | Dev | L each | gRPC shipped 2026-09-16; WebSocket shipped 2026-09-19; GraphQL later phase | gRPC landed as the third container on the shape [ADR-0007](adr/0007-apis-beside-interfaces.md) was written to survive — see [the gRPC spec](specs/2026-09-16-wirebench-grpc-client-design.md). [Server reflection](specs/2026-09-17-grpc-server-reflection-design.md) shipped 2026-09-17 [live streaming with interactive bidirectional send](specs/2026-09-18-grpc-live-streaming-design.md) and [message completion from the descriptor](specs/2026-09-18-grpc-message-completion-design.md) on 2026-09-18; resend from History followed 2026-09-22 ([spec](specs/2026-09-22-grpc-history-resend-design.md)). That work paid for a live pane and a multi-message record, which the WebSocket request kind reused to land as the fourth container 2026-09-19 — see [the WebSocket spec](specs/2026-09-19-websocket-request-kind-design.md) and [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions). Server-Sent Events shipped 2026-09-21 the same way — see [the SSE spec](specs/2026-09-21-rest-sse-responses-design.md) — reusing the same live pane and History record rather than a new request kind. GraphQL stays demand-driven, cut in two: queries and mutations over HTTP, then subscriptions once those transports exist. |
 | — | Load testing, WSDL coverage and refactoring, code generation | — | XL | phase 4 | Deferred indefinitely; other tools do these better. The TCP monitor's use case, recording traffic, is absorbed by the mock recorder. |
 | — | MQTT, Kafka and JMS transports | — | L each | watch | A different buyer and native modules; only on a customer's ask. |
@@ -426,6 +427,35 @@ design, and the shipped shared workspaces embody the first two:
 | Git-native shared workspaces | **Shipped in 2.1.0** ([ADR-0008](adr/0008-shared-workspaces-are-git-repositories.md), `docs/collaborate.md`): a whole workspace — projects and environments — shared as a git repository on the team's own hosting or a synced folder, with an in-app Sync control, a conflict resolver and per-member secrets until item 6. Roles are repository permissions; history is git history. | Shipped |
 | Self-hosted Wirebench Server | First slice in progress: `docs/specs/2026-09-24-wirebench-server-capability-map.md`. Spec 2 of `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (§5.4): the same repository with the server running git, plus live updates, presence, accounts and organisations, roles, OIDC and SAML SSO, SCIM, an audit log (item 15). | XL |
 | Hosted cloud                 | The same server run as a service: billing, uptime, support, and eventually a SOC 2 report.                                                                                                                                                                         | a business                  |
+
+### Editions and compliance
+
+Item 18. The server as shipped is the **Community** edition and stays free: everything above, for up to
+five enabled accounts. A signed license file, verified offline against a key compiled into the server and
+never reporting anywhere, makes it **Team** (the seat cap lifted) or **Enterprise** (Team plus the gated
+features). The boundary is a product boundary under one Apache-2.0 license, not a legal one
+([ADR-0017](adr/0017-licensing-is-a-product-boundary.md)): nothing already shipped becomes paid, a lapsed
+license disables nobody and locks nothing, and after 30 days of grace the server is Community again.
+
+The gated features, in the order they are planned:
+
+- **Audit log** (`docs/specs/2026-10-01-wirebench-server-audit-log-design.md`): sign-ins, users, teams,
+  roles, pushes, secrets, catch URLs, CI tokens and license changes, written inside the action's
+  transaction on every edition, retained by age, read and exported as newline-delimited JSON by server
+  admins on Enterprise. Server events only; what the app sends where is a later ruling.
+- **SCIM provisioning and finer roles**: groups pushed from the identity provider, deprovisioning on the
+  leaver's day, roles beyond admin and member.
+- **Server policies**: refuse sends to named hosts outside a window, require approval before a secret is
+  shared, enforce TLS verification, forbid plaintext credentials in project files. Managed preferences
+  (#67) cover the client; policy at the server is what a security office signs off.
+- **Scheduled and monitored runs**: the CLI runner's suites run by the server on a schedule, results kept,
+  regressions alerted.
+- **Usage for the buyer**: seat utilisation, active workspaces, most-called services, so a renewal has a
+  page to point at.
+
+Not features, but on the same list because they unblock the same deals: a filled security questionnaire,
+a data-processing agreement, a support SLA, a vulnerability-disclosure policy, and a path to a SOC 2 or
+ISO 27001 report once there is a company to audit.
 
 ### Deliberately not
 
