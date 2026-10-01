@@ -1,17 +1,20 @@
 /**
- * gRPC's run facet (spec §3.3): unary calls only, since a stream needs an assertion model a run does
- * not have yet. A send resolves the call and refuses one it cannot make, loads the API's schema
+ * gRPC's run facet (spec §3.3). A run selects unary calls only, since a stream needs an assertion
+ * model a run does not have yet; a host opens any method kind, and drives a client or bidi stream's
+ * request side when it opens one interactive (spec §5.2). A send resolves the call and refuses one it cannot make, loads the API's schema
  * (without a schema there is no call, so no token is worth fetching; a schema that does not load is
  * remembered for the run), runs its pre-request script, connects, then calls (spec §3.4).
  */
 import type { AssertionSubject } from '../assert/model.js';
-import { isWirebenchError, WirebenchError } from '../errors.js';
+import { GrpcError, isWirebenchError, WirebenchError } from '../errors.js';
 import type { AuthConfig } from '../project/model.js';
 import { apiDefinitionDir } from '../project/paths.js';
 import type { ProtocolRun, RunGroup, RunScope, ScriptedSend } from '../protocol/module.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { scopesFor } from '../run/context.js';
-import { exchangeController } from '../run/exchange.js';
+import { exchangeController, notStreaming } from '../run/exchange.js';
+import type { ExchangeController, StreamingSide } from '../run/exchange.js';
+import type { AttemptedRequest } from '../run/host.js';
 import type { SentRequest } from '../run/run.js';
 import type { RunContext } from '../run/context.js';
 import {
@@ -26,13 +29,16 @@ import {
 import type { Resolved } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, findInTree, walkTree } from '../run/tree.js';
 import { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from './scripting.js';
+import type { GrpcRequestSnapshot } from './scripting.js';
 import { grpcMessageTypes, grpcScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import { toGrpcSendInput } from './send-input.js';
 import { readGrpcDefinitionCache } from './cache.js';
 import { callGrpc } from './call.js';
-import type { GrpcCallResult } from './call.js';
+import type { GrpcCallResult, GrpcCallStreamHandle, GrpcResponseMessage } from './call.js';
+import type { GrpcLiveEvent } from './events.js';
 import { expandGrpcInput } from './expand.js';
+import { clientStreams, grpcMethodPath } from './model.js';
 import type { GrpcApi, GrpcFolder, GrpcRequestDef } from './model.js';
 import { loadProtoSet } from './proto/load.js';
 import type { ProtoSet } from './proto/load.js';
@@ -192,53 +198,191 @@ export function grpcSubject(result: GrpcCallResult): AssertionSubject {
 /** gRPC's `UNAUTHENTICATED`: the server's word for a credential it will not accept. */
 const GRPC_UNAUTHENTICATED = 16;
 
-/** The API's schema, read once per run; a failed load is remembered. */
-function protoSetFor(api: GrpcApi, scope: RunScope): Promise<ProtoSet> {
+/**
+ * The API's schema: the host's when it lends one, otherwise read from the definition cache once per
+ * run, a failed load remembered.
+ */
+async function protoSetFor(selected: GrpcSelected, scope: RunScope, context: RunContext): Promise<ProtoSet> {
+  const lent = context.host.protoSetFor;
+  if (lent !== undefined) return (await lent(selected)) as ProtoSet;
+  const { api } = selected;
   return scope.memo(`grpc:${api.id}:proto-set`, () => loadProtoSetFor(scope.context.projectDir, api));
 }
 
 const STREAMING_STEP_REASON = 'A streaming gRPC call cannot be a sequence step; only unary calls can';
 
+/** What a failed call was about to put on the wire: an HTTP/2 POST to `/<service>/<method>`, its metadata. */
+function attemptedOf(input: GrpcResolvedInput): AttemptedRequest {
+  return {
+    url: `${input.tls ? 'https' : 'http'}://${input.target}${grpcMethodPath(input.service, input.method)}`,
+    method: 'POST',
+    headers: Object.fromEntries(input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value])),
+  };
+}
+
 /**
- * One gRPC request as a run sends it (spec §3.4): resolve, run its pre-request script when
- * `scripts` is given, connect, call, then its post-response script.
+ * An interactive call's request side, between the handle `open` returns at once and the call that
+ * opens it later: a push before the call opens waits for it, a half-close before it opens ends it as
+ * it opens, and a call that ends without opening refuses the pushes still waiting.
+ */
+interface GrpcStreamState {
+  /** The side the handle drives. */
+  readonly streaming: StreamingSide;
+  /** Given to `callGrpc` as its `onOpen`. */
+  opened(handle: GrpcCallStreamHandle): void;
+  /** The call has ended, opened or not. */
+  settled(): void;
+}
+
+function grpcStreamState(controller: ExchangeController<GrpcLiveEvent>): GrpcStreamState {
+  let side: GrpcCallStreamHandle | undefined;
+  let ended = false;
+  let resolve: (handle: GrpcCallStreamHandle) => void = () => undefined;
+  let reject: (error: unknown) => void = () => undefined;
+  const stream = new Promise<GrpcCallStreamHandle>((onOpen, onClosed) => {
+    resolve = onOpen;
+    reject = onClosed;
+  });
+  // Observed here, so a call that never opens and has no push waiting reports nothing unhandled.
+  stream.catch(() => undefined);
+  const end = (): void => {
+    ended = true;
+    side?.end();
+  };
+  return {
+    streaming: {
+      push: async (message) => {
+        if (!('text' in message)) throw notStreaming('grpc');
+        return (await stream).send(message.text);
+      },
+      halfClose: () => {
+        if (ended) return;
+        end();
+        controller.queue.push({ protocol: 'grpc', kind: 'closed' });
+      },
+      close: end,
+    },
+    opened(handle) {
+      side = handle;
+      if (ended) handle.end();
+      resolve(handle);
+      controller.queue.push({ protocol: 'grpc', kind: 'open' });
+    },
+    settled() {
+      if (side !== undefined) return;
+      reject(
+        new GrpcError('grpc-stream-closed', 'The request side of this call is already closed', {
+          details: { halfClosed: ended, settled: true },
+        }),
+      );
+    },
+  };
+}
+
+/** How one call is sent: its live events and, for an interactive call, its request side. */
+interface GrpcSendMode {
+  readonly controller: ExchangeController<GrpcLiveEvent>;
+  readonly live: boolean;
+  readonly stream?: GrpcStreamState;
+}
+
+/**
+ * One gRPC request as a run or a host sends it (spec §3.4): resolve, run its pre-request script when
+ * `scripts` is given, connect, call, then its post-response script. A failure is told to the host
+ * with its stage and what was attempted: a reference nothing resolves in the prepare stage.
  */
 async function sendGrpcItem(
   selected: GrpcSelected,
   scope: RunScope,
   context: RunContext,
   scripts: ScriptedSend | undefined,
+  mode: GrpcSendMode,
 ): Promise<SentRequest> {
-  if (scripts === undefined) {
-    const resolved = await resolveGrpc(selected, context);
-    refuseUnsendable(selected, resolved);
-    // Before the send connects: without a schema there is no call, so no token is worth fetching.
-    const protoSet = await protoSetFor(selected.api, scope);
-    const connected = await connectGrpc(selected, context, resolved.input);
-    const result = await callGrpc({ ...connected, set: protoSet, messageText: resolved.messageText });
-    dropRefusedToken(context, connected.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-    return { subject: grpcSubject(result), raw: result.exchange, origin: connected.target };
-  }
-
-  const resolved = await resolveGrpc(selected, { ...context, secretPlaceholders: scripts.placeholders });
-  refuseUnsendable(selected, resolved);
-  const protoSet = await protoSetFor(selected.api, scope);
-  const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
-  const sent = await scripts.session.pre(before);
-  const changed = applyGrpcSnapshot(resolved.input, resolved.messageText, before, sent);
-  const restored = await scripts.placeholders.restore(
-    { metadata: changed.input.metadata, messageText: changed.messageText },
-    context.host.getSecret,
-  );
-  const connected = await connectGrpc(selected, context, { ...changed.input, metadata: restored.metadata });
-  const result = await callGrpc({ ...connected, set: protoSet, messageText: restored.messageText });
-  dropRefusedToken(context, connected.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-  return {
-    subject: grpcSubject(result),
-    raw: result.exchange,
-    origin: connected.target,
-    script: await scripts.session.post(sent, grpcResponseSnapshot(result)),
+  const { controller, live, stream } = mode;
+  const startedAt = Date.now();
+  // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
+  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: GrpcResolvedInput | undefined): void => {
+    try {
+      context.host.events?.onFailed?.(selected, {
+        stage,
+        error,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        ...(attempted !== undefined ? { attempted: attemptedOf(attempted), input: attempted } : {}),
+      });
+    } catch {
+      // Deliberately ignored — see above.
+    }
   };
+  try {
+    let input: GrpcResolvedInput | undefined;
+    let connected: GrpcResolvedInput;
+    let messageText: string;
+    let protoSet: ProtoSet;
+    let sent: GrpcRequestSnapshot | undefined;
+    try {
+      const resolved = await resolveGrpc(
+        selected,
+        scripts !== undefined ? { ...context, secretPlaceholders: scripts.placeholders } : context,
+      );
+      input = resolved.input;
+      refuseUnsendable(selected, resolved);
+      // Before the send connects: without a schema there is no call, so no token is worth fetching.
+      protoSet = await protoSetFor(selected, scope, context);
+      if (scripts === undefined) {
+        connected = await connectGrpc(selected, context, resolved.input);
+        messageText = resolved.messageText;
+      } else {
+        const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
+        sent = await scripts.session.pre(before);
+        const changed = applyGrpcSnapshot(resolved.input, resolved.messageText, before, sent);
+        const restored = await scripts.placeholders.restore(
+          { metadata: changed.input.metadata, messageText: changed.messageText },
+          context.host.getSecret,
+        );
+        input = { ...changed.input, metadata: restored.metadata };
+        connected = await connectGrpc(selected, context, input);
+        messageText = restored.messageText;
+      }
+    } catch (error) {
+      failed('prepare', error, input);
+      throw error;
+    }
+    let result: GrpcCallResult;
+    try {
+      result = await callGrpc({
+        ...connected,
+        set: protoSet,
+        messageText,
+        signal: controller.signal,
+        // Only a live send decodes each message as it arrives; any other has them all in the result.
+        ...(live
+          ? {
+              onHeaders: (headers: Readonly<Record<string, string>>, httpStatus: number) =>
+                controller.queue.push({ protocol: 'grpc', kind: 'headers', httpStatus, headers }),
+              onMessage: (message: GrpcResponseMessage, index: number) =>
+                controller.queue.push({ protocol: 'grpc', kind: 'message', index, message }),
+            }
+          : {}),
+        ...(stream !== undefined ? { onOpen: (handle: GrpcCallStreamHandle) => stream.opened(handle) } : {}),
+      });
+    } catch (error) {
+      failed('send', error, connected);
+      throw error;
+    }
+    dropRefusedToken(context, connected.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
+    return {
+      subject: grpcSubject(result),
+      raw: result.exchange,
+      exchange: { kind: 'grpc', grpc: result },
+      origin: connected.target,
+      ...(scripts !== undefined
+        ? { script: await scripts.session.post(sent as GrpcRequestSnapshot, grpcResponseSnapshot(result)) }
+        : {}),
+    };
+  } finally {
+    stream?.settled();
+  }
 }
 
 /** gRPC's run facet. */
@@ -275,9 +419,17 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
   },
 
   open(selected, scope, host, options) {
-    const controller = exchangeController('grpc', options);
+    const controller = exchangeController<GrpcLiveEvent>('grpc', options);
     const context: RunContext = { ...scope.context, host, signal: controller.signal };
-    return controller.handle(() => sendGrpcItem(selected, scope, context, options.scripts));
+    // Only a client or bidi stream has a request side to drive; any other call refuses a push.
+    const stream =
+      options.interactive && clientStreams(selected.request.methodKind) ? grpcStreamState(controller) : undefined;
+    const mode: GrpcSendMode = {
+      controller,
+      live: options.live === true,
+      ...(stream !== undefined ? { stream } : {}),
+    };
+    return controller.handle(() => sendGrpcItem(selected, scope, context, options.scripts, mode), stream?.streaming);
   },
 
   resolve(selected, scope, host) {
@@ -286,7 +438,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
 
   async scriptTypes(selected, scope) {
     // A schema that does not load leaves the messages untyped; the send reports the missing schema.
-    const protoSet = await protoSetFor(selected.api, scope).catch(() => undefined);
+    const protoSet = await protoSetFor(selected, scope, scope.context).catch(() => undefined);
     const types = grpcMessageTypes(protoSet, selected.request.service, selected.request.method);
     return {
       generated: grpcScriptTypes(types === undefined ? undefined : protoSet, types?.input ?? '', types?.output ?? ''),

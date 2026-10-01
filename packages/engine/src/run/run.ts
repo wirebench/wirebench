@@ -148,7 +148,7 @@ function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
 export interface SentRequest {
   readonly subject: AssertionSubject;
   readonly raw: { readonly rawRequest: Uint8Array; readonly rawResponse: Uint8Array };
-  /** The whole SOAP or REST exchange; absent for a gRPC call. */
+  /** The whole exchange, of whichever protocol sent it. */
   readonly exchange?: SentExchange;
   /** Where the request went: a URL's origin, or a gRPC target. */
   readonly origin?: string;

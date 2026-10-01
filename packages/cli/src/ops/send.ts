@@ -133,7 +133,7 @@ function failure(result: RequestResult, needs: readonly LocatedSecretNeed[]): Op
 function resultOf(
   item: SendableItem,
   result: RequestResult,
-  exchange: SentExchange,
+  exchange: Extract<SentExchange, { kind: 'soap' | 'rest' }>,
   mask: (text: string) => string,
   historyId?: string,
 ): SendResult {
@@ -229,7 +229,8 @@ export const sendOp = defineOp({
       if (result === undefined) {
         throw new Error('the run returned no result');
       }
-      if (exchange === undefined) {
+      // A gRPC item never gets this far (`sendable` refuses it); the narrowing says so.
+      if (exchange === undefined || exchange.kind === 'grpc') {
         throw failure(result, needs);
       }
       const mask = createSecretMasker(known());

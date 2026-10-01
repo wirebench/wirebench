@@ -3,6 +3,8 @@
  * It holds the built-in registry every entry point falls back to, and the union types a host that
  * narrows on `kind` uses.
  */
+import type { GrpcCallResult } from './grpc/call.js';
+import type { GrpcLiveEvent } from './grpc/events.js';
 import { grpcProtocol } from './grpc/module.js';
 import type { GrpcSelected } from './grpc/run.js';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
@@ -78,10 +80,15 @@ export type SentExchange =
       /** What was sent: after the script, with the credentials resolved. */
       readonly input: RestSendInput;
       readonly contract?: unknown;
+    }
+  | {
+      readonly kind: 'grpc';
+      /** The call whole: every request message as sent, every response message decoded. */
+      readonly grpc: GrpcCallResult;
     };
 
-/** A message an open exchange reports, whatever its protocol; Tasks 10 and 12 add gRPC and WebSocket. */
-export type LiveEvent = RestLiveEvent;
+/** A message an open exchange reports, whatever its protocol; Task 12 adds WebSocket. */
+export type LiveEvent = RestLiveEvent | GrpcLiveEvent;
 
 /** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
 export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;

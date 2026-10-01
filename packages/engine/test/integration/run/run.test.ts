@@ -221,7 +221,9 @@ describe('runRequests', () => {
             ? undefined
             : exchange.kind === 'soap'
               ? exchange.soap.http.status
-              : exchange.rest.status;
+              : exchange.kind === 'rest'
+                ? exchange.rest.status
+                : undefined;
         seen.push([item.request.name, exchange?.kind, status]);
       },
     });

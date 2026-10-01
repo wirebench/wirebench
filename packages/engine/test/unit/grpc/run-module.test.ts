@@ -172,7 +172,8 @@ describe('grpcRun.open', () => {
       'send localhost:50051 {"name":"abc123def456ghi789"}',
     ]);
     expect(sent?.subject).toMatchObject({ protocol: 'grpc', status: 0, bodyText: '{"message":"Hello"}' });
-    expect(sent?.exchange).toBeUndefined();
+    // The call whole, for a host that records more than a report does.
+    expect(sent?.exchange).toMatchObject({ kind: 'grpc', grpc: { exchange: { status: 0 } } });
     expect(sent?.origin).toBe('localhost:50051');
   });
 

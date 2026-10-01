@@ -67,5 +67,6 @@ export interface SendHost {
   readonly contractFor?: (item: SelectedBase, exchange: unknown, sent?: unknown) => Promise<unknown>;
   /** A webhook item's callback URL, used in place of its target; undefined keeps the target. */
   readonly callbackUrlFor?: (item: SelectedBase) => Promise<string | undefined>;
-  // Added later: protoSetFor (Task 10).
+  /** An API's schema (a ProtoSet; the gRPC module narrows it), in place of the definition cache. */
+  readonly protoSetFor?: (item: SelectedBase) => Promise<unknown>;
 }
