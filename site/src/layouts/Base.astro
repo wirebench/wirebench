@@ -1,9 +1,14 @@
 ---
+/** Every page's frame: head, skip link, nav, the page's content, footer. */
+import '../styles/tokens.css';
+import '../styles/site.css';
+import { DOCS_LINKS, docsUrl } from '../docs-links.ts';
 interface Props {
   title: string;
+  description: string;
 }
-
-const { title } = Astro.props;
+const { title, description } = Astro.props;
+const base = import.meta.env.BASE_URL; // "/wirebench/"
 ---
 
 <!doctype html>
@@ -12,8 +17,28 @@ const { title } = Astro.props;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
   </head>
   <body>
-    <main><slot /></main>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="column nav">
+      <a class="wordmark" href={base}><img src={`${base}hero-mark.svg`} alt="" width="28" height="28" /> Wirebench</a>
+      <nav aria-label="Site">
+        <a href={`${base}features/`}>Features</a>
+        <a href={`${base}download/`}>Download</a>
+        <a href={docsUrl(DOCS_LINKS.home)}>Docs</a>
+        <a href="https://github.com/wirebench/wirebench">GitHub</a>
+      </nav>
+      <a class="button button--primary nav__download" href={`${base}download/`}>Download</a>
+    </header>
+    <main id="main" class="column"><slot /></main>
+    <footer class="column">
+      <a href={docsUrl(DOCS_LINKS.home)}>Docs</a>
+      <a href="https://github.com/wirebench/wirebench">GitHub</a>
+      <a href="https://github.com/wirebench/wirebench/releases">Releases</a>
+      <a href={docsUrl(DOCS_LINKS.codeSigningPolicy)}>Code-signing policy</a>
+      <span>Apache-2.0</span>
+    </footer>
   </body>
 </html>
