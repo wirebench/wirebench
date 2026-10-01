@@ -45,8 +45,8 @@ For the vocabulary, see the phase 1 spec, `docs/specs/2026-09-30-wirebench-proto
 ## Where the plan refines the spec
 
 The spec says exact type names follow the code at planning time. Reading the code changed the details below;
-the shape stays the same (a host object, a handle, the prepare order). The owner should review these items;
-see "Open questions" at the end.
+the shape stays the same (a host object, a handle, the prepare order). The owner accepted all eight on
+2026-10-01, and the spec was updated to match.
 
 1. **`SendHost.cookies` is keyed by request, not by URL:** `cookiesFor(item)` and `remember(item, cookies)`.
    The desktop keeps cookies per request (`ProjectHost.restCookiesFor`), not in a jar, and sends them only
@@ -1882,18 +1882,36 @@ it('sends the override envelope to the override endpoint', async () => {
 
 ```ts
   registerHandler(channels.request.send, async (request) => {
-    if (request.requestId === undefined) {
-      return sendAdHocSoap(service, deps, request); // see Open questions: 2
-    }
-    const summary = (await sendThroughEngine(sendDeps, request.sendId, request.requestId, {
+    const summary = (await sendThroughEngine(sendDeps, request.sendId, request.requestId ?? AD_HOC_ID, {
       draft: { kind: 'soap', override: soapOverrideOf(request.input) },
+      ...(request.requestId === undefined ? { adHoc: { input: request.input, names: AD_HOC_NAME } } : {}),
     })) as ExchangeSummary;
-    return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
+    return request.requestId === undefined
+      ? summary
+      : writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
 ```
 
-  `sendAdHocSoap` is today's `sendAndRecordHistory` call, kept under a new name in `send/ad-hoc-soap.ts`
-  until the owner answers open question 2.
+  **Ad-hoc SOAP sends (owner ruling, 2026-10-01: a synthetic engine item).** These are a `request.send` with no
+  `requestId`, and a History resend of a request deleted since. They go through the engine as a synthetic
+  item:
+  - `SendOptions` gains `adHoc?: { readonly input: ResolvedSendInputWire; readonly names: HistoryNameFallback }`.
+  - `send/draft.ts` gains `adHocSoapItem(input, names): SoapSelected`. It builds:
+    - an `Interface` with `id: 'ad-hoc'`, no definition and no endpoints;
+    - an `OperationDef` named after `names.operationName`;
+    - a `SoapRequestDef` from `createSoapRequest` with the input's envelope, SOAP version, SOAPAction,
+      headers and properties (timeout, encoding, …, mapped as `toSoapSendInput` reads them back);
+    - and `override: { endpoint: input.endpoint }`.
+  - `sendThroughEngine` uses `adHocSoapItem` in place of `selectedFor` when `options.adHoc` is set.
+  - Its History row uses `names` (`AD_HOC_NAME`, `send-with-history.ts:102`, or the resend's names) and
+    `names.projectId`. Move `AD_HOC_NAME` and `HistoryNameFallback` to `send/record.ts`.
+  - `runContextFor(AD_HOC_ID)` answers the open project, or `createProject('Ad hoc')` when none is open. The
+    properties come from `deps.adHocScopes?.()`, the scopes `sendAndRecordHistory` uses for a send with no
+    `requestId`; pass them as `RunContext.overrides`.
+  - Test: an ad-hoc send and an ad-hoc resend write the same History row and summary as
+    `sendAndRecordHistory` did. Port `send-with-history.test.ts`'s ad-hoc cases.
+  - Also add a test for the owner ruling "refuse everywhere": a desktop SOAP send with `${nope}` in its
+    envelope rejects with `unresolved-properties` and writes no History entry.
 
 - [ ] **Step 7: Run the listed tests, then gate and commit**
 
@@ -2381,8 +2399,9 @@ git commit -m "feat(engine): streaming gRPC, WebSocket and SSE requests run, bou
 - [ ] **Step 3: Move the callers.**
   - **`history.resend` (SOAP):** when the saved request exists, call
     `sendThroughEngine(sendDeps, randomUUID(), entry.requestId, { draft: { kind: 'soap', override: {} } })`.
-    The fallback that rebuilds a send from the redacted entry (l.452–458, for a request deleted since) uses
-    `sendAdHocSoap`; see Open questions: 2.
+    The fallback that rebuilds a send from the redacted entry (l.452–458, for a request deleted since) sends
+    Task 9's synthetic item:
+    `sendThroughEngine(sendDeps, randomUUID(), AD_HOC_ID, { draft: { kind: 'soap', override: {} }, adHoc: { input, names } })`.
   - **`history.resendRest` and `resendGrpc`:** their drafts (`restResendDraft`, `grpcResendDraft`) become
     `{ kind: 'rest', draft }` and `{ kind: 'grpc', draft }`.
   - **`log.resend`:** per kind, as today. Event streams and WebSocket are still refused; `ws-resend-streaming`
@@ -2474,13 +2493,12 @@ git commit -m "test(cli): run and the MCP send op on WebSocket and streaming gRP
 
 **Files:**
 - Delete from `apps/desktop/src/main/`:
-  - `send-with-history.ts`, except what `send/ad-hoc-soap.ts` still needs (open question 2);
+  - `send-with-history.ts`;
   - `rest-send.ts`, `grpc-send.ts` and `ws-send.ts`. `withDraft` is already in `send/draft.ts`; `withGrpcPatch`
     and `withWsPatch` stay in their mutation files.
 - Modify `engine-service.ts`:
   - delete `sendRestRequest`, `sendGrpcRequest`, `openWsSession`, `pushGrpcMessage`, `halfCloseGrpc`,
-    `sendWsMessage`, `closeWs`, `closeAllWs`, `closeWsWhere`, `abortRestStreamsWhere`, and `send` when only the
-    ad-hoc path still needs it (open question 2);
+    `sendWsMessage`, `closeWs`, `closeAllWs`, `closeWsWhere`, `abortRestStreamsWhere` and `send`;
   - delete `observe` and `notify` if nothing uses them;
   - delete the maps `restStreams`, `grpcStreams`, `wsSessions` and `frameCheckers`;
   - keep `exchanges`, the definition store, imports and the REST contract checker.
@@ -2496,7 +2514,7 @@ git commit -m "test(cli): run and the MCP send op on WebSocket and streaming gRP
 
 - [ ] **Step 1: Find what is left.**
   Run: `rg -n "sendAndRecordHistory|sendRestRequest|sendGrpcRequest|openWsSession|resolveRestSend|resolveGrpcSend|resolveWsSend|withRequestProperties" apps/desktop`.
-  Only their definitions (and the ad-hoc path) should remain.
+  Only their definitions should remain.
 - [ ] **Step 2: Delete them and fix the imports.**
 - [ ] **Step 3: Run the desktop tests**
 
@@ -2552,6 +2570,8 @@ git commit -m "test(engine): one request sends the same bytes from either host (
     - **Added:**
       - WebSocket, streaming gRPC and SSE requests run, bounded by the timeout;
       - the error code `exchange-not-streaming`.
+    - **Changed (desktop):** a SOAP send with unresolved references is refused (`unresolved-properties`)
+      instead of sent half-expanded.
     - **Fixed (desktop):**
       - a scripted SOAP request resent from History runs its scripts;
       - SOAP resends use the request's TLS;
@@ -2603,13 +2623,13 @@ git commit -m "test(engine): one request sends the same bytes from either host (
     `ExchangeRegistry`, `DraftOf`, `selectedFor`, `desktopSendHost`;
   - `desktopSendHost` is async; Task 7 says so and the code in Task 8 awaits it.
 
-## Open questions for the owner
+## Owner rulings (2026-10-01)
 
-1. **SOAP unresolved references.** The desktop never refuses a SOAP send with unresolved references: it reports
-   them on `summary.unresolved` and sends. The engine refuses (`unresolved-properties`). The spec says SOAP keeps
-   `unresolved-properties`, but also that the desktop wins a conflict. Should the desktop refuse too, which
-   changes the app's behaviour? Or should a desktop SOAP send go through with the references reported?
-2. **Ad-hoc SOAP sends.** A `request.send` payload without a `requestId`, and a History resend of a request
-   deleted since, have no saved request and so no run item. Keep them on a small ad-hoc path (`send/ad-hoc-soap.ts`,
-   today's code), or build a synthetic item for the engine?
-3. **The eight refinements** under "Where the plan refines the spec": accept them as written?
+1. **SOAP unresolved references: refuse everywhere.** The desktop now refuses a SOAP send with unresolved
+   references (`unresolved-properties`), as the CLI does. Task 9 tests it, and Task 19 lists it in the
+   changelog. A desktop test that expected `summary.unresolved` on a sent SOAP exchange changes to expect the
+   refusal.
+2. **Ad-hoc SOAP sends: a synthetic engine item.** See Task 9 Step 6 and Task 15. Nothing of the old path
+   stays.
+3. **The eight refinements: accepted.** The spec is updated to match.
+4. **Execution: one subagent per task,** with a review between tasks and no check-ins.

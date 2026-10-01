@@ -1,6 +1,6 @@
 # Wirebench: one send path for the desktop, the CLI and MCP — design
 
-Date: 2026-10-01 · Status: draft, awaiting the owner's review · Issue #184 (phase 2 of the epic).
+Date: 2026-10-01 · Status: approved; refined at planning (§13) · Issue #184 (phase 2 of the epic).
 Phase 1 (the protocol registry, PR #185) is merged (1d7be1e6).
 
 - Builds on:
@@ -259,6 +259,8 @@ The IPC handlers in `ipc/request.ts`, the resends in `ipc/history.ts` and `ipc/l
   `ws-unresolved-properties`, `grpc-method-unset`. SOAP keeps `unresolved-properties`. No aliases
   (the engine is already at v3.0.0 on this line).
 - Removed with the reasons they named: `STREAMING_STEP_REASON` and the WebSocket "cannot run" text.
+- The desktop refuses a SOAP send with unresolved references too (`unresolved-properties`), where it used to
+  send the envelope half-expanded and list the references on the result (owner, 2026-10-01).
 
 ## 9. Testing
 
@@ -308,3 +310,25 @@ Each slice keeps `pnpm check` green.
    the order (§9).
 3. **Size.** One PR over seven slices; each slice is green on its own.
 4. **Streams in runs hang.** Every stream is bounded by the run timeout and a closed handle.
+
+## 13. Refinements at planning
+
+Reading the code during planning changed the type details below. The owner accepted them on 2026-10-01, and
+they replace the matching lines in §3 and §4. The plan is
+`docs/plans/2026-10-01-wirebench-one-send-path-plan.md`.
+
+1. `SendHost.cookies` is keyed by request: `cookiesFor(item)` and `remember(item, cookies)`. The engine sends
+   them only when the request's `sendCookies` is on.
+2. `SendHost.tls` is `{ anchors?, identityFor?(keystoreId) }`. `identityFor` answers for the request's
+   keystore, or for the host's default identity when there is none.
+3. `SendHost.contractFor(item, exchange)` returns the check result. The engine attaches it to the REST
+   exchange.
+4. `events.onPrepareFailed` is `events.onFailed(item, failure)`, where `failure.stage` is `'prepare'` or
+   `'send'` and `failure.attempted` holds the URL, method and headers.
+5. `ExchangeHandle.push(message)` resolves with what was sent: a gRPC message's canonical JSON, or a WebSocket
+   frame. `cancel()` returns `boolean`.
+6. `ExchangeOptions.live`, `false` by default: events are buffered only for a caller that reads them.
+7. `LiveEvent` is a union in `protocols.ts`. Each module declares its own events.
+8. The engine's default token source refuses the OAuth2 authorization-code grant. A host whose `tokens` can
+   do it, as the desktop's can, is not refused.
+9. Ad-hoc SOAP sends (no saved request) go through the engine as a synthetic item (owner, 2026-10-01).
