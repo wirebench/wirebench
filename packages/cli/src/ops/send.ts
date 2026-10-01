@@ -26,6 +26,7 @@ import type {
 } from '@wirebench/engine';
 import { z } from 'zod';
 import { createEnvSecrets } from '../env-secrets.js';
+import { cliSendHost } from '../send-host.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
@@ -203,11 +204,11 @@ export const sendOp = defineOp({
       ...(workspace !== undefined ? { workspace } : {}),
       ...(environment !== undefined ? { environmentId: environment.id } : {}),
       overrides: {},
-      host: {
+      host: cliSendHost({
         getSecret: secrets.getSecret,
-        proxyFor: (url) => Promise.resolve(proxyFor(url)),
+        env: context.env,
         onSecretValue: (secret) => tokens.add(secret),
-      },
+      }),
       containsKnownSecret: (text) => knownSecretIn(text, known()),
       scripting: new RequestScripting({ sandbox, checker, onSecretValue: (secret) => tokens.add(secret) }),
     };

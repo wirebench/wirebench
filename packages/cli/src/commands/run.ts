@@ -31,6 +31,7 @@ import type { CliIo } from '../main.js';
 import { createEnvSecrets } from '../env-secrets.js';
 import { pickEnvironment } from '../ops/environment.js';
 import { OpsError } from '../ops/errors.js';
+import { cliSendHost } from '../send-host.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
@@ -225,12 +226,12 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     ...(workspace !== undefined ? { workspace } : {}),
     ...(environment !== undefined ? { environmentId: environment.id } : {}),
     overrides: args.vars,
-    host: {
+    host: cliSendHost({
       getSecret: secrets.getSecret,
-      proxyFor: (url) => Promise.resolve(proxyFor(url)),
+      env: io.env,
       // An OAuth2 token, and a sequence value that is (or holds) a secret: every mask built after this hides it.
       onSecretValue: (value) => tokens.add(value),
-    },
+    }),
     ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
     insecure: args.insecure,
     signal: controller.signal,
