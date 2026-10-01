@@ -19,13 +19,15 @@ import {
   DEFAULT_PREFERENCES,
   entry,
   parseSecretPseudoRef,
+  WirebenchError,
 } from '@wirebench/engine';
-import type { GrpcMethodKind, GrpcRequestDef, Project } from '@wirebench/engine';
+import type { ExchangeHandle, GrpcMethodKind, GrpcRequestDef, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { registerRequestChannels, sendGrpcRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { recordSecretValue } from '../src/main/redact.js';
+import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import type {
   FailedExchangeWire,
   GrpcExchangeSummary,
@@ -168,8 +170,12 @@ const normalise = (value: unknown): unknown =>
       if (volatile.has(key) || (Array.isArray(inner) && volatile.has(String(inner[0]).toLowerCase()))) {
         return undefined;
       }
-      // The raw HTTP/2 frames carry the date header the server stamps on every response.
-      return typeof inner === 'string' && key.endsWith('Base64') ? '-' : inner;
+      // Raw bytes are compared decoded, less the date header the server stamps on every response.
+      return typeof inner === 'string' && key.endsWith('Base64')
+        ? Buffer.from(inner, 'base64')
+            .toString('latin1')
+            .replace(/date: [^\r\n]*/gi, 'date: -')
+        : inner;
     }),
   );
 
@@ -326,6 +332,7 @@ describe('request.sendGrpc through the engine', () => {
     };
     // Today's row, from the app's own gRPC path.
     const oldRows: FailedExchangeWire[] = [];
+    const oldAppended: HistoryEntryWire[] = [];
     await expect(
       sendGrpcRequest(
         new EngineService(secrets),
@@ -344,6 +351,8 @@ describe('request.sendGrpc through the engine', () => {
             grpcTlsFor: () => Promise.resolve(undefined),
           } as unknown as RequestChannelDeps['project'],
           secretsFor,
+          history: await openHistory(),
+          onHistoryAppended: (wire) => oldAppended.push(wire),
           onSendFailed: (failure) => oldRows.push(failure),
         },
         { sendId: 'r1', requestId: 'q-1' },
@@ -369,6 +378,33 @@ describe('request.sendGrpc through the engine', () => {
     expect(appended).toHaveLength(1);
     expect(appended[0]!.ok).toBe(false);
     expect(JSON.stringify(appended)).not.toContain(value);
+    // The failed call's History row, rebuilt from the engine's failure, is today's row.
+    expect(oldAppended).toHaveLength(1);
+    expect(normalise(appended)).toEqual(normalise(oldAppended));
+  });
+
+  it('refuses a credential missing from the keychain before the call: one prepare row, no History', async () => {
+    const failures: FailedExchangeWire[] = [];
+    const appended: HistoryEntryWire[] = [];
+    registerOver(seeded(), {
+      getSecret: () => Promise.resolve(undefined),
+      history: await openHistory(),
+      onHistoryAppended: (wire) => appended.push(wire),
+      onSendFailed: (failure) => failures.push(failure),
+    });
+    const calls = server.calls.length;
+    expect(refusal(await invoke('request.sendGrpc', { sendId: 'k1', requestId: 'q-1' }))).toMatchObject({
+      code: 'secret-missing',
+    });
+    expect(server.calls).toHaveLength(calls);
+    expect(appended).toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      sendId: 'k1',
+      stage: 'prepare',
+      request: { url: `http://${server.target}/${SERVICE}/SayHello`, method: 'POST', headers: {} },
+      error: { code: 'secret-missing' },
+    });
   });
 
   it("puts the user's preferred user agent on the wire", async () => {
@@ -395,5 +431,35 @@ describe('request.curl for a gRPC request', () => {
     expect(reply.command).toContain(`${SERVICE}/SayHello`);
     expect(reply.notes).toContain('Some ${…} references did not resolve; they are shown as typed.');
     expect(getSecret).not.toHaveBeenCalled();
+  });
+});
+
+describe('ExchangeRegistry.halfClose', () => {
+  function kept(halfClose: () => void): ExchangeRegistry {
+    const registry = new ExchangeRegistry();
+    registry.keep('s1', 'q-1', 'grpc', { halfClose } as unknown as ExchangeHandle);
+    return registry;
+  }
+
+  it('answers false for a send that takes no messages', () => {
+    const registry = kept(() => {
+      throw new WirebenchError('exchange-not-streaming', 'no messages');
+    });
+    expect(registry.halfClose('s1')).toBe(false);
+  });
+
+  it('rethrows any other failure rather than report the call still open', () => {
+    const registry = kept(() => {
+      throw new Error('stream destroyed');
+    });
+    expect(() => registry.halfClose('s1')).toThrow('stream destroyed');
+  });
+
+  it('half-closes once', () => {
+    const halfClose = vi.fn();
+    const registry = kept(halfClose);
+    expect(registry.halfClose('s1')).toBe(true);
+    expect(registry.halfClose('s1')).toBe(false);
+    expect(halfClose).toHaveBeenCalledTimes(1);
   });
 });

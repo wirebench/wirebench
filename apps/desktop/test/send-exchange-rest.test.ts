@@ -270,6 +270,29 @@ describe('sendThroughEngine for a REST request', () => {
     expect(appended).toEqual([]);
   });
 
+  it('refuses a credential missing from the keychain before the call: one prepare row, no History', async () => {
+    const failures: FailedExchangeWire[] = [];
+    const appended: HistoryEntryWire[] = [];
+    const deps = sendDepsFor(seeded(), {
+      getSecret: () => Promise.resolve(undefined),
+      history: await openHistory(),
+      onHistoryAppended: (wire) => appended.push(wire),
+      onSendFailed: (failure) => failures.push(failure),
+    });
+    await expect(sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } })).rejects.toMatchObject({
+      code: 'secret-missing',
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      protocol: 'rest',
+      requestId: 'req-1',
+      stage: 'prepare',
+      request: { method: 'GET', headers: {} },
+      error: { code: 'secret-missing' },
+    });
+    expect(appended).toEqual([]);
+  });
+
   it('refuses a request no project holds as unknown-entity', async () => {
     await expect(
       sendThroughEngine(sendDepsFor(seeded()), 's1', 'nope', { draft: { kind: 'rest' } }),

@@ -242,7 +242,14 @@ before and after for the two changes that need more than a rename. The package's
 - **A send refused for an unresolved reference is logged.** A REST or SOAP send with a `${…}` reference
   nothing resolves is refused before anything is sent, and the HTTP Log now shows it as a row that
   never went out (`rest-unresolved-properties`, `unresolved-properties`), with no History entry. A SOAP
-  send with such a reference used to go out with the reference left in it.
+  send with such a reference used to go out with the reference left in it. A gRPC call with such a
+  reference (`grpc-unresolved-properties`), or with no method chosen (`grpc-method-unset`), is logged
+  the same way.
+- **A send whose credential secret is missing is refused before the call.** The HTTP Log shows a
+  prepare row and History records nothing (`secret-missing`).
+- **An interactive gRPC call's request side.** A push after the half-close is refused with
+  `grpc-stream-closed`. A half-close made before the call opens answers `{ closed: true }`, and the
+  request side closes once the call opens.
 
 ### Fixed
 

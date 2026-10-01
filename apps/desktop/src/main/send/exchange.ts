@@ -10,6 +10,7 @@ import {
   createRunScope,
   deferredSession,
   grpcEffectiveAuth,
+  isWirebenchError,
   openExchange,
   parseSecretPseudoRef,
   ProjectError,
@@ -144,9 +145,10 @@ export class ExchangeRegistry {
     if (kept === undefined || kept.halfClosed === true) return false;
     try {
       kept.handle.halfClose();
-    } catch {
-      // A send that takes no messages (`exchange-not-streaming`) has no request side to close.
-      return false;
+    } catch (error) {
+      // A send that takes no messages has no request side to close; anything else is a real failure.
+      if (isWirebenchError(error) && error.code === 'exchange-not-streaming') return false;
+      throw error;
     }
     kept.halfClosed = true;
     return true;
@@ -668,14 +670,8 @@ async function recordFailure(
     case 'grpc': {
       // The call as connected, with the message it was to send: a send-stage failure has both.
       const { messageText, ...input } = failed.input as GrpcFailedInput;
-      await recordGrpc(
-        deps,
-        item,
-        { input, messageText: messageText ?? item.request.message },
-        undefined,
-        durationMs,
-        error,
-      );
+      if (messageText === undefined) return;
+      await recordGrpc(deps, item, { input, messageText }, undefined, durationMs, error);
       return;
     }
   }
