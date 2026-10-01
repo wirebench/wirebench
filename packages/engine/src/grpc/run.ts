@@ -1,8 +1,8 @@
 /**
  * gRPC's run facet (spec §3.3): unary calls only, since a stream needs an assertion model a run does
- * not have yet. The API's schema is loaded before the call resolves: without a schema there is no
- * call, so no token is worth fetching. A schema that does not load is remembered for the run. A
- * send resolves, runs its pre-request script, connects, then calls (spec §3.4).
+ * not have yet. A send resolves the call and refuses one it cannot make, loads the API's schema
+ * (without a schema there is no call, so no token is worth fetching; a schema that does not load is
+ * remembered for the run), runs its pre-request script, connects, then calls (spec §3.4).
  */
 import type { AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
@@ -64,20 +64,16 @@ export function grpcEffectiveAuth(selected: GrpcSelected): AuthConfig {
  * The app's `resolveGrpcSend` plus what its send handler adds (spec §3.4): the target through the
  * environment's override for the API (the slot a REST base URL uses), the settings ladder, and one
  * expansion pass over target, metadata and message, nothing connected. A reference nothing
- * resolves is reported in `unresolved`, not thrown: the send refuses it, a preview shows it.
+ * resolves is reported in `unresolved`, not thrown, and so is a call with no method chosen: the
+ * send refuses both (`refuseUnsendable`), a preview shows them.
  *
- * @throws WirebenchError `grpc-method-unset` | `secret-missing`
+ * @throws WirebenchError `secret-missing`
  */
 export async function resolveGrpc(
   selected: GrpcSelected,
   context: RunContext,
 ): Promise<Resolved<GrpcResolvedInput> & { readonly messageText: string }> {
   const { api, request } = selected;
-  if (request.service === '' || request.method === '') {
-    throw new WirebenchError('grpc-method-unset', 'Choose the service and method this request calls first.', {
-      details: { path: selected.path },
-    });
-  }
   const scopes = scopesFor(context);
   const target = baseUrlFor(context, { slug: api.slug, baseUrl: api.target });
   const unexpanded = toGrpcSendInput({
@@ -105,6 +101,23 @@ export async function resolveGrpc(
     messageText,
     unresolved,
   };
+}
+
+/**
+ * Refuses a resolved call the send cannot make, in the app's order: a reference nothing resolves,
+ * then no service or method chosen. Both come before the schema is loaded.
+ *
+ * @throws WirebenchError `grpc-unresolved-properties` | `grpc-method-unset`
+ */
+function refuseUnsendable(selected: GrpcSelected, resolved: Resolved<GrpcResolvedInput>): void {
+  if (resolved.unresolved.length > 0) {
+    throw unresolvedError('grpc-unresolved-properties', selected.path, resolved.unresolved);
+  }
+  if (selected.request.service === '' || selected.request.method === '') {
+    throw new WirebenchError('grpc-method-unset', 'Choose the service and method this request calls first.', {
+      details: { path: selected.path },
+    });
+  }
 }
 
 /**
@@ -196,13 +209,11 @@ async function sendGrpcItem(
   context: RunContext,
   scripts: ScriptedSend | undefined,
 ): Promise<SentRequest> {
-  // Before the send resolves: without a schema there is no call, so nothing is worth asking for.
-  const protoSet = await protoSetFor(selected.api, scope);
   if (scripts === undefined) {
     const resolved = await resolveGrpc(selected, context);
-    if (resolved.unresolved.length > 0) {
-      throw unresolvedError('grpc-unresolved-properties', selected.path, resolved.unresolved);
-    }
+    refuseUnsendable(selected, resolved);
+    // Before the send connects: without a schema there is no call, so no token is worth fetching.
+    const protoSet = await protoSetFor(selected.api, scope);
     const connected = await connectGrpc(selected, context, resolved.input);
     const result = await callGrpc({ ...connected, set: protoSet, messageText: resolved.messageText });
     dropRefusedToken(context, connected.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
@@ -210,9 +221,8 @@ async function sendGrpcItem(
   }
 
   const resolved = await resolveGrpc(selected, { ...context, secretPlaceholders: scripts.placeholders });
-  if (resolved.unresolved.length > 0) {
-    throw unresolvedError('grpc-unresolved-properties', selected.path, resolved.unresolved);
-  }
+  refuseUnsendable(selected, resolved);
+  const protoSet = await protoSetFor(selected.api, scope);
   const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
   const sent = await scripts.session.pre(before);
   const changed = applyGrpcSnapshot(resolved.input, resolved.messageText, before, sent);

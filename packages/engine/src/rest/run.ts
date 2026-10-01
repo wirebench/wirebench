@@ -1,8 +1,8 @@
 /**
  * REST's run facet (spec §3.3): the requests of every API, and the project's webhook items as a
  * group a run sends only when a selector names it. A send resolves the request (its properties and
- * secret tokens), runs its pre-request script, connects (its TLS identity, its credentials with an
- * OAuth2 token, a webhook item's signing secret, the proxy), then goes on the wire (spec §3.4).
+ * secret tokens), runs its pre-request script, connects (its TLS identity, a webhook item's signing
+ * secret, its credentials with an OAuth2 token, the proxy), then goes on the wire (spec §3.4).
  */
 import { readFile } from 'node:fs/promises';
 import type { AssertionSubject } from '../assert/model.js';
@@ -131,7 +131,7 @@ export async function resolveRest(selected: RestSelected, context: RunContext): 
 }
 
 /**
- * TLS, credentials (an OAuth2 token included), signing and the proxy, over a resolved input: what
+ * TLS, signing, credentials (an OAuth2 token included) and the proxy, over a resolved input: what
  * a send does after its pre-request script, so the script never sees a credential (spec §7).
  *
  * @throws WirebenchError `secret-missing` | `auth-grant-unsupported` | `keystore-missing` |
@@ -144,8 +144,9 @@ export async function connectRest(
 ): Promise<RestSendInput> {
   const { request } = selected;
   const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
-  const auth = await authFor(restEffectiveAuth(selected), selected.path, context, tls);
+  // As the app does: a webhook item's signing secret is read before any OAuth2 token is fetched.
   const sign = await signFor(selected, context);
+  const auth = await authFor(restEffectiveAuth(selected), selected.path, context, tls);
   // As the app does: the proxy is chosen for the base URL, or the request's own URL when there is none.
   const proxy = await context.host.proxyFor?.(input.baseUrl === '' ? input.request.url : input.baseUrl);
   return {

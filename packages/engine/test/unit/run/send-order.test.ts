@@ -409,6 +409,13 @@ describe('the order of operations in a REST send', () => {
     expect(await orderOf('Webhooks/Ping')).toEqual(['secret secret:tenant', 'secret ref-hooks', 'send']);
   });
 
+  it('reads a webhook item’s signing secret before it fetches its OAuth2 token, as the app does', async () => {
+    const base = project();
+    const p: Project = { ...base, webhooks: { ...base.webhooks!, auth: AUTH } };
+    await createRunSender(contextFor(p, false))(pick(p, 'Webhooks/Ping'));
+    expect(events).toEqual(['secret secret:tenant', 'secret ref-hooks', 'secret ref-client', 'fetch token', 'send']);
+  });
+
   it('sends a request whose scripts are switched off as one without scripts, and says so', async () => {
     const p = project({ ...SCRIPTS, enabled: false });
     const sent = await createRunSender(contextFor(p, true))(pick(p, 'Invoices/List'));
@@ -425,20 +432,26 @@ describe('the order of operations in a REST send', () => {
 });
 
 describe('the order of operations in a gRPC send', () => {
-  it('loads the schema before it resolves the call or fetches the token', async () => {
-    expect(await orderOf('Greeter/Hello')).toEqual(['load proto set', ...PLAIN]);
+  it('resolves the call, then loads the schema before it fetches the token', async () => {
+    expect(await orderOf('Greeter/Hello')).toEqual([
+      'secret secret:tenant',
+      'load proto set',
+      'secret ref-client',
+      'fetch token',
+      'send',
+    ]);
   });
 
   it('loads the schema once for the check and the send', async () => {
     expect(await orderOf('Greeter/Hello', SCRIPTS)).toEqual(['load proto set', ...SCRIPTED]);
   });
 
-  it('remembers a schema that did not load, and asks for nothing', async () => {
+  it('remembers a schema that did not load, and fetches no token', async () => {
     const p = project();
     const send = createRunSender(contextFor(p, false));
     await expect(send(pick(p, 'Uncached/Hello'))).rejects.toMatchObject({ code: 'grpc-definition-missing' });
     await expect(send(pick(p, 'Uncached/Hello'))).rejects.toMatchObject({ code: 'grpc-definition-missing' });
-    expect(events).toEqual(['load proto set']);
+    expect(events).toEqual(['secret secret:tenant', 'load proto set', 'secret secret:tenant']);
   });
 
   it('drops the token after UNAUTHENTICATED, and keeps it after PERMISSION_DENIED', async () => {

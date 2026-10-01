@@ -176,12 +176,41 @@ describe('grpcRun.open', () => {
     expect(sent?.origin).toBe('localhost:50051');
   });
 
-  it('refuses a call whose API has no cached definition before it asks for anything, and remembers', async () => {
+  it('refuses a call whose API has no cached definition before it asks for a credential, and remembers', async () => {
     const hello = itemAt('Uncached/Hello');
     const scope = createRunScope(context());
     await expect(hello && sendGrpc(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
     await expect(hello && sendGrpc(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
-    expect(events).toEqual([]);
+    // Each send resolves its secret tokens first; the credential (ref-token) is never asked for.
+    expect(events).toEqual(['secret secret:tenant', 'secret secret:tenant']);
+  });
+
+  // The app's precedence: unresolved references, then no method, then the schema.
+  const uncachedWith = (patch: Partial<Project['grpcApis'][number]['requests'][number]>) => {
+    const p: Project = {
+      ...project,
+      grpcApis: project.grpcApis.map((a) => ({
+        ...a,
+        requests: a.requests.map((request) => (request.name === 'Hello' ? { ...request, ...patch } : request)),
+      })),
+    };
+    const item = grpcRun
+      .groups(p)
+      .flatMap((group) => group.candidates)
+      .find((candidate) => candidate.item.path === 'Uncached/Hello')?.item;
+    if (item === undefined) throw new Error('No Uncached/Hello');
+    return sendGrpc(item, createRunScope({ ...context(), project: p }));
+  };
+
+  it('refuses a call with no method before its missing schema', async () => {
+    await expect(uncachedWith({ method: '' })).rejects.toMatchObject({ code: 'grpc-method-unset' });
+  });
+
+  it('refuses an unresolved reference before a missing method or schema', async () => {
+    await expect(uncachedWith({ method: '', message: '{"name":"${nope}"}' })).rejects.toMatchObject({
+      code: 'grpc-unresolved-properties',
+      details: { unresolved: ['${nope}'] },
+    });
   });
 });
 
