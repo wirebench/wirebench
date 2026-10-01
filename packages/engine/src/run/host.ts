@@ -4,6 +4,7 @@
  */
 import type { ProxyOptions } from '../http/types.js';
 import type { Preferences } from '../project/preferences.js';
+import type { SelectedBase } from '../protocol/module.js';
 import type { GetSecret } from '../secrets/resolve.js';
 import type { RunTokenSource } from './oauth2-token.js';
 
@@ -42,5 +43,10 @@ export interface SendHost {
   /** The OAuth2 token source; a run creates one per run when the host brings none. */
   readonly tokens?: RunTokenSource;
   readonly preferences?: Preferences;
-  // Added later: events (Task 2), cookies, contractFor, callbackUrlFor (Task 6), protoSetFor (Task 10).
+  readonly events?: {
+    onFailed?(item: SelectedBase, failure: SendFailure): void;
+    /** A row the host logs that is not the send's result (the WebSocket handshake). */
+    onExchange?(item: SelectedBase, exchange: unknown): void;
+  };
+  // Added later: cookies, contractFor, callbackUrlFor (Task 6), protoSetFor (Task 10).
 }
