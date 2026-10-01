@@ -242,13 +242,13 @@ dependencies. Copy uses short sentences, names behaviour directly and never a co
 
 - [ ] `https://wirebench.github.io/wirebench/` is the landing page and `/wirebench/docs/` is the user
       guide with working search and sidebar.
-- [ ] The three pages exist with real copy and real screenshots; no placeholder text remains.
-- [ ] The download page lists every installer of the latest release with its size, lifts the visitor's
+- [x] The three pages exist with real copy and real screenshots; no placeholder text remains.
+- [x] The download page lists every installer of the latest release with its size, lifts the visitor's
       platform to the top, and the build fails on a release with a missing installer.
-- [ ] Every screenshot comes from `docs-screenshots.spec.ts`, and `pnpm check:docs-images` passes for both
+- [x] Every screenshot comes from `docs-screenshots.spec.ts`, and `pnpm check:docs-images` passes for both
       packages and fails on a missing or orphaned site image.
-- [ ] `pnpm contrast:check` covers the site tokens and passes in both themes.
-- [ ] Every docs link on the site resolves to a page, proven by the Vitest test.
+- [x] `pnpm contrast:check` covers the site tokens and passes in both themes.
+- [x] Every docs link on the site resolves to a page, proven by the Vitest test.
 - [ ] `pnpm check` passes, and a push to `main` deploys the assembled site.
 - [ ] The pages read correctly at 360px and 1280px, in light and dark, and with JavaScript off.
 

@@ -195,6 +195,7 @@ repository. It is what the opt-in update feed is derived from.
 
 ## Documentation
 
+- [Website](https://wirebench.github.io/wirebench/) — what Wirebench does, and the installers for the latest release.
 - [User guide](https://wirebench.github.io/wirebench/docs/) — install, a ten-minute walkthrough, a guide per feature, the
   command reference, troubleshooting and FAQ
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
