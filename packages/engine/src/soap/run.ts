@@ -150,7 +150,7 @@ function wssFor(selected: SoapSelected, context: RunContext): SoapSendWss | unde
     ...(incoming !== undefined ? { incoming } : {}),
     ctx: createWssContext({
       keystores: (ref) => loadKeystoreById(context, ref),
-      secrets: (ref) => requiredSecret(ref, context.getSecret),
+      secrets: (ref) => requiredSecret(ref, context.host.getSecret),
     }),
     requestProperties: {
       ...(properties.wssPasswordType !== undefined ? { wssPasswordType: properties.wssPasswordType } : {}),
@@ -225,7 +225,7 @@ export async function prepareSoap(selected: SoapSelected, context: RunContext): 
   });
   const scopes = scopesFor(context);
   const tls = await tlsFor(context, request.properties.sslKeystoreRef, resolved.endpoint?.trustInvalid === true);
-  const proxy = context.proxyFor?.(resolved.url);
+  const proxy = await context.host.proxyFor?.(resolved.url);
   const wsa = wsaFor(selected, context);
   const wss = wssFor(selected, context);
   // An owner's OAuth2 gets its token as a REST one does (client credentials; the browser grant is
@@ -233,7 +233,7 @@ export async function prepareSoap(selected: SoapSelected, context: RunContext): 
   const sendAuth =
     owner !== undefined && owner.type === 'oauth2'
       ? await authFor(owner, selected.path, context, tls)
-      : await resolveSoapAuth(owner, context.getSecret);
+      : await resolveSoapAuth(owner, context.host.getSecret);
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
   const input: SoapSendInput = {
     ...base,
@@ -245,7 +245,7 @@ export async function prepareSoap(selected: SoapSelected, context: RunContext): 
     ...(wss !== undefined ? { wss } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   };
-  const withTokens = await withSecrets(input, scopes, context.getSecret, context.secretPlaceholders);
+  const withTokens = await withSecrets(input, scopes, context.host.getSecret, context.secretPlaceholders);
   // Refused here, before the wire: the engine would report the same refs on the exchange, but by
   // then a half-expanded envelope has already been sent to somebody's service.
   const { unresolved } = expandSendInput(input, withTokens);
@@ -475,7 +475,7 @@ export const soapRun: ProtocolRun<SoapSelected> = {
         envelopeXml: changed.envelopeXml,
         ...(changed.soapAction !== undefined ? { soapAction: changed.soapAction } : {}),
       },
-      context.getSecret,
+      context.host.getSecret,
     );
     // Already expanded: sent without scopes, so nothing the script wrote is expanded again.
     const exchange = await sendSoapRequest({ ...changed, ...restored });

@@ -13,12 +13,13 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import type { HttpExchange } from '../../../src/http/types.js';
+import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Interface, OAuth2Auth, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
+import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import { createRunSender } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import type { SelectedRequest } from '../../../src/run/select.js';
@@ -304,7 +305,7 @@ beforeEach(() => {
 });
 
 /** A token endpoint that hands out `tok-1`, `tok-2`, … and records each request. */
-const fetchToken: NonNullable<RunContext['fetchToken']> = (request) => {
+const fetchToken = (request: HttpRequest): Promise<HttpExchange> => {
   events.push('fetch token');
   issued += 1;
   const body = new TextEncoder().encode(
@@ -321,16 +322,20 @@ const fetchToken: NonNullable<RunContext['fetchToken']> = (request) => {
   } as unknown as HttpExchange);
 };
 
+function getSecretFor(ref: string): Promise<string | undefined> {
+  events.push(`secret ${ref}`);
+  return Promise.resolve(SECRETS[ref]);
+}
+
 function contextFor(p: Project, scripting: boolean): RunContext {
   return {
     project: p,
     projectDir: dir,
     overrides: {},
-    getSecret: (ref) => {
-      events.push(`secret ${ref}`);
-      return Promise.resolve(SECRETS[ref]);
+    host: {
+      getSecret: getSecretFor,
+      tokens: createRunTokenSource({ getSecret: getSecretFor, send: fetchToken }),
     },
-    fetchToken,
     ...(scripting ? { scripting: new RecordingScripting() } : {}),
   };
 }

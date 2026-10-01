@@ -22,6 +22,7 @@ import { SecretPlaceholders } from '../script/send.js';
 import type { TransferResult } from '../sequence/run.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
+import type { SendHost } from './host.js';
 import { createRunTokenSource } from './oauth2-token.js';
 import { createRunScope, scopeWith } from './scope.js';
 import {
@@ -178,7 +179,7 @@ function runOf(registry: ProtocolRegistry, item: SelectedBase): ProtocolRun {
 function deferredSession(scripting: RequestScripting, scripted: ScriptedRequest, context: RunContext): ScriptSession {
   let opening: Promise<ScriptSession> | undefined;
   const open = (): Promise<ScriptSession> => {
-    opening ??= listedSecrets(scripted.scripts.secrets, context.getSecret).then((secrets) =>
+    opening ??= listedSecrets(scripted.scripts.secrets, context.host.getSecret).then((secrets) =>
       // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is
       // shown before that.
       scriptSession(scripting, scripted, {
@@ -233,16 +234,16 @@ function scriptsRefusal(item: SelectedBase, registry: ProtocolRegistry): Wireben
 export function createRunSender(context: RunContext): RunRequestSender {
   const registry = context.registry ?? defaultRegistry();
   // One token source for the whole run: requests behind the same OAuth2 configuration share a token.
-  const scope = createRunScope({
-    ...context,
-    tokenSource:
-      context.tokenSource ??
+  const host: SendHost = {
+    ...context.host,
+    tokens:
+      context.host.tokens ??
       createRunTokenSource({
-        getSecret: context.getSecret,
-        ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
-        ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+        getSecret: context.host.getSecret,
+        ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
       }),
-  });
+  };
+  const scope = createRunScope({ ...context, host });
 
   return async (item, overrides = {}) => {
     const itemContext: RunContext = {
@@ -441,7 +442,12 @@ export async function runRequests(
     } else {
       const ran = await runOne(item, send, options, { sequence: Object.fromEntries(runValues) }, context);
       result = ran.result;
-      mergeScriptValues(runValues, ran.sent?.script?.values ?? [], context.onSecretValue, context.containsKnownSecret);
+      mergeScriptValues(
+        runValues,
+        ran.sent?.script?.values ?? [],
+        context.host.onSecretValue,
+        context.containsKnownSecret,
+      );
     }
     results.push(result);
     options.onRequestDone?.(result);

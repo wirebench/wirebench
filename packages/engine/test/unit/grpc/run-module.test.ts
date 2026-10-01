@@ -105,9 +105,11 @@ function context(): RunContext {
     project,
     projectDir: dir,
     overrides: {},
-    getSecret: (ref) => {
-      events.push(`secret ${ref}`);
-      return Promise.resolve('abc123def456ghi789');
+    host: {
+      getSecret: (ref) => {
+        events.push(`secret ${ref}`);
+        return Promise.resolve('abc123def456ghi789');
+      },
     },
   };
 }

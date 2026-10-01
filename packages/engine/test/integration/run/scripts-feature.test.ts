@@ -97,7 +97,7 @@ function setup(scripts: RequestScripts | undefined, registry: ProtocolRegistry) 
     project: p,
     projectDir: dir,
     overrides: {},
-    getSecret: () => Promise.resolve(undefined),
+    host: { getSecret: () => Promise.resolve(undefined) },
     // No checker: these tests are about what is refused before a script is looked at.
     scripting: new RequestScripting({ sandbox, registry }),
     registry,

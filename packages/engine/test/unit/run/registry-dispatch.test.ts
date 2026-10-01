@@ -56,7 +56,7 @@ const context: RunContext = {
   project,
   projectDir: '/nowhere',
   overrides: {},
-  getSecret: () => Promise.resolve(undefined),
+  host: { getSecret: () => Promise.resolve(undefined) },
 };
 
 describe('the built-in registry', () => {

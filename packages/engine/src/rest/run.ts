@@ -89,7 +89,7 @@ async function signFor(selected: RestSelected, context: RunContext): Promise<Res
   const effective = selected.signing;
   if (effective === undefined || effective.signing.mode !== 'sign') return undefined;
   const ref = signingSecretRef(effective.signing);
-  const secret = ref === undefined ? undefined : await context.getSecret(ref);
+  const secret = ref === undefined ? undefined : await context.host.getSecret(ref);
   if (secret === undefined || secret === '') throw signingSecretMissing(effective, ref);
   return { scheme: effective.signing.scheme, secret };
 }
@@ -124,7 +124,7 @@ export async function prepareRest(selected: RestSelected, context: RunContext): 
     resolveFile: restFileResolver(context),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
-  const withTokens = await withSecrets(unexpanded, scopes, context.getSecret, context.secretPlaceholders);
+  const withTokens = await withSecrets(unexpanded, scopes, context.host.getSecret, context.secretPlaceholders);
   const { input, unresolved } = expandRestSendInput(unexpanded, withTokens, {
     escape: request.settings.escapeProperties === true,
   });
@@ -133,7 +133,7 @@ export async function prepareRest(selected: RestSelected, context: RunContext): 
   }
   const sign = await signFor(selected, context);
   // As the app does: the proxy is chosen for the base URL, or the request's own when it has none.
-  const proxy = context.proxyFor?.(input.baseUrl === '' ? input.request.url : input.baseUrl);
+  const proxy = await context.host.proxyFor?.(input.baseUrl === '' ? input.request.url : input.baseUrl);
   return {
     kind: 'rest',
     input: {
@@ -279,7 +279,7 @@ export const restRun: ProtocolRun<RestSelected> = {
     const changed = applyRestSnapshot(prepared.input, before, sent);
     const restored = await scripts.placeholders.restore(
       { baseUrl: changed.baseUrl, request: changed.request },
-      context.getSecret,
+      context.host.getSecret,
     );
     const exchange = await sendRest({ ...changed, ...restored });
     dropRefusedToken(context, prepared.input.auth, exchange.status === 401);

@@ -225,13 +225,15 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     ...(workspace !== undefined ? { workspace } : {}),
     ...(environment !== undefined ? { environmentId: environment.id } : {}),
     overrides: args.vars,
-    getSecret: secrets.getSecret,
+    host: {
+      getSecret: secrets.getSecret,
+      proxyFor: (url) => Promise.resolve(proxyFor(url)),
+      // An OAuth2 token, and a sequence value that is (or holds) a secret: every mask built after this hides it.
+      onSecretValue: (value) => tokens.add(value),
+    },
     ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
     insecure: args.insecure,
-    proxyFor,
     signal: controller.signal,
-    // An OAuth2 token, and a sequence value that is (or holds) a secret: every mask built after this hides it.
-    onSecretValue: (value) => tokens.add(value),
     containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
     scripting: new RequestScripting({ sandbox, checker, onSecretValue: (value) => tokens.add(value) }),
   };

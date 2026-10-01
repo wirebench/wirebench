@@ -203,9 +203,11 @@ export const sendOp = defineOp({
       ...(workspace !== undefined ? { workspace } : {}),
       ...(environment !== undefined ? { environmentId: environment.id } : {}),
       overrides: {},
-      getSecret: secrets.getSecret,
-      proxyFor,
-      onSecretValue: (secret) => tokens.add(secret),
+      host: {
+        getSecret: secrets.getSecret,
+        proxyFor: (url) => Promise.resolve(proxyFor(url)),
+        onSecretValue: (secret) => tokens.add(secret),
+      },
       containsKnownSecret: (text) => knownSecretIn(text, known()),
       scripting: new RequestScripting({ sandbox, checker, onSecretValue: (secret) => tokens.add(secret) }),
     };

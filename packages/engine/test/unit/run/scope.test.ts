@@ -7,7 +7,7 @@ const context: RunContext = {
   project: createProject('P', { id: 'p1' }),
   projectDir: '/nowhere',
   overrides: {},
-  getSecret: () => Promise.resolve(undefined),
+  host: { getSecret: () => Promise.resolve(undefined) },
 };
 
 describe('createRunScope', () => {

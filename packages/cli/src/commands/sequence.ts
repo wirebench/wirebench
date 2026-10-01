@@ -172,7 +172,7 @@ export async function runSequences(
       const run = await runSequence(sequence, context.project, sender, {
         signal: controller.signal,
         onStepDone: (step) => options.onStepDone(toResult(step)),
-        ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+        ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
         // Steps are looked up in the registry the sender sends through.
         ...(context.registry !== undefined ? { registry: context.registry } : {}),
         containsKnownSecret: options.containsKnownSecret,

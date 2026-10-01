@@ -67,7 +67,9 @@ async function run(requests: readonly EchoRequest[]) {
     project: p,
     projectDir: dir,
     overrides: {},
-    getSecret: (ref) => Promise.resolve(ref.replace(/^secret:/, '') === 'api_key' ? API_KEY : undefined),
+    host: {
+      getSecret: (ref) => Promise.resolve(ref.replace(/^secret:/, '') === 'api_key' ? API_KEY : undefined),
+    },
     scripting: new RequestScripting({ sandbox, checker, registry }),
     registry,
   };

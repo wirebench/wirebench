@@ -94,7 +94,7 @@ export async function prepareGrpc(selected: GrpcSelected, context: RunContext): 
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
   const withMessage = { ...unexpanded, messageText: request.message };
-  const withTokens = await withSecrets(withMessage, scopes, context.getSecret, context.secretPlaceholders);
+  const withTokens = await withSecrets(withMessage, scopes, context.host.getSecret, context.secretPlaceholders);
   const { input, unresolved } = expandGrpcInput(withMessage, withTokens, {
     escape: request.settings.escapeProperties === true,
   });
@@ -216,7 +216,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     const changed = applyGrpcSnapshot(prepared.input, prepared.messageText, before, sent);
     const restored = await scripts.placeholders.restore(
       { metadata: changed.input.metadata, messageText: changed.messageText },
-      context.getSecret,
+      context.host.getSecret,
     );
     const result = await callGrpc({
       ...changed.input,

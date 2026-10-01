@@ -148,7 +148,7 @@ export const echoScripting: ProtocolScripting<EchoRequestSnapshot, EchoResponseS
 async function echoPlain(selected: EchoSelected, scope: RunScope): Promise<SentRequest> {
   const { context } = scope;
   const { text } = selected.request;
-  const scopes = await withSecrets(text, scopesFor(context), context.getSecret);
+  const scopes = await withSecrets(text, scopesFor(context), context.host.getSecret);
   const expanded = expand(text, scopes);
   if (expanded.unresolved.length > 0) {
     throw unresolvedError(selected.path, expanded.unresolved);
@@ -183,7 +183,7 @@ export const echoRun: ProtocolRun<EchoSelected> = {
     );
     const before: EchoRequestSnapshot = { protocol: 'echo', text: hidden };
     const sent = await scripts.session.pre(before);
-    const restored = await scripts.placeholders.restore({ text: sent.text }, scope.context.getSecret);
+    const restored = await scripts.placeholders.restore({ text: sent.text }, scope.context.host.getSecret);
     const echoed = await echoPlain({ ...selected, request: { ...selected.request, text: restored.text } }, scope);
     const response: EchoResponseSnapshot = {
       protocol: 'echo',

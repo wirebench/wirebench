@@ -177,9 +177,11 @@ describe('restRun.send', () => {
       project,
       projectDir: '/nowhere',
       overrides: {},
-      getSecret: (ref) => {
-        events.push(`secret ${ref}`);
-        return Promise.resolve('abc123def456ghi789');
+      host: {
+        getSecret: (ref) => {
+          events.push(`secret ${ref}`);
+          return Promise.resolve('abc123def456ghi789');
+        },
       },
     };
     const list = itemAt('Billing/Invoices/List');

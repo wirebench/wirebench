@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { prepareFor } from '../../helpers/prepare-for.js';
 import type { RunContext } from '../../../src/run/context.js';
+import type { SendHost } from '../../../src/run/host.js';
+import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
@@ -115,8 +117,20 @@ function makeProject(options: ProjectOptions = {}): Project {
 
 const getSecret = (ref: string): Promise<string | undefined> => Promise.resolve(ref === 'sec_1' ? 'pw' : undefined);
 
-function contextFor(project: Project, extra: Partial<RunContext> = {}): RunContext {
-  return { project, projectDir: projectDir(), overrides: {}, getSecret, ...extra };
+function contextFor(project: Project, extra: Partial<RunContext> = {}, host: Partial<SendHost> = {}): RunContext {
+  return { project, projectDir: projectDir(), overrides: {}, host: { getSecret, ...host }, ...extra };
+}
+
+/** A token source that answers through `send`, as `fetchToken` once did, telling `onSecretValue` of each token. */
+function tokensVia(
+  send: (request: HttpRequest) => Promise<HttpExchange>,
+  onSecretValue?: (value: string) => void,
+): NonNullable<SendHost['tokens']> {
+  return createRunTokenSource({
+    getSecret,
+    send,
+    ...(onSecretValue !== undefined ? { onSecretValue } : {}),
+  });
 }
 
 let dir: string | undefined;
@@ -203,7 +217,7 @@ describe('prepareFor — SOAP', () => {
       {
         code: 'auth-grant-unsupported',
         message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
-        details: { path: soapOf(project).path },
+        details: { grant: 'authorization-code' },
       },
     );
   });
@@ -214,15 +228,19 @@ describe('prepareFor — SOAP', () => {
     const seen: string[] = [];
     const prepared = await prepareFor(
       soapOf(project),
-      contextFor(project, {
-        environmentId: 'env-test',
-        timeoutMs: 1234,
-        fetchToken: (request) => {
-          sent.push(request);
-          return Promise.resolve(tokenExchange('tok-s'));
+      contextFor(
+        project,
+        { environmentId: 'env-test', timeoutMs: 1234 },
+        {
+          tokens: tokensVia(
+            (request) => {
+              sent.push(request);
+              return Promise.resolve(tokenExchange('tok-s'));
+            },
+            (value) => seen.push(value),
+          ),
         },
-        onSecretValue: (value) => seen.push(value),
-      }),
+      ),
     );
     expect(prepared.kind === 'soap' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-s' });
     expect(sent).toHaveLength(1);
@@ -406,16 +424,21 @@ describe('prepareFor — REST', () => {
     const seen: string[] = [];
     const prepared = await prepareFor(
       restOf(project),
-      contextFor(project, {
-        environmentId: 'env-test',
-        timeoutMs: 1234,
-        proxyFor: (url) => (url === 'https://auth.test/token' ? { url: 'http://proxy.test:8080' } : undefined),
-        fetchToken: (request) => {
-          sent.push(request);
-          return Promise.resolve(tokenExchange('tok-1'));
+      contextFor(
+        project,
+        { environmentId: 'env-test', timeoutMs: 1234 },
+        {
+          proxyFor: (url) =>
+            Promise.resolve(url === 'https://auth.test/token' ? { url: 'http://proxy.test:8080' } : undefined),
+          tokens: tokensVia(
+            (request) => {
+              sent.push(request);
+              return Promise.resolve(tokenExchange('tok-1'));
+            },
+            (value) => seen.push(value),
+          ),
         },
-        onSecretValue: (value) => seen.push(value),
-      }),
+      ),
     );
     expect(prepared.kind === 'rest' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-1' });
     expect(sent).toHaveLength(1);
@@ -463,13 +486,16 @@ describe('prepareFor — ${secret:name} tokens', () => {
     const seen: string[] = [];
     const prepared = await prepareFor(
       restOf(project),
-      contextFor(project, {
-        environmentId: 'env-test',
-        getSecret: (ref) => {
-          seen.push(ref);
-          return tokenSecrets(ref);
+      contextFor(
+        project,
+        { environmentId: 'env-test' },
+        {
+          getSecret: (ref) => {
+            seen.push(ref);
+            return tokenSecrets(ref);
+          },
         },
-      }),
+      ),
     );
     expect(prepared.kind === 'rest' && prepared.input.request.url).toContain('key=ghp_FAKEvalue');
     expect(seen).toEqual(['secret:billing_key']);
@@ -479,18 +505,20 @@ describe('prepareFor — ${secret:name} tokens', () => {
     const project = makeProject({ envelopeXml: '<Envelope>${key}</Envelope>' });
     const prepared = await prepareFor(
       soapOf(project),
-      contextFor(project, {
-        environmentId: 'env-test',
-        overrides: { key: '${secret:billing_key}' },
-        getSecret: tokenSecrets,
-      }),
+      contextFor(
+        project,
+        { environmentId: 'env-test', overrides: { key: '${secret:billing_key}' } },
+        { getSecret: tokenSecrets },
+      ),
     );
     expect(prepared.kind === 'soap' && prepared.scopes.secrets).toEqual({ billing_key: 'ghp_FAKEvalue' });
   });
 
   it('refuses a token with no value as secret-missing, naming the secret', async () => {
     const project = makeProject({ restUrl: '${baseUrl}/x?key=${secret:nope}' });
-    await expect(prepareFor(restOf(project), contextFor(project, { getSecret: tokenSecrets }))).rejects.toMatchObject({
+    await expect(
+      prepareFor(restOf(project), contextFor(project, {}, { getSecret: tokenSecrets })),
+    ).rejects.toMatchObject({
       code: 'secret-missing',
       message: 'The secret "nope" is not on this machine — set it with Set Secret Token Value… (Secrets).',
       details: { ref: 'secret:nope' },
@@ -532,8 +560,8 @@ describe('prepareFor — inside a workspace', () => {
     projects: [{ id: 'proj-1', slug: 'billing', source: 'internal' }],
     environments: [LINKED, STAGING],
   };
-  const inWorkspace = (project: Project, extra: Partial<RunContext> = {}): RunContext =>
-    contextFor(project, { workspace: { workspace: WORKSPACE, projectSlug: 'billing' }, ...extra });
+  const inWorkspace = (project: Project, extra: Partial<RunContext> = {}, host: Partial<SendHost> = {}): RunContext =>
+    contextFor(project, { workspace: { workspace: WORKSPACE, projectSlug: 'billing' }, ...extra }, host);
 
   it('resolves ${#Workspace#name} from the workspace properties', async () => {
     const project = makeProject({ restUrl: '${#Workspace#host}/invoices' });
@@ -586,10 +614,11 @@ describe('prepareFor — inside a workspace', () => {
     const project = makeProject({ envelopeXml: '<Envelope>${key}</Envelope>' });
     const prepared = await prepareFor(
       soapOf(project),
-      inWorkspace(project, {
-        environmentId: 'wsenv-staging',
-        getSecret: (ref) => Promise.resolve(ref === 'secret:billing_key' ? 'ghp_FAKEvalue' : undefined),
-      }),
+      inWorkspace(
+        project,
+        { environmentId: 'wsenv-staging' },
+        { getSecret: (ref) => Promise.resolve(ref === 'secret:billing_key' ? 'ghp_FAKEvalue' : undefined) },
+      ),
     );
     expect(prepared.kind === 'soap' && prepared.scopes.secrets).toEqual({ billing_key: 'ghp_FAKEvalue' });
   });
@@ -669,10 +698,14 @@ describe('prepareFor — gRPC', () => {
     const project = grpcProject({ message: '{"key": "${secret:grpc_key}"}' });
     const prepared = await prepareFor(
       grpcOf(project),
-      contextFor(project, {
-        environmentId: 'env-test',
-        getSecret: (ref) => (ref === 'secret:grpc_key' ? Promise.resolve('fake-grpc-key-0000') : Promise.resolve('pw')),
-      }),
+      contextFor(
+        project,
+        { environmentId: 'env-test' },
+        {
+          getSecret: (ref) =>
+            ref === 'secret:grpc_key' ? Promise.resolve('fake-grpc-key-0000') : Promise.resolve('pw'),
+        },
+      ),
     );
     expect(prepared.kind === 'grpc' && prepared.messageText).toBe('{"key": "fake-grpc-key-0000"}');
   });
@@ -689,12 +722,16 @@ describe('prepareFor — gRPC', () => {
     const project = grpcProject({}, oauth('client-credentials'));
     const prepared = await prepareFor(
       grpcOf(project),
-      contextFor(project, { environmentId: 'env-test', fetchToken: () => Promise.resolve(tokenExchange('tok-g')) }),
+      contextFor(
+        project,
+        { environmentId: 'env-test' },
+        { tokens: tokensVia(() => Promise.resolve(tokenExchange('tok-g'))) },
+      ),
     );
     expect(prepared.kind === 'grpc' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-g' });
     const browser = grpcProject({}, oauth('authorization-code'));
     await expect(prepareFor(grpcOf(browser), contextFor(browser, { environmentId: 'env-test' }))).rejects.toMatchObject(
-      { code: 'auth-grant-unsupported', details: { path: 'Greeter/Admin/Hello' } },
+      { code: 'auth-grant-unsupported', details: { grant: 'authorization-code' } },
     );
   });
 });

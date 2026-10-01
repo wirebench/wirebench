@@ -56,6 +56,18 @@ describe('createRunTokenSource', () => {
     expect(new TextDecoder().decode(h.sent[0]?.body)).toContain('grant_type=client_credentials');
   });
 
+  it('refuses the authorization-code grant, which needs a browser, before sending anything', async () => {
+    const h = harness([]);
+    await expect(
+      h.source.accessTokenFor({ ...CONFIG, grant: 'authorization-code' }, { scopes: SCOPES }),
+    ).rejects.toMatchObject({
+      code: 'auth-grant-unsupported',
+      message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+      details: { grant: 'authorization-code' },
+    });
+    expect(h.sent).toHaveLength(0);
+  });
+
   it('reports every token obtained through onSecretValue', async () => {
     const h = harness([exchange(200, { access_token: 'tok-1', token_type: 'Bearer' })]);
     await h.source.accessTokenFor(CONFIG, { scopes: SCOPES });
@@ -136,7 +148,8 @@ describe('createRunTokenSource', () => {
     await h.source.accessTokenFor(CONFIG, {
       scopes: SCOPES,
       tls: { rejectUnauthorized: false },
-      proxy: (url) => (url === 'https://auth.test/token' ? { url: 'http://proxy.test:3128' } : undefined),
+      proxy: (url) =>
+        Promise.resolve(url === 'https://auth.test/token' ? { url: 'http://proxy.test:3128' } : undefined),
     });
     expect(h.sent[0]).toMatchObject({ tls: { rejectUnauthorized: false }, proxy: { url: 'http://proxy.test:3128' } });
   });

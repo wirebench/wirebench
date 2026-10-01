@@ -1,6 +1,7 @@
 export { findStepRequest, selectRequests } from './select.js';
 export type { SelectedRequest, StepRequestLookup } from './select.js';
 export { scopesFor } from './context.js';
+export type { AttemptedRequest, ClientIdentity, SendFailure, SendHost } from './host.js';
 export type { RunContext, RunWorkspace } from './context.js';
 export { cappedExchange, checkRunScripts, createRunSender, errorOf, runRequests, scriptReport } from './run.js';
 export type {

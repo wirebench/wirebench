@@ -109,7 +109,9 @@ export async function loadKeystoreById(context: RunContext, keystoreId: string):
     });
   }
   const password =
-    def.passwordSecretRef === undefined ? undefined : await requiredSecret(def.passwordSecretRef, context.getSecret);
+    def.passwordSecretRef === undefined
+      ? undefined
+      : await requiredSecret(def.passwordSecretRef, context.host.getSecret);
   return loadKeystore(await readFile(path), { type: def.type, ...(password !== undefined ? { password } : {}) });
 }
 
@@ -149,11 +151,10 @@ export async function tlsFor(
 /** The run's shared token source, or a fresh one for a send outside a run. */
 export function tokenSourceOf(context: RunContext): RunTokenSource {
   return (
-    context.tokenSource ??
+    context.host.tokens ??
     createRunTokenSource({
-      getSecret: context.getSecret,
-      ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
-      ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+      getSecret: context.host.getSecret,
+      ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
     })
   );
 }
@@ -173,23 +174,16 @@ export async function authFor(
   tls: TlsOptions | undefined,
 ): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
   if (configured.type !== 'oauth2') {
-    return resolveAuthConfig(configured, context.getSecret);
-  }
-  if (configured.grant === 'authorization-code') {
-    throw new WirebenchError(
-      'auth-grant-unsupported',
-      'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
-      { details: { path, grant: configured.grant } },
-    );
+    return resolveAuthConfig(configured, context.host.getSecret);
   }
   const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
     scopes: scopesFor(context),
     ...(tls !== undefined ? { tls } : {}),
-    ...(context.proxyFor !== undefined ? { proxy: context.proxyFor } : {}),
+    ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
-  return resolveAuthConfig(configured, context.getSecret, { accessToken });
+  return resolveAuthConfig(configured, context.host.getSecret, { accessToken });
 }
 
 /** A REST API's base URL (or a gRPC API's target), through the workspace's environment likewise. */
@@ -214,7 +208,7 @@ export function baseUrlFor(context: RunContext, api: { readonly slug: string; re
  */
 export function dropRefusedToken(context: RunContext, auth: SendAuth | undefined, refused: boolean): void {
   if (refused && auth?.type === 'oauth2') {
-    context.tokenSource?.reject(auth.accessToken);
+    context.host.tokens?.reject(auth.accessToken);
   }
 }
 
