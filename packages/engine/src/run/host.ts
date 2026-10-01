@@ -55,7 +55,8 @@ export interface SendHost {
     /** Replaces the stored cookies; an empty list forgets them. */
     remember(item: SelectedBase, cookies: readonly Cookie[]): void;
   };
-  /** The response checked against the request's contract. Absent: nothing is checked. */
+  /** The response checked against the request's contract. Absent: nothing is checked.
+   * A rejection means nothing was checked: the send still succeeds, without a contract. */
   readonly contractFor?: (item: SelectedBase, exchange: unknown) => Promise<unknown>;
   /** A webhook item's callback URL, used in place of its target; undefined keeps the target. */
   readonly callbackUrlFor?: (item: SelectedBase) => Promise<string | undefined>;

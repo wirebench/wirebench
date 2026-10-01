@@ -30,6 +30,8 @@ import {
 import type { Resolved } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, byOrder, findInTree, walkTree } from '../run/tree.js';
 import { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './scripting.js';
+import type { RestRequestSnapshot } from './scripting.js';
+import type { SseRow } from './sse.js';
 import { loadOpenApiDocument, restOperationFor, restScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
@@ -277,6 +279,9 @@ async function connectAndSend(
   context: RunContext,
   input: RestSendInput,
   controller: ExchangeController<RestLiveEvent>,
+  live: boolean,
+  /** The pre-request script's step, inside the prepare stage so its failure is reported with it. */
+  script?: () => Promise<RestSendInput>,
 ): Promise<{ readonly connected: RestSendInput; readonly sent: SentRequest }> {
   const startedAt = Date.now();
   const failed = (stage: 'prepare' | 'send', error: unknown, attempted: RestSendInput): void =>
@@ -289,7 +294,7 @@ async function connectAndSend(
     });
   let connected: RestSendInput;
   try {
-    connected = await connectRest(selected, context, input);
+    connected = await connectRest(selected, context, script !== undefined ? await script() : input);
   } catch (error) {
     failed('prepare', error, input);
     throw error;
@@ -299,10 +304,16 @@ async function connectAndSend(
     exchange = await sendRest({
       ...connected,
       signal: controller.signal,
-      onStream: {
-        onOpen: (status, headers) => controller.queue.push({ protocol: 'rest', kind: 'open', status, headers }),
-        onRow: (row) => controller.queue.push({ protocol: 'rest', kind: 'row', row }),
-      },
+      // Only a live send parses an event stream; any other keeps the buffered body.
+      ...(live
+        ? {
+            onStream: {
+              onOpen: (status: number, headers: Readonly<Record<string, string>>) =>
+                controller.queue.push({ protocol: 'rest', kind: 'open', status, headers }),
+              onRow: (row: SseRow) => controller.queue.push({ protocol: 'rest', kind: 'row', row }),
+            },
+          }
+        : {}),
     });
   } catch (error) {
     failed('send', error, connected);
@@ -311,7 +322,8 @@ async function connectAndSend(
   dropRefusedToken(context, connected.auth, exchange.status === 401);
   // As the app does after every send: what the response set replaces what was stored, and none forgets it.
   context.host.cookies?.remember(selected, exchange.cookies);
-  const contract = await context.host.contractFor?.(selected, exchange);
+  // The request has gone out: a contract check that rejects checked nothing, and fails nothing.
+  const contract = await context.host.contractFor?.(selected, exchange).catch(() => undefined);
   return {
     connected,
     sent: {
@@ -332,26 +344,33 @@ async function sendRestItem(
   context: RunContext,
   scripts: ScriptedSend | undefined,
   controller: ExchangeController<RestLiveEvent>,
+  live: boolean,
 ): Promise<SentRequest> {
   if (scripts === undefined) {
     const { input, unresolved } = await resolveRest(selected, context);
     if (unresolved.length > 0) throw unresolvedError('rest-unresolved-properties', selected.path, unresolved);
-    return (await connectAndSend(selected, context, input, controller)).sent;
+    return (await connectAndSend(selected, context, input, controller, live)).sent;
   }
 
   // Resolved with its secrets behind placeholders; the URL is rebuilt only when the script changed it.
   const { input, unresolved } = await resolveRest(selected, { ...context, secretPlaceholders: scripts.placeholders });
   if (unresolved.length > 0) throw unresolvedError('rest-unresolved-properties', selected.path, unresolved);
   const before = restRequestSnapshot(input);
-  const sent = await scripts.session.pre(before);
-  const changed = applyRestSnapshot(input, before, sent);
-  const restored = await scripts.placeholders.restore(
-    { baseUrl: changed.baseUrl, request: changed.request },
-    context.host.getSecret,
-  );
-  const result = await connectAndSend(selected, context, { ...changed, ...restored }, controller);
+  let sent: RestRequestSnapshot | undefined;
+  const result = await connectAndSend(selected, context, input, controller, live, async () => {
+    sent = await scripts.session.pre(before);
+    const changed = applyRestSnapshot(input, before, sent);
+    const restored = await scripts.placeholders.restore(
+      { baseUrl: changed.baseUrl, request: changed.request },
+      context.host.getSecret,
+    );
+    return { ...changed, ...restored };
+  });
   const exchange = result.sent.raw as RestExchange;
-  return { ...result.sent, script: await scripts.session.post(sent, restResponseSnapshot(exchange)) };
+  return {
+    ...result.sent,
+    script: await scripts.session.post(sent as RestRequestSnapshot, restResponseSnapshot(exchange)),
+  };
 }
 
 /** REST's run facet. */
@@ -384,7 +403,7 @@ export const restRun: ProtocolRun<RestSelected> = {
   open(selected, scope, host, options) {
     const controller = exchangeController<RestLiveEvent>('rest', options);
     const context: RunContext = { ...scope.context, host, signal: controller.signal };
-    return controller.handle(() => sendRestItem(selected, context, options.scripts, controller));
+    return controller.handle(() => sendRestItem(selected, context, options.scripts, controller, options.live === true));
   },
 
   resolve(selected, scope, host) {

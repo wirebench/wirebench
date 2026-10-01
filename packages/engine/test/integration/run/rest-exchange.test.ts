@@ -156,4 +156,16 @@ describe('REST through openExchange', () => {
     const sent = await open(restItem('/echo'), {}, { contractFor: () => Promise.resolve({ status: 'ok' }) }).result;
     expect(sent.exchange?.kind === 'rest' && sent.exchange.contract).toEqual({ status: 'ok' });
   });
+
+  it('a rejected contract check still resolves the send, without a contract', async () => {
+    const sent = await open(restItem('/echo'), {}, { contractFor: () => Promise.reject(new Error('no spec')) }).result;
+    expect(sent.subject.status).toBe(200);
+    expect(sent.exchange?.kind === 'rest' && sent.exchange.contract).toBeUndefined();
+  });
+
+  it('a send that is not live keeps the buffered body of an event stream', async () => {
+    const sent = await open(restItem('/sse/ticks?n=3&every=5')).result;
+    expect(sent.subject.bodyText).not.toBe('');
+    expect(sent.exchange?.kind === 'rest' && sent.exchange.rest.stream).toBeUndefined();
+  });
 });

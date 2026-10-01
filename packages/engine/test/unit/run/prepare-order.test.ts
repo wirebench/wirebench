@@ -335,6 +335,27 @@ describe('the failures a REST send reports to the host', () => {
     expect(events).not.toContain('send');
   });
 
+  it('reports stage prepare when the pre-request script throws', async () => {
+    const p = project();
+    const base = contextFor(p);
+    const failures: SendFailure[] = [];
+    const host: SendHost = { ...base.host, events: { onFailed: (_item, failure) => failures.push(failure) } };
+    const throwing: ScriptSession = { pre: () => Promise.reject(new Error('script broke')), post: session.post };
+    await expect(
+      openExchange(pick(p, 'Invoices/List'), host, {
+        scope: createRunScope({ ...base, host }),
+        interactive: false,
+        scripts: { session: throwing, placeholders: new SecretPlaceholders() },
+      }).result,
+    ).rejects.toThrow('script broke');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      stage: 'prepare',
+      attempted: { url: 'https://api.example.test/invoices', method: 'GET' },
+    });
+    expect(events).not.toContain('send');
+  });
+
   it('reports stage send when the connection is refused', async () => {
     refuse.on = true;
     const { failures, done } = sendWith({});
