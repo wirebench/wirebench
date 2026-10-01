@@ -227,7 +227,7 @@ function attemptedOf(input: GrpcResolvedInput): AttemptedRequest {
  * as it is pushed, and before that they wait in a queue the opening drains. A half-close never
  * drops a push made before it: before the call opens it is held until the queue has drained. A
  * push after the half-close, or one still waiting when the call ends without opening, is refused
- * with `grpc-stream-closed`.
+ * with `grpc-stream-closed`, as is any push once a call that never opened has ended.
  */
 interface GrpcStreamState {
   /** The side the handle drives. */
@@ -254,6 +254,8 @@ function grpcStreamState(controller: ExchangeController<GrpcLiveEvent>): GrpcStr
   let side: GrpcCallStreamHandle | undefined;
   let waiting: WaitingPush[] = [];
   let ended = false;
+  /** The call has ended; when it never opened, nothing pushed now could be written. */
+  let done = false;
   // Async only to turn a throw into a rejection: the body, and so the write, runs at once.
   // eslint-disable-next-line @typescript-eslint/require-await
   const write = async (handle: GrpcCallStreamHandle, text: string): Promise<unknown> => handle.send(text);
@@ -280,6 +282,7 @@ function grpcStreamState(controller: ExchangeController<GrpcLiveEvent>): GrpcStr
         }
         if (ended) return Promise.reject(streamClosed(true, false));
         if (side !== undefined) return write(side, message.text);
+        if (done) return Promise.reject(streamClosed(false, true));
         return new Promise((resolve, reject) => waiting.push({ text: message.text, resolve, reject }));
       },
       halfClose,
@@ -294,6 +297,7 @@ function grpcStreamState(controller: ExchangeController<GrpcLiveEvent>): GrpcStr
       if (ended) end(handle);
     },
     settled() {
+      done = true;
       const queued = waiting;
       waiting = [];
       for (const push of queued) push.reject(streamClosed(ended, true));

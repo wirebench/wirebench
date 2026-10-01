@@ -100,6 +100,14 @@ function open(built: Built, options: Partial<ExchangeOptions> = {}, hostExtra: P
   return openExchange(built.item, host, { scope: createRunScope(context), interactive: false, ...options });
 }
 
+/** Rejects with `timeout` when `promise` has not settled within a short while: a push must never hang. */
+function settlesWithin<T>(promise: Promise<T>, ms = 500): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
 function recorder(): { failures: SendFailure[]; host: Partial<SendHost> } {
   const failures: SendFailure[] = [];
   return { failures, host: { events: { onFailed: (_item, failure) => failures.push(failure) } } };
@@ -217,6 +225,35 @@ describe('gRPC through openExchange', () => {
     const pushed = handle.push({ text: '{"name":"x"}' });
     await expect(handle.result).rejects.toMatchObject({ code: 'grpc-definition-missing' });
     await expect(pushed).rejects.toMatchObject({ code: 'grpc-stream-closed' });
+  });
+
+  it('refuses a push made after a call ended without opening, rather than leaving it waiting', async () => {
+    const handle = open(callWithoutCache('Chat', []), { interactive: true });
+    await expect(handle.result).rejects.toMatchObject({ code: 'grpc-definition-missing' });
+    await expect(settlesWithin(handle.push({ text: '{"name":"late"}' }))).rejects.toMatchObject({
+      code: 'grpc-stream-closed',
+    });
+    handle.halfClose();
+  });
+
+  it('refuses a push made after a cancel ended the call before it opened', async () => {
+    const handle = open(call('Chat', []), { interactive: true });
+    handle.cancel();
+    await expect(handle.result).rejects.toMatchObject({ code: 'aborted' });
+    await expect(settlesWithin(handle.push({ text: '{"name":"late"}' }))).rejects.toMatchObject({
+      code: 'grpc-stream-closed',
+    });
+  });
+
+  it('the server receives un-awaited pushes in push order when the half-close comes before the open', async () => {
+    const names = ['a', 'b', 'c', 'd', 'e'];
+    const handle = open(call('Chat', []), { interactive: true });
+    const pushed = names.map((name) => handle.push({ text: JSON.stringify({ name }) }));
+    handle.halfClose();
+    await Promise.all(pushed);
+    await handle.result;
+    const received = server.calls.filter((recorded) => recorded.path === `/${SERVICE}/Chat`).at(-1);
+    expect(received?.messages).toEqual(names.map((name) => ({ name })));
   });
 
   it('refuses a binary push on an interactive call', async () => {
