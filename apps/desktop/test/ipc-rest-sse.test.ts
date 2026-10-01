@@ -271,7 +271,7 @@ describe('closing the app or a project over an open stream', () => {
     expect(summary.stream?.endedBy).toBe('client');
   });
 
-  it('a plain send is not a stream to abort', async () => {
+  it('a send that has finished leaves nothing to end', async () => {
     const registry = register({}, (requestId) =>
       requestId === 'rest-1' ? resolution(server.url, '/echo') : undefined,
     );

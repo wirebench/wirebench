@@ -9,7 +9,7 @@
  * through the engine logs, masks and checks exactly as the desktop always has.
  */
 import { readFileSync } from 'node:fs';
-import { failedRequestOf, findWebhookRequest } from '@wirebench/engine';
+import { failedRequestOf, findWebhookRequest, SIGNING_PSEUDO_REF_PREFIX } from '@wirebench/engine';
 import type {
   AttemptedRequest,
   ClientIdentity,
@@ -80,8 +80,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
   const preferences = deps.preferences?.();
   const tokens = oauth2Tokens(deps);
   return {
-    // The getter `tokenSecrets` builds in `ipc/request.ts`: the send's own project's.
-    getSecret: deps.secretsFor?.(projectId) ?? ((ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined)),
+    getSecret: desktopSecrets(deps, projectId),
     onSecretValue: recordSecretValue,
     proxyFor: async (url) => {
       const proxy = projectId === undefined ? undefined : await project.proxyFor?.(projectId, url);
@@ -121,6 +120,16 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       },
     },
   };
+}
+
+/**
+ * The getter `tokenSecrets` builds in `ipc/request.ts`: the send's own project's. A webhook signing
+ * pseudo-ref (a node that names only a CI variable) is never looked up (R7): the desktop reads a
+ * signing secret from the keychain by `secretRef` alone, so such a node refuses rather than signs.
+ */
+function desktopSecrets(deps: DesktopSendDeps, projectId: string | undefined): GetSecret {
+  const getSecret = deps.secretsFor?.(projectId) ?? ((ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
+  return (ref) => (ref.startsWith(SIGNING_PSEUDO_REF_PREFIX) ? Promise.resolve(undefined) : getSecret(ref));
 }
 
 /** The OAuth2 service as the engine's token source: its cache, its browser flow, its `clear`. */

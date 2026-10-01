@@ -7,7 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import type { AssertionSubject } from '../assert/model.js';
 import { readAttachment } from '../project/attachments-cache.js';
-import type { AttachmentSource, AuthConfig } from '../project/model.js';
+import type { AttachmentSource, AuthConfig, Project } from '../project/model.js';
 import { REQUESTS_DIR, WEBHOOKS_DIR } from '../project/paths.js';
 import type { ProtocolRun, RunGroup, ScriptedSend } from '../protocol/module.js';
 import type { ExchangeController } from '../run/exchange.js';
@@ -37,6 +37,7 @@ import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { toRestSendInput } from './send-input.js';
 import {
+  assertWebhookTarget,
   effectiveSigning,
   effectiveTarget,
   signingSecretMissing,
@@ -103,7 +104,12 @@ async function signFor(selected: RestSelected, context: RunContext): Promise<Res
  * configured, so the input holds no `auth`. A reference nothing resolves is reported in
  * `unresolved`, not thrown: the send refuses it, a preview shows it.
  *
- * @throws WirebenchError `secret-missing` | `rest-file-outside-project`
+ * A webhook item goes to its callback URL when the host names one: that URL is the whole
+ * destination, taken literally (ADR-0015), with no base. Otherwise it goes to its target, which
+ * must expand to an `http(s)` URL.
+ *
+ * @throws WirebenchError `secret-missing` | `rest-file-outside-project` | `webhook-target-missing` |
+ * `webhook-target-invalid`
  */
 export async function resolveRest(selected: RestSelected, context: RunContext): Promise<Resolved<RestSendInput>> {
   const { api, request } = selected;
@@ -113,14 +119,14 @@ export async function resolveRest(selected: RestSelected, context: RunContext): 
   const unexpanded = toRestSendInput({
     request: {
       method: request.method,
-      url: request.url,
+      url: callbackUrl ?? request.url,
       pathParams: request.pathParams,
       query: request.query,
       headers: request.headers,
       body: request.body,
       settings: request.settings,
     },
-    baseUrl: callbackUrl ?? baseUrlFor(context, api),
+    baseUrl: callbackUrl !== undefined ? '' : baseUrlFor(context, api),
     projectSettings: context.project.settings,
     ...(context.host.preferences !== undefined ? { preferences: context.host.preferences } : {}),
     ...(cookies !== undefined ? { cookies } : {}),
@@ -130,7 +136,16 @@ export async function resolveRest(selected: RestSelected, context: RunContext): 
   const withTokens = await withSecrets(unexpanded, scopes, context.host.getSecret, context.secretPlaceholders);
   const { input, unresolved } = expandRestSendInput(unexpanded, withTokens, {
     escape: request.settings.escapeProperties === true,
+    ...(callbackUrl !== undefined ? { literalUrl: true } : {}),
   });
+  // A target holding a secret still behind its placeholder is checked by nothing: its value is not in.
+  if (
+    isWebhookItem(selected) &&
+    callbackUrl === undefined &&
+    context.secretPlaceholders?.holds(input.baseUrl) !== true
+  ) {
+    assertWebhookTarget(input.baseUrl, input.request.url, unresolved.length > 0);
+  }
   return {
     input: {
       ...input,
@@ -197,8 +212,11 @@ function signingNeeds(selected: RestSelected): SecretNeed[] {
 
 type RestCandidate = RunGroup<RestSelected>['candidates'][number];
 
-/** An API's requests in explorer order, without the ones its contract no longer has. */
-function apiCandidates(api: RestApi): RestCandidate[] {
+/**
+ * An API's requests in explorer order, without the ones its contract no longer has unless
+ * `orphaned` asks for them too.
+ */
+function apiCandidates(api: RestApi, orphaned = false): RestCandidate[] {
   const out: RestCandidate[] = [];
   walkTree<RestFolder, RestRequestDef, RestSelected>(
     api,
@@ -206,7 +224,7 @@ function apiCandidates(api: RestApi): RestCandidate[] {
     api.name,
     `apis/${api.slug}/requests`,
     (request, chain, group) =>
-      request.orphaned === true
+      request.orphaned === true && !orphaned
         ? undefined
         : { kind: 'rest', path: `${group}/${request.name}`, group, api, chain, request },
     out,
@@ -223,7 +241,7 @@ function isWebhookItem(selected: RestSelected): boolean {
  * The project's webhook items, as REST items against a synthetic API whose base URL is each item's
  * effective target. A run has no history, so a callback uses the target.
  */
-function webhookCandidates(collection: WebhookCollection): RestCandidate[] {
+function webhookCandidates(collection: WebhookCollection, orphaned = false): RestCandidate[] {
   const out: RestCandidate[] = [];
   const visit = (
     folders: readonly WebhookFolder[],
@@ -239,7 +257,7 @@ function webhookCandidates(collection: WebhookCollection): RestCandidate[] {
       ...(collection.auth !== undefined ? { auth: collection.auth } : {}),
     });
     for (const request of [...requests].sort(byOrder)) {
-      if (request.orphaned === true) continue;
+      if (request.orphaned === true && !orphaned) continue;
       out.push({
         item: {
           kind: 'rest',
@@ -257,6 +275,19 @@ function webhookCandidates(collection: WebhookCollection): RestCandidate[] {
   };
   visit(collection.folders, collection.requests, []);
   return out;
+}
+
+/**
+ * The REST item for `requestId`, an API request or a webhook item, built as a run builds it — and
+ * found even when its contract no longer has it (`orphaned`), which a run skips and a person may
+ * still send. Undefined when no REST request has that id.
+ */
+export function restItemFor(project: Project, requestId: string): RestSelected | undefined {
+  const candidates = [
+    ...project.apis.flatMap((api) => apiCandidates(api, true)),
+    ...(project.webhooks !== undefined ? webhookCandidates(project.webhooks, true) : []),
+  ];
+  return candidates.find((candidate) => candidate.item.request.id === requestId)?.item;
 }
 
 /** What a failed send was about to put on the wire: the resolved URL, the method, the enabled headers. */

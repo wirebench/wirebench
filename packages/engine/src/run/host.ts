@@ -28,7 +28,11 @@ export interface SendFailure {
   readonly durationMs: number;
   /** What was about to go, or went, on the wire; absent when resolution itself failed. */
   readonly attempted?: AttemptedRequest;
-  /** The protocol's input at the stage that failed, for a host that records the send whole. */
+  /**
+   * The protocol's input at the stage that failed, for a host that records the send whole. It holds
+   * live credentials — resolved auth, a signing secret, a proxy password, TLS keys — so a host reads
+   * only what it records and never logs or serialises it.
+   */
   readonly input?: unknown;
 }
 

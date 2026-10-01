@@ -1,8 +1,9 @@
 /**
- * The request a desktop send sends: the saved one, selected exactly as a run would select it, with
- * the editor's unsaved draft laid over it for this send only. Nothing here is persisted.
+ * The request a desktop send sends: the saved one, built as a run builds its item, with the editor's
+ * unsaved draft laid over it for this send only. Nothing here is persisted. Unlike a run, a person
+ * may send a request its contract no longer has (orphaned), as the app always let them.
  */
-import { findStepRequest, restRun, signingAlong, webhookPath } from '@wirebench/engine';
+import { restItemFor, signingAlong, webhookPath } from '@wirebench/engine';
 import type { Project, RestRequestDef, RestRequestSettings, RestSelected, SelectedRequest } from '@wirebench/engine';
 import { toEngineAuthConfig, toEngineBody, toEngineRows, toEngineSigning } from '../project-rest-mutations.js';
 import type { RestRequestPatchWire } from '../../shared/wire-types.js';
@@ -12,22 +13,13 @@ export type DraftOf = { readonly kind: 'rest'; readonly draft?: RestRequestPatch
 
 /** The saved request as a run item with the editor's draft applied. Undefined: no such request of that kind. */
 export function selectedFor(project: Project, requestId: string, draft: DraftOf): SelectedRequest | undefined {
-  const lookup = findStepRequest(project, requestId);
-  const found = lookup.kind === 'found' ? lookup.selected : explicitOnlyItem(project, requestId);
-  if (found === undefined || found.kind !== draft.kind) return undefined;
   switch (draft.kind) {
-    case 'rest':
-      return withRestDraft(project, found, draft.draft);
+    case 'rest': {
+      // An API request or a webhook item, orphaned or not.
+      const found = restItemFor(project, requestId);
+      return found === undefined ? undefined : withRestDraft(project, found, draft.draft);
+    }
   }
-}
-
-/** A webhook item: never a sequence step, so `findStepRequest` does not find it. */
-function explicitOnlyItem(project: Project, requestId: string): SelectedRequest | undefined {
-  return restRun
-    .groups(project)
-    .filter((group) => group.explicitOnly === true)
-    .flatMap((group) => group.candidates)
-    .find((candidate) => candidate.item.request.id === requestId)?.item;
 }
 
 /**

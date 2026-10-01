@@ -8,6 +8,7 @@ import {
   createRestRequest,
   createWebhookCollection,
   DEFAULT_PREFERENCES,
+  restItemFor,
 } from '../../../src/index.js';
 import type { Cookie, Project, RestRequestDef } from '../../../src/index.js';
 import type { ExchangeOptions } from '../../../src/run/exchange.js';
@@ -47,12 +48,12 @@ function restItemAt(base: string, path: string, settings: RestRequestDef['settin
   return { p, item: selectRequests(p, ['Api/Req']).selected[0]! };
 }
 
-function webhookItem(target: string) {
+function webhookItem(target: string, url = '/echo') {
   const p: Project = {
     ...createProject('Hooks', { id: 'p-hooks' }),
     webhooks: createWebhookCollection({
       target,
-      requests: [createRestRequest('Ping', { id: 'w1', slug: 'ping', method: 'POST', url: '/echo' })],
+      requests: [createRestRequest('Ping', { id: 'w1', slug: 'ping', method: 'POST', url })],
     }),
   };
   return { p, item: selectRequests(p, ['Webhooks/Ping']).selected[0]! };
@@ -146,10 +147,53 @@ describe('REST through openExchange', () => {
       webhookItem('http://127.0.0.1:1/never'),
       {},
       {
-        callbackUrlFor: () => Promise.resolve(`${server.url}`),
+        callbackUrlFor: () => Promise.resolve(`${server.url}/echo`),
       },
     ).result;
     expect(sent.subject.status).toBe(200);
+  });
+
+  it('sends to the callback URL literally, its query kept and the item URL not joined to it', async () => {
+    const callback = `${server.url}/echo?t=abc/def&n=\${nope}`;
+    const sent = await open(
+      webhookItem('http://127.0.0.1:1/never', '/onEvent'),
+      {},
+      { callbackUrlFor: () => Promise.resolve(callback) },
+    ).result;
+    const echoed = JSON.parse(sent.subject.bodyText) as { path: string; query: Record<string, string> };
+    expect(echoed.path).toBe('/echo');
+    expect(echoed.query).toEqual({ t: 'abc/def', n: '${nope}' });
+    expect(sent.exchange?.kind === 'rest' && sent.exchange.input.baseUrl).toBe('');
+    expect(sent.exchange?.kind === 'rest' && sent.exchange.input.request.url).toBe(callback);
+  });
+
+  it('refuses a webhook item whose target is empty, or not http(s), before anything is sent', async () => {
+    await expect(open(webhookItem('')).result).rejects.toMatchObject({
+      code: 'webhook-target-missing',
+      message: 'Set the Webhooks target',
+    });
+    await expect(open(webhookItem('ftp://files.test')).result).rejects.toMatchObject({
+      code: 'webhook-target-invalid',
+      message: 'The Webhooks target must start with http:// or https://',
+    });
+  });
+
+  it('sends a webhook item whose own URL is absolute without any target', async () => {
+    const sent = await open(webhookItem('', `${server.url}/echo`)).result;
+    expect(sent.subject.status).toBe(200);
+  });
+
+  it('finds an orphaned API request and an orphaned webhook item for a person to send, which a run skips', () => {
+    const orphan = { ...createRestRequest('Legacy', { id: 'r-old', url: '/legacy' }), orphaned: true as const };
+    const hook = { ...createRestRequest('Gone', { id: 'w-old', url: '/gone' }), orphaned: true as const };
+    const p: Project = {
+      ...project(server.url, orphan),
+      webhooks: createWebhookCollection({ target: server.url, requests: [hook] }),
+    };
+    expect(restItemFor(p, 'r-old')).toMatchObject({ kind: 'rest', path: 'Api/Legacy', request: { id: 'r-old' } });
+    expect(restItemFor(p, 'w-old')).toMatchObject({ kind: 'rest', group: 'Webhooks', request: { id: 'w-old' } });
+    expect(restItemFor(p, 'nope')).toBeUndefined();
+    expect(selectRequests(p, []).selected).toEqual([]);
   });
 
   it('attaches the host contract result', async () => {

@@ -90,7 +90,7 @@ export type { UnsupportedContainer } from './project/model.js';
 export { soapResponseSubject } from './soap/run.js';
 export { restSubject } from './rest/run.js';
 // The REST run facet and its effective credentials, for a host that sends one REST item itself.
-export { restEffectiveAuth, restRun } from './rest/run.js';
+export { restEffectiveAuth, restItemFor, restRun } from './rest/run.js';
 export type { RestSelected } from './rest/run.js';
 export { grpcSubject } from './grpc/run.js';
 export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
@@ -453,6 +453,7 @@ export {
   DEFAULT_WEBHOOK_TARGET,
   WEBHOOKS_COLLECTION_PREFIX,
   WEBHOOK_TARGET_PROPERTY,
+  assertWebhookTarget,
   createWebhookCollection,
   createWebhookFolder,
   effectiveSigning,

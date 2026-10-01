@@ -8,6 +8,7 @@
  */
 
 import {
+  assertWebhookTarget,
   createApi,
   effectiveTarget,
   evaluateRuntimeTemplate,
@@ -17,7 +18,6 @@ import {
   signingSecretMissing,
   webhookPath,
   webhookRequests,
-  WirebenchError,
 } from '@wirebench/engine';
 import type {
   Cookie,
@@ -144,24 +144,6 @@ export function callbackUrlFor(
 }
 
 /**
- * Refuses a target that cannot be sent to, once it is expanded: an empty one (unless the item's
- * own URL is absolute) and one that is not `http(s)`. A target still holding a reference nothing
- * resolved is left to the unresolved list, which already refuses the send and names the reference.
- * Exported for the engine send path (`send/exchange.ts`), which checks a webhook item's target first.
- */
-export function assertTarget(baseUrl: string, url: string, unresolved: boolean): void {
-  if (baseUrl.trim() === '') {
-    if (!ABSOLUTE_HTTP.test(url)) {
-      throw new WirebenchError('webhook-target-missing', 'Set the Webhooks target');
-    }
-    return;
-  }
-  if (!ABSOLUTE_HTTP.test(baseUrl) && !(unresolved && baseUrl.includes('${'))) {
-    throw new WirebenchError('webhook-target-invalid', 'The Webhooks target must start with http:// or https://');
-  }
-}
-
-/**
  * Resolves one send of a webhook item. The draft is applied first; a callback's URL, when it
  * resolves, is sent verbatim with no base URL; otherwise the effective target is the base URL,
  * expanded with the rest of the request. Credentials climb item → folders (leaf to root) → the
@@ -192,7 +174,7 @@ export function resolveWebhookSend(args: ResolveWebhookSendArgs): RestSendResolu
       ? expandedSendInput(args, { ...request, url: callback.url }, '', { literalUrl: true })
       : expandedSendInput(args, request, effectiveTarget(collection, path.chain));
   if (callback?.url === undefined) {
-    assertTarget(input.baseUrl, input.request.url, unresolved.length > 0);
+    assertWebhookTarget(input.baseUrl, input.request.url, unresolved.length > 0);
   }
 
   return {

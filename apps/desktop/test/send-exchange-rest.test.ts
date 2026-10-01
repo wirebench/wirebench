@@ -10,11 +10,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
-import { createApi, createProject, createRestRequest, entry, resolveApiBaseUrl } from '@wirebench/engine';
-import type { Project, RequestScripts, RestRequestDef } from '@wirebench/engine';
+import {
+  createApi,
+  createProject,
+  createRestRequest,
+  createWebhookCollection,
+  createWebhookFolder,
+  entry,
+  resolveApiBaseUrl,
+  verifyWebhook,
+} from '@wirebench/engine';
+import type { Project, RequestScripts, RestRequestDef, WebhookSigning } from '@wirebench/engine';
+import { buildRestHistoryEntry, toHistoryEntryWire, type RecordRestSendInput } from '../src/main/history-service.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
 import { ScriptHost } from '../src/main/script-host.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
@@ -26,7 +36,47 @@ import type {
 } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 
-vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
+const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    },
+  },
+}));
+
+/** One `request.*` channel as the renderer invokes it; the reply is the IPC envelope. */
+function invoke(channel: string, payload: unknown): Promise<unknown> {
+  const handler = handlers.get(channel);
+  if (handler === undefined) {
+    throw new Error(`${channel} was never registered`);
+  }
+  return handler({ sender: { isDestroyed: () => false, send: () => undefined } }, payload);
+}
+
+function unwrap<T>(result: unknown): T {
+  const envelope = result as { ok: boolean; value?: T; error?: { code: string; message: string } };
+  if (!envelope.ok) {
+    throw new Error(`ipc failed: ${envelope.error?.code} ${envelope.error?.message}`);
+  }
+  return envelope.value as T;
+}
+
+/** Registers the `request.*` channels over `model`, with `extra` laid over the dependencies. */
+function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): void {
+  handlers.clear();
+  registerRequestChannels(new EngineService(), {
+    project: {
+      projectId: () => model.id,
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+      restMeta: () => undefined,
+      requestMeta: () => undefined,
+      buildLiveSendInput: () => undefined,
+    } as unknown as RequestChannelDeps['project'],
+    ...extra,
+  });
+}
 
 const KEY = 'good-key-9f3a';
 const secrets = (ref: string): Promise<string | undefined> =>
@@ -275,3 +325,261 @@ describe('sendThroughEngine for a REST request with scripts', () => {
     expect(host.sessionValues('p1')).toEqual({ seen: '200' });
   });
 });
+
+describe('sendThroughEngine for an orphaned REST request', () => {
+  /** `req-1` is a request the API's contract no longer has; a run skips it, a person may send it. */
+  function orphaned(): Project {
+    return seeded([{ ...createRestRequest('Legacy', { id: 'req-1', url: '/echo' }), orphaned: true }]);
+  }
+
+  it('sends it from the editor', async () => {
+    const summary = await sendThroughEngine(sendDepsFor(orphaned(), { getSecret: secrets }), 's1', 'req-1', {
+      draft: { kind: 'rest' },
+    });
+    expect(summary.http.status).toBe(200);
+  });
+
+  it('exports it as a cURL command', async () => {
+    registerOver(orphaned());
+    const result = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
+    expect(result.command).toContain(`${server.url}/echo?`);
+  });
+});
+
+describe('sendThroughEngine for a webhook item', () => {
+  const SECRET = 'abc123def456ghi789';
+  const SIGNING: WebhookSigning = {
+    mode: 'sign',
+    scheme: { kind: 'standard', toleranceSec: 300 },
+    secretRef: 'ref-orders',
+  };
+  const SIGNING_HEADERS = ['webhook-id', 'webhook-timestamp', 'webhook-signature'] as const;
+  const BODY = '{"order":42}';
+
+  /** Webhook item `w1` under folder `Orders`, `POST /echo` to `target`. */
+  function hooks(target: string, signing: WebhookSigning = SIGNING, orphan = false): Project {
+    const paid = createRestRequest('Paid', {
+      id: 'w1',
+      method: 'POST',
+      url: '/echo',
+      body: { kind: 'raw', language: 'json', text: BODY },
+    });
+    return {
+      ...createProject('P', { id: 'p1' }),
+      webhooks: createWebhookCollection({
+        target,
+        folders: [
+          createWebhookFolder('Orders', {
+            id: 'g1',
+            signing,
+            requests: [orphan ? { ...paid, orphaned: true } : paid],
+          }),
+        ],
+      }),
+    };
+  }
+
+  /** A History that keeps what is recorded, newest first, and answers `newestFor` from `parents`. */
+  function history(parents: Record<string, HistoryEntryWire> = {}) {
+    const entries: HistoryEntryWire[] = [];
+    return {
+      entries,
+      service: {
+        recordRestSend: (projectId: string, record: RecordRestSendInput) => {
+          const wire = toHistoryEntryWire(buildRestHistoryEntry(projectId, record));
+          entries.unshift(wire);
+          return Promise.resolve(wire);
+        },
+        newestFor: (_projectId: string, requestId: string) => parents[requestId],
+      } as unknown as HistoryService,
+    };
+  }
+
+  function keychain(values: Record<string, string>) {
+    const asked: string[] = [];
+    return {
+      asked,
+      secretsFor: () => (ref: string) => {
+        asked.push(ref);
+        return Promise.resolve(values[ref]);
+      },
+    };
+  }
+
+  const signingHeadersOf = (headers: Readonly<Record<string, string | string[] | undefined>>) =>
+    Object.fromEntries(SIGNING_HEADERS.map((name) => [name, String(headers[name])]));
+
+  it('signs with the keychain secret, and History records the signing headers as sent', async () => {
+    const kept = history();
+    const keys = keychain({ 'ref-orders': SECRET });
+    await sendThroughEngine(
+      sendDepsFor(hooks(server.url), { history: kept.service, secretsFor: keys.secretsFor }),
+      's1',
+      'w1',
+      { draft: { kind: 'rest' } },
+    );
+
+    expect(keys.asked).toContain('ref-orders');
+    const last = server.requests.at(-1)!;
+    const pairs = SIGNING_HEADERS.map((name) => [name, String(last.headers[name])] as const);
+    expect(verifyWebhook(SIGNING.mode === 'sign' ? SIGNING.scheme : never(), SECRET, pairs, last.body)).toEqual({
+      verdict: 'verified',
+    });
+    const recorded = Object.fromEntries(kept.entries[0]!.request.headers.map((header) => [header.name, header.value]));
+    expect(recorded).toMatchObject(signingHeadersOf(last.headers));
+  });
+
+  it('sends an orphaned webhook item too', async () => {
+    const keys = keychain({ 'ref-orders': SECRET });
+    const summary = await sendThroughEngine(
+      sendDepsFor(hooks(server.url, SIGNING, true), { secretsFor: keys.secretsFor }),
+      's1',
+      'w1',
+      { draft: { kind: 'rest' } },
+    );
+    expect(summary.http.status).toBe(200);
+  });
+
+  it('refuses the send when the keychain has no secret, and nothing goes out', async () => {
+    const before = server.requests.length;
+    await expect(
+      sendThroughEngine(sendDepsFor(hooks(server.url), { secretsFor: keychain({}).secretsFor }), 's2', 'w1', {
+        draft: { kind: 'rest' },
+      }),
+    ).rejects.toMatchObject({ code: 'webhook-signing-secret' });
+    expect(server.requests.length).toBe(before);
+  });
+
+  it('refuses a CI-only signing on the desktop rather than send unsigned (R7)', async () => {
+    const ciOnly: WebhookSigning = {
+      mode: 'sign',
+      scheme: { kind: 'standard', toleranceSec: 300 },
+      secretEnv: 'ORDERS',
+    };
+    const keys = keychain({ 'webhook-signing:ORDERS': SECRET });
+    const before = server.requests.length;
+
+    await expect(
+      sendThroughEngine(sendDepsFor(hooks(server.url, ciOnly), { secretsFor: keys.secretsFor }), 's3', 'w1', {
+        draft: { kind: 'rest' },
+      }),
+    ).rejects.toMatchObject({ code: 'webhook-signing-secret' });
+    expect(keys.asked).not.toContain('webhook-signing:ORDERS');
+    expect(server.requests.length).toBe(before);
+  });
+
+  it('refuses an empty target as webhook-target-missing, sending nothing and writing no row', async () => {
+    const failures: FailedExchangeWire[] = [];
+    const kept = history();
+    const before = server.requests.length;
+
+    await expect(
+      sendThroughEngine(
+        sendDepsFor(hooks('', { mode: 'none' }), {
+          history: kept.service,
+          onSendFailed: (failure) => failures.push(failure),
+        }),
+        's4',
+        'w1',
+        { draft: { kind: 'rest' } },
+      ),
+    ).rejects.toMatchObject({ code: 'webhook-target-missing', message: 'Set the Webhooks target' });
+    expect(server.requests.length).toBe(before);
+    expect(failures).toEqual([]);
+    expect(kept.entries).toEqual([]);
+  });
+
+  it('sends a callback, through request.sendRest, to exactly the URL its parent recorded', async () => {
+    // Already in its encoded form: a query value is percent-encoded on the wire like any send's.
+    const callback = `${server.url}/echo?t=abc123&sub=42`;
+    const model: Project = {
+      ...createProject('P', { id: 'p1' }),
+      apis: [
+        createApi('Petstore', {
+          id: 'api-1',
+          baseUrl: 'https://api.test',
+          requests: [
+            createRestRequest('Subscribe', {
+              id: 'parent',
+              method: 'POST',
+              url: '/subscriptions',
+              contract: { method: 'post', path: '/subscriptions' },
+            }),
+          ],
+        }),
+      ],
+      webhooks: createWebhookCollection({
+        folders: [
+          createWebhookFolder('Petstore', {
+            id: 'g1',
+            target: 'http://127.0.0.1:1/never',
+            source: { apiId: 'api-1' },
+            requests: [
+              createRestRequest('onEvent', {
+                id: 'w3',
+                method: 'POST',
+                url: '/onEvent',
+                hook: {
+                  kind: 'callback',
+                  operation: 'post /subscriptions',
+                  name: 'onEvent',
+                  expression: '{$request.body#/callbackUrl}',
+                },
+              }),
+            ],
+          }),
+        ],
+      }),
+    };
+    const parent: HistoryEntryWire = {
+      id: 'h1',
+      kind: 'rest',
+      at: '2026-09-28T10:42:00.000Z',
+      projectId: 'p1',
+      requestId: 'parent',
+      requestName: 'Subscribe',
+      interfaceName: 'Petstore',
+      operationName: '',
+      endpoint: 'https://api.test/subscriptions',
+      soapVersion: 'none',
+      method: 'POST',
+      status: 201,
+      durationMs: 5,
+      ok: true,
+      request: { envelopeXml: JSON.stringify({ callbackUrl: callback }), headers: [] },
+      response: { envelopeXml: '{}', rawHeaders: [], status: 201, statusText: 'Created' },
+      sizeBytes: 0,
+    };
+    const kept = history({ parent });
+    registerOver(model, { history: kept.service });
+
+    const summary = unwrap<RestExchangeSummary>(await invoke('request.sendRest', { sendId: 'cb1', requestId: 'w3' }));
+
+    expect(server.requests.at(-1)!.url).toBe('/echo?t=abc123&sub=42');
+    expect(summary.url).toBe(callback);
+    expect(kept.entries[0]!.endpoint).toBe(callback);
+  });
+});
+
+describe('closing a project over a plain REST send in flight', () => {
+  it('cancels it, and History records it as aborted', async () => {
+    const appended: HistoryEntryWire[] = [];
+    const deps = sendDepsFor(seeded([createRestRequest('Slow', { id: 'req-1', url: '/slow?ms=2000' })]), {
+      getSecret: secrets,
+      history: await openHistory(),
+      onHistoryAppended: (wire) => appended.push(wire),
+    });
+    const sending = sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } });
+    await waitFor(() => deps.registry.has('s1'), 'the send to be kept');
+
+    expect(deps.registry.endWhere(() => true, 'rest')).toBe(1);
+
+    await expect(sending).rejects.toMatchObject({ code: 'aborted' });
+    expect(appended).toHaveLength(1);
+    expect(appended[0]).toMatchObject({ ok: false, error: { code: 'aborted' } });
+  });
+});
+
+function never(): never {
+  throw new Error('unreachable');
+}

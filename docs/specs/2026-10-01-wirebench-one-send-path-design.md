@@ -322,9 +322,12 @@ they replace the matching lines in §3 and §4. The plan is
 2. `SendHost.tls` is `{ anchors?, identityFor?(keystoreId) }`. `identityFor` answers for the request's
    keystore, or for the host's default identity when there is none.
 3. `SendHost.contractFor(item, exchange)` returns the check result. The engine attaches it to the REST
-   exchange.
+   exchange. An optional third argument, `sent`, is the protocol's input as it went out: the desktop looks
+   the operation up by the request's own path and method from it, as it always has, not by the joined URL.
 4. `events.onPrepareFailed` is `events.onFailed(item, failure)`, where `failure.stage` is `'prepare'` or
-   `'send'` and `failure.attempted` holds the URL, method and headers.
+   `'send'` and `failure.attempted` holds the URL, method and headers. `failure.input` is the protocol's
+   input at the stage that failed, from which the desktop writes a failed send's History row. It holds live
+   credentials (auth, a signing secret, a proxy password, TLS keys): a host never logs or serialises it.
 5. `ExchangeHandle.push(message)` resolves with what was sent: a gRPC message's canonical JSON, or a WebSocket
    frame. `cancel()` returns `boolean`.
 6. `ExchangeOptions.live`, `false` by default: events are buffered only for a caller that reads them.

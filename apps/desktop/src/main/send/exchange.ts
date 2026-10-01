@@ -7,13 +7,11 @@
 import {
   createRunScope,
   deferredSession,
-  expand,
   openExchange,
   parseSecretPseudoRef,
   ProjectError,
   resolveExchange,
   restEffectiveAuth,
-  scopesFor,
   SecretPlaceholders,
 } from '@wirebench/engine';
 import type {
@@ -37,7 +35,7 @@ import type {
 import type { HistoryService } from '../history-service.js';
 import { containsRecordedSecret, recordSecretValue } from '../redact.js';
 import { finishScripts, scriptsFailed, scriptsForSend, sessionValuesFor, type SendScripts } from '../script-send.js';
-import { assertTarget, withSentSigningHeaders } from '../webhook-send.js';
+import { withSentSigningHeaders } from '../webhook-send.js';
 import { selectedFor, type DraftOf } from './draft.js';
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from './host.js';
 import { toWireEvent } from './live.js';
@@ -168,7 +166,6 @@ export async function sendThroughEngine(
     ...(deps.scripts !== undefined ? { scripting: deps.scripts.scripting } : {}),
     containsKnownSecret: containsRecordedSecret,
   };
-  await assertSendable(item, host, context);
   const scope = createRunScope(context);
   const scripted =
     scripts.kind === 'on' && deps.scripts !== undefined
@@ -256,7 +253,6 @@ export async function previewRest(
   const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: tokenText };
   const placeholders = new SecretPlaceholders();
   const context: RunContext = { ...runContextOf(located, host), secretPlaceholders: placeholders };
-  await assertSendable(item, host, context);
   const resolved = (await resolveExchange(item, host, createRunScope(context))) as {
     readonly input: RestSendInput;
     readonly unresolved: readonly UnresolvedRef[];
@@ -314,20 +310,6 @@ function deferredSendFailure(base: SendHost): {
       return { input: failed.failure.input, report: () => base.events?.onFailed?.(failed.item, failed.failure) };
     },
   };
-}
-
-/**
- * Refuses what the app refuses before a send resolves: a webhook item whose target is empty or not
- * `http(s)` (`webhook-target-missing`, `webhook-target-invalid`), unless its callback URL stands in.
- */
-async function assertSendable(item: SelectedRequest, host: SendHost, context: RunContext): Promise<void> {
-  // A webhook item is a REST item against the synthetic `webhooks` API (the engine's `webhookCandidates`).
-  if (item.kind !== 'rest' || item.api.id !== 'webhooks') return;
-  if ((await host.callbackUrlFor?.(item)) !== undefined) return;
-  const scopes = scopesFor(context);
-  const target = expand(item.api.baseUrl, scopes);
-  const url = expand(item.request.url, scopes);
-  assertTarget(target.text, url.text, target.unresolved.length > 0 || url.unresolved.length > 0);
 }
 
 /**

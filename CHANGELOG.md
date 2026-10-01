@@ -235,6 +235,10 @@ before and after for the two changes that need more than a rename. The package's
 - **A status assertion on an HTTP response.** One that names an all-capitals word which is not a status
   name now errors instead of failing. A request file cannot hold one, because its schema
   refuses it.
+- **A webhook item's target is checked on the command line too.** `wirebench run` and the MCP `send`
+  refuse a webhook item whose target is empty (`webhook-target-missing`) or is not an `http(s)` URL
+  (`webhook-target-invalid`), before anything is sent, as the app always has. They used to try the
+  send and fail later with another code.
 
 ### Fixed
 
