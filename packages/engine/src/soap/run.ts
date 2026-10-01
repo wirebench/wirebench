@@ -1,8 +1,9 @@
 /**
- * SOAP's run facet (spec §3.3): which saved requests a run can send, how one is prepared and sent
- * with and without scripts, its script types, and the secrets its configuration needs. The steps of
- * a send are in the order they have always been: the definition, the request's TLS identity, its
- * credentials (an OAuth2 token included), its secret tokens, then the wire.
+ * SOAP's run facet (spec §3.3): which saved requests a run can send, how one is resolved and sent
+ * with and without scripts, its script types, and the secrets its configuration needs. A send loads
+ * the definition, resolves the request (its endpoint and secret tokens), runs its pre-request
+ * script, connects (its TLS identity, the proxy, its credentials with an OAuth2 token), then goes
+ * on the wire (spec §3.4).
  */
 import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
@@ -43,6 +44,7 @@ import {
   unresolvedError,
   withSecrets,
 } from '../run/send-helpers.js';
+import type { Resolved } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
 import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './scripting.js';
 import { soapOperationElements, soapScriptTypes } from './script-types.js';
@@ -76,10 +78,8 @@ export interface SoapSelected {
   readonly request: SoapRequestDef;
 }
 
-/** A SOAP request ready for `sendSoapRequest`, with the scopes its text expands against. */
-export interface PreparedSoap {
-  readonly kind: 'soap';
-  readonly input: SoapSendInput;
+/** A SOAP request resolved, with the scopes its text expands against. */
+export interface ResolvedSoap extends Resolved<SoapSendInput> {
   readonly scopes: PropertyScopes;
 }
 
@@ -196,22 +196,31 @@ function attachmentResolvers(context: RunContext): AttachmentResolvers {
   };
 }
 
-/**
- * One SOAP request as a send input, with its secrets resolved (or behind `context.secretPlaceholders`).
- * Exported for this module's tests; not part of the run facet.
- *
- * @throws WirebenchError `unresolved-properties` | `endpoint-unresolved` | `secret-missing` |
- * `auth-grant-unsupported` | `wss-config-missing` | `keystore-missing`
- */
-export async function prepareSoap(selected: SoapSelected, context: RunContext): Promise<PreparedSoap> {
-  const { iface, request } = selected;
-  const resolved = endpointFor(context, iface, request);
+/** A SOAP request's endpoint, refused when nothing resolves one. */
+function requiredEndpoint(
+  selected: SoapSelected,
+  context: RunContext,
+): ReturnType<typeof endpointFor> & { url: string } {
+  const resolved = endpointFor(context, selected.iface, selected.request);
   if (resolved.url === undefined) {
     throw new WirebenchError('endpoint-unresolved', `No endpoint resolves for "${selected.path}"`, {
       details: { path: selected.path },
     });
   }
-  const owner = soapEffectiveAuth(selected);
+  return { ...resolved, url: resolved.url };
+}
+
+/**
+ * One SOAP request resolved (spec §3.4): its endpoint, WS-Addressing, its WS-Security
+ * configuration and its secret tokens (behind `context.secretPlaceholders` when given), nothing
+ * connected and the credentials still as configured, so the input holds no `auth`. A reference
+ * nothing resolves is reported in `unresolved`, not thrown: the send refuses it, a preview shows it.
+ *
+ * @throws WirebenchError `endpoint-unresolved` | `secret-missing` | `wss-config-missing`
+ */
+export async function resolveSoap(selected: SoapSelected, context: RunContext): Promise<ResolvedSoap> {
+  const { request } = selected;
+  const resolved = requiredEndpoint(selected, context);
   const base = toSoapSendInput({
     request: {
       properties: request.properties,
@@ -226,35 +235,52 @@ export async function prepareSoap(selected: SoapSelected, context: RunContext): 
     attachmentResolvers: attachmentResolvers(context),
   });
   const scopes = scopesFor(context);
-  const tls = await tlsFor(context, request.properties.sslKeystoreRef, resolved.endpoint?.trustInvalid === true);
-  const proxy = await context.host.proxyFor?.(resolved.url);
   const wsa = wsaFor(selected, context);
   const wss = wssFor(selected, context);
+  // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
+  const input: SoapSendInput = {
+    ...base,
+    ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+    ...(wsa !== undefined ? { wsa } : {}),
+    ...(wss !== undefined ? { wss } : {}),
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  };
+  const withTokens = await withSecrets(input, scopes, context.host.getSecret, context.secretPlaceholders);
+  // Reported here, before the wire: the engine would report the same refs on the exchange, but by
+  // then a half-expanded envelope has already been sent to somebody's service.
+  const { unresolved } = expandSendInput(input, withTokens);
+  return { input, scopes: withTokens, unresolved };
+}
+
+/**
+ * The request's TLS identity and trust decision, the proxy for its endpoint, and its credentials
+ * (an OAuth2 token included), over a resolved input: what a send does after its pre-request
+ * script, so the script never sees a credential (spec §7).
+ *
+ * @throws WirebenchError `secret-missing` | `auth-grant-unsupported` | `keystore-missing`
+ */
+export async function connectSoap(
+  selected: SoapSelected,
+  context: RunContext,
+  input: SoapSendInput,
+): Promise<SoapSendInput> {
+  const { request } = selected;
+  const resolved = requiredEndpoint(selected, context);
+  const owner = soapEffectiveAuth(selected);
+  const tls = await tlsFor(context, request.properties.sslKeystoreRef, resolved.endpoint?.trustInvalid === true);
+  const proxy = await context.host.proxyFor?.(input.endpoint);
   // An owner's OAuth2 gets its token as a REST one does (client credentials; the browser grant is
   // refused); the endpoint schemes resolve through the SOAP path.
   const sendAuth =
     owner !== undefined && owner.type === 'oauth2'
       ? await authFor(owner, selected.path, context, tls)
       : await resolveSoapAuth(owner, context.host.getSecret);
-  // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
-  const input: SoapSendInput = {
-    ...base,
+  return {
+    ...input,
     ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
-    ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
-    ...(tls !== undefined ? { tls: { ...base.tls, ...tls } } : {}),
+    ...(tls !== undefined ? { tls: { ...input.tls, ...tls } } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
-    ...(wsa !== undefined ? { wsa } : {}),
-    ...(wss !== undefined ? { wss } : {}),
-    ...(context.signal !== undefined ? { signal: context.signal } : {}),
   };
-  const withTokens = await withSecrets(input, scopes, context.host.getSecret, context.secretPlaceholders);
-  // Refused here, before the wire: the engine would report the same refs on the exchange, but by
-  // then a half-expanded envelope has already been sent to somebody's service.
-  const { unresolved } = expandSendInput(input, withTokens);
-  if (unresolved.length > 0) {
-    throw unresolvedError(selected.path, unresolved);
-  }
-  return { kind: 'soap', input, scopes: withTokens };
 }
 
 /** An interface's cached definition, compiled once per run. */
@@ -351,7 +377,7 @@ function soapSubject(
   };
 }
 
-/** Parses a WS-Security configuration by id; missing or unreadable is prepare's error, not a need. */
+/** Parses a WS-Security configuration by id; missing or unreadable is resolve's error, not a need. */
 function findConfig<T>(
   refs: Project['wss']['outgoing'],
   id: string | undefined,
@@ -425,7 +451,10 @@ async function soapContextFor(
   return { context, loaded };
 }
 
-/** One SOAP request as a run sends it: prepare, run its scripts when `scripts` is given, send. */
+/**
+ * One SOAP request as a run sends it (spec §3.4): resolve, run its pre-request script when
+ * `scripts` is given, connect, send, then its post-response script.
+ */
 async function sendSoapItem(
   selected: SoapSelected,
   scope: RunScope,
@@ -434,9 +463,13 @@ async function sendSoapItem(
 ): Promise<SentRequest> {
   const { context, loaded } = await soapContextFor(selected, scope, base);
   if (scripts === undefined) {
-    const prepared = await prepareSoap(selected, context);
-    const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
-    dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
+    const resolved = await resolveSoap(selected, context);
+    if (resolved.unresolved.length > 0) {
+      throw unresolvedError('unresolved-properties', selected.path, resolved.unresolved);
+    }
+    const connected = await connectSoap(selected, context, resolved.input);
+    const exchange = await sendSoapRequest(connected, { scopes: resolved.scopes });
+    dropRefusedToken(context, connected.auth, exchange.http.status === 401);
     return {
       subject: soapSubject(exchange, loaded, selected),
       raw: exchange.http,
@@ -445,11 +478,14 @@ async function sendSoapItem(
     };
   }
 
-  // Prepared with its secrets behind placeholders; the pre-request script runs on the expanded
+  // Resolved with its secrets behind placeholders; the pre-request script runs on the expanded
   // request, the secrets are put back, and the post-response script sees what the script left.
-  const prepared = await prepareSoap(selected, { ...context, secretPlaceholders: scripts.placeholders });
-  const expanded = expandSendInput(prepared.input, prepared.scopes, {
-    entitize: prepared.input.entitize ?? false,
+  const resolved = await resolveSoap(selected, { ...context, secretPlaceholders: scripts.placeholders });
+  if (resolved.unresolved.length > 0) {
+    throw unresolvedError('unresolved-properties', selected.path, resolved.unresolved);
+  }
+  const expanded = expandSendInput(resolved.input, resolved.scopes, {
+    entitize: resolved.input.entitize ?? false,
   }).input;
   const before = soapRequestSnapshot(expanded);
   const sent = await scripts.session.pre(before);
@@ -463,9 +499,10 @@ async function sendSoapItem(
     },
     context.host.getSecret,
   );
+  const connected = await connectSoap(selected, context, { ...changed, ...restored });
   // Already expanded: sent without scopes, so nothing the script wrote is expanded again.
-  const exchange = await sendSoapRequest({ ...changed, ...restored });
-  dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
+  const exchange = await sendSoapRequest(connected);
+  dropRefusedToken(context, connected.auth, exchange.http.status === 401);
   return {
     subject: soapSubject(exchange, loaded, selected),
     raw: exchange.http,
@@ -514,7 +551,7 @@ export const soapRun: ProtocolRun<SoapSelected> = {
 
   async resolve(selected, scope, host) {
     const { context } = await soapContextFor(selected, scope, { ...scope.context, host });
-    return (await prepareSoap(selected, context)).input;
+    return resolveSoap(selected, context);
   },
 
   async scriptTypes(selected, scope) {

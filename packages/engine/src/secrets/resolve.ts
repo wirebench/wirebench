@@ -167,7 +167,7 @@ export async function resolveAuthConfig(
  * are resolved through {@link resolveAuthConfig}, the same one REST uses — one implementation of
  * "turn a reference into a value" for every token scheme, SOAP or REST.
  *
- * A caller refusing a SOAP owner's OAuth2 (as `prepareSoap` does, matching `prepareRest`) should
+ * A caller refusing a SOAP owner's OAuth2 (as `connectSoap` does, matching `connectRest`) should
  * do so before calling this — reached with `options.accessToken` unset, an OAuth2 owner simply
  * resolves to no credentials.
  *

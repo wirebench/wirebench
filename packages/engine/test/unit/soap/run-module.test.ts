@@ -143,7 +143,7 @@ describe('soapRun.secretNeeds', () => {
 });
 
 describe('soapRun.open', () => {
-  it('prepares, sends once, and reports a SOAP subject with its exchange and origin', async () => {
+  it('resolves, connects, sends once, and reports a SOAP subject with its exchange and origin', async () => {
     const context: RunContext = {
       project,
       projectDir: '/nowhere',
@@ -158,11 +158,59 @@ describe('soapRun.open', () => {
     const [get] = items();
     const scope = createRunScope(context);
     const sent = get && (await soapRun.open(get, scope, context.host, { scope, interactive: false }).result);
-    expect(events).toEqual(['secret ref-iface', 'secret secret:tenant', 'send https://soap.example.test/billing']);
+    expect(events).toEqual(['secret secret:tenant', 'secret ref-iface', 'send https://soap.example.test/billing']);
     expect(sent?.subject).toMatchObject({ protocol: 'soap', status: 200 });
     expect(sent?.exchange?.kind).toBe('soap');
     expect(sent?.origin).toBe('https://soap.example.test');
     expect(sent?.scriptsOff).toBeUndefined();
+  });
+});
+
+describe('soapRun.resolve', () => {
+  const resolveIn = (p: Project, path: string): Promise<unknown> => {
+    const context: RunContext = {
+      project: p,
+      projectDir: '/nowhere',
+      overrides: {},
+      host: {
+        getSecret: (ref) => {
+          events.push(`secret ${ref}`);
+          return Promise.resolve('abc123def456ghi789');
+        },
+      },
+    };
+    const item = soapRun
+      .groups(p)
+      .flatMap((group) => group.candidates)
+      .find((candidate) => candidate.item.path === path)?.item;
+    if (item === undefined) throw new Error(`No request at ${path}`);
+    return soapRun.resolve(item, createRunScope(context), context.host);
+  };
+
+  it('returns the input and its scopes, no credentials, and nothing unresolved', async () => {
+    const resolved = await resolveIn(project, 'Billing/First/Get');
+    expect(resolved).toMatchObject({
+      input: { endpoint: 'https://soap.example.test/billing' },
+      scopes: { secrets: { tenant: 'abc123def456ghi789' } },
+      unresolved: [],
+    });
+    expect(resolved).not.toHaveProperty('input.auth');
+    // The interface's password is asked for in connect, which resolve does not reach.
+    expect(events).toEqual(['secret secret:tenant']);
+  });
+
+  it('reports a reference nothing resolves, and does not throw it', async () => {
+    const withRef: Project = {
+      ...project,
+      interfaces: project.interfaces.map((i) => ({
+        ...i,
+        operations: i.operations.map((operation) => ({
+          ...operation,
+          requests: operation.requests.map((r) => ({ ...r, envelopeXml: '<Envelope>${nope}</Envelope>' })),
+        })),
+      })),
+    };
+    expect(await resolveIn(withRef, 'Billing/First/Get')).toMatchObject({ unresolved: [{ expr: '${nope}' }] });
   });
 });
 

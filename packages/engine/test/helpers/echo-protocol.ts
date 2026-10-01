@@ -158,7 +158,7 @@ async function echoPlain(selected: EchoSelected, scope: RunScope): Promise<SentR
   const scopes = await withSecrets(text, scopesFor(context), context.host.getSecret);
   const expanded = expand(text, scopes);
   if (expanded.unresolved.length > 0) {
-    throw unresolvedError(selected.path, expanded.unresolved);
+    throw unresolvedError('unresolved-properties', selected.path, expanded.unresolved);
   }
   const raw = bytes(expanded.text);
   return { subject: echoSubject(expanded.text), raw: { rawRequest: raw, rawResponse: raw } };

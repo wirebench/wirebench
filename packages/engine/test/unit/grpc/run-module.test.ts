@@ -163,12 +163,12 @@ const sendGrpc = (item: Parameters<typeof grpcRun.open>[0], scope: RunScope) =>
   grpcRun.open(item, scope, scope.context.host, { scope, interactive: false }).result;
 
 describe('grpcRun.open', () => {
-  it('loads the schema, prepares, calls once, and reports a gRPC subject with the target as origin', async () => {
+  it('loads the schema, resolves, connects, calls once, and reports a gRPC subject with the target as origin', async () => {
     const hello = itemAt('Greeter/Hello');
     const sent = hello && (await sendGrpc(hello, createRunScope(context())));
     expect(events).toEqual([
-      'secret ref-token',
       'secret secret:tenant',
+      'secret ref-token',
       'send localhost:50051 {"name":"abc123def456ghi789"}',
     ]);
     expect(sent?.subject).toMatchObject({ protocol: 'grpc', status: 0, bodyText: '{"message":"Hello"}' });
@@ -182,6 +182,41 @@ describe('grpcRun.open', () => {
     await expect(hello && sendGrpc(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
     await expect(hello && sendGrpc(hello, scope)).rejects.toMatchObject({ code: 'grpc-definition-missing' });
     expect(events).toEqual([]);
+  });
+});
+
+describe('grpcRun.resolve', () => {
+  const resolveIn = (p: Project, path: string): Promise<unknown> => {
+    const item = grpcRun
+      .groups(p)
+      .flatMap((group) => group.candidates)
+      .find((candidate) => candidate.item.path === path)?.item;
+    if (item === undefined) throw new Error(`No request at ${path}`);
+    const scope = createRunScope({ ...context(), project: p });
+    return grpcRun.resolve(item, scope, scope.context.host);
+  };
+
+  it('returns the input and the message with its secret tokens expanded, no credentials, and nothing unresolved', async () => {
+    const resolved = await resolveIn(project, 'Greeter/Hello');
+    expect(resolved).toMatchObject({
+      input: { target: 'localhost:50051', service: 'wirebench.greet.Greeter', method: 'SayHello' },
+      messageText: '{"name":"abc123def456ghi789"}',
+      unresolved: [],
+    });
+    expect(resolved).not.toHaveProperty('input.auth');
+    // The token is asked for in connect, which resolve does not reach.
+    expect(events).toEqual(['secret secret:tenant']);
+  });
+
+  it('reports a reference nothing resolves, and does not throw it', async () => {
+    const withRef: Project = {
+      ...project,
+      grpcApis: project.grpcApis.map((api) => ({
+        ...api,
+        requests: api.requests.map((request) => ({ ...request, message: '{"name":"${nope}"}' })),
+      })),
+    };
+    expect(await resolveIn(withRef, 'Greeter/Hello')).toMatchObject({ unresolved: [{ expr: '${nope}' }] });
   });
 });
 

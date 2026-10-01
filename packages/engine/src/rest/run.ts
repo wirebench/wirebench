@@ -1,8 +1,8 @@
 /**
  * REST's run facet (spec §3.3): the requests of every API, and the project's webhook items as a
- * group a run sends only when a selector names it. The steps of a send are in the order they have
- * always been: the request's TLS identity, its credentials (an OAuth2 token included), its secret
- * tokens, a webhook item's signing secret, then the wire.
+ * group a run sends only when a selector names it. A send resolves the request (its properties and
+ * secret tokens), runs its pre-request script, connects (its TLS identity, its credentials with an
+ * OAuth2 token, a webhook item's signing secret, the proxy), then goes on the wire (spec §3.4).
  */
 import { readFile } from 'node:fs/promises';
 import type { AssertionSubject } from '../assert/model.js';
@@ -25,6 +25,7 @@ import {
   unresolvedError,
   withSecrets,
 } from '../run/send-helpers.js';
+import type { Resolved } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, byOrder, findInTree, walkTree } from '../run/tree.js';
 import { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './scripting.js';
 import { loadOpenApiDocument, restOperationFor, restScriptTypes } from './script-types.js';
@@ -56,12 +57,6 @@ export interface RestSelected {
   readonly request: RestRequestDef;
   /** A webhook item's effective signing (webhook-signatures §5.2); absent for an API request. */
   readonly signing?: EffectiveSigning;
-}
-
-/** A REST request ready for `sendRest`. */
-export interface PreparedRest {
-  readonly kind: 'rest';
-  readonly input: RestSendInput;
 }
 
 /** Innermost first, as the app's `authChainFor` builds it: request, its folders inside-out, the API. */
@@ -97,18 +92,16 @@ async function signFor(selected: RestSelected, context: RunContext): Promise<Res
 }
 
 /**
- * One REST request as a send input, with its secrets resolved (or behind `context.secretPlaceholders`).
- * Exported for this module's tests; not part of the run facet.
+ * One REST request resolved (spec §3.4): its properties and secret tokens expanded (the secrets
+ * behind `context.secretPlaceholders` when given), nothing connected and the credentials still as
+ * configured, so the input holds no `auth`. A reference nothing resolves is reported in
+ * `unresolved`, not thrown: the send refuses it, a preview shows it.
  *
- * @throws WirebenchError `unresolved-properties` | `secret-missing` | `auth-grant-unsupported` |
- * `keystore-missing` | `webhook-signing-secret`
+ * @throws WirebenchError `secret-missing` | `rest-file-outside-project`
  */
-export async function prepareRest(selected: RestSelected, context: RunContext): Promise<PreparedRest> {
+export async function resolveRest(selected: RestSelected, context: RunContext): Promise<Resolved<RestSendInput>> {
   const { api, request } = selected;
   const scopes = scopesFor(context);
-  const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
-  const auth = await authFor(restEffectiveAuth(selected), selected.path, context, tls);
-  const baseUrl = baseUrlFor(context, api);
   const unexpanded = toRestSendInput({
     request: {
       method: request.method,
@@ -119,10 +112,8 @@ export async function prepareRest(selected: RestSelected, context: RunContext): 
       body: request.body,
       settings: request.settings,
     },
-    baseUrl,
+    baseUrl: baseUrlFor(context, api),
     projectSettings: context.project.settings,
-    ...(auth !== undefined ? { auth } : {}),
-    ...(tls !== undefined ? { tls } : {}),
     resolveFile: restFileResolver(context),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
@@ -130,20 +121,39 @@ export async function prepareRest(selected: RestSelected, context: RunContext): 
   const { input, unresolved } = expandRestSendInput(unexpanded, withTokens, {
     escape: request.settings.escapeProperties === true,
   });
-  if (unresolved.length > 0) {
-    throw unresolvedError(selected.path, unresolved);
-  }
-  const sign = await signFor(selected, context);
-  // As the app does: the proxy is chosen for the base URL, or the request's own when it has none.
-  const proxy = await context.host.proxyFor?.(input.baseUrl === '' ? input.request.url : input.baseUrl);
   return {
-    kind: 'rest',
     input: {
       ...input,
-      ...(proxy !== undefined ? { proxy } : {}),
-      ...(sign !== undefined ? { sign } : {}),
       ...(context.timeoutMs !== undefined ? { settings: { ...input.settings, timeoutMs: context.timeoutMs } } : {}),
     },
+    unresolved,
+  };
+}
+
+/**
+ * TLS, credentials (an OAuth2 token included), signing and the proxy, over a resolved input: what
+ * a send does after its pre-request script, so the script never sees a credential (spec §7).
+ *
+ * @throws WirebenchError `secret-missing` | `auth-grant-unsupported` | `keystore-missing` |
+ * `webhook-signing-secret`
+ */
+export async function connectRest(
+  selected: RestSelected,
+  context: RunContext,
+  input: RestSendInput,
+): Promise<RestSendInput> {
+  const { request } = selected;
+  const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
+  const auth = await authFor(restEffectiveAuth(selected), selected.path, context, tls);
+  const sign = await signFor(selected, context);
+  // As the app does: the proxy is chosen for the base URL, or the request's own URL when there is none.
+  const proxy = await context.host.proxyFor?.(input.baseUrl === '' ? input.request.url : input.baseUrl);
+  return {
+    ...input,
+    ...(auth !== undefined ? { auth } : {}),
+    ...(tls !== undefined ? { tls: { ...input.tls, ...tls } } : {}),
+    ...(proxy !== undefined ? { proxy } : {}),
+    ...(sign !== undefined ? { sign } : {}),
   };
 }
 
@@ -233,16 +243,21 @@ function webhookCandidates(collection: WebhookCollection): RestCandidate[] {
   return out;
 }
 
-/** One REST request as a run sends it: prepare, run its scripts when `scripts` is given, send. */
+/**
+ * One REST request as a run sends it (spec §3.4): resolve, run its pre-request script when
+ * `scripts` is given, connect, send, then its post-response script.
+ */
 async function sendRestItem(
   selected: RestSelected,
   context: RunContext,
   scripts: ScriptedSend | undefined,
 ): Promise<SentRequest> {
   if (scripts === undefined) {
-    const prepared = await prepareRest(selected, context);
-    const exchange = await sendRest(prepared.input);
-    dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
+    const { input, unresolved } = await resolveRest(selected, context);
+    if (unresolved.length > 0) throw unresolvedError('rest-unresolved-properties', selected.path, unresolved);
+    const connected = await connectRest(selected, context, input);
+    const exchange = await sendRest(connected);
+    dropRefusedToken(context, connected.auth, exchange.status === 401);
     return {
       subject: restSubject(exchange),
       raw: exchange,
@@ -251,17 +266,19 @@ async function sendRestItem(
     };
   }
 
-  // Prepared with its secrets behind placeholders; the URL is rebuilt only when the script changed it.
-  const prepared = await prepareRest(selected, { ...context, secretPlaceholders: scripts.placeholders });
-  const before = restRequestSnapshot(prepared.input);
+  // Resolved with its secrets behind placeholders; the URL is rebuilt only when the script changed it.
+  const { input, unresolved } = await resolveRest(selected, { ...context, secretPlaceholders: scripts.placeholders });
+  if (unresolved.length > 0) throw unresolvedError('rest-unresolved-properties', selected.path, unresolved);
+  const before = restRequestSnapshot(input);
   const sent = await scripts.session.pre(before);
-  const changed = applyRestSnapshot(prepared.input, before, sent);
+  const changed = applyRestSnapshot(input, before, sent);
   const restored = await scripts.placeholders.restore(
     { baseUrl: changed.baseUrl, request: changed.request },
     context.host.getSecret,
   );
-  const exchange = await sendRest({ ...changed, ...restored });
-  dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
+  const connected = await connectRest(selected, context, { ...changed, ...restored });
+  const exchange = await sendRest(connected);
+  dropRefusedToken(context, connected.auth, exchange.status === 401);
   return {
     subject: restSubject(exchange),
     raw: exchange,
@@ -304,8 +321,8 @@ export const restRun: ProtocolRun<RestSelected> = {
     return controller.handle(() => sendRestItem(selected, context, options.scripts));
   },
 
-  async resolve(selected, scope, host) {
-    return (await prepareRest(selected, { ...scope.context, host })).input;
+  resolve(selected, scope, host) {
+    return resolveRest(selected, { ...scope.context, host });
   },
 
   async scriptTypes(selected, scope) {

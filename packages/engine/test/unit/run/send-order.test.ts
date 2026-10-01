@@ -2,7 +2,8 @@
  * Pins the order of operations inside one send, per protocol: which secret is asked for when, when
  * the OAuth2 token is fetched, when the contract is loaded, when the scripts run, and what a refused
  * token does to the run's token source. Written against the run module before the protocols became
- * modules, and unchanged by that move.
+ * modules, and unchanged by that move. Since #184 phase 2 the order is the desktop's: resolve,
+ * script, connect, send.
  *
  * Nothing here reaches the network: the three senders and the three contract loaders are replaced by
  * recorders, so the only thing under test is the order of the calls.
@@ -367,24 +368,24 @@ async function tokensFetched(path: string, refuse: () => void): Promise<number> 
   return events.filter((event) => event === 'fetch token').length;
 }
 
-const PLAIN = ['secret ref-client', 'fetch token', 'secret secret:tenant', 'send'];
+const PLAIN = ['secret secret:tenant', 'secret ref-client', 'fetch token', 'send'];
 const SCRIPTED = [
   'check',
-  'secret ref-client',
-  'fetch token',
   'secret secret:signing',
   'pre',
   'secret secret:tenant',
+  'secret ref-client',
+  'fetch token',
   'send',
   'post',
 ];
 
 describe('the order of operations in a SOAP send', () => {
-  it('loads the definition, fetches the token, resolves the secret tokens, then sends', async () => {
+  it('loads the definition, resolves the secret tokens, fetches the token, then sends', async () => {
     expect(await orderOf('Billing/Op/Get')).toEqual(['load definition', ...PLAIN]);
   });
 
-  it('checks the scripts before anything is asked for, and puts the secrets back after the pre-request script', async () => {
+  it('checks the scripts before anything is asked for, and fetches the token after the pre-request script', async () => {
     expect(await orderOf('Billing/Op/Get', SCRIPTS)).toEqual(['load definition', ...SCRIPTED]);
   });
 
@@ -396,7 +397,7 @@ describe('the order of operations in a SOAP send', () => {
 });
 
 describe('the order of operations in a REST send', () => {
-  it('fetches the token, resolves the secret tokens, then sends, and loads no contract', async () => {
+  it('resolves the secret tokens, fetches the token, then sends, and loads no contract', async () => {
     expect(await orderOf('Invoices/List')).toEqual(PLAIN);
   });
 
@@ -424,7 +425,7 @@ describe('the order of operations in a REST send', () => {
 });
 
 describe('the order of operations in a gRPC send', () => {
-  it('loads the schema before it fetches the token', async () => {
+  it('loads the schema before it resolves the call or fetches the token', async () => {
     expect(await orderOf('Greeter/Hello')).toEqual(['load proto set', ...PLAIN]);
   });
 

@@ -1,7 +1,8 @@
 /**
  * gRPC's run facet (spec §3.3): unary calls only, since a stream needs an assertion model a run does
- * not have yet. The API's schema is loaded before the call is prepared: without a schema there is no
- * call, so no token is worth fetching. A schema that does not load is remembered for the run.
+ * not have yet. The API's schema is loaded before the call resolves: without a schema there is no
+ * call, so no token is worth fetching. A schema that does not load is remembered for the run. A
+ * send resolves, runs its pre-request script, connects, then calls (spec §3.4).
  */
 import type { AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
@@ -22,6 +23,7 @@ import {
   unresolvedError,
   withSecrets,
 } from '../run/send-helpers.js';
+import type { Resolved } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, findInTree, walkTree } from '../run/tree.js';
 import { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from './scripting.js';
 import { grpcMessageTypes, grpcScriptTypes } from './script-types.js';
@@ -48,13 +50,9 @@ export interface GrpcSelected {
   readonly request: GrpcRequestDef;
 }
 
-/** A unary call ready for `callGrpc`, which also takes the API's proto set. */
-export interface PreparedGrpc {
-  readonly kind: 'grpc';
-  // The streaming hooks are left out: a run makes unary calls, and wants only the result.
-  readonly input: Omit<GrpcSendInput, 'messages' | 'onMessage' | 'onOpen'>;
-  readonly messageText: string;
-}
+/** A unary call ready for `callGrpc`, which also takes the API's proto set and the message. */
+// The streaming hooks are left out: a run makes unary calls, and wants only the result.
+export type GrpcResolvedInput = Omit<GrpcSendInput, 'messages' | 'onMessage' | 'onOpen'>;
 
 /** The same chain for a gRPC request: request, its folders inside-out, the API. */
 export function grpcEffectiveAuth(selected: GrpcSelected): AuthConfig {
@@ -63,21 +61,24 @@ export function grpcEffectiveAuth(selected: GrpcSelected): AuthConfig {
 }
 
 /**
- * The app's `resolveGrpcSend` plus what its send handler adds: the target through the
- * environment's override for the API (the slot a REST base URL uses), the settings ladder, one
- * expansion pass over target, metadata and message, then the request's own TLS identity and trust
- * decision and the chain's credentials. There is no proxy: the app sends gRPC direct as well.
+ * The app's `resolveGrpcSend` plus what its send handler adds (spec §3.4): the target through the
+ * environment's override for the API (the slot a REST base URL uses), the settings ladder, and one
+ * expansion pass over target, metadata and message, nothing connected. A reference nothing
+ * resolves is reported in `unresolved`, not thrown: the send refuses it, a preview shows it.
  *
- * Exported for this module's tests; not part of the run facet.
- *
- * @throws WirebenchError `unresolved-properties` | `secret-missing` | `auth-grant-unsupported` |
- * `keystore-missing`
+ * @throws WirebenchError `grpc-method-unset` | `secret-missing`
  */
-export async function prepareGrpc(selected: GrpcSelected, context: RunContext): Promise<PreparedGrpc> {
+export async function resolveGrpc(
+  selected: GrpcSelected,
+  context: RunContext,
+): Promise<Resolved<GrpcResolvedInput> & { readonly messageText: string }> {
   const { api, request } = selected;
+  if (request.service === '' || request.method === '') {
+    throw new WirebenchError('grpc-method-unset', 'Choose the service and method this request calls first.', {
+      details: { path: selected.path },
+    });
+  }
   const scopes = scopesFor(context);
-  const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
-  const auth = await authFor(grpcEffectiveAuth(selected), selected.path, context, tls);
   const target = baseUrlFor(context, { slug: api.slug, baseUrl: api.target });
   const unexpanded = toGrpcSendInput({
     request: {
@@ -91,8 +92,6 @@ export async function prepareGrpc(selected: GrpcSelected, context: RunContext): 
     tls: api.tls,
     apiMetadata: api.metadata,
     projectSettings: context.project.settings,
-    ...(auth !== undefined ? { auth } : {}),
-    ...(tls !== undefined ? { tlsOptions: tls } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
   const withMessage = { ...unexpanded, messageText: request.message };
@@ -100,14 +99,33 @@ export async function prepareGrpc(selected: GrpcSelected, context: RunContext): 
   const { input, unresolved } = expandGrpcInput(withMessage, withTokens, {
     escape: request.settings.escapeProperties === true,
   });
-  if (unresolved.length > 0) {
-    throw unresolvedError(selected.path, unresolved);
-  }
   const { messageText, ...transport } = input;
   return {
-    kind: 'grpc',
     input: { ...transport, ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}) },
     messageText,
+    unresolved,
+  };
+}
+
+/**
+ * The request's own TLS identity and trust decision and the chain's credentials (an OAuth2 token
+ * included), over a resolved call: what a send does after its pre-request script, so the script
+ * never sees a credential (spec §7). There is no proxy: the app sends gRPC direct as well.
+ *
+ * @throws WirebenchError `secret-missing` | `auth-grant-unsupported` | `keystore-missing`
+ */
+export async function connectGrpc(
+  selected: GrpcSelected,
+  context: RunContext,
+  input: GrpcResolvedInput,
+): Promise<GrpcResolvedInput> {
+  const { request } = selected;
+  const tls = await tlsFor(context, request.settings.sslKeystoreRef, request.settings.trustInvalid === true);
+  const auth = await authFor(grpcEffectiveAuth(selected), selected.path, context, tls);
+  return {
+    ...input,
+    ...(auth !== undefined ? { auth } : {}),
+    ...(tls !== undefined ? { tlsOptions: { ...input.tlsOptions, ...tls } } : {}),
   };
 }
 
@@ -168,41 +186,47 @@ function protoSetFor(api: GrpcApi, scope: RunScope): Promise<ProtoSet> {
 
 const STREAMING_STEP_REASON = 'A streaming gRPC call cannot be a sequence step; only unary calls can';
 
-/** One gRPC request as a run sends it: prepare, run its scripts when `scripts` is given, call. */
+/**
+ * One gRPC request as a run sends it (spec §3.4): resolve, run its pre-request script when
+ * `scripts` is given, connect, call, then its post-response script.
+ */
 async function sendGrpcItem(
   selected: GrpcSelected,
   scope: RunScope,
   context: RunContext,
   scripts: ScriptedSend | undefined,
 ): Promise<SentRequest> {
-  // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
+  // Before the send resolves: without a schema there is no call, so nothing is worth asking for.
   const protoSet = await protoSetFor(selected.api, scope);
   if (scripts === undefined) {
-    const prepared = await prepareGrpc(selected, context);
-    const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
-    dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-    return { subject: grpcSubject(result), raw: result.exchange, origin: prepared.input.target };
+    const resolved = await resolveGrpc(selected, context);
+    if (resolved.unresolved.length > 0) {
+      throw unresolvedError('grpc-unresolved-properties', selected.path, resolved.unresolved);
+    }
+    const connected = await connectGrpc(selected, context, resolved.input);
+    const result = await callGrpc({ ...connected, set: protoSet, messageText: resolved.messageText });
+    dropRefusedToken(context, connected.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
+    return { subject: grpcSubject(result), raw: result.exchange, origin: connected.target };
   }
 
-  const prepared = await prepareGrpc(selected, { ...context, secretPlaceholders: scripts.placeholders });
-  const before = grpcRequestSnapshot(prepared.input, prepared.messageText);
+  const resolved = await resolveGrpc(selected, { ...context, secretPlaceholders: scripts.placeholders });
+  if (resolved.unresolved.length > 0) {
+    throw unresolvedError('grpc-unresolved-properties', selected.path, resolved.unresolved);
+  }
+  const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
   const sent = await scripts.session.pre(before);
-  const changed = applyGrpcSnapshot(prepared.input, prepared.messageText, before, sent);
+  const changed = applyGrpcSnapshot(resolved.input, resolved.messageText, before, sent);
   const restored = await scripts.placeholders.restore(
     { metadata: changed.input.metadata, messageText: changed.messageText },
     context.host.getSecret,
   );
-  const result = await callGrpc({
-    ...changed.input,
-    metadata: restored.metadata,
-    set: protoSet,
-    messageText: restored.messageText,
-  });
-  dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
+  const connected = await connectGrpc(selected, context, { ...changed.input, metadata: restored.metadata });
+  const result = await callGrpc({ ...connected, set: protoSet, messageText: restored.messageText });
+  dropRefusedToken(context, connected.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
   return {
     subject: grpcSubject(result),
     raw: result.exchange,
-    origin: prepared.input.target,
+    origin: connected.target,
     script: await scripts.session.post(sent, grpcResponseSnapshot(result)),
   };
 }
@@ -246,9 +270,8 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     return controller.handle(() => sendGrpcItem(selected, scope, context, options.scripts));
   },
 
-  async resolve(selected, scope, host) {
-    const { input, messageText } = await prepareGrpc(selected, { ...scope.context, host });
-    return { input, messageText };
+  resolve(selected, scope, host) {
+    return resolveGrpc(selected, { ...scope.context, host });
   },
 
   async scriptTypes(selected, scope) {

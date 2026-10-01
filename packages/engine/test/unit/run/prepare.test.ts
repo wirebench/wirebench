@@ -199,10 +199,13 @@ describe('prepareFor — SOAP', () => {
 
   it('refuses a request whose password is not supplied', async () => {
     const project = makeProject({ soapAuth: { type: 'basic', username: 'svc', passwordRef: 'sec_missing' } });
-    await expect(prepareFor(soapOf(project), contextFor(project))).rejects.toMatchObject({
-      code: 'secret-missing',
-      details: { ref: 'sec_missing' },
-    });
+    // With its environment, so the request resolves: the credentials are only reached in connect.
+    await expect(prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }))).rejects.toMatchObject(
+      {
+        code: 'secret-missing',
+        details: { ref: 'sec_missing' },
+      },
+    );
   });
 
   it('resolves a bearer owner through the secret getter', async () => {
@@ -386,9 +389,12 @@ describe('prepareFor — SOAP', () => {
     expect(plain.kind === 'soap' && plain.input.tls?.cert).toBeUndefined();
 
     const gone = withKeys('ks-gone');
-    await expect(prepareFor(soapOf(gone), contextFor(gone))).rejects.toMatchObject({ code: 'keystore-missing' });
+    // With its environment, so the request resolves: the keystore is only reached in connect.
+    await expect(prepareFor(soapOf(gone), contextFor(gone, { environmentId: 'env-test' }))).rejects.toMatchObject({
+      code: 'keystore-missing',
+    });
     const locked = withKeys('ks-locked');
-    await expect(prepareFor(soapOf(locked), contextFor(locked))).rejects.toMatchObject({
+    await expect(prepareFor(soapOf(locked), contextFor(locked, { environmentId: 'env-test' }))).rejects.toMatchObject({
       code: 'secret-missing',
       details: { ref: 'sec_missing' },
     });
@@ -406,7 +412,7 @@ describe('prepareFor — REST', () => {
 
     const broken = makeProject({ restUrl: '/invoices/${nope}' });
     await expect(prepareFor(restOf(broken), contextFor(broken, { environmentId: 'env-test' }))).rejects.toMatchObject({
-      code: 'unresolved-properties',
+      code: 'rest-unresolved-properties',
       details: { unresolved: ['${nope}'] },
     });
   });
@@ -713,7 +719,7 @@ describe('prepareFor — gRPC', () => {
   it('refuses a call with a property nothing resolves', async () => {
     const project = grpcProject();
     await expect(prepareFor(grpcOf(project), contextFor(project))).rejects.toMatchObject({
-      code: 'unresolved-properties',
+      code: 'grpc-unresolved-properties',
       details: { path: 'Greeter/Admin/Hello', unresolved: ['${tenant}', '${tenant}'] },
     });
   });

@@ -174,8 +174,8 @@ function runOf(registry: ProtocolRegistry, item: SelectedBase): ProtocolRun {
 
 /**
  * The scripts of one send, opened when the module first runs one. The secrets a request lists for
- * its scripts are read then and not before, so they are asked for after everything preparing the
- * request asks for, as they always were. Exported for the desktop's sends.
+ * its scripts are read then and not before, so they are asked for after everything resolving the
+ * request asks for, and before anything connecting it does. Exported for the desktop's sends.
  */
 export function deferredSession(
   scripting: RequestScripting,
@@ -232,9 +232,9 @@ function scriptsRefusal(item: SelectedBase, registry: ProtocolRegistry): Wireben
  * exactly as a selected request is. Which protocol sends a request is the registry's answer
  * (`context.registry`, the built-in protocols by default).
  *
- * A request with scripts (#63) is type-checked first; its module then prepares it with its secrets
- * behind placeholders, runs the pre-request script on that, puts the secrets back, sends, and runs
- * the post-response script on the response.
+ * A request with scripts (#63) is type-checked first; its module then resolves it with its secrets
+ * behind placeholders, runs the pre-request script on that, puts the secrets back, connects, sends,
+ * and runs the post-response script on the response.
  */
 export function createRunSender(context: RunContext): RunRequestSender {
   const registry = context.registry ?? defaultRegistry();

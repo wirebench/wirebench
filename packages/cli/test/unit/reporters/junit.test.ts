@@ -87,7 +87,7 @@ describe('renderJunit', () => {
     const list = childrenNamed(users, 'testcase').find((testcase) => attributesOf(testcase)['name'] === 'list')!;
     const errors = childrenNamed(list, 'error');
     expect(errors).toHaveLength(1);
-    expect(attributesOf(errors[0]!)).toMatchObject({ type: 'unresolved-properties' });
+    expect(attributesOf(errors[0]!)).toMatchObject({ type: 'rest-unresolved-properties' });
     expect(attributesOf(errors[0]!)['message']).toContain('${baseUrl}');
   });
 

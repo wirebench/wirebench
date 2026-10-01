@@ -69,14 +69,21 @@ export async function withSecrets(
   };
 }
 
-/** The refusal for a request whose text holds property references nothing resolves. */
-export function unresolvedError(path: string, unresolved: readonly UnresolvedRef[]): WirebenchError {
+/** A send resolved (spec §3.4): what it would send, and the references nothing resolves in it. */
+export interface Resolved<I> {
+  readonly input: I;
+  readonly unresolved: readonly UnresolvedRef[];
+}
+
+/**
+ * The refusal for a request whose text holds property references nothing resolves, under the code
+ * its protocol raises (spec §8).
+ */
+export function unresolvedError(code: string, path: string, unresolved: readonly UnresolvedRef[]): WirebenchError {
   const exprs = unresolved.map((ref) => ref.expr);
-  return new WirebenchError(
-    'unresolved-properties',
-    `"${path}" has property references nothing resolves: ${exprs.join(', ')}`,
-    { details: { path, unresolved: exprs } },
-  );
+  return new WirebenchError(code, `"${path}" has property references nothing resolves: ${exprs.join(', ')}`, {
+    details: { path, unresolved: exprs },
+  });
 }
 
 /**
