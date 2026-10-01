@@ -1,0 +1,26 @@
+---
+import Base from '../layouts/Base.astro';
+import { DOCS_LINKS, docsUrl } from '../docs-links.ts';
+
+const base = import.meta.env.BASE_URL;
+---
+
+<Base title="Page not found — Wirebench" description="This page does not exist.">
+  <div class="column missing">
+    <h1>Page not found</h1>
+    <p>
+      That address does not lead anywhere. Go back to the <a href={base}>home page</a> or open the
+      <a href={docsUrl(DOCS_LINKS.home)}>docs</a>.
+    </p>
+  </div>
+</Base>
+
+<style>
+  .missing {
+    padding-block: 3rem;
+  }
+
+  h1 {
+    margin: 0 0 1rem;
+  }
+</style>
