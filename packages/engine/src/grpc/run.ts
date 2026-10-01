@@ -1,9 +1,10 @@
 /**
  * gRPC's run facet (spec §3.3). A run selects unary calls only, since a stream needs an assertion
  * model a run does not have yet; a host opens any method kind, and drives a client or bidi stream's
- * request side when it opens one interactive (spec §5.2). A send resolves the call and refuses one it cannot make, loads the API's schema
- * (without a schema there is no call, so no token is worth fetching; a schema that does not load is
- * remembered for the run), runs its pre-request script, connects, then calls (spec §3.4).
+ * request side when it opens one interactive (spec §5.2). A send resolves the call and refuses one
+ * it cannot make, loads the API's schema (without a schema there is no call, so no token is worth
+ * fetching; a schema that does not load is remembered for the run), runs its pre-request script,
+ * connects, then calls (spec §3.4).
  */
 import type { AssertionSubject } from '../assert/model.js';
 import { GrpcError, isWirebenchError, WirebenchError } from '../errors.js';
@@ -12,7 +13,7 @@ import { apiDefinitionDir } from '../project/paths.js';
 import type { ProtocolRun, RunGroup, RunScope, ScriptedSend } from '../protocol/module.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { scopesFor } from '../run/context.js';
-import { exchangeController, notStreaming } from '../run/exchange.js';
+import { exchangeController } from '../run/exchange.js';
 import type { ExchangeController, StreamingSide } from '../run/exchange.js';
 import type { AttemptedRequest } from '../run/host.js';
 import type { SentRequest } from '../run/run.js';
@@ -222,8 +223,11 @@ function attemptedOf(input: GrpcResolvedInput): AttemptedRequest {
 
 /**
  * An interactive call's request side, between the handle `open` returns at once and the call that
- * opens it later: a push before the call opens waits for it, a half-close before it opens ends it as
- * it opens, and a call that ends without opening refuses the pushes still waiting.
+ * opens it later. Pushes go out in the order they were made: once the call is open each is written
+ * as it is pushed, and before that they wait in a queue the opening drains. A half-close never
+ * drops a push made before it: before the call opens it is held until the queue has drained. A
+ * push after the half-close, or one still waiting when the call ends without opening, is refused
+ * with `grpc-stream-closed`.
  */
 interface GrpcStreamState {
   /** The side the handle drives. */
@@ -234,47 +238,65 @@ interface GrpcStreamState {
   settled(): void;
 }
 
+interface WaitingPush {
+  readonly text: string;
+  readonly resolve: (json: unknown) => void;
+  readonly reject: (error: unknown) => void;
+}
+
+function streamClosed(halfClosed: boolean, settled: boolean): GrpcError {
+  return new GrpcError('grpc-stream-closed', 'The request side of this call is already closed', {
+    details: { halfClosed, settled },
+  });
+}
+
 function grpcStreamState(controller: ExchangeController<GrpcLiveEvent>): GrpcStreamState {
   let side: GrpcCallStreamHandle | undefined;
+  let waiting: WaitingPush[] = [];
   let ended = false;
-  let resolve: (handle: GrpcCallStreamHandle) => void = () => undefined;
-  let reject: (error: unknown) => void = () => undefined;
-  const stream = new Promise<GrpcCallStreamHandle>((onOpen, onClosed) => {
-    resolve = onOpen;
-    reject = onClosed;
-  });
-  // Observed here, so a call that never opens and has no push waiting reports nothing unhandled.
-  stream.catch(() => undefined);
-  const end = (): void => {
+  // Async only to turn a throw into a rejection: the body, and so the write, runs at once.
+  // eslint-disable-next-line @typescript-eslint/require-await
+  const write = async (handle: GrpcCallStreamHandle, text: string): Promise<unknown> => handle.send(text);
+  const end = (handle: GrpcCallStreamHandle): void => {
+    handle.end();
+    controller.queue.push({ protocol: 'grpc', kind: 'closed' });
+  };
+  // `close` is a half-close too: a gRPC call is aborted by `cancel`, never by its request side.
+  const halfClose = (): void => {
+    if (ended) return;
     ended = true;
-    side?.end();
+    // Before the call opens, the opening ends it once the pushes made before now are written.
+    if (side !== undefined) end(side);
   };
   return {
     streaming: {
-      push: async (message) => {
-        if (!('text' in message)) throw notStreaming('grpc');
-        return (await stream).send(message.text);
+      push: (message) => {
+        if (!('text' in message)) {
+          return Promise.reject(
+            new WirebenchError('exchange-not-streaming', 'A gRPC call takes its messages as JSON text, not binary', {
+              details: { protocol: 'grpc', reason: 'binary' },
+            }),
+          );
+        }
+        if (ended) return Promise.reject(streamClosed(true, false));
+        if (side !== undefined) return write(side, message.text);
+        return new Promise((resolve, reject) => waiting.push({ text: message.text, resolve, reject }));
       },
-      halfClose: () => {
-        if (ended) return;
-        end();
-        controller.queue.push({ protocol: 'grpc', kind: 'closed' });
-      },
-      close: end,
+      halfClose,
+      close: halfClose,
     },
     opened(handle) {
       side = handle;
-      if (ended) handle.end();
-      resolve(handle);
       controller.queue.push({ protocol: 'grpc', kind: 'open' });
+      const queued = waiting;
+      waiting = [];
+      for (const push of queued) write(handle, push.text).then(push.resolve, push.reject);
+      if (ended) end(handle);
     },
     settled() {
-      if (side !== undefined) return;
-      reject(
-        new GrpcError('grpc-stream-closed', 'The request side of this call is already closed', {
-          details: { halfClosed: ended, settled: true },
-        }),
-      );
+      const queued = waiting;
+      waiting = [];
+      for (const push of queued) push.reject(streamClosed(ended, true));
     },
   };
 }

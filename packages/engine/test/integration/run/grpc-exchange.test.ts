@@ -159,6 +159,59 @@ describe('gRPC through openExchange', () => {
     await handle.result;
   });
 
+  it('sends a push made just before a half-close on an open call', async () => {
+    const handle = open(call('Chat', []), { interactive: true });
+    await handle.push({ text: '{"name":"a"}' });
+    const pushed = handle.push({ text: '{"name":"b"}' });
+    handle.halfClose();
+    await expect(pushed).resolves.toEqual({ name: 'b' });
+    const sent = await handle.result;
+    expect(sent.exchange?.kind === 'grpc' && sent.exchange.grpc.requestMessages).toEqual([
+      { name: 'a' },
+      { name: 'b' },
+    ]);
+  });
+
+  it('sends every push made before a half-close that comes before the call opens, in order', async () => {
+    const handle = open(call('Chat', []), { live: true, interactive: true });
+    const pushed = [handle.push({ text: '{"name":"a"}' }), handle.push({ text: '{"name":"b"}' })];
+    handle.halfClose();
+    await expect(Promise.all(pushed)).resolves.toEqual([{ name: 'a' }, { name: 'b' }]);
+    const sent = await handle.result;
+    expect(sent.exchange?.kind === 'grpc' && sent.exchange.grpc.requestMessages).toEqual([
+      { name: 'a' },
+      { name: 'b' },
+    ]);
+    const kinds: string[] = [];
+    for await (const event of handle.events) kinds.push(event.kind);
+    expect(kinds[0]).toBe('open');
+    expect(kinds.filter((kind) => kind === 'closed')).toHaveLength(1);
+  });
+
+  it('keeps the order of pushes made without awaiting, across the call opening', async () => {
+    const handle = open(call('Chat', []), { interactive: true });
+    const first = handle.push({ text: '{"name":"a"}' });
+    await first;
+    const rest = ['b', 'c', 'd'].map((name) => handle.push({ text: JSON.stringify({ name }) }));
+    handle.halfClose();
+    await Promise.all(rest);
+    const sent = await handle.result;
+    expect(sent.exchange?.kind === 'grpc' && sent.exchange.grpc.requestMessages).toEqual(
+      ['a', 'b', 'c', 'd'].map((name) => ({ name })),
+    );
+  });
+
+  it('close is a half-close: close then halfClose queues one closed event', async () => {
+    const handle = open(call('Chat', []), { live: true, interactive: true });
+    await handle.push({ text: '{"name":"a"}' });
+    handle.close();
+    handle.halfClose();
+    await handle.result;
+    const kinds: string[] = [];
+    for await (const event of handle.events) kinds.push(event.kind);
+    expect(kinds.filter((kind) => kind === 'closed')).toHaveLength(1);
+  });
+
   it('refuses a push on a call that failed before it opened, rather than leaving it waiting', async () => {
     const handle = open(callWithoutCache('Chat', []), { interactive: true });
     const pushed = handle.push({ text: '{"name":"x"}' });
@@ -195,10 +248,21 @@ describe('gRPC through openExchange', () => {
     expect(sent.subject.status).toBe(0);
   });
 
+  it('asks the host for the proto set even when the API has a cached one', async () => {
+    const asked: string[] = [];
+    const protoSetFor = (item: { path: string }) => {
+      asked.push(item.path);
+      return Promise.resolve(server.set);
+    };
+    const sent = await open(call('SayHello', { name: 'a' }), {}, { protoSetFor }).result;
+    expect(sent.subject.status).toBe(0);
+    expect(asked).toEqual(['Greeter/SayHello']);
+  });
+
   it('a cancel aborts this call', async () => {
     const handle = open(call('Slow', SLOW_REQUEST), {});
     handle.cancel();
-    await expect(handle.result).rejects.toBeDefined();
+    await expect(handle.result).rejects.toMatchObject({ code: 'aborted' });
   });
 
   it('reports a reference nothing resolves as a prepare-stage failure, with what was attempted', async () => {

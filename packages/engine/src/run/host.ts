@@ -26,7 +26,11 @@ export interface SendFailure {
   /** `Date.now()` when the send began. */
   readonly startedAt: number;
   readonly durationMs: number;
-  /** What was about to go, or went, on the wire; absent when resolution itself failed. */
+  /**
+   * What was about to go, or went, on the wire; absent when resolution itself failed. It can hold
+   * live values — a `${secret:…}` expanded into a header or a metadata row — so a host redacts it
+   * before it is shown or logged.
+   */
   readonly attempted?: AttemptedRequest;
   /**
    * The protocol's input at the stage that failed, for a host that records the send whole. It holds
