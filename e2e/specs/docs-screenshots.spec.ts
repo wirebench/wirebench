@@ -1,5 +1,5 @@
-import { copyFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
@@ -99,8 +99,11 @@ async function shoot(
 ): Promise<void> {
   const mask = [...(options.mask ?? []), page.getByTestId('status-bar-last'), page.getByTestId('status-bar-save')];
   await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { mask, maxBytes: MAX_BYTES });
+  const written = join(IMAGES_DIR, `${shot}.png`);
   for (const name of [options.also ?? []].flat()) {
-    await captureWindow(page, join(SITE_IMAGES_DIR, `${name}.png`), { mask, maxBytes: MAX_BYTES });
+    const target = join(SITE_IMAGES_DIR, `${name}.png`);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(written, target);
   }
 }
 

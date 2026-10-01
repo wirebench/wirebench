@@ -44,7 +44,7 @@ const tabs = [
   </div>
   {
     tabs.map((tab, index) => (
-      <section role="tabpanel" id={`panel-${tab.id}`} aria-labelledby={`tab-${tab.id}`} hidden={index !== 0} class="protocols__panel">
+      <section role="tabpanel" id={`panel-${tab.id}`} aria-labelledby={`tab-${tab.id}`} tabindex="0" hidden={index !== 0} class="protocols__panel">
         <img src={tab.src} width="1280" height="800" loading="lazy" alt={tab.alt} />
         <ul>
           {tab.bullets.map((bullet) => (

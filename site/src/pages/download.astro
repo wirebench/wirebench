@@ -8,6 +8,7 @@ const released = new Date(release.publishedAt).toLocaleDateString('en-GB', {
   day: 'numeric',
   month: 'long',
   year: 'numeric',
+  timeZone: 'UTC',
 });
 ---
 
@@ -15,7 +16,7 @@ const released = new Date(release.publishedAt).toLocaleDateString('en-GB', {
   title="Download Wirebench"
   description="Installers for macOS, Windows and Linux, from the latest Wirebench release."
 >
-  <div class="column download-page">
+  <div class="download-page">
     <h1>Download Wirebench {release.version}</h1>
     <p class="released">
       Released {released} · <a href={release.notesUrl}>Release notes</a>

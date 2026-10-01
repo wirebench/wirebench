@@ -55,8 +55,8 @@ const groups = platforms.map((platform) => ({
     ))
   }
   <p class="download__notes">
-    First launch on macOS or Windows may ask you to confirm the app; the <a href={docsUrl(DOCS_LINKS.installation)}>install guide</a> covers each prompt and where Wirebench keeps its data.
-    macOS builds are signed and notarised, and Windows signing is still being set up; see the <a href={docsUrl(DOCS_LINKS.codeSigningPolicy)}>code-signing policy</a>.
+    macOS builds are signed and notarised, so they open without a warning. On first launch Windows may ask you to confirm the app (SmartScreen); the <a href={docsUrl(DOCS_LINKS.installation)}>install guide</a> covers the prompt and where Wirebench keeps its data.
+    Windows signing is still being set up; see the <a href={docsUrl(DOCS_LINKS.codeSigningPolicy)}>code-signing policy</a>.
   </p>
 </div>
 
@@ -64,13 +64,15 @@ const groups = platforms.map((platform) => ({
   {
     const nav = navigator;
     const platform = nav.userAgentData?.platform ?? nav.platform ?? '';
-    const match = /mac/i.test(platform)
-      ? 'macOS'
-      : /win/i.test(platform)
-        ? 'Windows'
-        : /linux/i.test(platform)
-          ? 'Linux'
-          : null;
+    const match = /android/i.test(platform)
+      ? null
+      : /mac/i.test(platform)
+        ? 'macOS'
+        : /^win/i.test(platform)
+          ? 'Windows'
+          : /linux/i.test(platform)
+            ? 'Linux'
+            : null;
     if (match) {
       const section = document.querySelector(`[data-platform="${match}"]`);
       if (section?.parentElement) {

@@ -3,7 +3,7 @@ name: Site
 # Builds the landing site and the documentation site and publishes them to GitHub Pages.
 #
 # Every push to main deploys, with no path filter: the command reference and the screenshots are
-# generated from app code, so a change outside docs-site/ can change the site. The artifact is the
+# generated from app code, so a change outside site/ or docs-site/ can change either package. The artifact is the
 # landing site with the user guide under /docs. Pull requests that touch the site build it without
 # deploying, which is where a broken internal link fails.
 on:
@@ -14,6 +14,8 @@ on:
       - 'site/**'
       - 'docs-site/**'
       - 'scripts/site-assemble.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/site.yml'
   workflow_dispatch:
 
@@ -37,6 +39,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm site:assemble
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
