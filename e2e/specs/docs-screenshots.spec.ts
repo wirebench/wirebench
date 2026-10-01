@@ -80,17 +80,24 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 /** Where the site serves its images from, one folder per page. */
 const IMAGES_DIR = join(REPO_ROOT, 'docs-site', 'public', 'images');
 
+/** Where the landing site serves its images from; `also` writes a second copy of a shot here. */
+const SITE_IMAGES_DIR = join(REPO_ROOT, 'site', 'public', 'images');
+
 /** The same tripwire as the README's: a page of 300 KB images is slow on a phone. */
 const MAX_BYTES = 300 * 1024;
 
 /**
  * Shoots the whole window into `docs-site/public/images/<shot>.png`, `shot` being `<page>/<name>`.
  * The status bar's last-request and last-saved clock times are masked on every shot, since any
- * screen can show them; `mask` adds the regions a particular screen needs on top.
+ * screen can show them; `mask` adds the regions a particular screen needs on top. `also` writes the
+ * same capture to `site/public/images/<also>.png` for the landing site.
  */
-async function shoot(page: Page, shot: string, options: { mask?: Locator[] } = {}): Promise<void> {
+async function shoot(page: Page, shot: string, options: { mask?: Locator[]; also?: string } = {}): Promise<void> {
   const mask = [...(options.mask ?? []), page.getByTestId('status-bar-last'), page.getByTestId('status-bar-save')];
   await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { mask, maxBytes: MAX_BYTES });
+  if (options.also !== undefined) {
+    await captureWindow(page, join(SITE_IMAGES_DIR, `${options.also}.png`), { mask, maxBytes: MAX_BYTES });
+  }
 }
 
 /**
@@ -272,7 +279,7 @@ test.describe('docs site screenshots', () => {
 
     await window.getByTestId('request-send').click();
     await expect(window.getByTestId('response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
-    await shoot(window, 'getting-started/response', { mask: timingRegions(window) });
+    await shoot(window, 'getting-started/response', { mask: timingRegions(window), also: 'home/response' });
   });
 
   test('REST client: a request and its response', async () => {
@@ -289,7 +296,7 @@ test.describe('docs site screenshots', () => {
     await setMethodAndUrl(window, 'GET', '/echo?pet=Fido&limit=10');
     await sendRest(window);
     await expect(window.getByTestId('rest-response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
-    await shoot(window, 'rest-client/rest-response', { mask: restTimingRegions(window) });
+    await shoot(window, 'rest-client/rest-response', { mask: restTimingRegions(window), also: 'home/rest-response' });
   });
 
   test('SOAP: an outgoing WS-Security configuration', async () => {
@@ -353,6 +360,7 @@ test.describe('docs site screenshots', () => {
     await expect(window.getByTestId('grpc-response-messages')).toContainText('Hello, Ada');
     await shoot(window, 'grpc/unary-response', {
       mask: [grpcStatus(window), logRows(window), window.getByTestId('status-bar-last')],
+      also: 'home/grpc-response',
     });
   });
 
