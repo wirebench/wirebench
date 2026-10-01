@@ -14,23 +14,23 @@ Variable values and credentials do not come across. Pre-request and test scripts
 until someone has read them. The import summary lists each of these, so you know what to set up before
 the first send.
 
-To run the import, see [Postman collections](/wirebench/guides/importers/#postman-collections) in
+To run the import, see [Postman collections](/wirebench/docs/guides/importers/#postman-collections) in
 the importers guide. It takes Collection v2.0 and v2.1 JSON, from a file or pasted.
 
-![The import summary for a Postman collection: three requests in one folder, and five things to look at, from scripts to credentials](/wirebench/images/switching/postman-summary.png)
+![The import summary for a Postman collection: three requests in one folder, and five things to look at, from scripts to credentials](/wirebench/docs/images/switching/postman-summary.png)
 
 ## What carries over
 
 | In Postman | In Wirebench | More |
 | --- | --- | --- |
-| The collection, its name and description | A REST API with the same name and description | [REST](/wirebench/guides/rest-client/) |
-| A `baseUrl` or `base_url` collection variable. Without one, the origin of the first full URL | The API's **Base URL**, also offered as a suggestion in that field. Request URLs that started with `{{baseUrl}}` become relative paths | [REST](/wirebench/guides/rest-client/#create-an-api-and-a-request) |
+| The collection, its name and description | A REST API with the same name and description | [REST](/wirebench/docs/guides/rest-client/) |
+| A `baseUrl` or `base_url` collection variable. Without one, the origin of the first full URL | The API's **Base URL**, also offered as a suggestion in that field. Request URLs that started with `{{baseUrl}}` become relative paths | [REST](/wirebench/docs/guides/rest-client/#create-an-api-and-a-request) |
 | Folders, nested, with their descriptions | Folders, nested the same way | |
 | Requests: method, URL and description | Requests. A request saved as a bare URL string is a GET | |
-| `{{name}}` anywhere in a name, URL, header, query, body or auth field | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/reference/property-syntax/) |
-| `:id` path segments and their values | `{id}` in the URL, with a row in the **Path parameters** table | [Path and query parameters](/wirebench/guides/rest-client/#path-and-query-parameters) |
+| `{{name}}` anywhere in a name, URL, header, query, body or auth field | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `:id` path segments and their values | `{id}` in the URL, with a row in the **Path parameters** table | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
 | Query parameters and headers, including disabled ones | Rows in the **Params** and **Headers** tables. Disabled rows stay off | |
-| A raw body (JSON, XML, text…) | A raw body in the same language | [Request body](/wirebench/guides/rest-client/#request-body) |
+| A raw body (JSON, XML, text…) | A raw body in the same language | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
 | An `x-www-form-urlencoded` body | A form body | |
 | A `form-data` body | A multipart body. File fields keep the file path | |
 | A binary file body | A binary body pointing at the same path | |
@@ -52,7 +52,7 @@ on a request becomes the request's. A request or folder set to inherit still inh
 | OAuth 2.0, client credentials | OAuth 2, client credentials: token URL, client ID and scopes |
 | NTLM | NTLM, with the username, domain and workstation |
 
-See [Authentication](/wirebench/guides/auth/) for each scheme's fields.
+See [Authentication](/wirebench/docs/guides/auth/) for each scheme's fields.
 
 ## What does not carry over
 
@@ -61,12 +61,12 @@ See [Authentication](/wirebench/guides/auth/) for each scheme's fields.
 | Passwords, tokens, API key values, client secrets | Never copied. The summary counts the auth configurations that need one | Enter each on its **Auth** tab. Wirebench stores it encrypted outside the project |
 | Collection and folder variables, other than the base URL | Not imported. The summary names them; their values are lost | Define each as a project property or an environment variable, with the same name |
 | Dynamic variables such as `{{$guid}}` or `{{$timestamp}}` | Translated to `${$guid}`, but nothing generates a value. The summary names them | Define each as a property |
-| Pre-request and test scripts | Imported as each request's [scripts](/wirebench/guides/scripts/#postman-scripts): the collection's, the folders' and the request's own, in order, run through a `pm` layer. **Switched off** until switched on. The summary counts them and names the requests that call something the layer does not support | Read them, then **Switch on** (per request) or **Switch on scripts…** (for an API or folder). Rewrite a call the layer does not support, such as `pm.sendRequest`; a value one request passes to another can also be a [sequence](/wirebench/guides/sequences/) transfer |
+| Pre-request and test scripts | Imported as each request's [scripts](/wirebench/docs/guides/scripts/#postman-scripts): the collection's, the folders' and the request's own, in order, run through a `pm` layer. **Switched off** until switched on. The summary counts them and names the requests that call something the layer does not support | Read them, then **Switch on** (per request) or **Switch on scripts…** (for an API or folder). Rewrite a call the layer does not support, such as `pm.sendRequest`; a value one request passes to another can also be a [sequence](/wirebench/docs/guides/sequences/) transfer |
 | OAuth 2.0 password or implicit grants | Auth set to none. The summary names the grant | Pick a supported grant on the **Auth** tab, or set the token as Bearer |
 | Other auth types (Digest, AWS Signature, Hawk, OAuth 1.0, Akamai, JWT…) | Auth set to none. The summary names the type | Set the request's auth by hand, or send the header yourself |
 | Items that are neither a folder nor a request | Skipped. The summary counts them | Nothing: there was no request to import |
 | Saved responses and examples | Not imported, and not reported | Send the request to get a live response |
-| Environment and globals exports | Not accepted: the dialog asks for a collection | Recreate them as [environments](/wirebench/guides/environments/) |
+| Environment and globals exports | Not accepted: the dialog asks for a collection | Recreate them as [environments](/wirebench/docs/guides/environments/) |
 | Collections by URL | Not supported | Download the file, or paste its JSON |
 
 <Aside type="caution" title="Credentials typed as headers">
@@ -82,10 +82,10 @@ to the **Auth** tab, where it is stored as a secret.
 1. Read the summary, or choose **Copy report** to keep it as a checklist.
 
 2. Enter the passwords, tokens and keys it counts, on each **Auth** tab. See
-   [Secrets](/wirebench/guides/secrets/).
+   [Secrets](/wirebench/docs/guides/secrets/).
 
 3. Define the variables it names as properties or environment variables. See
-   [Environments and properties](/wirebench/guides/environments/).
+   [Environments and properties](/wirebench/docs/guides/environments/).
 
 4. Check the API's **Base URL**, then send one request to confirm the setup.
 
@@ -93,6 +93,6 @@ to the **Auth** tab, where it is stored as a secret.
 
 ## Related
 
-- [Importing APIs](/wirebench/guides/importers/): the Import dialog and every format it reads.
-- [Property expansion syntax](/wirebench/reference/property-syntax/): how `${name}` resolves.
-- [Secrets](/wirebench/guides/secrets/): where credentials live and why no import copies them.
+- [Importing APIs](/wirebench/docs/guides/importers/): the Import dialog and every format it reads.
+- [Property expansion syntax](/wirebench/docs/reference/property-syntax/): how `${name}` resolves.
+- [Secrets](/wirebench/docs/guides/secrets/): where credentials live and why no import copies them.

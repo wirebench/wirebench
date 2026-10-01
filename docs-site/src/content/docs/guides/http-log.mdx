@@ -7,9 +7,9 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 
 The HTTP Log is the console's raw record of what actually went over the wire, one row per send
 this session: SOAP, REST and gRPC, finished exchanges and failed sends alike. It resets when the
-workspace closes — for the persistent, re-sendable record, see [History](/wirebench/guides/history/).
+workspace closes — for the persistent, re-sendable record, see [History](/wirebench/docs/guides/history/).
 
-![The response next to the request, with the HTTP Log below](/wirebench/images/getting-started/response.png)
+![The response next to the request, with the HTTP Log below](/wirebench/docs/images/getting-started/response.png)
 
 ## Read a row
 
@@ -71,7 +71,7 @@ the failure was a TLS trust error. Headers for a failed send are redacted once, 
 they're recorded, and stay that way — no unredacted copy exists, so the show-secrets toggle can't
 reveal them, and the **Headers** tab explains this with a note.
 
-![The HTTP Log with a finished request and a refused one, the refused row selected and its Response tab showing connection-refused](/wirebench/images/http-log/failed-send.png)
+![The HTTP Log with a finished request and a refused one, the refused row selected and its Response tab showing connection-refused](/wirebench/docs/images/http-log/failed-send.png)
 
 ## Filter and search
 
@@ -104,7 +104,7 @@ whole session's log at once, not just the selected row.
 **Preserve log** keeps the log's rows in memory when you close or switch a workspace, instead of
 starting empty. It's never written to disk, and it's off again at every launch. The number of rows
 the log keeps before dropping the oldest is **HTTP Log rows kept** in
-[Preferences](/wirebench/guides/preferences/) → UI (100–5000, default 500).
+[Preferences](/wirebench/docs/guides/preferences/) → UI (100–5000, default 500).
 
 ## Copy, resend or open a row
 
@@ -142,10 +142,10 @@ an `_error` field with its code, message and stage; a truncated body carries `_t
 
 ## Related
 
-- [History](/wirebench/guides/history/): the persistent, re-sendable and diffable record of your
+- [History](/wirebench/docs/guides/history/): the persistent, re-sendable and diffable record of your
   own sends.
-- [Secrets](/wirebench/guides/secrets/)
-- [Preferences and layout](/wirebench/guides/preferences/)
-- [REST](/wirebench/guides/rest-client/)
-- [SOAP and WSDL](/wirebench/guides/soap-wsdl/)
-- [Authentication](/wirebench/guides/auth/)
+- [Secrets](/wirebench/docs/guides/secrets/)
+- [Preferences and layout](/wirebench/docs/guides/preferences/)
+- [REST](/wirebench/docs/guides/rest-client/)
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/)
+- [Authentication](/wirebench/docs/guides/auth/)

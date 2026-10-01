@@ -23,13 +23,13 @@ on the same request.
 The explorer fills with a folder per interface, a request named `Request 1` under each operation,
 generated from the operation's schema.
 
-![The Import dialog with a WSDL URL filled in](/wirebench/images/getting-started/import-wsdl.png)
+![The Import dialog with a WSDL URL filled in](/wirebench/docs/images/getting-started/import-wsdl.png)
 
 ## Send a request
 
 Open a request and it opens in the request editor with a generated SOAP envelope.
 
-![The generated Add request, open in the editor](/wirebench/images/getting-started/request-editor.png)
+![The generated Add request, open in the editor](/wirebench/docs/images/getting-started/request-editor.png)
 
 Fill in the values and choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The
 response opens beside the request with its status, headers, timing and raw bytes on their own
@@ -55,7 +55,7 @@ shield icon). It has three sections: **Keystores**, **Outgoing** and **Incoming*
    the same masked way. Java keystores (`.jks`) aren't read; convert one to PKCS#12 first with
    `keytool -importkeystore -srckeystore in.jks -destkeystore out.p12 -deststoretype PKCS12`.
 
-![An expanded outgoing WS-Security configuration with a Timestamp entry and a Username Token entry for user bob, password type Digest](/wirebench/images/soap-wsdl/wss-outgoing.png)
+![An expanded outgoing WS-Security configuration with a Timestamp entry and a Username Token entry for user bob, password type Digest](/wirebench/docs/images/soap-wsdl/wss-outgoing.png)
 
 Select the configuration on the request's **Auth** inspector tab (**Outgoing WSS**) before
 sending. The raw request view masks the password even though the envelope itself has the
@@ -100,6 +100,6 @@ changed; choose **Update** to apply it:
 
 ## Related
 
-- [REST](/wirebench/guides/rest-client/)
-- [HTTP Log](/wirebench/guides/http-log/)
-- [Importers](/wirebench/guides/importers/)
+- [REST](/wirebench/docs/guides/rest-client/)
+- [HTTP Log](/wirebench/docs/guides/http-log/)
+- [Importers](/wirebench/docs/guides/importers/)

@@ -29,7 +29,7 @@ that does not exist is an error before anything is sent.
 </Steps>
 
 A script is saved beside its request, as `<request>.pre.ts` or `<request>.post.ts`, and the request
-file names it under `scripts`. See the [project folder format](/wirebench/reference/project-format/).
+file names it under `scripts`. See the [project folder format](/wirebench/docs/reference/project-format/).
 
 ```ts
 // Log in.post.ts: keep the token for the next request, as a secret.
@@ -47,7 +47,7 @@ const signature = crypto.hmac('sha256', secrets.get('signing_key'), request.body
 request.headers.set('X-Signature', signature);
 ```
 
-The whole API, per protocol and phase, is in the [script API reference](/wirebench/reference/script-api/).
+The whole API, per protocol and phase, is in the [script API reference](/wirebench/docs/reference/script-api/).
 
 ## What a pre-request script can change
 

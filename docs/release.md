@@ -223,7 +223,7 @@ Until `SIGNPATH_API_TOKEN` is set, both signing jobs pass their input through un
 
 1. Apply to the SignPath Foundation programme for `wirebench/wirebench`. The programme asks for the
    project's code-signing policy, which is published at
-   <https://wirebench.github.io/wirebench/help/code-signing-policy/>.
+   <https://wirebench.github.io/wirebench/docs/help/code-signing-policy/>.
 2. In SignPath, create the project and connect it to this repository as a trusted build system
    (GitHub Actions).
 3. Create two **artifact configurations**:

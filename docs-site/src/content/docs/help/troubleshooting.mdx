@@ -9,7 +9,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 macOS releases from 2.2.0 on are signed and notarised, so macOS opens them without blocking. Windows
 releases aren't code-signed yet, so Windows warns the first time you run the installer. That is
-expected: see [Install and first run](/wirebench/getting-started/installation/) for the steps to get
+expected: see [Install and first run](/wirebench/docs/getting-started/installation/) for the steps to get
 past it, and for opening a macOS release older than 2.2.0.
 
 ## "git was not found on this machine"
@@ -67,13 +67,13 @@ responses from the server.
 The `.snap` package is confined to your home folder. A WSDL, OpenAPI document, keystore or
 project stored outside it — on another mounted drive, for instance — isn't reachable by a snap
 install. Use the AppImage, `.deb` or `.rpm` package instead if you need to reach files outside
-your home folder; see [Install and first run](/wirebench/getting-started/installation/) for all
+your home folder; see [Install and first run](/wirebench/docs/getting-started/installation/) for all
 four Linux packages.
 
 ## Where your data lives
 
 Workspaces, projects, preferences and secrets all live in one data folder per system — see
-[Where your data lives](/wirebench/getting-started/installation/#where-your-data-lives) for the
+[Where your data lives](/wirebench/docs/getting-started/installation/#where-your-data-lives) for the
 exact path on macOS, Windows and Linux (and the snap's own subfolder). There's no separate log
 file to check: Wirebench doesn't write one, and nothing is ever sent off your machine.
 

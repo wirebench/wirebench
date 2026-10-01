@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { citedImages, compareImages } from './check-docs-images.ts';
 
 describe('citedImages', () => {
-  it('reads Markdown images and HTML src attributes under the site base', () => {
+  it('reads Markdown images and HTML src attributes under the docs base', () => {
     const page = [
-      '![The picker](/wirebench/images/getting-started/workspace-picker.png)',
-      '<img src="/wirebench/images/rest-client/rest-response.png" alt="" />',
-      '[A page, not an image](/wirebench/guides/rest-client/)',
+      '![The picker](/wirebench/docs/images/getting-started/workspace-picker.png)',
+      '<img src="/wirebench/docs/images/rest-client/rest-response.png" alt="" />',
+      '[A page, not an image](/wirebench/docs/guides/rest-client/)',
     ].join('\n');
     expect(citedImages(page)).toEqual(['getting-started/workspace-picker.png', 'rest-client/rest-response.png']);
   });

@@ -16,11 +16,11 @@ Wirebench opens the workspace picker whenever no workspace is open — on first 
 you delete the one you had open. It lists every workspace on disk, with its project count and
 when you last opened it, and offers a name field to create another.
 
-![The workspace picker Wirebench shows on first launch](/wirebench/images/getting-started/workspace-picker.png)
+![The workspace picker Wirebench shows on first launch](/wirebench/docs/images/getting-started/workspace-picker.png)
 
 From the picker you can also **Import project folder…** (copies a project folder into a new
 workspace named after it) and **Join shared workspace…** (see [Shared
-workspaces](/wirebench/guides/shared-workspaces/)).
+workspaces](/wirebench/docs/guides/shared-workspaces/)).
 
 ## Create a workspace
 
@@ -48,10 +48,10 @@ count. From here you can:
 
 - **Rename** a workspace in place — type into its name field and press Enter or click away.
 - **Share this workspace…** or **Stop sharing** — see [Shared
-  workspaces](/wirebench/guides/shared-workspaces/).
+  workspaces](/wirebench/docs/guides/shared-workspaces/).
 - **Delete** a workspace.
 
-![The Manage workspaces dialog listing two workspaces, Demo and Staging, with their rename fields and share and delete buttons](/wirebench/images/workspaces/manage-dialog.png)
+![The Manage workspaces dialog listing two workspaces, Demo and Staging, with their rename fields and share and delete buttons](/wirebench/docs/images/workspaces/manage-dialog.png)
 
 <Aside type="caution" title="Deleting a workspace">
 Deleting sends the workspace and the projects stored inside it to the trash — never a permanent
@@ -64,7 +64,7 @@ workspace. Deleting the workspace you have open returns you to the picker.
 **New Project…** (<kbd>⌘⇧N</kbd> / <kbd>Ctrl+Shift+N</kbd>) creates an empty project inside the
 open workspace — just a name; its folder is the workspace's own `projects/<slug>/`. From there,
 import a WSDL or an OpenAPI document into it, or build requests by hand. See
-[importers](/wirebench/guides/importers/).
+[importers](/wirebench/docs/guides/importers/).
 
 ## Remove a project
 
@@ -85,7 +85,7 @@ copying it — Wirebench reads and writes it in place. Use this when a project's
 where they are, for example under their own version control outside the workspace.
 
 <Aside type="note">
-Linked projects are not available in a [shared workspace](/wirebench/guides/shared-workspaces/):
+Linked projects are not available in a [shared workspace](/wirebench/docs/guides/shared-workspaces/):
 a linked folder points outside the tree that gets shared, which a teammate's machine cannot
 resolve. Use **Move to workspace…** on a local workspace to copy a linked project in first.
 </Aside>
@@ -112,8 +112,8 @@ reordering tabs, and which one is active, is remembered per workspace the next t
 
 ## Related
 
-- [Shared workspaces](/wirebench/guides/shared-workspaces/) — share a workspace with a team, sync,
+- [Shared workspaces](/wirebench/docs/guides/shared-workspaces/) — share a workspace with a team, sync,
   and resolve conflicts.
-- [Importers](/wirebench/guides/importers/) — WSDL, OpenAPI, cURL and legacy SOAP project import.
-- [Environments](/wirebench/guides/environments/) — variables and endpoints shared across a
+- [Importers](/wirebench/docs/guides/importers/) — WSDL, OpenAPI, cURL and legacy SOAP project import.
+- [Environments](/wirebench/docs/guides/environments/) — variables and endpoints shared across a
   workspace's projects.

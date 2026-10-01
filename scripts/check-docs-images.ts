@@ -4,7 +4,7 @@
  * catches a page written before its screenshot was shot; the second, a screenshot left behind
  * after the page stopped using it.
  *
- * A citation is any `/wirebench/images/<path>` in a page — a Markdown image or an HTML `src`.
+ * A citation is any `/wirebench/docs/images/<path>` in a page — a Markdown image or an HTML `src`.
  * `node scripts/check-docs-images.ts` prints the result and exits non-zero on any problem. Wired
  * into `pnpm check` as `pnpm check:docs-images`.
  */
@@ -21,7 +21,7 @@ const IMAGE_EXTENSION = /\.(png|jpe?g|svg|webp|gif)$/;
 
 /** Every image path (relative to the images folder) that `page` cites. Pure. */
 export function citedImages(page: string): string[] {
-  return [...page.matchAll(/\/wirebench\/images\/([^\s)"'#?]+)/g)].map((match) => match[1]!);
+  return [...page.matchAll(/\/wirebench\/docs\/images\/([^\s)"'#?]+)/g)].map((match) => match[1]!);
 }
 
 /** The problems between what pages cite and what the images folder holds. Pure. */

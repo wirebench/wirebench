@@ -4,7 +4,7 @@ import starlightLinksValidator from 'starlight-links-validator';
 
 export default defineConfig({
   site: 'https://wirebench.github.io',
-  base: '/wirebench',
+  base: '/wirebench/docs',
   image: {
     service: passthroughImageService(),
   },

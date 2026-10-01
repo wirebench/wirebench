@@ -10,13 +10,13 @@ Point a payment provider's, a CI system's or your own service's webhook at it, a
 up in Wirebench seconds later: method, path, headers and body, exactly as they arrived.
 
 Catch URLs belong to a workspace shared on Wirebench Server, so everyone in the workspace sees the
-same captures. See [Shared workspaces](/wirebench/guides/shared-workspaces/) for sharing a workspace
+same captures. See [Shared workspaces](/wirebench/docs/guides/shared-workspaces/) for sharing a workspace
 on a server.
 
 <Aside>
 This page is about *receiving* real deliveries on a public URL. For *sending* webhook events you
 define yourself — from an OpenAPI document or by hand — see
-[Sending webhooks](/wirebench/guides/sending-webhooks/).
+[Sending webhooks](/wirebench/docs/guides/sending-webhooks/).
 </Aside>
 
 ## Create a catch URL
@@ -49,11 +49,11 @@ Select a capture to read it:
 - **Details** shows the method, subpath, query, source address, time received and size.
 
 A catch URL with a signature scheme marks each capture ✓ (verified) or ✗ (with the reason), and *401*
-when it rejected the request. See [Webhook signatures](/wirebench/guides/webhook-signatures/).
+when it rejected the request. See [Webhook signatures](/wirebench/docs/guides/webhook-signatures/).
 
 **Save as webhook…**, on the capture viewer, turns a capture into a webhook item in a project's
 Webhooks collection — useful for replaying a real event on demand. See
-[Sending webhooks](/wirebench/guides/sending-webhooks/#replay-a-real-event).
+[Sending webhooks](/wirebench/docs/guides/sending-webhooks/#replay-a-real-event).
 
 A body larger than the server's limit is cut, and the tab says so: _Body cut at 1.0 MB of 3.4 MB_.
 

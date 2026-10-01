@@ -4,7 +4,7 @@ description: Check the webhook a request causes, in a sequence step or a CI run.
 ---
 
 A **callback assertion** passes when a request's send causes a webhook. After the send, Wirebench
-waits for a capture at one of the workspace's [catch URLs](/wirebench/guides/webhooks/), takes the
+waits for a capture at one of the workspace's [catch URLs](/wirebench/docs/guides/webhooks/), takes the
 first one that fits, and checks it.
 
 ## Add one
@@ -56,4 +56,4 @@ The token is a **CI token**. An editor or admin creates one with **Create CI tok
 **Preferences → Devices & tokens**. It is read-only and belongs to one workspace: it can read that
 workspace's catch URL list and captures, and nothing else. Without the two variables, the request
 still runs and each callback assertion is reported as errored (exit code 3). See
-[Run in CI](/wirebench/guides/run-in-ci/).
+[Run in CI](/wirebench/docs/guides/run-in-ci/).

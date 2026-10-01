@@ -6,7 +6,7 @@ description: The persistent record of every send — search it, re-send an entry
 import { Steps } from '@astrojs/starlight/components';
 
 History is the persistent record of every request you've sent — SOAP, REST and gRPC alike. Unlike
-the [HTTP Log](/wirebench/guides/http-log/), which is the raw wire exchange for the current
+the [HTTP Log](/wirebench/docs/guides/http-log/), which is the raw wire exchange for the current
 session only, History survives a relaunch and is what you reach for to re-run or compare past
 sends.
 
@@ -97,7 +97,7 @@ the body. Redacted values show as they were recorded. When you compare a REST en
 the Request tab shows the current side's headers as they were sent, including the auth and default
 headers an entry never records.
 
-![A Compare tab diffing two runs of Request 1 side by side, next to the History list](/wirebench/images/history/diff-view.png)
+![A Compare tab diffing two runs of Request 1 side by side, next to the History list](/wirebench/docs/images/history/diff-view.png)
 
 A body that doesn't parse as JSON or XML is shown as it was recorded, unformatted.
 
@@ -114,7 +114,7 @@ per-row delete — only a full clear.
 
 ## Limits
 
-- A REST request whose response was an event stream (see [REST](/wirebench/guides/rest-client/#event-streams))
+- A REST request whose response was an event stream (see [REST](/wirebench/docs/guides/rest-client/#event-streams))
   is recorded with its events, capped at both ends; it can't be re-sent from History.
 - History is per-workspace and stored on disk, so it survives closing and reopening Wirebench.
 - History doesn't keep timings or connection details; that detail lives in the HTTP Log for the
@@ -125,8 +125,8 @@ per-row delete — only a full clear.
 
 ## Related
 
-- [HTTP Log](/wirebench/guides/http-log/): the raw wire exchange for the current session, with
+- [HTTP Log](/wirebench/docs/guides/http-log/): the raw wire exchange for the current session, with
   filters and timing detail.
-- [SOAP and WSDL](/wirebench/guides/soap-wsdl/)
-- [REST](/wirebench/guides/rest-client/)
-- [gRPC](/wirebench/guides/grpc/)
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/)
+- [REST](/wirebench/docs/guides/rest-client/)
+- [gRPC](/wirebench/docs/guides/grpc/)

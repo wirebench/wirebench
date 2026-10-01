@@ -11,7 +11,7 @@ followed by a call that needs its token is a two-step sequence.
 
 A sequence runs no code. Everything it does is declared in its file, `sequences/<name>.sequence.yaml`,
 which you review and share like any other file in the project. A step's request can still have
-[scripts](/wirebench/guides/scripts/) of its own: they run in the step as they would on a single send,
+[scripts](/wirebench/docs/guides/scripts/) of its own: they run in the step as they would on a single send,
 and a value a script sets with `vars.set` reaches the later steps just as a transfer does.
 
 ## Build a sequence
@@ -64,7 +64,7 @@ A step runs its request's own assertions first (turn off **Run the request's own
 skip them), then its own: status, a header, a body expression that equals, matches, is present or is
 absent, response time, a SOAP fault, or the schema.
 
-A step can also wait for the webhook its request causes: see [Callback assertions](/wirebench/guides/callback-assertions/).
+A step can also wait for the webhook its request causes: see [Callback assertions](/wirebench/docs/guides/callback-assertions/).
 
 ## Read a run
 
