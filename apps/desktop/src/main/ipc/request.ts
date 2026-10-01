@@ -1,6 +1,5 @@
 import type { WebContents } from 'electron';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import {
   composeUrl,
@@ -63,7 +62,8 @@ import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactUrl, redactXml } from '../redact.js';
 import { failedExchangeOf } from '../failed-exchange.js';
-import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
+import { sendAndRecordHistory } from '../send-with-history.js';
+import { extraTrustAnchors, reportSendFailed } from '../send/host.js';
 import {
   finishScripts,
   scriptsFailed,
@@ -151,6 +151,12 @@ export type RequestChannelProject = Pick<
       | 'restTlsFor'
       | 'rememberRestCookies'
       | 'restMeta'
+      // What the send host (send/host.ts) lends the engine: the trust anchors, the client identity,
+      // the stored cookies, and the project and environment a send runs in.
+      | 'trustAnchorsFor'
+      | 'clientIdentityFor'
+      | 'restCookiesFor'
+      | 'runContextFor'
       // Read after a REST send, to check the response against its OpenAPI operation.
       | 'restContractFor'
       // Read by the body editor's form view.
@@ -266,41 +272,6 @@ function tokenSecrets(deps: Pick<RequestChannelDeps, 'project' | 'secretsFor'>, 
  * write target; only a path chosen through the Save-as "Browse…" picker does.
  */
 export type DumpFilePicks = { hasWrite(path: string): boolean };
-
-/**
- * e2e-only: extra trust anchors for every send, as one PEM file named by
- * `WIREBENCH_E2E_EXTRA_CA_FILE`.
- *
- * Superseded, for real use, by the `ssl.caBundlePath` preference (see
- * `ProjectHost.trustAnchors`), which is how a user configures a private CA and which a spec
- * can now drive through the picker with `WIREBENCH_E2E_FILE_DIALOG_PATH`. This hook survives for
- * the specs that predate the preference and only need *some* anchor in place before the
- * Preferences UI exists in their flow; it adds to `tls.ca` exactly as the preference does.
- *
- * The Playwright suite talks to a TLS server signed by a CA it generates at run time, and
- * Wirebench must trust it *the way a user would* — by configuring trust, not by turning
- * verification off, and not by letting a client keystore double as a trust store (which is
- * exactly the confusion `toTlsClientIdentity` was changed to avoid). So a test build takes the
- * anchors from an env var no shipped build ever sets, alongside `WIREBENCH_E2E_OPEN_PATH`,
- * `WIREBENCH_E2E_SAVE_PATH`, `WIREBENCH_E2E_DIALOG_FOLDER`, `WIREBENCH_E2E_DIALOG_SAVE` and
- * `WIREBENCH_E2E_FILE_DIALOG_PATH`.
- *
- * TLS verification itself is untouched: these anchors are *added* to a send's `tls.ca`, and
- * `rejectUnauthorized` keeps its default. The file is read once and remembered; an unset or
- * unreadable variable simply yields no anchors, so an ordinary run pays nothing for it.
- */
-let e2eTrustAnchors: readonly string[] | undefined;
-function extraTrustAnchors(): readonly string[] {
-  if (e2eTrustAnchors === undefined) {
-    const path = process.env['WIREBENCH_E2E_EXTRA_CA_FILE'];
-    try {
-      e2eTrustAnchors = path === undefined || path.length === 0 ? [] : [readFileSync(path, 'utf-8')];
-    } catch {
-      e2eTrustAnchors = [];
-    }
-  }
-  return e2eTrustAnchors;
-}
 
 /**
  * Applies the saved request's properties (and the user's preferences) to the input the

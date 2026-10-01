@@ -192,3 +192,49 @@ describe('ProjectHost under a named workspace environment', () => {
     expect(ws.workspace().activeEnvironmentId).toBe('wdev');
   });
 });
+
+describe('ProjectHost for the send host', () => {
+  it("answers a request's run context under its project's environment", async () => {
+    const { requestId, dev, test } = await restProject();
+    const context = host.runContextFor(requestId);
+    expect(context?.project).toBe(host.model());
+    expect(context?.projectDir).toBe(join(dir, 'project'));
+    expect(context?.environmentId).toBe(dev);
+    expect(context?.workspace).toBeUndefined();
+    expect(host.runContextFor(requestId, test)?.environmentId).toBe(test);
+    expect(host.runContextFor(requestId, 'no-such-env')).toBeUndefined();
+  });
+
+  it('answers the workspace and its environment inside a workspace, leaving the active one alone', async () => {
+    await host.mutate({ kind: 'add-api', name: 'Pets', baseUrl: 'https://api.default' });
+    const api = host.model()?.apis[0] as RestApi;
+    await host.mutate({ kind: 'add-rest-request', apiId: api.id });
+    const requestId = (host.model()?.apis[0] as RestApi).requests[0]?.id as string;
+    const ws = insideWorkspace(api.slug);
+
+    const active = host.runContextFor(requestId);
+    expect(active?.environmentId).toBe('wdev');
+    expect(active?.workspace).toEqual({ workspace: ws.workspace(), projectSlug: 'proj' });
+    const named = host.runContextFor(requestId, 'wtest');
+    expect(named?.environmentId).toBe('wtest');
+    expect(named?.workspace?.workspace.activeEnvironmentId).toBe('wtest');
+    expect(ws.workspace().activeEnvironmentId).toBe('wdev');
+  });
+
+  it("hands back a request's stored cookies whatever its send-cookies setting", async () => {
+    const { requestId } = await restProject();
+    const cookie = { name: 'sid', value: 'abc' } as never;
+    expect(host.restCookiesFor(requestId)).toBeUndefined();
+    host.rememberRestCookies(requestId, [cookie]);
+    expect(host.restCookiesFor(requestId)).toEqual([cookie]);
+    // The request's own resolution still sends none: its setting is off.
+    expect(host.restSend(requestId)?.input.cookies).toBeUndefined();
+    host.rememberRestCookies(requestId, []);
+    expect(host.restCookiesFor(requestId)).toBeUndefined();
+  });
+
+  it('lends no trust anchors and no identity when nothing is configured', async () => {
+    expect(await host.trustAnchors()).toBeUndefined();
+    expect(await host.clientIdentityFor(undefined)).toBeUndefined();
+  });
+});

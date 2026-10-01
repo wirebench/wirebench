@@ -20,6 +20,7 @@ import type { OAuth2Auth, ScriptSession, SentScripts, SoapRequestSnapshot, SoapS
 import type { EngineService } from './engine-service.js';
 import { resolveSoapAuth } from './secret-resolver.js';
 import { failedExchangeOf } from './failed-exchange.js';
+import { reportSendFailed } from './send/host.js';
 import type { HistoryService } from './history-service.js';
 import type { OAuth2Service } from './oauth2.js';
 import type { ProjectRouter } from './project-router.js';
@@ -308,24 +309,6 @@ function withoutUndefined<T extends object>(value: T): { [K in keyof T]: Exclude
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as {
     [K in keyof T]: Exclude<T[K], undefined>;
   };
-}
-
-/**
- * Hands a failure row to `onSendFailed`, if one is wired. Anything the row builder or the listener
- * throws is swallowed: the send's own error is what the caller rethrows and the user must see.
- */
-export function reportSendFailed(
-  onSendFailed: ((failure: FailedExchangeWire) => void) | undefined,
-  failure: () => FailedExchangeWire,
-): void {
-  if (onSendFailed === undefined) {
-    return;
-  }
-  try {
-    onSendFailed(failure());
-  } catch {
-    // Deliberately ignored — see above.
-  }
 }
 
 async function record(

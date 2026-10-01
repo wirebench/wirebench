@@ -2793,6 +2793,18 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  trustAnchorsFor(projectId: string): ReturnType<ProjectRouter['trustAnchorsFor']> {
+    return this.hostFor(projectId).trustAnchors();
+  }
+
+  /** @inheritdoc */
+  clientIdentityFor(
+    ...[projectId, keystoreId]: Parameters<ProjectRouter['clientIdentityFor']>
+  ): ReturnType<ProjectRouter['clientIdentityFor']> {
+    return this.hostFor(projectId).clientIdentityFor(keystoreId);
+  }
+
+  /** @inheritdoc */
   addInterface(
     ...[projectId, input]: Parameters<ProjectRouter['addInterface']>
   ): ReturnType<ProjectRouter['addInterface']> {
@@ -2916,6 +2928,16 @@ export class WorkspaceService implements ProjectRouter {
 
   restBodySchema(...args: Parameters<ProjectRouter['restBodySchema']>): ReturnType<ProjectRouter['restBodySchema']> {
     return this.hostOfEntity(args[0]).restBodySchema(...args);
+  }
+
+  /** @inheritdoc */
+  restCookiesFor(...args: Parameters<ProjectRouter['restCookiesFor']>): ReturnType<ProjectRouter['restCookiesFor']> {
+    return this.hostOfEntity(args[0]).restCookiesFor(...args);
+  }
+
+  /** @inheritdoc */
+  runContextFor(...args: Parameters<ProjectRouter['runContextFor']>): ReturnType<ProjectRouter['runContextFor']> {
+    return this.hostOfEntity(args[0]).runContextFor(...args);
   }
 
   /** @inheritdoc */

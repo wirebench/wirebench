@@ -192,7 +192,7 @@ import type {
   UpdatePlanWire,
 } from '../shared/wire-types.js';
 import { isEndpointAuth } from '@wirebench/engine';
-import type { DefinitionAuth, EndpointAuth, JsonSchema, SoapOwnerAuth } from '@wirebench/engine';
+import type { DefinitionAuth, EndpointAuth, JsonSchema, RunWorkspace, SoapOwnerAuth } from '@wirebench/engine';
 import type { EngineService } from './engine-service.js';
 import { generateOptionsFrom } from './generate-options.js';
 import type { GlobalProperties } from './global-properties.js';
@@ -560,6 +560,39 @@ export class ProjectHost {
       return context;
     }
     return { ...context, workspace: { ...context.workspace, activeEnvironmentId: envId } };
+  }
+
+  /**
+   * What the engine runs a send of `requestId` in: the open project, its folder, the environment
+   * resolution reads under `envId` (the active one when absent) and, inside a workspace, the
+   * workspace with that environment active. `undefined` when no project is open or the
+   * environment is unknown, as {@link restSend} refuses it. The request itself is not looked up:
+   * the caller selects it from `project`.
+   */
+  runContextFor(
+    _requestId: string,
+    envId?: string,
+  ):
+    | {
+        readonly project: Project;
+        readonly projectDir: string;
+        readonly environmentId?: string;
+        readonly workspace?: RunWorkspace;
+      }
+    | undefined {
+    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
+      return undefined;
+    }
+    const { project, dir } = this.open;
+    const workspace = this.workspaceContextFor(envId);
+    const environmentId =
+      workspace === undefined ? (envId ?? project.activeEnvironmentId) : workspace.workspace.activeEnvironmentId;
+    return {
+      project,
+      projectDir: dir,
+      ...(environmentId !== undefined ? { environmentId } : {}),
+      ...(workspace !== undefined ? { workspace } : {}),
+    };
   }
 
   /**
@@ -1605,7 +1638,7 @@ export class ProjectHost {
     const preferences = this.prefs();
     // A sequence step's `${#Sequence#…}` values ride along; the expanders hold them to ADR-0015.
     const scopes = { ...this.scopesFor(envId), ...(sequence !== undefined ? { sequence } : {}) };
-    const cookies = this.restCookiesFor(requestId);
+    const cookies = this.sentRestCookiesFor(requestId);
     if (
       findRestRequest(project, requestId) === undefined &&
       project.webhooks !== undefined &&
@@ -1730,11 +1763,19 @@ export class ProjectHost {
    * Session-only and per request, deliberately: there is no jar, so one request's send never
    * depends on another's, and nothing about cookies reaches disk.
    */
-  private restCookiesFor(requestId: string): readonly Cookie[] | undefined {
+  private sentRestCookiesFor(requestId: string): readonly Cookie[] | undefined {
     const request = this.restOrWebhookRequest(requestId);
     if (request?.settings.sendCookies !== true) {
       return undefined;
     }
+    return this.restCookiesFor(requestId);
+  }
+
+  /**
+   * The cookies stored for this REST request, whatever its *send cookies* setting: the engine
+   * reads the setting itself, so the send host lends what is stored.
+   */
+  restCookiesFor(requestId: string): readonly Cookie[] | undefined {
     return this.restCookies.get(requestId);
   }
 
@@ -2229,7 +2270,7 @@ export class ProjectHost {
    * request configured for a particular mutual-TLS service is not quietly overridden by a
    * default meant for everything else.
    */
-  private async clientIdentityFor(requestKeystoreId: string | undefined): Promise<TlsOptionsWire | undefined> {
+  async clientIdentityFor(requestKeystoreId: string | undefined): Promise<TlsOptionsWire | undefined> {
     const globalRef = this.prefs()?.ssl.clientKeystoreRef;
     const keystoreId =
       requestKeystoreId !== undefined && requestKeystoreId.length > 0
@@ -2267,7 +2308,7 @@ export class ProjectHost {
    * verification stricter, never looser, so failing quietly here is safe in the one direction
    * that matters.
    */
-  private async trustAnchors(): Promise<readonly string[] | undefined> {
+  async trustAnchors(): Promise<readonly string[] | undefined> {
     const open = this.open;
     if (open === undefined) return undefined;
     return resolveTrustAnchors({ caBundlePath: this.prefs()?.ssl.caBundlePath, roots: [open.dir], picks: this.picks });

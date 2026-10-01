@@ -43,6 +43,13 @@ export interface ProjectRouter {
   save(projectId: string, ...args: Parameters<ProjectHost['save']>): ReturnType<ProjectHost['save']>;
   /** Resolves the proxy for `url` against one project's effective preferences. */
   proxyFor(projectId: string, ...args: Parameters<ProjectHost['proxyFor']>): ReturnType<ProjectHost['proxyFor']>;
+  /** One project's extra trust anchors: the preferred CA bundle, split into one PEM per certificate. */
+  trustAnchorsFor(projectId: string): ReturnType<ProjectHost['trustAnchors']>;
+  /** The client identity a send presents: the keystore named, else the global client keystore. */
+  clientIdentityFor(
+    projectId: string,
+    ...args: Parameters<ProjectHost['clientIdentityFor']>
+  ): ReturnType<ProjectHost['clientIdentityFor']>;
   /**
    * Imports a definition into the addressed project. `project.addInterface` carries a target of
    * `{ projectId }` (or `{ newProjectName }`, which a later task resolves to a project first).
@@ -116,6 +123,11 @@ export interface ProjectRouter {
   restContractFor(...args: Parameters<ProjectHost['restContractFor']>): ReturnType<ProjectHost['restContractFor']>;
   /** The JSON schema of the body a REST request's operation declares, for the body editor's form. */
   restBodySchema(...args: Parameters<ProjectHost['restBodySchema']>): ReturnType<ProjectHost['restBodySchema']>;
+
+  /** The cookies stored for one REST request, whatever its *send cookies* setting. */
+  restCookiesFor(...args: Parameters<ProjectHost['restCookiesFor']>): ReturnType<ProjectHost['restCookiesFor']>;
+  /** What the engine runs a send of one request in: its project, folder, environment and workspace. */
+  runContextFor(...args: Parameters<ProjectHost['runContextFor']>): ReturnType<ProjectHost['runContextFor']>;
 
   /** Remembers what a REST response set, for the next send of that same request. */
   rememberRestCookies(
