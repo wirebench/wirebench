@@ -142,6 +142,7 @@ const session: ScriptSession = {
 
 interface Shape {
   readonly restUrl?: string;
+  readonly restBaseUrl?: string;
   readonly soapEnvelope?: string;
   readonly grpcMessage?: string;
   readonly grpcMethod?: string;
@@ -180,7 +181,7 @@ function project(shape: Shape = {}): Project {
     id: 'api-invoices',
     slug: 'invoices',
     order: 1,
-    baseUrl: 'https://api.example.test',
+    baseUrl: shape.restBaseUrl ?? 'https://api.example.test',
     auth: AUTH,
     requests: [
       createRestRequest('List', { id: 'req-rest', url: shape.restUrl ?? '/invoices', headers: [entry('X-A', 'a')] }),
@@ -310,8 +311,8 @@ describe("the desktop's codes for a request that does not resolve", () => {
 });
 
 describe('the failures a REST send reports to the host', () => {
-  function sendWith(extra: Partial<SendHost>): { failures: SendFailure[]; done: Promise<unknown> } {
-    const p = project();
+  function sendWith(extra: Partial<SendHost>, shape: Shape = {}): { failures: SendFailure[]; done: Promise<unknown> } {
+    const p = project(shape);
     const base = contextFor(p);
     const failures: SendFailure[] = [];
     const host: SendHost = { ...base.host, events: { onFailed: (_item, failure) => failures.push(failure) }, ...extra };
@@ -354,6 +355,28 @@ describe('the failures a REST send reports to the host', () => {
       attempted: { url: 'https://api.example.test/invoices', method: 'GET' },
     });
     expect(events).not.toContain('send');
+  });
+
+  it('reports stage prepare for a base URL that does not parse, and rethrows the original error', async () => {
+    const { failures, done } = sendWith(
+      { proxyFor: () => Promise.reject(new Error('proxy broke')) },
+      { restBaseUrl: 'not a url' },
+    );
+    await expect(done).rejects.toThrow('proxy broke');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ stage: 'prepare', attempted: { url: 'not a url/invoices', method: 'GET' } });
+  });
+
+  it("never masks the send's own error with one the host's listener throws", async () => {
+    const { done } = sendWith({
+      proxyFor: () => Promise.reject(new Error('proxy broke')),
+      events: {
+        onFailed: () => {
+          throw new Error('listener broke');
+        },
+      },
+    });
+    await expect(done).rejects.toThrow('proxy broke');
   });
 
   it('reports stage send when the connection is refused', async () => {

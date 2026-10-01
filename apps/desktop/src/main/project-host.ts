@@ -564,10 +564,10 @@ export class ProjectHost {
 
   /**
    * What the engine runs a send of `requestId` in: the open project, its folder, the environment
-   * resolution reads under `envId` (the active one when absent) and, inside a workspace, the
-   * workspace with that environment active. `undefined` when no project is open or the
-   * environment is unknown, as {@link restSend} refuses it. The request itself is not looked up:
-   * the caller selects it from `project`.
+   * resolution reads under `envId` (the active one when absent), inside a workspace the workspace
+   * with that environment active, and the enabled global properties. `undefined` when no project
+   * is open or the environment is unknown, as {@link restSend} refuses it. The request itself is
+   * not looked up: the caller selects it from `project`.
    */
   runContextFor(
     _requestId: string,
@@ -578,6 +578,7 @@ export class ProjectHost {
         readonly projectDir: string;
         readonly environmentId?: string;
         readonly workspace?: RunWorkspace;
+        readonly globals: PropertyMap;
       }
     | undefined {
     if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
@@ -592,6 +593,7 @@ export class ProjectHost {
       projectDir: dir,
       ...(environmentId !== undefined ? { environmentId } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
+      globals: this.enabledGlobals(),
     };
   }
 
@@ -893,8 +895,7 @@ export class ProjectHost {
    * so an ad-hoc send still expands `${#Global#…}`.
    */
   scopesFor(envId?: string): PropertyScopes {
-    const globalsState = this.globals?.get();
-    const globals = globalsState === undefined ? {} : enabledProperties(globalsState.properties, globalsState.disabled);
+    const globals = this.enabledGlobals();
     if (this.open === undefined) {
       return { project: {}, global: globals, system: process.env };
     }
@@ -911,6 +912,12 @@ export class ProjectHost {
       });
     }
     return resolveScopes(this.open.project, envId ?? this.open.project.activeEnvironmentId, globals, process.env);
+  }
+
+  /** The enabled global properties, the `${#Global#…}` scope every send of this project reads. */
+  private enabledGlobals(): PropertyMap {
+    const globalsState = this.globals?.get();
+    return globalsState === undefined ? {} : enabledProperties(globalsState.properties, globalsState.disabled);
   }
 
   /**

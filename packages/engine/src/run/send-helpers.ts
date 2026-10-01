@@ -186,7 +186,7 @@ export async function authFor(
   tls: TlsOptions | undefined,
 ): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
   if (configured.type !== 'oauth2') {
-    return resolveAuthConfig(configured, context.host.getSecret);
+    return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret), context);
   }
   const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
     scopes: scopesFor(context),
@@ -195,7 +195,35 @@ export async function authFor(
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
-  return resolveAuthConfig(configured, context.host.getSecret, { accessToken });
+  return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret, { accessToken }), context);
+}
+
+/**
+ * Tells the host each credential a resolved auth puts on the wire, in the form it travels there,
+ * so a server that echoes one back has it masked: an API key's value, a bearer or OAuth2 access
+ * token, and Basic's `base64(user:password)`. A password is never reported bare — people choose
+ * them, so one is often ordinary text — and NTLM's password never travels at all.
+ */
+export function reportedAuth(auth: SendAuth | undefined, context: RunContext): SendAuth | undefined {
+  const report = context.host.onSecretValue;
+  if (report === undefined || auth === undefined) return auth;
+  switch (auth.type) {
+    case 'api-key':
+      report(auth.value);
+      break;
+    case 'bearer':
+      report(auth.token);
+      break;
+    case 'oauth2':
+      report(auth.accessToken);
+      break;
+    case 'basic':
+      report(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
+      break;
+    default:
+      break;
+  }
+  return auth;
 }
 
 /** A REST API's base URL (or a gRPC API's target), through the workspace's environment likewise. */

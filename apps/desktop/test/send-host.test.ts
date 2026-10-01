@@ -11,16 +11,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  createApi,
+  createProject,
+  createRestRequest,
+  createWebhookCollection,
+  createWebhookFolder,
   failedRequestOf,
   WirebenchError,
   type OAuth2Auth,
+  type Project,
   type SelectedBase,
   type WsHandshake,
 } from '@wirebench/engine';
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from '../src/main/send/host.js';
 import { failedExchangeOf } from '../src/main/failed-exchange.js';
 import { toWsHandshakeWire } from '../src/main/engine-wire.js';
-import type { FailedExchangeWire, LogEntryWire } from '../src/shared/wire-types.js';
+import { containsRecordedSecret, redactSecretText } from '../src/main/redact.js';
+import type { FailedExchangeWire, HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -51,6 +58,29 @@ function restItem(url = '/pets/{id}'): SelectedBase {
     group: 'Pets',
     request: { id: 'r1', name: 'Get pet', slug: 'get-pet', method: 'GET', url },
   } as unknown as SelectedBase;
+}
+
+/** A History entry of the parent request, whose body names the callback URL. */
+function sentWith(body: string): HistoryEntryWire {
+  return {
+    id: 'h1',
+    kind: 'rest',
+    at: '2026-09-28T10:42:00.000Z',
+    projectId: 'p1',
+    requestId: 'parent',
+    requestName: 'Subscribe',
+    interfaceName: 'Petstore',
+    operationName: '',
+    endpoint: 'https://api.test/subscriptions',
+    soapVersion: 'none',
+    method: 'POST',
+    status: 201,
+    durationMs: 5,
+    ok: true,
+    request: { envelopeXml: body, headers: [] },
+    response: { envelopeXml: '{}', rawHeaders: [], status: 201, statusText: 'Created' },
+    sizeBytes: 0,
+  };
 }
 
 describe('desktopSendHost', () => {
@@ -243,6 +273,81 @@ describe('desktopSendHost', () => {
     expect(await host.contractFor!(restItem(), { ...exchange, stream: {} })).toBeUndefined();
   });
 
+  it("sends a webhook callback to the URL its parent's newest exchange names", async () => {
+    const callback = createRestRequest('onPetEvent', {
+      id: 'w3',
+      method: 'POST',
+      url: '/onPetEvent',
+      hook: {
+        kind: 'callback',
+        operation: 'post /subscriptions',
+        name: 'onPetEvent',
+        expression: '{$request.body#/callbackUrl}',
+      },
+    });
+    const model: Project = {
+      ...createProject('P', { id: 'p1' }),
+      apis: [
+        createApi('Petstore', {
+          id: 'api-1',
+          baseUrl: 'https://api.test',
+          requests: [
+            createRestRequest('Subscribe', {
+              id: 'parent',
+              method: 'POST',
+              url: '/subscriptions',
+              contract: { method: 'post', path: '/subscriptions' },
+            }),
+          ],
+        }),
+      ],
+      webhooks: createWebhookCollection({
+        folders: [
+          createWebhookFolder('Petstore', {
+            id: 'g1',
+            target: 'https://group.test',
+            source: { apiId: 'api-1' },
+            requests: [callback],
+          }),
+        ],
+      }),
+    };
+    const asked: [string, string][] = [];
+    const newestHistory = (projectId: string, requestId: string): HistoryEntryWire | undefined => {
+      asked.push([projectId, requestId]);
+      return requestId === 'parent' ? sentWith('{"callbackUrl":"https://cb.test/x"}') : undefined;
+    };
+    const runContextFor = vi.fn(() => ({ project: model, projectDir: '/nowhere', globals: {} }));
+    const host = await desktopSendHost(deps({ project: project({ runContextFor }), newestHistory }), {
+      ...send,
+      requestId: 'w3',
+      envId: 'e1',
+    });
+    const item = {
+      kind: 'rest',
+      path: 'Petstore/onPetEvent',
+      group: 'Petstore',
+      request: callback,
+    } as unknown as SelectedBase;
+    expect(await host.callbackUrlFor!(item)).toBe('https://cb.test/x');
+    expect(runContextFor).toHaveBeenCalledWith('w3', 'e1');
+    expect(asked).toEqual([['p1', 'parent']]);
+    // Never sent: the target is kept.
+    const unsent = await desktopSendHost(deps({ project: project({ runContextFor }) }), { ...send, requestId: 'w3' });
+    expect(await unsent.callbackUrlFor!(item)).toBeUndefined();
+  });
+
+  it('records each token it hands out, so the log masks it', async () => {
+    const host = await desktopSendHost(
+      deps({ oauth2: { accessToken: () => Promise.resolve('tok-7d1e5b2a'), clear: () => undefined } }),
+      send,
+    );
+    expect(containsRecordedSecret('tok-7d1e5b2a')).toBe(false);
+    await host.tokens!.accessTokenFor(config, { scopes });
+    expect(containsRecordedSecret('tok-7d1e5b2a')).toBe(true);
+    expect(redactSecretText('echo tok-7d1e5b2a')).not.toContain('tok-7d1e5b2a');
+  });
+
   it('keeps the target of an item that is not a webhook', async () => {
     const host = await desktopSendHost(deps(), send);
     expect(await host.callbackUrlFor!(restItem())).toBeUndefined();
@@ -286,17 +391,13 @@ describe('desktopSendHost', () => {
     expect(mine.failedStage).toBe('prepare');
   });
 
-  it("falls back to the item's own URL when nothing was attempted", async () => {
+  it('writes no row when the failure says nothing was attempted, but still records the stage', async () => {
     const rows: FailedExchangeWire[] = [];
     const mine: DesktopSend = { ...send };
     const host = await desktopSendHost(deps({ onSendFailed: (row) => void rows.push(row) }), mine);
-    host.events!.onFailed!(restItem('/pets/{id}'), {
-      stage: 'prepare',
-      error: new Error('no'),
-      startedAt: 1_700_000_000_000,
-      durationMs: 1,
-    });
-    expect(rows[0]?.request).toEqual({ url: '/pets/{id}', method: 'GET', headers: {} });
+    host.events!.onFailed!(restItem(), { stage: 'prepare', error: new Error('no'), startedAt: 0, durationMs: 1 });
+    expect(rows).toEqual([]);
+    expect(mine.failedStage).toBe('prepare');
   });
 
   it('writes the send row with the enabled headers and what the transport captured', async () => {
@@ -352,7 +453,13 @@ describe('desktopSendHost', () => {
       loud,
     );
     expect(() =>
-      throwing.events!.onFailed!(restItem(), { stage: 'prepare', error: new Error('x'), startedAt: 0, durationMs: 0 }),
+      throwing.events!.onFailed!(restItem(), {
+        stage: 'prepare',
+        error: new Error('x'),
+        startedAt: 0,
+        durationMs: 0,
+        attempted: { url: 'http://h/x', method: 'GET', headers: {} },
+      }),
     ).not.toThrow();
     expect(loud.failedStage).toBe('prepare');
   });

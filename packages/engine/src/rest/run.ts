@@ -284,14 +284,20 @@ async function connectAndSend(
   script?: () => Promise<RestSendInput>,
 ): Promise<{ readonly connected: RestSendInput; readonly sent: SentRequest }> {
   const startedAt = Date.now();
-  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: RestSendInput): void =>
-    context.host.events?.onFailed?.(selected, {
-      stage,
-      error,
-      startedAt,
-      durationMs: Date.now() - startedAt,
-      attempted: attemptedOf(attempted),
-    });
+  // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
+  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: RestSendInput): void => {
+    try {
+      context.host.events?.onFailed?.(selected, {
+        stage,
+        error,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        attempted: attemptedOf(attempted),
+      });
+    } catch {
+      // Deliberately ignored — see above.
+    }
+  };
   let connected: RestSendInput;
   try {
     connected = await connectRest(selected, context, script !== undefined ? await script() : input);

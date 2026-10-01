@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { failedRequestOf, findWebhookRequest } from '@wirebench/engine';
 import type {
+  AttemptedRequest,
   ClientIdentity,
   GetSecret,
   OAuth2Auth,
@@ -107,7 +108,10 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
     events: {
       onFailed: (item, failure) => {
         send.failedStage = failure.stage;
-        reportSendFailed(deps.onSendFailed, () => failedExchangeOf(failureRowOf(send, item, failure)));
+        // Every module says what it attempted; without that there is no row to write.
+        const { attempted } = failure;
+        if (attempted === undefined) return;
+        reportSendFailed(deps.onSendFailed, () => failedExchangeOf(failureRowOf(send, item, failure, attempted)));
       },
       onExchange: (item, exchange) => {
         if (item.kind !== 'websocket') return;
@@ -210,8 +214,12 @@ function callbackUrlOf(deps: DesktopSendDeps, send: DesktopSend, item: SelectedB
  * The HTTP Log's failure row, as `ipc/request.ts` builds it: a prepare row carries no headers (the
  * request was never built), a send row the enabled headers and whatever the transport captured.
  */
-function failureRowOf(send: DesktopSend, item: SelectedBase, failure: SendFailure): FailedExchangeInput {
-  const attempted = failure.attempted ?? fallbackRequestOf(item);
+function failureRowOf(
+  send: DesktopSend,
+  item: SelectedBase,
+  failure: SendFailure,
+  attempted: AttemptedRequest,
+): FailedExchangeInput {
   return {
     sendId: send.sendId,
     protocol: item.kind as FailedExchangeInput['protocol'],
@@ -226,16 +234,6 @@ function failureRowOf(send: DesktopSend, item: SelectedBase, failure: SendFailur
       : { headers: attempted.headers, captured: failedRequestOf(failure.error) }),
     ...(send.keyParams !== undefined ? { keyParams: send.keyParams } : {}),
     ...(send.keyHeaders !== undefined ? { keyHeaders: send.keyHeaders } : {}),
-  };
-}
-
-/** What a failure row shows when resolution itself failed: the item's own URL, unexpanded. */
-function fallbackRequestOf(item: SelectedBase): NonNullable<SendFailure['attempted']> {
-  const request = item.request as { readonly url?: unknown; readonly method?: unknown };
-  return {
-    url: typeof request.url === 'string' ? request.url : '',
-    method: typeof request.method === 'string' ? request.method : item.kind === 'websocket' ? 'GET' : 'POST',
-    headers: {},
   };
 }
 

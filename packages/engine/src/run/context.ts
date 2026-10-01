@@ -41,6 +41,8 @@ export interface RunContext {
   readonly workspace?: RunWorkspace;
   /** `--var` overrides, laid over the environment's properties. */
   readonly overrides: PropertyMap;
+  /** The host's global properties, the `${#Global#…}` scope. Absent: none. */
+  readonly globals?: PropertyMap;
   /** What the host lends each send: secrets, proxy, TLS, tokens, preferences (spec §3.1). */
   readonly host: SendHost;
   readonly timeoutMs?: number;
@@ -76,13 +78,14 @@ export interface RunContext {
 /** The property scopes a request of this run expands against, secrets not yet added. */
 export function scopesFor(context: RunContext): PropertyScopes {
   const { project, environmentId, workspace } = context;
+  const globals = context.globals ?? {};
   const scopes =
     workspace === undefined
-      ? resolveScopes(project, environmentId, {}, process.env)
+      ? resolveScopes(project, environmentId, globals, process.env)
       : resolveWorkspaceScopes({
           workspace: withActiveEnvironment(workspace.workspace, environmentId),
           project,
-          globals: {},
+          globals,
           system: process.env,
         });
   return {

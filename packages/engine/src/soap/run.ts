@@ -40,6 +40,7 @@ import {
   loadKeystoreById,
   originOf,
   present,
+  reportedAuth,
   tlsFor,
   unresolvedError,
   withSecrets,
@@ -274,7 +275,7 @@ export async function connectSoap(
   const sendAuth =
     owner !== undefined && owner.type === 'oauth2'
       ? await authFor(owner, selected.path, context, tls)
-      : await resolveSoapAuth(owner, context.host.getSecret);
+      : reportedAuth(await resolveSoapAuth(owner, context.host.getSecret), context);
   return {
     ...input,
     ...(sendAuth !== undefined ? { auth: sendAuth } : {}),

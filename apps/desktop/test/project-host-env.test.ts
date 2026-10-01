@@ -203,6 +203,7 @@ describe('ProjectHost for the send host', () => {
     expect(context?.workspace).toBeUndefined();
     expect(host.runContextFor(requestId, test)?.environmentId).toBe(test);
     expect(host.runContextFor(requestId, 'no-such-env')).toBeUndefined();
+    expect(context?.globals).toEqual({});
   });
 
   it('answers the workspace and its environment inside a workspace, leaving the active one alone', async () => {
@@ -236,5 +237,27 @@ describe('ProjectHost for the send host', () => {
   it('lends no trust anchors and no identity when nothing is configured', async () => {
     expect(await host.trustAnchors()).toBeUndefined();
     expect(await host.clientIdentityFor(undefined)).toBeUndefined();
+  });
+});
+
+describe('ProjectHost.runContextFor with global properties', () => {
+  it('carries the enabled globals, as scopesFor reads them', async () => {
+    const globals = { get: () => ({ properties: { x: 'g', off: 'o' }, disabled: ['off'] }) };
+    const withGlobals = new ProjectHost(
+      new EngineService(),
+      {},
+      undefined,
+      globals,
+      undefined,
+      undefined,
+      new DialogPicks(),
+    );
+    try {
+      await withGlobals.create({ dir: join(dir, 'globals'), name: 'Globals' });
+      expect(withGlobals.runContextFor('any')?.globals).toEqual({ x: 'g' });
+      expect(withGlobals.scopesFor().global).toEqual({ x: 'g' });
+    } finally {
+      await withGlobals.close();
+    }
   });
 });
