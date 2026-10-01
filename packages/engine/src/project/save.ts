@@ -12,6 +12,7 @@
  * interface is deleted, in which case the whole interface folder goes.
  */
 
+import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
 import { ProjectError } from '../errors.js';
 import type { ContainerDir } from '../protocol/module.js';
@@ -260,6 +261,17 @@ export async function saveProject(project: Project, root: string, options?: Save
     interfaces: takenContainerSlugs(project, 'interfaces'),
     apis: takenContainerSlugs(project, 'apis'),
   };
+  // An API whose slug an interface has is skipped on load (`api-slug-conflict`), so it is in no list
+  // above; its folder is still the user's and stays.
+  const interfaceKeys = new Set([...live.interfaces].map((slug) => slug.toLowerCase()));
+  const keptApiDir = (name: string): boolean => interfaceKeys.has(name.toLowerCase());
+
+  // On a file system that does not tell `Graph` from `graph`, a container renamed only by case still
+  // sits in its old folder; give the folder its new name before anything is written into it.
+  const foldsCase = await foldsCaseUnder(fs, root);
+  if (foldsCase) {
+    await renameContainersByCase(fs, root, live);
+  }
   // What this save may delete: core's own files, then each module's word on each of its containers
   // (spec §5.2). A placeholder, and a container no enabled module answers for, has no managed file,
   // so nothing under its directory is removed or touched (spec §6).
@@ -308,7 +320,7 @@ export async function saveProject(project: Project, root: string, options?: Save
   const goneEntities = new Set<string>();
   for (const dir of [INTERFACES_DIR, APIS_DIR] as const) {
     for (const entry of await readdirIfExists(fs, toAbsolute(root, dir))) {
-      if (entry.isDirectory && !live[dir].has(entry.name)) {
+      if (entry.isDirectory && !live[dir].has(entry.name) && !(dir === APIS_DIR && keptApiDir(entry.name))) {
         const relative = `${dir}/${entry.name}`;
         await fs.rm(toAbsolute(root, relative), { recursive: true, force: true });
         removed.push(relative);
@@ -317,8 +329,18 @@ export async function saveProject(project: Project, root: string, options?: Save
     }
   }
 
+  // The written path, by its case-folded form, for a file renamed only by case.
+  const desiredByKey = new Map([...desired.keys()].map((path) => [path.toLowerCase(), path]));
+  const renamedByCase = new Set<string>();
   for (const relative of existing) {
     if (desired.has(relative) || [...goneEntities].some((prefix) => relative.startsWith(prefix))) {
+      continue;
+    }
+    const sameFile = foldsCase ? desiredByKey.get(relative.toLowerCase()) : undefined;
+    if (sameFile !== undefined) {
+      // The write above went into this very file and kept its old name; removing it would remove
+      // the new content. Give it the new name instead.
+      await renamePathByCase(fs, root, relative, sameFile, renamedByCase);
       continue;
     }
     await fs.rm(toAbsolute(root, relative), { force: true });
@@ -362,4 +384,72 @@ async function timestampedBackupPath(fs: FsLike, root: string, backup: string, n
     n += 1;
   }
   return candidate;
+}
+
+/**
+ * Whether the file system under `root` treats two names that differ only by case as one entry, as
+ * the default ones on macOS and Windows do. Probed with an entry `root` already holds; a folder that
+ * holds nothing yet has nothing to rename, so it answers `false`.
+ */
+async function foldsCaseUnder(fs: FsLike, root: string): Promise<boolean> {
+  const names = (await readdirIfExists(fs, root)).map((entry) => entry.name);
+  const probe = names.find((name) => name.toLowerCase() !== name.toUpperCase());
+  if (probe === undefined) {
+    return false;
+  }
+  const swapped = probe === probe.toUpperCase() ? probe.toLowerCase() : probe.toUpperCase();
+  if (names.includes(swapped)) {
+    return false;
+  }
+  try {
+    await fs.stat(toAbsolute(root, swapped));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Renames `from` to `to`, two names of one entry, through a temporary name so the case change holds. */
+async function renameByCase(fs: FsLike, from: string, to: string): Promise<void> {
+  const hop = `${from}.case-${randomBytes(6).toString('hex')}`;
+  await fs.rename(from, hop);
+  await fs.rename(hop, to);
+}
+
+/** Gives each container folder whose container was renamed only by case its new name. */
+async function renameContainersByCase(
+  fs: FsLike,
+  root: string,
+  live: Readonly<Record<ContainerDir, ReadonlySet<string>>>,
+): Promise<void> {
+  for (const dir of [INTERFACES_DIR, APIS_DIR] as const) {
+    const byKey = new Map([...live[dir]].map((slug) => [slug.toLowerCase(), slug]));
+    for (const entry of await readdirIfExists(fs, toAbsolute(root, dir))) {
+      const slug = byKey.get(entry.name.toLowerCase());
+      if (entry.isDirectory && slug !== undefined && slug !== entry.name) {
+        await renameByCase(fs, toAbsolute(root, `${dir}/${entry.name}`), toAbsolute(root, `${dir}/${slug}`));
+      }
+    }
+  }
+}
+
+/**
+ * Gives the managed file `from` the name `to`, which differs from it only by case, renaming each
+ * folder on the way whose case changed too. `done` holds the case-folded paths already renamed.
+ */
+async function renamePathByCase(fs: FsLike, root: string, from: string, to: string, done: Set<string>): Promise<void> {
+  const fromParts = from.split('/');
+  const toParts = to.split('/');
+  for (let index = 0; index < toParts.length; index += 1) {
+    if (fromParts[index] === toParts[index]) {
+      continue;
+    }
+    const target = toParts.slice(0, index + 1).join('/');
+    if (done.has(target.toLowerCase())) {
+      continue;
+    }
+    const current = [...toParts.slice(0, index), fromParts[index]].join('/');
+    await renameByCase(fs, toAbsolute(root, current), toAbsolute(root, target));
+    done.add(target.toLowerCase());
+  }
 }
