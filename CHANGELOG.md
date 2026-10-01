@@ -33,7 +33,7 @@ modules themselves do not change the project folder format.
 
 [`packages/engine/README.md`](packages/engine/README.md#migrating-to-30) has the full tables and a
 before and after for the two changes that need more than a rename. The package's subpaths (`./xml`,
-`./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./ws`, `./detect`) are unchanged.
+`./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) are unchanged.
 
 ### Added
 
