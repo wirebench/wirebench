@@ -4,6 +4,9 @@
  */
 import { isWirebenchError } from '@wirebench/engine';
 import type {
+  GrpcCallResult,
+  GrpcResolvedInput,
+  GrpcSelected,
   RestContractResult,
   RestExchange,
   RestSelected,
@@ -12,9 +15,20 @@ import type {
   SoapSendInput,
 } from '@wirebench/engine';
 import type { EngineService } from '../engine-service.js';
-import { redactExchangeSummary, toExchangeSummary, toRestContractWire, toRestExchangeSummary } from '../engine-wire.js';
+import {
+  redactExchangeSummary,
+  toExchangeSummary,
+  toGrpcExchangeSummary,
+  toRestContractWire,
+  toRestExchangeSummary,
+} from '../engine-wire.js';
 import type { SendThroughEngineDeps } from './exchange.js';
-import type { ExchangeSummary, ResolvedSendInputWire, RestExchangeSummary } from '../../shared/wire-types.js';
+import type {
+  ExchangeSummary,
+  GrpcExchangeSummary,
+  ResolvedSendInputWire,
+  RestExchangeSummary,
+} from '../../shared/wire-types.js';
 
 export type RecordDeps = Pick<SendThroughEngineDeps, 'project' | 'history' | 'onHistoryAppended'>;
 
@@ -202,4 +216,56 @@ export function summariseRest(
   };
   service.exchanges.putRest(sendId, summaryOf(true), exchange.body, summaryOf);
   return summaryOf(options.show);
+}
+
+/** What a gRPC call sent, as History records it: the call as resolved and its message text. */
+export interface GrpcSent {
+  readonly input: GrpcResolvedInput;
+  readonly messageText: string;
+}
+
+/**
+ * Appends one gRPC send's History entry, successful or not. A no-op without a history service.
+ * `item` names the request, its API and its method when the project has no meta for it.
+ */
+export async function recordGrpc(
+  deps: RecordDeps,
+  item: GrpcSelected,
+  sent: GrpcSent,
+  summary: GrpcExchangeSummary | undefined,
+  durationMs: number,
+  error?: unknown,
+): Promise<void> {
+  const requestId = item.request.id;
+  const projectId = deps.project.projectId(requestId);
+  if (deps.history === undefined || projectId === undefined) {
+    return;
+  }
+  const meta = deps.project.grpcMeta?.(requestId);
+  const entry = await deps.history.recordGrpcSend(projectId, {
+    requestId,
+    requestName: meta?.requestName ?? item.request.name,
+    apiName: meta?.apiName ?? item.api.name,
+    folderPath: meta?.folderPath ?? '',
+    target: summary?.target ?? sent.input.target,
+    service: item.request.service,
+    method: item.request.method,
+    methodKind: item.request.methodKind,
+    requestMetadata: Object.fromEntries(
+      sent.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
+    ),
+    requestMessage: sent.messageText,
+    ...(summary !== undefined ? { exchange: summary } : {}),
+    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
+    durationMs,
+    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
+}
+
+/** A gRPC call as `request.sendGrpc` answers it, redacted for `show`. History records the same. */
+export function summariseGrpc(result: GrpcCallResult, sendId: string, show: boolean): GrpcExchangeSummary {
+  return toGrpcExchangeSummary(result, sendId, { show });
 }

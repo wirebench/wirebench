@@ -6,6 +6,7 @@
 import {
   createInterface,
   createRequest,
+  grpcItemFor,
   normalizeWsa,
   restItemFor,
   signingAlong,
@@ -23,14 +24,16 @@ import type {
   SoapSelected,
   WsaConfigPatch,
 } from '@wirebench/engine';
+import { withGrpcPatch } from '../project-grpc-mutations.js';
 import { toEngineAuthConfig, toEngineBody, toEngineRows, toEngineSigning } from '../project-rest-mutations.js';
 import type { HistoryNameFallback } from './record.js';
-import type { ResolvedSendInputWire, RestRequestPatchWire } from '../../shared/wire-types.js';
+import type { GrpcRequestPatchWire, ResolvedSendInputWire, RestRequestPatchWire } from '../../shared/wire-types.js';
 
-/** What the editor holds for one send, by protocol. Tasks 11 and 13 add gRPC and WebSocket. */
+/** What the editor holds for one send, by protocol. Task 13 adds WebSocket. */
 export type DraftOf =
   | { readonly kind: 'rest'; readonly draft?: RestRequestPatchWire }
-  | { readonly kind: 'soap'; readonly override?: SoapOverride };
+  | { readonly kind: 'soap'; readonly override?: SoapOverride }
+  | { readonly kind: 'grpc'; readonly draft?: GrpcRequestPatchWire };
 
 /** The request id a send with no saved request behind it goes by (`SendOptions.adHoc`). */
 export const AD_HOC_ID = 'ad-hoc';
@@ -47,6 +50,13 @@ export function selectedFor(project: Project, requestId: string, draft: DraftOf)
       // Orphaned or not: the editor sends what it shows.
       const found = soapItemFor(project, requestId);
       return found === undefined || draft.override === undefined ? found : { ...found, override: draft.override };
+    }
+    case 'grpc': {
+      // Any method kind, orphaned or not: a run skips streams, a person sends them.
+      const found = grpcItemFor(project, requestId);
+      return found === undefined || draft.draft === undefined
+        ? found
+        : { ...found, request: withGrpcPatch(found.request, draft.draft) };
     }
   }
 }

@@ -3,19 +3,41 @@
  * session's show-secrets flag exactly as `EngineService` redacted its own live events.
  */
 import type { LiveEvent } from '@wirebench/engine';
-import { toSseRowWire } from '../engine-wire.js';
+import { toGrpcResponseMessageWire, toSseRowWire } from '../engine-wire.js';
 import { redactHeaders } from '../redact.js';
-import type { RestLiveEvent } from '../../shared/wire-types.js';
+import type { GrpcLiveEvent, RestLiveEvent } from '../../shared/wire-types.js';
 
-/** One live event on the wire. Tasks 11 and 13 add the gRPC and WebSocket arms. */
-export function toWireEvent(sendId: string, event: LiveEvent, show: boolean): RestLiveEvent {
+/** A live event as the renderer receives it, of any protocol. */
+export type LiveEventWire = RestLiveEvent | GrpcLiveEvent;
+
+/** One live event on the wire. Task 13 adds the WebSocket arm. */
+export function toWireEvent(sendId: string, event: LiveEvent, show: boolean): LiveEventWire {
   switch (event.protocol) {
     case 'rest':
       return event.kind === 'open'
         ? { kind: 'open', sendId, status: event.status, headers: redactHeaders(event.headers, { show }) }
         : { kind: 'row', sendId, row: toSseRowWire(event.row, { show }) };
     case 'grpc':
-      // Unreachable until Task 11: the app still makes its gRPC calls through EngineService.
-      throw new Error('A gRPC live event has no wire form yet');
+      switch (event.kind) {
+        case 'open':
+          return { kind: 'open', sendId };
+        case 'headers':
+          // Redacted as the summary's `headers` are, so metadata looks the same live or after.
+          return {
+            kind: 'headers',
+            sendId,
+            httpStatus: event.httpStatus,
+            headers: redactHeaders(event.headers, { show }),
+          };
+        case 'message':
+          return {
+            kind: 'message',
+            sendId,
+            index: event.index,
+            message: toGrpcResponseMessageWire(event.message, { show }),
+          };
+        case 'closed':
+          return { kind: 'closed', sendId };
+      }
   }
 }

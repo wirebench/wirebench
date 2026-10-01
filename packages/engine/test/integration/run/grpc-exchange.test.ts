@@ -9,10 +9,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
-import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest } from '../../../src/grpc/model.js';
 import type { GrpcMethodKind } from '../../../src/grpc/model.js';
+import { grpcItemFor } from '../../../src/grpc/run.js';
 import type { GrpcSelected } from '../../../src/grpc/run.js';
-import { createProject } from '../../../src/index.js';
+import { createProject, DEFAULT_PREFERENCES } from '../../../src/index.js';
 import type { Project } from '../../../src/project/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import type { RunContext } from '../../../src/run/context.js';
@@ -327,6 +328,55 @@ describe('gRPC through openExchange', () => {
         method: 'POST',
         headers: { 'x-trace': 'abc' },
       },
+      // What a host records the failed call from: the call as connected and the message it was to send.
+      input: { target: dead.target, messageText: '{"name":"a"}' },
     });
+  });
+
+  it('reports a call with no method chosen with its target alone, never a `//` path', async () => {
+    const { failures, host } = recorder();
+    await expect(open(call('', { name: 'a' }), {}, host).result).rejects.toMatchObject({ code: 'grpc-method-unset' });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ stage: 'prepare', attempted: { url: `http://${server.target}` } });
+  });
+
+  it('hands the host the call as sent: its input and its message text', async () => {
+    const sent = await open(call('SayHello', '{"name": "a"}')).result;
+    expect(sent.exchange).toMatchObject({
+      kind: 'grpc',
+      input: { target: server.target, service: SERVICE, method: 'SayHello' },
+      messageText: '{"name": "a"}',
+    });
+  });
+
+  it("sends the host's preferred user agent", async () => {
+    const preferences = { ...DEFAULT_PREFERENCES, http: { ...DEFAULT_PREFERENCES.http, userAgent: 'wb-engine-ua/1' } };
+    await open(call('SayHello', { name: 'a' }), {}, { preferences }).result;
+    expect(server.calls.at(-1)?.headers['user-agent']).toContain('wb-engine-ua/1');
+  });
+});
+
+describe('grpcItemFor', () => {
+  it('finds a streaming call and an orphaned one, which a run skips, inside their folders', () => {
+    const chat = createGrpcRequest('Chat', {
+      id: 'g-chat',
+      service: SERVICE,
+      method: 'Chat',
+      methodKind: 'bidi-streaming',
+    });
+    const gone = { ...createGrpcRequest('Gone', { id: 'g-gone', service: SERVICE, method: 'Gone' }), orphaned: true };
+    const folder = createGrpcFolder('Inner', { id: 'f-1', requests: [chat, gone] });
+    const api = createGrpcApi('Greeter', { id: 'api-1', target: server.target, tls: false, folders: [folder] });
+    const p: Project = { ...createProject('Items', { id: 'p-items' }), grpcApis: [api] };
+    expect(grpcItemFor(p, 'g-chat')).toEqual({
+      kind: 'grpc',
+      path: 'Greeter/Inner/Chat',
+      group: 'Greeter/Inner',
+      api,
+      chain: [folder],
+      request: chat,
+    });
+    expect(grpcItemFor(p, 'g-gone')?.request).toBe(gone);
+    expect(grpcItemFor(p, 'nope')).toBeUndefined();
   });
 });

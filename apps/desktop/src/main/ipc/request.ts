@@ -67,8 +67,10 @@ import { extraTrustAnchors, reportSendFailed } from '../send/host.js';
 import { AD_HOC_NAME } from '../send/record.js';
 import {
   ExchangeRegistry,
+  previewGrpc,
   previewRest,
   sendThroughEngine,
+  type GrpcPreview,
   type RestPreview,
   type SendThroughEngineDeps,
 } from '../send/exchange.js';
@@ -584,7 +586,8 @@ async function curl(
   if (rest !== undefined) {
     return await restCurl(deps, request, rest);
   }
-  const grpc = deps.project.grpcSend?.(request.requestId, request.grpcDraft);
+  // A gRPC request the same way: through the engine, with no secret read.
+  const grpc = await previewGrpc(sendDeps, request.requestId, request.grpcDraft);
   if (grpc !== undefined) {
     return await grpcCommand(deps, request, grpc);
   }
@@ -1190,29 +1193,34 @@ function preflightRest(
 
 /**
  * The command-line form of a gRPC call: what a command-line gRPC client would be told to make the
- * same call, credentials resolved and then masked unless the session shows secrets, the `.proto`
- * files named from the API's cached roots.
+ * same call, the `.proto` files named from the API's cached roots. Credentials are read only while
+ * the session shows secrets; otherwise a stand-in takes their place, and is masked all the same.
  */
 async function grpcCommand(
   deps: RequestChannelDeps,
   request: RequestCurlRequest,
-  resolved: GrpcSendResolution,
+  resolved: GrpcPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
-  const auth = await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
+  const auth = show
+    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+    : placeholderAuth(resolved.auth);
   // A definition discovered by reflection has no .proto files on disk to name, and grpcurl asks the
   // server itself when it is given none — so the flags are dropped rather than pointing at nothing.
-  const fromFiles = resolved.api.definition !== undefined && resolved.api.definition.kind === 'proto';
+  const { definition } = resolved.item.api;
+  const fromFiles = definition !== undefined && definition.kind === 'proto';
   const command = grpcToCommand({ ...resolved.input, ...(auth !== undefined ? { auth } : {}) }, resolved.messageText, {
     redactSecrets: !show,
     shell: request.shell,
-    ...(fromFiles ? { protoFiles: [...(resolved.api.definition?.roots ?? [])] } : {}),
+    ...(fromFiles ? { protoFiles: [...definition.roots] } : {}),
   });
+  // A `${secret:name}` token is shown as typed too: an export never reads its value.
+  const asTyped = resolved.unresolved.length > 0 || resolved.secretTokens;
   const notes = [
     fromFiles
       ? 'The .proto files are named by import path; pass their folder with -import-path.'
       : 'No .proto files are named: this API was discovered by server reflection, which grpcurl uses by default.',
-    ...(resolved.unresolved.length > 0 ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
+    ...(asTyped ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
   ];
   return { command, notes };
 }
@@ -1578,6 +1586,9 @@ async function recordWs(
     deps.onHistoryAppended?.(entry);
   }
 }
+
+/** What a push on a call that is not open, or never was, is refused with. */
+const GRPC_STREAM_UNKNOWN_MESSAGE = 'That call is no longer open for sending.';
 
 /**
  * The dry run of a gRPC call: the target it would go to and what would not expand. Nothing is sent
@@ -2015,17 +2026,27 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
 
   registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
 
-  registerHandler(channels.request.sendGrpc, (request, sender) => sendGrpcRequest(service, deps, request, sender));
-  registerHandler(channels.request.grpcPush, (request) =>
-    Promise.resolve(service.pushGrpcMessage(request.sendId, request.messageText)),
+  // The call as it happens, its request side open for pushes when `interactive`; the `closed` event
+  // of a half-close comes from the engine with the rest of the call's events.
+  registerHandler(channels.request.sendGrpc, (request, sender) =>
+    sendThroughEngine(sendDeps, request.sendId, request.requestId, {
+      draft: { kind: 'grpc', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
+      interactive: request.interactive === true,
+      onLive: (live) => {
+        emitEvent(sender, events.grpc.live, live);
+      },
+    }),
   );
-  registerHandler(channels.request.grpcHalfClose, (request, sender) => {
-    const closed = service.halfCloseGrpc(request.sendId);
-    if (closed.closed) {
-      emitEvent(sender, events.grpc.live, { kind: 'closed', sendId: request.sendId });
+  registerHandler(channels.request.grpcPush, async ({ sendId, messageText }) => {
+    const handle = sendDeps.registry.get(sendId);
+    if (handle === undefined) {
+      throw new WirebenchError('grpc-stream-unknown', GRPC_STREAM_UNKNOWN_MESSAGE, { details: { sendId } });
     }
-    return Promise.resolve(closed);
+    return { json: JSON.stringify(await handle.push({ text: messageText }), null, 2) };
   });
+  registerHandler(channels.request.grpcHalfClose, ({ sendId }) =>
+    Promise.resolve({ closed: sendDeps.registry.halfClose(sendId) }),
+  );
 
   registerHandler(channels.request.preflightGrpc, (request) => Promise.resolve(preflightGrpc(deps, request)));
 

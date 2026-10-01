@@ -6,7 +6,7 @@
 import type { GrpcCallResult } from './grpc/call.js';
 import type { GrpcLiveEvent } from './grpc/events.js';
 import { grpcProtocol } from './grpc/module.js';
-import type { GrpcSelected } from './grpc/run.js';
+import type { GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
@@ -85,6 +85,10 @@ export type SentExchange =
       readonly kind: 'grpc';
       /** The call whole: every request message as sent, every response message decoded. */
       readonly grpc: GrpcCallResult;
+      /** What was sent: after the script, with the credentials resolved. */
+      readonly input: GrpcResolvedInput;
+      /** The request message text as sent, after the script. */
+      readonly messageText: string;
     };
 
 /** A message an open exchange reports, whatever its protocol; Task 12 adds WebSocket. */

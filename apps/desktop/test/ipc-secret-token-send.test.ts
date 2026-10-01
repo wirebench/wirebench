@@ -30,7 +30,6 @@ import {
 } from '@wirebench/engine';
 import type { GetSecret, HistoryEntry, Project, PropertyScopes, ProtoSet } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import {
   buildGrpcHistoryEntry,
   buildHistoryEntry,
@@ -42,7 +41,7 @@ import {
   type RecordWsSessionInput,
 } from '../src/main/history-service.js';
 import { registerHistoryChannels } from '../src/main/ipc/history.js';
-import { registerRequestChannels, sendGrpcRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { recordSecretValue } from '../src/main/redact.js';
 import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
@@ -540,15 +539,9 @@ describe('a gRPC call with tokens', () => {
       project: {
         scopesFor: () => SCOPES,
         projectId: () => 'p1',
-        grpcSend: (requestId: string) =>
-          resolveGrpcSend({
-            project,
-            requestId,
-            scopes: SCOPES,
-            resolveTarget: (api) => ({ url: api.target, source: 'api' }),
-          }),
+        runContextFor: () => ({ project, projectDir: '/tmp/none' }),
+        grpcMeta: () => undefined,
         grpcProtoSetFor: () => Promise.resolve(set),
-        grpcTlsFor: () => Promise.resolve(undefined),
       } as unknown as RequestChannelDeps['project'],
       secretsFor: getterFor,
       ...(show ? { showSecrets: { get: () => true } } : {}),
@@ -559,6 +552,17 @@ describe('a gRPC call with tokens', () => {
         },
       } as never,
     };
+  }
+
+  /** One call through `request.sendGrpc`, as the renderer makes it, over `deps`. */
+  async function sendGrpc(
+    deps: RequestChannelDeps,
+    payload: { readonly sendId: string; readonly requestId: string },
+    sender: unknown,
+  ): Promise<GrpcExchangeSummary> {
+    handlers.clear();
+    registerRequestChannels(new EngineService(), deps);
+    return unwrap<GrpcExchangeSummary>(await invoke('request.sendGrpc', payload, sender));
   }
 
   /** Every base64 field of a summary's `http`, decoded, so a value in raw bytes is seen too. */
@@ -590,12 +594,7 @@ describe('a gRPC call with tokens', () => {
     await store.set('fake-grpc-name-00000001', { label: secretStoreLabel('p1', 'grpc_name') });
     await store.set('fake-grpc-token-0000001', { label: secretStoreLabel('p1', 'grpc_token') });
 
-    const summary = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(false),
-      { sendId: 'g1', requestId: 'q-1' },
-      fakeSender().sender as never,
-    );
+    const summary = await sendGrpc(grpcDeps(false), { sendId: 'g1', requestId: 'q-1' }, fakeSender().sender);
 
     const call = grpcServer.calls.at(-1);
     expect(call?.headers['x-token']).toBe('fake-grpc-token-0000001');
@@ -604,12 +603,7 @@ describe('a gRPC call with tokens', () => {
     expect(summary.requestMessages.join('')).toContain('<redacted>');
     expect(summary.http.request.headers['x-token']).toBe('<redacted>');
 
-    const shown = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(true),
-      { sendId: 'g2', requestId: 'q-1' },
-      fakeSender().sender as never,
-    );
+    const shown = await sendGrpc(grpcDeps(true), { sendId: 'g2', requestId: 'q-1' }, fakeSender().sender);
     expect(shown.requestMessages.join('')).toContain('fake-grpc-name-00000001');
   });
 
@@ -620,12 +614,7 @@ describe('a gRPC call with tokens', () => {
     const written: HistoryEntry[] = [];
     const { sender, events } = fakeSender();
 
-    const summary = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(false, written),
-      { sendId: 'g3', requestId: 'q-1' },
-      sender as never,
-    );
+    const summary = await sendGrpc(grpcDeps(false, written), { sendId: 'g3', requestId: 'q-1' }, sender);
 
     expect(JSON.stringify(grpcServer.calls.at(-1))).toContain(value);
     expect(headerEvents(events).map((headers) => headers['x-echo'])).toEqual(['hi <redacted>']);
@@ -653,12 +642,7 @@ describe('a gRPC call with tokens', () => {
     const written: HistoryEntry[] = [];
     const { sender, events } = fakeSender();
 
-    const summary = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(true, written),
-      { sendId: 'g4', requestId: 'q-1' },
-      sender as never,
-    );
+    const summary = await sendGrpc(grpcDeps(true, written), { sendId: 'g4', requestId: 'q-1' }, sender);
 
     expect(headerEvents(events).map((headers) => headers['x-echo'])).toEqual([`hi ${value}`]);
     expect(messageEvents(events)[0]!.json).toContain(`"message": "Hello, ${value}"`);
@@ -675,12 +659,7 @@ describe('a gRPC call with tokens', () => {
     const written: HistoryEntry[] = [];
     const { sender, events } = fakeSender();
 
-    const summary = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(false, written, garbledSet()),
-      { sendId: 'g7', requestId: 'q-1' },
-      sender as never,
-    );
+    const summary = await sendGrpc(grpcDeps(false, written, garbledSet()), { sendId: 'g7', requestId: 'q-1' }, sender);
 
     const live = messageEvents(events);
     expect(live).toHaveLength(1);
@@ -702,12 +681,7 @@ describe('a gRPC call with tokens', () => {
     const written: HistoryEntry[] = [];
     const { sender, events } = fakeSender();
 
-    const summary = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(true, written, garbledSet()),
-      { sendId: 'g8', requestId: 'q-1' },
-      sender as never,
-    );
+    const summary = await sendGrpc(grpcDeps(true, written, garbledSet()), { sendId: 'g8', requestId: 'q-1' }, sender);
 
     expect(decoded(messageEvents(events)[0]!.base64)).toContain(value);
     expect(decoded(summary.responseMessages[0]!.base64)).toContain(value);
@@ -726,12 +700,7 @@ describe('a gRPC call with tokens', () => {
     const written: HistoryEntry[] = [];
     const { sender, events } = fakeSender();
 
-    const summary = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(false, written),
-      { sendId: 'g5', requestId: 'q-2' },
-      sender as never,
-    );
+    const summary = await sendGrpc(grpcDeps(false, written), { sendId: 'g5', requestId: 'q-2' }, sender);
 
     expect(summary.status).toBe(5);
     expect(summary.statusMessage).toBe('no such <redacted>');
@@ -739,12 +708,7 @@ describe('a gRPC call with tokens', () => {
     expect(decodedHttp(summary)).not.toContain(value);
     expect(JSON.stringify(events)).not.toContain(value);
 
-    const shown = await sendGrpcRequest(
-      new EngineService(),
-      grpcDeps(true, written),
-      { sendId: 'g6', requestId: 'q-2' },
-      fakeSender().sender as never,
-    );
+    const shown = await sendGrpc(grpcDeps(true, written), { sendId: 'g6', requestId: 'q-2' }, fakeSender().sender);
     expect(shown.statusMessage).toBe(`no such ${value}`);
     expect(written).toHaveLength(2);
     expect(JSON.stringify(written)).not.toContain(value);

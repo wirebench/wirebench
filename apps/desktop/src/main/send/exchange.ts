@@ -9,6 +9,7 @@ import {
   createProject,
   createRunScope,
   deferredSession,
+  grpcEffectiveAuth,
   openExchange,
   parseSecretPseudoRef,
   ProjectError,
@@ -20,6 +21,9 @@ import {
 import type {
   AuthConfig,
   ExchangeHandle,
+  GrpcFailedInput,
+  GrpcResolvedInput,
+  GrpcSelected,
   LiveEvent,
   PropertyMap,
   PropertyScopes,
@@ -44,9 +48,20 @@ import { withSentSigningHeaders } from '../webhook-send.js';
 import { adHocSoapItem, AD_HOC_ID, selectedFor, type DraftOf } from './draft.js';
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from './host.js';
 import { toWireEvent } from './live.js';
-import { recordRest, recordSoap, summariseRest, summariseSoap, type HistoryNameFallback } from './record.js';
+import {
+  recordGrpc,
+  recordRest,
+  recordSoap,
+  summariseGrpc,
+  summariseRest,
+  summariseSoap,
+  type HistoryNameFallback,
+} from './record.js';
 import type {
   ExchangeSummary,
+  GrpcExchangeSummary,
+  GrpcLiveEvent,
+  GrpcRequestPatchWire,
   HistoryEntryWire,
   ResolvedSendInputWire,
   RestExchangeSummary,
@@ -67,17 +82,25 @@ export interface SendOptions<D extends DraftOf = DraftOf> {
   readonly timeoutMs?: number;
   readonly interactive?: boolean;
   /** The wire events, redacted; omitted when the caller shows nothing live. */
-  readonly onLive?: (event: RestLiveEvent) => void;
+  readonly onLive?: (event: LiveByKind[D['kind']]) => void;
   /** A sequence step's: told the scripts' result instead of the session store. */
   readonly onScriptsRan?: (sent: SentScripts) => void;
   /** Told the engine's `SentRequest` before the summary is built (a sequence step's subject). */
   readonly onSent?: (sent: SentRequest) => void;
 }
 
-/** What a send answers with, by protocol. Tasks 11 and 13 add the gRPC and WebSocket summaries. */
+/** The live events a send reports, by protocol: a SOAP send reports none. */
+interface LiveByKind {
+  readonly rest: RestLiveEvent;
+  readonly soap: never;
+  readonly grpc: GrpcLiveEvent;
+}
+
+/** What a send answers with, by protocol. Task 13 adds the WebSocket summary. */
 interface SummaryByKind {
   readonly rest: RestExchangeSummary;
   readonly soap: ExchangeSummary;
+  readonly grpc: GrpcExchangeSummary;
 }
 
 export type SendSummary = SummaryByKind[keyof SummaryByKind];
@@ -86,6 +109,8 @@ interface Kept {
   readonly requestId: string;
   readonly kind: string;
   readonly handle: ExchangeHandle;
+  /** Set once its request side has been half-closed through the registry. */
+  halfClosed?: boolean;
 }
 
 /** The exchanges in flight, by send id: what `request.cancel` and a project's close reach. */
@@ -108,6 +133,23 @@ export class ExchangeRegistry {
   cancel(sendId: string): { readonly cancelled: boolean } {
     const kept = this.kept.get(sendId);
     return { cancelled: kept?.handle.cancel() ?? false };
+  }
+
+  /**
+   * Half-closes the request side of the send `sendId`. `false` when no such send is in flight, it
+   * takes no messages, or it has already been half-closed; its `closed` event comes from the engine.
+   */
+  halfClose(sendId: string): boolean {
+    const kept = this.kept.get(sendId);
+    if (kept === undefined || kept.halfClosed === true) return false;
+    try {
+      kept.handle.halfClose();
+    } catch {
+      // A send that takes no messages (`exchange-not-streaming`) has no request side to close.
+      return false;
+    }
+    kept.halfClosed = true;
+    return true;
   }
 
   /** Ends every kept handle of `kind` whose request matches: a WebSocket closes 1000, anything else is cancelled. */
@@ -142,7 +184,7 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
 }
 
 /** What the "no such request" refusal calls a kind, as the app always has. */
-const KIND_LABEL: Readonly<Record<DraftOf['kind'], string>> = { rest: 'REST', soap: 'SOAP' };
+const KIND_LABEL: Readonly<Record<DraftOf['kind'], string>> = { rest: 'REST', soap: 'SOAP', grpc: 'gRPC' };
 
 /**
  * Sends one saved request through the engine. Its scripts are type-checked first; a request that
@@ -156,7 +198,8 @@ export async function sendThroughEngine<D extends DraftOf>(
   requestId: string,
   options: SendOptions<D>,
 ): Promise<SummaryByKind[D['kind']]> {
-  return (await sendItem(deps, sendId, requestId, options)) as SummaryByKind[D['kind']];
+  // Narrowed by `D` for the caller; the send itself hands any protocol's events on.
+  return (await sendItem(deps, sendId, requestId, options as unknown as SendOptions)) as SummaryByKind[D['kind']];
 }
 
 async function sendItem(
@@ -338,6 +381,61 @@ export async function previewRest(
   };
 }
 
+/** A gRPC call resolved as its send would resolve it, nothing connected and no secret read. */
+export interface GrpcPreview {
+  readonly item: GrpcSelected;
+  readonly input: GrpcResolvedInput;
+  readonly messageText: string;
+  readonly unresolved: readonly UnresolvedRef[];
+  /** True when a `${secret:name}` token was reached: it stays in the output as typed. */
+  readonly secretTokens: boolean;
+  /** The credentials that apply, still as references. */
+  readonly auth: AuthConfig;
+}
+
+/**
+ * What a send of the gRPC request would send, for an export: resolved through the engine with no
+ * secret read, each `${secret:name}` put back as its token text. Undefined: no such gRPC request.
+ */
+export async function previewGrpc(
+  deps: SendThroughEngineDeps,
+  requestId: string,
+  draft: GrpcRequestPatchWire | undefined,
+): Promise<GrpcPreview | undefined> {
+  const located = deps.project.runContextFor?.(requestId);
+  const item =
+    located === undefined
+      ? undefined
+      : selectedFor(located.project, requestId, { kind: 'grpc', ...(draft !== undefined ? { draft } : {}) });
+  if (located === undefined || item?.kind !== 'grpc') return undefined;
+  const send: DesktopSend = { sendId: '', requestId, projectId: deps.project.projectId(requestId) };
+  let secretTokens = false;
+  const asTyped = (ref: string): Promise<string | undefined> => {
+    secretTokens ||= parseSecretPseudoRef(ref) !== undefined;
+    return tokenText(ref);
+  };
+  const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: asTyped };
+  const placeholders = new SecretPlaceholders();
+  const context: RunContext = { ...runContextOf(located, host), secretPlaceholders: placeholders };
+  const resolved = (await resolveExchange(item, host, createRunScope(context))) as {
+    readonly input: GrpcResolvedInput;
+    readonly messageText: string;
+    readonly unresolved: readonly UnresolvedRef[];
+  };
+  const restored = await placeholders.restore(
+    { metadata: resolved.input.metadata, messageText: resolved.messageText },
+    asTyped,
+  );
+  return {
+    item,
+    input: { ...resolved.input, metadata: restored.metadata },
+    messageText: restored.messageText,
+    unresolved: resolved.unresolved,
+    secretTokens,
+    auth: grpcEffectiveAuth(item),
+  };
+}
+
 /** A `${secret:name}` token's own text, which a preview shows in place of its value. */
 function tokenText(ref: string): Promise<string | undefined> {
   const name = parseSecretPseudoRef(ref);
@@ -452,6 +550,11 @@ function soapSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange'
   return sent.exchange;
 }
 
+function grpcSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange']>, { kind: 'grpc' }> {
+  if (sent.exchange?.kind !== 'grpc') throw new Error('A gRPC send came back without its exchange');
+  return sent.exchange;
+}
+
 /** The summary the renderer is handed and, for SOAP, the unredacted one History records. */
 function summarise(
   deps: SendThroughEngineDeps,
@@ -489,8 +592,8 @@ function summarise(
       });
       return { summary, unredacted: full };
     }
-    default:
-      throw new Error('not yet');
+    case 'grpc':
+      return { summary: summariseGrpc(grpcSent(sent).grpc, sendId, show) };
   }
 }
 
@@ -534,8 +637,9 @@ async function record(
       });
       return;
     }
-    default:
-      throw new Error('not yet');
+    case 'grpc':
+      await recordGrpc(deps, item, grpcSent(sent), summary as GrpcExchangeSummary, durationMs);
+      return;
   }
 }
 
@@ -561,7 +665,18 @@ async function recordFailure(
         durationMs: failed.durationMs,
       });
       return;
-    default:
-      throw new Error('not yet');
+    case 'grpc': {
+      // The call as connected, with the message it was to send: a send-stage failure has both.
+      const { messageText, ...input } = failed.input as GrpcFailedInput;
+      await recordGrpc(
+        deps,
+        item,
+        { input, messageText: messageText ?? item.request.message },
+        undefined,
+        durationMs,
+        error,
+      );
+      return;
+    }
   }
 }

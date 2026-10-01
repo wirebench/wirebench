@@ -2,8 +2,9 @@
  * The desktop's `SendHost` (spec §3.1): what the engine borrows from the app for one send. Each
  * member is the app's own service — the project's secret getter, its proxy and trust preferences,
  * the request's or the global client keystore, the session's OAuth2 token cache, the per-request
- * cookies, the REST contract check, a callback's URL from History — and the two HTTP Log rows the
- * desktop writes while a send is under way: a failure row, and a WebSocket handshake's row.
+ * cookies, the REST contract check, a callback's URL from History, a gRPC API's schema — and the
+ * two HTTP Log rows the desktop writes while a send is under way: a failure row, and a WebSocket
+ * handshake's row.
  *
  * Every member is a port of what `ipc/request.ts` and `send-with-history.ts` do today, so a send
  * through the engine logs, masks and checks exactly as the desktop always has.
@@ -106,6 +107,10 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
     },
     contractFor: restContractFor(deps),
     callbackUrlFor: (item) => Promise.resolve(callbackUrlOf(deps, send, item)),
+    // The project's own schema for a gRPC API, which it loads once a session, discovered or imported.
+    ...(project.grpcProtoSetFor !== undefined
+      ? { protoSetFor: async (item: SelectedBase) => await project.grpcProtoSetFor?.(item.request.id) }
+      : {}),
     events: {
       onFailed: (item, failure) => {
         send.failedStage = failure.stage;

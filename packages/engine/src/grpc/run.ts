@@ -8,7 +8,7 @@
  */
 import type { AssertionSubject } from '../assert/model.js';
 import { GrpcError, isWirebenchError, WirebenchError } from '../errors.js';
-import type { AuthConfig } from '../project/model.js';
+import type { AuthConfig, Project } from '../project/model.js';
 import { apiDefinitionDir } from '../project/paths.js';
 import type { ProtocolRun, RunGroup, RunScope, ScriptedSend } from '../protocol/module.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
@@ -57,6 +57,12 @@ export interface GrpcSelected {
   readonly request: GrpcRequestDef;
 }
 
+/**
+ * What a failed call reports as its `SendFailure.input`: the call as far as it got, and its message
+ * text once resolved. It holds live credentials once connected; a host never logs it.
+ */
+export type GrpcFailedInput = GrpcResolvedInput & { readonly messageText?: string };
+
 /** A unary call ready for `callGrpc`, which also takes the API's proto set and the message. */
 // The streaming hooks are left out: a run makes unary calls, and wants only the result.
 export type GrpcResolvedInput = Omit<GrpcSendInput, 'messages' | 'onMessage' | 'onOpen'>;
@@ -65,6 +71,29 @@ export type GrpcResolvedInput = Omit<GrpcSendInput, 'messages' | 'onMessage' | '
 export function grpcEffectiveAuth(selected: GrpcSelected): AuthConfig {
   const { api, chain, request } = selected;
   return resolveAuthChain([request.auth, ...[...chain].reverse().map((folder) => folder.auth), api.auth]);
+}
+
+/**
+ * The gRPC item for `requestId`, built as a run builds it — and found whatever its method kind, and
+ * even when its contract no longer has it (`orphaned`), both of which a run skips and a person may
+ * still send. Undefined when no gRPC request has that id.
+ */
+export function grpcItemFor(project: Project, requestId: string): GrpcSelected | undefined {
+  const candidates: { item: GrpcSelected; diskPath: string }[] = [];
+  for (const api of project.grpcApis) {
+    walkTree<GrpcFolder, GrpcRequestDef, GrpcSelected>(
+      api,
+      [],
+      api.name,
+      `apis/${api.slug}/requests`,
+      (request, chain, group) =>
+        request.id === requestId
+          ? { kind: 'grpc', path: `${group}/${request.name}`, group, api, chain, request }
+          : undefined,
+      candidates,
+    );
+  }
+  return candidates[0]?.item;
 }
 
 /**
@@ -94,6 +123,8 @@ export async function resolveGrpc(
     target,
     tls: api.tls,
     apiMetadata: api.metadata,
+    // The user agent, socket timeout and TLS floor the app's own sends take from preferences.
+    ...(context.host.preferences !== undefined ? { preferences: context.host.preferences } : {}),
     projectSettings: context.project.settings,
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
@@ -212,10 +243,14 @@ async function protoSetFor(selected: GrpcSelected, scope: RunScope, context: Run
 
 const STREAMING_STEP_REASON = 'A streaming gRPC call cannot be a sequence step; only unary calls can';
 
-/** What a failed call was about to put on the wire: an HTTP/2 POST to `/<service>/<method>`, its metadata. */
+/**
+ * What a failed call was about to put on the wire: an HTTP/2 POST to `/<service>/<method>`, its
+ * metadata. A call with no method chosen names its target alone.
+ */
 function attemptedOf(input: GrpcResolvedInput): AttemptedRequest {
+  const path = input.service === '' || input.method === '' ? '' : grpcMethodPath(input.service, input.method);
   return {
-    url: `${input.tls ? 'https' : 'http'}://${input.target}${grpcMethodPath(input.service, input.method)}`,
+    url: `${input.tls ? 'https' : 'http'}://${input.target}${path}`,
     method: 'POST',
     headers: Object.fromEntries(input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value])),
   };
@@ -327,14 +362,21 @@ async function sendGrpcItem(
   const { controller, live, stream } = mode;
   const startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
-  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: GrpcResolvedInput | undefined): void => {
+  const failed = (
+    stage: 'prepare' | 'send',
+    error: unknown,
+    attempted: GrpcResolvedInput | undefined,
+    messageText: string | undefined,
+  ): void => {
     try {
+      const input: GrpcFailedInput | undefined =
+        attempted === undefined ? undefined : { ...attempted, ...(messageText !== undefined ? { messageText } : {}) };
       context.host.events?.onFailed?.(selected, {
         stage,
         error,
         startedAt,
         durationMs: Date.now() - startedAt,
-        ...(attempted !== undefined ? { attempted: attemptedOf(attempted), input: attempted } : {}),
+        ...(attempted !== undefined ? { attempted: attemptedOf(attempted), input } : {}),
       });
     } catch {
       // Deliberately ignored — see above.
@@ -343,7 +385,7 @@ async function sendGrpcItem(
   try {
     let input: GrpcResolvedInput | undefined;
     let connected: GrpcResolvedInput;
-    let messageText: string;
+    let messageText: string | undefined;
     let protoSet: ProtoSet;
     let sent: GrpcRequestSnapshot | undefined;
     try {
@@ -352,12 +394,12 @@ async function sendGrpcItem(
         scripts !== undefined ? { ...context, secretPlaceholders: scripts.placeholders } : context,
       );
       input = resolved.input;
+      messageText = resolved.messageText;
       refuseUnsendable(selected, resolved);
       // Before the send connects: without a schema there is no call, so no token is worth fetching.
       protoSet = await protoSetFor(selected, scope, context);
       if (scripts === undefined) {
         connected = await connectGrpc(selected, context, resolved.input);
-        messageText = resolved.messageText;
       } else {
         const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
         sent = await scripts.session.pre(before);
@@ -367,19 +409,20 @@ async function sendGrpcItem(
           context.host.getSecret,
         );
         input = { ...changed.input, metadata: restored.metadata };
-        connected = await connectGrpc(selected, context, input);
         messageText = restored.messageText;
+        connected = await connectGrpc(selected, context, input);
       }
     } catch (error) {
-      failed('prepare', error, input);
+      failed('prepare', error, input, messageText);
       throw error;
     }
+    const sentText = messageText;
     let result: GrpcCallResult;
     try {
       result = await callGrpc({
         ...connected,
         set: protoSet,
-        messageText,
+        messageText: sentText,
         signal: controller.signal,
         // Only a live send decodes each message as it arrives; any other has them all in the result.
         ...(live
@@ -393,14 +436,14 @@ async function sendGrpcItem(
         ...(stream !== undefined ? { onOpen: (handle: GrpcCallStreamHandle) => stream.opened(handle) } : {}),
       });
     } catch (error) {
-      failed('send', error, connected);
+      failed('send', error, connected, sentText);
       throw error;
     }
     dropRefusedToken(context, connected.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
     return {
       subject: grpcSubject(result),
       raw: result.exchange,
-      exchange: { kind: 'grpc', grpc: result },
+      exchange: { kind: 'grpc', grpc: result, input: connected, messageText: sentText },
       origin: connected.target,
       ...(scripts !== undefined
         ? { script: await scripts.session.post(sent as GrpcRequestSnapshot, grpcResponseSnapshot(result)) }

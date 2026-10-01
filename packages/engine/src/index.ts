@@ -96,6 +96,9 @@ export { restSubject } from './rest/run.js';
 export { restEffectiveAuth, restItemFor, restRun } from './rest/run.js';
 export type { RestSelected } from './rest/run.js';
 export { grpcSubject } from './grpc/run.js';
+// The gRPC run facet's item and its effective credentials, for a host that sends one gRPC item itself.
+export { grpcEffectiveAuth, grpcItemFor } from './grpc/run.js';
+export type { GrpcFailedInput, GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
 export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
 export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
 export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
