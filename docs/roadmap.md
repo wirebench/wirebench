@@ -138,7 +138,7 @@ on 2.4, so the two can swap the day an enterprise evaluation arrives first.
   published per release, so the speed claim is measured rather than asserted.
 - **Tooling.** Done 2026-09-18 (issue #29): the user guide is `docs-site/`, its own workspace package on
   Astro Starlight with Pagefind search, kept apart from the engineering documents under `docs/`, and
-  published to GitHub Pages at https://wirebench.github.io/wirebench/docs/ by `.github/workflows/docs.yml` on
+  published to GitHub Pages at https://wirebench.github.io/wirebench/docs/ by `.github/workflows/site.yml` on
   every push to `main`; pull requests that touch it build it, and broken internal links fail that build.
   The command and shortcut reference is generated from the shared command catalog
   (`pnpm docs:commands --check`, like the WS-I tables); screenshots come from

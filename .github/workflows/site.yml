@@ -1,17 +1,20 @@
-name: Docs
+name: Site
 
-# Builds the documentation site and publishes it to GitHub Pages.
+# Builds the landing site and the documentation site and publishes them to GitHub Pages.
 #
 # Every push to main deploys, with no path filter: the command reference and the screenshots are
-# generated from app code, so a change outside docs-site/ can change the site. Pull requests that
-# touch the site build it without deploying, which is where a broken internal link fails.
+# generated from app code, so a change outside docs-site/ can change the site. The artifact is the
+# landing site with the user guide under /docs. Pull requests that touch the site build it without
+# deploying, which is where a broken internal link fails.
 on:
   push:
     branches: [main]
   pull_request:
     paths:
+      - 'site/**'
       - 'docs-site/**'
-      - '.github/workflows/docs.yml'
+      - 'scripts/site-assemble.ts'
+      - '.github/workflows/site.yml'
   workflow_dispatch:
 
 permissions:
@@ -33,11 +36,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm docs:build
+      - run: pnpm site:assemble
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: docs-site/dist
+          path: site/dist
 
   deploy:
     if: github.event_name != 'pull_request'
