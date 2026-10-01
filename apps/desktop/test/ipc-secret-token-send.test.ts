@@ -18,15 +18,17 @@ import {
   type TestWsServer,
 } from '@wirebench/engine/test-helpers';
 import {
+  createApi,
   createGrpcApi,
   createGrpcRequest,
   createProject,
+  createRestRequest,
   createWsApi,
   createWsRequest,
   entry,
   loadProtoSet,
 } from '@wirebench/engine';
-import type { GetSecret, HistoryEntry, Project, PropertyScopes, ProtoSet, RestSendInput } from '@wirebench/engine';
+import type { GetSecret, HistoryEntry, Project, PropertyScopes, ProtoSet } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import {
@@ -53,7 +55,6 @@ import type {
   RestLiveEvent,
   WsFrameWire,
 } from '../src/shared/wire-types.js';
-import { restApiWire } from './helpers/wire-defaults.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -774,18 +775,14 @@ describe('an event stream that echoes a token value', () => {
   async function stream(sendId: string, show: boolean) {
     // As the getter records a value it hands out for `${secret:name}`.
     recordSecretValue(value);
-    const input: RestSendInput = {
-      baseUrl: url,
-      request: { method: 'GET', url: '/', pathParams: [], query: [], headers: [], body: { kind: 'none' } },
+    const request = createRestRequest('Stream', {
+      id: 'rest-1',
+      url: '/',
       settings: { timeoutMs: 5_000, followRedirects: true },
-    };
-    const resolution = {
-      input,
-      unresolved: [],
-      api: restApiWire(),
-      request: {},
-      baseUrlSource: 'api',
-      auth: { type: 'none' },
+    });
+    const model: Project = {
+      ...createProject('Demo', { id: 'p1' }),
+      apis: [createApi('Api', { id: 'api-1', baseUrl: url, requests: [request] })],
     };
     const written: HistoryEntry[] = [];
     registerRequestChannels(new EngineService(), {
@@ -794,7 +791,8 @@ describe('an event stream that echoes a token value', () => {
         authFor: () => undefined,
         requestMeta: () => undefined,
         projectId: () => 'p1',
-        restSend: (requestId: string) => (requestId === 'rest-1' ? resolution : undefined),
+        runContextFor: (requestId: string) =>
+          requestId === 'rest-1' ? { project: model, projectDir: '/tmp/none' } : undefined,
       } as unknown as RequestChannelDeps['project'],
       ...(show ? { showSecrets: { get: () => true } } : {}),
       history: {

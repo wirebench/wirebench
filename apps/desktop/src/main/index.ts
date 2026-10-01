@@ -69,6 +69,7 @@ import {
   type RequestChannelDeps,
 } from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
+import { ExchangeRegistry } from './send/exchange.js';
 import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
 import { registerTeamChannels } from './ipc/team.js';
@@ -143,6 +144,8 @@ const secretsFor = (projectId: string | undefined) =>
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
+/** The sends in flight through the engine's `openExchange`, which `request.cancel` and a close reach. */
+const exchanges = new ExchangeRegistry();
 /** The request scripts' host (#63), created with the request channels once the app is ready. */
 let scriptHost: ScriptHost | undefined;
 
@@ -361,9 +364,10 @@ const workspaceService = new WorkspaceService({
     } else {
       engineService.closeWsWhere(matches);
     }
-    // An event stream open on a REST request is the same kind of thing: stopped here, and its
-    // History entry — written by its own pending `request.sendRest` — waited for alongside.
-    engineService.abortRestStreamsWhere(matches ?? (() => true));
+    // An event stream open on a REST request is the same kind of thing: stopped here (with any other
+    // REST send of the project still in flight), and its History entry — written by its own pending
+    // `request.sendRest` — waited for alongside.
+    exchanges.endWhere(matches ?? (() => true), 'rest');
     // Always awaited, never guarded by "did we just close anything": the engine drops a session
     // from its map as the socket finishes, *before* the pending `request.openWs` has written the
     // History entry. A session that closed a moment ago is therefore invisible here while its
@@ -487,6 +491,7 @@ void app.whenReady().then(() => {
     storeSecret: (value, label) => secretStore.set(value, { label }),
     secretsFor,
     scripts,
+    registry: exchanges,
   };
   registerRequestChannels(engineService, requestDeps);
   // A sequence's steps go through the very paths a single send takes, with the same dependencies.
@@ -767,7 +772,7 @@ app.on('before-quit', (event) => {
     );
   });
   try {
-    engineService.abortRestStreamsWhere(() => true);
+    exchanges.endWhere(() => true, 'rest');
   } catch (error) {
     console.warn('[rest] aborting streams on quit failed', error instanceof Error ? error.message : String(error));
   }

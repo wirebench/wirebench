@@ -25,20 +25,13 @@ import type {
   PropertyScopes,
   RestApi,
   RestRequestDef,
-  RestRequestSettings,
   RestSendInput,
   TlsOptions,
   UnresolvedRef,
 } from '@wirebench/engine';
-import {
-  authChainFor,
-  findRestRequest,
-  toEngineAuthConfig,
-  toEngineSigning,
-  toEngineBody,
-  toEngineRows,
-} from './project-rest-mutations.js';
+import { authChainFor, findRestRequest } from './project-rest-mutations.js';
 import { withSecretTokenScope } from './secret-resolver.js';
+import { withDraft } from './send/draft.js';
 import type { RestRequestPatchWire } from '../shared/wire-types.js';
 
 /** What one resolved REST send knows about itself, beyond the input the engine will consume. */
@@ -92,37 +85,6 @@ function locate(project: Project, requestId: string): { api: RestApi; request: R
     (candidate) => findRestRequest({ ...project, apis: [candidate] }, requestId) !== undefined,
   );
   return api === undefined ? undefined : { api, request };
-}
-
-/** The saved request with the editor's draft applied, for this send only — nothing is persisted. */
-export function withDraft(request: RestRequestDef, draft: RestRequestPatchWire | undefined): RestRequestDef {
-  if (draft === undefined) {
-    return request;
-  }
-  const merged: RestRequestDef = {
-    ...request,
-    ...(draft.method !== undefined ? { method: draft.method } : {}),
-    ...(draft.url !== undefined ? { url: draft.url } : {}),
-    ...(draft.pathParams !== undefined ? { pathParams: toEngineRows(draft.pathParams) } : {}),
-    ...(draft.query !== undefined ? { query: toEngineRows(draft.query) } : {}),
-    ...(draft.headers !== undefined ? { headers: toEngineRows(draft.headers) } : {}),
-    ...(draft.body !== undefined ? { body: toEngineBody(draft.body) } : {}),
-    ...(draft.auth !== undefined ? { auth: toEngineAuthConfig(draft.auth) } : {}),
-    ...(draft.settings !== undefined ? { settings: cleanSettings(draft.settings) } : {}),
-    ...(draft.signing !== undefined && draft.signing !== null ? { signing: toEngineSigning(draft.signing) } : {}),
-  };
-  if (draft.signing !== null) {
-    return merged;
-  }
-  // An unsaved *Inherit* on the Signing tab: send as the parents would sign.
-  const inherited: Record<string, unknown> = { ...merged };
-  delete inherited['signing'];
-  return inherited as unknown as RestRequestDef;
-}
-
-/** Settings from the wire, with the keys the sender left undefined dropped (they mean *inherit*). */
-function cleanSettings(settings: NonNullable<RestRequestPatchWire['settings']>): RestRequestSettings {
-  return Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined));
 }
 
 /**

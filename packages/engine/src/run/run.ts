@@ -32,6 +32,7 @@ import {
   scriptAssertions,
   scriptSession,
   type ScriptSession,
+  type ScriptSessionOptions,
   type SentScripts,
 } from './script-support.js';
 
@@ -175,23 +176,30 @@ function runOf(registry: ProtocolRegistry, item: SelectedBase): ProtocolRun {
 /**
  * The scripts of one send, opened when the module first runs one. The secrets a request lists for
  * its scripts are read then and not before, so they are asked for after everything resolving the
- * request asks for, and before anything connecting it does. Exported for the desktop's sends.
+ * request asks for, and before anything connecting it does. Exported for the desktop's sends,
+ * which pass `options` to record each secret value a script sets as the app's other sends do.
  */
 export function deferredSession(
   scripting: RequestScripting,
   scripted: ScriptedRequest,
   context: RunContext,
+  options: ScriptSessionOptions = {},
 ): ScriptSession {
   let opening: Promise<ScriptSession> | undefined;
   const open = (): Promise<ScriptSession> => {
     opening ??= listedSecrets(scripted.scripts.secrets, context.host.getSecret).then((secrets) =>
       // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is
       // shown before that.
-      scriptSession(scripting, scripted, {
-        vars: context.sequence ?? {},
-        props: scriptProperties(scopesFor(context)),
-        secrets,
-      }),
+      scriptSession(
+        scripting,
+        scripted,
+        {
+          vars: context.sequence ?? {},
+          props: scriptProperties(scopesFor(context)),
+          secrets,
+        },
+        options,
+      ),
     );
     return opening;
   };

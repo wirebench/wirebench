@@ -89,6 +89,9 @@ export type { UnsupportedContainer } from './project/model.js';
 // What three core files re-exported until 3.0, from the module that declares it.
 export { soapResponseSubject } from './soap/run.js';
 export { restSubject } from './rest/run.js';
+// The REST run facet and its effective credentials, for a host that sends one REST item itself.
+export { restEffectiveAuth, restRun } from './rest/run.js';
+export type { RestSelected } from './rest/run.js';
 export { grpcSubject } from './grpc/run.js';
 export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
 export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';

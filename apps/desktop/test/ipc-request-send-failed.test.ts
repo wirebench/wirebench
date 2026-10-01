@@ -5,10 +5,10 @@
  * code — after which the IPC reply is the same failed envelope it always was.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RestSendInput } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest } from '@wirebench/engine';
+import type { AuthConfig, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { restApiWire } from './helpers/wire-defaults.js';
 import type { FailedExchangeWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -29,31 +29,39 @@ function invoke(channel: string, payload: unknown): Promise<unknown> {
   return handler({ sender: {} }, payload);
 }
 
-/** A resolved REST send aimed at port 1, where nothing listens. */
-function resolution(auth: Record<string, unknown> = { type: 'none' }) {
-  const input: RestSendInput = {
-    baseUrl: 'http://127.0.0.1:1',
-    request: {
-      method: 'GET',
-      url: '/nope/{id}',
-      pathParams: [{ name: 'id', value: '42', enabled: true }],
-      query: [
-        { name: 'page', value: '2', enabled: true },
-        { name: 'off', value: 'x', enabled: false },
-      ],
-      headers: [
-        { name: 'Authorization', value: 'Bearer plain-token', enabled: true },
-        { name: 'X-Trace', value: 'abc', enabled: true },
-        { name: 'X-Off', value: 'no', enabled: false },
-      ],
-      body: { kind: 'none' },
-    },
+/** A project whose one API is aimed at port 1, where nothing listens, holding `rest-1`. */
+function resolution(options: { readonly auth?: AuthConfig; readonly baseUrl?: string; readonly url?: string } = {}) {
+  const request = createRestRequest('Nope', {
+    id: 'rest-1',
+    url: options.url ?? '/nope/{id}',
+    pathParams: [{ name: 'id', value: '42', enabled: true }],
+    query: [
+      { name: 'page', value: '2', enabled: true },
+      { name: 'off', value: 'x', enabled: false },
+    ],
+    headers: [
+      { name: 'Authorization', value: 'Bearer plain-token', enabled: true },
+      { name: 'X-Trace', value: 'abc', enabled: true },
+      { name: 'X-Off', value: 'no', enabled: false },
+    ],
     settings: { timeoutMs: 2_000, followRedirects: true },
-  };
-  return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth };
+  });
+  const api = createApi('Api', {
+    id: 'api-1',
+    baseUrl: options.baseUrl ?? 'http://127.0.0.1:1',
+    ...(options.auth !== undefined ? { auth: options.auth } : {}),
+    requests: [request],
+  });
+  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
 }
 
-function project(auth?: Record<string, unknown>) {
+/** The send's run context: the project `resolution` builds, for a REST id. */
+function located(model: Project) {
+  return (requestId: string) =>
+    requestId.startsWith('rest-') ? { project: model, projectDir: '/tmp/none' } : undefined;
+}
+
+function project(auth?: AuthConfig) {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     preflight: () => undefined as never,
@@ -64,7 +72,7 @@ function project(auth?: Record<string, unknown>) {
     buildLiveSendInput: () => undefined,
     sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
-    restSend: (requestId: string) => (requestId.startsWith('rest-') ? resolution(auth) : undefined),
+    runContextFor: located(resolution(auth !== undefined ? { auth } : {})),
   } as unknown as RequestChannelDeps['project'];
 }
 
@@ -109,9 +117,10 @@ describe('request.sendRest → onSendFailed', () => {
 
   it("masks a header API key by the name the request's auth gives it, whatever that is", async () => {
     const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
-    const auth = { type: 'api-key', name: 'Ocp-Apim-Subscription-Key', in: 'header', valueRef: 'sec_key' };
-    registerRequestChannels(new EngineService((ref) => Promise.resolve(ref === 'sec_key' ? 'hdr-key' : undefined)), {
+    const auth = { type: 'api-key', name: 'Ocp-Apim-Subscription-Key', in: 'header', valueRef: 'sec_key' } as const;
+    registerRequestChannels(new EngineService(), {
       project: project(auth),
+      getSecret: (ref) => Promise.resolve(ref === 'sec_key' ? 'hdr-key' : undefined),
       adHocScopes: () => ({ project: {}, global: {}, system: {} }),
       showSecrets: { get: () => true },
       onSendFailed,

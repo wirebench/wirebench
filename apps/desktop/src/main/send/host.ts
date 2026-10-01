@@ -19,6 +19,7 @@ import type {
   ProxyOptions,
   RestExchange,
   RestRequestDef,
+  RestSendInput,
   RunTokenSource,
   SelectedBase,
   SendFailure,
@@ -165,15 +166,18 @@ async function oauth2Credentials(
 
 /**
  * A REST response checked against its OpenAPI operation, as `EngineService.sendRestRequest` checks
- * it: only a JSON body that is not a stream, within the service's deadline.
+ * it: only a JSON body that is not a stream, within the service's deadline. The operation is found
+ * from the method and the request's own URL as they were sent (the path, not the base URL joined to
+ * it), as the send path always matched it; the exchange's URL stands in when the input is absent.
  */
 function restContractFor(deps: DesktopSendDeps): NonNullable<SendHost['contractFor']> {
-  return (item, exchange) => {
+  return (item, exchange, sent) => {
     if (item.kind !== 'rest') return Promise.resolve(undefined);
     const rest = exchange as RestExchange;
+    const input = sent as RestSendInput | undefined;
     const target = deps.project.restContractFor?.(item.request.id, {
-      method: rest.request.method,
-      url: rest.request.url,
+      method: input?.request.method ?? rest.request.method,
+      url: input?.request.url ?? rest.request.url,
     });
     // Handled here too, as the send path did: a cache that fails to read is reported by the check.
     target?.catch(() => undefined);

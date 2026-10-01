@@ -33,6 +33,7 @@ export type { ScriptSession, ScriptSessionOptions, SentScripts } from './script-
 export { EventQueue } from './event-queue.js';
 export { exchangeController, notStreaming } from './exchange.js';
 export { openExchange, resolveExchange } from './open.js';
+export { createRunScope } from './scope.js';
 export type {
   ExchangeController,
   ExchangeHandle,

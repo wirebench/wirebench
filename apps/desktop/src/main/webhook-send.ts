@@ -33,7 +33,8 @@ import type {
   SignatureScheme,
   TlsOptions,
 } from '@wirebench/engine';
-import { expandedSendInput, withDraft } from './rest-send.js';
+import { expandedSendInput } from './rest-send.js';
+import { withDraft } from './send/draft.js';
 import type { RestSendResolution } from './rest-send.js';
 import { webhookCollectionId } from './webhook-ids.js';
 import type { HistoryEntryWire, RestRequestPatchWire } from '../shared/wire-types.js';
@@ -146,8 +147,9 @@ export function callbackUrlFor(
  * Refuses a target that cannot be sent to, once it is expanded: an empty one (unless the item's
  * own URL is absolute) and one that is not `http(s)`. A target still holding a reference nothing
  * resolved is left to the unresolved list, which already refuses the send and names the reference.
+ * Exported for the engine send path (`send/exchange.ts`), which checks a webhook item's target first.
  */
-function assertTarget(baseUrl: string, url: string, unresolved: boolean): void {
+export function assertTarget(baseUrl: string, url: string, unresolved: boolean): void {
   if (baseUrl.trim() === '') {
     if (!ABSOLUTE_HTTP.test(url)) {
       throw new WirebenchError('webhook-target-missing', 'Set the Webhooks target');
@@ -226,14 +228,14 @@ export async function webhookSignFor(
 }
 
 /**
- * The resolution History records for a signed send: its header rows with the signing headers
- * appended as they went out (read from the sent request), replacing any typed row of the same name.
+ * The input History records for a signed send: its header rows with the signing headers appended
+ * as they went out (read from the sent request), replacing any typed row of the same name.
  */
 export function withSentSigningHeaders(
-  resolved: RestSendResolution,
+  input: RestSendInput,
   scheme: SignatureScheme,
   sent: Readonly<Record<string, string>>,
-): RestSendResolution {
+): RestSendInput {
   const lowerSent = new Map(Object.entries(sent).map(([name, value]) => [name.toLowerCase(), value]));
   const names = signatureHeaderNames(scheme);
   const signed = names.flatMap((name) => {
@@ -241,15 +243,12 @@ export function withSentSigningHeaders(
     return value === undefined ? [] : [{ name, value, enabled: true }];
   });
   const replaced = new Set(signed.map((header) => header.name.toLowerCase()));
-  const request = resolved.input.request;
+  const request = input.request;
   return {
-    ...resolved,
-    input: {
-      ...resolved.input,
-      request: {
-        ...request,
-        headers: [...request.headers.filter((header) => !replaced.has(header.name.toLowerCase())), ...signed],
-      },
+    ...input,
+    request: {
+      ...request,
+      headers: [...request.headers.filter((header) => !replaced.has(header.name.toLowerCase())), ...signed],
     },
   };
 }

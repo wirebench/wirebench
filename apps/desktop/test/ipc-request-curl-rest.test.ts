@@ -7,7 +7,8 @@
  * not reach the command unless the session's show-secrets switch is on.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AuthConfig, RestSendInput } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest } from '@wirebench/engine';
+import type { AuthConfig, KeyValueEntry, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { ProjectChange } from '../src/shared/wire-types.js';
@@ -39,34 +40,30 @@ function unwrap<T>(result: unknown): T {
   return envelope.value as T;
 }
 
-/** A resolved REST send, as `ProjectRouter.restSend` would answer it. */
-function resolution(overrides: { readonly auth?: AuthConfig; readonly unresolved?: readonly { expr: string }[] } = {}) {
-  const input: RestSendInput = {
-    baseUrl: 'https://api.test',
-    request: {
-      method: 'POST',
-      url: '/pets',
-      pathParams: [],
-      query: [{ name: 'dry', value: 'true', enabled: true }],
-      headers: [{ name: 'Content-Type', value: 'application/json', enabled: true }],
-      body: { kind: 'raw', language: 'json', text: '{"name":"Fido"}' },
-    },
+/** A project holding REST request `rest-1`: `POST https://api.test/pets?dry=true` with a JSON body. */
+function resolution(
+  overrides: {
+    readonly auth?: AuthConfig;
+    readonly headers?: readonly KeyValueEntry[];
+    readonly url?: string;
+  } = {},
+): Project {
+  const request = createRestRequest('Create pet', {
+    id: 'rest-1',
+    method: 'POST',
+    url: overrides.url ?? '/pets',
+    query: [{ name: 'dry', value: 'true', enabled: true }],
+    headers: [...(overrides.headers ?? [{ name: 'Content-Type', value: 'application/json', enabled: true }])],
+    body: { kind: 'raw', language: 'json', text: '{"name":"Fido"}' },
     settings: { timeoutMs: 30_000, followRedirects: true },
-  };
-  return {
-    input,
-    unresolved: overrides.unresolved ?? [],
-    api: restApiWire(),
-    request: {},
-    baseUrlSource: 'api',
-    auth: overrides.auth ?? { type: 'none' },
-  };
+    ...(overrides.auth !== undefined ? { auth: overrides.auth } : {}),
+  });
+  const api = createApi('Petstore', { id: 'api-1', baseUrl: 'https://api.test', requests: [request] });
+  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
 }
 
 /** The project surface these two channels touch, and nothing more. */
-function project(
-  options: { readonly rest?: ReturnType<typeof resolution> | undefined; readonly changes?: ProjectChange[] } = {},
-) {
+function project(options: { readonly rest?: Project | undefined; readonly changes?: ProjectChange[] } = {}) {
   const changes = options.changes ?? [];
   return {
     changes,
@@ -79,7 +76,10 @@ function project(
     buildLiveSendInput: () => undefined,
     sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
-    restSend: (requestId: string) => (requestId.startsWith('rest-') ? options.rest : undefined),
+    runContextFor: (requestId: string) =>
+      requestId.startsWith('rest-') && options.rest !== undefined
+        ? { project: options.rest, projectDir: '/tmp/demo' }
+        : undefined,
     projectSnapshot: () => ({
       ...NO_REST,
       settings: PROJECT_SETTINGS,
@@ -109,7 +109,7 @@ function project(
 
 /** Registers the channels with a stub project and an optional show-secrets flag. */
 function setup(options: {
-  readonly rest?: ReturnType<typeof resolution> | undefined;
+  readonly rest?: Project | undefined;
   readonly show?: boolean;
   readonly changes?: ProjectChange[];
   readonly secrets?: Record<string, string>;
@@ -206,7 +206,7 @@ describe('request.curl for a REST request', () => {
   });
 
   it('says which properties are unresolved instead of refusing to export', async () => {
-    setup({ rest: resolution({ unresolved: [{ expr: '${#Project#missing}' }] }) });
+    setup({ rest: resolution({ url: '/pets/${#Project#missing}' }) });
 
     const result = unwrap<{ notes?: string[] }>(await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }));
 
@@ -214,16 +214,7 @@ describe('request.curl for a REST request', () => {
   });
 
   it('does not note a ${secret:name} token as unresolved, leaving it in the command as written', async () => {
-    const rest = resolution({
-      unresolved: [{ expr: '${secret:api_key}', scope: 'Secret', name: 'api_key', code: 'missing' } as never],
-    });
-    rest.input = {
-      ...rest.input,
-      request: {
-        ...rest.input.request,
-        headers: [{ name: 'X-Key', value: '${secret:api_key}', enabled: true }],
-      },
-    };
+    const rest = resolution({ headers: [{ name: 'X-Key', value: '${secret:api_key}', enabled: true }] });
     setup({ rest });
 
     const result = unwrap<{ command: string; notes?: string[] }>(

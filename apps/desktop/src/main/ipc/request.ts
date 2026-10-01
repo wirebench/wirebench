@@ -65,6 +65,13 @@ import { failedExchangeOf } from '../failed-exchange.js';
 import { sendAndRecordHistory } from '../send-with-history.js';
 import { extraTrustAnchors, reportSendFailed } from '../send/host.js';
 import {
+  ExchangeRegistry,
+  previewRest,
+  sendThroughEngine,
+  type RestPreview,
+  type SendThroughEngineDeps,
+} from '../send/exchange.js';
+import {
   finishScripts,
   scriptsFailed,
   scriptsForSend,
@@ -232,8 +239,9 @@ export interface RequestChannelDeps {
    * than quietly obtaining one.
    */
   readonly oauth2?: Pick<OAuth2Service, 'accessToken'> &
-    // Read by the SOAP cURL export, which uses a cached token but never obtains one.
-    Partial<Pick<OAuth2Service, 'status'>>;
+    // Read by the SOAP cURL export, which uses a cached token but never obtains one; and `clear`
+    // by a send through the engine, which forgets a token the server refused.
+    Partial<Pick<OAuth2Service, 'status' | 'clear'>>;
   /**
    * Resolves one keychain reference, for the client secret and the remembered refresh token an
    * OAuth2 token request needs. The engine service resolves every *other* reference itself; this is
@@ -259,6 +267,48 @@ export interface RequestChannelDeps {
   readonly scripts?: SendScripts;
   /** Told what a sequence step's scripts did; see `ScriptSendDeps.onScriptsRan`. */
   readonly onScriptsRan?: (sent: SentScripts) => void;
+  /**
+   * The app's exchanges in flight, which `request.cancel` and a project's close reach. Omitted in
+   * tests, which then get one of their own per registration.
+   */
+  readonly registry?: ExchangeRegistry;
+}
+
+/**
+ * The dependencies a send through the engine (`send/exchange.ts`) takes, from the channels' own.
+ * `registry` is the one the channels cancel through.
+ */
+export function toSendDeps(
+  service: EngineService,
+  deps: RequestChannelDeps,
+  registry: ExchangeRegistry = deps.registry ?? new ExchangeRegistry(),
+): SendThroughEngineDeps {
+  const { oauth2, preferences, history } = deps;
+  return {
+    project: deps.project,
+    service,
+    registry,
+    ...(oauth2 !== undefined
+      ? {
+          oauth2: {
+            accessToken: (config, options) => oauth2.accessToken(config, options),
+            clear: (config) => oauth2.clear?.(config),
+          },
+        }
+      : {}),
+    ...(deps.getSecret !== undefined ? { getSecret: deps.getSecret } : {}),
+    ...(deps.secretsFor !== undefined ? { secretsFor: deps.secretsFor } : {}),
+    ...(preferences !== undefined ? { preferences: () => preferences.get() } : {}),
+    ...(history !== undefined
+      ? { history, newestHistory: (projectId, requestId) => history.newestFor(projectId, requestId) }
+      : {}),
+    ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),
+    ...(deps.showSecrets !== undefined ? { showSecrets: deps.showSecrets } : {}),
+    ...(deps.onSendFailed !== undefined ? { onSendFailed: deps.onSendFailed } : {}),
+    ...(deps.onExchange !== undefined ? { onExchange: deps.onExchange } : {}),
+    ...(deps.scripts !== undefined ? { scripts: deps.scripts } : {}),
+    ...(deps.onScriptsRan !== undefined ? { onScriptsRan: deps.onScriptsRan } : {}),
+  };
 }
 
 /** The token getter for a send of `requestId`: its own project's, or one that finds nothing. */
@@ -487,7 +537,7 @@ function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
 async function restCurl(
   deps: RequestChannelDeps,
   request: RequestCurlRequest,
-  resolved: NonNullable<ReturnType<NonNullable<RequestChannelProject['restSend']>>>,
+  resolved: RestPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
   // With show-secrets off no secret is read at all: the command needs the *shape* of the credential,
@@ -520,11 +570,13 @@ async function restCurl(
 async function curl(
   service: EngineService,
   deps: RequestChannelDeps,
+  sendDeps: SendThroughEngineDeps,
   request: RequestCurlRequest,
 ): Promise<RequestCurlResponse> {
   // Dispatch on what the id names rather than on a flag the renderer sends: the Code panel asks about
-  // whatever request is in front of the user, and only the model knows which protocol that is.
-  const rest = deps.project.restSend?.(request.requestId, request.draft);
+  // whatever request is in front of the user, and only the model knows which protocol that is. A
+  // REST request is resolved as its send resolves it, through the engine, with no secret read.
+  const rest = await previewRest(sendDeps, request.requestId, request.draft);
   if (rest !== undefined) {
     return await restCurl(deps, request, rest);
   }
@@ -942,7 +994,9 @@ export async function sendRestRequest(
     );
     // History keeps the signing headers as they went out, so its resend replays them (R1).
     const recorded =
-      sign === undefined ? resolved : withSentSigningHeaders(resolved, sign.scheme, summary.http.request.headers);
+      sign === undefined
+        ? resolved
+        : { ...resolved, input: withSentSigningHeaders(resolved.input, sign.scheme, summary.http.request.headers) };
     await recordRest(deps, request.requestId, recorded, summary, Date.now() - startedAt, keyParams);
     return summary;
   } catch (error) {
@@ -1612,7 +1666,7 @@ const openRestCalls = new Map<Promise<unknown>, string>();
 
 /**
  * Resolves once every editor REST send in flight whose request `matches` has recorded its History
- * entry, or after `timeoutMs`. Paired with `EngineService.abortRestStreamsWhere` wherever
+ * entry, or after `timeoutMs`. Paired with `ExchangeRegistry.endWhere(…, 'rest')` wherever
  * WebSocket sessions are closed on the app's behalf (quitting, closing a project).
  */
 export async function whenRestSendsRecorded(
@@ -1638,6 +1692,17 @@ export async function whenRestSendsRecorded(
       clearTimeout(timer);
     }
   }
+}
+
+/** Registers one editor REST send in {@link openRestCalls} until it has recorded its History entry. */
+function trackRestSend<T>(requestId: string, call: Promise<T>): Promise<T> {
+  const settled = call.then(
+    () => undefined,
+    () => undefined,
+  );
+  openRestCalls.set(settled, requestId);
+  void settled.finally(() => openRestCalls.delete(settled));
+  return call;
 }
 
 /** Registers one `request.openWs` call in {@link openWsCalls} for the life of its session. */
@@ -1912,6 +1977,7 @@ function restErrorDetail(error: unknown): { code: string; message: string } {
  * unresolved references before anything leaves the machine.
  */
 export function registerRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
+  const sendDeps = toSendDeps(service, deps);
   registerHandler(channels.request.generate, (request) => {
     const options = request.options ?? generateOptionsFrom(deps.preferences?.get());
     return Promise.resolve(service.generate({ ...request, ...(options !== undefined ? { options } : {}) }));
@@ -1923,20 +1989,19 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
 
-  registerHandler(channels.request.sendRest, (request, sender) => {
-    // The stream as it happens, alongside the invoke that is still open and will resolve with the
-    // whole exchange. A window that has gone away swallows its own events.
-    const call = sendRestRequest(service, deps, request, (event) => {
-      emitEvent(sender, events.rest.live, event);
-    });
-    const settled = call.then(
-      () => undefined,
-      () => undefined,
-    );
-    openRestCalls.set(settled, request.requestId);
-    void settled.finally(() => openRestCalls.delete(settled));
-    return call;
-  });
+  // The stream as it happens, alongside the invoke that is still open and will resolve with the
+  // whole exchange. A window that has gone away swallows its own events.
+  registerHandler(channels.request.sendRest, (request, sender) =>
+    trackRestSend(
+      request.requestId,
+      sendThroughEngine(sendDeps, request.sendId, request.requestId, {
+        draft: { kind: 'rest', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
+        onLive: (live) => {
+          emitEvent(sender, events.rest.live, live);
+        },
+      }),
+    ),
+  );
 
   registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
 
@@ -1965,15 +2030,20 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
 
   registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(service, deps, request));
 
-  registerHandler(channels.request.cancel, (request) =>
-    Promise.resolve(cancelEnvironmentBatch(service, request.sendId) ?? service.cancel(request.sendId)),
+  // A send through the engine is cancelled through the registry; a SOAP, gRPC or WebSocket send, and
+  // a REST one still sent by the service, through the service.
+  registerHandler(channels.request.cancel, ({ sendId }) =>
+    Promise.resolve(
+      cancelEnvironmentBatch(service, sendId) ??
+        (sendDeps.registry.has(sendId) ? sendDeps.registry.cancel(sendId) : service.cancel(sendId)),
+    ),
   );
 
   registerHandler(channels.request.preflight, (request) => Promise.resolve(deps.project.preflight(request.requestId)));
 
   registerHandler(channels.request.recreate, (request) => recreate(service, deps, request));
 
-  registerHandler(channels.request.curl, (request) => curl(service, deps, request));
+  registerHandler(channels.request.curl, (request) => curl(service, deps, sendDeps, request));
 
   registerHandler(channels.request.importCurl, (request) => importCurl(deps, request));
 

@@ -293,6 +293,7 @@ async function connectAndSend(
         startedAt,
         durationMs: Date.now() - startedAt,
         attempted: attemptedOf(attempted),
+        input: attempted,
       });
     } catch {
       // Deliberately ignored — see above.
@@ -329,7 +330,7 @@ async function connectAndSend(
   // As the app does after every send: what the response set replaces what was stored, and none forgets it.
   context.host.cookies?.remember(selected, exchange.cookies);
   // The request has gone out: a contract check that rejects checked nothing, and fails nothing.
-  const contract = await context.host.contractFor?.(selected, exchange).catch(() => undefined);
+  const contract = await context.host.contractFor?.(selected, exchange, connected).catch(() => undefined);
   return {
     connected,
     sent: {

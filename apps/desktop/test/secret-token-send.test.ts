@@ -24,7 +24,6 @@ import type { GetSecret, Project, PropertyScopes } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import {
   recordSecretValue,
   redactHeaders,
@@ -33,10 +32,11 @@ import {
   redactUrl,
   redactXml,
 } from '../src/main/redact.js';
-import { resolveRestSend } from '../src/main/rest-send.js';
 import { projectSecretGetter, resolveWithStoredValues, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { newSecretRef, SecretStore, type CryptoBackend } from '../src/main/secrets.js';
 import { sendAndRecordHistory } from '../src/main/send-with-history.js';
+import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 import { resolveWsSend } from '../src/main/ws-send.js';
 
 const SCOPES: PropertyScopes = { project: {}, global: {}, system: {} };
@@ -219,21 +219,8 @@ function restProject(header: string): Project {
   };
 }
 
-function restDeps(project: Project): RequestChannelDeps {
-  return {
-    project: {
-      scopesFor: () => SCOPES,
-      projectId: () => 'p1',
-      restSend: (requestId: string) =>
-        resolveRestSend({
-          project,
-          requestId,
-          scopes: SCOPES,
-          resolveBaseUrl: (api) => ({ url: api.baseUrl, source: 'api' }),
-        }),
-    } as unknown as RequestChannelDeps['project'],
-    secretsFor: getterFor,
-  };
+function restDeps(project: Project): SendThroughEngineDeps {
+  return sendDepsFor(project, { secretsFor: getterFor });
 }
 
 describe('a desktop REST send', () => {
@@ -241,9 +228,8 @@ describe('a desktop REST send', () => {
     await store.set('fake-billing-key-0001', { label: secretStoreLabel('p1', 'billing_key') });
     const before = server.requests.length;
 
-    const summary = await sendRestRequest(new EngineService(), restDeps(restProject('Key ${secret:billing_key}')), {
-      sendId: 'rest-1',
-      requestId: 'r1',
+    const summary = await sendThroughEngine(restDeps(restProject('Key ${secret:billing_key}')), 'rest-1', 'r1', {
+      draft: { kind: 'rest' },
     });
 
     expect(server.requests.slice(before)[0]?.headers['x-billing']).toBe('Key fake-billing-key-0001');
@@ -259,10 +245,7 @@ describe('a desktop REST send', () => {
     const before = server.requests.length;
 
     await expect(
-      sendRestRequest(new EngineService(), restDeps(restProject('${secret:not_stored}')), {
-        sendId: 'rest-2',
-        requestId: 'r1',
-      }),
+      sendThroughEngine(restDeps(restProject('${secret:not_stored}')), 'rest-2', 'r1', { draft: { kind: 'rest' } }),
     ).rejects.toMatchObject({ code: 'secret-missing', details: { ref: 'secret:not_stored' } });
     expect(server.requests.length).toBe(before);
   });

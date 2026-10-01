@@ -4,10 +4,10 @@
  * does not parse) reach `onSendFailed` as one `stage: 'prepare'` row, and the call still fails.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { joinBase, WirebenchError, type RestSendInput } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, joinBase, WirebenchError } from '@wirebench/engine';
+import type { AuthConfig, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { restApiWire } from './helpers/wire-defaults.js';
 import type { FailedExchangeWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -28,28 +28,36 @@ function invoke(channel: string, payload: unknown): Promise<unknown> {
   return handler({ sender: {} }, payload);
 }
 
-/** A resolved REST send aimed at port 1, where nothing listens. */
-function resolution() {
-  const input: RestSendInput = {
-    baseUrl: 'http://127.0.0.1:1',
-    request: {
-      method: 'GET',
-      url: '/nope/{id}',
-      pathParams: [{ name: 'id', value: '42', enabled: true }],
-      query: [
-        { name: 'page', value: '2', enabled: true },
-        { name: 'off', value: 'x', enabled: false },
-      ],
-      headers: [
-        { name: 'Authorization', value: 'Bearer plain-token', enabled: true },
-        { name: 'X-Trace', value: 'abc', enabled: true },
-        { name: 'X-Off', value: 'no', enabled: false },
-      ],
-      body: { kind: 'none' },
-    },
+/** A project whose one API is aimed at port 1, where nothing listens, holding `rest-1`. */
+function resolution(options: { readonly auth?: AuthConfig; readonly baseUrl?: string; readonly url?: string } = {}) {
+  const request = createRestRequest('Nope', {
+    id: 'rest-1',
+    url: options.url ?? '/nope/{id}',
+    pathParams: [{ name: 'id', value: '42', enabled: true }],
+    query: [
+      { name: 'page', value: '2', enabled: true },
+      { name: 'off', value: 'x', enabled: false },
+    ],
+    headers: [
+      { name: 'Authorization', value: 'Bearer plain-token', enabled: true },
+      { name: 'X-Trace', value: 'abc', enabled: true },
+      { name: 'X-Off', value: 'no', enabled: false },
+    ],
     settings: { timeoutMs: 2_000, followRedirects: true },
-  };
-  return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth: { type: 'none' } };
+  });
+  const api = createApi('Api', {
+    id: 'api-1',
+    baseUrl: options.baseUrl ?? 'http://127.0.0.1:1',
+    ...(options.auth !== undefined ? { auth: options.auth } : {}),
+    requests: [request],
+  });
+  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+}
+
+/** The send's run context: the project `resolution` builds, for a REST id. */
+function located(model: Project) {
+  return (requestId: string) =>
+    requestId.startsWith('rest-') ? { project: model, projectDir: '/tmp/none' } : undefined;
 }
 
 function project() {
@@ -63,7 +71,7 @@ function project() {
     buildLiveSendInput: () => undefined,
     sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
-    restSend: (requestId: string) => (requestId.startsWith('rest-') ? resolution() : undefined),
+    runContextFor: located(resolution()),
   } as unknown as RequestChannelDeps['project'];
 }
 
@@ -106,26 +114,25 @@ describe('request.sendRest → prepare-stage failures', () => {
   });
 
   it('an OAuth2 token fetch that throws emits a prepare row with the service code', async () => {
-    const auth = { type: 'oauth2', grant: 'client-credentials' };
+    const auth = { type: 'oauth2', grant: 'client-credentials' } as unknown as AuthConfig;
     const onSendFailed = register(
       {
         oauth2: {
           accessToken: () => Promise.reject(new WirebenchError('oauth2-flow-pending', 'Waiting.')),
         },
       },
-      { restSend: () => ({ ...resolution(), auth }) },
+      { runContextFor: located(resolution({ auth })) },
     );
     await invoke('request.sendRest', { sendId: 's-2', requestId: 'rest-1' });
     expect(onSendFailed.mock.calls[0]![0]).toMatchObject({ stage: 'prepare', error: { code: 'oauth2-flow-pending' } });
   });
 
   it('an unparseable URL emits invalid-url with the unresolved text', async () => {
-    const bad = resolution();
-    const input = { ...bad.input, baseUrl: 'ht!tp://', request: { ...bad.input.request, url: '/x' } };
+    const bad = resolution({ baseUrl: 'ht!tp://', url: '/x' });
     const onSendFailed = register(
       {},
       {
-        restSend: () => ({ ...bad, input }),
+        runContextFor: located(bad),
         proxyFor: (_owner: string, target: string) => Promise.resolve(void new URL(target)),
       },
     );
@@ -139,9 +146,8 @@ describe('request.sendRest → prepare-stage failures', () => {
   });
 
   it('an unparseable base URL with no proxy configured is still a prepare row', async () => {
-    const bad = resolution();
-    const input = { ...bad.input, baseUrl: 'ht!tp://', request: { ...bad.input.request, url: '/x' } };
-    const onSendFailed = register({}, { restSend: () => ({ ...bad, input }) });
+    const bad = resolution({ baseUrl: 'ht!tp://', url: '/x' });
+    const onSendFailed = register({}, { runContextFor: located(bad) });
     await invoke('request.sendRest', { sendId: 's-5', requestId: 'rest-1' });
     expect(onSendFailed).toHaveBeenCalledTimes(1);
     // The engine refuses it while composing the URL, before anything is built.

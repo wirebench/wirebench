@@ -20,7 +20,7 @@ import {
   setWebhookFolderTarget,
   updateWebhooks,
 } from '../src/main/project-webhook-mutations.js';
-import { withDraft } from '../src/main/rest-send.js';
+import { withDraft } from '../src/main/send/draft.js';
 import { projectChangeSchema, restRequestPatchSchema } from '../src/shared/wire-types.js';
 import type { WebhookSigningWire } from '../src/shared/wire-types.js';
 
