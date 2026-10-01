@@ -18,7 +18,7 @@ import type { Interface, OAuth2Auth, Project, SoapRequestDef } from '../../../sr
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
-import type { SendHost } from '../../../src/run/host.js';
+import type { SendFailure, SendHost } from '../../../src/run/host.js';
 import type { RunTokenSource } from '../../../src/run/oauth2-token.js';
 import { openExchange } from '../../../src/run/open.js';
 import { createRunSender } from '../../../src/run/run.js';
@@ -30,7 +30,7 @@ import { SecretPlaceholders } from '../../../src/script/send.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 
-const { events } = vi.hoisted(() => ({ events: [] as string[] }));
+const { events, refuse } = vi.hoisted(() => ({ events: [] as string[], refuse: { on: false } }));
 
 vi.mock('../../../src/wsdl/cache.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/wsdl/cache.js')>()),
@@ -62,6 +62,7 @@ vi.mock('../../../src/rest/send.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/rest/send.js')>()),
   sendRest: () => {
     events.push('send');
+    if (refuse.on) return Promise.reject(new Error('connection refused'));
     return Promise.resolve({
       request: { url: 'https://api.example.test/invoices', method: 'GET', headers: {} },
       status: 200,
@@ -235,6 +236,7 @@ afterAll(() => {
 beforeEach(() => {
   events.length = 0;
   snapshotSeenByScript = undefined;
+  refuse.on = false;
 });
 
 function contextFor(p: Project): RunContext {
@@ -304,5 +306,40 @@ describe("the desktop's codes for a request that does not resolve", () => {
       send(project({ soapEnvelope: '<Envelope>${nope}</Envelope>' }), 'Billing/Op/Get'),
     ).rejects.toMatchObject({ code: 'unresolved-properties' });
     expect(events).toEqual([]);
+  });
+});
+
+describe('the failures a REST send reports to the host', () => {
+  function sendWith(extra: Partial<SendHost>): { failures: SendFailure[]; done: Promise<unknown> } {
+    const p = project();
+    const base = contextFor(p);
+    const failures: SendFailure[] = [];
+    const host: SendHost = { ...base.host, events: { onFailed: (_item, failure) => failures.push(failure) }, ...extra };
+    const done = openExchange(pick(p, 'Invoices/List'), host, {
+      scope: createRunScope({ ...base, host }),
+      interactive: false,
+    }).result;
+    return { failures, done };
+  }
+
+  it('reports stage prepare when connecting throws', async () => {
+    const { failures, done } = sendWith({
+      proxyFor: () => Promise.reject(new Error('proxy broke')),
+    });
+    await expect(done).rejects.toThrow('proxy broke');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      stage: 'prepare',
+      attempted: { url: 'https://api.example.test/invoices', method: 'GET', headers: { 'X-A': 'a' } },
+    });
+    expect(events).not.toContain('send');
+  });
+
+  it('reports stage send when the connection is refused', async () => {
+    refuse.on = true;
+    const { failures, done } = sendWith({});
+    await expect(done).rejects.toThrow('connection refused');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ stage: 'send', attempted: { url: 'https://api.example.test/invoices' } });
   });
 });

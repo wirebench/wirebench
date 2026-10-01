@@ -19,6 +19,7 @@ export type {
   RunRequestSender,
   RunResult,
   RunSendOverrides,
+  LiveEvent,
   RunSummary,
   SentExchange,
   SentRequest,

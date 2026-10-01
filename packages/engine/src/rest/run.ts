@@ -10,6 +10,8 @@ import { readAttachment } from '../project/attachments-cache.js';
 import type { AttachmentSource, AuthConfig } from '../project/model.js';
 import { REQUESTS_DIR, WEBHOOKS_DIR } from '../project/paths.js';
 import type { ProtocolRun, RunGroup, ScriptedSend } from '../protocol/module.js';
+import type { ExchangeController } from '../run/exchange.js';
+import type { AttemptedRequest } from '../run/host.js';
 import { scopesFor } from '../run/context.js';
 import { exchangeController } from '../run/exchange.js';
 import type { SentRequest } from '../run/run.js';
@@ -42,9 +44,11 @@ import {
 import type { EffectiveSigning, WebhookCollection, WebhookFolder } from '../webhooks/model.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
 import { expandRestSendInput } from './expand.js';
+import type { RestLiveEvent } from './events.js';
 import { createApi } from './model.js';
 import type { RestApi, RestFolder, RestRequestDef } from './model.js';
 import { sendRest } from './send.js';
+import { joinBase } from './url.js';
 import type { RestExchange, RestSendInput } from './send.js';
 
 /** One saved REST request, or one webhook item, selected for a run. */
@@ -102,6 +106,8 @@ async function signFor(selected: RestSelected, context: RunContext): Promise<Res
 export async function resolveRest(selected: RestSelected, context: RunContext): Promise<Resolved<RestSendInput>> {
   const { api, request } = selected;
   const scopes = scopesFor(context);
+  const callbackUrl = isWebhookItem(selected) ? await context.host.callbackUrlFor?.(selected) : undefined;
+  const cookies = request.settings.sendCookies === true ? context.host.cookies?.cookiesFor(selected) : undefined;
   const unexpanded = toRestSendInput({
     request: {
       method: request.method,
@@ -112,8 +118,10 @@ export async function resolveRest(selected: RestSelected, context: RunContext): 
       body: request.body,
       settings: request.settings,
     },
-    baseUrl: baseUrlFor(context, api),
+    baseUrl: callbackUrl ?? baseUrlFor(context, api),
     projectSettings: context.project.settings,
+    ...(context.host.preferences !== undefined ? { preferences: context.host.preferences } : {}),
+    ...(cookies !== undefined ? { cookies } : {}),
     resolveFile: restFileResolver(context),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
@@ -204,6 +212,11 @@ function apiCandidates(api: RestApi): RestCandidate[] {
   return out;
 }
 
+/** True for a webhook item, which `webhookCandidates` builds against the synthetic `webhooks` API. */
+function isWebhookItem(selected: RestSelected): boolean {
+  return selected.api.id === 'webhooks';
+}
+
 /**
  * The project's webhook items, as REST items against a synthetic API whose base URL is each item's
  * effective target. A run has no history, so a callback uses the target.
@@ -244,6 +257,72 @@ function webhookCandidates(collection: WebhookCollection): RestCandidate[] {
   return out;
 }
 
+/** What a failed send was about to put on the wire: the resolved URL, the method, the enabled headers. */
+function attemptedOf(input: RestSendInput): AttemptedRequest {
+  return {
+    url: joinBase(input.baseUrl, input.request.url),
+    method: input.request.method,
+    headers: Object.fromEntries(
+      input.request.headers.filter((header) => header.enabled).map((header) => [header.name, header.value]),
+    ),
+  };
+}
+
+/**
+ * Connects and sends one resolved input, telling the host when either stage fails, then hands the
+ * response's cookies and its contract result to the host.
+ */
+async function connectAndSend(
+  selected: RestSelected,
+  context: RunContext,
+  input: RestSendInput,
+  controller: ExchangeController<RestLiveEvent>,
+): Promise<{ readonly connected: RestSendInput; readonly sent: SentRequest }> {
+  const startedAt = Date.now();
+  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: RestSendInput): void =>
+    context.host.events?.onFailed?.(selected, {
+      stage,
+      error,
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      attempted: attemptedOf(attempted),
+    });
+  let connected: RestSendInput;
+  try {
+    connected = await connectRest(selected, context, input);
+  } catch (error) {
+    failed('prepare', error, input);
+    throw error;
+  }
+  let exchange: RestExchange;
+  try {
+    exchange = await sendRest({
+      ...connected,
+      signal: controller.signal,
+      onStream: {
+        onOpen: (status, headers) => controller.queue.push({ protocol: 'rest', kind: 'open', status, headers }),
+        onRow: (row) => controller.queue.push({ protocol: 'rest', kind: 'row', row }),
+      },
+    });
+  } catch (error) {
+    failed('send', error, connected);
+    throw error;
+  }
+  dropRefusedToken(context, connected.auth, exchange.status === 401);
+  // As the app does after every send: what the response set replaces what was stored, and none forgets it.
+  context.host.cookies?.remember(selected, exchange.cookies);
+  const contract = await context.host.contractFor?.(selected, exchange);
+  return {
+    connected,
+    sent: {
+      subject: restSubject(exchange),
+      raw: exchange,
+      exchange: { kind: 'rest', rest: exchange, input: connected, ...(contract !== undefined ? { contract } : {}) },
+      ...originOf(exchange.request.url),
+    },
+  };
+}
+
 /**
  * One REST request as a run sends it (spec §3.4): resolve, run its pre-request script when
  * `scripts` is given, connect, send, then its post-response script.
@@ -252,19 +331,12 @@ async function sendRestItem(
   selected: RestSelected,
   context: RunContext,
   scripts: ScriptedSend | undefined,
+  controller: ExchangeController<RestLiveEvent>,
 ): Promise<SentRequest> {
   if (scripts === undefined) {
     const { input, unresolved } = await resolveRest(selected, context);
     if (unresolved.length > 0) throw unresolvedError('rest-unresolved-properties', selected.path, unresolved);
-    const connected = await connectRest(selected, context, input);
-    const exchange = await sendRest(connected);
-    dropRefusedToken(context, connected.auth, exchange.status === 401);
-    return {
-      subject: restSubject(exchange),
-      raw: exchange,
-      exchange: { kind: 'rest', rest: exchange },
-      ...originOf(exchange.request.url),
-    };
+    return (await connectAndSend(selected, context, input, controller)).sent;
   }
 
   // Resolved with its secrets behind placeholders; the URL is rebuilt only when the script changed it.
@@ -277,16 +349,9 @@ async function sendRestItem(
     { baseUrl: changed.baseUrl, request: changed.request },
     context.host.getSecret,
   );
-  const connected = await connectRest(selected, context, { ...changed, ...restored });
-  const exchange = await sendRest(connected);
-  dropRefusedToken(context, connected.auth, exchange.status === 401);
-  return {
-    subject: restSubject(exchange),
-    raw: exchange,
-    exchange: { kind: 'rest', rest: exchange },
-    ...originOf(exchange.request.url),
-    script: await scripts.session.post(sent, restResponseSnapshot(exchange)),
-  };
+  const result = await connectAndSend(selected, context, { ...changed, ...restored }, controller);
+  const exchange = result.sent.raw as RestExchange;
+  return { ...result.sent, script: await scripts.session.post(sent, restResponseSnapshot(exchange)) };
 }
 
 /** REST's run facet. */
@@ -317,9 +382,9 @@ export const restRun: ProtocolRun<RestSelected> = {
   },
 
   open(selected, scope, host, options) {
-    const controller = exchangeController('rest', options);
+    const controller = exchangeController<RestLiveEvent>('rest', options);
     const context: RunContext = { ...scope.context, host, signal: controller.signal };
-    return controller.handle(() => sendRestItem(selected, context, options.scripts));
+    return controller.handle(() => sendRestItem(selected, context, options.scripts, controller));
   },
 
   resolve(selected, scope, host) {

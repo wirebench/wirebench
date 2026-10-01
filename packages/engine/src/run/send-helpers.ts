@@ -147,12 +147,17 @@ export async function tlsFor(
   keystoreId: string | undefined,
   trustInvalid: boolean,
 ): Promise<TlsOptions | undefined> {
-  const identity = await clientIdentityFor(context, keystoreId);
+  const { tls } = context.host;
+  const identity =
+    tls?.identityFor !== undefined ? await tls.identityFor(keystoreId) : await clientIdentityFor(context, keystoreId);
   const skipVerify = context.insecure === true || trustInvalid;
-  if (identity === undefined && !skipVerify) {
-    return undefined;
-  }
-  return { ...identity, ...(skipVerify ? { rejectUnauthorized: false } : {}) };
+  const anchors = tls?.anchors;
+  if (identity === undefined && !skipVerify && anchors === undefined) return undefined;
+  return {
+    ...(identity !== undefined ? { cert: identity.cert, key: identity.key } : {}),
+    ...(anchors !== undefined ? { ca: [...anchors] } : {}),
+    ...(skipVerify ? { rejectUnauthorized: false } : {}),
+  };
 }
 
 /** The run's shared token source, or a fresh one for a send outside a run. */

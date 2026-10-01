@@ -13,7 +13,8 @@ import type { ProtocolRegistry } from './protocol/registry.js';
 import { restProtocol } from './rest/module.js';
 import type { RestSelected } from './rest/run.js';
 import type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
-import type { RestExchange } from './rest/send.js';
+import type { RestLiveEvent } from './rest/events.js';
+import type { RestExchange, RestSendInput } from './rest/send.js';
 import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
 import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
@@ -65,7 +66,17 @@ export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected;
 
 /** The exchange a request travelled as, for a host that keeps more of it than a report does. */
 export type SentExchange =
-  { readonly kind: 'soap'; readonly soap: SoapExchange } | { readonly kind: 'rest'; readonly rest: RestExchange };
+  | { readonly kind: 'soap'; readonly soap: SoapExchange }
+  | {
+      readonly kind: 'rest';
+      readonly rest: RestExchange;
+      /** What was sent: after the script, with the credentials resolved. */
+      readonly input: RestSendInput;
+      readonly contract?: unknown;
+    };
+
+/** A message an open exchange reports, whatever its protocol; Tasks 10 and 12 add gRPC and WebSocket. */
+export type LiveEvent = RestLiveEvent;
 
 /** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
 export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;

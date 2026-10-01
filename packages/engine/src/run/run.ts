@@ -35,7 +35,7 @@ import {
   type SentScripts,
 } from './script-support.js';
 
-export type { SentExchange } from '../protocols.js';
+export type { LiveEvent, SentExchange } from '../protocols.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
