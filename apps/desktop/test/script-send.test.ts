@@ -29,7 +29,6 @@ import { HistoryService } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
 import { ScriptHost } from '../src/main/script-host.js';
-import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { SequenceRunner } from '../src/main/sequence-runner.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { sendDepsFor } from './helpers/send-deps.js';
@@ -292,7 +291,14 @@ describe('a SOAP send with scripts', () => {
               order: 0,
               requests: [
                 {
-                  ...createRequest('Add', { id: 'soap-1', envelopeXml: '<e/>', soapVersion: '1.1' }),
+                  ...createRequest('Add', {
+                    id: 'soap-1',
+                    envelopeXml: '<e/>',
+                    soapVersion: '1.1',
+                    properties: { timeoutMs: 5_000 },
+                  }),
+                  endpointUrl: endpoint,
+                  auth: { type: 'basic', username: 'svc', passwordRef: 'sec_pw', preemptive: true },
                   scripts: scripts({
                     pre: [
                       "request.headers.set('x-trace', 'from-script');",
@@ -307,33 +313,25 @@ describe('a SOAP send with scripts', () => {
             },
           ],
         });
-        const model: Project = { ...createProject('Demo', { id: 'p1' }), interfaces: [iface] };
-        const { deps, engine } = await harness(model);
-        const engineWithPassword = new EngineService((ref) => Promise.resolve(ref === 'sec_pw' ? 'pw-9d2' : undefined));
+        const model: Project = { ...createProject('Demo', { id: 'p1' }), properties: { v: '1' }, interfaces: [iface] };
+        await harness(model);
+        const deps = sendDepsFor(model, {
+          // The project's token, and the password its Basic auth names.
+          secretsFor: () => (ref) =>
+            Promise.resolve(ref === 'secret:api_key' ? API_KEY : ref === 'sec_pw' ? 'pw-9d2' : undefined),
+          scripts: host,
+        });
 
-        const summary = await sendAndRecordHistory(
-          engineWithPassword,
-          {
-            ...deps,
-            project: {
-              scopesFor: () => ({ project: { v: '1' }, global: {}, system: {} }),
-              authFor: () => ({ type: 'basic', username: 'svc', passwordRef: 'sec_pw', preemptive: true }),
-              requestMeta: () => undefined,
-              projectId: () => 'p1',
-            },
-          },
-          {
-            sendId: 'soap-send',
-            requestId: 'soap-1',
-            input: {
+        // The editor's envelope, unsaved, rides over the saved `<e/>`.
+        const summary = await sendThroughEngine(deps, 'soap-send', 'soap-1', {
+          draft: {
+            kind: 'soap',
+            override: {
               endpoint,
               envelopeXml: '<Envelope><Body><v>${v}</v><k>${secret:api_key}</k></Body></Envelope>',
-              soapVersion: '1.1',
-              timeoutMs: 5_000,
             },
           },
-        );
-        void engine;
+        });
 
         expect(seen).toHaveLength(1);
         expect(seen[0]?.headers['x-trace']).toBe('from-script');

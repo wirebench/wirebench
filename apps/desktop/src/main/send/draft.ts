@@ -3,13 +3,28 @@
  * unsaved draft laid over it for this send only. Nothing here is persisted. Unlike a run, a person
  * may send a request its contract no longer has (orphaned), as the app always let them.
  */
-import { restItemFor, signingAlong, webhookPath } from '@wirebench/engine';
-import type { Project, RestRequestDef, RestRequestSettings, RestSelected, SelectedRequest } from '@wirebench/engine';
+import { createInterface, createRequest, restItemFor, signingAlong, soapItemFor, webhookPath } from '@wirebench/engine';
+import type {
+  Project,
+  RequestProperties,
+  RestRequestDef,
+  RestRequestSettings,
+  RestSelected,
+  SelectedRequest,
+  SoapOverride,
+  SoapSelected,
+} from '@wirebench/engine';
 import { toEngineAuthConfig, toEngineBody, toEngineRows, toEngineSigning } from '../project-rest-mutations.js';
-import type { RestRequestPatchWire } from '../../shared/wire-types.js';
+import type { HistoryNameFallback } from './record.js';
+import type { ResolvedSendInputWire, RestRequestPatchWire } from '../../shared/wire-types.js';
 
-/** What the editor holds for one send, by protocol. Tasks 9, 11 and 13 add SOAP, gRPC and WebSocket. */
-export type DraftOf = { readonly kind: 'rest'; readonly draft?: RestRequestPatchWire };
+/** What the editor holds for one send, by protocol. Tasks 11 and 13 add gRPC and WebSocket. */
+export type DraftOf =
+  | { readonly kind: 'rest'; readonly draft?: RestRequestPatchWire }
+  | { readonly kind: 'soap'; readonly override?: SoapOverride };
+
+/** The request id a send with no saved request behind it goes by (`SendOptions.adHoc`). */
+export const AD_HOC_ID = 'ad-hoc';
 
 /** The saved request as a run item with the editor's draft applied. Undefined: no such request of that kind. */
 export function selectedFor(project: Project, requestId: string, draft: DraftOf): SelectedRequest | undefined {
@@ -19,7 +34,78 @@ export function selectedFor(project: Project, requestId: string, draft: DraftOf)
       const found = restItemFor(project, requestId);
       return found === undefined ? undefined : withRestDraft(project, found, draft.draft);
     }
+    case 'soap': {
+      // Orphaned or not: the editor sends what it shows.
+      const found = soapItemFor(project, requestId);
+      return found === undefined || draft.override === undefined ? found : { ...found, override: draft.override };
+    }
   }
+}
+
+/**
+ * What the editor sends of a SOAP request: its envelope, the endpoint it resolved, and its headers.
+ * The rest of the renderer's input (timeout, encoding, …) is built from the saved request's
+ * properties, and its SOAP version and SOAPAction are the saved request's, as they always were.
+ */
+export function soapOverrideOf(input: ResolvedSendInputWire): SoapOverride {
+  return {
+    envelopeXml: input.envelopeXml,
+    endpoint: input.endpoint,
+    ...(input.headers !== undefined ? { headers: input.headers } : {}),
+  };
+}
+
+/**
+ * A send with no saved request behind it (an ad-hoc send, or the resend of a request deleted since)
+ * as an engine item: an interface of its own with no definition and no endpoints, one operation
+ * named as History names it, and a request holding the input — its envelope, version, SOAPAction,
+ * headers and the properties `toSoapSendInput` reads back — sent to the input's endpoint with the
+ * input's own TLS floor, compression and HTTP/2 offer, as the renderer built it.
+ */
+export function adHocSoapItem(input: ResolvedSendInputWire, names: HistoryNameFallback): SoapSelected {
+  const request = createRequest(names.requestName, {
+    id: AD_HOC_ID,
+    envelopeXml: input.envelopeXml,
+    soapVersion: input.soapVersion,
+    ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
+    headers: Object.entries(input.headers ?? {}).map(([name, value]) => ({ name, value })),
+    properties: adHocProperties(input),
+  });
+  const operation = { name: names.operationName, bindingName: '', slug: 'ad-hoc', order: 0, requests: [request] };
+  const iface = createInterface(names.interfaceName, {
+    id: AD_HOC_ID,
+    definitionUrl: '',
+    cacheDefinition: false,
+    operations: [operation],
+  });
+  const group = `${iface.name}/${operation.name}`;
+  return {
+    kind: 'soap',
+    path: `${group}/${request.name}`,
+    group,
+    iface,
+    operation,
+    request,
+    override: {
+      endpoint: input.endpoint,
+      ...(input.tls?.minVersion !== undefined ? { tlsMinVersion: input.tls.minVersion } : {}),
+      ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
+      ...(input.allowH2 !== undefined ? { allowH2: input.allowH2 } : {}),
+    },
+  };
+}
+
+/** The request properties an input's own settings stand for, as `toSoapSendInput` reads them back. */
+function adHocProperties(input: ResolvedSendInputWire): Partial<RequestProperties> {
+  return {
+    ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+    ...(input.encoding !== undefined ? { encoding: input.encoding } : {}),
+    ...(input.followRedirects !== undefined ? { followRedirects: input.followRedirects } : {}),
+    ...(input.maxSizeBytes !== undefined ? { maxSizeBytes: input.maxSizeBytes } : {}),
+    ...(input.skipSoapAction !== undefined ? { skipSoapAction: input.skipSoapAction } : {}),
+    ...(input.localAddress !== undefined ? { bindAddress: input.localAddress } : {}),
+    ...(input.entitize !== undefined ? { entitizeProperties: input.entitize } : {}),
+  };
 }
 
 /**

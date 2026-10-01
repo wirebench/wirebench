@@ -18,7 +18,7 @@ import type { RestExchange, RestSendInput } from './rest/send.js';
 import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
 import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
-import type { SoapExchange } from './soap/types.js';
+import type { SoapExchange, SoapSendInput } from './soap/types.js';
 import { wsProtocol } from './ws/module.js';
 
 /**
@@ -66,7 +66,12 @@ export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected;
 
 /** The exchange a request travelled as, for a host that keeps more of it than a report does. */
 export type SentExchange =
-  | { readonly kind: 'soap'; readonly soap: SoapExchange }
+  | {
+      readonly kind: 'soap';
+      readonly soap: SoapExchange;
+      /** The request as resolved: references unexpanded, before its script and its credentials. */
+      readonly input: SoapSendInput;
+    }
   | {
       readonly kind: 'rest';
       readonly rest: RestExchange;

@@ -1,10 +1,12 @@
+// @vitest-environment node
 /**
  * `WIREBENCH_E2E_EXTRA_CA_FILE`: the e2e-only trust hook.
  *
  * It exists so the Playwright suite can reach a TLS server signed by a CA it generates at run
  * time *without* weakening verification and without a client keystore doubling as a trust store.
- * These tests pin both halves of that: the anchors are appended to `tls.ca` when the variable is
- * set, and nothing at all changes when it is not.
+ * These tests pin both halves of that against a real TLS server signed by such a CA: a send trusts
+ * it when the variable names the CA, alongside the anchors main already resolved, and is refused
+ * when the variable is unset — verification is never turned off.
  *
  * The module memoises the file after the first read, so each case loads it fresh through
  * `vi.resetModules()` with the environment already in place.
@@ -13,8 +15,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PropertyScopes } from '@wirebench/engine';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  generateServerCert,
+  generateTestCa,
+  generateUntrustedCert,
+  startTestSoapServer,
+} from '@wirebench/engine/test-helpers';
+import type { TestSoapServer } from '@wirebench/engine/test-helpers';
+import { createInterface, createProject, createRequest, type Project, type PropertyScopes } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -29,7 +38,24 @@ vi.mock('electron', () => ({
 
 const scopes: PropertyScopes = { project: {}, global: {}, env: {} };
 
-const ANCHOR = '-----BEGIN CERTIFICATE-----\nTEST-CA\n-----END CERTIFICATE-----\n';
+/** The CA the TLS servers below are signed by: trusted only when a send is given it. */
+const ANCHOR = generateTestCa().certPem;
+
+let server: TestSoapServer;
+/** The same CA's server, capped at TLS 1.2: a send whose floor is 1.3 cannot reach it. */
+let tls12: TestSoapServer;
+
+beforeAll(async () => {
+  const ca = generateTestCa();
+  const leaf = generateServerCert(ca);
+  server = await startTestSoapServer({ tls: { cert: leaf.certPem, key: leaf.keyPem } });
+  tls12 = await startTestSoapServer({ tls: { cert: leaf.certPem, key: leaf.keyPem, maxVersion: 'TLSv1.2' } });
+});
+
+afterAll(async () => {
+  await server.close();
+  await tls12.close();
+});
 
 const dirs: string[] = [];
 
@@ -45,60 +71,41 @@ beforeEach(() => {
   vi.resetModules();
 });
 
-function anchorFile(): string {
+function anchorFile(pem = ANCHOR): string {
   const dir = mkdtempSync(join(tmpdir(), 'wirebench-trust-'));
   dirs.push(dir);
   const path = join(dir, 'test-ca.pem');
-  writeFileSync(path, ANCHOR, 'utf-8');
+  writeFileSync(path, pem, 'utf-8');
   return path;
 }
 
-/** The TLS options a captured send went out with. */
-interface SentTls {
-  readonly ca?: readonly string[];
-  readonly rejectUnauthorized?: boolean;
+/** A project whose `req-1` is sent to the TLS server. */
+function seeded(): Project {
+  const request = {
+    ...createRequest('Req', { id: 'req-1', envelopeXml: '<a/>', soapVersion: '1.1' }),
+    endpointUrl: `${server.url}/soap`,
+  };
+  const iface = createInterface('Svc', {
+    id: 'iface-1',
+    definitionUrl: 'http://127.0.0.1:1/x?wsdl',
+    cacheDefinition: false,
+    operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests: [request] }],
+  });
+  return { ...createProject('P', { id: 'p1' }), interfaces: [iface] };
 }
 
 /**
- * Registers the channels against a stubbed engine; every send lands in `sent`, and `sends`
- * counts how many reached the engine at all (so a *rejected* send can be told apart from one
- * that went out carrying nothing).
+ * Registers the channels over `seeded()`. `trustAnchorsFor` is the CA-bundle preference's anchors,
+ * which main resolves for the request's project.
  */
-async function register(
-  sent: SentTls[],
-  options: { readonly tlsFor?: () => Promise<Record<string, unknown> | undefined> } = {},
-): Promise<void> {
+async function register(options: { readonly trustAnchorsFor?: () => Promise<readonly string[]> } = {}): Promise<void> {
   const { registerRequestChannels } = await import('../src/main/ipc/request.js');
-  const engine = new EngineService();
-  const response = {
-    sendId: 'send-1',
-    durationMs: 1,
-    http: {
-      status: 200,
-      statusText: 'OK',
-      headers: {},
-      rawHeaders: [],
-      bodyBase64: '',
-      rawBodyBase64: '',
-      rawRequestBase64: '',
-      rawResponseBase64: '',
-      truncated: false,
-      httpVersion: '1.1' as const,
-      timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
-      redirects: [],
-      request: { url: 'https://dev.test/soap', method: 'POST', headers: {} },
-    },
-    problems: [],
-  };
-  vi.spyOn(engine, 'send').mockImplementation((request) => {
-    sent.push((request.input.tls ?? { absent: true }) as SentTls);
-    return Promise.resolve(response);
-  });
-  registerRequestChannels(engine, {
+  const model = seeded();
+  registerRequestChannels(new EngineService(), {
     project: {
       scopesFor: () => scopes,
       preflight: () => ({
-        endpoint: 'https://dev.test/soap',
+        endpoint: `${server.url}/soap`,
         endpointSource: 'request-endpoint',
         auth: { source: 'none', type: 'none' },
         wsa: { enabled: false },
@@ -106,7 +113,8 @@ async function register(
       }),
       authFor: () => undefined,
       requestMeta: () => undefined,
-      projectId: () => undefined,
+      projectId: () => 'p1',
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
       requestSource: () => {
         throw new Error('not stubbed');
       },
@@ -118,62 +126,59 @@ async function register(
       },
       sendInputFor: () => undefined,
       dumpFileFor: () => undefined,
-      ...(options.tlsFor !== undefined ? { tlsFor: options.tlsFor } : {}),
-    },
+      ...(options.trustAnchorsFor !== undefined ? { trustAnchorsFor: options.trustAnchorsFor } : {}),
+    } as never,
   });
 }
 
-async function sendOnce(payload: Record<string, unknown>): Promise<unknown> {
+type Reply = { ok: boolean; value?: { http: { status: number } }; error?: { code: string } };
+
+async function sendOnce(payload: Record<string, unknown>): Promise<Reply> {
   const handler = handlers.get('request.send');
   if (handler === undefined) {
     throw new Error('request.send was never registered');
   }
-  return await handler({ sender: {} }, payload);
+  return (await handler({ sender: {} }, payload)) as Reply;
 }
+
+const saved = (url = `${server.url}/soap`) => ({
+  sendId: 'send-1',
+  requestId: 'req-1',
+  input: { endpoint: url, envelopeXml: '<a/>', soapVersion: '1.1' },
+});
 
 describe('WIREBENCH_E2E_EXTRA_CA_FILE', () => {
   it('appends the file as an extra trust anchor on a saved request', async () => {
     process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile();
-    const sent: SentTls[] = [];
-    await register(sent);
+    await register();
 
-    await sendOnce({
-      sendId: 'send-1',
-      requestId: 'req-1',
-      input: { endpoint: 'https://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
-    });
+    const result = await sendOnce(saved());
 
-    expect(sent[0]?.ca).toEqual([ANCHOR]);
-    // Verification itself is untouched: the hook adds trust, it never turns checking off.
-    expect(sent[0]?.rejectUnauthorized).toBeUndefined();
+    // Trusted through the anchor alone: verification itself is untouched, the hook only adds trust.
+    expect(result).toMatchObject({ ok: true, value: { http: { status: 200 } } });
   });
 
   it('keeps the anchors main already resolved and adds to them', async () => {
-    process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile();
-    const sent: SentTls[] = [];
-    // The anchors a send starts with come from `ProjectHost.tlsFor` — the CA-bundle
-    // preference — never from the renderer, which cannot name `ca` at all.
-    await register(sent, { tlsFor: () => Promise.resolve({ ca: ['OWN'] }) });
+    // The file names some other authority; the server's CA comes from `trustAnchorsFor` — the
+    // CA-bundle preference — never from the renderer, which cannot name `ca` at all.
+    process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile(generateUntrustedCert().certPem);
+    await register({ trustAnchorsFor: () => Promise.resolve([ANCHOR]) });
 
-    await sendOnce({
-      sendId: 'send-1',
-      requestId: 'req-1',
-      input: { endpoint: 'https://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
-    });
+    const result = await sendOnce(saved());
 
-    expect(sent[0]?.ca).toEqual(['OWN', ANCHOR]);
+    expect(result).toMatchObject({ ok: true, value: { http: { status: 200 } } });
   });
 
   it('changes nothing when the variable is unset', async () => {
-    const sent: SentTls[] = [];
-    await register(sent);
+    await register();
 
-    await sendOnce({
+    const result = await sendOnce({
       sendId: 'send-1',
-      input: { endpoint: 'https://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' },
     });
 
-    expect(sent[0]).toEqual({ absent: true });
+    // No anchor was added, so the server's certificate is not trusted.
+    expect(result).toMatchObject({ ok: false, error: { code: 'tls-untrusted' } });
   });
 });
 
@@ -193,33 +198,32 @@ describe('the send wire cannot loosen TLS', () => {
     ['passphrase', { passphrase: 'p' }],
     ['servername', { servername: 'evil.test' }],
   ])('rejects a send naming tls.%s, without sending anything', async (_name, tls) => {
-    const sent: SentTls[] = [];
-    await register(sent);
+    await register();
+    const before = server.requests.length;
 
-    const result = (await sendOnce({
+    const result = await sendOnce({
       sendId: 'send-1',
-      input: { endpoint: 'https://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1', tls },
-    })) as { ok: boolean; error?: { code: string } };
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1', tls },
+    });
 
     expect(result).toMatchObject({ ok: false, error: { code: 'ipc-invalid-request' } });
-    expect(sent).toEqual([]);
+    expect(server.requests.length).toBe(before);
   });
 
   it('still accepts the one knob it owns, tls.minVersion', async () => {
-    const sent: SentTls[] = [];
-    await register(sent);
-
-    const result = (await sendOnce({
+    process.env['WIREBENCH_E2E_EXTRA_CA_FILE'] = anchorFile();
+    await register();
+    const floor = (url: string) => ({
       sendId: 'send-1',
-      input: {
-        endpoint: 'https://dev.test/soap',
-        envelopeXml: '<a/>',
-        soapVersion: '1.1',
-        tls: { minVersion: 'TLSv1.3' },
-      },
-    })) as { ok: boolean };
+      input: { endpoint: url, envelopeXml: '<a/>', soapVersion: '1.1', tls: { minVersion: 'TLSv1.3' } },
+    });
+
+    const result = await sendOnce(floor(`${server.url}/soap`));
 
     expect(result.ok).toBe(true);
-    expect(sent[0]).toMatchObject({ minVersion: 'TLSv1.3' });
+    // The floor went out: a server that stops at TLS 1.2 cannot meet it.
+    const refused = await sendOnce(floor(`${tls12.url}/soap`));
+    expect(refused.ok).toBe(false);
+    expect(refused.error?.code).not.toBe('ipc-invalid-request');
   });
 });

@@ -4,7 +4,9 @@
  * it, the app's own services lent as the `SendHost`, and the result turned into the summary the
  * renderer is handed and the History entry — byte for byte what the app's own send path wrote.
  */
+import { tmpdir } from 'node:os';
 import {
+  createProject,
   createRunScope,
   deferredSession,
   openExchange,
@@ -13,12 +15,14 @@ import {
   resolveExchange,
   restEffectiveAuth,
   SecretPlaceholders,
+  soapEffectiveAuth,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
   ExchangeHandle,
   LiveEvent,
   PropertyMap,
+  PropertyScopes,
   RestContractResult,
   RestSendInput,
   RunContext,
@@ -30,25 +34,33 @@ import type {
   SendHost,
   SentRequest,
   SentScripts,
+  SoapSendInput,
   UnresolvedRef,
 } from '@wirebench/engine';
 import type { HistoryService } from '../history-service.js';
 import { containsRecordedSecret, recordSecretValue } from '../redact.js';
 import { finishScripts, scriptsFailed, scriptsForSend, sessionValuesFor, type SendScripts } from '../script-send.js';
 import { withSentSigningHeaders } from '../webhook-send.js';
-import { selectedFor, type DraftOf } from './draft.js';
+import { adHocSoapItem, AD_HOC_ID, selectedFor, type DraftOf } from './draft.js';
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from './host.js';
 import { toWireEvent } from './live.js';
-import { recordRest, summariseRest } from './record.js';
+import { recordRest, recordSoap, summariseRest, summariseSoap, type HistoryNameFallback } from './record.js';
 import type {
+  ExchangeSummary,
   HistoryEntryWire,
+  ResolvedSendInputWire,
   RestExchangeSummary,
   RestLiveEvent,
   RestRequestPatchWire,
 } from '../../shared/wire-types.js';
 
-export interface SendOptions {
-  readonly draft: DraftOf;
+export interface SendOptions<D extends DraftOf = DraftOf> {
+  readonly draft: D;
+  /**
+   * A SOAP send with no saved request behind it: an ad-hoc send, or the resend of a request deleted
+   * since. It is sent as a synthetic item (`adHocSoapItem`) and recorded under `names`.
+   */
+  readonly adHoc?: { readonly input: ResolvedSendInputWire; readonly names: HistoryNameFallback };
   readonly envId?: string;
   /** `${#Sequence#…}` values for a sequence step (`RunContext.sequence`). */
   readonly sequence?: PropertyMap;
@@ -62,8 +74,13 @@ export interface SendOptions {
   readonly onSent?: (sent: SentRequest) => void;
 }
 
-/** What a send answers with. Tasks 9, 11 and 13 add the SOAP, gRPC and WebSocket summaries. */
-export type SendSummary = RestExchangeSummary;
+/** What a send answers with, by protocol. Tasks 11 and 13 add the gRPC and WebSocket summaries. */
+interface SummaryByKind {
+  readonly rest: RestExchangeSummary;
+  readonly soap: ExchangeSummary;
+}
+
+export type SendSummary = SummaryByKind[keyof SummaryByKind];
 
 interface Kept {
   readonly requestId: string;
@@ -120,10 +137,12 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
   readonly showSecrets?: { get(): boolean };
   readonly scripts?: SendScripts;
   readonly onScriptsRan?: (sent: SentScripts) => void;
+  /** The scopes an ad-hoc send expands against: the user's globals and the process env. */
+  readonly adHocScopes?: () => PropertyScopes;
 }
 
 /** What the "no such request" refusal calls a kind, as the app always has. */
-const KIND_LABEL: Readonly<Record<DraftOf['kind'], string>> = { rest: 'REST' };
+const KIND_LABEL: Readonly<Record<DraftOf['kind'], string>> = { rest: 'REST', soap: 'SOAP' };
 
 /**
  * Sends one saved request through the engine. Its scripts are type-checked first; a request that
@@ -131,22 +150,38 @@ const KIND_LABEL: Readonly<Record<DraftOf['kind'], string>> = { rest: 'REST' };
  * the engine reports it; History is written for a send that went out (or failed on the wire), never
  * for one that failed while it was prepared.
  */
-export async function sendThroughEngine(
+export async function sendThroughEngine<D extends DraftOf>(
+  deps: SendThroughEngineDeps,
+  sendId: string,
+  requestId: string,
+  options: SendOptions<D>,
+): Promise<SummaryByKind[D['kind']]> {
+  return (await sendItem(deps, sendId, requestId, options)) as SummaryByKind[D['kind']];
+}
+
+async function sendItem(
   deps: SendThroughEngineDeps,
   sendId: string,
   requestId: string,
   options: SendOptions,
 ): Promise<SendSummary> {
+  const { adHoc } = options;
   // Type-checked before anything is resolved: a script that does not check never reaches the wire.
-  const scripts = await scriptsForSend(deps, requestId);
-  const located = deps.project.runContextFor?.(requestId, options.envId);
-  const item = located === undefined ? undefined : selectedFor(located.project, requestId, options.draft);
+  const scripts = await scriptsForSend(deps, adHoc === undefined ? requestId : undefined);
+  const located = adHoc === undefined ? deps.project.runContextFor?.(requestId, options.envId) : adHocContext(deps);
+  const item =
+    located === undefined
+      ? undefined
+      : adHoc !== undefined
+        ? adHocSoapItem(adHoc.input, adHoc.names)
+        : selectedFor(located.project, requestId, options.draft);
   if (located === undefined || item === undefined) {
     throw new ProjectError('unknown-entity', `No ${KIND_LABEL[options.draft.kind]} request with id "${requestId}"`, {
       details: { requestId },
     });
   }
-  const projectId = deps.project.projectId(requestId);
+  // An ad-hoc send belongs to no project: no project's secrets, proxy, keystore or session values.
+  const projectId = adHoc === undefined ? deps.project.projectId(requestId) : undefined;
   const masks = keyMasks(item);
   const send: DesktopSend = {
     sendId,
@@ -185,20 +220,22 @@ export async function sendThroughEngine(
     const sent = await handle.result;
     await forwarding;
     options.onSent?.(sent);
-    const summary = summarise(deps, sendId, item, sent, masks, show);
+    const summarised = summarise(deps, sendId, item, sent, masks, show, adHoc === undefined ? requestId : undefined);
     const full: SendSummary = {
-      ...summary,
+      ...summarised.summary,
       ...(sent.script !== undefined ? finishScripts(stepDeps, projectId, sent.script) : {}),
       ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
     };
-    await record(deps, item, sent, full, Date.now() - startedAt, masks);
+    const recorded: Recorded = { item, masks, ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}) };
+    await record(deps, recorded, sent, full, summarised.unredacted, Date.now() - startedAt);
     return full;
   } catch (error) {
     await forwarding;
     const failed = failures.sendStage();
     if (failed !== undefined) {
       // As the app always has: History first, then the HTTP Log's row.
-      await recordFailure(deps, item, failed.input, error, Date.now() - startedAt, masks);
+      const recorded: Recorded = { item, masks, ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}) };
+      await recordFailure(deps, recorded, failed, error, Date.now() - startedAt);
       failed.report();
     }
     throw error;
@@ -207,7 +244,10 @@ export async function sendThroughEngine(
   }
 }
 
-type Located = NonNullable<ReturnType<NonNullable<SendThroughEngineDeps['project']['runContextFor']>>>;
+type Located = NonNullable<ReturnType<NonNullable<SendThroughEngineDeps['project']['runContextFor']>>> & {
+  /** The `${…}` shorthand's values laid over the environment's (`RunContext.overrides`). */
+  readonly overrides?: PropertyMap;
+};
 
 /** The run context a send of the located request runs in: its project, environment and globals. */
 function runContextOf(located: Located, host: SendHost): RunContext {
@@ -218,8 +258,23 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     ...(located.workspace !== undefined ? { workspace: located.workspace } : {}),
     // The `${#Global#…}` scope: without it a global property stays unresolved.
     ...(located.globals !== undefined ? { globals: located.globals } : {}),
-    overrides: {},
+    overrides: located.overrides ?? {},
     host,
+  };
+}
+
+/**
+ * Where an ad-hoc send runs: a project of its own, holding nothing, with the scopes the app gives
+ * such a send (`adHocScopes`: the user's globals and the process env) as its properties.
+ */
+function adHocContext(deps: SendThroughEngineDeps): Located {
+  const scopes = deps.adHocScopes?.();
+  return {
+    project: { ...createProject('Ad hoc', { id: AD_HOC_ID }), properties: { ...scopes?.project } },
+    // Nothing is read from it: the item has no attachments, keystore or cached definition.
+    projectDir: tmpdir(),
+    globals: { ...scopes?.global },
+    overrides: { ...scopes?.env },
   };
 }
 
@@ -272,9 +327,9 @@ function tokenText(ref: string): Promise<string | undefined> {
 
 /** The names of an API key in the query or a header, from the item's effective credentials. */
 function keyMasks(item: SelectedRequest): Pick<DesktopSend, 'keyParams' | 'keyHeaders'> {
-  if (item.kind !== 'rest') return {};
-  const auth = restEffectiveAuth(item);
-  if (auth.type !== 'api-key') return {};
+  const auth =
+    item.kind === 'rest' ? restEffectiveAuth(item) : item.kind === 'soap' ? soapEffectiveAuth(item) : undefined;
+  if (auth?.type !== 'api-key') return {};
   // The one query parameter an API key may be configured to travel in, so the URL is masked wherever
   // it is logged even when the key is called something this build has never heard of; and the
   // header one may travel in, masked by name wherever the request's headers are shown.
@@ -287,7 +342,7 @@ function keyMasks(item: SelectedRequest): Pick<DesktopSend, 'keyParams' | 'keyHe
  */
 function deferredSendFailure(base: SendHost): {
   readonly host: SendHost;
-  sendStage(): { readonly input: unknown; report(): void } | undefined;
+  sendStage(): HeldFailure | undefined;
 } {
   let held: { readonly item: SelectedBase; readonly failure: SendFailure } | undefined;
   return {
@@ -307,7 +362,11 @@ function deferredSendFailure(base: SendHost): {
     sendStage: () => {
       const failed = held;
       if (failed === undefined) return undefined;
-      return { input: failed.failure.input, report: () => base.events?.onFailed?.(failed.item, failed.failure) };
+      return {
+        input: failed.failure.input,
+        durationMs: failed.failure.durationMs,
+        report: () => base.events?.onFailed?.(failed.item, failed.failure),
+      };
     },
   };
 }
@@ -348,11 +407,33 @@ async function forwardLive(
   }
 }
 
+/** A send-stage failure held back until History is written. */
+interface HeldFailure {
+  /** The protocol's input as the engine reports it; it may hold live credentials, never logged. */
+  readonly input: unknown;
+  /** How long the send stage ran. */
+  readonly durationMs: number;
+  report(): void;
+}
+
+/** What a send's History entry is written from beyond the result: the item, its masks, an ad-hoc send's names. */
+interface Recorded {
+  readonly item: SelectedRequest;
+  readonly masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>;
+  readonly adHoc?: HistoryNameFallback;
+}
+
 function restSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange']>, { kind: 'rest' }> {
   if (sent.exchange?.kind !== 'rest') throw new Error('A REST send came back without its exchange');
   return sent.exchange;
 }
 
+function soapSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange']>, { kind: 'soap' }> {
+  if (sent.exchange?.kind !== 'soap') throw new Error('A SOAP send came back without its exchange');
+  return sent.exchange;
+}
+
+/** The summary the renderer is handed and, for SOAP, the unredacted one History records. */
 function summarise(
   deps: SendThroughEngineDeps,
   sendId: string,
@@ -360,41 +441,108 @@ function summarise(
   sent: SentRequest,
   masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>,
   show: boolean,
-): SendSummary {
-  if (item.kind !== 'rest') throw new Error('not yet');
-  const exchange = restSent(sent);
-  return summariseRest(deps.service, sendId, exchange.rest, exchange.contract as RestContractResult | undefined, {
-    method: exchange.input.request.method,
-    ...masks,
-    show,
-  });
+  requestId: string | undefined,
+): { readonly summary: SendSummary; readonly unredacted?: ExchangeSummary } {
+  switch (item.kind) {
+    case 'rest': {
+      const exchange = restSent(sent);
+      return {
+        summary: summariseRest(
+          deps.service,
+          sendId,
+          exchange.rest,
+          exchange.contract as RestContractResult | undefined,
+          {
+            method: exchange.input.request.method,
+            ...masks,
+            show,
+          },
+        ),
+      };
+    }
+    case 'soap': {
+      const exchange = soapSent(sent);
+      const { summary, full } = summariseSoap(deps.service, sendId, exchange.soap, {
+        ...(requestId !== undefined ? { requestId } : {}),
+        requestEnvelopeXml: exchange.input.envelopeXml,
+        ...masks,
+        show,
+      });
+      return { summary, unredacted: full };
+    }
+    default:
+      throw new Error('not yet');
+  }
+}
+
+/** What History names a SOAP item by when the project has no meta for it: an ad-hoc send's own names. */
+function soapNames(recorded: Recorded): HistoryNameFallback {
+  if (recorded.adHoc !== undefined) return recorded.adHoc;
+  const { item } = recorded;
+  return item.kind === 'soap'
+    ? { requestName: item.request.name, interfaceName: item.iface.name, operationName: item.operation.name }
+    : { requestName: item.request.name, interfaceName: '', operationName: '' };
 }
 
 async function record(
   deps: SendThroughEngineDeps,
-  item: SelectedRequest,
+  recorded: Recorded,
   sent: SentRequest,
   summary: SendSummary,
+  unredacted: ExchangeSummary | undefined,
   durationMs: number,
-  masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>,
 ): Promise<void> {
-  if (item.kind !== 'rest') throw new Error('not yet');
-  const { input } = restSent(sent);
-  // History keeps the signing headers as they went out, so its resend replays them (R1).
-  const recorded =
-    input.sign === undefined ? input : withSentSigningHeaders(input, input.sign.scheme, summary.http.request.headers);
-  await recordRest(deps, item, recorded, summary, durationMs, masks.keyParams);
+  const { item, masks } = recorded;
+  switch (item.kind) {
+    case 'rest': {
+      const { input } = restSent(sent);
+      // History keeps the signing headers as they went out, so its resend replays them (R1).
+      const rest = summary as RestExchangeSummary;
+      const sentInput =
+        input.sign === undefined ? input : withSentSigningHeaders(input, input.sign.scheme, rest.http.request.headers);
+      await recordRest(deps, item, sentInput, rest, durationMs, masks.keyParams);
+      return;
+    }
+    case 'soap': {
+      const exchange = soapSent(sent);
+      await recordSoap(deps, {
+        ...(recorded.adHoc === undefined ? { requestId: item.request.id } : {}),
+        names: soapNames(recorded),
+        input: exchange.input,
+        ...(unredacted !== undefined ? { exchange: unredacted } : {}),
+        // The exchange's own time on the wire: History has never counted resolving and connecting.
+        durationMs: exchange.soap.durationMs,
+      });
+      return;
+    }
+    default:
+      throw new Error('not yet');
+  }
 }
 
 async function recordFailure(
   deps: SendThroughEngineDeps,
-  item: SelectedRequest,
-  input: unknown,
+  recorded: Recorded,
+  failed: HeldFailure,
   error: unknown,
   durationMs: number,
-  masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>,
 ): Promise<void> {
-  if (item.kind !== 'rest') throw new Error('not yet');
-  if (input === undefined) return;
-  await recordRest(deps, item, input as RestSendInput, undefined, durationMs, masks.keyParams, error);
+  const { item, masks } = recorded;
+  if (failed.input === undefined) return;
+  switch (item.kind) {
+    case 'rest':
+      await recordRest(deps, item, failed.input as RestSendInput, undefined, durationMs, masks.keyParams, error);
+      return;
+    case 'soap':
+      await recordSoap(deps, {
+        ...(recorded.adHoc === undefined ? { requestId: item.request.id } : {}),
+        names: soapNames(recorded),
+        input: failed.input as SoapSendInput,
+        error,
+        durationMs: failed.durationMs,
+      });
+      return;
+    default:
+      throw new Error('not yet');
+  }
 }

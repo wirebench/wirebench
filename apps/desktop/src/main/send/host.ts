@@ -34,6 +34,7 @@ import type { OAuth2Service } from '../oauth2.js';
 import { recordSecretValue } from '../redact.js';
 import { restContractOf } from '../rest-contract.js';
 import { callbackUrlFor } from '../webhook-send.js';
+import { AD_HOC_ID } from './draft.js';
 import type { FailedExchangeWire, HistoryEntryWire, LogEntryWire } from '../../shared/wire-types.js';
 
 export interface DesktopSendDeps {
@@ -236,7 +237,8 @@ function failureRowOf(
   return {
     sendId: send.sendId,
     protocol: item.kind as FailedExchangeInput['protocol'],
-    requestId: send.requestId,
+    // An ad-hoc send has no request to name.
+    requestId: send.requestId === AD_HOC_ID ? undefined : send.requestId,
     url: attempted.url,
     method: attempted.method,
     startedAt: failure.startedAt,

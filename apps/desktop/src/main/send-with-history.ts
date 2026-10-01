@@ -21,6 +21,7 @@ import type { EngineService } from './engine-service.js';
 import { resolveSoapAuth } from './secret-resolver.js';
 import { failedExchangeOf } from './failed-exchange.js';
 import { reportSendFailed } from './send/host.js';
+import { AD_HOC_NAME, type HistoryNameFallback } from './send/record.js';
 import type { HistoryService } from './history-service.js';
 import type { OAuth2Service } from './oauth2.js';
 import type { ProjectRouter } from './project-router.js';
@@ -86,21 +87,6 @@ export interface SendWithHistoryDeps extends ScriptSendDeps {
   /** Resolves the client secret and remembered refresh token an OAuth2 token request needs. */
   readonly getSecret?: (ref: string) => Promise<string | undefined>;
 }
-
-/** The label used when the send's `requestId` is unknown or no longer exists. */
-export interface HistoryNameFallback {
-  readonly requestName: string;
-  readonly interfaceName: string;
-  readonly operationName: string;
-  /**
-   * The project an entry for a send with no live request is keyed to. Only a resend supplies
-   * one — the project whose history the resent entry came from; with none, such a send is
-   * simply not recorded, since no project owns it.
-   */
-  readonly projectId?: string;
-}
-
-const AD_HOC_NAME: HistoryNameFallback = { requestName: 'Ad-hoc request', interfaceName: '', operationName: '' };
 
 function errorDetail(error: unknown): { code: string; message: string } {
   if (isWirebenchError(error)) {

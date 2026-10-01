@@ -46,8 +46,10 @@ import {
   withSecrets,
 } from '../run/send-helpers.js';
 import type { Resolved } from '../run/send-helpers.js';
+import type { AttemptedRequest } from '../run/host.js';
 import { ORPHANED_STEP_REASON, byOrder } from '../run/tree.js';
 import { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './scripting.js';
+import type { SoapRequestSnapshot } from './scripting.js';
 import { soapOperationElements, soapScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
 import type { SecretNeed } from '../secrets/env-names.js';
@@ -69,6 +71,22 @@ import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 
+/** The editor's unsent envelope, endpoint and headers. A send uses them in place of the saved ones. */
+export interface SoapOverride {
+  readonly envelopeXml?: string;
+  /** The URL to send to, in place of the one the request's endpoint resolves to. */
+  readonly endpoint?: string;
+  /** The request's whole header list as the editor holds it: it replaces the saved one. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * An ad-hoc send's own transport knobs, which a saved request takes from the preferences: the
+   * TLS floor, request-body compression and the HTTP/2 offer.
+   */
+  readonly tlsMinVersion?: 'TLSv1.2' | 'TLSv1.3';
+  readonly compressBody?: 'gzip';
+  readonly allowH2?: boolean;
+}
+
 /** One saved SOAP request selected for a run, with enough context to send and report it. */
 export interface SoapSelected {
   readonly kind: 'soap';
@@ -77,6 +95,8 @@ export interface SoapSelected {
   readonly iface: Interface;
   readonly operation: OperationDef;
   readonly request: SoapRequestDef;
+  /** What the editor holds and has not saved, for this send only. */
+  readonly override?: SoapOverride;
 }
 
 /** A SOAP request resolved, with the scopes its text expands against. */
@@ -197,18 +217,20 @@ function attachmentResolvers(context: RunContext): AttachmentResolvers {
   };
 }
 
-/** A SOAP request's endpoint, refused when nothing resolves one. */
+/** A SOAP request's endpoint (the override's when it names one), refused when nothing resolves one. */
 function requiredEndpoint(
   selected: SoapSelected,
   context: RunContext,
 ): ReturnType<typeof endpointFor> & { url: string } {
   const resolved = endpointFor(context, selected.iface, selected.request);
-  if (resolved.url === undefined) {
+  // The configured endpoint stays: its trust decision applies to the URL the editor resolved from it.
+  const url = selected.override?.endpoint ?? resolved.url;
+  if (url === undefined) {
     throw new WirebenchError('endpoint-unresolved', `No endpoint resolves for "${selected.path}"`, {
       details: { path: selected.path },
     });
   }
-  return { ...resolved, url: resolved.url };
+  return { ...resolved, url };
 }
 
 /**
@@ -220,17 +242,22 @@ function requiredEndpoint(
  * @throws WirebenchError `endpoint-unresolved` | `secret-missing` | `wss-config-missing`
  */
 export async function resolveSoap(selected: SoapSelected, context: RunContext): Promise<ResolvedSoap> {
-  const { request } = selected;
+  const { request, override } = selected;
   const resolved = requiredEndpoint(selected, context);
+  const preferences = context.host.preferences;
   const base = toSoapSendInput({
     request: {
       properties: request.properties,
       soapVersion: request.soapVersion,
       ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
-      headers: request.headers,
-      envelopeXml: request.envelopeXml,
+      headers:
+        override?.headers !== undefined
+          ? Object.entries(override.headers).map(([name, value]) => ({ name, value }))
+          : request.headers,
+      envelopeXml: override?.envelopeXml ?? request.envelopeXml,
     },
     endpoint: resolved.url,
+    ...(preferences !== undefined ? { preferences } : {}),
     projectSettings: context.project.settings,
     attachments: request.attachments,
     attachmentResolvers: attachmentResolvers(context),
@@ -241,6 +268,9 @@ export async function resolveSoap(selected: SoapSelected, context: RunContext): 
   // The attachments and MTOM options ride on `base`, as the app's `sendAttachmentsFor` builds them.
   const input: SoapSendInput = {
     ...base,
+    ...(override?.tlsMinVersion !== undefined ? { tls: { ...base.tls, minVersion: override.tlsMinVersion } } : {}),
+    ...(override?.compressBody !== undefined ? { compressBody: override.compressBody } : {}),
+    ...(override?.allowH2 !== undefined ? { allowH2: override.allowH2 } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
     ...(wsa !== undefined ? { wsa } : {}),
     ...(wss !== undefined ? { wss } : {}),
@@ -452,9 +482,17 @@ async function soapContextFor(
   return { context, loaded };
 }
 
+/** What a failed send was about to put on the wire: the endpoint, POST, the request's headers. */
+function attemptedOf(input: SoapSendInput): AttemptedRequest {
+  return { url: input.endpoint, method: 'POST', headers: input.headers ?? {} };
+}
+
 /**
  * One SOAP request as a run sends it (spec §3.4): resolve, run its pre-request script when
- * `scripts` is given, connect, send, then its post-response script.
+ * `scripts` is given, connect, send, then its post-response script. The host is told of a failure
+ * once the endpoint is known: a `prepare` one before the request goes out, a `send` one after.
+ * Either carries the request as resolved (`input`), references unexpanded, which is what a host
+ * records; the sent exchange carries it too.
  */
 async function sendSoapItem(
   selected: SoapSelected,
@@ -463,34 +501,95 @@ async function sendSoapItem(
   scripts: ScriptedSend | undefined,
 ): Promise<SentRequest> {
   const { context, loaded } = await soapContextFor(selected, scope, base);
+  const endpoint = requiredEndpoint(selected, context).url;
+  let startedAt = Date.now();
+  let resolvedInput: SoapSendInput | undefined;
+  // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
+  const failed = (stage: 'prepare' | 'send', error: unknown, attempted: SoapSendInput | undefined): void => {
+    try {
+      context.host.events?.onFailed?.(selected, {
+        stage,
+        error,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        attempted: attempted !== undefined ? attemptedOf(attempted) : { url: endpoint, method: 'POST', headers: {} },
+        ...(resolvedInput !== undefined ? { input: resolvedInput } : {}),
+      });
+    } catch {
+      // Deliberately ignored — see above.
+    }
+  };
+
+  let prepared: PreparedSoap;
+  try {
+    prepared = await prepareSoap(selected, context, scripts, (input) => {
+      resolvedInput = input;
+    });
+  } catch (error) {
+    failed('prepare', error, resolvedInput);
+    throw error;
+  }
+
+  const { input, connected, scopes, snapshot } = prepared;
+  startedAt = Date.now();
+  let exchange: SoapExchange;
+  try {
+    exchange = await sendSoapRequest(connected, scopes !== undefined ? { scopes } : {});
+  } catch (error) {
+    failed('send', error, input);
+    throw error;
+  }
+  dropRefusedToken(context, connected.auth, exchange.http.status === 401);
+  const sent: SentRequest = {
+    subject: soapSubject(exchange, loaded, selected),
+    raw: exchange.http,
+    exchange: { kind: 'soap', soap: exchange, input },
+    ...originOf(exchange.http.request.url),
+  };
+  return scripts === undefined || snapshot === undefined
+    ? sent
+    : { ...sent, script: await scripts.session.post(snapshot, soapResponseSnapshot(exchange)) };
+}
+
+/** A SOAP request ready for the wire: as resolved, as connected, and what its script was shown. */
+interface PreparedSoap {
+  /** As resolved: references unexpanded, before the script and the credentials. */
+  readonly input: SoapSendInput;
+  readonly connected: SoapSendInput;
+  /** The scopes the send expands against; absent when the script's send is already expanded. */
+  readonly scopes?: PropertyScopes;
+  readonly snapshot?: SoapRequestSnapshot;
+}
+
+/** Resolves, runs the pre-request script when there is one, and connects; `onResolved` hears the input first. */
+async function prepareSoap(
+  selected: SoapSelected,
+  context: RunContext,
+  scripts: ScriptedSend | undefined,
+  onResolved: (input: SoapSendInput) => void,
+): Promise<PreparedSoap> {
   if (scripts === undefined) {
     const resolved = await resolveSoap(selected, context);
+    onResolved(resolved.input);
     if (resolved.unresolved.length > 0) {
       throw unresolvedError('unresolved-properties', selected.path, resolved.unresolved);
     }
     const connected = await connectSoap(selected, context, resolved.input);
-    const exchange = await sendSoapRequest(connected, { scopes: resolved.scopes });
-    dropRefusedToken(context, connected.auth, exchange.http.status === 401);
-    return {
-      subject: soapSubject(exchange, loaded, selected),
-      raw: exchange.http,
-      exchange: { kind: 'soap', soap: exchange },
-      ...originOf(exchange.http.request.url),
-    };
+    return { input: resolved.input, connected, scopes: resolved.scopes };
   }
 
   // Resolved with its secrets behind placeholders; the pre-request script runs on the expanded
   // request, the secrets are put back, and the post-response script sees what the script left.
   const resolved = await resolveSoap(selected, { ...context, secretPlaceholders: scripts.placeholders });
+  onResolved(resolved.input);
   if (resolved.unresolved.length > 0) {
     throw unresolvedError('unresolved-properties', selected.path, resolved.unresolved);
   }
   const expanded = expandSendInput(resolved.input, resolved.scopes, {
     entitize: resolved.input.entitize ?? false,
   }).input;
-  const before = soapRequestSnapshot(expanded);
-  const sent = await scripts.session.pre(before);
-  const changed = applySoapSnapshot(expanded, sent);
+  const snapshot = await scripts.session.pre(soapRequestSnapshot(expanded));
+  const changed = applySoapSnapshot(expanded, snapshot);
   const restored = await scripts.placeholders.restore(
     {
       endpoint: changed.endpoint,
@@ -500,17 +599,27 @@ async function sendSoapItem(
     },
     context.host.getSecret,
   );
-  const connected = await connectSoap(selected, context, { ...changed, ...restored });
   // Already expanded: sent without scopes, so nothing the script wrote is expanded again.
-  const exchange = await sendSoapRequest(connected);
-  dropRefusedToken(context, connected.auth, exchange.http.status === 401);
-  return {
-    subject: soapSubject(exchange, loaded, selected),
-    raw: exchange.http,
-    exchange: { kind: 'soap', soap: exchange },
-    ...originOf(exchange.http.request.url),
-    script: await scripts.session.post(sent, soapResponseSnapshot(exchange)),
-  };
+  const connected = await connectSoap(selected, context, { ...changed, ...restored });
+  return { input: resolved.input, connected, snapshot };
+}
+
+/**
+ * The SOAP item for `requestId`, built as a run builds it — and found even when its definition no
+ * longer has it (`orphaned`), which a run skips and a person may still send. Undefined when no SOAP
+ * request has that id.
+ */
+export function soapItemFor(project: Project, requestId: string): SoapSelected | undefined {
+  for (const iface of project.interfaces) {
+    for (const operation of iface.operations) {
+      const request = operation.requests.find((candidate) => candidate.id === requestId);
+      if (request !== undefined) {
+        const group = `${iface.name}/${operation.name}`;
+        return { kind: 'soap', path: `${group}/${request.name}`, group, iface, operation, request };
+      }
+    }
+  }
+  return undefined;
 }
 
 /** SOAP's run facet. */

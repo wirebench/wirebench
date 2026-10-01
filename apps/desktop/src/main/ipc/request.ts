@@ -62,8 +62,9 @@ import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactUrl, redactXml } from '../redact.js';
 import { failedExchangeOf } from '../failed-exchange.js';
-import { sendAndRecordHistory } from '../send-with-history.js';
+import { AD_HOC_ID, soapOverrideOf } from '../send/draft.js';
 import { extraTrustAnchors, reportSendFailed } from '../send/host.js';
+import { AD_HOC_NAME } from '../send/record.js';
 import {
   ExchangeRegistry,
   previewRest,
@@ -308,6 +309,7 @@ export function toSendDeps(
     ...(deps.onExchange !== undefined ? { onExchange: deps.onExchange } : {}),
     ...(deps.scripts !== undefined ? { scripts: deps.scripts } : {}),
     ...(deps.onScriptsRan !== undefined ? { onScriptsRan: deps.onScriptsRan } : {}),
+    ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
   };
 }
 
@@ -1983,10 +1985,16 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     return Promise.resolve(service.generate({ ...request, ...(options !== undefined ? { options } : {}) }));
   });
 
+  // The editor's envelope, endpoint and headers ride over the saved request as its override; a send
+  // with no saved request behind it goes as the renderer built it, as a synthetic item.
   registerHandler(channels.request.send, async (request) => {
-    const effective = await withRequestProperties(deps.project, request);
-    const summary = await sendAndRecordHistory(service, deps, effective);
-    return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
+    const summary = await sendThroughEngine(sendDeps, request.sendId, request.requestId ?? AD_HOC_ID, {
+      draft: { kind: 'soap', override: soapOverrideOf(request.input) },
+      ...(request.requestId === undefined ? { adHoc: { input: request.input, names: AD_HOC_NAME } } : {}),
+    });
+    return request.requestId === undefined
+      ? summary
+      : writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
 
   // The stream as it happens, alongside the invoke that is still open and will resolve with the

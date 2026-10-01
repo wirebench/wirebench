@@ -3,13 +3,127 @@
  * handed (and the exchange cache keeps unredacted), and the History entry.
  */
 import { isWirebenchError } from '@wirebench/engine';
-import type { RestContractResult, RestExchange, RestSelected, RestSendInput } from '@wirebench/engine';
+import type {
+  RestContractResult,
+  RestExchange,
+  RestSelected,
+  RestSendInput,
+  SoapExchange,
+  SoapSendInput,
+} from '@wirebench/engine';
 import type { EngineService } from '../engine-service.js';
-import { toRestContractWire, toRestExchangeSummary } from '../engine-wire.js';
+import { redactExchangeSummary, toExchangeSummary, toRestContractWire, toRestExchangeSummary } from '../engine-wire.js';
 import type { SendThroughEngineDeps } from './exchange.js';
-import type { RestExchangeSummary } from '../../shared/wire-types.js';
+import type { ExchangeSummary, ResolvedSendInputWire, RestExchangeSummary } from '../../shared/wire-types.js';
 
 export type RecordDeps = Pick<SendThroughEngineDeps, 'project' | 'history' | 'onHistoryAppended'>;
+
+/** The label used when the send's `requestId` is unknown or no longer exists. */
+export interface HistoryNameFallback {
+  readonly requestName: string;
+  readonly interfaceName: string;
+  readonly operationName: string;
+  /**
+   * The project an entry for a send with no live request is keyed to. Only a resend supplies
+   * one — the project whose history the resent entry came from; with none, such a send is
+   * simply not recorded, since no project owns it.
+   */
+  readonly projectId?: string;
+}
+
+export const AD_HOC_NAME: HistoryNameFallback = {
+  requestName: 'Ad-hoc request',
+  interfaceName: '',
+  operationName: '',
+};
+
+/** One SOAP send as History records it: the request it came from, if any, and its names. */
+export interface SoapRecord {
+  /** Absent for an ad-hoc send. */
+  readonly requestId?: string;
+  /** What names the entry when the project has no meta for the request. */
+  readonly names: HistoryNameFallback;
+  /** The request as resolved, references unexpanded. */
+  readonly input: SoapSendInput;
+  /** The unredacted summary, when the send completed (a SOAP fault included). */
+  readonly exchange?: ExchangeSummary;
+  readonly error?: unknown;
+  readonly durationMs: number;
+}
+
+/**
+ * Appends one SOAP send's History entry, successful or not, to the project owning the request — or,
+ * for a send with none, to the project `names` names. A no-op without a history service or a project.
+ */
+export async function recordSoap(deps: RecordDeps, record: SoapRecord): Promise<void> {
+  if (deps.history === undefined) {
+    return;
+  }
+  const { requestId } = record;
+  const projectId = (requestId === undefined ? undefined : deps.project.projectId(requestId)) ?? record.names.projectId;
+  if (projectId === undefined) {
+    return;
+  }
+  const meta = requestId !== undefined ? deps.project.requestMeta(requestId) : undefined;
+  const name = meta ?? record.names;
+  const entry = await deps.history.recordSend(projectId, {
+    ...(requestId !== undefined ? { requestId } : {}),
+    requestName: name.requestName,
+    interfaceName: name.interfaceName,
+    operationName: name.operationName,
+    input: soapInputWire(record.input),
+    ...(record.exchange !== undefined ? { exchange: record.exchange } : {}),
+    ...(record.error !== undefined ? { error: restErrorDetail(record.error) } : {}),
+    durationMs: record.durationMs,
+    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
+}
+
+/** The parts of a resolved SOAP input History reads, in the wire shape it records. */
+function soapInputWire(input: SoapSendInput): ResolvedSendInputWire {
+  return {
+    endpoint: input.endpoint,
+    envelopeXml: input.envelopeXml,
+    soapVersion: input.soapVersion,
+    ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
+    ...(input.headers !== undefined ? { headers: { ...input.headers } } : {}),
+  };
+}
+
+/**
+ * A SOAP exchange as `request.send` answers it, redacted for `show`. The exchange cache keeps the
+ * unredacted summary, the response attachments' bytes and the engine exchange, and re-renders it
+ * when the show-secrets flag changes. Returns the unredacted summary too, which History records.
+ */
+export function summariseSoap(
+  service: EngineService,
+  sendId: string,
+  exchange: SoapExchange,
+  options: {
+    readonly requestId?: string;
+    /** The request envelope as resolved: `SoapExchange` keeps the request only as raw bytes. */
+    readonly requestEnvelopeXml: string;
+    readonly keyParams?: readonly string[];
+    readonly keyHeaders?: readonly string[];
+    readonly show: boolean;
+  },
+): { readonly summary: ExchangeSummary; readonly full: ExchangeSummary } {
+  const keys = {
+    ...(options.keyParams !== undefined ? { keyParams: options.keyParams } : {}),
+    ...(options.keyHeaders !== undefined ? { keyHeaders: options.keyHeaders } : {}),
+  };
+  const full = toExchangeSummary(exchange, sendId, { show: true });
+  service.exchanges.put(sendId, full, exchange.response?.attachments, {
+    exchange,
+    ...(options.requestId !== undefined ? { requestId: options.requestId } : {}),
+    requestEnvelopeXml: options.requestEnvelopeXml,
+    ...keys,
+  });
+  return { summary: redactExchangeSummary(full, { show: options.show, ...keys }), full };
+}
 
 /**
  * Appends one REST send's History entry, successful or not. A no-op without a history service.

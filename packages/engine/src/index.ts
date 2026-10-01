@@ -88,6 +88,9 @@ export type { UnsupportedContainer } from './project/model.js';
 
 // What three core files re-exported until 3.0, from the module that declares it.
 export { soapResponseSubject } from './soap/run.js';
+// The SOAP run facet's item and its effective credentials, for a host that sends one SOAP item itself.
+export { soapEffectiveAuth, soapItemFor } from './soap/run.js';
+export type { SoapOverride, SoapSelected } from './soap/run.js';
 export { restSubject } from './rest/run.js';
 // The REST run facet and its effective credentials, for a host that sends one REST item itself.
 export { restEffectiveAuth, restItemFor, restRun } from './rest/run.js';
