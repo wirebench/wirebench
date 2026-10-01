@@ -63,7 +63,7 @@ import {
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   saveProject,
-  toSendInput,
+  toSoapSendInput,
   uniqueSlug,
   writeApiDefinitionCache,
   applyAsyncApiUpdate,
@@ -136,8 +136,8 @@ import type {
   ProjectFiles,
   PropertyMap,
   PropertyScopes,
-  RequestDef,
-  SendAttachmentOptions,
+  SoapRequestDef,
+  SoapAttachmentOptions,
   Workspace,
 } from '@wirebench/engine';
 import {
@@ -200,7 +200,7 @@ import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
 import { resolveEndpointAuth } from './secret-resolver.js';
-import { findRestFolder, findRestRequest, mapFolder, restApiOwning } from './project-rest-mutations.js';
+import { findRestFolder, findRestRequest, mapFolder, restApiOwning, takenApiSlugs } from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
 import {
   addWebhookGroup,
@@ -215,7 +215,7 @@ import type { RestSendResolution } from './rest-send.js';
 import { resolveGrpcSend } from './grpc-send.js';
 import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
-import { findWsRequest, locateWsRequest, takenApiSlugs, wsApiOwning } from './project-ws-mutations.js';
+import { findWsRequest, locateWsRequest, wsApiOwning } from './project-ws-mutations.js';
 import { resolveWsSend } from './ws-send.js';
 import type { WsSendResolution } from './ws-send.js';
 import type { SecretStore } from './secrets.js';
@@ -243,7 +243,7 @@ import { refusedSequenceSlugs } from './project-sequence-mutations.js';
  */
 export interface SendAttachmentInput {
   readonly attachments: readonly Attachment[];
-  readonly attachmentOptions: SendAttachmentOptions;
+  readonly attachmentOptions: SoapAttachmentOptions;
 }
 
 /** How long an edit sits before autosave writes it out. */
@@ -515,7 +515,7 @@ export class ProjectHost {
   private resolveEndpointFor(
     project: Project,
     iface: Interface,
-    request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+    request: Pick<SoapRequestDef, 'endpointId' | 'endpointUrl'>,
     envId?: string,
   ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
     const context = this.workspaceContextFor(envId);
@@ -628,7 +628,7 @@ export class ProjectHost {
   /**
    * Folds a request's saved properties, the project's settings and the user's preferences into
    * the send input for `requestId` — the single place those three layers meet (see the engine's
-   * `toSendInput`). `overrides` carries what the *editor* currently holds (an envelope the user
+   * `toSoapSendInput`). `overrides` carries what the *editor* currently holds (an envelope the user
    * has typed but that has not been autosaved yet, and the endpoint the renderer resolved), so
    * a send always puts the visible request on the wire, with the saved knobs applied to it.
    *
@@ -660,7 +660,7 @@ export class ProjectHost {
         ? Object.entries(overrides.headers).map(([name, value]) => ({ name, value }))
         : request.headers;
     const wsa = this.wsaFor(requestId);
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: {
         properties: request.properties,
         soapVersion: request.soapVersion,
@@ -712,10 +712,10 @@ export class ProjectHost {
       return undefined;
     }
     const { request } = location;
-    // Built through `toSendInput` rather than by mapping the seven MTOM flags here a second
+    // Built through `toSoapSendInput` rather than by mapping the seven MTOM flags here a second
     // time: that mapping is the engine's, and duplicating it is how the two drift apart. Only
     // the attachment fields of the result are used; the rest is rebuilt by `sendInputFor`.
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: {
         properties: request.properties,
         soapVersion: request.soapVersion,
@@ -2067,12 +2067,7 @@ export class ProjectHost {
     } & GrpcDefinitionInput,
   ): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
-    const taken = new Set([
-      ...open.project.apis.map((api) => api.slug),
-      ...open.project.grpcApis.map((api) => api.slug),
-      ...open.project.interfaces.map((iface) => iface.slug),
-    ]);
-    const slug = uniqueSlug(input.api.name, taken);
+    const slug = uniqueSlug(input.api.name, takenApiSlugs(open.project));
     const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
     if (cache) {
       await this.writeGrpcDefinition(apiDefinitionDir(open.dir, slug), input.source, input.roots, input);
@@ -2650,7 +2645,9 @@ export class ProjectHost {
   }): Promise<{ project: ProjectWire; interfaceId: string }> {
     const open = this.require();
     const interfaceId = generateId();
-    const taken = new Set(open.project.interfaces.map((iface) => iface.slug));
+    // Every top-level slug, APIs' too: an interface sharing an API's slug makes the next load skip
+    // that API (`api-slug-conflict`), and the save after it would delete its folder.
+    const taken = takenApiSlugs(open.project);
 
     const resolvedAuth =
       input.auth !== undefined
@@ -2771,7 +2768,9 @@ export class ProjectHost {
     token?: string;
   }): Promise<{ project: ProjectWire; report: LegacyImportReport; environmentNames: string[] }> {
     const open = this.require();
-    const taken = new Set(open.project.interfaces.map((iface) => iface.slug));
+    // Every top-level slug, APIs' too: an interface sharing an API's slug makes the next load skip
+    // that API (`api-slug-conflict`), and the save after it would delete its folder.
+    const taken = takenApiSlugs(open.project);
     const network = createDefaultFetchDocument();
     const summaries = new Map<string, InterfaceSummary>();
 
@@ -2964,7 +2963,7 @@ export class ProjectHost {
     const iface = this.requireInterface(interfaceId);
     const previous = this.engine.resultFor(interfaceId);
     const auth = await this.importAuthFor(iface);
-    // Fetched into a scratch result only: nothing about the live `ImportResult` or the
+    // Fetched into a scratch result only: nothing about the live `WsdlImportResult` or the
     // definition cache changes here. If the save below fails, the interface must look exactly
     // as it did before this call — see the fix1 finding on this method.
     const next = await this.engine.importPreview(await this.updateSource(source), auth);
@@ -2981,7 +2980,7 @@ export class ProjectHost {
       // very save that overwrites them rather than written out of band afterwards.
       saveResult = await this.save({ reason: 'update-definition', backups: applied.backups });
     } catch (error) {
-      // Roll the in-memory model back: the live `ImportResult`/definition cache were never
+      // Roll the in-memory model back: the live `WsdlImportResult`/definition cache were never
       // touched, so undoing `open.project`/`open.dirty` is enough to leave everything as it
       // was before this call.
       open.project = priorProject;
@@ -3034,11 +3033,7 @@ export class ProjectHost {
     readonly webhooks?: WebhookFolder;
   }): Promise<{ project: ProjectWire; apiId: string }> {
     const open = this.require();
-    const taken = new Set([
-      ...open.project.apis.map((api) => api.slug),
-      ...open.project.interfaces.map((iface) => iface.slug),
-    ]);
-    const slug = uniqueSlug(input.api.name, taken);
+    const slug = uniqueSlug(input.api.name, takenApiSlugs(open.project));
     const cache = input.cache ?? this.prefs()?.wsdl.cacheDefinitions ?? true;
 
     if (cache) {

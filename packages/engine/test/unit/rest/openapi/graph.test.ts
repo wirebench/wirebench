@@ -13,8 +13,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { parseOpenApiDocument, parseSchema } from '../../../../src/rest/openapi/parse.js';
-import { resolveRefs } from '../../../../src/rest/openapi/refs.js';
-import { sampleFromSchema, sampleXml, MAX_SAMPLE_NODES } from '../../../../src/rest/openapi/sample.js';
+import { resolveRefs } from '../../../../src/json/schema/refs.js';
+import { sampleFromSchema, sampleXml, MAX_SAMPLE_NODES } from '../../../../src/json/schema/sample.js';
 import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
 
 const SCHEMAS = 25;

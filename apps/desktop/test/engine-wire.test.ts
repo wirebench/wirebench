@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { generateRequest, importDefinition, parseFault, parseSoapResponse, parseXml } from '@wirebench/engine';
+import { generateSoapRequest, importWsdl, parseFault, parseSoapResponse, parseXml } from '@wirebench/engine';
 import type { HttpExchange, RestExchange, SoapExchange } from '@wirebench/engine';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -17,11 +17,11 @@ import { fixturePath, readPublicFixture } from './helpers/fixtures.js';
 const CALCULATOR_URL = 'http://example.test/calculator/service.wsdl';
 
 async function importCalculator() {
-  return importDefinition({ kind: 'text', text: readPublicFixture('calculator'), location: CALCULATOR_URL });
+  return importWsdl({ kind: 'text', text: readPublicFixture('calculator'), location: CALCULATOR_URL });
 }
 
 describe('toInterfaceSummary', () => {
-  it('projects a real ImportResult into a JSON-serialisable InterfaceSummary', async () => {
+  it('projects a real WsdlImportResult into a JSON-serialisable InterfaceSummary', async () => {
     const result = await importCalculator();
 
     const summary = toInterfaceSummary(result, 'iface-1', CALCULATOR_URL);
@@ -65,7 +65,7 @@ describe('toInterfaceSummary', () => {
 
   it('carries the binding mime parts through to the operation summary', async () => {
     const location = fixturePath('wsdl/crafted/attachments/service.wsdl');
-    const result = await importDefinition({ kind: 'text', text: readFileSync(location, 'utf-8'), location });
+    const result = await importWsdl({ kind: 'text', text: readFileSync(location, 'utf-8'), location });
     const summary = toInterfaceSummary(result, 'iface-3', location);
     expect(summary.operations.find((op) => op.name === 'Upload')?.inputMimeParts).toEqual([
       { part: 'file', type: 'application/octet-stream' },
@@ -176,7 +176,7 @@ describe('toGenerateResponse', () => {
     const result = await importCalculator();
     const op = result.operations[0];
     if (op === undefined) throw new Error('fixture has no operations');
-    const generated = generateRequest(result, { bindingName: op.bindingName, operationName: op.operationName });
+    const generated = generateSoapRequest(result, { bindingName: op.bindingName, operationName: op.operationName });
 
     const wire = toGenerateResponse(generated);
 

@@ -8,10 +8,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sendHttp } from '../../../src/http/client.js';
 import type { OAuth2Auth } from '../../../src/project/model.js';
-import { buildTokenRequest, parseTokenResponse, pkce, newState, authorizationUrl } from '../../../src/rest/oauth2.js';
+import {
+  buildTokenRequest,
+  parseTokenResponse,
+  pkce,
+  newState,
+  authorizationUrl,
+} from '../../../src/http/auth/oauth2.js';
 import { sendRest } from '../../../src/rest/send.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
-import type { SendAuth } from '../../../src/types.js';
+import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;

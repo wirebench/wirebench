@@ -1236,7 +1236,7 @@ export async function copyProjectIntoWorkspace(
   try {
     await mkdir(projectDir, { recursive: true });
     await saveProject(copy, projectDir, deps.fsOption);
-    await copyProjectPayload(source.dir, projectDir);
+    await copyProjectPayload(source.dir, projectDir, copy);
     await keepLegacyActiveEnvironment(targetDir, workspace, legacy, deps.fsOption);
     await saveWorkspace(
       { ...workspace, projects: [...workspace.projects, { id: copy.id, slug, source: 'internal' }] },

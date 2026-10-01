@@ -5,7 +5,7 @@ import { createWssContext } from '../../../../src/wss/model.js';
 import { WSS_TOKEN_TYPES } from '../../../../src/wss/key-identifiers.js';
 import { NS } from '../../../../src/xml/namespaces.js';
 import { generateClientCert, generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore, KeystoreAlias } from '../../../../src/wss/keystore/model.js';
+import type { Keystore, KeystoreAlias } from '../../../../src/keystore/model.js';
 import type {
   WssDigestAlgorithm,
   WssEntry,

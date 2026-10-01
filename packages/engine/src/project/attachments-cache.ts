@@ -15,8 +15,10 @@ import { ProjectError } from '../errors.js';
 import type { Attachment } from './model.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic, type FsLike } from './fs.js';
 import { ATTACHMENTS_DIR } from './paths.js';
-import type { AttachmentResolver } from '../soap/mime/types.js';
 import { parseYaml, stringifyYaml } from './yaml.js';
+
+/** Resolves one attachment's bytes. Rejects when the attachment cannot be read. */
+export type AttachmentResolver = (attachment: Attachment) => Promise<Uint8Array>;
 
 /** One blob in the attachment cache, as recorded in `attachments/index.yaml`. */
 export interface AttachmentCacheEntry {

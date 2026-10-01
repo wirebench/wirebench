@@ -13,8 +13,8 @@ import {
   assertOriginIndependent,
   expandWithSequenceEscaped,
 } from '../project/sequence-guards.js';
-import { escapeForLanguage } from '../rest/body.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import { escapeForLanguage } from '../http/escape.js';
+import type { KeyValueEntry } from '../http/entries.js';
 
 /** The parts of a call that carry text a property can appear in. */
 export interface GrpcExpandable {

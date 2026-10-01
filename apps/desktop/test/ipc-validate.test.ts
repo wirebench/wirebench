@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { fileURLToPath } from 'node:url';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { importDefinition } from '@wirebench/engine';
-import type { ImportResult } from '@wirebench/engine';
+import { importWsdl } from '@wirebench/engine';
+import type { WsdlImportResult } from '@wirebench/engine';
 import { registerValidateChannels } from '../src/main/ipc/validate.js';
 import type { EngineService } from '../src/main/engine-service.js';
 import type { ValidateChannelProject } from '../src/main/ipc/validate.js';
@@ -47,10 +47,10 @@ const envelope = (body: string) =>
 const VALID_ADD = envelope('      <tem:Add><tem:intA>1</tem:intA><tem:intB>2</tem:intB></tem:Add>');
 
 describe('validate.message IPC', () => {
-  let calculator: ImportResult;
+  let calculator: WsdlImportResult;
 
   beforeAll(async () => {
-    calculator = await importDefinition({
+    calculator = await importWsdl({
       kind: 'file',
       path: `${repoRoot}fixtures/wsdl/public/calculator/service.wsdl`,
     });

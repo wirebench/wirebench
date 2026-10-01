@@ -16,7 +16,7 @@ import type { DirEntry, FsLike } from '../project/fs.js';
 import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from '../project/fs.js';
 import { parseYaml, stringifyYaml } from '../project/yaml.js';
 import { parseXml } from '../xml/parse.js';
-import { assignFileNames } from './cache-naming.js';
+import { assignFileNames } from '../project/cache-naming.js';
 import type { BundledDocument, DefinitionBundle, FetchDocument, FetchedDocument } from './resolver.js';
 
 const MANIFEST_FILE = 'manifest.yaml';

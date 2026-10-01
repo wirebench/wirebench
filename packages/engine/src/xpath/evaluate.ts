@@ -15,7 +15,7 @@ import { getPosition, parseXml } from '../xml/parse.js';
 import { serializeXml } from '../xml/serialize.js';
 import { LineIndex } from '../xml/positions.js';
 import type { LinePosition } from '../xml/positions.js';
-import type { TextRange } from '../xsd/locate.js';
+import type { TextRange } from '../xml/locate.js';
 import { evaluateJsonPath } from './jsonpath.js';
 
 // `fontoxpath` ships as CommonJS; its named exports only land on the default import under

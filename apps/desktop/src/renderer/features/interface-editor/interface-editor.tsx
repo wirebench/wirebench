@@ -3,7 +3,7 @@
  * what it declares (Overview), where it can be called (Endpoints), its documents (WSDL Content),
  * its schema components (Schema) and its WS-I Basic Profile report (WS-I).
  *
- * Everything it shows comes from main's cached `ImportResult` through `definition.documents` /
+ * Everything it shows comes from main's cached `WsdlImportResult` through `definition.documents` /
  * `definition.schemaIndex`; the renderer neither fetches nor reads files.
  */
 

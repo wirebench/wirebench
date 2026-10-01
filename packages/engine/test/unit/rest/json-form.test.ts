@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyJsonFormEdit, buildJsonForm, toWireSchema, type JsonFormNode } from '../../../src/rest/json-form.js';
 import type { JsonSchema } from '../../../src/rest/openapi/model.js';
-import { sampleFromSchema } from '../../../src/rest/openapi/sample.js';
+import { sampleFromSchema } from '../../../src/json/schema/sample.js';
 import { parseSchema } from '../../../src/rest/openapi/parse.js';
 
 function child(node: JsonFormNode, name: string): JsonFormNode {

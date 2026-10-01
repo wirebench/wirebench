@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseOpenApi } from '../../../../src/rest/openapi/import.js';
 import type { JsonSchema, OpenApiDocument } from '../../../../src/rest/openapi/model.js';
-import { MAX_SAMPLE_DEPTH, sampleFromSchema, sampleXml } from '../../../../src/rest/openapi/sample.js';
+import { MAX_SAMPLE_DEPTH, sampleFromSchema, sampleXml } from '../../../../src/json/schema/sample.js';
 import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
 
 const craftedDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/', import.meta.url));

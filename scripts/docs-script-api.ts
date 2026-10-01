@@ -4,12 +4,13 @@
  * drift from what the checker enforces.
  *
  * `node scripts/docs-script-api.ts` writes the page; `node scripts/docs-script-api.ts --check` exits
- * non-zero when the committed page is out of date (this runs as part of `pnpm check`). The source
- * module has only type imports, so Node loads it straight from source.
+ * non-zero when the committed page is out of date (this runs as part of `pnpm check`). The
+ * reference comes from the engine's registry, so the engine is read from its build output: run
+ * `pnpm build` (or `pnpm typecheck`, which emits it) first.
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { apiReference, type ApiReferenceSection } from '../packages/engine/src/script/types/api.ts';
+import type { ApiReferenceSection } from '../packages/engine/src/script/types/api.ts';
 
 const target = fileURLToPath(new URL('../docs-site/src/content/docs/reference/script-api.md', import.meta.url));
 
@@ -40,6 +41,8 @@ export function renderScriptApiReference(sections: readonly ApiReferenceSection[
 }
 
 async function main(): Promise<void> {
+  // Imported here, not at the top: a test that imports `renderScriptApiReference` needs no build.
+  const { apiReference } = await import('../packages/engine/dist/index.js');
   const rendered = renderScriptApiReference(apiReference());
   const check = process.argv.includes('--check');
   const current = await readFile(target, 'utf-8').catch(() => undefined);

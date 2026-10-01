@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { Agent, type Dispatcher } from 'undici';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
-import { sendSoapRequest } from '../../../src/send.js';
+import { sendSoapRequest } from '../../../src/soap/send.js';
 import { startTestSoapServer, type TestSoapServer } from '../../helpers/test-soap-server.js';
 
 const ENVELOPE = `<?xml version="1.0" encoding="utf-8"?>

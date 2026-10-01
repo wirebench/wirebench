@@ -6,14 +6,15 @@
 import { describe, expect, it } from 'vitest';
 import { SequenceError } from '../../../src/errors.js';
 import { expandGrpcInput } from '../../../src/grpc/expand.js';
-import { expand, expandSendInput } from '../../../src/project/properties.js';
+import { expand } from '../../../src/project/properties.js';
+import { expandSendInput } from '../../../src/soap/expand.js';
 import type { PropertyScopes } from '../../../src/project/properties.js';
 import { expandWithSequenceEscaped, urlOrigin } from '../../../src/project/sequence-guards.js';
 import { expandRestSendInput } from '../../../src/rest/expand.js';
 import { entry } from '../../../src/rest/model.js';
 import type { RestBody } from '../../../src/rest/model.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
-import type { SoapSendInput } from '../../../src/types.js';
+import type { SoapSendInput } from '../../../src/soap/types.js';
 
 function scopes(sequence: Record<string, string>, env: Record<string, string> = {}): PropertyScopes {
   return {

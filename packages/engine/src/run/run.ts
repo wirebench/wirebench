@@ -11,61 +11,29 @@ import type { CaptureSource } from '../assert/capture-source.js';
 import { evaluateAssertions } from '../assert/index.js';
 import type { Assertion, AssertionResult, AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
-import { readGrpcDefinitionCache } from '../grpc/cache.js';
-import { callGrpc } from '../grpc/call.js';
-import type { GrpcCallResult } from '../grpc/call.js';
-import { loadProtoSet } from '../grpc/proto/load.js';
-import type { ProtoSet } from '../grpc/proto/load.js';
-import { protoSetFromDescriptorSet } from '../grpc/reflection/descriptors.js';
-import { apiDefinitionDir, definitionCacheDir } from '../project/paths.js';
-import { sendRest } from '../rest/send.js';
-import type { RestExchange } from '../rest/send.js';
-import { sendSoapRequest } from '../send.js';
-import type { SendAuth, SoapExchange } from '../types.js';
-import { bindingContextFor, validateMessage } from '../validate/index.js';
-import { summarizeWsa } from '../wsa/policy-detect.js';
-import { parseWsdlBundle } from '../wsdl/merge.js';
-import type { WsdlDefinition } from '../wsdl/model.js';
-import { readDefinitionCache } from '../wsdl/cache.js';
-import type { DefinitionBundle } from '../wsdl/resolver.js';
-import { buildSchemaSet } from '../xsd/schema-set.js';
-import type { SchemaSet } from '../xsd/schema-set.js';
-import { urlOrigin } from '../project/sequence-guards.js';
-import { createRunTokenSource } from './oauth2-token.js';
-import { prepareSend, scopesFor } from './prepare.js';
-import type { RunContext } from './prepare.js';
-import type { SelectedRequest } from './select.js';
-import type { TransferResult } from '../sequence/run.js';
-import { expandSendInput } from '../project/properties.js';
-import type { OpenApiDocument } from '../rest/openapi/model.js';
-import { loadOpenApiDocument } from '../script/contracts.js';
+import type { ProtocolRun, SelectedBase } from '../protocol/module.js';
+import { featureDisabled } from '../protocol/registry.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
+import { defaultRegistry } from '../protocols.js';
+import type { SelectedRequest, SentExchange } from '../protocols.js';
 import { scriptProperties } from '../script/props.js';
-import {
-  activeScripts,
-  type RequestScripting,
-  type ScriptedRequest,
-  type ScriptRunValues,
-} from '../script/request-scripts.js';
-import {
-  SecretPlaceholders,
-  applyGrpcSnapshot,
-  applyRestSnapshot,
-  applySoapSnapshot,
-  grpcRequestSnapshot,
-  grpcResponseSnapshot,
-  restRequestSnapshot,
-  restResponseSnapshot,
-  soapRequestSnapshot,
-  soapResponseSnapshot,
-} from '../script/send.js';
+import { activeScripts, type RequestScripting, type ScriptedRequest } from '../script/request-scripts.js';
+import { SecretPlaceholders } from '../script/send.js';
+import type { TransferResult } from '../sequence/run.js';
+import { scopesFor } from './context.js';
+import type { RunContext } from './context.js';
+import { createRunTokenSource } from './oauth2-token.js';
+import { createRunScope, scopeWith } from './scope.js';
 import {
   listedSecrets,
   mergeScriptValues,
   scriptAssertions,
   scriptSession,
-  scriptTypesFor,
+  type ScriptSession,
   type SentScripts,
 } from './script-support.js';
+
+export type { SentExchange } from '../protocols.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
@@ -74,7 +42,8 @@ export interface RequestResult {
   readonly path: string;
   readonly group: string;
   readonly name: string;
-  readonly protocol: 'soap' | 'rest' | 'grpc';
+  /** The request's kind, as its module registered it. */
+  readonly protocol: string;
   readonly outcome: RequestOutcome;
   readonly status?: number;
   readonly durationMs?: number;
@@ -139,20 +108,8 @@ export interface RunOptions {
   readonly onSent?: (item: SelectedRequest, sent: SentRequest) => void;
 }
 
-type SoapSelected = Extract<SelectedRequest, { kind: 'soap' }>;
-type GrpcSelected = Extract<SelectedRequest, { kind: 'grpc' }>;
-type RestSelected = Extract<SelectedRequest, { kind: 'rest' }>;
-
 /** A request's own assertions; a gRPC request that never had any carries none. */
 const assertionsOf = (item: SelectedRequest): readonly Assertion[] => item.request.assertions ?? [];
-
-/** An interface's cached definition, compiled once per run. */
-interface LoadedDefinition {
-  readonly definition: WsdlDefinition;
-  readonly bundle: DefinitionBundle;
-  readonly schemaSet: SchemaSet;
-  readonly defaultActionByOperation: Readonly<Record<string, string>>;
-}
 
 /** Enough of each exchange to keep for a report: a failing response can be megabytes. */
 const EXCHANGE_CAP_BYTES = 64 * 1024;
@@ -178,172 +135,11 @@ function erroredResult(item: SelectedRequest, error: NonNullable<RequestResult['
   };
 }
 
-function parseClark(clark: string): { namespaceUri: string; localName: string } {
-  const match = /^\{([^}]*)\}(.*)$/.exec(clark);
-  return match === null
-    ? { namespaceUri: '', localName: clark }
-    : { namespaceUri: match[1] ?? '', localName: match[2] ?? '' };
-}
-
-/**
- * Reads the interface's definition from `interfaces/<slug>/definition/`, as the app hydrates it
- * with `prefer-cache` — minus the network fallback: a run never fetches a WSDL. An interface that
- * does not cache its definition, or whose cache is absent or unreadable, has no contract here.
- */
-async function loadDefinition(projectDir: string, iface: SoapSelected['iface']): Promise<LoadedDefinition | undefined> {
-  if (!iface.cacheDefinition) {
-    return undefined;
-  }
-  try {
-    const bundle = await readDefinitionCache(definitionCacheDir(projectDir, iface.slug));
-    const definition = parseWsdlBundle(bundle);
-    return {
-      definition,
-      bundle,
-      schemaSet: buildSchemaSet(bundle),
-      defaultActionByOperation: summarizeWsa(definition).defaultActionByOperation,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * A SOAP response as assertions and sequence transfers see it, without contract validation: what a
- * host that has no compiled definition at hand (the desktop's sequence runner) can build from the
- * exchange alone.
- */
-export function soapResponseSubject(exchange: SoapExchange): AssertionSubject {
-  const fault = exchange.response?.fault;
-  return {
-    protocol: 'soap',
-    status: exchange.http.status,
-    durationMs: exchange.durationMs,
-    bodyText: exchange.response?.envelopeXml ?? new TextDecoder().decode(exchange.http.body),
-    bodyKind: exchange.response?.isSoap === true ? 'xml' : 'other',
-    headers: exchange.http.rawHeaders,
-    fault: {
-      present: fault !== undefined,
-      ...(fault !== undefined ? { summary: [fault.code, fault.reason].filter((s) => s.length > 0).join(' — ') } : {}),
-    },
-  };
-}
-
-function soapSubject(
-  exchange: SoapExchange,
-  loaded: LoadedDefinition | undefined,
-  item: SoapSelected,
-): AssertionSubject {
-  const base = soapResponseSubject(exchange);
-  const bodyText = base.bodyText;
-  const binding =
-    loaded === undefined
-      ? undefined
-      : bindingContextFor(
-          loaded.definition,
-          { bindingName: parseClark(item.operation.bindingName), operationName: item.operation.name },
-          'response',
-        );
-  const contentType = exchange.http.headers['content-type'];
-  return {
-    ...base,
-    ...(loaded !== undefined && binding !== undefined
-      ? {
-          validateContract: () =>
-            validateMessage({
-              xml: bodyText,
-              direction: 'response',
-              schemaSet: loaded.schemaSet,
-              bundle: loaded.bundle,
-              binding,
-              http: { ...(contentType !== undefined ? { contentType } : {}) },
-            }).then((r) => r.problems),
-        }
-      : {}),
-  };
-}
-
-/** A REST response as assertions and sequence transfers see it. */
-export function restSubject(exchange: RestExchange): AssertionSubject {
-  return {
-    protocol: 'rest',
-    status: exchange.status,
-    durationMs: exchange.durationMs,
-    bodyText: exchange.text,
-    bodyKind: exchange.language === 'json' ? 'json' : exchange.language === 'xml' ? 'xml' : 'other',
-    headers: exchange.rawHeaders,
-  };
-}
-
-/**
- * Reads a gRPC API's schema from `apis/<slug>/definition/`, as the app's `grpcProtoSetFor` does:
- * the `.proto` sources an import cached, or the descriptor set reflection cached. A run never
- * reflects against a server, so an API with no cache has no schema and none of its calls can run.
- *
- * @throws WirebenchError `grpc-definition-missing` when there is no cache; whatever the loaders
- * throw for one that does not load
- */
-async function loadProtoSetFor(projectDir: string, api: GrpcSelected['api']): Promise<ProtoSet> {
-  let cache: Awaited<ReturnType<typeof readGrpcDefinitionCache>>;
-  try {
-    cache = await readGrpcDefinitionCache(apiDefinitionDir(projectDir, api.slug));
-  } catch (error) {
-    if (isWirebenchError(error) && error.code === 'definition-cache-missing') {
-      throw new WirebenchError(
-        'grpc-definition-missing',
-        `The gRPC API "${api.name}" has no cached definition; import its .proto files or discover it in the app first.`,
-        { details: { api: api.name }, cause: error },
-      );
-    }
-    throw error;
-  }
-  return cache.kind === 'proto'
-    ? loadProtoSet(cache.sources, { roots: cache.manifest.roots })
-    : protoSetFromDescriptorSet(cache.descriptors, { roots: cache.manifest.roots });
-}
-
-/**
- * A unary call's answer as assertions see it: the gRPC status code (0 = OK), and the one response
- * message as JSON. No message, or one that did not decode, leaves nothing a `match` can read.
- * Exported for its unit test; not part of the run module's public surface.
- */
-export function grpcSubject(result: GrpcCallResult): AssertionSubject {
-  const first = result.responseMessages[0];
-  const decoded = first !== undefined && first.json !== undefined;
-  return {
-    protocol: 'grpc',
-    status: result.exchange.status,
-    durationMs: result.exchange.durationMs,
-    bodyText: decoded ? JSON.stringify(first.json) : '',
-    bodyKind: decoded ? 'json' : 'other',
-    // Metadata first, then trailers: a header assertion or transfer takes the first value it finds.
-    headers: [...Object.entries(result.exchange.headers), ...Object.entries(result.exchange.trailers)],
-  };
-}
-
-/** gRPC's `UNAUTHENTICATED`: the server's word for a credential it will not accept. */
-const GRPC_UNAUTHENTICATED = 16;
-
-/**
- * After a server refused the credentials a send carried, drops the run's OAuth2 token among them,
- * so the next request behind that configuration fetches a new one instead of repeating the refusal.
- * The refused request itself is never sent again.
- */
-function dropRefusedToken(context: RunContext, auth: SendAuth | undefined, refused: boolean): void {
-  if (refused && auth?.type === 'oauth2') {
-    context.tokenSource?.reject(auth.accessToken);
-  }
-}
-
 function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
   if (assertions.some((a) => a.outcome === 'errored')) return 'errored';
   if (assertions.some((a) => a.outcome === 'failed')) return 'failed';
   return 'passed';
 }
-
-/** The exchange a request travelled as, for a host that keeps more of it than a report does. */
-export type SentExchange =
-  { readonly kind: 'soap'; readonly soap: SoapExchange } | { readonly kind: 'rest'; readonly rest: RestExchange };
 
 /** One request as a run sends it: the response as assertions see it, and what a report keeps. */
 export interface SentRequest {
@@ -365,36 +161,79 @@ export type RunSendOverrides = Pick<RunContext, 'sequence' | 'timeoutMs'>;
 /** Sends one selected request as a run does. Throws what preparing or sending throws. */
 export type RunRequestSender = (item: SelectedRequest, overrides?: RunSendOverrides) => Promise<SentRequest>;
 
+/** The run facet of the module for `item`'s kind. */
+function runOf(registry: ProtocolRegistry, item: SelectedBase): ProtocolRun {
+  const run = registry.require(item.kind).run;
+  if (run === undefined) {
+    throw new Error(`The "${item.kind}" protocol cannot run requests`);
+  }
+  return run;
+}
+
 /**
- * A sender for one run: each interface's definition and each gRPC API's schema is loaded once, and one
- * OAuth2 token source serves every request behind the same configuration. `runRequests` sends through
- * it, and so does a sequence run, so a step is sent exactly as a selected request is.
+ * The scripts of one send, opened when the module first runs one. The secrets a request lists for
+ * its scripts are read then and not before, so they are asked for after everything preparing the
+ * request asks for, as they always were.
+ */
+function deferredSession(scripting: RequestScripting, scripted: ScriptedRequest, context: RunContext): ScriptSession {
+  let opening: Promise<ScriptSession> | undefined;
+  const open = (): Promise<ScriptSession> => {
+    opening ??= listedSecrets(scripted.scripts.secrets, context.getSecret).then((secrets) =>
+      // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is
+      // shown before that.
+      scriptSession(scripting, scripted, {
+        vars: context.sequence ?? {},
+        props: scriptProperties(scopesFor(context)),
+        secrets,
+      }),
+    );
+    return opening;
+  };
+  return {
+    pre: async (before) => (await open()).pre(before),
+    post: async (sent, response) => (await open()).post(sent, response),
+  };
+}
+
+/**
+ * Why a request's active scripts cannot run in this registry, as the error its send reports (spec
+ * §5.3, §9): the `scripts` feature is off, or the request's protocol has no scripting facet.
+ * Undefined when they can run, and for a protocol the registry does not hold: looking its module up
+ * refuses that request first, with the protocol's own `feature-disabled`.
+ */
+function scriptsRefusal(item: SelectedBase, registry: ProtocolRegistry): WirebenchError | undefined {
+  const module = registry.find(item.kind);
+  if (module === undefined) return undefined;
+  if (!registry.features.isEnabled('scripts')) {
+    return featureDisabled(registry.features, 'scripts');
+  }
+  if (module.scripting === undefined) {
+    return new WirebenchError(
+      'script-unsupported',
+      `"${item.path}" has scripts, and ${item.kind} requests cannot have them`,
+      {
+        details: { path: item.path, protocol: item.kind },
+      },
+    );
+  }
+  return undefined;
+}
+
+/**
+ * A sender for one run: whatever a protocol loads for a container (a definition, a schema, an
+ * OpenAPI document) is loaded once, and one OAuth2 token source serves every request behind the same
+ * configuration. `runRequests` sends through it, and so does a sequence run, so a step is sent
+ * exactly as a selected request is. Which protocol sends a request is the registry's answer
+ * (`context.registry`, the built-in protocols by default).
+ *
+ * A request with scripts (#63) is type-checked first; its module then prepares it with its secrets
+ * behind placeholders, runs the pre-request script on that, puts the secrets back, sends, and runs
+ * the post-response script on the response.
  */
 export function createRunSender(context: RunContext): RunRequestSender {
-  const definitions = new Map<string, Promise<LoadedDefinition | undefined>>();
-  const definitionFor = (iface: SoapSelected['iface']): Promise<LoadedDefinition | undefined> => {
-    let loaded = definitions.get(iface.id);
-    if (loaded === undefined) {
-      loaded = loadDefinition(context.projectDir, iface);
-      definitions.set(iface.id, loaded);
-    }
-    return loaded;
-  };
-  // Each gRPC API's schema is loaded once per run; a failed load is remembered too, since nothing
-  // in a run can fix the cache, and every call of that API reports the same error.
-  const protoSets = new Map<string, Promise<ProtoSet>>();
-  const protoSetFor = (api: GrpcSelected['api']): Promise<ProtoSet> => {
-    let loading = protoSets.get(api.id);
-    if (loading === undefined) {
-      loading = loadProtoSetFor(context.projectDir, api);
-      // Observed here so a rejection nobody awaits yet is never reported as unhandled.
-      loading.catch(() => undefined);
-      protoSets.set(api.id, loading);
-    }
-    return loading;
-  };
+  const registry = context.registry ?? defaultRegistry();
   // One token source for the whole run: requests behind the same OAuth2 configuration share a token.
-  const runContext: RunContext = {
+  const scope = createRunScope({
     ...context,
     tokenSource:
       context.tokenSource ??
@@ -403,191 +242,46 @@ export function createRunSender(context: RunContext): RunRequestSender {
         ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
         ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
       }),
-  };
-
-  // Each REST API's OpenAPI document is read once per run, for its requests' script types.
-  const openApiDocuments = new Map<string, Promise<OpenApiDocument | undefined>>();
-  const openApiFor = (api: RestSelected['api']): Promise<OpenApiDocument | undefined> => {
-    let loading = openApiDocuments.get(api.id);
-    if (loading === undefined) {
-      loading = loadOpenApiDocument(context.projectDir, api.slug);
-      openApiDocuments.set(api.id, loading);
-    }
-    return loading;
-  };
+  });
 
   return async (item, overrides = {}) => {
     const itemContext: RunContext = {
-      ...runContext,
+      ...scope.context,
       ...(overrides.sequence !== undefined ? { sequence: overrides.sequence } : {}),
       ...(overrides.timeoutMs !== undefined ? { timeoutMs: overrides.timeoutMs } : {}),
     };
-    const loaded = item.kind === 'soap' ? await definitionFor(item.iface) : undefined;
-    // Before the send is prepared: without a schema there is no call, so no token is worth fetching.
-    const protoSet = item.kind === 'grpc' ? await protoSetFor(item.api) : undefined;
-    const withWsa: RunContext = {
-      ...itemContext,
-      ...(loaded !== undefined
-        ? {
-            defaultWsaActionFor: (s: SoapSelected) =>
-              loaded.defaultActionByOperation[`${s.operation.bindingName}|${s.operation.name}`] ?? '',
-          }
-        : {}),
-    };
+    const itemScope = scopeWith(scope, itemContext);
+    const run = runOf(registry, item);
 
     const scripts = activeScripts(item.request.scripts);
-    if (scripts !== undefined) {
-      if (context.scripting === undefined) {
-        throw new WirebenchError('script-unavailable', `"${item.path}" has scripts, and this run cannot run them`, {
-          details: { path: item.path },
-        });
-      }
-      const openApi = item.kind === 'rest' ? await openApiFor(item.api) : undefined;
-      const scripted: ScriptedRequest = {
-        protocol: item.kind,
-        path: item.path,
-        name: item.request.name,
-        slug: item.request.slug,
-        scripts,
-        types: scriptTypesFor(item, loaded, protoSet, openApi),
-      };
-      return sendScripted(item, scripted, context.scripting, withWsa, loaded, protoSet);
+    if (scripts === undefined) {
+      const sent = await run.send(item, itemScope);
+      return item.request.scripts !== undefined ? { ...sent, scriptsOff: true } : sent;
     }
 
-    const scriptsOff = item.request.scripts !== undefined ? { scriptsOff: true as const } : {};
-    const prepared = await prepareSend(item, withWsa);
-    if (prepared.kind === 'soap' && item.kind === 'soap') {
-      const exchange = await sendSoapRequest(prepared.input, { scopes: prepared.scopes });
-      dropRefusedToken(itemContext, prepared.input.auth, exchange.http.status === 401);
-      return {
-        subject: soapSubject(exchange, loaded, item),
-        raw: exchange.http,
-        exchange: { kind: 'soap', soap: exchange },
-        ...originOf(exchange.http.request.url),
-        ...scriptsOff,
-      };
-    }
-    if (prepared.kind === 'rest') {
-      const exchange = await sendRest(prepared.input);
-      dropRefusedToken(itemContext, prepared.input.auth, exchange.status === 401);
-      return {
-        subject: restSubject(exchange),
-        raw: exchange,
-        exchange: { kind: 'rest', rest: exchange },
-        ...originOf(exchange.request.url),
-        ...scriptsOff,
-      };
-    }
-    if (prepared.kind === 'grpc' && protoSet !== undefined) {
-      const result = await callGrpc({ ...prepared.input, set: protoSet, messageText: prepared.messageText });
-      dropRefusedToken(itemContext, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-      return { subject: grpcSubject(result), raw: result.exchange, origin: prepared.input.target, ...scriptsOff };
-    }
-    throw new Error('prepareSend returned a send of the wrong protocol');
-  };
-}
+    const refused = scriptsRefusal(item, registry);
+    if (refused !== undefined) throw refused;
 
-/**
- * Sends a request that has scripts (#63). It is prepared with its secrets behind placeholders, the
- * pre-request script runs on that, the secrets are put back, and the post-response script sees the
- * request as the script left it — placeholders and all — and the response.
- *
- * @throws WirebenchError what preparing or sending throws, `script-type-error`, or a pre-request
- * script's failure; a post-response script's failure is returned with the response
- */
-async function sendScripted(
-  item: SelectedRequest,
-  scripted: ScriptedRequest,
-  scripting: RequestScripting,
-  context: RunContext,
-  loaded: LoadedDefinition | undefined,
-  protoSet: ProtoSet | undefined,
-): Promise<SentRequest> {
-  await scripting.check(scripted);
-  const placeholders = new SecretPlaceholders();
-  const prepared = await prepareSend(item, { ...context, secretPlaceholders: placeholders });
-  const values: ScriptRunValues = {
-    vars: context.sequence ?? {},
-    props: scriptProperties(scopesFor(context)),
-    secrets: await listedSecrets(scripted.scripts.secrets, context.getSecret),
-  };
-  // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is shown
-  // before that.
-  const { pre, post } = scriptSession(scripting, scripted, values);
-
-  if (prepared.kind === 'soap' && item.kind === 'soap') {
-    const expanded = expandSendInput(prepared.input, prepared.scopes, {
-      entitize: prepared.input.entitize ?? false,
-    }).input;
-    const before = soapRequestSnapshot(expanded);
-    const sent = await pre(before);
-    const changed = applySoapSnapshot(expanded, sent);
-    const restored = await placeholders.restore(
-      {
-        endpoint: changed.endpoint,
-        headers: changed.headers ?? {},
-        envelopeXml: changed.envelopeXml,
-        ...(changed.soapAction !== undefined ? { soapAction: changed.soapAction } : {}),
-      },
-      context.getSecret,
-    );
-    // Already expanded: sent without scopes, so nothing the script wrote is expanded again.
-    const exchange = await sendSoapRequest({ ...changed, ...restored });
-    dropRefusedToken(context, prepared.input.auth, exchange.http.status === 401);
-    return {
-      subject: soapSubject(exchange, loaded, item),
-      raw: exchange.http,
-      exchange: { kind: 'soap', soap: exchange },
-      ...originOf(exchange.http.request.url),
-      script: await post(sent, soapResponseSnapshot(exchange)),
+    const scripting = context.scripting;
+    if (scripting === undefined) {
+      throw new WirebenchError('script-unavailable', `"${item.path}" has scripts, and this run cannot run them`, {
+        details: { path: item.path },
+      });
+    }
+    const scripted: ScriptedRequest = {
+      protocol: item.kind,
+      path: item.path,
+      name: item.request.name,
+      slug: item.request.slug,
+      scripts,
+      types: await run.scriptTypes(item, itemScope),
     };
-  }
-  if (prepared.kind === 'rest') {
-    const before = restRequestSnapshot(prepared.input);
-    const sent = await pre(before);
-    const changed = applyRestSnapshot(prepared.input, before, sent);
-    const restored = await placeholders.restore(
-      { baseUrl: changed.baseUrl, request: changed.request },
-      context.getSecret,
-    );
-    const exchange = await sendRest({ ...changed, ...restored });
-    dropRefusedToken(context, prepared.input.auth, exchange.status === 401);
-    return {
-      subject: restSubject(exchange),
-      raw: exchange,
-      exchange: { kind: 'rest', rest: exchange },
-      ...originOf(exchange.request.url),
-      script: await post(sent, restResponseSnapshot(exchange)),
-    };
-  }
-  if (prepared.kind === 'grpc' && protoSet !== undefined) {
-    const before = grpcRequestSnapshot(prepared.input, prepared.messageText);
-    const sent = await pre(before);
-    const changed = applyGrpcSnapshot(prepared.input, prepared.messageText, before, sent);
-    const restored = await placeholders.restore(
-      { metadata: changed.input.metadata, messageText: changed.messageText },
-      context.getSecret,
-    );
-    const result = await callGrpc({
-      ...changed.input,
-      metadata: restored.metadata,
-      set: protoSet,
-      messageText: restored.messageText,
+    await scripting.check(scripted);
+    return run.send(item, itemScope, {
+      session: deferredSession(scripting, scripted, itemContext),
+      placeholders: new SecretPlaceholders(),
     });
-    dropRefusedToken(context, prepared.input.auth, result.exchange.status === GRPC_UNAUTHENTICATED);
-    return {
-      subject: grpcSubject(result),
-      raw: result.exchange,
-      origin: prepared.input.target,
-      script: await post(sent, grpcResponseSnapshot(result)),
-    };
-  }
-  throw new Error('prepareSend returned a send of the wrong protocol');
-}
-
-function originOf(url: string): { readonly origin?: string } {
-  const origin = urlOrigin(url);
-  return origin !== undefined ? { origin } : {};
+  };
 }
 
 /**
@@ -602,32 +296,16 @@ export async function checkRunScripts(
   const scripting = context.scripting;
   const errors: WirebenchError[] = [];
   if (scripting === undefined) return errors;
-  const definitions = new Map<string, Promise<LoadedDefinition | undefined>>();
-  const protoSets = new Map<string, Promise<ProtoSet | undefined>>();
-  const documents = new Map<string, Promise<OpenApiDocument | undefined>>();
-  const once = <T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
-    let found = cache.get(key);
-    if (found === undefined) {
-      found = load();
-      cache.set(key, found);
-    }
-    return found;
-  };
+  const registry = context.registry ?? defaultRegistry();
+  const scope = createRunScope(context);
   for (const item of selected) {
     const scripts = activeScripts(item.request.scripts);
     if (scripts === undefined) continue;
-    const loaded =
-      item.kind === 'soap'
-        ? await once(definitions, item.iface.id, () => loadDefinition(context.projectDir, item.iface))
-        : undefined;
-    const protoSet =
-      item.kind === 'grpc'
-        ? await once(protoSets, item.api.id, () => loadProtoSetFor(context.projectDir, item.api).catch(() => undefined))
-        : undefined;
-    const openApi =
-      item.kind === 'rest'
-        ? await once(documents, item.api.id, () => loadOpenApiDocument(context.projectDir, item.api.slug))
-        : undefined;
+    const refused = scriptsRefusal(item, registry);
+    if (refused !== undefined) {
+      errors.push(refused);
+      continue;
+    }
     try {
       await scripting.check({
         protocol: item.kind,
@@ -635,7 +313,7 @@ export async function checkRunScripts(
         name: item.request.name,
         slug: item.request.slug,
         scripts,
-        types: scriptTypesFor(item, loaded, protoSet, openApi),
+        types: await runOf(registry, item).scriptTypes(item, scope),
       });
     } catch (error) {
       errors.push(

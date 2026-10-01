@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 
 describe('createDefaultFetchDocument — http(s)', () => {
   const originalFetch = globalThis.fetch;

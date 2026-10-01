@@ -10,8 +10,8 @@
 import { randomBytes } from 'node:crypto';
 import { WirebenchError } from '../errors.js';
 import type { AttachmentSource } from '../project/model.js';
-import { encodeBody } from '../soap/charset.js';
-import { mediaTypeOf } from '../soap/mime/multipart.js';
+import { encodeBody } from '../http/charset.js';
+import { mediaTypeOf } from '../http/media-type.js';
 import type { KeyValueEntry, MultipartFormPart, RawLanguage, RestBody } from './model.js';
 import { RAW_LANGUAGE_CONTENT_TYPES } from './model.js';
 
@@ -24,7 +24,7 @@ export type FileResolver = (source: AttachmentSource) => Promise<Uint8Array>;
 export interface EncodeBodyOptions {
   /** How a `multipart` or `binary` body's files are read. Required for those kinds only. */
   readonly resolveFile?: FileResolver;
-  /** Charset for a raw or form body. Default `utf-8`; see `soap/charset.ts` for the labels. */
+  /** Charset for a raw or form body. Default `utf-8`; see `http/charset.ts` for the labels. */
   readonly charset?: string;
   /** Fixed multipart boundary; a random one is generated otherwise. Tests inject it. */
   readonly boundary?: string;
@@ -185,29 +185,7 @@ export async function encodeRestBody(body: RestBody, options: EncodeBodyOptions 
   }
 }
 
-/**
- * XML- or JSON-escapes a value being substituted into a body, for the *escape properties* setting.
- *
- * Only the characters that would otherwise change the document's structure are touched. A JSON
- * body gets JSON string escaping (without the surrounding quotes, since the value is substituted
- * inside them); an XML body gets the five predefined entities; anything else is left alone,
- * because there is no general escape for `text/plain`.
- */
-export function escapeForLanguage(value: string, language: RawLanguage | 'form'): string {
-  if (language === 'json') {
-    const json = JSON.stringify(value);
-    return json.slice(1, -1);
-  }
-  if (language === 'xml' || language === 'html') {
-    return value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  }
-  return value;
-}
+export { escapeForLanguage } from '../http/escape.js';
 
 /** The language a body's escaping follows, for {@link escapeForLanguage}. */
 export function bodyLanguage(body: RestBody): RawLanguage | 'form' | undefined {

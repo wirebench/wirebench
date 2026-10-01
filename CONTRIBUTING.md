@@ -81,6 +81,67 @@ pull request.
 it, then refactor. Golden fixtures must be deterministic (inject the clock and id generator). No
 test touches the network except `packages/engine/test/interop`.
 
+## Adding a protocol
+
+A protocol is one module behind the `ProtocolModule` interface
+([ADR-0017](docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). Adding one to the engine
+changes its own folder, plus registration edits that are expected: the module in `BUILTIN_PROTOCOLS`
+and its types in the `SelectedRequest`, `RequestSnapshot` and `ResponseSnapshot` unions of
+`packages/engine/src/protocols.ts`, its exports in `packages/engine/src/index.ts`, and its folder in
+`GROUP_FOLDERS` in `scripts/engine-import-graph.mjs` (steps 3 and 4 below). If a change needs any other
+core file to know the protocol's name, the interface is missing something, and that is worth an issue
+before the code.
+
+This covers the engine, which is what `wirebench run` uses. The desktop app does not read the registry
+yet (issue #184, phases 2 and 3): a new protocol's editor, IPC channels and wire types are separate
+work, and until then the app does not show its containers.
+
+The checklist, with `packages/engine/test/helpers/echo-protocol.ts` as the smallest complete example:
+
+1. **A folder**, `packages/engine/src/<name>/`, holding the model and a file per facet. Leave a facet
+   out when the protocol has none: a module that leaves the `run` facet out cannot run its requests
+   (WebSocket defines a run facet inline in `ws/module.ts` that offers no requests), and one that
+   leaves out `scripting` cannot have scripts.
+   - `files.ts`: the zod schemas of the container file and the request files.
+   - `storage.ts`: a `ProtocolStorage`. `load` reads one container directory and pushes problems that
+     do not stop the load; `files` returns every file a container is written as, deterministically;
+     `managed` lists the files a save may delete. A kind with no list of its own on `Project` keeps
+     its containers in `Project.extraContainers[kind]`.
+   - `run.ts`: a `ProtocolRun`. `groups` lists what a run can send, in explorer order; `send` prepares,
+     runs the scripts it is handed, and sends, in whatever order the protocol needs; `secretNeeds`
+     names every secret its auth, keystores and signing read. Cache a contract with `scope.memo`
+     under the key `<kind>:<container id>:<what>`.
+   - `scripting.ts`: a `ProtocolScripting`. `inspect` describes a request snapshot (its destination,
+     what a script may not change, its header pairs, its single-line values, every text in which a
+     `${secret:…}` would be expanded). The rules of ADR-0016 are applied in core from that
+     description; a module never implements one.
+   - `module.ts`: `defineProtocol({ kind, feature, storage, run, scripting })`.
+2. **The feature descriptor.** `feature.id` equals `kind`. Give it a `title`, `default`, `stage`
+   (`experimental` for a protocol that should ship off) and the features it `requires`.
+3. **Register it**: add the module to `BUILTIN_PROTOCOLS` in `packages/engine/src/protocols.ts`, and
+   its selection, exchange and snapshot types to the unions declared there. Add what a host needs to
+   `packages/engine/src/index.ts`.
+4. **The dependency rules.** A protocol's folders import core and themselves, never another
+   protocol's; core imports no protocol. Add the new folder to `GROUP_FOLDERS` in
+   `scripts/engine-import-graph.mjs`. `pnpm check:engine-layers`, which `pnpm check` runs, fails on an
+   import that breaks either rule (`scripts/engine-layers.test.ts` proves it bites). It is the only
+   enforcement: there is no lint rule, so an editor does not flag a wrong import, and you learn of one
+   from `pnpm check`. If two protocols need the same code, it moves into core (`http/`, `json/`,
+   `xml/`), in its own commit.
+5. **The tests every module needs:**
+   - a round trip: a project holding its containers loads, and saves back byte-identical;
+   - the order of `getSecret`, token fetch and contract load inside `send`, pinned as
+     `packages/engine/test/unit/run/send-order.test.ts` pins the built-in ones;
+   - each of the five script rules refused through its `inspect`, added to
+     `packages/engine/test/unit/script/rules-per-protocol.test.ts`;
+   - its secret needs, against a request that uses every kind of secret it supports;
+   - a project that holds its containers, loaded with the feature switched off: a placeholder and a
+     `container-unsupported` problem, a save that leaves the folder byte-identical, and the container
+     back when the switch is on again.
+6. **Errors** are `WirebenchError` subclasses with a stable `code`; a new code goes in `docs/cli.md`.
+7. **Exports** are tagged `@internal` until a plugin API exists. Do not describe the module interface
+   as stable in any document.
+
 ## Commit style
 
 [Conventional Commits](https://www.conventionalcommits.org/) — `feat(engine): parse WSDL imports`,

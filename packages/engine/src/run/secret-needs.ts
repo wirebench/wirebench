@@ -1,48 +1,25 @@
 /**
  * Every secret a selection of requests will ask for, found before anything is sent, so a pipeline
  * can be told which variables to set (`wirebench secrets list`) and a run knows which names to
- * read. It walks the same sources `prepareSend` resolves: effective auth, the request's keystore,
- * and the WS-Security configurations it selects, with the keystores those lead to.
+ * read. The generic part is here: every `${secret:name}` the request's own text reaches, and the
+ * secrets its scripts list. What a protocol's configuration needs (effective auth, the request's
+ * keystore, signing, WS-Security) is its module's answer, walking the same sources its send resolves.
  */
 import { resolveScopes } from '../project/environments.js';
-import { toKeystoreDef } from '../project/keystores.js';
-import { secretNamesIn } from '../project/properties.js';
-import type { PropertyScopes } from '../project/properties.js';
 import type { Project, PropertyMap } from '../project/model.js';
-import { toWssIncomingConfig, toWssOutgoingConfig } from '../project/wss-configs.js';
-import { secretNeedsOfAuth } from '../secrets/env-names.js';
+import type { PropertyScopes } from '../project/properties.js';
+import type { SelectedBase } from '../protocol/module.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
+import { defaultRegistry } from '../protocols.js';
+import type { SelectedRequest } from '../protocols.js';
+import { activeScripts } from '../script/request-scripts.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import { secretEnvName, secretPseudoRef } from '../secrets/secret-token.js';
-import { activeScripts } from '../script/request-scripts.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
-import { signingSecretRef, signingSourceLabel } from '../webhooks/model.js';
-import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
-import { grpcEffectiveAuth, restEffectiveAuth, soapEffectiveAuth } from './effective-auth.js';
-import type { SelectedRequest } from './select.js';
+import { secretNamesInValue } from './send-helpers.js';
 
-/**
- * The `${secret:name}` names anywhere in `value`'s strings — a send input or a saved request —
- * following property values through `scopes`, in first-use order. Binary data is skipped.
- */
-export function secretNamesInValue(value: unknown, scopes?: PropertyScopes): string[] {
-  const found = new Set<string>();
-  const visit = (current: unknown): void => {
-    if (typeof current === 'string') {
-      if (current.includes('${')) {
-        for (const name of secretNamesIn(current, scopes)) {
-          found.add(name);
-        }
-      }
-    } else if (Array.isArray(current)) {
-      current.forEach(visit);
-    } else if (current !== null && typeof current === 'object' && !ArrayBuffer.isView(current)) {
-      Object.values(current).forEach(visit);
-    }
-  };
-  visit(value);
-  return [...found];
-}
+export { secretNamesInValue } from './send-helpers.js';
 
 /** One secret a run needs, and which requests need it. */
 export interface LocatedSecretNeed extends SecretNeed {
@@ -50,86 +27,7 @@ export interface LocatedSecretNeed extends SecretNeed {
   readonly usedBy: readonly string[];
 }
 
-const present = (id: string | undefined): id is string => id !== undefined && id.length > 0;
-
-/** A keystore's password, when the registry entry has one; an unreadable entry needs nothing here. */
-function keystoreNeeds(project: Project, keystoreId: string | undefined): SecretNeed[] {
-  if (!present(keystoreId)) {
-    return [];
-  }
-  const ref = project.wss.keystores.find((candidate) => candidate.id === keystoreId);
-  if (ref === undefined) {
-    return [];
-  }
-  try {
-    const def = toKeystoreDef(ref);
-    return present(def.passwordSecretRef)
-      ? [
-          {
-            ref: def.passwordSecretRef,
-            ...(def.passwordEnv !== undefined ? { envName: def.passwordEnv } : {}),
-            purpose: `keystore password for "${def.name}"`,
-          },
-        ]
-      : [];
-  } catch {
-    // `prepareSend` refuses such a request with its own error; it needs no secret before then.
-    return [];
-  }
-}
-
-/** Parses a WS-Security configuration by id; missing or unreadable is prepare's error, not a need. */
-function findConfig<T>(
-  refs: Project['wss']['outgoing'],
-  id: string | undefined,
-  convert: (ref: (typeof refs)[number]) => T,
-): T | undefined {
-  if (!present(id)) {
-    return undefined;
-  }
-  const ref = refs.find((candidate) => candidate.id === id);
-  if (ref === undefined) {
-    return undefined;
-  }
-  try {
-    return convert(ref);
-  } catch {
-    return undefined;
-  }
-}
-
-/** WS-Security passwords carry no `…Env` name: they resolve through their ref-derived variable. */
-function outgoingNeeds(project: Project, config: WssOutgoingConfig): SecretNeed[] {
-  const needs: SecretNeed[] = [];
-  for (const entry of config.entries) {
-    if (entry.kind === 'username-token') {
-      const ref = entry.passwordRef ?? config.defaultPasswordRef;
-      if (entry.passwordType !== 'none' && present(ref)) {
-        needs.push({ ref, purpose: `WS-Security password for "${entry.username}"` });
-      }
-    } else if (entry.kind === 'signature') {
-      needs.push(...keystoreNeeds(project, entry.keystoreRef));
-      if (present(entry.keyPasswordRef)) {
-        needs.push({ ref: entry.keyPasswordRef, purpose: `WS-Security signing key password ("${config.name}")` });
-      }
-    } else if (entry.kind === 'encryption') {
-      needs.push(...keystoreNeeds(project, entry.keystoreRef));
-    }
-  }
-  return needs;
-}
-
-function incomingNeeds(project: Project, config: WssIncomingConfig): SecretNeed[] {
-  return [
-    ...keystoreNeeds(project, config.decryptKeystoreRef),
-    ...(present(config.decryptKeyPasswordRef)
-      ? [{ ref: config.decryptKeyPasswordRef, purpose: `WS-Security decryption key password ("${config.name}")` }]
-      : []),
-    ...keystoreNeeds(project, config.signatureKeystoreRef),
-  ];
-}
-
-function tokenNeeds(selected: SelectedRequest, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
+function tokenNeeds(selected: SelectedBase, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
   // A script's own text is code, not a template: nothing in it is a reference. The secrets its
   // request lists for `secrets.get` are needed instead (#63).
   const { scripts, ...request } = selected.request;
@@ -144,47 +42,15 @@ function tokenNeeds(selected: SelectedRequest, scopeSets: readonly PropertyScope
   }));
 }
 
-/** A webhook item's signing secret, read from `WIREBENCH_SECRET_<secretEnv>` (§5.2). */
-function signingNeeds(selected: Extract<SelectedRequest, { kind: 'rest' }>): SecretNeed[] {
-  const effective = selected.signing;
-  if (effective === undefined || effective.signing.mode !== 'sign') return [];
-  const ref = signingSecretRef(effective.signing);
-  if (ref === undefined) return [];
-  return [
-    {
-      ref,
-      ...(effective.signing.secretEnv !== undefined ? { envName: effective.signing.secretEnv } : {}),
-      purpose: `webhook signing secret (${signingSourceLabel(effective)})`,
-    },
-  ];
-}
-
-function needsOf(selected: SelectedRequest, project: Project, scopeSets: readonly PropertyScopes[]): SecretNeed[] {
-  if (selected.kind === 'rest') {
-    return [
-      ...tokenNeeds(selected, scopeSets),
-      ...secretNeedsOfAuth(restEffectiveAuth(selected)),
-      ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
-      ...signingNeeds(selected),
-    ];
-  }
-  if (selected.kind === 'grpc') {
-    return [
-      ...tokenNeeds(selected, scopeSets),
-      ...secretNeedsOfAuth(grpcEffectiveAuth(selected)),
-      ...keystoreNeeds(project, selected.request.settings.sslKeystoreRef),
-    ];
-  }
-  const { request } = selected;
-  const outgoing = findConfig(project.wss.outgoing, request.wssOutgoingRef, toWssOutgoingConfig);
-  const incoming = findConfig(project.wss.incoming, request.wssIncomingRef, toWssIncomingConfig);
-  return [
-    ...tokenNeeds(selected, scopeSets),
-    ...secretNeedsOfAuth(soapEffectiveAuth(selected)),
-    ...keystoreNeeds(project, request.properties.sslKeystoreRef),
-    ...(outgoing !== undefined ? outgoingNeeds(project, outgoing) : []),
-    ...(incoming !== undefined ? incomingNeeds(project, incoming) : []),
-  ];
+/** The generic needs of `selected`, then what its protocol's configuration needs. */
+function needsOf(
+  selected: SelectedBase,
+  project: Project,
+  scopeSets: readonly PropertyScopes[],
+  registry: ProtocolRegistry,
+): SecretNeed[] {
+  const run = registry.find(selected.kind)?.run;
+  return [...tokenNeeds(selected, scopeSets), ...(run !== undefined ? run.secretNeeds(selected, project) : [])];
 }
 
 /** A workspace's scopes with no environment active, then under each of its environments in turn. */
@@ -199,13 +65,15 @@ function workspaceScopeSets(workspace: Workspace, project: Project): PropertySco
  * that uses it. The first declaration of a ref supplies its name and purpose. `overrides` are the
  * run's `--var` properties, laid over the environment's as a send lays them. With a `workspace`
  * the scopes are the ones a send inside it expands against: the workspace's properties, and each
- * workspace environment with its linked project environment.
+ * workspace environment with its linked project environment. `registry` is the set of protocol
+ * modules asked for their needs; the built-in ones by default.
  */
 export function secretNeedsOf(
   selected: readonly SelectedRequest[],
   project: Project,
   overrides: PropertyMap = {},
   workspace?: Workspace,
+  registry: ProtocolRegistry = defaultRegistry(),
 ): LocatedSecretNeed[] {
   const byRef = new Map<string, { need: SecretNeed; usedBy: string[] }>();
   // A token a property holds counts whichever environment a run picks: project properties alone,
@@ -223,7 +91,7 @@ export function secretNeedsOf(
       : workspaceScopeSets(workspace, project)
   ).map(withOverrides);
   for (const item of selected) {
-    for (const need of needsOf(item, project, scopeSets)) {
+    for (const need of needsOf(item, project, scopeSets, registry)) {
       const known = byRef.get(need.ref);
       if (known === undefined) {
         byRef.set(need.ref, { need, usedBy: [item.path] });

@@ -17,7 +17,7 @@ import type { Interface, OAuth2Auth, Project, SoapRequestDef } from '../../../sr
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/prepare.js';
+import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';

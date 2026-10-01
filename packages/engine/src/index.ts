@@ -15,6 +15,7 @@ export type {
   SlaAssertion,
   SoapFaultAssertion,
   StatusAssertion,
+  StatusNames,
   StepAssertion,
 } from './assert/model.js';
 export { CALLBACK_LIMITS, callbackLabel } from './assert/model.js';
@@ -57,6 +58,60 @@ export type {
 } from './assert/callback.js';
 
 export * from './run/index.js';
+
+// Protocol modules, the registry and features (ADR-0017). Exported for the engine's own hosts and
+// tagged `@internal` where they are declared: they are not yet a plugin API.
+export { createFeatureSet } from './protocol/features.js';
+export type { FeatureDescriptor, FeatureSet, WhyDisabled } from './protocol/features.js';
+export { defineProtocol } from './protocol/module.js';
+export type {
+  ContainerBase,
+  ContainerDir,
+  LoadContext,
+  ProtocolModule,
+  ProtocolRun,
+  ProtocolScripting,
+  ProtocolStorage,
+  RequestSnapshotBase,
+  ResponseSnapshotBase,
+  RunGroup,
+  RunScope,
+  ScriptedSend,
+  SelectedBase,
+  SnapshotFacts,
+} from './protocol/module.js';
+export { createProtocolRegistry } from './protocol/registry.js';
+export type { ProtocolRegistry, ProtocolRegistryOptions } from './protocol/registry.js';
+export { BUILTIN_PROTOCOLS, createBuiltinRegistry } from './protocols.js';
+export { extraContainersOf, unsupportedOf } from './project/model.js';
+export type { UnsupportedContainer } from './project/model.js';
+
+// What three core files re-exported until 3.0, from the module that declares it.
+export { soapResponseSubject } from './soap/run.js';
+export { restSubject } from './rest/run.js';
+export { grpcSubject } from './grpc/run.js';
+export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
+export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
+export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
+export {
+  projectSoapBody,
+  qnameFromClark,
+  replaceSoapBody,
+  soapOperationElements,
+  soapScriptTypes,
+} from './soap/script-types.js';
+export { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './rest/scripting.js';
+export type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
+export { restOperationFor, restScriptTypes } from './rest/script-types.js';
+export { applyGrpcSnapshot, grpcRequestSnapshot, grpcResponseSnapshot } from './grpc/scripting.js';
+export type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
+export { grpcMessageTypes, grpcScriptTypes } from './grpc/script-types.js';
+export { interfaceFileSchema, requestFileSchema } from './soap/files.js';
+export type { InterfaceFile, RequestFile } from './soap/files.js';
+export { apiFileSchema, restBodySchema, restRequestFileSchema } from './rest/files.js';
+export type { ApiFile, RestRequestFile } from './rest/files.js';
+export { grpcApiFileSchema, grpcMethodKindSchema, grpcRequestFileSchema } from './grpc/files.js';
+export type { GrpcApiFile, GrpcRequestFile } from './grpc/files.js';
 
 export {
   WirebenchError,
@@ -133,11 +188,11 @@ export type {
   ResolveOptions,
   ResolveProblem,
 } from './wsdl/resolver.js';
-export { createDefaultFetchDocument } from './wsdl/fetch.js';
+export { createDefaultFetchDocument } from './http/fetch-document.js';
 export { createHttpFetchDocument } from './http/document-fetch.js';
 export type { DocumentFetchOptions } from './http/document-fetch.js';
-export { assignFileNames } from './wsdl/cache-naming.js';
-export type { NamedDocument } from './wsdl/cache-naming.js';
+export { assignFileNames } from './project/cache-naming.js';
+export type { NamedDocument } from './project/cache-naming.js';
 export { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from './wsdl/cache.js';
 export type { DefinitionCacheOptions, WriteDefinitionCacheOptions } from './wsdl/cache.js';
 export { exportDefinition } from './wsdl/export-definition.js';
@@ -223,7 +278,7 @@ export type {
 
 export { createEnvelope, detectEnvelopeVersion, envelopeNamespace, SOAP_ENVELOPE_PREFIX } from './soap/envelope.js';
 export type { EnvelopeParts, SoapEnvelopeVersion } from './soap/envelope.js';
-export { prefixForNamespace, RESERVED_PREFIXES } from './soap/prefixes.js';
+export { prefixForNamespace, RESERVED_PREFIXES } from './xml/prefixes.js';
 export { NamespaceScope } from './soap/namespace-scope.js';
 export { soapActionHeaders } from './soap/soap-action.js';
 export type { SoapActionHeaders, SoapActionOptions } from './soap/soap-action.js';
@@ -236,9 +291,10 @@ export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
 export type { RecreateOptions, RecreateResult } from './soap/recreate.js';
-export { fromCurl, soapToCurl, toCurl } from './http/curl.js';
-export type { CurlBody, CurlCommand, CurlHeader, CurlPart } from './http/curl.js';
-export type { FromCurlResult, ToCurlOptions } from './http/curl.js';
+export { toCurl } from './http/curl.js';
+export type { CurlBody, CurlCommand, CurlHeader, CurlPart, ToCurlOptions } from './http/curl.js';
+export { fromCurl, soapToCurl } from './soap/curl.js';
+export type { FromCurlResult } from './soap/curl.js';
 export { parseSoapResponse } from './soap/response-parser.js';
 export type { ParsedSoapResponse } from './soap/response-parser.js';
 
@@ -314,26 +370,25 @@ export type { ProxyConfig, ResolveProxyOptions } from './http/proxy.js';
 export { captureSslInfo, splitPemBundle } from './http/tls.js';
 export type { PeerCert, SslInfo, TlsSocketLike } from './http/tls.js';
 
-export { importDefinition } from './import.js';
-export { sendSoapRequest } from './send.js';
-export { generateEmptyRequest, generateRequest } from './generate.js';
-export { summarizeOperations } from './operations.js';
+export { importWsdl } from './soap/import.js';
+export { sendSoapRequest } from './soap/send.js';
+export { generateEmptySoapRequest, generateSoapRequest } from './soap/generate.js';
+export { summarizeSoapOperations } from './soap/operations.js';
 export type {
-  ImportCacheOptions,
-  ImportOptions,
-  ImportProblem,
-  ImportProgress,
-  ImportResult,
-  ImportSource,
-  OperationSummary,
-  AuthSummary,
-  SendAttachmentOptions,
-  SendAuth,
+  SoapAttachmentOptions,
   SoapExchange,
+  SoapOperationSummary,
   SoapSendInput,
   SoapSendWsa,
   SoapSendWss,
-} from './types.js';
+  WsdlImportCacheOptions,
+  WsdlImportOptions,
+  WsdlImportProblem,
+  WsdlImportProgress,
+  WsdlImportResult,
+  WsdlImportSource,
+} from './soap/types.js';
+export type { AuthSummary, SendAuth } from './http/auth/send-auth.js';
 
 export {
   DEFAULT_OAUTH2_AUTH,
@@ -345,6 +400,7 @@ export {
   createRequest,
   defaultContentId,
   generateId,
+  takenContainerSlugs,
 } from './project/model.js';
 export type {
   AnyRequestDef,
@@ -371,7 +427,6 @@ export type {
   Project,
   ProjectSettings,
   PropertyMap,
-  RequestDef,
   RequestProperties,
   SoapOwnerAuth,
   SoapRequestDef,
@@ -427,12 +482,17 @@ export {
   signatureSchemeSchema,
   toSignatureScheme,
   verifyWebhook,
-} from './webhooks/signature.js';
-export type { SignatureAlgorithm, SignatureFailure, SignatureScheme, SignatureVerdict } from './webhooks/signature.js';
+} from './http/webhook-signature.js';
+export type {
+  SignatureAlgorithm,
+  SignatureFailure,
+  SignatureScheme,
+  SignatureVerdict,
+} from './http/webhook-signature.js';
 export { bodyLanguage, encodeFormFields, encodeRestBody, escapeForLanguage, rawContentType } from './rest/body.js';
 export type { EncodeBodyOptions, EncodedBody, FileResolver } from './rest/body.js';
-export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './rest/auth.js';
-export type { AppliedAuth } from './rest/auth.js';
+export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from './http/auth/apply-auth.js';
+export type { AppliedAuth } from './http/auth/apply-auth.js';
 export { applySoapAuth } from './soap/auth.js';
 export type { SoapAppliedAuth } from './soap/auth.js';
 export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
@@ -447,7 +507,7 @@ export {
   newState,
   parseTokenResponse,
   pkce,
-} from './rest/oauth2.js';
+} from './http/auth/oauth2.js';
 export type {
   AuthorizationUrlInput,
   OAuth2Secrets,
@@ -456,7 +516,7 @@ export type {
   TokenRequestOptions,
   TokenResponseInput,
   TokenSet,
-} from './rest/oauth2.js';
+} from './http/auth/oauth2.js';
 export { fromRestCurl, restToCurl, CURL_REDACTED } from './rest/curl.js';
 export type { FromRestCurlOptions, FromRestCurlResult, RestToCurlOptions } from './rest/curl.js';
 export { expandRestSendInput } from './rest/expand.js';
@@ -503,7 +563,7 @@ export type { WorkerFrameChecker, WorkerFrameCheckerOptions } from './asyncapi/f
 export type { ImportAsyncApiOptions, ImportedAsyncApi } from './asyncapi/import.js';
 export { importOpenApi, parseOpenApi } from './rest/openapi/import.js';
 export type { ImportedOpenApi, ImportOpenApiOptions } from './rest/openapi/import.js';
-export { loadOpenApiDocument } from './script/contracts.js';
+export { loadOpenApiDocument } from './rest/script-types.js';
 export {
   apiFromDocument,
   authFromScheme,
@@ -583,10 +643,10 @@ export {
 export type { RestContractChecker, RestContractCheckerOptions } from './rest/contract-check-worker-host.js';
 export { pointerRange } from './json/pointer-range.js';
 export type { PointerTextRange } from './json/pointer-range.js';
-export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './rest/openapi/refs.js';
-export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './rest/openapi/refs.js';
-export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './rest/openapi/sample.js';
-export type { SampleOptions, SampleXmlOptions } from './rest/openapi/sample.js';
+export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from './json/schema/refs.js';
+export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './json/schema/refs.js';
+export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './json/schema/sample.js';
+export type { SampleOptions, SampleXmlOptions } from './json/schema/sample.js';
 export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
 export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
 export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';
@@ -734,30 +794,20 @@ export {
 } from './project/paths.js';
 export type { RequestFilePair } from './project/paths.js';
 export {
-  apiFileSchema,
-  assertSupportedKind,
   attachmentSourceSchema,
   authConfigSchema,
   definitionAuthSchema,
   definitionCacheManifestSchema,
   environmentFileSchema,
   keyValueEntrySchema,
-  interfaceFileSchema,
   soapOwnerAuthSchema,
   keystoreEntrySchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
-  requestFileSchema,
-  restBodySchema,
   apiDefinitionCacheManifestSchema,
   restFolderFileSchema,
-  restRequestFileSchema,
-  grpcApiFileSchema,
-  grpcRequestFileSchema,
-  grpcMethodKindSchema,
   protoDefinitionCacheManifestSchema,
-  apiKindOf,
   hookLinkSchema,
   webhookFolderFileSchema,
   webhooksFileSchema,
@@ -768,18 +818,12 @@ export {
 export type {
   ApiDefinitionCacheDocument,
   ApiDefinitionCacheManifest,
-  ApiFile,
   DefinitionCacheDocument,
   DefinitionCacheManifest,
   EnvironmentFile,
-  InterfaceFile,
   KeyValueEntryFile,
   ManifestFile,
-  RequestFile,
   RestFolderFile,
-  RestRequestFile,
-  GrpcApiFile,
-  GrpcRequestFile,
   ProtoDefinitionCacheManifest,
 } from './project/schema.js';
 export {
@@ -805,16 +849,12 @@ export type {
   RestPreferences,
   WsiPreferences,
 } from './project/preferences.js';
-export { toGrpcSendInput, toRestSendInput, toSendInput } from './send-options.js';
-export type {
-  AttachmentResolvers,
-  GrpcSendRequestInput,
-  RestSendRequestInput,
-  SendRequestInput,
-  ToGrpcSendInputArgs,
-  ToRestSendInputArgs,
-  ToSendInputArgs,
-} from './send-options.js';
+export { toSoapSendInput } from './soap/send-input.js';
+export { toRestSendInput } from './rest/send-input.js';
+export { toGrpcSendInput } from './grpc/send-input.js';
+export type { AttachmentResolvers, SoapSendRequestInput, ToSoapSendInputArgs } from './soap/send-input.js';
+export type { RestSendRequestInput, ToRestSendInputArgs } from './rest/send-input.js';
+export type { GrpcSendRequestInput, ToGrpcSendInputArgs } from './grpc/send-input.js';
 export { entitizeValue, prettyPrint, removeEmptyContent, stripWhitespaces } from './soap/transforms.js';
 export { jsonCompletionContextAt } from './json/cursor.js';
 export type { JsonCompletionContext, JsonTextRange } from './json/cursor.js';
@@ -866,11 +906,12 @@ export type {
   HistoryWs,
   RestEventStreamLike,
 } from './project/history.js';
-export { enabledProperties, expand, expandSendInput, hasExpansions, secretNamesIn } from './project/properties.js';
+export { enabledProperties, expand, hasExpansions, secretNamesIn } from './project/properties.js';
+export { expandSendInput } from './soap/expand.js';
 export type { ExpandOptions, ExpandResult, PropertyScopes, UnresolvedRef } from './project/properties.js';
 export { effectiveAuth, isEndpointAuth } from './project/endpoints.js';
 export { toKeystoreDef, toKeystoreRef } from './project/keystores.js';
-export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './project/wss-configs.js';
+export { toWssIncomingConfig, toWssIncomingRef, toWssOutgoingConfig, toWssOutgoingRef } from './wss/configs.js';
 // ---------------------------------------------------------------------------
 // WS-Addressing (Task 41)
 // ---------------------------------------------------------------------------
@@ -960,7 +1001,7 @@ export {
   loadPkcs12,
   selectAlias,
   toTlsClientIdentity,
-} from './wss/keystore/index.js';
+} from './keystore/index.js';
 export type {
   Keystore,
   KeystoreAlias,
@@ -968,7 +1009,7 @@ export type {
   KeystoreType,
   LoadKeystoreOptions,
   TlsClientIdentity,
-} from './wss/keystore/index.js';
+} from './keystore/index.js';
 export {
   findEnvironment,
   removeEnvironment,
@@ -1149,6 +1190,7 @@ export {
   encodeGrpcMessage,
   formatGrpcTimeout,
   grpcStatusName,
+  grpcStatusNames,
 } from './grpc/status.js';
 export { encodeGrpcFrame, GrpcFrameParser } from './grpc/framing.js';
 export type { GrpcFrame } from './grpc/framing.js';

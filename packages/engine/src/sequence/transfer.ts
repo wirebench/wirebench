@@ -7,7 +7,7 @@
 import { firstHeaderValue } from '../assert/header.js';
 import { firstText } from '../assert/match.js';
 import type { AssertionSubject } from '../assert/model.js';
-import { parseSetCookie } from '../rest/response.js';
+import { parseSetCookie } from '../http/cookies.js';
 import { evaluateWithTimeout } from '../xpath/evaluate-async.js';
 import { collectNamespaces } from '../xpath/namespaces.js';
 import { SEQUENCE_LIMITS } from './model.js';

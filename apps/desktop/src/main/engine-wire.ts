@@ -1,5 +1,5 @@
 /**
- * Pure conversion helpers from engine result types (`ImportResult`, `SoapExchange`,
+ * Pure conversion helpers from engine result types (`WsdlImportResult`, `SoapExchange`,
  * `SoapFault`) to their JSON-serialisable wire projections. Kept free of `electron` and
  * `ipcMain` imports so they can be unit-tested directly against real engine output.
  */
@@ -23,7 +23,7 @@ import type {
   GrpcCallResult,
   GrpcResponseMessage,
   HttpExchange,
-  ImportResult,
+  WsdlImportResult,
   SoapExchange,
   SoapFault,
   SslInfo,
@@ -66,8 +66,8 @@ function basenameOf(location: string): string {
   return segments.at(-1) ?? location;
 }
 
-/** Converts an `ImportResult` plus its assigned id into the `InterfaceSummary` sent over IPC. */
-export function toInterfaceSummary(result: ImportResult, id: string, definitionUrl: string): InterfaceSummary {
+/** Converts a `WsdlImportResult` plus its assigned id into the `InterfaceSummary` sent over IPC. */
+export function toInterfaceSummary(result: WsdlImportResult, id: string, definitionUrl: string): InterfaceSummary {
   const { definition } = result;
 
   const services: ServiceSummary[] = definition.services.map((service) => ({

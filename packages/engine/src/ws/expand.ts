@@ -12,8 +12,8 @@
 
 import { expand } from '../project/properties.js';
 import type { PropertyScopes, UnresolvedRef } from '../project/properties.js';
-import { escapeForLanguage } from '../rest/body.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import { escapeForLanguage } from '../http/escape.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import type { WsRequestDef } from './model.js';
 
 /** Input to {@link expandWsInput}: the parts of a saved request an open call needs. */

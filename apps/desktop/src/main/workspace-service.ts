@@ -1879,8 +1879,8 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /**
-   * Copies an open project (its current model, unsaved edits included, plus attachments and
-   * definition caches) into the closed workspace `targetWorkspaceId`, then removes it from this
+   * Copies an open project (its current model, unsaved edits included, plus attachments,
+   * definition caches and placeholder folders) into the closed workspace `targetWorkspaceId`, then removes it from this
    * one — trashing its folder when it was internal. Ids are kept unless the target already has
    * the project id.
    *
@@ -2092,7 +2092,7 @@ export class WorkspaceService implements ProjectRouter {
     const dir = workspaceProjectDir(open.tree, slug);
     await mkdir(dir, { recursive: true });
     await saveProject(copy, dir, this.fsOption());
-    await copyProjectPayload(source, dir);
+    await copyProjectPayload(source, dir, copy);
     await this.adoptProject(open, { id: copy.id, slug, source: 'internal' }, dir);
     return this.requireSnapshot();
   }
@@ -2124,7 +2124,7 @@ export class WorkspaceService implements ProjectRouter {
       throw new WorkspaceError('export-target-not-empty', `"${dir}" is not empty.`, { details: { dir } });
     }
     await saveProject(model, dir, this.fsOption());
-    await copyProjectPayload(entry.dir, dir);
+    await copyProjectPayload(entry.dir, dir, model);
     return { dir };
   }
 

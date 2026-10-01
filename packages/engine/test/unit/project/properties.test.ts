@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   enabledProperties,
   expand,
-  expandSendInput,
   hasExpansions,
   secretNamesIn,
   type PropertyScopes,
 } from '../../../src/project/properties.js';
-import type { SoapSendInput } from '../../../src/types.js';
+import { expandSendInput } from '../../../src/soap/expand.js';
+import type { SoapSendInput } from '../../../src/soap/types.js';
 
 const scopes: PropertyScopes = {
   project: { name: 'proj-name', which: 'name', selfRef: '${#Project#selfRef}' },

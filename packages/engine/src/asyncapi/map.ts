@@ -10,8 +10,8 @@ import { AsyncApiError } from '../errors.js';
 import { unsupportedKeywordsIn } from '../json/schema-validate.js';
 import type { AuthConfig, IdGenerator } from '../project/model.js';
 import { uniqueSlug } from '../project/paths.js';
-import { entry, type KeyValueEntry } from '../rest/model.js';
-import { sampleFromSchema } from '../rest/openapi/sample.js';
+import { entry, type KeyValueEntry } from '../http/entries.js';
+import { sampleFromSchema } from '../json/schema/sample.js';
 import {
   createWsApi,
   createWsFolder,

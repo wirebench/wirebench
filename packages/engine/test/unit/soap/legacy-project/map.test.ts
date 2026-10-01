@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../../src/import.js';
+import { importWsdl } from '../../../../src/soap/import.js';
 import { definitionRootOf, fetchDocumentFromCache } from '../../../../src/soap/legacy-project/definition-fetcher.js';
 import type { LegacyMapContext, ResolvedLegacyInterface } from '../../../../src/soap/legacy-project/map.js';
 import {
@@ -36,7 +36,7 @@ async function resolveOffline(project: LegacyProject): Promise<ResolvedLegacyInt
       const base = { legacy, id: `iface-${String(index)}`, slug: `slug-${String(index)}` };
       const root = definitionRootOf(legacy.cache, legacy.definitionUrl);
       try {
-        const result = await importDefinition(
+        const result = await importWsdl(
           { kind: 'url', url: root! },
           { fetchDocument: fetchDocumentFromCache(legacy.cache) },
         );

@@ -8,6 +8,9 @@ import { OpsError } from './errors.js';
 
 export type SendableItem = Extract<SelectedRequest, { kind: 'soap' | 'rest' }>;
 
+/** A container the project's folder holds and this build did not load. */
+type Placeholder = NonNullable<Project['unsupported']>[number];
+
 function sendable(item: SelectedRequest): SendableItem {
   if (item.kind === 'grpc') {
     throw new OpsError('unsupported-kind', `"${item.path}" is a gRPC request; send takes SOAP and REST requests`, {
@@ -23,6 +26,15 @@ function ambiguous(ref: string, items: readonly SelectedRequest[]): OpsError {
     `"${ref}" names ${String(items.length)} requests; pass one path: ${items.map((item) => item.path).join(', ')}`,
     { item: ref },
   );
+}
+
+/** The placeholder `ref` points into: by its display name, or by its folder on disk. */
+function placeholderFor(project: Project, ref: string): Placeholder | undefined {
+  return (project.unsupported ?? []).find((container) => {
+    const label = container.name ?? container.slug;
+    const folder = `${container.dir}/${container.slug}`;
+    return ref === label || ref.startsWith(`${label}/`) || ref === folder || ref.startsWith(`${folder}/`);
+  });
 }
 
 /** @throws OpsError `item-not-found`, `item-ambiguous`, `unsupported-kind` */
@@ -55,6 +67,16 @@ export function resolveItem(project: Project, ref: string): SendableItem {
       'unsupported-kind',
       `"${ref}" is in the ${unsupported.kind} API "${unsupported.name}"; send takes SOAP and REST requests`,
       { item: ref },
+    );
+  }
+  // Nor is anything in a placeholder: the engine never read its request files. Say which and why.
+  const placeholder = placeholderFor(project, ref);
+  if (placeholder !== undefined) {
+    const why = placeholder.reason === 'feature-disabled' ? 'that protocol is switched off' : 'it has no such protocol';
+    throw new OpsError(
+      'unsupported-kind',
+      `"${ref}" is in "${placeholder.name ?? placeholder.slug}", a "${placeholder.kind}" container this build did not load: ${why}`,
+      { item: ref, kind: placeholder.kind, reason: placeholder.reason },
     );
   }
   throw new OpsError('item-not-found', `No saved request matches "${ref}"; wirebench operations lists them`, {

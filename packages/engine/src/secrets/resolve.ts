@@ -1,13 +1,13 @@
 /**
  * Resolves an `EndpointAuth` (which only ever carries a `passwordRef`) into the plaintext shape
- * the engine's `importDefinition`/send path expects. Kept pure — the secret getter is injected —
+ * the engine's `importWsdl`/send path expects. Kept pure — the secret getter is injected —
  * so it needs no Electron and is trivially testable without a real `SecretStore`.
  */
 
 import { WirebenchError } from '../errors.js';
 import { isEndpointAuth } from '../project/endpoints.js';
 import type { AuthConfig, SoapOwnerAuth, EndpointAuth } from '../project/model.js';
-import type { SendAuth } from '../types.js';
+import type { SendAuth } from '../http/auth/send-auth.js';
 import { secretPseudoRef } from './secret-token.js';
 
 /**

@@ -11,9 +11,9 @@ import {
   applySoapAuth,
   applyWsaHeaders,
   expandSendInput,
-  generateEmptyRequest,
-  generateRequest,
-  importDefinition as engineImportDefinition,
+  generateEmptySoapRequest,
+  generateSoapRequest,
+  importWsdl as engineImportDefinition,
   normalizeWsa,
   openWsSession,
   sendSoapRequest,
@@ -32,9 +32,9 @@ import type {
   SoapExchange,
   SoapOwnerAuth,
   GenerateOptions,
-  ImportProgress,
-  ImportResult,
-  ImportSource,
+  WsdlImportProgress,
+  WsdlImportResult,
+  WsdlImportSource,
   PropertyScopes,
   QName,
   SoapSendInput,
@@ -105,7 +105,7 @@ import type { SendAttachmentInput } from './project-host.js';
 
 /** One imported definition kept in memory, alongside the location it was resolved from. */
 interface StoredDefinition {
-  readonly result: ImportResult;
+  readonly result: WsdlImportResult;
   readonly definitionUrl: string;
   /** Epoch milliseconds at which this definition was loaded into memory — the Interface editor's "last import". */
   readonly loadedAt: number;
@@ -129,11 +129,11 @@ function parseClarkQName(clark: string): QName {
 }
 
 /**
- * Converts the wire `ImportSourceWire` to the engine's `ImportSource`. Needed because a zod
+ * Converts the wire `ImportSourceWire` to the engine's `WsdlImportSource`. Needed because a zod
  * `.optional()` field infers as `T | undefined` under `exactOptionalPropertyTypes`, which
  * cannot be assigned directly to the engine's `field?: T` (no explicit `undefined`).
  */
-function toEngineSource(source: ImportSourceWire): ImportSource {
+function toEngineSource(source: ImportSourceWire): WsdlImportSource {
   if (source.kind === 'text') {
     return { kind: 'text', text: source.text, ...(source.location !== undefined ? { location: source.location } : {}) };
   }
@@ -264,8 +264,8 @@ function toEngineSendInput(
   };
 }
 
-/** Human-readable message for one `ImportProgress` phase, shown in the UI while an import runs. */
-function messageFor(progress: ImportProgress): string {
+/** Human-readable message for one `WsdlImportProgress` phase, shown in the UI while an import runs. */
+function messageFor(progress: WsdlImportProgress): string {
   switch (progress.phase) {
     case 'fetch':
       return `Fetching ${progress.location}`;
@@ -368,7 +368,7 @@ export class EngineService {
     }
   }
 
-  /** Imports a WSDL definition and stores the full `ImportResult` under a new id. */
+  /** Imports a WSDL definition and stores the full `WsdlImportResult` under a new id. */
   async importDefinition(request: DefinitionImportRequest, hooks: EngineServiceHooks = {}): Promise<InterfaceSummary> {
     const id = crypto.randomUUID();
     const controller = new AbortController();
@@ -382,7 +382,7 @@ export class EngineService {
         details: { ref: wireAuth.passwordRef },
       });
     }
-    let result: ImportResult;
+    let result: WsdlImportResult;
     try {
       result = await engineImportDefinition(toEngineSource(request.source), {
         ...(wireAuth !== undefined && password !== undefined
@@ -431,7 +431,7 @@ export class EngineService {
     source: ImportSourceWire,
     auth?: { readonly username: string; readonly password: string },
     signal?: AbortSignal,
-  ): Promise<ImportResult> {
+  ): Promise<WsdlImportResult> {
     return engineImportDefinition(toEngineSource(source), {
       ...(auth !== undefined ? { auth } : {}),
       ...(signal !== undefined ? { signal } : {}),
@@ -463,7 +463,7 @@ export class EngineService {
     if (input.token !== undefined) {
       this.imports.set(input.token, controller);
     }
-    let result: ImportResult;
+    let result: WsdlImportResult;
     try {
       result = await engineImportDefinition(toEngineSource(input.source), {
         ...(input.auth !== undefined ? { auth: input.auth } : {}),
@@ -509,7 +509,7 @@ export class EngineService {
    * `ProjectHost.applyDefinitionUpdate`, which fetches the preview, saves, and only then
    * calls this to make the new definition live.
    */
-  commitResult(interfaceId: string, result: ImportResult, definitionUrl: string): InterfaceSummary {
+  commitResult(interfaceId: string, result: WsdlImportResult, definitionUrl: string): InterfaceSummary {
     const loadedAt = Date.now();
     this.definitions.set(interfaceId, { result, definitionUrl, loadedAt });
     return { ...toInterfaceSummary(result, interfaceId, definitionUrl), loadedAt };
@@ -599,7 +599,7 @@ export class EngineService {
     return { cancelled: true };
   }
 
-  /** Frees the in-memory `ImportResult` for `interfaceId`. */
+  /** Frees the in-memory `WsdlImportResult` for `interfaceId`. */
   close(interfaceId: string): { closed: boolean } {
     return { closed: this.definitions.delete(interfaceId) };
   }
@@ -609,8 +609,8 @@ export class EngineService {
     return this.lookup(interfaceId).schemaSet;
   }
 
-  /** The whole in-memory `ImportResult` for `interfaceId`. Throws `unknown-interface` if absent. */
-  resultFor(interfaceId: string): ImportResult {
+  /** The whole in-memory `WsdlImportResult` for `interfaceId`. Throws `unknown-interface` if absent. */
+  resultFor(interfaceId: string): WsdlImportResult {
     return this.lookup(interfaceId);
   }
 
@@ -619,7 +619,7 @@ export class EngineService {
     return this.lookupStored(interfaceId).loadedAt;
   }
 
-  private lookup(interfaceId: string): ImportResult {
+  private lookup(interfaceId: string): WsdlImportResult {
     return this.lookupStored(interfaceId).result;
   }
 
@@ -640,8 +640,8 @@ export class EngineService {
     const opRef = { bindingName: parseClarkQName(request.bindingName), operationName: request.operationName };
     const generated =
       request.empty === true
-        ? generateEmptyRequest(result, opRef)
-        : generateRequest(result, opRef, toEngineGenerateOptions(request.options));
+        ? generateEmptySoapRequest(result, opRef)
+        : generateSoapRequest(result, opRef, toEngineGenerateOptions(request.options));
     return toGenerateResponse(generated);
   }
 

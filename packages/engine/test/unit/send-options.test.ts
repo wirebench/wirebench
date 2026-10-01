@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
 import type { RequestProperties } from '../../src/project/model.js';
 import { DEFAULT_PREFERENCES, mergePreferences } from '../../src/project/preferences.js';
-import { toRestSendInput, toSendInput } from '../../src/send-options.js';
-import type { SendRequestInput, ToSendInputArgs } from '../../src/send-options.js';
+import { toRestSendInput } from '../../src/rest/send-input.js';
+import { toSoapSendInput } from '../../src/soap/send-input.js';
+import type { SoapSendRequestInput, ToSoapSendInputArgs } from '../../src/soap/send-input.js';
 
 const ENVELOPE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><a><b>?</b><c>1</c></a></soapenv:Body></soapenv:Envelope>';
 
-function request(properties: Partial<RequestProperties> = {}, extra: Partial<SendRequestInput> = {}): SendRequestInput {
+function request(
+  properties: Partial<RequestProperties> = {},
+  extra: Partial<SoapSendRequestInput> = {},
+): SoapSendRequestInput {
   return {
     properties: { ...DEFAULT_REQUEST_PROPERTIES, ...properties },
     soapVersion: '1.1',
@@ -18,8 +22,8 @@ function request(properties: Partial<RequestProperties> = {}, extra: Partial<Sen
   };
 }
 
-function build(args: Partial<ToSendInputArgs> & { request?: SendRequestInput } = {}) {
-  return toSendInput({
+function build(args: Partial<ToSoapSendInputArgs> & { request?: SoapSendRequestInput } = {}) {
+  return toSoapSendInput({
     request: args.request ?? request(),
     endpoint: args.endpoint ?? 'http://example.test/soap',
     ...(args.preferences !== undefined ? { preferences: args.preferences } : {}),
@@ -46,7 +50,7 @@ const ATTACHMENT = {
   source: { kind: 'cache' as const, sha256: 'a'.repeat(64) },
 };
 
-describe('toSendInput mapping', () => {
+describe('toSoapSendInput mapping', () => {
   it('maps the transport properties one for one', () => {
     const input = build({
       request: request({
@@ -76,7 +80,7 @@ describe('toSendInput mapping', () => {
   });
 });
 
-describe('toSendInput timeout precedence', () => {
+describe('toSoapSendInput timeout precedence', () => {
   const preferences = mergePreferences({ http: { socketTimeoutMs: 11_000 } });
 
   it('prefers the request property', () => {
@@ -101,7 +105,7 @@ describe('toSendInput timeout precedence', () => {
   });
 });
 
-describe('toSendInput headers', () => {
+describe('toSoapSendInput headers', () => {
   it('adds the preferred User-Agent and Accept-Encoding', () => {
     const input = build();
     expect(input.headers?.['User-Agent']).toBe('Wirebench/0.1');
@@ -132,7 +136,7 @@ describe('toSendInput headers', () => {
   });
 });
 
-describe('toSendInput envelope transforms', () => {
+describe('toSoapSendInput envelope transforms', () => {
   it('leaves the envelope alone when no transform is requested', () => {
     expect(build().envelopeXml).toBe(ENVELOPE);
   });
@@ -234,7 +238,7 @@ describe('toSendInput envelope transforms', () => {
   });
 });
 
-describe('toSendInput content-type charset', () => {
+describe('toSoapSendInput content-type charset', () => {
   it('reflects a non-default encoding into the Content-Type charset (SOAP 1.1)', () => {
     const input = build({ request: request({ encoding: 'ISO-8859-1' }) });
     expect(input.headers?.['Content-Type']).toBe('text/xml;charset=ISO-8859-1');
@@ -262,7 +266,7 @@ describe('toSendInput content-type charset', () => {
   });
 });
 
-describe('toSendInput: TLS and HTTP/2 preferences', () => {
+describe('toSoapSendInput: TLS and HTTP/2 preferences', () => {
   it('carries the preferred minimum TLS version as the send’s TLS floor', () => {
     expect(build().tls).toEqual({ minVersion: 'TLSv1.2' });
     expect(build({ preferences: mergePreferences({ ssl: { minVersion: 'TLSv1.3' } }) }).tls).toEqual({

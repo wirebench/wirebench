@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { soapToCurl, fromCurl } from '../../../src/http/curl.js';
-import type { SoapSendInput } from '../../../src/types.js';
+import { soapToCurl, fromCurl } from '../../../src/soap/curl.js';
+import type { SoapSendInput } from '../../../src/soap/types.js';
 
 const INPUT: SoapSendInput = {
   endpoint: 'https://example.com/calc?wsdl',

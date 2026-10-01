@@ -10,8 +10,7 @@
  * default; then the interface's first endpoint.
  */
 
-import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from './model.js';
-import type { RestApi } from '../rest/model.js';
+import type { Endpoint, Environment, Interface, Project, PropertyMap, SoapRequestDef } from './model.js';
 import type { PropertyScopes } from './properties.js';
 import { enabledProperties } from './properties.js';
 
@@ -40,7 +39,7 @@ export function resolveEndpoint(
   project: Project,
   envId: string | undefined,
   iface: Interface,
-  request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>,
+  request: Pick<SoapRequestDef, 'endpointId' | 'endpointUrl'>,
 ): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
   const environment = findEnvironment(project, envId);
   if (environment !== undefined) {
@@ -90,7 +89,7 @@ export type BaseUrlSource = 'environment' | 'workspace-environment' | 'api';
 export function resolveApiBaseUrl(
   project: Project,
   envId: string | undefined,
-  api: Pick<RestApi, 'slug' | 'baseUrl'>,
+  api: { readonly slug: string; readonly baseUrl: string },
 ): { url: string; source: BaseUrlSource } {
   const environment = findEnvironment(project, envId);
   const override = environment?.endpoints[api.slug];
@@ -105,7 +104,10 @@ export function resolveApiBaseUrl(
  * a request's effective auth (not just its URL) should resolve the endpoint through this function
  * rather than re-deriving the precedence, so the two cannot drift apart.
  */
-export function resolveAuthEndpoint(iface: Interface, request: Pick<RequestDef, 'endpointId'>): Endpoint | undefined {
+export function resolveAuthEndpoint(
+  iface: Interface,
+  request: Pick<SoapRequestDef, 'endpointId'>,
+): Endpoint | undefined {
   if (request.endpointId !== undefined) {
     const endpoint = iface.endpoints.find((candidate) => candidate.id === request.endpointId);
     if (endpoint !== undefined) {

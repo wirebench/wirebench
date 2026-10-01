@@ -9,7 +9,7 @@ import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import { SIGNING_PSEUDO_REF_PREFIX } from '../secrets/env-names.js';
 import type { RestFolder, RestRequestDef } from '../rest/model.js';
-import type { SignatureScheme } from './signature.js';
+import type { SignatureScheme } from '../http/webhook-signature.js';
 
 /** The link from an imported item back to the OpenAPI entry it came from. */
 export type HookLink =

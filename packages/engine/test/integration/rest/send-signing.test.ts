@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entry } from '../../../src/rest/model.js';
 import { sendRest } from '../../../src/rest/send.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
-import { verifyWebhook } from '../../../src/webhooks/signature.js';
+import { verifyWebhook } from '../../../src/http/webhook-signature.js';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;

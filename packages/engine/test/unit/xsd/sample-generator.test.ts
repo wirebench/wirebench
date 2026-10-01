@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseXml } from '../../../src/xml/parse.js';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import type { SchemaSet } from '../../../src/xsd/schema-set.js';

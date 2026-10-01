@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { generateEmptyRequest, generateRequest } from '../../src/generate.js';
-import { importDefinition } from '../../src/import.js';
-import { summarizeOperations } from '../../src/operations.js';
+import { generateEmptySoapRequest, generateSoapRequest } from '../../src/soap/generate.js';
+import { importWsdl } from '../../src/soap/import.js';
+import { summarizeSoapOperations } from '../../src/soap/operations.js';
 import { parseWsdlDocument } from '../../src/wsdl/parse-wsdl.js';
 import { parseXml } from '../../src/xml/parse.js';
 import { readPublicFixture } from '../helpers/fixtures.js';
@@ -12,9 +12,9 @@ function parseFixture(name: string) {
   return parseWsdlDocument(doc, `${name}/service.wsdl`);
 }
 
-describe('summarizeOperations', () => {
+describe('summarizeSoapOperations', () => {
   const def = parseFixture('calculator');
-  const summaries = summarizeOperations(def);
+  const summaries = summarizeSoapOperations(def);
 
   it('lists one summary per binding x operation', () => {
     // 2 bindings (CalculatorSoap, CalculatorSoap12) x 4 operations each
@@ -62,31 +62,31 @@ describe('summarizeOperations', () => {
 
   it('returns an empty ports array for a binding no service/port references', () => {
     const orphan = { ...def, bindings: def.bindings, services: [] };
-    const orphanSummaries = summarizeOperations(orphan);
+    const orphanSummaries = summarizeSoapOperations(orphan);
     expect(orphanSummaries.every((s) => s.ports.length === 0)).toBe(true);
   });
 });
 
-describe('importDefinition — invalid ImportSource', () => {
+describe('importWsdl — invalid WsdlImportSource', () => {
   it('throws a WsdlParseError with code invalid-url for a malformed URL source', async () => {
-    await expect(importDefinition({ kind: 'url', url: 'not a url' })).rejects.toMatchObject({
+    await expect(importWsdl({ kind: 'url', url: 'not a url' })).rejects.toMatchObject({
       code: 'invalid-url',
     });
   });
 });
 
-describe('generateRequest / generateEmptyRequest — ImportResult convenience wrappers', () => {
-  it('build the same envelopes as buildSampleRequest/buildEmptyRequest given an ImportResult', async () => {
-    const result = await importDefinition({ kind: 'text', text: readPublicFixture('calculator') });
+describe('generateSoapRequest / generateEmptySoapRequest — WsdlImportResult convenience wrappers', () => {
+  it('build the same envelopes as buildSampleRequest/buildEmptyRequest given a WsdlImportResult', async () => {
+    const result = await importWsdl({ kind: 'text', text: readPublicFixture('calculator') });
     const op = {
       bindingName: { namespaceUri: result.definition.targetNamespace, localName: 'CalculatorSoap' },
       operationName: 'Add',
     };
 
-    const sample = generateRequest(result, op);
+    const sample = generateSoapRequest(result, op);
     expect(sample.envelopeXml).toContain('<tem:Add>');
 
-    const empty = generateEmptyRequest(result, op);
+    const empty = generateEmptySoapRequest(result, op);
     expect(empty.envelopeXml).not.toContain('<tem:Add>');
     expect(empty.soapVersion).toBe('1.1');
   });

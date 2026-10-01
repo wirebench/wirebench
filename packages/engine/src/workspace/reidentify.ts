@@ -8,7 +8,7 @@
  */
 
 import { defaultContentId, generateId } from '../project/model.js';
-import type { Attachment, IdGenerator, Project, RequestDef, WssRef } from '../project/model.js';
+import type { Attachment, IdGenerator, Project, SoapRequestDef, WssRef } from '../project/model.js';
 
 /** Every entity id in `project`, in visit order (an id shared by two entities is deduplicated). */
 function collectIds(project: Project): string[] {
@@ -100,7 +100,7 @@ export function reidentifyProject(project: Project, newId: IdGenerator = generat
     };
   };
 
-  const reidentifyRequest = (request: RequestDef): RequestDef => ({
+  const reidentifyRequest = (request: SoapRequestDef): SoapRequestDef => ({
     ...request,
     id: mapId(request.id),
     ...optional('endpointId', mapRef(request.endpointId)),

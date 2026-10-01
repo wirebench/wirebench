@@ -7,7 +7,7 @@
 import { ProjectError } from '../errors.js';
 import { keystoreEntrySchema } from './schema.js';
 import type { WssRef } from './model.js';
-import type { KeystoreDef } from '../wss/keystore/model.js';
+import type { KeystoreDef } from '../keystore/model.js';
 
 /**
  * Reads one keystore registry entry out of its `WssRef`.

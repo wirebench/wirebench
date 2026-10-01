@@ -1,26 +1,16 @@
 /**
- * The static half of a script's types: the API's declarations, per protocol and phase (spec §API).
- * They refer to the aliases the generated half defines from the request's contract
- * (`rest.ts`, `grpc.ts`, `xsd.ts`): `WbRequestBody` / `WbResponse` for REST, `WbSoapRequestBody` /
- * `WbSoapResponseBody` for SOAP, `WbRequestMessage` / `WbResponseMessage` for gRPC, and `WbSecretName`.
+ * The static half of a script's types (spec §API): the declarations every script has, followed by
+ * the ones its protocol's scripting facet supplies for the phase. Those refer to aliases the
+ * generated half defines from the request's contract (`<protocol>/script-types.ts`), and to
+ * `WbSecretName`.
  *
  * A script is a global script, not a module: these are ambient declarations, one file per script.
  */
-import type { ScriptPhase, ScriptProtocol } from '../model.js';
-
-const range = (from: number, to: number): string =>
-  Array.from({ length: to - from + 1 }, (_, i) => String(from + i)).join(' | ');
-
-/** Every HTTP status a response can have, as literals, so an arm's status narrows exactly. */
-const STATUS_TYPES = `
-/** Any HTTP status, as literals, so that checking \`response.status\` narrows the response. */
-type WbStatus = ${range(100, 599)};
-type WbRange1 = Extract<WbStatus, ${range(100, 199)}>;
-type WbRange2 = Extract<WbStatus, ${range(200, 299)}>;
-type WbRange3 = Extract<WbStatus, ${range(300, 399)}>;
-type WbRange4 = Extract<WbStatus, ${range(400, 499)}>;
-type WbRange5 = Extract<WbStatus, ${range(500, 599)}>;
-`;
+import type { ProtocolScripting } from '../../protocol/module.js';
+import type { ProtocolRegistry } from '../../protocol/registry.js';
+import { defaultRegistry } from '../../protocols.js';
+import { requireScripting } from '../lookup.js';
+import type { ScriptPhase } from '../model.js';
 
 const COMMON = `
 /** A case-insensitive list of headers (or gRPC metadata), in order. Names may repeat. */
@@ -90,135 +80,33 @@ declare function test(name: string, check: () => void): void;
 declare function expect<T>(actual: T): WbExpectation<T>;
 `;
 
-const REST_REQUEST = `
-interface WbRestQuery {
-  get(name: string): string | undefined;
-  getAll(name: string): string[];
-  list(): { name: string; value: string }[];
+/**
+ * The API's declarations for one protocol and phase. `scripting` is the protocol's facet, or its
+ * `kind`, looked up in `registry` (the built-in one when absent).
+ *
+ * @throws WirebenchError `script-unsupported` when a `kind` has no scripting facet
+ */
+export function apiDeclarations(
+  scripting: ProtocolScripting | string,
+  phase: ScriptPhase,
+  registry?: ProtocolRegistry,
+): string {
+  return [COMMON, requireScripting(scripting, registry).declarations(phase)].join('\n');
 }
-interface WbWritableRestQuery extends WbRestQuery {
-  set(name: string, value: string): void;
-  add(name: string, value: string): void;
-  delete(name: string): void;
-}
-interface WbRestBody {
-  /** \`other\` is a form, multipart or binary body, which a script cannot read or change. */
-  readonly kind: 'none' | 'text' | 'other';
-  readonly text: string;
-  readonly json: WbRequestBody;
-}
-interface WbResponseArm<S extends number, B> {
-  readonly status: S;
-  readonly statusText: string;
-  readonly headers: WbPairs;
-  readonly text: string;
-  /** The body parsed as JSON, typed from the contract's response for this status. */
-  json(): B;
-  readonly durationMs: number;
-}
-interface WbWritableRestBody {
-  readonly kind: 'none' | 'text' | 'other';
-  text: string;
-  json: WbRequestBody;
-}
-`;
 
-const REST_PRE = `
-declare const request: {
-  method: string;
-  /** The full URL. A script may change the path, query and fragment, never the scheme, host or port. */
-  url: string;
-  readonly query: WbWritableRestQuery;
-  readonly headers: WbWritablePairs;
-  readonly body: WbWritableRestBody;
-};
-`;
-
-const REST_POST = `
-declare const request: {
-  readonly method: string;
-  readonly url: string;
-  readonly query: WbRestQuery;
-  readonly headers: WbPairs;
-  readonly body: WbRestBody;
-};
-declare const response: WbResponse;
-`;
-
-const SOAP_PRE = `
-declare const request: {
-  readonly endpoint: string;
-  soapAction: string;
-  readonly headers: WbWritablePairs;
-  /** The whole envelope, after property expansion and before WS-Addressing and WS-Security. */
-  envelope: string;
-  /** The SOAP body's element, typed from the operation's input message. */
-  body: WbSoapRequestBody;
-};
-`;
-
-const SOAP_POST = `
-declare const request: {
-  readonly endpoint: string;
-  readonly soapAction: string;
-  readonly headers: WbPairs;
-  readonly envelope: string;
-  readonly body: WbSoapRequestBody;
-};
-declare const response: {
-  readonly status: number;
-  readonly headers: WbPairs;
-  readonly envelope: string;
-  readonly text: string;
-  /** The SOAP body's element, typed from the operation's output message. */
-  readonly body: WbSoapResponseBody;
-  readonly fault?: { readonly code: string; readonly reason: string };
-  /** Strings an XPath expression selects in the response envelope. */
-  select(xpath: string, namespaces?: Record<string, string>): string[];
-  readonly durationMs: number;
-};
-`;
-
-const GRPC_PRE = `
-declare const request: {
-  readonly target: string;
-  readonly method: string;
-  readonly metadata: WbWritablePairs;
-  message: WbRequestMessage;
-};
-`;
-
-const GRPC_POST = `
-declare const request: {
-  readonly target: string;
-  readonly method: string;
-  readonly metadata: WbPairs;
-  readonly message: WbRequestMessage;
-};
-declare const response: {
-  readonly status: { readonly code: number; readonly name: string; readonly message: string };
-  readonly metadata: WbPairs;
-  readonly trailers: WbPairs;
-  readonly message: WbResponseMessage | undefined;
-  readonly durationMs: number;
-};
-`;
-
-/** The API's declarations for one protocol and phase. */
-export function apiDeclarations(protocol: ScriptProtocol, phase: ScriptPhase): string {
-  const parts = [COMMON];
-  switch (protocol) {
-    case 'rest':
-      parts.push(STATUS_TYPES, REST_REQUEST, phase === 'pre' ? REST_PRE : REST_POST);
-      break;
-    case 'soap':
-      parts.push(phase === 'pre' ? SOAP_PRE : SOAP_POST);
-      break;
-    case 'grpc':
-      parts.push(phase === 'pre' ? GRPC_PRE : GRPC_POST);
-      break;
-  }
-  return parts.join('\n');
+/**
+ * Everything a script is checked against: the API, its secret names, and the request's generated types.
+ *
+ * @throws WirebenchError `script-unsupported` when a `kind` has no scripting facet
+ */
+export function scriptDeclarations(
+  scripting: ProtocolScripting | string,
+  phase: ScriptPhase,
+  secrets: readonly string[],
+  generated: string,
+  registry?: ProtocolRegistry,
+): string {
+  return `${apiDeclarations(scripting, phase, registry)}\n${secretNameType(secrets)}\n${generated}`;
 }
 
 /** `type WbSecretName = ...` for the secrets a request lists (`never` when it lists none). */
@@ -227,36 +115,32 @@ export function secretNameType(secrets: readonly string[]): string {
   return `type WbSecretName = ${names.length > 0 ? names.join(' | ') : 'never'};\n`;
 }
 
-/** Everything a script is checked against: the API, its secret names, and the request's generated types. */
-export function scriptDeclarations(
-  protocol: ScriptProtocol,
-  phase: ScriptPhase,
-  secrets: readonly string[],
-  generated: string,
-): string {
-  return `${apiDeclarations(protocol, phase)}\n${secretNameType(secrets)}\n${generated}`;
-}
-
 /** One section of the published API reference: a heading and the declarations it shows. */
 export interface ApiReferenceSection {
   readonly title: string;
   readonly declarations: string;
 }
 
+/** Orders two protocols' sections by the title of the first, in code-unit order. */
+function byFirstTitle(a: readonly ApiReferenceSection[], b: readonly ApiReferenceSection[]): number {
+  const left = a[0]?.title ?? '';
+  const right = b[0]?.title ?? '';
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /**
  * The API's declarations as the docs site's reference shows them (`pnpm docs:script-api`): what
- * every script has, then each protocol's request and response per phase. The status literal types
- * are described rather than listed.
+ * every script has, then the sections of each protocol in `registry` that has a scripting facet.
+ * Protocols are ordered by title, not by registration, so the page does not depend on the order a
+ * host composed its modules in. The status literal types are described rather than listed.
  */
-export function apiReference(): readonly ApiReferenceSection[] {
-  return [
-    { title: 'Every script', declarations: COMMON },
-    { title: 'REST: shared by both phases', declarations: REST_REQUEST },
-    { title: 'REST: pre-request', declarations: REST_PRE },
-    { title: 'REST: post-response', declarations: REST_POST },
-    { title: 'SOAP: pre-request', declarations: SOAP_PRE },
-    { title: 'SOAP: post-response', declarations: SOAP_POST },
-    { title: 'gRPC: pre-request', declarations: GRPC_PRE },
-    { title: 'gRPC: post-response', declarations: GRPC_POST },
-  ].map((section) => ({ title: section.title, declarations: section.declarations.trim() }));
+export function apiReference(registry: ProtocolRegistry = defaultRegistry()): readonly ApiReferenceSection[] {
+  const perProtocol = registry.modules
+    .map((module) => module.scripting?.reference() ?? [])
+    .filter((sections) => sections.length > 0)
+    .sort(byFirstTitle);
+  return [{ title: 'Every script', declarations: COMMON }, ...perProtocol.flat()].map((section) => ({
+    title: section.title,
+    declarations: section.declarations.trim(),
+  }));
 }

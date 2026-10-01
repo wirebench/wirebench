@@ -15,10 +15,9 @@
  * carries one.
  */
 
-import type { Endpoint, Environment, Interface, Project, PropertyMap, RequestDef } from '../project/model.js';
+import type { Endpoint, Environment, Interface, Project, PropertyMap, SoapRequestDef } from '../project/model.js';
 import type { BaseUrlSource, EndpointSource } from '../project/environments.js';
 import { resolveApiBaseUrl, resolveEndpoint } from '../project/environments.js';
-import type { RestApi } from '../rest/model.js';
 import type { PropertyScopes } from '../project/properties.js';
 import { enabledProperties } from '../project/properties.js';
 import type { Workspace, WorkspaceEnvironment } from './model.js';
@@ -115,7 +114,7 @@ export function resolveWorkspaceEndpoint(input: {
   readonly project: Project;
   readonly projectSlug: string;
   readonly iface: Interface;
-  readonly request: Pick<RequestDef, 'endpointId' | 'endpointUrl'>;
+  readonly request: Pick<SoapRequestDef, 'endpointId' | 'endpointUrl'>;
 }): { url: string | undefined; source: EndpointSource; endpoint?: Endpoint } {
   const { workspace, project, projectSlug, iface, request } = input;
   const activeWorkspaceEnv = activeWorkspaceEnvironment(workspace);
@@ -150,7 +149,7 @@ export function resolveWorkspaceApiBaseUrl(input: {
   readonly workspace: Workspace;
   readonly project: Project;
   readonly projectSlug: string;
-  readonly api: Pick<RestApi, 'slug' | 'baseUrl'>;
+  readonly api: { readonly slug: string; readonly baseUrl: string };
 }): { url: string; source: BaseUrlSource } {
   const { workspace, project, projectSlug, api } = input;
   const activeWorkspaceEnv = activeWorkspaceEnvironment(workspace);

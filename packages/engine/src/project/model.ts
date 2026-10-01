@@ -22,6 +22,7 @@ import type { RestApi, RestRequestDef } from '../rest/model.js';
 import type { WsApi, WsRequestDef } from '../ws/model.js';
 import type { SequenceDef } from '../sequence/model.js';
 import type { WebhookCollection } from '../webhooks/model.js';
+import type { ContainerBase, ContainerDir } from '../protocol/module.js';
 import type { RequestScripts } from '../script/model.js';
 
 export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '../wsa/model.js';
@@ -71,7 +72,7 @@ export interface EndpointAuth {
 /**
  * "Whatever the thing above me uses." Only a REST request or folder may say this; resolution
  * walks request → folder chain → API and takes the first configuration that is not `inherit`
- * (see `rest/auth.ts`).
+ * (see `http/auth/apply-auth.ts`).
  */
 export interface InheritAuth {
   readonly type: 'inherit';
@@ -313,12 +314,6 @@ export interface SoapRequestDef {
 }
 
 /**
- * The name this type had before REST requests existed, kept as an alias for one release so
- * callers that only ever mean a SOAP request need not be touched. Prefer {@link SoapRequestDef}.
- */
-export type RequestDef = SoapRequestDef;
-
-/**
  * A saved request of either protocol, which is what a lookup by request id can return: the id
  * space is one (ULIDs), so `kind` is how a caller finds out what it has.
  */
@@ -405,6 +400,22 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = Object.freeze({
   prettyPrintResponses: true,
 });
 
+/**
+ * A container whose kind has no enabled module: kept on disk exactly as it is (spec §6).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export interface UnsupportedContainer {
+  readonly dir: 'interfaces' | 'apis';
+  readonly slug: string;
+  /** As written in the container file. */
+  readonly kind: string;
+  readonly reason: 'unknown-kind' | 'feature-disabled';
+  /** Read from the container file when present, for a placeholder row. */
+  readonly name?: string;
+  readonly order?: number;
+}
+
 /** A whole Wirebench project, as loaded from (or saved to) a project folder. */
 export interface Project {
   readonly formatVersion: typeof FORMAT_VERSION;
@@ -435,6 +446,19 @@ export interface Project {
    */
   readonly wsApis: readonly WsApi[];
   /**
+   * Containers of a kind that has no list of its own above, keyed by kind. Absent means none.
+   * Read with {@link extraContainersOf}.
+   *
+   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+   */
+  readonly extraContainers?: Readonly<Record<string, readonly ContainerBase[]>>;
+  /**
+   * Containers this build could not load and left untouched on disk. Absent means none.
+   *
+   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+   */
+  readonly unsupported?: readonly UnsupportedContainer[];
+  /**
    * The project's sequences, one file each under `sequences/`. Not a container like the four above: a
    * sequence holds no requests of its own, only references to theirs by id.
    */
@@ -452,6 +476,50 @@ export interface Project {
     readonly incoming: readonly WssRef[];
     readonly keystores: readonly WssRef[];
   };
+}
+
+/**
+ * The project's placeholders; empty when it has none.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export function unsupportedOf(project: Project): readonly UnsupportedContainer[] {
+  return project.unsupported ?? [];
+}
+
+/**
+ * The project's containers of `kind` kept in {@link Project.extraContainers}.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export function extraContainersOf(project: Project, kind: string): readonly ContainerBase[] {
+  return project.extraContainers?.[kind] ?? [];
+}
+
+/**
+ * Every slug in use under one of the two container directories: the containers the project holds
+ * there, and the placeholders (spec §6). A save keeps exactly these directories, whatever its
+ * registry can write. Hand it to `uniqueSlug` when naming a new container, so a save never has to
+ * refuse it with `container-slug-conflict`.
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export function takenContainerSlugs(project: Project, dir: ContainerDir): ReadonlySet<string> {
+  const containers: readonly ContainerBase[] =
+    dir === 'interfaces'
+      ? project.interfaces
+      : [
+          ...project.apis,
+          ...project.grpcApis,
+          ...project.wsApis,
+          ...Object.values(project.extraContainers ?? {}).flat(),
+        ];
+  return new Set([
+    ...containers.map((container) => container.slug),
+    ...unsupportedOf(project)
+      .filter((placeholder) => placeholder.dir === dir)
+      .map((placeholder) => placeholder.slug),
+  ]);
 }
 
 /** Generates entity ids; injectable so tests can produce deterministic projects. */
@@ -536,7 +604,7 @@ export interface CreateRequestInput extends CreateOptions {
 }
 
 /** Creates a request with the default request properties applied. */
-export function createRequest(name: string, input: CreateRequestInput): RequestDef {
+export function createRequest(name: string, input: CreateRequestInput): SoapRequestDef {
   return {
     kind: 'soap',
     id: idOf(input),

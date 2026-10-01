@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { importDefinition } from '@wirebench/engine';
-import type { ImportResult, SoapExchange } from '@wirebench/engine';
+import { importWsdl } from '@wirebench/engine';
+import type { WsdlImportResult, SoapExchange } from '@wirebench/engine';
 import { ExchangeCache } from '../src/main/exchange-cache.js';
 import { registerWsiChannels } from '../src/main/ipc/wsi.js';
 import type { WsiChannelProject } from '../src/main/ipc/wsi.js';
@@ -79,13 +79,13 @@ const SAVED_TARGET = {
 };
 
 describe('wsi.* IPC', () => {
-  let calculator: ImportResult;
+  let calculator: WsdlImportResult;
   let cache: ExchangeCache;
   let picked: string[];
   let saveTo: string | undefined;
 
   beforeAll(async () => {
-    calculator = await importDefinition({
+    calculator = await importWsdl({
       kind: 'file',
       path: `${repoRoot}fixtures/wsdl/public/calculator/service.wsdl`,
     });

@@ -5,7 +5,8 @@
  *
  * Pure module: no I/O.
  */
-import type { KeyValueEntry, RestBody, RestRequestDef } from '../../rest/model.js';
+import type { KeyValueEntry } from '../../http/entries.js';
+import type { RestBody, RestRequestDef } from '../../rest/model.js';
 import type { GrpcRequestDef } from '../../grpc/model.js';
 import type { WsRequestDef } from '../../ws/model.js';
 import type { Project } from '../../project/model.js';

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { OpenApiOperation } from '../../../src/rest/openapi/model.js';
 import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
 import { JsonSchemaTypes } from '../../../src/script/types/json-schema.js';
-import { restScriptTypes } from '../../../src/script/types/rest.js';
+import { restScriptTypes } from '../../../src/rest/script-types.js';
 import { typeErrors } from './ts-check.js';
 
 const pet: Record<string, unknown> = {

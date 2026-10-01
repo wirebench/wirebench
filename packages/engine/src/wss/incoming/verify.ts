@@ -21,7 +21,7 @@ import type { Element } from '@xmldom/xmldom';
 import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
 import { serializeXml } from '../../xml/serialize.js';
-import { renderDn, renderDnRfc2253 } from '../keystore/certificate.js';
+import { renderDn, renderDnRfc2253 } from '../../keystore/certificate.js';
 import {
   certificateBase64,
   subjectKeyIdentifierBase64,
@@ -30,7 +30,7 @@ import {
 } from '../key-identifiers.js';
 import { childElement, findElement } from '../security-header.js';
 import { verifySignature } from '../outgoing/signature.js';
-import type { Keystore } from '../keystore/model.js';
+import type { Keystore } from '../../keystore/model.js';
 
 /** One `ds:Signature` as {@link verifyIncoming} judged it. */
 export interface IncomingSignatureResult {

@@ -9,7 +9,7 @@
 import type { Document, Element } from '@xmldom/xmldom';
 import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
-import type { SoapExchange } from '../../types.js';
+import type { SoapExchange } from '../../soap/types.js';
 import type { WsdlDefinition } from '../../wsdl/model.js';
 import { findBinding } from '../../wsdl/model.js';
 import type { OperationRef } from '../../soap/request-builder.js';
@@ -218,7 +218,7 @@ export function runMessageAssertions(exchange: SoapExchange, options: RunMessage
 
 /**
  * Derives the {@link WsiMessageBinding} one operation implies, so a caller holding an
- * `ImportResult` does not have to walk the model itself. Returns `undefined` when the binding is
+ * `WsdlImportResult` does not have to walk the model itself. Returns `undefined` when the binding is
  * not a SOAP binding, or has no such operation.
  *
  * @param definition the merged description

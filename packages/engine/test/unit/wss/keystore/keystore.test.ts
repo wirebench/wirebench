@@ -2,15 +2,10 @@ import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import forge from 'node-forge';
 import { WssError } from '../../../../src/errors.js';
-import {
-  keystoreTypeForPath,
-  loadKeystore,
-  selectAlias,
-  toTlsClientIdentity,
-} from '../../../../src/wss/keystore/index.js';
+import { keystoreTypeForPath, loadKeystore, selectAlias, toTlsClientIdentity } from '../../../../src/keystore/index.js';
 import { toKeystoreDef, toKeystoreRef } from '../../../../src/project/keystores.js';
 import { generateClientCert, generateTestCa } from '../../../helpers/test-certs.js';
-import type { Keystore, KeystoreAlias } from '../../../../src/wss/keystore/index.js';
+import type { Keystore, KeystoreAlias } from '../../../../src/keystore/index.js';
 
 const PASSWORD = 'correct horse';
 

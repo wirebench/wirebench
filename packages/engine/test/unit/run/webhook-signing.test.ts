@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { prepareSend } from '../../../src/run/prepare.js';
-import type { RunContext } from '../../../src/run/prepare.js';
+import { prepareFor } from '../../helpers/prepare-for.js';
+import type { RunContext } from '../../../src/run/context.js';
 import { secretNeedsOf } from '../../../src/run/secret-needs.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { envVariablesFor } from '../../../src/secrets/env-names.js';
@@ -58,7 +58,7 @@ describe('runner signing (§5.2)', () => {
 
   it('puts the resolved secret on the send input', async () => {
     const [ping] = selectRequests(signed(), ['Webhooks/Ping']).selected;
-    const prepared = await prepareSend(ping!, context(signed(), { 'ref-hooks': 'abc123def456ghi789' }));
+    const prepared = await prepareFor(ping!, context(signed(), { 'ref-hooks': 'abc123def456ghi789' }));
     expect(prepared.kind === 'rest' ? prepared.input.sign : undefined).toEqual({
       scheme: SIGNING.scheme,
       secret: 'abc123def456ghi789',
@@ -67,7 +67,7 @@ describe('runner signing (§5.2)', () => {
 
   it('refuses an item whose secret the run was not given', async () => {
     const [ping] = selectRequests(signed(), ['Webhooks/Ping']).selected;
-    await expect(prepareSend(ping!, context(signed(), {}))).rejects.toMatchObject({
+    await expect(prepareFor(ping!, context(signed(), {}))).rejects.toMatchObject({
       code: 'webhook-signing-secret',
       message: 'Signing is set on the Webhooks collection but its secret is not set',
     });
@@ -75,7 +75,7 @@ describe('runner signing (§5.2)', () => {
 
   it('adds nothing for an unsigned item', async () => {
     const [ping] = selectRequests(hooksProject(), ['Webhooks/Ping']).selected;
-    const prepared = await prepareSend(ping!, context(hooksProject(), {}));
+    const prepared = await prepareFor(ping!, context(hooksProject(), {}));
     expect(prepared.kind === 'rest' ? prepared.input.sign : 'x').toBeUndefined();
   });
 });

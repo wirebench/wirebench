@@ -136,9 +136,21 @@ export interface HeaderAssertion {
 /** What a sequence step may assert: the request catalogue plus {@link HeaderAssertion}. */
 export type StepAssertion = Assertion | HeaderAssertion;
 
+/**
+ * A protocol's status codes by name, for a subject whose statuses have names (gRPC's `NOT_FOUND`).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export interface StatusNames {
+  readonly byName: ReadonlyMap<string, number>;
+  /** The name of a code, including one the protocol does not define. */
+  nameOf(code: number): string;
+}
+
 /** What an assertion looks at — protocol-neutral, built by the runner from an exchange. */
 export interface AssertionSubject {
-  readonly protocol: 'soap' | 'rest' | 'grpc';
+  /** The `kind` of the protocol module that built the subject. */
+  readonly protocol: string;
   readonly status: number;
   readonly durationMs: number;
   /** Decoded response text: the (possibly decrypted) envelope for SOAP, the body text for REST. */
@@ -153,6 +165,13 @@ export interface AssertionSubject {
    * sequence transfers. Absent means none were recorded.
    */
   readonly headers?: readonly (readonly [string, string])[];
+  /**
+   * Set when the protocol's statuses have names. A status assertion then accepts a name and
+   * compares codes exactly; without it the HTTP rules apply (a number, or an `Nxx` class).
+   *
+   * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+   */
+  readonly statusNames?: StatusNames;
 }
 
 /** The outcome of evaluating one assertion against a subject. */

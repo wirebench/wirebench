@@ -5,7 +5,7 @@
 
 import type { Element, Node } from '@xmldom/xmldom';
 import { parseXml } from '../xml/parse.js';
-import { prefixForNamespace } from '../soap/prefixes.js';
+import { prefixForNamespace } from '../xml/prefixes.js';
 
 /** True for element nodes (xmldom `nodeType` 1) — the only nodes that carry `xmlns:*` attributes. */
 function isElement(node: Node): node is Element {

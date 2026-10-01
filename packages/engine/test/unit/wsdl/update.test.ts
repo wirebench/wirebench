@@ -4,24 +4,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
-import type { ImportResult } from '../../../src/types.js';
+import { importWsdl } from '../../../src/soap/import.js';
+import type { WsdlImportResult } from '../../../src/soap/types.js';
 import { createInterface, createProject, createRequest } from '../../../src/project/model.js';
-import type { OperationDef, Project, RequestDef } from '../../../src/project/model.js';
+import type { OperationDef, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
-import { generateRequest } from '../../../src/generate.js';
+import { generateSoapRequest } from '../../../src/soap/generate.js';
 import { applyUpdate, planUpdate } from '../../../src/wsdl/update-definition.js';
 
 const craftedRoot = fileURLToPath(new URL('../../../../../fixtures/wsdl/crafted/', import.meta.url));
 
 const BINDING = '{urn:wb:versioned}VersionedBinding';
 
-async function importVersion(version: 'v1' | 'v2'): Promise<ImportResult> {
-  return importDefinition({ kind: 'file', path: join(craftedRoot, 'versioned', version, 'service.wsdl') });
+async function importVersion(version: 'v1' | 'v2'): Promise<WsdlImportResult> {
+  return importWsdl({ kind: 'file', path: join(craftedRoot, 'versioned', version, 'service.wsdl') });
 }
 
-let v1: ImportResult;
-let v2: ImportResult;
+let v1: WsdlImportResult;
+let v2: WsdlImportResult;
 
 beforeAll(async () => {
   v1 = await importVersion('v1');
@@ -38,12 +38,12 @@ function counterIds(): () => string {
 }
 
 /** One operation folder holding one request with the v1 envelope for that operation. */
-function operationOf(result: ImportResult, name: string, envelopeXml?: string): OperationDef {
-  const generated = generateRequest(result, {
+function operationOf(result: WsdlImportResult, name: string, envelopeXml?: string): OperationDef {
+  const generated = generateSoapRequest(result, {
     bindingName: { namespaceUri: 'urn:wb:versioned', localName: 'VersionedBinding' },
     operationName: name,
   });
-  const request: RequestDef = createRequest('Request 1', {
+  const request: SoapRequestDef = createRequest('Request 1', {
     id: `req-${name}`,
     slug: 'request-1',
     envelopeXml: envelopeXml ?? generated.envelopeXml,
@@ -145,7 +145,7 @@ describe('applyUpdate', () => {
   });
 
   it('keeps an edited value in a recreated request when keepExisting is set', () => {
-    const edited = generateRequest(v1, {
+    const edited = generateSoapRequest(v1, {
       bindingName: { namespaceUri: 'urn:wb:versioned', localName: 'VersionedBinding' },
       operationName: 'Echo',
     }).envelopeXml.replace('<ver:text>?</ver:text>', '<ver:text>hello</ver:text>');
@@ -161,7 +161,7 @@ describe('applyUpdate', () => {
   });
 
   it('drops the edited value when keepExisting is clear', () => {
-    const edited = generateRequest(v1, {
+    const edited = generateSoapRequest(v1, {
       bindingName: { namespaceUri: 'urn:wb:versioned', localName: 'VersionedBinding' },
       operationName: 'Echo',
     }).envelopeXml.replace('<ver:text>?</ver:text>', '<ver:text>hello</ver:text>');
@@ -325,13 +325,13 @@ describe('planUpdate — change reasons', () => {
   const v1Text = readFileSync(join(craftedRoot, 'versioned', 'v1', 'service.wsdl'), 'utf-8');
 
   /** Imports v1 with `replacements` applied to its source, at a fixed location. */
-  async function variant(...replacements: readonly (readonly [string, string])[]): Promise<ImportResult> {
+  async function variant(...replacements: readonly (readonly [string, string])[]): Promise<WsdlImportResult> {
     let text = v1Text;
     for (const [from, to] of replacements) {
       expect(text).toContain(from);
       text = text.replace(from, to);
     }
-    return importDefinition({ kind: 'text', text, location: 'http://example.invalid/variant.wsdl' });
+    return importWsdl({ kind: 'text', text, location: 'http://example.invalid/variant.wsdl' });
   }
 
   /** The reason reported for `Echo`, or `undefined` when the plan does not consider it changed. */

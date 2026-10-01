@@ -183,6 +183,12 @@ export const APIS_DIR = 'apis';
 export const WEBHOOKS_DIR = 'webhooks';
 /** File describing the webhook collection: its target and default credentials. */
 export const WEBHOOKS_FILE = 'webhooks.yaml';
+
+/**
+ * The feature that also switches the webhook collection: it is REST requests in a tree of its own,
+ * so it is loaded and saved only while `rest` is on (spec §3.2).
+ */
+export const WEBHOOKS_FEATURE = 'rest';
 /** Per-API directory holding the request tree: request files and folder directories. */
 export const REQUESTS_DIR = 'requests';
 /** File naming a folder inside an API's request tree. */
@@ -221,7 +227,7 @@ export function definitionDir(root: string, interfaceSlug: string): string {
 
 /**
  * Alias of {@link definitionDir} under the name the desktop facade (Task 21)
- * calls it by: the directory passed as `cache.dir` to `importDefinition`.
+ * calls it by: the directory passed as `cache.dir` to `importWsdl`.
  */
 export const definitionCacheDir = definitionDir;
 

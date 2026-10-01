@@ -5,7 +5,8 @@
  *
  * Pure module: no I/O. The input project is never mutated; unchanged branches are shared.
  */
-import type { KeyValueEntry, RestBody, RestRequestDef } from '../../rest/model.js';
+import type { KeyValueEntry } from '../../http/entries.js';
+import type { RestBody, RestRequestDef } from '../../rest/model.js';
 import type { Project } from '../../project/model.js';
 import { SECRET_NAME_PATTERN, secretToken } from '../secret-token.js';
 import type { SecretFinding, SecretLocation } from './walk.js';

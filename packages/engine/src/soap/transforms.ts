@@ -10,8 +10,8 @@
  * Entitizing is the odd one out. It escapes the values substituted by property expansion,
  * which cannot be identified after the fact — by the time an envelope is a string, a `&` that
  * came from a property is indistinguishable from one the user typed. So {@link entitizeValue}
- * is applied *during* expansion instead (see `project/properties.ts`'s `entitize` option), and
- * lives here alongside its siblings.
+ * is applied *during* expansion instead (see `project/properties.ts`'s `entitize` option). It
+ * lives in `xml/entitize.ts`, which core can import, and is re-exported here beside its siblings.
  */
 
 import { formatXml } from '../xml/pretty.js';
@@ -161,15 +161,4 @@ export function prettyPrint(xml: string, indentWidth = 3): string {
   return result.problem === undefined ? result.text : xml;
 }
 
-/**
- * "Entitize Properties", applied to one substituted property value: escapes the three
- * characters that would otherwise be read as markup once the value lands inside an envelope.
- *
- * `"` and `'` are deliberately left alone: expansion targets element content far more often
- * than an attribute value, and escaping quotes there would show up as `&quot;` in the payload.
- *
- * @param value the expanded property value
- */
-export function entitizeValue(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+export { entitizeValue } from '../xml/entitize.js';

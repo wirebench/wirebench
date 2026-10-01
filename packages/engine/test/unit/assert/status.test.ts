@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateAssertions } from '../../../src/assert/index.js';
 import type { AssertionSubject } from '../../../src/assert/model.js';
+import { grpcStatusNames } from '../../../src/grpc/status.js';
 
 const grpcSubject = (over: Partial<AssertionSubject> = {}): AssertionSubject => ({
   protocol: 'grpc',
@@ -8,6 +9,7 @@ const grpcSubject = (over: Partial<AssertionSubject> = {}): AssertionSubject => 
   durationMs: 120,
   bodyText: '{}',
   bodyKind: 'json',
+  statusNames: grpcStatusNames,
   ...over,
 });
 
@@ -85,5 +87,51 @@ describe('status name on a non-gRPC subject', () => {
     };
     const [r] = await evaluateAssertions(soap, [{ type: 'status', equals: 4 }]);
     expect(r!.outcome).toBe('errored');
+  });
+});
+
+describe('status names come from the subject, whatever its protocol', () => {
+  const subject: AssertionSubject = {
+    protocol: 'echo',
+    status: 2,
+    durationMs: 1,
+    bodyText: '',
+    bodyKind: 'other',
+    statusNames: {
+      byName: new Map([
+        ['READY', 1],
+        ['BUSY', 2],
+      ]),
+      nameOf: (code) => (code === 1 ? 'READY' : code === 2 ? 'BUSY' : `UNKNOWN (${String(code)})`),
+    },
+  };
+
+  it('passes by name and by exact code', async () => {
+    const [byName, byCode] = await evaluateAssertions(subject, [
+      { type: 'status', equals: 'BUSY' },
+      { type: 'status', equals: 2 },
+    ]);
+    expect(byName?.outcome).toBe('passed');
+    expect(byCode?.outcome).toBe('passed');
+  });
+
+  it('fails with the name of the status it got', async () => {
+    const [failed] = await evaluateAssertions(subject, [{ type: 'status', equals: 'READY' }]);
+    expect(failed).toMatchObject({ outcome: 'failed', expected: 'READY', actual: 'BUSY' });
+  });
+
+  it('errors on a name the subject does not have, and on an HTTP class', async () => {
+    const [unknown, httpClass] = await evaluateAssertions(subject, [
+      { type: 'status', equals: 'NOT_FOUND' },
+      { type: 'status', equals: '2xx' },
+    ]);
+    expect(unknown?.outcome).toBe('errored');
+    expect(httpClass?.outcome).toBe('errored');
+  });
+
+  it('a subject without names gets the HTTP rules, whatever it calls its protocol', async () => {
+    const bare: AssertionSubject = { protocol: 'grpc', status: 5, durationMs: 1, bodyText: '', bodyKind: 'other' };
+    const [low] = await evaluateAssertions(bare, [{ type: 'status', equals: 5 }]);
+    expect(low).toMatchObject({ outcome: 'errored', message: '5 is not an HTTP status' });
   });
 });

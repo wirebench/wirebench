@@ -15,11 +15,12 @@ import {
   definitionCacheDir,
   detectImportFormat,
   generateId,
-  generateRequest,
-  importDefinition,
+  generateSoapRequest,
+  importWsdl,
   importOpenApi,
   qnameToString,
   saveProject,
+  takenContainerSlugs,
   uniqueSlug,
   writeApiDefinitionCache,
   writeDefinitionCache,
@@ -27,7 +28,7 @@ import {
 import type {
   Endpoint,
   FetchDocument,
-  ImportResult,
+  WsdlImportResult,
   Interface,
   OperationDef,
   Project,
@@ -110,7 +111,7 @@ async function readSource(source: string, fetchDocument: FetchDocument): Promise
 }
 
 /** Every distinct port address of the definition, as the interface's endpoints. */
-function endpointsOf(result: ImportResult): Endpoint[] {
+function endpointsOf(result: WsdlImportResult): Endpoint[] {
   const seen = new Set<string>();
   const endpoints: Endpoint[] = [];
   for (const service of result.definition.services) {
@@ -131,12 +132,12 @@ function endpointsOf(result: ImportResult): Endpoint[] {
 }
 
 /** One operation per binding operation, each with a generated `Request 1`, as the desktop's import makes them. */
-function operationsOf(result: ImportResult, endpointId: string | undefined): OperationDef[] {
+function operationsOf(result: WsdlImportResult, endpointId: string | undefined): OperationDef[] {
   const taken = new Set<string>();
   return result.operations.map((summary, index) => {
     const slug = uniqueSlug(summary.operationName, taken);
     taken.add(slug);
-    const generated = generateRequest(result, {
+    const generated = generateSoapRequest(result, {
       bindingName: summary.bindingName,
       operationName: summary.operationName,
     });
@@ -186,10 +187,13 @@ async function addWsdl(
   fetchDocument: FetchDocument,
   name: string | undefined,
 ): Promise<ImportOutput> {
-  const result = await importDefinition({ kind: 'text', text: read.text, location: read.location }, { fetchDocument });
+  const result = await importWsdl({ kind: 'text', text: read.text, location: read.location }, { fetchDocument });
   const interfaceName =
     name ?? result.definition.services[0]?.name.localName ?? read.filename ?? basename(new URL(read.location).pathname);
-  const slug = uniqueSlug(interfaceName, new Set(project.interfaces.map((iface) => iface.slug)));
+  // Every top-level slug, APIs' too: an interface sharing an API's slug makes the next load skip that
+  // API (`api-slug-conflict`), and the save after it would delete its folder.
+  const taken = new Set([...takenContainerSlugs(project, 'interfaces'), ...takenContainerSlugs(project, 'apis')]);
+  const slug = uniqueSlug(interfaceName, taken);
   const cache = project.settings.cacheDefinitions;
   const endpoints = endpointsOf(result);
   const iface: Interface = {
@@ -254,7 +258,7 @@ async function addOpenApi(
       ...(name !== undefined ? { name } : {}),
     },
   );
-  const taken = new Set([...project.apis.map((api) => api.slug), ...project.interfaces.map((iface) => iface.slug)]);
+  const taken = new Set([...takenContainerSlugs(project, 'apis'), ...takenContainerSlugs(project, 'interfaces')]);
   const slug = uniqueSlug(imported.api.name, taken);
   const cache = project.settings.cacheDefinitions;
   const version = imported.summary.declaredVersion;

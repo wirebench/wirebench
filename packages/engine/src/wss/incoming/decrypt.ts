@@ -12,7 +12,7 @@ import { NS } from '../../xml/namespaces.js';
 import { parseXml } from '../../xml/parse.js';
 import { findElement } from '../security-header.js';
 import { decryptEnvelope } from '../outgoing/encryption.js';
-import type { Keystore, KeystoreAlias } from '../keystore/model.js';
+import type { Keystore, KeystoreAlias } from '../../keystore/model.js';
 
 /** The keystore material {@link decryptIncoming} opens an `xenc:EncryptedKey` with. */
 export interface ResolvedDecryptionKey {

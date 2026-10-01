@@ -11,17 +11,17 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { generateRequest } from '../../src/generate.js';
-import { importDefinition } from '../../src/import.js';
-import type { ImportResult } from '../../src/types.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { generateSoapRequest } from '../../src/soap/generate.js';
+import { importWsdl } from '../../src/soap/import.js';
+import type { WsdlImportResult } from '../../src/soap/types.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import { buildMultipartRelated } from '../../src/soap/mime/multipart.js';
 import { prepareMtomRequest } from '../../src/soap/mime/mtom.js';
 import type { Attachment } from '../../src/project/model.js';
 import { evaluate } from '../../src/xpath/evaluate.js';
 import { importOpenApi, parseOpenApi } from '../../src/rest/openapi/import.js';
 import type { JsonSchema } from '../../src/rest/openapi/model.js';
-import { sampleFromSchema, sampleXml } from '../../src/rest/openapi/sample.js';
+import { sampleFromSchema, sampleXml } from '../../src/json/schema/sample.js';
 import { prettyBody } from '../../src/rest/response.js';
 import { sendRest } from '../../src/rest/send.js';
 import { createSseParser } from '../../src/rest/sse.js';
@@ -52,12 +52,12 @@ const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
 /** Imports a WSDL from disk and generates a sample request for its first operation. */
 async function importAndGenerate(path: string): Promise<void> {
-  const result: ImportResult = await importDefinition({ kind: 'file', path });
+  const result: WsdlImportResult = await importWsdl({ kind: 'file', path });
   const operation = result.operations[0];
   if (operation === undefined) {
     throw new Error(`no operations in ${path}`);
   }
-  generateRequest(result, { bindingName: operation.bindingName, operationName: operation.operationName });
+  generateSoapRequest(result, { bindingName: operation.bindingName, operationName: operation.operationName });
 }
 
 function fileScenario(path: string): PreparedScenario {

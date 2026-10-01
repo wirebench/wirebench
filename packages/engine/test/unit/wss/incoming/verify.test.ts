@@ -8,7 +8,7 @@ import { createHash, createSign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ExclusiveCanonicalization } from 'xml-crypto';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
-import { loadKeystore } from '../../../../src/wss/keystore/index.js';
+import { loadKeystore } from '../../../../src/keystore/index.js';
 import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/wss/model.js';
 import { verifyIncoming } from '../../../../src/wss/incoming/verify.js';
 import { decryptIncoming } from '../../../../src/wss/incoming/decrypt.js';
@@ -17,7 +17,7 @@ import { serializeXml } from '../../../../src/xml/serialize.js';
 import { NS } from '../../../../src/xml/namespaces.js';
 import { certificateBase64 } from '../../../../src/wss/key-identifiers.js';
 import type { Element } from '@xmldom/xmldom';
-import type { Keystore } from '../../../../src/wss/keystore/model.js';
+import type { Keystore } from '../../../../src/keystore/model.js';
 import type { WssKeyIdentifierType, WssOutgoingConfig, WssPart } from '../../../../src/wss/model.js';
 import { generateSigningCert, generateTestCa, generateUntrustedCert } from '../../../helpers/test-certs.js';
 

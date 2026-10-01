@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_REQUEST_PROPERTIES } from '../../src/project/model.js';
 import { mergePreferences } from '../../src/project/preferences.js';
-import { toSendInput } from '../../src/send-options.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { toSoapSendInput } from '../../src/soap/send-input.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 
 const ENVELOPE =
@@ -18,7 +18,7 @@ describe('request-body compression', () => {
 
   it('gzips the body, announces it, and the server reads the original envelope back', async () => {
     server = await startTestSoapServer();
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: { properties: DEFAULT_REQUEST_PROPERTIES, soapVersion: '1.1', headers: [], envelopeXml: ENVELOPE },
       endpoint: `${server.url}/soap`,
       preferences: mergePreferences({ http: { requestCompression: 'gzip' } }),
@@ -37,7 +37,7 @@ describe('request-body compression', () => {
 
   it('sends the body uncompressed by default', async () => {
     server = await startTestSoapServer();
-    const input = toSendInput({
+    const input = toSoapSendInput({
       request: { properties: DEFAULT_REQUEST_PROPERTIES, soapVersion: '1.1', headers: [], envelopeXml: ENVELOPE },
       endpoint: `${server.url}/soap`,
     });

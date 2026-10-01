@@ -7,7 +7,7 @@
  * name. A keyword the mapping does not know widens its node to `unknown` rather than guessing, and
  * the whole output is bounded (depth, aliases, size), past which it widens too.
  */
-import type { JsonSchema } from '../../rest/openapi/model.js';
+import type { JsonSchema } from '../../json/schema/model.js';
 
 /** Past these, a node is typed `unknown`. */
 const LIMITS = { depth: 32, aliases: 500, outputChars: 1_000_000 } as const;

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { applyOutgoingWss } from '../../../../src/wss/apply.js';
 import { createWssContext, DEFAULT_WSS_SIGNATURE_PARTS } from '../../../../src/wss/model.js';
 import { processIncomingWss } from '../../../../src/wss/incoming/index.js';
-import { loadKeystore } from '../../../../src/wss/keystore/index.js';
+import { loadKeystore } from '../../../../src/keystore/index.js';
 import type { WssIncomingConfig, WssPart } from '../../../../src/wss/model.js';
 import { generateSigningCert, generateTestCa } from '../../../helpers/test-certs.js';
 

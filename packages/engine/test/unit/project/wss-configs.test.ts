@@ -5,7 +5,7 @@ import {
   toWssIncomingRef,
   toWssOutgoingConfig,
   toWssOutgoingRef,
-} from '../../../src/project/wss-configs.js';
+} from '../../../src/wss/configs.js';
 import type { WssRef } from '../../../src/project/model.js';
 import type { WssOutgoingConfig } from '../../../src/wss/model.js';
 

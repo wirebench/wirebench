@@ -6,35 +6,28 @@
  * touching a file system.
  */
 
-import { ProjectError } from '../errors.js';
-import type { AuthConfig, Interface, Project, PropertyMap, RequestDef, WssRef } from './model.js';
-import type { KeyValueEntry, RestApi, RestBody, RestDefinitionRef, RestRequestDef } from '../rest/model.js';
-import type { GrpcApi, GrpcRequestDef } from '../grpc/model.js';
-import type { WsApi, WsDefinitionRef, WsRequestDef } from '../ws/model.js';
-import { wsMessageFileName } from '../ws/model.js';
-import { RAW_LANGUAGE_EXTENSIONS } from '../rest/model.js';
-import type { WebhookCollection, WebhookFolder, WebhookSigning } from '../webhooks/model.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
+import { defaultRegistry } from '../protocols.js';
+import type { RestRequestDef } from '../rest/model.js';
+import { signingDocument, writeRestRequest } from '../rest/storage.js';
+import { sequenceDocument, sequenceFilePath } from '../sequence/file.js';
+import type { WebhookCollection, WebhookFolder } from '../webhooks/model.js';
+import type { Project, PropertyMap, WssRef } from './model.js';
 import {
-  API_FILE,
-  APIS_DIR,
   assertPathSegment,
   assertWssRelativePath,
   ENVIRONMENTS_DIR,
-  FOLDER_FILE,
-  INTERFACES_DIR,
-  MAX_FOLDER_DEPTH,
-  OPERATIONS_DIR,
-  REQUEST_SUFFIX,
   REQUESTS_DIR,
-  restBodyFileName,
+  slugify,
   WEBHOOKS_DIR,
+  WEBHOOKS_FEATURE,
   WEBHOOKS_FILE,
   WSS_DIR,
-  slugify,
 } from './paths.js';
+import { addFolderFiles, authDocument } from './serialize-helpers.js';
 import { compact, stringifyYaml } from './yaml.js';
-import { sequenceDocument, sequenceFilePath } from '../sequence/file.js';
-import { scriptFileName, type RequestScripts } from '../script/model.js';
+
+export { authDocument } from './serialize-helpers.js';
 
 /** A project's files, keyed by path relative to the project root (always `/`-separated). */
 export type ProjectFiles = ReadonlyMap<string, string>;
@@ -54,445 +47,6 @@ function disabledList(disabled: readonly string[], properties: PropertyMap): rea
   const known = new Set(Object.keys(properties));
   const kept = [...new Set(disabled.filter((name) => known.has(name)))].sort();
   return kept.length > 0 ? kept : undefined;
-}
-
-/**
- * One authentication configuration as written: its own fields only, in the schema's spelling,
- * with absent optionals and an empty scope list dropped. Every scheme's secret is a reference,
- * so there is nothing here to redact — the values live in the keychain (ADR-0004).
- */
-export function authDocument(auth: AuthConfig): Record<string, unknown> {
-  if (auth.type === 'oauth2') {
-    return compact({ ...auth, scopes: auth.scopes.length > 0 ? [...auth.scopes] : undefined });
-  }
-  return compact({ ...auth });
-}
-
-/** A `signing` key as written: the scheme's own fields, and references only. */
-function signingDocument(signing: WebhookSigning | undefined): Record<string, unknown> | undefined {
-  if (signing === undefined) return undefined;
-  if (signing.mode === 'none') return { mode: 'none' };
-  return compact({
-    mode: 'sign',
-    scheme: compact({ ...signing.scheme }),
-    secretRef: signing.secretRef,
-    secretEnv: signing.secretEnv,
-  });
-}
-
-/**
- * A REST or AsyncAPI definition record as written: its own fields, with the fetch credentials in
- * the schema's spelling through {@link authDocument} — references only, like every other auth.
- */
-function definitionDocument(definition: RestDefinitionRef | WsDefinitionRef): Record<string, unknown> {
-  return compact({ ...definition, auth: definition.auth === undefined ? undefined : authDocument(definition.auth) });
-}
-
-/**
- * A request's `scripts` key as written, plus the script files beside it (#63). Each file is named
- * from the slug; the key records the name only so the YAML reads on its own.
- */
-function scriptsDocument(
-  scripts: RequestScripts | undefined,
-  slug: string,
-): { readonly document?: Record<string, unknown>; readonly files: readonly (readonly [string, string])[] } {
-  if (scripts === undefined) {
-    return { files: [] };
-  }
-  const files: [string, string][] = [];
-  const nameOf = (phase: 'pre' | 'post'): string | undefined => {
-    const source = scripts[phase];
-    if (source === undefined) {
-      return undefined;
-    }
-    const name = scriptFileName(slug, phase, scripts.api);
-    assertPathSegment(name);
-    files.push([name, source.text]);
-    return name;
-  };
-  const pre = nameOf('pre');
-  const post = nameOf('post');
-  return {
-    document: compact({
-      pre,
-      post,
-      api: scripts.api === 'wirebench' ? undefined : scripts.api,
-      enabled: scripts.enabled ? undefined : false,
-      secrets: scripts.secrets.length > 0 ? [...scripts.secrets] : undefined,
-      timeoutMs: scripts.timeoutMs,
-    }),
-    files,
-  };
-}
-
-/** Writes a request's script files into `files` under `dir`. */
-function writeScriptFiles(
-  files: Map<string, string>,
-  dir: string,
-  scripts: RequestScripts | undefined,
-  slug: string,
-): void {
-  for (const [name, text] of scriptsDocument(scripts, slug).files) {
-    files.set(`${dir}/${name}`, text);
-  }
-}
-
-function requestDocument(request: RequestDef): Record<string, unknown> {
-  return compact({
-    kind: request.kind,
-    id: request.id,
-    name: request.name,
-    order: request.order,
-    description: request.description,
-    endpointId: request.endpointId,
-    endpointUrl: request.endpointUrl,
-    soapVersion: request.soapVersion,
-    soapAction: request.soapAction,
-    headers: request.headers.map((h) => ({ name: h.name, value: h.value })),
-    attachments: request.attachments.map((a) => compact({ ...a })),
-    auth: request.auth === undefined ? undefined : authDocument(request.auth),
-    wsa: request.wsa === undefined ? undefined : compact({ ...request.wsa }),
-    wssOutgoingRef: request.wssOutgoingRef,
-    wssIncomingRef: request.wssIncomingRef,
-    properties: compact({ ...request.properties }),
-    assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
-    orphaned: request.orphaned === true ? true : undefined,
-    scripts: scriptsDocument(request.scripts, request.slug).document,
-  });
-}
-
-function interfaceDocument(iface: Interface): Record<string, unknown> {
-  return compact({
-    kind: iface.kind,
-    id: iface.id,
-    name: iface.name,
-    order: iface.order,
-    definitionUrl: iface.definitionUrl,
-    cacheDefinition: iface.cacheDefinition,
-    targetNamespace: iface.targetNamespace,
-    endpoints: iface.endpoints.map((e) =>
-      compact({ ...e, auth: e.auth === undefined ? undefined : authDocument(e.auth) }),
-    ),
-    defaultEndpointId: iface.defaultEndpointId,
-    wsa: compact({ ...iface.wsa }),
-    auth: iface.auth === undefined ? undefined : authDocument(iface.auth),
-    operations: iface.operations.map((op) => ({
-      name: op.name,
-      bindingName: op.bindingName,
-      slug: op.slug,
-      order: op.order,
-    })),
-  });
-}
-
-/** One table row as written: `enabled` only when `false`, so a file stays quiet about the default. */
-function keyValueDocuments(rows: readonly KeyValueEntry[]): Record<string, unknown>[] {
-  return rows.map((row) =>
-    compact({
-      name: row.name,
-      value: row.value,
-      enabled: row.enabled ? undefined : false,
-      description: row.description,
-    }),
-  );
-}
-
-/**
- * A body as written, plus the sibling file a raw body needs.
- *
- * The text of a raw body is deliberately *not* in the request document: it goes to
- * `<slug>.body.<ext>` beside it, so a JSON payload is a JSON file in git — reviewable, searchable
- * and mergeable — rather than a quoted blob inside YAML.
- */
-function bodyDocument(
-  body: RestBody,
-  requestSlug: string,
-): { readonly document: Record<string, unknown>; readonly file?: readonly [string, string] } {
-  switch (body.kind) {
-    case 'raw': {
-      const name = restBodyFileName(requestSlug, RAW_LANGUAGE_EXTENSIONS[body.language]);
-      assertPathSegment(name);
-      return {
-        document: compact({ kind: 'raw', language: body.language, contentType: body.contentType, file: name }),
-        file: [name, body.text],
-      };
-    }
-    case 'form':
-      return { document: { kind: 'form', fields: keyValueDocuments(body.fields) } };
-    case 'multipart':
-      return {
-        document: {
-          kind: 'multipart',
-          parts: body.parts.map((part) => compact({ ...part, enabled: part.enabled ? undefined : false })),
-        },
-      };
-    case 'binary':
-      return { document: { kind: 'binary', source: { ...body.source }, contentType: body.contentType } };
-    default:
-      return { document: { kind: 'none' } };
-  }
-}
-
-function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
-  const body = bodyDocument(request.body, request.slug);
-  return compact({
-    kind: request.kind,
-    id: request.id,
-    name: request.name,
-    order: request.order,
-    description: request.description,
-    method: request.method,
-    url: request.url,
-    pathParams: request.pathParams.length > 0 ? keyValueDocuments(request.pathParams) : undefined,
-    query: request.query.length > 0 ? keyValueDocuments(request.query) : undefined,
-    headers: request.headers.length > 0 ? keyValueDocuments(request.headers) : undefined,
-    body: body.document,
-    auth: authDocument(request.auth),
-    settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
-    assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
-    orphaned: request.orphaned === true ? true : undefined,
-    contract:
-      request.contract === undefined ? undefined : { method: request.contract.method, path: request.contract.path },
-    hook: request.hook === undefined ? undefined : { ...request.hook },
-    signing: signingDocument(request.signing),
-    scripts: scriptsDocument(request.scripts, request.slug).document,
-  });
-}
-
-/** A folder of either protocol's tree, for the writer that handles both. */
-interface FolderNode<R> {
-  readonly id: string;
-  readonly name: string;
-  readonly slug: string;
-  readonly order: number;
-  readonly description?: string;
-  readonly auth?: AuthConfig;
-  readonly folders: readonly FolderNode<R>[];
-  readonly requests: readonly R[];
-}
-
-/** Writes one request's files into `files` under `dir`: its document, and any sibling the body needs. */
-type RequestWriter<R> = (files: Map<string, string>, dir: string, request: R) => void;
-
-const writeRestRequest: RequestWriter<RestRequestDef> = (files, dir, request) => {
-  const body = bodyDocument(request.body, request.slug);
-  files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(restRequestDocument(request)));
-  if (body.file !== undefined) {
-    files.set(`${dir}/${body.file[0]}`, body.file[1]);
-  }
-  writeScriptFiles(files, dir, request.scripts, request.slug);
-};
-
-/**
- * A gRPC request as written: the message text goes to `<slug>.body.json` beside the document, the
- * same convention as a REST raw body, so a message is a JSON file in git.
- */
-const writeGrpcRequest: RequestWriter<GrpcRequestDef> = (files, dir, request) => {
-  const messageFile = restBodyFileName(request.slug, 'json');
-  assertPathSegment(messageFile);
-  files.set(
-    `${dir}/${request.slug}${REQUEST_SUFFIX}`,
-    stringifyYaml(
-      compact({
-        kind: request.kind,
-        id: request.id,
-        name: request.name,
-        order: request.order,
-        description: request.description,
-        service: request.service,
-        method: request.method,
-        methodKind: request.methodKind,
-        metadata: request.metadata.length > 0 ? keyValueDocuments(request.metadata) : undefined,
-        message: messageFile,
-        auth: authDocument(request.auth),
-        settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
-        orphaned: request.orphaned === true ? true : undefined,
-        assertions:
-          request.assertions !== undefined && request.assertions.length > 0
-            ? request.assertions.map((a) => compact({ ...a }))
-            : undefined,
-        scripts: scriptsDocument(request.scripts, request.slug).document,
-      }),
-    ),
-  );
-  files.set(`${dir}/${messageFile}`, request.message);
-  writeScriptFiles(files, dir, request.scripts, request.slug);
-};
-
-/**
- * A WebSocket request as written: each saved message goes to a sibling file, so a JSON message is a
- * JSON file in git. Siblings rather than a directory, because every directory here loads as a folder.
- *
- * @throws ProjectError `duplicate-slug` when two of the request's messages share a slug.
- */
-const writeWsRequest: RequestWriter<WsRequestDef> = (files, dir, request) => {
-  const messages = request.messages.map((message) => {
-    const file = wsMessageFileName(request.slug, message);
-    assertPathSegment(file);
-    if (files.has(`${dir}/${file}`)) {
-      throw new ProjectError('duplicate-slug', `Request "${request.name}" has two messages named "${message.slug}"`, {
-        details: { file: `${dir}/${file}` },
-      });
-    }
-    files.set(`${dir}/${file}`, message.content);
-    return compact({
-      id: message.id,
-      name: message.name,
-      format: message.format === 'binary' ? 'binary' : undefined,
-      file,
-      contract:
-        message.contract === undefined
-          ? undefined
-          : { message: message.contract.message, generated: message.contract.generated },
-    });
-  });
-  files.set(
-    `${dir}/${request.slug}${REQUEST_SUFFIX}`,
-    stringifyYaml(
-      compact({
-        kind: request.kind,
-        id: request.id,
-        name: request.name,
-        order: request.order,
-        description: request.description,
-        url: request.url,
-        query: request.query.length > 0 ? keyValueDocuments(request.query) : undefined,
-        headers: request.headers.length > 0 ? keyValueDocuments(request.headers) : undefined,
-        subprotocols: request.subprotocols.length > 0 ? [...request.subprotocols] : undefined,
-        auth: authDocument(request.auth),
-        settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
-        messages: messages.length > 0 ? messages : undefined,
-        contract: request.contract === undefined ? undefined : { channel: request.contract.channel },
-        orphaned: request.orphaned === true ? true : undefined,
-      }),
-    ),
-  );
-};
-
-/**
- * Adds one folder's own file, its requests (and their body files) and, recursively, the folders
- * below it.
- *
- * @throws ProjectError `project-path-invalid` for an unsafe slug, `project-folder-too-deep` for a
- * tree deeper than {@link MAX_FOLDER_DEPTH} — before any path is built, never after.
- */
-function addFolderFiles<R extends { readonly slug: string }>(
-  files: Map<string, string>,
-  dir: string,
-  node: Pick<FolderNode<R>, 'folders' | 'requests'>,
-  depth: number,
-  writeRequest: RequestWriter<R>,
-  folderExtra?: (folder: FolderNode<R>) => Record<string, unknown>,
-): void {
-  for (const request of node.requests) {
-    assertPathSegment(request.slug);
-    writeRequest(files, dir, request);
-  }
-  for (const folder of node.folders) {
-    assertPathSegment(folder.slug);
-    if (depth + 1 > MAX_FOLDER_DEPTH) {
-      throw new ProjectError(
-        'project-folder-too-deep',
-        `Folder "${folder.name}" would nest more than ${String(MAX_FOLDER_DEPTH)} deep`,
-        { details: { folder: folder.slug, depth: depth + 1, max: MAX_FOLDER_DEPTH } },
-      );
-    }
-    const childDir = `${dir}/${folder.slug}`;
-    files.set(
-      `${childDir}/${FOLDER_FILE}`,
-      stringifyYaml(
-        compact({
-          id: folder.id,
-          name: folder.name,
-          order: folder.order,
-          description: folder.description,
-          auth: folder.auth === undefined ? undefined : authDocument(folder.auth),
-          ...(folderExtra?.(folder) ?? {}),
-        }),
-      ),
-    );
-    addFolderFiles(files, childDir, folder, depth + 1, writeRequest, folderExtra);
-  }
-}
-
-/** Every file one REST API occupies, keyed by path relative to the project root. */
-function addApiFiles(files: Map<string, string>, api: RestApi): void {
-  assertPathSegment(api.slug);
-  const base = `${APIS_DIR}/${api.slug}`;
-  files.set(
-    `${base}/${API_FILE}`,
-    stringifyYaml(
-      compact({
-        kind: api.kind,
-        id: api.id,
-        name: api.name,
-        order: api.order,
-        description: api.description,
-        baseUrl: api.baseUrl,
-        servers: api.servers.length > 0 ? api.servers.map((server) => compact({ ...server })) : undefined,
-        auth: api.auth === undefined ? undefined : authDocument(api.auth),
-        definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
-      }),
-    ),
-  );
-  addFolderFiles<RestRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeRestRequest);
-}
-
-/** Every file one gRPC API occupies. It shares `apis/` with the REST ones; its `kind` says which it is. */
-function addGrpcApiFiles(files: Map<string, string>, api: GrpcApi): void {
-  assertPathSegment(api.slug);
-  const base = `${APIS_DIR}/${api.slug}`;
-  files.set(
-    `${base}/${API_FILE}`,
-    stringifyYaml(
-      compact({
-        kind: api.kind,
-        id: api.id,
-        name: api.name,
-        order: api.order,
-        description: api.description,
-        target: api.target,
-        tls: api.tls,
-        metadata: api.metadata.length > 0 ? keyValueDocuments(api.metadata) : undefined,
-        auth: api.auth === undefined ? undefined : authDocument(api.auth),
-        definition:
-          api.definition === undefined
-            ? undefined
-            : compact({
-                kind: api.definition.kind,
-                source: api.definition.source,
-                cache: api.definition.cache,
-                roots: [...api.definition.roots],
-                reflectionVersion: api.definition.reflectionVersion,
-                trustInvalid: api.definition.trustInvalid,
-              }),
-      }),
-    ),
-  );
-  addFolderFiles<GrpcRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeGrpcRequest);
-}
-
-/** Every file one WebSocket API occupies. It shares `apis/` with the others; its `kind` says which it is. */
-function addWsApiFiles(files: Map<string, string>, api: WsApi): void {
-  assertPathSegment(api.slug);
-  const base = `${APIS_DIR}/${api.slug}`;
-  files.set(
-    `${base}/${API_FILE}`,
-    stringifyYaml(
-      compact({
-        kind: api.kind,
-        id: api.id,
-        name: api.name,
-        order: api.order,
-        description: api.description,
-        url: api.url,
-        headers: api.headers.length > 0 ? keyValueDocuments(api.headers) : undefined,
-        auth: api.auth === undefined ? undefined : authDocument(api.auth),
-        definition: api.definition === undefined ? undefined : definitionDocument(api.definition),
-      }),
-    ),
-  );
-  addFolderFiles<WsRequestDef>(files, `${base}/${REQUESTS_DIR}`, api, 0, writeWsRequest);
 }
 
 /** The webhook collection's files: `webhooks/webhooks.yaml` and the request tree under it. */
@@ -539,10 +93,13 @@ export function wssRefPath(direction: 'outgoing' | 'incoming', ref: WssRef): str
 export interface ProjectFilesOptions {
   /** Recorded in the manifest as `writtenBy`. Defaults to `'wirebench'`. */
   readonly writer?: string;
+  /** The protocols whose containers are written. Defaults to the built-in ones, all switched on. */
+  readonly registry?: ProtocolRegistry;
 }
 
 /**
- * Builds the complete `relative path -> content` map for a project.
+ * Builds the complete `relative path -> content` map for a project: core's own files, and every
+ * enabled module's `storage.files` for each of its containers (spec §5.2).
  *
  * Every slug is validated with {@link assertPathSegment} (and every
  * `WssRef.file` with {@link assertWssRelativePath}) before any path is built,
@@ -553,6 +110,7 @@ export interface ProjectFilesOptions {
 export function projectFiles(project: Project, options?: ProjectFilesOptions): ProjectFiles {
   const files = new Map<string, string>();
   const writer = options?.writer ?? 'wirebench';
+  const registry = options?.registry ?? defaultRegistry();
 
   files.set(
     MANIFEST_PATH,
@@ -588,36 +146,22 @@ export function projectFiles(project: Project, options?: ProjectFilesOptions): P
     );
   }
 
-  for (const iface of project.interfaces) {
-    assertPathSegment(iface.slug);
-    const base = `${INTERFACES_DIR}/${iface.slug}`;
-    files.set(`${base}/interface.yaml`, stringifyYaml(interfaceDocument(iface)));
-    for (const operation of iface.operations) {
-      assertPathSegment(operation.slug);
-      const dir = `${base}/${OPERATIONS_DIR}/${operation.slug}`;
-      for (const request of operation.requests) {
-        assertPathSegment(request.slug);
-        files.set(`${dir}/${request.slug}${REQUEST_SUFFIX}`, stringifyYaml(requestDocument(request)));
-        files.set(`${dir}/${request.slug}.xml`, request.envelopeXml);
-        writeScriptFiles(files, dir, request.scripts, request.slug);
+  // In registration order, which is the order these files always had: interfaces, then each kind
+  // of API.
+  for (const { storage } of registry.modules) {
+    for (const container of storage.containers(project)) {
+      for (const [relative, content] of storage.files(container)) {
+        files.set(relative, content);
       }
     }
   }
 
-  for (const api of project.apis) {
-    addApiFiles(files, api);
-  }
-  for (const api of project.grpcApis) {
-    addGrpcApiFiles(files, api);
-  }
-  for (const api of project.wsApis) {
-    addWsApiFiles(files, api);
-  }
   for (const sequence of project.sequences) {
     assertPathSegment(sequence.slug);
     files.set(sequenceFilePath(sequence.slug), sequenceDocument(sequence));
   }
-  if (project.webhooks !== undefined) {
+  // REST requests in a tree of their own: written only while REST is on (spec §3.2).
+  if (project.webhooks !== undefined && registry.features.isEnabled(WEBHOOKS_FEATURE)) {
     addWebhookFiles(files, project.webhooks);
   }
 
