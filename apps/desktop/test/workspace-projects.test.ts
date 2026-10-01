@@ -706,7 +706,12 @@ describe('WorkspaceService — placeholders survive a copy of the project', () =
 
   async function expectSameTree(copied: string, original: string): Promise<void> {
     const files = await filesUnder(original);
-    expect(files).toEqual(Object.keys(PLACEHOLDER_FILES).sort());
+    // `filesUnder` gives the platform's separator; the fixture's keys use `/`.
+    expect(files).toEqual(
+      Object.keys(PLACEHOLDER_FILES)
+        .map((file) => join(...file.split('/')))
+        .sort(),
+    );
     expect(await filesUnder(copied)).toEqual(files);
     for (const file of files) {
       expect(await readFile(join(copied, file))).toEqual(await readFile(join(original, file)));
