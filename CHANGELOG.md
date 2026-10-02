@@ -46,6 +46,11 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **An Assertions tab on every editor.** The REST, SOAP, gRPC and WebSocket editors have an Assertions tab.
+  Every editor Send checks the request's assertions and shows the result in the response pane's
+  Assertions tab; callback assertions are still checked in runs and sequences only (#192).
+- **A WebSocket request carries `assertions:`** (part of `formatVersion: 6`). Runs, `send` and MCP `send`
+  check them, and `--require-assertions` sends a WebSocket request that has them (#192).
 - **A landing site.** https://wirebench.github.io/wirebench/ now has a home page, a features page and a
   download page built from the latest release; the user guide moved to
   https://wirebench.github.io/wirebench/docs/.
@@ -74,8 +79,7 @@ before and after for the two changes that need more than a rename. The package's
   fails with `ws-handshake-refused`. The send lands in the desktop's History as the app's own
   WebSocket sessions do, tagged `cli` or `mcp`. `operations` lists saved WebSocket requests by path. A name a REST and a WebSocket request
   share is now ambiguous where it used to resolve to the REST request; gRPC requests are still refused.
-  A saved WebSocket request has no assertions of its own, so `--require-assertions` errors it in a run
-  (#184).
+  A saved WebSocket request without assertions errors under `--require-assertions` in a run (#184).
 - **Streaming requests run.** `wirebench run` with no selector, `wirebench run --sequence`, and a
   sequence in the app now send WebSocket, streaming gRPC and Server-Sent Events requests, which a run
   used to skip or refuse. A gRPC client or bidirectional stream sends its saved messages in order and
@@ -258,6 +262,13 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Changed
 
+- **A WebSocket assertion reads a received message that is JSON as its value, not its text.** (#192)
+
+  ```text
+  received:  {"type":"ready"}   then   pong
+  before:    ["{\"type\":\"ready\"}", "pong"]
+  after:     [{"type":"ready"}, "pong"]
+  ```
 - **The catch-URL root is now Webhook inbox.** The Explorer node for a shared workspace's catch URLs,
   previously labelled *Webhooks*, is now **Webhook inbox** — the new per-project *Webhooks* node is
   for the webhook items described above. Nothing about catch URLs themselves changes.
@@ -287,7 +298,7 @@ before and after for the two changes that need more than a rename. The package's
   WebSocket sends honour the user's preferences, as each applies: the user agent, compression, the
   timeouts, HTTP/2 and the TLS floor. The command line and MCP lend none, so their output is unchanged.
 - **`wirebench run` includes WebSocket and streaming gRPC requests.** With no selector a run now sends
-  them (see Added). A saved WebSocket request has no assertions, so `--require-assertions` errors it.
+  them (see Added). A saved WebSocket request without assertions errors under `--require-assertions`.
   A sequence in `wirebench run --sequence` may have them as steps too.
 - **A response read by an assertion or a transfer from an event stream is a JSON array.** For any send
   that is not live, which covers `wirebench run`, `send` and a desktop sequence step, the subject of an
