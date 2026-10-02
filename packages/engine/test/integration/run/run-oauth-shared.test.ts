@@ -18,8 +18,10 @@ import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
+import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import { runRequests } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
+import { testHost } from '../../helpers/send-host.js';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 import { startTestGrpcServer } from '../../helpers/test-grpc-server.js';
 import type { TestGrpcServer } from '../../helpers/test-grpc-server.js';
@@ -85,7 +87,7 @@ function makeProject(auth: AuthConfig): Project {
 }
 
 function contextFor(project: Project, extra: Partial<RunContext> = {}): RunContext {
-  return { project, projectDir: dir, overrides: {}, getSecret: () => Promise.resolve(undefined), ...extra };
+  return { project, projectDir: dir, overrides: {}, host: testHost(), ...extra };
 }
 
 const all = (project: Project) => selectRequests(project, []).selected;
@@ -106,21 +108,29 @@ describe('runRequests — REST and gRPC sharing one OAuth2 configuration', () =>
     const result = await runRequests(
       all(project),
       contextFor(project, {
-        fetchToken: (request) => {
-          fetched.push(request);
-          const body = new TextEncoder().encode(
-            JSON.stringify({ access_token: 'shared-token', token_type: 'Bearer', expires_in: 3600 }),
-          );
-          return Promise.resolve({
-            request: { url: request.url, method: 'POST', headers: {} },
-            status: 200,
-            statusText: 'OK',
-            headers: { 'content-type': 'application/json' },
-            rawHeaders: [],
-            body,
-            rawBody: body,
-          } as unknown as HttpExchange);
-        },
+        host: testHost(
+          {},
+          {
+            tokens: createRunTokenSource({
+              getSecret: () => Promise.resolve(undefined),
+              send: (request) => {
+                fetched.push(request);
+                const body = new TextEncoder().encode(
+                  JSON.stringify({ access_token: 'shared-token', token_type: 'Bearer', expires_in: 3600 }),
+                );
+                return Promise.resolve({
+                  request: { url: request.url, method: 'POST', headers: {} },
+                  status: 200,
+                  statusText: 'OK',
+                  headers: { 'content-type': 'application/json' },
+                  rawHeaders: [],
+                  body,
+                  rawBody: body,
+                } as unknown as HttpExchange);
+              },
+            }),
+          },
+        ),
       }),
     );
     expect(result.summary).toMatchObject({ total: 2, passed: 2 });

@@ -6,11 +6,13 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
-import type { RestContractInput, RestContractResult, RestSendInput } from '@wirebench/engine';
-import { EngineService } from '../src/main/engine-service.js';
+import { createApi, createProject, createRestRequest } from '@wirebench/engine';
+import type { RestContractInput, RestContractResult } from '@wirebench/engine';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
 import { restContractOf, type RestContractTarget } from '../src/main/rest-contract.js';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { historyEntrySchema, restExchangeSummarySchema } from '../src/shared/wire-types.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 
 const responses = {
   '200': { content: { 'application/json': { schema: { type: 'object', required: ['name'] } } } },
@@ -145,53 +147,57 @@ describe('the contract on the wire and in History', () => {
     await server.close();
   });
 
-  function input(): RestSendInput {
-    return {
-      baseUrl: server.url,
-      request: { method: 'GET', url: '/echo', pathParams: [], query: [], headers: [], body: { kind: 'none' } },
+  /** Request `r1` (`GET <url>`) of a project aimed at the test server, its operation looked up by `lookup`. */
+  function deps(
+    url = '/echo',
+    lookup?: (requestId: string, sent: { method: string; url: string }) => Promise<RestContractTarget> | undefined,
+  ) {
+    const request = createRestRequest('Echo', {
+      id: 'r1',
+      url,
       settings: { timeoutMs: 5_000, followRedirects: true },
+    });
+    const model = {
+      ...createProject('Demo', { id: 'p1' }),
+      apis: [createApi('Api', { id: 'api-1', baseUrl: server.url, requests: [request] })],
     };
+    return sendDepsFor(model, lookup !== undefined ? { project: { restContractFor: lookup } } : {});
   }
 
+  const send = (sendDeps: ReturnType<typeof deps>, sendId: string) =>
+    sendThroughEngine(sendDeps, sendId, 'r1', { draft: { kind: 'rest' } });
+
   it('a send with a contract attaches the result, which survives the wire parse and the cached view', async () => {
-    const engine = new EngineService();
+    const lookup = vi.fn(() => Promise.resolve(target));
+    const sendDeps = deps('/echo', lookup);
+    const engine = sendDeps.service;
     try {
-      const summary = await engine.sendRestRequest(
-        { sendId: 'c1', requestId: 'r1', input: input() },
-        { contract: Promise.resolve(target) },
-      );
+      const summary = await send(sendDeps, 'c1');
       expect(summary.contract?.status).toBe('violation');
       expect(summary.contract?.problems[0]?.keyword).toBe('required');
       expect(restExchangeSummarySchema.parse(summary).contract).toEqual(summary.contract);
       expect(engine.exchanges.getRestView('c1', false)?.contract).toEqual(summary.contract);
+      // The operation is looked up from the request's own path as sent, not the base URL joined to it.
+      expect(lookup).toHaveBeenCalledWith('r1', { method: 'GET', url: '/echo' });
     } finally {
       await engine.disposeRestContractChecker();
     }
   });
 
   it('a send with a hung definition lookup still returns within the deadline, not-checked', async () => {
-    const engine = new EngineService();
-    engine.restContractDeadlineMs = 600;
+    const sendDeps = deps('/echo', () => new Promise<RestContractTarget>(() => undefined));
+    sendDeps.service.restContractDeadlineMs = 600;
     const started = Date.now();
-    const summary = await engine.sendRestRequest(
-      { sendId: 'c4', requestId: 'r1', input: input() },
-      { contract: new Promise<RestContractTarget>(() => undefined) },
-    );
+    const summary = await send(sendDeps, 'c4');
     expect(summary.contract?.status).toBe('not-checked');
     expect(Date.now() - started).toBeLessThan(2_500);
   });
 
   it('a followed 302 is checked against the final 200 response', async () => {
-    const engine = new EngineService();
+    const sendDeps = deps('/redirect/302?to=/echo', () => Promise.resolve(target));
+    const engine = sendDeps.service;
     try {
-      const summary = await engine.sendRestRequest(
-        {
-          sendId: 'c5',
-          requestId: 'r1',
-          input: { ...input(), request: { ...input().request, url: '/redirect/302?to=/echo' } },
-        },
-        { contract: Promise.resolve(target) },
-      );
+      const summary = await send(sendDeps, 'c5');
       expect(summary.http.status).toBe(200);
       expect(summary.contract?.responseKey).toBe('200');
     } finally {
@@ -200,15 +206,14 @@ describe('the contract on the wire and in History', () => {
   });
 
   it('a send without a contract carries no contract field', async () => {
-    const engine = new EngineService();
-    const summary = await engine.sendRestRequest({ sendId: 'c2', requestId: 'r1', input: input() });
+    const sendDeps = deps();
+    const summary = await send(sendDeps, 'c2');
     expect(summary).not.toHaveProperty('contract');
-    await engine.disposeRestContractChecker();
+    await sendDeps.service.disposeRestContractChecker();
   });
 
   it('History keeps the result under the caps and parses it back', async () => {
-    const engine = new EngineService();
-    const sent = await engine.sendRestRequest({ sendId: 'c3', requestId: 'r1', input: input() });
+    const sent = await send(deps(), 'c3');
     const summary = {
       ...sent,
       contract: {

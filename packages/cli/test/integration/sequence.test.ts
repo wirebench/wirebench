@@ -173,7 +173,7 @@ describe('wirebench run --sequence', () => {
     const dir = await shopProject({ 'no-login': early });
     const { code, stdout } = await run(dir, '--sequence', 'no login');
     expect(code).toBe(3);
-    expect(stdout).toContain('unresolved-properties');
+    expect(stdout).toContain('rest-unresolved-properties');
     expect(demo.requests).toEqual([]);
   });
 

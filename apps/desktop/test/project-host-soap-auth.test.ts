@@ -1,12 +1,13 @@
 // @vitest-environment node
 /**
- * `ProjectHost.authFor` resolves a SOAP request's effective token auth through its endpoint's
+ * A SOAP request's effective token auth (`soapEffectiveAuth`) resolves through its endpoint's
  * `authMode`, and `soapAuthOf` answers one owner's own configuration for the OAuth2 channels.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { soapEffectiveAuth, soapItemFor } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
@@ -45,7 +46,7 @@ afterEach(async () => {
 });
 
 describe('ProjectHost SOAP owner auth', () => {
-  it("authFor returns the endpoint's bearer under override, the request's api-key under complement", async () => {
+  it("the effective auth is the endpoint's bearer under override, the request's api-key under complement", async () => {
     // An imported endpoint starts in `complement`; `override` is the endpoint's credentials winning.
     await host.mutate({
       kind: 'update-endpoint',
@@ -53,7 +54,7 @@ describe('ProjectHost SOAP owner auth', () => {
       endpointId: ids.endpointId,
       patch: { authMode: 'override' },
     });
-    expect(host.authFor(ids.requestId)).toMatchObject(BEARER);
+    expect(soapEffectiveAuth(soapItemFor(host.model()!, ids.requestId)!)).toMatchObject(BEARER);
 
     await host.mutate({
       kind: 'update-endpoint',
@@ -62,7 +63,7 @@ describe('ProjectHost SOAP owner auth', () => {
       patch: { authMode: 'complement' },
     });
 
-    expect(host.authFor(ids.requestId)).toMatchObject(API_KEY);
+    expect(soapEffectiveAuth(soapItemFor(host.model()!, ids.requestId)!)).toMatchObject(API_KEY);
   });
 
   it('soapAuthOf finds an interface, an endpoint and a request by id, and nothing for an unknown one', async () => {

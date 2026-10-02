@@ -17,8 +17,15 @@ import { expand } from '../../src/project/properties.js';
 import { nonEmpty, parseFile } from '../../src/project/schema-parts.js';
 import { stringifyYaml } from '../../src/project/yaml.js';
 import { defineProtocol } from '../../src/protocol/module.js';
-import type { ProtocolRun, ProtocolScripting, ProtocolStorage, RunScope } from '../../src/protocol/module.js';
+import type {
+  ProtocolRun,
+  ProtocolScripting,
+  ProtocolStorage,
+  RunScope,
+  ScriptedSend,
+} from '../../src/protocol/module.js';
 import { scopesFor } from '../../src/run/context.js';
+import { exchangeController } from '../../src/run/exchange.js';
 import type { SentRequest } from '../../src/run/run.js';
 import { unresolvedError, withSecrets } from '../../src/run/send-helpers.js';
 import type { RequestScripts } from '../../src/script/model.js';
@@ -148,13 +155,37 @@ export const echoScripting: ProtocolScripting<EchoRequestSnapshot, EchoResponseS
 async function echoPlain(selected: EchoSelected, scope: RunScope): Promise<SentRequest> {
   const { context } = scope;
   const { text } = selected.request;
-  const scopes = await withSecrets(text, scopesFor(context), context.getSecret);
+  const scopes = await withSecrets(text, scopesFor(context), context.host.getSecret);
   const expanded = expand(text, scopes);
   if (expanded.unresolved.length > 0) {
-    throw unresolvedError(selected.path, expanded.unresolved);
+    throw unresolvedError('unresolved-properties', selected.path, expanded.unresolved);
   }
   const raw = bytes(expanded.text);
   return { subject: echoSubject(expanded.text), raw: { rawRequest: raw, rawResponse: raw } };
+}
+
+/** One echo as a run sends it, with its scripts when it has them. */
+async function echoSend(
+  selected: EchoSelected,
+  scope: RunScope,
+  scripts: ScriptedSend | undefined,
+): Promise<SentRequest> {
+  if (scripts === undefined) return echoPlain(selected, scope);
+  // Every `${secret:…}` goes behind a placeholder before the script sees the text, and comes back
+  // as its value after it, as the built-in protocols do it.
+  const hidden = selected.request.text.replace(/\$\{secret:([^}]+)\}/g, (_whole, name: string) =>
+    scripts.placeholders.placeholderFor(name),
+  );
+  const before: EchoRequestSnapshot = { protocol: 'echo', text: hidden };
+  const sent = await scripts.session.pre(before);
+  const restored = await scripts.placeholders.restore({ text: sent.text }, scope.context.host.getSecret);
+  const echoed = await echoPlain({ ...selected, request: { ...selected.request, text: restored.text } }, scope);
+  const response: EchoResponseSnapshot = {
+    protocol: 'echo',
+    text: echoed.subject.bodyText,
+    durationMs: echoed.subject.durationMs,
+  };
+  return { ...echoed, script: await scripts.session.post(sent, response) };
 }
 
 /** Echo's run facet. */
@@ -174,23 +205,14 @@ export const echoRun: ProtocolRun<EchoSelected> = {
     return undefined;
   },
 
-  async send(selected, scope, scripts) {
-    if (scripts === undefined) return echoPlain(selected, scope);
-    // Every `${secret:…}` goes behind a placeholder before the script sees the text, and comes back
-    // as its value after it, as the built-in protocols do it.
-    const hidden = selected.request.text.replace(/\$\{secret:([^}]+)\}/g, (_whole, name: string) =>
-      scripts.placeholders.placeholderFor(name),
-    );
-    const before: EchoRequestSnapshot = { protocol: 'echo', text: hidden };
-    const sent = await scripts.session.pre(before);
-    const restored = await scripts.placeholders.restore({ text: sent.text }, scope.context.getSecret);
-    const echoed = await echoPlain({ ...selected, request: { ...selected.request, text: restored.text } }, scope);
-    const response: EchoResponseSnapshot = {
-      protocol: 'echo',
-      text: echoed.subject.bodyText,
-      durationMs: echoed.subject.durationMs,
-    };
-    return { ...echoed, script: await scripts.session.post(sent, response) };
+  open(selected, scope, host, options) {
+    const controller = exchangeController('echo', options);
+    const context = { ...scope.context, host, signal: controller.signal };
+    return controller.handle(() => echoSend(selected, { ...scope, context }, options.scripts));
+  },
+
+  resolve(selected) {
+    return Promise.resolve({ text: selected.request.text });
   },
 
   scriptTypes() {

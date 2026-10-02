@@ -21,9 +21,9 @@ and a value a script sets with `vars.set` reaches the later steps just as a tran
 
 1. Right-click the project in the explorer and choose **New Sequence**. It opens in its own tab and
    appears under **Sequences** in the project.
-2. Choose **Add step…** and pick a request. Add as many as you need; each step is a saved SOAP, REST or
-   unary gRPC request. A WebSocket request or a streaming gRPC call can't be a step, and the list says
-   so.
+2. Choose **Add step…** and pick a request. Add as many as you need; each step is a saved SOAP, REST,
+   gRPC or WebSocket request, streaming gRPC calls included. A request that is no longer in its
+   contract can't be a step, and the list says so.
 3. Select a step to give it **transfers** and **assertions**.
 4. Choose **Run** (`Ctrl+Enter`, `⌘↩` on macOS).
 

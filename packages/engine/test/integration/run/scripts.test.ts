@@ -109,8 +109,10 @@ function contextFor(p: Project): Run {
     project: p,
     projectDir: dir,
     overrides: {},
-    getSecret: (ref) => Promise.resolve(values[ref.replace(/^secret:/, '')]),
-    onSecretValue: (value) => secrets.push(value),
+    host: {
+      getSecret: (ref) => Promise.resolve(values[ref.replace(/^secret:/, '')]),
+      onSecretValue: (value) => secrets.push(value),
+    },
     scripting: new RequestScripting({ sandbox, checker, onSecretValue: (value) => secrets.push(value) }),
   };
   return { secrets, context };

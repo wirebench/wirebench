@@ -1,15 +1,17 @@
 // @vitest-environment node
 /**
- * The gRPC send path in main: the resolver's target, chain and expansion; the engine service against
- * a real gRPC server with credentials from the store, redacted on the way back; and the history line.
+ * The gRPC send path in main: the target, chain and expansion a send resolves (`previewGrpc`); a send through the engine
+ * against a real gRPC server with credentials from the store, redacted on the way back; and the
+ * history line.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startTestGrpcServer, type TestGrpcServer } from '@wirebench/engine/test-helpers';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest, createProject, entry } from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
-import { EngineService } from '../src/main/engine-service.js';
-import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import { buildGrpcHistoryEntry } from '../src/main/history-service.js';
+import { previewGrpc, sendThroughEngine } from '../src/main/send/exchange.js';
+import type { GrpcRequestPatchWire } from '../src/shared/wire-types.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 
 let server: TestGrpcServer;
 
@@ -51,45 +53,52 @@ function project(): Project {
   };
 }
 
-function resolve(overrides: { readonly draft?: { message?: string } } = {}) {
-  return resolveGrpcSend({
-    project: project(),
-    requestId: 'q-1',
-    ...(overrides.draft !== undefined ? { draft: overrides.draft } : {}),
-    scopes: { project: { who: 'Ada', tenant: 'acme', host: server.target }, global: {}, system: {} },
-    resolveTarget: (api) => ({ url: api.target, source: 'api' }),
+/** `requestId` resolved as its send would resolve it, the server's target in `${host}`. */
+function resolve(overrides: { readonly draft?: GrpcRequestPatchWire; readonly requestId?: string } = {}) {
+  const model = project();
+  const withHost: Project = { ...model, properties: { ...model.properties, host: server.target } };
+  return previewGrpc(sendDepsFor(withHost), overrides.requestId ?? 'q-1', overrides.draft);
+}
+
+/**
+ * `q-1` sent through the engine as the editor sends it, the server's target in `${host}`, with
+ * `getSecret` as the keychain and `show` as the session's flag.
+ */
+function send(
+  sendId: string,
+  getSecret: (ref: string) => Promise<string | undefined>,
+  options: { readonly draft?: GrpcRequestPatchWire; readonly show?: boolean } = {},
+) {
+  const model = project();
+  const withHost: Project = { ...model, properties: { ...model.properties, host: server.target } };
+  const deps = sendDepsFor(withHost, {
+    getSecret,
+    project: { grpcProtoSetFor: () => Promise.resolve(server.set), grpcMeta: () => undefined },
+    ...(options.show === true ? { showSecrets: { get: () => true } } : {}),
+  });
+  return sendThroughEngine(deps, sendId, 'q-1', {
+    draft: { kind: 'grpc', ...(options.draft !== undefined ? { draft: options.draft } : {}) },
   });
 }
 
-describe('resolveGrpcSend', () => {
-  it('applies the draft, expands target, metadata and message, and resolves the chain', () => {
-    const resolved = resolve()!;
+describe('resolving a gRPC call (previewGrpc)', () => {
+  it('applies the draft, expands target, metadata and message, and resolves the chain', async () => {
+    const resolved = (await resolve())!;
     expect(resolved.input.target).toBe(server.target);
     expect(resolved.input.metadata).toEqual([entry('x-tenant', 'acme'), entry('x-trace', 'abc')]);
     expect(resolved.messageText).toBe('{"name": "Ada"}');
     expect(resolved.auth).toEqual({ type: 'bearer', tokenRef: 'sec_tok' });
     expect(resolved.unresolved).toEqual([]);
-    const drafted = resolve({ draft: { message: '{"name": "${nope}"}' } })!;
+    const drafted = (await resolve({ draft: { message: '{"name": "${nope}"}' } }))!;
     expect(drafted.unresolved.map((ref) => ref.name)).toEqual(['nope']);
-    expect(
-      resolveGrpcSend({
-        project: project(),
-        requestId: 'zz',
-        scopes: { project: {}, global: {}, system: {} },
-        resolveTarget: () => ({ url: '', source: 'api' }),
-      }),
-    ).toBeUndefined();
+    expect(await resolve({ requestId: 'zz' })).toBeUndefined();
   });
 });
 
-describe('EngineService.sendGrpcRequest', () => {
+describe('a gRPC send through the engine', () => {
   it('calls the server, decodes the reply, and redacts the token on the way back', async () => {
-    const resolved = resolve()!;
-    const engine = new EngineService((ref) => Promise.resolve(ref === 'sec_tok' ? 'good-token' : undefined));
-    const summary = await engine.sendGrpcRequest(
-      { sendId: 's1', requestId: 'q-1', set: server.set, input: resolved.input, messageText: resolved.messageText },
-      { auth: resolved.auth },
-    );
+    const getSecret = (ref: string) => Promise.resolve(ref === 'sec_tok' ? 'good-token' : undefined);
+    const summary = await send('s1', getSecret);
     expect(summary).toMatchObject({
       status: 0,
       statusName: 'OK',
@@ -107,41 +116,42 @@ describe('EngineService.sendGrpcRequest', () => {
     expect(Buffer.from(summary.http.rawRequestBase64, 'base64').toString('latin1')).not.toContain('good-token');
     expect(server.calls.at(-1)?.headers['authorization']).toBe('Bearer good-token');
 
-    const shown = await engine.sendGrpcRequest(
-      { sendId: 's2', requestId: 'q-1', set: server.set, input: resolved.input, messageText: resolved.messageText },
-      { auth: resolved.auth, showSecrets: true },
-    );
+    const shown = await send('s2', getSecret, { show: true });
     expect(shown.http.request.headers['authorization']).toBe('Bearer good-token');
   });
 
   it('reports a non-OK status as a result and a missing secret as an error', async () => {
-    const resolved = resolve()!;
-    const engine = new EngineService(() => Promise.resolve('t'));
-    const failing = await engine.sendGrpcRequest({
-      sendId: 's3',
-      requestId: 'q-1',
-      set: server.set,
-      input: { ...resolved.input, method: 'Fail' },
-      messageText: '{"code": 7, "message": "nope"}',
+    const failing = await send('s3', () => Promise.resolve('t'), {
+      draft: { method: 'Fail', message: '{"code": 7, "message": "nope"}' },
     });
     expect(failing).toMatchObject({ status: 7, statusName: 'PERMISSION_DENIED', statusMessage: 'nope' });
     await expect(
-      new EngineService(() => Promise.resolve(undefined)).sendGrpcRequest(
-        { sendId: 's4', requestId: 'q-1', set: server.set, input: resolved.input, messageText: '{}' },
-        { auth: { type: 'bearer', tokenRef: 'gone' } },
-      ),
+      send('s4', () => Promise.resolve(undefined), {
+        draft: { message: '{}', auth: { type: 'bearer', tokenRef: 'gone' } },
+      }),
     ).rejects.toMatchObject({ code: 'secret-missing' });
+  });
+});
+
+describe('a gRPC server stream sent from the editor', () => {
+  it('keeps a stream its deadline cut as a result, with the messages and DEADLINE_EXCEEDED', async () => {
+    const summary = await send('s6', () => Promise.resolve('t'), {
+      draft: {
+        method: 'LotsOfReplies',
+        methodKind: 'server-streaming',
+        message: '{"count": 1000, "delay_ms": 20}',
+        settings: { timeoutMs: 200 },
+      },
+    });
+    expect(summary).toMatchObject({ status: 4, statusName: 'DEADLINE_EXCEEDED', methodKind: 'server-streaming' });
+    expect(summary.responseMessages.length).toBeGreaterThan(0);
   });
 });
 
 describe('buildGrpcHistoryEntry', () => {
   it('records the call with its messages, redacting the metadata', async () => {
-    const resolved = resolve()!;
-    const engine = new EngineService(() => Promise.resolve('good-token'));
-    const summary = await engine.sendGrpcRequest(
-      { sendId: 's5', requestId: 'q-1', set: server.set, input: resolved.input, messageText: resolved.messageText },
-      { auth: resolved.auth },
-    );
+    const resolved = (await resolve())!;
+    const summary = await send('s5', () => Promise.resolve('good-token'));
     const entry = buildGrpcHistoryEntry('p1', {
       requestId: 'q-1',
       requestName: 'SayHello',

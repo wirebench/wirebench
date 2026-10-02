@@ -29,7 +29,8 @@ function importText(result: ImportOutput): string {
 function operationsText(result: OperationsResult): string {
   const out: string[] = [];
   for (const row of result.operations) {
-    const detail = row.kind === 'soap' ? (row.soapAction ?? '') : (row.operationId ?? '');
+    const detail =
+      row.kind === 'soap' ? (row.soapAction ?? '') : row.kind === 'rest' ? (row.operationId ?? '') : row.url;
     out.push(detail.length > 0 ? `${row.ref}  (${detail})` : row.ref);
     out.push(...row.items.map((item) => `  ${item}`));
   }
@@ -55,6 +56,16 @@ function generateText(result: GenerateResult): string {
   );
 }
 
+/** A WebSocket frame as one line: `>` sent, `<` received. */
+function frameLine(frame: NonNullable<SendResult['frames']>[number]): string {
+  const arrow = frame.direction === 'sent' ? '>' : '<';
+  if (frame.close !== undefined) {
+    return `${arrow} close ${String(frame.close.code)}${frame.close.reason.length > 0 ? ` ${frame.close.reason}` : ''}`;
+  }
+  if (frame.text !== undefined) return `${arrow} ${frame.text}`;
+  return `${arrow} (${frame.opcode}, ${String(frame.size)} bytes)`;
+}
+
 function sendText(result: SendResult): string {
   const mark = (outcome: string): string => (outcome === 'passed' ? 'ok  ' : outcome === 'failed' ? 'FAIL' : 'ERR ');
   return lines(
@@ -68,8 +79,12 @@ function sendText(result: SendResult): string {
     '',
     ...headerLines(result.headers),
     '',
-    result.body,
-    ...(result.bodyTruncated ? ['(body truncated)'] : []),
+    ...(result.frames !== undefined
+      ? [
+          ...result.frames.map(frameLine),
+          ...(result.framesTruncated === true ? ['(frames cut: some were left out)'] : []),
+        ]
+      : [result.body, ...(result.bodyTruncated ? ['(body truncated)'] : [])]),
     ...(result.historyId !== undefined ? ['', `history: ${result.historyId}`] : []),
   );
 }

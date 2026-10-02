@@ -213,6 +213,27 @@ export function signingSecretRef(signing: Extract<WebhookSigning, { mode: 'sign'
   return signing.secretEnv !== undefined ? `${SIGNING_PSEUDO_REF_PREFIX}${signing.secretEnv}` : undefined;
 }
 
+const ABSOLUTE_HTTP = /^https?:\/\//i;
+
+/**
+ * Refuses a webhook item's target that cannot be sent to, once it is expanded: an empty one (unless
+ * the item's own URL is absolute) and one that is not `http(s)`. A target still holding a reference
+ * nothing resolved is left to the unresolved list, which already refuses the send and names it.
+ *
+ * @throws WirebenchError `webhook-target-missing` | `webhook-target-invalid`
+ */
+export function assertWebhookTarget(baseUrl: string, url: string, unresolved: boolean): void {
+  if (baseUrl.trim() === '') {
+    if (!ABSOLUTE_HTTP.test(url)) {
+      throw new WirebenchError('webhook-target-missing', 'Set the Webhooks target');
+    }
+    return;
+  }
+  if (!ABSOLUTE_HTTP.test(baseUrl) && !(unresolved && baseUrl.includes('${'))) {
+    throw new WirebenchError('webhook-target-invalid', 'The Webhooks target must start with http:// or https://');
+  }
+}
+
 /** The refusal when signing is set but its secret is not: a send never goes out unsigned (§5.2). */
 export function signingSecretMissing(effective: EffectiveSigning, ref?: string): WirebenchError {
   return new WirebenchError(

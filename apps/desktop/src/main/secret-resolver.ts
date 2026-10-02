@@ -1,17 +1,15 @@
 /**
  * Secret resolution lives in the engine so the CLI runner resolves credentials exactly as the app
  * does. This module stays as the desktop's import path for it, and adds what only the desktop has:
- * the store entry a `${secret:name}` token names, and a way to hand those values to the send
- * resolvers (`rest-send.ts`, `grpc-send.ts`, `ws-send.ts`), which expand synchronously.
+ * the store entry a `${secret:name}` token names.
  */
 import {
   parseSecretPseudoRef,
   resolveAuthConfig as resolveAuthConfigValues,
-  resolveSecretTokens,
   resolveSoapAuth as resolveSoapAuthValues,
   SECRET_NAME_PATTERN,
 } from '@wirebench/engine';
-import type { GetSecret, PropertyScopes, SecretPlaceholders, UnresolvedRef } from '@wirebench/engine';
+import type { GetSecret, UnresolvedRef } from '@wirebench/engine';
 import { recordAuthValues } from './redact.js';
 import type { SecretStore } from './secrets.js';
 
@@ -90,56 +88,4 @@ export function isSecretTokenRef(ref: Pick<UnresolvedRef, 'scope' | 'name' | 'co
   return (
     ref.scope === 'Secret' && ref.code === 'missing' && ref.name !== undefined && SECRET_NAME_PATTERN.test(ref.name)
   );
-}
-
-/** The names of the `${secret:name}` tokens an expansion reached and had no value for. */
-export function missingSecretNames(unresolved: readonly UnresolvedRef[]): string[] {
-  const names = unresolved.filter(isSecretTokenRef).map((ref) => ref.name as string);
-  return [...new Set(names)];
-}
-
-/** Token values for the resolution running right now; see {@link withSecretTokenScope}. */
-let tokenValues: Readonly<Record<string, string>> | undefined;
-
-/**
- * `scopes` with the token values of the resolution {@link resolveWithStoredValues} is running, if
- * any. The send resolvers pass their scopes through this, so the host's synchronous `restSend`
- * (and its gRPC and WebSocket twins) expand tokens without a keychain lookup of their own.
- */
-export function withSecretTokenScope(scopes: PropertyScopes): PropertyScopes {
-  return tokenValues === undefined ? scopes : { ...scopes, secrets: { ...scopes.secrets, ...tokenValues } };
-}
-
-/**
- * Runs a synchronous send resolution (`project.restSend(…)` and its twins), filling the secrets
- * scope first. The first pass says which tokens the expansion reached; when there are any, their
- * values are read through `getSecret` and the resolution runs again with them in scope. A token
- * with no value refuses the send as `secret-missing` rather than going out empty or as typed.
- *
- * With `placeholders` — a request whose scripts run (#63) — each token resolves to its placeholder
- * instead, and no value is read: the send puts the values back after the pre-request script.
- *
- * The values are in scope only for the duration of that second, synchronous call.
- *
- * @throws WirebenchError `secret-missing`
- */
-export async function resolveWithStoredValues<R extends { readonly unresolved: readonly UnresolvedRef[] }>(
-  resolve: () => R | undefined,
-  getSecret: GetSecret,
-  placeholders?: SecretPlaceholders,
-): Promise<R | undefined> {
-  const first = resolve();
-  const names = first === undefined ? [] : missingSecretNames(first.unresolved);
-  if (names.length === 0) {
-    return first;
-  }
-  const values =
-    placeholders !== undefined ? placeholders.scopeFor(names) : await resolveSecretTokens(names, getSecret);
-  const previous = tokenValues;
-  tokenValues = values;
-  try {
-    return resolve();
-  } finally {
-    tokenValues = previous;
-  }
 }

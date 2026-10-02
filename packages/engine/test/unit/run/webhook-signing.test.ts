@@ -29,7 +29,7 @@ const context = (project: Project, secrets: Record<string, string>): RunContext 
   project,
   projectDir: dir,
   overrides: {},
-  getSecret: (ref) => Promise.resolve(secrets[ref]),
+  host: { getSecret: (ref) => Promise.resolve(secrets[ref]) },
 });
 
 describe('runner signing (§5.2)', () => {

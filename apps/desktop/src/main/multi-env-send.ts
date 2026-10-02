@@ -4,16 +4,14 @@
  * active — endpoint or base URL, property expansion (credentials included), TLS — while the active
  * environment is left as it is.
  *
- * Every child goes through the same path a single send takes (`sendAndRecordHistory` for SOAP,
- * `sendRestRequest` for REST), so History and the HTTP Log get one row per environment. The only
- * thing that differs is the project surface those paths read: {@link underEnvironment} answers
- * `scopesFor` for the chosen environment and names the History entry after it.
+ * Every child goes through the engine (`sendThroughEngine`), the path a single send takes, under its
+ * own environment (`SendOptions.envId`), so History and the HTTP Log get one row per environment and
+ * each History entry carries its environment's name (`SendOptions.environmentName`).
  */
 
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
-import type { EngineService } from './engine-service.js';
-import { sendRestRequest, withRequestProperties, type RequestChannelDeps } from './ipc/request.js';
-import { sendAndRecordHistory } from './send-with-history.js';
+import type { RequestChannelDeps } from './ipc/request.js';
+import { sendThroughEngine, type ExchangeRegistry, type SendThroughEngineDeps } from './send/exchange.js';
 import type {
   EnvSendResult,
   RequestSendToEnvironmentsRequest,
@@ -32,49 +30,19 @@ function childSendId(batchId: string, envId: string): string {
  * Cancels every child of the fan-out `batchId` still running. `undefined` when no such batch is
  * running, so `request.cancel` can fall through to an ordinary send id.
  */
-export function cancelEnvironmentBatch(service: EngineService, batchId: string): { cancelled: boolean } | undefined {
+export function cancelEnvironmentBatch(
+  registry: ExchangeRegistry,
+  batchId: string,
+): { cancelled: boolean } | undefined {
   const children = batches.get(batchId);
   if (children === undefined) {
     return undefined;
   }
   let cancelled = false;
   for (const sendId of children) {
-    cancelled = service.cancel(sendId).cancelled || cancelled;
+    cancelled = registry.cancel(sendId).cancelled || cancelled;
   }
   return { cancelled };
-}
-
-/** Appends the environment's name, so a History entry says which environment it went to. */
-function named<T extends { requestName: string }>(meta: T | undefined, envName: string): T | undefined {
-  return meta === undefined ? undefined : { ...meta, requestName: `${meta.requestName} · ${envName}` };
-}
-
-/**
- * The project surface a child send reads, with the scopes resolved for `envId` rather than the
- * active environment and the History names carrying the environment's name. Everything else is
- * the router's own.
- */
-function underEnvironment(
-  project: RequestChannelDeps['project'],
-  envId: string,
-  envName: string,
-): RequestChannelDeps['project'] {
-  const overrides: Partial<Record<PropertyKey, unknown>> = {
-    scopesFor: (requestId: string) => project.scopesFor(requestId, envId),
-    requestMeta: (requestId: string) => named(project.requestMeta(requestId), envName),
-    ...(project.restMeta !== undefined
-      ? { restMeta: (requestId: string) => named(project.restMeta?.(requestId), envName) }
-      : {}),
-  };
-  return new Proxy(project, {
-    get(target, property) {
-      if (Object.hasOwn(overrides, property)) {
-        return overrides[property];
-      }
-      const value: unknown = Reflect.get(target, property, target);
-      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
-    },
-  });
 }
 
 function errorResult(envId: string, envName: string, error: unknown): EnvSendResult {
@@ -89,46 +57,35 @@ function errorResult(envId: string, envName: string, error: unknown): EnvSendRes
 
 /** Sends one environment's child; throws what a single send would throw. */
 async function sendOne(
-  service: EngineService,
-  deps: RequestChannelDeps,
+  sendDeps: SendThroughEngineDeps,
   request: RequestSendToEnvironmentsRequest,
   envId: string,
   envName: string,
 ): Promise<EnvSendResult> {
   const sendId = childSendId(request.batchId, envId);
-  const envDeps: RequestChannelDeps = { ...deps, project: underEnvironment(deps.project, envId, envName) };
   const base = { outcome: 'ok', environmentId: envId, environmentName: envName } as const;
+  const options = { envId, environmentName: envName } as const;
   if (request.soap !== undefined) {
-    const mapped = deps.project.sendInputFor(
-      request.requestId,
-      {
-        envelopeXml: request.soap.envelopeXml,
-        ...(request.soap.headers !== undefined ? { headers: { ...request.soap.headers } } : {}),
-      },
-      envId,
-    );
-    if (mapped === undefined) {
+    const headers = request.soap.headers !== undefined ? { headers: { ...request.soap.headers } } : {};
+    // Refused as it always was, naming the environment, before anything is prepared.
+    if (sendDeps.project.endpointFor(request.requestId, envId) === undefined) {
       return errorResult(
         envId,
         envName,
         new WirebenchError('no-endpoint', `No endpoint resolves for this request under "${envName}"`),
       );
     }
-    const effective = await withRequestProperties(
-      envDeps.project,
-      { sendId, requestId: request.requestId, input: mapped },
-      envId,
-    );
-    const soap = await sendAndRecordHistory(service, envDeps, effective);
+    // The editor's envelope and headers; the endpoint is the environment's.
+    const soap = await sendThroughEngine(sendDeps, sendId, request.requestId, {
+      ...options,
+      draft: { kind: 'soap', override: { envelopeXml: request.soap.envelopeXml, ...headers } },
+    });
     return { ...base, kind: 'soap', soap };
   }
-  const rest = await sendRestRequest(
-    service,
-    envDeps,
-    { sendId, requestId: request.requestId, ...(request.restDraft !== undefined ? { draft: request.restDraft } : {}) },
-    undefined,
-    envId,
-  );
+  const rest = await sendThroughEngine(sendDeps, sendId, request.requestId, {
+    ...options,
+    draft: { kind: 'rest', ...(request.restDraft !== undefined ? { draft: request.restDraft } : {}) },
+  });
   return { ...base, kind: 'rest', rest };
 }
 
@@ -138,8 +95,8 @@ async function sendOne(
  * project does not have, never stops the others — and the results come back in the order asked.
  */
 export async function sendToEnvironments(
-  service: EngineService,
-  deps: RequestChannelDeps,
+  sendDeps: SendThroughEngineDeps,
+  deps: Pick<RequestChannelDeps, 'project'>,
   request: RequestSendToEnvironmentsRequest,
 ): Promise<RequestSendToEnvironmentsResponse> {
   // The environments that apply to the request: the workspace's inside a workspace, else its
@@ -167,7 +124,7 @@ export async function sendToEnvironments(
           );
         }
         try {
-          return await sendOne(service, deps, request, envId, envName);
+          return await sendOne(sendDeps, request, envId, envName);
         } catch (error) {
           return errorResult(envId, envName, error);
         }

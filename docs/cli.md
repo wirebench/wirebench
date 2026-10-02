@@ -5,7 +5,7 @@ pipeline, and turns the result into an exit code and a report a CI system unders
 alongside the desktop app in this monorepo; see [Run in CI](../README.md#run-in-ci) in the README
 for the one-line pipeline step.
 
-This page documents S1–S7: SOAP, REST and unary gRPC requests, all four assertion types that apply
+This page documents S1–S7: SOAP, REST, gRPC and WebSocket requests, all four assertion types that apply
 to them, all four reporters, environment-variable secrets and OAuth2 client credentials — see the
 [design spec](specs/2026-09-18-cli-runner-design.md) and, for S7,
 [its own spec](specs/2026-09-22-cli-runner-design.md).
@@ -149,13 +149,15 @@ A `match` result is compared as a string unless `equals` is a boolean or a numbe
 
 ### gRPC requests
 
-Unary gRPC requests run like the others, in the same project order; server-, client- and
-bidirectional-streaming requests are skipped (a selector naming one matches nothing, exit 2), and so
-is a request whose method is gone from the API's definition. The schema comes from the API's
+gRPC requests run like the others, in the same project order. A client- or bidirectional-streaming
+request sends its saved `message` array in order and then half-closes. What `match` reads is the one
+message of a unary or client-streaming call, and for a server-streaming or bidirectional call every
+message in order as a JSON array (one that did not decode is `null`). The run's timeout bounds a stream, and a stream it cuts
+fails with `timeout`. A request whose method is gone from the API's definition is skipped. The schema comes from the API's
 **cached** definition (`apis/<slug>/definition/`, written when the desktop imports a `.proto` set
 with caching on) — the runner never reads the original `.proto` folder nor asks the server for
 reflection. An API without a cache errors each of its requests with `grpc-definition-missing`
-(exit 3) and sends nothing. `status`, `match` (JSONPath over the first response message as JSON)
+(exit 3) and sends nothing. `status`, `match` (JSONPath over the response message, or the array of messages, as JSON)
 and `sla` apply; `--timeout` replaces the request's own deadline.
 
 ```yaml
@@ -175,6 +177,27 @@ covered.
 Every assertion of a request is evaluated even after one fails, so the report shows everything
 wrong with that response, not just the first.
 
+### WebSocket requests and event streams
+
+A saved WebSocket request runs as `send` runs it: the socket opens, the saved messages go out in order, and the
+session closes after the reply that follows the last one, or when the request's timeout
+passes. A session that gets no reply by then fails with `timeout`; a server that refuses the handshake or
+cannot be reached fails with `ws-handshake-refused`. The texts received, in order, are a JSON array that `match`
+reads. A saved WebSocket request has no `assertions:`, so it passes with a note, and `--require-assertions`
+errors it.
+
+A REST response of type `text/event-stream` is read until the stream ends or the timeout passes; a stream the
+timeout cuts fails with `timeout`. In a run, in `send` and in a sequence step the response an assertion or a
+transfer reads is a JSON array of each event's `data`, not the raw stream text: write `contains: "ok"` or a
+`match` on `$[0]`, not `contains: "data: ok"`.
+
+The error codes a send can end with, besides the HTTP layer's (`timeout`, `aborted`, `network`):
+`rest-unresolved-properties`, `unresolved-properties` (SOAP), `grpc-unresolved-properties` and
+`ws-unresolved-properties`, a `${…}` reference nothing resolves, refused before anything is sent;
+`grpc-method-unset`, a gRPC request with no method; `secret-missing`, a credential secret that is not set;
+`ws-handshake-refused`; `grpc-definition-missing`; and `exchange-not-streaming`, a message pushed to a send that
+takes none (only a host that drives a send by hand can cause it; a run never does).
+
 ## Sequences
 
 `--sequence <name>` runs a sequence instead of a selection of requests: its steps in order, each step's
@@ -188,8 +211,9 @@ wirebench run ./shop -e staging --sequence checkout --reporter junit=reports/che
 
 - A sequence is named by its name or by its file, `sequences/<slug>.sequence.yaml`. Repeat the flag to run
   several, in the order given. It cannot be combined with request selectors (exit 2).
-- Every step is checked before anything is sent: a step whose request is gone, is a WebSocket request, or is a
-  streaming gRPC call refuses the run with exit 2, naming the step.
+- Every step is checked before anything is sent: a step whose request is gone, or is orphaned, refuses the run
+  with exit 2, naming the step. A WebSocket request and a streaming gRPC call can be steps; they run as in a
+  plain run, bounded by the step's timeout.
 - Within a sequence, a failed or errored step skips the rest unless the sequence sets `stopOnFailure: false`.
   `--bail` skips the *sequences* after the first that fails.
 - `--timeout`, `--sla` and `--require-assertions` apply to each step as they do to a request; a sequence's own
@@ -206,7 +230,7 @@ named `<sequence>/<n>. <step>`.
 
 ## Scripts
 
-A saved SOAP, REST or unary gRPC request may carry a pre-request and a post-response script, in TypeScript files
+A saved SOAP, REST or gRPC request may carry a pre-request and a post-response script, in TypeScript files
 beside it (`<request>.pre.ts`, `<request>.post.ts`). `wirebench run` runs them on every send, with and without
 `--sequence`. What a script can do, and cannot, is in [the typed scripting design](specs/2026-09-28-typed-scripting-design.md).
 
@@ -407,7 +431,7 @@ The stable machine interface, its own `formatVersion` starting at 1:
 }
 ```
 
-`protocol` is the request's kind: `"soap"`, `"rest"` or `"grpc"`; for a gRPC request `status` is the gRPC status
+`protocol` is the request's kind: `"soap"`, `"rest"`, `"grpc"` or `"websocket"`; for a gRPC request `status` is the gRPC status
 code. A sequence step (`--sequence`) carries three more fields, added within `formatVersion` 1:
 `sequence` (`{ id, name, stepId }`), `transfers` (`[{ name, outcome, secret, value?, message? }]`, with no
 `value` for a secret transfer) and `origin`, where the step's request went. A request with scripts may carry
@@ -477,9 +501,9 @@ to [`wirebench mcp`](#wirebench-mcp).
 | Verb | Does |
 | --- | --- |
 | `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
-| `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action) and REST endpoints (API, method, path, operationId), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC and WebSocket items are in the project but not listed. |
+| `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) and saved WebSocket requests (API, URL), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. |
 | `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
-| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP or REST request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
+| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
 | `wirebench validate <history-id\|file> [--operation <ref>] [--direction request\|response] [--status <n>]` | Validates a SOAP message against the WSDL's XSD and SOAP rules (line and column), or a REST response body against its OpenAPI response schema (JSON path and keyword). |
 | `wirebench query <expression> <history-id\|file> [--namespace <prefix>=<uri>]… [--direction request\|response]` | XPath 3.1 on XML (the document's own prefixes are known), JSONPath on JSON; one result per line. |
 | `wirebench history list [--item <text>] [--limit <n>]` | The project's History, newest first: id, time, item, status and duration. `--item` matches part of the item path, in any case. `--limit` is 1 to 200 and defaults to 20. |
@@ -497,9 +521,17 @@ Details that are easy to get wrong:
   body of a REST request, for this send only; nothing is saved. It is sent as written, so a `${…}`
   placeholder in it is refused with `invalid-input`. The saved request's own body still expands
   placeholders as usual. Secrets come only from `WIREBENCH_SECRET_<NAME>` variables, and only the ones
-  the saved request uses. gRPC and WebSocket items are in the project, but `operations` does not list
-  them and `send` refuses them with `unsupported-kind`, as it does an item inside a container that was
-  not loaded, naming the reason. Server-sent events are a response mode of a REST
+  the saved request uses. A WebSocket request is sent as a run sends it: the socket opens, the saved
+  messages go out in order, and the session closes once a reply comes after the last one, or fails
+  with `timeout` when the request's handshake timeout (else the project's default timeout) passes
+  first, returning no frames and writing no History; a server that refuses or cannot be reached fails
+  it with `ws-handshake-refused`. The result
+  carries the handshake's status and headers, every text received as a JSON array in `body`, and
+  `frames`, both ways, masked and capped as History stores them (`framesTruncated` says some were
+  left out); `--body` does not apply to it. gRPC items are in the project, but `operations` does not
+  list them and `send` refuses them with `unsupported-kind`, as it does an item inside a container
+  that was not loaded, naming the reason. A name a REST and a WebSocket request share is ambiguous:
+  pass the path. Server-sent events are a response mode of a REST
   request, not an item kind. The response body in the result is cut at 256 Ki characters, and
   `bodyTruncated` says when it was (the same cut applies to the History entry).
   A send that got no response is not written to History. When the History file is busy (another

@@ -183,6 +183,46 @@ describe('the op verbs, --json and the human text', () => {
     expect(formatHuman('history_diff', { ...diff, truncated: false })).not.toContain('cut at');
   });
 
+  it("prints a WebSocket send's frames, one a line, in place of a body", () => {
+    const text = formatHuman('send', {
+      item: 'Chat/Echo',
+      kind: 'websocket',
+      outcome: 'passed',
+      unasserted: true,
+      method: 'GET',
+      url: 'ws://127.0.0.1:9/echo',
+      status: 101,
+      statusText: 'Switching Protocols',
+      durationMs: 12,
+      headers: { upgrade: 'websocket' },
+      body: '["hi"]',
+      bodyTruncated: false,
+      frames: [
+        { index: 0, direction: 'sent', opcode: 'text', at: 1, size: 2, text: 'hi' },
+        { index: 1, direction: 'received', opcode: 'binary', at: 2, size: 3, base64: 'AQID' },
+        { index: 2, direction: 'received', opcode: 'text', at: 3, size: 2, text: 'hi' },
+        { index: 3, direction: 'sent', opcode: 'close', at: 4, size: 2, close: { code: 1000, reason: '' } },
+      ],
+      framesTruncated: true,
+      assertions: [],
+    });
+    expect(text).toBe(
+      [
+        'PASSED  GET ws://127.0.0.1:9/echo -> 101 Switching Protocols (12 ms)',
+        '  (no assertions)',
+        '',
+        'upgrade: websocket',
+        '',
+        '> hi',
+        '< (binary, 3 bytes)',
+        '< hi',
+        '> close 1000',
+        '(frames cut: some were left out)',
+        '',
+      ].join('\n'),
+    );
+  });
+
   it('refuses a flag the verb does not take, as a usage error', async () => {
     const fixture = await soapProject();
     const foreign = await cli(['operations', '--project', fixture.dir, '--body', 'x']);

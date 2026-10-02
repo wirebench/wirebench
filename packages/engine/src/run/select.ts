@@ -53,11 +53,11 @@ const covers = (selector: string, candidate: string): boolean =>
  * Resolves `selectors` (display paths or on-disk paths, matched at a `/` boundary) against the
  * project's requests, in explorer order. An empty `selectors` list selects everything but the webhook
  * items: those deliver to a receiver rather than test an API, so a run sends one only when a selector
- * covers it (`Webhooks/…` or `webhooks/requests/…`). A WebSocket
- * API, and a gRPC request that streams, are skipped: neither is runnable from the command line yet,
- * and there is no per-selector reason to report — a selector naming one simply matches nothing and
- * surfaces through `unmatched`, same as a typo would. `unmatched` lists every selector that covered no
- * request, so the runner can refuse the run rather than quietly test nothing.
+ * covers it (`Webhooks/…` or `webhooks/requests/…`). A gRPC request that streams, and a request its
+ * contract no longer has, are skipped: neither is runnable from the command line yet, and there is no
+ * per-selector reason to report — a selector naming one simply matches nothing and surfaces through
+ * `unmatched`, same as a typo would. `unmatched` lists every selector that covered no request, so the
+ * runner can refuse the run rather than quietly test nothing.
  *
  * `registry` is the set of protocol modules asked for their requests; the built-in ones by default.
  */
@@ -88,9 +88,9 @@ export type StepRequestLookup =
 
 /**
  * Finds the request a sequence step names by id, among the requests a run can send, with the same
- * context `selectRequests` gives. A request that exists but cannot run (a webhook item, a WebSocket
- * request, a streaming gRPC call, one orphaned by its contract) says why, so the step errors with a
- * reason rather than as missing. Every module is asked for a reason before any candidate is looked
+ * context `selectRequests` gives. A request that exists but cannot run (a webhook item, a streaming
+ * gRPC call, one orphaned by its contract) says why, so the step errors with a reason rather than as
+ * missing. Every module is asked for a reason before any candidate is looked
  * at: a webhook item is a candidate of a run, and still not a step.
  */
 export function findStepRequest(

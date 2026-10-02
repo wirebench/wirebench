@@ -1,9 +1,9 @@
 /**
  * Builds the `FailedExchangeWire` the console's HTTP Log shows for a send that never produced a
- * response. Called from the same catch blocks that write History (`send-with-history.ts` for SOAP
- * sends and resends, `ipc/request.ts` for REST). When the transport got as far as building the
- * request, the error carries it (`failedRequestOf`), so the row shows the URL, method, headers and
- * body as they were about to go on the wire; otherwise the resolved pre-build request is used.
+ * response. Called from the send's host (`send/host.ts`), as History records the failure. When the
+ * transport got as far as building the request, the error carries it (`failedRequestOf`), so the
+ * row shows the URL, method, headers and body as they were about to go on the wire; otherwise the
+ * resolved pre-build request is used.
  *
  * Redaction is unconditional here — `show: false`, whatever the session's show-secrets flag says. A
  * failure is never held in the unredacted `ExchangeCache`, so there is nothing to re-fetch later:
@@ -12,7 +12,7 @@
 
 import { isWirebenchError, type FailedRequest } from '@wirebench/engine';
 import type { FailedExchangeWire } from '../shared/wire-types.js';
-import { redactHeaders, redactRawHttp, redactUrl } from './redact.js';
+import { redactHeaders, redactRawHttp, redactSecretValues, redactUrl } from './redact.js';
 
 /** What a catch block has at hand for one failed send. */
 export interface FailedExchangeInput {
@@ -45,9 +45,12 @@ export interface FailedExchangeInput {
 /** The `{ code, message }` History records for the same error; `internal-error` for a non-engine one. */
 function errorOf(error: unknown): { code: string; message: string } {
   if (isWirebenchError(error)) {
-    return { code: error.code, message: error.message };
+    return { code: error.code, message: redactSecretValues(error.message) };
   }
-  return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
+  return {
+    code: 'internal-error',
+    message: redactSecretValues(error instanceof Error ? error.message : String(error)),
+  };
 }
 
 /** The code a prepare-stage failure is reported under. */

@@ -91,7 +91,9 @@ export function withDefaultSla(sequence: SequenceDef, project: Project, slaMs: n
     steps: sequence.steps.map((step) => {
       const target = findStepRequest(project, step.requestId);
       const own: readonly StepAssertion[] = [
-        ...(step.requestAssertions && target.kind === 'found' ? (target.selected.request.assertions ?? []) : []),
+        ...(step.requestAssertions && target.kind === 'found' && 'assertions' in target.selected.request
+          ? (target.selected.request.assertions ?? [])
+          : []),
         ...step.assertions,
       ];
       return own.some((a) => a.type === 'sla')
@@ -138,10 +140,12 @@ export async function runSequences(
     const raw = new Map<string, SentRequest['raw']>();
     const sender: SequenceStepSender = async (step, sequenceScope) => {
       // A post-response script's tests count as the step's assertions (#63).
+      // A WebSocket request has neither assertions nor scripts of its own.
+      const { request } = step.selected;
       const declared =
-        (step.step.requestAssertions ? (step.selected.request.assertions ?? []).length : 0) +
+        (step.step.requestAssertions && 'assertions' in request ? (request.assertions ?? []).length : 0) +
         step.step.assertions.length +
-        (activeScripts(step.selected.request.scripts)?.post !== undefined ? 1 : 0);
+        ('scripts' in request && activeScripts(request.scripts)?.post !== undefined ? 1 : 0);
       if (options.requireAssertions && declared === 0) {
         return { error: { code: 'assertions-required', message: 'This step has no assertions.' } };
       }
@@ -172,7 +176,7 @@ export async function runSequences(
       const run = await runSequence(sequence, context.project, sender, {
         signal: controller.signal,
         onStepDone: (step) => options.onStepDone(toResult(step)),
-        ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+        ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
         // Steps are looked up in the registry the sender sends through.
         ...(context.registry !== undefined ? { registry: context.registry } : {}),
         containsKnownSecret: options.containsKnownSecret,

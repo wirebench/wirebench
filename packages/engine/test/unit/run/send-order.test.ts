@@ -2,7 +2,8 @@
  * Pins the order of operations inside one send, per protocol: which secret is asked for when, when
  * the OAuth2 token is fetched, when the contract is loaded, when the scripts run, and what a refused
  * token does to the run's token source. Written against the run module before the protocols became
- * modules, and unchanged by that move.
+ * modules, and unchanged by that move. Since #184 phase 2 the order is the desktop's: resolve,
+ * script, connect, send.
  *
  * Nothing here reaches the network: the three senders and the three contract loaders are replaced by
  * recorders, so the only thing under test is the order of the calls.
@@ -13,12 +14,13 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeProtoDefinitionCache } from '../../../src/grpc/cache.js';
 import { createGrpcApi, createGrpcRequest } from '../../../src/grpc/model.js';
-import type { HttpExchange } from '../../../src/http/types.js';
+import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Interface, OAuth2Auth, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
+import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import { createRunSender } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import type { SelectedRequest } from '../../../src/run/select.js';
@@ -304,7 +306,7 @@ beforeEach(() => {
 });
 
 /** A token endpoint that hands out `tok-1`, `tok-2`, … and records each request. */
-const fetchToken: NonNullable<RunContext['fetchToken']> = (request) => {
+const fetchToken = (request: HttpRequest): Promise<HttpExchange> => {
   events.push('fetch token');
   issued += 1;
   const body = new TextEncoder().encode(
@@ -321,16 +323,20 @@ const fetchToken: NonNullable<RunContext['fetchToken']> = (request) => {
   } as unknown as HttpExchange);
 };
 
+function getSecretFor(ref: string): Promise<string | undefined> {
+  events.push(`secret ${ref}`);
+  return Promise.resolve(SECRETS[ref]);
+}
+
 function contextFor(p: Project, scripting: boolean): RunContext {
   return {
     project: p,
     projectDir: dir,
     overrides: {},
-    getSecret: (ref) => {
-      events.push(`secret ${ref}`);
-      return Promise.resolve(SECRETS[ref]);
+    host: {
+      getSecret: getSecretFor,
+      tokens: createRunTokenSource({ getSecret: getSecretFor, send: fetchToken }),
     },
-    fetchToken,
     ...(scripting ? { scripting: new RecordingScripting() } : {}),
   };
 }
@@ -362,24 +368,24 @@ async function tokensFetched(path: string, refuse: () => void): Promise<number> 
   return events.filter((event) => event === 'fetch token').length;
 }
 
-const PLAIN = ['secret ref-client', 'fetch token', 'secret secret:tenant', 'send'];
+const PLAIN = ['secret secret:tenant', 'secret ref-client', 'fetch token', 'send'];
 const SCRIPTED = [
   'check',
-  'secret ref-client',
-  'fetch token',
   'secret secret:signing',
   'pre',
   'secret secret:tenant',
+  'secret ref-client',
+  'fetch token',
   'send',
   'post',
 ];
 
 describe('the order of operations in a SOAP send', () => {
-  it('loads the definition, fetches the token, resolves the secret tokens, then sends', async () => {
+  it('loads the definition, resolves the secret tokens, fetches the token, then sends', async () => {
     expect(await orderOf('Billing/Op/Get')).toEqual(['load definition', ...PLAIN]);
   });
 
-  it('checks the scripts before anything is asked for, and puts the secrets back after the pre-request script', async () => {
+  it('checks the scripts before anything is asked for, and fetches the token after the pre-request script', async () => {
     expect(await orderOf('Billing/Op/Get', SCRIPTS)).toEqual(['load definition', ...SCRIPTED]);
   });
 
@@ -391,7 +397,7 @@ describe('the order of operations in a SOAP send', () => {
 });
 
 describe('the order of operations in a REST send', () => {
-  it('fetches the token, resolves the secret tokens, then sends, and loads no contract', async () => {
+  it('resolves the secret tokens, fetches the token, then sends, and loads no contract', async () => {
     expect(await orderOf('Invoices/List')).toEqual(PLAIN);
   });
 
@@ -401,6 +407,13 @@ describe('the order of operations in a REST send', () => {
 
   it('reads a webhook item’s signing secret after its secret tokens', async () => {
     expect(await orderOf('Webhooks/Ping')).toEqual(['secret secret:tenant', 'secret ref-hooks', 'send']);
+  });
+
+  it('reads a webhook item’s signing secret before it fetches its OAuth2 token, as the app does', async () => {
+    const base = project();
+    const p: Project = { ...base, webhooks: { ...base.webhooks!, auth: AUTH } };
+    await createRunSender(contextFor(p, false))(pick(p, 'Webhooks/Ping'));
+    expect(events).toEqual(['secret secret:tenant', 'secret ref-hooks', 'secret ref-client', 'fetch token', 'send']);
   });
 
   it('sends a request whose scripts are switched off as one without scripts, and says so', async () => {
@@ -419,20 +432,26 @@ describe('the order of operations in a REST send', () => {
 });
 
 describe('the order of operations in a gRPC send', () => {
-  it('loads the schema before it fetches the token', async () => {
-    expect(await orderOf('Greeter/Hello')).toEqual(['load proto set', ...PLAIN]);
+  it('resolves the call, then loads the schema before it fetches the token', async () => {
+    expect(await orderOf('Greeter/Hello')).toEqual([
+      'secret secret:tenant',
+      'load proto set',
+      'secret ref-client',
+      'fetch token',
+      'send',
+    ]);
   });
 
   it('loads the schema once for the check and the send', async () => {
     expect(await orderOf('Greeter/Hello', SCRIPTS)).toEqual(['load proto set', ...SCRIPTED]);
   });
 
-  it('remembers a schema that did not load, and asks for nothing', async () => {
+  it('remembers a schema that did not load, and fetches no token', async () => {
     const p = project();
     const send = createRunSender(contextFor(p, false));
     await expect(send(pick(p, 'Uncached/Hello'))).rejects.toMatchObject({ code: 'grpc-definition-missing' });
     await expect(send(pick(p, 'Uncached/Hello'))).rejects.toMatchObject({ code: 'grpc-definition-missing' });
-    expect(events).toEqual(['load proto set']);
+    expect(events).toEqual(['secret secret:tenant', 'load proto set', 'secret secret:tenant']);
   });
 
   it('drops the token after UNAUTHENTICATED, and keeps it after PERMISSION_DENIED', async () => {

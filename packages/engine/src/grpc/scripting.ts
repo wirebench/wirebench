@@ -9,7 +9,7 @@ import { headerPairSchema } from '../script/apply.js';
 import type { HeaderPair, ScriptFailure } from '../script/model.js';
 import { entriesOf, pairsOf, recordPairs } from '../script/send.js';
 import type { GrpcCallResult } from './call.js';
-import type { GrpcSendInput } from './send.js';
+import type { GrpcResolvedInput } from './run.js';
 
 export interface GrpcRequestSnapshot {
   readonly protocol: 'grpc';
@@ -31,9 +31,7 @@ export interface GrpcResponseSnapshot {
   readonly durationMs: number;
 }
 
-type PreparedGrpc = Omit<GrpcSendInput, 'messages' | 'onMessage' | 'onOpen'>;
-
-export function grpcRequestSnapshot(input: PreparedGrpc, messageText: string): GrpcRequestSnapshot {
+export function grpcRequestSnapshot(input: GrpcResolvedInput, messageText: string): GrpcRequestSnapshot {
   let message: unknown;
   try {
     message = JSON.parse(messageText);
@@ -50,11 +48,11 @@ export function grpcRequestSnapshot(input: PreparedGrpc, messageText: string): G
 }
 
 export function applyGrpcSnapshot(
-  input: PreparedGrpc,
+  input: GrpcResolvedInput,
   messageText: string,
   before: GrpcRequestSnapshot,
   after: GrpcRequestSnapshot,
-): { input: PreparedGrpc; messageText: string } {
+): { input: GrpcResolvedInput; messageText: string } {
   const changed = JSON.stringify(after.message) !== JSON.stringify(before.message);
   return {
     input: { ...input, metadata: entriesOf(after.metadata) },

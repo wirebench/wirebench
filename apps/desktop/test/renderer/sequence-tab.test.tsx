@@ -122,9 +122,9 @@ describe('SequenceTab', () => {
     expect(within(steps[0]!).getByText('Log in')).toBeTruthy();
     expect(within(steps[0]!).getByText('POST')).toBeTruthy();
     expect(within(steps[0]!).queryByTestId('sequence-step-problem')).toBeNull();
-    expect(within(steps[1]!).getByTestId('sequence-step-problem').textContent).toBe(
-      'A WebSocket request cannot be a step',
-    );
+    // A WebSocket session runs as a step, so it shows no problem.
+    expect(within(steps[1]!).getByText('Live feed')).toBeTruthy();
+    expect(within(steps[1]!).queryByTestId('sequence-step-problem')).toBeNull();
     expect(within(steps[2]!).getByTestId('sequence-step-problem').textContent).toBe('Missing request');
   });
 

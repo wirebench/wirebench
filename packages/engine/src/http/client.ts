@@ -545,7 +545,19 @@ export async function sendHttp(
         break;
       }
 
-      const { data: rawBodyRaw, truncated } = await readBody(response.body, req.maxSizeBytes);
+      let read: Awaited<ReturnType<typeof readBody>>;
+      try {
+        read = await readBody(response.body, req.maxSizeBytes);
+      } catch (err) {
+        // A body the deadline or the caller cuts short fails as the request would have.
+        throw toHttpError(err, {
+          userAborted: req.signal?.aborted === true,
+          deadlineHit: deadlineController.signal.aborted,
+          hadProxy: req.proxy !== undefined,
+          host: currentUrl.host,
+        });
+      }
+      const { data: rawBodyRaw, truncated } = read;
       const decompress = req.decompress ?? true;
       let body = rawBodyRaw;
       let decodeError: string | undefined;

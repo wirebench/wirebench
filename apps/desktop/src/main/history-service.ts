@@ -16,89 +16,40 @@ export interface RecordWsSessionInput {
   readonly handshakeOpened: boolean;
   /** Query parameters an API key travels in, masked in the URL whatever they are called. */
   readonly keyParams?: readonly string[];
+  /** The run a sequence step's session belongs to, e.g. `sequence:<id>` and `run:<id>`. */
+  readonly tags?: readonly string[];
 }
 
 /**
  * Builds one (already redacted) WebSocket `HistoryEntry` from a finished session — written on
  * close, whether the session closed cleanly or the handshake never got past `error`/a non-101
- * status. The SOAP-shaped fields carry what they can, as a gRPC entry's do: the API's name as the
- * interface, the folder path as the operation, the handshake's status as the status; `ws` is the
- * multi-message record ADR-0007 left room for, capped by {@link historyWsOf}'s own `capFrames`.
+ * status — with the engine's builder, which the command line's `send` shares.
  *
  * `WsExchangeSummary` (the wire shape `openWsSession` resolves with) is already redacted for the
  * session's own show-secrets toggle; History redacts again unconditionally with `show: false`,
- * the same way `buildGrpcHistoryEntry` re-redacts its metadata regardless of what was shown live.
+ * the same way `buildGrpcHistoryEntry` re-redacts its metadata regardless of what was shown live,
+ * and masks every secret value main recorded this session.
  */
 export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionInput): HistoryEntry {
-  const { exchange } = record;
-  const keyParams = record.keyParams ?? [];
-  // Built from the wire shape (`WsExchangeSummary`, zod-inferred, every optional field typed
-  // `T | undefined`) into the engine's stricter `WsExchange` (plain `?:`, no explicit `undefined`
-  // under `exactOptionalPropertyTypes`) — the same widen/narrow gap `toHistoryEntryWire`'s own
-  // JSON round trip papers over elsewhere in this file. The shapes agree field for field; only
+  // The wire shape (`WsExchangeSummary`, zod-inferred, every optional field typed `T | undefined`)
+  // read as the engine's stricter `WsExchange` (plain `?:`, no explicit `undefined` under
+  // `exactOptionalPropertyTypes`) — the same widen/narrow gap `toHistoryEntryWire`'s own JSON round
+  // trip papers over elsewhere in this file. The shapes agree field for field; only
   // `exactOptionalPropertyTypes` disagrees, so the cast is safe.
-  const redacted = {
-    kind: 'websocket',
-    url: redactUrl(exchange.url, { show: false, extraParams: keyParams }),
-    handshake: {
-      ...exchange.handshake,
-      url: redactUrl(exchange.handshake.url, { show: false, extraParams: keyParams }),
-      requestHeaders: redactHeaders(exchange.handshake.requestHeaders, { show: false }),
-      ...(exchange.handshake.responseHeaders !== undefined
-        ? { responseHeaders: redactHeaders(exchange.handshake.responseHeaders, { show: false }) }
-        : {}),
-    },
-    // A frame's text may carry a `${secret:name}` value (sent, or echoed back); the summary shows
-    // it while secrets are shown, and History, written to disk, never does. A binary payload's
-    // bytes and a close reason are masked the same way; `size` stays the size on the wire, as the
-    // summary's, though a masked payload's own length can differ from it.
-    frames: exchange.frames.map((frame) => ({
-      ...frame,
-      ...(frame.text !== undefined ? { text: redactSecretValues(frame.text) } : {}),
-      ...(frame.base64 !== undefined ? { base64: redactSecretBytes(frame.base64) } : {}),
-      ...(frame.close !== undefined
-        ? { close: { code: frame.close.code, reason: redactSecretValues(frame.close.reason) } }
-        : {}),
-    })),
-    // `historyWsOf` copies the reason into the entry's `closeReason`.
-    closed: { ...exchange.closed, reason: redactSecretValues(exchange.closed.reason) },
-    counts: exchange.counts,
-    durationMs: exchange.durationMs,
-  } as unknown as WsExchange;
-  const ws = historyWsOf(redacted);
-  const headers: HeaderEntryWire[] = Object.entries(redacted.handshake.requestHeaders).map(([name, value]) => ({
-    name,
-    value,
-  }));
-  return {
-    id: generateHistoryId(),
-    kind: 'websocket',
-    at: new Date().toISOString(),
+  return buildEngineWsHistoryEntry(
     projectId,
-    requestId: record.requestId,
-    requestName: record.requestName,
-    interfaceName: record.apiName,
-    operationName: record.folderPath,
-    endpoint: ws.url,
-    soapVersion: 'none',
-    method: 'GET',
-    ...(ws.status !== undefined ? { status: ws.status } : {}),
-    durationMs: exchange.durationMs,
-    ok: record.handshakeOpened && ws.closedBy !== 'error',
-    request: { envelopeXml: '', headers },
-    ...(ws.status !== undefined
-      ? {
-          response: {
-            rawHeaders: Object.entries(redacted.handshake.responseHeaders ?? {}),
-            status: ws.status,
-            statusText: exchange.handshake.statusText ?? '',
-          },
-        }
-      : {}),
-    ...(ws.error !== undefined ? { error: { code: 'ws-handshake-failed', message: ws.error } } : {}),
-    ws,
-    sizeBytes: exchange.counts.bytesSent + exchange.counts.bytesReceived,
-  };
+    {
+      requestId: record.requestId,
+      requestName: record.requestName,
+      apiName: record.apiName,
+      folderPath: record.folderPath,
+      exchange: record.exchange as unknown as WsExchange,
+      handshakeOpened: record.handshakeOpened,
+      ...(record.keyParams !== undefined ? { keyParams: record.keyParams } : {}),
+      ...(record.tags !== undefined ? { tags: record.tags } : {}),
+    },
+    { text: redactSecretValues, base64: (base64) => redactSecretBytes(base64) },
+  );
 }
 
 /**
@@ -116,12 +67,12 @@ import { mkdirSync, watch } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import {
   ProjectError,
+  buildWsHistoryEntry as buildEngineWsHistoryEntry,
   normalizeHistoryEntry,
   assertPathSegment,
   generateHistoryId,
   historyContractOf,
   historySseOf,
-  historyWsOf,
   openHistory,
 } from '@wirebench/engine';
 import type {

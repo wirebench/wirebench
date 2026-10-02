@@ -1,5 +1,12 @@
 // packages/cli/test/unit/ops/operations.test.ts
-import { loadProject } from '@wirebench/engine';
+import {
+  createGrpcApi,
+  createGrpcRequest,
+  createWsApi,
+  createWsFolder,
+  createWsRequest,
+  loadProject,
+} from '@wirebench/engine';
 import type { RestFolder, RestRequestDef } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
@@ -150,5 +157,47 @@ describe('op operations', () => {
       expect.objectContaining({ kind: 'soap', ref: 'CalculatorService/Add', items: [SOAP_ITEM] }),
     ]);
     expect(result.operations[0]).not.toHaveProperty('soapAction');
+  });
+
+  it('lists each saved WebSocket request send takes, by its path, and leaves gRPC out', async () => {
+    const fixture = await emptyProject();
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      wsApis: [
+        createWsApi('Chat', {
+          id: 'ws-chat',
+          slug: 'chat',
+          url: 'ws://127.0.0.1:9',
+          requests: [createWsRequest('Echo', { id: 'ws-echo', url: `/echo?token=${SECRET}` })],
+          folders: [
+            createWsFolder('Rooms', {
+              id: 'ws-rooms',
+              requests: [createWsRequest('Join', { id: 'ws-join', url: '/join' })],
+            }),
+          ],
+        }),
+      ],
+      grpcApis: [createGrpcApi('Greeter', { id: 'g', requests: [createGrpcRequest('Hello', { id: 'g-hello' })] })],
+    }));
+
+    const result = await runOp(operationsOp, {}, fixture.base());
+
+    const [echo] = result.operations;
+    expect(echo?.kind === 'websocket' ? echo.url : '').toMatch(/^\/echo\?token=/);
+    expect(result.operations).toEqual([
+      {
+        kind: 'websocket',
+        container: 'Chat',
+        url: echo?.kind === 'websocket' ? echo.url : '',
+        ref: 'Chat/Echo',
+        items: ['Chat/Echo'],
+      },
+      { kind: 'websocket', container: 'Chat', url: '/join', ref: 'Chat/Rooms/Join', items: ['Chat/Rooms/Join'] },
+    ]);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+    expect((await runOp(operationsOp, { container: 'chat' }, fixture.base())).operations).toHaveLength(2);
+    await expect(runOp(operationsOp, { container: 'Greeter' }, fixture.base())).rejects.toMatchObject({
+      code: 'container-not-found',
+    });
   });
 });

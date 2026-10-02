@@ -1,12 +1,22 @@
+// @vitest-environment node
 /**
- * Resolving a REST send in main: the base URL under an environment, the editor's unsaved draft, the
- * settings ladder, property expansion, and which credentials a folder chain lands on.
+ * Resolving a REST send in main, as the send itself resolves it through the engine (`previewRest`,
+ * which the editor's badge and the cURL export read): the base URL under an environment, the
+ * editor's unsaved draft, the settings ladder, property expansion, which credentials a folder chain
+ * lands on, and the proxy the host chooses for the send.
  *
  * The point of each case is that the renderer could not have worked it out: it has no environment,
  * no project model and no keychain, so anything it got wrong here would be sent to the wrong place
  * with the wrong credentials.
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  generateServerCert,
+  generateTestCa,
+  startTestProxy,
+  startTestRestServer,
+  type TestRestServer,
+} from '@wirebench/engine/test-helpers';
 import {
   DEFAULT_PREFERENCES,
   createApi,
@@ -15,17 +25,21 @@ import {
   createRestRequest,
   entry,
   mergePreferences,
-  resolveApiBaseUrl,
 } from '@wirebench/engine';
-import type { Project, PropertyScopes, RestApi } from '@wirebench/engine';
-import { resolveRestSend } from '../src/main/rest-send.js';
+import type { Environment, Preferences, Project, RestApi } from '@wirebench/engine';
 import { resolveAuthConfig } from '../src/main/secret-resolver.js';
+import { previewRest, sendThroughEngine, type RestPreview } from '../src/main/send/exchange.js';
+import type { RestRequestPatchWire } from '../src/shared/wire-types.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 
-const scopes: PropertyScopes = {
-  project: { tier: 'gold' },
-  env: { base: 'https://uat.test/api', petId: '42' },
-  global: {},
-  system: {},
+const UAT: Environment = {
+  id: 'env-uat',
+  name: 'uat',
+  slug: 'uat',
+  order: 0,
+  endpoints: {},
+  properties: { base: 'https://uat.test/api', petId: '42' },
+  disabledProperties: [],
 };
 
 function seeded(overrides: Partial<RestApi> = {}): Project {
@@ -50,21 +64,49 @@ function seeded(overrides: Partial<RestApi> = {}): Project {
     ],
     ...overrides,
   });
-  return { ...createProject('Demo', { id: 'p1' }), apis: [api] };
+  return {
+    ...createProject('Demo', { id: 'p1' }),
+    properties: { tier: 'gold' },
+    environments: [UAT],
+    activeEnvironmentId: UAT.id,
+    apis: [api],
+  };
 }
 
-/** The resolver a project open outside a workspace uses: its own active environment. */
-const ownEnvironment = (project: Project) => (api: RestApi) => resolveApiBaseUrl(project, undefined, api);
+/** `requestId` of `project` resolved as its send would resolve it, under the project's active environment. */
+async function resolve(
+  project: Project,
+  requestId: string,
+  options: { readonly draft?: RestRequestPatchWire; readonly preferences?: Preferences } = {},
+): Promise<RestPreview | undefined> {
+  const { preferences } = options;
+  const deps = sendDepsFor(project, {
+    project: {
+      runContextFor: () => ({
+        project,
+        projectDir: '/tmp/none',
+        globals: {},
+        ...(project.activeEnvironmentId !== undefined ? { environmentId: project.activeEnvironmentId } : {}),
+      }),
+    },
+    ...(preferences !== undefined ? { preferences: () => preferences } : {}),
+  });
+  return await previewRest(deps, requestId, options.draft);
+}
 
-describe('resolveRestSend', () => {
-  it('expands the base URL, the path parameter and the header', () => {
-    const project = seeded();
-    const resolved = resolveRestSend({
-      project,
-      requestId: 'req-1',
-      scopes,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+let server: TestRestServer;
+
+beforeAll(async () => {
+  server = await startTestRestServer();
+});
+
+afterAll(async () => {
+  await server.close();
+});
+
+describe('resolving a REST send (previewRest)', () => {
+  it('expands the base URL, the path parameter and the header', async () => {
+    const resolved = (await resolve(seeded(), 'req-1'))!;
 
     expect(resolved.input.baseUrl).toBe('https://uat.test/api');
     expect(resolved.input.request.pathParams).toEqual([{ name: 'petId', value: '42', enabled: true }]);
@@ -73,61 +115,34 @@ describe('resolveRestSend', () => {
     expect(resolved.baseUrlSource).toBe('api');
   });
 
-  it('takes an environment override for the API, and says so', () => {
+  it('takes an environment override for the API, and says so', async () => {
     const project = seeded();
     const withEnv: Project = {
       ...project,
-      environments: [
-        {
-          id: 'env-1',
-          name: 'uat',
-          slug: 'uat',
-          order: 0,
-          endpoints: { Petstore: 'https://second.test' },
-          properties: {},
-          disabledProperties: [],
-        },
-      ],
-      activeEnvironmentId: 'env-1',
+      environments: [{ ...UAT, endpoints: { [project.apis[0]!.slug]: 'https://second.test' } }],
     };
-    const resolved = resolveRestSend({
-      project: withEnv,
-      requestId: 'req-1',
-      scopes,
-      resolveBaseUrl: (api) => resolveApiBaseUrl(withEnv, 'env-1', api),
-    })!;
+    const resolved = (await resolve(withEnv, 'req-1'))!;
 
     expect(resolved.input.baseUrl).toBe('https://second.test');
     expect(resolved.baseUrlSource).toBe('environment');
   });
 
-  it('reports a property nothing resolved rather than leaving the caller to notice', () => {
-    const project = seeded();
-    const resolved = resolveRestSend({
-      project,
-      requestId: 'req-1',
-      draft: { url: '/pet/${#Env#nope}' },
-      scopes,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+  it('reports a property nothing resolved rather than leaving the caller to notice', async () => {
+    const resolved = (await resolve(seeded(), 'req-1', { draft: { url: '/pet/${#Env#nope}' } }))!;
 
     expect(resolved.unresolved.map((ref) => ref.name)).toEqual(['nope']);
   });
 
-  it('sends what the editor is looking at, without persisting it', () => {
+  it('sends what the editor is looking at, without persisting it', async () => {
     const project = seeded();
-    const resolved = resolveRestSend({
-      project,
-      requestId: 'req-1',
+    const resolved = (await resolve(project, 'req-1', {
       draft: {
         method: 'POST',
         url: '/pets',
         pathParams: [],
         body: { kind: 'raw', language: 'json', text: '{"tier":"${tier}"}' },
       },
-      scopes,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+    }))!;
 
     expect(resolved.input.request.method).toBe('POST');
     expect(resolved.input.request.body).toEqual({ kind: 'raw', language: 'json', text: '{"tier":"gold"}' });
@@ -135,109 +150,93 @@ describe('resolveRestSend', () => {
     expect(project.apis[0]!.requests[0]!.method).toBe('GET');
   });
 
-  it('climbs the settings ladder: request over API over project', () => {
+  it('climbs the settings ladder: request over API over project', async () => {
     // A project always carries a timeout, so for a *saved* request the preference is the floor the
     // project setting itself was defaulted from rather than a fourth rung reachable from here; the
     // engine's own test covers the preference layer directly.
     const project = seeded();
     const preferences = mergePreferences({ http: { socketTimeoutMs: 11_000 } });
 
-    const fromProject = resolveRestSend({
-      project,
-      requestId: 'req-1',
-      scopes,
-      preferences,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+    const fromProject = (await resolve(project, 'req-1', { preferences }))!;
     expect(fromProject.input.settings.timeoutMs).toBe(project.settings.defaultTimeoutMs);
 
-    const fromRequest = resolveRestSend({
-      project,
-      requestId: 'req-1',
-      draft: { settings: { timeoutMs: 250 } },
-      scopes,
-      preferences,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+    const fromRequest = (await resolve(project, 'req-1', { draft: { settings: { timeoutMs: 250 } }, preferences }))!;
     expect(fromRequest.input.settings.timeoutMs).toBe(250);
   });
 
-  it('follows redirects by default, as a REST client should', () => {
-    const project = seeded();
-    const resolved = resolveRestSend({
-      project,
-      requestId: 'req-1',
-      scopes,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+  it('follows redirects by default, as a REST client should', async () => {
+    const resolved = (await resolve(seeded(), 'req-1'))!;
     expect(resolved.input.settings.followRedirects).toBe(DEFAULT_PREFERENCES.rest.followRedirects);
   });
 
-  it('resolves the credentials the folder chain lands on, still as references', () => {
+  it('resolves the credentials the folder chain lands on, still as references', async () => {
     const project = seeded();
 
-    const root = resolveRestSend({ project, requestId: 'req-1', scopes, resolveBaseUrl: ownEnvironment(project) })!;
+    const root = (await resolve(project, 'req-1'))!;
     expect(root.auth).toEqual({ type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' });
 
-    const inFolder = resolveRestSend({
-      project,
-      requestId: 'req-admin',
-      scopes,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+    const inFolder = (await resolve(project, 'req-admin'))!;
     expect(inFolder.auth).toEqual({ type: 'bearer', tokenRef: 'sec_token' });
   });
 
-  it('lets the editor draft change which credentials apply', () => {
-    const project = seeded();
-    const resolved = resolveRestSend({
-      project,
-      requestId: 'req-admin',
-      draft: { auth: { type: 'none' } },
-      scopes,
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+  it('lets the editor draft change which credentials apply', async () => {
+    const resolved = (await resolve(seeded(), 'req-admin', { draft: { auth: { type: 'none' } } }))!;
 
     expect(resolved.auth).toEqual({ type: 'none' });
   });
 
-  it('escapes substituted values into the body when the request asks to', () => {
-    const project = seeded();
-    const resolved = resolveRestSend({
-      project,
-      requestId: 'req-1',
+  it('escapes substituted values into the body when the request asks to', async () => {
+    const project = { ...seeded(), properties: { tier: 'gold', quote: 'a"b' } };
+    const resolved = (await resolve(project, 'req-1', {
       draft: {
         body: { kind: 'raw', language: 'json', text: '{"q":"${quote}"}' },
         settings: { escapeProperties: true },
       },
-      scopes: { ...scopes, project: { ...scopes.project, quote: 'a"b' } },
-      resolveBaseUrl: ownEnvironment(project),
-    })!;
+    }))!;
 
     const body = resolved.input.request.body;
     expect(body.kind === 'raw' && body.text).toBe('{"q":"a\\"b"}');
   });
 
-  it('is undefined for a request that no longer exists', () => {
-    const project = seeded();
-    expect(
-      resolveRestSend({ project, requestId: 'gone', scopes, resolveBaseUrl: ownEnvironment(project) }),
-    ).toBeUndefined();
+  it('is undefined for a request that no longer exists', async () => {
+    expect(await resolve(seeded(), 'gone')).toBeUndefined();
   });
 
-  it('passes the host TLS and proxy through untouched', () => {
-    const project = seeded();
-    const resolved = resolveRestSend({
-      project,
-      requestId: 'req-1',
-      scopes,
-      resolveBaseUrl: ownEnvironment(project),
-      tls: { rejectUnauthorized: false },
-      proxy: { url: 'http://proxy.test:8080' },
-    })!;
+  it("sends past an untrusted certificate only when the request's settings trust it", async () => {
+    // A CA the process does not trust, and no anchors lent: only `trustInvalid` lets the send through.
+    const cert = generateServerCert(generateTestCa());
+    const https = await startTestRestServer({ tls: { cert: cert.certPem, key: cert.keyPem } });
+    try {
+      const sendWith = (trustInvalid: boolean) => {
+        const request = createRestRequest('Echo', { id: 'req-tls', url: '/echo' });
+        const project = seeded({
+          baseUrl: https.url,
+          auth: { type: 'none' },
+          requests: [{ ...request, settings: { ...request.settings, trustInvalid } }],
+        });
+        return sendThroughEngine(sendDepsFor(project), 's1', 'req-tls', { draft: { kind: 'rest' } });
+      };
+      expect((await sendWith(true)).http.status).toBe(200);
+      await expect(sendWith(false)).rejects.toMatchObject({ code: expect.stringMatching(/tls/) as unknown });
+    } finally {
+      await https.close();
+    }
+  });
 
-    expect(resolved.input.tls).toMatchObject({ rejectUnauthorized: false });
-    expect(resolved.input.proxy).toEqual({ url: 'http://proxy.test:8080' });
+  it('passes the host proxy through to the send', async () => {
+    const proxy = await startTestProxy();
+    try {
+      const project = seeded({ baseUrl: server.url, auth: { type: 'none' } });
+      const deps = sendDepsFor(project, {
+        getSecret: () => Promise.resolve('tok'),
+        project: { proxyFor: () => Promise.resolve({ url: proxy.url }) },
+      });
+      await sendThroughEngine(deps, 's1', 'req-admin', { draft: { kind: 'rest', draft: { url: '/echo' } } });
+
+      expect(proxy.requests.map((request) => request.target)).toEqual([`${server.url}/echo`]);
+    } finally {
+      await proxy.close();
+    }
   });
 });
 

@@ -11,13 +11,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
-import { createApi, createProject, createRestRequest, entry, resolveApiBaseUrl } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, entry } from '@wirebench/engine';
 import type { AuthConfig, Project } from '@wirebench/engine';
-import { EngineService } from '../src/main/engine-service.js';
 import { buildRestHistoryEntry, HistoryService, historyFilePath } from '../src/main/history-service.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { resolveRestSend } from '../src/main/rest-send.js';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire, RestExchangeSummary } from '../src/shared/wire-types.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
@@ -66,25 +65,15 @@ interface Sent {
 
 /** Sends `req-1` of `model` through main's REST path, into a real History. */
 async function send(model: Project, showSecrets: boolean): Promise<Sent> {
-  const engine = new EngineService((ref) => Promise.resolve(SECRETS[ref]));
   const history = new HistoryService(userDataDir);
   await history.open('p1');
-  const deps: RequestChannelDeps = {
-    project: {
-      projectId: () => 'p1',
-      restSend: (requestId: string) =>
-        resolveRestSend({
-          project: model,
-          requestId,
-          scopes: { project: {}, global: {}, system: {} },
-          resolveBaseUrl: (api) => resolveApiBaseUrl(model, undefined, api),
-        }),
-    } as unknown as RequestChannelDeps['project'],
+  const deps = sendDepsFor(model, {
+    getSecret: (ref) => Promise.resolve(SECRETS[ref]),
     history,
     showSecrets: { get: () => showSecrets },
-  };
+  });
 
-  const summary = await sendRestRequest(engine, deps, { sendId: 's1', requestId: 'req-1' });
+  const summary = await sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } });
   const line = (await readFile(historyFilePath(userDataDir, 'p1'), 'utf8')).trim();
   return { summary, line, stored: JSON.parse(line) as HistoryEntryWire };
 }

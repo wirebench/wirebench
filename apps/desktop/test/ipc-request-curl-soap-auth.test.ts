@@ -5,7 +5,8 @@
  * and an OAuth2 token is taken from the cache only — never fetched for an export.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SoapOwnerAuth } from '@wirebench/engine';
+import { createInterface, createProject, createRequest } from '@wirebench/engine';
+import type { Project, SoapOwnerAuth } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 
@@ -33,6 +34,21 @@ async function curl(): Promise<{ command: string; notes?: string[] }> {
 
 const secrets: Record<string, string> = { sec_token: 'tok-s3cret', sec_key: 'my key' };
 
+/** `req-1` at `http://dev.test/calc.asmx`, its interface's credentials `auth`. */
+function model(auth: SoapOwnerAuth | undefined): Project {
+  const request = {
+    ...createRequest('Add', { id: 'req-1', envelopeXml: '<Envelope/>', soapVersion: '1.1' }),
+    endpointUrl: 'http://dev.test/calc.asmx',
+  };
+  const iface = createInterface('Calculator', {
+    id: 'iface-1',
+    definitionUrl: 'http://dev.test/calc?wsdl',
+    cacheDefinition: false,
+    operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
+  });
+  return { ...createProject('Demo', { id: 'p1' }), interfaces: [auth === undefined ? iface : { ...iface, auth }] };
+}
+
 const OAUTH2 = {
   type: 'oauth2',
   grant: 'client-credentials',
@@ -53,21 +69,13 @@ describe('request.curl with a SOAP token owner auth', () => {
     cached = undefined;
     accessToken.mockClear();
     const project = {
-      scopesFor: () => ({ project: {}, global: {}, system: {} }),
-      authFor: () => auth,
-      buildLiveSendInput: (id: string) =>
-        id === 'req-1'
-          ? {
-              endpoint: 'http://dev.test/calc.asmx',
-              envelopeXml: '<Envelope/>',
-              soapVersion: '1.1' as const,
-              headers: {},
-            }
-          : undefined,
+      projectId: () => 'p1',
+      runContextFor: (id: string) => (id === 'req-1' ? { project: model(auth), projectDir: '/tmp/none' } : undefined),
     };
     registerRequestChannels(new EngineService((ref) => Promise.resolve(secrets[ref])), {
       project: project as unknown as RequestChannelDeps['project'],
       showSecrets: { get: () => showSecrets },
+      getSecret: (ref) => Promise.resolve(secrets[ref]),
       oauth2: {
         accessToken,
         status: () => (cached === undefined ? { state: 'none' } : { state: 'valid', token: cached }),

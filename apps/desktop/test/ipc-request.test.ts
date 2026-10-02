@@ -1,19 +1,28 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PropertyScopes } from '@wirebench/engine';
-import type { RequestSendRequest } from '../src/shared/wire-types.js';
+import { createServer, type Server } from 'node:http';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createInterface,
+  createProject,
+  createRequest,
+  DEFAULT_REQUEST_PROPERTIES,
+  type Project,
+  type PropertyScopes,
+  type SoapRequestDef,
+} from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { registerRequestChannels } from '../src/main/ipc/request.js';
+import type { RecordSendInput } from '../src/main/history-service.js';
+import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { PreflightResult } from '../src/main/expansion-preflight.js';
 import { wrapHandler } from '../src/main/ipc/envelope.js';
+import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import { channels } from '../src/shared/ipc.js';
 
 describe('request.* IPC validation', () => {
   it('rejects a malformed request.send payload with ipc-invalid-request', async () => {
-    const service = new EngineService();
-    const wrapped = wrapHandler(channels.request.send, (request) => service.send(request));
+    const wrapped = wrapHandler(channels.request.send, () => Promise.reject(new Error('never reached')));
 
     const result = await wrapped({ sendId: 'x' /* missing `input` */ });
 
@@ -21,8 +30,7 @@ describe('request.* IPC validation', () => {
   });
 
   it('rejects a request.send payload whose input.soapVersion is invalid', async () => {
-    const service = new EngineService();
-    const wrapped = wrapHandler(channels.request.send, (request) => service.send(request));
+    const wrapped = wrapHandler(channels.request.send, () => Promise.reject(new Error('never reached')));
 
     const result = await wrapped({
       sendId: 'x',
@@ -33,9 +41,9 @@ describe('request.* IPC validation', () => {
   });
 
   it('returns cancelled: false for an unknown sendId without touching the engine', async () => {
-    const service = new EngineService();
-    const cancelSpy = vi.spyOn(service, 'cancel');
-    const wrapped = wrapHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
+    const registry = new ExchangeRegistry();
+    const cancelSpy = vi.spyOn(registry, 'cancel');
+    const wrapped = wrapHandler(channels.request.cancel, (request) => Promise.resolve(registry.cancel(request.sendId)));
 
     const result = await wrapped({ sendId: 'never-sent' });
 
@@ -96,15 +104,12 @@ const noActionSupport = {
   requestSource: (): never => {
     throw new Error('requestSource is not stubbed in this test');
   },
-  buildLiveSendInput: (): never => {
-    throw new Error('buildLiveSendInput is not stubbed in this test');
-  },
   projectMutate: (): never => {
     throw new Error('projectMutate is not stubbed in this test');
   },
-  // No saved request behind these sends, so the property mapping is a pass-through.
-  sendInputFor: (): undefined => undefined,
   dumpFileFor: (): undefined => undefined,
+  // No saved SOAP request behind these sends.
+  endpointFor: (): undefined => undefined,
 };
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {
@@ -113,6 +118,77 @@ function invoke(channel: string, payload: unknown): Promise<unknown> {
     throw new Error(`${channel} was never registered`);
   }
   return handler({ sender: {} }, payload);
+}
+
+interface OkServer {
+  readonly url: string;
+  /** Every request body received, in order. */
+  readonly bodies: string[];
+  readonly contentTypes: string[];
+  close(): Promise<void>;
+}
+
+/** What the server answers: a SOAP envelope, so the exchange carries no `not-soap` problem. */
+const OK =
+  '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><ok/></soapenv:Body></soapenv:Envelope>';
+
+/** Answers every POST with {@link OK}, keeping what it was sent. */
+async function startOkServer(): Promise<OkServer> {
+  const bodies: string[] = [];
+  const contentTypes: string[] = [];
+  const server: Server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      bodies.push(Buffer.concat(chunks).toString('latin1'));
+      contentTypes.push(req.headers['content-type'] ?? '');
+      // `/slow` answers after half a second: longer than a 100 ms timeout.
+      setTimeout(
+        () => {
+          res.writeHead(200, { 'content-type': 'text/xml' });
+          res.end(OK);
+        },
+        req.url === '/slow' ? 500 : 0,
+      );
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const port = typeof address === 'object' && address !== null ? address.port : 0;
+  return {
+    url: `http://127.0.0.1:${String(port)}`,
+    bodies,
+    contentTypes,
+    close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
+  };
+}
+
+/** A project whose `req-1` the sends below go through; its endpoint is the renderer's, whatever it saves. */
+function seeded(extra: Partial<SoapRequestDef> = {}): Project {
+  const request: SoapRequestDef = {
+    ...createRequest('Req', { id: 'req-1', envelopeXml: '<a/>', soapVersion: '1.1' }),
+    endpointUrl: 'http://127.0.0.1:1/saved',
+    ...extra,
+  };
+  const iface = createInterface('Svc', {
+    id: 'iface-1',
+    definitionUrl: 'http://127.0.0.1:1/x?wsdl',
+    cacheDefinition: false,
+    operations: [{ name: 'Op', bindingName: '{urn:t}B', slug: 'op', order: 0, requests: [request] }],
+  });
+  return { ...createProject('P', { id: 'p1' }), properties: { stage: 'dev' }, interfaces: [iface] };
+}
+
+/** The project surface a send through the engine reads, over `model`. */
+function stubProject(model: Project) {
+  return {
+    scopesFor: () => scopes,
+    preflight: () => preflight,
+    requestMeta: () => undefined,
+    projectId: () => 'p1',
+    runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
+    ...noActionSupport,
+  };
 }
 
 describe('plaintext credentials never validate', () => {
@@ -144,89 +220,69 @@ describe('plaintext credentials never validate', () => {
 });
 
 describe('registerRequestChannels', () => {
-  beforeEach(() => {
+  let server: OkServer;
+
+  beforeEach(async () => {
     handlers.clear();
+    server = await startOkServer();
   });
 
-  it("passes the project service's property scopes into every send", async () => {
-    const engine = new EngineService();
-    const send = vi.spyOn(engine, 'send').mockResolvedValue({
-      sendId: 'send-1',
-      durationMs: 1,
-      http: {
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        rawHeaders: [],
-        bodyBase64: '',
-        rawBodyBase64: '',
-        rawRequestBase64: '',
-        rawResponseBase64: '',
-        truncated: false,
-        httpVersion: '1.1',
-        timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
-        redirects: [],
-        request: { url: 'http://dev.test/soap', method: 'POST', headers: {} },
-      },
-      problems: [],
-    });
-    const scopesFor = vi.fn().mockReturnValue(scopes);
+  afterEach(async () => {
+    await server.close();
+  });
+
+  it("expands every send against its own project's scopes, and an ad-hoc one against the ad-hoc scopes", async () => {
+    const model = seeded({ envelopeXml: '<a>${#Project#stage}</a>' });
+    const runContextFor = vi.fn(() => ({ project: model, projectDir: '/tmp/none', globals: {} }));
     const adHoc: PropertyScopes = { project: {}, global: { only: 'globals' }, env: {} };
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => 'p1',
-        ...noActionSupport,
-      },
+    registerRequestChannels(new EngineService(), {
+      project: { ...stubProject(model), runContextFor },
       adHocScopes: () => adHoc,
     });
 
     const result = await invoke('request.send', {
       sendId: 'send-1',
       requestId: 'req-1',
-      input: { endpoint: 'http://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a>${#Project#stage}</a>', soapVersion: '1.1' },
     });
 
     expect(result).toMatchObject({ ok: true });
     // Resolved for the request's own project: the router picks the host from the request id.
-    expect(scopesFor).toHaveBeenCalledWith('req-1');
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ sendId: 'send-1' }), { scopes, showSecrets: false });
+    expect(runContextFor).toHaveBeenCalledWith('req-1', undefined);
+    expect(server.bodies.at(-1)).toBe('<a>dev</a>');
 
     // A send with no request behind it belongs to no project, so it expands against the
     // ad-hoc scopes (globals and the process env) rather than being routed anywhere.
     await invoke('request.send', {
       sendId: 'send-2',
-      input: { endpoint: 'http://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a>${#Global#only}</a>', soapVersion: '1.1' },
     });
-    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ sendId: 'send-2' }), {
-      scopes: adHoc,
-      showSecrets: false,
+    expect(server.bodies.at(-1)).toBe('<a>globals</a>');
+    expect(runContextFor).toHaveBeenCalledTimes(1);
+
+    // The ad-hoc scopes are all it reads: the project's own properties are not among them.
+    const before = server.bodies.length;
+    const refused = await invoke('request.send', {
+      sendId: 'send-3',
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a>${#Project#stage}</a>', soapVersion: '1.1' },
     });
-    expect(scopesFor).toHaveBeenCalledTimes(1);
+    expect(refused).toMatchObject({ ok: false, error: { code: 'unresolved-properties' } });
+    expect(server.bodies.length).toBe(before);
   });
 
   it('returns secret-missing (not an unhandled rejection) when auth references a deleted ref', async () => {
     // The store no longer holds the ref the project's auth points at — a password cleared from
     // the keychain while the project still references it.
-    const engine = new EngineService(() => Promise.resolve(undefined));
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => ({ type: 'basic', username: 'alice', passwordRef: 'sec_deleted' }),
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-      },
+    const model = seeded({ auth: { type: 'basic', username: 'alice', passwordRef: 'sec_deleted' } });
+    registerRequestChannels(new EngineService(() => Promise.resolve(undefined)), {
+      project: { ...stubProject(model), projectId: () => undefined },
+      getSecret: () => Promise.resolve(undefined),
     });
 
     const result = await invoke('request.send', {
       sendId: 'send-missing',
       requestId: 'req-1',
-      input: { endpoint: 'http://dev.test/soap', envelopeXml: '<a/>', soapVersion: '1.1' },
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' },
     });
 
     expect(result).toMatchObject({ ok: false, error: { code: 'secret-missing' } });
@@ -236,7 +292,6 @@ describe('registerRequestChannels', () => {
     const project = {
       scopesFor: vi.fn().mockReturnValue(scopes),
       preflight: vi.fn().mockReturnValue(preflight),
-      authFor: vi.fn().mockReturnValue(undefined),
       requestMeta: vi.fn().mockReturnValue(undefined),
       projectId: vi.fn().mockReturnValue(undefined),
       ...noActionSupport,
@@ -254,7 +309,6 @@ describe('registerRequestChannels', () => {
       project: {
         scopesFor: () => scopes,
         preflight: () => preflight,
-        authFor: () => undefined,
         requestMeta: () => undefined,
         projectId: () => undefined,
         ...noActionSupport,
@@ -266,138 +320,92 @@ describe('registerRequestChannels', () => {
 });
 
 describe('request.send applies the saved request properties', () => {
-  beforeEach(() => {
+  let server: OkServer;
+
+  beforeEach(async () => {
     handlers.clear();
+    server = await startOkServer();
   });
 
-  /** An engine whose `send` records what it was handed and answers with a tiny exchange. */
-  function recordingEngine(): { engine: EngineService; sent: RequestSendRequest[] } {
-    const engine = new EngineService();
-    const sent: RequestSendRequest[] = [];
-    vi.spyOn(engine, 'send').mockImplementation((request) => {
-      sent.push(request);
-      return Promise.resolve({
-        sendId: request.sendId,
-        durationMs: 1,
-        http: {
-          status: 200,
-          statusText: 'OK',
-          headers: {},
-          rawHeaders: [],
-          bodyBase64: Buffer.from('<ok/>').toString('base64'),
-          rawBodyBase64: Buffer.from('<ok/>').toString('base64'),
-          rawRequestBase64: '',
-          rawResponseBase64: '',
-          truncated: false,
-          httpVersion: '1.1',
-          timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
-          redirects: [],
-          request: { url: request.input.endpoint, method: 'POST', headers: {} },
-        },
-        problems: [],
-      });
+  afterEach(async () => {
+    await server.close();
+  });
+
+  /** The `request.*` channels over `model`, with `project` laid over the stub's members. */
+  function registerOver(
+    model: Project,
+    project: Record<string, unknown> = {},
+    extra: Partial<RequestChannelDeps> = {},
+  ) {
+    registerRequestChannels(new EngineService(), {
+      project: { ...stubProject(model), ...project },
+      ...extra,
     });
-    return { engine, sent };
   }
 
-  it('replaces the renderer input with the property-mapped one', async () => {
-    const { engine, sent } = recordingEngine();
-    const mapped = {
-      endpoint: 'http://mapped.test/soap',
-      envelopeXml: '<mapped/>',
-      soapVersion: '1.1' as const,
-      timeoutMs: 100,
-      encoding: 'ISO-8859-1',
-    };
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-        sendInputFor: () => mapped,
-      },
-    });
+  const send = (sendId: string, requestId: string | undefined = 'req-1') =>
+    invoke('request.send', {
+      sendId,
+      ...(requestId !== undefined ? { requestId } : {}),
+      input: { endpoint: `${server.url}/soap`, envelopeXml: '<raw/>', soapVersion: '1.1' },
+    }) as Promise<{ ok: boolean; value: { problems: { code: string }[] } }>;
 
-    await invoke('request.send', {
-      sendId: 'send-mapped',
+  it("sends the renderer's envelope with the saved request's properties applied", async () => {
+    const recordSend = vi.fn<(projectId: string, record: RecordSendInput) => Promise<undefined>>(() =>
+      Promise.resolve(undefined),
+    );
+    registerOver(
+      seeded({
+        envelopeXml: '<saved/>',
+        properties: { ...DEFAULT_REQUEST_PROPERTIES, encoding: 'ISO-8859-1', timeoutMs: 100 },
+      }),
+      {},
+      { history: { recordSend } as never },
+    );
+
+    await send('send-mapped');
+
+    // The editor's envelope, with the saved request's encoding on the wire.
+    expect(server.bodies.at(-1)).toBe('<raw/>');
+    expect(server.contentTypes.at(-1)).toMatch(/charset=ISO-8859-1/i);
+    const [, record] = recordSend.mock.calls[0]!;
+    expect(record.input).toMatchObject({ endpoint: `${server.url}/soap`, envelopeXml: '<raw/>', soapVersion: '1.1' });
+    expect(record.input.headers?.['Content-Type']).toMatch(/charset=ISO-8859-1/i);
+
+    // And the saved timeout: a response slower than 100 ms is not waited for.
+    const slow = await invoke('request.send', {
+      sendId: 'send-slow',
       requestId: 'req-1',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
+      input: { endpoint: `${server.url}/slow`, envelopeXml: '<raw/>', soapVersion: '1.1' },
     });
-
-    expect(sent[0]?.input).toEqual(mapped);
+    expect(slow).toMatchObject({ ok: false, error: { code: 'timeout' } });
   });
 
   it('sends an ad-hoc request exactly as the renderer built it', async () => {
-    const { engine, sent } = recordingEngine();
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-      },
-    });
+    registerOver(seeded());
 
-    await invoke('request.send', {
-      sendId: 'send-adhoc',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
-    });
+    await send('send-adhoc', undefined);
 
-    expect(sent[0]?.input.envelopeXml).toBe('<raw/>');
+    expect(server.bodies.at(-1)).toBe('<raw/>');
   });
 
   it("writes the response body to the request's dump file, resolving it against the project dir", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
-    const { engine } = recordingEngine();
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-        dumpFileFor: () => ({ path: join('dumps', 'last.xml'), projectDir: dir }),
-      },
-    });
+    registerOver(seeded(), { dumpFileFor: () => ({ path: join('dumps', 'last.xml'), projectDir: dir }) });
 
-    const result = (await invoke('request.send', {
-      sendId: 'send-dump',
-      requestId: 'req-1',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
-    })) as { ok: boolean; value: { problems: { code: string }[] } };
+    const result = await send('send-dump');
 
     expect(result.ok).toBe(true);
     expect(result.value.problems).toEqual([]);
-    expect(readFileSync(join(dir, 'dumps', 'last.xml'), 'utf8')).toBe('<ok/>');
+    expect(readFileSync(join(dir, 'dumps', 'last.xml'), 'utf8')).toBe(OK);
     rmSync(dir, { recursive: true, force: true });
   });
 
   it('refuses a dump file whose relative path traverses outside the project folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
-    const { engine } = recordingEngine();
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-        dumpFileFor: () => ({ path: join('..', '..', 'escaped.xml'), projectDir: dir }),
-      },
-    });
+    registerOver(seeded(), { dumpFileFor: () => ({ path: join('..', '..', 'escaped.xml'), projectDir: dir }) });
 
-    const result = (await invoke('request.send', {
-      sendId: 'send-dump-traversal',
-      requestId: 'req-1',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
-    })) as { ok: boolean; value: { problems: { code: string }[] } };
+    const result = await send('send-dump-traversal');
 
     expect(result.ok).toBe(true);
     expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-outside-project' })]);
@@ -407,24 +415,9 @@ describe('request.send applies the saved request properties', () => {
   it('refuses an absolute dump file path outside the project folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
     const outsideDir = mkdtempSync(join(tmpdir(), 'wirebench-outside-'));
-    const { engine } = recordingEngine();
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-        dumpFileFor: () => ({ path: join(outsideDir, 'out.xml'), projectDir: dir }),
-      },
-    });
+    registerOver(seeded(), { dumpFileFor: () => ({ path: join(outsideDir, 'out.xml'), projectDir: dir }) });
 
-    const result = (await invoke('request.send', {
-      sendId: 'send-dump-absolute',
-      requestId: 'req-1',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
-    })) as { ok: boolean; value: { problems: { code: string }[] } };
+    const result = await send('send-dump-absolute');
 
     expect(result.ok).toBe(true);
     expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-outside-project' })]);
@@ -437,29 +430,17 @@ describe('request.send applies the saved request properties', () => {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
     const outsideDir = mkdtempSync(join(tmpdir(), 'wirebench-outside-'));
     const outsidePath = join(outsideDir, 'picked.xml');
-    const { engine } = recordingEngine();
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-        dumpFileFor: () => ({ path: outsidePath, projectDir: dir }),
-      },
-      dialogPicks: { hasWrite: (path) => path === outsidePath },
-    });
+    registerOver(
+      seeded(),
+      { dumpFileFor: () => ({ path: outsidePath, projectDir: dir }) },
+      { dialogPicks: { hasWrite: (path) => path === outsidePath } },
+    );
 
-    const result = (await invoke('request.send', {
-      sendId: 'send-dump-picked',
-      requestId: 'req-1',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
-    })) as { ok: boolean; value: { problems: { code: string }[] } };
+    const result = await send('send-dump-picked');
 
     expect(result.ok).toBe(true);
     expect(result.value.problems).toEqual([]);
-    expect(readFileSync(outsidePath, 'utf8')).toBe('<ok/>');
+    expect(readFileSync(outsidePath, 'utf8')).toBe(OK);
     rmSync(dir, { recursive: true, force: true });
     rmSync(outsideDir, { recursive: true, force: true });
   });
@@ -472,26 +453,14 @@ describe('request.send applies the saved request properties', () => {
     const dir = mkdtempSync(join(tmpdir(), 'wirebench-dump-'));
     const outsideDir = mkdtempSync(join(tmpdir(), 'wirebench-outside-'));
     const outsidePath = join(outsideDir, 'attached-not-dumped.xml');
-    const { engine } = recordingEngine();
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-        dumpFileFor: () => ({ path: outsidePath, projectDir: dir }),
-      },
+    registerOver(
+      seeded(),
+      { dumpFileFor: () => ({ path: outsidePath, projectDir: dir }) },
       // `hasWrite` never returns true for this path: it was only ever offered as a read pick.
-      dialogPicks: { hasWrite: () => false },
-    });
+      { dialogPicks: { hasWrite: () => false } },
+    );
 
-    const result = (await invoke('request.send', {
-      sendId: 'send-dump-read-pick-only',
-      requestId: 'req-1',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
-    })) as { ok: boolean; value: { problems: { code: string }[] } };
+    const result = await send('send-dump-read-pick-only');
 
     expect(result.ok).toBe(true);
     expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-outside-project' })]);
@@ -501,28 +470,15 @@ describe('request.send applies the saved request properties', () => {
   });
 
   it('reports a dump-failed problem instead of failing the send', async () => {
-    const { engine } = recordingEngine();
-    registerRequestChannels(engine, {
-      project: {
-        scopesFor: () => scopes,
-        preflight: () => preflight,
-        authFor: () => undefined,
-        requestMeta: () => undefined,
-        projectId: () => undefined,
-        ...noActionSupport,
-        // A path whose parent is a file, so `mkdir` cannot create it.
-        // The project dir is the filesystem root the temp file lives on, so the containment
-        // check passes on every platform ('/' would be the *current drive*'s root on Windows,
-        // which need not be the drive holding the temp folder).
-        dumpFileFor: () => ({ path: join(existingFile, 'nested', 'out.xml'), projectDir: parse(existingFile).root }),
-      },
+    registerOver(seeded(), {
+      // A path whose parent is a file, so `mkdir` cannot create it.
+      // The project dir is the filesystem root the temp file lives on, so the containment
+      // check passes on every platform ('/' would be the *current drive*'s root on Windows,
+      // which need not be the drive holding the temp folder).
+      dumpFileFor: () => ({ path: join(existingFile, 'nested', 'out.xml'), projectDir: parse(existingFile).root }),
     });
 
-    const result = (await invoke('request.send', {
-      sendId: 'send-dump-fail',
-      requestId: 'req-1',
-      input: { endpoint: 'http://raw.test/soap', envelopeXml: '<raw/>', soapVersion: '1.1' },
-    })) as { ok: boolean; value: { problems: { code: string }[] } };
+    const result = await send('send-dump-fail');
 
     expect(result.ok).toBe(true);
     expect(result.value.problems).toEqual([expect.objectContaining({ code: 'dump-failed' })]);

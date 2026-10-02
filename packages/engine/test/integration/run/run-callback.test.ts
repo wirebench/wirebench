@@ -70,7 +70,7 @@ const contextFor = (p: Project): RunContext => ({
   project: p,
   projectDir: dir,
   overrides: {},
-  getSecret: () => Promise.resolve(undefined),
+  host: { getSecret: () => Promise.resolve(undefined) },
 });
 
 function fakeClock(): CallbackClock {

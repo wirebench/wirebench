@@ -1,11 +1,15 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WirebenchError } from '@wirebench/engine';
+import { createProject, WirebenchError } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { wrapHandler } from '../src/main/ipc/envelope.js';
+import { AD_HOC_ID, soapOverrideOf } from '../src/main/send/draft.js';
+import { ExchangeRegistry, sendThroughEngine } from '../src/main/send/exchange.js';
+import { AD_HOC_NAME } from '../src/main/send/record.js';
 import { channels } from '../src/shared/ipc.js';
-import type { EngineProgressEvent } from '../src/shared/wire-types.js';
+import type { EngineProgressEvent, ResolvedSendInputWire } from '../src/shared/wire-types.js';
 import { readPublicFixture } from './helpers/fixtures.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 
 /** A running local echo server plus its base URL and a way to shut it down. */
 interface EchoServer {
@@ -94,8 +98,18 @@ describe('EngineService', () => {
     }
   });
 
+  /** Sends `input` ad hoc through the engine, as `request.send` does for an input with no request. */
+  function sendAdHoc(registry: ExchangeRegistry, sendId: string, input: ResolvedSendInputWire) {
+    const deps = sendDepsFor(createProject('Demo', { id: 'p1' }), { service, registry });
+    return sendThroughEngine(deps, sendId, AD_HOC_ID, {
+      draft: { kind: 'soap', override: soapOverrideOf(input) },
+      adHoc: { input, names: AD_HOC_NAME },
+    });
+  }
+
   it('cancelling a pending send aborts it, surfacing an `aborted` HttpError through the IPC envelope', async () => {
-    const wrapped = wrapHandler(channels.request.send, (request) => service.send(request));
+    const registry = new ExchangeRegistry();
+    const wrapped = wrapHandler(channels.request.send, (request) => sendAdHoc(registry, request.sendId, request.input));
     const sendId = 'send-cancel-1';
 
     const pending = wrapped({
@@ -105,15 +119,15 @@ describe('EngineService', () => {
 
     // Give the request a tick to register before cancelling it.
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(service.cancel(sendId)).toEqual({ cancelled: true });
-    expect(service.cancel(sendId)).toEqual({ cancelled: false });
+    expect(registry.cancel(sendId)).toEqual({ cancelled: true });
+    expect(registry.cancel(sendId)).toEqual({ cancelled: false });
 
     const result = await pending;
     expect(result).toMatchObject({ ok: false, error: { code: 'aborted' } });
   });
 
   it('cancel is a no-op for an unknown sendId', () => {
-    expect(service.cancel('does-not-exist')).toEqual({ cancelled: false });
+    expect(new ExchangeRegistry().cancel('does-not-exist')).toEqual({ cancelled: false });
   });
 
   it('sends a real SOAP request and returns a JSON-safe ExchangeSummary', async () => {
@@ -128,14 +142,11 @@ describe('EngineService', () => {
       operationName: addOp.name,
     });
 
-    const exchange = await service.send({
-      sendId: 'send-1',
-      input: {
-        endpoint: `${server.url}/soap`,
-        envelopeXml: generated.envelopeXml,
-        soapVersion: generated.soapVersion,
-        headers: generated.headers,
-      },
+    const exchange = await sendAdHoc(new ExchangeRegistry(), 'send-1', {
+      endpoint: `${server.url}/soap`,
+      envelopeXml: generated.envelopeXml,
+      soapVersion: generated.soapVersion,
+      headers: generated.headers,
     });
 
     expect(exchange.http.status).toBe(200);

@@ -73,7 +73,7 @@ describe('runSequences', () => {
       project,
       projectDir: '/nowhere',
       overrides: {},
-      getSecret: () => Promise.resolve(undefined),
+      host: { getSecret: () => Promise.resolve(undefined) },
       registry: hostRegistry(),
     };
 

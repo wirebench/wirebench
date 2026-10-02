@@ -1,24 +1,27 @@
 // @vitest-environment node
 /**
- * The REST send path end to end in main: the engine service against a real server, credentials
- * resolved from the store, the URL and headers redacted on the way back, the response cached, and a
- * history line written.
+ * The REST send path end to end in main: a saved request sent through the engine against a real
+ * server, credentials resolved from the store, the URL and headers redacted on the way back, the
+ * response cached, and a history line written.
  *
  * The redaction assertions are the ones that matter most. An API key that travels in the query
  * string is in the URL of every request that uses it, and the URL reaches the HTTP log, history and
  * the cURL export — so "the key never crosses the bridge in the clear" has to be checked where the
  * URL is built, not only where headers are.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
-import { entry } from '@wirebench/engine';
-import type { RestSendInput } from '@wirebench/engine';
-import type { LogEntryWire } from '../src/shared/wire-types.js';
-import { EngineService } from '../src/main/engine-service.js';
+import { createApi, createProject, createRestRequest, entry } from '@wirebench/engine';
+import type { AuthConfig, CreateRestRequestInput, RestRequestSettings } from '@wirebench/engine';
+import type { LogEntryWire, RestExchangeSummary, RestLiveEvent } from '../src/shared/wire-types.js';
 import { harOf } from '../src/main/har.js';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
 import { curlForLogEntry } from '../src/main/log-curl.js';
 import { redactUrl } from '../src/main/redact.js';
+import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
+import { sendDepsFor } from './helpers/send-deps.js';
+
+vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
 
 let server: TestRestServer;
 
@@ -30,30 +33,60 @@ afterAll(async () => {
   await server.close();
 });
 
-/** An engine service whose secret store answers a fixed map. */
-function service(secrets: Record<string, string> = {}): EngineService {
-  return new EngineService((ref) => Promise.resolve(secrets[ref]));
+interface SendOptions {
+  /** The API's credentials; the request inherits them. */
+  readonly auth?: AuthConfig;
+  /** The secret store, by reference. */
+  readonly secrets?: Record<string, string>;
+  readonly showSecrets?: boolean;
+  readonly onLive?: (event: RestLiveEvent) => void;
+  readonly settings?: RestRequestSettings;
 }
 
-function input(overrides: Partial<RestSendInput['request']> = {}): RestSendInput {
-  return {
+/**
+ * Sends request `r1` — `GET /echo` unless `request` says otherwise — of a one-API project aimed at the
+ * test server, through the engine. `deps` holds the exchange cache and the registry the send is in.
+ */
+function send(
+  sendId: string,
+  request: CreateRestRequestInput = {},
+  options: SendOptions = {},
+): { readonly deps: SendThroughEngineDeps; readonly sending: Promise<RestExchangeSummary> } {
+  const api = createApi('Petstore', {
+    id: 'api-1',
     baseUrl: server.url,
-    request: {
-      method: 'GET',
-      url: '/echo',
-      pathParams: [],
-      query: [],
-      headers: [],
-      body: { kind: 'none' },
-      ...overrides,
+    ...(options.auth !== undefined ? { auth: options.auth } : {}),
+    requests: [
+      createRestRequest('R', {
+        id: 'r1',
+        url: '/echo',
+        settings: options.settings ?? { timeoutMs: 5_000, followRedirects: true },
+        ...request,
+      }),
+    ],
+  });
+  const deps = sendDepsFor(
+    { ...createProject('Demo', { id: 'p1' }), apis: [api] },
+    {
+      getSecret: (ref) => Promise.resolve(options.secrets?.[ref]),
+      showSecrets: { get: () => options.showSecrets ?? false },
     },
-    settings: { timeoutMs: 5_000, followRedirects: true },
-  };
+  );
+  const sending = sendThroughEngine(deps, sendId, 'r1', {
+    draft: { kind: 'rest' },
+    ...(options.onLive !== undefined ? { onLive: options.onLive } : {}),
+  });
+  return { deps, sending };
 }
 
-describe('EngineService.sendRestRequest', () => {
+/** The summary of one send of `r1`. */
+async function sent(sendId: string, request: CreateRestRequestInput = {}, options: SendOptions = {}) {
+  return await send(sendId, request, options).sending;
+}
+
+describe('a REST send through the engine', () => {
   it('sends, decodes the body and reports the language', async () => {
-    const summary = await service().sendRestRequest({ sendId: 's1', requestId: 'r1', input: input() });
+    const summary = await sent('s1');
 
     expect(summary.http.status).toBe(200);
     expect(summary.language).toBe('json');
@@ -63,11 +96,10 @@ describe('EngineService.sendRestRequest', () => {
   });
 
   it('resolves a bearer token from the store and redacts it on the way back', async () => {
-    const engine = service({ sec_token: 'good-token' });
-
-    const summary = await engine.sendRestRequest(
-      { sendId: 's2', requestId: 'r1', input: input({ url: '/auth/bearer' }) },
-      { auth: { type: 'bearer', tokenRef: 'sec_token' } },
+    const summary = await sent(
+      's2',
+      { url: '/auth/bearer' },
+      { auth: { type: 'bearer', tokenRef: 'sec_token' }, secrets: { sec_token: 'good-token' } },
     );
 
     expect(summary.http.status).toBe(200);
@@ -77,11 +109,10 @@ describe('EngineService.sendRestRequest', () => {
   });
 
   it('shows the token when the session says to show secrets', async () => {
-    const engine = service({ sec_token: 'good-token' });
-
-    const summary = await engine.sendRestRequest(
-      { sendId: 's3', requestId: 'r1', input: input({ url: '/auth/bearer' }) },
-      { auth: { type: 'bearer', tokenRef: 'sec_token' }, showSecrets: true },
+    const summary = await sent(
+      's3',
+      { url: '/auth/bearer' },
+      { auth: { type: 'bearer', tokenRef: 'sec_token' }, secrets: { sec_token: 'good-token' }, showSecrets: true },
     );
 
     const headers = summary.http.request.headers;
@@ -89,11 +120,14 @@ describe('EngineService.sendRestRequest', () => {
   });
 
   it('masks an API key that travels in the query string, in the URL it reports', async () => {
-    const engine = service({ sec_key: 'good-key' });
-
-    const summary = await engine.sendRestRequest(
-      { sendId: 's4', requestId: 'r1', input: input({ url: '/auth/apikey' }) },
-      { auth: { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' }, keyParams: ['api_key'] },
+    // The key's parameter name is masked because the credentials name it (`keyParams`).
+    const summary = await sent(
+      's4',
+      { url: '/auth/apikey' },
+      {
+        auth: { type: 'api-key', name: 'api_key', in: 'query', valueRef: 'sec_key' },
+        secrets: { sec_key: 'good-key' },
+      },
     );
 
     expect(summary.http.status).toBe(200);
@@ -104,14 +138,16 @@ describe('EngineService.sendRestRequest', () => {
   });
 
   it('masks the key in a redirect hop too, on the send and on a later re-render', async () => {
-    const engine = service({ sec_key: 'good key' });
     const auth = { type: 'api-key', name: 'api key', in: 'query', valueRef: 'sec_key' } as const;
     const key = /good(%20|\+| )key/;
 
-    const summary = await engine.sendRestRequest(
-      { sendId: 's4r', requestId: 'r1', input: input({ url: '/redirect/302?to=/echo' }) },
-      { auth, keyParams: ['api key'] },
+    const { deps, sending } = send(
+      's4r',
+      { url: '/redirect/302?to=/echo' },
+      { auth, secrets: { sec_key: 'good key' } },
     );
+    const summary = await sending;
+    const engine = deps.service;
 
     expect(summary.http.redirects).toHaveLength(1);
     const [hop] = summary.http.redirects;
@@ -124,14 +160,12 @@ describe('EngineService.sendRestRequest', () => {
   });
 
   it('masks a header API key under a custom name, on the send, a re-render, a HAR and a row cURL', async () => {
-    const engine = service({ sec_key: 'good-key' });
     const auth = { type: 'api-key', name: 'Ocp-Apim-Subscription-Key', in: 'header', valueRef: 'sec_key' } as const;
     const raw = (base64: string): string => Buffer.from(base64, 'base64').toString('latin1');
 
-    const summary = await engine.sendRestRequest(
-      { sendId: 's4h', requestId: 'r1', input: input() },
-      { auth, keyHeaders: ['Ocp-Apim-Subscription-Key'] },
-    );
+    const { deps, sending } = send('s4h', {}, { auth, secrets: { sec_key: 'good-key' } });
+    const summary = await sending;
+    const engine = deps.service;
 
     // The server got the key; the report masks it by the header's own name.
     expect(summary.text).toContain('good-key');
@@ -156,20 +190,18 @@ describe('EngineService.sendRestRequest', () => {
 
   it('fails loudly when a reference has no secret behind it', async () => {
     await expect(
-      service().sendRestRequest(
-        { sendId: 's5', requestId: 'r1', input: input({ url: '/auth/bearer' }) },
-        { auth: { type: 'bearer', tokenRef: 'sec_gone' } },
-      ),
+      sent('s5', { url: '/auth/bearer' }, { auth: { type: 'bearer', tokenRef: 'sec_gone' } }),
     ).rejects.toMatchObject({ code: 'secret-missing' });
   });
 
   it('keeps the unredacted summary and the body bytes in main, for a later re-render', async () => {
-    const engine = service({ sec_token: 'good-token' });
-
-    await engine.sendRestRequest(
-      { sendId: 's6', requestId: 'r1', input: input({ url: '/auth/bearer' }) },
-      { auth: { type: 'bearer', tokenRef: 'sec_token' } },
+    const { deps, sending } = send(
+      's6',
+      { url: '/auth/bearer' },
+      { auth: { type: 'bearer', tokenRef: 'sec_token' }, secrets: { sec_token: 'good-token' } },
     );
+    await sending;
+    const engine = deps.service;
 
     const cached = engine.exchanges.getRest('s6');
     const headers = cached?.http.request.headers ?? {};
@@ -178,36 +210,27 @@ describe('EngineService.sendRestRequest', () => {
   });
 
   it('parses the cookies a response set', async () => {
-    const summary = await service().sendRestRequest({
-      sendId: 's7',
-      requestId: 'r1',
-      input: input({ url: '/cookies/set' }),
-    });
+    const summary = await sent('s7', { url: '/cookies/set' });
 
     expect(summary.cookies.map((cookie) => cookie.name)).toEqual(['session', 'tracking']);
   });
 
   it('is cancellable by its send id', async () => {
-    const engine = service();
-    const pending = engine.sendRestRequest({
-      sendId: 's8',
-      requestId: 'r1',
-      input: input({ url: '/slow?ms=500' }),
+    const { deps, sending: pending } = send('s8', { url: '/slow?ms=500' });
+    // Kept in the registry once its host is ready, a moment after the call.
+    await vi.waitFor(() => {
+      expect(deps.registry.has('s8')).toBe(true);
     });
-    expect(engine.cancel('s8')).toEqual({ cancelled: true });
+    expect(deps.registry.cancel('s8')).toEqual({ cancelled: true });
 
     await expect(pending).rejects.toMatchObject({ code: 'aborted' });
   });
 
   it('sends a body and reports the method a redirect changed', async () => {
-    const summary = await service().sendRestRequest({
-      sendId: 's9',
-      requestId: 'r1',
-      input: input({
-        method: 'POST',
-        url: '/redirect/302?to=/echo',
-        body: { kind: 'raw', language: 'json', text: '{"a":1}' },
-      }),
+    const summary = await sent('s9', {
+      method: 'POST',
+      url: '/redirect/302?to=/echo',
+      body: { kind: 'raw', language: 'json', text: '{"a":1}' },
     });
 
     expect(summary.methodChanged).toBe(true);
@@ -217,10 +240,10 @@ describe('EngineService.sendRestRequest', () => {
 
 describe('a REST history line', () => {
   it('records the method, the API and the folder path, with bodies and headers redacted', async () => {
-    const summary = await service().sendRestRequest({
-      sendId: 's10',
-      requestId: 'req-1',
-      input: input({ method: 'POST', url: '/echo', headers: [entry('Authorization', 'Bearer leak')] }),
+    const summary = await sent('s10', {
+      method: 'POST',
+      url: '/echo',
+      headers: [entry('Authorization', 'Bearer leak')],
     });
 
     const line = buildRestHistoryEntry('p1', {
@@ -274,16 +297,12 @@ describe('a REST history line', () => {
   });
 
   it('counts a 3xx that was not followed as an answer, and a 4xx as not ok', async () => {
-    const redirect = await service().sendRestRequest({
-      sendId: 's11',
-      requestId: 'req-1',
-      input: { ...input({ url: '/redirect/302' }), settings: { timeoutMs: 5_000, followRedirects: false } },
-    });
-    const notFound = await service().sendRestRequest({
-      sendId: 's12',
-      requestId: 'req-1',
-      input: input({ url: '/status/404' }),
-    });
+    const redirect = await sent(
+      's11',
+      { url: '/redirect/302' },
+      { settings: { timeoutMs: 5_000, followRedirects: false } },
+    );
+    const notFound = await sent('s12', { url: '/status/404' });
 
     const line = (exchange: typeof redirect) =>
       buildRestHistoryEntry('p1', {
@@ -321,10 +340,7 @@ describe('a REST history line', () => {
   });
 
   it('a stopped stream writes one rest entry with sse, ok decided by status same as any other', async () => {
-    const summary = await service().sendRestRequest(
-      { sendId: 's13', requestId: 'req-1', input: input({ url: '/sse/ticks?n=3&every=1' }) },
-      { onLive: () => undefined },
-    );
+    const summary = await sent('s13', { url: '/sse/ticks?n=3&every=1' }, { onLive: () => undefined });
     expect(summary.stream).toBeDefined();
 
     const line = buildRestHistoryEntry('p1', {

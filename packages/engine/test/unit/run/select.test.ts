@@ -129,14 +129,16 @@ describe('selectRequests — gRPC', () => {
     return { ...makeProject(), grpcApis: [greeter] };
   }
 
-  it('walks a gRPC API in the shared order, unary and non-orphaned requests only', () => {
+  it('walks a gRPC API in the shared order, non-orphaned requests of every method kind', () => {
     const { selected } = selectRequests(withGrpc(), []);
     expect(selected.map((s) => s.path)).toEqual([
       'Alpha/OpA/Request 1',
       'Billing API/Get invoice',
       'Billing API/invoices/List',
       'Greeter/Admin/Fail',
+      'Greeter/Chat',
       'Greeter/Say hello',
+      'Greeter/Replies',
       'Beta/OpB/Request 1',
     ]);
     const fail = selected[3];
@@ -144,16 +146,16 @@ describe('selectRequests — gRPC', () => {
     expect(fail?.kind === 'grpc' && fail.chain.map((f) => f.name)).toEqual(['Admin']);
   });
 
-  it('accepts display and on-disk paths, and a streaming request matches nothing', () => {
+  it('accepts display and on-disk paths, and a streaming request matches; an orphan matches nothing', () => {
     const project = withGrpc();
     expect(
       selectRequests(project, ['apis/greeter/requests/admin/fail.request.yaml']).selected.map((s) => s.path),
     ).toEqual(['Greeter/Admin/Fail']);
     expect(selectRequests(project, ['Greeter/Say hello']).selected).toHaveLength(1);
-    expect(selectRequests(project, ['Greeter/Chat', 'Greeter/Gone']).unmatched).toEqual([
-      'Greeter/Chat',
-      'Greeter/Gone',
-    ]);
+    expect(selectRequests(project, ['Greeter/Chat', 'Greeter/Gone'])).toMatchObject({
+      selected: [{ path: 'Greeter/Chat' }],
+      unmatched: ['Greeter/Gone'],
+    });
   });
 });
 

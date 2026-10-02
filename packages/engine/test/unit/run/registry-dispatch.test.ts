@@ -9,7 +9,12 @@ import { createProtocolRegistry } from '../../../src/protocol/registry.js';
 import { BUILTIN_PROTOCOLS, SCRIPTS_FEATURE, createBuiltinRegistry, defaultRegistry } from '../../../src/protocols.js';
 import { createApi, createRestRequest, entry } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
+import { exchangeController } from '../../../src/run/exchange.js';
+import { openExchange } from '../../../src/run/open.js';
 import { checkRunScripts, createRunSender } from '../../../src/run/run.js';
+import type { SentRequest } from '../../../src/run/run.js';
+import { createRunScope } from '../../../src/run/scope.js';
+import { testHost } from '../../helpers/send-host.js';
 import { secretNeedsOf } from '../../../src/run/secret-needs.js';
 import { findStepRequest, selectRequests } from '../../../src/run/select.js';
 import { RequestScripting } from '../../../src/script/request-scripts.js';
@@ -56,7 +61,7 @@ const context: RunContext = {
   project,
   projectDir: '/nowhere',
   overrides: {},
-  getSecret: () => Promise.resolve(undefined),
+  host: { getSecret: () => Promise.resolve(undefined) },
 };
 
 describe('the built-in registry', () => {
@@ -90,20 +95,31 @@ describe('a protocol switched off', () => {
   const withoutRest = createBuiltinRegistry({ rest: false });
 
   it('has no request to select, so a selector naming one is unmatched', () => {
-    expect(selectRequests(project, []).selected.map((item) => item.path)).toEqual(['Api/Ping', 'Greeter/Hello']);
-    expect(selectRequests(project, [], withoutGrpc).selected.map((item) => item.path)).toEqual(['Api/Ping']);
+    expect(selectRequests(project, []).selected.map((item) => item.path)).toEqual([
+      'Api/Ping',
+      'Greeter/Chat',
+      'Greeter/Hello',
+      'Feed/Ticker',
+    ]);
+    expect(selectRequests(project, [], withoutGrpc).selected.map((item) => item.path)).toEqual([
+      'Api/Ping',
+      'Feed/Ticker',
+    ]);
+    expect(selectRequests(project, ['Feed'], createBuiltinRegistry({ websocket: false }))).toEqual({
+      selected: [],
+      unmatched: ['Feed'],
+    });
     expect(selectRequests(project, ['Greeter'], withoutGrpc)).toEqual({ selected: [], unmatched: ['Greeter'] });
   });
 
   it('leaves a step naming its request missing, with or without a reason to give', () => {
     expect(findStepRequest(project, 'g-hello').kind).toBe('found');
-    expect(findStepRequest(project, 'g-chat').kind).toBe('unsupported');
+    // A streaming gRPC call is a step like any other now that a run sends it.
+    expect(findStepRequest(project, 'g-chat').kind).toBe('found');
     expect(findStepRequest(project, 'g-hello', withoutGrpc)).toEqual({ kind: 'missing' });
     expect(findStepRequest(project, 'g-chat', withoutGrpc)).toEqual({ kind: 'missing' });
-    expect(findStepRequest(project, 'ws-ticker')).toEqual({
-      kind: 'unsupported',
-      reason: 'A WebSocket request cannot be a sequence step',
-    });
+    // A WebSocket request is a step like any other now that its module runs it.
+    expect(findStepRequest(project, 'ws-ticker').kind).toBe('found');
     expect(findStepRequest(project, 'ws-ticker', createBuiltinRegistry({ websocket: false }))).toEqual({
       kind: 'missing',
     });
@@ -175,7 +191,9 @@ describe('the order of groups', () => {
       run: {
         groups: () => groups,
         whyNotRunnable: () => undefined,
-        send: () => Promise.reject(new Error('not sent in this test')),
+        open: (_selected, _scope, _host, options) =>
+          exchangeController(kind, options).handle(() => Promise.reject(new Error('not sent in this test'))),
+        resolve: () => Promise.resolve({}),
         scriptTypes: () => Promise.resolve({ generated: '' }),
         secretNeeds: () => [],
       },
@@ -205,5 +223,49 @@ describe('the order of groups', () => {
       'two:hooks-a',
       'one:hooks-b',
     ]);
+  });
+});
+
+describe('openExchange', () => {
+  const sentStub: SentRequest = {
+    subject: { protocol: 'fake', status: 200, durationMs: 1, bodyText: '', bodyKind: 'other' },
+    raw: { rawRequest: new Uint8Array(), rawResponse: new Uint8Array() },
+  };
+
+  it('hands the item to its own module, and the module refuses another kind', async () => {
+    interface FakeSelected extends SelectedBase {
+      readonly kind: 'fake';
+    }
+    const opened: string[] = [];
+    const fake = defineProtocol<FakeSelected>({
+      kind: 'fake',
+      feature: { id: 'fake', title: 'Fake', default: true, stage: 'stable', requires: [] },
+      storage: emptyStorage('fake'),
+      run: {
+        groups: () => [],
+        whyNotRunnable: () => undefined,
+        open: (selected, _scope, _host, options) => {
+          opened.push(selected.path);
+          return exchangeController('fake', options).handle(() => Promise.resolve(sentStub));
+        },
+        resolve: () => Promise.resolve({}),
+        scriptTypes: () => Promise.resolve({ generated: '' }),
+        secretNeeds: () => [],
+      },
+    });
+    const registry = createProtocolRegistry([fake]);
+    const scope = createRunScope({
+      project: createProject('P'),
+      projectDir: '/x',
+      overrides: {},
+      host: testHost(),
+      registry,
+    });
+    const item = { kind: 'fake', path: 'g/r', group: 'g', request: { id: 'r', name: 'r', slug: 'r' } };
+    await openExchange(item as never, testHost(), { scope, interactive: false }).result;
+    expect(opened).toEqual(['g/r']);
+    expect(() => fake.run?.open({ ...item, kind: 'other' }, scope, testHost(), { scope, interactive: false })).toThrow(
+      'The "fake" protocol was handed a "other" request',
+    );
   });
 });
