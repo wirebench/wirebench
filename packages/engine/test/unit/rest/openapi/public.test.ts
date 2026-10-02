@@ -224,7 +224,11 @@ describe('Support for different security types (3.1)', () => {
     // there is nothing to say and the request inherits.
     expect(routes.get('POST /anything/no-auth')?.auth).toEqual({ type: 'inherit' });
     expect(summary.skipped).toEqual([
-      { kind: 'security-scheme', where: 'apiKey_cookie', reason: 'An API key in a cookie is not supported' },
+      {
+        kind: 'security-scheme',
+        where: 'apiKey_cookie',
+        reason: 'An API key in a cookie is sent as a Cookie header on each request instead',
+      },
       { kind: 'security-scheme', where: 'mutualTLS', reason: 'Security scheme type "mutualTLS" is not supported' },
       {
         kind: 'security-scheme',

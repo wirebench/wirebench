@@ -82,10 +82,7 @@ webhooks:
 `),
     );
     const mapped = webhooksFromDocument(withCookie, { apiId: 'api-1', newId });
-    expect(mapped?.skipped).toContainEqual({
-      kind: 'parameter',
-      where: 'POST petMoved',
-      reason: 'Cookie parameter "session" is not imported',
-    });
+    expect(mapped?.skipped).toEqual([]);
+    expect(mapped?.folder.requests[0]?.headers).toEqual([{ name: 'Cookie', value: 'session=', enabled: false }]);
   });
 });

@@ -92,12 +92,10 @@ describe('apiFromDocument', () => {
     expect(request?.headers).toEqual([
       { name: 'X-Shared', value: 'shared', enabled: false },
       { name: 'X-Trace', value: 'trace-1', enabled: false },
+      // A cookie parameter has no table of its own, so it travels the way a cookie does: a header.
+      { name: 'Cookie', value: 'session=', enabled: false },
     ]);
-    expect(summary.skipped).toContainEqual({
-      kind: 'parameter',
-      where: 'GET /pets/{petId}/photos/{photoId}',
-      reason: 'Cookie parameter "session" is not imported',
-    });
+    expect(summary.skipped.filter((item) => item.kind === 'parameter')).toEqual([]);
   });
 
   it('maps each body media type onto the body kind that edits it', async () => {
@@ -205,10 +203,16 @@ describe('apiFromDocument', () => {
   it('says so rather than guessing when a scheme has no equivalent here', async () => {
     const cookie = await mapped('security', { securityScheme: 'apiKeyCookie' });
     expect(cookie.api.auth).toBeUndefined();
+    // The key still arrives, as a blank cookie in a switched-off header, on the requests sent under
+    // it; one that names its own scheme gets no cookie.
+    const requests = [...cookie.api.requests, ...cookie.api.folders.flatMap((folder) => folder.requests)];
+    const headersOf = (name: string) => requests.find((request) => request.name === name)?.headers;
+    expect(headersOf('getInherits')).toEqual([{ name: 'Cookie', value: 'session=', enabled: false }]);
+    expect(headersOf('getBasic')).toEqual([]);
     expect(cookie.summary.skipped).toContainEqual({
       kind: 'security-scheme',
       where: 'apiKeyCookie',
-      reason: 'An API key in a cookie is not supported',
+      reason: 'An API key in a cookie is sent as a Cookie header on each request instead',
     });
 
     const openId = await mapped('security', { securityScheme: 'openId' });
@@ -295,7 +299,7 @@ describe('apiFromDocument', () => {
     expect(byName.get('apiKeyCookie')).toEqual({
       name: 'apiKeyCookie',
       type: 'apiKey',
-      reason: 'An API key in a cookie is not supported',
+      reason: 'An API key in a cookie is sent as a Cookie header on each request instead',
       applied: false,
     });
     expect(byName.get('openId')?.reason).toBe('Security scheme type "openIdConnect" is not supported');

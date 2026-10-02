@@ -115,7 +115,7 @@ export interface MappedApi {
 }
 
 /** Header parameters OpenAPI itself says to ignore, because the message decides them. */
-const RESERVED_HEADERS: ReadonlySet<string> = new Set(['accept', 'content-type', 'authorization']);
+const RESERVED_HEADERS: ReadonlySet<string> = new Set(['accept', 'content-type', 'authorization', 'cookie']);
 
 /** The media types a *Binary* body is the honest reading of. */
 function isBinaryMedia(type: string, schema: JsonSchema | undefined): boolean {
@@ -210,17 +210,35 @@ function parameterRows(
   return rows;
 }
 
-/** Every cookie parameter, counted: this client has no cookie-parameter table. */
-function noteCookieParameters(operation: OpenApiOperation, skipped: OpenApiSkipped[]): void {
-  for (const parameter of operation.parameters) {
-    if (parameter.in === 'cookie') {
-      skipped.push({
-        kind: 'parameter',
-        where: `${operation.method.toUpperCase()} ${operation.path}`,
-        reason: `Cookie parameter "${parameter.name}" is not imported`,
-      });
-    }
+/**
+ * Cookie parameters, and an API key the operation's scheme puts in a cookie, as one `Cookie`
+ * header row: this client has no cookie table, and a header is how a cookie travels anyway. Off,
+ * like every imported header, and an API key's value is left blank — secrets are never invented.
+ */
+function cookieHeader(
+  operation: OpenApiOperation,
+  scheme: OpenApiSecurityScheme | undefined,
+  options: MapApiOptions,
+): KeyValueEntry[] {
+  const pairs = operation.parameters
+    .filter((parameter) => parameter.in === 'cookie')
+    .map((parameter) => `${parameter.name}=${parameterValue(parameter, options)}`);
+  if (scheme?.type === 'apiKey' && scheme.in === 'cookie' && scheme.keyName !== undefined) {
+    pairs.push(`${scheme.keyName}=`);
   }
+  return pairs.length === 0 ? [] : [entry('Cookie', pairs.join('; '), { enabled: false })];
+}
+
+/** The scheme an operation is sent under: its own when it states one, else the one the API was given. */
+function effectiveScheme(
+  operation: OpenApiOperation,
+  document: OpenApiDocument,
+  apiScheme: OpenApiSecurityScheme | undefined,
+): OpenApiSecurityScheme | undefined {
+  if (operation.security !== undefined) {
+    return schemeOfRequirement(operation.security, document.securitySchemes);
+  }
+  return apiScheme;
 }
 
 /** The media type an operation's body is built from, under {@link BODY_PREFERENCE}. */
@@ -347,7 +365,7 @@ export function mapScheme(scheme: OpenApiSecurityScheme): { auth?: AuthConfig; r
       if (scheme.in === 'header' || scheme.in === 'query') {
         return { auth: { type: 'api-key', name: scheme.keyName ?? '', in: scheme.in } };
       }
-      return { reason: 'An API key in a cookie is not supported' };
+      return { reason: 'An API key in a cookie is sent as a Cookie header on each request instead' };
     case 'oauth2': {
       const clientCredentials = scheme.flows?.clientCredentials;
       const authorizationCode = scheme.flows?.authorizationCode;
@@ -487,6 +505,8 @@ function groupByFolder(operations: readonly OpenApiOperation[]): Map<string | un
 /** What {@link requestFromOperation} needs beyond the operation itself, threaded through one mapping pass. */
 interface MapContext {
   readonly document: OpenApiDocument;
+  /** The scheme the API itself was imported under; a webhook group has none. */
+  readonly apiScheme?: OpenApiSecurityScheme;
   readonly options: MapApiOptions;
   readonly newId: IdGenerator;
   readonly skipped: OpenApiSkipped[];
@@ -513,7 +533,6 @@ function requestFromOperation(
   overrides?: RequestOverrides,
 ): RestRequestDef {
   const { document, options, newId, skipped, counts } = context;
-  noteCookieParameters(operation, skipped);
   if (operation.deprecated === true) {
     counts.deprecated += 1;
   }
@@ -530,7 +549,10 @@ function requestFromOperation(
     ...(description !== undefined ? { description } : {}),
     pathParams: overrides !== undefined ? [] : parameterRows(operation, 'path', options, skipped),
     query: parameterRows(operation, 'query', options, skipped),
-    headers: parameterRows(operation, 'header', options, skipped),
+    headers: [
+      ...parameterRows(operation, 'header', options, skipped),
+      ...cookieHeader(operation, effectiveScheme(operation, document, context.apiScheme), options),
+    ],
     body: bodyOf(operation, options, skipped),
     ...(auth !== undefined ? { auth } : {}),
     ...(overrides !== undefined
@@ -689,7 +711,14 @@ export function apiFromDocument(document: OpenApiDocument, options: MapApiOption
   const folders: RestFolder[] = [];
   const folderSlugs = new Set<string>();
   const rootSlugs = new Set<string>();
-  const context: MapContext = { document, options, newId, skipped, counts: { requests: 0, deprecated: 0 } };
+  const context: MapContext = {
+    document,
+    options,
+    newId,
+    skipped,
+    counts: { requests: 0, deprecated: 0 },
+    ...(chosenScheme !== undefined ? { apiScheme: chosenScheme } : {}),
+  };
 
   for (const [folderName, operations] of groups) {
     if (folderName === undefined) {
