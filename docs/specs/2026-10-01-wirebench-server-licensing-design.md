@@ -13,7 +13,7 @@ of `docs/specs/2026-09-24-wirebench-server-capability-map.md` (fourth slice, fir
   - `ServerHooks` announcements (`packages/server/src/context.ts`), which the audit log listens to.
 - Decisions recorded here (owner, 2026-10-01):
   - **Everything stays Apache-2.0.** The key check is a product boundary, not a legal one; a fork may
-    remove it. [ADR-0017](../adr/0017-licensing-is-a-product-boundary.md) records this and its
+    remove it. [ADR-0018](../adr/0018-licensing-is-a-product-boundary.md) records this and its
     consequences.
   - **The boundary is a seat cap plus enterprise features.** Community is the server as shipped today,
     for up to five enabled accounts. Team lifts the cap. Enterprise adds the gated features. Nothing
@@ -323,7 +323,7 @@ apps/desktop/src/renderer/features/team/license-tab.tsx
 apps/desktop/src/renderer/features/team/team-dialog.tsx
 apps/desktop/src/renderer/features/preferences/sections/accounts-section.tsx
 apps/desktop/src/renderer/state/account.ts
-docs/adr/0017-licensing-is-a-product-boundary.md
+docs/adr/0018-licensing-is-a-product-boundary.md
 docs-site/src/content/docs/server/licensing.md
 ```
 
@@ -385,7 +385,7 @@ seat refusal reaches it as a problem it shows verbatim.
   name the server time so the operator can tell.
 - **Key compromise.** A leaked private key means a new server release with a new public key and every
   customer re-issued. Keep the signing tool offline.
-- **The fork question.** Covered by ADR-0017: the boundary rests on the product, the trademark and the
+- **The fork question.** Covered by ADR-0018: the boundary rests on the product, the trademark and the
   support relationship, not on the code.
 
 ## 16. Open questions (bold = proposed default)

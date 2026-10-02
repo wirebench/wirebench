@@ -1,4 +1,4 @@
-# ADR-0017: Licensing is a product boundary under one open license
+# ADR-0018: Licensing is a product boundary under one open license
 
 - Status: accepted
 - Date: 2026-10-01
