@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { hooksMetaSchema } from './hooks.js';
+import { editionSchema } from './licensing.js';
 
 export const SERVER_NAME = 'wirebench-server';
 export const SERVER_API_VERSION = 1;
@@ -17,5 +18,7 @@ export const metaResponseSchema = z.object({
   capabilities: z.array(z.string()),
   /** webhook-capture §3.7: absent on a server without the module, which the desktop reads as disabled. */
   hooks: hooksMetaSchema.optional(),
+  /** licensing §3.6: the server's edition, and nothing else about its license. Absent from an older server. */
+  edition: editionSchema.optional(),
 });
 export type MetaResponse = z.infer<typeof metaResponseSchema>;
