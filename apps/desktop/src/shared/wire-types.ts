@@ -871,8 +871,24 @@ export const scriptResultWireSchema = z.object({
 });
 export type ScriptResultWire = z.infer<typeof scriptResultWireSchema>;
 
+/**
+ * One of a request's own assertions as an editor Send checked it (request-assertions spec §6). A
+ * callback assertion is `not-checked`: only a run waits for a callback. Every string is masked.
+ */
+export const requestAssertionResultWireSchema = z.object({
+  type: z.string(),
+  label: z.string(),
+  outcome: z.enum(['passed', 'failed', 'errored', 'not-checked']),
+  expected: z.string().optional(),
+  actual: z.string().optional(),
+  message: z.string().optional(),
+});
+export type RequestAssertionResultWire = z.infer<typeof requestAssertionResultWireSchema>;
+
 /** Response payload for `request.send`: a JSON-serialisable projection of `SoapExchange`. */
 export const exchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   durationMs: z.number(),
   http: httpExchangeWireSchema,
@@ -1193,6 +1209,106 @@ export const requestScriptsPatchSchema = z.object({
 });
 export type RequestScriptsPatchWire = z.infer<typeof requestScriptsPatchSchema>;
 
+const assertionNameWire = z.string().optional();
+
+const callbackCheckFields = {
+  equals: z.string().optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+};
+const callbackHeaderWire = z.object({ name: z.string(), ...callbackCheckFields });
+const callbackBodyWire = z.object({
+  language: z.enum(['jsonpath', 'xpath']),
+  path: z.string(),
+  ...callbackCheckFields,
+});
+
+const statusAssertionWire = z.object({
+  type: z.literal('status'),
+  equals: z.union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))]),
+  name: assertionNameWire,
+});
+const soapFaultAssertionWire = z.object({
+  type: z.literal('soap-fault'),
+  expect: z.enum(['none', 'present']),
+  name: assertionNameWire,
+});
+const matchAssertionWire = z.object({
+  type: z.literal('match'),
+  language: z.enum(['xpath', 'xquery', 'jsonpath']),
+  expression: z.string(),
+  namespaces: z.record(z.string(), z.string()).optional(),
+  equals: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+  name: assertionNameWire,
+});
+const schemaAssertionWire = z.object({ type: z.literal('schema'), name: assertionNameWire });
+const slaAssertionWire = z.object({
+  type: z.literal('sla'),
+  maxMs: z.number().int().positive(),
+  name: assertionNameWire,
+});
+const headerAssertionWire = z.object({
+  type: z.literal('header'),
+  header: z.string(),
+  equals: z.string().optional(),
+  matches: z.string().optional(),
+  exists: z.boolean().optional(),
+  name: assertionNameWire,
+});
+const callbackAssertionWire = z.object({
+  type: z.literal('callback'),
+  catchUrl: z.string(),
+  withinMs: z.number().int(),
+  match: z.object({
+    method: z.string().optional(),
+    path: z.string().optional(),
+    pathMatches: z.string().optional(),
+    headers: z.array(callbackHeaderWire).optional(),
+    body: callbackBodyWire.optional(),
+  }),
+  expect: z.array(
+    z.union([
+      z.object({ body: callbackBodyWire }),
+      z.object({ header: callbackHeaderWire }),
+      z.object({ signature: z.literal('verified') }),
+    ]),
+  ),
+  name: assertionNameWire,
+});
+
+const requestAssertionUnion = z.discriminatedUnion('type', [
+  statusAssertionWire,
+  soapFaultAssertionWire,
+  matchAssertionWire,
+  schemaAssertionWire,
+  slaAssertionWire,
+  callbackAssertionWire,
+]);
+// Each kind is named by an interface so the IPC channel registry's inferred type prints it by name
+// instead of expanding it at every request wire (which overflows the compiler's serialisation limit).
+/* eslint-disable @typescript-eslint/no-empty-object-type -- named, not expanded: see above */
+export interface StatusAssertionWire extends z.infer<typeof statusAssertionWire> {}
+export interface SoapFaultAssertionWire extends z.infer<typeof soapFaultAssertionWire> {}
+export interface MatchAssertionWire extends z.infer<typeof matchAssertionWire> {}
+export interface SchemaAssertionWire extends z.infer<typeof schemaAssertionWire> {}
+export interface SlaAssertionWire extends z.infer<typeof slaAssertionWire> {}
+export interface CallbackAssertionWire extends z.infer<typeof callbackAssertionWire> {}
+/* eslint-enable @typescript-eslint/no-empty-object-type */
+export type RequestAssertionWire =
+  | StatusAssertionWire
+  | SoapFaultAssertionWire
+  | MatchAssertionWire
+  | SchemaAssertionWire
+  | SlaAssertionWire
+  | CallbackAssertionWire;
+/**
+ * One assertion a request may carry: the step catalogue without `header`, which only a step may use.
+ * Annotated with its named type so the IPC channel registry's inferred type stays serialisable.
+ */
+export const requestAssertionWireSchema: z.ZodType<RequestAssertionWire> = requestAssertionUnion;
+
 /** A saved request, flattened out of its owning operation so the renderer can index it by id. */
 export const requestWireSchema = z.object({
   id: z.string(),
@@ -1234,6 +1350,8 @@ export const requestWireSchema = z.object({
   attachments: z.array(attachmentWireSchema).default([]),
   properties: requestPropertiesSchema,
   scripts: requestScriptsWireSchema.optional(),
+  /** The request's own assertions (request-assertions spec §5.1); a stub may omit them, so they default. */
+  assertions: z.array(requestAssertionWireSchema).default([]),
   /**
    * True when this request's operation is no longer in the interface's definition, after an
    * Update Definition dropped it. Nothing is deleted; the explorer badges the row instead.
@@ -1554,6 +1672,8 @@ export const restRequestWireSchema = z.object({
   auth: authConfigWireSchema,
   settings: restSettingsWireSchema,
   scripts: requestScriptsWireSchema.optional(),
+  /** The request's own assertions (request-assertions spec §5.1); a stub may omit them, so they default. */
+  assertions: z.array(requestAssertionWireSchema).default([]),
   orphaned: z.boolean().optional(),
   /** Set only on a webhook collection item imported from an OpenAPI definition. */
   hook: hookLinkWireSchema.optional(),
@@ -1676,6 +1796,8 @@ export const grpcRequestWireSchema = z.object({
   auth: authConfigWireSchema,
   settings: grpcSettingsWireSchema,
   scripts: requestScriptsWireSchema.optional(),
+  /** The request's own assertions (request-assertions spec §5.1); a stub may omit them, so they default. */
+  assertions: z.array(requestAssertionWireSchema).default([]),
   orphaned: z.boolean().optional(),
 });
 export type GrpcRequestWire = z.infer<typeof grpcRequestWireSchema>;
@@ -1786,6 +1908,8 @@ export const wsRequestWireSchema = z.object({
   auth: authConfigWireSchema,
   settings: wsSettingsWireSchema,
   messages: z.array(wsSavedMessageWireSchema),
+  /** The request's own assertions (request-assertions spec §5.1); a stub may omit them, so they default. */
+  assertions: z.array(requestAssertionWireSchema).default([]),
   /** The contract channel it was imported from, by its key in the document. */
   contract: z.object({ channel: z.string() }).optional(),
   /** The contract no longer has that channel. */
@@ -1952,6 +2076,8 @@ export const restContractResultSchema = z.object({
 export type RestContractResultWire = z.infer<typeof restContractResultSchema>;
 
 export const restExchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   durationMs: z.number(),
   http: httpExchangeWireSchema,
@@ -2095,6 +2221,8 @@ export type GrpcResponseMessageWire = z.infer<typeof grpcResponseMessageWireSche
  * metadata both ways and the decoded messages are what the gRPC response pane adds.
  */
 export const grpcExchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   durationMs: z.number(),
   http: httpExchangeWireSchema,
@@ -2246,6 +2374,8 @@ export type WsHandshakeWire = z.infer<typeof wsHandshakeWireSchema>;
 
 /** What one WebSocket session produced (so far, or in whole): the handshake, its frames, how it closed. */
 export const wsExchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   url: z.string(),
   handshake: wsHandshakeWireSchema,
@@ -2467,68 +2597,15 @@ export type LogExportHarRequest = z.infer<typeof logExportHarRequestSchema>;
 // so the limits, the transfer-name pattern and the compiled `matches:` are enforced by the same code
 // that guards a file from a teammate.
 
-const assertionNameWire = z.string().optional();
-
-const callbackCheckFields = {
-  equals: z.string().optional(),
-  matches: z.string().optional(),
-  exists: z.boolean().optional(),
-};
-const callbackHeaderWire = z.object({ name: z.string(), ...callbackCheckFields });
-const callbackBodyWire = z.object({
-  language: z.enum(['jsonpath', 'xpath']),
-  path: z.string(),
-  ...callbackCheckFields,
-});
-
-/** One assertion a sequence step may carry: the request catalogue plus `header` and `callback`. */
+/** One assertion a sequence step may carry: the request catalogue plus `header`. */
 export const stepAssertionWireSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('status'),
-    equals: z.union([z.number(), z.string(), z.array(z.union([z.number(), z.string()]))]),
-    name: assertionNameWire,
-  }),
-  z.object({ type: z.literal('soap-fault'), expect: z.enum(['none', 'present']), name: assertionNameWire }),
-  z.object({
-    type: z.literal('match'),
-    language: z.enum(['xpath', 'xquery', 'jsonpath']),
-    expression: z.string(),
-    namespaces: z.record(z.string(), z.string()).optional(),
-    equals: z.union([z.string(), z.number(), z.boolean()]).optional(),
-    matches: z.string().optional(),
-    exists: z.boolean().optional(),
-    name: assertionNameWire,
-  }),
-  z.object({ type: z.literal('schema'), name: assertionNameWire }),
-  z.object({ type: z.literal('sla'), maxMs: z.number().int().positive(), name: assertionNameWire }),
-  z.object({
-    type: z.literal('header'),
-    header: z.string(),
-    equals: z.string().optional(),
-    matches: z.string().optional(),
-    exists: z.boolean().optional(),
-    name: assertionNameWire,
-  }),
-  z.object({
-    type: z.literal('callback'),
-    catchUrl: z.string(),
-    withinMs: z.number().int(),
-    match: z.object({
-      method: z.string().optional(),
-      path: z.string().optional(),
-      pathMatches: z.string().optional(),
-      headers: z.array(callbackHeaderWire).optional(),
-      body: callbackBodyWire.optional(),
-    }),
-    expect: z.array(
-      z.union([
-        z.object({ body: callbackBodyWire }),
-        z.object({ header: callbackHeaderWire }),
-        z.object({ signature: z.literal('verified') }),
-      ]),
-    ),
-    name: assertionNameWire,
-  }),
+  statusAssertionWire,
+  soapFaultAssertionWire,
+  matchAssertionWire,
+  schemaAssertionWire,
+  slaAssertionWire,
+  headerAssertionWire,
+  callbackAssertionWire,
 ]);
 export type StepAssertionWire = z.infer<typeof stepAssertionWireSchema>;
 
@@ -2947,6 +3024,12 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
     kind: z.literal('update-request-properties'),
     requestId: z.string(),
     patch: requestPropertiesPatchSchema,
+  }),
+  // A SOAP, REST, gRPC or WebSocket request's own assertions, replaced whole (request-assertions §5.2).
+  z.object({
+    kind: z.literal('set-request-assertions'),
+    requestId: z.string(),
+    assertions: z.array(requestAssertionWireSchema),
   }),
   // A SOAP, REST or gRPC request's scripts (#63); `null` removes them, and their files, altogether.
   z.object({

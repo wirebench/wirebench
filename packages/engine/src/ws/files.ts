@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { assertionsSchema } from '../assert/schema.js';
 import { authConfigSchema, definitionAuthSchema, keyValueEntrySchema, nonEmpty } from '../project/schema-parts.js';
 
 const wsSettingsSchema = z.looseObject({
@@ -46,6 +47,7 @@ export const wsRequestFileSchema = z.looseObject({
   auth: authConfigSchema.default({ type: 'inherit' }),
   settings: wsSettingsSchema.default({}),
   messages: z.array(wsSavedMessageSchema).default([]),
+  assertions: assertionsSchema.default([]),
   /** The channel of the API's contract this request was imported from. */
   contract: z.looseObject({ channel: nonEmpty }).optional(),
   /** The contract no longer has that channel. */

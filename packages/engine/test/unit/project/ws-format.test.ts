@@ -7,6 +7,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { Assertion } from '../../../src/assert/model.js';
 import { assertSupportedKind } from '../../../src/project/schema.js';
 import { loadProject } from '../../../src/project/load.js';
 import { createProject } from '../../../src/project/model.js';
@@ -336,5 +337,36 @@ describe("an AsyncAPI definition's fetch credentials", () => {
       auth,
     });
     expect(serializeProject(reloaded.project)).toEqual(files);
+  });
+});
+
+describe("a WebSocket request's assertions", () => {
+  it('round-trip, a callback assertion included, and are written only when present', async () => {
+    const assertions: Assertion[] = [
+      { type: 'status', equals: 101 },
+      { type: 'match', language: 'jsonpath', expression: '$[0].type', equals: 'ready', name: 'ready first' },
+      {
+        type: 'callback',
+        catchUrl: 'orders',
+        withinMs: 5000,
+        match: { method: 'POST' },
+        expect: [{ body: { language: 'jsonpath', path: '$.id', exists: true } }],
+      },
+    ];
+    const asserted = createWsRequest('Feed', { id: 'r1', url: '/feed', assertions });
+    const bare = createWsRequest('Bare', { id: 'r2', url: '/bare', order: 1 });
+    const project = {
+      ...emptyProject(),
+      wsApis: [createWsApi('Live', { id: 'a1', url: 'wss://live.example.test', requests: [asserted, bare] })],
+    };
+    const files = serializeProject(project);
+    expect(files.get('apis/Live/requests/Feed.request.yaml')).toContain('assertions:');
+    expect(files.get('apis/Live/requests/Bare.request.yaml')).not.toContain('assertions');
+
+    const loaded = await loadFrom(files);
+    const requests = loaded.project.wsApis[0]?.requests ?? [];
+    expect(requests.find((r) => r.id === 'r1')?.assertions).toEqual(assertions);
+    expect(requests.find((r) => r.id === 'r2')?.assertions).toEqual([]);
+    expect(serializeProject(loaded.project)).toEqual(files);
   });
 });

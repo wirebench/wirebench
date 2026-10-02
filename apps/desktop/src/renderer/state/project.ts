@@ -52,6 +52,7 @@ import type {
   RestFolderPatchWire,
   RestFolderWire,
   RestRequestPatchWire,
+  RequestAssertionWire,
   RestRequestWire,
   WebhookCollectionWire,
   WebhookSigningWire,
@@ -227,6 +228,8 @@ export interface ProjectStore extends ProjectSnapshot {
    * properties are; `null` removes them and their files. Resolves once main has the change.
    */
   readonly updateRequestScripts: (requestId: string, patch: RequestScriptsPatchWire | null) => Promise<void>;
+  /** Replaces a request's own assertions, any protocol (request-assertions spec §5.2). */
+  readonly setRequestAssertions: (requestId: string, assertions: RequestAssertionWire[]) => Promise<void>;
   /**
    * Switches on the scripts of every listed request that has them — **Switch on scripts…**. The
    * requests are one project's: the first one's.
@@ -2010,6 +2013,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     updateRequestScripts: async (requestId, patch) => {
       await mutateEntity(requestId, { kind: 'update-request-scripts', requestId, scripts: patch });
+    },
+
+    setRequestAssertions: async (requestId, assertions) => {
+      await mutateEntity(requestId, { kind: 'set-request-assertions', requestId, assertions });
     },
 
     enableScripts: async (requestIds) => {

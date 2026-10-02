@@ -1,25 +1,43 @@
 /**
- * A step's own assertions, evaluated after its request's own. The catalogue is the runner's (status,
- * SOAP fault, match, schema, response time) plus `header` and `callback`, which only a step may use.
+ * Assertions in a table: a sequence step's own (every kind), or a request's own (the kinds its protocol can check).
  */
 import type { StepAssertionWire } from '../../../shared/wire-types.js';
 import { useWebhooksStore } from '../../state/webhooks.js';
-import { CallbackFields } from './callback-fields.js';
-import { CALLBACK_BOUNDS } from './callback-text.js';
-import { CheckEditor } from './check-editor.js';
-import { CommitInput, FieldRow, SelectField } from './step-fields.js';
+import { CallbackFields } from '../sequence/callback-fields.js';
+import { CALLBACK_BOUNDS } from '../sequence/callback-text.js';
+import { CheckEditor } from '../sequence/check-editor.js';
+import { CommitInput, FieldRow, SelectField } from '../sequence/step-fields.js';
 
-type Kind = StepAssertionWire['type'];
+export type AssertionKind = StepAssertionWire['type'];
 
-const KINDS: readonly { value: Kind; label: string }[] = [
-  { value: 'status', label: 'Status' },
-  { value: 'header', label: 'Header' },
-  { value: 'match', label: 'Body matches' },
-  { value: 'sla', label: 'Response time' },
-  { value: 'soap-fault', label: 'SOAP fault' },
-  { value: 'schema', label: 'Schema' },
-  { value: 'callback', label: 'Callback' },
+const LABELS: Record<AssertionKind, string> = {
+  status: 'Status',
+  header: 'Header',
+  match: 'Body matches',
+  sla: 'Response time',
+  'soap-fault': 'SOAP fault',
+  schema: 'Schema',
+  callback: 'Callback',
+};
+
+export const STEP_KINDS: readonly AssertionKind[] = [
+  'status',
+  'header',
+  'match',
+  'sla',
+  'soap-fault',
+  'schema',
+  'callback',
 ];
+export const SOAP_REQUEST_KINDS: readonly AssertionKind[] = [
+  'status',
+  'match',
+  'sla',
+  'soap-fault',
+  'schema',
+  'callback',
+];
+export const REQUEST_KINDS: readonly AssertionKind[] = ['status', 'match', 'sla', 'callback'];
 
 const LANGUAGES = [
   { value: 'jsonpath', label: 'JSONPath' },
@@ -28,7 +46,7 @@ const LANGUAGES = [
 ] as const;
 
 /** A new assertion of `kind`; a callback starts from the first catch URL the workspace knows. */
-function defaultOf(kind: Kind, catchUrls: readonly string[]): StepAssertionWire {
+function defaultOf(kind: AssertionKind, catchUrls: readonly string[]): StepAssertionWire {
   switch (kind) {
     case 'status':
       return { type: 'status', equals: 200 };
@@ -76,41 +94,51 @@ function formatStatuses(equals: number | string | readonly (number | string)[]):
   return Array.isArray(equals) ? equals.join(', ') : String(equals);
 }
 
-export interface AssertionTableProps {
-  readonly assertions: readonly StepAssertionWire[];
-  readonly onChange: (assertions: StepAssertionWire[]) => void;
+export interface AssertionTableProps<A extends StepAssertionWire = StepAssertionWire> {
+  readonly assertions: readonly A[];
+  readonly onChange: (assertions: A[]) => void;
+  readonly kinds?: readonly AssertionKind[];
+  readonly testIdPrefix?: string;
+  readonly emptyText?: string;
 }
 
-export function AssertionTable({ assertions, onChange }: AssertionTableProps) {
+export function AssertionTable<A extends StepAssertionWire>({
+  assertions,
+  onChange,
+  kinds = STEP_KINDS,
+  testIdPrefix = 'sequence',
+  emptyText = 'No assertions of the step’s own.',
+}: AssertionTableProps<A>) {
   const hooks = useWebhooksStore((state) => state.hooks);
   const catchUrls = hooks.map((hook) => hook.name);
+  const options = kinds.map((value) => ({ value, label: LABELS[value] }));
   const replace = (index: number, next: StepAssertionWire): void =>
-    onChange(assertions.map((assertion, i) => (i === index ? next : assertion)));
+    onChange(assertions.map((assertion, i) => (i === index ? (next as A) : assertion)));
 
   return (
-    <div data-testid="sequence-assertions">
+    <div data-testid={`${testIdPrefix}-assertions`}>
       {assertions.length === 0 ? (
-        <p className="py-1 text-sm text-fg-subtle">No assertions of the step’s own.</p>
+        <p className="py-1 text-sm text-fg-subtle">{emptyText}</p>
       ) : (
         <ul>
           {assertions.map((assertion, index) => (
             <FieldRow
               key={index}
-              testId="sequence-assertion-row"
+              testId={`${testIdPrefix}-assertion-row`}
               removeLabel="Remove assertion"
               onRemove={() => onChange(assertions.filter((_, i) => i !== index))}
             >
               <SelectField
                 label="Assertion"
-                testId="sequence-assertion-kind"
+                testId={`${testIdPrefix}-assertion-kind`}
                 value={assertion.type}
-                options={KINDS}
+                options={options}
                 onChange={(kind) => replace(index, defaultOf(kind, catchUrls))}
               />
               {assertion.type === 'status' && (
                 <CommitInput
                   label="Expected status"
-                  testId="sequence-assertion-status"
+                  testId={`${testIdPrefix}-assertion-status`}
                   className="w-32"
                   value={formatStatuses(assertion.equals)}
                   placeholder="200, 2xx"
@@ -181,9 +209,9 @@ export function AssertionTable({ assertions, onChange }: AssertionTableProps) {
       )}
       <button
         type="button"
-        data-testid="sequence-add-assertion"
+        data-testid={`${testIdPrefix}-add-assertion`}
         className="mt-1 text-sm text-accent hover:underline"
-        onClick={() => onChange([...assertions, defaultOf('status', catchUrls)])}
+        onClick={() => onChange([...assertions, defaultOf(kinds[0] ?? 'status', catchUrls) as A])}
       >
         Add assertion
       </button>

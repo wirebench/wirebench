@@ -1,4 +1,5 @@
 export { evaluateAssertions } from './assert/index.js';
+export { checkRequestAssertions } from './assert/check.js';
 export type {
   Assertion,
   AssertionLanguage,
@@ -100,7 +101,7 @@ export { grpcSubject } from './grpc/run.js';
 export { grpcEffectiveAuth, grpcItemFor } from './grpc/run.js';
 export type { GrpcFailedInput, GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
 // The WebSocket run facet's item and its effective credentials, for a host that opens one itself.
-export { wsEffectiveAuth, wsItemFor } from './ws/run.js';
+export { wsEffectiveAuth, wsItemFor, wsSubject } from './ws/run.js';
 export type { WsSelected } from './ws/run.js';
 // One WebSocket session as History records it, for every host that writes History.
 export { buildWsHistoryEntry, redactWsExchange } from './ws/history-entry.js';

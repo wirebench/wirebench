@@ -151,6 +151,7 @@ describe('projectLookup', () => {
           auth: { type: 'inherit' },
           settings: {},
           messages: [],
+          assertions: [],
         },
       },
       grpcRequests: {},

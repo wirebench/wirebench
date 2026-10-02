@@ -42,6 +42,8 @@ import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
 import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
 import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
+import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
+import { REQUEST_KINDS } from '../assertions/assertion-table.js';
 
 /** The two webhook-target error codes `request.preflightRest` refuses a webhook item's send with. */
 const WEBHOOK_TARGET_ERROR_CODES = new Set(['webhook-target-missing', 'webhook-target-invalid']);
@@ -62,6 +64,7 @@ const TABS = [
   // Webhook items only (webhook-signatures §5.2).
   { id: 'signing', label: 'Signing' },
   { id: 'scripts', label: 'Scripts' },
+  { id: 'assertions', label: 'Assertions' },
   { id: 'settings', label: 'Settings' },
 ] as const;
 
@@ -219,6 +222,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
         ? { label: topAuth.label, type: topAuth.auth.type }
         : undefined;
 
+  const assertionsCount = assertionsBadge(request.assertions);
   const requestTabs = (
     // `h-full`, not `flex-1`: the panel this sits in is a plain block, so a flex child of it would
     // size to its content and the raw body's editor would collapse to nothing.
@@ -226,7 +230,11 @@ export function RestEditor({ requestId }: RestEditorProps) {
       <Tabs
         label="Request tabs"
         items={TABS.filter((item) => item.id !== 'signing' || isWebhookItem).map((item) =>
-          item.id === 'scripts' && hasScripts(request.scripts) ? { ...item, badge: '●' } : item,
+          item.id === 'scripts' && hasScripts(request.scripts)
+            ? { ...item, badge: '●' }
+            : item.id === 'assertions' && assertionsCount !== undefined
+              ? { ...item, badge: assertionsCount }
+              : item,
         )}
         active={shownTab}
         onSelect={setTab}
@@ -271,6 +279,9 @@ export function RestEditor({ requestId }: RestEditorProps) {
           />
         )}
         {shownTab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
+        {shownTab === 'assertions' && (
+          <AssertionsTab key={requestId} requestId={requestId} assertions={request.assertions} kinds={REQUEST_KINDS} />
+        )}
         {shownTab === 'settings' && (
           <SettingsTab
             settings={request.settings}

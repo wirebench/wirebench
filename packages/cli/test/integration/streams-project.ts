@@ -27,12 +27,17 @@ export interface StreamCall {
 
 /**
  * Saves a project of streams in `dir`: a WebSocket API `Chat` on `wsUrl` whose `Echo` request sends
- * `one` then `two` (no assertions, as a saved WebSocket request has none), and, when `grpcTarget` is
+ * `one` then `two`, and, when `grpcTarget` is
  * given, the greeter's `calls` under a gRPC API `Greeter` with its proto definition cached.
  */
 export async function writeStreamsProject(
   dir: string,
-  options: { readonly wsUrl: string; readonly grpcTarget?: string; readonly calls?: readonly StreamCall[] },
+  options: {
+    readonly wsUrl: string;
+    readonly grpcTarget?: string;
+    readonly calls?: readonly StreamCall[];
+    readonly wsAssertions?: readonly Assertion[];
+  },
 ): Promise<void> {
   const project = {
     ...createProject('Streams', { id: 'p-streams' }),
@@ -46,6 +51,7 @@ export async function writeStreamsProject(
           createWsRequest('Echo', {
             id: 'ws-echo',
             url: '/echo',
+            assertions: options.wsAssertions ?? [],
             messages: [
               createWsSavedMessage('One', { id: 'm1', content: 'one' }),
               createWsSavedMessage('Two', { id: 'm2', content: 'two' }),

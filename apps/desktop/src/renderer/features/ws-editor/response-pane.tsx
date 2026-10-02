@@ -15,6 +15,7 @@ import { formatBytes } from '../../lib/format-size.js';
 import type { IpcError } from '../../../shared/ipc.js';
 import type { WsFrameWire, WsHandshakeWire } from '../../../shared/wire-types.js';
 import type { WsExchangeState } from '../../state/exchanges.js';
+import { AssertionResults, assertionResultsBadge } from '../assertions/assertion-results.js';
 import { TimingsBar } from '../console/timings-bar.js';
 import { TlsDetails } from '../request-editor/inspectors/ssl-inspector.js';
 import { WsComposer, type WsComposerProps } from './composer.js';
@@ -27,6 +28,7 @@ const TABS = [
   { id: 'handshake', label: 'Handshake' },
   { id: 'timing', label: 'Timing' },
   { id: 'tls', label: 'TLS' },
+  { id: 'assertions', label: 'Assertions' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -252,9 +254,16 @@ export function WsResponsePane({ state, onSend, sendShortcut }: WsResponsePanePr
   // The whole session's frame count. Past the live cap `frames` holds only the newest of them,
   // so the badge adds back the ones let go rather than reporting a total that stopped growing.
   const totalFrames = frames.length + (live?.droppedFrames ?? 0);
-  const items = TABS.map((item) =>
-    item.id === 'timeline' && totalFrames > 0 ? { ...item, badge: String(totalFrames) } : item,
-  );
+  const items = TABS.map((item) => {
+    if (item.id === 'assertions') {
+      const verdict = assertionResultsBadge(exchange?.assertions);
+      if (verdict === undefined) {
+        return item;
+      }
+      return { ...item, label: verdict.failed ? 'Assertions ✕' : item.label, badge: verdict.text };
+    }
+    return item.id === 'timeline' && totalFrames > 0 ? { ...item, badge: String(totalFrames) } : item;
+  });
 
   return (
     <section aria-label="Session" data-testid="ws-response" className="flex h-full min-h-0 flex-col">
@@ -266,6 +275,7 @@ export function WsResponsePane({ state, onSend, sendShortcut }: WsResponsePanePr
       <Tabs label="Session tabs" items={items} active={tab} onSelect={setTab} />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {tab === 'timeline' && <WsTimelineWithDetail frames={frames} droppedFrames={live?.droppedFrames} />}
+        {tab === 'assertions' && <AssertionResults assertions={exchange?.assertions} />}
         {tab === 'handshake' && <WsHandshakeView handshake={handshake} />}
         {tab === 'timing' &&
           (handshake === undefined ? (

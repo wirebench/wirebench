@@ -459,6 +459,7 @@ export function cloneWsRequest(project: Project, requestId: string): WsMutationR
       subprotocols: original.subprotocols,
       auth: original.auth,
       settings: original.settings,
+      assertions: original.assertions,
       messages: original.messages.map((message) =>
         createWsSavedMessage(message.name, { slug: message.slug, format: message.format, content: message.content }),
       ),

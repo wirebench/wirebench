@@ -25,6 +25,7 @@ import { RedirectsView } from './redirects-view.js';
 import { ResponseHeadersView } from './headers-view.js';
 import { StatusLine } from './status-line.js';
 import { SnapshotPanel } from '../../snapshot/snapshot-panel.js';
+import { AssertionResults, assertionResultsBadge } from '../../assertions/assertion-results.js';
 import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../../scripts/script-results.js';
 
 /** The response tabs, in order. An event stream swaps Body for Events, first. */
@@ -38,6 +39,7 @@ const TABS = [
   { id: 'tls', label: 'TLS' },
   { id: 'raw', label: 'Raw' },
   { id: 'query', label: 'Query' },
+  { id: 'assertions', label: 'Assertions' },
   { id: 'script', label: 'Script' },
   { id: 'snapshot', label: 'Snapshot' },
 ] as const;
@@ -85,6 +87,13 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
     if (item.id === 'events') {
       const total = stream !== undefined ? streamRowTotal(stream) : (live?.rows.length ?? 0) + (live?.droppedRows ?? 0);
       return total > 0 ? { ...item, badge: String(total) } : item;
+    }
+    if (item.id === 'assertions') {
+      const verdict = assertionResultsBadge(exchange?.assertions);
+      if (verdict === undefined) {
+        return item;
+      }
+      return { ...item, label: verdict.failed ? 'Assertions ✕' : item.label, badge: verdict.text };
     }
     if (item.id === 'script') {
       const badge = scriptResultsBadge(exchange?.script);
@@ -172,6 +181,7 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
               </div>
             )}
             {activeTab === 'raw' && <RawExchange exchange={exchange} />}
+            {activeTab === 'assertions' && <AssertionResults assertions={exchange.assertions} />}
             {activeTab === 'script' && <ScriptResults script={exchange.script} scriptsOff={exchange.scriptsOff} />}
             {activeTab === 'snapshot' && (
               <SnapshotPanel

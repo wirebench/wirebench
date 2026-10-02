@@ -49,6 +49,7 @@ import {
   updateEnvironment,
 } from './project-environment-mutations.js';
 import { addKeystore, removeKeystore, updateKeystore } from './project-keystore-mutations.js';
+import { setRequestAssertions } from './project-assertion-mutations.js';
 import { enableScripts, updateRequestScripts } from './project-script-mutations.js';
 import {
   addGrpcApi,
@@ -1020,6 +1021,9 @@ export async function applyChange(
 
     case 'update-request-properties':
       return updateRequestProperties(project, change.requestId, change.patch);
+
+    case 'set-request-assertions':
+      return setRequestAssertions(project, change.requestId, change.assertions);
 
     case 'update-request-scripts':
       return updateRequestScripts(project, change.requestId, change.scripts);

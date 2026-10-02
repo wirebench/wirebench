@@ -109,7 +109,7 @@ The project format is currently **version 6**:
 5. **Version 5** — a SOAP interface, endpoint or request can use bearer, API-key and OAuth2 auth,
    previously REST-only.
 6. **Version 6** — a SOAP, REST or gRPC request can carry a `scripts` key, with its pre-request and
-   post-response scripts in files beside it.
+   post-response scripts in files beside it, and a WebSocket request can carry `assertions`.
 
 A sequence file is versioned on its own (`version: 1`), not by `formatVersion`. An older build never
 reads, lists or deletes `sequences/`, so it opens the project and leaves the folder exactly as it

@@ -38,6 +38,8 @@ import { ViewTabs } from './view-tabs.js';
 import { FormView, OutlineView, prefetchViews, RawView, ViewFallback } from './views/lazy-views.js';
 import { applyValueEdit, type TextRange } from './views/xml-model.js';
 import { ScriptsTab } from '../scripts/scripts-tab.js';
+import { AssertionsTab } from '../assertions/assertions-tab.js';
+import { SOAP_REQUEST_KINDS } from '../assertions/assertion-table.js';
 
 /** Long enough that a burst of keystrokes is one store write, short enough to feel immediate. */
 const DEBOUNCE_MS = 120;
@@ -52,6 +54,7 @@ const REQUEST_INSPECTORS: readonly InspectorItem[] = [
   { id: 'wsa', label: 'WS-A' },
   { id: 'ssl', label: 'SSL' },
   { id: 'scripts', label: 'Scripts' },
+  { id: 'assertions', label: 'Assertions' },
 ];
 
 const VIEWS = [
@@ -402,6 +405,8 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
             <AuthInspector requestId={requestId} />
           ) : inspector === 'scripts' ? (
             <SoapScriptsInspector requestId={requestId} />
+          ) : inspector === 'assertions' ? (
+            <SoapAssertionsInspector requestId={requestId} />
           ) : (
             <WsaInspector requestId={requestId} />
           )
@@ -410,6 +415,16 @@ export const RequestPane = forwardRef<RequestPaneHandle, RequestPaneProps>(funct
     </div>
   );
 });
+
+/** The Assertions inspector: the request's own assertions, as the other editors' Assertions tab shows them. */
+function SoapAssertionsInspector({ requestId }: { readonly requestId: string }) {
+  const assertions = useProjectStore((state) => state.requests[requestId]?.assertions);
+  return (
+    <div className="h-80 min-h-0">
+      <AssertionsTab key={requestId} requestId={requestId} assertions={assertions} kinds={SOAP_REQUEST_KINDS} />
+    </div>
+  );
+}
 
 /** The Scripts inspector: the request's scripts, as the REST and gRPC editors' Scripts tab shows them. */
 function SoapScriptsInspector({ requestId }: { readonly requestId: string }) {

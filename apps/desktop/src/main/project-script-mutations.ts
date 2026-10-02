@@ -10,52 +10,11 @@
 import { ProjectError, SCRIPT_LIMITS } from '@wirebench/engine';
 import type { Project, RequestScripts, ScriptSource } from '@wirebench/engine';
 import type { RequestScriptsPatchWire } from '../shared/wire-types.js';
+import { mapRequests } from './project-request-map.js';
+import type { Identified } from './project-request-map.js';
 
 /** A request of any protocol, as far as its scripts go. */
-interface Scripted {
-  readonly id: string;
-  readonly scripts?: RequestScripts;
-}
-
-type Update = <R extends Scripted>(request: R) => R;
-
-interface Tree<R extends Scripted> {
-  readonly requests: readonly R[];
-  readonly folders: readonly Tree<R>[];
-}
-
-/** `container` with `update` applied to every request in it, folders included; the same object when none changed. */
-function mapTree<T extends Tree<R>, R extends Scripted>(container: T, update: Update): T {
-  const requests = container.requests.map((request) => update(request));
-  const folders = container.folders.map((folder) => mapTree(folder, update));
-  const changed =
-    requests.some((request, index) => request !== container.requests[index]) ||
-    folders.some((folder, index) => folder !== container.folders[index]);
-  return changed ? { ...container, requests, folders } : container;
-}
-
-/** `items` mapped, or the same array when no item changed. */
-function mapSame<T>(items: readonly T[], map: (item: T) => T): readonly T[] {
-  const next = items.map(map);
-  return next.some((item, index) => item !== items[index]) ? next : items;
-}
-
-/** `project` with `update` applied to every SOAP, REST and gRPC request in it. */
-function mapRequests(project: Project, update: Update): Project {
-  const interfaces = mapSame(project.interfaces, (iface) => {
-    const operations = mapSame(iface.operations, (operation) => {
-      const requests = mapSame(operation.requests, (request) => update(request));
-      return requests === operation.requests ? operation : { ...operation, requests };
-    });
-    return operations === iface.operations ? iface : { ...iface, operations };
-  });
-  return {
-    ...project,
-    interfaces,
-    apis: mapSame(project.apis, (api) => mapTree(api, update)),
-    grpcApis: mapSame(project.grpcApis, (api) => mapTree(api, update)),
-  };
-}
+type Scripted = Identified & { readonly scripts?: RequestScripts };
 
 /** A script's source as edited: text over the size limit is kept, and refuses to send, as a loaded one does. */
 function sourceOf(text: string): ScriptSource {
@@ -107,7 +66,7 @@ export function updateRequestScripts(
   patch: RequestScriptsPatchWire | null,
 ): { readonly project: Project } {
   let found = false;
-  const next = mapRequests(project, (request) => {
+  const next = mapRequests<Scripted>(project, (request) => {
     if (request.id !== requestId) return request;
     found = true;
     return withScripts(request, patch === null ? undefined : patchedScripts(request.scripts, patch));
@@ -125,7 +84,7 @@ export function updateRequestScripts(
 export function enableScripts(project: Project, requestIds: readonly string[]): { readonly project: Project } {
   const ids = new Set(requestIds);
   return {
-    project: mapRequests(project, (request) =>
+    project: mapRequests<Scripted>(project, (request) =>
       ids.has(request.id) && request.scripts !== undefined && !request.scripts.enabled
         ? { ...request, scripts: { ...request.scripts, enabled: true } }
         : request,

@@ -15,6 +15,7 @@ import {
   wssOutgoingFileSchema,
 } from '@wirebench/engine';
 import type {
+  Assertion,
   AuthConfig,
   GrpcApi,
   GrpcRequestDef,
@@ -38,6 +39,7 @@ import type {
   WssRef,
 } from '@wirebench/engine';
 import type {
+  RequestAssertionWire,
   AuthConfigWire,
   GrpcApiWire,
   GrpcRequestWire,
@@ -210,6 +212,11 @@ export function toRequestScriptsWire(scripts: RequestScripts | undefined): Reque
   };
 }
 
+/** A request's own assertions as the renderer edits them: the engine's shapes, copied. */
+function toAssertionWires(assertions: readonly Assertion[] | undefined): RequestAssertionWire[] {
+  return (assertions ?? []).map((assertion) => structuredClone(assertion) as RequestAssertionWire);
+}
+
 /** `{ scripts }` for a wire object, or nothing when the request has none. */
 function scriptsField(scripts: RequestScripts | undefined): { scripts?: RequestScriptsWire } {
   const wire = toRequestScriptsWire(scripts);
@@ -240,6 +247,7 @@ export function toRequestWire(iface: Interface, operation: OperationDef, request
     attachments: request.attachments.map(toAttachmentWire),
     properties: { ...request.properties },
     ...scriptsField(request.scripts),
+    assertions: toAssertionWires(request.assertions),
     ...(request.orphaned === true ? { orphaned: true } : {}),
   };
 }
@@ -457,6 +465,7 @@ function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: str
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
     ...scriptsField(request.scripts),
+    assertions: toAssertionWires(request.assertions),
     ...(request.orphaned === true ? { orphaned: true } : {}),
     ...(request.hook !== undefined ? { hook: request.hook } : {}),
     ...(request.signing !== undefined ? { signing: request.signing } : {}),
@@ -594,6 +603,7 @@ function toGrpcRequestWire(request: GrpcRequestDef, apiId: string, folderId: str
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
     ...scriptsField(request.scripts),
+    assertions: toAssertionWires(request.assertions),
     ...(request.orphaned === true ? { orphaned: true } : {}),
   };
 }
@@ -686,6 +696,7 @@ function toWsRequestWire(request: WsRequestDef, apiId: string, folderId: string 
     auth: toAuthConfigWire(request.auth),
     settings: { ...request.settings },
     messages: request.messages.map(toWsMessageWire),
+    assertions: toAssertionWires(request.assertions),
     ...(request.contract !== undefined ? { contract: { channel: request.contract.channel } } : {}),
     ...(request.orphaned === true ? { orphaned: true } : {}),
   };

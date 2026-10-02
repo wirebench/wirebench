@@ -565,10 +565,15 @@ describe('op send on a WebSocket request', () => {
   });
 
   it('masks a secret inside a binary frame, in the result and in History', async () => {
-    // Answers each text with a binary frame that carries it between two non-text bytes.
+    // Answers the last saved message only, with a binary frame that carries it between two non-text
+    // bytes. A run closes after the first reply that follows its last message, so an answer to
+    // `hello` arriving after `key …` was sent would end the run before the frame under test.
     const binary = await startTestWsServer({
-      onText: (text, peer) =>
-        peer.sendBinary(Buffer.concat([Buffer.from([0x01]), Buffer.from(text), Buffer.from([0xff])])),
+      onText: (text, peer) => {
+        if (text.startsWith('key ')) {
+          peer.sendBinary(Buffer.concat([Buffer.from([0x01]), Buffer.from(text), Buffer.from([0xff])]));
+        }
+      },
     });
     sockets.push(binary);
     const fixture = await wsProject(binary.url);
@@ -582,8 +587,7 @@ describe('op send on a WebSocket request', () => {
     const decoded = (result.frames ?? [])
       .filter((frame) => frame.opcode === 'binary')
       .map((frame) => Buffer.from(frame.base64 ?? '', 'base64').toString('latin1'));
-    expect(decoded[0]).toBe('\u0001hello\u00ff');
-    expect(decoded).toContain(`\u0001key ${REDACTED_MARKER}\u00ff`);
+    expect(decoded).toEqual([`\u0001key ${REDACTED_MARKER}\u00ff`]);
     for (const frame of result.frames ?? []) {
       expect(Buffer.from(frame.base64 ?? '', 'base64').toString('latin1')).not.toContain(SECRET);
     }

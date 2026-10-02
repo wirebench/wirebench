@@ -1164,6 +1164,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.send, async (request) => {
     const summary = await sendThroughEngine(sendDeps, request.sendId, request.requestId ?? AD_HOC_ID, {
       draft: { kind: 'soap', override: soapOverrideOf(request.input) },
+      checkAssertions: true,
       ...(request.requestId === undefined ? { adHoc: { input: request.input, names: AD_HOC_NAME } } : {}),
     });
     return request.requestId === undefined
@@ -1178,6 +1179,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
       request.requestId,
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
         draft: { kind: 'rest', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
+        checkAssertions: true,
         onLive: (live) => {
           emitEvent(sender, events.rest.live, live);
         },
@@ -1192,6 +1194,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.sendGrpc, (request, sender) =>
     sendThroughEngine(sendDeps, request.sendId, request.requestId, {
       draft: { kind: 'grpc', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
+      checkAssertions: true,
       interactive: request.interactive === true,
       onLive: (live) => {
         emitEvent(sender, events.grpc.live, live);
@@ -1221,6 +1224,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
         draft: { kind: 'websocket', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
         interactive: true,
+        checkAssertions: true,
         onLive: (live) => {
           emitEvent(sender, events.ws.live, live);
         },

@@ -34,7 +34,7 @@ export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '.
  * interface, endpoint or request carry `bearer`, `api-key` and `oauth2` auth (previously
  * REST-only) — new keys and new enum values on an existing field. 6 added `scripts` on a SOAP, REST or
  * gRPC request (#63), the project's webhook collection under `webhooks/`, `hook` on a request, `signing` on the
- * collection, its folders and its items, and the `callback` assertion kind (callback-assertion spec §2.1).
+ * collection, its folders and its items, the `callback` assertion kind (callback-assertion spec §2.1), and `assertions` on a WebSocket request (#192).
  * 6 is not yet released, so these share it.
  * All are additive; this format does not round-trip unknown keys, so an older build would delete them on
  * its next save (see `schema.ts` and ADR-0003) — and would meanwhile send a request without its scripts.

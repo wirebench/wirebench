@@ -117,12 +117,13 @@ function makeProject(streams: Streams): Project {
               id: 'api-chat',
               slug: 'chat',
               url: streams.ws.url ?? ws.url,
-              // A saved WebSocket request has no assertions of its own yet; a run evaluates any it carries.
               requests: [
-                Object.assign(
-                  createWsRequest('Echo', { id: 'ws-echo', url: streams.ws.path, messages: streams.ws.messages }),
-                  { assertions: streams.ws.assertions ?? [] },
-                ),
+                createWsRequest('Echo', {
+                  id: 'ws-echo',
+                  url: streams.ws.path,
+                  messages: streams.ws.messages,
+                  assertions: streams.ws.assertions ?? [],
+                }),
               ],
             }),
           ],
@@ -143,9 +144,12 @@ function makeProject(streams: Streams): Project {
   };
 }
 
+function contextFor(project: Project, extra: Partial<RunContext> = {}): RunContext {
+  return { project, projectDir: dir, overrides: {}, host: testHost(), ...extra };
+}
+
 async function run(project: Project, extra: Partial<RunContext> = {}): Promise<readonly RequestResult[]> {
-  const context: RunContext = { project, projectDir: dir, overrides: {}, host: testHost(), ...extra };
-  return (await runRequests(selectRequests(project, []).selected, context)).requests;
+  return (await runRequests(selectRequests(project, []).selected, contextFor(project, extra))).requests;
 }
 
 const TWO = [
@@ -154,6 +158,28 @@ const TWO = [
 ];
 
 describe('runRequests — streams', () => {
+  it('checks a JSON message by its fields, and fails a WebSocket run whose assertion does not hold', async () => {
+    const READY = [createWsSavedMessage('Ready', { id: 'm-ready', content: '{"type":"ready","id":7}' })];
+    const [passed] = await run(
+      makeProject({ ws: { path: '/echo', messages: READY, assertions: [match('$[0].type', 'ready')] } }),
+    );
+    expect(passed).toMatchObject({ protocol: 'websocket', outcome: 'passed', unasserted: false });
+
+    const [failed] = await run(
+      makeProject({ ws: { path: '/echo', messages: READY, assertions: [match('$[0].type', 'gone')] } }),
+    );
+    expect(failed).toMatchObject({ protocol: 'websocket', outcome: 'failed' });
+    expect(failed?.assertions[0]).toMatchObject({ outcome: 'failed', actual: 'ready' });
+  });
+
+  it('sends a WebSocket request that has assertions under --require-assertions', async () => {
+    const project = makeProject({ ws: { path: '/echo', messages: TWO, assertions: [match('$[0]', 'one')] } });
+    const [only] = (
+      await runRequests(selectRequests(project, []).selected, contextFor(project), { requireAssertions: true })
+    ).requests;
+    expect(only).toMatchObject({ protocol: 'websocket', outcome: 'passed' });
+  });
+
   it('runs a server-streaming and a bidi call, a WebSocket request and an event stream to their end', async () => {
     const project = makeProject({
       grpc: [

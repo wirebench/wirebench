@@ -61,6 +61,7 @@ import type { HistoryService } from '../history-service.js';
 import { containsRecordedSecret, recordSecretValue } from '../redact.js';
 import { finishScripts, scriptsFailed, scriptsForSend, sessionValuesFor, type SendScripts } from '../script-send.js';
 import { callbackUrlFor, withSentSigningHeaders, type WebhookUrlSource } from '../webhook-send.js';
+import { editorAssertionResults } from './assertions.js';
 import { adHocSoapItem, AD_HOC_ID, selectedFor, type DraftOf } from './draft.js';
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from './host.js';
 import { toWireEvent } from './live.js';
@@ -116,6 +117,11 @@ export interface SendOptions<D extends DraftOf = DraftOf> {
    * within the timeout, and one the timeout cuts fails with `timeout`. The editor's sends are not.
    */
   readonly run?: boolean;
+  /**
+   * True for an editor's Send: the request's own assertions are checked against what came back and
+   * returned with the result. Resends, multi-environment sends and sequence steps leave it off.
+   */
+  readonly checkAssertions?: boolean;
   /** The History entry's tags in place of the request's own: the run a sequence step belongs to. */
   readonly tags?: readonly string[];
   /** Appended to the History entry's request name: the environment a multi-environment send went to. */
@@ -475,7 +481,10 @@ async function sendReserved(
       handshakeLogged: send.handshakeLogged === true,
     };
     await record(deps, recorded, sent, full, summarised.unredacted);
-    return full;
+    // After History is written, so a result never reaches it (request-assertions spec §6).
+    const own = options.checkAssertions === true && 'assertions' in item.request ? (item.request.assertions ?? []) : [];
+    const assertions = await editorAssertionResults(own, sent.subject);
+    return assertions === undefined ? full : { ...full, assertions };
   } catch (error) {
     await forwarding;
     const failed = failures.sendStage();

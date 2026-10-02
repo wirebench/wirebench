@@ -372,20 +372,29 @@ function responseHead(handshake: WsHandshake): string {
   return `${lines.join('\r\n')}\r\n\r\n`;
 }
 
+/** A received text as assertions read it: its JSON value when it is JSON, else the text itself. */
+function messageValue(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
 /**
  * A session as assertions see it: the handshake's status and response headers, and every text the
- * server sent, in order, as a JSON array. A refused handshake has no status, so it reads as 0.
- * Exported for its unit test; not part of the run module's public surface.
+ * server sent, in order, as a JSON array — a JSON message as its value, any other as its text. A
+ * refused handshake has no status, so it reads as 0.
  */
 export function wsSubject(exchange: WsExchange): AssertionSubject {
-  const receivedTexts = exchange.frames
+  const received = exchange.frames
     .filter((frame) => frame.direction === 'received' && frame.opcode === 'text')
-    .map((frame) => frame.text ?? '');
+    .map((frame) => messageValue(frame.text ?? ''));
   return {
     protocol: 'websocket',
     status: exchange.handshake.status ?? 0,
     durationMs: exchange.durationMs,
-    bodyText: JSON.stringify(receivedTexts),
+    bodyText: JSON.stringify(received),
     bodyKind: 'json',
     headers: Object.entries(exchange.handshake.responseHeaders ?? {}),
   };

@@ -123,6 +123,7 @@ describe('ExplorerView', () => {
         'req-1': {
           properties: REQUEST_PROPERTIES,
           attachments: [],
+          assertions: [],
           id: 'req-1',
           interfaceId: 'iface-1',
           bindingName: '{tns}B',
@@ -213,6 +214,7 @@ describe('ExplorerView', () => {
         'req-1': {
           properties: REQUEST_PROPERTIES,
           attachments: [],
+          assertions: [],
           id: 'req-1',
           interfaceId: 'iface-1',
           bindingName: '{tns}B',
@@ -228,6 +230,7 @@ describe('ExplorerView', () => {
         'req-2': {
           properties: REQUEST_PROPERTIES,
           attachments: [],
+          assertions: [],
           id: 'req-2',
           interfaceId: 'iface-1',
           bindingName: '{tns}B',

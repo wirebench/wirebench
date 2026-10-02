@@ -20,6 +20,7 @@ import type { GrpcExchangeState, GrpcLiveState } from '../../state/exchanges.js'
 import { InspectorIconButton } from '../request-editor/inspectors/inspector-strip.js';
 import { SslInspector } from '../request-editor/inspectors/ssl-inspector.js';
 import { TimingsBar } from '../console/timings-bar.js';
+import { AssertionResults, assertionResultsBadge } from '../assertions/assertion-results.js';
 import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../scripts/script-results.js';
 
 /** The response tabs, in order. */
@@ -29,6 +30,7 @@ const TABS = [
   { id: 'timing', label: 'Timing' },
   { id: 'tls', label: 'TLS' },
   { id: 'raw', label: 'Raw' },
+  { id: 'assertions', label: 'Assertions' },
   { id: 'script', label: 'Script' },
 ] as const;
 
@@ -135,6 +137,13 @@ export function GrpcResponsePane({ state, onPush, onHalfClose }: GrpcResponsePan
     if (item.id === 'messages' && messages.length > 0) {
       return { ...item, badge: String(messages.length) };
     }
+    if (item.id === 'assertions') {
+      const verdict = assertionResultsBadge(exchange?.assertions);
+      if (verdict === undefined) {
+        return item;
+      }
+      return { ...item, label: verdict.failed ? 'Assertions ✕' : item.label, badge: verdict.text };
+    }
     const badge = item.id === 'script' ? scriptResultsBadge(exchange?.script) : undefined;
     return badge !== undefined ? { ...item, badge } : item;
   });
@@ -200,6 +209,7 @@ export function GrpcResponsePane({ state, onPush, onHalfClose }: GrpcResponsePan
               ) : (
                 <RawExchange exchange={exchange} />
               ))}
+            {tab === 'assertions' && <AssertionResults assertions={exchange?.assertions} />}
             {tab === 'script' && exchange !== undefined && (
               <ScriptResults script={exchange.script} scriptsOff={exchange.scriptsOff} />
             )}
