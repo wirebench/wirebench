@@ -37,6 +37,8 @@ import { MetadataTab } from './metadata-tab.js';
 import { GrpcResponsePane } from './response-pane.js';
 import { GrpcSettingsTab } from './settings-tab.js';
 import { hasScripts, ScriptsTab } from '../scripts/scripts-tab.js';
+import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
+import { REQUEST_KINDS } from '../assertions/assertion-table.js';
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -46,6 +48,7 @@ const TABS = [
   { id: 'metadata', label: 'Metadata' },
   { id: 'auth', label: 'Auth' },
   { id: 'scripts', label: 'Scripts' },
+  { id: 'assertions', label: 'Assertions' },
   { id: 'settings', label: 'Settings' },
 ] as const;
 
@@ -205,12 +208,17 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
         ? { label: api.name, type: api.auth.type }
         : undefined;
 
+  const assertionsCount = assertionsBadge(request.assertions);
   const requestTabs = (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <Tabs
         label="Request tabs"
         items={TABS.map((item) =>
-          item.id === 'scripts' && hasScripts(request.scripts) ? { ...item, badge: '●' } : item,
+          item.id === 'scripts' && hasScripts(request.scripts)
+            ? { ...item, badge: '●' }
+            : item.id === 'assertions' && assertionsCount !== undefined
+              ? { ...item, badge: assertionsCount }
+              : item,
         )}
         active={tab}
         onSelect={setTab}
@@ -250,6 +258,9 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
           />
         )}
         {tab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
+        {tab === 'assertions' && (
+          <AssertionsTab requestId={requestId} assertions={request.assertions} kinds={REQUEST_KINDS} />
+        )}
         {tab === 'settings' && (
           <GrpcSettingsTab
             settings={request.settings}

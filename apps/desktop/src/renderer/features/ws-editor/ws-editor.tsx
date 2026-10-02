@@ -17,6 +17,8 @@ import { detectPlatform } from '../../lib/platform.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
+import { assertionsBadge, AssertionsTab } from '../assertions/assertions-tab.js';
+import { REQUEST_KINDS } from '../assertions/assertion-table.js';
 import { folderChainOf, useProjectStore, wsDraftPatch } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
@@ -41,6 +43,7 @@ const TABS = [
   { id: 'headers', label: 'Headers' },
   { id: 'subprotocols', label: 'Subprotocols' },
   { id: 'auth', label: 'Auth' },
+  { id: 'assertions', label: 'Assertions' },
   { id: 'settings', label: 'Settings' },
 ] as const;
 
@@ -89,6 +92,8 @@ function WsBreadcrumb({ requestId }: { readonly requestId: string }) {
 /** One WebSocket request's editor. */
 export function WsEditor({ requestId }: WsEditorProps) {
   const request = useProjectStore((state) => state.wsRequests[requestId]);
+  const savedAssertions = useProjectStore((state) => state.wsRequests[requestId]?.assertions);
+  const assertionsCount = assertionsBadge(savedAssertions);
   const api = useProjectStore((state) => (request === undefined ? undefined : state.wsApis[request.apiId]));
   const folderMap = useProjectStore((state) => state.folders);
   const folders = useMemo(() => folderChainOf(folderMap, request?.folderId), [folderMap, request?.folderId]);
@@ -173,7 +178,14 @@ export function WsEditor({ requestId }: WsEditorProps) {
 
   const requestTabs = (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <Tabs label="Request tabs" items={TABS} active={tab} onSelect={setTab} />
+      <Tabs
+        label="Request tabs"
+        items={TABS.map((item) =>
+          item.id === 'assertions' && assertionsCount !== undefined ? { ...item, badge: assertionsCount } : item,
+        )}
+        active={tab}
+        onSelect={setTab}
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {tab === 'messages' && (
           <WsMessagesTab
@@ -222,6 +234,9 @@ export function WsEditor({ requestId }: WsEditorProps) {
               stage({ auth });
             }}
           />
+        )}
+        {tab === 'assertions' && (
+          <AssertionsTab requestId={requestId} assertions={savedAssertions} kinds={REQUEST_KINDS} />
         )}
         {tab === 'settings' && (
           <WsSettingsTab

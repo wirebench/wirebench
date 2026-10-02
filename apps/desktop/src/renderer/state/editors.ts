@@ -30,7 +30,7 @@ const DEFAULT_REST_BODY_VIEW: RestBodyViewType = 'text';
 
 /** Which inspector is showing in a pane's bottom strip. Editor state, never saved to disk. */
 export type InspectorId =
-  'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details' | 'properties' | 'scripts';
+  'headers' | 'attachments' | 'auth' | 'wsa' | 'wss' | 'ssl' | 'details' | 'properties' | 'scripts' | 'assertions';
 
 /** Which pane's strip an inspector selection belongs to — the two are independent. */
 export type InspectorPane = 'request' | 'response';
