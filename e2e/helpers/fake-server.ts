@@ -38,7 +38,23 @@ export interface FakeTeam {
   readonly workspaces?: readonly { readonly name: string; readonly defaultRole?: DefaultRole }[];
 }
 
+/** One audit event as `GET /audit` carries it (audit-log spec §3). */
+export interface AuditEvent {
+  readonly id: string;
+  readonly at: string;
+  readonly actor: { readonly kind: string; readonly userId?: string; readonly email?: string };
+  readonly action: string;
+  readonly target: { readonly kind: string; readonly id: string | null };
+  readonly workspaceId: string | null;
+  readonly teamId: string | null;
+  readonly ip: string | null;
+  readonly userAgent: string | null;
+  readonly details: Readonly<Record<string, unknown>>;
+}
+
 export interface FakeServerOptions {
+  /** Audit events behind `GET /audit` and `/audit/export`; served only on an Enterprise license. */
+  readonly auditEvents?: readonly AuditEvent[];
   readonly users?: readonly FakeUser[];
   /** Open invitations, by secret. */
   readonly invitations?: Readonly<Record<string, { readonly email: string }>>;
@@ -371,17 +387,23 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     | undefined;
   const licenseState = () =>
     installedLicense === undefined
-      ? { edition: 'community', status: 'none', seats: { used: users.size, limit: 5 }, features: [] }
+      ? {
+          edition: 'community',
+          status: 'none',
+          seats: { used: users.size, limit: 5 as number | null },
+          features: [] as string[],
+        }
       : {
           edition: installedLicense.edition,
           status: 'active',
           seats: { used: users.size, limit: installedLicense.seats },
-          features: [],
+          features: installedLicense.edition === 'enterprise' ? ['audit-log'] : ([] as string[]),
           licenseId: installedLicense.id,
           customer: installedLicense.customer,
           issuedAt: installedLicense.issuedAt,
           expiresAt: installedLicense.expiresAt,
         };
+  const auditEvents = [...(options.auditEvents ?? [])];
   const signOuts: string[] = [];
   const requests: FakeRequest[] = [];
   let url = '';
@@ -1194,6 +1216,41 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           installedLicense = undefined;
           return send(response, 204);
         }
+      }
+      if (path.pathname === '/api/v1/audit' || path.pathname === '/api/v1/audit/export') {
+        if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
+        if (users.get(email.toLowerCase())?.serverAdmin !== true) return problem(response, 403, 'identity-forbidden');
+        if (!licenseState().features.includes('audit-log')) {
+          return problem(response, 403, 'licensing-feature-required');
+        }
+        const action = path.searchParams.get('action');
+        const from = path.searchParams.get('from');
+        const workspaceId = path.searchParams.get('workspaceId');
+        const matching = auditEvents
+          .filter(
+            (e) =>
+              (action === null || e.action.startsWith(action)) &&
+              (from === null || e.at >= from) &&
+              (workspaceId === null || e.workspaceId === workspaceId),
+          )
+          .sort((a, b) => (a.at < b.at ? 1 : -1));
+        if (path.pathname.endsWith('/export')) {
+          response.writeHead(200, { 'content-type': 'application/x-ndjson' });
+          response.end(
+            [...matching]
+              .reverse()
+              .map((e) => `${JSON.stringify(e)}\n`)
+              .join(''),
+          );
+          return;
+        }
+        const limit = Number(path.searchParams.get('limit') ?? '50');
+        const after = path.searchParams.get('after');
+        const start = after === null ? 0 : Number(Buffer.from(after, 'base64url').toString());
+        const events = matching.slice(start, start + limit);
+        const next =
+          start + limit < matching.length ? Buffer.from(String(start + limit)).toString('base64url') : undefined;
+        return send(response, 200, { events, ...(next !== undefined ? { next } : {}) });
       }
       if (request.method === 'POST' && path.pathname === '/api/v1/auth/sign-out') {
         if (email === undefined || token === undefined) return problem(response, 401, 'identity-unauthenticated');
