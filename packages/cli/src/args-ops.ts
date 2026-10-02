@@ -98,8 +98,9 @@ wirebench operations [<interface-or-api>] [--project <dir>]
 wirebench generate <operation> [--optional all|required] [--project <dir>]
                        Prints a sample request: a SOAP envelope, or a REST method, path and JSON body.
 wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--project <dir>]
-                       Sends a saved SOAP or REST request as run does, prints the response and the
-                       assertion results, and records it in the desktop's History.
+                       Sends a saved SOAP, REST or WebSocket request as run does, prints the response
+                       (a WebSocket session's frames) and the assertion results, and records it in the
+                       desktop's History.
 wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
                        Validates a message against the WSDL schema or the OpenAPI response schema. The
                        source is a file when one exists at that path, else a History id.

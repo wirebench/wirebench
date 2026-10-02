@@ -1,12 +1,22 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createGrpcApi, createWsApi, loadProject, REDACTED_MARKER } from '@wirebench/engine';
+import {
+  createGrpcApi,
+  createWsApi,
+  createWsRequest,
+  createWsSavedMessage,
+  loadProject,
+  REDACTED_MARKER,
+} from '@wirebench/engine';
+import { startTestWsServer } from '@wirebench/engine/test-helpers';
+import type { TestWsServer } from '@wirebench/engine/test-helpers';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { MAX_STORED_CHARS } from '../../../src/ops/history-entry.js';
 import { sendOp } from '../../../src/ops/send.js';
 import {
   addEnvironment,
+  emptyProject,
   removeTempDirs,
   restItem,
   restProject,
@@ -429,7 +439,7 @@ describe('op send', () => {
     });
   });
 
-  it('refuses an unknown item, and WebSocket and gRPC requests', async () => {
+  it('refuses an unknown item, and gRPC requests', async () => {
     const fixture = await soapProject();
     await updateProject(fixture.dir, (project) => ({
       ...project,
@@ -440,11 +450,115 @@ describe('op send', () => {
     await expect(runOp(sendOp, { item: 'CalculatorService/Add/Nope' }, fixture.base())).rejects.toMatchObject({
       code: 'item-not-found',
     });
+    // send takes WebSocket requests: a reference into a WebSocket API that matches none is not found.
     await expect(runOp(sendOp, { item: 'Chat/Hello' }, fixture.base())).rejects.toMatchObject({
-      code: 'unsupported-kind',
+      code: 'item-not-found',
     });
     await expect(runOp(sendOp, { item: 'Greeter/SayHello' }, fixture.base())).rejects.toMatchObject({
       code: 'unsupported-kind',
+    });
+  });
+});
+
+describe('op send on a WebSocket request', () => {
+  const sockets: TestWsServer[] = [];
+
+  afterEach(async () => {
+    await Promise.all(sockets.splice(0).map((socket) => socket.close()));
+  });
+
+  /** An empty project with one WebSocket request on `url`: a secret header and two saved messages. */
+  async function wsProject(url: string): Promise<Awaited<ReturnType<typeof emptyProject>>> {
+    const fixture = await emptyProject();
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      wsApis: [
+        createWsApi('Chat', {
+          id: 'ws-chat',
+          slug: 'chat',
+          url,
+          requests: [
+            createWsRequest('Echo', {
+              id: 'ws-echo',
+              url: '/echo',
+              headers: [{ name: 'X-Key', value: '${secret:wsKey}', enabled: true }],
+              messages: [
+                createWsSavedMessage('Hello', { id: 'm1', content: 'hello' }),
+                createWsSavedMessage('Key', { id: 'm2', content: 'key ${secret:wsKey}' }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }));
+    return fixture;
+  }
+
+  it('sends the saved messages, returns the frames as a run collects them, and writes a tagged History entry', async () => {
+    const echo = await startTestWsServer();
+    sockets.push(echo);
+    const fixture = await wsProject(echo.url);
+
+    const result = await runOp(
+      sendOp,
+      { item: 'Chat/Echo' },
+      fixture.base({ env: { WIREBENCH_SECRET_WSKEY: SECRET } }),
+    );
+
+    expect(echo.handshakes[0]?.headers['x-key']).toBe(SECRET);
+    expect(echo.received.map((frame) => frame.payload.toString('utf8'))).toContain(`key ${SECRET}`);
+    expect(result).toMatchObject({
+      item: 'Chat/Echo',
+      kind: 'websocket',
+      outcome: 'passed',
+      unasserted: true,
+      method: 'GET',
+      status: 101,
+      assertions: [],
+    });
+    const texts = (result.frames ?? [])
+      .filter((frame) => frame.opcode === 'text')
+      .map((frame) => [frame.direction, frame.text]);
+    // The run closes once a reply has come after the last saved message; the echo of it may or may not beat the close.
+    expect(texts.slice(0, 3)).toEqual([
+      ['sent', 'hello'],
+      ['sent', `key ${REDACTED_MARKER}`],
+      ['received', 'hello'],
+    ]);
+    expect((JSON.parse(result.body) as string[])[0]).toBe('hello');
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+
+    const [line] = (await historyText(fixture.historyDir)).trim().split('\n');
+    const entry = JSON.parse(line ?? '{}') as Record<string, unknown>;
+    expect(entry).toMatchObject({
+      id: result.historyId,
+      kind: 'websocket',
+      projectId: 'mcp-fixture',
+      requestId: 'ws-echo',
+      requestName: 'Echo',
+      interfaceName: 'Chat',
+      operationName: '',
+      method: 'GET',
+      status: 101,
+      ok: true,
+      tags: ['mcp'],
+    });
+    expect(line).not.toContain(SECRET);
+  });
+
+  it('errors with ws-handshake-refused when nothing listens at the endpoint', async () => {
+    const fixture = await wsProject('ws://127.0.0.1:1');
+
+    await expect(
+      runOp(sendOp, { item: 'Chat/Echo' }, fixture.base({ env: { WIREBENCH_SECRET_WSKEY: SECRET } })),
+    ).rejects.toMatchObject({ code: 'ws-handshake-refused' });
+  });
+
+  it('refuses the body override, which replaces an envelope or a body only', async () => {
+    const fixture = await wsProject('ws://127.0.0.1:1');
+
+    await expect(runOp(sendOp, { item: 'Chat/Echo', body: 'hi' }, fixture.base())).rejects.toMatchObject({
+      code: 'invalid-input',
     });
   });
 });

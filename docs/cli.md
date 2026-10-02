@@ -479,7 +479,7 @@ to [`wirebench mcp`](#wirebench-mcp).
 | `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
 | `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action) and REST endpoints (API, method, path, operationId), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC and WebSocket items are in the project but not listed. |
 | `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
-| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP or REST request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
+| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
 | `wirebench validate <history-id\|file> [--operation <ref>] [--direction request\|response] [--status <n>]` | Validates a SOAP message against the WSDL's XSD and SOAP rules (line and column), or a REST response body against its OpenAPI response schema (JSON path and keyword). |
 | `wirebench query <expression> <history-id\|file> [--namespace <prefix>=<uri>]… [--direction request\|response]` | XPath 3.1 on XML (the document's own prefixes are known), JSONPath on JSON; one result per line. |
 | `wirebench history list [--item <text>] [--limit <n>]` | The project's History, newest first: id, time, item, status and duration. `--item` matches part of the item path, in any case. `--limit` is 1 to 200 and defaults to 20. |
@@ -497,9 +497,16 @@ Details that are easy to get wrong:
   body of a REST request, for this send only; nothing is saved. It is sent as written, so a `${…}`
   placeholder in it is refused with `invalid-input`. The saved request's own body still expands
   placeholders as usual. Secrets come only from `WIREBENCH_SECRET_<NAME>` variables, and only the ones
-  the saved request uses. gRPC and WebSocket items are in the project, but `operations` does not list
-  them and `send` refuses them with `unsupported-kind`, as it does an item inside a container that was
-  not loaded, naming the reason. Server-sent events are a response mode of a REST
+  the saved request uses. A WebSocket request is sent as a run sends it: the socket opens, the saved
+  messages go out in order, and the session closes once a reply comes after the last one, or fails
+  with `timeout` when the request's handshake timeout (else the project's default timeout) passes
+  first; a server that refuses or cannot be reached fails it with `ws-handshake-refused`. The result
+  carries the handshake's status and headers, every text received as a JSON array in `body`, and
+  `frames`, both ways, masked and capped as History stores them (`framesTruncated` says some were
+  left out); `--body` does not apply to it. gRPC items are in the project, but `operations` does not
+  list them and `send` refuses them with `unsupported-kind`, as it does an item inside a container
+  that was not loaded, naming the reason. A name a REST and a WebSocket request share is ambiguous:
+  pass the path. Server-sent events are a response mode of a REST
   request, not an item kind. The response body in the result is cut at 256 Ki characters, and
   `bodyTruncated` says when it was (the same cut applies to the History entry).
   A send that got no response is not written to History. When the History file is busy (another

@@ -6,21 +6,21 @@ import { selectRequests } from '@wirebench/engine';
 import type { Project, SelectedRequest } from '@wirebench/engine';
 import { OpsError } from './errors.js';
 
-export type SendableItem = Extract<SelectedRequest, { kind: 'soap' | 'rest' }>;
+export type SendableItem = Extract<SelectedRequest, { kind: 'soap' | 'rest' | 'websocket' }>;
 
 /** A container the project's folder holds and this build did not load. */
 type Placeholder = NonNullable<Project['unsupported']>[number];
 
 function isSendable(item: SelectedRequest): item is SendableItem {
-  return item.kind === 'soap' || item.kind === 'rest';
+  return item.kind === 'soap' || item.kind === 'rest' || item.kind === 'websocket';
 }
 
-/** The refusal of a request `send` cannot take: a gRPC or a WebSocket one. */
+/** What `send` takes, as its refusals name it. */
+const TAKES = 'send takes SOAP, REST and WebSocket requests';
+
+/** The refusal of a request `send` cannot take: a gRPC one. */
 function notSendable(item: SelectedRequest): OpsError {
-  const kind = item.kind === 'grpc' ? 'gRPC' : 'WebSocket';
-  return new OpsError('unsupported-kind', `"${item.path}" is a ${kind} request; send takes SOAP and REST requests`, {
-    item: item.path,
-  });
+  return new OpsError('unsupported-kind', `"${item.path}" is a gRPC request; ${TAKES}`, { item: item.path });
 }
 
 function ambiguous(ref: string, items: readonly SelectedRequest[]): OpsError {
@@ -41,9 +41,10 @@ function placeholderFor(project: Project, ref: string): Placeholder | undefined 
 }
 
 /**
- * Requests `send` cannot take (gRPC, WebSocket) are set aside before any ambiguity is judged, so a
- * name a REST request shares with one of them still resolves to the REST request. A reference only
- * they match is refused as `unsupported-kind`.
+ * Requests `send` cannot take (gRPC) are set aside before any ambiguity is judged, so a name a SOAP,
+ * REST or WebSocket request shares with one of them still resolves to that request; a name two
+ * requests `send` takes share is ambiguous. A reference only gRPC requests match is refused as
+ * `unsupported-kind`.
  *
  * @throws OpsError `item-not-found`, `item-ambiguous`, `unsupported-kind`
  */
@@ -73,18 +74,11 @@ export function resolveItem(project: Project, ref: string): SendableItem {
   if (other !== undefined) {
     throw notSendable(other);
   }
-  // A gRPC API's streaming calls are not selectable, nor is anything in an API with no requests;
-  // name the API's kind rather than "not found".
-  const unsupported = [
-    ...project.wsApis.map((api) => ({ name: api.name, kind: 'WebSocket' })),
-    ...project.grpcApis.map((api) => ({ name: api.name, kind: 'gRPC' })),
-  ].find((api) => ref === api.name || ref.startsWith(`${api.name}/`));
-  if (unsupported !== undefined) {
-    throw new OpsError(
-      'unsupported-kind',
-      `"${ref}" is in the ${unsupported.kind} API "${unsupported.name}"; send takes SOAP and REST requests`,
-      { item: ref },
-    );
+  // Nothing in a gRPC API is sendable, an API with no requests included; name the API's kind rather
+  // than "not found".
+  const grpcApi = project.grpcApis.find((api) => ref === api.name || ref.startsWith(`${api.name}/`));
+  if (grpcApi !== undefined) {
+    throw new OpsError('unsupported-kind', `"${ref}" is in the gRPC API "${grpcApi.name}"; ${TAKES}`, { item: ref });
   }
   // Nor is anything in a placeholder: the engine never read its request files. Say which and why.
   const placeholder = placeholderFor(project, ref);

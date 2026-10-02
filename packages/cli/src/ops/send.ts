@@ -2,13 +2,18 @@
  * `send` (spec §2): one saved request, sent exactly as `wirebench run` sends it — the same
  * environment rules, `WIREBENCH_SECRET_*` secrets, scripts, assertions and callback captures —
  * then recorded in the desktop's History. Needs `--allow-send` under `wirebench mcp`.
+ *
+ * A WebSocket request is a run's too: the socket opens, the saved messages go out, a reply after the
+ * last one (or the run timeout) ends it, and the frames come back as the session recorded them.
  */
 import {
   appendHistory,
   checkRunScripts,
   createScriptChecker,
   createScriptSandbox,
+  createSecretBytesMasker,
   createSecretMasker,
+  historyWsOf,
   isWirebenchError,
   redactHeaders,
   redactUrl,
@@ -23,6 +28,7 @@ import type {
   RunContext,
   SentExchange,
   SentRequest,
+  WsFrame,
 } from '@wirebench/engine';
 import { z } from 'zod';
 import { createEnvSecrets } from '../env-secrets.js';
@@ -33,7 +39,7 @@ import { captureSourceFromEnv } from '../server-captures.js';
 import { defineOp } from './context.js';
 import { cutText } from './cut.js';
 import { OpsError } from './errors.js';
-import { historyEntryFor, MAX_STORED_CHARS } from './history-entry.js';
+import { historyEntryFor, MAX_STORED_CHARS, redactedWsExchange } from './history-entry.js';
 import { resolveItem } from './items.js';
 import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
@@ -42,7 +48,7 @@ import { redactAssertions, redactBody, redactUrlsInText } from './redact.js';
 
 export interface SendResult {
   readonly item: string;
-  readonly kind: 'soap' | 'rest';
+  readonly kind: 'soap' | 'rest' | 'websocket';
   /** `failed`: an assertion failed. `errored`: an assertion or a script errored. */
   readonly outcome: 'passed' | 'failed' | 'errored';
   /** The request has no assertions of its own. */
@@ -54,8 +60,15 @@ export interface SendResult {
   readonly durationMs: number;
   /** Response headers, lower-cased, sensitive ones redacted. */
   readonly headers: Readonly<Record<string, string>>;
+  /** A WebSocket request's: every text the server sent, in order, as a JSON array (what assertions read). */
   readonly body: string;
   readonly bodyTruncated: boolean;
+  /**
+   * A WebSocket request's frames both ways, masked as History stores them and capped as History caps
+   * them; `framesTruncated` says some were left out.
+   */
+  readonly frames?: readonly WsFrame[];
+  readonly framesTruncated?: boolean;
   readonly assertions: readonly AssertionResult[];
   readonly error?: { readonly code: string; readonly message: string };
   /** The History entry written; absent when History could not be written (a warning says why). */
@@ -66,7 +79,9 @@ const input = z.object({
   item: z
     .string()
     .min(1)
-    .describe('A saved SOAP or REST request: its path as operations lists it, or its name when only one has it'),
+    .describe(
+      'A saved SOAP, REST or WebSocket request: its path as operations lists it, or its name when only one has it',
+    ),
   environment: z
     .string()
     .min(1)
@@ -77,6 +92,7 @@ const input = z.object({
     .optional()
     .describe(
       'Send this envelope (SOAP) or raw body (REST) instead of the saved one; nothing is saved. ' +
+        'Not for a WebSocket request, which sends its saved messages. ' +
         "It is sent as written: ${…} placeholders are refused. The saved request's own body still expands as usual.",
     ),
 });
@@ -85,6 +101,13 @@ const input = z.object({
 function withBody(item: SendableItem, body: string): SendableItem {
   if (item.kind === 'soap') {
     return { ...item, request: { ...item.request, envelopeXml: body } };
+  }
+  if (item.kind === 'websocket') {
+    throw new OpsError(
+      'invalid-input',
+      `"${item.path}" is a WebSocket request; the body override replaces a SOAP envelope or a REST body only`,
+      { item: item.path },
+    );
   }
   const saved = item.request.body;
   if (saved.kind !== 'none' && saved.kind !== 'raw') {
@@ -130,8 +153,65 @@ function failure(result: RequestResult, needs: readonly LocatedSecretNeed[]): Op
   return new OpsError(explained.code, explained.message, explained.details);
 }
 
-function resultOf(
+/** What every result carries, whatever the protocol. */
+function commonOf(
   item: SendableItem,
+  result: RequestResult,
+  historyId: string | undefined,
+): Pick<SendResult, 'item' | 'kind' | 'outcome' | 'unasserted' | 'durationMs' | 'assertions' | 'error' | 'historyId'> {
+  return {
+    item: item.path,
+    kind: item.kind,
+    outcome: result.outcome === 'passed' || result.outcome === 'failed' ? result.outcome : 'errored',
+    unasserted: result.unasserted,
+    durationMs: result.durationMs ?? 0,
+    // `run` shows the values an assertion read; an op shows a credential's as the marker.
+    assertions: redactAssertions(
+      result.assertions,
+      'assertions' in item.request ? (item.request.assertions ?? []) : [],
+    ),
+    ...(result.error !== undefined
+      ? { error: { code: result.error.code, message: redactUrlsInText(result.error.message) } }
+      : {}),
+    ...(historyId !== undefined ? { historyId } : {}),
+  };
+}
+
+/** A WebSocket session's result: the handshake's answer, the texts received, and the frames. */
+function wsResultOf(
+  item: Extract<SendableItem, { kind: 'websocket' }>,
+  result: RequestResult,
+  exchange: Extract<SentExchange, { kind: 'websocket' }>,
+  masks: { readonly text: (text: string) => string; readonly base64: (base64: string) => string },
+  historyId?: string,
+): SendResult {
+  const ws = exchange.ws;
+  const redacted = redactedWsExchange(item, ws, masks);
+  const capped = historyWsOf(redacted);
+  // Masked before it is cut, as a body is.
+  const body = masks.text(
+    JSON.stringify(
+      ws.frames
+        .filter((frame) => frame.direction === 'received' && frame.opcode === 'text')
+        .map((frame) => frame.text ?? ''),
+    ),
+  );
+  return {
+    ...commonOf(item, result, historyId),
+    method: 'GET',
+    url: redacted.url,
+    status: ws.handshake.status ?? 0,
+    statusText: ws.handshake.statusText ?? '',
+    headers: redacted.handshake.responseHeaders ?? {},
+    body: cutText(body, MAX_STORED_CHARS),
+    bodyTruncated: body.length > MAX_STORED_CHARS,
+    frames: capped.frames,
+    framesTruncated: capped.truncated === true,
+  };
+}
+
+function resultOf(
+  item: Exclude<SendableItem, { kind: 'websocket' }>,
   result: RequestResult,
   exchange: Extract<SentExchange, { kind: 'soap' | 'rest' }>,
   mask: (text: string) => string,
@@ -145,24 +225,14 @@ function resultOf(
   // Masked before it is cut: a secret across the cut would otherwise leave its first characters.
   const body = mask(redactBody(text, http.headers['content-type']));
   return {
-    item: item.path,
-    kind: item.kind,
-    outcome: result.outcome === 'passed' || result.outcome === 'failed' ? result.outcome : 'errored',
-    unasserted: result.unasserted,
+    ...commonOf(item, result, historyId),
     method: http.request.method,
     url: redactUrl(http.request.url, { show: false }),
     status: http.status,
     statusText: http.statusText,
-    durationMs: result.durationMs ?? 0,
     headers: redactHeaders(http.headers, { show: false }),
     body: cutText(body, MAX_STORED_CHARS),
     bodyTruncated: http.truncated || body.length > MAX_STORED_CHARS,
-    // `run` shows the values an assertion read; an op shows a credential's as the marker.
-    assertions: redactAssertions(result.assertions, item.request.assertions ?? []),
-    ...(result.error !== undefined
-      ? { error: { code: result.error.code, message: redactUrlsInText(result.error.message) } }
-      : {}),
-    ...(historyId !== undefined ? { historyId } : {}),
   };
 }
 
@@ -170,9 +240,11 @@ export const sendOp = defineOp({
   name: 'send',
   title: 'Send a saved request',
   description:
-    'Sends one saved SOAP or REST request as wirebench run does (environment, secrets from WIREBENCH_SECRET_* ' +
-    'variables, scripts, assertions), returns the response and the assertion results, and records the send ' +
-    "in the desktop's History. Needs --allow-send; --env limits the environments it may use.",
+    'Sends one saved SOAP, REST or WebSocket request as wirebench run does (environment, secrets from ' +
+    'WIREBENCH_SECRET_* variables, scripts, assertions), returns the response and the assertion results, and ' +
+    "records the send in the desktop's History. A WebSocket request sends its saved messages, waits for a " +
+    'reply after the last one or the timeout, closes, and returns the frames. Needs --allow-send; --env limits ' +
+    'the environments it may use.',
   input,
   async run(value, context): Promise<SendResult> {
     if (!context.gates.send) {
@@ -229,11 +301,12 @@ export const sendOp = defineOp({
       if (result === undefined) {
         throw new Error('the run returned no result');
       }
-      // A gRPC or WebSocket item never gets this far (`sendable` refuses it); the narrowing says so.
-      if (exchange === undefined || exchange.kind === 'grpc' || exchange.kind === 'websocket') {
+      // A gRPC item never gets this far (`resolveItem` refuses it); the narrowing says so.
+      if (exchange === undefined || exchange.kind === 'grpc') {
         throw failure(result, needs);
       }
       const mask = createSecretMasker(known());
+      const maskBase64 = createSecretBytesMasker(known());
       let historyId: string | undefined;
       try {
         const entry = historyEntryFor({
@@ -243,6 +316,7 @@ export const sendOp = defineOp({
           origin: context.origin,
           durationMs: result.durationMs ?? 0,
           mask,
+          maskBase64,
         });
         // The desktop may keep more than the default cap: a send from here never drops a kept entry.
         await appendHistory(historyFileFor(context.historyDir, project.id), entry, { keepAtLeastCurrent: true });
@@ -252,6 +326,12 @@ export const sendOp = defineOp({
         context.warn(
           `History not written: ${isWirebenchError(error) ? `${error.code}: ${error.message}` : String(error)}`,
         );
+      }
+      if (exchange.kind === 'websocket' || item.kind === 'websocket') {
+        if (exchange.kind !== 'websocket' || item.kind !== 'websocket') {
+          throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
+        }
+        return wsResultOf(item, result, exchange, { text: mask, base64: maskBase64 }, historyId);
       }
       return resultOf(item, result, exchange, mask, historyId);
     } finally {

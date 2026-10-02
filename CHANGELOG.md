@@ -55,6 +55,13 @@ before and after for the two changes that need more than a rename. The package's
   (`wirebench import`, `operations`, `generate`, `send`, `validate`, `query`, `history list|diff`),
   with `--json` for the exact result. A send from the terminal or an agent lands in the desktop's
   History, and an open History panel refreshes when another process writes the file (#32).
+- **`send` takes WebSocket requests.** `wirebench send` and the MCP `send` tool send a saved WebSocket
+  request as `wirebench run` does: open the socket, send the saved messages, wait for a reply or the
+  timeout, close, and return the frames collected, masked. The send lands in the desktop's History as
+  the app's own WebSocket sessions do, tagged `cli` or `mcp`. A name a REST and a WebSocket request
+  share is now ambiguous where it used to resolve to the REST request; gRPC requests are still refused.
+  A saved WebSocket request has no assertions of its own, so `--require-assertions` errors it in a run
+  (#184).
 - **Request scripts.** A SOAP, REST or gRPC request can have a pre-request script, which runs just
   before the send and can change it (sign the body, add a header, fill in a field), and a
   post-response script, which checks the response with tests and keeps values for later requests.

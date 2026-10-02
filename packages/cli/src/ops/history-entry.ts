@@ -1,10 +1,20 @@
 /**
  * A send as the desktop's History records it (R5): the same fields and the same redaction as the
- * desktop's `buildHistoryEntry` and `buildRestHistoryEntry`, so the History panel shows an agent's
- * send like its own. Tagged with where it came from.
+ * desktop's `buildHistoryEntry` and `buildRestHistoryEntry`, and for a WebSocket session the very
+ * builder the desktop uses, so the History panel shows an agent's send like its own. Tagged with
+ * where it came from.
  */
-import { generateHistoryId, redactHeaderPairs, redactHeaders, redactUrl, redactXml } from '@wirebench/engine';
-import type { HistoryEntry, HistoryHeader, SentExchange } from '@wirebench/engine';
+import {
+  buildWsHistoryEntry,
+  generateHistoryId,
+  redactHeaderPairs,
+  redactHeaders,
+  redactUrl,
+  redactWsExchange,
+  redactXml,
+  wsEffectiveAuth,
+} from '@wirebench/engine';
+import type { HistoryEntry, HistoryHeader, SentExchange, WsExchange, WsHistoryMasks } from '@wirebench/engine';
 import { cutText } from './cut.js';
 import type { SendableItem } from './items.js';
 
@@ -47,10 +57,42 @@ export interface HistoryEntryInput {
   readonly durationMs: number;
   /** Masks every secret value the send resolved. */
   readonly mask: (text: string) => string;
+  /** The same over a base64 run of bytes: a binary WebSocket frame. */
+  readonly maskBase64: (base64: string) => string;
+}
+
+type WsItem = Extract<SendableItem, { kind: 'websocket' }>;
+
+/** The query parameter a WebSocket request's API key travels in, masked whatever it is called, as the desktop's. */
+function wsKeyParams(item: WsItem): readonly string[] {
+  const auth = wsEffectiveAuth(item);
+  return auth.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
+}
+
+/** A WebSocket session redacted as History stores it, for the op's own result. */
+export function redactedWsExchange(item: WsItem, exchange: WsExchange, masks: WsHistoryMasks): WsExchange {
+  return redactWsExchange(exchange, masks, wsKeyParams(item));
 }
 
 export function historyEntryFor(input: HistoryEntryInput): HistoryEntry {
   const { item, exchange, mask } = input;
+  if (exchange.kind === 'websocket' && item.kind === 'websocket') {
+    // A run's session that got this far opened: one that never did fails the send.
+    return buildWsHistoryEntry(
+      input.projectId,
+      {
+        requestId: item.request.id,
+        requestName: item.request.name,
+        apiName: item.api.name,
+        folderPath: item.chain.map((folder) => folder.name).join(' / '),
+        exchange: exchange.ws,
+        handshakeOpened: true,
+        keyParams: wsKeyParams(item),
+        tags: [input.origin],
+      },
+      { text: mask, base64: input.maskBase64 },
+    );
+  }
   const common = {
     id: generateHistoryId(),
     at: new Date().toISOString(),

@@ -102,6 +102,9 @@ export type { GrpcFailedInput, GrpcResolvedInput, GrpcSelected } from './grpc/ru
 // The WebSocket run facet's item and its effective credentials, for a host that opens one itself.
 export { wsEffectiveAuth, wsItemFor } from './ws/run.js';
 export type { WsSelected } from './ws/run.js';
+// One WebSocket session as History records it, for every host that writes History.
+export { buildWsHistoryEntry, redactWsExchange } from './ws/history-entry.js';
+export type { WsHistoryInput, WsHistoryMasks } from './ws/history-entry.js';
 export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
 export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
 export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
@@ -1418,7 +1421,7 @@ export {
   redactUrl,
   redactXml,
 } from './redact/index.js';
-export { createSecretMasker } from './redact/literal.js';
+export { createSecretBytesMasker, createSecretMasker } from './redact/literal.js';
 
 // WebSocket: the fourth protocol, a sibling container to a SOAP interface, a REST API and a gRPC
 // API (ADR-0007).
