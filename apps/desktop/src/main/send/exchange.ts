@@ -558,6 +558,8 @@ type Located = NonNullable<ReturnType<NonNullable<SendThroughEngineDeps['project
   readonly overrides?: PropertyMap;
   /** A SOAP request's default `wsa:Action`, from the definition the app has loaded. */
   readonly defaultWsaActionFor?: RunContext['defaultWsaActionFor'];
+  /** A SOAP request's definition, as the app has loaded it: the engine then reads no cache. */
+  readonly loadedDefinitionFor?: RunContext['loadedDefinitionFor'];
 };
 
 /** The run context a send of the located request runs in: its project, environment and globals. */
@@ -571,6 +573,7 @@ function runContextOf(located: Located, host: SendHost): RunContext {
     ...(located.globals !== undefined ? { globals: located.globals } : {}),
     overrides: located.overrides ?? {},
     ...(located.defaultWsaActionFor !== undefined ? { defaultWsaActionFor: located.defaultWsaActionFor } : {}),
+    ...(located.loadedDefinitionFor !== undefined ? { loadedDefinitionFor: located.loadedDefinitionFor } : {}),
     host,
   };
 }
@@ -578,14 +581,22 @@ function runContextOf(located: Located, host: SendHost): RunContext {
 /**
  * Where a send of a saved request runs: its project, environment and globals, and the default
  * `wsa:Action` of its operation from the definition the app has loaded — whether or not the
- * interface caches it on disk, which is all the engine can read for itself.
+ * interface caches it on disk, which is all the engine can read for itself. That definition is lent
+ * whole too, so a SOAP send or preview never re-reads and recompiles the interface's cache.
  */
 function savedContext(deps: SendThroughEngineDeps, requestId: string, envId: string | undefined): Located | undefined {
   const located = deps.project.runContextFor?.(requestId, envId);
+  if (located === undefined) return undefined;
   const defaultAction = deps.project.defaultWsaActionFor;
-  return located === undefined || defaultAction === undefined
-    ? located
-    : { ...located, defaultWsaActionFor: (selected) => defaultAction.call(deps.project, selected.request.id) };
+  const { service } = deps;
+  return {
+    ...located,
+    ...(defaultAction !== undefined
+      ? { defaultWsaActionFor: (selected) => defaultAction.call(deps.project, selected.request.id) }
+      : {}),
+    loadedDefinitionFor: (selected) =>
+      service.has(selected.iface.id) ? service.resultFor(selected.iface.id) : undefined,
+  };
 }
 
 /**

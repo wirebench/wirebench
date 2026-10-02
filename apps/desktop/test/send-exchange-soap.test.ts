@@ -18,13 +18,24 @@ import {
   normalizeWsa,
   WirebenchError,
 } from '@wirebench/engine';
-import type { HeaderEntry, Project, PropertyScopes, SoapRequestDef } from '@wirebench/engine';
+import type { HeaderEntry, Project, PropertyScopes, SoapRequestDef, WsdlImportResult } from '@wirebench/engine';
 import { HistoryService, type RecordSendInput } from '../src/main/history-service.js';
 import { soapOverrideOf } from '../src/main/send/draft.js';
-import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
+import { previewSoap, sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { AD_HOC_NAME } from '../src/main/send/record.js';
 import type { FailedExchangeWire, HistoryEntryWire, ResolvedSendInputWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
+
+const { cacheReads } = vi.hoisted(() => ({ cacheReads: [] as string[] }));
+
+// Every read of an interface's definition cache by the engine, which finds none here.
+vi.mock('../../../packages/engine/src/wsdl/cache.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../packages/engine/src/wsdl/cache.js')>()),
+  readDefinitionCache: (dir: string) => {
+    cacheReads.push(dir);
+    return Promise.reject(new Error('no cache here'));
+  },
+}));
 
 interface EchoServer {
   readonly url: string;
@@ -654,5 +665,54 @@ describe('sendThroughEngine (SOAP) → prepare-stage failures', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('sendThroughEngine (SOAP) → the definition the app holds', () => {
+  /** `req-1` under an interface that caches its definition on disk. */
+  const cachedModel = (): Project => {
+    const model = seeded(`${server.url}/calc`);
+    return { ...model, interfaces: model.interfaces.map((i) => ({ ...i, cacheDefinition: true })) };
+  };
+  /** What the app holds for the interface once imported; no binding, so nothing is validated. */
+  const held = {
+    definition: { bindings: [] },
+    bundle: {},
+    schemaSet: {},
+    wsa: { defaultActionByOperation: {} },
+  } as unknown as WsdlImportResult;
+  /** Deps whose engine service holds `iface-1`'s definition in memory. */
+  const holding = (model: Project): { deps: SendThroughEngineDeps; asked: string[] } => {
+    const deps = depsFor(model);
+    const asked: string[] = [];
+    vi.spyOn(deps.service, 'has').mockImplementation((id) => id === 'iface-1');
+    vi.spyOn(deps.service, 'resultFor').mockImplementation((id) => {
+      asked.push(id);
+      return held;
+    });
+    return { deps, asked };
+  };
+
+  beforeEach(() => {
+    cacheReads.length = 0;
+  });
+
+  it('a send reads the definition cache only when the app holds no definition', async () => {
+    await sendThroughEngine(depsFor(cachedModel()), 'send-cache', 'req-1', { draft: { kind: 'soap' } });
+    expect(cacheReads).toHaveLength(1);
+  });
+
+  it('a send with the definition lent never reads the definition cache', async () => {
+    const { deps, asked } = holding(cachedModel());
+    await sendThroughEngine(deps, 'send-held', 'req-1', { draft: { kind: 'soap' } });
+    expect(asked).toEqual(['iface-1']);
+    expect(cacheReads).toEqual([]);
+  });
+
+  it('a cURL export with the definition lent never reads the definition cache', async () => {
+    const { deps, asked } = holding(cachedModel());
+    expect((await previewSoap(deps, 'req-1'))?.input.endpoint).toBe(`${server.url}/calc`);
+    expect(asked).toEqual(['iface-1']);
+    expect(cacheReads).toEqual([]);
   });
 });

@@ -459,7 +459,18 @@ function incomingNeeds(project: Project, config: WssIncomingConfig): SecretNeed[
   ];
 }
 
-function definitionFor(iface: Interface, scope: RunScope): Promise<LoadedDefinition | undefined> {
+/** The definition the host holds for the request's interface, else the cached one, read once per run scope. */
+function definitionFor(selected: SoapSelected, scope: RunScope): Promise<LoadedDefinition | undefined> {
+  const held = scope.context.loadedDefinitionFor?.(selected);
+  if (held !== undefined) {
+    return Promise.resolve({
+      definition: held.definition,
+      bundle: held.bundle,
+      schemaSet: held.schemaSet,
+      defaultActionByOperation: held.wsa.defaultActionByOperation,
+    });
+  }
+  const { iface } = selected;
   return scope.memo(`soap:${iface.id}:definition`, () => loadDefinition(scope.context.projectDir, iface));
 }
 
@@ -469,7 +480,7 @@ async function soapContextFor(
   scope: RunScope,
   base: RunContext,
 ): Promise<{ context: RunContext; loaded: Awaited<ReturnType<typeof definitionFor>> }> {
-  const loaded = await definitionFor(selected.iface, scope);
+  const loaded = await definitionFor(selected, scope);
   // A host's own answer wins (the app's definition in memory, cached on disk or not); the cached
   // definition answers when the host has none.
   const lent = base.defaultWsaActionFor;
@@ -675,7 +686,7 @@ export const soapRun: ProtocolRun<SoapSelected> = {
   },
 
   async scriptTypes(selected, scope) {
-    const loaded = await definitionFor(selected.iface, scope);
+    const loaded = await definitionFor(selected, scope);
     if (loaded === undefined) {
       return { generated: soapScriptTypes(undefined) };
     }

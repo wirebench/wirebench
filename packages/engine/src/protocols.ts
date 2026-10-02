@@ -20,7 +20,7 @@ import type { RestExchange, RestSendInput } from './rest/send.js';
 import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
 import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
-import type { SoapExchange, SoapSendInput } from './soap/types.js';
+import type { SoapExchange, SoapSendInput, WsdlImportResult } from './soap/types.js';
 import type { WsLiveEvent } from './ws/events.js';
 import type { WsExchange } from './ws/model.js';
 import { wsProtocol } from './ws/module.js';
@@ -68,6 +68,9 @@ export function defaultRegistry(): ProtocolRegistry {
 
 /** One saved request selected for a run, of any built-in protocol a run can send. */
 export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected;
+
+/** A SOAP interface's definition as a host already holds it in memory: imported and compiled. */
+export type HeldSoapDefinition = Pick<WsdlImportResult, 'definition' | 'bundle' | 'schemaSet' | 'wsa'>;
 
 /** The exchange a request travelled as, for a host that keeps more of it than a report does. */
 export type SentExchange =

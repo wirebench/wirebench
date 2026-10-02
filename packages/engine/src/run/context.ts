@@ -5,6 +5,7 @@
  */
 import { resolveScopes } from '../project/environments.js';
 import type { Project, PropertyMap } from '../project/model.js';
+import type { HeldSoapDefinition } from '../protocols.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import type { RequestScripting } from '../script/request-scripts.js';
@@ -54,6 +55,14 @@ export interface RunContext {
    * an explicit `wsa:Action` or the request's SOAPAction then still applies.
    */
   readonly defaultWsaActionFor?: (selected: Extract<SelectedRequest, { kind: 'soap' }>) => string;
+  /**
+   * The definition a host already holds for a SOAP request's interface (the app's, imported and
+   * compiled), so a send neither reads nor compiles the definition cache. Absent, or answering
+   * undefined: the run reads the interface's cached definition itself, once per run scope.
+   */
+  readonly loadedDefinitionFor?: (
+    selected: Extract<SelectedRequest, { kind: 'soap' }>,
+  ) => HeldSoapDefinition | undefined;
   /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
   readonly sequence?: PropertyMap;
   /**
