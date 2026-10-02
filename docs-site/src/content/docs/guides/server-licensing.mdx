@@ -1,0 +1,92 @@
+---
+title: Editions and licenses
+description: What Community, Team and Enterprise mean on Wirebench Server, how seats are counted, and how a server admin installs, reads or removes a license.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench Server runs as one of three editions. The code is the same for all three, under the same
+Apache-2.0 license. A license file tells a server which edition it is.
+
+| Edition    | Seats                     | Enterprise features |
+| ---------- | ------------------------- | ------------------- |
+| Community  | 5                         | No                  |
+| Team       | The number on the license | No                  |
+| Enterprise | The number on the license | Yes                 |
+
+A server with no license is Community. Everything the server did before licenses existed stays in
+Community: sign-in, teams, shared workspaces, live updates, webhooks and CI tokens.
+
+## Seats
+
+A seat is an enabled account, server admins included. A disabled account frees its seat at once.
+Team invitations count against seats too.
+
+The server checks seats only when an account would become enabled:
+
+- when a server admin or a team admin creates an invitation;
+- when someone accepts an invitation, with a password or through the identity provider;
+- when a server admin enables a disabled account.
+
+A password reset never counts. When no seat is free, the server refuses with a message that says how
+many seats are in use and how many the edition allows. An invitation refused at acceptance stays
+open, so it goes through once a seat frees.
+
+The server never disables anyone to get under a limit. A server with more enabled accounts than its
+edition allows keeps every one of them working, and refuses only the next new account.
+
+## Installing a license
+
+A license is one line of text that starts with `wbl1.`.
+
+<Steps>
+
+1. Sign in as a server admin and choose **Account: Manage teams**. A server admin with no team sees only
+   the **License** tab.
+2. Open the **License** tab. It shows the edition, the seats in use and, with a license, its customer and
+   expiry date.
+3. Paste the license line, or click **Choose file…**, then click **Install license**.
+
+</Steps>
+
+The new edition applies from the next request, with no restart. Installing a license replaces the one
+before it. A license that fails its check is not stored, so a bad paste never replaces a working
+license. To go back to Community, click **Remove license…** and confirm.
+
+From the server's console, the same three actions are commands:
+
+```bash
+wirebench-server admin license install team.lic
+wirebench-server admin license show
+wirebench-server admin license remove
+```
+
+`install` exits with code 2 when the file fails its check, and prints the reason.
+
+## Expiry
+
+When a license passes its expiry date, it has 30 days of grace. The edition holds during grace, and
+server admins see a banner with the date it ends. After grace the server is Community again. Nobody is
+signed out, no workspace is locked, and sync keeps working.
+
+The tab's status reads *No license installed*, *Active*, *Expired, in its grace period*, *Expired* or
+*Installed, but not valid*.
+
+## How the check works
+
+The license is signed. The server checks the signature against a public key built into the server, so
+the check works offline. The server never contacts anyone about its license and sends no usage report.
+
+A stored license can stop passing the check. One cause is a server clock set before the license's issue
+date. Another is a server version that no longer carries the key the license was signed with. The
+License tab then shows *Installed, but not valid* with the reason, and the server runs as Community.
+
+<Aside>
+`GET /api/v1/meta` reports the edition and nothing else about the license. The full state is at
+`GET /api/v1/license`, for server admins only.
+</Aside>
+
+## Related
+
+- [Wirebench Server](/wirebench/docs/guides/wirebench-server/) — running the server, accounts and sign-in.
+- [Shared workspaces](/wirebench/docs/guides/shared-workspaces/) — what a team shares on the server.

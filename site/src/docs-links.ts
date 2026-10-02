@@ -27,6 +27,7 @@ export const DOCS_LINKS = {
   snapshotRegression: 'guides/snapshot-regression',
   sharedWorkspaces: 'guides/shared-workspaces',
   wirebenchServer: 'guides/wirebench-server',
+  serverLicensing: 'guides/server-licensing',
   agentsMcp: 'guides/agents-mcp',
   codeSigningPolicy: 'help/code-signing-policy',
   projectFormat: 'reference/project-format',
