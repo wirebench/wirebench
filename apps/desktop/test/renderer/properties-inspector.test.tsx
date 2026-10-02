@@ -8,6 +8,7 @@ import type { RequestDraft } from '../../src/renderer/state/project.js';
 
 const request: RequestDraft = {
   attachments: [],
+  assertions: [],
   id: 'req-1',
   interfaceId: 'iface-1',
   bindingName: '{tns}B',

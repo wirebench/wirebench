@@ -77,6 +77,7 @@ export function grpcRequestWire(overrides: Partial<GrpcRequestWire> = {}): GrpcR
     message: '{\n  "name": ""\n}\n',
     auth: { type: 'inherit' },
     settings: {},
+    assertions: [],
     ...overrides,
   };
 }
@@ -117,6 +118,7 @@ export function restRequestWire(overrides: Partial<RestRequestWire> = {}): RestR
     body: { kind: 'none' },
     auth: { type: 'inherit' },
     settings: {},
+    assertions: [],
     ...overrides,
   };
 }
@@ -151,6 +153,7 @@ export function wsRequestWire(overrides: Partial<WsRequestWire> = {}): WsRequest
     auth: { type: 'inherit' },
     settings: {},
     messages: [],
+    assertions: [],
     ...overrides,
   };
 }

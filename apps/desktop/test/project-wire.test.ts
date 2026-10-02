@@ -119,6 +119,7 @@ describe('project-wire', () => {
         order: 0,
         attachments: [],
         properties: REQUEST_PROPERTIES,
+        assertions: [],
       },
     ]);
   });
@@ -179,6 +180,26 @@ describe('project-wire', () => {
     expect(wire.wsRequests).toMatchObject([
       { kind: 'websocket', id: 'ws-req-1', apiId: 'ws-1', url: '/lobby', messages: [{ name: 'Hi', content: 'hi' }] },
     ]);
+  });
+
+  it("shows a WebSocket request's assertions, and none as an empty list", () => {
+    const wsProject: Project = {
+      ...createProject('Demo', { id: 'p1' }),
+      wsApis: [
+        createWsApi('Chat', {
+          id: 'ws-1',
+          requests: [
+            { ...createWsRequest('With', { id: 'ws-a', url: '/a' }), assertions: [{ type: 'status', equals: 200 }] },
+            createWsRequest('Without', { id: 'ws-b', url: '/b' }),
+          ],
+        }),
+      ],
+    };
+    const wire = toProjectWire(wsProject, { dir: '/tmp/demo', dirty: false, problems: [], runtime: new Map() });
+    expect(wire.wsRequests.find((request) => request.id === 'ws-a')?.assertions).toEqual([
+      { type: 'status', equals: 200 },
+    ]);
+    expect(wire.wsRequests.find((request) => request.id === 'ws-b')?.assertions).toEqual([]);
   });
 
   it('wires the webhook collection and its tree into the flat arrays', () => {

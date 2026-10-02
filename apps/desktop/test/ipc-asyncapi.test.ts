@@ -422,6 +422,7 @@ describe('contract on the wire', () => {
       auth: { type: 'inherit' },
       settings: {},
       messages: [message],
+      assertions: [],
       contract: { channel: 'userChat' },
       orphaned: true,
     };

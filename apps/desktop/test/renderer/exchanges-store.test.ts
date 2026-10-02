@@ -20,6 +20,7 @@ import { REQUEST_PROPERTIES } from '../helpers/wire-defaults.js';
 const draft: RequestDraft = {
   properties: REQUEST_PROPERTIES,
   attachments: [],
+  assertions: [],
   id: 'r1',
   interfaceId: 'iface-1',
   bindingName: '{tns}B',
@@ -194,6 +195,7 @@ describe('useExchangesStore', () => {
     const draftWithoutEndpoint: RequestDraft = {
       properties: REQUEST_PROPERTIES,
       attachments: [],
+      assertions: [],
       id: draft.id,
       interfaceId: draft.interfaceId,
       bindingName: draft.bindingName,

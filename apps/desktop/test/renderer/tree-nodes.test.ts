@@ -55,6 +55,7 @@ function request(overrides: Partial<RequestDraft> = {}): RequestDraft {
   return {
     properties: REQUEST_PROPERTIES,
     attachments: [],
+    assertions: [],
     id: 'req-1',
     interfaceId: 'iface-1',
     bindingName: '{tns}CalculatorSoap',
