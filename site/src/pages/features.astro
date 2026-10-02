@@ -34,8 +34,11 @@ const sections: Section[] = [
   },
   {
     heading: 'WebSocket and server-sent events',
-    text: 'A WebSocket API sits beside SOAP, REST and gRPC in the same project, workspace, environments, history and search. Requests under it connect, show every frame on a live timeline, and send messages while the connection is open.',
-    links: [{ label: 'Read the guide', slug: DOCS_LINKS.websocket }],
+    text: 'A WebSocket API sits beside SOAP, REST and gRPC in the same project, workspace, environments, history and search. Requests under it connect, show every frame on a live timeline, and send messages while the connection is open. An API imported from an AsyncAPI document also checks every frame against its contract.',
+    links: [
+      { label: 'Read the WebSocket guide', slug: DOCS_LINKS.websocket },
+      { label: 'Read the AsyncAPI guide', slug: DOCS_LINKS.asyncapi },
+    ],
   },
   {
     heading: 'Importers and switching',
@@ -70,12 +73,17 @@ const sections: Section[] = [
     image: { src: '/wirebench/images/features/failed-send.png', alt: 'A failed send selected in the HTTP Log, with its connection error in the response tab' },
   },
   {
-    heading: 'Sequences and scripts',
-    text: 'A sequence sends saved requests one after another. Each step can lift values out of its response, such as a token, an id or a cookie, for the steps after it, and check the response with assertions.',
+    heading: 'Request scripts',
+    text: 'A SOAP, REST or gRPC request can have two scripts. The pre-request script runs just before the request is sent and can change it: add a header, sign the body, fill in a field. The post-response script checks the response with tests and keeps a value for later requests. Scripts are TypeScript, typed from the request\'s own contract, so a path that does not exist is an error before anything is sent.',
     links: [
-      { label: 'Read the sequences guide', slug: DOCS_LINKS.sequences },
-      { label: 'Read the scripts guide', slug: DOCS_LINKS.scripts },
+      { label: 'Read the guide', slug: DOCS_LINKS.scripts },
+      { label: 'Script API reference', slug: DOCS_LINKS.scriptApi },
     ],
+  },
+  {
+    heading: 'Sequences',
+    text: 'A sequence sends saved requests one after another. Each step can lift values out of its response, such as a token, an id or a cookie, for the steps after it, and check the response with assertions.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.sequences }],
   },
   {
     heading: 'Snapshot regression',
@@ -90,8 +98,13 @@ const sections: Section[] = [
   },
   {
     heading: 'Webhooks',
-    text: 'A catch URL on your Wirebench Server records every request sent to it. Each delivery shows up with its method, path, headers and body exactly as they arrived.',
-    links: [{ label: 'Read the guide', slug: DOCS_LINKS.webhooks }],
+    text: 'Webhooks work in both directions. A catch URL on your Wirebench Server records every request sent to it, with its method, path, headers and body exactly as they arrived. A webhook item plays a provider calling your own receiver, so you can build that handler without waiting for a real delivery. Items can sign what they send, catch URLs can check what they receive, and a callback assertion makes a sequence step or a CI run wait for the webhook its request causes.',
+    links: [
+      { label: 'Webhook inbox', slug: DOCS_LINKS.webhooks },
+      { label: 'Sending webhooks', slug: DOCS_LINKS.sendingWebhooks },
+      { label: 'Webhook signatures', slug: DOCS_LINKS.webhookSignatures },
+      { label: 'Callback assertions', slug: DOCS_LINKS.callbackAssertions },
+    ],
   },
   {
     heading: 'CLI and agents',
@@ -112,7 +125,7 @@ const slugify = (heading: string): string =>
 
 <Base
   title="Features — Wirebench"
-  description="SOAP, REST and gRPC in one workbench: importers, environments, auth and secrets, HTTP Log, sequences, snapshots, shared workspaces, webhooks, CLI and agents."
+  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, snapshots, shared workspaces, webhooks, CLI and agents."
 >
   <div class="features">
     <h1>Features</h1>
