@@ -11,14 +11,14 @@ becomes a ready-to-send request, filled in with examples from the document:
 - servers become base URLs;
 - security schemes become auth you can apply with one click.
 
-Responses, webhooks, callbacks and vendor extensions do not come across. The summary lists what was
-skipped and why.
+Webhooks and callbacks come across too, as webhook items in the project's **Webhooks** collection.
+Responses, links and vendor extensions do not. The summary lists what was skipped and why.
 
 To run the import, see [OpenAPI (and Swagger)](/wirebench/docs/guides/importers/#openapi-and-swagger) in
 the importers guide. It reads OpenAPI 3.0, 3.1 and 3.2, and Swagger 1.x and 2.0, in YAML or JSON, by
 URL, file or paste.
 
-![The import summary for an OpenAPI document: two requests in one folder, two security schemes to choose from, and four things not imported](/wirebench/docs/images/switching/openapi-summary.png)
+![The import summary for an OpenAPI document: two requests in one folder, two security schemes to choose from, one webhook added to the Webhooks collection, and three things not imported](/wirebench/docs/images/switching/openapi-summary.png)
 
 ## What carries over
 
@@ -67,7 +67,9 @@ empty for you to fill in.
 | Cookie parameters | Skipped, and listed | Send a `Cookie` header yourself |
 | `Accept`, `Content-Type` and `Authorization` header parameters | Skipped, and listed: the request sets these itself | Nothing |
 | A second media type for a body | Skipped, and listed with the one that was chosen | Change the body on the **Body** tab |
-| Webhooks, callbacks and links | Skipped, and listed | Nothing: they describe calls the server makes, not ones you send |
+| `webhooks` (OpenAPI 3.1+) and operation `callbacks` | Imported as webhook items in the project's **Webhooks** collection, in a folder named after the API, when **Import webhooks & callbacks** is ticked (the default) | Point them at your own receiver. See [Sending webhooks](/wirebench/docs/guides/sending-webhooks/#import-from-openapi) |
+| `webhooks` in an OpenAPI 3.0 document | Skipped, and listed: webhooks need 3.1 | Nothing |
+| Links | Skipped, and listed | Nothing |
 | Vendor extensions (`x-…`) | Skipped, and listed | Nothing |
 | A `$ref` that can't be resolved | Skipped, and listed | Fix the reference in the document and import again |
 | Responses and response examples | Not imported, and not listed | Send the request to see the live response |
