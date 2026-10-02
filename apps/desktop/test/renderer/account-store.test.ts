@@ -100,6 +100,9 @@ describe('account store', () => {
       'That address is not a Wirebench Server.',
     );
     expect(signInErrorMessage({ code: 'identity-not-invited', message: 'x' })).toContain('invite you');
+    expect(signInErrorMessage({ code: 'licensing-seat-limit', message: 'This server has 5 enabled accounts.' })).toBe(
+      'This server has 5 enabled accounts. Ask a server admin.',
+    );
     expect(signInErrorMessage({ code: 'something-else', message: 'the message' })).toBe('the message');
   });
 });

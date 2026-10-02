@@ -57,6 +57,7 @@ describe('buildApi', () => {
       'history',
       'hooks',
       'keystores',
+      'license',
       'log',
       'oauth2',
       'on',

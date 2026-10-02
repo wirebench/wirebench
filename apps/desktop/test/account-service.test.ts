@@ -196,6 +196,16 @@ describe('AccountService', () => {
     loopback.answer({ flow: 'flow-1', error: 'identity-not-invited' });
     await expect(pending).rejects.toMatchObject({ code: 'identity-not-invited' });
 
+    const third = fakeLoopback();
+    const s3 = service(fakeClient(), fakeSecrets(), third);
+    const seats = s3.startOidc({ url: URL_A });
+    await vi.waitFor(() => expect(third.start).toHaveBeenCalled());
+    third.answer({ flow: 'flow-1', error: 'licensing-seat-limit' });
+    await expect(seats).rejects.toMatchObject({
+      code: 'licensing-seat-limit',
+      message: 'This server has no free seat for a new account.',
+    });
+
     const second = fakeLoopback();
     const s2 = service(fakeClient(), fakeSecrets(), second);
     const pending2 = s2.startOidc({ url: URL_A });

@@ -118,5 +118,7 @@ const SIGN_IN_MESSAGES: Readonly<Record<string, string>> = {
 };
 
 export function signInErrorMessage(error: IpcError): string {
+  // licensing §3.8: the server's message, then who can fix it. No other text.
+  if (error.code === 'licensing-seat-limit') return `${error.message} Ask a server admin.`;
   return SIGN_IN_MESSAGES[error.code] ?? error.message;
 }
