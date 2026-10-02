@@ -1,0 +1,259 @@
+---
+title: Wirebench Server
+description: Run Wirebench Server for a team — sign-in, teams and roles, shared workspaces, live updates, team secrets and webhook catch URLs, self-hosted.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench Server gives a team sign-in, teams, shared workspaces and live updates, on a machine you
+run. This page is for the person who runs it. For using a server from the app, see
+[Shared workspaces](/wirebench/docs/guides/shared-workspaces/#sign-in-to-a-server).
+
+## What it gives a team
+
+- **Sign-in.** Accounts are invite-only. People sign in with an email and password, with the team's
+  OpenID Connect identity provider, or both.
+- **Teams and roles.** A team owns workspaces. Each member has a role in each workspace: *viewer*,
+  *editor* or *admin*.
+- **Shared workspaces over HTTP.** A workspace shared on the server syncs with the same Sync control as
+  a git share, but nobody needs git on their machine. The server stores each push as git commits.
+- **Live updates.** The app hears about a teammate's push, a role change or an ended session within
+  seconds, and sees who else has a workspace open.
+- **Team secrets.** A workspace's admins can share the secret values behind its references, encrypted
+  for each approved machine. See [Team secrets](/wirebench/docs/guides/shared-workspaces/#team-secrets).
+- **Catch URLs.** A workspace's editors create public addresses that record every webhook sent to them.
+  See [Webhook inbox](/wirebench/docs/guides/webhooks/).
+
+Nothing in the app needs a server. Without one, no account UI is shown.
+
+## What it needs
+
+- **One process.** Run one replica. Pushes to a workspace are serialised by a lock inside the process,
+  and live updates run on a hub inside it, so a second replica would miss the first's events.
+- **PostgreSQL.** The connection string goes in `WIREBENCH_SERVER_DATABASE_URL`.
+- **A data directory.** It holds the workspaces' repositories and temporary files: `/data` by default.
+  The server checks at start-up that it can write there.
+- **git.** The server calls the system `git`. The container image includes it.
+- **TLS in front.** The public URL must be `https://`. Put the server behind a reverse proxy that ends
+  TLS and forwards `/api/v1/`, `/hooks/` and the WebSocket upgrade for `/api/v1/live`.
+
+## Run the published image
+
+Each release publishes the server as `ghcr.io/wirebench/wirebench-server`, for `linux/amd64` and
+`linux/arm64`. The image listens on port `8080`, runs `serve` by default and keeps its data in the
+`/data` volume.
+
+<Steps>
+
+1. Create a PostgreSQL database and a user for the server.
+2. Run the image with the two required variables, a volume for `/data` and the port:
+
+   ```sh
+   docker run -d --name wirebench-server \
+     -e WIREBENCH_SERVER_DATABASE_URL=postgres://wirebench:…@db.example.com:5432/wirebench \
+     -e WIREBENCH_SERVER_PUBLIC_URL=https://wirebench.example.com \
+     -v wirebench-data:/data \
+     -p 127.0.0.1:8080:8080 \
+     ghcr.io/wirebench/wirebench-server
+   ```
+
+3. Point your reverse proxy at port `8080` (see [Behind a reverse proxy](#behind-a-reverse-proxy)).
+4. Create the first admin (see [The first admin](#the-first-admin)).
+
+</Steps>
+
+The server applies any pending database migrations when it starts. Its `config check` command lists
+each variable as set, defaulted or missing, and never prints a value. `/healthz` reports pass or
+fail for the database, the data directory and git, and the image's health check calls it.
+
+## Try it with the compose file
+
+The repository has a compose file that builds the server image from a checkout and runs it beside
+PostgreSQL 16, each with a named volume. It is for trying the server on your own machine: the public
+URL is `http://localhost:8080`, with `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` on.
+
+```sh
+docker compose -f packages/server/compose.yaml up
+```
+
+Both ports are published on `127.0.0.1` only: the server on `WIREBENCH_HTTP_PORT` (default `8080`) and the
+database on `WIREBENCH_DB_PORT` (default `5432`). Set either when the default is taken.
+
+## Configuration
+
+The server reads `WIREBENCH_SERVER_*` environment variables. A value it cannot use stops the start-up
+with the variable's name and the rule it broke, never the value.
+
+{/* Generated from CONFIG_VARIABLES by `pnpm docs:server-config`; edit packages/server/src/config.ts, not this table. */}
+{/* prettier-ignore-start */}
+{/* config:start */}
+| Variable | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `WIREBENCH_SERVER_DATABASE_URL` | yes | — | PostgreSQL connection string. Never logged. |
+| `WIREBENCH_SERVER_PUBLIC_URL` | yes | — | The `https://…` origin clients use; no path, query or trailing slash. |
+| `WIREBENCH_SERVER_DATA_DIR` | no | `/data` | Repositories and temporary files. |
+| `WIREBENCH_SERVER_HOST` | no | `0.0.0.0` | Listen address. |
+| `WIREBENCH_SERVER_PORT` | no | `8080` | Listen port. |
+| `WIREBENCH_SERVER_LOG_LEVEL` | no | `info` | Log level: fatal, error, warn, info, debug or trace. |
+| `WIREBENCH_SERVER_TRUST_PROXY` | no | `false` | Honour `X-Forwarded-*` headers and incoming request ids. |
+| `WIREBENCH_SERVER_GIT_PATH` | no | — | Explicit git binary; otherwise `PATH` is searched. |
+| `WIREBENCH_SERVER_BODY_LIMIT_MB` | no | `32` | Maximum request body in MiB. |
+| `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` | no | `false` | Permit an `http://` public URL (development only). |
+| `WIREBENCH_SERVER_LOCAL_AUTH` | no | `true` | Offer local accounts (email and password). |
+| `WIREBENCH_SERVER_OIDC_ISSUER` | no | — | OIDC issuer URL; setting it turns OIDC sign-in on. Discovery runs at start-up. |
+| `WIREBENCH_SERVER_OIDC_CLIENT_ID` | no | — | Client id registered at the issuer. Required with the issuer. |
+| `WIREBENCH_SERVER_OIDC_CLIENT_SECRET` | no | — | Client secret registered at the issuer. Required with the issuer. Never logged. |
+| `WIREBENCH_SERVER_OIDC_SCOPES` | no | `openid email profile` | Scopes requested from the issuer, space-separated. |
+| `WIREBENCH_SERVER_OIDC_DISPLAY_NAME` | no | `OIDC` | The label of the *Continue with …* button in the app. |
+| `WIREBENCH_SERVER_TOKEN_IDLE_DAYS` | no | `30` | A device token unused for this long expires. |
+| `WIREBENCH_SERVER_TOKEN_MAX_DAYS` | no | `180` | A device token older than this expires whatever its use. |
+| `WIREBENCH_SERVER_INVITATION_DAYS` | no | `7` | How long an invitation or password-reset link stays valid. |
+| `WIREBENCH_SERVER_HOOKS_ENABLED` | no | `true` | Serve catch URLs: the public `/hooks/…` route and the webhook management API. |
+| `WIREBENCH_SERVER_HOOKS_BODY_LIMIT_MB` | no | `1` | How much of a caught request body is stored, in MiB (1–32). A longer body is cut and marked truncated. |
+| `WIREBENCH_SERVER_HOOKS_KEEP` | no | `500` | Captures kept per catch URL (1–10000); the oldest go first. |
+| `WIREBENCH_SERVER_HOOKS_MAX_AGE_DAYS` | no | `7` | Captures older than this many days are deleted (1–365). |
+| `WIREBENCH_SERVER_HOOKS_RATE_PER_SECOND` | no | `10` | Requests per second a catch URL accepts once its burst is spent (1–1000); past it, `429`. |
+| `WIREBENCH_SERVER_HOOKS_BURST` | no | `50` | Requests a catch URL accepts at once before the rate applies (1–10000). |
+| `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` | no | `50` | Catch URLs a workspace may hold (1–1000). |
+| `WIREBENCH_SERVER_HOOKS_SECRET_KEY` | no | — | Encrypts catch URL signature secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, signature settings are refused. Never logged. |
+{/* config:end */}
+{/* prettier-ignore-end */}
+
+Some variables travel together:
+
+- An `http://` public URL is refused unless `WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL` is `true`.
+- `WIREBENCH_SERVER_OIDC_ISSUER` needs the client id and the client secret, and must be `https://` under
+  the same rule.
+- At least one sign-in method must be on: local accounts, OIDC, or both.
+
+## The first admin
+
+Accounts are invite-only, and a fresh server has none. Create the first server admin from the console,
+with the server's `admin invite` command. In the image, the command is `node /app/dist/bin.js`.
+
+<Steps>
+
+1. Run `admin invite` with your email, in the running container:
+
+   ```sh
+   docker exec wirebench-server node /app/dist/bin.js admin invite you@example.com
+   ```
+
+   With the compose file, `docker compose -f packages/server/compose.yaml run --rm server admin invite you@example.com`
+   does the same.
+
+2. It prints a one-time link, `<public URL>/invite/<code>`, valid for `WIREBENCH_SERVER_INVITATION_DAYS`
+   (7 days by default).
+3. Open the link, or paste the code into the app's **Account: Sign in to a server…** dialog under
+   **Have an invitation code?**, and choose a password. You are the first server admin.
+
+</Steps>
+
+An invitation from the console makes a server admin unless you add `--no-admin`. Later invitations come
+from the console the same way, or from the app by an admin. The server sends no email: copy the link and
+send it however your team already talks. `admin list-invitations` and
+`admin revoke-invitation <id>` help an operator who cannot sign in yet.
+
+## Sign-in
+
+- **Local accounts** (email and password) are on unless `WIREBENCH_SERVER_LOCAL_AUTH` is `false`.
+- **OpenID Connect** is on once `WIREBENCH_SERVER_OIDC_ISSUER` is set. Register the redirect URI that
+  `config check` prints, `<public URL>/api/v1/auth/oidc/callback`, at the identity
+  provider. A login is linked to an existing account or an open invitation by the provider's verified
+  email. It never creates an account on its own.
+- Sign-in and invitation endpoints accept ten attempts a minute per address and per email. The counters
+  live in the process, so a restart resets them.
+- Each installation of the app holds a device token. It expires after `WIREBENCH_SERVER_TOKEN_IDLE_DAYS`
+  without use, or `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most. Users see and revoke their devices in the
+  app, and disabling a user revokes all of theirs.
+
+## Teams and workspaces
+
+A server admin creates teams, with **New team…** in the app's **Account: Manage teams…** dialog, and
+becomes the first admin of each. Team admins do the rest:
+
+- Add people who already have an account, invite new ones, and change or remove roles. A team keeps at
+  least one admin.
+- Any member can create a workspace in the team and is its admin. Each workspace has a default role for
+  the team's members — *none*, *viewer* or *editor*, *viewer* for a new one — and a workspace admin can
+  grant any member a different role.
+
+| Role   | Open and pull | Send requests | Push | Manage access | Delete |
+| ------ | ------------- | ------------- | ---- | ------------- | ------ |
+| viewer | yes           | yes           | no   | no            | no     |
+| editor | yes           | yes           | yes  | no            | no     |
+| admin  | yes           | yes           | yes  | yes           | yes    |
+
+Team admins and server admins are admins of every workspace of their teams. To anyone without a role, a
+workspace does not exist. Deleting a workspace moves its repository under `<data dir>/tmp/`; nothing is
+deleted from disk.
+
+## Behind a reverse proxy
+
+Set `WIREBENCH_SERVER_PUBLIC_URL` to the `https://` origin people reach, and
+`WIREBENCH_SERVER_TRUST_PROXY` to `true` so the server honours `X-Forwarded-*` headers. The proxy must
+forward:
+
+- `/api/v1/` — the API the app talks to.
+- `/api/v1/live` with the `Upgrade` and `Connection` headers. Live updates are a WebSocket there.
+  Without them, the app shows *Reconnecting…* and falls back to polling; sync keeps working.
+- `/hooks/` with every method, the request body and the client's address, when catch URLs are on.
+
+With nginx:
+
+```nginx
+location /api/v1/live {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}
+
+location /hooks/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    client_max_body_size 32m;
+}
+```
+
+The server pings every live socket every 30 seconds, which keeps an idle connection inside a proxy's
+read timeout. A WebSocket upgrade whose `Origin` is not the public URL is refused.
+
+## Limits
+
+- `WIREBENCH_SERVER_BODY_LIMIT_MB` (32 MiB by default) bounds a push and a download. Raise it for
+  workspaces with large attachments. Each file is at most 8 MiB.
+- Catch URLs keep the newest 500 captures each for 7 days, store up to 1 MiB of each body, and accept 10
+  requests a second with bursts of 50. The `WIREBENCH_SERVER_HOOKS_*` variables change these.
+  `WIREBENCH_SERVER_HOOKS_ENABLED=false` turns catch URLs off, and the app hides its **Webhook inbox** node.
+- A catch URL can check webhook signatures only when `WIREBENCH_SERVER_HOOKS_SECRET_KEY` is set. See
+  [Webhook signatures](/wirebench/docs/guides/webhook-signatures/).
+
+<Aside type="caution">
+The per-workspace lock and the live-updates hub live in the server process. Run one replica per data
+directory: two would interleave pushes and miss each other's events.
+</Aside>
+
+## Upgrading
+
+The server applies pending migrations when it starts. To apply them ahead of a restart, run its
+`migrate` command. `migrate --check` exits 1 while any are pending.
+
+On shutdown, the server finishes the repository work already queued before it closes the database, and
+closes every live socket. The app reconnects when the server is back.
+
+When the app reports that a server is too old to sync workspaces, upgrade the server. Before a workspace
+admin turns team secrets on, everyone in the workspace should update the app.
+
+## Related
+
+- [Sign in to a server](/wirebench/docs/guides/shared-workspaces/#sign-in-to-a-server) — signing in from
+  the app.
+- [Share with Wirebench Server](/wirebench/docs/guides/shared-workspaces/#share-with-wirebench-server) —
+  sharing and opening a team workspace.
+- [Webhook inbox](/wirebench/docs/guides/webhooks/) — catch URLs and their captures.
+- [Webhook signatures](/wirebench/docs/guides/webhook-signatures/) — checking a delivery's signature.
+- [Callback assertions](/wirebench/docs/guides/callback-assertions/) — waiting for a webhook in a sequence
+  or a CI run.

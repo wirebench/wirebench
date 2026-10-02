@@ -49,6 +49,7 @@ export default defineConfig({
             { label: 'Scripts', slug: 'guides/scripts' },
             { label: 'Snapshot regression', slug: 'guides/snapshot-regression' },
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
+            { label: 'Wirebench Server', slug: 'guides/wirebench-server' },
             { label: 'Webhook inbox', slug: 'guides/webhooks' },
             { label: 'Sending webhooks', slug: 'guides/sending-webhooks' },
             { label: 'Webhook signatures', slug: 'guides/webhook-signatures' },

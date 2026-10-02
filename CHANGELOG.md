@@ -73,6 +73,14 @@ before and after for the two changes that need more than a rename. The package's
   run through a `pm` layer and switched off until someone switches them on. Request files move to
   `formatVersion: 6`; an older build refuses a project this one has saved.
 
+- **Wirebench Server.** A self-hosted server gives a team sign-in (local accounts, OpenID Connect or
+  both, invite-only), teams with viewer, editor and admin roles, workspaces shared over HTTP with no git
+  on members' machines, and live updates of pushes, role changes and who else has a workspace open. It
+  is one process with one PostgreSQL database and one data directory, run behind TLS. Each release
+  publishes it as the container image `ghcr.io/wirebench/wirebench-server` (`linux/amd64` +
+  `linux/arm64`), and `packages/server/compose.yaml` runs it beside PostgreSQL for a local try. See
+  [Wirebench Server](https://wirebench.github.io/wirebench/docs/guides/wirebench-server/).
+
 - **Webhook capture.** A workspace shared on Wirebench Server gets catch URLs. Each is a public address
   that records every request sent to it, with a configurable fixed response. Captures appear live in a
   tab under the Explorer's new *Webhooks* node, read with the same body and header viewers as a response,
