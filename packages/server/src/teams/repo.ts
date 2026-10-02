@@ -384,6 +384,15 @@ export async function upsertGrant(
   );
 }
 
-export async function deleteGrant(db: Querier, workspaceId: string, userId: string): Promise<void> {
-  await db.query('delete from workspace_grants where workspace_id = $1 and user_id = $2', [workspaceId, userId]);
+/** The removed grant's role, or `undefined` when there was none, so a no-op delete records nothing (audit-log plan ruling 7). */
+export async function deleteGrant(
+  db: Querier,
+  workspaceId: string,
+  userId: string,
+): Promise<WorkspaceRole | undefined> {
+  const result = await db.query<{ role: WorkspaceRole }>(
+    'delete from workspace_grants where workspace_id = $1 and user_id = $2 returning role',
+    [workspaceId, userId],
+  );
+  return result.rows[0]?.role;
 }

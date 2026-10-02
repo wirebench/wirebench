@@ -14,7 +14,8 @@ import {
   type TeamInvitationCreateRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { auditSource, type InvitationAcceptedHook } from '../../context.js';
+import { auditSource, recordAudit, type InvitationAcceptedHook, type ServerHooks } from '../../context.js';
+import { findUserById } from '../../identity/repo.js';
 import { createInvitation, revokeOpenInvitation } from '../../identity/invitations.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
@@ -26,11 +27,19 @@ import { requireTeamRole } from '../roles.js';
  * §3.4: runs inside identity's accepting transaction. No `team_invitations` row means a plain
  * server invitation, or a team deleted since (its row went with it): nothing to add.
  */
-export function addInvitedMember(now: () => Date): InvitationAcceptedHook {
+export function addInvitedMember(now: () => Date, hooks: ServerHooks): InvitationAcceptedHook {
   return async (tx, accepted) => {
     const invited = await repo.teamInvitationOf(tx, accepted.invitationId);
     if (invited === undefined) return;
     await repo.insertMember(tx, { teamId: invited.teamId, userId: accepted.userId, role: invited.role, at: now() });
+    const user = await findUserById(tx, accepted.userId);
+    await recordAudit(hooks, tx, {
+      actor: user === undefined ? { kind: 'system' } : { kind: 'user', userId: user.id, email: user.email },
+      action: 'team.member_added',
+      target: { kind: 'user', id: accepted.userId },
+      teamId: invited.teamId,
+      details: { role: invited.role, via: 'invitation', invitationId: accepted.invitationId },
+    });
   };
 }
 

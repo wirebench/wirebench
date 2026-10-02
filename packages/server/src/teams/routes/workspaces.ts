@@ -18,7 +18,7 @@ import {
   type WorkspaceRole,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireUser } from '../../identity/guard.js';
 import { newId } from '../../identity/tokens.js';
@@ -106,6 +106,14 @@ export const workspaceRoutes =
             if ((await repo.memberRole(tx, teamId, caller.id)) !== undefined) {
               await repo.upsertGrant(tx, { workspaceId: id, userId: caller.id, role: 'admin', at });
             }
+            await recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              action: 'workspace.created',
+              target: { kind: 'workspace', id },
+              workspaceId: id,
+              teamId,
+              details: { name, defaultRole: body.defaultRole ?? 'viewer' },
+            });
             // §3.7: built before commit, so a failure here rolls the row back.
             await repos.withLock(id, () => repos.create(id));
             progress.built = true;
@@ -152,10 +160,37 @@ export const workspaceRoutes =
       async (request) => {
         const access = request.workspaceAccess!;
         const body = request.body as TeamWorkspaceUpdateRequest;
-        await repo
-          .updateWorkspace(db, access.workspaceId, {
-            ...(body.name !== undefined ? { name: cleanName(body.name) } : {}),
-            ...(body.defaultRole !== undefined ? { defaultRole: body.defaultRole } : {}),
+        const name = body.name !== undefined ? cleanName(body.name) : undefined;
+        await db
+          .transaction(async (tx) => {
+            const previous = await repo.workspaceById(tx, access.workspaceId);
+            if (previous === undefined) throw workspaceNotFound();
+            await repo.updateWorkspace(tx, access.workspaceId, {
+              ...(name !== undefined ? { name } : {}),
+              ...(body.defaultRole !== undefined ? { defaultRole: body.defaultRole } : {}),
+            });
+            const source = auditSource(request);
+            const scope = {
+              target: { kind: 'workspace' as const, id: access.workspaceId },
+              workspaceId: access.workspaceId,
+              teamId: previous.teamId,
+            };
+            if (name !== undefined && name !== previous.name) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                ...scope,
+                action: 'workspace.renamed',
+                details: { name, previousName: previous.name },
+              });
+            }
+            if (body.defaultRole !== undefined && body.defaultRole !== previous.defaultRole) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                ...scope,
+                action: 'workspace.default_role_changed',
+                details: { role: body.defaultRole, previousRole: previous.defaultRole },
+              });
+            }
           })
           .catch(conflictOr);
         // The default role moves every member on it; a rename moves no one (§3.2).
@@ -175,7 +210,18 @@ export const workspaceRoutes =
         // either see a spurious 409 (the old repository still on disk when it tries to build) or
         // have its brand-new repository moved away by this delete's cleanup.
         await repos.withLock(workspaceId, async () => {
-          await repo.deleteWorkspace(db, workspaceId); // grants go by cascade
+          const ws = await repo.workspaceById(db, workspaceId);
+          await db.transaction(async (tx) => {
+            await repo.deleteWorkspace(tx, workspaceId); // grants go by cascade
+            await recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              action: 'workspace.deleted',
+              target: { kind: 'workspace', id: workspaceId },
+              workspaceId,
+              ...(ws !== undefined ? { teamId: ws.teamId } : {}),
+              details: { name: ws?.name ?? null },
+            });
+          });
           // The row is gone and its grants with it: every subscriber's role is now none (§3.1). Said
           // here, before the repository move, so a move that fails (a 500) still tells the sockets.
           announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
