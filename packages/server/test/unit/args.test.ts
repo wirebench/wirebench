@@ -47,4 +47,14 @@ describe('admin commands (§3.7)', () => {
     expect(() => parseServerArgs(['admin', 'frobnicate'])).toThrow(/unknown admin command/);
     expect(() => parseServerArgs(['serve', '--no-admin'])).toThrow(/--no-admin only applies to admin invite/);
   });
+  it('parses admin license install, show and remove', () => {
+    expect(parseServerArgs(['admin', 'license', 'install', 'team.lic'])).toEqual({
+      command: 'admin-license-install',
+      file: 'team.lic',
+    });
+    expect(parseServerArgs(['admin', 'license', 'show'])).toEqual({ command: 'admin-license-show' });
+    expect(parseServerArgs(['admin', 'license', 'remove'])).toEqual({ command: 'admin-license-remove' });
+    expect(() => parseServerArgs(['admin', 'license', 'install'])).toThrow(/admin license install <file>/);
+    expect(() => parseServerArgs(['admin', 'license'])).toThrow(/install <file> \| show \| remove/);
+  });
 });

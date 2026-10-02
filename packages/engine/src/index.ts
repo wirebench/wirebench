@@ -1716,6 +1716,30 @@ export {
   ciWhoamiResponseSchema,
 } from './server-api/ci-tokens.js';
 export type { CiTokenCreateRequest, CiTokenCreated, CiTokenSummary, CiWhoamiResponse } from './server-api/ci-tokens.js';
+export {
+  COMMUNITY_SEATS,
+  EDITIONS,
+  FEATURES,
+  GRACE_DAYS,
+  LICENSE_FORMAT,
+  LICENSE_STATUSES,
+  LICENSE_TEXT_MAX_LENGTH,
+  LICENSE_TEXT_PATTERN,
+  editionSchema,
+  featureSchema,
+  licenseInstallRequestSchema,
+  licensePayloadSchema,
+  licenseStateSchema,
+} from './server-api/licensing.js';
+export type {
+  Edition,
+  Feature,
+  LicenseInstallRequest,
+  LicenseInvalidReason,
+  LicensePayload,
+  LicenseState,
+  LicenseStatus,
+} from './server-api/licensing.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';
 export * from './sequence/index.js';

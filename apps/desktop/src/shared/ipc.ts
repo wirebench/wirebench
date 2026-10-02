@@ -4,6 +4,10 @@ import {
   ciTokenCreatedWireSchema,
   ciTokenRevokeRequestWireSchema,
   ciTokenRevokeResponseWireSchema,
+  licenseInstallRequestWireSchema,
+  licenseRemoveResponseWireSchema,
+  licenseRequestWireSchema,
+  licenseStateWireSchema,
   ciTokensListResponseWireSchema,
   ciTokensRequestWireSchema,
   apiCancelImportRequestSchema,
@@ -653,6 +657,12 @@ export const channels = {
     list: defineChannel('ciTokens.list', ciTokensRequestWireSchema, ciTokensListResponseWireSchema),
     create: defineChannel('ciTokens.create', ciTokenCreateRequestWireSchema, ciTokenCreatedWireSchema),
     revoke: defineChannel('ciTokens.revoke', ciTokenRevokeRequestWireSchema, ciTokenRevokeResponseWireSchema),
+  },
+  /** The server's license (licensing spec §3.8): server admins only; main adds the account's token. */
+  license: {
+    get: defineChannel('license.get', licenseRequestWireSchema, licenseStateWireSchema),
+    install: defineChannel('license.install', licenseInstallRequestWireSchema, licenseStateWireSchema),
+    remove: defineChannel('license.remove', licenseRequestWireSchema, licenseRemoveResponseWireSchema),
   },
   // An API and the definition it was imported from. Separate from `definition.*` because the two
   // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI

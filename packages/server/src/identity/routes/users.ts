@@ -66,6 +66,10 @@ export const userRoutes =
             await repo.setDisabled(tx, id, now);
             await repo.revokeTokensOfUser(tx, id, now); // disabling revokes every token (§3.1)
           } else if (body.disabled === false) {
+            // licensing §3.4: only restoring a disabled account takes a seat.
+            // Re-read inside the transaction: a concurrent disable since the read above must not skip the check.
+            const current = await repo.findUserById(tx, id);
+            if (current?.disabledAt !== null) await env.ctx.license.assertSeatAvailable(tx);
             await repo.setDisabled(tx, id, null);
           }
         });

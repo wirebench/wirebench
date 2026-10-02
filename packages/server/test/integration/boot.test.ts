@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { ServerModule } from '../../src/context.js';
+import { permissiveLicense, type ServerModule } from '../../src/context.js';
 import { main } from '../../src/main.js';
 import { startServer, StartupError } from '../../src/serve.js';
 import { describeDb, testDatabase } from '../helpers/database.js';
@@ -55,6 +55,23 @@ describeDb('startServer', () => {
       await server.close();
     }
     expect(exit).not.toHaveBeenCalled();
+  });
+
+  it('returns the context a module replaced the license on, not the permissive default', async () => {
+    const live = { ...permissiveLicense() };
+    const module: ServerModule = {
+      name: 'licensing',
+      register: (_app, ctx) => {
+        ctx.license = live;
+        return Promise.resolve();
+      },
+    };
+    const server = await startServer(env(), io(), { signals: new EventEmitter(), exit: vi.fn(), modules: [module] });
+    try {
+      expect(server.ctx.license).toBe(live);
+    } finally {
+      await server.close();
+    }
   });
 
   it('shuts down on SIGTERM after draining an in-flight request', async () => {

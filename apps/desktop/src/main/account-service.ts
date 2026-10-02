@@ -63,6 +63,7 @@ const LOOPBACK_MESSAGES: Readonly<Record<string, string>> = {
   'identity-user-disabled': 'This account is disabled.',
   'identity-oidc-refused': 'The identity provider refused the sign-in.',
   'identity-oidc-failed': 'The identity provider did not complete the sign-in.',
+  'licensing-seat-limit': 'This server has no free seat for a new account.',
 };
 
 export class AccountService {

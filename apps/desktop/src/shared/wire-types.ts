@@ -6115,3 +6115,26 @@ export const ciTokenCreatedWireSchema = z.object({ id: z.string(), name: z.strin
 export type CiTokenCreatedWire = z.infer<typeof ciTokenCreatedWireSchema>;
 export const ciTokenRevokeRequestWireSchema = ciTokensRequestWireSchema.extend({ tokenId: z.string() });
 export const ciTokenRevokeResponseWireSchema = z.object({ revoked: z.literal(true) });
+
+// --- Server license (licensing spec §3.8, §5.3) --------------------------------------------------
+
+/** What `GET /api/v1/license` answers, restated for the bridge; the renderer imports only its type. */
+export const licenseStateWireSchema = z.object({
+  edition: z.enum(['community', 'team', 'enterprise']),
+  status: z.enum(['none', 'active', 'grace', 'expired', 'invalid']),
+  seats: z.object({ used: z.number(), limit: z.number().nullable() }),
+  features: z.array(z.string()),
+  licenseId: z.string().optional(),
+  customer: z.string().optional(),
+  issuedAt: z.string().optional(),
+  expiresAt: z.string().optional(),
+  graceUntil: z.string().optional(),
+  reason: z.string().optional(),
+  message: z.string().optional(),
+});
+export type LicenseStateWire = z.infer<typeof licenseStateWireSchema>;
+export const licenseRequestWireSchema = z.object({ url: z.string() });
+export const licenseInstallRequestWireSchema = licenseRequestWireSchema.extend({
+  license: z.string().min(1).max(8192),
+});
+export const licenseRemoveResponseWireSchema = z.object({ removed: z.literal(true) });

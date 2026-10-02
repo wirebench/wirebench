@@ -162,6 +162,9 @@ export async function buildServer(ctx: ServerContext, options: BuildServerOption
       });
     }
   }
+  // A module may replace parts of its context (licensing installs `license`); the caller's context
+  // must see the live service, not the permissive default it started with.
+  ctx.license = context.license;
   await app.ready();
   return app;
 }

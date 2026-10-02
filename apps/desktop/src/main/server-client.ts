@@ -16,6 +16,8 @@ import {
   catchUrlSchema,
   catchUrlsResponseSchema,
   invitationLookupResponseSchema,
+  licenseStateSchema,
+  type LicenseState,
   meResponseSchema,
   metaResponseSchema,
   oidcStartResponseSchema,
@@ -540,6 +542,27 @@ export class ServerClient {
       path: `${workspacePath(workspaceId)}/ci-tokens/${encodeURIComponent(tokenId)}`,
       token,
     });
+  }
+
+  // ---- licensing (licensing spec §3.6): server admins, on their own session ------------------------
+
+  getLicense(url: string, token: string): Promise<LicenseState> {
+    return this.call(url, { method: 'GET', path: '/api/v1/license', token, schema: licenseStateSchema });
+  }
+
+  /** The server verifies; a refusal arrives as `licensing-invalid` with the reason in its message. */
+  installLicense(url: string, token: string, license: string): Promise<LicenseState> {
+    return this.call(url, {
+      method: 'PUT',
+      path: '/api/v1/license',
+      token,
+      body: { license },
+      schema: licenseStateSchema,
+    });
+  }
+
+  async removeLicense(url: string, token: string): Promise<void> {
+    await this.call<unknown>(url, { method: 'DELETE', path: '/api/v1/license', token });
   }
 
   private async call<T>(url: string, call: Call<T>): Promise<T> {

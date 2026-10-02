@@ -20,7 +20,7 @@ import type {
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 
-export type TeamTab = 'members' | 'workspaces' | 'invitations';
+export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license';
 
 export interface TeamState {
   readonly url: string | undefined;
@@ -187,6 +187,8 @@ export const useTeamStore = create<TeamStore>((set, get) => {
         workspaces: spaces?.workspaces ?? get().workspaces,
         teamId,
       });
+      // The License tab is a server admin's (licensing §3.8).
+      if (!list.serverAdmin && get().tab === 'license') set({ tab: 'members' });
       await loadTeam();
       await reloadAccess();
       set({ loading: false });

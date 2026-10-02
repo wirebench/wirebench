@@ -1,6 +1,7 @@
-import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
-import type { GitCli, HooksMeta } from '@wirebench/engine';
+import type { FastifyBaseLogger, FastifyInstance, preHandlerAsyncHookHandler } from 'fastify';
+import type { Edition, Feature, GitCli, HooksMeta, LicenseState } from '@wirebench/engine';
 import type { ServerConfig } from './config.js';
+import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
 
 /** The slice of `pg.Pool` the modules use, so tests can pass a fake. */
@@ -65,6 +66,42 @@ export interface HooksChanged {
 /** An after-commit listener: synchronous, never awaited, and its throw never reaches the caller (R3). */
 export type Announcement<E> = (event: E) => void;
 
+/** A license was installed or removed (licensing spec §3.9); fired after the statement that stored or deleted it. */
+export interface LicenseChanged {
+  readonly action: 'installed' | 'removed';
+  readonly licenseId?: string;
+  readonly edition?: Edition;
+  /** `null` from the command line, which has no user. */
+  readonly actorUserId: string | null;
+}
+
+/**
+ * The server's license (licensing spec §5.1). Read at request time, never at registration: identity
+ * registers before licensing replaces the host's permissive default.
+ */
+export interface LicenseService {
+  /** Computed on demand from the stored row, the clock and one count (§3.3). Pass `tx` inside a transaction. */
+  state(tx?: Querier): Promise<LicenseState>;
+  /** Inside the caller's transaction: refuses with `licensing-seat-limit` when no seat is free (§3.4). */
+  assertSeatAvailable(tx: Querier): Promise<void>;
+  /** A preHandler for after a route's role guard: `licensing-feature-required` without the feature (§3.5). */
+  requireFeature(feature: Feature): preHandlerAsyncHookHandler;
+}
+
+/**
+ * What a server without the licensing module has: unlimited seats and no features. Tests that register
+ * identity alone keep it, so identity's suites do not depend on licensing.
+ */
+export function permissiveLicense(): LicenseService {
+  const state = (): Promise<LicenseState> =>
+    Promise.resolve({ edition: 'community', status: 'none', seats: { used: 0, limit: null }, features: [] });
+  return {
+    state,
+    assertSeatAvailable: () => Promise.resolve(),
+    requireFeature: (feature) => requireFeature(feature, state),
+  };
+}
+
 /**
  * What a later module adds to an earlier module's work. Modules push onto these lists in
  * `register()`. There are two kinds:
@@ -72,7 +109,7 @@ export type Announcement<E> = (event: E) => void;
  * - **Hooks** (`invitationAccepted`; teams-access spec §3.4, R1) run inside the caller's transaction
  *   and are awaited. Their writes commit with the caller's, and a throw rolls the caller back.
  * - **Announcements** (`headMoved`, `accessChanged`, `sessionEnded`; live-updates spec §3.2, R3;
- *   `captureReceived`, `hooksChanged`; webhook-capture spec §3.6) run through {@link announce} after
+ *   `captureReceived`, `hooksChanged`; webhook-capture spec §3.6; `licenseChanged`; licensing spec §3.9) run through {@link announce} after
  *   the caller's statement or transaction has resolved, on the success path. They are never awaited
  *   and never run inside a transaction, and a throw is logged and swallowed. A rolled-back
  *   transaction never reaches the line that announces.
@@ -84,6 +121,7 @@ export interface ServerHooks {
   readonly sessionEnded: Announcement<SessionEnded>[];
   readonly captureReceived: Announcement<CaptureReceived>[];
   readonly hooksChanged: Announcement<HooksChanged>[];
+  readonly licenseChanged: Announcement<LicenseChanged>[];
 }
 
 /**
@@ -98,6 +136,7 @@ export function serverHooks(): ServerHooks {
     sessionEnded: [],
     captureReceived: [],
     hooksChanged: [],
+    licenseChanged: [],
   };
 }
 
@@ -170,10 +209,13 @@ export interface ServerContext {
   readonly log: FastifyBaseLogger;
   readonly meta: MetaRegistry;
   readonly hooks: ServerHooks;
+  /** Replaced by the licensing module in `register()`; the one field a module may assign (licensing spec §5.1). */
+  license: LicenseService;
 }
 
 export interface ServerModule {
-  readonly name: 'identity' | 'teams-access' | 'server-sync' | 'webhook-capture' | 'ci-tokens' | 'live-updates';
+  readonly name:
+    'identity' | 'licensing' | 'teams-access' | 'server-sync' | 'webhook-capture' | 'ci-tokens' | 'live-updates';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

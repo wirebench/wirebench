@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { GitCli, WirebenchError, findGit } from '@wirebench/engine';
 import { ConfigError, loadConfig, type ServerConfig } from './config.js';
-import { MetaRegistry, serverHooks, type ServerContext, type ServerModule } from './context.js';
+import { MetaRegistry, permissiveLicense, serverHooks, type ServerContext, type ServerModule } from './context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR, pendingMigrations, type Migration } from './db/migrate.js';
 import { createDatabase } from './db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from './io.js';
@@ -193,6 +193,7 @@ export async function startServer(
     log: undefined as unknown as ServerContext['log'], // buildServer replaces it with the app's logger
     meta: new MetaRegistry(),
     hooks: serverHooks(),
+    license: permissiveLicense(),
   };
   let app: FastifyInstance;
   try {

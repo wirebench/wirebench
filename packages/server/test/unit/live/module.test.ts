@@ -11,6 +11,7 @@ describe('live-updates module wiring (§5.1)', () => {
   it('is registered last, after server-sync and webhook-capture', () => {
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
+      'licensing',
       'teams-access',
       'server-sync',
       'webhook-capture',

@@ -46,6 +46,9 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
     case 'admin-invite':
     case 'admin-list-invitations':
     case 'admin-revoke-invitation':
+    case 'admin-license-install':
+    case 'admin-license-show':
+    case 'admin-license-remove':
       return runAdmin(command, io);
     case 'serve': {
       try {

@@ -78,6 +78,18 @@ the counters reset on restart). Device tokens expire after `WIREBENCH_SERVER_TOK
 without use or `WIREBENCH_SERVER_TOKEN_MAX_DAYS` at most; a user sees and revokes their devices
 in the app, and an admin who disables a user revokes them all.
 
+## License
+
+A server with no license is the Community edition: everything it does today, for up to five enabled
+accounts. A license file sets the Team or Enterprise edition. It is checked offline against a public key
+built into the server; nothing is sent anywhere. Install it from the app's License tab, or here:
+
+    docker compose -f packages/server/compose.yaml exec server node /app/dist/bin.js admin license install /path/in/container/team.lic
+
+`admin license show` prints the edition, seats and expiry; `admin license remove` returns the server to
+Community. An expired license keeps its edition for 30 days, then the server is Community again, with
+nobody signed out and nothing locked. See the docs site's _Editions and licenses_ guide.
+
 ## Teams
 
 A server admin creates teams (`POST /api/v1/teams`) and becomes the first admin of each. Team admins do

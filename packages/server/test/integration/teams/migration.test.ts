@@ -20,6 +20,7 @@ describeDb('0003_teams (§4.1)', () => {
     expect(list).toEqual(['1_init', '2_identity', '3_teams']);
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
+      'licensing',
       'teams-access',
       'server-sync',
       'webhook-capture',

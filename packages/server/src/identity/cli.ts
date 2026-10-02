@@ -3,6 +3,7 @@
  * an operator who cannot sign in yet — on a fresh server, the first admin comes from here.
  * It refuses to run against an unmigrated database rather than guessing at the schema.
  */
+import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, loadConfig } from '../config.js';
@@ -10,6 +11,9 @@ import { serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
+import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
+import { runLicenseCommand } from '../licensing/cli.js';
+import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
 import { identitySettings, type InvitationEnv } from './env.js';
@@ -22,18 +26,26 @@ type AdminCommand = Extract<ServerCommand, { command: `admin-${string}` }>;
 export async function runAdmin(
   command: AdminCommand,
   io: ServerIo,
-  options: { readonly now?: () => Date } = {},
+  options: { readonly now?: () => Date; readonly publicKeys?: readonly KeyObject[] } = {},
 ): Promise<number> {
   let env: InvitationEnv;
   let db: ReturnType<typeof createDatabase>;
+  let publicKeys: readonly KeyObject[];
   try {
     const config = loadConfig(io.env, packageVersion());
     delete process.env.WIREBENCH_SERVER_DATABASE_URL;
     db = createDatabase(config.databaseUrl);
+    const now = options.now ?? (() => new Date());
+    publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
     env = {
-      ctx: { db, config, hooks: serverHooks() },
+      ctx: {
+        db,
+        config,
+        hooks: serverHooks(),
+        license: createLicenseService({ db, publicKeys, now }),
+      },
       settings: identitySettings(config),
-      now: options.now ?? (() => new Date()),
+      now,
     };
   } catch (error) {
     if (error instanceof ConfigError) {
@@ -88,6 +100,10 @@ export async function runAdmin(
         io.stdout.write(`Revoked ${command.id}\n`);
         return ExitCode.Ok;
       }
+      case 'admin-license-install':
+      case 'admin-license-show':
+      case 'admin-license-remove':
+        return await runLicenseCommand(command, { db, publicKeys, now: env.now, license: env.ctx.license }, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {

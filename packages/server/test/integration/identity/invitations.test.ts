@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { permissiveLicense } from '../../../src/context.js';
 import { createInvitation } from '../../../src/identity/invitations.js';
 import * as repo from '../../../src/identity/repo.js';
 import { mintSecret } from '../../../src/identity/tokens.js';
@@ -213,7 +214,7 @@ describeDb('invitations (§3.1, §3.7)', () => {
 
   it('createInvitation runs attach in the insert transaction: a failing attach leaves no invitation', async () => {
     const env = {
-      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks },
+      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks, license: permissiveLicense() },
       settings: { invitationMs: 7 * DAY },
       now: () => h.clock.now,
     } as never;

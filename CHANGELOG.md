@@ -118,6 +118,13 @@ before and after for the two changes that need more than a rename. The package's
   viewers read them. The server bounds captures by count, age, body size and rate, and the app never
   writes them to disk.
 
+- **Server editions and licenses.** Wirebench Server runs as Community, Team or Enterprise. A server with
+  no license is Community, with five seats, and keeps everything it did before. A signed license file,
+  checked offline and installed from the new License tab or with `wirebench-server admin license install`,
+  raises the seats and turns on enterprise features. An expired license has 30 days of grace, and a lapse
+  never disables an account or locks data. See
+  [Editions and licenses](https://wirebench.github.io/wirebench/docs/guides/server-licensing/).
+
 - **Sequences.** A sequence sends saved SOAP, REST, gRPC and WebSocket requests one after another (a
   streaming gRPC call and a WebSocket request can be steps too), and is declared in its own file,
   `sequences/<name>.sequence.yaml`, with no code. A step can lift a value from its response (a body

@@ -267,6 +267,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       close: vi.fn().mockResolvedValue({ ok: true, value: { done: true } }),
     },
     ciTokens: { list: fail('ciTokens.list'), create: fail('ciTokens.create'), revoke: fail('ciTokens.revoke') },
+    license: { get: fail('license.get'), install: fail('license.install'), remove: fail('license.remove') },
     xml: {
       completions: fail('xml.completions'),
       declaration: fail('xml.declaration'),

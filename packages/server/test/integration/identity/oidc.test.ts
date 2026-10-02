@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { permissiveLicense } from '../../../src/context.js';
 import { createInvitation } from '../../../src/identity/invitations.js';
 import * as repo from '../../../src/identity/repo.js';
 import { mintSecret, pkceChallenge } from '../../../src/identity/tokens.js';
@@ -34,7 +35,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
   /** Injects env through the harness's module: `createInvitation` wants an IdentityEnv-shaped object. */
   const env = () =>
     ({
-      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks },
+      ctx: { db: h.db, config: { publicUrl: 'https://wirebench.test' }, hooks: h.hooks, license: permissiveLicense() },
       settings: { invitationMs: 7 * 86_400_000 },
       now: () => h.clock.now,
     }) as never;

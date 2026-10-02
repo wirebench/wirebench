@@ -358,6 +358,30 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
   const sessions = new Map<string, string>(); // token → email
   const issued: { readonly token: string; readonly email: string }[] = [];
   const tokens: string[] = [];
+  /** The installed license's payload; the fake checks shape only, as the desktop does (licensing §3.8). */
+  let installedLicense:
+    | {
+        id: string;
+        customer: string;
+        edition: 'team' | 'enterprise';
+        seats: number | null;
+        issuedAt: string;
+        expiresAt: string;
+      }
+    | undefined;
+  const licenseState = () =>
+    installedLicense === undefined
+      ? { edition: 'community', status: 'none', seats: { used: users.size, limit: 5 }, features: [] }
+      : {
+          edition: installedLicense.edition,
+          status: 'active',
+          seats: { used: users.size, limit: installedLicense.seats },
+          features: [],
+          licenseId: installedLicense.id,
+          customer: installedLicense.customer,
+          issuedAt: installedLicense.issuedAt,
+          expiresAt: installedLicense.expiresAt,
+        };
   const signOuts: string[] = [];
   const requests: FakeRequest[] = [];
   let url = '';
@@ -1109,6 +1133,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           publicUrl: url,
           auth: { local: true, oidc: options.oidc ?? false },
           capabilities,
+          edition: installedLicense?.edition ?? 'community',
           ...(options.hooks === true ? { hooks: HOOKS_META } : {}),
         });
         return;
@@ -1148,6 +1173,27 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       if (request.method === 'GET' && path.pathname === '/api/v1/me') {
         if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
         return send(response, 200, { user: userOf(email), methods: { local: true, oidc: [] } });
+      }
+      if (path.pathname === '/api/v1/license') {
+        if (email === undefined) return problem(response, 401, 'identity-unauthenticated');
+        if (users.get(email.toLowerCase())?.serverAdmin !== true) return problem(response, 403, 'identity-forbidden');
+        if (request.method === 'GET') return send(response, 200, licenseState());
+        if (request.method === 'PUT') {
+          const body = (await readJson(request)) as { license: string };
+          const segment = body.license.split('.')[1] ?? '';
+          try {
+            installedLicense = JSON.parse(
+              Buffer.from(segment, 'base64url').toString('utf8'),
+            ) as typeof installedLicense;
+          } catch {
+            return problem(response, 400, 'licensing-invalid');
+          }
+          return send(response, 200, licenseState());
+        }
+        if (request.method === 'DELETE') {
+          installedLicense = undefined;
+          return send(response, 204);
+        }
       }
       if (request.method === 'POST' && path.pathname === '/api/v1/auth/sign-out') {
         if (email === undefined || token === undefined) return problem(response, 401, 'identity-unauthenticated');
