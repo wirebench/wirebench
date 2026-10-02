@@ -460,6 +460,49 @@ describe('WebSocket through openExchange', () => {
     await expect(handle.result).rejects.toMatchObject({ code: 'timeout' });
   });
 
+  /** A session on a server that never replies, opened, with its failures recorded; `run` as given. */
+  async function openedOnSilentServer(options: Partial<ExchangeOptions>) {
+    const silent = await startTestWsServer({ onText: () => undefined });
+    const failures: SendFailure[] = [];
+    let opened = false;
+    const messages = [createWsSavedMessage('One', { id: 'm1', content: 'one' })];
+    const handle = open(build('/', { messages, serverUrl: silent.url }), options, {
+      events: {
+        onExchange: () => {
+          opened = true;
+        },
+        onFailed: (_item, failure) => failures.push(failure),
+      },
+    });
+    await until(() => opened, 'the session to open');
+    return { handle, failures, close: () => silent.close() };
+  }
+
+  it('a run cancelled after its handshake fails with aborted, keeping its transcript', async () => {
+    const { handle, failures, close } = await openedOnSilentServer({ interactive: false, run: true });
+    try {
+      expect(handle.cancel()).toBe(true);
+      await expect(settlesWithin(handle.result, 2000)).rejects.toMatchObject({ code: 'aborted' });
+      expect(failures).toMatchObject([{ stage: 'send' }]);
+      expect(failures[0]?.exchange).toMatchObject({ handshake: { status: 101 } });
+    } finally {
+      await close();
+    }
+  });
+
+  it('an interactive session cancelled after its handshake still settles with its transcript', async () => {
+    const { handle, failures, close } = await openedOnSilentServer({ interactive: true });
+    try {
+      expect(handle.cancel()).toBe(true);
+      const sent = await settlesWithin(handle.result, 2000);
+      const ws = sent.exchange?.kind === 'websocket' ? sent.exchange.ws : undefined;
+      expect(ws?.handshake.status).toBe(101);
+      expect(failures).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
   it('a run row against a dead endpoint fails rather than passes', async () => {
     const { p } = build('', { serverUrl: 'ws://127.0.0.1:1' });
     const context: RunContext = { project: p, projectDir: '/nowhere', overrides: {}, host: testHost() };

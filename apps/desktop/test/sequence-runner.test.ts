@@ -413,5 +413,7 @@ describe('streaming steps (a sequence is a run)', () => {
 
     expect(performance.now() - started).toBeLessThan(3000);
     expect(result.steps.map((step) => step.skipped)).toEqual([undefined, 'cancelled']);
+    // Cut short before its reply: the step failed, as a cancelled REST, SOAP or gRPC step does.
+    expect(result.steps[0]).toMatchObject({ outcome: 'errored', error: { code: 'aborted' } });
   });
 });

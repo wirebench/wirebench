@@ -481,7 +481,10 @@ async function sendReserved(
     const failed = failures.sendStage();
     if (failed !== undefined) {
       // As the app always has: History first, then the HTTP Log's row.
-      const recorded = recordedOf(item, masks, options);
+      const recorded: Recorded = {
+        ...recordedOf(item, masks, options),
+        handshakeLogged: send.handshakeLogged === true,
+      };
       await recordFailure(deps, recorded, failed, error, { sendId, show });
       failed.report();
     }
@@ -1191,14 +1194,15 @@ async function recordFailure(
       return;
     }
     case 'websocket': {
-      // A session cancelled before it opened settled with its transcript, which History keeps as
-      // the app always has; one that failed as it was built (a bad option) has none to record.
+      // A session cancelled before it opened, or a run's cancelled after, settled with its transcript,
+      // which History keeps as the app always has; one that failed as it was built (a bad option) has
+      // none to record.
       if (failed.exchange === undefined) return;
       const summary = summariseWs(failed.exchange as WsExchange, summaryOf.sendId, {
         show: summaryOf.show,
         ...(masks.keyParams !== undefined ? { keyParams: masks.keyParams } : {}),
       });
-      await recordWs(deps, item, summary, masks.keyParams, false, recorded.label);
+      await recordWs(deps, item, summary, masks.keyParams, recorded.handshakeLogged === true, recorded.label);
       return;
     }
   }

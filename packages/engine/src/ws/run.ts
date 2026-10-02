@@ -498,7 +498,9 @@ async function sendWsItem(
         onClosed: () => controller.queue.push({ protocol: 'websocket', kind: 'closed' }),
       });
       exchange = await session.done;
-      if (!opened && controller.signal.aborted) {
+      // A run's session cancelled before its reply is cut short, never a pass, as any other protocol's
+      // cancelled step is. Any other session settles with its transcript once it has opened.
+      if (controller.signal.aborted && (!opened || (run && watch?.hasReplied !== true))) {
         throw new HttpError('aborted', 'The request was aborted.');
       }
       // A host shows a refused handshake from the transcript; a run has nothing to assert on, so it fails.
