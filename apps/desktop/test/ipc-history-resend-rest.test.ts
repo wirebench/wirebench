@@ -103,7 +103,7 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
   });
   /** A fresh send of `requestId`, as the editor sends it. */
   const send = (sendId: string, requestId: string) =>
-    sendThroughEngine(sendDeps, sendId, requestId, { draft: { kind: 'rest' } });
+    sendThroughEngine(sendDeps, sendId, requestId, { draft: { kind: 'rest' }, checkAssertions: true });
   return { send, entries };
 }
 
@@ -219,5 +219,22 @@ describe('history.resendRest against the test server', () => {
     expect(sent.pathname).toBe('/echo');
     expect(sent.searchParams.getAll('x')).toEqual(['2']);
     expect(sent.searchParams.getAll('api_key')).toEqual(['good-key']);
+  });
+
+  it("does not check the request's own assertions on a resend, though the editor Send did", async () => {
+    const base = seeded(server.url);
+    const api = base.apis[0]!;
+    const model: Project = {
+      ...base,
+      apis: [{ ...api, requests: [{ ...api.requests[0]!, assertions: [{ type: 'status', equals: 200 }] }] }],
+    };
+    const { send, entries } = harness(model);
+
+    const first = await send('first', 'req-1');
+    expect(first).toMatchObject({ assertions: [{ type: 'status', outcome: 'passed' }] });
+
+    const result = (await invoke('history.resendRest', { id: entries[0]!.id })) as { ok: boolean; value: object };
+    expect(result.ok).toBe(true);
+    expect(result.value).not.toHaveProperty('assertions');
   });
 });

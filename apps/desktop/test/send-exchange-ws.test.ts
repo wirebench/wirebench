@@ -1020,3 +1020,50 @@ describe('ExchangeRegistry reservations', () => {
     );
   });
 });
+
+describe("request.openWs — the request's own assertions", () => {
+  it('checks them once the session ends, against the parsed messages', async () => {
+    registerOver(
+      seeded('/echo', {
+        assertions: [
+          { type: 'status', equals: 101 },
+          { type: 'match', language: 'jsonpath', expression: '$[0].type', equals: 'ready' },
+          { type: 'match', language: 'jsonpath', expression: '$[0].type', equals: 'gone', name: 'gone' },
+          {
+            type: 'callback',
+            catchUrl: 'orders',
+            withinMs: 1000,
+            match: {},
+            expect: [{ body: { language: 'jsonpath', path: '$.id', exists: true } }],
+          },
+        ],
+      }),
+    );
+    const events: unknown[] = [];
+    const sender = { isDestroyed: () => false, send: (_channel: string, event: unknown) => events.push(event) };
+    const opened = open('s-assert', sender);
+    await waitFor(() => hasHandshake(events), 'the handshake');
+    unwrap(await push('s-assert', '{"type":"ready"}'));
+    await waitFor(() => frames(events).some((frame) => frame.direction === 'received'), 'the echo');
+    unwrap(await invoke('request.wsClose', { sendId: 's-assert' }));
+    const summary = unwrap<WsExchangeSummary>(await opened);
+
+    expect(summary.assertions?.map((a) => [a.type, a.outcome])).toEqual([
+      ['status', 'passed'],
+      ['match', 'passed'],
+      ['match', 'failed'],
+      ['callback', 'not-checked'],
+    ]);
+    expect(summary.assertions?.[3]).toMatchObject({ label: 'callback orders', message: 'checked in runs' });
+  });
+
+  it('leaves the field off a request with no assertions', async () => {
+    registerOver(seeded());
+    const events: unknown[] = [];
+    const sender = { isDestroyed: () => false, send: (_channel: string, event: unknown) => events.push(event) };
+    const opened = open('s-none', sender);
+    await waitFor(() => hasHandshake(events), 'the handshake');
+    unwrap(await invoke('request.wsClose', { sendId: 's-none' }));
+    expect(unwrap<WsExchangeSummary>(await opened).assertions).toBeUndefined();
+  });
+});

@@ -763,3 +763,27 @@ describe('closing a project over a plain REST send in flight', () => {
 function never(): never {
   throw new Error('unreachable');
 }
+
+describe("request.sendRest — the request's own assertions", () => {
+  it('checks them against the answer, and returns the results with it', async () => {
+    registerOver(
+      seeded([
+        {
+          ...createRestRequest('Echo', { id: 'req-1', url: '/echo' }),
+          assertions: [
+            { type: 'status', equals: 200 },
+            { type: 'status', equals: 404 },
+          ],
+        },
+      ]),
+      { secretsFor: () => secrets },
+    );
+
+    const summary = unwrap<RestExchangeSummary>(await invoke('request.sendRest', { sendId: 'a1', requestId: 'req-1' }));
+
+    expect(summary.assertions?.map((a) => [a.type, a.outcome])).toEqual([
+      ['status', 'passed'],
+      ['status', 'failed'],
+    ]);
+  });
+});

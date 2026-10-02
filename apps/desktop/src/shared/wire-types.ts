@@ -871,8 +871,24 @@ export const scriptResultWireSchema = z.object({
 });
 export type ScriptResultWire = z.infer<typeof scriptResultWireSchema>;
 
+/**
+ * One of a request's own assertions as an editor Send checked it (request-assertions spec §6). A
+ * callback assertion is `not-checked`: only a run waits for a callback. Every string is masked.
+ */
+export const requestAssertionResultWireSchema = z.object({
+  type: z.string(),
+  label: z.string(),
+  outcome: z.enum(['passed', 'failed', 'errored', 'not-checked']),
+  expected: z.string().optional(),
+  actual: z.string().optional(),
+  message: z.string().optional(),
+});
+export type RequestAssertionResultWire = z.infer<typeof requestAssertionResultWireSchema>;
+
 /** Response payload for `request.send`: a JSON-serialisable projection of `SoapExchange`. */
 export const exchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   durationMs: z.number(),
   http: httpExchangeWireSchema,
@@ -2060,6 +2076,8 @@ export const restContractResultSchema = z.object({
 export type RestContractResultWire = z.infer<typeof restContractResultSchema>;
 
 export const restExchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   durationMs: z.number(),
   http: httpExchangeWireSchema,
@@ -2203,6 +2221,8 @@ export type GrpcResponseMessageWire = z.infer<typeof grpcResponseMessageWireSche
  * metadata both ways and the decoded messages are what the gRPC response pane adds.
  */
 export const grpcExchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   durationMs: z.number(),
   http: httpExchangeWireSchema,
@@ -2354,6 +2374,8 @@ export type WsHandshakeWire = z.infer<typeof wsHandshakeWireSchema>;
 
 /** What one WebSocket session produced (so far, or in whole): the handshake, its frames, how it closed. */
 export const wsExchangeSummarySchema = z.object({
+  /** The request's own assertions as an editor Send checked them; absent when it has none or nothing checked them. */
+  assertions: z.array(requestAssertionResultWireSchema).optional(),
   sendId: z.string(),
   url: z.string(),
   handshake: wsHandshakeWireSchema,
