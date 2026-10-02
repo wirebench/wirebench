@@ -8,7 +8,7 @@ describe('live-updates module wiring (§5.1)', () => {
     vi.useRealTimers();
   });
 
-  it('is registered last, after server-sync and webhook-capture', () => {
+  it('is registered after webhook-capture and ci-tokens', () => {
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
       'licensing',
@@ -17,6 +17,7 @@ describe('live-updates module wiring (§5.1)', () => {
       'webhook-capture',
       'ci-tokens',
       'live-updates',
+      'audit-log',
     ]);
   });
 

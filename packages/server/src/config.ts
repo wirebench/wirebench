@@ -72,6 +72,7 @@ const inputSchema = z.object({
   hooksBodyLimitMb: integerText(1, 32, '1'),
   hooksKeep: integerText(1, 10_000, '500'),
   hooksMaxAgeDays: integerText(1, 365, '7'),
+  auditMaxAgeDays: integerText(30, 3650, '365'),
   hooksRatePerSecond: integerText(1, 1_000, '10'),
   hooksBurst: integerText(1, 10_000, '50'),
   hooksPerWorkspace: integerText(1, 1_000, '50'),
@@ -308,6 +309,14 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     secret: true,
     description:
       'Encrypts catch URL signature secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, signature settings are refused.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS',
+    key: 'auditMaxAgeDays',
+    required: false,
+    defaultText: '365',
+    secret: false,
+    description: 'Audit events older than this many days are deleted (30–3650).',
   },
 ];
 

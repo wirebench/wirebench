@@ -108,6 +108,14 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...required, WIREBENCH_SERVER_TRUST_PROXY: 'yes' }, '2.1.1')).toThrow(ConfigError);
   });
 
+  it('defaults and bounds the audit retention (audit-log spec §3.3)', () => {
+    expect(loadConfig(required, '2.1.1')).toMatchObject({ auditMaxAgeDays: 365 });
+    expect(loadConfig({ ...required, WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS: '3650' }, '2.1.1')).toMatchObject({
+      auditMaxAgeDays: 3650,
+    });
+    expect(() => loadConfig({ ...required, WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS: '29' }, '2.1.1')).toThrow(ConfigError);
+  });
+
   it('defaults and bounds the webhook-capture variables (webhook-capture §3.7)', () => {
     expect(loadConfig(required, '2.1.1')).toMatchObject({
       hooksEnabled: true,
@@ -177,6 +185,7 @@ describe('describeConfig', () => {
     expect(CONFIG_VARIABLES.map((v) => v.env).sort()).toEqual(
       [
         'WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL',
+        'WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS',
         'WIREBENCH_SERVER_BODY_LIMIT_MB',
         'WIREBENCH_SERVER_DATABASE_URL',
         'WIREBENCH_SERVER_DATA_DIR',

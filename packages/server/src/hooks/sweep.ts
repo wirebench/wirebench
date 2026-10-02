@@ -20,6 +20,10 @@ export interface SweeperDeps {
   readonly log: FastifyBaseLogger;
   /** Tests only; production deletes `SWEEP_BATCH` at a time. */
   readonly batchSize?: number;
+  /** What to delete (audit-log plan ruling 14); captures by default. */
+  readonly deleteBefore?: (db: Querier, cutoff: Date, limit: number) => Promise<number>;
+  /** The warn line's subject; `capture sweep` by default. */
+  readonly label?: string;
 }
 
 export class CaptureSweeper {
@@ -57,7 +61,7 @@ export class CaptureSweeper {
       this.tick();
     }, SWEEP_INTERVAL_MS);
     void this.runOnce().catch((error: unknown) => {
-      this.deps.log.warn({ err: error }, 'capture sweep failed');
+      this.deps.log.warn({ err: error }, `${this.deps.label ?? 'capture sweep'} failed`);
     });
   }
 
@@ -66,7 +70,7 @@ export class CaptureSweeper {
     const batch = this.deps.batchSize ?? SWEEP_BATCH;
     let total = 0;
     while (!this.stopped) {
-      const deleted = await deleteCapturesBefore(this.deps.db, cutoff, batch);
+      const deleted = await (this.deps.deleteBefore ?? deleteCapturesBefore)(this.deps.db, cutoff, batch);
       total += deleted;
       if (deleted < batch) break;
     }
