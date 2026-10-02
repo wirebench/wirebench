@@ -21,6 +21,12 @@ import type { WsExchange, WsFrame, WsHandshake, WsOpcode } from './model.js';
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 30_000;
 
+/**
+ * How a handshake that timed out begins its `error`: the one failure a caller tells apart from a
+ * refusal (the run facet fails a run's send with `timeout` for it). Not part of the public surface.
+ */
+export const HANDSHAKE_TIMEOUT_ERROR = 'The server did not answer the handshake within';
+
 /** Options for {@link openWsSession}. */
 export interface WsSessionOptions {
   readonly url: string;
@@ -326,7 +332,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     ws.close();
   };
   const timer = setTimeout(() => {
-    if (handshake === undefined) fail(`The server did not answer the handshake within ${timeoutMs} ms`);
+    if (handshake === undefined) fail(`${HANDSHAKE_TIMEOUT_ERROR} ${timeoutMs} ms`);
   }, timeoutMs);
   const onAbort = (): void => fail('The connection was cancelled');
   if (options.signal?.aborted === true) queueMicrotask(onAbort);

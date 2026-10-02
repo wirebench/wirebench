@@ -11,7 +11,9 @@ import type { RunContext } from '../../../src/run/context.js';
 import type { ExchangeOptions } from '../../../src/run/exchange.js';
 import type { SendFailure, SendHost } from '../../../src/run/host.js';
 import { openExchange } from '../../../src/run/open.js';
+import { runRequests } from '../../../src/run/run.js';
 import { createRunScope } from '../../../src/run/scope.js';
+import { selectRequests } from '../../../src/run/select.js';
 import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src/ws/model.js';
 import type { WsFrame, WsHandshake, WsSavedMessage } from '../../../src/ws/model.js';
 import { effectiveWsSettings } from '../../../src/ws/run.js';
@@ -311,6 +313,62 @@ describe('WebSocket through openExchange', () => {
     const sent = await handle.result;
     expect(told).toEqual([]);
     expect(sent.exchange?.kind === 'websocket' && sent.exchange.ws.handshake.error).toBeTruthy();
+    expect(sent.exchange?.kind === 'websocket' && sent.exchange.ws.closed.by).toBe('error');
+    expect(sent.subject.status).toBe(0);
+  });
+
+  it('an interactive session the server drops settles with the transcript', async () => {
+    const handle = open(build('/drop'));
+    await handle.push({ text: 'bye' });
+    const sent = await handle.result;
+    const ws = sent.exchange?.kind === 'websocket' ? sent.exchange.ws : undefined;
+    expect(ws?.handshake.status).toBe(101);
+    expect(ws?.closed.by).toBe('error');
+    expect(ws?.frames.filter((f) => f.direction === 'sent').map((f) => f.text)).toEqual(['bye']);
+  });
+
+  it('cancel while the server holds the handshake fails the result with aborted', async () => {
+    const before = server.handshakes.length;
+    const { failures, host } = recorder();
+    const handle = open(build('/hang'), {}, host);
+    await until(() => server.handshakes.length > before, 'the upgrade to reach the server');
+    expect(handle.cancel()).toBe(true);
+    await expect(handle.result).rejects.toMatchObject({ code: 'aborted' });
+    expect(failures).toMatchObject([{ stage: 'send' }]);
+  });
+
+  it('an expanded push after close or after the end rejects only as closed, with nothing unhandled', async () => {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', listener);
+    const asked: string[] = [];
+    const getSecret = (ref: string) => {
+      asked.push(ref);
+      return Promise.resolve(undefined);
+    };
+    try {
+      const handle = open(build('/echo'), {}, { getSecret });
+      await handle.push({ text: 'a' });
+      handle.close();
+      await expect(handle.push({ text: '${nope}', expand: true })).rejects.toMatchObject({
+        code: 'ws-session-closed',
+      });
+      await expect(handle.push({ text: '${secret:gone}', expand: true })).rejects.toMatchObject({
+        code: 'ws-session-closed',
+      });
+      await handle.result;
+      await expect(handle.push({ text: '${nope}', expand: true })).rejects.toMatchObject({
+        code: 'ws-session-closed',
+      });
+      // Long enough for Node to report a rejection nobody observed.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(unhandled).toEqual([]);
+      expect(asked).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', listener);
+    }
   });
 
   it('a run sends the saved messages in order, expanded, then closes', async () => {
@@ -336,6 +394,49 @@ describe('WebSocket through openExchange', () => {
     const handle = open(build('/echo', { messages }), { interactive: false });
     await expect(handle.result).rejects.toMatchObject({ code: 'ws-unresolved-properties' });
     expect(server.handshakes).toHaveLength(before);
+  });
+
+  it('a run refuses a saved binary message that is not base64 before it dials', async () => {
+    const before = server.handshakes.length;
+    const { failures, host } = recorder();
+    const messages = [
+      createWsSavedMessage('Text', { id: 'm1', content: 'fine' }),
+      createWsSavedMessage('Bytes', { id: 'm2', format: 'binary', content: 'not base64!' }),
+    ];
+    const handle = open(build('/echo', { messages }), { interactive: false }, host);
+    await expect(handle.result).rejects.toMatchObject({ code: 'ws-bad-binary' });
+    expect(server.handshakes).toHaveLength(before);
+    expect(failures).toMatchObject([{ stage: 'prepare' }]);
+  });
+
+  it('a run against a host nothing listens on fails with ws-handshake-refused', async () => {
+    const { failures, host } = recorder();
+    const handle = open(build('', { serverUrl: 'ws://127.0.0.1:1' }), { interactive: false }, host);
+    await expect(handle.result).rejects.toMatchObject({ code: 'ws-handshake-refused' });
+    expect(failures).toMatchObject([{ stage: 'send' }]);
+  });
+
+  it('a run whose handshake the server refuses fails with ws-handshake-refused', async () => {
+    const handle = open(build('/refuse'), { interactive: false });
+    await expect(handle.result).rejects.toMatchObject({ code: 'ws-handshake-refused' });
+  });
+
+  it('a run whose handshake times out fails with timeout', async () => {
+    const built = build('/hang');
+    const item: WsSelected = {
+      ...built.item,
+      request: { ...built.item.request, settings: { handshakeTimeoutMs: 100 } },
+    };
+    const handle = open({ ...built, item }, { interactive: false });
+    await expect(handle.result).rejects.toMatchObject({ code: 'timeout' });
+  });
+
+  it('a run row against a dead endpoint fails rather than passes', async () => {
+    const { p } = build('', { serverUrl: 'ws://127.0.0.1:1' });
+    const context: RunContext = { project: p, projectDir: '/nowhere', overrides: {}, host: testHost() };
+    const result = await runRequests(selectRequests(p, []).selected, context);
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({ outcome: 'errored', error: { code: 'ws-handshake-refused' } });
   });
 });
 

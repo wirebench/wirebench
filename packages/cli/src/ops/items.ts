@@ -11,14 +11,16 @@ export type SendableItem = Extract<SelectedRequest, { kind: 'soap' | 'rest' }>;
 /** A container the project's folder holds and this build did not load. */
 type Placeholder = NonNullable<Project['unsupported']>[number];
 
-function sendable(item: SelectedRequest): SendableItem {
-  if (item.kind === 'grpc' || item.kind === 'websocket') {
-    const kind = item.kind === 'grpc' ? 'gRPC' : 'WebSocket';
-    throw new OpsError('unsupported-kind', `"${item.path}" is a ${kind} request; send takes SOAP and REST requests`, {
-      item: item.path,
-    });
-  }
-  return item;
+function isSendable(item: SelectedRequest): item is SendableItem {
+  return item.kind === 'soap' || item.kind === 'rest';
+}
+
+/** The refusal of a request `send` cannot take: a gRPC or a WebSocket one. */
+function notSendable(item: SelectedRequest): OpsError {
+  const kind = item.kind === 'grpc' ? 'gRPC' : 'WebSocket';
+  return new OpsError('unsupported-kind', `"${item.path}" is a ${kind} request; send takes SOAP and REST requests`, {
+    item: item.path,
+  });
 }
 
 function ambiguous(ref: string, items: readonly SelectedRequest[]): OpsError {
@@ -38,27 +40,41 @@ function placeholderFor(project: Project, ref: string): Placeholder | undefined 
   });
 }
 
-/** @throws OpsError `item-not-found`, `item-ambiguous`, `unsupported-kind` */
+/**
+ * Requests `send` cannot take (gRPC, WebSocket) are set aside before any ambiguity is judged, so a
+ * name a REST request shares with one of them still resolves to the REST request. A reference only
+ * they match is refused as `unsupported-kind`.
+ *
+ * @throws OpsError `item-not-found`, `item-ambiguous`, `unsupported-kind`
+ */
 export function resolveItem(project: Project, ref: string): SendableItem {
-  const { selected } = selectRequests(project, [ref]);
+  const { selected: covered } = selectRequests(project, [ref]);
+  const selected = covered.filter(isSendable);
   const exact = selected.filter((item) => item.path === ref);
   if (exact.length === 1 && exact[0] !== undefined) {
-    return sendable(exact[0]);
+    return exact[0];
   }
   if (selected.length === 1 && selected[0] !== undefined) {
-    return sendable(selected[0]);
+    return selected[0];
   }
   if (selected.length > 1) {
     throw ambiguous(ref, selected);
   }
-  const named = selectRequests(project, []).selected.filter((item) => item.request.name === ref);
+  const allNamed = selectRequests(project, []).selected.filter((item) => item.request.name === ref);
+  const named = allNamed.filter(isSendable);
   if (named.length === 1 && named[0] !== undefined) {
-    return sendable(named[0]);
+    return named[0];
   }
   if (named.length > 1) {
     throw ambiguous(ref, named);
   }
-  // WebSocket APIs and streaming gRPC calls are not selectable at all; name them rather than "not found".
+  // Nothing send takes matched; something it cannot take did.
+  const other = covered.find((item) => item.path === ref) ?? covered[0] ?? allNamed[0];
+  if (other !== undefined) {
+    throw notSendable(other);
+  }
+  // A gRPC API's streaming calls are not selectable, nor is anything in an API with no requests;
+  // name the API's kind rather than "not found".
   const unsupported = [
     ...project.wsApis.map((api) => ({ name: api.name, kind: 'WebSocket' })),
     ...project.grpcApis.map((api) => ({ name: api.name, kind: 'gRPC' })),

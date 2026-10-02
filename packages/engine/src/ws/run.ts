@@ -37,7 +37,7 @@ import type { WsLiveEvent } from './events.js';
 import { expandWsInput, expandWsMessage } from './expand.js';
 import type { WsCallInput } from './expand.js';
 import type { WsApi, WsExchange, WsFolder, WsFrame, WsHandshake, WsRequestDef, WsRequestSettings } from './model.js';
-import { assertCloseCode, openWsSession } from './session.js';
+import { assertCloseCode, HANDSHAKE_TIMEOUT_ERROR, openWsSession } from './session.js';
 import type { WsSessionHandle, WsSessionOptions } from './session.js';
 import { resolveWsUrl } from './url.js';
 
@@ -159,9 +159,16 @@ async function connectWs(
   });
 }
 
+/** True when `text` is strictly valid base64, the empty string included: the app's own check. */
+function isValidBase64(text: string): boolean {
+  return text.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(text);
+}
+
 /**
  * The saved messages a run sends, in order: text expanded with the request's escaping, binary from
  * its base64. Expanded before the session dials, so a reference nothing resolves refuses the send.
+ *
+ * @throws WsError `ws-bad-binary` for a binary message that is not valid base64
  */
 async function savedPayloads(
   selected: WsSelected,
@@ -172,7 +179,15 @@ async function savedPayloads(
   const scopes = await withSecrets(texts, scopesFor(context), context.host.getSecret);
   const unresolved: UnresolvedRef[] = [];
   const payloads = messages.map((message) => {
-    if (message.format === 'binary') return new Uint8Array(Buffer.from(message.content, 'base64'));
+    if (message.format === 'binary') {
+      // `Buffer.from` drops what is not base64 and would send what is left: refuse it instead.
+      if (!isValidBase64(message.content)) {
+        throw new WsError('ws-bad-binary', `The saved message "${message.name}" is not valid base64.`, {
+          details: { path: selected.path, message: message.name },
+        });
+      }
+      return new Uint8Array(Buffer.from(message.content, 'base64'));
+    }
     const expanded = expandWsMessage(message.content, scopes, { escape: settings.escapeProperties === true });
     unresolved.push(...expanded.unresolved);
     return expanded.text;
@@ -211,8 +226,12 @@ function sessionClosed(closing: boolean, settled: boolean): WsError {
  * `ws-session-closed`, as is any still waiting when the session ends without opening.
  */
 interface WsSessionState {
-  /** Queues `payload` behind every message before it; resolves with the frame it went out as. */
-  send(payload: Promise<string | Uint8Array>): Promise<WsFrame>;
+  /**
+   * Queues the payload `prepare` builds behind every message before it; resolves with the frame it
+   * went out as. `prepare` is not called for a message refused as closed, so nothing it would ask for
+   * (a secret) is asked, and no rejection of its goes unobserved.
+   */
+  send(prepare: () => Promise<string | Uint8Array>): Promise<WsFrame>;
   /** @throws WsError `ws-bad-close` for a code an application may not send. */
   close(code?: number, reason?: string): void;
   /** The handshake has opened the session. */
@@ -240,9 +259,10 @@ function wsSessionState(): WsSessionState {
     return result;
   };
   return {
-    send(payload) {
+    send(prepare) {
       if (closing || done) return Promise.reject(sessionClosed(closing, done));
       // Expanded at once; only the write waits its turn.
+      const payload = prepare();
       payload.catch(() => undefined);
       return enqueue(async () => {
         const data = await payload;
@@ -264,6 +284,19 @@ function wsSessionState(): WsSessionState {
       if (!isOpen) rejectOpen(sessionClosed(closing, true));
     },
   };
+}
+
+/**
+ * Why a run's session never opened: `timeout` when the server did not answer the handshake in time,
+ * the HTTP layer's code; `ws-handshake-refused` for a refusal or a server that cannot be reached.
+ */
+function handshakeFailure(handshake: WsHandshake): HttpError | WsError {
+  if (handshake.error?.startsWith(HANDSHAKE_TIMEOUT_ERROR) === true) {
+    return new HttpError('timeout', 'The request timed out.', { details: { url: handshake.url } });
+  }
+  return new WsError('ws-handshake-refused', handshake.error ?? 'The server refused the WebSocket handshake.', {
+    details: { url: handshake.url },
+  });
 }
 
 /** The handshake's response head, as `raw` keeps it: status line and headers. */
@@ -298,9 +331,10 @@ export function wsSubject(exchange: WsExchange): AssertionSubject {
 /**
  * One WebSocket request as a run or a host sends it (spec §3.4): resolve, connect, open. A failure
  * is told to the host with its stage and what was attempted: a reference nothing resolves in the
- * prepare stage. The session's own outcome is a result, a refused handshake included; only a cancel
- * before the handshake fails the send, with `aborted`. A cancel after it ends the session, which
- * settles with what it recorded.
+ * prepare stage. A cancel before the handshake fails the send, with `aborted`; a cancel after it
+ * ends the session, which settles with what it recorded. Otherwise an interactive session's outcome
+ * is a result, a refused handshake included, which the host shows; a run's session that never opened
+ * fails, with `ws-handshake-refused` or `timeout`, so a dead endpoint never passes a run.
  */
 async function sendWsItem(
   selected: WsSelected,
@@ -343,7 +377,7 @@ async function sendWsItem(
         if (saved.unresolved.length > 0) {
           throw unresolvedError('ws-unresolved-properties', selected.path, saved.unresolved);
         }
-        for (const payload of saved.payloads) void state.send(Promise.resolve(payload)).catch(() => undefined);
+        for (const payload of saved.payloads) void state.send(() => Promise.resolve(payload)).catch(() => undefined);
         state.close(1000);
       }
       options = await connectWs(selected, context, input, controller.signal);
@@ -376,6 +410,8 @@ async function sendWsItem(
       if (!opened && controller.signal.aborted) {
         throw new HttpError('aborted', 'The request was aborted.');
       }
+      // A host shows a refused handshake from the transcript; a run has nothing to assert on, so it fails.
+      if (!opened && !interactive) throw handshakeFailure(exchange.handshake);
     } catch (error) {
       failed('send', error, sentAttempt, input);
       throw error;
@@ -430,7 +466,7 @@ export const wsRun: ProtocolRun<WsSelected> = {
     const state = wsSessionState();
     // A WebSocket has no half-close: ending the sending side ends the session.
     const streaming: StreamingSide = {
-      push: (message) => state.send(pushedPayload(selected, context, message)),
+      push: (message) => state.send(() => pushedPayload(selected, context, message)),
       halfClose: () => state.close(),
       close: (code, reason) => state.close(code, reason),
     };
