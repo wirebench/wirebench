@@ -1,15 +1,29 @@
 // @vitest-environment node
 /**
- * `log.resend` replays the saved request behind an HTTP Log row as it is now: SOAP through
- * `sendAndRecordHistory` with the live send input (History's resend Path 1), REST through the
- * normal REST send path with a fresh sendId and no draft.
+ * `log.resend` replays the saved request behind an HTTP Log row as it is now, through the engine
+ * (`sendThroughEngine`) with a fresh sendId and no draft: SOAP once the saved request still builds
+ * (History's resend Path 1), REST and unary gRPC as the editor sends them, never live.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RestSendInput } from '@wirebench/engine';
+import { createProject, type RestSendInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerLogChannels } from '../src/main/ipc/log.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
+
+/** The engine send every resend goes through, stubbed: what it was asked to send is what is checked. */
+const engineSend = vi.hoisted(() => vi.fn());
+
+vi.mock('../src/main/send/exchange.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/send/exchange.js')>()),
+  sendThroughEngine: engineSend,
+}));
+
+/** The `n`th engine send's request id and options. */
+function sent(n = 0): { sendId: string; requestId: string; options: Record<string, unknown> } {
+  const [, sendId, requestId, options] = engineSend.mock.calls[n] as [unknown, string, string, Record<string, unknown>];
+  return { sendId, requestId, options };
+}
 import type { ExchangeSummary, RestExchangeSummary } from '../src/shared/wire-types.js';
 import { restApiWire } from './helpers/wire-defaults.js';
 
@@ -103,10 +117,11 @@ describe('log.resend', () => {
   beforeEach(() => {
     handlers.clear();
     vi.restoreAllMocks();
+    engineSend.mockReset();
   });
 
-  it('SOAP: sends the live request of the row through sendAndRecordHistory and returns the exchange', async () => {
-    const send = vi.spyOn(EngineService.prototype, 'send').mockResolvedValue(soapExchange());
+  it('SOAP: sends the live request of the row through the engine and returns the exchange', async () => {
+    engineSend.mockResolvedValue(soapExchange());
     const buildLiveSendInput = vi.fn(() => ({
       endpoint: 'http://h/s',
       envelopeXml: '<e/>',
@@ -126,7 +141,8 @@ describe('log.resend', () => {
     expect(reply.ok).toBe(true);
     expect(reply.value.protocol).toBe('soap');
     expect(buildLiveSendInput).toHaveBeenCalledWith('req-1');
-    expect(send.mock.calls[0]![0]).toMatchObject({ requestId: 'req-1', input: { endpoint: 'http://h/s' } });
+    // The saved request as it is now: the engine builds its endpoint and envelope from the project.
+    expect(sent()).toMatchObject({ requestId: 'req-1', options: { draft: { kind: 'soap', override: {} } } });
   });
 
   it('SOAP: a request that no longer exists is refused with unknown-entity', async () => {
@@ -141,10 +157,11 @@ describe('log.resend', () => {
       error: { code: string };
     };
     expect(reply.error.code).toBe('unknown-entity');
+    expect(engineSend).not.toHaveBeenCalled();
   });
 
   it('REST: goes through the REST send path with a fresh sendId and no draft', async () => {
-    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest').mockResolvedValue(restExchange());
+    engineSend.mockResolvedValue(restExchange());
     registerLogChannels({
       showSecrets: { get: () => false },
       service: new EngineService(),
@@ -153,13 +170,14 @@ describe('log.resend', () => {
     });
     const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as { ok: boolean };
     expect(reply.ok).toBe(true);
-    const call = sendRest.mock.calls[0]![0];
+    const call = sent();
     expect(call.requestId).toBe('rest-1');
     expect(call.sendId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(call.options).toEqual({ draft: { kind: 'rest' } });
   });
 
   it('REST: a resend is buffered, never streamed — no live hook the renderer could not stop', async () => {
-    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest').mockResolvedValue(restExchange());
+    engineSend.mockResolvedValue(restExchange());
     registerLogChannels({
       showSecrets: { get: () => false },
       service: new EngineService(),
@@ -168,12 +186,12 @@ describe('log.resend', () => {
     });
     const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as { ok: boolean };
     expect(reply.ok).toBe(true);
-    expect(sendRest.mock.calls[0]![1]).not.toHaveProperty('onLive');
+    expect(sent().options).not.toHaveProperty('onLive');
   });
 
   it('REST: a row with no cached exchange falls back to the request current Accept header', async () => {
     // Only an ad-hoc/failure row (no sendId, since it never produced an exchange) takes this path.
-    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');
+    const sendRest = engineSend;
     const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: 'text/event-stream', enabled: true }]));
     registerLogChannels({
       showSecrets: { get: () => false },
@@ -191,7 +209,7 @@ describe('log.resend', () => {
   });
 
   it('REST: a row whose logged exchange streamed is refused, even though the request now accepts */*', async () => {
-    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');
+    const sendRest = engineSend;
     // The saved request's current Accept says nothing about streaming: the refusal must not depend
     // on it once the row's own exchange is known.
     const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: '*/*', enabled: true }]));
@@ -229,7 +247,7 @@ describe('log.resend', () => {
   });
 
   it('REST: a buffered row resends even though the saved request has since grown a streaming Accept', async () => {
-    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest').mockResolvedValue(restExchange());
+    const sendRest = engineSend.mockResolvedValue(restExchange());
     const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: 'text/event-stream', enabled: true }]));
     const service = new EngineService();
     service.exchanges.putRest('send-buffered', restExchange(), new Uint8Array());
@@ -249,13 +267,19 @@ describe('log.resend', () => {
   });
 
   it('REST: a deleted request behind a logged (non-streaming) row gets unknown-entity, not a silent send', async () => {
-    const sendRest = vi.spyOn(EngineService.prototype, 'sendRestRequest');
+    // The engine's own refusal: the project it reads no longer holds the request, so no exchange opens.
+    const actual = await vi.importActual<typeof import('../src/main/send/exchange.js')>('../src/main/send/exchange.js');
+    engineSend.mockImplementation(actual.sendThroughEngine);
+    const sendRest = vi.spyOn(ExchangeRegistry.prototype, 'attach');
     const service = new EngineService();
     service.exchanges.putRest('send-gone', restExchange(), new Uint8Array());
     registerLogChannels({
       showSecrets: { get: () => false },
       service,
-      request: requestDeps({ restSend: () => undefined }),
+      request: requestDeps({
+        restSend: () => undefined,
+        runContextFor: () => ({ project: createProject('P', { id: 'p1' }), projectDir: '/tmp/none' }),
+      }),
       ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', {
@@ -269,7 +293,7 @@ describe('log.resend', () => {
   });
 
   it('gRPC: a streaming method is refused before anything is sent', async () => {
-    const sendGrpc = vi.spyOn(EngineService.prototype, 'sendGrpcRequest');
+    const sendGrpc = engineSend;
     const grpcSend = vi.fn(() => ({
       unresolved: [],
       request: { service: 's', method: 'm', methodKind: 'server-streaming' },
@@ -289,6 +313,22 @@ describe('log.resend', () => {
     expect(sendGrpc).not.toHaveBeenCalled();
   });
 
+  it('gRPC: a unary call goes through the engine with a fresh sendId, no draft and no live hook', async () => {
+    engineSend.mockResolvedValue({ sendId: 'x' });
+    const grpcSend = vi.fn(() => ({ unresolved: [], request: { service: 's', method: 'm', methodKind: 'unary' } }));
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: requestDeps({ grpcSend }),
+      ...LOG_EXTRA,
+    });
+    await invoke('log.resend', { protocol: 'grpc', requestId: 'grpc-1' });
+    const call = sent();
+    expect(call.requestId).toBe('grpc-1');
+    expect(call.sendId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(call.options).toEqual({ draft: { kind: 'grpc' } });
+  });
+
   it('WebSocket: a row is refused before anything is dialled — it is a session, not one request/response pair', async () => {
     // Every session the app opens is kept in the exchange registry; a refused resend keeps none.
     const openWs = vi.spyOn(ExchangeRegistry.prototype, 'keep');
@@ -304,6 +344,7 @@ describe('log.resend', () => {
     };
     expect(reply.ok).toBe(false);
     expect(reply.error.code).toBe('ws-resend-streaming');
+    expect(engineSend).not.toHaveBeenCalled();
     expect(reply.error.message).toBe(
       'A WebSocket session cannot be resent from the log. Open the connection from the request.',
     );

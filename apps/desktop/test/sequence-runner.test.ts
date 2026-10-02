@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
- * The desktop sequence runner end to end in main: a real engine service against a real server, the
- * steps sent through the ordinary REST send path, History entries tagged with the run, and the
- * security properties that only hold if the order of events is right:
+ * The desktop sequence runner end to end in main: the steps sent through the engine, as a single
+ * send is, against real servers, History entries tagged with the run, streams run as a run runs
+ * them, and the security properties that only hold if the order of events is right:
  * - a transfer reads the unredacted response, not the redacted summary;
  * - a value marked secret is recorded for masking before its own step's History entry is written;
  * - nothing that crosses to the renderer carries it.
@@ -14,29 +14,44 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  startTestGrpcServer,
+  startTestWsServer,
+  type TestGrpcServer,
+  type TestWsServer,
+} from '@wirebench/engine/test-helpers';
+import {
   createApi,
+  createGrpcApi,
+  createGrpcRequest,
   createProject,
   createRestRequest,
   createSequence,
   createSequenceStep,
+  createWsApi,
+  createWsRequest,
+  createWsSavedMessage,
   entry,
-  expandRestSendInput,
 } from '@wirebench/engine';
 import type {
+  Assertion,
   CallbackAssertion,
   CaptureSource,
-  PropertyMap,
   Project,
   RestSendInput,
+  SequenceSettings,
   SequenceStep,
 } from '@wirebench/engine';
-import type { WebContents } from 'electron';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService, historyFilePath } from '../src/main/history-service.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
 import { SequenceRunner } from '../src/main/sequence-runner.js';
-import type { RestExchangeSummary, SequenceProgressEvent, SequenceWaitingEvent } from '../src/shared/wire-types.js';
-import { restApiWire } from './helpers/wire-defaults.js';
+import type {
+  HistoryEntryWire,
+  LogEntryWire,
+  RestExchangeSummary,
+  SequenceProgressEvent,
+  SequenceWaitingEvent,
+} from '../src/shared/wire-types.js';
 
 /** Under a JSON key no redaction rule knows, so only the recorded value can mask it. */
 const JWT = 'jwt-value-long-7e21c0';
@@ -45,6 +60,11 @@ let url = '';
 let userDataDir = '';
 let meCalls: (string | undefined)[] = [];
 let release: (() => void) | undefined;
+let grpc: TestGrpcServer;
+/** Answers only the text `two`, a little later; never answers anything else. */
+let lastOnly: TestWsServer;
+/** Never answers a text. */
+let deaf: TestWsServer;
 const server = createServer((req, res) => {
   if (req.url === '/login') {
     res.writeHead(200, { 'content-type': 'application/json' });
@@ -64,9 +84,17 @@ beforeAll(async () => {
   userDataDir = await mkdtemp(join(tmpdir(), 'wirebench-sequence-runner-'));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  grpc = await startTestGrpcServer();
+  deaf = await startTestWsServer({ onText: () => undefined });
+  lastOnly = await startTestWsServer({
+    onText: (text, peer) => {
+      if (text === 'two') setTimeout(() => peer.sendText('re: two'), 50);
+    },
+  });
 });
 
 afterAll(async () => {
+  await Promise.all([grpc.close(), lastOnly.close(), deaf.close()]);
   await rm(userDataDir, { recursive: true, force: true });
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
@@ -78,68 +106,105 @@ const TEMPLATES: Record<string, Pick<RestSendInput['request'], 'method' | 'url' 
   hang: { method: 'GET', url: '/hang', headers: [] },
 };
 
-function project(steps: SequenceStep[]): Project {
+/** Every request of the steps below, saved as a send reads them: the REST templates, a stream of each kind. */
+function project(steps: SequenceStep[], settings?: SequenceSettings): Project {
   return {
     ...createProject('Shop', { id: 'P1' }),
     apis: [
       createApi('Shop', {
         id: 'A1',
-        requests: Object.keys(TEMPLATES).map((id) => createRestRequest(id, { id })),
+        baseUrl: url,
+        requests: Object.entries(TEMPLATES).map(([id, template]) =>
+          createRestRequest(id, { id, method: template.method, url: template.url, headers: [...template.headers] }),
+        ),
       }),
     ],
-    sequences: [createSequence('Checkout', { id: 'S1', steps })],
+    grpcApis: [
+      createGrpcApi('Greeter', {
+        id: 'G1',
+        target: grpc.target,
+        tls: false,
+        requests: [
+          createGrpcRequest('replies', {
+            id: 'replies',
+            service: 'wirebench.greet.Greeter',
+            method: 'LotsOfReplies',
+            methodKind: 'server-streaming',
+            message: '{"count": 3}',
+          }),
+          createGrpcRequest('endless', {
+            id: 'endless',
+            service: 'wirebench.greet.Greeter',
+            method: 'LotsOfReplies',
+            methodKind: 'server-streaming',
+            message: '{"count": 1000, "delay_ms": 50}',
+          }),
+        ],
+      }),
+    ],
+    wsApis: [
+      createWsApi('Chat', {
+        id: 'W1',
+        url: lastOnly.url,
+        requests: [
+          createWsRequest('deaf', {
+            id: 'deaf',
+            url: deaf.url,
+            messages: [createWsSavedMessage('One', { id: 'm3', content: 'one' })],
+          }),
+          createWsRequest('chat', {
+            id: 'chat',
+            url: '/',
+            messages: [
+              createWsSavedMessage('One', { id: 'm1', content: 'one' }),
+              createWsSavedMessage('Two', { id: 'm2', content: 'two' }),
+            ],
+          }),
+        ],
+      }),
+    ],
+    sequences: [createSequence('Checkout', { id: 'S1', steps, ...(settings !== undefined ? { settings } : {}) })],
   };
 }
 
-/** The request surface a send reads; `restSend` really expands, so the Sequence values are proved to arrive. */
-function surface(projectId: string) {
-  const restSend = vi.fn((requestId: string, _draft: unknown, _envId?: string, sequence?: PropertyMap) => {
-    const template = TEMPLATES[requestId];
-    if (template === undefined) return undefined;
-    const { input, unresolved } = expandRestSendInput(
-      {
-        baseUrl: url,
-        request: { ...template, pathParams: [], query: [], body: { kind: 'none' } },
-        settings: { timeoutMs: 5_000, followRedirects: true },
-      },
-      { project: {}, global: {}, system: {}, ...(sequence !== undefined ? { sequence } : {}) },
-    );
-    return {
-      input,
-      unresolved,
-      api: restApiWire(),
-      request: { name: requestId },
-      baseUrlSource: 'api',
-      auth: { type: 'none' },
-    };
-  });
+/** The request surface a send reads: the project the steps' requests live in, and their names. */
+function surface(projectId: string, model: Project) {
   return {
-    restSend,
+    runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+    grpcProtoSetFor: () => Promise.resolve(grpc.set),
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     projectId: () => projectId,
     requestMeta: () => undefined,
     restMeta: (id: string) => ({ requestName: id, apiName: 'Shop', folderPath: '' }),
+    grpcMeta: (id: string) => ({ requestName: id, apiName: 'Greeter', folderPath: '' }),
+    wsMeta: (id: string) => ({ requestName: id, apiName: 'Chat', folderPath: '' }),
   } as unknown as RequestChannelDeps['project'];
 }
 
-async function harness(steps: SequenceStep[], projectId: string) {
+async function harness(steps: SequenceStep[], projectId: string, settings?: SequenceSettings) {
   meCalls = [];
   const service = new EngineService();
   const history = new HistoryService(userDataDir);
   await history.open(projectId);
   const logged: { exchange: RestExchangeSummary }[] = [];
+  const rows: LogEntryWire[] = [];
+  const appended: HistoryEntryWire[] = [];
   const events: SequenceProgressEvent[] = [];
+  const model = project(steps, settings);
   const requests = {
-    project: surface(projectId),
+    project: surface(projectId, model),
     history,
-    onExchange: (row: { exchange: RestExchangeSummary }) => logged.push(row),
+    onHistoryAppended: (entry: HistoryEntryWire) => appended.push(entry),
+    onExchange: (row: LogEntryWire) => {
+      rows.push(row);
+      if (row.kind === 'exchange' && 'cookies' in row.exchange) logged.push(row as { exchange: RestExchangeSummary });
+    },
   } as unknown as RequestChannelDeps;
   const runner = new SequenceRunner();
-  const model = project(steps);
   const deps = { service, requests, modelOf: () => model, emit: (event: SequenceProgressEvent) => events.push(event) };
   const historyLines = async (): Promise<string[]> =>
     (await readFile(historyFilePath(userDataDir, projectId), 'utf8')).trim().split('\n');
-  return { runner, deps, service, logged, events, historyLines };
+  return { runner, deps, logged, rows, appended, events, historyLines };
 }
 
 /** The raw response as the HTTP log shows it. */
@@ -156,12 +221,17 @@ const ME = createSequenceStep('me', {
   transfers: [{ name: 'user', from: 'body', language: 'jsonpath', expression: '$.name' }],
   assertions: [{ type: 'status', equals: 200 }],
 });
-const sender = {} as WebContents;
+const match = (expression: string, equals: string): Assertion => ({
+  type: 'match',
+  language: 'jsonpath',
+  expression,
+  equals,
+});
 
 describe('SequenceRunner', () => {
   it('carries a secret from one step to the next and never lets it out of main', async () => {
     const { runner, deps, logged, events, historyLines } = await harness([LOGIN, ME], 'P-secret');
-    const result = await runner.run({ sequenceId: 'S1', runId: 'R1' }, deps, sender);
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R1' }, deps);
 
     expect(result.outcome).toBe('passed');
     expect(meCalls).toEqual([`Bearer ${JWT}`]);
@@ -189,26 +259,31 @@ describe('SequenceRunner', () => {
 
   it('refuses a second run of the same sequence while one is running, and cancels the step in flight', async () => {
     const hang = createSequenceStep('hang', { id: 'T3' });
-    const { runner, deps, service } = await harness([hang, ME], 'P-cancel');
-    const running = runner.run({ sequenceId: 'S1', runId: 'R2' }, deps, sender);
+    const { runner, deps, appended } = await harness([hang, ME], 'P-cancel');
+    const running = runner.run({ sequenceId: 'S1', runId: 'R2' }, deps);
     await vi.waitFor(() => expect(release).toBeDefined());
 
-    await expect(runner.run({ sequenceId: 'S1', runId: 'R3' }, deps, sender)).rejects.toMatchObject({
+    await expect(runner.run({ sequenceId: 'S1', runId: 'R3' }, deps)).rejects.toMatchObject({
       code: 'sequence-already-running',
     });
-    expect(runner.cancel('R2', service)).toEqual({ cancelled: true });
+    // Through the step's own signal: the run's cancel needs nothing but the run.
+    expect(runner.cancel('R2')).toEqual({ cancelled: true });
     const result = await running;
     release?.();
     release = undefined;
 
     expect(result.steps.map((s) => s.outcome)).toEqual(['errored', 'skipped']);
+    expect(result.steps[0]?.error?.code).toBe('aborted');
     expect(result.steps[1]?.skipped).toBe('cancelled');
-    expect(runner.cancel('R2', service)).toEqual({ cancelled: false });
+    // The cancelled step went out, so History keeps it, tagged with the run, as a cancelled send.
+    expect(appended).toHaveLength(1);
+    expect(appended[0]).toMatchObject({ ok: false, tags: ['sequence:S1', 'run:R2'] });
+    expect(runner.cancel('R2')).toEqual({ cancelled: false });
   });
 
   it('refuses a sequence the project does not have', async () => {
     const { runner, deps } = await harness([], 'P-none');
-    await expect(runner.run({ sequenceId: 'nope', runId: 'R4' }, deps, sender)).rejects.toMatchObject({
+    await expect(runner.run({ sequenceId: 'nope', runId: 'R4' }, deps)).rejects.toMatchObject({
       code: 'unknown-entity',
     });
   });
@@ -248,7 +323,6 @@ describe('callback assertions (callback-assertion §5)', () => {
     const result = await runner.run(
       { sequenceId: 'S1', runId: 'R-callback' },
       { ...deps, captures: () => source, emitWaiting: (event: SequenceWaitingEvent) => waiting.push(event) },
-      sender,
     );
     expect(waiting).toEqual([
       {
@@ -272,10 +346,71 @@ describe('callback assertions (callback-assertion §5)', () => {
       [createSequenceStep('login', { id: 'T1', assertions: [CALLBACK] })],
       'P-callback-2',
     );
-    const result = await runner.run({ sequenceId: 'S1', runId: 'R-unlinked' }, deps, sender);
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R-unlinked' }, deps);
     expect(result.steps[0]?.assertions[0]).toMatchObject({
       outcome: 'errored',
       message: 'this workspace is not linked to a Wirebench Server',
     });
+  });
+});
+
+describe('streaming steps (a sequence is a run)', () => {
+  it('waits for the reply a WebSocket step gets after its last message, and tags its History', async () => {
+    const { runner, deps, rows, appended } = await harness(
+      [createSequenceStep('chat', { id: 'T1', assertions: [match('$[0]', 're: two')] })],
+      'P-ws',
+    );
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R-ws' }, deps);
+
+    expect(result.steps[0]).toMatchObject({
+      outcome: 'passed',
+      origin: expect.stringContaining(new URL(lastOnly.url).host) as unknown,
+    });
+    expect(result.steps[0]).not.toHaveProperty('protocol');
+    // The handshake's own row is the session's one row in the HTTP Log.
+    expect(rows.map((row) => row.kind === 'exchange' && 'protocol' in row.exchange && row.exchange.protocol)).toEqual([
+      'websocket',
+    ]);
+    expect(appended).toHaveLength(1);
+    expect(appended[0]).toMatchObject({ kind: 'websocket', tags: ['sequence:S1', 'run:R-ws'] });
+  });
+
+  it('runs a server-streaming gRPC step to its end, every reply under assertion', async () => {
+    const { runner, deps, appended } = await harness(
+      [createSequenceStep('replies', { id: 'T1', assertions: [match('$[2].message', 'Hello #3')] })],
+      'P-grpc',
+    );
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R-grpc' }, deps);
+
+    expect(result.steps[0]).toMatchObject({ outcome: 'passed', protocol: 'grpc' });
+    expect(appended[0]).toMatchObject({ kind: 'grpc', tags: ['sequence:S1', 'run:R-grpc'] });
+  });
+
+  it('errors a gRPC stream the step timeout cuts with timeout', async () => {
+    const { runner, deps } = await harness([createSequenceStep('endless', { id: 'T1' })], 'P-cut', {
+      stopOnFailure: true,
+      stepTimeoutMs: 200,
+    });
+    const started = performance.now();
+    const result = await runner.run({ sequenceId: 'S1', runId: 'R-cut' }, deps);
+
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(result.steps[0]).toMatchObject({ outcome: 'errored', error: { code: 'timeout' } });
+  });
+
+  it('closes an open WebSocket step when the run is cancelled, rather than waiting out its timeout', async () => {
+    const { runner, deps, rows } = await harness(
+      [createSequenceStep('deaf', { id: 'T1' }), createSequenceStep('chat', { id: 'T2' })],
+      'P-ws-cancel',
+    );
+    const started = performance.now();
+    const running = runner.run({ sequenceId: 'S1', runId: 'R-ws-cancel' }, deps);
+    await vi.waitFor(() => expect(rows).toHaveLength(1));
+
+    expect(runner.cancel('R-ws-cancel')).toEqual({ cancelled: true });
+    const result = await running;
+
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(result.steps.map((step) => step.skipped)).toEqual([undefined, 'cancelled']);
   });
 });

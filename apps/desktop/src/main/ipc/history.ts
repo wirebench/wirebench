@@ -1,67 +1,51 @@
 /**
- * Registers the `history.*` IPC channels: list/search, read one entry, clear, and re-send.
- * `history.resend` goes through the same `sendAndRecordHistory` path as `request.send`, so a
- * re-send is itself recorded as a new history entry. `history.resendGrpc` calls a gRPC entry's
- * saved request through `request.sendGrpc`'s path, with the messages the entry recorded.
- * `history.resendRest` sends a REST entry's method, URL, headers and body through its saved
- * request's auth, TLS and settings, on `request.sendRest`'s path, which records the new entry.
+ * Registers the `history.*` IPC channels: list/search, read one entry, clear, and re-send. Every
+ * re-send goes through the engine (`sendThroughEngine`), the path `request.*` sends take, so it is
+ * itself recorded as a new history entry. `history.resend` replays a SOAP entry's saved request as
+ * it is now, or the entry itself once its request is gone. `history.resendGrpc` calls a gRPC entry's
+ * saved request with the messages the entry recorded. `history.resendRest` sends a REST entry's
+ * method, URL, headers and body through its saved request's auth, TLS and settings.
  */
 
 import { randomUUID } from 'node:crypto';
-import type { WebContents } from 'electron';
 import { joinBase, signatureHeaderNames, splitQuery, WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type {
-  FailedExchangeWire,
-  GrpcExchangeSummary,
   GrpcRequestPatchWire,
   HeaderEntryWire,
   HistoryEntryWire,
   KeyValueWire,
-  RequestSendGrpcRequest,
-  RequestSendRestRequest,
   RestBodyWire,
-  RestExchangeSummary,
   RestRequestPatchWire,
 } from '../../shared/wire-types.js';
-import type { EngineService } from '../engine-service.js';
 import { isTruncatedBody, type HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
 import type { RestSendResolution } from '../rest-send.js';
-import type { GetSecret, PropertyScopes, RestBody } from '@wirebench/engine';
-import type { HistorySendProject, SendWithHistoryDeps } from '../send-with-history.js';
-import { sendAndRecordHistory } from '../send-with-history.js';
+import type { RestBody } from '@wirebench/engine';
+import { AD_HOC_ID } from '../send/draft.js';
+import { sendThroughEngine, type SendThroughEngineDeps } from '../send/exchange.js';
 import { registerHandler } from './register.js';
 
-/** What `history.resend` needs beyond `EngineService`/`HistoryService`. */
+/** What the `history.*` channels need beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: HistorySendProject &
-    Pick<ProjectRouter, 'buildLiveSendInput'> &
-    Partial<Pick<ProjectRouter, 'grpcSend' | 'restSend'>>;
+  readonly project: Pick<ProjectRouter, 'buildLiveSendInput'> & Partial<Pick<ProjectRouter, 'grpcSend' | 'restSend'>>;
   /**
-   * The scopes an *ad-hoc* send expands against — one with no saved request behind it, and so
-   * no project to resolve a chain from. Omitted in tests, which then expand against nothing.
+   * The engine send every re-send goes through: the request channels' own dependencies and their
+   * registry, so a re-send runs its scripts, is cancelled and is recorded as any send is. Without
+   * it a re-send is refused as `history-resend-unsupported`.
    */
-  readonly adHocScopes?: () => PropertyScopes;
-  readonly showSecrets?: { get(): boolean };
-  /** Called with the new entry a re-send produced, so main can broadcast `history.appended`. */
-  readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
-  /** Called with the failure row of a resend that threw, so main can broadcast `exchange.failed`. */
-  readonly onSendFailed?: (failure: FailedExchangeWire) => void;
-  /** The getter a resend's `${secret:name}` tokens resolve through; see `SendWithHistoryDeps`. */
-  readonly secretsFor?: (projectId: string | undefined) => GetSecret;
-  /** The OAuth2 token service and keychain reader, for a resend whose owner uses OAuth2. */
-  readonly oauth2?: SendWithHistoryDeps['oauth2'];
-  readonly getSecret?: SendWithHistoryDeps['getSecret'];
-  /** Sends a gRPC call the way `request.sendGrpc` does; `history.resendGrpc` is refused without it. */
-  readonly grpc?: {
-    send(request: RequestSendGrpcRequest, sender: WebContents): Promise<GrpcExchangeSummary>;
-  };
-  /** Sends a REST request the way `log.resend` does; `history.resendRest` is refused without it. */
-  readonly rest?: {
-    send(request: RequestSendRestRequest): Promise<RestExchangeSummary>;
-  };
+  readonly send?: SendThroughEngineDeps;
+}
+
+/** Refuses a re-send when there is no engine send to put it through (a test that registers none). */
+function sendDepsOf(deps: HistoryChannelDeps, id: string, kind: string): SendThroughEngineDeps {
+  if (deps.send === undefined) {
+    throw new WirebenchError('history-resend-unsupported', "This entry can't be re-sent here.", {
+      details: { id, kind },
+    });
+  }
+  return deps.send;
 }
 
 /**
@@ -389,11 +373,7 @@ function isRedacted(entry: HistoryEntryWire): boolean {
   );
 }
 
-export function registerHistoryChannels(
-  service: EngineService,
-  history: HistoryService,
-  deps: HistoryChannelDeps,
-): void {
+export function registerHistoryChannels(history: HistoryService, deps: HistoryChannelDeps): void {
   registerHandler(channels.history.list, (request) =>
     Promise.resolve(
       history.list({
@@ -433,58 +413,48 @@ export function registerHistoryChannels(
     }
 
     // Path 1: the original request still exists — replay the LIVE request (current envelope,
-    // headers and effective endpoint), exactly like a normal `request.send`. The stored entry
-    // was redacted before being written to disk, so it must never be the source of a resend
-    // while a live copy is available.
-    const liveInput = entry.requestId !== undefined ? deps.project.buildLiveSendInput(entry.requestId) : undefined;
-    if (liveInput === undefined) {
-      // Path 2: the original request is gone. An entry that carries a redacted secret can never
-      // be resent — the marker itself would go out as the literal credential — so refuse it.
-      if (isRedacted(entry)) {
-        throw new WirebenchError(
-          'history-resend-redacted',
-          "This entry holds values History redacted and the request it was sent from no longer exists, so it can't be re-sent.",
-          { details: { id: request.id } },
-        );
-      }
+    // headers and effective endpoint, its scripts, TLS and auth), exactly like a normal
+    // `request.send`. The stored entry was redacted before being written to disk, so it must never
+    // be the source of a resend while a live copy is available.
+    const { requestId } = entry;
+    if (requestId !== undefined && deps.project.buildLiveSendInput(requestId) !== undefined) {
+      return sendThroughEngine(sendDepsOf(deps, request.id, kind), randomUUID(), requestId, {
+        draft: { kind: 'soap', override: {} },
+      });
     }
-
-    const input = liveInput ?? {
+    // Path 2: the original request is gone. An entry that carries a redacted secret can never
+    // be resent — the marker itself would go out as the literal credential — so refuse it.
+    if (isRedacted(entry)) {
+      throw new WirebenchError(
+        'history-resend-redacted',
+        "This entry holds values History redacted and the request it was sent from no longer exists, so it can't be re-sent.",
+        { details: { id: request.id } },
+      );
+    }
+    const input = {
       endpoint: entry.endpoint,
       envelopeXml: entry.request.envelopeXml,
-      soapVersion: entry.soapVersion === 'none' ? '1.1' : entry.soapVersion,
+      soapVersion: entry.soapVersion === 'none' ? ('1.1' as const) : entry.soapVersion,
       ...(entry.soapAction !== undefined ? { soapAction: entry.soapAction } : {}),
       headers: liveHeaders(entry.request.headers),
     };
-
-    return sendAndRecordHistory(
-      service,
-      {
-        project: deps.project,
-        ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
-        ...(deps.showSecrets !== undefined ? { showSecrets: deps.showSecrets } : {}),
-        history,
-        ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),
-        ...(deps.onSendFailed !== undefined ? { onSendFailed: deps.onSendFailed } : {}),
-        ...(deps.secretsFor !== undefined ? { secretsFor: deps.secretsFor } : {}),
-        ...(deps.oauth2 !== undefined ? { oauth2: deps.oauth2 } : {}),
-        ...(deps.getSecret !== undefined ? { getSecret: deps.getSecret } : {}),
-      },
-      {
-        sendId: crypto.randomUUID(),
-        ...(entry.requestId !== undefined ? { requestId: entry.requestId } : {}),
+    // Sent as it was recorded, as a synthetic item, back into the History it came from.
+    return sendThroughEngine(sendDepsOf(deps, request.id, kind), randomUUID(), AD_HOC_ID, {
+      draft: { kind: 'soap', override: {} },
+      adHoc: {
         input,
+        names: {
+          requestName: entry.requestName,
+          interfaceName: entry.interfaceName,
+          operationName: entry.operationName,
+          projectId: entry.projectId,
+        },
+        ...(requestId !== undefined ? { requestId } : {}),
       },
-      {
-        requestName: entry.requestName,
-        interfaceName: entry.interfaceName,
-        operationName: entry.operationName,
-        projectId: entry.projectId,
-      },
-    );
+    });
   });
 
-  registerHandler(channels.history.resendGrpc, (request, sender) => {
+  registerHandler(channels.history.resendGrpc, (request) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
       throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
@@ -492,7 +462,7 @@ export function registerHistoryChannels(
       });
     }
     const { grpc } = entry;
-    if (entry.kind !== 'grpc' || grpc === undefined || deps.grpc === undefined) {
+    if (entry.kind !== 'grpc' || grpc === undefined || deps.send === undefined) {
       throw new WirebenchError(
         'history-resend-unsupported',
         "This entry isn't a gRPC call, so it can't be re-sent as one.",
@@ -509,7 +479,10 @@ export function registerHistoryChannels(
         { details: { id: request.id } },
       );
     }
-    return deps.grpc.send({ sendId: randomUUID(), requestId, draft: grpcResendDraft({ ...entry, grpc }) }, sender);
+    // No live hook: nothing on screen holds this send id, so its events would be dropped.
+    return sendThroughEngine(deps.send, randomUUID(), requestId, {
+      draft: { kind: 'grpc', draft: grpcResendDraft({ ...entry, grpc }) },
+    });
   });
 
   registerHandler(channels.history.resendRest, (request) => {
@@ -519,7 +492,7 @@ export function registerHistoryChannels(
         details: { id: request.id },
       });
     }
-    if (entry.kind !== 'rest' || deps.rest === undefined) {
+    if (entry.kind !== 'rest' || deps.send === undefined) {
       throw new WirebenchError(
         'history-resend-unsupported',
         "This entry isn't a REST request, so it can't be re-sent as one.",
@@ -543,10 +516,8 @@ export function registerHistoryChannels(
         { details: { id: request.id } },
       );
     }
-    return deps.rest.send({
-      sendId: randomUUID(),
-      requestId,
-      draft: restResendDraft(entry, saved, savedOriginOf(saved)),
+    return sendThroughEngine(deps.send, randomUUID(), requestId, {
+      draft: { kind: 'rest', draft: restResendDraft(entry, saved, savedOriginOf(saved)) },
     });
   });
 }

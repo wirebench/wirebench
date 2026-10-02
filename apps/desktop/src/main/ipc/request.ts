@@ -1939,15 +1939,11 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   );
   registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
 
-  registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(service, deps, request));
+  registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(sendDeps, deps, request));
 
-  // A send through the engine is cancelled through the registry; a SOAP, gRPC or WebSocket send, and
-  // a REST one still sent by the service, through the service.
+  // Every send goes through the engine, so every one is cancelled through the registry.
   registerHandler(channels.request.cancel, ({ sendId }) =>
-    Promise.resolve(
-      cancelEnvironmentBatch(service, sendId) ??
-        (sendDeps.registry.has(sendId) ? sendDeps.registry.cancel(sendId) : service.cancel(sendId)),
-    ),
+    Promise.resolve(cancelEnvironmentBatch(sendDeps.registry, sendId) ?? sendDeps.registry.cancel(sendId)),
   );
 
   registerHandler(channels.request.preflight, (request) => Promise.resolve(deps.project.preflight(request.requestId)));

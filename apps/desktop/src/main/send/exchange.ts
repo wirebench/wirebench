@@ -66,6 +66,7 @@ import {
   summariseRest,
   summariseSoap,
   summariseWs,
+  type HistoryLabel,
   type HistoryNameFallback,
 } from './record.js';
 import { withContracts, wsContractChecks, type WsContractChecks } from './ws-contract.js';
@@ -89,20 +90,37 @@ export interface SendOptions<D extends DraftOf = DraftOf> {
   readonly draft: D;
   /**
    * A SOAP send with no saved request behind it: an ad-hoc send, or the resend of a request deleted
-   * since. It is sent as a synthetic item (`adHocSoapItem`) and recorded under `names`.
+   * since. It is sent as a synthetic item (`adHocSoapItem`) and recorded under `names`; a resend
+   * names the request it was sent from (`requestId`), which its History entry and rows keep.
    */
-  readonly adHoc?: { readonly input: ResolvedSendInputWire; readonly names: HistoryNameFallback };
+  readonly adHoc?: {
+    readonly input: ResolvedSendInputWire;
+    readonly names: HistoryNameFallback;
+    readonly requestId?: string;
+  };
   readonly envId?: string;
   /** `${#Sequence#…}` values for a sequence step (`RunContext.sequence`). */
   readonly sequence?: PropertyMap;
   readonly timeoutMs?: number;
   readonly interactive?: boolean;
+  /**
+   * True for a sequence step, which is a run (`ExchangeOptions.run`): a stream waits for its answer
+   * within the timeout, and one the timeout cuts fails with `timeout`. The editor's sends are not.
+   */
+  readonly run?: boolean;
+  /** The History entry's tags in place of the request's own: the run a sequence step belongs to. */
+  readonly tags?: readonly string[];
+  /** Appended to the History entry's request name: the environment a multi-environment send went to. */
+  readonly environmentName?: string;
   /** The wire events, redacted; omitted when the caller shows nothing live. */
   readonly onLive?: (event: LiveByKind[D['kind']]) => void;
   /** A sequence step's: told the scripts' result instead of the session store. */
   readonly onScriptsRan?: (sent: SentScripts) => void;
-  /** Told the engine's `SentRequest` before the summary is built (a sequence step's subject). */
-  readonly onSent?: (sent: SentRequest) => void;
+  /**
+   * Told the engine's `SentRequest` before the summary is built and History is written, and awaited:
+   * a sequence step reads its subject here and records the values to mask before its rows exist.
+   */
+  readonly onSent?: (sent: SentRequest) => void | Promise<void>;
 }
 
 /** The live events a send reports, by protocol: a SOAP send reports none. */
@@ -357,9 +375,11 @@ async function sendReserved(
   // An ad-hoc send belongs to no project: no project's secrets, proxy, keystore or session values.
   const projectId = adHoc === undefined ? deps.project.projectId(requestId) : undefined;
   const masks = keyMasks(item);
+  // What the rows name: the saved request, or the one a resent entry came from.
+  const namedId = adHoc === undefined ? requestId : adHoc.requestId;
   const send: DesktopSend = {
     sendId,
-    requestId,
+    requestId: namedId ?? AD_HOC_ID,
     projectId,
     ...masks,
     ...(options.envId !== undefined ? { envId: options.envId } : {}),
@@ -386,36 +406,27 @@ async function sendReserved(
     scope,
     interactive: options.interactive === true,
     live: options.onLive !== undefined || session !== undefined,
+    ...(options.run === true ? { run: true } : {}),
     ...(scripted !== undefined ? { scripts: scripted } : {}),
   });
-  deps.registry.attach(sendId, token, handle, session?.opened);
+  // Only a session the person drives is spared a cancel once open: a run's has no close to end it by.
+  deps.registry.attach(sendId, token, handle, options.interactive === true ? session?.opened : undefined);
   const show = deps.showSecrets?.get() ?? false;
   const forwarding = forwardLive(sendId, handle, { show, ...masks }, options.onLive, session);
   const startedAt = Date.now();
   try {
     const sent = await handle.result;
     await forwarding;
-    options.onSent?.(sent);
+    await options.onSent?.(sent);
     const checked = session === undefined ? undefined : await session.checked(wsSent(sent).ws);
-    const summarised = summarise(
-      deps,
-      sendId,
-      item,
-      sent,
-      masks,
-      show,
-      adHoc === undefined ? requestId : undefined,
-      checked,
-    );
+    const summarised = summarise(deps, sendId, item, sent, masks, show, namedId, checked);
     const full: SendSummary = {
       ...summarised.summary,
       ...(sent.script !== undefined ? finishScripts(stepDeps, projectId, sent.script) : {}),
       ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
     };
     const recorded: Recorded = {
-      item,
-      masks,
-      ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}),
+      ...recordedOf(item, masks, options),
       handshakeLogged: send.handshakeLogged === true,
     };
     await record(deps, recorded, sent, full, summarised.unredacted, Date.now() - startedAt);
@@ -425,7 +436,7 @@ async function sendReserved(
     const failed = failures.sendStage();
     if (failed !== undefined) {
       // As the app always has: History first, then the HTTP Log's row.
-      const recorded: Recorded = { item, masks, ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}) };
+      const recorded = recordedOf(item, masks, options);
       await recordFailure(deps, recorded, failed, error, Date.now() - startedAt, { sendId, show });
       failed.report();
     }
@@ -806,8 +817,36 @@ interface Recorded {
   readonly item: SelectedRequest;
   readonly masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>;
   readonly adHoc?: HistoryNameFallback;
+  /** The request an ad-hoc resend's entry still names, though it no longer exists. */
+  readonly adHocRequestId?: string;
+  readonly label?: HistoryLabel;
   /** A WebSocket session's: its opened handshake's Log row was written. */
   readonly handshakeLogged?: boolean;
+}
+
+function recordedOf(
+  item: SelectedRequest,
+  masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>,
+  options: SendOptions,
+): Recorded {
+  const { adHoc, tags, environmentName } = options;
+  const label: HistoryLabel | undefined =
+    tags === undefined && environmentName === undefined
+      ? undefined
+      : { ...(tags !== undefined ? { tags } : {}), ...(environmentName !== undefined ? { environmentName } : {}) };
+  return {
+    item,
+    masks,
+    ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}),
+    ...(adHoc?.requestId !== undefined ? { adHocRequestId: adHoc.requestId } : {}),
+    ...(label !== undefined ? { label } : {}),
+  };
+}
+
+/** The request a SOAP entry is keyed to: the saved one, or the one an ad-hoc resend came from. */
+function soapRequestId(recorded: Recorded): { readonly requestId?: string } {
+  if (recorded.adHoc === undefined) return { requestId: recorded.item.request.id };
+  return recorded.adHocRequestId !== undefined ? { requestId: recorded.adHocRequestId } : {};
 }
 
 function restSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange']>, { kind: 'rest' }> {
@@ -908,30 +947,39 @@ async function record(
       const rest = summary as RestExchangeSummary;
       const sentInput =
         input.sign === undefined ? input : withSentSigningHeaders(input, input.sign.scheme, rest.http.request.headers);
-      await recordRest(deps, item, sentInput, rest, durationMs, masks.keyParams);
+      await recordRest(deps, item, sentInput, rest, durationMs, masks.keyParams, undefined, recorded.label);
       return;
     }
     case 'soap': {
       const exchange = soapSent(sent);
       await recordSoap(deps, {
-        ...(recorded.adHoc === undefined ? { requestId: item.request.id } : {}),
+        ...soapRequestId(recorded),
         names: soapNames(recorded),
         input: exchange.input,
         ...(unredacted !== undefined ? { exchange: unredacted } : {}),
         // The exchange's own time on the wire: History has never counted resolving and connecting.
         durationMs: exchange.soap.durationMs,
+        ...(recorded.label !== undefined ? { label: recorded.label } : {}),
       });
       return;
     }
     case 'grpc':
-      await recordGrpc(deps, item, grpcSent(sent), summary as GrpcExchangeSummary, durationMs);
+      await recordGrpc(
+        deps,
+        item,
+        grpcSent(sent),
+        summary as GrpcExchangeSummary,
+        durationMs,
+        undefined,
+        recorded.label,
+      );
       return;
     case 'websocket': {
       // As the app always has: the refused handshake's Log row, then History.
       const ws = summary as WsExchangeSummary;
       const opened = recorded.handshakeLogged === true;
       reportWsHandshakeFailure(deps, ws.sendId, item.request.id, ws, masks.keyParams, opened);
-      await recordWs(deps, item, ws, masks.keyParams, opened);
+      await recordWs(deps, item, ws, masks.keyParams, opened, recorded.label);
       return;
     }
   }
@@ -949,22 +997,32 @@ async function recordFailure(
   if (failed.input === undefined) return;
   switch (item.kind) {
     case 'rest':
-      await recordRest(deps, item, failed.input as RestSendInput, undefined, durationMs, masks.keyParams, error);
+      await recordRest(
+        deps,
+        item,
+        failed.input as RestSendInput,
+        undefined,
+        durationMs,
+        masks.keyParams,
+        error,
+        recorded.label,
+      );
       return;
     case 'soap':
       await recordSoap(deps, {
-        ...(recorded.adHoc === undefined ? { requestId: item.request.id } : {}),
+        ...soapRequestId(recorded),
         names: soapNames(recorded),
         input: failed.input as SoapSendInput,
         error,
         durationMs: failed.durationMs,
+        ...(recorded.label !== undefined ? { label: recorded.label } : {}),
       });
       return;
     case 'grpc': {
       // The call as connected, with the message it was to send: a send-stage failure has both.
       const { messageText, ...input } = failed.input as GrpcFailedInput;
       if (messageText === undefined) return;
-      await recordGrpc(deps, item, { input, messageText }, undefined, durationMs, error);
+      await recordGrpc(deps, item, { input, messageText }, undefined, durationMs, error, recorded.label);
       return;
     }
     case 'websocket': {
@@ -975,7 +1033,7 @@ async function recordFailure(
         show: summaryOf.show,
         ...(masks.keyParams !== undefined ? { keyParams: masks.keyParams } : {}),
       });
-      await recordWs(deps, item, summary, masks.keyParams, false);
+      await recordWs(deps, item, summary, masks.keyParams, false, recorded.label);
       return;
     }
   }

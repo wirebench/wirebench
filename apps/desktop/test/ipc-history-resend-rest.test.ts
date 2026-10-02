@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * `history.resendRest` end to end in main: an entry recorded by a real send is replayed through
- * `sendRestRequest` against the test server. The resend is a new History entry under the same
+ * the engine (`sendThroughEngine`) against the test server. The resend is a new History entry under the same
  * request, the saved request is left as it was, and a query API key goes out exactly once: the
  * recorded (masked) copy is dropped and auth appends the real key.
  */
@@ -17,8 +17,9 @@ import {
   type RecordRestSendInput,
 } from '../src/main/history-service.js';
 import { registerHistoryChannels } from '../src/main/ipc/history.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { resolveRestSend } from '../src/main/rest-send.js';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire, RestRequestPatchWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -71,11 +72,12 @@ function seeded(baseUrl: string): Project {
 }
 
 /**
- * Main's REST send path over `model`: the real resolver and sender, and a History that builds each
- * entry the way `HistoryService.recordRestSend` does, newest first.
+ * Main's send through the engine over `model`, and a History that builds each entry the way
+ * `HistoryService.recordRestSend` does, newest first. `secrets` is the project's keychain, which
+ * holds the API key too.
  */
 function harness(model: Project, secrets: GetSecret = () => Promise.resolve(undefined)) {
-  const engine = new EngineService((ref) => Promise.resolve(ref === 'sec_key' ? 'good-key' : undefined));
+  const engine = new EngineService();
   const entries: HistoryEntryWire[] = [];
   const history = {
     recordRestSend: (projectId: string, record: RecordRestSendInput) => {
@@ -93,32 +95,35 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
       scopes: { project: {}, global: {}, system: {} },
       resolveBaseUrl: (api) => resolveApiBaseUrl(model, undefined, api),
     });
+  const keychain: GetSecret = (ref) => (ref === 'sec_key' ? Promise.resolve('good-key') : secrets(ref));
   const requestDeps: RequestChannelDeps = {
-    project: { projectId: () => 'p1', restSend } as unknown as RequestChannelDeps['project'],
-    history: history as unknown as HistoryService,
-    secretsFor: () => secrets,
-  };
-  registerHistoryChannels(engine, history as never, {
     project: {
-      scopesFor: () => ({ project: {}, global: {}, system: {} }),
-      authFor: () => undefined,
-      requestMeta: () => undefined,
       projectId: () => 'p1',
-      buildLiveSendInput: () => undefined,
       restSend,
-    },
-    rest: { send: (request) => sendRestRequest(engine, requestDeps, request) },
+      restMeta: () => undefined,
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+    } as unknown as RequestChannelDeps['project'],
+    history: history as unknown as HistoryService,
+    secretsFor: () => keychain,
+  };
+  const sendDeps = toSendDeps(engine, requestDeps);
+  registerHistoryChannels(history as never, {
+    project: { buildLiveSendInput: () => undefined, restSend },
+    send: sendDeps,
   });
-  return { engine, requestDeps, entries };
+  /** A fresh send of `requestId`, as the editor sends it. */
+  const send = (sendId: string, requestId: string) =>
+    sendThroughEngine(sendDeps, sendId, requestId, { draft: { kind: 'rest' } });
+  return { send, entries };
 }
 
 describe('history.resendRest against the test server', () => {
   it('appends a new entry under the same request, leaves the request alone and sends the key once', async () => {
     const model = seeded(server.url);
     const before = structuredClone(model);
-    const { engine, requestDeps, entries } = harness(model);
+    const { send, entries } = harness(model);
 
-    await sendRestRequest(engine, requestDeps, { sendId: 'first', requestId: 'req-1' });
+    await send('first', 'req-1');
     expect(entries).toHaveLength(1);
     const original = entries[0]!;
     expect(original.endpoint).toContain('api_key=%3Credacted%3E');
@@ -140,9 +145,9 @@ describe('history.resendRest against the test server', () => {
 
   it('refuses an entry recorded on another origin, sending nothing to either host', async () => {
     const model = seeded(server.url);
-    const { engine, requestDeps, entries } = harness(model);
+    const { send, entries } = harness(model);
 
-    await sendRestRequest(engine, requestDeps, { sendId: 'first', requestId: 'req-1' });
+    await send('first', 'req-1');
     const original = entries[0]!;
 
     // Stand in for a redirect this build never saw the tail of: History has no trail of hops, so
@@ -168,9 +173,9 @@ describe('history.resendRest against the test server', () => {
   it('sends recorded ${…} text literally: no secret is read and the server gets the text as recorded', async () => {
     const model = seeded(server.url);
     const getSecret = vi.fn((ref: string) => Promise.resolve(ref === 's' ? 'THE-SECRET' : undefined));
-    const { engine, requestDeps, entries } = harness(model, getSecret);
+    const { send, entries } = harness(model, getSecret);
 
-    await sendRestRequest(engine, requestDeps, { sendId: 'first', requestId: 'req-1' });
+    await send('first', 'req-1');
     const original = entries[0]!;
 
     // A same-origin redirect to `/cb?x=${secret:s}` is recorded as it went out: WHATWG keeps `${}`
@@ -201,9 +206,9 @@ describe('history.resendRest against the test server', () => {
 
   it('reuses the recorded URL, with the real resolver, when the entry stayed on the saved origin', async () => {
     const model = seeded(server.url);
-    const { engine, requestDeps, entries } = harness(model);
+    const { send, entries } = harness(model);
 
-    await sendRestRequest(engine, requestDeps, { sendId: 'first', requestId: 'req-1' });
+    await send('first', 'req-1');
     const original = entries[0]!;
 
     // Same origin as the saved request, but a different query value than the saved request has —

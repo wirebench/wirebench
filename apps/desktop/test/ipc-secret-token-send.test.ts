@@ -21,7 +21,9 @@ import {
   createApi,
   createGrpcApi,
   createGrpcRequest,
+  createInterface,
   createProject,
+  createRequest,
   createRestRequest,
   createWsApi,
   createWsRequest,
@@ -41,7 +43,7 @@ import {
   type RecordWsSessionInput,
 } from '../src/main/history-service.js';
 import { registerHistoryChannels } from '../src/main/ipc/history.js';
-import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { recordSecretValue } from '../src/main/redact.js';
 import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
@@ -842,27 +844,52 @@ describe('a History resend with a token', () => {
       request: { envelopeXml: '<Envelope><Pw><redacted></Pw></Envelope>', headers: [] },
       sizeBytes: 10,
     };
-    registerHistoryChannels(
-      new EngineService(),
-      {
-        get: (id: string) => (id === 'h-1' ? entry : undefined),
-        recordSend,
-      } as never,
-      {
-        project: {
-          scopesFor: () => SCOPES,
-          authFor: () => undefined,
-          requestMeta: () => undefined,
-          projectId: () => 'p1',
-          buildLiveSendInput: () => ({
-            endpoint: url,
-            envelopeXml: '<Envelope><Pw>${secret:resend_pw}</Pw></Envelope>',
-            soapVersion: '1.1',
-          }),
+    // The request as it is saved now, its password a `${secret:…}` token the store resolves.
+    const iface = createInterface('Calc', {
+      id: 'iface-1',
+      definitionUrl: 'http://127.0.0.1:1/x?wsdl',
+      cacheDefinition: false,
+      operations: [
+        {
+          name: 'Add',
+          bindingName: '{urn:t}B',
+          slug: 'add',
+          order: 0,
+          requests: [
+            {
+              ...createRequest('Add', {
+                id: 'req-1',
+                envelopeXml: '<Envelope><Pw>${secret:resend_pw}</Pw></Envelope>',
+                soapVersion: '1.1',
+              }),
+              endpointUrl: url,
+            },
+          ],
         },
+      ],
+    });
+    const model: Project = { ...createProject('P', { id: 'p1' }), interfaces: [iface] };
+    const history = { get: (id: string) => (id === 'h-1' ? entry : undefined), recordSend };
+    const project = {
+      scopesFor: () => SCOPES,
+      authFor: () => undefined,
+      requestMeta: () => undefined,
+      projectId: () => 'p1',
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+      buildLiveSendInput: () => ({
+        endpoint: url,
+        envelopeXml: '<Envelope><Pw>${secret:resend_pw}</Pw></Envelope>',
+        soapVersion: '1.1',
+      }),
+    } as unknown as RequestChannelDeps['project'];
+    registerHistoryChannels(history as never, {
+      project,
+      send: toSendDeps(new EngineService(), {
+        project,
+        history: history as never,
         secretsFor: getterFor,
-      },
-    );
+      }),
+    });
     const before = captured.length;
 
     const summary = unwrap<{ http: { rawRequestBase64: string } }>(await invoke('history.resend', { id: 'h-1' }));

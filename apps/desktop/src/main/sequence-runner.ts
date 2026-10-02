@@ -1,18 +1,19 @@
 /**
- * `sequence.run`: a sequence's steps sent one after another through the same paths a single send
- * takes (`sendAndRecordHistory` for SOAP, `sendRestRequest`, `sendGrpcRequest`), so every step gets
- * the auth, TLS, proxy, HTTP Log row and History entry a single send gets. The engine's `runSequence`
- * owns the loop, the transfers and the assertions; this module is the desktop's sender.
+ * `sequence.run`: a sequence's steps sent one after another through the engine (`sendThroughEngine`),
+ * the path a single send takes, so every step gets the auth, TLS, proxy, scripts, HTTP Log row and
+ * History entry a single send gets. The engine's `runSequence` owns the loop, the transfers and the
+ * assertions; this module is the desktop's sender. A step is a run's send (`SendOptions.run`), as it
+ * is on the command line: a stream waits for its answer within the step's timeout.
  *
- * What differs from a single send is the project surface a step reads (see {@link forStep}): the
- * scopes carry the run's `${#Sequence#…}` values, and History names carry the run's tags. The same
- * technique as the multi-environment send (`multi-env-send.ts`).
+ * What differs from a single send: the step expands against the run's `${#Sequence#…}` values
+ * (`SendOptions.sequence`), its History entry carries the run's tags (`SendOptions.tags`), its
+ * scripts hand their values to the run, and the run's cancel aborts it through its signal.
  *
  * Security (ADR-0015, spec §Security):
- * - Transfers read the unredacted engine exchange (`EngineService.observe`), never a summary.
+ * - Transfers read the unredacted engine exchange (`SendOptions.onSent`), never a summary.
  * - A value marked secret, or holding a credential already recorded, is recorded for masking inside
- *   that observer, which the engine service awaits before the step's own log row and History entry
- *   exist, so even the step that produced it shows it masked.
+ *   `onSent`, which the send awaits before the step's own log row and History entry exist, so even
+ *   the step that produced it shows it masked.
  * - Every string of a result is masked before it crosses to the renderer, and a secret transfer
  *   never carries a value at all.
  */
@@ -31,18 +32,19 @@ import {
 import type {
   AssertionSubject,
   CaptureSource,
-  PropertyMap,
   Project,
+  SelectedRequest,
+  SentRequest,
   SentScripts,
   SequenceStepResult,
   SequenceStepSender,
 } from '@wirebench/engine';
-import type { WebContents } from 'electron';
-import type { EngineService, ObservedExchange } from './engine-service.js';
+import type { EngineService } from './engine-service.js';
 import { UNLINKED_WORKSPACE_MESSAGE } from './hooks/capture-source.js';
-import { sendGrpcRequest, sendRestRequest, withRequestProperties, type RequestChannelDeps } from './ipc/request.js';
+import { toSendDeps, type RequestChannelDeps } from './ipc/request.js';
 import { containsRecordedSecret, recordSecretValue, redactSecretText } from './redact.js';
-import { sendAndRecordHistory } from './send-with-history.js';
+import type { DraftOf } from './send/draft.js';
+import { sendThroughEngine } from './send/exchange.js';
 import type {
   SequenceProgressEvent,
   SequenceRunRequest,
@@ -68,65 +70,48 @@ export interface SequenceRunDeps {
 
 interface ActiveRun {
   readonly sequenceId: string;
+  /** Aborted by a cancel: the step in flight is cancelled through its signal, the rest skipped. */
   readonly controller: AbortController;
-  /** The step send in flight, so a cancel stops it rather than waiting it out. */
-  sendId: string | undefined;
 }
 
-/**
- * The project surface one step reads: the router's own, with the run's Sequence values added to the
- * scopes every protocol resolves, and the run's tags on every History entry the step writes.
- */
-function forStep(
-  project: RequestChannelDeps['project'],
-  sequence: PropertyMap,
-  tags: readonly string[],
-): RequestChannelDeps['project'] {
-  const tagged = <T extends object>(meta: T | undefined): (T & { tags: readonly string[] }) | undefined =>
-    meta === undefined ? undefined : { ...meta, tags };
-  const overrides: Partial<Record<PropertyKey, unknown>> = {
-    scopesFor: (requestId: string, envId?: string) => ({ ...project.scopesFor(requestId, envId), sequence }),
-    requestMeta: (requestId: string) => tagged(project.requestMeta(requestId)),
-    ...(project.restSend !== undefined
-      ? {
-          restSend: (...[requestId, draft, envId]: Parameters<NonNullable<typeof project.restSend>>) =>
-            project.restSend?.(requestId, draft, envId, sequence),
-        }
-      : {}),
-    ...(project.grpcSend !== undefined
-      ? {
-          grpcSend: (...[requestId, draft]: Parameters<NonNullable<typeof project.grpcSend>>) =>
-            project.grpcSend?.(requestId, draft, sequence),
-        }
-      : {}),
-    ...(project.restMeta !== undefined ? { restMeta: (id: string) => tagged(project.restMeta?.(id)) } : {}),
-    ...(project.grpcMeta !== undefined ? { grpcMeta: (id: string) => tagged(project.grpcMeta?.(id)) } : {}),
-  };
-  return new Proxy(project, {
-    get(target, property) {
-      if (Object.hasOwn(overrides, property)) {
-        return overrides[property];
-      }
-      const value: unknown = Reflect.get(target, property, target);
-      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
-    },
-  });
+/** A step's request as its send sends it: the saved request as it is, no draft over it. */
+function draftFor(kind: SelectedRequest['kind']): DraftOf {
+  switch (kind) {
+    case 'soap':
+      return { kind, override: {} };
+    case 'rest':
+    case 'grpc':
+    case 'websocket':
+      return { kind };
+  }
 }
 
-/** An observed exchange as assertions and transfers see it, and where it went. */
-function describe(observed: ObservedExchange): { subject: AssertionSubject; origin?: string } {
-  switch (observed.kind) {
+/** A sent step as assertions and transfers see it, and where it went. */
+function describe(sent: SentRequest): { subject: AssertionSubject; origin?: string } {
+  const { exchange } = sent;
+  switch (exchange?.kind) {
     case 'soap': {
-      const origin = urlOrigin(observed.exchange.http.request.url);
-      return { subject: soapResponseSubject(observed.exchange), ...(origin !== undefined ? { origin } : {}) };
+      const origin = urlOrigin(exchange.soap.http.request.url);
+      return { subject: soapResponseSubject(exchange.soap), ...(origin !== undefined ? { origin } : {}) };
     }
     case 'rest': {
-      const origin = urlOrigin(observed.exchange.request.url);
-      return { subject: restSubject(observed.exchange), ...(origin !== undefined ? { origin } : {}) };
+      const origin = urlOrigin(exchange.rest.request.url);
+      return { subject: restSubject(exchange.rest), ...(origin !== undefined ? { origin } : {}) };
     }
     case 'grpc':
-      return { subject: grpcSubject(observed.result), origin: observed.result.exchange.request.authority };
+      return { subject: grpcSubject(exchange.grpc), origin: exchange.grpc.exchange.request.authority };
+    default:
+      // A WebSocket session: the engine's own subject, its frames, and the URL's origin.
+      return { subject: sent.subject, ...(sent.origin !== undefined ? { origin: sent.origin } : {}) };
   }
+}
+
+/** A step's error as the run reports it. */
+function errorOf(error: unknown): { code: string; message: string } {
+  return {
+    code: isWirebenchError(error) ? error.code : 'internal-error',
+    message: error instanceof Error ? error.message : String(error),
+  };
 }
 
 const mask = (text: string): string => redactSecretText(text, { show: false });
@@ -138,7 +123,7 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
     stepId: step.stepId,
     requestId: step.requestId,
     name: step.name,
-    // The wire names no WebSocket step yet: until Task 15 sends one, it is refused before it is sent.
+    // The wire names no WebSocket protocol for a step: such a step goes without one.
     ...(step.protocol !== undefined && step.protocol !== 'websocket' ? { protocol: step.protocol } : {}),
     outcome: step.outcome,
     ...(step.status !== undefined ? { status: step.status } : {}),
@@ -178,7 +163,7 @@ export class SequenceRunner {
    *
    * @throws WirebenchError `sequence-already-running`, `unknown-entity`
    */
-  async run(request: SequenceRunRequest, deps: SequenceRunDeps, sender: WebContents): Promise<SequenceRunResultWire> {
+  async run(request: SequenceRunRequest, deps: SequenceRunDeps): Promise<SequenceRunResultWire> {
     for (const active of this.runs.values()) {
       if (active.sequenceId === request.sequenceId) {
         throw new WirebenchError('sequence-already-running', 'This sequence is already running');
@@ -191,78 +176,69 @@ export class SequenceRunner {
         details: { sequenceId: request.sequenceId },
       });
     }
-    const active: ActiveRun = { sequenceId: sequence.id, controller: new AbortController(), sendId: undefined };
+    const active: ActiveRun = { sequenceId: sequence.id, controller: new AbortController() };
     this.runs.set(request.runId, active);
     const tags = [`sequence:${sequence.id}`, `run:${request.runId}`];
     const sendIds = new Map<string, string>();
+    // The request channels' own send through the engine, and the registry they cancel through.
+    const sendDeps = toSendDeps(deps.service, deps.requests);
 
-    const send: SequenceStepSender = async (resolved, sequenceScope) => {
-      // The engine runs a WebSocket step now; the app sends one once Task 15 moves its steps onto the
-      // engine. Until then it is refused as it was before the engine could run it.
-      if (resolved.selected.kind === 'websocket') {
-        return {
-          error: { code: 'sequence-step-unsupported', message: 'A WebSocket request cannot be a sequence step' },
-        };
-      }
+    const send: SequenceStepSender = async (resolved, sequenceScope, signal) => {
       const sendId = `${request.runId}:${resolved.index}`;
       sendIds.set(resolved.step.id, sendId);
-      active.sendId = sendId;
+      const requestId = resolved.selected.request.id;
       // The step's scripts hand their values to the run, not to the project's session (#63).
       let ran: SentScripts | undefined;
-      let scriptsOff = false;
-      const requestDeps: RequestChannelDeps = {
-        ...deps.requests,
-        project: forStep(deps.requests.project, sequenceScope, tags),
-        onScriptsRan: (sent) => {
-          ran = sent;
-        },
-      };
       let described: { subject: AssertionSubject; origin?: string } | undefined;
-      const stopObserving = deps.service.observe(sendId, async (observed) => {
-        described = describe(observed);
-        // Before the step's own log row and History entry exist: record what must be masked in them.
-        for (const transfer of resolved.step.transfers) {
-          const found = await extractTransfer(described.subject, transfer);
-          if (found.kind === 'value' && (transfer.secret === true || containsRecordedSecret(found.value))) {
-            recordSecretValue(found.value);
-          }
-        }
-      });
+      // Refused as it always was, before anything is prepared.
+      if (resolved.selected.kind === 'soap' && deps.requests.project.sendInputFor(requestId) === undefined) {
+        return { error: { code: 'no-endpoint', message: 'No endpoint resolves for this request' } };
+      }
+      const stop = (): void => {
+        sendDeps.registry.cancel(sendId);
+      };
+      signal.addEventListener('abort', stop, { once: true });
       try {
-        const requestId = resolved.selected.request.id;
-        if (resolved.selected.kind === 'soap') {
-          const input = requestDeps.project.sendInputFor(requestId);
-          if (input === undefined) {
-            return { error: { code: 'no-endpoint', message: 'No endpoint resolves for this request' } };
-          }
-          const effective = await withRequestProperties(requestDeps.project, { sendId, requestId, input });
-          const summary = await sendAndRecordHistory(deps.service, requestDeps, effective);
-          scriptsOff = summary.scriptsOff === true;
-          deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
-        } else if (resolved.selected.kind === 'rest') {
-          const summary = await sendRestRequest(deps.service, requestDeps, { sendId, requestId });
-          scriptsOff = summary.scriptsOff === true;
-          deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
-        } else {
-          const summary = await sendGrpcRequest(deps.service, requestDeps, { sendId, requestId }, sender);
-          scriptsOff = summary.scriptsOff === true;
+        const sending = sendThroughEngine(sendDeps, sendId, requestId, {
+          draft: draftFor(resolved.selected.kind),
+          sequence: sequenceScope,
+          tags,
+          run: true,
+          ...(resolved.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
+          onScriptsRan: (sent) => {
+            ran = sent;
+          },
+          onSent: async (sent) => {
+            described = describe(sent);
+            // Before the step's own log row and History entry exist: record what must be masked in them.
+            for (const transfer of resolved.step.transfers) {
+              const found = await extractTransfer(described.subject, transfer);
+              if (found.kind === 'value' && (transfer.secret === true || containsRecordedSecret(found.value))) {
+                recordSecretValue(found.value);
+              }
+            }
+          },
+        });
+        // The send holds its id from its first moment: a cancel that came just before reaches it too.
+        if (signal.aborted) stop();
+        const summary = await sending;
+        // A WebSocket session's handshake row is already in the HTTP Log; any other step's row is this.
+        if (!('handshake' in summary)) {
           deps.requests.onExchange?.({ kind: 'exchange', exchange: summary, requestId });
         }
-      } catch (error) {
+        if (described === undefined) {
+          return { error: { code: 'no-response', message: 'The send ended without a response' } };
+        }
         return {
-          error: {
-            code: isWirebenchError(error) ? error.code : 'internal-error',
-            message: error instanceof Error ? error.message : String(error),
-          },
+          ...described,
+          ...(ran !== undefined ? { script: ran } : {}),
+          ...('scriptsOff' in summary && summary.scriptsOff === true ? { scriptsOff: true } : {}),
         };
+      } catch (error) {
+        return { error: errorOf(error) };
       } finally {
-        stopObserving();
-        active.sendId = undefined;
+        signal.removeEventListener('abort', stop);
       }
-      if (described === undefined) {
-        return { error: { code: 'no-response', message: 'The send ended without a response' } };
-      }
-      return { ...described, ...(ran !== undefined ? { script: ran } : {}), ...(scriptsOff ? { scriptsOff } : {}) };
     };
 
     try {
@@ -301,16 +277,13 @@ export class SequenceRunner {
     }
   }
 
-  /** Stops `runId`: the step in flight is cancelled and the rest are skipped. */
-  cancel(runId: string, service: EngineService): { cancelled: boolean } {
+  /** Stops `runId`: the step in flight is cancelled through its signal and the rest are skipped. */
+  cancel(runId: string): { cancelled: boolean } {
     const active = this.runs.get(runId);
     if (active === undefined) {
       return { cancelled: false };
     }
     active.controller.abort();
-    if (active.sendId !== undefined) {
-      service.cancel(active.sendId);
-    }
     return { cancelled: true };
   }
 }

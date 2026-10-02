@@ -62,8 +62,7 @@ import { ScriptHost } from './script-host.js';
 import { registerScriptChannels } from './ipc/script.js';
 import {
   registerRequestChannels,
-  sendGrpcRequest,
-  sendRestRequest,
+  toSendDeps,
   whenRestSendsRecorded,
   whenWsSessionsRecorded,
   type RequestChannelDeps,
@@ -494,8 +493,8 @@ void app.whenReady().then(() => {
     registry: exchanges,
   };
   registerRequestChannels(engineService, requestDeps);
-  // A sequence's steps go through the very paths a single send takes, with the same dependencies.
-  registerSequenceChannels(new SequenceRunner(), engineService, {
+  // A sequence's steps go through the engine as a single send does, with the same dependencies.
+  registerSequenceChannels(new SequenceRunner(), {
     service: engineService,
     requests: requestDeps,
     modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
@@ -533,20 +532,10 @@ void app.whenReady().then(() => {
     // an unhandled rejection; accountService already reports per-account sign-in state via
     // onChange, so there is nothing further to log and never a token to log.
     .catch(() => {});
-  registerHistoryChannels(engineService, historyService, {
+  // A resend is a send like any other: the request channels' dependencies, scripts and registry.
+  registerHistoryChannels(historyService, {
     project: workspaceService,
-    adHocScopes: () => {
-      const state = globalProperties.get();
-      return { project: {}, global: enabledProperties(state.properties, state.disabled), system: process.env };
-    },
-    showSecrets: showSecretsFlag,
-    onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
-    onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
-    secretsFor,
-    oauth2: oauth2Service,
-    getSecret: secretsFor(undefined),
-    grpc: { send: (request, sender) => sendGrpcRequest(engineService, requestDeps, request, sender) },
-    rest: { send: (request) => sendRestRequest(engineService, requestDeps, request) },
+    send: toSendDeps(engineService, requestDeps),
   });
   registerProjectChannels({
     router: workspaceService,

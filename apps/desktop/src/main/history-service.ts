@@ -16,6 +16,8 @@ export interface RecordWsSessionInput {
   readonly handshakeOpened: boolean;
   /** Query parameters an API key travels in, masked in the URL whatever they are called. */
   readonly keyParams?: readonly string[];
+  /** The run a sequence step's session belongs to, e.g. `sequence:<id>` and `run:<id>`. */
+  readonly tags?: readonly string[];
 }
 
 /**
@@ -98,6 +100,7 @@ export function buildWsHistoryEntry(projectId: string, record: RecordWsSessionIn
     ...(ws.error !== undefined ? { error: { code: 'ws-handshake-failed', message: ws.error } } : {}),
     ws,
     sizeBytes: exchange.counts.bytesSent + exchange.counts.bytesReceived,
+    ...(record.tags !== undefined ? { tags: record.tags } : {}),
   };
 }
 

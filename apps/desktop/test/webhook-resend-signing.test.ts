@@ -25,7 +25,8 @@ import {
 } from '../src/main/history-service.js';
 import { registerHistoryChannels } from '../src/main/ipc/history.js';
 import { registerLogChannels } from '../src/main/ipc/log.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { resolveWebhookSend } from '../src/main/webhook-send.js';
 import type { HistoryEntryWire, RestRequestPatchWire } from '../src/shared/wire-types.js';
 
@@ -89,7 +90,7 @@ function project(target: string, signing: WebhookSigning = SIGNING): Project {
   };
 }
 
-/** Main's REST send path over `model` with a keychain of `keychain`, History kept newest first. */
+/** Main's send through the engine over `model` with a keychain of `keychain`, History kept newest first. */
 function harness(model: Project, keychain: Record<string, string>) {
   // Held in a box so a test can change the project between a send and its resend.
   const box = { model };
@@ -121,21 +122,17 @@ function harness(model: Project, keychain: Record<string, string>) {
     project: {
       projectId: () => 'p1',
       restSend,
+      restMeta: () => undefined,
+      runContextFor: () => ({ project: box.model, projectDir: '/tmp/none' }),
       scopesFor: () => ({ project: {}, global: {}, system: {} }),
     } as unknown as RequestChannelDeps['project'],
     history: history as unknown as HistoryService,
     secretsFor: () => secrets,
   };
-  registerHistoryChannels(engine, history as never, {
-    project: {
-      scopesFor: () => ({ project: {}, global: {}, system: {} }),
-      authFor: () => undefined,
-      requestMeta: () => undefined,
-      projectId: () => 'p1',
-      buildLiveSendInput: () => undefined,
-      restSend,
-    },
-    rest: { send: (request) => sendRestRequest(engine, requestDeps, request) },
+  const sendDeps = toSendDeps(engine, requestDeps);
+  registerHistoryChannels(history as never, {
+    project: { buildLiveSendInput: () => undefined, restSend },
+    send: sendDeps,
   });
   registerLogChannels({
     showSecrets: { get: () => false },
@@ -144,7 +141,10 @@ function harness(model: Project, keychain: Record<string, string>) {
     picks: { rememberWrite: () => undefined },
     appVersion: '0.0.0-test',
   });
-  return { engine, requestDeps, entries, asked, keychain, box };
+  /** A fresh send of `requestId`, as the editor sends it. */
+  const send = (sendId: string, requestId: string) =>
+    sendThroughEngine(sendDeps, sendId, requestId, { draft: { kind: 'rest' } });
+  return { send, entries, asked, keychain, box };
 }
 
 function signingHeadersOf(headers: Readonly<Record<string, string | string[] | undefined>>): Record<string, string> {
@@ -157,9 +157,9 @@ describe('signing a webhook send in main', () => {
   });
 
   it('signs a fresh send with the keychain secret, and History records the headers as sent', async () => {
-    const { engine, requestDeps, entries, asked } = harness(project(server.url), { 'ref-orders': SECRET });
+    const { send, entries, asked } = harness(project(server.url), { 'ref-orders': SECRET });
 
-    await sendRestRequest(engine, requestDeps, { sendId: 's1', requestId: 'w1' });
+    await send('s1', 'w1');
 
     expect(asked).toContain('ref-orders');
     const last = server.requests.at(-1)!;
@@ -172,10 +172,10 @@ describe('signing a webhook send in main', () => {
   });
 
   it('refuses the send when the keychain has no secret, and nothing goes out', async () => {
-    const { engine, requestDeps } = harness(project(server.url), {});
+    const { send } = harness(project(server.url), {});
     const before = server.requests.length;
 
-    await expect(sendRestRequest(engine, requestDeps, { sendId: 's2', requestId: 'w1' })).rejects.toMatchObject({
+    await expect(send('s2', 'w1')).rejects.toMatchObject({
       code: 'webhook-signing-secret',
     });
     expect(server.requests.length).toBe(before);
@@ -187,9 +187,9 @@ describe('signing a webhook send in main', () => {
       scheme: { kind: 'standard', toleranceSec: 300 },
       secretEnv: 'ORDERS',
     };
-    const { engine, requestDeps, asked } = harness(project(server.url, ciOnly), { 'webhook-signing:ORDERS': SECRET });
+    const { send, asked } = harness(project(server.url, ciOnly), { 'webhook-signing:ORDERS': SECRET });
 
-    await expect(sendRestRequest(engine, requestDeps, { sendId: 's3', requestId: 'w1' })).rejects.toMatchObject({
+    await expect(send('s3', 'w1')).rejects.toMatchObject({
       code: 'webhook-signing-secret',
     });
     expect(asked).not.toContain('webhook-signing:ORDERS');
@@ -197,7 +197,7 @@ describe('signing a webhook send in main', () => {
 
   it('a History resend replays the recorded signing headers byte for byte and never signs again (R1)', async () => {
     const h = harness(project(server.url), { 'ref-orders': SECRET });
-    await sendRestRequest(h.engine, h.requestDeps, { sendId: 's4', requestId: 'w1' });
+    await h.send('s4', 'w1');
     const original = signingHeadersOf(server.requests.at(-1)!.headers);
     // Were the resend signed again, a new message id and this new secret would show.
     h.keychain['ref-orders'] = 'zyx987wvu654tsr321';
@@ -212,7 +212,7 @@ describe('signing a webhook send in main', () => {
 
   it('an HTTP Log resend replays the saved request, so it signs fresh — never unsigned', async () => {
     const h = harness(project(server.url), { 'ref-orders': SECRET });
-    await sendRestRequest(h.engine, h.requestDeps, { sendId: 's5', requestId: 'w1' });
+    await h.send('s5', 'w1');
     const first = signingHeadersOf(server.requests.at(-1)!.headers);
     h.asked.length = 0;
 
@@ -230,7 +230,7 @@ describe('signing a webhook send in main', () => {
 
   it('a History entry without signing headers, for an item that now signs, is resent signed', async () => {
     const h = harness(project(server.url, { mode: 'none' }), { 'ref-orders': SECRET });
-    await sendRestRequest(h.engine, h.requestDeps, { sendId: 's6', requestId: 'w1' });
+    await h.send('s6', 'w1');
     expect(h.entries[0]!.request.headers.map((header) => header.name.toLowerCase())).not.toContain('webhook-signature');
     h.box.model = project(server.url);
 

@@ -53,6 +53,31 @@ export interface HistoryNameFallback {
   readonly projectId?: string;
 }
 
+/**
+ * What a send's History entry adds to its request's own names: a sequence run's tags, or the
+ * environment a multi-environment send went to. Laid over the project's meta for the request, so a
+ * request the project has no meta for is named as it always is.
+ */
+export interface HistoryLabel {
+  /** Replaces the meta's tags: the run a sequence step belongs to. */
+  readonly tags?: readonly string[];
+  /** Appended to the request's name: the environment a multi-environment send went to. */
+  readonly environmentName?: string;
+}
+
+/** `meta` with `label` laid over it; undefined when the project has no meta for the request. */
+function labelled<T extends { readonly requestName: string }>(
+  meta: T | undefined,
+  label: HistoryLabel | undefined,
+): (T & { readonly tags?: readonly string[] }) | undefined {
+  if (meta === undefined || label === undefined) return meta;
+  return {
+    ...meta,
+    ...(label.environmentName !== undefined ? { requestName: `${meta.requestName} · ${label.environmentName}` } : {}),
+    ...(label.tags !== undefined ? { tags: label.tags } : {}),
+  };
+}
+
 export const AD_HOC_NAME: HistoryNameFallback = {
   requestName: 'Ad-hoc request',
   interfaceName: '',
@@ -71,6 +96,7 @@ export interface SoapRecord {
   readonly exchange?: ExchangeSummary;
   readonly error?: unknown;
   readonly durationMs: number;
+  readonly label?: HistoryLabel;
 }
 
 /**
@@ -86,7 +112,7 @@ export async function recordSoap(deps: RecordDeps, record: SoapRecord): Promise<
   if (projectId === undefined) {
     return;
   }
-  const meta = requestId !== undefined ? deps.project.requestMeta(requestId) : undefined;
+  const meta = requestId !== undefined ? labelled(deps.project.requestMeta(requestId), record.label) : undefined;
   const name = meta ?? record.names;
   const entry = await deps.history.recordSend(projectId, {
     ...(requestId !== undefined ? { requestId } : {}),
@@ -159,13 +185,14 @@ export async function recordRest(
   durationMs: number,
   keyParams: readonly string[] | undefined,
   error?: unknown,
+  label?: HistoryLabel,
 ): Promise<void> {
   const requestId = item.request.id;
   const projectId = deps.project.projectId(requestId);
   if (deps.history === undefined || projectId === undefined) {
     return;
   }
-  const meta = deps.project.restMeta?.(requestId);
+  const meta = labelled(deps.project.restMeta?.(requestId), label);
   const body = input.request.body;
   const entry = await deps.history.recordRestSend(projectId, {
     requestId,
@@ -247,13 +274,14 @@ export async function recordGrpc(
   summary: GrpcExchangeSummary | undefined,
   durationMs: number,
   error?: unknown,
+  label?: HistoryLabel,
 ): Promise<void> {
   const requestId = item.request.id;
   const projectId = deps.project.projectId(requestId);
   if (deps.history === undefined || projectId === undefined) {
     return;
   }
-  const meta = deps.project.grpcMeta?.(requestId);
+  const meta = labelled(deps.project.grpcMeta?.(requestId), label);
   const entry = await deps.history.recordGrpcSend(projectId, {
     requestId,
     requestName: meta?.requestName ?? item.request.name,
@@ -305,13 +333,14 @@ export async function recordWs(
   summary: WsExchangeSummary,
   keyParams: readonly string[] | undefined,
   handshakeOpened: boolean,
+  label?: HistoryLabel,
 ): Promise<void> {
   const requestId = item.request.id;
   const projectId = deps.project.projectId(requestId);
   if (deps.history === undefined || projectId === undefined) {
     return;
   }
-  const meta = deps.project.wsMeta?.(requestId);
+  const meta = labelled(deps.project.wsMeta?.(requestId), label);
   const entry = await deps.history.recordWsSession(projectId, {
     requestId,
     requestName: meta?.requestName ?? item.request.name,
@@ -320,6 +349,7 @@ export async function recordWs(
     exchange: summary,
     handshakeOpened,
     ...(keyParams !== undefined ? { keyParams } : {}),
+    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
   });
   if (entry !== undefined) {
     deps.onHistoryAppended?.(entry);

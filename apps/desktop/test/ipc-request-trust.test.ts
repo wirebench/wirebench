@@ -235,3 +235,63 @@ describe('the send wire cannot loosen TLS', () => {
     expect(refused.error?.code).toBe('tls');
   });
 });
+
+/**
+ * A SOAP resend, from History or from the HTTP Log, is the saved request's send as the editor makes
+ * it: it trusts the anchors main resolves for the request's project, as `request.send` does.
+ */
+describe('a SOAP resend trusts the anchors of its project', () => {
+  async function resendDeps() {
+    const { toSendDeps } = await import('../src/main/ipc/request.js');
+    const model = seeded();
+    const project = {
+      requestMeta: () => undefined,
+      projectId: () => 'p1',
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
+      buildLiveSendInput: () => ({ endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' }),
+      trustAnchorsFor: () => Promise.resolve([ANCHOR]),
+    } as never;
+    return { project, send: toSendDeps(new EngineService(), { project }) };
+  }
+
+  it('from History', async () => {
+    const { registerHistoryChannels } = await import('../src/main/ipc/history.js');
+    const { project, send } = await resendDeps();
+    const entry = {
+      id: 'h-1',
+      at: '2026-01-01T00:00:00.000Z',
+      projectId: 'p1',
+      requestId: 'req-1',
+      requestName: 'Req',
+      interfaceName: 'Svc',
+      operationName: 'Op',
+      endpoint: `${server.url}/soap`,
+      soapVersion: '1.1',
+      durationMs: 1,
+      ok: true,
+      request: { envelopeXml: '<a/>', headers: [] },
+      sizeBytes: 1,
+    };
+    registerHistoryChannels({ get: () => entry } as never, { project, send });
+
+    const result = await handlers.get('history.resend')!({ sender: {} }, { id: 'h-1' });
+
+    expect(result).toMatchObject({ ok: true, value: { http: { status: 200 } } });
+  });
+
+  it('from the HTTP Log', async () => {
+    const { registerLogChannels } = await import('../src/main/ipc/log.js');
+    const { project } = await resendDeps();
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: { project },
+      picks: { rememberWrite: () => undefined },
+      appVersion: '0.0.0-test',
+    });
+
+    const result = await handlers.get('log.resend')!({ sender: {} }, { protocol: 'soap', requestId: 'req-1' });
+
+    expect(result).toMatchObject({ ok: true, value: { protocol: 'soap', exchange: { http: { status: 200 } } } });
+  });
+});

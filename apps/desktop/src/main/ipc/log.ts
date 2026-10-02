@@ -6,9 +6,9 @@ import type { EngineService } from '../engine-service.js';
 import { harFileName, harOf } from '../har.js';
 import { curlForLogEntry } from '../log-curl.js';
 import { pickSaveFile } from '../native-dialogs.js';
-import { sendAndRecordHistory } from '../send-with-history.js';
+import { sendThroughEngine } from '../send/exchange.js';
 import { registerHandler } from './register.js';
-import { sendGrpcRequest, sendRestRequest, type RequestChannelDeps } from './request.js';
+import { toSendDeps, type RequestChannelDeps } from './request.js';
 
 /** What the HTTP Log's channels need from main. */
 export interface LogChannelDeps {
@@ -24,12 +24,14 @@ export interface LogChannelDeps {
 
 /** Registers `log.*`: everything the HTTP Log asks main to do with a row it already holds. */
 export function registerLogChannels(deps: LogChannelDeps): void {
+  // The request channels' own send through the engine, cancelled through the same registry.
+  const sendDeps = toSendDeps(deps.service, deps.request);
   registerHandler(channels.log.curl, (request) =>
     Promise.resolve(curlForLogEntry(request.entry, { shell: request.shell, show: deps.showSecrets.get() })),
   );
 
   // Replays the saved request behind a row as it is now — never the row's own (redacted) copy.
-  registerHandler(channels.log.resend, async (request, sender) => {
+  registerHandler(channels.log.resend, async (request) => {
     const sendId = randomUUID();
     if (request.protocol === 'rest') {
       // The row menu only offers Resend when the row itself was not an event stream; main holds
@@ -60,7 +62,7 @@ export function registerLogChannels(deps: LogChannelDeps): void {
         protocol: 'rest' as const,
         // No live hook: nothing on screen registered this send id, so it could not be stopped.
         // The saved request, not the row's headers, so a webhook item that signs is signed fresh.
-        exchange: await sendRestRequest(deps.service, deps.request, { sendId, requestId: request.requestId }),
+        exchange: await sendThroughEngine(sendDeps, sendId, request.requestId, { draft: { kind: 'rest' } }),
       };
     }
     if (request.protocol === 'grpc') {
@@ -74,7 +76,8 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       }
       return {
         protocol: 'grpc' as const,
-        exchange: await sendGrpcRequest(deps.service, deps.request, { sendId, requestId: request.requestId }, sender),
+        // No live hook either: nothing on screen holds this send id, so its events would be dropped.
+        exchange: await sendThroughEngine(sendDeps, sendId, request.requestId, { draft: { kind: 'grpc' } }),
       };
     }
     if (request.protocol === 'websocket') {
@@ -87,18 +90,15 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       );
     }
     // History's resend Path 1: the live request, never a redacted copy.
-    const input = deps.request.project.buildLiveSendInput(request.requestId);
-    if (input === undefined) {
+    if (deps.request.project.buildLiveSendInput(request.requestId) === undefined) {
       throw new ProjectError('unknown-entity', `No request with id "${request.requestId}"`, {
         details: { requestId: request.requestId },
       });
     }
     return {
       protocol: 'soap' as const,
-      exchange: await sendAndRecordHistory(deps.service, deps.request, {
-        sendId,
-        requestId: request.requestId,
-        input,
+      exchange: await sendThroughEngine(sendDeps, sendId, request.requestId, {
+        draft: { kind: 'soap', override: {} },
       }),
     };
   });
