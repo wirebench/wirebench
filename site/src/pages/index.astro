@@ -19,6 +19,16 @@ import { DOCS_LINKS } from '../docs-links.ts';
     <h2 id="beyond-heading">Beyond the desktop</h2>
     <div class="beyond__cards">
       <FeatureCard
+        title="Request scripts"
+        text="Typed pre-request and post-response scripts that sign, check and carry values."
+        slug={DOCS_LINKS.scripts}
+      />
+      <FeatureCard
+        title="Webhooks"
+        text="Catch, send, sign and assert on webhooks, alone or inside a CI run."
+        slug={DOCS_LINKS.webhooks}
+      />
+      <FeatureCard
         title="CLI and CI"
         text="Run a project's requests from the command line and in your pipeline."
         slug={DOCS_LINKS.runInCi}
@@ -54,7 +64,7 @@ import { DOCS_LINKS } from '../docs-links.ts';
 
   .beyond__cards {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
   }
 

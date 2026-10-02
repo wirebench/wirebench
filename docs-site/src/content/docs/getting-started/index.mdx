@@ -16,6 +16,25 @@ machine: no account, no cloud sync you did not set up, no telemetry.
 | SOAP 1.1 and 1.2 | A WSDL (URL, file or pasted), with its imports and includes | [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/) |
 | REST | An OpenAPI or Postman collection, a cURL command, or nothing at all | [REST](/wirebench/docs/guides/rest-client/) |
 | gRPC | A `.proto` file, or server reflection | [gRPC](/wirebench/docs/guides/grpc/) |
+| WebSocket | A URL, or an AsyncAPI document | [WebSocket](/wirebench/docs/guides/websocket/), [AsyncAPI contracts](/wirebench/docs/guides/asyncapi/) |
+
+A REST response can also be a stream of server-sent events, read in the same response pane. See
+[Event streams](/wirebench/docs/guides/rest-client/#event-streams).
+
+## What it does beyond a single request
+
+- **Scripts.** A request can run a typed TypeScript script before it is sent and after its response
+  arrives. See [Scripts](/wirebench/docs/guides/scripts/).
+- **Sequences.** Saved requests run one after another, passing values from step to step. See
+  [Sequences](/wirebench/docs/guides/sequences/).
+- **Snapshot regression.** A request keeps a known-good response and lists what changed on each send.
+  See [Snapshot regression](/wirebench/docs/guides/snapshot-regression/).
+- **Webhooks.** Catch incoming webhooks, send your own, sign and verify them, and assert on the
+  webhook a request causes. See [Webhook inbox](/wirebench/docs/guides/webhooks/) and
+  [Sending webhooks](/wirebench/docs/guides/sending-webhooks/).
+- **CI and agents.** The `wirebench` command runs a project in a pipeline, and `wirebench mcp` serves it
+  to a coding agent. See [Run in CI](/wirebench/docs/guides/run-in-ci/) and
+  [Agents (MCP)](/wirebench/docs/guides/agents-mcp/).
 
 ## How your work is organised
 
