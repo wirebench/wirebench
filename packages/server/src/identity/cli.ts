@@ -12,6 +12,7 @@ import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
+import { runLicenseCommand } from '../licensing/cli.js';
 import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
@@ -29,17 +30,19 @@ export async function runAdmin(
 ): Promise<number> {
   let env: InvitationEnv;
   let db: ReturnType<typeof createDatabase>;
+  let publicKeys: readonly KeyObject[];
   try {
     const config = loadConfig(io.env, packageVersion());
     delete process.env.WIREBENCH_SERVER_DATABASE_URL;
     db = createDatabase(config.databaseUrl);
     const now = options.now ?? (() => new Date());
+    publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
     env = {
       ctx: {
         db,
         config,
         hooks: serverHooks(),
-        license: createLicenseService({ db, publicKeys: options.publicKeys ?? PRODUCTION_PUBLIC_KEYS, now }),
+        license: createLicenseService({ db, publicKeys, now }),
       },
       settings: identitySettings(config),
       now,
@@ -97,6 +100,10 @@ export async function runAdmin(
         io.stdout.write(`Revoked ${command.id}\n`);
         return ExitCode.Ok;
       }
+      case 'admin-license-install':
+      case 'admin-license-show':
+      case 'admin-license-remove':
+        return await runLicenseCommand(command, { db, publicKeys, now: env.now, license: env.ctx.license }, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {

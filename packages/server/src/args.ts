@@ -7,6 +7,9 @@ export type ServerCommand =
   | { readonly command: 'admin-invite'; readonly email: string; readonly serverAdmin: boolean }
   | { readonly command: 'admin-list-invitations' }
   | { readonly command: 'admin-revoke-invitation'; readonly id: string }
+  | { readonly command: 'admin-license-install'; readonly file: string }
+  | { readonly command: 'admin-license-show' }
+  | { readonly command: 'admin-license-remove' }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -25,6 +28,10 @@ Usage:
                                     Create an invitation link (a server admin unless --no-admin)
   wirebench-server admin list-invitations
   wirebench-server admin revoke-invitation <id>
+  wirebench-server admin license install <file>
+                                    Install a license file (replaces any installed license)
+  wirebench-server admin license show
+  wirebench-server admin license remove
   wirebench-server --version
   wirebench-server --help
 
@@ -47,7 +54,7 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   }
   if (parsed.values.help) return { command: 'help' };
   if (parsed.values.version) return { command: 'version' };
-  const [word, second, third] = parsed.positionals;
+  const [word, second, third, fourth] = parsed.positionals;
   if (parsed.values['no-admin'] && !(word === 'admin' && second === 'invite')) {
     throw new UsageError('--no-admin only applies to admin invite');
   }
@@ -71,6 +78,18 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
         case 'revoke-invitation':
           if (third === undefined) throw new UsageError('usage: wirebench-server admin revoke-invitation <id>');
           return { command: 'admin-revoke-invitation', id: third };
+        case 'license':
+          switch (third) {
+            case 'install':
+              if (fourth === undefined) throw new UsageError('usage: wirebench-server admin license install <file>');
+              return { command: 'admin-license-install', file: fourth };
+            case 'show':
+              return { command: 'admin-license-show' };
+            case 'remove':
+              return { command: 'admin-license-remove' };
+            default:
+              throw new UsageError('usage: wirebench-server admin license install <file> | show | remove');
+          }
         default:
           throw new UsageError(`unknown admin command "${second ?? ''}"; try --help`);
       }
