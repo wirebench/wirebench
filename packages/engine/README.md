@@ -60,14 +60,17 @@ if (operation !== undefined) {
 
 ### Removed
 
-| 2.x                                | Use instead                                                                                               |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `prepareSend`, `PreparedSend`      | `createRunSender`. A module's own prepare function is internal.                                           |
-| `assertSupportedKind`, `apiKindOf` | `ProtocolRegistry.status(kind)`, which answers `enabled`, `disabled` or `unknown`.                        |
-| `RequestDef`                       | `SoapRequestDef`, which it was an alias of.                                                               |
-| `scriptTypesFor`                   | The module's `run.scriptTypes`. A run that goes through `createRunSender` or `runRequests` needs neither. |
-| `RequestScriptTypes.soap`          | `RequestScriptTypes.binding`, an opaque value the module that made it reads back.                         |
-| `ScriptProtocol`                   | `string`.                                                                                                 |
+| 2.x                                                                              | Use instead                                                                                               |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `prepareSend`, `PreparedSend`                                                    | `createRunSender`. A module's own prepare function is internal.                                           |
+| `assertSupportedKind`, `apiKindOf`                                               | `ProtocolRegistry.status(kind)`, which answers `enabled`, `disabled` or `unknown`.                        |
+| `RequestDef`                                                                     | `SoapRequestDef`, which it was an alias of.                                                               |
+| `scriptTypesFor`                                                                 | The module's `run.scriptTypes`. A run that goes through `createRunSender` or `runRequests` needs neither. |
+| `RequestScriptTypes.soap`                                                        | `RequestScriptTypes.binding`, an opaque value the module that made it reads back.                         |
+| `ProtocolRun.send`                                                               | `ProtocolRun.open`, which returns an `ExchangeHandle` and never throws, and `ProtocolRun.resolve`.        |
+| `RunContext.getSecret`, `proxyFor`, `onSecretValue`, `fetchToken`, `tokenSource` | `RunContext.host`, a `SendHost`: `getSecret`, `proxyFor` (now async), `onSecretValue` and `tokens`.       |
+| `prepareRest`, `prepareSoap`, `prepareGrpc`                                      | `openExchange` and `resolveExchange`. The modules' prepare functions are internal.                        |
+| `ScriptProtocol`                                                                 | `string`.                                                                                                 |
 
 `prepareSend` handed back one of three shapes, and the caller sent it with the matching function. `createRunSender` does both, with the run's caches and the request's scripts:
 
@@ -99,12 +102,35 @@ for (const item of selected) {
 
 `sent.exchange` holds the whole SOAP or REST exchange when a host needs more than the status, and `sendSoapRequest`, `sendRest` and `callGrpc` are still exported for a caller that builds its own input.
 
+`ProtocolRun.send` returned the finished exchange. `open` starts the send and returns a handle: its `events` are the live events (read only when `ExchangeOptions.live` is true), `push`, `halfClose` and `close` drive a stream, `cancel` ends this send only, and `result` settles with what `send` returned or rejects with its error. `interactive` is true when the host drives the messages itself; otherwise the request's saved messages are sent. A push, half-close or close on a send that takes no messages is refused with `exchange-not-streaming`. `resolve` is the first step alone, with nothing connected.
+
+```ts
+// 2.x
+const context = { project, projectDir, overrides: {}, getSecret, proxyFor, tokenSource };
+const sent = await module.run.send(item, scope);
+```
+
+```ts
+// 3.0
+import { openExchange } from '@wirebench/engine';
+
+const context = { project, projectDir, overrides: {}, host: { getSecret, proxyFor, tokens } };
+const handle = openExchange(item, context.host, {
+  scope: createRunScope(context),
+  interactive: false,
+  run: true,
+});
+const sent = await handle.result;
+```
+
+`SendHost` carries what a host lends a send. Only `getSecret` is required; where a member is absent the send behaves as the command line's does. A run (`ExchangeOptions.run`) waits for a stream's answer within the run's timeout and fails a stream the timeout cuts with `timeout`.
+
 ### Widened
 
 `RequestResult.protocol`, `AssertionSubject.protocol` and `ScriptedRequest.protocol` were the union `'soap' | 'rest' | 'grpc'` and are now `string`. Code that copies one of them into a closed union needs a check first; a comparison such as `result.protocol === 'grpc'` compiles as before.
 
 ### Added
 
-`ProtocolModule` and its facets (`ProtocolStorage`, `ProtocolRun`, `ProtocolScripting`), `defineProtocol`, `ProtocolRegistry`, `createProtocolRegistry`, `createBuiltinRegistry`, `BUILTIN_PROTOCOLS`, `FeatureDescriptor`, `FeatureSet`, `createFeatureSet`, `UnsupportedContainer`, `unsupportedOf`, `extraContainersOf`, `takenContainerSlugs`, `grpcStatusNames`, `StatusNames`, `SnapshotFacts`, `SelectedBase`, `RunGroup`, `RunScope`, `ScriptedSend`, `ContainerBase`, `ContainerDir`, `LoadContext`, `RequestSnapshotBase`, `ResponseSnapshotBase`, `ProtocolRegistryOptions`, `WhyDisabled`, `Project.unsupported`, `Project.extraContainers` and `AssertionSubject.statusNames`. They are exported for Wirebench's own hosts and tagged `@internal`: they are not a plugin API, and they may change in any release. `RunContext` also gains an optional `registry`; it is not tagged, as `RunContext` stays part of the run API.
+`openExchange`, `resolveExchange`, `SendHost`, `SendFailure`, `ClientIdentity`, `AttemptedRequest`, `ExchangeHandle`, `ExchangeOptions`, `ExchangeController`, `exchangeController`, `notStreaming`, `PushMessage`, `StreamingSide`, `LiveEventBase`, `EventQueue` and `createRunScope`, for the send path above, and `ProtocolModule` and its facets (`ProtocolStorage`, `ProtocolRun`, `ProtocolScripting`), `defineProtocol`, `ProtocolRegistry`, `createProtocolRegistry`, `createBuiltinRegistry`, `BUILTIN_PROTOCOLS`, `FeatureDescriptor`, `FeatureSet`, `createFeatureSet`, `UnsupportedContainer`, `unsupportedOf`, `extraContainersOf`, `takenContainerSlugs`, `grpcStatusNames`, `StatusNames`, `SnapshotFacts`, `SelectedBase`, `RunGroup`, `RunScope`, `ScriptedSend`, `ContainerBase`, `ContainerDir`, `LoadContext`, `RequestSnapshotBase`, `ResponseSnapshotBase`, `ProtocolRegistryOptions`, `WhyDisabled`, `Project.unsupported`, `Project.extraContainers` and `AssertionSubject.statusNames`. They are exported for Wirebench's own hosts and tagged `@internal`: they are not a plugin API, and they may change in any release. `RunContext` also gains an optional `registry`; it is not tagged, as `RunContext` stays part of the run API.
 
 A project can now hold containers the engine did not load: one whose `kind` has no module in the build, or whose protocol is switched off. `loadProject` reports each as a `container-unsupported` problem and lists it in `Project.unsupported`; `saveProject` leaves its files untouched. A host that lists a project's containers should list these too, as not loaded.

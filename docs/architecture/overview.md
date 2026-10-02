@@ -175,34 +175,57 @@ cannot disagree with what is actually sent. Nothing else in `rest/` is importabl
 
 ## How a send actually happens
 
-**Send dispatches on kind, once per layer.** A project holds SOAP requests and REST requests
-(ADR-0007), and `request.send` takes an id, not a protocol. Main resolves what that id names and
-calls `sendSoap` or `sendRest`; the engine's two send functions sit side by side over one `http/`
-dispatcher. The same single branch appears in `request.curl`, in the History entry's `kind`, and in
-the explorer row — and nowhere else. Everything between the branch and the wire (endpoint resolution,
-property expansion, `secretRef` → credential, keystores, TLS, proxy, cancellation, raw capture,
-redacted history) is one code path for both protocols. The walk-through below is the SOAP one; a REST
-send differs only in steps 4 and 5, where the engine composes a URL and a body instead of an envelope
-and parses the response by content type instead of as a SOAP message.
+**There is one send path, and every host uses it.** A project holds SOAP, REST, gRPC and WebSocket
+requests (ADR-0007, ADR-0017), and `request.send` takes an id, not a protocol. Main resolves what that
+id names and hands it to the engine's `openExchange`, which asks the registry for the protocol's module
+and calls its run facet's `open`. The desktop, `wirebench run`, `wirebench send` and the MCP `send` tool
+all call it, so a request sends the same bytes from each. What differs between hosts is what a host
+lends the send: a `SendHost`, carried on `RunContext.host`, holds the secret getter (the only required
+member) and, when a host has them, the proxy, TLS trust and client identity, the OAuth2 token source,
+preferences, cookies, a contract check, gRPC schemas, and hooks that report a send that failed. Where a
+member is absent the send behaves as the command line's does. The desktop builds its host from its own
+services (`apps/desktop/src/main/send/host.ts`); the command line builds one from the environment.
+
+`open` never throws: it returns an `ExchangeHandle` with the live events, `push`, `halfClose`, `close`
+and `cancel`, and a `result` that rejects with the send's error. `resolve` is the same first step on
+its own: what a send would send, with nothing connected, for a cURL export or a preview. A message
+pushed to a send that takes none is refused with `exchange-not-streaming`. A run bounds every stream by
+its timeout.
+
+**The prepare order is the same for every protocol:**
+
+1. Resolve the request: property expansion across `Env → Project → Workspace → Global`, the endpoint
+   (the active environment's, then the project's, then the interface's default, ADR-0006), and the
+   saved definition. A reference nothing resolves refuses the send with its protocol's
+   `…-unresolved-properties` code (SOAP keeps `unresolved-properties`); a gRPC request with no method is
+   refused with `grpc-method-unset`.
+2. Run the pre-request script, if the request has one. It sees the request as resolved and no token.
+3. Read the `secretRef`s the request lists, then obtain the OAuth2 token and choose the proxy (for the
+   token URL as well as for the request's own URL), keystores and TLS trust.
+4. Connect and send; capture raw wire bytes and a timing breakdown; read the response.
+
+A refusal at any step before the connection is reported to the host as a failure at the `prepare` stage
+and sent nothing.
+
+The walk-through of the desktop's side, for a SOAP request:
 
 1. The user presses Send. The renderer dispatches a command and calls
    `window.wirebench.request.send(…)` with the request's project id and the request id — not an
    envelope, not an endpoint.
 2. Preload forwards it over the typed channel; main validates the payload against the channel's
    zod schema, and `WorkspaceService` resolves the `projectId` to the right `ProjectHost`.
-3. Main resolves what the renderer was never given: the active workspace environment's endpoint
-   (falling back to the project's own environment for a linked project, then the interface's
-   default — ADR-0006), property expansions across `Env → Project → Workspace → Global`,
-   `secretRef`s → real credentials from `safeStorage`, keystore files (containment- or
-   dialog-proven), the effective TLS and proxy settings.
-4. Main calls `EngineService.send(…)` with a fully resolved request and an `AbortSignal`.
-   The engine builds the envelope, applies WS-Security and WS-Addressing, prepares MTOM/SwA
-   parts, and sends it through undici — capturing raw wire bytes and a timing breakdown.
-5. The response comes back; main parses it, and `HistoryService` appends a redacted entry
-   (stored in app data, keyed by project id — never in the project folder, and merged
-   newest-first across every open project for the History view), and answers the channel.
+3. Main builds the `SendHost` from what the renderer was never given: `secretRef`s → real credentials
+   from `safeStorage`, keystore files (containment- or dialog-proven), the effective TLS and proxy
+   settings, the cookie jar.
+4. `sendThroughEngine` calls `openExchange` with the selected request, the host and an `AbortSignal`.
+   The engine runs the steps above: for SOAP it builds the envelope, applies WS-Security and
+   WS-Addressing, prepares MTOM/SwA parts, and sends it through undici.
+5. The response comes back; main records the HTTP Log row, and `HistoryService` appends a redacted
+   entry (stored in app data, keyed by project id — never in the project folder, and merged
+   newest-first across every open project for the History view), and answers the channel. Redaction
+   stays in each host, not in the engine.
 6. The renderer renders what it was given. Cancel is the same path in reverse: one IPC call
-   aborts the signal the engine is already holding.
+   aborts the exchange's signal, which also stops a send still being prepared.
 
 ## The OAuth2 loopback listener
 

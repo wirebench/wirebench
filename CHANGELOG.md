@@ -30,6 +30,15 @@ modules themselves do not change the project folder format.
 - **`@wirebench/engine`: `protocol` is a `string`.** `RequestResult.protocol`,
   `AssertionSubject.protocol` and `ScriptedRequest.protocol` were the union `'soap' | 'rest' | 'grpc'`.
   The JSON report's `protocol` field is typed the same way; the values a run writes are unchanged.
+- **`@wirebench/engine`: one send path.** `ProtocolRun.send` is replaced by `open`, which starts a send
+  and hands back an exchange (its events, `push`, `halfClose`, `close`, `cancel` and `result`), and
+  `resolve`, which gives what a send would send with nothing connected. `RunContext.host`, a `SendHost`,
+  replaces `getSecret`, `proxyFor`, `onSecretValue`, `fetchToken` and `tokenSource`, and also carries
+  what a host can lend a send: TLS anchors and identities, preferences, cookies, a contract check and
+  gRPC schemas. `prepareRest`, `prepareSoap` and `prepareGrpc`, the modules' own prepare functions (never exports of
+  the main entry), are removed. `openExchange`,
+  `resolveExchange` and `SendHost` are added, with the types around them (`ExchangeHandle`,
+  `ExchangeOptions`, `SendFailure`). The desktop, the command line and MCP all send through them.
 
 [`packages/engine/README.md`](packages/engine/README.md#migrating-to-30) has the full tables and a
 before and after for the two changes that need more than a rename. The package's subpaths (`./xml`,
@@ -64,6 +73,14 @@ before and after for the two changes that need more than a rename. The package's
   share is now ambiguous where it used to resolve to the REST request; gRPC requests are still refused.
   A saved WebSocket request has no assertions of its own, so `--require-assertions` errors it in a run
   (#184).
+- **Streaming requests run.** `wirebench run` with no selector, `wirebench run --sequence`, and a
+  sequence in the app now send WebSocket, streaming gRPC and Server-Sent Events requests, which a run
+  used to skip or refuse. A gRPC client or bidirectional stream sends its saved messages in order and
+  half-closes; a WebSocket request sends its saved messages and closes after the last reply; an event
+  stream is read until it ends. The run's timeout bounds every one of them, and a stream it cuts fails
+  with `timeout` instead of passing. Everything received is what the request's assertions and a
+  sequence's transfers read. A new error code, `exchange-not-streaming`, answers a message pushed to,
+  or a half-close asked of, a send that takes none (#184).
 - **Request scripts.** A SOAP, REST or gRPC request can have a pre-request script, which runs just
   before the send and can change it (sign the body, add a header, fill in a field), and a
   post-response script, which checks the response with tests and keeps values for later requests.
@@ -165,7 +182,7 @@ before and after for the two changes that need more than a rename. The package's
 
 - **CLI runner: unary gRPC and OAuth2 client credentials.** `wirebench run` now runs unary gRPC
   requests from an API's cached definition, with `status` (gRPC code or name), JSONPath `match` and
-  `sla` assertions — streaming requests are skipped, and an API without a cached definition errors
+  `sla` assertions, and an API without a cached definition errors
   with `grpc-definition-missing`. A REST or gRPC request behind OAuth2 client credentials fetches its
   token headlessly, once per configuration per run, with the client secret from
   `WIREBENCH_SECRET_<NAME>`; the token is masked in every report and output like any other secret.
@@ -249,10 +266,33 @@ before and after for the two changes that need more than a rename. The package's
   refuse a webhook item whose target is empty (`webhook-target-missing`) or is not an `http(s)` URL
   (`webhook-target-invalid`), before anything is sent, as the app always has. They used to try the
   send and fail later with another code.
+- **One order for every send.** Each protocol now resolves the request, runs its pre-request script,
+  then obtains the OAuth2 token and the proxy, applies TLS and connects. A SOAP send used to fetch its
+  token and proxy before the script ran. The
+  OAuth2 token request now uses the proxy chosen for the token URL, not the one chosen for the
+  request's base URL. A cancel that lands while a send is still being prepared stops the send, for
+  every protocol.
+- **A REST send takes the preferences a host gives it.** The default `User-Agent` and `Accept`,
+  response compression, closing connections, HTTP/2, the socket timeout and the redirect defaults
+  apply to a send from any host that has preferences, as they always did in the app. The command line
+  and MCP, which have none, send as they did.
+- **`wirebench run` includes WebSocket and streaming gRPC requests.** With no selector a run now sends
+  them (see Added). A saved WebSocket request has no assertions, so `--require-assertions` errors it.
+  A sequence in `wirebench run --sequence` may have them as steps too.
+- **A response read by an assertion or a transfer from an event stream is a JSON array.** For any send
+  that is not live, which covers `wirebench run`, `send` and a desktop sequence step, the subject of an
+  assertion over a Server-Sent Events response is a JSON array of each event's `data`, where it was the
+  raw stream text. A saved `contains` or regular-expression assertion, or a transfer, written against
+  that text needs rewriting: `contains: "data: ok"` becomes `contains: "ok"`, or a `match` on `$[0]`.
+- **A sequence step on the desktop honours the step timeout**, and closing a project, or quitting,
+  now stops the re-sends, multi-environment sends and sequence REST and WebSocket sends still in
+  flight.
 - **A send refused for an unresolved reference is logged.** A REST or SOAP send with a `${…}` reference
   nothing resolves is refused before anything is sent, and the HTTP Log now shows it as a row that
   never went out (`rest-unresolved-properties`, `unresolved-properties`), with no History entry. A SOAP
-  send with such a reference used to go out with the reference left in it. A gRPC call with such a
+  send with such a reference used to go out with the reference left in it, on the desktop; it is
+  refused there now, as the command line always refused it. The command line and MCP report the same
+  codes. A gRPC call with such a
   reference (`grpc-unresolved-properties`), or with no method chosen (`grpc-method-unset`), is logged
   the same way, and so is a WebSocket connection with one (`ws-unresolved-properties`).
 - **A send whose credential secret is missing is refused before the call.** The HTTP Log shows a
@@ -272,6 +312,12 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Fixed
 
+- **A response cut short reports why.** A body that the deadline, a cancel or a dropped connection cut
+  off reported `internal-error`. It now reports `timeout`, `aborted` or `network`. Exit codes are
+  unchanged.
+- **A scripted SOAP request re-sent from History runs its scripts**, and a SOAP re-send uses the
+  request's TLS settings, as the original send did.
+- **A sequence's Cancel stops the step in flight**, not only the steps after it.
 - **An error message no longer shows a secret from the request when secrets are hidden.** A failure
   whose message quotes the URL it could not reach, with a `${secret:…}` value in its query, showed the
   value in the HTTP Log row, its HAR export and the error the app reported. The value is masked there

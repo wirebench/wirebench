@@ -237,7 +237,7 @@ The IPC handlers in `ipc/request.ts`, the resends in `ipc/history.ts` and `ipc/l
 
 - `send-with-history.ts`.
 - `EngineService.send`, `sendRestRequest`, `sendGrpcRequest`, `openWsSession` and their stream maps.
-  `EngineService` keeps the exchange cache and `observe`.
+  `EngineService` keeps the exchange cache. (`observe` was in this list too, and was deleted as well: nothing called it.)
 - The resolution in `rest-send.ts`, `grpc-send.ts` and `ws-send.ts`; whatever is left (draft
   application) moves into `send/`.
 - `ipc/request.ts` keeps only IPC wiring.
