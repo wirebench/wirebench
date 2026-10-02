@@ -18,6 +18,7 @@ import { defaultRegistry } from '../protocols.js';
 import type { SelectedRequest, SentExchange } from '../protocols.js';
 import { scriptProperties } from '../script/props.js';
 import { activeScripts, type RequestScripting, type ScriptedRequest } from '../script/request-scripts.js';
+import type { RequestScripts } from '../script/model.js';
 import { SecretPlaceholders } from '../script/send.js';
 import type { TransferResult } from '../sequence/run.js';
 import { scopesFor } from './context.js';
@@ -111,8 +112,13 @@ export interface RunOptions {
   readonly onSent?: (item: SelectedRequest, sent: SentRequest) => void;
 }
 
-/** A request's own assertions; a gRPC request that never had any carries none. */
-const assertionsOf = (item: SelectedRequest): readonly Assertion[] => item.request.assertions ?? [];
+/** A request's own assertions; a gRPC request that never had any, and a protocol without them, carry none. */
+const assertionsOf = (item: SelectedRequest): readonly Assertion[] =>
+  ('assertions' in item.request ? item.request.assertions : undefined) ?? [];
+
+/** A request's scripts, as saved; a protocol without scripts has none. */
+const scriptsOf = (item: SelectedRequest): RequestScripts | undefined =>
+  'scripts' in item.request ? item.request.scripts : undefined;
 
 /** Enough of each exchange to keep for a report: a failing response can be megabytes. */
 const EXCHANGE_CAP_BYTES = 64 * 1024;
@@ -267,10 +273,10 @@ export function createRunSender(context: RunContext): RunRequestSender {
     const itemScope = scopeWith(scope, itemContext);
     const run = runOf(registry, item);
 
-    const scripts = activeScripts(item.request.scripts);
+    const scripts = activeScripts(scriptsOf(item));
     if (scripts === undefined) {
       const sent = await openExchange(item, itemContext.host, { scope: itemScope, interactive: false }).result;
-      return item.request.scripts !== undefined ? { ...sent, scriptsOff: true } : sent;
+      return scriptsOf(item) !== undefined ? { ...sent, scriptsOff: true } : sent;
     }
 
     const refused = scriptsRefusal(item, registry);
@@ -314,7 +320,7 @@ export async function checkRunScripts(
   const registry = context.registry ?? defaultRegistry();
   const scope = createRunScope(context);
   for (const item of selected) {
-    const scripts = activeScripts(item.request.scripts);
+    const scripts = activeScripts(scriptsOf(item));
     if (scripts === undefined) continue;
     const refused = scriptsRefusal(item, registry);
     if (refused !== undefined) {
@@ -449,7 +455,7 @@ export async function runRequests(
       };
     } else if (
       assertionsOf(item).length === 0 &&
-      activeScripts(item.request.scripts)?.post === undefined &&
+      activeScripts(scriptsOf(item))?.post === undefined &&
       options.requireAssertions === true
     ) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });

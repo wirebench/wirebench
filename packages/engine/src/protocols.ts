@@ -21,7 +21,10 @@ import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
 import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
 import type { SoapExchange, SoapSendInput } from './soap/types.js';
+import type { WsLiveEvent } from './ws/events.js';
+import type { WsExchange } from './ws/model.js';
 import { wsProtocol } from './ws/module.js';
+import type { WsSelected } from './ws/run.js';
 
 /**
  * The four built-in protocols, in the order their containers tie-break in the explorer.
@@ -64,7 +67,7 @@ export function defaultRegistry(): ProtocolRegistry {
 }
 
 /** One saved request selected for a run, of any built-in protocol a run can send. */
-export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected;
+export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected;
 
 /** The exchange a request travelled as, for a host that keeps more of it than a report does. */
 export type SentExchange =
@@ -89,10 +92,15 @@ export type SentExchange =
       readonly input: GrpcResolvedInput;
       /** The request message text as sent, after the script. */
       readonly messageText: string;
+    }
+  | {
+      readonly kind: 'websocket';
+      /** The session whole: its handshake, every frame both ways, and how it closed. */
+      readonly ws: WsExchange;
     };
 
-/** A message an open exchange reports, whatever its protocol; Task 12 adds WebSocket. */
-export type LiveEvent = RestLiveEvent | GrpcLiveEvent;
+/** A message an open exchange reports, whatever its protocol. */
+export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent;
 
 /** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
 export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;

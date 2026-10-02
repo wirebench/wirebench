@@ -39,5 +39,8 @@ export function toWireEvent(sendId: string, event: LiveEvent, show: boolean): Li
         case 'closed':
           return { kind: 'closed', sendId };
       }
+    case 'websocket':
+      // Never reached yet: WebSocket sessions keep their own path until Task 13 moves them here.
+      throw new Error('A WebSocket session is not sent through the engine yet');
   }
 }

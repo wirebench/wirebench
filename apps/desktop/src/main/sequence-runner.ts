@@ -138,7 +138,8 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
     stepId: step.stepId,
     requestId: step.requestId,
     name: step.name,
-    ...(step.protocol !== undefined ? { protocol: step.protocol } : {}),
+    // The wire names no WebSocket step yet: until Task 15 sends one, it is refused before it is sent.
+    ...(step.protocol !== undefined && step.protocol !== 'websocket' ? { protocol: step.protocol } : {}),
     outcome: step.outcome,
     ...(step.status !== undefined ? { status: step.status } : {}),
     ...(step.durationMs !== undefined ? { durationMs: step.durationMs } : {}),
@@ -196,6 +197,13 @@ export class SequenceRunner {
     const sendIds = new Map<string, string>();
 
     const send: SequenceStepSender = async (resolved, sequenceScope) => {
+      // The engine runs a WebSocket step now; the app sends one once Task 15 moves its steps onto the
+      // engine. Until then it is refused as it was before the engine could run it.
+      if (resolved.selected.kind === 'websocket') {
+        return {
+          error: { code: 'sequence-step-unsupported', message: 'A WebSocket request cannot be a sequence step' },
+        };
+      }
       const sendId = `${request.runId}:${resolved.index}`;
       sendIds.set(resolved.step.id, sendId);
       active.sendId = sendId;

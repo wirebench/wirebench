@@ -55,8 +55,13 @@ export interface WsSessionHandle {
   readonly done: Promise<WsExchange>;
 }
 
-/** RFC 6455 §7.4, as the WHATWG API enforces it: 1000, or the 3000–4999 range. */
-function assertCloseCode(code: number): void {
+/**
+ * RFC 6455 §7.4, as the WHATWG API enforces it: 1000, or the 3000–4999 range. Exported for the run
+ * facet, which refuses a bad code when it is asked to close rather than when the close goes out.
+ *
+ * @throws WsError `ws-bad-close`
+ */
+export function assertCloseCode(code: number): void {
   if (code !== 1000 && !(code >= 3000 && code <= 4999)) {
     throw new WsError('ws-bad-close', `${code} is not a close code an application may send (1000, or 3000–4999)`, {
       details: { code },

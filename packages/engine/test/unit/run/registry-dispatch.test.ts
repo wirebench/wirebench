@@ -95,8 +95,19 @@ describe('a protocol switched off', () => {
   const withoutRest = createBuiltinRegistry({ rest: false });
 
   it('has no request to select, so a selector naming one is unmatched', () => {
-    expect(selectRequests(project, []).selected.map((item) => item.path)).toEqual(['Api/Ping', 'Greeter/Hello']);
-    expect(selectRequests(project, [], withoutGrpc).selected.map((item) => item.path)).toEqual(['Api/Ping']);
+    expect(selectRequests(project, []).selected.map((item) => item.path)).toEqual([
+      'Api/Ping',
+      'Greeter/Hello',
+      'Feed/Ticker',
+    ]);
+    expect(selectRequests(project, [], withoutGrpc).selected.map((item) => item.path)).toEqual([
+      'Api/Ping',
+      'Feed/Ticker',
+    ]);
+    expect(selectRequests(project, ['Feed'], createBuiltinRegistry({ websocket: false }))).toEqual({
+      selected: [],
+      unmatched: ['Feed'],
+    });
     expect(selectRequests(project, ['Greeter'], withoutGrpc)).toEqual({ selected: [], unmatched: ['Greeter'] });
   });
 
@@ -105,10 +116,8 @@ describe('a protocol switched off', () => {
     expect(findStepRequest(project, 'g-chat').kind).toBe('unsupported');
     expect(findStepRequest(project, 'g-hello', withoutGrpc)).toEqual({ kind: 'missing' });
     expect(findStepRequest(project, 'g-chat', withoutGrpc)).toEqual({ kind: 'missing' });
-    expect(findStepRequest(project, 'ws-ticker')).toEqual({
-      kind: 'unsupported',
-      reason: 'A WebSocket request cannot be a sequence step',
-    });
+    // A WebSocket request is a step like any other now that its module runs it.
+    expect(findStepRequest(project, 'ws-ticker').kind).toBe('found');
     expect(findStepRequest(project, 'ws-ticker', createBuiltinRegistry({ websocket: false }))).toEqual({
       kind: 'missing',
     });

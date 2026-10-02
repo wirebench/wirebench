@@ -211,8 +211,8 @@ describe('runSequence', () => {
     expect(calls.map((c) => c.step.step.requestId)).toEqual(['pay']);
   });
 
-  it('errors a missing, a WebSocket and a streaming step by name', async () => {
-    const { send, calls } = sender({});
+  it('errors a missing and a streaming step by name, and sends a WebSocket one', async () => {
+    const { send, calls } = sender({ socket: json([]) });
     const result = await runSequence(
       createSequence('S', {
         id: 'S',
@@ -224,10 +224,10 @@ describe('runSequence', () => {
     );
     expect(result.steps.map((s) => s.error?.code)).toEqual([
       'sequence-step-missing-request',
-      'sequence-step-unsupported',
+      undefined,
       'sequence-step-unsupported',
     ]);
-    expect(calls).toEqual([]);
+    expect(calls.map((c) => c.step.step.requestId)).toEqual(['socket']);
   });
 
   it('turns a throwing sender into an errored step with the error’s code', async () => {

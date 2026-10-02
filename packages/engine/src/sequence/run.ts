@@ -156,7 +156,7 @@ function stepName(step: SequenceStep, selected: SelectedRequest | undefined): st
 }
 
 function requestAssertionsOf(selected: SelectedRequest): readonly StepAssertion[] {
-  return selected.request.assertions ?? [];
+  return ('assertions' in selected.request ? selected.request.assertions : undefined) ?? [];
 }
 
 /**

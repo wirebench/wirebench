@@ -15,12 +15,16 @@ import type { RunContext } from '../../src/run/context.js';
 import { unresolvedError } from '../../src/run/send-helpers.js';
 import { connectSoap, resolveSoap } from '../../src/soap/run.js';
 import type { SoapSendInput } from '../../src/soap/types.js';
+import type { WsCallInput } from '../../src/ws/expand.js';
+import { resolveWs } from '../../src/ws/run.js';
 
 /** A request resolved and connected, told apart by `kind`. */
 export type Prepared =
   | { readonly kind: 'soap'; readonly input: SoapSendInput; readonly scopes: PropertyScopes }
   | { readonly kind: 'rest'; readonly input: RestSendInput }
-  | { readonly kind: 'grpc'; readonly input: GrpcResolvedInput; readonly messageText: string };
+  | { readonly kind: 'grpc'; readonly input: GrpcResolvedInput; readonly messageText: string }
+  // Resolved only: a WebSocket request connects as it opens its session.
+  | { readonly kind: 'websocket'; readonly input: WsCallInput };
 
 /** @throws WirebenchError what the module's `resolve…` and `connect…` throw, or its unresolved code */
 export async function prepareFor(selected: SelectedRequest, context: RunContext): Promise<Prepared> {
@@ -39,6 +43,11 @@ export async function prepareFor(selected: SelectedRequest, context: RunContext)
       const { input, messageText, unresolved } = await resolveGrpc(selected, context);
       if (unresolved.length > 0) throw unresolvedError('grpc-unresolved-properties', selected.path, unresolved);
       return { kind: 'grpc', input: await connectGrpc(selected, context, input), messageText };
+    }
+    case 'websocket': {
+      const { input, unresolved } = await resolveWs(selected, context);
+      if (unresolved.length > 0) throw unresolvedError('ws-unresolved-properties', selected.path, unresolved);
+      return { kind: 'websocket', input };
     }
   }
 }

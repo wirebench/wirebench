@@ -229,8 +229,8 @@ export const sendOp = defineOp({
       if (result === undefined) {
         throw new Error('the run returned no result');
       }
-      // A gRPC item never gets this far (`sendable` refuses it); the narrowing says so.
-      if (exchange === undefined || exchange.kind === 'grpc') {
+      // A gRPC or WebSocket item never gets this far (`sendable` refuses it); the narrowing says so.
+      if (exchange === undefined || exchange.kind === 'grpc' || exchange.kind === 'websocket') {
         throw failure(result, needs);
       }
       const mask = createSecretMasker(known());

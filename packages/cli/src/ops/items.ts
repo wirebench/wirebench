@@ -12,8 +12,9 @@ export type SendableItem = Extract<SelectedRequest, { kind: 'soap' | 'rest' }>;
 type Placeholder = NonNullable<Project['unsupported']>[number];
 
 function sendable(item: SelectedRequest): SendableItem {
-  if (item.kind === 'grpc') {
-    throw new OpsError('unsupported-kind', `"${item.path}" is a gRPC request; send takes SOAP and REST requests`, {
+  if (item.kind === 'grpc' || item.kind === 'websocket') {
+    const kind = item.kind === 'grpc' ? 'gRPC' : 'WebSocket';
+    throw new OpsError('unsupported-kind', `"${item.path}" is a ${kind} request; send takes SOAP and REST requests`, {
       item: item.path,
     });
   }
