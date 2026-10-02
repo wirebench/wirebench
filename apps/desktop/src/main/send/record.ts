@@ -2,7 +2,7 @@
  * What a desktop send leaves behind once the engine has sent it: the summary the renderer is
  * handed (and the exchange cache keeps unredacted), and the History entry.
  */
-import { isWirebenchError } from '@wirebench/engine';
+import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type {
   GrpcCallResult,
   GrpcResolvedInput,
@@ -13,6 +13,8 @@ import type {
   RestSendInput,
   SoapExchange,
   SoapSendInput,
+  WsExchange,
+  WsSelected,
 } from '@wirebench/engine';
 import type { EngineService } from '../engine-service.js';
 import {
@@ -21,13 +23,18 @@ import {
   toGrpcExchangeSummary,
   toRestContractWire,
   toRestExchangeSummary,
+  toWsExchangeSummary,
 } from '../engine-wire.js';
+import { failedExchangeOf } from '../failed-exchange.js';
 import type { SendThroughEngineDeps } from './exchange.js';
+import { reportSendFailed } from './host.js';
 import type {
   ExchangeSummary,
+  FailedExchangeWire,
   GrpcExchangeSummary,
   ResolvedSendInputWire,
   RestExchangeSummary,
+  WsExchangeSummary,
 } from '../../shared/wire-types.js';
 
 export type RecordDeps = Pick<SendThroughEngineDeps, 'project' | 'history' | 'onHistoryAppended'>;
@@ -268,4 +275,93 @@ export async function recordGrpc(
 /** A gRPC call as `request.sendGrpc` answers it, redacted for `show`. History records the same. */
 export function summariseGrpc(result: GrpcCallResult, sendId: string, show: boolean): GrpcExchangeSummary {
   return toGrpcExchangeSummary(result, sendId, { show });
+}
+
+/** A WebSocket session as `request.openWs` answers it, redacted for `show`. History records the same. */
+export function summariseWs(
+  exchange: WsExchange,
+  sendId: string,
+  options: { readonly show: boolean; readonly keyParams?: readonly string[] },
+): WsExchangeSummary {
+  return toWsExchangeSummary(exchange, sendId, options);
+}
+
+/**
+ * Appends one WebSocket session's History entry, on close — successful or not. A no-op without a
+ * history service. `item` names the request and its API when the project has no meta for it.
+ * `handshakeOpened` is the same fact {@link reportWsHandshakeFailure} is guarded by (the handshake's
+ * Log row was written), so History's `ok` follows it rather than re-deriving from
+ * `summary.handshake.status`, which is optional and so cannot distinguish a refusal from a session
+ * that opened but happens to carry no status (e.g. through a proxy tunnel).
+ */
+export async function recordWs(
+  deps: RecordDeps,
+  item: Pick<WsSelected, 'request' | 'api'>,
+  summary: WsExchangeSummary,
+  keyParams: readonly string[] | undefined,
+  handshakeOpened: boolean,
+): Promise<void> {
+  const requestId = item.request.id;
+  const projectId = deps.project.projectId(requestId);
+  if (deps.history === undefined || projectId === undefined) {
+    return;
+  }
+  const meta = deps.project.wsMeta?.(requestId);
+  const entry = await deps.history.recordWsSession(projectId, {
+    requestId,
+    requestName: meta?.requestName ?? item.request.name,
+    apiName: meta?.apiName ?? item.api.name,
+    folderPath: meta?.folderPath ?? '',
+    exchange: summary,
+    handshakeOpened,
+    ...(keyParams !== undefined ? { keyParams } : {}),
+  });
+  if (entry !== undefined) {
+    deps.onHistoryAppended?.(entry);
+  }
+}
+
+/**
+ * The HTTP Log's row for a handshake that never opened: a refusal (e.g. 401) or a transport
+ * failure before any response. Checked against the *settled* `summary` rather than a live event:
+ * the session settles with such a handshake rather than failing, and the host is told only of a
+ * handshake that opened, so this is the one place such a failure can be seen and reported, exactly
+ * like a prepare/send-stage failure. {@link recordWs} still writes History for it afterwards
+ * (`closedBy: 'error'`).
+ *
+ * Guarded by `handshakeLogged` (the opened handshake's row was written) rather than by
+ * `summary.handshake.status !== 101`: `status` is *optional* on the engine's handshake (e.g. absent
+ * through a proxy tunnel, which never populates it even for a session that opened fine), so testing
+ * it here could report a failure row for a session that already got a success row. The two rows
+ * must stay provably exclusive.
+ */
+export function reportWsHandshakeFailure(
+  deps: { readonly onSendFailed?: ((failure: FailedExchangeWire) => void) | undefined },
+  sendId: string,
+  requestId: string,
+  summary: WsExchangeSummary,
+  keyParams: readonly string[] | undefined,
+  handshakeLogged: boolean,
+): void {
+  if (handshakeLogged) {
+    return;
+  }
+  const { handshake } = summary;
+  reportSendFailed(deps.onSendFailed, () =>
+    failedExchangeOf({
+      sendId,
+      protocol: 'websocket',
+      requestId,
+      url: handshake.url,
+      method: 'GET',
+      headers: handshake.requestHeaders,
+      startedAt: new Date(handshake.startedAt).getTime(),
+      durationMs: handshake.durationMs,
+      error:
+        handshake.error !== undefined
+          ? new WirebenchError('ws-handshake-failed', handshake.error)
+          : new WirebenchError('ws-handshake-refused', 'The server refused the WebSocket handshake.'),
+      keyParams,
+    }),
+  );
 }

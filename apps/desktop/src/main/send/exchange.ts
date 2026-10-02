@@ -18,6 +18,7 @@ import {
   restEffectiveAuth,
   SecretPlaceholders,
   soapEffectiveAuth,
+  wsEffectiveAuth,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
@@ -41,6 +42,11 @@ import type {
   SentScripts,
   SoapSendInput,
   UnresolvedRef,
+  WorkerFrameChecker,
+  WorkerFrameCheckerOptions,
+  WsCallInput,
+  WsExchange,
+  WsFrameContract,
 } from '@wirebench/engine';
 import type { HistoryService } from '../history-service.js';
 import { containsRecordedSecret, recordSecretValue } from '../redact.js';
@@ -53,11 +59,15 @@ import {
   recordGrpc,
   recordRest,
   recordSoap,
+  recordWs,
+  reportWsHandshakeFailure,
   summariseGrpc,
   summariseRest,
   summariseSoap,
+  summariseWs,
   type HistoryNameFallback,
 } from './record.js';
+import { withContracts, wsContractChecks, type WsContractChecks } from './ws-contract.js';
 import type {
   ExchangeSummary,
   GrpcExchangeSummary,
@@ -68,7 +78,11 @@ import type {
   RestExchangeSummary,
   RestLiveEvent,
   RestRequestPatchWire,
+  WsExchangeSummary,
+  WsLiveEvent,
+  WsRequestPatchWire,
 } from '../../shared/wire-types.js';
+import { toWsFrameContractWire } from '../engine-wire.js';
 
 export interface SendOptions<D extends DraftOf = DraftOf> {
   readonly draft: D;
@@ -95,13 +109,15 @@ interface LiveByKind {
   readonly rest: RestLiveEvent;
   readonly soap: never;
   readonly grpc: GrpcLiveEvent;
+  readonly websocket: WsLiveEvent;
 }
 
-/** What a send answers with, by protocol. Task 13 adds the WebSocket summary. */
+/** What a send answers with, by protocol. */
 interface SummaryByKind {
   readonly rest: RestExchangeSummary;
   readonly soap: ExchangeSummary;
   readonly grpc: GrpcExchangeSummary;
+  readonly websocket: WsExchangeSummary;
 }
 
 export type SendSummary = SummaryByKind[keyof SummaryByKind];
@@ -110,16 +126,24 @@ interface Kept {
   readonly requestId: string;
   readonly kind: string;
   readonly handle: ExchangeHandle;
+  /** A WebSocket session's: true once its handshake has opened it. */
+  readonly opened?: () => boolean;
   /** Set once its request side has been half-closed through the registry. */
   halfClosed?: boolean;
+  /** Set once a WebSocket session has been asked to close through the registry. */
+  closed?: boolean;
 }
 
 /** The exchanges in flight, by send id: what `request.cancel` and a project's close reach. */
 export class ExchangeRegistry {
   private readonly kept = new Map<string, Kept>();
 
-  keep(sendId: string, requestId: string, kind: string, handle: ExchangeHandle): void {
-    this.kept.set(sendId, { requestId, kind, handle });
+  /** The contract workers of the WebSocket sessions in flight, by send id, while each runs. */
+  readonly frameCheckers = new Map<string, WorkerFrameChecker>();
+
+  /** `opened` tells a WebSocket session that has opened from one still in its handshake. */
+  keep(sendId: string, requestId: string, kind: string, handle: ExchangeHandle, opened?: () => boolean): void {
+    this.kept.set(sendId, { requestId, kind, handle, ...(opened !== undefined ? { opened } : {}) });
   }
 
   get(sendId: string): ExchangeHandle | undefined {
@@ -130,10 +154,29 @@ export class ExchangeRegistry {
     return this.kept.has(sendId);
   }
 
-  /** Aborts the send `sendId`. `false` when no such send is in flight, or it has already settled. */
+  /**
+   * Aborts the send `sendId`. `false` when no such send is in flight, or it has already settled. A
+   * WebSocket session that has opened is not aborted: it ends only through a close, with a close
+   * code, never a torn socket, so a late Escape after the handshake does nothing.
+   */
   cancel(sendId: string): { readonly cancelled: boolean } {
     const kept = this.kept.get(sendId);
+    if (kept?.opened?.() === true) return { cancelled: false };
     return { cancelled: kept?.handle.cancel() ?? false };
+  }
+
+  /**
+   * Closes the WebSocket session `sendId` with `code` and `reason`. `false` when no such session is
+   * in flight or it has already been asked to close; a close before the handshake waits for it.
+   *
+   * @throws WsError `ws-bad-close` for a code an application may not send; the session stays open.
+   */
+  closeWs(sendId: string, code?: number, reason?: string): boolean {
+    const kept = this.kept.get(sendId);
+    if (kept === undefined || kept.kind !== 'websocket' || kept.closed === true) return false;
+    kept.handle.close(code, reason);
+    kept.closed = true;
+    return true;
   }
 
   /**
@@ -154,16 +197,29 @@ export class ExchangeRegistry {
     return true;
   }
 
-  /** Ends every kept handle of `kind` whose request matches: a WebSocket closes 1000, anything else is cancelled. */
+  /**
+   * Ends every kept handle of `kind` whose request matches, and answers how many it ended. An open
+   * WebSocket session closes `1000 'going away'` (an application may not send 1001, RFC 6455
+   * §7.4.1), and one already asked to close is left to finish; one still in its handshake is
+   * cancelled, so a project's close or the app's quit never waits out the handshake timeout.
+   * Anything else is cancelled.
+   */
   endWhere(matches: (requestId: string) => boolean, kind: string): number {
     let ended = 0;
-    for (const kept of this.kept.values()) {
+    for (const [sendId, kept] of this.kept) {
       if (kept.kind !== kind || !matches(kept.requestId)) continue;
-      if (kind === 'websocket') {
-        kept.handle.close(1000);
+      if (kind !== 'websocket' || kept.opened?.() !== true) {
+        if (kept.handle.cancel()) ended += 1;
+        continue;
+      }
+      if (kept.closed === true) continue;
+      // One session refusing to close must not stop the rest of them from being asked to close too.
+      try {
+        kept.handle.close(1000, 'going away');
+        kept.closed = true;
         ended += 1;
-      } else if (kept.handle.cancel()) {
-        ended += 1;
+      } catch (error) {
+        console.warn(`[ws] closing "${sendId}" failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     return ended;
@@ -183,10 +239,17 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
   readonly onScriptsRan?: (sent: SentScripts) => void;
   /** The scopes an ad-hoc send expands against: the user's globals and the process env. */
   readonly adHocScopes?: () => PropertyScopes;
+  /** For tests: substitutes a WebSocket contract checker's worker script or its deadline. */
+  readonly wsFrameChecker?: WorkerFrameCheckerOptions;
 }
 
 /** What the "no such request" refusal calls a kind, as the app always has. */
-const KIND_LABEL: Readonly<Record<DraftOf['kind'], string>> = { rest: 'REST', soap: 'SOAP', grpc: 'gRPC' };
+const KIND_LABEL: Readonly<Record<DraftOf['kind'], string>> = {
+  rest: 'REST',
+  soap: 'SOAP',
+  grpc: 'gRPC',
+  websocket: 'WebSocket',
+};
 
 /**
  * Sends one saved request through the engine. Its scripts are type-checked first; a request that
@@ -251,27 +314,44 @@ async function sendItem(
     scripts.kind === 'on' && deps.scripts !== undefined
       ? scriptedSend(deps.scripts, scripts.request, context)
       : undefined;
+  // A WebSocket session's events are always read: its frames are checked, its handshake opens it.
+  const session = item.kind === 'websocket' ? wsSessionOf(deps, sendId, requestId, send, options.onLive) : undefined;
   const handle = openExchange(item, host, {
     scope,
     interactive: options.interactive === true,
-    live: options.onLive !== undefined,
+    live: options.onLive !== undefined || session !== undefined,
     ...(scripted !== undefined ? { scripts: scripted } : {}),
   });
-  deps.registry.keep(sendId, requestId, item.kind, handle);
+  deps.registry.keep(sendId, requestId, item.kind, handle, session?.opened);
   const show = deps.showSecrets?.get() ?? false;
-  const forwarding = forwardLive(sendId, handle, show, options.onLive);
+  const forwarding = forwardLive(sendId, handle, { show, ...masks }, options.onLive, session);
   const startedAt = Date.now();
   try {
     const sent = await handle.result;
     await forwarding;
     options.onSent?.(sent);
-    const summarised = summarise(deps, sendId, item, sent, masks, show, adHoc === undefined ? requestId : undefined);
+    const checked = session === undefined ? undefined : await session.checked(wsSent(sent).ws);
+    const summarised = summarise(
+      deps,
+      sendId,
+      item,
+      sent,
+      masks,
+      show,
+      adHoc === undefined ? requestId : undefined,
+      checked,
+    );
     const full: SendSummary = {
       ...summarised.summary,
       ...(sent.script !== undefined ? finishScripts(stepDeps, projectId, sent.script) : {}),
       ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
     };
-    const recorded: Recorded = { item, masks, ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}) };
+    const recorded: Recorded = {
+      item,
+      masks,
+      ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}),
+      handshakeLogged: send.handshakeLogged === true,
+    };
     await record(deps, recorded, sent, full, summarised.unredacted, Date.now() - startedAt);
     return full;
   } catch (error) {
@@ -286,7 +366,69 @@ async function sendItem(
     throw error;
   } finally {
     deps.registry.forget(sendId);
+    // The contract worker ends with the session however it ended: a close, a drop, a quit.
+    await session?.dispose();
   }
+}
+
+/** A WebSocket session as the desktop follows it: opened or not, and its frames' contract checks. */
+interface WsSession {
+  /** True once the handshake has opened the session. */
+  readonly opened: () => boolean;
+  /** Told each live event before it is handed on. */
+  seen(event: LiveEvent): void;
+  /** Told each live event after it is handed on. */
+  forwarded(event: LiveEvent): void;
+  /** The exchange with its frames' check results, once every check has answered or run out of time. */
+  checked(exchange: WsExchange): Promise<WsExchange>;
+  dispose(): Promise<void>;
+}
+
+/**
+ * A WebSocket session's follower. Its contract is asked for here and never awaited: frames flow
+ * while it loads, and one that fails leaves the session unchecked with one console line. Each frame
+ * is checked on a worker after its own `frame` event, and its result follows as a `contract` event.
+ */
+function wsSessionOf(
+  deps: SendThroughEngineDeps,
+  sendId: string,
+  requestId: string,
+  send: DesktopSend,
+  onLive: SendOptions['onLive'],
+): WsSession {
+  let handshakeSeen = false;
+  const onContract = (index: number, contract: WsFrameContract): void => {
+    try {
+      onLive?.({ kind: 'contract', sendId, index, contract: toWsFrameContractWire(contract) });
+    } catch (error) {
+      console.warn(
+        `[ws] a live event ("contract") for send "${sendId}" could not be delivered: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+  const checks: WsContractChecks | undefined = wsContractChecks(
+    sendId,
+    deps.project.wsContractFor?.(requestId),
+    deps.wsFrameChecker,
+    onContract,
+    deps.registry.frameCheckers,
+  );
+  return {
+    // The host's handshake row is written as the socket opens; the live event follows it.
+    opened: () => handshakeSeen || send.handshakeLogged === true,
+    seen: (event) => {
+      if (event.protocol === 'websocket' && event.kind === 'handshake') handshakeSeen = true;
+    },
+    forwarded: (event) => {
+      if (event.protocol === 'websocket' && event.kind === 'frame') checks?.check(event.frame);
+    },
+    checked: async (exchange) => (checks === undefined ? exchange : withContracts(exchange, await checks.settle())),
+    dispose: async () => {
+      await checks?.dispose();
+    },
+  };
 }
 
 type Located = NonNullable<ReturnType<NonNullable<SendThroughEngineDeps['project']['runContextFor']>>> & {
@@ -438,6 +580,52 @@ export async function previewGrpc(
   };
 }
 
+/** A WebSocket session resolved as its open would resolve it, nothing dialled and no secret read. */
+export interface WsPreview {
+  readonly input: WsCallInput;
+  readonly unresolved: readonly UnresolvedRef[];
+  /** True when a `${secret:name}` token was reached: it stays in the output as typed. */
+  readonly secretTokens: boolean;
+  /** The credentials that apply, still as references. */
+  readonly auth: AuthConfig;
+}
+
+/**
+ * What an open of the WebSocket request would dial, for an export: resolved through the engine with
+ * no secret read, each `${secret:name}` put back as its token text. Undefined: no such WebSocket request.
+ */
+export async function previewWs(
+  deps: SendThroughEngineDeps,
+  requestId: string,
+  draft: WsRequestPatchWire | undefined,
+): Promise<WsPreview | undefined> {
+  const located = deps.project.runContextFor?.(requestId);
+  const item =
+    located === undefined
+      ? undefined
+      : selectedFor(located.project, requestId, { kind: 'websocket', ...(draft !== undefined ? { draft } : {}) });
+  if (located === undefined || item?.kind !== 'websocket') return undefined;
+  const send: DesktopSend = { sendId: '', requestId, projectId: deps.project.projectId(requestId) };
+  let secretTokens = false;
+  const asTyped = (ref: string): Promise<string | undefined> => {
+    secretTokens ||= parseSecretPseudoRef(ref) !== undefined;
+    return tokenText(ref);
+  };
+  const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: asTyped };
+  const placeholders = new SecretPlaceholders();
+  const context: RunContext = { ...runContextOf(located, host), secretPlaceholders: placeholders };
+  const resolved = (await resolveExchange(item, host, createRunScope(context))) as {
+    readonly input: WsCallInput;
+    readonly unresolved: readonly UnresolvedRef[];
+  };
+  return {
+    input: await placeholders.restore(resolved.input, asTyped),
+    unresolved: resolved.unresolved,
+    secretTokens,
+    auth: wsEffectiveAuth(item),
+  };
+}
+
 /** A `${secret:name}` token's own text, which a preview shows in place of its value. */
 function tokenText(ref: string): Promise<string | undefined> {
   const name = parseSecretPseudoRef(ref);
@@ -446,6 +634,11 @@ function tokenText(ref: string): Promise<string | undefined> {
 
 /** The names of an API key in the query or a header, from the item's effective credentials. */
 function keyMasks(item: SelectedRequest): Pick<DesktopSend, 'keyParams' | 'keyHeaders'> {
+  if (item.kind === 'websocket') {
+    // A WebSocket session masks its URL's key alone, as the app always has: its rows mask headers by name.
+    const auth = wsEffectiveAuth(item);
+    return auth.type === 'api-key' && auth.in === 'query' ? { keyParams: [auth.name] } : {};
+  }
   const auth =
     item.kind === 'rest' ? restEffectiveAuth(item) : item.kind === 'soap' ? soapEffectiveAuth(item) : undefined;
   if (auth?.type !== 'api-key') return {};
@@ -510,12 +703,15 @@ function scriptedSend(scripts: SendScripts, request: ScriptedRequest, context: R
 async function forwardLive(
   sendId: string,
   handle: ExchangeHandle,
-  show: boolean,
+  redaction: { readonly show: boolean; readonly keyParams?: readonly string[] },
   onLive: SendOptions['onLive'],
+  session: WsSession | undefined,
 ): Promise<void> {
-  for await (const event of handle.events) {
+  for await (const raw of handle.events) {
+    const event = raw as LiveEvent;
+    session?.seen(event);
     try {
-      onLive?.(toWireEvent(sendId, event as LiveEvent, show));
+      onLive?.(toWireEvent(sendId, event, redaction.show, redaction.keyParams));
     } catch (error) {
       console.warn(
         `[${event.protocol}] a live event ("${event.kind}") for send "${sendId}" could not be delivered: ${
@@ -523,6 +719,7 @@ async function forwardLive(
         }`,
       );
     }
+    session?.forwarded(event);
   }
 }
 
@@ -540,6 +737,8 @@ interface Recorded {
   readonly item: SelectedRequest;
   readonly masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>;
   readonly adHoc?: HistoryNameFallback;
+  /** A WebSocket session's: its opened handshake's Log row was written. */
+  readonly handshakeLogged?: boolean;
 }
 
 function restSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange']>, { kind: 'rest' }> {
@@ -557,7 +756,15 @@ function grpcSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange'
   return sent.exchange;
 }
 
-/** The summary the renderer is handed and, for SOAP, the unredacted one History records. */
+function wsSent(sent: SentRequest): Extract<NonNullable<SentRequest['exchange']>, { kind: 'websocket' }> {
+  if (sent.exchange?.kind !== 'websocket') throw new Error('A WebSocket session came back without its exchange');
+  return sent.exchange;
+}
+
+/**
+ * The summary the renderer is handed and, for SOAP, the unredacted one History records. A WebSocket
+ * session's is built from `checked`, its exchange with its frames' contract results.
+ */
 function summarise(
   deps: SendThroughEngineDeps,
   sendId: string,
@@ -566,6 +773,7 @@ function summarise(
   masks: Pick<DesktopSend, 'keyParams' | 'keyHeaders'>,
   show: boolean,
   requestId: string | undefined,
+  checked: WsExchange | undefined,
 ): { readonly summary: SendSummary; readonly unredacted?: ExchangeSummary } {
   switch (item.kind) {
     case 'rest': {
@@ -597,8 +805,12 @@ function summarise(
     case 'grpc':
       return { summary: summariseGrpc(grpcSent(sent).grpc, sendId, show) };
     case 'websocket':
-      // Never reached yet: WebSocket sessions keep their own path until Task 13 moves them here.
-      throw new Error('A WebSocket session is not sent through the engine yet');
+      return {
+        summary: summariseWs(checked ?? wsSent(sent).ws, sendId, {
+          show,
+          ...(masks.keyParams !== undefined ? { keyParams: masks.keyParams } : {}),
+        }),
+      };
   }
 }
 
@@ -645,6 +857,14 @@ async function record(
     case 'grpc':
       await recordGrpc(deps, item, grpcSent(sent), summary as GrpcExchangeSummary, durationMs);
       return;
+    case 'websocket': {
+      // As the app always has: the refused handshake's Log row, then History.
+      const ws = summary as WsExchangeSummary;
+      const opened = recorded.handshakeLogged === true;
+      reportWsHandshakeFailure(deps, ws.sendId, item.request.id, ws, masks.keyParams, opened);
+      await recordWs(deps, item, ws, masks.keyParams, opened);
+      return;
+    }
   }
 }
 
@@ -677,5 +897,8 @@ async function recordFailure(
       await recordGrpc(deps, item, { input, messageText }, undefined, durationMs, error);
       return;
     }
+    case 'websocket':
+      // A session that failed (a bad option, a cancel before the handshake) has no transcript to record.
+      return;
   }
 }

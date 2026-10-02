@@ -3,15 +3,23 @@
  * session's show-secrets flag exactly as `EngineService` redacted its own live events.
  */
 import type { LiveEvent } from '@wirebench/engine';
-import { toGrpcResponseMessageWire, toSseRowWire } from '../engine-wire.js';
+import { toGrpcResponseMessageWire, toSseRowWire, toWsFrameWire, toWsHandshakeWire } from '../engine-wire.js';
 import { redactHeaders } from '../redact.js';
-import type { GrpcLiveEvent, RestLiveEvent } from '../../shared/wire-types.js';
+import type { GrpcLiveEvent, RestLiveEvent, WsLiveEvent } from '../../shared/wire-types.js';
 
 /** A live event as the renderer receives it, of any protocol. */
-export type LiveEventWire = RestLiveEvent | GrpcLiveEvent;
+export type LiveEventWire = RestLiveEvent | GrpcLiveEvent | WsLiveEvent;
 
-/** One live event on the wire. Task 13 adds the WebSocket arm. */
-export function toWireEvent(sendId: string, event: LiveEvent, show: boolean): LiveEventWire {
+/**
+ * One live event on the wire. `keyParams` names the query parameters an API key travels in, which a
+ * WebSocket handshake's URL masks whatever they are called.
+ */
+export function toWireEvent(
+  sendId: string,
+  event: LiveEvent,
+  show: boolean,
+  keyParams?: readonly string[],
+): LiveEventWire {
   switch (event.protocol) {
     case 'rest':
       return event.kind === 'open'
@@ -40,7 +48,20 @@ export function toWireEvent(sendId: string, event: LiveEvent, show: boolean): Li
           return { kind: 'closed', sendId };
       }
     case 'websocket':
-      // Never reached yet: WebSocket sessions keep their own path until Task 13 moves them here.
-      throw new Error('A WebSocket session is not sent through the engine yet');
+      switch (event.kind) {
+        case 'handshake':
+          return {
+            kind: 'handshake',
+            sendId,
+            handshake: toWsHandshakeWire(event.handshake, {
+              show,
+              ...(keyParams !== undefined ? { keyParams } : {}),
+            }),
+          };
+        case 'frame':
+          return { kind: 'frame', sendId, frame: toWsFrameWire(event.frame, { show }) };
+        case 'closed':
+          return { kind: 'closed', sendId };
+      }
   }
 }

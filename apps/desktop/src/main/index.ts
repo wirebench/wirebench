@@ -353,7 +353,7 @@ const workspaceService = new WorkspaceService({
   closeWsSessions: async (projectId) => {
     const matches = projectId === undefined ? undefined : (id: string) => workspaceService.projectId(id) === projectId;
     if (matches === undefined) {
-      engineService.closeAllWs();
+      exchanges.endWhere(() => true, 'websocket');
       // The whole workspace is going: its REST checker worker goes with it (the next check starts one).
       void engineService.disposeRestContractChecker().catch((error: unknown) => {
         console.warn(
@@ -362,16 +362,16 @@ const workspaceService = new WorkspaceService({
         );
       });
     } else {
-      engineService.closeWsWhere(matches);
+      exchanges.endWhere(matches, 'websocket');
     }
     // An event stream open on a REST request is the same kind of thing: stopped here (with any other
     // REST send of the project still in flight), and its History entry — written by its own pending
     // `request.sendRest` — waited for alongside.
     exchanges.endWhere(matches ?? (() => true), 'rest');
-    // Always awaited, never guarded by "did we just close anything": the engine drops a session
-    // from its map as the socket finishes, *before* the pending `request.openWs` has written the
-    // History entry. A session that closed a moment ago is therefore invisible here while its
-    // write is still in flight, and skipping the wait would race it against `history.close`.
+    // Always awaited, never guarded by "did we just close anything": a session already asked to
+    // close is not closed again, yet its pending `request.openWs` may not have written the History
+    // entry. A session that closed a moment ago is therefore invisible here while its write is
+    // still in flight, and skipping the wait would race it against `history.close`.
     // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
     await Promise.all([
       whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
@@ -756,7 +756,7 @@ app.on('before-quit', (event) => {
   // happens inside `workspaceService.close()` below, which owns the history files. Guarded: a
   // failure to close a socket must never be the reason the app fails to quit.
   try {
-    engineService.closeAllWs();
+    exchanges.endWhere(() => true, 'websocket');
   } catch (error) {
     console.warn('[ws] closeAllWs on quit failed', error instanceof Error ? error.message : String(error));
   }

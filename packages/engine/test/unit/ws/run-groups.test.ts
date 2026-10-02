@@ -4,7 +4,7 @@ import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { ORPHANED_STEP_REASON } from '../../../src/run/tree.js';
 import { createWsApi, createWsFolder, createWsRequest } from '../../../src/ws/model.js';
-import { wsEffectiveAuth, wsRun } from '../../../src/ws/run.js';
+import { wsEffectiveAuth, wsItemFor, wsRun } from '../../../src/ws/run.js';
 import type { WsSelected } from '../../../src/ws/run.js';
 
 const ticker = createWsRequest('Ticker', { id: 'ws-ticker', slug: 'ticker', order: 0 });
@@ -85,5 +85,23 @@ describe('wsRun.secretNeeds and wsEffectiveAuth', () => {
 
   it('has no script types to offer', async () => {
     await expect(wsRun.scriptTypes(selected, {} as never)).resolves.toEqual({ generated: '' });
+  });
+});
+
+describe('wsItemFor', () => {
+  it('finds a request inside a folder, and an orphaned one a run skips', () => {
+    expect(wsItemFor(project, 'ws-audit')).toEqual({
+      kind: 'websocket',
+      path: 'Feed/Admin/Audit',
+      group: 'Feed/Admin',
+      api: feed,
+      chain: [admin],
+      request: audit,
+    });
+    expect(wsItemFor(project, 'ws-gone')?.request).toBe(gone);
+  });
+
+  it('has nothing for an id no WebSocket request has', () => {
+    expect(wsItemFor(project, 'nowhere')).toBeUndefined();
   });
 });

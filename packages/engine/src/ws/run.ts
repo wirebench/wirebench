@@ -58,6 +58,29 @@ export function wsEffectiveAuth(selected: WsSelected): AuthConfig {
 }
 
 /**
+ * The WebSocket item for `requestId`, built as a run builds it, and found even when its contract no
+ * longer has it (`orphaned`), which a run skips and a person may still open. Undefined when no
+ * WebSocket request has that id.
+ */
+export function wsItemFor(project: Project, requestId: string): WsSelected | undefined {
+  const candidates: { item: WsSelected; diskPath: string }[] = [];
+  for (const api of project.wsApis) {
+    walkTree<WsFolder, WsRequestDef, WsSelected>(
+      api,
+      [],
+      api.name,
+      `apis/${api.slug}/requests`,
+      (request, chain, group) =>
+        request.id === requestId
+          ? { kind: 'websocket', path: `${group}/${request.name}`, group, api, chain, request }
+          : undefined,
+      candidates,
+    );
+  }
+  return candidates[0]?.item;
+}
+
+/**
  * The effective `WsRequestSettings` a request sends with, request settings resolved against
  * project/preference defaults.
  *

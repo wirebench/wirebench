@@ -244,12 +244,18 @@ before and after for the two changes that need more than a rename. The package's
   never went out (`rest-unresolved-properties`, `unresolved-properties`), with no History entry. A SOAP
   send with such a reference used to go out with the reference left in it. A gRPC call with such a
   reference (`grpc-unresolved-properties`), or with no method chosen (`grpc-method-unset`), is logged
-  the same way.
+  the same way, and so is a WebSocket connection with one (`ws-unresolved-properties`).
 - **A send whose credential secret is missing is refused before the call.** The HTTP Log shows a
   prepare row and History records nothing (`secret-missing`).
 - **An interactive gRPC call's request side.** A push after the half-close is refused with
   `grpc-stream-closed`. A half-close made before the call opens answers `{ closed: true }`, and the
   request side closes once the call opens.
+- **A WebSocket connection's sending side.** A message sent or a disconnect asked for while the
+  handshake is still under way waits for it, rather than being refused as `ws-session-unknown`; a
+  message after the disconnect is refused with `ws-session-closed`. Cancelling a handshake the server
+  has not answered fails the connection with `aborted`: the HTTP Log shows the failed row and History
+  records nothing, where it used to record the attempt as a closed session. Closing a project, or
+  quitting, ends a handshake still under way at once rather than waiting for its timeout.
 
 ### Fixed
 

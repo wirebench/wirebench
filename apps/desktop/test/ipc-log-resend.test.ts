@@ -9,6 +9,7 @@ import type { RestSendInput } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerLogChannels } from '../src/main/ipc/log.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
+import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import type { ExchangeSummary, RestExchangeSummary } from '../src/shared/wire-types.js';
 import { restApiWire } from './helpers/wire-defaults.js';
 
@@ -289,7 +290,8 @@ describe('log.resend', () => {
   });
 
   it('WebSocket: a row is refused before anything is dialled — it is a session, not one request/response pair', async () => {
-    const openWs = vi.spyOn(EngineService.prototype, 'openWsSession');
+    // Every session the app opens is kept in the exchange registry; a refused resend keeps none.
+    const openWs = vi.spyOn(ExchangeRegistry.prototype, 'keep');
     registerLogChannels({
       showSecrets: { get: () => false },
       service: new EngineService(),

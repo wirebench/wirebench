@@ -45,7 +45,6 @@ import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ip
 import { recordSecretValue } from '../src/main/redact.js';
 import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { SecretStore, type CryptoBackend } from '../src/main/secrets.js';
-import { resolveWsSend } from '../src/main/ws-send.js';
 import type {
   GrpcExchangeSummary,
   GrpcResponseMessageWire,
@@ -168,14 +167,7 @@ function registerWs(options: { header?: string; show?: boolean; secretsFor?: (id
       projectId: () => 'p1',
       authFor: () => undefined,
       requestMeta: () => undefined,
-      wsSend: (requestId: string) =>
-        resolveWsSend({
-          project,
-          requestId,
-          scopes: SCOPES,
-          resolveTarget: (api) => ({ url: api.url, source: 'api' }),
-        }),
-      wsTlsFor: () => Promise.resolve(undefined),
+      runContextFor: () => ({ project, projectDir: '/tmp/none' }),
       wsMeta: () => ({ requestName: 'Echo', apiName: 'Chat', folderPath: '' }),
     } as unknown as RequestChannelDeps['project'],
     getSecret: () => Promise.resolve(undefined),

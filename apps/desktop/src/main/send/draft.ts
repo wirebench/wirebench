@@ -12,6 +12,7 @@ import {
   signingAlong,
   soapItemFor,
   webhookPath,
+  wsItemFor,
 } from '@wirebench/engine';
 import type {
   Project,
@@ -26,14 +27,21 @@ import type {
 } from '@wirebench/engine';
 import { withGrpcPatch } from '../project-grpc-mutations.js';
 import { toEngineAuthConfig, toEngineBody, toEngineRows, toEngineSigning } from '../project-rest-mutations.js';
+import { withWsPatch } from '../project-ws-mutations.js';
 import type { HistoryNameFallback } from './record.js';
-import type { GrpcRequestPatchWire, ResolvedSendInputWire, RestRequestPatchWire } from '../../shared/wire-types.js';
+import type {
+  GrpcRequestPatchWire,
+  ResolvedSendInputWire,
+  RestRequestPatchWire,
+  WsRequestPatchWire,
+} from '../../shared/wire-types.js';
 
-/** What the editor holds for one send, by protocol. Task 13 adds WebSocket. */
+/** What the editor holds for one send, by protocol. */
 export type DraftOf =
   | { readonly kind: 'rest'; readonly draft?: RestRequestPatchWire }
   | { readonly kind: 'soap'; readonly override?: SoapOverride }
-  | { readonly kind: 'grpc'; readonly draft?: GrpcRequestPatchWire };
+  | { readonly kind: 'grpc'; readonly draft?: GrpcRequestPatchWire }
+  | { readonly kind: 'websocket'; readonly draft?: WsRequestPatchWire };
 
 /** The request id a send with no saved request behind it goes by (`SendOptions.adHoc`). */
 export const AD_HOC_ID = 'ad-hoc';
@@ -57,6 +65,13 @@ export function selectedFor(project: Project, requestId: string, draft: DraftOf)
       return found === undefined || draft.draft === undefined
         ? found
         : { ...found, request: withGrpcPatch(found.request, draft.draft) };
+    }
+    case 'websocket': {
+      // Orphaned or not: the editor opens what it shows.
+      const found = wsItemFor(project, requestId);
+      return found === undefined || draft.draft === undefined
+        ? found
+        : { ...found, request: withWsPatch(found.request, draft.draft) };
     }
   }
 }
