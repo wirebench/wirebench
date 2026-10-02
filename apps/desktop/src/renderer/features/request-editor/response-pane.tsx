@@ -24,6 +24,7 @@ import { ViewTabs } from './view-tabs.js';
 import type { ViewTabItem } from './view-tabs.js';
 import { FaultOverview, OutlineView, prefetchViews, QueryView, RawView, ViewFallback } from './views/lazy-views.js';
 import type { TextRange } from './views/xml-model.js';
+import { AssertionResults, assertionResultsBadge } from '../assertions/assertion-results.js';
 import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../scripts/script-results.js';
 
 /** Converts a 0-based UTF-16 offset into a 1-based Monaco line/column — mirrors `request-pane.tsx`'s
@@ -54,11 +55,17 @@ function responseInspectors(
   script: ExchangeState['exchange'] | undefined,
 ): readonly InspectorItem[] {
   const scriptBadge = scriptResultsBadge(script?.script);
+  const verdict = assertionResultsBadge(script?.assertions);
   return [
     { id: 'headers', label: 'Headers' },
     { id: 'attachments', label: attachmentCount > 0 ? `Attachments (${String(attachmentCount)})` : 'Attachments' },
     { id: 'wss', label: wssLabel },
     { id: 'ssl', label: 'SSL Info' },
+    // How the request's own assertions fared in this send (#192); always there, empty without any.
+    {
+      id: 'assertions' as const,
+      label: verdict === undefined ? 'Assertions' : `Assertions ${verdict.text}${verdict.failed ? ' ✕' : ''}`,
+    },
     // What the request's scripts did (#63), only when it has any.
     ...(script !== undefined && hasScriptResults(script)
       ? [{ id: 'scripts' as const, label: scriptBadge === undefined ? 'Script' : `Script ${scriptBadge}` }]
@@ -272,6 +279,8 @@ export function ResponsePane({ state, interfaceId, requestId }: ResponsePaneProp
             <SslInspector http={exchange?.http} />
           ) : inspector === 'attachments' ? (
             <ResponseAttachmentsInspector exchange={exchange} />
+          ) : inspector === 'assertions' ? (
+            <AssertionResults assertions={exchange?.assertions} />
           ) : inspector === 'scripts' ? (
             <ScriptResults script={exchange?.script} scriptsOff={exchange?.scriptsOff} />
           ) : (
