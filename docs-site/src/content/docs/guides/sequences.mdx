@@ -6,8 +6,9 @@ description: Chain saved requests, carry a value from one response into the next
 import { Steps } from '@astrojs/starlight/components';
 
 A sequence sends saved requests one after another. Each step can lift values out of its response (a
-token, an id, a cookie) for the steps after it, and check the response with assertions. A login
-followed by a call that needs its token is a two-step sequence.
+token, an id, a cookie) for the steps after it, and check the response with
+[assertions](/wirebench/docs/guides/assertions/). A login followed by a call that needs its token is a
+two-step sequence.
 
 A sequence runs no code. Everything it does is declared in its file, `sequences/<name>.sequence.yaml`,
 which you review and share like any other file in the project. A step's request can still have

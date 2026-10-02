@@ -1,0 +1,206 @@
+---
+title: Assertions
+description: Declare checks on a response — status, a body expression, a header, response time, a SOAP fault, the schema — on a request or a sequence step, and read pass, fail and error in the app and in CI.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+An **assertion** is a declared check on one response: the status is 200, `$.id` exists, the reply came
+within 800 ms. Assertions are data, not code. They live in the project's files beside the request or
+the sequence step they check, and `wirebench run` turns their results into an exit code and a report.
+
+Every assertion is evaluated, even after one fails, so a report shows everything wrong with a response,
+not just the first thing.
+
+## Where they go
+
+- **On a request.** A SOAP, REST or gRPC request file, `<Name>.request.yaml`, can carry an
+  `assertions:` list. `wirebench run` checks it after every send of that request, and so does every
+  sequence step that sends it. The app keeps these assertions when it saves the request, but has no
+  editor for them: write them in the file.
+- **On a sequence step.** A step has assertions of its own, edited in the app, which run after its
+  request's own. A step can also check a response header.
+
+A WebSocket request carries no assertions.
+
+## The kinds
+
+### Status
+
+The response status is one of the values given: a number, a class such as `"2xx"`, or a list of
+either. For a gRPC request, the value is the gRPC status code, `0`–`16`, or its name: `OK`,
+`NOT_FOUND`, `UNAVAILABLE` and so on.
+
+```yaml
+assertions:
+  - type: status
+    equals: [200, 201]
+```
+
+```yaml
+assertions:
+  - type: status
+    equals: OK
+```
+
+### Body expression
+
+`type: match` evaluates a JSONPath, XPath or XQuery expression against the response body, and checks
+its first result with exactly one of:
+
+- `equals` — the result's text equals this value.
+- `matches` — the result's text matches this regular expression, anywhere in the text unless you anchor
+  it with `^` and `$`.
+- `exists` — `true` passes when there is a result, `false` when there is none.
+
+```yaml
+assertions:
+  - type: match
+    language: jsonpath
+    expression: $.status
+    equals: shipped
+  - type: match
+    language: xpath
+    expression: //m:Country
+    namespaces: { m: 'http://example.org/countries' }
+    exists: true
+```
+
+For a gRPC request, the expression reads the response message as JSON.
+
+### Response time
+
+`type: sla` passes when the exchange took at most `maxMs` milliseconds.
+
+```yaml
+assertions:
+  - type: sla
+    maxMs: 800
+```
+
+`wirebench run --sla <ms>` adds the same check to every request that declares none.
+
+### SOAP fault
+
+`type: soap-fault` checks whether a SOAP response is a fault: `expect: none` (the default) or
+`expect: present`.
+
+```yaml
+assertions:
+  - type: soap-fault
+    expect: none
+```
+
+### Schema
+
+`type: schema` passes when a SOAP response validates against the interface's cached contract.
+
+```yaml
+assertions:
+  - type: schema
+```
+
+### Header (sequence steps)
+
+`type: header` checks the first value of a response header, its name compared without regard to case,
+with exactly one of `equals`, `matches` or `exists`. For a gRPC request, it reads the response metadata,
+then the trailers. Only a sequence step may carry one.
+
+```yaml
+assertions:
+  - type: header
+    header: Content-Type
+    matches: ^application/json
+```
+
+### Callback
+
+`type: callback` waits for the webhook a send causes, at a catch URL of a Wirebench Server workspace,
+and checks it. See [Callback assertions](/wirebench/docs/guides/callback-assertions/).
+
+Any assertion can carry a `name`, which reports use as its label in place of the generated one.
+
+## Add one to a sequence step
+
+<Steps>
+
+1. Open the sequence and select the step.
+2. Choose **Add assertion**.
+3. Pick the kind under **Assertion**: **Status**, **Header**, **Body matches**, **Response time**,
+   **SOAP fault**, **Schema** or **Callback**.
+4. Fill in its fields. For **Body matches** and **Header**, the **Check** is **equals**, **matches**,
+   **is present** or **is absent**.
+
+</Steps>
+
+A step runs its request's own assertions first. Turn off **Run the request’s own assertions too** to
+skip them for that step. In the step's file, the step's own list sits under the step:
+
+```yaml
+steps:
+  - id: create-order
+    request: 01J9…
+    assertions:
+      - type: status
+        equals: 201
+      - type: header
+        header: Location
+        exists: true
+```
+
+## Pass, fail and error
+
+Each assertion ends one of three ways:
+
+- **Passed.** The check held.
+- **Failed.** The check did not hold. The result shows what was expected and what came back.
+- **Errored.** The check could not be made, so it says nothing about the service. The result says why.
+
+An assertion errors, for example, when:
+
+- its expression does not compile, or a `matches:` pattern runs too long;
+- a `jsonpath` expression meets a body that is not JSON, or an `xpath` or `xquery` one meets a body that
+  is neither XML nor JSON;
+- a `soap-fault` assertion is on a request that is not SOAP, or a `schema` assertion is on a request that
+  is not SOAP or whose interface has no cached definition;
+- a status assertion on an HTTP response names a gRPC status, such as `NOT_FOUND`, or a number below
+  100. It could never pass, so it errors rather than fails.
+
+An errored assertion outranks a failed one: a request with both counts as errored.
+
+## Read the results
+
+In the app, a sequence's run panel lists each step's assertions as it ends: ✓ for passed, ✗ for failed
+and ! for errored, each with its label. One that did not pass shows *expected …, actual …*, or the reason
+it errored. See [Read a run](/wirebench/docs/guides/sequences/#read-a-run).
+
+A **Schema** assertion is evaluated by `wirebench run`. In the app it errors, because no schema is at
+hand.
+
+## In CI
+
+`wirebench run` evaluates every selected request's assertions, or every step's with `--sequence`:
+
+- Exit `0` when every request passed, `1` when an assertion failed and nothing errored, and `3` when a
+  request errored, an errored assertion included. `3` takes precedence over `1`.
+- An `assertions:` list the file format refuses stops the run before anything is sent, with exit `2`.
+- A request with no assertions passes on any response that came back, with a note.
+  `--require-assertions` makes it an error instead.
+- `--reporter junit=<file>` names the request and the assertion that failed, for the CI system's own test
+  view. An assertion's actual text is masked like everything else in a report.
+
+See [Run in CI](/wirebench/docs/guides/run-in-ci/).
+
+<Aside>
+A post-response script's tests are reported as assertions too, of type `script`, and count as asserted
+under `--require-assertions`. See [Scripts](/wirebench/docs/guides/scripts/).
+</Aside>
+
+## Related
+
+- [Sequences](/wirebench/docs/guides/sequences/) — chain requests and check each step.
+- [Callback assertions](/wirebench/docs/guides/callback-assertions/) — wait for and check the webhook a
+  send causes.
+- [Snapshot regression](/wirebench/docs/guides/snapshot-regression/) — compare a response with a
+  known-good one instead of writing checks.
+- [Run in CI](/wirebench/docs/guides/run-in-ci/) — exit codes and reports in a pipeline.

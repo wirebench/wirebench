@@ -59,7 +59,7 @@ pass/fail per check (database, data directory, git) and nothing else.
 
 Accounts are invite-only. On a fresh server, create the first admin from the console:
 
-    docker compose -f packages/server/compose.yaml exec server wirebench-server admin invite you@example.com
+    docker compose -f packages/server/compose.yaml exec server node /app/dist/bin.js admin invite you@example.com
 
 It prints a one-time link (`<public URL>/invite/<code>`), valid for `WIREBENCH_SERVER_INVITATION_DAYS`
 (default 7). Open it, or paste the code into Wirebench's _Account: Sign in to a server…_ dialog under

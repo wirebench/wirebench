@@ -142,10 +142,10 @@ assertions:
 | `schema` | the response validates against the interface's cached contract |
 | `sla` | the exchange's `durationMs` is at or under `maxMs` — every leg of the send, an auth challenge included |
 
-`soap-fault` on a REST request and an XSD `schema` assertion on a REST request are load errors
-(exit 2), not silent passes. `schema` for REST is reserved but not implemented until `#45`
-(OpenAPI response validation) lands. A `match` result is compared as a string unless `equals` is a
-boolean or a number.
+`soap-fault` and `schema` apply to SOAP requests only. On any other request they are errored
+assertions, never silent passes: the request counts as errored and the run exits 3. A REST response is
+checked against its OpenAPI schema with `wirebench validate`, not with a `schema` assertion.
+A `match` result is compared as a string unless `equals` is a boolean or a number.
 
 ### gRPC requests
 
