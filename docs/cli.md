@@ -256,7 +256,7 @@ The CLI never reads the desktop's `secrets.json` and never touches a keychain â€
 user, so it has no keychain to read.
 
 A webhook item that signs what it sends (see the
-[Webhook signatures guide](https://wirebench.github.io/wirebench/guides/webhook-signatures/)) reads its
+[Webhook signatures guide](https://wirebench.github.io/wirebench/docs/guides/webhook-signatures/)) reads its
 signing secret from `WIREBENCH_SECRET_<secretEnv>`, the CI name saved on the item, folder or collection
 (with no CI name, from the ref-derived variable above). Missing, the item fails and the message names
 the variable; it is never sent unsigned. `wirebench secrets list` lists it like any other secret.
@@ -308,7 +308,7 @@ placeholders, if you want the literal-masking guarantee to apply to them.
 ## Callback assertions
 
 A `callback` assertion (see the
-[Callback assertions guide](https://wirebench.github.io/wirebench/guides/callback-assertions/)) waits
+[Callback assertions guide](https://wirebench.github.io/wirebench/docs/guides/callback-assertions/)) waits
 for a webhook at a catch URL of a Wirebench Server workspace, so `wirebench run` needs to reach that
 server:
 
@@ -679,7 +679,7 @@ Four ways to run a project in a pipeline, from the same package. Every secret is
 each one to `WIREBENCH_SECRET_<NAME>` (the same variable `secrets list` reports) in the CI system's
 own environment or variables, and the runner's masking hides the value in every reporter, the `cli`
 one included â€” nothing here holds or asks for a secret itself. See the [docs-site "Run in
-CI" guide](https://wirebench.github.io/wirebench/guides/run-in-ci/) for the same recipes with more
+CI" guide](https://wirebench.github.io/wirebench/docs/guides/run-in-ci/) for the same recipes with more
 walkthrough.
 
 ### GitHub Actions

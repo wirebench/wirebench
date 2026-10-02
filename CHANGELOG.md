@@ -37,6 +37,9 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **A landing site.** https://wirebench.github.io/wirebench/ now has a home page, a features page and a
+  download page built from the latest release; the user guide moved to
+  https://wirebench.github.io/wirebench/docs/.
 - **Protocol modules in the engine.** SOAP, REST, gRPC and WebSocket each sit behind one interface,
   held in a registry, so the loader, the writer, the run loop and the script host no longer branch on
   the protocol ([ADR-0017](docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md), #184). Two
@@ -203,7 +206,7 @@ before and after for the two changes that need more than a rename. The package's
   absolute URL — the editor's URL bar shows which and why. **Save as webhook…**, on a catch URL
   capture, turns a real delivery into a webhook item, dropping hop-by-hop headers and any header whose
   name mentions a signature. The collection is part of `formatVersion: 6`, with request scripts. See
-  [Sending webhooks](https://wirebench.github.io/wirebench/guides/sending-webhooks/).
+  [Sending webhooks](https://wirebench.github.io/wirebench/docs/guides/sending-webhooks/).
 
 - **Webhook signatures.** Webhook items, their folders and the Webhooks collection can sign what they
   send — *HMAC of body*, *Timestamped HMAC* or *Standard Webhooks* — with a secret from the keychain,
@@ -215,7 +218,7 @@ before and after for the two changes that need more than a rename. The package's
 - **Callback assertions.** A sequence step or a CI run waits for the webhook its request causes and
   checks it; CI tokens in Preferences → Devices & tokens, with `WIREBENCH_SERVER_URL` and
   `WIREBENCH_SERVER_TOKEN` for `wirebench run`. See
-  [Callback assertions](https://wirebench.github.io/wirebench/guides/callback-assertions/). A
+  [Callback assertions](https://wirebench.github.io/wirebench/docs/guides/callback-assertions/). A
   `callback` assertion is part of `formatVersion: 6`.
 
 ### Changed

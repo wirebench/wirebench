@@ -8,7 +8,7 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 Wirebench's REST client groups requests under an API, which holds a base URL and, optionally,
 authentication every request under it inherits.
 
-![A REST request and its JSON response](/wirebench/images/rest-client/rest-response.png)
+![A REST request and its JSON response](/wirebench/docs/images/rest-client/rest-response.png)
 
 ## Create an API and a request
 
@@ -41,7 +41,7 @@ The **Body** tab switches between five kinds, each keeping its own draft while y
 - **Multipart** — mixed text fields and file parts, picked through the native file dialog.
 - **Binary** — a single file as the whole body, with its own content type.
 
-![The Body tab of a POST request set to Raw, holding a small JSON object](/wirebench/images/rest-client/body-tab.png)
+![The Body tab of a POST request set to Raw, holding a small JSON object](/wirebench/docs/images/rest-client/body-tab.png)
 
 When a request was imported from an OpenAPI document and its operation declares a JSON request body,
 a **Text / Form** switch appears next to the language picker while the body is Raw and set to JSON.
@@ -76,7 +76,7 @@ refused before anything reaches the server, and the response pane says why.
 
 <Aside type="tip">
 An environment can override an API's base URL. Switch environments from the status bar's
-environment switcher; see [Environments](/wirebench/guides/environments/).
+environment switcher; see [Environments](/wirebench/docs/guides/environments/).
 </Aside>
 
 ## Event streams
@@ -104,7 +104,7 @@ so far, as one JSON document.
   response.
 - History and the HTTP Log keep the stream as a multi-message exchange; its HAR export and cURL command work as they do for any other response — *Copy as cURL* adds `-N`
   when the request's enabled `Accept` header asks for `text/event-stream`. Re-sending a streamed
-  row from the HTTP Log is refused; see [HTTP Log](/wirebench/guides/http-log/).
+  row from the HTTP Log is refused; see [HTTP Log](/wirebench/docs/guides/http-log/).
 - Reconnecting with `Last-Event-ID`, honouring a server's `retry:` field, and event streams from
   the CLI are not built.
 
@@ -150,7 +150,7 @@ HTML, text or binary).
 
 ## Update Definition
 
-When an API was made by [importing an OpenAPI document](/wirebench/guides/importers/#openapi-and-swagger)
+When an API was made by [importing an OpenAPI document](/wirebench/docs/guides/importers/#openapi-and-swagger)
 and that document changes, re-read it instead of importing again: importing always makes a second
 API, updating keeps the one you have been working in.
 
@@ -211,12 +211,12 @@ schemas, and the project is saved. If that save fails, the API is left exactly a
 
 ## Re-send from History
 
-Every send is recorded in [History](/wirebench/guides/history/) with its method, URL, headers and
+Every send is recorded in [History](/wirebench/docs/guides/history/) with its method, URL, headers and
 body. Choose **↻** on the entry to send it again through this request, with the request's current
 auth and settings; redacted values are filled from the request. An entry that ended on another
 host (a redirect, or another environment) is re-sent from the request instead. Comparing two entries diffs both
 the response and the request — see
-[Re-send a REST request](/wirebench/guides/history/#re-send-a-rest-request).
+[Re-send a REST request](/wirebench/docs/guides/history/#re-send-a-rest-request).
 
 ## Limits
 
@@ -225,7 +225,7 @@ the response and the request — see
 
 ## Related
 
-- [Importers](/wirebench/guides/importers/): bring in an OpenAPI document or a cURL command as
+- [Importers](/wirebench/docs/guides/importers/): bring in an OpenAPI document or a cURL command as
   requests.
-- [Environments](/wirebench/guides/environments/)
-- [HTTP Log](/wirebench/guides/http-log/)
+- [Environments](/wirebench/docs/guides/environments/)
+- [HTTP Log](/wirebench/docs/guides/http-log/)

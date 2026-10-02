@@ -1,5 +1,5 @@
-import { copyFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
@@ -80,17 +80,31 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 /** Where the site serves its images from, one folder per page. */
 const IMAGES_DIR = join(REPO_ROOT, 'docs-site', 'public', 'images');
 
+/** Where the landing site serves its images from; `also` writes second copies of a shot here. */
+const SITE_IMAGES_DIR = join(REPO_ROOT, 'site', 'public', 'images');
+
 /** The same tripwire as the README's: a page of 300 KB images is slow on a phone. */
 const MAX_BYTES = 300 * 1024;
 
 /**
  * Shoots the whole window into `docs-site/public/images/<shot>.png`, `shot` being `<page>/<name>`.
  * The status bar's last-request and last-saved clock times are masked on every shot, since any
- * screen can show them; `mask` adds the regions a particular screen needs on top.
+ * screen can show them; `mask` adds the regions a particular screen needs on top. `also` writes the
+ * same capture to `site/public/images/<also>.png` for the landing site, one file per name.
  */
-async function shoot(page: Page, shot: string, options: { mask?: Locator[] } = {}): Promise<void> {
+async function shoot(
+  page: Page,
+  shot: string,
+  options: { mask?: Locator[]; also?: string | readonly string[] } = {},
+): Promise<void> {
   const mask = [...(options.mask ?? []), page.getByTestId('status-bar-last'), page.getByTestId('status-bar-save')];
   await captureWindow(page, join(IMAGES_DIR, `${shot}.png`), { mask, maxBytes: MAX_BYTES });
+  const written = join(IMAGES_DIR, `${shot}.png`);
+  for (const name of [options.also ?? []].flat()) {
+    const target = join(SITE_IMAGES_DIR, `${name}.png`);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(written, target);
+  }
 }
 
 /**
@@ -272,7 +286,7 @@ test.describe('docs site screenshots', () => {
 
     await window.getByTestId('request-send').click();
     await expect(window.getByTestId('response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
-    await shoot(window, 'getting-started/response', { mask: timingRegions(window) });
+    await shoot(window, 'getting-started/response', { mask: timingRegions(window), also: 'home/response' });
   });
 
   test('REST client: a request and its response', async () => {
@@ -289,7 +303,7 @@ test.describe('docs site screenshots', () => {
     await setMethodAndUrl(window, 'GET', '/echo?pet=Fido&limit=10');
     await sendRest(window);
     await expect(window.getByTestId('rest-response-status')).toContainText(/\d{3}/, { timeout: 20_000 });
-    await shoot(window, 'rest-client/rest-response', { mask: restTimingRegions(window) });
+    await shoot(window, 'rest-client/rest-response', { mask: restTimingRegions(window), also: 'home/rest-response' });
   });
 
   test('SOAP: an outgoing WS-Security configuration', async () => {
@@ -314,7 +328,7 @@ test.describe('docs site screenshots', () => {
     await expect(window.getByTestId('wss-entry-row')).toHaveCount(2);
     await editor.getByRole('textbox', { name: 'Username' }).fill('bob');
     await expect(editor.getByLabel('Password type')).toHaveValue('digest');
-    await shoot(window, 'soap-wsdl/wss-outgoing');
+    await shoot(window, 'soap-wsdl/wss-outgoing', { also: 'features/wss-outgoing' });
   });
 
   test('REST client: a raw JSON body', async () => {
@@ -332,7 +346,7 @@ test.describe('docs site screenshots', () => {
     await openRequestTab(window, 'Body');
     await window.getByTestId('rest-body-kind').selectOption('raw');
     await setMonacoText(window, 'Request body', '{\n  "name": "Fido",\n  "tag": "dog"\n}');
-    await shoot(window, 'rest-client/body-tab');
+    await shoot(window, 'rest-client/body-tab', { also: 'features/body-tab' });
   });
 
   test('gRPC: a unary call and its reply', async () => {
@@ -353,6 +367,7 @@ test.describe('docs site screenshots', () => {
     await expect(window.getByTestId('grpc-response-messages')).toContainText('Hello, Ada');
     await shoot(window, 'grpc/unary-response', {
       mask: [grpcStatus(window), logRows(window), window.getByTestId('status-bar-last')],
+      also: ['home/grpc-response', 'features/grpc'],
     });
   });
 
@@ -375,7 +390,7 @@ test.describe('docs site screenshots', () => {
       `curl -X POST 'https://api.example.com/pets?dry=true' -u ada:s3cret -H 'Content-Type: application/json' -H 'X-From: curl' -d '{"name":"Fido"}'`,
     );
     await expect(window.getByTestId('import-curl-submit')).toBeEnabled();
-    await shoot(window, 'importers/curl-preview');
+    await shoot(window, 'importers/curl-preview', { also: 'features/curl-preview' });
   });
 
   test('importers: the legacy SOAP project summary', async () => {
@@ -423,7 +438,7 @@ test.describe('docs site screenshots', () => {
     await expect(override).toBeVisible({ timeout: 20_000 });
     await override.fill('https://uat.example.com/calculator/soap');
     await override.press('Enter');
-    await shoot(window, 'environments/endpoint-override');
+    await shoot(window, 'environments/endpoint-override', { also: 'features/endpoint-override' });
   });
 
   test('HTTP Log: a failed send beside a finished one', async () => {
@@ -458,6 +473,7 @@ test.describe('docs site screenshots', () => {
     // With a row selected the log narrows to its compact columns, which carry no time or duration,
     // so the rows stay visible; only the response status line and the status bar carry timings.
     await shoot(window, 'http-log/failed-send', {
+      also: 'features/failed-send',
       mask: [responseStatus(window), window.getByTestId('status-bar-last')],
     });
   });
@@ -544,7 +560,7 @@ test.describe('docs site screenshots', () => {
     await runCommand(window, 'Sync: Show Sync Panel');
     await expect(window.getByTestId('sync-panel')).toBeVisible();
     await expect(window.getByTestId('sync-log-row').first()).toBeVisible({ timeout: 20_000 });
-    await shoot(window, 'shared-workspaces/sync-panel');
+    await shoot(window, 'shared-workspaces/sync-panel', { also: 'features/sync-panel' });
   });
 
   test('shared workspaces: conflict resolver', async () => {

@@ -12,22 +12,22 @@ A pasted `curl` command becomes **one request**. What it holds depends on where 
 
 The toast after the import names every flag the import could not use.
 
-To run the import, see [cURL commands](/wirebench/guides/importers/#curl-commands) in the importers
+To run the import, see [cURL commands](/wirebench/docs/guides/importers/#curl-commands) in the importers
 guide. The same section covers **Copy as cURL**, which turns a request back into a command.
 
-![The Import cURL dialog with a pasted POST command, previewing the request, its headers, a raw body and Basic auth as ada](/wirebench/images/importers/curl-preview.png)
+![The Import cURL dialog with a pasted POST command, previewing the request, its headers, a raw body and Basic auth as ada](/wirebench/docs/images/importers/curl-preview.png)
 
 ## What carries over into a REST request
 
 | Flag | In Wirebench | More |
 | --- | --- | --- |
-| The URL, or `--url` | The request's URL. If it starts with the API's **Base URL**, it becomes a relative path, so it follows the API's environments. The query string becomes rows in the **Params** table | [Path and query parameters](/wirebench/guides/rest-client/#path-and-query-parameters) |
+| The URL, or `--url` | The request's URL. If it starts with the API's **Base URL**, it becomes a relative path, so it follows the API's environments. The query string becomes rows in the **Params** table | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
 | `-X` / `--request`, also written `-XPUT` | The method. Without it: GET, or POST when the command sends a body | |
 | `-I` / `--head` | HEAD, unless `-X` says otherwise | |
 | `-H` / `--header` | Rows in the **Headers** table | |
-| `-u` / `--user` `name:password` | Basic auth, sent preemptively. The password is stored as a secret, outside the project | [Secrets](/wirebench/guides/secrets/) |
+| `-u` / `--user` `name:password` | Basic auth, sent preemptively. The password is stored as a secret, outside the project | [Secrets](/wirebench/docs/guides/secrets/) |
 | `-u name`, with no password | Basic auth with the username. The toast asks you to set the password on the **Auth** tab | |
-| `-d`, `--data`, `--data-raw`, `--data-binary` | A raw body, in the language its `Content-Type` names | [Request body](/wirebench/guides/rest-client/#request-body) |
+| `-d`, `--data`, `--data-raw`, `--data-binary` | A raw body, in the language its `Content-Type` names | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
 | `-d @file` | A binary body that reads that file when sent | |
 | A heredoc or PowerShell here-string after `-d @-` | A raw body with the heredoc's text | |
 | `--json` | A raw JSON body. `Content-Type` and `Accept` are set to `application/json`, unless the command sets them itself | |
@@ -82,6 +82,6 @@ When the import ignores a flag that takes a value, it skips the value too. So in
 
 ## Related
 
-- [Importing APIs](/wirebench/guides/importers/): the Import cURL dialog and **Copy as cURL**.
-- [REST](/wirebench/guides/rest-client/): the request the import created.
-- [Authentication](/wirebench/guides/auth/): Basic auth and the other schemes.
+- [Importing APIs](/wirebench/docs/guides/importers/): the Import cURL dialog and **Copy as cURL**.
+- [REST](/wirebench/docs/guides/rest-client/): the request the import created.
+- [Authentication](/wirebench/docs/guides/auth/): Basic auth and the other schemes.

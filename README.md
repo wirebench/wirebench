@@ -129,7 +129,7 @@ GitLab template, a container image or plain `npx`:
     WIREBENCH_SECRET_BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
 ```
 
-See [Run in CI](https://wirebench.github.io/wirebench/guides/run-in-ci/) on the docs site for all
+See [Run in CI](https://wirebench.github.io/wirebench/docs/guides/run-in-ci/) on the docs site for all
 four recipes, or [`docs/cli.md`](docs/cli.md#run-in-ci) for the full command reference —
 assertions, environment-variable secrets, all four reporters and the exit-code table.
 
@@ -195,7 +195,8 @@ repository. It is what the opt-in update feed is derived from.
 
 ## Documentation
 
-- [User guide](https://wirebench.github.io/wirebench/) — install, a ten-minute walkthrough, a guide per feature, the
+- [Website](https://wirebench.github.io/wirebench/) — what Wirebench does, and the installers for the latest release.
+- [User guide](https://wirebench.github.io/wirebench/docs/) — install, a ten-minute walkthrough, a guide per feature, the
   command reference, troubleshooting and FAQ
 - [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
 - [CLI reference](docs/cli.md) — `wirebench run`/`secrets list`, assertions, secrets, reports and exit codes,
@@ -229,7 +230,7 @@ sizes, the detail per theme, and what a review of the surrounding tools changed 
 
 1. **Windows code signing** — macOS releases are signed and notarised, and the MSI and SBOM ship; Windows signing
    through SignPath Foundation is waiting on their review ([#114](https://github.com/wirebench/wirebench/issues/114)).
-2. **Documentation site** — the [user guide](https://wirebench.github.io/wirebench/) is live; a switching guide and
+2. **Documentation site** — the [user guide](https://wirebench.github.io/wirebench/docs/) is live; a switching guide and
    a published benchmark are still to come.
 3. **CLI runner** — `wirebench run` with assertions, JUnit and JSON reports, CI recipes, and a baseline mode that
    compares responses with committed golden files.

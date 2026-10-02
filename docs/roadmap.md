@@ -142,15 +142,18 @@ on 3.1, so the two can swap the day an enterprise evaluation arrives first.
   published per release, so the speed claim is measured rather than asserted.
 - **Tooling.** Done 2026-09-18 (issue #29): the user guide is `docs-site/`, its own workspace package on
   Astro Starlight with Pagefind search, kept apart from the engineering documents under `docs/`, and
-  published to GitHub Pages at https://wirebench.github.io/wirebench/ by `.github/workflows/docs.yml` on
+  published to GitHub Pages at https://wirebench.github.io/wirebench/docs/ by `.github/workflows/site.yml` on
   every push to `main`; pull requests that touch it build it, and broken internal links fail that build.
   The command and shortcut reference is generated from the shared command catalog
   (`pnpm docs:commands --check`, like the WS-I tables); screenshots come from
   `e2e/specs/docs-screenshots.spec.ts` (`pnpm docs:screenshots`), and `pnpm check:docs-images` fails on
   a missing or orphaned one; the banned-terms and doc-path checks cover the site. Spec and plan:
   `docs/specs/2026-09-18-wirebench-docs-site-design.md`, `docs/plans/2026-09-18-wirebench-docs-site-plan.md`.
-  Still open: the benchmark above, and a move to wirebench.io once the domain is
-  registered.
+  Since 2026-10-01 (issue #188) a landing site, `site/`, is at the Pages root
+  (https://wirebench.github.io/wirebench/) and the user guide is under https://wirebench.github.io/wirebench/docs/,
+  both built by `.github/workflows/site.yml`; spec and plan: `docs/specs/2026-10-01-wirebench-website-design.md`,
+  `docs/plans/2026-10-01-wirebench-website-plan.md`. Still open: the benchmark above, and a move to wirebench.io
+  once the domain is registered.
 - **Naming.** The app's own "Generate HTML documentation" command documents the user's WSDL; the site
   calls itself the Wirebench user guide so the two are never confused.
 

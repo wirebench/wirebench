@@ -1,0 +1,41 @@
+---
+import Base from '../layouts/Base.astro';
+import DownloadTable from '../components/DownloadTable.astro';
+import { loadRelease } from '../data/release.ts';
+
+const release = await loadRelease();
+const released = new Date(release.publishedAt).toLocaleDateString('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+---
+
+<Base
+  title="Download Wirebench"
+  description="Installers for macOS, Windows and Linux, from the latest Wirebench release."
+>
+  <div class="download-page">
+    <h1>Download Wirebench {release.version}</h1>
+    <p class="released">
+      Released {released} · <a href={release.notesUrl}>Release notes</a>
+    </p>
+    <DownloadTable release={release} />
+  </div>
+</Base>
+
+<style>
+  .download-page {
+    padding-block: 2rem;
+  }
+
+  h1 {
+    margin: 0 0 0.5rem;
+  }
+
+  .released {
+    margin: 0 0 2rem;
+    color: var(--wb-fg-muted);
+  }
+</style>

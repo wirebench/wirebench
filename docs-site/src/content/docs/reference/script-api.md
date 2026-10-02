@@ -13,7 +13,7 @@ lists under `scripts.secrets`. `WbStatus` is every HTTP status from 100 to 599 a
 and `WbRange1` to `WbRange5` are its hundreds, so checking `response.status` narrows the response.
 
 A Postman script (`api: postman`) is JavaScript and is checked for syntax only; its `pm` object is
-described in the [Scripts guide](/wirebench/guides/scripts/#postman-scripts).
+described in the [Scripts guide](/wirebench/docs/guides/scripts/#postman-scripts).
 
 ## Every script
 

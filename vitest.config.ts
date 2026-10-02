@@ -115,6 +115,12 @@ export default defineConfig({
           include: ['scripts/**/*.test.ts'],
         },
       },
+      {
+        test: {
+          name: 'site',
+          include: ['site/test/**/*.test.ts'],
+        },
+      },
     ],
   },
 });

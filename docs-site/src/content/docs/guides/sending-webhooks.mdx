@@ -13,7 +13,7 @@ body and history all working exactly as they do for a REST request.
 
 <Aside>
 This page is about *sending* webhooks you define. For *receiving* real deliveries on a public URL, see
-[Webhook inbox](/wirebench/guides/webhooks/).
+[Webhook inbox](/wirebench/docs/guides/webhooks/).
 </Aside>
 
 ## What a webhook item is
@@ -47,13 +47,13 @@ Right-click the **Webhooks** node or a folder and choose **Settings…**:
 - A **Catch URLs ▸** menu, on the collection's settings and on a folder's alike, lists the
   workspace's catch URLs and writes the picked one's full address into the field (for a folder, as
   its own override). It only appears when the project's workspace is shared on a Wirebench Server with
-  capture enabled — see [Webhook inbox](/wirebench/guides/webhooks/) for setting one up.
+  capture enabled — see [Webhook inbox](/wirebench/docs/guides/webhooks/) for setting one up.
 - **Auth** on the collection's own settings: what an item whose auth is *inherit* uses when no
   folder above it configures credentials. OAuth2 works here as on an API: once saved, the token
   status panel appears under it.
 
 The target is an ordinary property (`webhookTarget`) resolved through the usual Environment →
-Project → Workspace chain — see [Environments and properties](/wirebench/guides/environments/). The
+Project → Workspace chain — see [Environments and properties](/wirebench/docs/guides/environments/). The
 first webhook seeds an empty project `webhookTarget` only when neither the project nor the workspace
 already defines one. A project value, even an empty one, wins over the workspace's: delete the project
 property to fall back to the workspace value. An environment's value still overrides both.
@@ -71,7 +71,7 @@ collection:
 
 <Steps>
 
-1. Import the document as usual (see [Importing APIs](/wirebench/guides/importers/)). When it
+1. Import the document as usual (see [Importing APIs](/wirebench/docs/guides/importers/)). When it
    declares any webhooks or callbacks, the import dialog shows an **Import webhooks & callbacks**
    checkbox, ticked by default. Leaving it ticked adds every item; unticking it skips them all for
    this import.
@@ -122,7 +122,7 @@ an unresolved reference is reported anywhere else in the app.
 
 ## Replay a real event
 
-From a capture's tab in the [Webhook inbox](/wirebench/guides/webhooks/), the capture viewer offers
+From a capture's tab in the [Webhook inbox](/wirebench/docs/guides/webhooks/), the capture viewer offers
 **Save as webhook…**:
 
 <Steps>
@@ -138,7 +138,7 @@ The new item's method and path come from the capture; its headers are the ones t
 hop-by-hop and transport headers (`Host`, `Content-Length`, `Connection`, and the like) and minus any
 header whose name contains `signature`, plus Standard Webhooks' `webhook-id` and `webhook-timestamp` —
 a captured signature is stale the moment the body changes, so it is left out rather than kept and
-silently wrong. To sign what you send, see [Webhook signatures](/wirebench/guides/webhook-signatures/). **Save as webhook…** is disabled, with the reason, on a
+silently wrong. To sign what you send, see [Webhook signatures](/wirebench/docs/guides/webhook-signatures/). **Save as webhook…** is disabled, with the reason, on a
 capture whose body was truncated or is binary.
 
 ## In a run
@@ -152,7 +152,7 @@ fallback there — the CLI never re-sends a stored exchange's response to derive
 
 ## Related
 
-- [Webhook inbox](/wirebench/guides/webhooks/)
-- [Importing APIs](/wirebench/guides/importers/)
-- [REST](/wirebench/guides/rest-client/)
-- [Environments and properties](/wirebench/guides/environments/)
+- [Webhook inbox](/wirebench/docs/guides/webhooks/)
+- [Importing APIs](/wirebench/docs/guides/importers/)
+- [REST](/wirebench/docs/guides/rest-client/)
+- [Environments and properties](/wirebench/docs/guides/environments/)

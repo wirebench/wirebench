@@ -7,7 +7,7 @@ description: Quick answers about accounts, privacy, data location, sync, protoco
 
 No. There's no account to create and no Wirebench-run server. Sharing a workspace works over git
 (your own remote) or a synced folder (Dropbox, OneDrive, Syncthing, a network share) — see
-[Shared workspaces](/wirebench/guides/shared-workspaces/).
+[Shared workspaces](/wirebench/docs/guides/shared-workspaces/).
 
 ### Does Wirebench send any telemetry or usage data?
 
@@ -18,7 +18,7 @@ that on.
 ### Where is my data stored?
 
 In one data folder, in your OS's standard app-data location — see [Where your data
-lives](/wirebench/getting-started/installation/#where-your-data-lives) for the exact path on
+lives](/wirebench/docs/getting-started/installation/#where-your-data-lives) for the exact path on
 macOS, Windows, Linux and under a snap install. Workspaces, projects, preferences and secrets are
 all there.
 
@@ -51,8 +51,8 @@ also import a single request from a `curl` command line (**Import cURL…**).
 
 Yes. Each release has an MSI for Windows fleets, which installs silently with `msiexec /qn`, and a
 CycloneDX SBOM. Newer releases also carry build attestations. See
-[Deploy to a fleet](/wirebench/getting-started/installation/#deploy-to-a-fleet) and the
-[code-signing policy](/wirebench/help/code-signing-policy/).
+[Deploy to a fleet](/wirebench/docs/getting-started/installation/#deploy-to-a-fleet) and the
+[code-signing policy](/wirebench/docs/help/code-signing-policy/).
 
 ### Is Wirebench free, and what licence is it under?
 
@@ -73,5 +73,5 @@ a shared workspace all need a reachable network, same as any client that talks t
 ### What happens if I open a project made by a newer version of Wirebench?
 
 It's refused with a clear error rather than opened partially or guessed at — see [Project folder
-format](/wirebench/reference/project-format/) for how the format version works. Update Wirebench
+format](/wirebench/docs/reference/project-format/) for how the format version works. Update Wirebench
 to open it.

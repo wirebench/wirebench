@@ -32,7 +32,7 @@ export function renderScriptApiReference(sections: readonly ApiReferenceSection[
     'and `WbRange1` to `WbRange5` are its hundreds, so checking `response.status` narrows the response.',
     '',
     'A Postman script (`api: postman`) is JavaScript and is checked for syntax only; its `pm` object is',
-    'described in the [Scripts guide](/wirebench/guides/scripts/#postman-scripts).',
+    'described in the [Scripts guide](/wirebench/docs/guides/scripts/#postman-scripts).',
   ];
   for (const section of sections) {
     lines.push('', `## ${section.title}`, '', '```ts', section.declarations, '```');

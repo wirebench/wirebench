@@ -1,0 +1,72 @@
+---
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import ProtocolTabs from '../components/ProtocolTabs.astro';
+import FolderTree from '../components/FolderTree.astro';
+import FeatureCard from '../components/FeatureCard.astro';
+import DownloadBand from '../components/DownloadBand.astro';
+import { DOCS_LINKS } from '../docs-links.ts';
+---
+
+<Base
+  title="Wirebench — one workbench for SOAP, REST and gRPC"
+  description="Import a WSDL, an OpenAPI document or a .proto set, get a request from the contract, send it, and read the response."
+>
+  <Hero />
+  <ProtocolTabs />
+  <FolderTree />
+  <section class="beyond" aria-labelledby="beyond-heading">
+    <h2 id="beyond-heading">Beyond the desktop</h2>
+    <div class="beyond__cards">
+      <FeatureCard
+        title="CLI and CI"
+        text="Run a project's requests from the command line and in your pipeline."
+        slug={DOCS_LINKS.runInCi}
+      />
+      <FeatureCard
+        title="Snapshot regression"
+        text="Save a response as a baseline and see what changed on the next run."
+        slug={DOCS_LINKS.snapshotRegression}
+      />
+      <FeatureCard
+        title="Shared workspaces"
+        text="Share a workspace through git, pull changes and resolve conflicts."
+        slug={DOCS_LINKS.sharedWorkspaces}
+      />
+      <FeatureCard
+        title="Agents over MCP"
+        text="Expose a project's requests to agents through an MCP server."
+        slug={DOCS_LINKS.agentsMcp}
+      />
+    </div>
+  </section>
+  <DownloadBand />
+</Base>
+
+<style>
+  .beyond {
+    padding-block: 2rem;
+  }
+
+  h2 {
+    margin: 0 0 1rem;
+  }
+
+  .beyond__cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  @media (max-width: 64rem) {
+    .beyond__cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 40rem) {
+    .beyond__cards {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

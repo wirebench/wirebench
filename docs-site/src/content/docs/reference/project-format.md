@@ -55,8 +55,8 @@ illegal on any supported OS are stripped, and a name cannot escape the project f
 | `apis/<Api>/api.yaml` | A REST API: its OpenAPI reference, base URL, settings and auth reference |
 | `<Request>.request.yaml` + `<Request>.xml` (SOAP) or `<Request>.body.json` (REST) | One saved request: metadata in YAML, the payload in a file of its own kind |
 | `<Request>.pre.ts`, `<Request>.post.ts` | A request's pre-request and post-response scripts, named by its `scripts` key. They are TypeScript, or JavaScript (`.pre.js`, `.post.js`) for scripts imported from Postman. Renaming or moving the request moves them |
-| `<Request>.golden.yaml` | A request's snapshot: the golden response body, its content type, when it was saved and the ignore rules. It sits beside the request's own file, outside the project model, so an older build leaves it alone and it needs no format-version change. Renaming or moving the request leaves it behind. See [Snapshot regression](/wirebench/guides/snapshot-regression/) |
-| `sequences/<Sequence>.sequence.yaml` | One [sequence](/wirebench/guides/sequences/): its steps in order, each naming a saved request by id, with the step's transfers and assertions and the run settings. It carries `kind: sequence` and its own `version` (see below) |
+| `<Request>.golden.yaml` | A request's snapshot: the golden response body, its content type, when it was saved and the ignore rules. It sits beside the request's own file, outside the project model, so an older build leaves it alone and it needs no format-version change. Renaming or moving the request leaves it behind. See [Snapshot regression](/wirebench/docs/guides/snapshot-regression/) |
+| `sequences/<Sequence>.sequence.yaml` | One [sequence](/wirebench/docs/guides/sequences/): its steps in order, each naming a saved request by id, with the step's transfers and assertions and the run settings. It carries `kind: sequence` and its own `version` (see below) |
 | `definition/` | The fetched or imported API definition (WSDL, XSD, OpenAPI), kept byte-exact, plus a manifest mapping each URL to its cached file and checksum |
 | `wss/` | WS-Security configuration and keystore entries — no secret values |
 | `attachments/` | Files attached to a request, stored by content hash |
@@ -69,7 +69,7 @@ into the OS keychain instead; a project file that somehow contained a plaintext 
 
 A workspace groups several projects under one set of environments. It normally lives entirely
 inside Wirebench's app data folder (see [Install and first
-run](/wirebench/getting-started/installation/) for the exact path per OS):
+run](/wirebench/docs/getting-started/installation/) for the exact path per OS):
 
 ```
 workspaces/<id>/

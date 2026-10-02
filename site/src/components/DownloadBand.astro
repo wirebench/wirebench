@@ -1,0 +1,32 @@
+---
+/** The closing band: the licence, the Download button and the three platforms. */
+const base = import.meta.env.BASE_URL;
+---
+
+<section class="band">
+  <p class="band__licence">Free and open source, Apache-2.0.</p>
+  <a class="button button--primary" href={`${base}download/`}>Download</a>
+  <p class="band__platforms">macOS · Windows · Linux</p>
+</section>
+
+<style>
+  .band {
+    margin-top: 2rem;
+    padding: 2.5rem 1rem;
+    border: 1px solid var(--wb-border);
+    border-radius: 8px;
+    background: var(--wb-bg-raised);
+    text-align: center;
+  }
+
+  .band__licence {
+    margin: 0 0 1rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .band__platforms {
+    margin: 1rem 0 0;
+    color: var(--wb-fg-muted);
+  }
+</style>
