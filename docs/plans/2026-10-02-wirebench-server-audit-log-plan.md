@@ -8,22 +8,23 @@
 
 **Tech Stack:** TypeScript on Node 24, Fastify (a `Readable` reply for the export), Postgres (`pg`), zod 4 (plain, ADR-0009), `ulidx` ids, React + zustand in the desktop renderer, Vitest 5, Playwright for e2e.
 
-**Spec:** `docs/specs/2026-10-01-wirebench-server-audit-log-design.md`. Builds on `docs/specs/2026-10-01-wirebench-server-licensing-design.md` and its plan `docs/plans/2026-10-02-wirebench-server-licensing-plan.md` (branch `feat/licensing`, PR #204), whose code this plan cites by path.
+**Spec:** `docs/specs/2026-10-01-wirebench-server-audit-log-design.md`. Builds on `docs/specs/2026-10-01-wirebench-server-licensing-design.md` and its plan `docs/plans/2026-10-02-wirebench-server-licensing-plan.md`, merged to main as #204 (6bb8b121), whose code this plan cites by path.
 
 ## Global Constraints
 
 - Events are recorded on every edition. Only `GET /api/v1/audit` and `GET /api/v1/audit/export` need the `audit-log` feature.
-- An event commits with the action it describes: the hook runs inside the caller's transaction and is awaited; a hook throw fails the action (spec §3.1). The two exceptions are rulings 4 and 5 below.
+- An event commits with the action it describes: the hook runs inside the caller's transaction and is awaited; a hook throw fails the action (spec §3.1). Where the action is a single statement on the pool today, the plan wraps the statement and its event in one transaction (ruling 23). Only three kinds are written on the pool by themselves: `auth.sign_in_failed`, which has no action to join, and rulings 4 and 5.
 - `details` never carries a secret, a token, a password hash or a request or response body. Its values are strings, numbers, booleans, `null` or arrays of the first three, and the serialised object is bounded at 4 KiB (`AUDIT_LIMITS.maxDetailsBytes`).
 - No route updates or deletes an event. There is no `POST /audit`. The desktop never originates an event.
 - Retention by age only: `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`, integer 30–3650, default 365.
-- Action names are a closed list (`AUDIT_ACTIONS`) referenced through the enum, never as string literals at a fire site.
+- Action names are a closed list (`AUDIT_ACTIONS`). A fire site writes the name as a literal that `tsc` checks against the `AuditAction` union (ruling 21); a coverage test fails when an action has no test (Task 7).
 - Problem codes stay the host's `{ code, message }`. New: `audit-cursor-invalid` (400).
 - `GET /audit` is newest first, default page 50, maximum 200; the cursor is opaque. `GET /audit/export` is oldest first, `application/x-ndjson`, one event per line, read in batches of 1000 behind a keyset cursor, never inside a long transaction.
 - The renderer imports only **types** from `shared/wire-types.ts` and nothing from the `@wirebench/engine` main entry (ESLint `no-restricted-imports`; an eager zod value import breaks every e2e under the CSP).
 - Docs and code never name which product inspired a feature; `pnpm check:banned-terms` enforces it.
 - `WIREBENCH_SKIP_PERF=1 pnpm check` is green before every commit. One commit per task. No `Co-Authored-By` or `Claude-Session` trailer. Commits as Mohammed Naami <m.naami@outlook.com>.
 - No local Electron e2e windows: e2e runs in CI only.
+- Every integration suite that loads the audit module builds on `licensingHarness(testKeys(), { extra })` (`test/helpers/licensing.ts`): it registers every module whose migrations come before 0008, and `allMigrations` refuses a gap in the combined versions (`serve.ts:89-117`).
 - Server route and fire-site tests run against real Postgres (`WIREBENCH_SERVER_TEST_DATABASE_URL`; locally `docker compose -f packages/server/compose.yaml up -d db`, then `postgres://wirebench:wirebench@127.0.0.1:5432/wirebench_test`). `describeDb` skips them when the variable is unset, so run them before each commit with the database up.
 
 ## Rulings made while planning
@@ -37,8 +38,8 @@ Each is a reading of the spec where the spec and the code disagree or the spec i
 5. **`license.*` arrive after the commit**, as the spec says (§3.2): the audit module listens to `licenseChanged`, looks the actor up by id, and writes on `ctx.db`. IP and user agent are absent there.
 6. **The server does not parse team-secrets files, so `secret.*` events come from paths.** In a push, a change under `team-secrets/values/` is `secret.shared` when the file did not exist at the push's parent and `secret.rotated` when it did (`store.hasFile`); a change under `team-secrets/access/` or `team-secrets/keys/` is `secret.access_changed`; the key-request route's commit is `secret.access_changed` with `details.keyId`. Details carry counts and the paths' leaf names, never contents. One event per kind per push.
 7. **Previous values come from a read before the write, in a transaction.** Team rename, workspace rename and default-role change, workspace delete and team delete become transactions that read the row first. `deleteGrant` and `revokeCiToken` gain `returning` clauses so the removed role and the revoked token's name are known, and so a delete that removed nothing records nothing.
-8. **`issueToken` returns the token id.** It becomes `Promise<{ response: SignInResponse; tokenId: string }>`; its three callers send `.response`. `auth.signed_in` carries `tokenId` and `device`.
-9. **`PATCH /users/:id` records only real transitions.** The handler writes even when nothing changes; the events fire only when `body.serverAdmin !== user.serverAdmin` or the disabled state flips, and the no-op writes go.
+8. **Sign-in issues the token and records `auth.signed_in` in one transaction.** `issueToken` takes the querier and returns `{ response, tokenId }`; a new `signIn(env, user, method, device, source)` wraps both, and the three sign-in paths call it. A failed audit insert leaves no live token the client never received.
+9. **`PATCH /users/:id` records only real transitions,** decided on the user re-read inside the transaction (the race fix of ba49c870 extended to every field). The no-op writes go.
 10. **A reset acceptance is `auth.password_changed` with `details.via: 'reset'`**, since it replaces the credential and revokes every token. The spec listed only `/me/password`.
 11. **`team.created` is one event**, with `details.name`; the creator's admin membership is implied and not a second `team.member_added`.
 12. **The cursor is `base64url("<at ISO>|<id>")`.** The page's `next` is present when the page is full. A cursor that does not decode is `400 audit-cursor-invalid`.
@@ -50,6 +51,10 @@ Each is a reading of the spec where the spec and the code disagree or the spec i
 18. **Desktop files follow the code, not the spec's paths.** Main: `src/main/ipc/audit.ts` plus `ServerClient` methods. Renderer: `src/renderer/state/audit.ts` and `features/team/audit-tab.tsx`, `audit-filter-bar.tsx`, `audit-detail.tsx`.
 19. **The docs page is `docs-site/src/content/docs/guides/server-audit-log.mdx`**, beside `server-licensing.mdx`.
 20. **`AUDIT_ACTIONS` drops nothing from the spec and adds nothing.** `team.renamed` has a route (`PATCH /teams/:teamId`), so it stays.
+21. **A literal typed as `AuditAction` satisfies spec §10's "through the enum".** `recordAudit` takes `AuditAction`, so a misspelt name fails `tsc`; a constant map would add nothing the union does not check.
+22. **Three shape changes from the spec's §4.2, §5.1 and §6.** The table gains `actor_workspace_id`, so a CI-token actor keeps its workspace. A `details` value may be `null`, for an absent previous value. The spec's `auditActor(request)` and its `events.ts` become `auditSource(request)` in `context.ts`, since request-less functions take the same shape (ruling 3).
+23. **Single-statement actions gain a transaction for their event.** Sign-out and device revoke, invitation revoke, grant removal, catch URL rotate, delete and clear, and CI-token revoke run their write and its event in one `db.transaction`.
+24. **`user.created` is written before the invitation-accepted hooks run**, in identity's acceptance and in OIDC linking, so the event order reads `user.created` then `team.member_added`, and a failing accepted-hook test proves the rollback.
 
 ## File map
 
@@ -98,7 +103,7 @@ Modified:
 **Files:**
 - Create: `packages/engine/src/server-api/audit.ts`
 - Modify: `packages/engine/src/index.ts` (after the licensing export blocks, before `ACCOUNTS_FILE_VERSION`)
-- Test: `packages/engine/test/server-api/audit.test.ts`
+- Test: `packages/engine/test/unit/server-api/audit.test.ts`
 
 **Interfaces:**
 - Produces: `AUDIT_ACTIONS`, `auditActionSchema`, `AuditAction`; `AUDIT_ACTION_GROUPS`, `AuditActionGroup`; `AUDIT_ACTOR_KINDS`, `AuditActorKind`; `AUDIT_TARGET_KINDS`, `AuditTargetKind`; `AUDIT_LIMITS`; `auditDetailsSchema`, `AuditDetails`; `auditActorSchema`, `AuditActor`; `auditEventSchema`, `AuditEvent`; `auditQuerySchema`, `AuditQuery`; `auditExportQuerySchema`, `AuditExportQuery`; `auditPageSchema`, `AuditPage`.
@@ -106,9 +111,9 @@ Modified:
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-// packages/engine/test/server-api/audit.test.ts
+// packages/engine/test/unit/server-api/audit.test.ts
 import { describe, expect, it } from 'vitest';
-import { AUDIT_ACTIONS, AUDIT_LIMITS, auditEventSchema, auditPageSchema, auditQuerySchema } from '../../src/index.js';
+import { AUDIT_ACTIONS, AUDIT_LIMITS, auditEventSchema, auditPageSchema, auditQuerySchema } from '../../../src/index.js';
 
 const EVENT = {
   id: '01J9ZK3V8Q0000000000000001',
@@ -159,7 +164,7 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
 
 - [ ] **Step 2: Run it to see it fail**
 
-Run: `pnpm exec vitest run packages/engine/test/server-api/audit.test.ts`
+Run: `pnpm exec vitest run packages/engine/test/unit/server-api/audit.test.ts`
 Expected: FAIL, `AUDIT_ACTIONS` is not exported.
 
 - [ ] **Step 3: Write the schemas**
@@ -329,7 +334,7 @@ export type {
 
 - [ ] **Step 4: Run the test to see it pass**
 
-Run: `pnpm exec vitest run packages/engine/test/server-api/audit.test.ts`
+Run: `pnpm exec vitest run packages/engine/test/unit/server-api/audit.test.ts`
 Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Gate and commit**
@@ -337,7 +342,7 @@ Expected: PASS, 4 tests.
 Run: `WIREBENCH_SKIP_PERF=1 nice pnpm check`
 
 ```bash
-git add packages/engine/src/server-api/audit.ts packages/engine/src/index.ts packages/engine/test/server-api/audit.test.ts
+git add packages/engine/src/server-api/audit.ts packages/engine/src/index.ts packages/engine/test/unit/server-api/audit.test.ts
 git commit -m "feat(engine): audit-log wire shapes — actions, events, queries and pages (#198)"
 ```
 
@@ -349,12 +354,12 @@ git commit -m "feat(engine): audit-log wire shapes — actions, events, queries 
 - Modify: `packages/server/src/context.ts`
 - Create: `packages/server/migrations/audit-log/0008_audit-log.sql`
 - Create: `packages/server/src/audit-log/hook.ts`, `repo.ts`, `cursor.ts`, `errors.ts`
-- Modify: `packages/server/test/helpers/context.ts`
+- Modify: `packages/server/test/helpers/context.ts`, `packages/server/test/unit/live/announce.test.ts` (the `serverHooks()` equality gains `audit: []`)
 - Test: `packages/server/test/unit/audit-log/hook.test.ts`, `test/unit/audit-log/cursor.test.ts`, `test/integration/audit-log/repo.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1's types; `Querier`, `ServerHooks`, `serverHooks()` from `context.ts`; `newId()` from `identity/tokens.ts`; `problem()` from `problem.ts`; `Caller` (`identity/guard.ts`) and `CiCaller` (`ci-tokens/principal.ts`) on the Fastify request.
-- Produces (in `context.ts`): `AuditActorInput`, `AuditSource`, `AuditInput`, `AuditHook`, `ServerHooks.audit`, `recordAudit(hooks, tx, event)`, `auditSource(request)`, `SYSTEM_SOURCE`, `ANONYMOUS_SOURCE`. In the module: `auditHook(now): AuditHook`, `boundDetails(details)`, `insertAuditEvent`, `AuditFilter`, `listAuditEvents(db, filter, page)`, `listAuditEventsAscending(db, filter, after, limit)`, `deleteAuditEventsBefore(db, cutoff, limit)`, `Cursor`, `encodeCursor`, `decodeCursor`, `cursorInvalid()`. In the test helpers: `recordingAudit(hooks): AuditInput[]`.
+- Produces (in `context.ts`): `AuditActorInput`, `AuditSource`, `AuditInput`, `AuditHook`, `ServerHooks.audit`, `recordAudit(hooks, tx, event)`, `auditSource(request)`, `SYSTEM_SOURCE`, `ANONYMOUS_SOURCE`. In the module: `auditHook(now): AuditHook`, `boundDetails(details)`, `insertAuditEvent`, `AuditFilter`, `listAuditEvents(db, filter, page)`, `listAuditEventsAscending(db, filter, after, limit)`, `deleteAuditEventsBefore(db, cutoff, limit)`, `Cursor`, `encodeCursor`, `decodeCursor`, `cursorInvalid()`. In the test helpers: `recordingAudit(hooks): AuditInput[]`, `expectNoSecretsInAudit(db): Promise<void>`.
 
 - [ ] **Step 1: Context plumbing**
 
@@ -394,7 +399,7 @@ export const SYSTEM_SOURCE: AuditSource = { actor: { kind: 'system' } };
 export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
 ```
 
-3. Add `readonly audit: AuditHook[];` to `ServerHooks` and `audit: [],` to `serverHooks()`. In the doc comment's **Hooks** sentence, name both: "`invitationAccepted` (teams-access §3.4) and `audit` (audit-log §3.1) run inside the caller's transaction and are awaited."
+3. Add `readonly audit: AuditHook[];` to `ServerHooks` and `audit: [],` to `serverHooks()`. `test/unit/live/announce.test.ts:90-99` asserts `serverHooks()` with `toEqual` over the seven existing lists; add `audit: []` there. In the doc comment's **Hooks** sentence, name both: "`invitationAccepted` (teams-access §3.4) and `audit` (audit-log §3.1) run inside the caller's transaction and are awaited."
 4. Below `runInvitationAccepted`, add:
 
 ```ts
@@ -426,10 +431,29 @@ export function auditSource(request: FastifyRequest): AuditSource {
 
 5. Change `ServerModule.name` to `'identity' | 'licensing' | 'teams-access' | 'server-sync' | 'webhook-capture' | 'ci-tokens' | 'live-updates' | 'audit-log'`.
 
-In `packages/server/test/helpers/context.ts`, add the recorder every fire-site test uses:
+In `packages/server/test/helpers/context.ts`, add the recorder every fire-site test uses, and the secret scan every audit suite ends with (spec §6, §11):
 
 ```ts
-import type { AuditInput, ServerHooks } from '../../src/context.js';
+import { detectInText } from '@wirebench/engine';
+import type { AuditInput, Querier, ServerHooks } from '../../src/context.js';
+
+/** Wirebench's own token (`identity/tokens.ts` `TOKEN_PREFIX`) and license shapes, which the credential rules do not know. */
+const WIREBENCH_SHAPES: readonly RegExp[] = [/wbs_[A-Za-z0-9_-]{20,}/, /wbl1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/];
+
+/**
+ * Every audit row, serialised, scanned with the engine's secret rules (`detectInText`, the patterns the
+ * secret-scanning spec defines) plus the two shapes above. Ids and commit hashes pass: the engine flags
+ * high entropy only under a secret-sounding name, and a body name must be one of `SECRET_BODY_KEYS` exactly.
+ */
+export async function expectNoSecretsInAudit(db: Querier): Promise<void> {
+  const rows = await db.query<Record<string, unknown>>('select actor_email, user_agent, details from audit_events');
+  for (const row of rows.rows) {
+    const text = JSON.stringify(row);
+    if (detectInText(text).length > 0 || WIREBENCH_SHAPES.some((shape) => shape.test(text))) {
+      throw new Error(`audit row carries a secret-shaped value: ${text}`);
+    }
+  }
+}
 
 /** Pushes a hook that keeps every event; `events` is what a test asserts on. */
 export function recordingAudit(hooks: ServerHooks): AuditInput[] {
@@ -806,7 +830,7 @@ Expected: PASS, 7 tests.
 
 - [ ] **Step 6: Write the repo integration test**
 
-The integration suites apply migrations through the harnesses (`identityHarness` and friends run `allMigrations(modules)`). This test needs only the audit table, so it applies the file directly with the migration runner the harness uses (`packages/server/src/db/migrate.ts`; read its exported name, `applyMigrations` or similar, and the shape `allMigrations` returns in `serve.ts`).
+The harnesses run `allMigrations(modules)`, which refuses a gap in the combined versions (`serve.ts:89-117`). This test needs only the host's `0001` and the audit table, so it calls `migrate()` directly, which applies a list without that check (`db/migrate.ts:78`). The audit folder is loaded with `contiguous: false`, as module folders are. The test does not import Task 3's module.
 
 ```ts
 // packages/server/test/integration/audit-log/repo.test.ts
@@ -814,26 +838,25 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { decodeCursor, encodeCursor } from '../../../src/audit-log/cursor.js';
 import { auditHook } from '../../../src/audit-log/hook.js';
 import { deleteAuditEventsBefore, listAuditEvents, listAuditEventsAscending } from '../../../src/audit-log/repo.js';
-import { AUDIT_LOG_MIGRATIONS_DIR } from '../../../src/audit-log/module.js'; // Task 3 creates it; until then inline the path
-import type { Database } from '../../../src/context.js';
-import { describeDb, testDatabase, type TestDatabase } from '../../helpers/database.js';
-import { applyMigrationsFrom } from '../../helpers/migrations.js'; // see the note above this block
+import { fileURLToPath } from 'node:url';
+import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
+import { describeDb, testDatabase } from '../../helpers/database.js';
+
+const AUDIT_DIR = fileURLToPath(new URL('../../../migrations/audit-log/', import.meta.url));
 
 describeDb('audit_events repo (audit-log spec §3.4, §4.2)', () => {
-  let t: TestDatabase;
-  let db: Database;
+  let db: Awaited<ReturnType<typeof testDatabase>>;
   let tick = Date.parse('2026-10-01T00:00:00Z');
   const clock = () => new Date((tick += 1000));
   const record = auditHook(clock);
 
   beforeAll(async () => {
-    t = await testDatabase();
-    db = t.db;
-    await applyMigrationsFrom(db, ['migrations/0001_init.sql', AUDIT_LOG_MIGRATIONS_DIR]);
+    db = await testDatabase();
+    await migrate(db, [...(await loadMigrations(MIGRATIONS_DIR)), ...(await loadMigrations(AUDIT_DIR, { contiguous: false }))]);
     for (let i = 0; i < 7; i++) {
       await record(db, {
         actor: i % 2 === 0 ? { kind: 'user', userId: 'U1', email: 'a@example.com' } : { kind: 'system' },
-        ip: i % 2 === 0 ? '203.0.113.7' : undefined,
+        ...(i % 2 === 0 ? { ip: '203.0.113.7' } : {}),
         action: i < 4 ? 'workspace.pushed' : 'team.created',
         target: { kind: i < 4 ? 'workspace' : 'team', id: `T${String(i)}` },
         ...(i < 4 ? { workspaceId: 'W1' } : { teamId: 'TEAM1' }),
@@ -841,7 +864,7 @@ describeDb('audit_events repo (audit-log spec §3.4, §4.2)', () => {
       });
     }
   });
-  afterAll(() => t.close());
+  afterAll(() => db.close());
 
   it('pages newest first through an opaque cursor, no row twice and none missing', async () => {
     const first = await listAuditEvents(db, {}, { limit: 3 });
@@ -891,7 +914,7 @@ describeDb('audit_events repo (audit-log spec §3.4, §4.2)', () => {
 });
 ```
 
-If no helper applies a list of migration sources, write `test/helpers/migrations.ts` with `applyMigrationsFrom(db, sources: string[])` on top of `db/migrate.ts`'s runner (ten lines), and inline `AUDIT_LOG_MIGRATIONS_DIR` as `fileURLToPath(new URL('../../../migrations/audit-log/', import.meta.url))` until Task 3 exports it.
+`testDatabase()` returns the `Database` itself, on a fresh schema (`test/helpers/database.ts:25`).
 
 - [ ] **Step 7: Run the integration test**
 
@@ -913,12 +936,13 @@ git commit -m "feat(server): the audit_events table, the in-transaction audit ho
 
 **Files:**
 - Create: `packages/server/src/audit-log/routes.ts`, `license-listener.ts`, `module.ts`
-- Modify: `packages/server/src/hooks/sweep.ts` (ruling 14), `packages/server/src/config.ts`, `packages/server/src/modules.ts`, `packages/server/src/live/module.ts` (export `realTimer` if it is not)
+- Modify: `packages/server/src/hooks/sweep.ts` (ruling 14), `packages/server/src/config.ts`, `packages/server/src/modules.ts`
+- Modify (tests that pin the module list): `packages/server/test/unit/live/module.test.ts:11-21` (append `'audit-log'`, and rename the case to "is registered after webhook-capture and ci-tokens", since live-updates is no longer last) and `packages/server/test/integration/hooks/repo.test.ts:33-41` (append `'audit-log'`)
 - Modify (generated): `packages/server/README.md` and `docs-site/src/content/docs/guides/wirebench-server.mdx` config tables, via `pnpm docs:server-config`
 - Test: `packages/server/test/unit/hooks/sweep.test.ts` (one case), `packages/server/test/unit/config.test.ts` (one case), `packages/server/test/integration/audit-log/routes.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2; `ctx.license.requireFeature('audit-log')`; `requireServerAdmin` (`identity/guard.ts`); `jsonSchema` (`schema.ts`); `CaptureSweeper` (`hooks/sweep.ts`), `SetTimer` (`hooks/env.ts`), `realTimer` (`live/module.ts`); `findUserById` (`identity/repo.ts`); `LicenseChanged` (`context.ts`).
+- Consumes: Task 2; `ctx.license.requireFeature('audit-log')`; `requireServerAdmin` (`identity/guard.ts`); `jsonSchema` (`schema.ts`); `CaptureSweeper` (`hooks/sweep.ts`), `SetTimer` (`hooks/env.ts`), `realTimer` (exported from `live/module.ts:41`); `findUserById` (`identity/repo.ts`); `LicenseChanged` (`context.ts`).
 - Produces: `auditLogModule(options?: { now?; setTimer? }): ServerModule`; `AUDIT_LOG_MIGRATIONS_DIR`; `auditRoutes(env)`; `filterOf(query): AuditFilter`; `exportLines(db, filter, onEnd): AsyncGenerator<string>`; `exportedEvent(source, query, count): AuditInput`; `licenseListener(env)`.
 
 - [ ] **Step 1: Generalise the sweeper**
@@ -932,14 +956,14 @@ In `packages/server/src/hooks/sweep.ts`, add to `SweeperDeps`:
   readonly label?: string;
 ```
 
-In `tick()`, log `` `${this.deps.label ?? 'capture sweep'} failed` ``; in `sweep()`, call `(this.deps.deleteBefore ?? deleteCapturesBefore)(this.deps.db, cutoff, batch)`. Add to `test/unit/hooks/sweep.test.ts`, using that file's own `fakeDb`, `timers` and logger fakes:
+In `tick()`, log `` `${this.deps.label ?? 'capture sweep'} failed` ``; in `sweep()`, call `(this.deps.deleteBefore ?? deleteCapturesBefore)(this.deps.db, cutoff, batch)`. Add to `test/unit/hooks/sweep.test.ts`, using that file's own `fakeDb`, `timers` and `log` fakes:
 
 ```ts
 it('deletes through an injected function in batches', async () => {
   const limits: number[] = [];
   const t = timers();
   const sweeper = new CaptureSweeper({
-    db: fakeDb([]), maxAgeDays: 1, now: () => new Date(), setTimer: t.setTimer, log: fakeLog(), batchSize: 2, label: 'audit sweep',
+    db: fakeDb([]), maxAgeDays: 1, now: () => new Date(), setTimer: t.setTimer, log: log([]), batchSize: 2, label: 'audit sweep',
     deleteBefore: (_db, _cutoff, limit) => { limits.push(limit); return Promise.resolve(limits.length === 1 ? 2 : 0); },
   });
   expect(await sweeper.runOnce()).toBe(2);
@@ -971,78 +995,125 @@ Run `pnpm docs:server-config` (no `--check`) to regenerate the two tables. In `t
 // packages/server/test/integration/audit-log/routes.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { auditLogModule } from '../../../src/audit-log/module.js';
+import { exportLines } from '../../../src/audit-log/routes.js';
+import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
+import { expectNoSecretsInAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
 import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
+import { manualTimers } from '../../helpers/timers.js';
+
+type Page = { events: { action: string; actor: { email?: string }; details: Record<string, unknown> }[]; next?: string };
 
 describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
   const keys = testKeys();
+  const timers = manualTimers();
   let h: Awaited<ReturnType<typeof licensingHarness>>;
   let admin: Awaited<ReturnType<typeof signedInUser>>;
   let member: Awaited<ReturnType<typeof signedInUser>>;
 
+  const get = (url: string, user = admin) => h.app.inject({ method: 'GET', url: `/api/v1${url}`, headers: user.headers });
+  const install = (edition: 'team' | 'enterprise') =>
+    h.app.inject({ method: 'PUT', url: '/api/v1/license', headers: admin.headers, payload: { license: license(keys, { edition }) } });
+  /** The listener writes after the announce (ruling 5), so a test waits for the row rather than sleeping. */
+  const rowsOf = async (action: string) =>
+    (await h.db.query<{ actor_email: string | null; details: Record<string, unknown> }>('select actor_email, details from audit_events where action = $1 order by at, id', [action])).rows;
+
   beforeAll(async () => {
-    h = await licensingHarness(keys, { extra: (clock) => [auditLogModule({ now: () => clock.now })] });
+    h = await licensingHarness(keys, { extra: (clock) => [auditLogModule({ now: () => clock.now, setTimer: timers.setTimer })] });
     admin = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     member = await signedInUser(h, { email: 'm@example.com' });
   });
   afterAll(() => h.close());
 
-  it('Community: an admin is refused with licensing-feature-required', async () => {
-    const res = await h.app.inject({ method: 'GET', url: '/api/v1/audit', headers: admin.headers });
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({ code: 'licensing-feature-required' });
+  it('Community: an admin is refused with licensing-feature-required, on both routes', async () => {
+    for (const url of ['/audit', '/audit/export']) {
+      const res = await get(url);
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ code: 'licensing-feature-required' });
+    }
   });
 
   it('a member hears identity-forbidden before the feature is checked', async () => {
-    const res = await h.app.inject({ method: 'GET', url: '/api/v1/audit', headers: member.headers });
+    const res = await get('/audit', member);
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ code: 'identity-forbidden' });
   });
 
+  it('Team: still refused, and the install is recorded all the same (recording is on for every edition)', async () => {
+    expect((await install('team')).statusCode).toBe(200);
+    await expect.poll(async () => (await rowsOf('license.installed')).length).toBe(1);
+    expect((await get('/audit')).statusCode).toBe(403);
+    expect((await get('/audit/export')).statusCode).toBe(403);
+  });
+
   it('Enterprise: pages newest first with a cursor, filters by prefix, refuses a bad cursor', async () => {
-    const put = await h.app.inject({ method: 'PUT', url: '/api/v1/license', headers: admin.headers, payload: { license: license(keys, { edition: 'enterprise' }) } });
-    expect(put.statusCode).toBe(200);
-    const page = await h.app.inject({ method: 'GET', url: '/api/v1/audit?limit=1', headers: admin.headers });
+    expect((await install('enterprise')).statusCode).toBe(200);
+    await expect.poll(async () => (await rowsOf('license.installed')).length).toBe(2);
+    const page = await get('/audit?limit=1');
     expect(page.statusCode).toBe(200);
-    const body = page.json<{ events: { action: string; actor: { email?: string } }[]; next?: string }>();
+    const body = page.json<Page>();
     expect(body.events).toHaveLength(1);
     expect(body.events[0]!.action).toBe('license.installed');
     expect(body.events[0]!.actor.email).toBe('root@example.com');
+    expect(body.events[0]!.details).toEqual({ edition: 'enterprise' });
     expect(body.next).toBeTypeOf('string');
-    const rest = await h.app.inject({ method: 'GET', url: `/api/v1/audit?limit=200&after=${encodeURIComponent(body.next!)}`, headers: admin.headers });
+    const rest = await get(`/audit?limit=200&after=${encodeURIComponent(body.next!)}`);
     expect(rest.statusCode).toBe(200);
-    expect(rest.json<{ next?: string }>().next).toBeUndefined();
-    const only = await h.app.inject({ method: 'GET', url: '/api/v1/audit?action=license.', headers: admin.headers });
-    for (const e of only.json<{ events: { action: string }[] }>().events) expect(e.action.startsWith('license.')).toBe(true);
-    const bad = await h.app.inject({ method: 'GET', url: '/api/v1/audit?after=!!!', headers: admin.headers });
+    expect(rest.json<Page>().next).toBeUndefined();
+    for (const e of (await get('/audit?action=license.')).json<Page>().events) expect(e.action.startsWith('license.')).toBe(true);
+    const bad = await get('/audit?after=!!!');
     expect(bad.statusCode).toBe(400);
     expect(bad.json()).toMatchObject({ code: 'audit-cursor-invalid' });
   });
 
-  it('exports oldest first as NDJSON and records the export with the admin as actor', async () => {
-    const res = await h.app.inject({ method: 'GET', url: '/api/v1/audit/export', headers: admin.headers });
+  it('exports oldest first as NDJSON across the 1000-row batch boundary, then records the export', async () => {
+    await h.db.query(
+      `insert into audit_events (id, at, actor_kind, action, target_kind, details)
+       select lpad(n::text, 26, '0'), timestamptz '2026-01-01' + n * interval '1 second', 'system', 'hook.cleared', 'hook', '{}'::jsonb
+       from generate_series(1, 1005) as n`,
+    );
+    const res = await get('/audit/export?action=hook.cleared');
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/x-ndjson/);
-    const lines = res.body.trimEnd().split('\n').map((line) => JSON.parse(line) as { at: string });
-    expect(lines.length).toBeGreaterThan(0);
+    const lines = res.body.trimEnd().split('\n').map((line) => JSON.parse(line) as { id: string; at: string });
+    expect(lines).toHaveLength(1005);
+    expect(new Set(lines.map((l) => l.id)).size).toBe(1005);
     for (let i = 1; i < lines.length; i++) expect(lines[i]!.at >= lines[i - 1]!.at).toBe(true);
-    const after = await h.app.inject({ method: 'GET', url: '/api/v1/audit?action=audit.exported', headers: admin.headers });
-    const exported = after.json<{ events: { details: Record<string, unknown>; actor: { email?: string } }[] }>().events[0]!;
-    expect(exported.details['count']).toBe(lines.length);
+    const exported = (await get('/audit?action=audit.exported')).json<Page>().events[0]!;
+    expect(exported.details).toMatchObject({ action: 'hook.cleared', count: 1005 });
     expect(exported.actor.email).toBe('root@example.com');
+  });
+
+  it('a consumer that stops mid-stream leaves no audit.exported row', async () => {
+    const before = (await rowsOf('audit.exported')).length;
+    const ended: number[] = [];
+    const lines = exportLines(h.db, { action: 'hook.cleared' }, (count) => {
+      ended.push(count);
+      return Promise.resolve();
+    });
+    await lines.next();
+    await lines.return(undefined);
+    expect(ended).toEqual([]);
+    expect((await rowsOf('audit.exported')).length).toBe(before);
   });
 
   it('license removal is recorded by the listener, after the commit, with the admin as actor', async () => {
     await h.app.inject({ method: 'DELETE', url: '/api/v1/license', headers: admin.headers });
-    await new Promise((resolve) => setTimeout(resolve, 50)); // the listener writes after the announce
-    const rows = await h.db.query<{ action: string; actor_email: string }>(`select action, actor_email from audit_events where action = 'license.removed'`);
-    expect(rows.rows).toEqual([{ action: 'license.removed', actor_email: 'root@example.com' }]);
+    await expect.poll(async () => (await rowsOf('license.removed')).map((r) => r.actor_email)).toEqual(['root@example.com']);
   });
+
+  it('the module sweeps events older than the retention on its own timer', async () => {
+    h.clock.set(new Date('2027-06-01T00:00:00Z')); // the generated rows are from 2026-01-01, beyond 365 days
+    expect(timers.fire(SWEEP_INTERVAL_MS)).toBe(1);
+    await expect.poll(async () => (await rowsOf('hook.cleared')).length).toBe(0);
+  });
+
+  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.db));
 });
 ```
 
-`licensingHarness(keys, { extra })` is on `feat/licensing` (`test/helpers/licensing.ts`): `extra: (clock) => ServerModule[]`, appended after its own modules. If its signature differs, adapt the call, not the harness. The sign-in rows that make the export non-empty come from Task 4; before that, `license.installed` alone keeps `lines.length > 0`.
+The sign-in rows that later tasks add do not change these counts: every assertion filters by action. Check that `CaptureSweeper.start()` arms its first tick through `setTimer` with `SWEEP_INTERVAL_MS` (`hooks/sweep.ts:33`); if it runs once at start instead, fire after `start` accordingly.
 
 - [ ] **Step 4: Run it to see it fail**
 
@@ -1070,6 +1141,7 @@ import {
   type AuditQuery,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import type { preHandlerAsyncHookHandler } from 'fastify';
 import { auditSource, recordAudit, type AuditInput, type AuditSource, type LicenseService, type Querier, type ServerHooks } from '../context.js';
 import { requireServerAdmin } from '../identity/guard.js';
 import { jsonSchema } from '../schema.js';
@@ -1079,7 +1151,8 @@ import { listAuditEvents, listAuditEventsAscending, type AuditFilter } from './r
 export interface AuditRoutesEnv {
   readonly db: Querier;
   readonly hooks: ServerHooks;
-  readonly license: LicenseService;
+  /** Read per request, never at registration: `ctx.license` is replaced when a license is installed (context.ts). */
+  readonly license: () => LicenseService;
 }
 
 export function filterOf(query: AuditExportQuery): AuditFilter {
@@ -1127,7 +1200,10 @@ export function exportedEvent(source: AuditSource, query: AuditExportQuery, coun
 export const auditRoutes =
   (env: AuditRoutesEnv) =>
   (app: FastifyInstance): void => {
-    const guards = [requireServerAdmin, env.license.requireFeature('audit-log')];
+    const feature: preHandlerAsyncHookHandler = async function (request, reply) {
+      await env.license().requireFeature('audit-log').call(this, request, reply);
+    };
+    const guards = [requireServerAdmin, feature];
 
     app.get(
       '/audit',
@@ -1136,7 +1212,7 @@ export const auditRoutes =
         const query = request.query as AuditQuery;
         const limit = query.limit ?? AUDIT_LIMITS.defaultPageSize;
         const after = query.after !== undefined ? decodeCursor(query.after) : undefined;
-        const events = await listAuditEvents(env.db, filterOf(query), { after, limit });
+        const events = await listAuditEvents(env.db, filterOf(query), { ...(after !== undefined ? { after } : {}), limit });
         const last = events[events.length - 1];
         return events.length === limit && last !== undefined ? { events, next: encodeCursor({ at: last.at, id: last.id }) } : { events };
       },
@@ -1218,7 +1294,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       ctx.hooks.audit.push(auditHook(now));
       ctx.hooks.licenseChanged.push(licenseListener({ db: ctx.db, hooks: ctx.hooks, log: ctx.log }));
       ctx.meta.addCapability('audit-log');
-      auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: ctx.license })(app);
+      auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
       const sweeper = new CaptureSweeper({
         db: ctx.db,
         maxAgeDays: ctx.config.auditMaxAgeDays,
@@ -1236,7 +1312,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
 }
 ```
 
-If `realTimer` is module-private in `live/module.ts`, export it (it is a `setTimeout` plus `unref`). In `packages/server/src/modules.ts`, import `auditLogModule` and append `auditLogModule()` after `liveModule()`, with one sentence in the block comment: "audit-log comes last: its routes sit behind identity's guard and read `ctx.license`; its hook is found at call time, so fire sites in earlier modules reach it."
+In `packages/server/src/modules.ts`, import `auditLogModule` and append `auditLogModule()` after `liveModule()`, with one sentence in the block comment: "audit-log comes last: its routes sit behind identity's guard and read `ctx.license`; its hook is found at call time, so fire sites in earlier modules reach it."
 
 - [ ] **Step 6: Run the tests to see them pass**
 
@@ -1259,10 +1335,11 @@ git commit -m "feat(server): the audit-log module — paged reads, NDJSON export
 **Files:**
 - Modify: `packages/server/src/identity/sessions.ts` (ruling 8), `invitations.ts`, `linking.ts`, `routes/auth-local.ts`, `routes/auth-oidc.ts`, `routes/me.ts`, `routes/users.ts`, `routes/invitations.ts`, `cli.ts` (call sites only; the hook itself is Task 7), `packages/server/src/teams/routes/invitations.ts` (the `createInvitation` and `revokeOpenInvitation` callers)
 - Test: `packages/server/test/integration/audit-log/identity-events.test.ts`; two cases in `test/integration/identity/oidc.test.ts`
+- Modify (callers of changed signatures): `test/integration/identity/invitations.test.ts`, `test/integration/identity/oidc.test.ts`, `test/integration/licensing/seats.test.ts` (see the end of Step 4)
 
 **Interfaces:**
 - Consumes: `recordAudit`, `auditSource`, `SYSTEM_SOURCE`, `ANONYMOUS_SOURCE`, `AuditSource` from `context.ts`; `recordingAudit` from the test helpers.
-- Produces: `issueToken(env, user, deviceName): Promise<{ response: SignInResponse; tokenId: string }>`; `CreateInvitationInput.source: AuditSource`; `createPasswordReset(env, user, createdBy, source)`; `revokeOpenInvitation(env, id, source)`; `acceptInvitation(env, input, source)`; `linkClaims(env, claims, source)`.
+- Produces: `issueToken(env, user, deviceName, db?): Promise<{ response: SignInResponse; tokenId: string }>`; `signIn(env, user, method, deviceName, source): Promise<SignInResponse>`; `CreateInvitationInput.source: AuditSource`; `createPasswordReset(env, user, createdBy, source)`; `revokeOpenInvitation(env, id, source)`; `acceptInvitation(env, input, source)`; `linkClaims(env, claims, source)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1273,18 +1350,22 @@ import type { AuditInput } from '../../../src/context.js';
 import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
-import { identityHarness, signedInUser } from '../../helpers/identity.js';
+import { expectNoSecretsInAudit } from '../../helpers/context.js';
+import { signedInUser } from '../../helpers/identity.js';
+import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 
 const last = (events: AuditInput[], action: AuditInput['action']) => events.filter((e) => e.action === action).at(-1)!;
 const PASSWORD = 'correct horse battery';
 
 describeDb('identity fire sites (audit-log spec §3.2)', () => {
-  let h: Awaited<ReturnType<typeof identityHarness>>;
+  let h: Awaited<ReturnType<typeof licensingHarness>>;
   let events: AuditInput[];
   let admin: Awaited<ReturnType<typeof signedInUser>>;
 
   beforeAll(async () => {
-    h = await identityHarness({ modules: (clock) => [auditLogModule({ now: () => clock.now })] });
+    // licensingHarness registers identity, licensing, teams, webhook capture and CI tokens, so the
+    // combined migrations run 0001 to 0008 with no gap (serve.ts refuses a gap).
+    h = await licensingHarness(testKeys(), { extra: (clock) => [auditLogModule({ now: () => clock.now })] });
     events = recordingAudit(h.hooks);
     admin = await signedInUser(h, { email: 'root@example.com', password: PASSWORD, serverAdmin: true });
   });
@@ -1326,7 +1407,7 @@ describeDb('identity fire sites (audit-log spec §3.2)', () => {
     expect(events[before + 1]!.details).toMatchObject({ method: 'local', device: 'phone' });
   });
 
-  it('a rolled-back acceptance leaves no row (the real hook, not the recorder)', async () => {
+  it('a rolled-back acceptance leaves no row: user.created is written before the failing accepted-hook (the real hook, not the recorder)', async () => {
     const invited = await h.app.inject({ method: 'POST', url: '/api/v1/invitations', headers: admin.headers, payload: { email: 'rollback@example.com' } });
     const secret = invited.json<{ url: string }>().url.split('/').at(-1)!;
     h.hooks.invitationAccepted.push(() => Promise.reject(new Error('boom')));
@@ -1362,8 +1443,33 @@ describeDb('identity fire sites (audit-log spec §3.2)', () => {
     await h.app.inject({ method: 'POST', url: '/api/v1/auth/sign-out', headers: other.headers });
     expect(last(events, 'auth.signed_out')).toMatchObject({ actor: { kind: 'user', email: 'o@example.com' }, details: { tokenId: other.tokenId } });
   });
+
+  it('revoking another device records auth.signed_out with that device token', async () => {
+    const laptop = await signedInUser(h, { email: 'd@example.com', password: PASSWORD, deviceName: 'laptop' });
+    const phone = await h.app.inject({ method: 'POST', url: '/api/v1/auth/local/sign-in', payload: { email: 'd@example.com', password: PASSWORD, device: { name: 'phone' } } });
+    expect(phone.statusCode).toBe(201);
+    const phoneTokenId = last(events, 'auth.signed_in').details!['tokenId'] as string;
+    const res = await h.app.inject({ method: 'DELETE', url: `/api/v1/me/devices/${phoneTokenId}`, headers: laptop.headers });
+    expect(res.statusCode).toBe(204);
+    expect(last(events, 'auth.signed_out')).toMatchObject({ actor: { kind: 'user', email: 'd@example.com' }, details: { tokenId: phoneTokenId } });
+  });
+
+  it('a failing audit insert fails the sign-in and leaves no token row', async () => {
+    const user = await signedInUser(h, { email: 'f@example.com', password: PASSWORD });
+    const before = await h.db.query('select 1 from device_tokens where user_id = $1', [user.user.id]);
+    h.hooks.audit.push(() => Promise.reject(new Error('audit down')));
+    const res = await h.app.inject({ method: 'POST', url: '/api/v1/auth/local/sign-in', payload: { email: 'f@example.com', password: PASSWORD, device: { name: 'x' } } });
+    h.hooks.audit.pop();
+    expect(res.statusCode).toBe(500);
+    const after = await h.db.query('select 1 from device_tokens where user_id = $1', [user.user.id]);
+    expect(after.rowCount).toBe(before.rowCount);
+  });
+
+  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.db));
 });
 ```
+
+The table is `device_tokens` (`migrations/identity/0002_identity.sql:46`) and the route is `DELETE /me/devices/:id` (`routes/me.ts`).
 
 In `test/integration/identity/oidc.test.ts`, add two cases with `const events = recordingAudit(h.hooks)`: the first sign-in of an invited user yields `user.created` with `details.method === 'oidc'` followed by `auth.signed_in` with `method: 'oidc'`; a callback for an email with no invitation yields `auth.sign_in_failed` with `details.reason === 'identity-not-invited'` and `details.emailLower` set.
 
@@ -1372,44 +1478,55 @@ In `test/integration/identity/oidc.test.ts`, add two cases with `const events = 
 Run: `WIREBENCH_SERVER_TEST_DATABASE_URL=… pnpm exec vitest run --project server-integration packages/server/test/integration/audit-log/identity-events.test.ts`
 Expected: FAIL, the recorder sees no events.
 
-- [ ] **Step 3: `issueToken` returns the token id (ruling 8)**
+- [ ] **Step 3: One sign-in helper that issues the token and records the event together (ruling 8)**
 
-In `identity/sessions.ts`:
+In `identity/sessions.ts`, `issueToken` takes the querier it writes on and returns the token id. A new `signIn` runs the token insert and `auth.signed_in` in one transaction (spec §3.1), so a failed audit insert leaves no live token the client never received. All three sign-in paths call `signIn`; nothing else calls `issueToken`.
 
 ```ts
-export async function issueToken(env: IdentityEnv, user: repo.UserRow, deviceName: string): Promise<{ response: SignInResponse; tokenId: string }> {
+export async function issueToken(
+  env: IdentityEnv,
+  user: repo.UserRow,
+  deviceName: string,
+  db: Querier = env.ctx.db,
+): Promise<{ response: SignInResponse; tokenId: string }> {
   const { token, hash } = mintToken();
   const id = newId();
-  const device = deviceName.trim().slice(0, MAX_DEVICE_NAME_LENGTH) || 'device';
-  await repo.insertToken(env.ctx.db, { id, userId: user.id, tokenHash: hash, deviceName: device, at: env.now() });
+  await repo.insertToken(db, { id, userId: user.id, tokenHash: hash, deviceName: deviceLabel(deviceName), at: env.now() });
   return { response: { token, user: publicUser(user) }, tokenId: id };
 }
 
-/** The `auth.signed_in` event every sign-in path records (audit-log §3.2), once the token exists. */
-export function signedInEvent(source: AuditSource, user: repo.UserRow, method: 'local' | 'oidc', device: string, tokenId: string): AuditInput {
-  return {
-    ...source,
-    actor: { kind: 'user', userId: user.id, email: user.email, tokenId },
-    action: 'auth.signed_in',
-    target: { kind: 'user', id: user.id },
-    details: { method, device: device.trim().slice(0, MAX_DEVICE_NAME_LENGTH), tokenId },
-  };
+const deviceLabel = (name: string): string => name.trim().slice(0, MAX_DEVICE_NAME_LENGTH) || 'device';
+
+/** The token and its `auth.signed_in` event (audit-log §3.2), committed together. */
+export async function signIn(env: IdentityEnv, user: repo.UserRow, method: 'local' | 'oidc', deviceName: string, source: AuditSource): Promise<SignInResponse> {
+  return env.ctx.db.transaction(async (tx) => {
+    const issued = await issueToken(env, user, deviceName, tx);
+    await recordAudit(env.ctx.hooks, tx, {
+      ...source,
+      actor: { kind: 'user', userId: user.id, email: user.email, tokenId: issued.tokenId },
+      action: 'auth.signed_in',
+      target: { kind: 'user', id: user.id },
+      details: { method, device: deviceLabel(deviceName), tokenId: issued.tokenId },
+    });
+    return issued.response;
+  });
 }
 ```
 
-Import `AuditInput, AuditSource` as types from `../context.js`.
+Import `recordAudit`, `type AuditSource` and `type Querier` from `../context.js`. Keep the existing body of `issueToken` otherwise (read it first; `publicUser` is whatever the current return builds).
 
 - [ ] **Step 4: The fire sites**
 
-`routes/auth-local.ts`, the sign-in handler. Import `ANONYMOUS_SOURCE, auditSource, recordAudit` from `../../context.js` and `signedInEvent` from `../sessions.js`:
+Every event below is written on the same querier as the action's own statement. The only writes on the pool by themselves are `auth.sign_in_failed`, which has no action to join (spec §3.2), and rulings 4 and 5.
+
+`routes/auth-local.ts`, the sign-in handler. Import `ANONYMOUS_SOURCE, auditSource, recordAudit` from `../../context.js` and `signIn` from `../sessions.js`:
 
 ```ts
       const source = auditSource(request);
       const failed = (reason: string) =>
         recordAudit(env.ctx.hooks, env.ctx.db, {
+          ...source,
           ...ANONYMOUS_SOURCE,
-          ip: source.ip,
-          ...(source.userAgent !== undefined ? { userAgent: source.userAgent } : {}),
           action: 'auth.sign_in_failed',
           target: { kind: 'server' },
           details: { method: 'local', reason, emailLower: emailLower(body.email) },
@@ -1423,19 +1540,22 @@ Import `AuditInput, AuditSource` as types from `../context.js`.
         throw userDisabled();
       }
       if (verdict.rehash) await repo.upsertCredential(env.ctx.db, user.id, await hashPassword(body.password), env.now());
-      const issued = await issueToken(env, user, body.device.name);
-      await recordAudit(env.ctx.hooks, env.ctx.db, signedInEvent(source, user, 'local', body.device.name, issued.tokenId));
-      return reply.code(201).send(issued.response);
+      return reply.code(201).send(await signIn(env, user, 'local', body.device.name, source));
 ```
 
-The sign-out handler, after `revokeToken`:
+`{ ...source, ...ANONYMOUS_SOURCE }` keeps the request's `ip` and `userAgent` and replaces the actor, with no `undefined` property (`exactOptionalPropertyTypes`).
+
+The sign-out handler:
 
 ```ts
-      await recordAudit(env.ctx.hooks, env.ctx.db, {
-        ...auditSource(request),
-        action: 'auth.signed_out',
-        target: { kind: 'user', id: request.caller!.id },
-        details: { tokenId: request.caller!.tokenId },
+      await env.ctx.db.transaction(async (tx) => {
+        await repo.revokeToken(tx, request.caller!.tokenId, env.now());
+        await recordAudit(env.ctx.hooks, tx, {
+          ...auditSource(request),
+          action: 'auth.signed_out',
+          target: { kind: 'user', id: request.caller!.id },
+          details: { tokenId: request.caller!.tokenId },
+        });
       });
 ```
 
@@ -1444,32 +1564,26 @@ The sign-out handler, after `revokeToken`:
 ```ts
       const refused = (reason: string, email?: string) =>
         recordAudit(env.ctx.hooks, env.ctx.db, {
+          ...auditSource(request),
           ...ANONYMOUS_SOURCE,
-          ip: request.ip,
           action: 'auth.sign_in_failed',
           target: { kind: 'server' },
           details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
         });
 ```
 
-and `await refused(...)` before each of the four redirects: the IdP's refusal (`'identity-oidc-refused'`), a failed exchange (`'identity-oidc-failed'`), an issuer mismatch (`'identity-oidc-failed'`, `claims.email`), and `linkClaims`'s refusal (`linked.code`, `claims.email`). `linkClaims(env, claims)` becomes `linkClaims(env, claims, auditSource(request))`. In `/auth/oidc/complete`:
+and `await refused(...)` before each of the four redirects: the IdP's refusal (`'identity-oidc-refused'`), a failed exchange (`'identity-oidc-failed'`), an issuer mismatch (`'identity-oidc-failed'`, `claims.email`), and `linkClaims`'s refusal (`linked.code`, `claims.email`). `linkClaims(env, claims)` becomes `linkClaims(env, claims, auditSource(request))`. In `/auth/oidc/complete`, `issueToken(env, user, flow.deviceName)` becomes `signIn(env, user, 'oidc', flow.deviceName, auditSource(request))`.
+
+`linking.ts`: `export async function linkClaims(env: IdentityEnv, claims: OidcClaims, source: AuditSource)`. In the create transaction, **before** `runInvitationAccepted` (so a failing accepted-hook proves the rollback, spec §11):
 
 ```ts
-      const issued = await issueToken(env, user, flow.deviceName);
-      await recordAudit(env.ctx.hooks, env.ctx.db, signedInEvent(auditSource(request), user, 'oidc', flow.deviceName, issued.tokenId));
-      return reply.code(201).send(issued.response);
-```
-
-`linking.ts`: `export async function linkClaims(env: IdentityEnv, claims: OidcClaims, source: AuditSource)`. In the create transaction, after `runInvitationAccepted`:
-
-```ts
-      await recordAudit(env.ctx.hooks, tx, {
-        ...source,
-        actor: { kind: 'user', userId: created.id, email: created.email },
-        action: 'user.created',
-        target: { kind: 'user', id: created.id },
-        details: { method: 'oidc', invitationId: decision.invitationId, emailLower: created.emailLower },
-      });
+          await recordAudit(env.ctx.hooks, tx, {
+            ...source,
+            actor: { kind: 'user', userId: created.id, email: created.email },
+            action: 'user.created',
+            target: { kind: 'user', id: created.id },
+            details: { method: 'oidc', invitationId: decision.invitationId, emailLower: created.emailLower },
+          });
 ```
 
 `invitations.ts`:
@@ -1486,48 +1600,69 @@ and `await refused(...)` before each of the four redirects: the IdP's refusal (`
 ```
 
 - `createPasswordReset(env, user, createdBy, source: AuditSource)`: inside its transaction, after `insertInvitation` (capture the row in a `const` first), record `user.password_reset_issued` with `target: { kind: 'user', id: user.id }`, `details: { invitationId: row.id }`.
-- `revokeOpenInvitation(env, id, source: AuditSource)`: after `revokeInvitation`, record `user.invitation_revoked` with `target: { kind: 'invitation', id }`, `details: { emailLower: row.emailLower }`, on `env.ctx.db`.
-- `acceptInvitation(env, input, source: AuditSource)`: in the transaction's `invite` branch after `runInvitationAccepted`, record `user.created` with the created user as actor and `details: { method: 'local', invitationId: invitation.id, emailLower: invitation.emailLower }`; in the `reset` branch after the credential is replaced and tokens revoked, record `auth.password_changed` with the user as actor and `details: { via: 'reset' }` (ruling 10). After the transaction: `const issued = await issueToken(env, user, input.device.name); await recordAudit(env.ctx.hooks, env.ctx.db, signedInEvent(source, user, 'local', input.device.name, issued.tokenId)); return issued.response;`.
+- `revokeOpenInvitation(env, id, source: AuditSource)`: the revoke and the event in one transaction.
+
+```ts
+  await env.ctx.db.transaction(async (tx) => {
+    await repo.revokeInvitation(tx, id, env.now());
+    await recordAudit(env.ctx.hooks, tx, { ...source, action: 'user.invitation_revoked', target: { kind: 'invitation', id }, details: { emailLower: row.emailLower } });
+  });
+```
+
+- `acceptInvitation(env, input, source: AuditSource)`: in the transaction's invite branch, record `user.created` right after `upsertCredential` and **before** `runInvitationAccepted`, with the created user as actor and `details: { method: 'local', invitationId: invitation.id, emailLower: invitation.emailLower }`. In the reset branch, after the credential is replaced and tokens revoked, record `auth.password_changed` with the user as actor and `details: { via: 'reset' }` (ruling 10). The last line becomes `return signIn(env, user, 'local', input.device.name, source);`.
 
 `routes/invitations.ts`: `source: auditSource(request)` in the `createInvitation` input; `revokeOpenInvitation(env, id, auditSource(request))`; `acceptInvitation(env, body, auditSource(request))`.
 
 `routes/me.ts`, `POST /me/password`, in the transaction after `revokeTokensOfUser`:
 
 ```ts
-        await recordAudit(env.ctx.hooks, tx, { ...auditSource(request), action: 'auth.password_changed', target: { kind: 'user', id: caller.id }, details: { via: 'self' } });
+          await recordAudit(env.ctx.hooks, tx, { ...auditSource(request), action: 'auth.password_changed', target: { kind: 'user', id: caller.id }, details: { via: 'self' } });
 ```
 
-`DELETE /me/devices/:id`, after `revokeToken`: record `auth.signed_out` with `target: { kind: 'user', id: caller.id }`, `details: { tokenId: id }`.
+`DELETE /me/devices/:id`: `revokeToken(tx, id, …)` and `auth.signed_out` (`target: { kind: 'user', id: caller.id }`, `details: { tokenId: id }`) in one `env.ctx.db.transaction`.
 
-`routes/users.ts`, `PATCH /users/:id` (ruling 9), the transaction body becomes:
+`routes/users.ts`, `PATCH /users/:id` (ruling 9). The transaction re-reads the user first, as the race fix in ba49c870 does for the seat check, and every transition is decided on that re-read:
 
 ```ts
         const source = auditSource(request);
-        const event = (action: 'user.disabled' | 'user.enabled' | 'user.admin_granted' | 'user.admin_revoked') =>
-          recordAudit(env.ctx.hooks, tx, { ...source, action, target: { kind: 'user', id } });
-        if (body.serverAdmin !== undefined && body.serverAdmin !== user.serverAdmin) {
-          await repo.setServerAdmin(tx, id, body.serverAdmin);
-          await event(body.serverAdmin ? 'user.admin_granted' : 'user.admin_revoked');
-        }
-        if (body.disabled === true && user.disabledAt === null) {
-          await repo.setDisabled(tx, id, now);
-          await repo.revokeTokensOfUser(tx, id, now); // disabling revokes every token (§3.1)
-          await event('user.disabled');
-        } else if (body.disabled === false && user.disabledAt !== null) {
-          await env.ctx.license.assertSeatAvailable(tx);
-          await repo.setDisabled(tx, id, null);
-          await event('user.enabled');
-        }
+        await env.ctx.db.transaction(async (tx) => {
+          // Re-read inside the transaction: a concurrent change since the read above must not skip the seat check or record a non-transition.
+          const current = (await repo.findUserById(tx, id)) ?? user;
+          const event = (action: 'user.disabled' | 'user.enabled' | 'user.admin_granted' | 'user.admin_revoked') =>
+            recordAudit(env.ctx.hooks, tx, { ...source, action, target: { kind: 'user', id } });
+          if (body.serverAdmin !== undefined && body.serverAdmin !== current.serverAdmin) {
+            await repo.setServerAdmin(tx, id, body.serverAdmin);
+            await event(body.serverAdmin ? 'user.admin_granted' : 'user.admin_revoked');
+          }
+          if (body.disabled === true && current.disabledAt === null) {
+            await repo.setDisabled(tx, id, now);
+            await repo.revokeTokensOfUser(tx, id, now); // disabling revokes every token (§3.1)
+            await event('user.disabled');
+          } else if (body.disabled === false && current.disabledAt !== null) {
+            // licensing §3.4: only restoring a disabled account takes a seat.
+            await env.ctx.license.assertSeatAvailable(tx);
+            await repo.setDisabled(tx, id, null);
+            await event('user.enabled');
+          }
+        });
 ```
 
-The response is unchanged. `POST /users/:id/password-reset` passes `auditSource(request)` as the fourth argument.
+The announcements after the transaction and the response are unchanged. `POST /users/:id/password-reset` passes `auditSource(request)` as the fourth argument.
 
 `identity/cli.ts`: `createInvitation(env, { …, source: SYSTEM_SOURCE })`, `revokeOpenInvitation(env, id, SYSTEM_SOURCE)`. `teams/routes/invitations.ts`: the team invitation passes `source: auditSource(request)` and its revoke passes `auditSource(request)`.
+
+Tests that call these functions directly need the new argument, or the typecheck fails. Each passes `source: SYSTEM_SOURCE` (or `SYSTEM_SOURCE` as the last argument):
+
+- `test/integration/identity/invitations.test.ts:222,228`
+- `test/integration/identity/oidc.test.ts:86,139,159,196`
+- `test/integration/licensing/seats.test.ts:80`
+
+Run `grep -rn "createInvitation(\|createPasswordReset(\|revokeOpenInvitation(\|acceptInvitation(\|linkClaims(\|issueToken(" packages/server/test` before the gate; the list above is what main had when this plan was written.
 
 - [ ] **Step 5: Run the identity suites**
 
 Run: `WIREBENCH_SERVER_TEST_DATABASE_URL=… pnpm exec vitest run --project server-integration packages/server/test/integration/identity packages/server/test/integration/audit-log packages/server/test/integration/licensing`
-Expected: PASS. The existing identity tests keep their behaviour: `issueToken`'s callers all send `.response`.
+Expected: PASS. The existing identity tests keep their behaviour: every sign-in path now goes through `signIn`, which answers the same `SignInResponse`.
 
 - [ ] **Step 6: Gate and commit**
 
@@ -1556,25 +1691,25 @@ git commit -m "feat(server): audit events for sign-ins, invitations, users and p
 // packages/server/test/integration/audit-log/teams-events.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { AuditInput } from '../../../src/context.js';
-import { recordingAudit } from '../../helpers/context.js';
+import { auditLogModule } from '../../../src/audit-log/module.js';
+import { expectNoSecretsInAudit, recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
-import { auditLogModule } from '../../../src/audit-log/module.js';
-import { teamsModule } from '../../../src/teams/module.js';
-import { identityHarness } from '../../helpers/identity.js';
+import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call, seedTeam } from '../../helpers/teams.js';
 
 const last = (events: AuditInput[], action: AuditInput['action']) => events.filter((e) => e.action === action).at(-1)!;
 
 describeDb('teams-access fire sites (audit-log spec §3.2, plan ruling 7)', () => {
-  let h: Awaited<ReturnType<typeof identityHarness>>;
+  let h: Awaited<ReturnType<typeof licensingHarness>>;
   let events: AuditInput[];
   let admin: Awaited<ReturnType<typeof signedInUser>>;
   let member: Awaited<ReturnType<typeof signedInUser>>;
 
   beforeAll(async () => {
-    // Through the routes, not the seed helpers: the seeds write rows directly and fire nothing.
-    h = await identityHarness({ modules: (clock) => [teamsModule({ now: () => clock.now }), auditLogModule({ now: () => clock.now })] });
+    // licensingHarness already registers teams-access, so migrations run 0001 to 0008 with no gap.
+    // Actions go through the routes, not the seed helpers: the seeds write rows directly and fire nothing.
+    h = await licensingHarness(testKeys(), { extra: (clock) => [auditLogModule({ now: () => clock.now })] });
     events = recordingAudit(h.hooks);
     admin = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     member = await signedInUser(h, { email: 'm@example.com' });
@@ -1625,6 +1760,17 @@ describeDb('teams-access fire sites (audit-log spec §3.2, plan ruling 7)', () =
     expect(added.details).toMatchObject({ role: 'member', via: 'invitation' });
     expect(added.actor).toMatchObject({ kind: 'user', email: 'inv@example.com' });
   });
+
+  it('a failing audit insert fails the action and leaves neither row (spec §11)', async () => {
+    h.hooks.audit.push(() => Promise.reject(new Error('audit down')));
+    const res = await call(h, admin, 'POST', '/teams', { name: 'Never' });
+    h.hooks.audit.pop();
+    expect(res.status).toBe(500);
+    expect((await h.db.query(`select 1 from teams where name = 'Never'`)).rowCount).toBe(0);
+    expect((await h.db.query(`select 1 from audit_events where action = 'team.created' and details->>'name' = 'Never'`)).rowCount).toBe(0);
+  });
+
+  it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.db));
 });
 ```
 
@@ -1636,7 +1782,7 @@ Expected: FAIL, no events recorded.
 
 - [ ] **Step 3: Repo change and fire sites**
 
-`teams/repo.ts` (use the grants table's real name from `migrations/teams-access/0003_teams.sql`):
+`teams/repo.ts` (the table is `workspace_grants`, `migrations/teams-access/0003_teams.sql:44`):
 
 ```ts
 /** The removed grant's role, or `undefined` when there was none, so a no-op delete records nothing (audit-log plan ruling 7). */
@@ -1666,8 +1812,17 @@ export async function deleteGrant(db: Querier, workspaceId: string, userId: stri
 
 `routes/access.ts`:
 
-- grant set: in the transaction after `upsertGrant`: `const ws = await repo.workspaceById(tx, workspaceId);` then record `workspace.grant_set` with `target: { kind: 'user', id: userId }`, `workspaceId`, `teamId: ws?.teamId`, `details: { role }`.
-- grant removed: `const removed = await repo.deleteGrant(db, workspaceId, userId); if (removed !== undefined) await recordAudit(env.ctx.hooks, db, { ...auditSource(request), action: 'workspace.grant_removed', target: { kind: 'user', id: userId }, workspaceId, details: { role: removed } });` then the existing announce.
+- grant set: in the transaction after `upsertGrant`: `const ws = await repo.workspaceById(tx, workspaceId);` then record `workspace.grant_set` with `target: { kind: 'user', id: userId }`, `workspaceId`, `...(ws !== undefined ? { teamId: ws.teamId } : {})`, `details: { role }`.
+- grant removed, the delete and its event in one transaction, then the existing announce:
+
+```ts
+        await db.transaction(async (tx) => {
+          const removed = await repo.deleteGrant(tx, workspaceId, userId);
+          if (removed !== undefined) {
+            await recordAudit(env.ctx.hooks, tx, { ...auditSource(request), action: 'workspace.grant_removed', target: { kind: 'user', id: userId }, workspaceId, details: { role: removed } });
+          }
+        });
+```
 
 `routes/invitations.ts`, `export function addInvitedMember(now: () => Date, hooks: ServerHooks): InvitationAcceptedHook`: after `insertMember`:
 
@@ -1704,12 +1859,13 @@ git commit -m "feat(server): audit events for teams, members, workspaces and gra
 
 **Files:**
 - Create: `packages/server/src/audit-log/secrets.ts` (pure, ruling 6)
-- Modify: `packages/server/src/sync/routes/commits.ts`, `sync/routes/key-requests.ts`, `hooks/routes/manage.ts`, `ci-tokens/repo.ts`, `ci-tokens/routes.ts`, `ci-tokens/module.ts`, `packages/server/test/helpers/context.ts`
+- Modify: `packages/server/src/sync/routes/commits.ts`, `sync/routes/key-requests.ts`, `hooks/routes/manage.ts`, `ci-tokens/repo.ts`, `ci-tokens/routes.ts`, `ci-tokens/module.ts`
+- Modify (return type change): `packages/server/test/integration/ci-tokens/repo.test.ts:58-59`
 - Test: `packages/server/test/unit/audit-log/secrets.test.ts`, `packages/server/test/integration/audit-log/sync-hooks-events.test.ts`
 
 **Interfaces:**
 - Consumes: `recordAudit`, `auditSource` (Task 1); `SyncChange` (`@wirebench/engine`); `CommitStore.hasFile(workspaceId, at, path)` (`sync/commit-store.ts`); `signaturePatchOf` and the `found(workspaceId, hookId)` lookup in `hooks/routes/manage.ts`; `revokeCiToken` (`ci-tokens/repo.ts`).
-- Produces: `secretEvents(changes, existed): SecretEvent[]` with `SecretEvent { action; details }`; `revokeCiToken(db, workspaceId, id, at): Promise<string | undefined>` (the revoked token's name); `CiTokensEnv.hooks`; test helpers `SECRET_SHAPES` and `expectNoSecretsInAudit(db)`.
+- Produces: `secretEvents(changes, existed): SecretEvent[]`, `isValuePath(path)`, with `SecretEvent { action; details }`; `revokeCiToken(db, workspaceId, id, at): Promise<string | undefined>` (the revoked token's name); `CiTokensEnv.hooks`, `CiTokensEnv.db: Database`; test helper `expectNoSecretsInAudit(db)`.
 
 - [ ] **Step 1: Write the failing pure test for the secrets derivation**
 
@@ -1718,23 +1874,23 @@ git commit -m "feat(server): audit events for teams, members, workspaces and gra
 import { describe, expect, it } from 'vitest';
 import { secretEvents } from '../../../src/audit-log/secrets.js';
 
-const change = (path: string) => ({ path, encoding: 'utf8' as const, content: 'x' });
+const change = (path: string, content: string | null = 'x') => ({ path, encoding: 'utf8' as const, content });
 
 describe('secret.* events from a push (audit-log plan ruling 6)', () => {
   it('a new value is shared, an existing one rotated, access and keys are access_changed, other paths are nothing', () => {
     const events = secretEvents(
       [
-        change('team-secrets/values/db-password.yaml'),
-        change('team-secrets/values/api-key.yaml'),
+        change('team-secrets/values/01J9V0000000000000000000A1.yaml'),
+        change('team-secrets/values/01J9V0000000000000000000B2.yaml'),
         change('team-secrets/access/01J9A.yaml'),
         change('team-secrets/keys/K1.yaml'),
         change('projects/p/requests/r.yaml'),
       ],
-      (path) => path.endsWith('api-key.yaml'),
+      (path) => path.endsWith('b2.yaml'),
     );
     expect(events).toEqual([
-      { action: 'secret.shared', details: { count: 1, names: ['db-password'] } },
-      { action: 'secret.rotated', details: { count: 1, names: ['api-key'] } },
+      { action: 'secret.shared', details: { count: 1, ids: ['01J9V0000000000000000000A1'] } },
+      { action: 'secret.rotated', details: { count: 1, ids: ['01J9V0000000000000000000B2'] } },
       { action: 'secret.access_changed', details: { entries: 1, keyRequests: 1 } },
     ]);
   });
@@ -1744,8 +1900,19 @@ describe('secret.* events from a push (audit-log plan ruling 6)', () => {
   });
 
   it('a deletion (null content) under values counts as rotated: the value is gone and must be set again', () => {
-    expect(secretEvents([{ path: 'team-secrets/values/old.yaml', encoding: 'utf8', content: null }], () => true)).toEqual([
-      { action: 'secret.rotated', details: { count: 1, names: ['old'] } },
+    expect(secretEvents([change('team-secrets/values/OLD.yaml', null)], () => true)).toEqual([
+      { action: 'secret.rotated', details: { count: 1, ids: ['OLD'] } },
+    ]);
+  });
+
+  it('matches without regard to case, and counts a path changed in two commits of one push once', () => {
+    const events = secretEvents(
+      [change('Team-Secrets/Values/N1.yaml'), change('team-secrets/values/n1.yaml', 'y'), change('TEAM-SECRETS/ACCESS/E.yaml')],
+      () => false,
+    );
+    expect(events).toEqual([
+      { action: 'secret.shared', details: { count: 1, ids: ['N1'] } },
+      { action: 'secret.access_changed', details: { entries: 1, keyRequests: 0 } },
     ]);
   });
 });
@@ -1762,41 +1929,47 @@ Expected: FAIL, the module does not exist.
 // packages/server/src/audit-log/secrets.ts
 /**
  * `secret.*` events from a push's paths (audit-log spec §3.2, plan ruling 6). The server never parses a
- * team-secrets file, so what it can say is which kind of file changed and whether a value is new. Names
- * are the file's leaf without extension: a label the team chose, never a value.
+ * team-secrets file, so what it can say is which kind of file changed and whether a value is new. A
+ * value file is named by its entry's id (`team-secrets/schema.ts`), so `ids` are ids, never values.
+ * Paths are compared lower-cased, as `sync/routes/commits.ts` does, and a path changed in several
+ * commits of one push counts once, judged by whether it existed at the push's parent.
  */
-import type { AuditDetails, SyncChange } from '@wirebench/engine';
+import { TEAM_SECRETS_ACCESS_DIR, TEAM_SECRETS_KEYS_DIR, TEAM_SECRETS_VALUES_DIR, type AuditDetails, type SyncChange } from '@wirebench/engine';
 
 export interface SecretEvent {
   readonly action: 'secret.shared' | 'secret.rotated' | 'secret.access_changed';
   readonly details: AuditDetails;
 }
 
-const VALUES = 'team-secrets/values/';
-const ACCESS = 'team-secrets/access/';
-const KEYS = 'team-secrets/keys/';
-const MAX_NAMES = 64;
-const leaf = (path: string): string => (path.split('/').at(-1) ?? path).replace(/\.ya?ml$/, '');
+const VALUES = `${TEAM_SECRETS_VALUES_DIR}/`;
+const ACCESS = `${TEAM_SECRETS_ACCESS_DIR}/`;
+const KEYS = `${TEAM_SECRETS_KEYS_DIR}/`;
+const MAX_IDS = 64;
+const idOf = (path: string): string => (path.split('/').at(-1) ?? path).replace(/\.ya?ml$/i, '');
 
-/** `existed(path)` answers whether the file was at the push's parent; a deletion is `content: null`. */
+/** Whether a value path is about to be counted; the caller asks the store only for these. */
+export const isValuePath = (path: string): boolean => path.toLowerCase().startsWith(VALUES);
+
+/** `existed(lowerCasedPath)` answers whether the file was at the push's parent. */
 export function secretEvents(changes: readonly SyncChange[], existed: (path: string) => boolean): SecretEvent[] {
+  const values = new Map<string, { id: string; deleted: boolean }>();
+  const access = new Set<string>();
+  const keys = new Set<string>();
+  for (const change of changes) {
+    const path = change.path.toLowerCase();
+    if (path.startsWith(VALUES)) {
+      const first = values.get(path);
+      values.set(path, { id: first?.id ?? idOf(change.path), deleted: change.content === null });
+    } else if (path.startsWith(ACCESS)) access.add(path);
+    else if (path.startsWith(KEYS)) keys.add(path);
+  }
   const shared: string[] = [];
   const rotated: string[] = [];
-  let entries = 0;
-  let keyRequests = 0;
-  for (const change of changes) {
-    if (change.path.startsWith(VALUES)) {
-      (change.content !== null && !existed(change.path) ? shared : rotated).push(leaf(change.path));
-    } else if (change.path.startsWith(ACCESS)) {
-      entries += 1;
-    } else if (change.path.startsWith(KEYS)) {
-      keyRequests += 1;
-    }
-  }
+  for (const [path, value] of values) (!value.deleted && !existed(path) ? shared : rotated).push(value.id);
   const events: SecretEvent[] = [];
-  if (shared.length > 0) events.push({ action: 'secret.shared', details: { count: shared.length, names: shared.slice(0, MAX_NAMES) } });
-  if (rotated.length > 0) events.push({ action: 'secret.rotated', details: { count: rotated.length, names: rotated.slice(0, MAX_NAMES) } });
-  if (entries + keyRequests > 0) events.push({ action: 'secret.access_changed', details: { entries, keyRequests } });
+  if (shared.length > 0) events.push({ action: 'secret.shared', details: { count: shared.length, ids: shared.slice(0, MAX_IDS) } });
+  if (rotated.length > 0) events.push({ action: 'secret.rotated', details: { count: rotated.length, ids: rotated.slice(0, MAX_IDS) } });
+  if (access.size + keys.size > 0) events.push({ action: 'secret.access_changed', details: { entries: access.size, keyRequests: keys.size } });
   return events;
 }
 ```
@@ -1809,14 +1982,12 @@ Run the test again: PASS.
 // packages/server/test/integration/audit-log/sync-hooks-events.test.ts
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { auditLogModule } from '../../../src/audit-log/module.js';
-import { ciTokensModule } from '../../../src/ci-tokens/module.js';
 import type { AuditInput } from '../../../src/context.js';
-import { hooksModule } from '../../../src/hooks/module.js';
 import { syncModule } from '../../../src/sync/module.js';
-import { teamsModule } from '../../../src/teams/module.js';
 import { expectNoSecretsInAudit, recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
-import { identityHarness, signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
+import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
+import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call, seedTeam } from '../../helpers/teams.js';
 
 /** The key the signature suites use (`test/integration/hooks/signatures-manage.test.ts`); without it a signature is refused. */
@@ -1842,16 +2013,9 @@ describeDb('sync, webhook and CI-token fire sites (audit-log spec §3.2, plan ru
   let workspaceId: string;
 
   beforeAll(async () => {
-    h = await identityHarness({
-      env: KEY_ENV,
-      modules: (clock) => [
-        teamsModule({ now: () => clock.now }),
-        syncModule(),
-        hooksModule({ now: () => clock.now }),
-        ciTokensModule({ now: () => clock.now }),
-        auditLogModule({ now: () => clock.now }),
-      ],
-    });
+    // licensingHarness brings identity, licensing, teams, webhook capture and CI tokens; sync and audit
+    // are added, so the combined migrations run 0001 to 0008 with no gap.
+    h = await licensingHarness(testKeys(), { env: KEY_ENV, extra: (clock) => [syncModule(), auditLogModule({ now: () => clock.now })] });
     events = recordingAudit(h.hooks);
     admin = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
     const team = await seedTeam(h, { name: 'Payments QA', admins: [admin] });
@@ -1867,9 +2031,16 @@ describeDb('sync, webhook and CI-token fire sites (audit-log spec §3.2, plan ru
       workspaceId,
       details: { head: first, previousHead: null, commits: 1 },
     });
-    expect(last(events, 'secret.shared').details).toEqual({ count: 1, names: ['db'] });
+    expect(last(events, 'secret.shared').details).toEqual({ count: 1, ids: ['db'] });
     await push(h, admin, workspaceId, first, [{ path: 'team-secrets/values/db.yaml', encoding: 'utf8', content: 'enc2' }]);
-    expect(last(events, 'secret.rotated').details).toEqual({ count: 1, names: ['db'] });
+    expect(last(events, 'secret.rotated').details).toEqual({ count: 1, ids: ['db'] });
+  });
+
+  it('a key request records secret.access_changed with its key id and the new head', async () => {
+    const keyId = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const res = await call<{ head: string }>(h, admin, 'POST', `/workspaces/${workspaceId}/team-secrets/key-requests`, { keyId, content: 'public key' });
+    expect(res.status).toBe(201);
+    expect(last(events, 'secret.access_changed')).toMatchObject({ workspaceId, details: { entries: 0, keyRequests: 1, keyId, head: res.body.head } });
   });
 
   it('catch URL created, changed with a signature set then cleared, rotated, cleared, deleted', async () => {
@@ -1920,7 +2091,7 @@ Expected: FAIL, no `workspace.pushed` event.
 
 - [ ] **Step 6: The fire sites**
 
-`sync/routes/commits.ts`, after `appendCommits` returns and before the `headMoved` announce (ruling 4). Import `auditSource, recordAudit` from `../../context.js` and `secretEvents` from `../../audit-log/secrets.js`:
+`sync/routes/commits.ts`, after `appendCommits` returns and before the `headMoved` announce (ruling 4). Import `auditSource, recordAudit` from `../../context.js` and `isValuePath, secretEvents` from `../../audit-log/secrets.js`:
 
 ```ts
     // Recorded after the ref moved (audit-log plan ruling 4): the commits are on main, so a failure here is logged, not answered.
@@ -1934,16 +2105,14 @@ Expected: FAIL, no `workspace.pushed` event.
         details: { head: result.head, previousHead: body.parent, commits: body.commits.length },
       });
       const changes = body.commits.flatMap((commit) => commit.changes);
-      if (changes.some((change) => change.path.startsWith('team-secrets/'))) {
-        const existed = new Map<string, boolean>();
-        for (const change of changes) {
-          if (change.path.startsWith('team-secrets/values/')) {
-            existed.set(change.path, body.parent !== null && (await env.store.hasFile(workspaceId, body.parent, change.path)));
-          }
-        }
-        for (const event of secretEvents(changes, (path) => existed.get(path) ?? false)) {
-          await recordAudit(hooks, db, { ...source, ...event, target: { kind: 'workspace', id: workspaceId }, workspaceId });
-        }
+      const valuePaths = new Map<string, string>(); // lower-cased path -> the path as pushed
+      for (const change of changes) if (isValuePath(change.path)) valuePaths.set(change.path.toLowerCase(), change.path);
+      const existed = new Set<string>();
+      if (body.parent !== null) {
+        for (const [lower, path] of valuePaths) if (await env.store.hasFile(workspaceId, body.parent, path)) existed.add(lower);
+      }
+      for (const event of secretEvents(changes, (path) => existed.has(path))) {
+        await recordAudit(hooks, db, { ...source, ...event, target: { kind: 'workspace', id: workspaceId }, workspaceId });
       }
     } catch (error) {
       request.log.warn({ err: error, workspaceId }, 'audit: push not recorded');
@@ -1951,17 +2120,26 @@ Expected: FAIL, no `workspace.pushed` event.
     announce(hooks.headMoved, { workspaceId, head: result.head, tokenId: request.caller!.tokenId }, request.log);
 ```
 
-`hasFile` is asked only for `values/` paths, once each, so a push's cost grows with its secret changes, not its size.
+`hasFile` is asked once per distinct value path, so a push's cost grows with its secret changes, not its size. Use the names the handler already has for `db`, `hooks` and `result` (read the handler first).
 
 `sync/routes/key-requests.ts`, after `appendCommits` returns, the same try/catch shape with one event: `action: 'secret.access_changed'`, `target: { kind: 'workspace', id: workspaceId }`, `workspaceId`, `details: { entries: 0, keyRequests: 1, keyId: body.keyId, head: result.head }`.
 
-`hooks/routes/manage.ts` (every event has `target: { kind: 'hook', id: hookId }` and `workspaceId`; `const source = auditSource(request)` at the top of each handler):
+`hooks/routes/manage.ts`. Every event has `target: { kind: 'hook', id: hookId }` and `workspaceId`; `const source = auditSource(request)` at the top of each handler. Each write and its event share one `db.transaction` (`db` is `env.ctx.db`, a `Database`):
 
 - create: in the transaction after `insertCatchUrl`, `hook.created` with `details: { name }`.
-- PATCH: wrap `updateCatchUrl` and the events in `db.transaction`. After a successful update: `hook.changed` with `details: { name: body.name ?? current.name, previousName: current.name, enabled: body.enabled ?? null, rejectUnverified: body.rejectUnverified ?? null }`; then from the `signature` value `signaturePatchOf` computed: an object → `hook.signature_set` with `details: { scheme: signature.scheme.kind }`; `null` → `hook.signature_cleared` with `details: { scheme: current.signature?.kind ?? null }`; `undefined` → nothing. The secret never comes near `details`.
-- rotate: keep `const row = await found(workspaceId, hookId);` (stop discarding it); after `rotateSecret`, `hook.rotated` with `details: { name: row.name }`.
-- delete: `const row = await found(…)`; after `deleteCatchUrl`, `hook.deleted` with `details: { name: row.name }`.
-- clear: `const row = await found(…)`; `const removed = await repo.clearCaptures(db, hookId)`; `hook.cleared` with `details: { name: row.name, captures: removed }`.
+- PATCH: wrap `updateCatchUrl` and the events in `db.transaction`. `hook.changed` only when something other than the signature changed: `name`, `enabled` or `rejectUnverified` given and different from `current`. Its details carry what changed: `{ name, previousName }` for a rename, `{ enabled }`, `{ rejectUnverified }`. Then, from the `signature` value `signaturePatchOf` computed: an object, `hook.signature_set` with `details: { scheme: signature.scheme.kind }`; `null`, `hook.signature_cleared` with `details: { scheme: current.signature?.kind ?? null }`; `undefined`, nothing. The secret never comes near `details`. A signature-only PATCH writes exactly one event.
+- rotate, delete and clear keep the row `found` returns (stop discarding it), and run the write and the event together:
+
+```ts
+        const row = await found(workspaceId, hookId);
+        await db.transaction(async (tx) => {
+          // rotate: the old URL answers 404 from the moment this commits (§3.5).
+          if (!(await repo.rotateSecret(tx, hookId, mintCatchSecret()))) throw catchUrlNotFound();
+          await recordAudit(env.ctx.hooks, tx, { ...source, action: 'hook.rotated', target: { kind: 'hook', id: hookId }, workspaceId, details: { name: row.name } });
+        });
+```
+
+  The delete is the same with `deleteCatchUrl` and `hook.deleted` (`details: { name: row.name }`). The clear is `const removed = await repo.clearCaptures(tx, hookId)` and `hook.cleared` with `details: { name: row.name, captures: removed }`. The announcements stay after the transaction.
 
 `ci-tokens/repo.ts`:
 
@@ -1976,43 +2154,22 @@ export async function revokeCiToken(db: Querier, workspaceId: string, id: string
 }
 ```
 
-`ci-tokens/routes.ts`: `CiTokensEnv` gains `readonly hooks: ServerHooks;` (set from `ctx.hooks` in `ci-tokens/module.ts`). Create: wrap `insertCiToken` and `ci_token.created` (`target: { kind: 'ci-token', id }`, `workspaceId`, `details: { name }`) in `db.transaction`. Revoke:
+`ci-tokens/routes.ts`: `CiTokensEnv.db` becomes `Database` (it needs `.transaction`; `ctx.db` already is one) and the env gains `readonly hooks: ServerHooks;`. `ci-tokens/module.ts` passes `{ db: ctx.db, now, hooks: ctx.hooks }`. Create: `insertCiToken` and `ci_token.created` (`target: { kind: 'ci-token', id }`, `workspaceId`, `details: { name }`) in one `db.transaction`. Revoke:
 
 ```ts
-    const name = await repo.revokeCiToken(db, workspaceId, tokenId, env.now());
-    if (name === undefined) throw ciTokenNotFound();
-    await recordAudit(env.hooks, db, { ...auditSource(request), action: 'ci_token.revoked', target: { kind: 'ci-token', id: tokenId }, workspaceId, details: { name } });
+        const workspaceId = request.workspaceAccess!.workspaceId;
+        await db.transaction(async (tx) => {
+          const name = await repo.revokeCiToken(tx, workspaceId, tokenId, env.now());
+          if (name === undefined) throw ciTokenNotFound();
+          await recordAudit(env.hooks, tx, { ...auditSource(request), action: 'ci_token.revoked', target: { kind: 'ci-token', id: tokenId }, workspaceId, details: { name } });
+        });
 ```
 
-Update the existing unit test that asserts `revokeCiToken` returns a boolean.
+Tests that change with the return type: `test/integration/ci-tokens/repo.test.ts:58-59` expects `'<the token name>'` then `undefined` instead of `true` then `false`. `test/integration/ci-tokens/principal.test.ts:165,206` ignore the result and need no change.
 
 - [ ] **Step 7: The whole-suite secret assertion (spec §6, §11)**
 
-Add to `test/helpers/context.ts`:
-
-```ts
-/** Secret shapes: device tokens, license lines, bearer values, scrypt/bcrypt hashes, long base64url blobs. */
-export const SECRET_SHAPES: readonly RegExp[] = [
-  /wbs_[A-Za-z0-9_-]{20,}/,
-  /wbl1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/,
-  /Bearer\s+[A-Za-z0-9._-]{16,}/i,
-  /\$(2[aby]|scrypt)\$/,
-  /[A-Za-z0-9_-]{64,}/,
-];
-
-/** Every row this database holds, serialised, matched against every shape: the §6 assertion each suite ends with. */
-export async function expectNoSecretsInAudit(db: Querier): Promise<void> {
-  const rows = await db.query<Record<string, unknown>>('select actor_email, user_agent, details from audit_events');
-  for (const row of rows.rows) {
-    const text = JSON.stringify(row);
-    for (const shape of SECRET_SHAPES) {
-      if (shape.test(text)) throw new Error(`audit row carries a secret-shaped value: ${text}`);
-    }
-  }
-}
-```
-
-Add a final `it('writes no secret-shaped value', () => expectNoSecretsInAudit(h.db))` to `identity-events.test.ts` (Task 4), `teams-events.test.ts` (Task 5) and `routes.test.ts` (Task 3), so every kind of row is scanned where it is produced. Task 7's CLI test adds its own.
+`expectNoSecretsInAudit` comes from Task 2's test helpers. Tasks 3, 4, 5 and 6 end their audit suites with it, and Task 7 adds its own case. Nothing more to write here; run it as part of Step 8.
 
 - [ ] **Step 8: Run and commit**
 
@@ -2031,7 +2188,7 @@ git commit -m "feat(server): audit events for pushes, team-secret paths, catch U
 **Files:**
 - Modify: `packages/server/src/args.ts`, `src/main.ts`, `src/identity/cli.ts`, `src/licensing/cli.ts`
 - Create: `packages/server/src/audit-log/cli.ts`
-- Test: `packages/server/test/unit/args.test.ts` (new cases), `packages/server/test/integration/audit-log/cli.test.ts`
+- Test: `packages/server/test/unit/args.test.ts` (new cases), `packages/server/test/integration/audit-log/cli.test.ts`, `packages/server/test/unit/audit-log/coverage.test.ts`
 
 **Interfaces:**
 - Consumes: `exportLines`, `filterOf`, `exportedEvent` (Task 3); `auditHook` (Task 2); `recordAudit`, `SYSTEM_SOURCE` (Task 1); `runAdmin`, `ServerIo`, `ExitCode` (`io.ts`); `installLicense`, `removeLicense` (`licensing/service.ts`).
@@ -2039,17 +2196,17 @@ git commit -m "feat(server): audit events for pushes, team-secret paths, catch U
 
 - [ ] **Step 1: Write the failing args test**
 
-In `test/unit/args.test.ts` (use the file's parse function name):
+In `test/unit/args.test.ts` (the parser is `parseServerArgs`, `args.ts:48`):
 
 ```ts
 it('parses admin audit export with its four options', () => {
-  expect(parseArgs(['admin', 'audit', 'export'])).toEqual({ command: 'admin-audit-export' });
+  expect(parseServerArgs(['admin', 'audit', 'export'])).toEqual({ command: 'admin-audit-export' });
   expect(
-    parseArgs(['admin', 'audit', 'export', '--from', '2026-10-01T00:00:00Z', '--to', '2026-11-01T00:00:00Z', '--action', 'auth.', '--workspace', 'W1']),
+    parseServerArgs(['admin', 'audit', 'export', '--from', '2026-10-01T00:00:00Z', '--to', '2026-11-01T00:00:00Z', '--action', 'auth.', '--workspace', 'W1']),
   ).toEqual({ command: 'admin-audit-export', from: '2026-10-01T00:00:00Z', to: '2026-11-01T00:00:00Z', action: 'auth.', workspace: 'W1' });
-  expect(() => parseArgs(['admin', 'audit'])).toThrow(/usage: wirebench-server admin audit export/);
-  expect(() => parseArgs(['admin', 'audit', 'export', '--from', 'yesterday'])).toThrow(/ISO 8601/);
-  expect(() => parseArgs(['admin', 'license', 'show', '--from', 'x'])).toThrow(/--from/);
+  expect(() => parseServerArgs(['admin', 'audit'])).toThrow(/usage: wirebench-server admin audit export/);
+  expect(() => parseServerArgs(['admin', 'audit', 'export', '--from', 'yesterday'])).toThrow(/ISO 8601/);
+  expect(() => parseServerArgs(['admin', 'license', 'show', '--from', 'x'])).toThrow(/--from/);
 });
 ```
 
@@ -2087,18 +2244,24 @@ One `HELP_TEXT` line: `  admin audit export [--from <iso>] [--to <iso>] [--actio
 
 `identity/cli.ts`, in `runAdmin`: after `env` is built, `env.ctx.hooks.audit.push(auditHook(env.now));` (ruling 2). Add `case 'admin-audit-export': return await runAuditCommand(command, { db, hooks: env.ctx.hooks, now: env.now }, io);`. The license branch passes `hooks: env.ctx.hooks` into `runLicenseCommand`'s env.
 
-`licensing/cli.ts`: the env gains `readonly hooks: ServerHooks`. After `installLicense` succeeds:
+`licensing/cli.ts`: the env gains `readonly hooks: ServerHooks`. Today `installLicense(env, text, null)` discards its result (`licensing/cli.ts:50`); keep it, inside the existing `try`, and record after it, as the routes' listener does after the commit (ruling 5):
 
 ```ts
-    await recordAudit(env.hooks, env.db, {
-      ...SYSTEM_SOURCE,
-      action: 'license.installed',
-      target: { kind: 'license', id: changed.licenseId },
-      details: { edition: changed.edition ?? null, via: 'cli' },
-    });
+      let changed: LicenseChanged;
+      try {
+        changed = await installLicense(env, text, null);
+      } catch (error) {
+        // … the existing licensing-invalid branch, unchanged
+      }
+      await recordAudit(env.hooks, env.db, {
+        ...SYSTEM_SOURCE,
+        action: 'license.installed',
+        target: { kind: 'license', ...(changed.licenseId !== undefined ? { id: changed.licenseId } : {}) },
+        details: { edition: changed.edition ?? null, via: 'cli' },
+      });
 ```
 
-After `removeLicense` returns a change: the same with `license.removed`, `target: { kind: 'license', id: changed.licenseId }` and `details: { via: 'cli' }`.
+`admin-license-remove` already keeps `changed`; when it is defined, record `license.removed` the same way with `details: { via: 'cli' }`. Import `recordAudit`, `SYSTEM_SOURCE`, `type LicenseChanged` and `type ServerHooks` from `../context.js`. In `identity/cli.ts:106`, the env passed to `runLicenseCommand` gains `hooks: env.ctx.hooks`.
 
 - [ ] **Step 4: `audit-log/cli.ts`**
 
@@ -2141,41 +2304,70 @@ export async function runAuditCommand(
 
 - [ ] **Step 5: Integration test**
 
-Model `packages/server/test/integration/audit-log/cli.test.ts` on the licensing CLI test (`test/integration/licensing/cli.test.ts`): the same database setup, the same `io` fake, `runAdmin` with `publicKeys: keys.publicKeys`. Cases:
+`packages/server/test/integration/audit-log/cli.test.ts` copies the licensing CLI test's setup (`test/integration/licensing/cli.test.ts:16-48`): a fresh `testDatabase()`, `main(['migrate'], …)`, an `io()` factory that returns a fresh `{ io, stdout(), stderr() }` per call, and `options = { now: () => NOW, publicKeys: [keys.publicKey] }`. `runAdmin` is `(command, io, options)` (`identity/cli.ts:28-32`).
 
 ```ts
-it('invites, installs a license, then exports both events with the system actor', async () => {
-  expect(await runAdmin({ command: 'admin-invite', email: 'a@example.com', admin: true }, env, io)).toBe(0);
-  expect(await runAdmin({ command: 'admin-license-install', file: licenseFile }, env, io)).toBe(0);
-  io.stdout.clear();
-  expect(await runAdmin({ command: 'admin-audit-export' }, env, io)).toBe(0);
-  const lines = io.stdout
-    .text()
-    .trim()
-    .split('\n')
-    .map((line) => JSON.parse(line) as { action: string; actor: { kind: string }; details: Record<string, unknown> });
-  expect(lines.map((l) => l.action)).toEqual(['user.invited', 'license.installed']);
-  expect(lines.every((l) => l.actor.kind === 'system')).toBe(true);
-  expect(lines[1]!.details).toMatchObject({ via: 'cli', edition: 'team' });
-  io.stdout.clear();
-  expect(await runAdmin({ command: 'admin-audit-export', action: 'audit.' }, env, io)).toBe(0);
-  const exported = JSON.parse(io.stdout.text().trim()) as { details: { count: number } };
-  expect(exported.details.count).toBe(2);
+type Line = { action: string; actor: { kind: string }; details: Record<string, unknown> };
+const lines = (text: string): Line[] => text.trim().split('\n').map((line) => JSON.parse(line) as Line);
+
+it('invites, installs and removes a license, then exports every event with the system actor', async () => {
+  expect(await runAdmin({ command: 'admin-invite', email: 'a@example.com', serverAdmin: true }, io().io, options)).toBe(0);
+  expect(await runAdmin({ command: 'admin-license-install', file: await file('team.lic', license(keys)) }, io().io, options)).toBe(0);
+  expect(await runAdmin({ command: 'admin-license-remove' }, io().io, options)).toBe(0);
+  const out = io();
+  expect(await runAdmin({ command: 'admin-audit-export' }, out.io, options)).toBe(0);
+  const events = lines(out.stdout());
+  expect(events.map((e) => e.action)).toEqual(['user.invited', 'license.installed', 'license.removed']);
+  expect(events.every((e) => e.actor.kind === 'system')).toBe(true);
+  expect(events[1]!.details).toEqual({ edition: 'team', via: 'cli' });
+  expect(events[2]!.details).toEqual({ via: 'cli' });
+  const again = io();
+  expect(await runAdmin({ command: 'admin-audit-export', action: 'audit.' }, again.io, options)).toBe(0);
+  expect(lines(again.stdout())[0]!.details['count']).toBe(3);
 });
 
 it('a bad action pattern is a configuration error that names the field', async () => {
-  expect(await runAdmin({ command: 'admin-audit-export', action: 'Nope' }, env, io)).toBe(2);
-  expect(io.stderr.text()).toContain('action');
+  const out = io();
+  expect(await runAdmin({ command: 'admin-audit-export', action: 'Nope' }, out.io, options)).toBe(2);
+  expect(out.stderr()).toContain('action');
 });
 
-it('writes no secret-shaped value: the license line never reaches a row', () => expectNoSecretsInAudit(env.db));
+it('writes no secret-shaped value: the license line never reaches a row', async () => {
+  await runAdmin({ command: 'admin-license-install', file: await file('team.lic', license(keys)) }, io().io, options);
+  await expectNoSecretsInAudit(db);
+});
 ```
 
-Match the `io` fake's accessor names (`text()`, `clear()`) to what the licensing CLI test defines.
+Each case starts on a fresh database (the file's `beforeEach`), so the counts are exact. The second export, filtered to `audit.`, prints the first export's row, whose `count` is 3; its own row is written after its last line, so it never lists itself.
+
+- [ ] **Step 5b: Every action has a test (spec §11, §15)**
+
+The last server task adds the check that the closed list and the tests agree. It reads the audit test folders as text and fails on an action no test names, so adding an action without a test turns `pnpm check` red.
+
+```ts
+// packages/server/test/unit/audit-log/coverage.test.ts
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { AUDIT_ACTIONS } from '@wirebench/engine';
+import { describe, expect, it } from 'vitest';
+
+const DIRS = ['../../integration/audit-log/', './'].map((dir) => fileURLToPath(new URL(dir, import.meta.url)));
+const text = DIRS.flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.test.ts')).map((f) => readFileSync(join(dir, f), 'utf8'))).join('\n');
+
+describe('audit actions and their tests (audit-log spec §15)', () => {
+  it('every action in AUDIT_ACTIONS is asserted by name in an audit test', () => {
+    const untested = AUDIT_ACTIONS.filter((action) => !text.includes(`'${action}'`));
+    expect(untested).toEqual([]);
+  });
+});
+```
+
+This file names no action itself, so it cannot satisfy its own check. With Tasks 3 to 7 done, every one of the 40 actions is asserted in `test/integration/audit-log/`; if the check reports one, add the missing assertion to the suite that owns its fire site.
 
 - [ ] **Step 6: Run, gate, commit**
 
-Run: `pnpm exec vitest run packages/server/test/unit/args.test.ts && WIREBENCH_SERVER_TEST_DATABASE_URL=… pnpm exec vitest run --project server-integration packages/server/test/integration/audit-log/cli.test.ts packages/server/test/integration/licensing && WIREBENCH_SKIP_PERF=1 nice pnpm check`
+Run: `pnpm exec vitest run packages/server/test/unit/args.test.ts packages/server/test/unit/audit-log/coverage.test.ts && WIREBENCH_SERVER_TEST_DATABASE_URL=… pnpm exec vitest run --project server-integration packages/server/test/integration/audit-log/cli.test.ts packages/server/test/integration/licensing && WIREBENCH_SKIP_PERF=1 nice pnpm check`
 Expected: green.
 
 ```bash
@@ -2193,8 +2385,8 @@ git commit -m "feat(server): admin audit export, and the console records its own
 - Test: `apps/desktop/test/ipc-audit.test.ts`, `apps/desktop/test/server-client-audit.test.ts`
 
 **Interfaces:**
-- Consumes: `auditPageSchema`, `AuditPage`, `AuditQuery`, `AuditExportQuery` (`@wirebench/engine`; main may import values); the engine's `stream` request hook (`accept(status, headers)` returning a sink with `onChunk`, or `undefined` to buffer); `withToken`, `registerHandler`, `pickSaveFile(sender, picks, opts)`; `ServerClient`'s private `call`, `withQuery`, `normalizeServerUrl`, `this.deps.options`, `this.send`.
-- Produces: wire schemas `auditActorWireSchema`, `auditEventWireSchema`, `auditQueryWireSchema`, `auditPageWireSchema`, `auditQueryRequestWireSchema` (`{ url, query }`), `auditExportRequestWireSchema` (`{ url, query }` without `after`/`limit`), `auditExportResponseWireSchema` (`{ saved: false } | { saved: true; path; count }`) and the types `AuditEventWire`, `AuditPageWire`, `AuditQueryWire`, `AuditExportResponseWire`; channels `audit.query`, `audit.export`; `ServerClient.queryAudit(url, token, query): Promise<AuditPage>`; `ServerClient.streamAuditExport(url, token, query, sink): Promise<void>`; `registerAuditChannels(deps)`; `auditFileName(at)`.
+- Consumes: `auditPageWireSchema` and the `AuditQueryWire`, `AuditExportQueryWire`, `AuditPageWire` types from `shared/wire-types.ts` (main may import values); the engine's `stream` request hook (`accept(status, headers)` returning a sink with `onChunk`, or `undefined` to buffer); `withToken`, `registerHandler`, `pickSaveFile(sender, picks, opts)`; `ServerClient`'s private `call`, `withQuery`, `normalizeServerUrl`, `this.deps.options`, `this.send`.
+- Produces: wire schemas `auditActorWireSchema`, `auditEventWireSchema`, `auditQueryWireSchema`, `auditPageWireSchema`, `auditQueryRequestWireSchema` (`{ url, query }`), `auditExportRequestWireSchema` (`{ url, query }` without `after`/`limit`), `auditExportResponseWireSchema` (`{ saved: false } | { saved: true; path; count }`) and the types `AuditEventWire`, `AuditPageWire`, `AuditQueryWire`, `AuditExportResponseWire`; channels `audit.query`, `audit.export`; `ServerClient.queryAudit(url, token, query: AuditQueryWire): Promise<AuditPageWire>`; `ServerClient.streamAuditExport(url, token, query, open): Promise<void>`; `registerAuditChannels(deps)`; `auditFileName(at)`.
 
 - [ ] **Step 1: Wire types and channels**
 
@@ -2242,6 +2434,7 @@ export const auditExportResponseWireSchema = z.union([
 export type AuditEventWire = z.infer<typeof auditEventWireSchema>;
 export type AuditPageWire = z.infer<typeof auditPageWireSchema>;
 export type AuditQueryWire = z.infer<typeof auditQueryWireSchema>;
+export type AuditExportQueryWire = z.infer<typeof auditExportRequestWireSchema>['query'];
 export type AuditExportResponseWire = z.infer<typeof auditExportResponseWireSchema>;
 ```
 
@@ -2291,18 +2484,24 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
         return Promise.resolve({ status: 200, headers: {}, body: new Uint8Array(), streamEnd: { by: 'server' } } as never);
       },
     });
-    await client.streamAuditExport('https://s.example', 'tok', {}, (chunk) => chunks.push(new TextDecoder().decode(chunk)));
+    await client.streamAuditExport('https://s.example', 'tok', {}, () => (chunk) => chunks.push(new TextDecoder().decode(chunk)));
     expect(chunks.join('')).toBe('{"a":1}\n{"a":2}\n');
   });
 
-  it("a problem status is not streamed and rejects with the server's code", async () => {
+  it("a problem status is not streamed, never opens the sink, and rejects with the server's code", async () => {
     const client = new ServerClient({
       send: (req) => {
         expect(req.stream!.accept(403, { 'content-type': 'application/json' })).toBeUndefined();
         return Promise.resolve(json(403, { code: 'licensing-feature-required', message: 'no' }));
       },
     });
-    await expect(client.streamAuditExport('https://s.example', 'tok', {}, () => undefined)).rejects.toMatchObject({ code: 'licensing-feature-required' });
+    let opened = false;
+    const open = () => {
+      opened = true;
+      return () => undefined;
+    };
+    await expect(client.streamAuditExport('https://s.example', 'tok', {}, open)).rejects.toMatchObject({ code: 'licensing-feature-required' });
+    expect(opened).toBe(false);
   });
 });
 ```
@@ -2319,15 +2518,20 @@ Beside the license methods in `server-client.ts`:
 ```ts
   // ---- audit log (audit-log spec §3.4): server admins on Enterprise ------------------------------
 
-  queryAudit(url: string, token: string, query: AuditQuery): Promise<AuditPage> {
-    return this.call(url, { method: 'GET', path: withQuery('/api/v1/audit', auditParams(query)), token, schema: auditPageSchema });
+  /**
+   * Parsed with the wire schema, not the engine's: its `action` is any string, so a newer server's new
+   * action reaches the tab instead of failing as `server-bad-response` (audit-log spec §3.6).
+   */
+  queryAudit(url: string, token: string, query: AuditQueryWire): Promise<AuditPageWire> {
+    return this.call(url, { method: 'GET', path: withQuery('/api/v1/audit', auditParams(query)), token, schema: auditPageWireSchema });
   }
 
   /**
-   * Streams the NDJSON export to `sink` as it arrives (audit-log plan ruling 16): `call()` buffers and
-   * expects JSON, so this builds the request itself. A non-2xx is read whole and raised as the problem.
+   * Streams the NDJSON export as it arrives (audit-log plan ruling 16): `call()` buffers and expects
+   * JSON, so this builds the request itself. `open()` runs once, on a 2xx, and returns the chunk sink, so
+   * the caller creates its file only then. A non-2xx is read whole and raised as the problem.
    */
-  async streamAuditExport(url: string, token: string, query: AuditExportQuery, sink: (chunk: Uint8Array) => void): Promise<void> {
+  async streamAuditExport(url: string, token: string, query: AuditExportQueryWire, open: () => (chunk: Uint8Array) => void): Promise<void> {
     const origin = normalizeServerUrl(url);
     const options = await this.deps.options?.(origin);
     let streamed = false;
@@ -2342,7 +2546,7 @@ Beside the license methods in `server-client.ts`:
         accept: (status) => {
           if (status < 200 || status >= 300) return undefined;
           streamed = true;
-          return { onChunk: sink };
+          return { onChunk: open() };
         },
       },
     }).catch((cause: unknown) => {
@@ -2358,7 +2562,7 @@ Beside the license methods in `server-client.ts`:
 At module level:
 
 ```ts
-const auditParams = (q: AuditQuery | AuditExportQuery): Record<string, string | number | undefined> => ({
+const auditParams = (q: AuditQueryWire | AuditExportQueryWire): Record<string, string | number | undefined> => ({
   action: q.action,
   actorUserId: q.actorUserId,
   ...('after' in q ? { after: q.after } : {}),
@@ -2380,12 +2584,14 @@ Keys are listed alphabetically because `withQuery` keeps the object's order and 
 // apps/desktop/src/main/ipc/audit.ts
 /**
  * `audit.*` (audit-log spec §3.6, §5.3): the Audit tab's calls, on the account's session. Main picks the
- * export file and writes the stream to it as it arrives (plan ruling 16); the renderer never sees a path.
+ * export file, and opens it only once the server has answered 2xx (plan ruling 16): a signed-out account,
+ * a 403 or an unreachable server leaves no empty file behind. The renderer never sees a path.
  */
 import { once } from 'node:events';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, type WriteStream } from 'node:fs';
 import { channels } from '../../shared/ipc.js';
-import { pickSaveFile, type DialogPicks } from '../native-dialogs.js';
+import type { RecordsWritePicks } from '../dialog-picks.js';
+import { pickSaveFile } from '../native-dialogs.js';
 import type { ServerClient } from '../server-client.js';
 import { withToken, type TokenSource } from '../server-token.js';
 import { registerHandler } from './register.js';
@@ -2393,7 +2599,7 @@ import { registerHandler } from './register.js';
 export interface AuditChannelDeps {
   readonly client: Pick<ServerClient, 'queryAudit' | 'streamAuditExport'>;
   readonly accounts: TokenSource;
-  readonly picks: DialogPicks;
+  readonly picks: RecordsWritePicks;
   /** Injected clock for the default file name. */
   readonly now?: () => Date;
 }
@@ -2410,78 +2616,87 @@ export function registerAuditChannels(deps: AuditChannelDeps): void {
       defaultPath: auditFileName((deps.now ?? (() => new Date()))()),
     });
     if (path === undefined) return { saved: false as const };
-    const out = createWriteStream(path);
+    let out: WriteStream | undefined;
     let count = 0;
     try {
       await withToken(deps, r.url, (url, token) =>
-        deps.client.streamAuditExport(url, token, r.query, (chunk) => {
-          for (const byte of chunk) if (byte === 0x0a) count += 1;
-          out.write(chunk);
+        deps.client.streamAuditExport(url, token, r.query, () => {
+          out = createWriteStream(path);
+          return (chunk) => {
+            for (const byte of chunk) if (byte === 0x0a) count += 1;
+            out!.write(chunk);
+          };
         }),
       );
     } finally {
-      out.end();
-      await once(out, 'close');
+      if (out !== undefined) {
+        out.end();
+        await once(out, 'close');
+      }
     }
     return { saved: true as const, path, count };
   });
 }
 ```
 
-Use the real exported names from `native-dialogs.ts` and `server-token.ts` (`pickSaveFile`'s picks type, `withToken`'s deps type); the shapes above follow `ipc/license.ts` and `ipc/http-log.ts`. A stream that stops early leaves the partial file and the error reaches the renderer through the envelope. In `main/index.ts`, beside `registerLicenseChannels`: `registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });` with the variable names that file uses.
+Check the picks type's module: `native-dialogs.ts:13` imports `RecordsWritePicks` from `./dialog-picks.js`. A stream that stops early leaves the partial file, and the error reaches the renderer through the envelope. In `main/index.ts`, beside `registerLicenseChannels`, call `registerAuditChannels` with the client, the account service and the dialog picks that file already passes to the log channels.
 
 - [ ] **Step 6: The channel test**
 
-`apps/desktop/test/ipc-audit.test.ts`, structured as `ipc-license.test.ts` (the `ipcMain.handle` mock into a Map, a stub client, `vi.mock('../src/main/native-dialogs.js')` for `pickSaveFile`):
+`apps/desktop/test/ipc-audit.test.ts`, with the fixtures of `test/ipc-log-export-har.test.ts:8-16` (a `handlers` map behind a mocked `ipcMain.handle`, a `pickSaveFile` `vi.fn` behind a mocked `native-dialogs.js`, `invoke(channel, payload)`), and the account fake of `test/ipc-license.test.ts:67`:
 
 ```ts
+const TOKEN = 'wbs_test';
+const accounts = (signedIn: boolean) => ({ tokenFor: () => Promise.resolve(signedIn ? TOKEN : undefined), markSignedOut: vi.fn() });
+const dir = mkdtempSync(join(tmpdir(), 'audit-'));
+const register = (client: object, signedIn = true) =>
+  registerAuditChannels({ client: client as never, accounts: accounts(signedIn), picks: {} as never });
+
 it('audit.query forwards url, token and query and returns the page', async () => {
-  const page = { events: [], next: undefined };
+  const page = { events: [] };
   const client = { queryAudit: vi.fn().mockResolvedValue(page), streamAuditExport: vi.fn() };
-  registerAuditChannels({ client, accounts: signedIn('tok'), picks: {} as never });
-  const result = await invoke('audit.query', { url: 'https://s.example', query: { limit: 10 } });
-  expect(client.queryAudit).toHaveBeenCalledWith('https://s.example', 'tok', { limit: 10 });
-  expect(result).toEqual({ ok: true, value: page });
+  register(client);
+  expect(await invoke('audit.query', { url: 'https://s.example', query: { limit: 10 } })).toEqual({ ok: true, value: page });
+  expect(client.queryAudit).toHaveBeenCalledWith('https://s.example', TOKEN, { limit: 10 });
 });
 
 it('audit.export with the dialog cancelled saves nothing and never calls the server', async () => {
-  pickSaveFileMock.mockResolvedValue(undefined);
+  pickSaveFile.mockResolvedValue(undefined);
   const client = { queryAudit: vi.fn(), streamAuditExport: vi.fn() };
-  registerAuditChannels({ client, accounts: signedIn('tok'), picks: {} as never });
+  register(client);
   expect(await invoke('audit.export', { url: 'https://s.example', query: {} })).toEqual({ ok: true, value: { saved: false } });
   expect(client.streamAuditExport).not.toHaveBeenCalled();
 });
 
 it('audit.export writes the chunks to the picked file and counts the lines', async () => {
   const path = join(dir, 'audit.ndjson');
-  pickSaveFileMock.mockResolvedValue(path);
+  pickSaveFile.mockResolvedValue(path);
   const client = {
     queryAudit: vi.fn(),
-    streamAuditExport: vi.fn(async (_u: string, _t: string, _q: unknown, sink: (c: Uint8Array) => void) => {
+    streamAuditExport: vi.fn((_u: string, _t: string, _q: unknown, open: () => (c: Uint8Array) => void) => {
+      const sink = open();
       sink(new TextEncoder().encode('{"a":1}\n{"a":'));
       sink(new TextEncoder().encode('2}\n'));
-      sink(new TextEncoder().encode(''));
+      return Promise.resolve();
     }),
   };
-  registerAuditChannels({ client, accounts: signedIn('tok'), picks: {} as never });
-  expect(await invoke('audit.export', { url: 'https://s.example', query: { action: 'auth.' } })).toEqual({
-    ok: true,
-    value: { saved: true, path, count: 2 },
-  });
+  register(client);
+  expect(await invoke('audit.export', { url: 'https://s.example', query: { action: 'auth.' } })).toEqual({ ok: true, value: { saved: true, path, count: 2 } });
   expect(readFileSync(path, 'utf8')).toBe('{"a":1}\n{"a":2}\n');
 });
 
-it('a signed-out account is the envelope error account-signed-out and no file is written', async () => {
+it('a signed-out account, or a refusal before any 2xx, writes no file', async () => {
   const path = join(dir, 'none.ndjson');
-  pickSaveFileMock.mockResolvedValue(path);
-  registerAuditChannels({ client: { queryAudit: vi.fn(), streamAuditExport: vi.fn() }, accounts: signedOut(), picks: {} as never });
-  const result = await invoke('audit.export', { url: 'https://s.example', query: {} });
-  expect(result).toMatchObject({ ok: false, error: { code: 'account-signed-out' } });
+  pickSaveFile.mockResolvedValue(path);
+  register({ queryAudit: vi.fn(), streamAuditExport: vi.fn() }, false);
+  expect(await invoke('audit.export', { url: 'https://s.example', query: {} })).toMatchObject({ ok: false, error: { code: 'account-signed-out' } });
+  register({ queryAudit: vi.fn(), streamAuditExport: vi.fn().mockRejectedValue(Object.assign(new Error('no'), { code: 'licensing-feature-required' })) });
+  expect(await invoke('audit.export', { url: 'https://s.example', query: {} })).toMatchObject({ ok: false });
   expect(existsSync(path)).toBe(false);
 });
 ```
 
-`signedIn`, `signedOut`, `invoke` and `pickSaveFileMock` are the fixtures `ipc-license.test.ts` defines; reuse its shapes. The fourth case needs the file opened after the token is resolved: move `createWriteStream(path)` inside the `withToken` callback and keep `out` in the enclosing scope for the `finally`, if the test shows the stream is created before the token check.
+Read how `ipc-license.test.ts` asserts an error envelope (the shape of `{ ok: false, error }`) and match it.
 
 - [ ] **Step 7: Run, gate, commit**
 
@@ -2504,7 +2719,7 @@ git commit -m "feat(desktop): audit channels, a paged query and a streamed NDJSO
 
 **Interfaces:**
 - Consumes: `ipc()` (`state/ipc-client.ts`); types `AuditEventWire`, `AuditQueryWire` from `shared/wire-types.ts` (type-only); `useGridNavigation` (`lib/grid-navigation.ts`); `Button`, `EmptyState`, the renderer's toast helper; `SELECT_CLASS` (`features/team/roles.ts`); `useTeamStore` (`serverAdmin`, the selected team's workspaces).
-- Produces: `useAuditStore` with `{ events, next, loaded, loading, loadingMore, exporting, error, filter, selectedId }` and `setFilter(url, patch)`, `load(url)`, `loadMore(url)`, `select(id)`, `exportToFile(url)`, `reset()`; `queryOf(filter, now, after?)`, `PAGE_SIZE`; in `audit-format.ts`: `RANGE_PRESETS`, `RANGE_LABELS`, `rangeOf(preset, now)`, `ACTION_GROUPS`, `ACTION_GROUP_LABELS`, `actionLabel`, `actorLabel`, `targetLabel`, `GATED_PATTERN`.
+- Produces: `useAuditStore` with `{ events, next, loaded, loading, loadingMore, exporting, error, errorCode, filter, selectedId }` and `setFilter(url, patch)`, `load(url)`, `loadMore(url)`, `select(id)`, `exportToFile(url)`, `reset()`; `queryOf(filter, now, after?)`, `PAGE_SIZE`; in `audit-format.ts`: `RANGE_PRESETS`, `RANGE_LABELS`, `rangeOf(preset, now)`, `ACTION_GROUPS`, `ACTION_GROUP_LABELS`, `actionLabel`, `actorLabel`, `targetLabel`.
 
 - [ ] **Step 1: Write the failing pure test**
 
@@ -2583,9 +2798,6 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   audit: 'Audit log',
 };
 
-/** The server's `licensing-feature-required` message names the edition; the tab shows its notice on it. */
-export const GATED_PATTERN = /Enterprise edition/;
-
 export function actionLabel(action: string): string {
   const words = (action.split('.')[1] ?? action).replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -2650,7 +2862,7 @@ import { create } from 'zustand';
 import type { AuditEventWire, AuditQueryWire } from '../../shared/wire-types.js';
 import { rangeOf, type ActionGroup, type RangePreset } from './audit-format.js';
 import { ipc } from './ipc-client.js';
-import { showToast } from './toast.js';
+import { showToast } from '../components/toast.js';
 
 export interface AuditFilter {
   readonly range: RangePreset;
@@ -2666,6 +2878,8 @@ export interface AuditSnapshot {
   readonly loadingMore: boolean;
   readonly exporting: boolean;
   readonly error: string | undefined;
+  /** The problem code, so the tab branches on `licensing-feature-required` rather than on message text. */
+  readonly errorCode: string | undefined;
   readonly filter: AuditFilter;
   readonly selectedId: string | undefined;
 }
@@ -2689,6 +2903,7 @@ const EMPTY: AuditSnapshot = {
   loadingMore: false,
   exporting: false,
   error: undefined,
+  errorCode: undefined,
   filter: { range: '7d', group: 'all', workspaceId: undefined },
   selectedId: undefined,
 };
@@ -2715,11 +2930,11 @@ export const useAuditStore = create<AuditSnapshot & AuditActions>((set, get) => 
   },
   async load(url) {
     const mine = ++loads;
-    set({ loading: true, error: undefined });
+    set({ loading: true, error: undefined, errorCode: undefined });
     const result = await ipc().audit.query({ url, query: queryOf(get().filter, new Date()) });
     if (mine !== loads) return;
     if (result.ok) set({ events: result.value.events, next: result.value.next, loaded: true, loading: false });
-    else set({ loaded: true, loading: false, error: result.error.message, events: [], next: undefined });
+    else set({ loaded: true, loading: false, error: result.error.message, errorCode: result.error.code, events: [], next: undefined });
   },
   async loadMore(url) {
     const { next, filter, loadingMore } = get();
@@ -2729,7 +2944,7 @@ export const useAuditStore = create<AuditSnapshot & AuditActions>((set, get) => 
     const result = await ipc().audit.query({ url, query: queryOf(filter, new Date(), next) });
     if (started !== epoch) return;
     if (result.ok) set((s) => ({ events: [...s.events, ...result.value.events], next: result.value.next, loadingMore: false }));
-    else set({ loadingMore: false, error: result.error.message });
+    else set({ loadingMore: false, error: result.error.message, errorCode: result.error.code });
   },
   select(id) {
     set({ selectedId: id });
@@ -2750,7 +2965,7 @@ export const useAuditStore = create<AuditSnapshot & AuditActions>((set, get) => 
 }));
 ```
 
-`showToast` stands for the renderer's toast helper; read `state/license.ts` or `features/team/license-tab.tsx` for the one the team dialog uses and import that.
+`showToast` is the renderer's toast (`renderer/components/toast.tsx:43`), the one `state/team.ts:20` imports.
 
 `state/team.ts`: `export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license' | 'audit';` and the non-admin guard becomes `if (!list.serverAdmin && (get().tab === 'license' || get().tab === 'audit')) set({ tab: 'members' });`.
 
@@ -2774,7 +2989,9 @@ export function AuditTab({ url, workspaces }: { readonly url: string; readonly w
   const nav = useGridNavigation(store.events.length, { onActiveRowChange: (i) => store.select(store.events[i]?.id) });
   const selected = store.events.find((e) => e.id === store.selectedId);
 
-  if (store.error !== undefined && store.events.length === 0 && GATED_PATTERN.test(store.error)) {
+  const workspaceName = (id: string | null): string => (id === null ? '—' : (workspaces.find((w) => w.id === id)?.name ?? id));
+
+  if (store.errorCode === 'licensing-feature-required' && store.events.length === 0) {
     return (
       <div data-testid="audit-tab" className="flex flex-col gap-3 text-sm">
         <p data-testid="audit-gated" role="status">
@@ -2803,6 +3020,7 @@ export function AuditTab({ url, workspaces }: { readonly url: string; readonly w
                   <th role="columnheader">Who</th>
                   <th role="columnheader">What</th>
                   <th role="columnheader">Target</th>
+                  <th role="columnheader">Workspace</th>
                 </tr>
               </thead>
               <tbody>
@@ -2824,6 +3042,7 @@ export function AuditTab({ url, workspaces }: { readonly url: string; readonly w
                     <td>{actorLabel(e.actor)}</td>
                     <td>{actionLabel(e.action)}</td>
                     <td>{targetLabel(e)}</td>
+                    <td>{workspaceName(e.workspaceId)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -2942,7 +3161,7 @@ git commit -m "feat(desktop): the Audit tab with filters, a keyboard grid, detai
 ### Task 10: One end-to-end path
 
 **Files:**
-- Modify: `e2e/helpers/fake-server.ts` (audit routes; `features` on an Enterprise license), `e2e/helpers/launch-app.ts` (an `env` option, if absent)
+- Modify: `e2e/helpers/fake-server.ts` (audit routes; `features` on an Enterprise license)
 - Create: `e2e/specs/audit.spec.ts`
 
 **Interfaces:**
@@ -3041,7 +3260,7 @@ test.describe('audit log (audit-log spec §3.6)', () => {
   test('gated on Community; filters, opens a detail and exports on Enterprise', async () => {
     test.setTimeout(120_000);
     server = await startFakeServer({ users: [ROOT], auditEvents: EVENTS });
-    launched = await launchApp({ userDataDir, keepUserDataDir: true, env: { WIREBENCH_E2E_DIALOG_SAVE: exportPath } });
+    launched = await launchApp({ userDataDir, keepUserDataDir: true, extraEnv: { WIREBENCH_E2E_DIALOG_SAVE: exportPath } });
     const page = launched.window;
     await signIn(page, server.url, ROOT);
     await runCommand(page, 'Account: Manage teams');
@@ -3052,7 +3271,7 @@ test.describe('audit log (audit-log spec §3.6)', () => {
 
     await dialog.getByRole('tab', { name: 'License' }).click();
     await dialog.getByTestId('license-input').fill(ENTERPRISE);
-    await dialog.getByRole('button', { name: 'Install license' }).click();
+    await dialog.getByTestId('license-install').click();
     await expect(dialog.getByTestId('license-edition')).toHaveText('Enterprise');
 
     await dialog.getByRole('tab', { name: 'Audit' }).click();
@@ -3070,13 +3289,9 @@ test.describe('audit log (audit-log spec §3.6)', () => {
 });
 ```
 
-Use the test ids and command name the License e2e spec uses for the dialog, the license input and the install button. If `launchApp` has no `env` option, add one in `e2e/helpers/launch-app.ts`, merged into the Electron process environment.
+The dialog, input and install test ids are the License spec's (`e2e/specs/license.spec.ts:50-58`). `launchApp`'s `extraEnv` (`e2e/helpers/launch-app.ts:121`) passes `WIREBENCH_E2E_DIALOG_SAVE`, which `pickSaveFile` honours in a test build (`main/native-dialogs.ts:60`).
 
-- [ ] **Step 3: Build and run in CI only**
-
-Push the branch and let CI run e2e (`pnpm build && xvfb-run -a pnpm test:e2e` on the runner). Do not run it locally. Fix what CI reports.
-
-- [ ] **Step 4: Gate and commit**
+- [ ] **Step 3: Gate and commit**
 
 Run: `WIREBENCH_SKIP_PERF=1 nice pnpm check`
 Expected: green.
@@ -3085,6 +3300,10 @@ Expected: green.
 git add e2e
 git commit -m "test(e2e): a server admin reads, filters and exports the audit log once Enterprise is installed (#198)"
 ```
+
+- [ ] **Step 4: Perf gate, push, and let CI run e2e**
+
+Run `pnpm test:perf` unskipped (the repository's rule before any push), then push the branch. CI runs e2e (`pnpm build && xvfb-run -a pnpm test:e2e`); do not run it locally. Fix what CI reports in a follow-up commit, gated the same way.
 
 ---
 
@@ -3140,7 +3359,7 @@ _Audit log_ guide for what each event carries and how to handle personal data.
 
 `docs/roadmap.md`, item 18's status: `licensing built (#197); audit log built (#198)`.
 
-The spec: append `## Revisions after planning` listing rulings 1–20 of this plan, one line each, with the plan's path; say that ruling 4 changes a requirement in §3.1 (a push's events are written after the ref moves and never fail the push) and that ruling 1 corrects §5.1 (`request.ciCaller`, not `request.caller`).
+The spec: append `## Revisions after planning` listing rulings 1–24 of this plan, one line each, with the plan's path; say that ruling 4 changes a requirement in §3.1 (a push's events are written after the ref moves and never fail the push) and that ruling 1 corrects §5.1 (`request.ciCaller`, not `request.caller`).
 
 - [ ] **Step 4: Check the docs**
 
@@ -3170,5 +3389,4 @@ git commit -m "docs: the audit log guide, the server README, the changelog and t
 Each has a default the plan already follows.
 
 1. **Pushes are recorded after the ref moves and never fail the push** (ruling 4). The alternative, refusing the push when the audit row cannot be written, would make the client resend commits that are already on main.
-2. **The secret scan in the tests uses five regular expressions** (Task 6, Step 7). If the secret-scanning plan (`docs/plans/2026-09-22-secret-scanning-plan.md`) exposes its pattern list from the engine, the helper should import it instead.
-3. **`auth.sign_in_failed` keeps the lower-cased email** (spec §16), personal data under the same retention. The alternative is a hash, which keeps brute-force attempts countable but not readable.
+2. **`auth.sign_in_failed` keeps the lower-cased email** (spec §16), personal data under the same retention. The alternative is a hash, which keeps brute-force attempts countable but not readable.
