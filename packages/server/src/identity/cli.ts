@@ -7,7 +7,7 @@ import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, loadConfig } from '../config.js';
-import { serverHooks } from '../context.js';
+import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
@@ -66,6 +66,7 @@ export async function runAdmin(
           email: command.email,
           serverAdmin: command.serverAdmin,
           createdBy: null,
+          source: SYSTEM_SOURCE,
         });
         io.stdout.write(
           `Invitation for ${created.email} (${command.serverAdmin ? 'server admin' : 'member'})\n${created.url}\nExpires ${created.expiresAt}\n`,
@@ -93,7 +94,7 @@ export async function runAdmin(
         return ExitCode.Ok;
       }
       case 'admin-revoke-invitation': {
-        if (!(await revokeOpenInvitation(env, command.id))) {
+        if (!(await revokeOpenInvitation(env, command.id, SYSTEM_SOURCE))) {
           io.stderr.write(`identity-not-found: no open invitation with id ${command.id}\n`);
           return 1;
         }

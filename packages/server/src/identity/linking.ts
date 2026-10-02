@@ -4,7 +4,7 @@
  * before `email_verified` is even consulted, and an unverified email can never link or create.
  */
 import { isWirebenchError } from '@wirebench/engine';
-import { runInvitationAccepted } from '../context.js';
+import { recordAudit, runInvitationAccepted, type AuditSource } from '../context.js';
 import type { IdentityEnv } from './env.js';
 import type { OidcClaims } from './oidc.js';
 import * as repo from './repo.js';
@@ -48,7 +48,7 @@ export type LinkOutcome =
   { readonly ok: true; readonly user: repo.UserRow } | { readonly ok: false; readonly code: LinkRefusal };
 
 /** Looks up the facts for `claims`, decides, and writes what the decision needs. */
-export async function linkClaims(env: IdentityEnv, claims: OidcClaims): Promise<LinkOutcome> {
+export async function linkClaims(env: IdentityEnv, claims: OidcClaims, source: AuditSource): Promise<LinkOutcome> {
   const db = env.ctx.db;
   const now = env.now();
   const identity = await repo.oidcIdentityOf(db, claims.issuer, claims.subject);
@@ -105,6 +105,13 @@ export async function linkClaims(env: IdentityEnv, claims: OidcClaims): Promise<
             subject: claims.subject,
             userId: created.id,
             at: now,
+          });
+          await recordAudit(env.ctx.hooks, tx, {
+            ...source,
+            actor: { kind: 'user', userId: created.id, email: created.email },
+            action: 'user.created',
+            target: { kind: 'user', id: created.id },
+            details: { method: 'oidc', invitationId: decision.invitationId, emailLower: created.emailLower },
           });
           await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: decision.invitationId, userId: created.id });
           return created;

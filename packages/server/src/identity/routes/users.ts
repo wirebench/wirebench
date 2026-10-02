@@ -8,7 +8,7 @@ import {
   type UserSummary,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import { notFound, selfChange } from '../errors.js';
@@ -60,17 +60,25 @@ export const userRoutes =
         const user = await repo.findUserById(env.ctx.db, id);
         if (user === undefined) throw notFound('User');
         const now = env.now();
+        const source = auditSource(request);
         await env.ctx.db.transaction(async (tx) => {
-          if (body.serverAdmin !== undefined) await repo.setServerAdmin(tx, id, body.serverAdmin);
-          if (body.disabled === true) {
+          // Re-read inside the transaction: a concurrent change since the read above must not skip the seat check or record a non-transition.
+          const current = (await repo.findUserById(tx, id)) ?? user;
+          const event = (action: 'user.disabled' | 'user.enabled' | 'user.admin_granted' | 'user.admin_revoked') =>
+            recordAudit(env.ctx.hooks, tx, { ...source, action, target: { kind: 'user', id } });
+          if (body.serverAdmin !== undefined && body.serverAdmin !== current.serverAdmin) {
+            await repo.setServerAdmin(tx, id, body.serverAdmin);
+            await event(body.serverAdmin ? 'user.admin_granted' : 'user.admin_revoked');
+          }
+          if (body.disabled === true && current.disabledAt === null) {
             await repo.setDisabled(tx, id, now);
             await repo.revokeTokensOfUser(tx, id, now); // disabling revokes every token (§3.1)
-          } else if (body.disabled === false) {
+            await event('user.disabled');
+          } else if (body.disabled === false && current.disabledAt !== null) {
             // licensing §3.4: only restoring a disabled account takes a seat.
-            // Re-read inside the transaction: a concurrent disable since the read above must not skip the check.
-            const current = await repo.findUserById(tx, id);
-            if (current?.disabledAt !== null) await env.ctx.license.assertSeatAvailable(tx);
+            await env.ctx.license.assertSeatAvailable(tx);
             await repo.setDisabled(tx, id, null);
+            await event('user.enabled');
           }
         });
         // Sockets first: a disabled user's sockets close before any access check could look at them.
@@ -94,7 +102,7 @@ export const userRoutes =
         const { id } = request.params as { id: string };
         const user = await repo.findUserById(env.ctx.db, id);
         if (user === undefined) throw notFound('User');
-        return reply.code(201).send(await createPasswordReset(env, user, request.caller!.id));
+        return reply.code(201).send(await createPasswordReset(env, user, request.caller!.id, auditSource(request)));
       },
     );
   };

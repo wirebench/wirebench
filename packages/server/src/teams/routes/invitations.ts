@@ -14,7 +14,7 @@ import {
   type TeamInvitationCreateRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import type { InvitationAcceptedHook } from '../../context.js';
+import { auditSource, type InvitationAcceptedHook } from '../../context.js';
 import { createInvitation, revokeOpenInvitation } from '../../identity/invitations.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
@@ -67,7 +67,7 @@ export const teamInvitationRoutes =
           // §6: a team invitation can never mint a server admin.
           created = await createInvitation(
             env.invitations,
-            { email: body.email, serverAdmin: false, createdBy: request.caller!.id },
+            { email: body.email, serverAdmin: false, createdBy: request.caller!.id, source: auditSource(request) },
             (tx, invitationId) => repo.insertTeamInvitation(tx, { invitationId, teamId, role: body.role }),
           );
         } catch (error) {
@@ -93,7 +93,7 @@ export const teamInvitationRoutes =
       async (request, reply) => {
         const { teamId, id } = request.params as { readonly teamId: string; readonly id: string };
         if (!(await repo.isTeamInvitation(db, teamId, id))) throw invitationNotFound();
-        if (!(await revokeOpenInvitation(env.invitations, id))) throw invitationNotFound();
+        if (!(await revokeOpenInvitation(env.invitations, id, auditSource(request)))) throw invitationNotFound();
         return reply.code(204).send();
       },
     );

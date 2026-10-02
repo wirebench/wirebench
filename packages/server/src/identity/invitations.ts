@@ -12,13 +12,13 @@ import {
   type PasswordResetCreated,
   type SignInResponse,
 } from '@wirebench/engine';
-import { announce, runInvitationAccepted, type Querier } from '../context.js';
+import { announce, recordAudit, runInvitationAccepted, type AuditSource, type Querier } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
 import type { IdentityEnv, InvitationEnv } from './env.js';
 import { invitationExists, invitationInvalid, methodDisabled, passwordTooShort, userExists } from './errors.js';
 import { hashPassword } from './passwords.js';
 import * as repo from './repo.js';
-import { emailLower, issueToken } from './sessions.js';
+import { emailLower, signIn } from './sessions.js';
 import { hashSecret, mintSecret, newId } from './tokens.js';
 
 export const inviteUrl = (env: InvitationEnv, secret: string): string => `${env.ctx.config.publicUrl}/invite/${secret}`;
@@ -28,6 +28,7 @@ export interface CreateInvitationInput {
   readonly serverAdmin: boolean;
   /** The admin's user id, or `null` from the console. */
   readonly createdBy: string | null;
+  readonly source: AuditSource;
 }
 
 /**
@@ -64,6 +65,12 @@ export async function createInvitation(
         expiresAt: new Date(now.getTime() + env.settings.invitationMs),
       });
       if (attach !== undefined) await attach(tx, inserted.id);
+      await recordAudit(env.ctx.hooks, tx, {
+        ...input.source,
+        action: 'user.invited',
+        target: { kind: 'invitation', id: inserted.id },
+        details: { emailLower: lower, serverAdmin: input.serverAdmin },
+      });
       return inserted;
     });
   } catch (error) {
@@ -79,12 +86,13 @@ export async function createPasswordReset(
   env: InvitationEnv,
   user: repo.UserRow,
   createdBy: string,
+  source: AuditSource,
 ): Promise<PasswordResetCreated> {
   const now = env.now();
   const { secret, hash } = mintSecret();
   const row = await env.ctx.db.transaction(async (tx) => {
     await repo.revokeOpenResetsOf(tx, user.id, now);
-    return repo.insertInvitation(tx, {
+    const inserted = await repo.insertInvitation(tx, {
       id: newId(),
       kind: 'reset',
       email: user.email,
@@ -95,6 +103,13 @@ export async function createPasswordReset(
       createdAt: now,
       expiresAt: new Date(now.getTime() + env.settings.invitationMs),
     });
+    await recordAudit(env.ctx.hooks, tx, {
+      ...source,
+      action: 'user.password_reset_issued',
+      target: { kind: 'user', id: user.id },
+      details: { invitationId: inserted.id },
+    });
+    return inserted;
   });
   return { url: inviteUrl(env, secret), expiresAt: row.expiresAt };
 }
@@ -127,7 +142,11 @@ export async function lookupInvitation(env: InvitationEnv, secret: string): Prom
  * loser throws `invitationInvalid()` and rolls back before it can create a duplicate user or a
  * second token.
  */
-export async function acceptInvitation(env: IdentityEnv, input: InvitationAcceptRequest): Promise<SignInResponse> {
+export async function acceptInvitation(
+  env: IdentityEnv,
+  input: InvitationAcceptRequest,
+  source: AuditSource,
+): Promise<SignInResponse> {
   if (!env.settings.local) throw methodDisabled();
   if (input.password.length < MIN_PASSWORD_LENGTH) throw passwordTooShort();
   const invitation = await openInvitationBySecret(env, input.secret);
@@ -141,6 +160,13 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
       if (existing === undefined || existing.disabledAt !== null) throw invitationInvalid();
       await repo.upsertCredential(tx, existing.id, hash, now);
       await repo.revokeTokensOfUser(tx, existing.id, now);
+      await recordAudit(env.ctx.hooks, tx, {
+        ...source,
+        actor: { kind: 'user', userId: existing.id, email: existing.email },
+        action: 'auth.password_changed',
+        target: { kind: 'user', id: existing.id },
+        details: { via: 'reset' },
+      });
       return existing;
     }
     if ((await repo.findUserByEmail(tx, invitation.emailLower)) !== undefined) throw userExists();
@@ -156,6 +182,13 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
       at: now,
     });
     await repo.upsertCredential(tx, created.id, hash, now);
+    await recordAudit(env.ctx.hooks, tx, {
+      ...source,
+      actor: { kind: 'user', userId: created.id, email: created.email },
+      action: 'user.created',
+      target: { kind: 'user', id: created.id },
+      details: { method: 'local', invitationId: invitation.id, emailLower: invitation.emailLower },
+    });
     // Later modules add to the new account here, in this transaction (teams spec §3.4): a
     // failure rolls the accept back and the invitation stays open.
     await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: invitation.id, userId: created.id });
@@ -164,14 +197,22 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
   // A reset revoked every device of the user above. There is no request here, and the CLI never
   // accepts (it builds only an InvitationEnv), so the server's own logger is the one at hand.
   if (invitation.kind === 'reset') announce(env.ctx.hooks.sessionEnded, { userId: user.id }, env.ctx.log);
-  return issueToken(env, user, input.device.name);
+  return signIn(env, user, 'local', input.device.name, source);
 }
 
 /** Revokes an open `invite`; `false` when there is no such open invitation. */
-export async function revokeOpenInvitation(env: InvitationEnv, id: string): Promise<boolean> {
+export async function revokeOpenInvitation(env: InvitationEnv, id: string, source: AuditSource): Promise<boolean> {
   const row = await repo.invitationById(env.ctx.db, id);
   if (row === undefined || row.kind !== 'invite' || !isOpen(row, env.now())) return false;
-  await repo.revokeInvitation(env.ctx.db, id, env.now());
+  await env.ctx.db.transaction(async (tx) => {
+    await repo.revokeInvitation(tx, id, env.now());
+    await recordAudit(env.ctx.hooks, tx, {
+      ...source,
+      action: 'user.invitation_revoked',
+      target: { kind: 'invitation', id },
+      details: { emailLower: row.emailLower },
+    });
+  });
   return true;
 }
 

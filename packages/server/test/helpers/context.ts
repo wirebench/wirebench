@@ -67,7 +67,10 @@ export async function expectNoSecretsInAudit(db: Querier): Promise<void> {
   const rows = await db.query<Record<string, unknown>>('select actor_email, user_agent, details from audit_events');
   for (const row of rows.rows) {
     const text = JSON.stringify(row);
-    if (detectInText(text).length > 0 || WIREBENCH_SHAPES.some((shape) => shape.test(text))) {
+    // `tokenId` is the device-token row's id, never the token (§3.5: only its hash is stored); the engine's
+    // entropy rule flags any high-entropy value under a name containing "token", so the id is dropped for that scan.
+    const scanned = JSON.stringify(row, (key, value: unknown) => (key === 'tokenId' ? undefined : value));
+    if (detectInText(scanned).length > 0 || WIREBENCH_SHAPES.some((shape) => shape.test(text))) {
       throw new Error(`audit row carries a secret-shaped value: ${text}`);
     }
   }

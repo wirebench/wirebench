@@ -1,6 +1,6 @@
 import { localSignInRequestSchema, signInResponseSchema, type LocalSignInRequest } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { ANONYMOUS_SOURCE, announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import { invalidCredentials, methodDisabled, userDisabled } from '../errors.js';
@@ -8,7 +8,7 @@ import { requireUser } from '../guard.js';
 import { hashPassword, verifyPassword } from '../passwords.js';
 import { emailKey, ipKey, rateLimit } from '../rate-limit.js';
 import * as repo from '../repo.js';
-import { emailLower, issueToken } from '../sessions.js';
+import { emailLower, signIn } from '../sessions.js';
 
 /**
  * Verified instead of a credential when the email is unknown, so an unknown email costs the
@@ -36,16 +36,39 @@ export const authLocalRoutes =
         const user = await repo.findUserByEmail(env.ctx.db, emailLower(body.email));
         const credential = user === undefined ? undefined : await repo.credentialOf(env.ctx.db, user.id);
         const verdict = await verifyPassword(body.password, credential?.passwordHash ?? (await decoyHash()));
-        if (user === undefined || credential === undefined || !verdict.ok) throw invalidCredentials();
-        if (user.disabledAt !== null) throw userDisabled();
+        const source = auditSource(request);
+        const failed = (reason: string) =>
+          recordAudit(env.ctx.hooks, env.ctx.db, {
+            ...source,
+            ...ANONYMOUS_SOURCE,
+            action: 'auth.sign_in_failed',
+            target: { kind: 'server' },
+            details: { method: 'local', reason, emailLower: emailLower(body.email) },
+          });
+        if (user === undefined || credential === undefined || !verdict.ok) {
+          await failed('identity-invalid-credentials');
+          throw invalidCredentials();
+        }
+        if (user.disabledAt !== null) {
+          await failed('identity-user-disabled');
+          throw userDisabled();
+        }
         if (verdict.rehash)
           await repo.upsertCredential(env.ctx.db, user.id, await hashPassword(body.password), env.now());
-        return reply.code(201).send(await issueToken(env, user, body.device.name));
+        return reply.code(201).send(await signIn(env, user, 'local', body.device.name, source));
       },
     );
 
     app.post('/auth/sign-out', { preHandler: requireUser }, async (request, reply) => {
-      await repo.revokeToken(env.ctx.db, request.caller!.tokenId, env.now());
+      await env.ctx.db.transaction(async (tx) => {
+        await repo.revokeToken(tx, request.caller!.tokenId, env.now());
+        await recordAudit(env.ctx.hooks, tx, {
+          ...auditSource(request),
+          action: 'auth.signed_out',
+          target: { kind: 'user', id: request.caller!.id },
+          details: { tokenId: request.caller!.tokenId },
+        });
+      });
       announce(env.ctx.hooks.sessionEnded, { tokenId: request.caller!.tokenId }, request.log);
       return reply.code(204).send();
     });

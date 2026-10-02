@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { permissiveLicense } from '../../../src/context.js';
+import { SYSTEM_SOURCE, permissiveLicense } from '../../../src/context.js';
 import { createInvitation } from '../../../src/identity/invitations.js';
 import * as repo from '../../../src/identity/repo.js';
 import { mintSecret, pkceChallenge } from '../../../src/identity/tokens.js';
 import { main } from '../../../src/main.js';
+import { recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { startFakeOidcIssuer, type FakeOidcIssuer } from '../../helpers/fake-oidc-issuer.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
@@ -87,6 +88,7 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
       email: 'Alice@example.com',
       serverAdmin: true,
       createdBy: null,
+      source: SYSTEM_SOURCE,
     });
     idp.nextUser({ sub: 'sub-alice', email: 'alice@EXAMPLE.com', email_verified: true, name: 'Alice Liddell' });
     const { flowId, cb } = await signInUpToGrant();
@@ -109,6 +111,37 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
     expect(me.json()).toMatchObject({ methods: { local: false, oidc: [{ issuer: idp.url }] } });
     expect(await repo.flowById(h.db, flowId)).toBeUndefined(); // single use
     expect(idp.tokenRequests).toBe(1);
+  });
+
+  it('the first sign-in of an invited user records user.created then auth.signed_in, both with method oidc', async () => {
+    const events = recordingAudit(h.hooks);
+    await createInvitation(env(), {
+      email: 'alice@example.com',
+      serverAdmin: false,
+      createdBy: null,
+      source: SYSTEM_SOURCE,
+    });
+    idp.nextUser({ sub: 'sub-alice', email: 'alice@example.com', email_verified: true });
+    const { flowId, cb } = await signInUpToGrant();
+    expect((await complete(flowId, loopback(cb).searchParams.get('grant')!)).statusCode).toBe(201);
+    const actions = events.filter((e) => e.action === 'user.created' || e.action === 'auth.signed_in');
+    expect(actions.map((e) => e.action)).toEqual(['user.created', 'auth.signed_in']);
+    expect(actions[0]!.details).toMatchObject({ method: 'oidc', emailLower: 'alice@example.com' });
+    expect(actions[1]!.details).toMatchObject({ method: 'oidc' });
+  });
+
+  it('a callback for an email with no invitation records auth.sign_in_failed with the reason and the email', async () => {
+    const events = recordingAudit(h.hooks);
+    idp.nextUser({ sub: 's9', email: 'Nobody@example.com', email_verified: true });
+    const { cb } = await signInUpToGrant();
+    expect(loopback(cb).searchParams.get('error')).toBe('identity-not-invited');
+    const failed = events.filter((e) => e.action === 'auth.sign_in_failed').at(-1)!;
+    expect(failed.actor).toEqual({ kind: 'anonymous' });
+    expect(failed.details).toMatchObject({
+      method: 'oidc',
+      reason: 'identity-not-invited',
+      emailLower: 'nobody@example.com',
+    });
   });
 
   it('links an existing local user by verified email; a second sign-in matches the identity row without an email', async () => {
@@ -136,9 +169,12 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
     ['no email_verified claim', { sub: 's2', email: 'bob@example.com' }, 'identity-email-unverified'],
     ['an uninvited email', { sub: 's3', email: 'nobody@example.com', email_verified: true }, 'identity-not-invited'],
   ])('refuses %s by redirecting the browser to the loopback with the code', async (_name, user, code) => {
-    await createInvitation(env(), { email: 'bob@example.com', serverAdmin: false, createdBy: null }).catch(
-      () => undefined,
-    );
+    await createInvitation(env(), {
+      email: 'bob@example.com',
+      serverAdmin: false,
+      createdBy: null,
+      source: SYSTEM_SOURCE,
+    }).catch(() => undefined);
     idp.nextUser(user);
     const { flowId, cb } = await signInUpToGrant();
     expect(cb.statusCode).toBe(302);
@@ -156,7 +192,12 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
   });
 
   it('refuses a wrong state, a reused grant, a wrong verifier and an expired flow', async () => {
-    await createInvitation(env(), { email: 'alice@example.com', serverAdmin: false, createdBy: null });
+    await createInvitation(env(), {
+      email: 'alice@example.com',
+      serverAdmin: false,
+      createdBy: null,
+      source: SYSTEM_SOURCE,
+    });
     const wrongState = await h.app.inject({
       method: 'GET',
       url: `/api/v1/auth/oidc/callback?code=x&state=${mintSecret().secret}`,
@@ -193,7 +234,12 @@ describeDb('OIDC sign-in (§3.1, §3.3, §13.3)', () => {
   });
 
   it('redeems a grant once when two completes race', async () => {
-    await createInvitation(env(), { email: 'alice@example.com', serverAdmin: false, createdBy: null });
+    await createInvitation(env(), {
+      email: 'alice@example.com',
+      serverAdmin: false,
+      createdBy: null,
+      source: SYSTEM_SOURCE,
+    });
     idp.nextUser({ sub: 'sub-alice', email: 'alice@example.com', email_verified: true });
     const { flowId, cb } = await signInUpToGrant();
     const grant = loopback(cb).searchParams.get('grant')!;
