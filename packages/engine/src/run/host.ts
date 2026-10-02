@@ -38,6 +38,11 @@ export interface SendFailure {
    * only what it records and never logs or serialises it.
    */
   readonly input?: unknown;
+  /**
+   * What the protocol recorded of an exchange that failed part way, for a host that records the
+   * attempt whole: a session cancelled before it opened keeps its transcript. Redacted as `input` is.
+   */
+  readonly exchange?: unknown;
 }
 
 export interface SendHost {

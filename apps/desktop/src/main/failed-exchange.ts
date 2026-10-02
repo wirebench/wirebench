@@ -12,7 +12,7 @@
 
 import { isWirebenchError, type FailedRequest } from '@wirebench/engine';
 import type { FailedExchangeWire } from '../shared/wire-types.js';
-import { redactHeaders, redactRawHttp, redactUrl } from './redact.js';
+import { redactHeaders, redactRawHttp, redactSecretValues, redactUrl } from './redact.js';
 
 /** What a catch block has at hand for one failed send. */
 export interface FailedExchangeInput {
@@ -45,9 +45,12 @@ export interface FailedExchangeInput {
 /** The `{ code, message }` History records for the same error; `internal-error` for a non-engine one. */
 function errorOf(error: unknown): { code: string; message: string } {
   if (isWirebenchError(error)) {
-    return { code: error.code, message: error.message };
+    return { code: error.code, message: redactSecretValues(error.message) };
   }
-  return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
+  return {
+    code: 'internal-error',
+    message: redactSecretValues(error instanceof Error ? error.message : String(error)),
+  };
 }
 
 /** The code a prepare-stage failure is reported under. */

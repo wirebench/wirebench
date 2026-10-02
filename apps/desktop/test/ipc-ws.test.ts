@@ -420,16 +420,28 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
   });
 
   it('request.cancel aborts a handshake still in flight', async () => {
-    const registry = register({}, { runContextFor: locatedAt('/hang') });
+    const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(() =>
+      Promise.resolve({ id: 'h-cancel', kind: 'websocket' } as HistoryEntryWire),
+    );
+    const registry = register({ history: { recordWsSession } as never }, { runContextFor: locatedAt('/hang') });
     const { sender } = fakeSender();
+    const before = server.handshakes.length;
     const openPromise = invoke('request.openWs', { sendId: 's5', requestId: 'ws-1' }, sender);
-    await waitFor(() => registry.has('s5'), 'the send to register');
+    await waitFor(() => server.handshakes.length > before, 'the upgrade to reach the server');
+    expect(registry.has('s5')).toBe(true);
     unwrap(await invoke('request.cancel', { sendId: 's5' }));
     // The engine fails a session cancelled before its handshake, where the old path answered with
     // its transcript closed by `error`.
     const reply = (await openPromise) as { ok: boolean; error?: { code: string } };
     expect(reply.ok).toBe(false);
     expect(reply.error?.code).toBe('aborted');
+    // History keeps the attempt, as it always has: a session that never opened, closed by error.
+    expect(recordWsSession).toHaveBeenCalledTimes(1);
+    expect(recordWsSession.mock.calls[0]![1]).toMatchObject({
+      requestId: 'ws-1',
+      handshakeOpened: false,
+      exchange: { closed: { by: 'error' } },
+    });
   });
 
   it('reports a prepare-stage failure when the proxy lookup throws', async () => {

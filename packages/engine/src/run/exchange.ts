@@ -4,6 +4,7 @@
  * facet. Core code: it names no protocol.
  */
 import { WirebenchError } from '../errors.js';
+import type { PropertyScopes } from '../project/properties.js';
 import type { RunScope, ScriptedSend } from '../protocol/module.js';
 import { EventQueue } from './event-queue.js';
 import type { SentRequest } from './run.js';
@@ -13,8 +14,13 @@ export interface LiveEventBase {
   readonly kind: string;
 }
 
-/** A message pushed on an open exchange: text (expanded when `expand`), or binary as base64. */
-export type PushMessage = { readonly text: string; readonly expand?: boolean } | { readonly base64: string };
+/**
+ * A message pushed on an open exchange: text (expanded when `expand`), or binary as base64. A text
+ * expands against `scopes` when the host brings them (its properties as they are at the push, an
+ * environment switched since the open included), else against the exchange's own.
+ */
+export type PushMessage =
+  { readonly text: string; readonly expand?: boolean; readonly scopes?: PropertyScopes } | { readonly base64: string };
 
 export interface ExchangeOptions {
   readonly scope: RunScope;

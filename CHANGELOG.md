@@ -253,12 +253,19 @@ before and after for the two changes that need more than a rename. The package's
 - **A WebSocket connection's sending side.** A message sent or a disconnect asked for while the
   handshake is still under way waits for it, rather than being refused as `ws-session-unknown`; a
   message after the disconnect is refused with `ws-session-closed`. Cancelling a handshake the server
-  has not answered fails the connection with `aborted`: the HTTP Log shows the failed row and History
-  records nothing, where it used to record the attempt as a closed session. Closing a project, or
-  quitting, ends a handshake still under way at once rather than waiting for its timeout.
+  has not answered fails the connection with `aborted`, and the HTTP Log shows it as a failed row;
+  History still records the attempt as a session closed by an error. Closing a project, or quitting,
+  ends a handshake still under way at once rather than waiting for its timeout. A message sent with
+  its `${…}` references expanded is escaped as the request was when the connection opened, unsaved
+  edits included, where it used to follow the saved request; its values are still read as they are
+  when it is sent, so switching the environment mid-connection changes them.
 
 ### Fixed
 
+- **An error message no longer shows a secret from the request when secrets are hidden.** A failure
+  whose message quotes the URL it could not reach, with a `${secret:…}` value in its query, showed the
+  value in the HTTP Log row, its HAR export and the error the app reported. The value is masked there
+  now, for every protocol, as it is everywhere else.
 - **A new SOAP interface no longer takes the folder name of a REST, gRPC or WebSocket API.** Adding an
   interface in the app, importing a legacy project and `wirebench import` of a WSDL could give the new
   interface the folder name an API already used. The next load then skipped that API, and the next save

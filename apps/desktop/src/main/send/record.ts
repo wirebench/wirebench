@@ -26,6 +26,7 @@ import {
   toWsExchangeSummary,
 } from '../engine-wire.js';
 import { failedExchangeOf } from '../failed-exchange.js';
+import { redactSecretValues } from '../redact.js';
 import type { SendThroughEngineDeps } from './exchange.js';
 import { reportSendFailed } from './host.js';
 import type {
@@ -190,10 +191,14 @@ export async function recordRest(
 
 /** One failure, as a history line records it. */
 export function restErrorDetail(error: unknown): { code: string; message: string } {
+  // History is always redacted: a message quoting what the request carried keeps no secret value.
   if (isWirebenchError(error)) {
-    return { code: error.code, message: error.message };
+    return { code: error.code, message: redactSecretValues(error.message) };
   }
-  return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
+  return {
+    code: 'internal-error',
+    message: redactSecretValues(error instanceof Error ? error.message : String(error)),
+  };
 }
 
 /**

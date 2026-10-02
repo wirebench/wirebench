@@ -226,7 +226,7 @@ async function pushedPayload(
 ): Promise<string | Uint8Array> {
   if ('base64' in message) return new Uint8Array(Buffer.from(message.base64, 'base64'));
   if (message.expand !== true) return message.text;
-  const scopes = await withSecrets(message.text, scopesFor(context), context.host.getSecret);
+  const scopes = await withSecrets(message.text, message.scopes ?? scopesFor(context), context.host.getSecret);
   const expanded = expandWsMessage(message.text, scopes, {
     escape: selected.request.settings.escapeProperties === true,
   });
@@ -373,6 +373,7 @@ async function sendWsItem(
     error: unknown,
     attempted: AttemptedRequest | undefined,
     input: WsCallInput | undefined,
+    transcript?: WsExchange,
   ): void => {
     try {
       context.host.events?.onFailed?.(selected, {
@@ -381,6 +382,7 @@ async function sendWsItem(
         startedAt,
         durationMs: Date.now() - startedAt,
         ...(attempted !== undefined ? { attempted, input } : {}),
+        ...(transcript !== undefined ? { exchange: transcript } : {}),
       });
     } catch {
       // Deliberately ignored — see above.
@@ -410,7 +412,7 @@ async function sendWsItem(
     }
     const sentAttempt: AttemptedRequest = { url: options.url, method: 'GET', headers: options.headers ?? {} };
     let opened = false;
-    let exchange: WsExchange;
+    let exchange: WsExchange | undefined;
     try {
       const session: WsSessionHandle = openWsSession(options, {
         onHandshake: (handshake) => {
@@ -436,7 +438,8 @@ async function sendWsItem(
       // A host shows a refused handshake from the transcript; a run has nothing to assert on, so it fails.
       if (!opened && !interactive) throw handshakeFailure(exchange.handshake);
     } catch (error) {
-      failed('send', error, sentAttempt, input);
+      // A session that settled before failing (cancelled before it opened) keeps its transcript.
+      failed('send', error, sentAttempt, input, exchange);
       throw error;
     }
     return {

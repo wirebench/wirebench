@@ -12,8 +12,9 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestWsServer, type TestWsServer } from '@wirebench/engine/test-helpers';
 import { createProject, createWsApi, createWsRequest, entry, parseSecretPseudoRef } from '@wirebench/engine';
-import type { AuthConfig, GetSecret, Project, WsRequestDef } from '@wirebench/engine';
+import type { AuthConfig, ExchangeHandle, GetSecret, Project, WsRequestDef } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
+import { harOf } from '../src/main/har.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { openWsRequest, registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { recordSecretValue } from '../src/main/redact.js';
@@ -129,11 +130,17 @@ const secrets = (ref: string): Promise<string | undefined> =>
   Promise.resolve(ref === 'sec_tok' ? 'good-token-41ab' : undefined);
 
 /** Registers the `request.*` channels over `model`, with `extra` laid over the dependencies. */
-function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): ExchangeRegistry {
+function registerOver(
+  model: Project,
+  extra: Partial<RequestChannelDeps> = {},
+  projectExtra: Record<string, unknown> = {},
+): ExchangeRegistry {
   handlers.clear();
   const registry = new ExchangeRegistry();
   registerRequestChannels(new EngineService(), {
     project: {
+      scopesFor: () => ({ project: { ...model.properties }, global: {}, system: {} }),
+      ...projectExtra,
       projectId: () => model.id,
       runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
       wsMeta: () => undefined,
@@ -244,15 +251,22 @@ describe('request.openWs through the engine', () => {
     expect(registry.closeWs('s2')).toBe(false);
   });
 
-  it('fails the invoke with aborted when request.cancel aborts a hanging handshake', async () => {
+  it('fails the invoke with aborted when request.cancel aborts a hanging handshake, and records the attempt', async () => {
     // The old path answered with a transcript closed by `error`; the engine fails a cancelled
-    // handshake instead, with a send row in the HTTP Log and no History entry.
+    // handshake instead, with a send row in the HTTP Log. History keeps the attempt, written first.
+    const order: string[] = [];
     const failures: FailedExchangeWire[] = [];
     const appended: HistoryEntryWire[] = [];
     const registry = registerOver(seeded('/hang'), {
       history: await openHistory(),
-      onHistoryAppended: (wire) => appended.push(wire),
-      onSendFailed: (failure) => failures.push(failure),
+      onHistoryAppended: (wire) => {
+        order.push('history');
+        appended.push(wire);
+      },
+      onSendFailed: (failure) => {
+        order.push('log');
+        failures.push(failure);
+      },
     });
     const before = server.handshakes.length;
     const opened = open('s3', fakeSender().sender);
@@ -262,7 +276,38 @@ describe('request.openWs through the engine', () => {
     expect(refusal(await opened).code).toBe('aborted');
     expect(registry.has('s3')).toBe(false);
     expect(failures).toMatchObject([{ sendId: 's3', protocol: 'websocket', error: { code: 'aborted' } }]);
-    expect(appended).toEqual([]);
+    expect(appended).toHaveLength(1);
+    expect(appended[0]).toMatchObject({ kind: 'websocket', ok: false, ws: { closedBy: 'error' } });
+    expect(order).toEqual(['history', 'log']);
+  });
+
+  it('refuses a second open of one sendId started with the first, while the first still prepares', async () => {
+    const registry = registerOver(seeded());
+    const { sender, events } = fakeSender();
+    const first = open('twin', sender);
+    const second = open('twin', fakeSender().sender);
+    expect(refusal(await second)).toMatchObject({ code: 'ws-session-exists', details: { sendId: 'twin' } });
+    await waitFor(() => hasHandshake(events), 'the first session to open');
+    expect(unwrap<WsFrameWire>(await push('twin', 'still mine')).text).toBe('still mine');
+    expect(unwrap(await invoke('request.wsClose', { sendId: 'twin' }))).toEqual({ closed: true });
+    expect(unwrap<WsExchangeSummary>(await first).closed.by).toBe('client');
+    expect(registry.has('twin')).toBe(false);
+  });
+
+  it('expands each pushed text against the scopes as they are at the push', async () => {
+    const live = { project: { tenant: 'dev' } as Record<string, string>, global: {}, system: {} };
+    registerOver(seeded(), {}, { scopesFor: () => ({ ...live, project: { ...live.project } }) });
+    const { sender, events } = fakeSender();
+    const opened = open('env', sender);
+    await waitFor(() => hasHandshake(events), 'the handshake');
+    const expanded = (text: string) =>
+      invoke('request.wsSend', { sendId: 'env', requestId: 'q-1', format: 'text', content: text, expand: true });
+    expect(unwrap<WsFrameWire>(await expanded('t=${tenant}')).text).toBe('t=dev');
+    // The user switches the active environment between two messages.
+    live.project = { tenant: 'prod' };
+    expect(unwrap<WsFrameWire>(await expanded('t=${tenant}')).text).toBe('t=prod');
+    unwrap(await invoke('request.wsClose', { sendId: 'env' }));
+    await opened;
   });
 
   it('resolves (not rejects) on a refused handshake, and never registers the session as open', async () => {
@@ -567,6 +612,25 @@ describe('the History and Log rows a session leaves', () => {
     expect(normalise(after.summary)).toEqual(normalise(before.summary));
   });
 
+  it('records the same History row as the old path for a handshake cancelled before it opened', async () => {
+    const model = seeded('/hang');
+    let handshakes = server.handshakes.length;
+    const before = await openOld(model, {}, async (sendId, _events, service) => {
+      await waitFor(() => server.handshakes.length > handshakes, 'the old upgrade');
+      service.cancel(sendId);
+    });
+    handshakes = server.handshakes.length;
+    const appended: HistoryEntryWire[] = [];
+    registerOver(model, { history: await openHistory(), onHistoryAppended: (wire) => appended.push(wire) });
+    const opened = open('o1', fakeSender().sender);
+    await waitFor(() => server.handshakes.length > handshakes, 'the new upgrade');
+    unwrap(await invoke('request.cancel', { sendId: 'o1' }));
+    expect(refusal(await opened).code).toBe('aborted');
+    expect(before.appended).toHaveLength(1);
+    expect(appended).toHaveLength(1);
+    expect(normalise(appended)).toEqual(normalise(before.appended));
+  });
+
   /** A getter that hands out `values` by token name, recording each as `projectSecretGetter` does. */
   function tokenSecrets(values: Readonly<Record<string, string>>): () => GetSecret {
     return () => (ref: string) => {
@@ -595,6 +659,7 @@ describe('the History and Log rows a session leaves', () => {
     expect(after.failures[0]!.request.headers['x-token']).toBe('<redacted>');
     expect(after.failures[0]!.request.headers['x-trace']).toBe('abc');
     expect(after.appended).toHaveLength(1);
+    expect(after.failures[0]!.error.message).not.toContain(query);
     const written = JSON.stringify([after.failures, after.appended, after.summary]);
     expect(written).not.toContain(header);
     expect(written).not.toContain(query);
@@ -619,12 +684,22 @@ describe('the History and Log rows a session leaves', () => {
     ).rejects.toMatchObject({ code: 'ws-bad-options' });
     const failures: FailedExchangeWire[] = [];
     registerOver(model, { secretsFor, onSendFailed: (failure) => failures.push(failure) });
-    expect(refusal(await open('o1', fakeSender().sender)).code).toBe('ws-bad-options');
+    const refused = refusal(await open('o1', fakeSender().sender));
+    expect(refused.code).toBe('ws-bad-options');
     expect(failures).toHaveLength(1);
     expect(failures[0]!.request.url).toBe(`${server.url}/echo?k=<redacted>`);
     expect(failures[0]!.request.headers['x-token']).toBe('<redacted>');
-    expect(JSON.stringify(failures[0]!.request)).not.toContain(header);
-    expect(JSON.stringify(failures[0]!.request)).not.toContain(query);
+    // The message names the URL it could not dial: masked in the row, its HAR and the refusal alike.
+    expect(failures[0]!.error.message).toContain('?k=<redacted>');
+    const har = JSON.stringify(
+      harOf([{ kind: 'failure', failure: failures[0]! }], { name: 'Wirebench', version: '0' }),
+    );
+    for (const value of [header, query]) {
+      expect(JSON.stringify(failures)).not.toContain(value);
+      expect(har).not.toContain(value);
+      expect(refused.message).not.toContain(value);
+    }
+    expect(refused.message).toContain('?k=<redacted>');
     expect(normalise(failures)).toEqual(normalise(oldRows));
   });
 });
@@ -645,5 +720,41 @@ describe('request.curl for a WebSocket request', () => {
     expect(reply.command).not.toContain('good-token-41ab');
     expect(reply.notes).toContain('Some ${…} references did not resolve; they are shown as typed.');
     expect(getSecret).not.toHaveBeenCalled();
+  });
+});
+
+describe('ExchangeRegistry reservations', () => {
+  const handle = () => ({ cancel: () => true }) as unknown as ExchangeHandle;
+
+  it('lets an ended send forget only its own entry, never a newer one under the same sendId', () => {
+    const registry = new ExchangeRegistry();
+    const older = registry.reserve('s', 'q-1', 'rest');
+    registry.attach('s', older, handle());
+    // A newer send reuses the id while the older one is still finishing.
+    const newer = registry.reserve('s', 'q-1', 'rest');
+    const kept = handle();
+    registry.attach('s', newer, kept);
+    registry.forget('s', older);
+    expect(registry.get('s')).toBe(kept);
+    registry.forget('s', newer);
+    expect(registry.has('s')).toBe(false);
+  });
+
+  it('cancels a send asked to stop while it is still prepared, the moment it has a handle', () => {
+    const registry = new ExchangeRegistry();
+    const token = registry.reserve('p', 'q-1', 'rest');
+    expect(registry.cancel('p')).toEqual({ cancelled: true });
+    expect(registry.cancel('p')).toEqual({ cancelled: false });
+    const cancel = vi.fn(() => true);
+    registry.attach('p', token, { cancel } as unknown as ExchangeHandle);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a WebSocket reservation for a sendId already held, before any handle is kept', () => {
+    const registry = new ExchangeRegistry();
+    registry.reserve('w', 'q-1', 'websocket');
+    expect(() => registry.reserve('w', 'q-1', 'websocket')).toThrow(
+      expect.objectContaining({ code: 'ws-session-exists' }) as Error,
+    );
   });
 });

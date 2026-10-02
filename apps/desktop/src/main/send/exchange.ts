@@ -18,6 +18,7 @@ import {
   restEffectiveAuth,
   SecretPlaceholders,
   soapEffectiveAuth,
+  WirebenchError,
   wsEffectiveAuth,
 } from '@wirebench/engine';
 import type {
@@ -125,13 +126,18 @@ export type SendSummary = SummaryByKind[keyof SummaryByKind];
 interface Kept {
   readonly requestId: string;
   readonly kind: string;
-  readonly handle: ExchangeHandle;
+  /** Who holds the entry: the send that reserved it, so an older send never removes a newer one. */
+  readonly token: object;
+  /** Absent while the send is still being prepared. */
+  handle?: ExchangeHandle;
   /** A WebSocket session's: true once its handshake has opened it. */
-  readonly opened?: () => boolean;
+  opened?: () => boolean;
   /** Set once its request side has been half-closed through the registry. */
   halfClosed?: boolean;
   /** Set once a WebSocket session has been asked to close through the registry. */
   closed?: boolean;
+  /** Set when a cancel, a project's close or a quit reached the send before it had a handle: cancelled on arrival. */
+  ending?: boolean;
 }
 
 /** The exchanges in flight, by send id: what `request.cancel` and a project's close reach. */
@@ -141,13 +147,45 @@ export class ExchangeRegistry {
   /** The contract workers of the WebSocket sessions in flight, by send id, while each runs. */
   readonly frameCheckers = new Map<string, WorkerFrameChecker>();
 
-  /** `opened` tells a WebSocket session that has opened from one still in its handshake. */
-  keep(sendId: string, requestId: string, kind: string, handle: ExchangeHandle, opened?: () => boolean): void {
-    this.kept.set(sendId, { requestId, kind, handle, ...(opened !== undefined ? { opened } : {}) });
+  /**
+   * Holds `sendId` for a send from its first moment, before it is prepared, and answers the token
+   * that {@link attach} and {@link forget} name it by. A WebSocket session's id is its address for
+   * every push and close, so a second open of one still held is refused; any other send replaces
+   * the entry, as a send id is never reused while its send runs.
+   *
+   * @throws WirebenchError `ws-session-exists`
+   */
+  reserve(sendId: string, requestId: string, kind: string): object {
+    if (kind === 'websocket' && this.kept.has(sendId)) {
+      throw new WirebenchError('ws-session-exists', 'That connection is already open.', { details: { sendId } });
+    }
+    const token = {};
+    this.kept.set(sendId, { requestId, kind, token });
+    return token;
   }
 
-  get(sendId: string): ExchangeHandle | undefined {
-    return this.kept.get(sendId)?.handle;
+  /**
+   * Gives the send `token` reserved its handle. `opened` tells a WebSocket session that has opened
+   * from one still in its handshake. A send already ended by a project's close is cancelled at once.
+   */
+  attach(sendId: string, token: object, handle: ExchangeHandle, opened?: () => boolean): void {
+    const kept = this.kept.get(sendId);
+    if (kept?.token !== token) return;
+    kept.handle = handle;
+    if (opened !== undefined) kept.opened = opened;
+    if (kept.ending === true) handle.cancel();
+  }
+
+  /** Reserves and attaches at once: a send whose handle is already built. */
+  keep(sendId: string, requestId: string, kind: string, handle: ExchangeHandle, opened?: () => boolean): void {
+    this.kept.delete(sendId);
+    this.attach(sendId, this.reserve(sendId, requestId, kind), handle, opened);
+  }
+
+  /** The handle of the send `sendId`, if it has one yet, and is of `kind` when one is named. */
+  get(sendId: string, kind?: string): ExchangeHandle | undefined {
+    const kept = this.kept.get(sendId);
+    return kind === undefined || kept?.kind === kind ? kept?.handle : undefined;
   }
 
   has(sendId: string): boolean {
@@ -157,12 +195,18 @@ export class ExchangeRegistry {
   /**
    * Aborts the send `sendId`. `false` when no such send is in flight, or it has already settled. A
    * WebSocket session that has opened is not aborted: it ends only through a close, with a close
-   * code, never a torn socket, so a late Escape after the handshake does nothing.
+   * code, never a torn socket, so a late Escape after the handshake does nothing. A send still being
+   * prepared is cancelled as soon as it has a handle.
    */
   cancel(sendId: string): { readonly cancelled: boolean } {
     const kept = this.kept.get(sendId);
-    if (kept?.opened?.() === true) return { cancelled: false };
-    return { cancelled: kept?.handle.cancel() ?? false };
+    if (kept === undefined || kept.opened?.() === true) return { cancelled: false };
+    if (kept.handle === undefined) {
+      if (kept.ending === true) return { cancelled: false };
+      kept.ending = true;
+      return { cancelled: true };
+    }
+    return { cancelled: kept.handle.cancel() };
   }
 
   /**
@@ -173,7 +217,7 @@ export class ExchangeRegistry {
    */
   closeWs(sendId: string, code?: number, reason?: string): boolean {
     const kept = this.kept.get(sendId);
-    if (kept === undefined || kept.kind !== 'websocket' || kept.closed === true) return false;
+    if (kept?.handle === undefined || kept.kind !== 'websocket' || kept.closed === true) return false;
     kept.handle.close(code, reason);
     kept.closed = true;
     return true;
@@ -185,7 +229,7 @@ export class ExchangeRegistry {
    */
   halfClose(sendId: string): boolean {
     const kept = this.kept.get(sendId);
-    if (kept === undefined || kept.halfClosed === true) return false;
+    if (kept?.handle === undefined || kept.halfClosed === true) return false;
     try {
       kept.handle.halfClose();
     } catch (error) {
@@ -198,16 +242,21 @@ export class ExchangeRegistry {
   }
 
   /**
-   * Ends every kept handle of `kind` whose request matches, and answers how many it ended. An open
+   * Ends every kept send of `kind` whose request matches, and answers how many it ended. An open
    * WebSocket session closes `1000 'going away'` (an application may not send 1001, RFC 6455
    * §7.4.1), and one already asked to close is left to finish; one still in its handshake is
-   * cancelled, so a project's close or the app's quit never waits out the handshake timeout.
-   * Anything else is cancelled.
+   * cancelled, so a project's close or the app's quit never waits out the handshake timeout. A send
+   * still being prepared is cancelled as soon as it has a handle. Anything else is cancelled.
    */
   endWhere(matches: (requestId: string) => boolean, kind: string): number {
     let ended = 0;
     for (const [sendId, kept] of this.kept) {
       if (kept.kind !== kind || !matches(kept.requestId)) continue;
+      if (kept.handle === undefined) {
+        if (kept.ending !== true) ended += 1;
+        kept.ending = true;
+        continue;
+      }
       if (kind !== 'websocket' || kept.opened?.() !== true) {
         if (kept.handle.cancel()) ended += 1;
         continue;
@@ -225,8 +274,9 @@ export class ExchangeRegistry {
     return ended;
   }
 
-  forget(sendId: string): void {
-    this.kept.delete(sendId);
+  /** Lets go of `sendId`, unless a newer send holds it now. */
+  forget(sendId: string, token: object): void {
+    if (this.kept.get(sendId)?.token === token) this.kept.delete(sendId);
   }
 }
 
@@ -272,6 +322,22 @@ async function sendItem(
   sendId: string,
   requestId: string,
   options: SendOptions,
+): Promise<SendSummary> {
+  // Held before the first await: a second open of the same session is refused even while this one prepares.
+  const token = deps.registry.reserve(sendId, requestId, options.draft.kind);
+  try {
+    return await sendReserved(deps, sendId, requestId, options, token);
+  } finally {
+    deps.registry.forget(sendId, token);
+  }
+}
+
+async function sendReserved(
+  deps: SendThroughEngineDeps,
+  sendId: string,
+  requestId: string,
+  options: SendOptions,
+  token: object,
 ): Promise<SendSummary> {
   const { adHoc } = options;
   // Type-checked before anything is resolved: a script that does not check never reaches the wire.
@@ -322,7 +388,7 @@ async function sendItem(
     live: options.onLive !== undefined || session !== undefined,
     ...(scripted !== undefined ? { scripts: scripted } : {}),
   });
-  deps.registry.keep(sendId, requestId, item.kind, handle, session?.opened);
+  deps.registry.attach(sendId, token, handle, session?.opened);
   const show = deps.showSecrets?.get() ?? false;
   const forwarding = forwardLive(sendId, handle, { show, ...masks }, options.onLive, session);
   const startedAt = Date.now();
@@ -360,12 +426,12 @@ async function sendItem(
     if (failed !== undefined) {
       // As the app always has: History first, then the HTTP Log's row.
       const recorded: Recorded = { item, masks, ...(adHoc !== undefined ? { adHoc: adHoc.names } : {}) };
-      await recordFailure(deps, recorded, failed, error, Date.now() - startedAt);
+      await recordFailure(deps, recorded, failed, error, Date.now() - startedAt, { sendId, show });
       failed.report();
     }
     throw error;
   } finally {
-    deps.registry.forget(sendId);
+    deps.registry.forget(sendId, token);
     // The contract worker ends with the session however it ended: a close, a drop, a quit.
     await session?.dispose();
   }
@@ -676,6 +742,7 @@ function deferredSendFailure(base: SendHost): {
       if (failed === undefined) return undefined;
       return {
         input: failed.failure.input,
+        exchange: failed.failure.exchange,
         durationMs: failed.failure.durationMs,
         report: () => base.events?.onFailed?.(failed.item, failed.failure),
       };
@@ -727,6 +794,8 @@ async function forwardLive(
 interface HeldFailure {
   /** The protocol's input as the engine reports it; it may hold live credentials, never logged. */
   readonly input: unknown;
+  /** What the protocol recorded of the exchange before it failed, when it settled part way. */
+  readonly exchange: unknown;
   /** How long the send stage ran. */
   readonly durationMs: number;
   report(): void;
@@ -874,6 +943,7 @@ async function recordFailure(
   failed: HeldFailure,
   error: unknown,
   durationMs: number,
+  summaryOf: { readonly sendId: string; readonly show: boolean },
 ): Promise<void> {
   const { item, masks } = recorded;
   if (failed.input === undefined) return;
@@ -897,8 +967,16 @@ async function recordFailure(
       await recordGrpc(deps, item, { input, messageText }, undefined, durationMs, error);
       return;
     }
-    case 'websocket':
-      // A session that failed (a bad option, a cancel before the handshake) has no transcript to record.
+    case 'websocket': {
+      // A session cancelled before it opened settled with its transcript, which History keeps as
+      // the app always has; one that failed as it was built (a bad option) has none to record.
+      if (failed.exchange === undefined) return;
+      const summary = summariseWs(failed.exchange as WsExchange, summaryOf.sendId, {
+        show: summaryOf.show,
+        ...(masks.keyParams !== undefined ? { keyParams: masks.keyParams } : {}),
+      });
+      await recordWs(deps, item, summary, masks.keyParams, false);
       return;
+    }
   }
 }

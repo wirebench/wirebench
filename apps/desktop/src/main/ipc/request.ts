@@ -1895,13 +1895,9 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
 
   // The session as it happens: the invoke stays pending until it closes, while `ws.live` reports the
   // handshake, each frame and each frame's contract check. Its request side takes pushes and a close.
+  // A reused `sendId` never replaces a session in flight, which nothing could reach again: the
+  // registry refuses it with `ws-session-exists` from the moment the first open begins.
   registerHandler(channels.request.openWs, async (request, sender) => {
-    // A reused `sendId` must never replace a session in flight: nothing could reach the first again.
-    if (sendDeps.registry.has(request.sendId)) {
-      throw new WirebenchError('ws-session-exists', 'That connection is already open.', {
-        details: { sendId: request.sendId },
-      });
-    }
     return await trackOpenWs(
       request.requestId,
       sendThroughEngine(sendDeps, request.sendId, request.requestId, {
@@ -1915,7 +1911,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   });
   // Pushed in the order the renderer sent them: a text waiting on the keychain holds back the next.
   registerHandler(channels.request.wsSend, async (request) => {
-    const handle = sendDeps.registry.get(request.sendId);
+    const handle = sendDeps.registry.get(request.sendId, 'websocket');
     if (handle === undefined) {
       throw new WirebenchError('ws-session-unknown', 'That connection is no longer open.', {
         details: { sendId: request.sendId },
@@ -1927,8 +1923,14 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
         details: { sendId: request.sendId },
       });
     }
+    // An expanded text reads the properties as they are now, an environment switched since the open
+    // included; its escaping follows the request as the session opened it.
     const frame = await handle.push(
-      request.format === 'binary' ? { base64: request.content } : { text: request.content, expand: request.expand },
+      request.format === 'binary'
+        ? { base64: request.content }
+        : request.expand
+          ? { text: request.content, expand: true, scopes: deps.project.scopesFor(request.requestId) }
+          : { text: request.content },
     );
     return toWsFrameWire(frame as WsFrame, { show: deps.showSecrets?.get() ?? false });
   });

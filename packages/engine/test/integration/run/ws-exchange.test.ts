@@ -143,6 +143,18 @@ describe('WebSocket through openExchange', () => {
     await handle.result;
   });
 
+  it('expands a pushed text against the scopes the push brings, as they are now', async () => {
+    const handle = open(build('/echo'));
+    const now = { project: { x: 'switched' }, global: {}, system: {} };
+    await expect(handle.push({ text: 'v=${x}', expand: true, scopes: now })).resolves.toMatchObject({
+      text: 'v=switched',
+    });
+    // A push without scopes still expands against the session's own.
+    await expect(handle.push({ text: 'v=${x}', expand: true })).resolves.toMatchObject({ text: 'v=expanded' });
+    handle.close();
+    await handle.result;
+  });
+
   it('expands a pushed secret token through the host', async () => {
     const handle = open(build('/echo'), {}, testHost({ 'secret:token': 's3cret' }));
     await expect(handle.push({ text: 'k=${secret:token}', expand: true })).resolves.toMatchObject({
@@ -335,6 +347,8 @@ describe('WebSocket through openExchange', () => {
     expect(handle.cancel()).toBe(true);
     await expect(handle.result).rejects.toMatchObject({ code: 'aborted' });
     expect(failures).toMatchObject([{ stage: 'send' }]);
+    // The transcript of the attempt rides on the failure, for a host that records it.
+    expect(failures[0]?.exchange).toMatchObject({ kind: 'websocket', closed: { by: 'error' }, frames: [] });
   });
 
   it('an expanded push after close or after the end rejects only as closed, with nothing unhandled', async () => {
