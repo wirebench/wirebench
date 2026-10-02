@@ -1,4 +1,5 @@
 export { evaluateAssertions } from './assert/index.js';
+export { checkRequestAssertions } from './assert/check.js';
 export type {
   Assertion,
   AssertionLanguage,

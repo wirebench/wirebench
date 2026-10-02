@@ -13,6 +13,7 @@ const valueOf = (name: string): unknown => Reflect.get(engine, name);
 
 const ADDED = [
   'wsSubject',
+  'checkRequestAssertions',
   'BUILTIN_PROTOCOLS',
   'createBuiltinRegistry',
   'createFeatureSet',

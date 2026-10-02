@@ -5,10 +5,10 @@
  * picture, not the first thing that went wrong. An errored assertion outranks a failed one for the
  * request's outcome, because "we could not tell" is a different problem from "it is wrong".
  */
-import { isCallbackAssertion, sendAwaitingCallbacks } from '../assert/callback.js';
+import { sendAwaitingCallbacks } from '../assert/callback.js';
 import type { CallbackClock, CallbackWaiting } from '../assert/callback.js';
 import type { CaptureSource } from '../assert/capture-source.js';
-import { evaluateAssertions } from '../assert/index.js';
+import { checkRequestAssertions } from '../assert/check.js';
 import type { Assertion, AssertionResult, AssertionSubject } from '../assert/model.js';
 import { isWirebenchError, WirebenchError } from '../errors.js';
 import type { ProtocolRun, SelectedBase } from '../protocol/module.js';
@@ -374,13 +374,10 @@ async function runOne(
     );
     options.onSent?.(item, sent);
     const { subject, raw, script } = sent;
-    const withDefault: readonly Assertion[] =
-      options.defaultSlaMs !== undefined && !own.some((a) => a.type === 'sla')
-        ? [...own, { type: 'sla', maxMs: options.defaultSlaMs }]
-        : own;
-    const immediate = await evaluateAssertions(
+    const immediate = await checkRequestAssertions(
       subject,
-      withDefault.filter((assertion) => !isCallbackAssertion(assertion)),
+      own,
+      options.defaultSlaMs !== undefined ? { defaultSlaMs: options.defaultSlaMs } : {},
     );
     const assertions = [...immediate, ...callbacks, ...scriptAssertions(script?.tests ?? [])];
     const outcome = script?.error !== undefined ? 'errored' : outcomeOf(assertions);
