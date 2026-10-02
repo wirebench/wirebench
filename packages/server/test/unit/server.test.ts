@@ -75,6 +75,7 @@ describe('buildServer', () => {
       publicUrl: 'https://wirebench.test',
       auth: { local: false, oidc: false },
       capabilities: [],
+      edition: 'community',
     });
     await app.close();
   });

@@ -32,6 +32,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
     const { BUILTIN_MODULES } = await import('../../../src/modules.js');
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
+      'licensing',
       'teams-access',
       'server-sync',
       'webhook-capture',

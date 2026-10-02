@@ -4,6 +4,13 @@
  */
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import type { LicensePayload } from '@wirebench/engine';
+import { ciTokensModule } from '../../src/ci-tokens/module.js';
+import type { ServerModule } from '../../src/context.js';
+import type { OidcProvider } from '../../src/identity/oidc.js';
+import { hooksModule } from '../../src/hooks/module.js';
+import { licensingModule } from '../../src/licensing/module.js';
+import { teamsModule } from '../../src/teams/module.js';
+import { identityHarness, type IdentityHarness, type TestClock } from './identity.js';
 
 export interface TestKeys {
   readonly publicKey: KeyObject;
@@ -34,4 +41,32 @@ export function signLicense(payload: object, privateKey: KeyObject): string {
 
 export function license(keys: TestKeys, overrides: Partial<LicensePayload> = {}): string {
   return signLicense({ ...PAYLOAD, ...overrides }, keys.privateKey);
+}
+
+/**
+ * Identity, then licensing with the test key, then teams, webhook capture and CI tokens, then any `extra`
+ * modules, all on the harness clock. The middle three are only here for their migrations: versions are
+ * checked for contiguity across modules, so 0007 cannot load without 0003 to 0006.
+ */
+export function licensingHarness(
+  keys: TestKeys,
+  options: {
+    readonly env?: Record<string, string>;
+    readonly provider?: OidcProvider;
+    readonly logStream?: NodeJS.WritableStream;
+    readonly extra?: (clock: TestClock) => readonly ServerModule[];
+  } = {},
+): Promise<IdentityHarness> {
+  return identityHarness({
+    ...(options.env !== undefined ? { env: options.env } : {}),
+    ...(options.provider !== undefined ? { provider: options.provider } : {}),
+    ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    modules: (clock) => [
+      licensingModule({ now: () => clock.now, publicKeys: [keys.publicKey] }),
+      teamsModule({ now: () => clock.now }),
+      hooksModule({ now: () => clock.now }),
+      ciTokensModule({ now: () => clock.now }),
+      ...(options.extra?.(clock) ?? []),
+    ],
+  });
 }
