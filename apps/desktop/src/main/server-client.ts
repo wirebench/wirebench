@@ -80,6 +80,12 @@ import {
   type WorkspaceRole,
 } from '@wirebench/engine';
 import type { z } from 'zod';
+import {
+  auditPageWireSchema,
+  type AuditExportQueryWire,
+  type AuditPageWire,
+  type AuditQueryWire,
+} from '../shared/wire-types.js';
 
 export interface ServerClientDeps {
   /** The engine's `sendHttp` by default; a stub in tests. */
@@ -565,6 +571,63 @@ export class ServerClient {
     await this.call<unknown>(url, { method: 'DELETE', path: '/api/v1/license', token });
   }
 
+  // ---- audit log (audit-log spec §3.4): server admins on Enterprise ------------------------------
+
+  /**
+   * Parsed with the wire schema, not the engine's: its `action` is any string, so a newer server's new
+   * action reaches the tab instead of failing as `server-bad-response` (audit-log spec §3.6).
+   */
+  queryAudit(url: string, token: string, query: AuditQueryWire): Promise<AuditPageWire> {
+    return this.call(url, {
+      method: 'GET',
+      path: withQuery('/api/v1/audit', auditParams(query)),
+      token,
+      schema: auditPageWireSchema,
+    });
+  }
+
+  /**
+   * Streams the NDJSON export as it arrives (audit-log plan ruling 16): `call()` buffers and expects
+   * JSON, so this builds the request itself. `open()` runs once, on a 2xx, and returns the chunk sink, so
+   * the caller creates its file only then. A non-2xx is read whole and raised as the problem.
+   */
+  async streamAuditExport(
+    url: string,
+    token: string,
+    query: AuditExportQueryWire,
+    open: () => (chunk: Uint8Array) => void,
+  ): Promise<void> {
+    const origin = normalizeServerUrl(url);
+    const options = (await this.deps.options?.(origin)) ?? {};
+    let streamed = false;
+    let response: HttpExchange;
+    try {
+      response = await this.send({
+        url: `${origin}${withQuery('/api/v1/audit/export', auditParams(query))}`,
+        method: 'GET',
+        headers: { accept: 'application/x-ndjson', authorization: `Bearer ${token}` },
+        timeoutMs: SYNC_TRANSFER_TIMEOUT_MS,
+        followRedirects: false,
+        ...transportOptions(options),
+        stream: {
+          accept: (status) => {
+            if (status < 200 || status >= 300) return undefined;
+            streamed = true;
+            return { onChunk: open() };
+          },
+        },
+      });
+    } catch (cause) {
+      throw new WirebenchError('server-unreachable', `Could not reach ${origin}`, { cause });
+    }
+    if (!streamed) this.throwProblem(origin, response);
+    if (response.streamEnd?.by === 'error') {
+      throw new WirebenchError('server-unreachable', `The export from ${origin} stopped early`, {
+        cause: response.streamEnd.error,
+      });
+    }
+  }
+
   private async call<T>(url: string, call: Call<T>): Promise<T> {
     const origin = normalizeServerUrl(url);
     const options = (await this.deps.options?.(origin)) ?? {};
@@ -582,8 +645,7 @@ export class ServerClient {
         ...(payload !== undefined ? { body: payload } : {}),
         timeoutMs: call.timeoutMs ?? this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         followRedirects: false,
-        ...(options.tls !== undefined ? { tls: options.tls } : {}),
-        ...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
+        ...transportOptions(options),
       });
     } catch (error) {
       throw new WirebenchError('server-unreachable', `Could not reach ${origin}`, { cause: error });
@@ -594,6 +656,12 @@ export class ServerClient {
       if (call.schema === undefined) return json as T;
       return parseOrBad(call.schema, json);
     }
+    return this.throwProblem(origin, exchange);
+  }
+
+  /** Raises a non-2xx answer as the server's own problem code, or `server-bad-response` when it has none. */
+  private throwProblem(origin: string, exchange: HttpExchange): never {
+    const json = parseJson(new TextDecoder().decode(exchange.body), exchange.headers['content-type']);
     const problem = json as { readonly code?: unknown; readonly message?: unknown } | undefined;
     if (typeof problem?.code === 'string' && typeof problem.message === 'string') {
       throw new WirebenchError(problem.code, problem.message, { details: { status: exchange.status } });
@@ -603,6 +671,31 @@ export class ServerClient {
     });
   }
 }
+
+/** The TLS and proxy settings a request to this server carries, only the ones that are set. */
+function transportOptions(options: { readonly tls?: TlsOptions; readonly proxy?: ProxyOptions }): {
+  readonly tls?: TlsOptions;
+  readonly proxy?: ProxyOptions;
+} {
+  return {
+    ...(options.tls !== undefined ? { tls: options.tls } : {}),
+    ...(options.proxy !== undefined ? { proxy: options.proxy } : {}),
+  };
+}
+
+/** Alphabetical, because `withQuery` keeps the object's order. */
+const auditParams = (q: AuditQueryWire | AuditExportQueryWire): Record<string, string | number | undefined> => ({
+  action: q.action,
+  actorUserId: q.actorUserId,
+  ...('after' in q ? { after: q.after } : {}),
+  from: q.from,
+  ...('limit' in q ? { limit: q.limit } : {}),
+  targetId: q.targetId,
+  targetKind: q.targetKind,
+  teamId: q.teamId,
+  to: q.to,
+  workspaceId: q.workspaceId,
+});
 
 function parseJson(text: string, contentType: string | undefined): unknown {
   if (text.length === 0) return undefined;

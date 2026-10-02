@@ -4,6 +4,10 @@ import {
   ciTokenCreatedWireSchema,
   ciTokenRevokeRequestWireSchema,
   ciTokenRevokeResponseWireSchema,
+  auditExportRequestWireSchema,
+  auditExportResponseWireSchema,
+  auditPageWireSchema,
+  auditQueryRequestWireSchema,
   licenseInstallRequestWireSchema,
   licenseRemoveResponseWireSchema,
   licenseRequestWireSchema,
@@ -663,6 +667,11 @@ export const channels = {
     get: defineChannel('license.get', licenseRequestWireSchema, licenseStateWireSchema),
     install: defineChannel('license.install', licenseInstallRequestWireSchema, licenseStateWireSchema),
     remove: defineChannel('license.remove', licenseRequestWireSchema, licenseRemoveResponseWireSchema),
+  },
+  /** The server's audit log (audit-log spec §3.6): server admins on Enterprise; main adds the token and picks the export file. */
+  audit: {
+    query: defineChannel('audit.query', auditQueryRequestWireSchema, auditPageWireSchema),
+    export: defineChannel('audit.export', auditExportRequestWireSchema, auditExportResponseWireSchema),
   },
   // An API and the definition it was imported from. Separate from `definition.*` because the two
   // describe different things — a WSDL bundle is resolved into memory and stays there, an OpenAPI

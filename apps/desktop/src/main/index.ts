@@ -76,6 +76,7 @@ import { HooksService } from './hooks/hooks-service.js';
 import { desktopCaptureSource, linkedServerOf } from './hooks/capture-source.js';
 import { registerCiTokenChannels } from './ipc/ci-tokens.js';
 import { registerLicenseChannels } from './ipc/license.js';
+import { registerAuditChannels } from './ipc/audit.js';
 import { registerHooksChannels } from './ipc/hooks.js';
 import { AccountService } from './account-service.js';
 import { ServerClient } from './server-client.js';
@@ -526,6 +527,7 @@ void app.whenReady().then(() => {
   registerTeamChannels({ client: serverClient, accounts: accountService });
   registerCiTokenChannels({ client: serverClient, accounts: accountService });
   registerLicenseChannels({ client: serverClient, accounts: accountService });
+  registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
   registerHooksChannels({ hooks: hooksService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
   // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed

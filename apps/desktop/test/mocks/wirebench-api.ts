@@ -268,6 +268,7 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
     },
     ciTokens: { list: fail('ciTokens.list'), create: fail('ciTokens.create'), revoke: fail('ciTokens.revoke') },
     license: { get: fail('license.get'), install: fail('license.install'), remove: fail('license.remove') },
+    audit: { query: fail('audit.query'), export: fail('audit.export') },
     xml: {
       completions: fail('xml.completions'),
       declaration: fail('xml.declaration'),
