@@ -91,6 +91,17 @@ built into the server; nothing is sent anywhere. Install it from the app's Licen
 Community. An expired license keeps its edition for 30 days, then the server is Community again, with
 nobody signed out and nothing locked. See the docs site's _Editions and licenses_ guide.
 
+## Audit log
+
+The server records who did what: sign-ins and failed sign-ins, users, teams, workspace roles, pushes,
+team-secret changes, catch URLs, CI tokens and license changes. Recording is on for every edition; reading
+needs an Enterprise license. Server admins read it in the app's Audit tab or export it:
+
+    docker compose -f packages/server/compose.yaml exec server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
+
+Events older than `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` (default 365) are deleted. See the docs site's
+_Audit log_ guide for what each event carries and how to handle personal data.
+
 ## Teams
 
 A server admin creates teams (`POST /api/v1/teams`) and becomes the first admin of each. Team admins do

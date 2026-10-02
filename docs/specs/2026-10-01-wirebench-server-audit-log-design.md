@@ -337,3 +337,37 @@ An older desktop sees no Audit tab.
   the variable allows up to ten years.
 - **`auth.sign_in_failed` keeps `emailLower`** so a brute-force attempt is readable; it is personal data
   under the same retention.
+
+## Revisions after planning
+
+The plan (`docs/plans/2026-10-02-wirebench-server-audit-log-plan.md`) made 24 rulings where this spec and
+the code disagreed or the spec was silent. Where a ruling differs from the text above, the ruling wins.
+
+Ruling 4 changes a requirement in §3.1: a push's events are written after the ref moves and never fail
+the push, because the client's commits are already on main. Ruling 1 corrects §5.1: CI tokens set
+`request.ciCaller`, not `request.caller`.
+
+1. CI tokens are a separate request field (`request.ciCaller`); `auditSource(request)` reads `request.caller` first, then `request.ciCaller`.
+2. The admin command line pushes the audit hook itself, and the license commands record `license.installed` and `license.removed` with the `system` actor.
+3. Functions without a request (invitations, resets, linking, adding an invited member) take an `AuditSource` argument.
+4. A push has no transaction to join: `workspace.pushed` and the `secret.*` events are written right after the ref moves, and a failed insert is logged and does not fail the push.
+5. `license.*` events arrive after the commit, from a `licenseChanged` listener, without IP or user agent.
+6. `secret.*` events come from file paths in a push, not from parsed team-secrets files; one event per kind per push.
+7. Previous values come from a read before the write inside a transaction; `deleteGrant` and `revokeCiToken` return what they removed.
+8. Sign-in issues the token and records `auth.signed_in` in one transaction.
+9. `PATCH /users/:id` records only real transitions, decided on the user re-read inside the transaction.
+10. A reset acceptance is `auth.password_changed` with `details.via: 'reset'`.
+11. `team.created` is one event with `details.name`; the creator's admin membership is not a second event.
+12. The cursor is `base64url("<at ISO>|<id>")`; a cursor that does not decode is `400 audit-cursor-invalid`.
+13. The export is a Node `Readable` from an async generator, and `audit.exported` is written when it reaches its end.
+14. The capture sweeper is reused for retention, with optional `deleteBefore` and `label` dependencies.
+15. The Audit tab is reachable with no team selected.
+16. The desktop export streams through the engine's `sendHttp` stream hook, and main picks the file.
+17. The v1 filter bar offers a time range, an action group and, with a team selected, its workspaces.
+18. Desktop files follow the code: `src/main/ipc/audit.ts`, `state/audit.ts` and `features/team/audit-*.tsx`.
+19. The docs page is `docs-site/src/content/docs/guides/server-audit-log.mdx`.
+20. `AUDIT_ACTIONS` drops nothing from the spec and adds nothing; `team.renamed` stays.
+21. A literal typed as `AuditAction` satisfies §10's "through the enum".
+22. The table gains `actor_workspace_id`, a `details` value may be `null`, and `auditActor(request)` becomes `auditSource(request)` in `context.ts`.
+23. Single-statement actions gain a transaction so the write and its event commit together.
+24. `user.created` is written before the invitation-accepted hooks run, so the order reads `user.created` then `team.member_added`.

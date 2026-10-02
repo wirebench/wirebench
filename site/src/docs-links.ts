@@ -28,6 +28,7 @@ export const DOCS_LINKS = {
   sharedWorkspaces: 'guides/shared-workspaces',
   wirebenchServer: 'guides/wirebench-server',
   serverLicensing: 'guides/server-licensing',
+  serverAuditLog: 'guides/server-audit-log',
   agentsMcp: 'guides/agents-mcp',
   codeSigningPolicy: 'help/code-signing-policy',
   projectFormat: 'reference/project-format',

@@ -1,0 +1,117 @@
+---
+title: Audit log
+description: What Wirebench Server records about who did what, how long it keeps it, and how a server admin reads or exports it.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Wirebench Server records who did what. Recording is on for every edition. Reading and exporting the log
+needs the Enterprise edition (see [Editions and licenses](/wirebench/docs/guides/server-licensing/)), and
+only server admins can do either.
+
+An event says who did it, what they did, which target it touched, when, and from where. Events are never
+edited and no route deletes one. The only way an event leaves is retention, below.
+
+## What is recorded
+
+| Group        | What is recorded                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| Sign-ins     | Sign-ins, failed sign-ins, sign-outs and password changes                                         |
+| Users        | Invitations and their revocation, new accounts, disabling and enabling, admin rights, reset links |
+| Teams        | A team created, renamed or deleted, and members added, removed or given another role              |
+| Workspaces   | A workspace created, renamed or deleted, its default role, role grants, and every push            |
+| Team secrets | A secret shared or rotated, and a change to who can read it. Never a value                        |
+| Catch URLs   | A catch URL created, changed, rotated, deleted or cleared, and its signature set or cleared       |
+| CI tokens    | A token created or revoked                                                                        |
+| License      | A license installed or removed                                                                    |
+| Exports      | Each export of the audit log itself                                                               |
+
+A push and a license change are recorded right after they complete. Everything else is recorded in the
+same transaction as the change, so a change that is not saved leaves no event, and an event that cannot
+be saved stops the change.
+
+Not recorded: reads, captures arriving at a catch URL, sync fetches and live sockets.
+
+An event carries a few details, such as the previous and new role. It never carries a secret, a token, a
+password hash, or the body of a request or response.
+
+## Reading the log
+
+A server admin on an Enterprise server opens **Account: Manage teams** and chooses the **Audit** tab. It
+works with no team selected.
+
+- **Range** picks the last 24 hours, 7 days, 30 days, or all time.
+- **Kind** picks one group from the table above.
+- **Workspace** appears when a team is selected and narrows the list to one of its workspaces.
+
+Events are listed newest first. Click one to see its detail: when, who, what, the target, workspace and
+team, the address and client it came from, its event id and its details. **Load more** fetches the next
+page.
+
+On a server without the Enterprise edition the audit routes refuse with a message that names the
+feature.
+
+## Exporting
+
+Click **Export…** in the Audit tab. Wirebench asks where to save the file and writes the events that match
+the current filters as newline-delimited JSON, one event per line, oldest first.
+
+On the machine that runs the server, the same export is a command:
+
+```bash
+wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]
+```
+
+It writes to standard output. `--action` is one action name, such as `team.deleted`, or a group followed by
+a dot, such as `secret.`. A nightly copy for an archive can be one `cron` line:
+
+```bash
+15 2 * * * docker compose -f /srv/wirebench/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from "$(date -u -d yesterday +\%Y-\%m-\%dT00:00:00Z)" >> /var/archive/wirebench-audit.ndjson
+```
+
+An export is itself recorded as `audit.exported`, once the whole export has been written. An export that
+the reader abandons halfway leaves no event.
+
+## Retention
+
+Events older than a set age are deleted. The age is `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`: a whole number
+of days from 30 to 3650, and 365 when unset. The server sweeps every ten minutes.
+
+If a regime asks you to keep events longer, export them before they age out.
+
+## Personal data
+
+The log holds personal data, under the same retention as everything else.
+
+- `actor.email` is the email address the person had when the event happened. It stays in the event after
+  the account is renamed or deleted.
+- The address an event came from is an IP address.
+- A failed sign-in keeps the email that was typed, lower-cased, so that repeated attempts are readable.
+
+To answer a request to erase one person, export the log first, then purge that person's events. The
+operator runs this in the database, with the person's user id:
+
+```sql
+delete from audit_events where actor_user_id = $1;
+```
+
+Nothing in the server removes events one person at a time, so this is a deliberate step by the operator.
+
+<Aside>
+For a guarantee that holds in the database itself, take the permission away from the role the server
+connects as. Run these two statements as the database owner, with that role's name:
+
+```sql
+revoke update on audit_events from wirebench_app;
+revoke delete on audit_events from wirebench_app;
+```
+
+The server's own retention sweep is a delete, so it stops working after the second statement, and old
+events stay until the operator removes them.
+
+</Aside>
+
+## Related
+
+- [Wirebench Server](/wirebench/docs/guides/wirebench-server/) — running the server, accounts and sign-in.
+- [Editions and licenses](/wirebench/docs/guides/server-licensing/) — seats, editions and installing a license.
