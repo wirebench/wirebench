@@ -38,6 +38,8 @@ let rest: TestRestServer;
 let ws: TestWsServer;
 /** Answers only the text `two`, a little later; never answers anything else. */
 let lastOnly: TestWsServer;
+/** Never answers a text, nor the client's close. */
+let deaf: TestWsServer;
 let dir: string;
 
 beforeAll(async () => {
@@ -49,6 +51,7 @@ beforeAll(async () => {
       if (text === 'two') setTimeout(() => peer.sendText('re: two'), 50);
     },
   });
+  deaf = await startTestWsServer({ onText: () => undefined, ignoreClose: true });
   dir = mkdtempSync(join(tmpdir(), 'wb-run-streams-'));
   await writeProtoDefinitionCache(readProtoFixture('greeter'), apiDefinitionDir(dir, 'greeter'), {
     source: 'greeter.proto',
@@ -57,7 +60,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await Promise.all([grpc.close(), rest.close(), ws.close(), lastOnly.close()]);
+  await Promise.all([grpc.close(), rest.close(), ws.close(), lastOnly.close(), deaf.close()]);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -218,6 +221,10 @@ describe('runRequests — streams', () => {
       })),
     ],
     [
+      'a WebSocket that never replies, nor answers the close',
+      makeProjectLater(() => ({ ws: { url: deaf.url, path: '/', messages: [TWO[0]!] } })),
+    ],
+    [
       'a WebSocket that never replies',
       makeProjectLater(() => ({ ws: { url: lastOnly.url, path: '/', messages: [TWO[0]!] } })),
     ],
@@ -226,6 +233,19 @@ describe('runRequests — streams', () => {
     const [only] = await run(later(), { timeoutMs: 200 });
     expect(performance.now() - started).toBeLessThan(3000);
     expect(only).toMatchObject({ outcome: 'errored', error: { code: 'timeout', message: 'The request timed out.' } });
+  });
+
+  it('lets go of the connection when the server never answers the close the timeout sent', async () => {
+    const before = deaf.peers.length;
+    const [only] = await run(makeProject({ ws: { url: deaf.url, path: '/', messages: [TWO[0]!] } }), {
+      timeoutMs: 200,
+    });
+    expect(only).toMatchObject({ outcome: 'errored', error: { code: 'timeout' } });
+    const deadline = Date.now() + 2000;
+    while (deaf.peers[before]?.closed !== true && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(deaf.peers[before]?.closed).toBe(true);
   });
 
   it('gives no reason a streaming gRPC call cannot run, and selects it', () => {

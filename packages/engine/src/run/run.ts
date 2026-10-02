@@ -275,7 +275,8 @@ export function createRunSender(context: RunContext): RunRequestSender {
 
     const scripts = activeScripts(scriptsOf(item));
     if (scripts === undefined) {
-      const sent = await openExchange(item, itemContext.host, { scope: itemScope, interactive: false }).result;
+      const sent = await openExchange(item, itemContext.host, { scope: itemScope, interactive: false, run: true })
+        .result;
       return scriptsOf(item) !== undefined ? { ...sent, scriptsOff: true } : sent;
     }
 
@@ -300,6 +301,7 @@ export function createRunSender(context: RunContext): RunRequestSender {
     return openExchange(item, itemContext.host, {
       scope: itemScope,
       interactive: false,
+      run: true,
       scripts: { session: deferredSession(scripting, scripted, itemContext), placeholders: new SecretPlaceholders() },
     }).result;
   };

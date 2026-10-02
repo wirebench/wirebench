@@ -144,6 +144,21 @@ describe('a gRPC send through the engine', () => {
   });
 });
 
+describe('a gRPC server stream sent from the editor', () => {
+  it('keeps a stream its deadline cut as a result, with the messages and DEADLINE_EXCEEDED', async () => {
+    const summary = await send('s6', () => Promise.resolve('t'), {
+      draft: {
+        method: 'LotsOfReplies',
+        methodKind: 'server-streaming',
+        message: '{"count": 1000, "delay_ms": 20}',
+        settings: { timeoutMs: 200 },
+      },
+    });
+    expect(summary).toMatchObject({ status: 4, statusName: 'DEADLINE_EXCEEDED', methodKind: 'server-streaming' });
+    expect(summary.responseMessages.length).toBeGreaterThan(0);
+  });
+});
+
 describe('buildGrpcHistoryEntry', () => {
   it('records the call with its messages, redacting the metadata', async () => {
     const resolved = resolve()!;

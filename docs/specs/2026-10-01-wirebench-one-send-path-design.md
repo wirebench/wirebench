@@ -335,3 +335,8 @@ they replace the matching lines in §3 and §4. The plan is
 8. The engine's default token source refuses the OAuth2 authorization-code grant. A host whose `tokens` can
    do it, as the desktop's can, is not refused.
 9. Ad-hoc SOAP sends (no saved request) go through the engine as a synthetic item (owner, 2026-10-01).
+10. `ExchangeOptions.run`, `false` by default, marks a run's send. Only a run waits for a stream's answer
+    within the run timeout and fails a stream that timeout cuts with `timeout` (§5.2). A host's own send that is
+    not interactive is not a run, and keeps what it received.
+11. A WebSocket run row stays unasserted until WebSocket requests can carry assertions. That needs a
+    project-format change, outside phase 2.

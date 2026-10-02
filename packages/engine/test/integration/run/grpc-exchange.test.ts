@@ -115,6 +115,18 @@ function recorder(): { failures: SendFailure[]; host: Partial<SendHost> } {
 }
 
 describe('gRPC through openExchange', () => {
+  it.each([true, false])(
+    'a send that is not a run keeps a server stream the deadline cut as a result, with status 4 (live: %s)',
+    async (live) => {
+      const built = call('LotsOfReplies', { count: 1000, delay_ms: 20 });
+      const item: GrpcSelected = { ...built.item, request: { ...built.item.request, settings: { timeoutMs: 200 } } };
+      const sent = await open({ ...built, item }, { live }).result;
+      const grpc = sent.exchange?.kind === 'grpc' ? sent.exchange.grpc : undefined;
+      expect(grpc?.exchange.status).toBe(4);
+      expect(grpc?.responseMessages.length).toBeGreaterThan(0);
+    },
+  );
+
   it('a server stream yields each message as an event', async () => {
     const handle = open(call('LotsOfReplies', STREAM_REQUEST_OF_3), { live: true });
     const kinds: string[] = [];

@@ -423,6 +423,21 @@ describe('WebSocket through openExchange', () => {
     expect(failures).toMatchObject([{ stage: 'prepare' }]);
   });
 
+  it('a send that is neither interactive nor a run closes after its last message, waiting for no reply', async () => {
+    const silent = await startTestWsServer({ onText: () => undefined });
+    try {
+      const messages = [createWsSavedMessage('One', { id: 'm1', content: 'one' })];
+      const sent = await settlesWithin(
+        open(build('/', { messages, serverUrl: silent.url }), { interactive: false }).result,
+        2000,
+      );
+      const ws = sent.exchange?.kind === 'websocket' ? sent.exchange.ws : undefined;
+      expect(ws?.closed).toMatchObject({ code: 1000, by: 'client' });
+    } finally {
+      await silent.close();
+    }
+  });
+
   it('a run against a host nothing listens on fails with ws-handshake-refused', async () => {
     const { failures, host } = recorder();
     const handle = open(build('', { serverUrl: 'ws://127.0.0.1:1' }), { interactive: false }, host);

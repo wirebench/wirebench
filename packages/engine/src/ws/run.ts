@@ -324,6 +324,9 @@ function handshakeFailure(handshake: WsHandshake): HttpError | WsError {
   });
 }
 
+/** How long a run waits for the server to answer its close before letting the connection go. */
+const RUN_CLOSE_GRACE_MS = 500;
+
 /**
  * When a run's session has its answer: a text or binary frame received once the last saved message
  * has gone out, or the first one when there is none.
@@ -396,7 +399,8 @@ export function wsSubject(exchange: WsExchange): AssertionSubject {
  * is a result, a refused handshake included, which the host shows; a run's session that never opened
  * fails, with `ws-handshake-refused` or `timeout`, so a dead endpoint never passes a run. A run's
  * session closes with 1000 once a reply comes after its last saved message; one the run timeout
- * closes first fails with `timeout`, never a pass.
+ * closes first fails with `timeout`, never a pass, and a server that never answers that close is let
+ * go after a short grace. A host's own send that is not interactive closes after its last message.
  */
 async function sendWsItem(
   selected: WsSelected,
@@ -404,6 +408,7 @@ async function sendWsItem(
   controller: ExchangeController<WsLiveEvent>,
   state: WsSessionState,
   interactive: boolean,
+  run: boolean,
 ): Promise<SentRequest> {
   const startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
@@ -444,10 +449,15 @@ async function sendWsItem(
           throw unresolvedError('ws-unresolved-properties', selected.path, saved.unresolved);
         }
         for (const payload of saved.payloads) void state.send(() => Promise.resolve(payload)).catch(() => undefined);
-        watch = replyWatch(saved.payloads.length);
-        void watch.replied.then(() => state.close(1000));
+        if (run) {
+          watch = replyWatch(saved.payloads.length);
+          void watch.replied.then(() => state.close(1000));
+        } else {
+          state.close(1000);
+        }
       }
-      options = await connectWs(selected, context, input, controller.signal);
+      const connected = await connectWs(selected, context, input, controller.signal);
+      options = run ? { ...connected, closeGraceMs: RUN_CLOSE_GRACE_MS } : connected;
     } catch (error) {
       failed('prepare', error, input === undefined ? undefined : attemptedOf(input), input);
       throw error;
@@ -555,7 +565,7 @@ export const wsRun: ProtocolRun<WsSelected> = {
       close: (code, reason) => state.close(code, reason),
     };
     return controller.handle(
-      () => sendWsItem(selected, context, controller, state, options.interactive),
+      () => sendWsItem(selected, context, controller, state, options.interactive, options.run === true),
       options.interactive ? streaming : undefined,
     );
   },

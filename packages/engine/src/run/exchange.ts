@@ -29,6 +29,11 @@ export interface ExchangeOptions {
   readonly interactive: boolean;
   /** True when the caller reads `events`. By default nothing is buffered. */
   readonly live?: boolean;
+  /**
+   * True for a run's send (spec §5.2): a stream waits for its answer within the run timeout, and one
+   * the timeout cuts fails with `timeout`. A host's own send is not a run, interactive or not.
+   */
+  readonly run?: boolean;
 }
 
 export interface StreamingSide {

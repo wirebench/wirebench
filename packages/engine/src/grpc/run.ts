@@ -247,6 +247,7 @@ function deadlineCut(result: GrpcCallResult, timeoutMs: number): boolean {
   return (
     result.methodKind !== 'unary' &&
     exchange.status === GRPC_DEADLINE_EXCEEDED &&
+    // A server's own status 4 counts once the deadline has passed: the local one would have fired by then.
     (exchange.statusSource === 'local' || exchange.durationMs >= timeoutMs)
   );
 }
@@ -363,8 +364,8 @@ function grpcStreamState(controller: ExchangeController<GrpcLiveEvent>): GrpcStr
 interface GrpcSendMode {
   readonly controller: ExchangeController<GrpcLiveEvent>;
   readonly live: boolean;
-  /** A host drives it; otherwise a run, where a stream the deadline cuts fails with `timeout`. */
-  readonly interactive: boolean;
+  /** A run's send, where a stream the deadline cuts fails with `timeout`. */
+  readonly run: boolean;
   readonly stream?: GrpcStreamState;
 }
 
@@ -380,7 +381,7 @@ async function sendGrpcItem(
   scripts: ScriptedSend | undefined,
   mode: GrpcSendMode,
 ): Promise<SentRequest> {
-  const { controller, live, interactive, stream } = mode;
+  const { controller, live, run, stream } = mode;
   const startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
   const failed = (
@@ -456,7 +457,7 @@ async function sendGrpcItem(
           : {}),
         ...(stream !== undefined ? { onOpen: (handle: GrpcCallStreamHandle) => stream.opened(handle) } : {}),
       });
-      if (!interactive && deadlineCut(result, connected.timeoutMs)) {
+      if (run && deadlineCut(result, connected.timeoutMs)) {
         throw new HttpError('timeout', 'The request timed out.', { details: { target: connected.target } });
       }
     } catch (error) {
@@ -517,7 +518,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     const mode: GrpcSendMode = {
       controller,
       live: options.live === true,
-      interactive: options.interactive,
+      run: options.run === true,
       ...(stream !== undefined ? { stream } : {}),
     };
     return controller.handle(() => sendGrpcItem(selected, scope, context, options.scripts, mode), stream?.streaming);

@@ -51,6 +51,8 @@ export interface TestWsServerOptions {
   readonly onText?: (text: string, peer: TestWsPeer) => void;
   /** Answers every upgrade with this plain HTTP status (e.g. `404`) instead of switching protocols. */
   readonly status?: number;
+  /** Swallows the client's close frame: never answers it and keeps the connection open. */
+  readonly ignoreClose?: boolean;
 }
 /** A running {@link startTestWsServer}. */
 export interface TestWsServer {
@@ -194,6 +196,12 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
     socket.on('close', () => {
       closed = true;
     });
+    // A server that swallows the close keeps its half of the connection; the client letting go ends it.
+    if (options.ignoreClose === true) {
+      socket.on('end', () => {
+        closed = true;
+      });
+    }
     const peer: TestWsPeer = {
       sendText(text) {
         if (closed || !socket.writable) return;
@@ -218,6 +226,7 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
       for (const frame of decodeFrames(state)) {
         received.push(frame);
         if (frame.opcode === OP.close) {
+          if (options.ignoreClose === true) continue;
           closed = true;
           if (closeSent) socket.end();
           else socket.end(encodeFrame(OP.close, frame.payload));
