@@ -93,8 +93,8 @@ const VERB_FLAGS: Readonly<Record<OpName, readonly string[]>> = {
 export const OPS_HELP_TEXT = `wirebench import <source> [--name <name>] [--project <dir>]
                        Adds a WSDL or OpenAPI document (a file or an http(s) URL) to the project.
 wirebench operations [<interface-or-api>] [--project <dir>]
-                       Lists SOAP operations and REST endpoints, with the references generate and
-                       validate take and the saved requests send takes.
+                       Lists SOAP operations, REST endpoints and saved WebSocket requests, with the
+                       references generate and validate take and the saved requests send takes.
 wirebench generate <operation> [--optional all|required] [--project <dir>]
                        Prints a sample request: a SOAP envelope, or a REST method, path and JSON body.
 wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--project <dir>]

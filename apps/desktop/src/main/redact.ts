@@ -13,6 +13,7 @@
  * never written anywhere; with the show-secrets toggle on, values are shown like everything else.
  */
 import {
+  createSecretBytesMasker,
   createSecretMasker,
   redactHeaderPairs as redactHeaderPairsByName,
   redactHeaders as redactHeadersByName,
@@ -27,8 +28,8 @@ export { REDACTED_MARKER, SECRET_BODY_KEYS, containsRedaction, redactResponseAtt
 
 const recorded = new Set<string>();
 let masker: ((text: string) => string) | undefined;
-/** The same, over raw bytes read as latin1: each value as its UTF-8 bytes would read that way. */
-let byteMasker: ((text: string) => string) | undefined;
+/** The same, over a base64 run of raw bytes: each value's UTF-8 bytes, wherever they sit. */
+let byteMasker: ((base64: string) => string) | undefined;
 
 /** Adds a secret value main handed out to the set every helper here masks, for the session. */
 export function recordSecretValue(value: string): void {
@@ -114,11 +115,8 @@ export function redactSecretBytes(base64: string, opts?: { show?: boolean }): st
   if (opts?.show === true || recorded.size === 0) {
     return base64;
   }
-  // Read as latin1 so bytes that are not UTF-8 survive the round trip unchanged.
-  byteMasker ??= createSecretMasker([...recorded].map((value) => Buffer.from(value, 'utf8').toString('latin1')));
-  const text = Buffer.from(base64, 'base64').toString('latin1');
-  const masked = byteMasker(text);
-  return masked === text ? base64 : Buffer.from(masked, 'latin1').toString('base64');
+  byteMasker ??= createSecretBytesMasker([...recorded]);
+  return byteMasker(base64);
 }
 
 /** See the engine's `redactHeaders`; recorded values are masked in every other header too. */

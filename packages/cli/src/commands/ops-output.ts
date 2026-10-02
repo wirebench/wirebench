@@ -29,7 +29,8 @@ function importText(result: ImportOutput): string {
 function operationsText(result: OperationsResult): string {
   const out: string[] = [];
   for (const row of result.operations) {
-    const detail = row.kind === 'soap' ? (row.soapAction ?? '') : (row.operationId ?? '');
+    const detail =
+      row.kind === 'soap' ? (row.soapAction ?? '') : row.kind === 'rest' ? (row.operationId ?? '') : row.url;
     out.push(detail.length > 0 ? `${row.ref}  (${detail})` : row.ref);
     out.push(...row.items.map((item) => `  ${item}`));
   }

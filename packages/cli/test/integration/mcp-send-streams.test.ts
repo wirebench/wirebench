@@ -40,7 +40,10 @@ interface ToolResult {
 async function callSend(project: string, historyDir: string, args: object): Promise<ToolResult> {
   const child = spawnCli(['mcp', '--project', project, '--allow-send', '--history-dir', historyDir]);
   let stdout = '';
-  const answered = new Promise<ToolResult>((resolve) => {
+  let stderr = '';
+  child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+  const exited = new Promise<void>((resolve) => child.on('close', () => resolve()));
+  const answered = new Promise<ToolResult>((resolve, reject) => {
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
       for (const line of stdout.split('\n')) {
@@ -49,8 +52,9 @@ async function callSend(project: string, historyDir: string, args: object): Prom
         }
       }
     });
+    // A server that dies before answering fails the test with what it said, not a vitest timeout.
+    void exited.then(() => reject(new Error(`wirebench mcp exited before answering: ${stderr}`)));
   });
-  const exited = new Promise<void>((resolve) => child.on('close', () => resolve()));
   const send = (message: object): void => {
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
   };

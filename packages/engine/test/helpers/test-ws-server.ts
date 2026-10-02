@@ -34,6 +34,8 @@ export interface TestWsHandshake {
 export interface TestWsPeer {
   /** Sends one text frame. Ignored once the peer is closed. */
   sendText(text: string): void;
+  /** Sends one binary frame. Ignored once the peer is closed. */
+  sendBinary(payload: Buffer): void;
   /** Sends a close frame with `code` and `reason`; the client's reply then ends the connection. */
   close(code: number, reason?: string): void;
   /** True once either side's close frame has been sent or received, or the connection has ended. */
@@ -206,6 +208,10 @@ export async function startTestWsServer(options: TestWsServerOptions = {}): Prom
       sendText(text) {
         if (closed || !socket.writable) return;
         socket.write(encodeFrame(OP.text, Buffer.from(text, 'utf8')));
+      },
+      sendBinary(payload) {
+        if (closed || !socket.writable) return;
+        socket.write(encodeFrame(OP.binary, payload));
       },
       close(code, reason = '') {
         if (closed) return;

@@ -56,9 +56,11 @@ before and after for the two changes that need more than a rename. The package's
   with `--json` for the exact result. A send from the terminal or an agent lands in the desktop's
   History, and an open History panel refreshes when another process writes the file (#32).
 - **`send` takes WebSocket requests.** `wirebench send` and the MCP `send` tool send a saved WebSocket
-  request as `wirebench run` does: open the socket, send the saved messages, wait for a reply or the
-  timeout, close, and return the frames collected, masked. The send lands in the desktop's History as
-  the app's own WebSocket sessions do, tagged `cli` or `mcp`. A name a REST and a WebSocket request
+  request as `wirebench run` does: open the socket, send the saved messages, wait for a reply, close,
+  and return the frames collected, masked. A session with no reply before the timeout fails with
+  `timeout`, returning no frames and writing no History; a server that refuses or cannot be reached
+  fails with `ws-handshake-refused`. The send lands in the desktop's History as the app's own
+  WebSocket sessions do, tagged `cli` or `mcp`. `operations` lists saved WebSocket requests by path. A name a REST and a WebSocket request
   share is now ambiguous where it used to resolve to the REST request; gRPC requests are still refused.
   A saved WebSocket request has no assertions of its own, so `--require-assertions` errors it in a run
   (#184).

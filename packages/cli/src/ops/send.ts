@@ -243,8 +243,9 @@ export const sendOp = defineOp({
     'Sends one saved SOAP, REST or WebSocket request as wirebench run does (environment, secrets from ' +
     'WIREBENCH_SECRET_* variables, scripts, assertions), returns the response and the assertion results, and ' +
     "records the send in the desktop's History. A WebSocket request sends its saved messages, waits for a " +
-    'reply after the last one or the timeout, closes, and returns the frames. Needs --allow-send; --env limits ' +
-    'the environments it may use.',
+    'reply after the last one, closes, and returns the frames; a session with no reply before the timeout ' +
+    'fails with timeout, with no frames and no History. Needs --allow-send; --env limits the environments ' +
+    'it may use.',
   input,
   async run(value, context): Promise<SendResult> {
     if (!context.gates.send) {
@@ -305,6 +306,10 @@ export const sendOp = defineOp({
       if (exchange === undefined || exchange.kind === 'grpc') {
         throw failure(result, needs);
       }
+      // Checked before History is written: a send reported as an error leaves no row.
+      if ((exchange.kind === 'websocket') !== (item.kind === 'websocket')) {
+        throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
+      }
       const mask = createSecretMasker(known());
       const maskBase64 = createSecretBytesMasker(known());
       let historyId: string | undefined;
@@ -327,11 +332,11 @@ export const sendOp = defineOp({
           `History not written: ${isWirebenchError(error) ? `${error.code}: ${error.message}` : String(error)}`,
         );
       }
-      if (exchange.kind === 'websocket' || item.kind === 'websocket') {
-        if (exchange.kind !== 'websocket' || item.kind !== 'websocket') {
-          throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
-        }
+      if (exchange.kind === 'websocket' && item.kind === 'websocket') {
         return wsResultOf(item, result, exchange, { text: mask, base64: maskBase64 }, historyId);
+      }
+      if (exchange.kind === 'websocket' || item.kind === 'websocket') {
+        throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
       }
       return resultOf(item, result, exchange, mask, historyId);
     } finally {

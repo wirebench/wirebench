@@ -546,6 +546,56 @@ describe('op send on a WebSocket request', () => {
     expect(line).not.toContain(SECRET);
   });
 
+  it('errors with timeout, with no frames and no History, when no reply comes before the timeout', async () => {
+    const deaf = await startTestWsServer({ onText: () => undefined, ignoreClose: true });
+    sockets.push(deaf);
+    const fixture = await wsProject(deaf.url);
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      wsApis: project.wsApis.map((api) => ({
+        ...api,
+        requests: api.requests.map((request) => ({ ...request, settings: { handshakeTimeoutMs: 300 } })),
+      })),
+    }));
+
+    await expect(
+      runOp(sendOp, { item: 'Chat/Echo' }, fixture.base({ env: { WIREBENCH_SECRET_WSKEY: SECRET } })),
+    ).rejects.toMatchObject({ code: 'timeout' });
+    await expect(historyText(fixture.historyDir)).rejects.toThrow();
+  });
+
+  it('masks a secret inside a binary frame, in the result and in History', async () => {
+    // Answers each text with a binary frame that carries it between two non-text bytes.
+    const binary = await startTestWsServer({
+      onText: (text, peer) =>
+        peer.sendBinary(Buffer.concat([Buffer.from([0x01]), Buffer.from(text), Buffer.from([0xff])])),
+    });
+    sockets.push(binary);
+    const fixture = await wsProject(binary.url);
+
+    const result = await runOp(
+      sendOp,
+      { item: 'Chat/Echo' },
+      fixture.base({ env: { WIREBENCH_SECRET_WSKEY: SECRET } }),
+    );
+
+    const decoded = (result.frames ?? [])
+      .filter((frame) => frame.opcode === 'binary')
+      .map((frame) => Buffer.from(frame.base64 ?? '', 'base64').toString('latin1'));
+    expect(decoded[0]).toBe('\u0001hello\u00ff');
+    expect(decoded).toContain(`\u0001key ${REDACTED_MARKER}\u00ff`);
+    for (const frame of result.frames ?? []) {
+      expect(Buffer.from(frame.base64 ?? '', 'base64').toString('latin1')).not.toContain(SECRET);
+    }
+    const [line] = (await historyText(fixture.historyDir)).trim().split('\n');
+    const entry = JSON.parse(line ?? '{}') as { ws: { frames: { opcode: string; base64?: string }[] } };
+    const stored = entry.ws.frames
+      .filter((frame) => frame.opcode === 'binary')
+      .map((frame) => Buffer.from(frame.base64 ?? '', 'base64').toString('latin1'));
+    expect(stored).toContain(`\u0001key ${REDACTED_MARKER}\u00ff`);
+    expect(stored.join('')).not.toContain(SECRET);
+  });
+
   it('errors with ws-handshake-refused when nothing listens at the endpoint', async () => {
     const fixture = await wsProject('ws://127.0.0.1:1');
 
