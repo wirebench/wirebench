@@ -55,8 +55,8 @@ describeDb('ci_tokens (callback-assertion §3)', () => {
     expect((await repo.ciTokenByHash(h.db, minted.hash))?.lastUsedAt).toBe(h.clock.now.toISOString());
 
     expect((await repo.ciTokensOfWorkspace(h.db, workspaceId)).map((t) => t.name)).toEqual(['pipeline-main']);
-    expect(await repo.revokeCiToken(h.db, workspaceId, id, h.clock.now)).toBe(true);
-    expect(await repo.revokeCiToken(h.db, workspaceId, id, h.clock.now)).toBe(false);
+    expect(await repo.revokeCiToken(h.db, workspaceId, id, h.clock.now)).toBe('pipeline-main');
+    expect(await repo.revokeCiToken(h.db, workspaceId, id, h.clock.now)).toBeUndefined();
     expect(await repo.ciTokensOfWorkspace(h.db, workspaceId)).toEqual([]);
     expect((await repo.ciTokenByHash(h.db, minted.hash))?.revokedAt).toBe(h.clock.now.toISOString());
   });

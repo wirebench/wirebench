@@ -13,7 +13,8 @@ import {
   type SyncPushRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
+import { isValuePath, secretEvents } from '../../audit-log/secrets.js';
 import { unauthenticated } from '../../identity/errors.js';
 import { findUserById } from '../../identity/repo.js';
 import { jsonSchema } from '../../schema.js';
@@ -86,6 +87,33 @@ export const commitRoutes =
           }
           return env.store.appendCommits(workspaceId, body.parent, body.commits, author);
         });
+        // Recorded after the ref moved (audit-log plan ruling 4): the commits are on main, so a failure here is logged, not answered.
+        try {
+          const source = auditSource(request);
+          const target = { kind: 'workspace', id: workspaceId } as const;
+          await recordAudit(hooks, db, {
+            ...source,
+            action: 'workspace.pushed',
+            target,
+            workspaceId,
+            details: { head: result.head, previousHead: body.parent, commits: body.commits.length },
+          });
+          const changes = body.commits.flatMap((commit) => commit.changes);
+          const valuePaths = new Map<string, string>(); // lower-cased path -> the path as pushed
+          for (const change of changes)
+            if (isValuePath(change.path)) valuePaths.set(change.path.toLowerCase(), change.path);
+          const existed = new Set<string>();
+          if (body.parent !== null) {
+            for (const [lower, path] of valuePaths) {
+              if (await env.store.hasFile(workspaceId, body.parent, path)) existed.add(lower);
+            }
+          }
+          for (const event of secretEvents(changes, (path) => existed.has(path))) {
+            await recordAudit(hooks, db, { ...source, ...event, target, workspaceId });
+          }
+        } catch (error) {
+          request.log.warn({ err: error, workspaceId }, 'audit: push not recorded');
+        }
         // main has moved: a rejected or failed push never reaches this line (live-updates §3.2).
         announce(hooks.headMoved, { workspaceId, head: result.head, tokenId: request.caller!.tokenId }, request.log);
         return reply.code(201).send(result);

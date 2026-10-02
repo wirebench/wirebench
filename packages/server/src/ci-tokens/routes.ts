@@ -10,7 +10,7 @@ import {
   type CiTokenSummary,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import type { Querier } from '../context.js';
+import { auditSource, recordAudit, type Database, type ServerHooks } from '../context.js';
 import { isUniqueViolation } from '../db/errors.js';
 import { unauthenticated } from '../identity/errors.js';
 import { mintToken, newId } from '../identity/tokens.js';
@@ -21,7 +21,8 @@ import { ciTokenNameBlank, ciTokenNameTaken, ciTokenNotFound, ciTokenRequired } 
 import * as repo from './repo.js';
 
 export interface CiTokensEnv {
-  readonly db: Querier;
+  readonly db: Database;
+  readonly hooks: ServerHooks;
   readonly now: () => Date;
 }
 
@@ -74,13 +75,22 @@ export const ciRoutes =
         const minted = mintToken();
         const id = newId();
         try {
-          await repo.insertCiToken(db, {
-            id,
-            workspaceId,
-            name,
-            tokenHash: minted.hash,
-            createdBy: request.caller!.id,
-            at: env.now(),
+          await db.transaction(async (tx) => {
+            await repo.insertCiToken(tx, {
+              id,
+              workspaceId,
+              name,
+              tokenHash: minted.hash,
+              createdBy: request.caller!.id,
+              at: env.now(),
+            });
+            await recordAudit(env.hooks, tx, {
+              ...auditSource(request),
+              action: 'ci_token.created',
+              target: { kind: 'ci-token', id },
+              workspaceId,
+              details: { name },
+            });
           });
         } catch (error) {
           if (isUniqueViolation(error, NAME_INDEX)) throw ciTokenNameTaken(name);
@@ -109,8 +119,18 @@ export const ciRoutes =
       },
       async (request, reply) => {
         const { tokenId } = request.params as { readonly tokenId: string };
-        const revoked = await repo.revokeCiToken(db, request.workspaceAccess!.workspaceId, tokenId, env.now());
-        if (!revoked) throw ciTokenNotFound();
+        const workspaceId = request.workspaceAccess!.workspaceId;
+        await db.transaction(async (tx) => {
+          const name = await repo.revokeCiToken(tx, workspaceId, tokenId, env.now());
+          if (name === undefined) throw ciTokenNotFound();
+          await recordAudit(env.hooks, tx, {
+            ...auditSource(request),
+            action: 'ci_token.revoked',
+            target: { kind: 'ci-token', id: tokenId },
+            workspaceId,
+            details: { name },
+          });
+        });
         return reply.code(204).send();
       },
     );
