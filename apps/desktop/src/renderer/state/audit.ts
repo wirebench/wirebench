@@ -79,7 +79,7 @@ export const useAuditStore = create<AuditSnapshot & AuditActions>((set, get) => 
   async load(url) {
     const mine = ++loads;
     const started = epoch;
-    set({ loading: true, error: undefined, errorCode: undefined });
+    set({ loading: true, loadingMore: false, error: undefined, errorCode: undefined });
     const result = await ipc().audit.query({ url, query: queryOf(get().filter, new Date()) });
     if (mine !== loads || started !== epoch) return;
     if (result.ok) set({ events: result.value.events, next: result.value.next, loaded: true, loading: false });
@@ -110,8 +110,10 @@ export const useAuditStore = create<AuditSnapshot & AuditActions>((set, get) => 
   },
   async exportToFile(url) {
     const query = filterQueryOf(get().filter, new Date());
+    const started = epoch;
     set({ exporting: true });
     const result = await ipc().audit.export({ url, query });
+    if (started !== epoch) return;
     set({ exporting: false });
     if (!result.ok) showToast(result.error.message);
     else if (result.value.saved) showToast(`Exported ${String(result.value.count)} events to ${result.value.path}`);

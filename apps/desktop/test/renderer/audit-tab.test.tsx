@@ -86,4 +86,24 @@ describe('AuditTab (audit-log spec §3.6)', () => {
     expect('after' in sent).toBe(false);
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Exported 3 events to /tmp/a.ndjson'));
   });
+
+  it('a load that starts while a load-more is pending leaves the store usable', async () => {
+    let answerMore: (value: unknown) => void = () => undefined;
+    query
+      .mockResolvedValueOnce({ ok: true, value: { events: [event(1)], next: 'c1' } })
+      .mockReturnValueOnce(new Promise((resolve) => (answerMore = resolve)))
+      .mockResolvedValueOnce({ ok: true, value: { events: [event(3)], next: 'c3' } })
+      .mockResolvedValueOnce({ ok: true, value: { events: [event(4)] } });
+    const url = 'https://s.example';
+    const store = useAuditStore.getState;
+    await store().load(url);
+    const more = store().loadMore(url);
+    await store().load(url);
+    answerMore({ ok: true, value: { events: [event(2)] } });
+    await more;
+    expect(store().loadingMore).toBe(false);
+    expect(store().events.map((e) => e.id)).toEqual([event(3).id]);
+    await store().loadMore(url);
+    expect(store().events.map((e) => e.id)).toEqual([event(3).id, event(4).id]);
+  });
 });
