@@ -186,8 +186,10 @@ preferences, cookies, a contract check, gRPC schemas, and hooks that report a se
 member is absent the send behaves as the command line's does. The desktop builds its host from its own
 services (`apps/desktop/src/main/send/host.ts`); the command line builds one from the environment.
 
-`open` never throws: it returns an `ExchangeHandle` with the live events, `push`, `halfClose`, `close`
-and `cancel`, and a `result` that rejects with the send's error. `resolve` is the same first step on
+`open` returns an `ExchangeHandle` with the live events, `push`, `halfClose`, `close` and `cancel`, and
+a `result` that rejects with the send's error: a send's own failure never throws from `open`. It throws
+at once only when nothing can be opened: a protocol that is unknown or switched off, one with no run
+facet, or a request handed to a module of another kind. `resolve` is the same first step on
 its own: what a send would send, with nothing connected, for a cURL export or a preview. A message
 pushed to a send that takes none is refused with `exchange-not-streaming`. A run bounds every stream by
 its timeout.

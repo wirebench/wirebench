@@ -272,10 +272,9 @@ before and after for the two changes that need more than a rename. The package's
   OAuth2 token request now uses the proxy chosen for the token URL, not the one chosen for the
   request's base URL. A cancel that lands while a send is still being prepared stops the send, for
   every protocol.
-- **A REST send takes the preferences a host gives it.** The default `User-Agent` and `Accept`,
-  response compression, closing connections, HTTP/2, the socket timeout and the redirect defaults
-  apply to a send from any host that has preferences, as they always did in the app. The command line
-  and MCP, which have none, send as they did.
+- **A send of any protocol takes the preferences a host lends.** The desktop's REST, SOAP, gRPC and
+  WebSocket sends honour the user's preferences, as each applies: the user agent, compression, the
+  timeouts, HTTP/2 and the TLS floor. The command line and MCP lend none, so their output is unchanged.
 - **`wirebench run` includes WebSocket and streaming gRPC requests.** With no selector a run now sends
   them (see Added). A saved WebSocket request has no assertions, so `--require-assertions` errors it.
   A sequence in `wirebench run --sequence` may have them as steps too.

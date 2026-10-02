@@ -60,17 +60,17 @@ if (operation !== undefined) {
 
 ### Removed
 
-| 2.x                                                                              | Use instead                                                                                               |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `prepareSend`, `PreparedSend`                                                    | `createRunSender`. A module's own prepare function is internal.                                           |
-| `assertSupportedKind`, `apiKindOf`                                               | `ProtocolRegistry.status(kind)`, which answers `enabled`, `disabled` or `unknown`.                        |
-| `RequestDef`                                                                     | `SoapRequestDef`, which it was an alias of.                                                               |
-| `scriptTypesFor`                                                                 | The module's `run.scriptTypes`. A run that goes through `createRunSender` or `runRequests` needs neither. |
-| `RequestScriptTypes.soap`                                                        | `RequestScriptTypes.binding`, an opaque value the module that made it reads back.                         |
-| `ProtocolRun.send`                                                               | `ProtocolRun.open`, which returns an `ExchangeHandle` and never throws, and `ProtocolRun.resolve`.        |
-| `RunContext.getSecret`, `proxyFor`, `onSecretValue`, `fetchToken`, `tokenSource` | `RunContext.host`, a `SendHost`: `getSecret`, `proxyFor` (now async), `onSecretValue` and `tokens`.       |
-| `prepareRest`, `prepareSoap`, `prepareGrpc`                                      | `openExchange` and `resolveExchange`. The modules' prepare functions are internal.                        |
-| `ScriptProtocol`                                                                 | `string`.                                                                                                 |
+| 2.x                                                                              | Use instead                                                                                                                    |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `prepareSend`, `PreparedSend`                                                    | `createRunSender`. A module's own prepare function is internal.                                                                |
+| `assertSupportedKind`, `apiKindOf`                                               | `ProtocolRegistry.status(kind)`, which answers `enabled`, `disabled` or `unknown`.                                             |
+| `RequestDef`                                                                     | `SoapRequestDef`, which it was an alias of.                                                                                    |
+| `scriptTypesFor`                                                                 | The module's `run.scriptTypes`. A run that goes through `createRunSender` or `runRequests` needs neither.                      |
+| `RequestScriptTypes.soap`                                                        | `RequestScriptTypes.binding`, an opaque value the module that made it reads back.                                              |
+| `ProtocolRun.send`                                                               | `ProtocolRun.open`, which returns an `ExchangeHandle` whose `result` rejects with a send's failure, and `ProtocolRun.resolve`. |
+| `RunContext.getSecret`, `proxyFor`, `onSecretValue`, `fetchToken`, `tokenSource` | `RunContext.host`, a `SendHost`: `getSecret`, `proxyFor` (now async), `onSecretValue` and `tokens`.                            |
+| `prepareRest`, `prepareSoap`, `prepareGrpc`                                      | `openExchange` and `resolveExchange`. The modules' prepare functions are internal.                                             |
+| `ScriptProtocol`                                                                 | `string`.                                                                                                                      |
 
 `prepareSend` handed back one of three shapes, and the caller sent it with the matching function. `createRunSender` does both, with the run's caches and the request's scripts:
 

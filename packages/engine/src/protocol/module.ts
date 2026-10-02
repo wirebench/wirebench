@@ -146,7 +146,10 @@ export interface ProtocolRun<S extends SelectedBase = SelectedBase> {
   groups(project: Project): readonly RunGroup<S>[];
   /** For a request id found in this protocol's containers but not runnable: why. */
   whyNotRunnable(project: Project, requestId: string): string | undefined;
-  /** Opens one send (spec §4): resolve, pre-request script, connect, send. Never throws: `result` rejects. */
+  /**
+   * Opens one send (spec §4): resolve, pre-request script, connect, send. The send's own failure
+   * rejects `result`; it throws at once only for a request of another kind.
+   */
   open(selected: S, scope: RunScope, host: SendHost, options: ExchangeOptions): ExchangeHandle;
   /** The resolve step alone (spec §3.3): what a send would send, with nothing connected. */
   resolve(selected: S, scope: RunScope, host: SendHost): Promise<unknown>;
