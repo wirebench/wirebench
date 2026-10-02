@@ -12,7 +12,7 @@
  * `max` on `body` here is in characters, which is only a cheap first bound.
  */
 import { z } from 'zod';
-import { SIGNATURE_FAILURES, signatureSchemeSchema } from '../webhooks/signature.js';
+import { SIGNATURE_FAILURES, signatureSchemeSchema } from '../http/webhook-signature.js';
 import { teamsIdSchema } from './teams.js';
 
 /** §3.5's validation limits and page sizes, shared so the desktop never sends what the server refuses. */

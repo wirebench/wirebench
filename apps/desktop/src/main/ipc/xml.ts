@@ -7,7 +7,7 @@ import {
   declarationOf,
   qnameToString,
 } from '@wirebench/engine';
-import type { ImportResult, OperationRef, QName } from '@wirebench/engine';
+import type { WsdlImportResult, OperationRef, QName } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { registerHandler } from './register.js';
@@ -26,7 +26,7 @@ function parseClarkQName(clark: string): QName {
 function formInputs(
   service: EngineService,
   request: { interfaceId: string; bindingName: string; operationName: string },
-): { result: ImportResult; op: OperationRef } {
+): { result: WsdlImportResult; op: OperationRef } {
   const result = service.resultFor(request.interfaceId);
   return {
     result,

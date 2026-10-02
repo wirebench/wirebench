@@ -8,10 +8,10 @@
  */
 
 import { AsyncApiError, OpenApiError } from '../errors.js';
-import type { OpenApiSource } from '../rest/openapi/import.js';
-import { parseDocumentText } from '../rest/openapi/parse.js';
-import { resolveRefs, type RefProblem, type ResolvedDocument } from '../rest/openapi/refs.js';
-import type { FetchDocument } from '../wsdl/resolver.js';
+import type { OpenApiSource } from '../json/schema/source.js';
+import { parseDocumentText } from '../json/schema/parse-text.js';
+import { resolveRefs, type RefProblem, type ResolvedDocument } from '../json/schema/refs.js';
+import type { FetchDocument } from '../http/fetch-document.js';
 import type { AsyncApiDocument } from './model.js';
 import { normaliseAsyncApi2 } from './normalise-2.js';
 import { normaliseAsyncApi3 } from './normalise-3.js';

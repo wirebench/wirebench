@@ -4,13 +4,10 @@
  */
 import { createHmac } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import type {
-  GrpcRequestSnapshot,
-  RestRequestSnapshot,
-  RestResponseSnapshot,
-  ScriptOutcome,
-  SoapRequestSnapshot,
-} from '../../../src/script/model.js';
+import type { GrpcRequestSnapshot } from '../../../src/grpc/scripting.js';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
+import type { ScriptOutcome } from '../../../src/script/model.js';
+import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
 import { runScript, type ScriptRunInput } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 

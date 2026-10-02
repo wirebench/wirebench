@@ -9,7 +9,7 @@
  */
 
 import { NS } from '../xml/namespaces.js';
-import { prefixForNamespace, RESERVED_PREFIXES } from './prefixes.js';
+import { prefixForNamespace, RESERVED_PREFIXES } from '../xml/prefixes.js';
 
 /** Prefixes the envelope pins regardless of what a mnemonic would suggest. */
 const PINNED: readonly (readonly [string, string])[] = [

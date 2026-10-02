@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import forge from 'node-forge';
 import { WssError } from '../errors.js';
 import { NS } from '../xml/namespaces.js';
-import { renderDnRfc2253 } from './keystore/certificate.js';
+import { renderDnRfc2253 } from '../keystore/certificate.js';
 import type { WssKeyIdentifierType } from './model.js';
 
 /** `ValueType`/`EncodingType` URIs from the WS-Security X.509 token profile. */

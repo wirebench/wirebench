@@ -43,17 +43,41 @@ flowchart TB
 
   subgraph E["@wirebench/engine — Node only, zero Electron/DOM/React"]
     direction LR
+    Pr["project/<br/>folder format · environments · properties"]
+    Mo["protocol/ · protocols.ts<br/>modules · registry · features"]
     W["wsdl/ · xsd/<br/>parse · resolve · schema set"]
     S["soap/<br/>envelope · sample request · MTOM/SwA · fault"]
-    H["http/<br/>undici · auth · TLS · proxy · timings"]
     Sx["wss/ · wsa/<br/>signature · encryption · tokens · addressing"]
     V["validate/ · xpath/ · xml/<br/>schema · WS-I · XPath/XQuery 3.1 · JSONPath"]
-    Pr["project/<br/>folder format · environments · properties"]
-    Re["rest/<br/>url · body · send · auth · oauth2 · cookies"]
-    Oa["rest/openapi/<br/>parse · refs · map · sample · cache"]
+    Re["rest/<br/>url · body · send · cookies · SSE"]
+    Oa["rest/openapi/<br/>parse · map · update · cache"]
+    G["grpc/<br/>.proto sets · reflection · codec · call"]
+    Wk["ws/ · asyncapi/<br/>session · transcript · AsyncAPI import"]
+    H["http/<br/>undici · auth · oauth2 · TLS · proxy · timings"]
+    J["json/<br/>schema refs · sample · cursor"]
+    K["keystore/<br/>PKCS#12 · PEM"]
+
+    Pr --> Mo
+    Mo --> S
+    Mo --> Re
+    Mo --> G
+    Mo --> Wk
+    S --> W
+    S --> Sx
+    S --> V
+    Oa --> Re
+    Oa --> J
+    Re --> J
+    Wk --> J
+    S --> H
+    Re --> H
+    G --> H
+    Wk --> H
+    Sx --> K
+    Pr --> K
   end
 
-  Net(["Remote SOAP or REST service"])
+  Net(["Remote service<br/>SOAP · REST · gRPC · WebSocket"])
   Disk[("Workspace folder<br/>workspace.yaml · environments/ · projects/<slug>/")]
   Key[("OS keychain<br/>userData/secrets.json")]
 
@@ -116,24 +140,38 @@ environments/`) lists Globals, the workspace and every environment; opening one 
 variables and endpoint overrides, each variable with an *enabled* checkbox — see "The `disabled`
 list" below.
 
-**The `rest/` module.** `packages/engine/src/rest/` is the REST half of the engine, and it is a
-sibling of `soap/` rather than a layer over it: `url.ts` (compose and split a URL, `{param}`
-placeholders), `body.ts` (the five body kinds → wire bytes), `send.ts` (the send itself, through the
-same `http/` dispatcher SOAP uses, so keystores, TLS trust, the proxy, timeouts and raw-byte capture
-are shared code and not a second implementation), `auth.ts` and `oauth2.ts`, `cookies.ts`,
-`response.ts`, `expand.ts` and `curl.ts`. Under it, `rest/openapi/` is the import: `parse.ts`,
-`refs.ts` (following `$ref` across documents, memoised per target — a resolved description is a
-*graph*, and walking it as a tree is exponential), `map.ts` (the pure document → API mapping),
-`sample.ts` (a body sampled from a schema, under a node budget) and `cache.ts` (the fetched document,
-byte-exact and SHA-256 verified). `rest/browser.ts` is the one browser-safe subpath
-(`@wirebench/engine/rest`): the URL helpers the renderer needs so the URL field and the query table
-cannot disagree with what is actually sent. Nothing else in `rest/` is importable from the renderer.
-
 **Engine.** `packages/engine`, `@wirebench/engine`. Zero Electron, DOM or React imports —
 enforced by lint, not convention. Every I/O entry point takes an `AbortSignal`, every export
 carries JSDoc, every error is a `WirebenchError` subclass with a stable `code`, and every model
-object is `readonly`. It is a library, not a service: the same code is meant to power the
-planned `wirebench run` CLI unchanged.
+object is `readonly`. It is a library, not a service: the same code runs in the desktop's main
+process, in `wirebench run` and in `wirebench mcp`.
+
+**Protocol modules (ADR-0017).** Each protocol is one module behind the `ProtocolModule` interface
+(`packages/engine/src/protocol/module.ts`), defined in its own folder: `soap/module.ts`,
+`rest/module.ts`, `grpc/module.ts` and `ws/module.ts`. A module has up to three facets. *Storage*
+reads and writes its containers in a project folder. *Run* lists the requests a run can send, sends
+one, and names the secrets it needs. *Scripting* describes what a script sees of a request and a
+response. WebSocket's run facet offers no request, so its requests load and save and a run cannot send them.
+`packages/engine/src/protocols.ts` is the one file that imports every module. It builds the default
+*registry*, and the loader, the writer, the run loop, the secret-needs walk and the script host ask
+that registry for a module by `kind` where they used to branch on it. The registry also holds the
+*features*: one per protocol, plus `scripts`. Using a feature that is off is refused with
+`feature-disabled`, and a container whose kind has no enabled module loads as a placeholder
+(`Project.unsupported`) whose files a save leaves untouched. Every feature is on, and nothing in
+the app or the CLI switches one off yet.
+
+Two rules keep the modules apart, and `pnpm check:engine-layers` (part of `pnpm check`) enforces
+both: a protocol's folders import core and themselves, never another protocol's; core imports no
+protocol, apart from the exceptions ADR-0017 lists. Only that script enforces them; nothing flags a
+wrong import in the editor. The protocol folders are `soap/` with `wsdl/`, `xsd/`, `wss/`, `wsa/` and
+`validate/`; `rest/` with `rest/openapi/` and `webhooks/`; `grpc/`; and `ws/` with `asyncapi/`.
+What they share is core: `http/` (one dispatcher for every protocol, so keystores, TLS trust, the
+proxy, timeouts and raw-byte capture are shared code and not a second implementation; applying a
+configured auth; header entries; cookies; charsets), `json/schema/` (`$ref` resolution across
+documents, memoised per target, and sampling under a node budget, for OpenAPI and AsyncAPI alike),
+`keystore/`, `xml/` and `xpath/`. `rest/browser.ts` is the browser-safe subpath
+`@wirebench/engine/rest`: the URL helpers the renderer needs so the URL field and the query table
+cannot disagree with what is actually sent. Nothing else in `rest/` is importable from the renderer.
 
 ## How a send actually happens
 
@@ -234,11 +272,19 @@ introduced.
 | Concern | Where |
 |---|---|
 | WSDL/XSD parsing, resolution, schema sets | `packages/engine/src/wsdl`, `packages/engine/src/xsd` |
-| Envelope generation, faults, MTOM/SwA, cURL | `packages/engine/src/soap` |
-| REST URL, bodies, send, auth, OAuth2, cookies, cURL | `packages/engine/src/rest` |
-| OpenAPI parse, `$ref` resolution, mapping, sampling, cache | `packages/engine/src/rest/openapi` |
-| HTTP, auth (Basic/NTLMv2), TLS, proxy, timings | `packages/engine/src/http` |
+| The protocol interface, the registry, features | `packages/engine/src/protocol` |
+| The built-in modules composed; the default registry | `packages/engine/src/protocols.ts` |
+| WSDL import, sample requests, the SOAP send, envelopes, faults, MTOM/SwA | `packages/engine/src/soap` |
+| REST URL, bodies, send, the cookie jar, cURL; webhook items | `packages/engine/src/rest`, `packages/engine/src/webhooks` |
+| OpenAPI import, mapping, Update Definition, the definition cache | `packages/engine/src/rest/openapi` |
+| gRPC calls, `.proto` sets, server reflection | `packages/engine/src/grpc` |
+| WebSocket sessions; AsyncAPI import | `packages/engine/src/ws`, `packages/engine/src/asyncapi` |
+| JSON Schema `$ref` resolution, parsing and sampling | `packages/engine/src/json/schema` |
+| HTTP, auth (Basic, NTLMv2, OAuth2 token requests and PKCE, applying a configured scheme), header entries, cookies, charsets, TLS, proxy, timings | `packages/engine/src/http` |
 | WS-Security, WS-Addressing | `packages/engine/src/wss`, `packages/engine/src/wsa` |
+| Keystores (PKCS#12, PEM) | `packages/engine/src/keystore` |
+| Selection, the run loop, secret needs | `packages/engine/src/run` |
+| The script sandbox, the checker, the rules on a changed request | `packages/engine/src/script` |
 | Schema + WS-I validation, XPath/XQuery/JSONPath | `packages/engine/src/validate`, `.../xpath` |
 | Project folder format, environments, properties | `packages/engine/src/project` |
 | Workspace format, environments, properties (`${#Workspace#…}`) | `packages/engine/src/workspace` |
@@ -268,5 +314,7 @@ introduced.
   repositories, synced by system git
 - [ADR-0009](../adr/0009-wirebench-server-is-a-fastify-postgres-process.md) — Wirebench Server
   is one Fastify process over PostgreSQL
+- [ADR-0017](../adr/0017-a-protocol-is-a-module-behind-one-interface.md) — a protocol is a module
+  behind one interface
 - [Security model](../security.md)
 - [Success criteria and their evidence](../success-criteria.md)

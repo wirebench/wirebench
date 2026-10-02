@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { resolvePointer, resolveRefs, unescapePointerToken } from '../../../../src/rest/openapi/refs.js';
+import { resolvePointer, resolveRefs, unescapePointerToken } from '../../../../src/json/schema/refs.js';
 import type { FetchDocument } from '../../../../src/wsdl/resolver.js';
 
 const craftedDir = fileURLToPath(new URL('../../../../../../fixtures/openapi/crafted/', import.meta.url));

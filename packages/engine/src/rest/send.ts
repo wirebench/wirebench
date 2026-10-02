@@ -12,11 +12,11 @@
 import { WirebenchError } from '../errors.js';
 import { sendWithAuth } from '../http/auth/apply.js';
 import type { HttpExchange, HttpRequest, HttpStreamSink, ProxyOptions, TlsOptions } from '../http/types.js';
-import type { AuthSummary, SendAuth } from '../types.js';
-import type { SignatureScheme } from '../webhooks/signature.js';
-import { signWebhook } from '../webhooks/signature.js';
-import { applyAuth } from './auth.js';
-import type { AppliedAuth } from './auth.js';
+import type { AuthSummary, SendAuth } from '../http/auth/send-auth.js';
+import type { SignatureScheme } from '../http/webhook-signature.js';
+import { signWebhook } from '../http/webhook-signature.js';
+import { applyAuth } from '../http/auth/apply-auth.js';
+import type { AppliedAuth } from '../http/auth/apply-auth.js';
 import { encodeRestBody } from './body.js';
 import type { FileResolver } from './body.js';
 import { cookieHeader } from './cookies.js';

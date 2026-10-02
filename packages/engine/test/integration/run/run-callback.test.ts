@@ -14,7 +14,7 @@ import type { Assertion, CallbackAssertion } from '../../../src/assert/model.js'
 import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/prepare.js';
+import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { startTestRestServer } from '../../helpers/test-rest-server.js';

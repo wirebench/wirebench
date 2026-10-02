@@ -11,7 +11,8 @@
  * `script-secret-denied`, `ScriptValueInvalid` → `script-value-invalid`, `ScriptUnsupported` →
  * `script-unsupported`.
  */
-import type { ScriptApi, ScriptPhase, ScriptProtocol } from '../model.js';
+import type { ProtocolScripting } from '../../protocol/module.js';
+import type { ScriptApi, ScriptPhase } from '../model.js';
 import { SCRIPT_OUTPUT_LIMITS } from '../model.js';
 
 const COMMON = String.raw`
@@ -215,222 +216,6 @@ const deepFreeze = (value) => {
 };
 `;
 
-/** Splits and joins a URL's query without a URL class, which QuickJS lacks. */
-const REST = String.raw`
-const splitUrl = (url) => {
-  const hashAt = url.indexOf('#');
-  const fragment = hashAt === -1 ? '' : url.slice(hashAt);
-  const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
-  const queryAt = beforeHash.indexOf('?');
-  return {
-    base: queryAt === -1 ? beforeHash : beforeHash.slice(0, queryAt),
-    query: queryAt === -1 ? '' : beforeHash.slice(queryAt + 1),
-    fragment,
-  };
-};
-const decode = (text) => { try { return decodeURIComponent(text.replace(/\+/g, ' ')); } catch { return text; } };
-const encode = (text) => encodeURIComponent(text);
-
-const restRequest = (snapshot, writable) => {
-  const data = {
-    method: snapshot.method,
-    url: snapshot.url,
-    headers: snapshot.headers.map(([n, v]) => [n, v]),
-    body: JSON.parse(JSON.stringify(snapshot.body)),
-  };
-  const queryPairs = () => {
-    const { query } = splitUrl(data.url);
-    return query === '' ? [] : query.split('&').filter((p) => p !== '').map((part) => {
-      const eq = part.indexOf('=');
-      return eq === -1 ? [decode(part), ''] : [decode(part.slice(0, eq)), decode(part.slice(eq + 1))];
-    });
-  };
-  const writeQuery = (pairs) => {
-    const { base, fragment } = splitUrl(data.url);
-    const query = pairs.map(([n, v]) => encode(n) + '=' + encode(v)).join('&');
-    data.url = base + (query === '' ? '' : '?' + query) + fragment;
-  };
-  const refuse = (what) => () => { throw new TypeError('The ' + what + ' of a sent request cannot be changed'); };
-  const query = Object.freeze({
-    get: (name) => { const hit = queryPairs().find(([n]) => n === String(name)); return hit === undefined ? undefined : hit[1]; },
-    getAll: (name) => queryPairs().filter(([n]) => n === String(name)).map(([, v]) => v),
-    list: () => queryPairs().map(([name, value]) => ({ name, value })),
-    set: writable ? (name, value) => {
-      const pairs = queryPairs().filter(([n]) => n !== String(name));
-      pairs.push([String(name), String(value)]);
-      writeQuery(pairs);
-    } : refuse('query'),
-    add: writable ? (name, value) => { const pairs = queryPairs(); pairs.push([String(name), String(value)]); writeQuery(pairs); } : refuse('query'),
-    delete: writable ? (name) => writeQuery(queryPairs().filter(([n]) => n !== String(name))) : refuse('query'),
-  });
-  const headers = pairsApi(data.headers, writable, 'header');
-  const bodyText = () => {
-    if (data.body.kind === 'text') return data.body.text;
-    if (data.body.kind === 'none') return '';
-    throw new TypeError('This request\'s body is ' + data.body.description + ', which a script cannot read or change');
-  };
-  const body = Object.freeze({
-    get kind() { return data.body.kind === 'other' ? 'other' : data.body.kind; },
-    get text() { return bodyText(); },
-    set text(value) {
-      if (!writable) refuse('body')();
-      if (data.body.kind === 'other') bodyText();
-      data.body = { kind: 'text', text: String(value), language: data.body.kind === 'text' ? data.body.language : 'text' };
-    },
-    get json() { return JSON.parse(bodyText()); },
-    set json(value) {
-      if (!writable) refuse('body')();
-      if (data.body.kind === 'other') bodyText();
-      const text = JSON.stringify(value);
-      if (text === undefined) throw new TypeError('body.json must be a JSON value');
-      data.body = { kind: 'text', text, language: 'json' };
-    },
-  });
-  const request = Object.freeze({
-    get method() { return data.method; },
-    set method(value) { if (!writable) refuse('method')(); data.method = String(value).toUpperCase(); },
-    get url() { return data.url; },
-    set url(value) { if (!writable) refuse('URL')(); data.url = String(value); },
-    query,
-    headers,
-    body,
-  });
-  const snapshotOf = () => ({ protocol: 'rest', method: data.method, url: data.url, headers: data.headers, body: data.body });
-  return { request, snapshotOf };
-};
-
-const restResponse = (snapshot) => deepFreeze({
-  status: snapshot.status,
-  statusText: snapshot.statusText,
-  headers: pairsApi(snapshot.headers.map(([n, v]) => [n, v]), false, 'header'),
-  text: snapshot.text,
-  json: () => JSON.parse(snapshot.text),
-  durationMs: snapshot.durationMs,
-});
-
-if (input.phase === 'pre') {
-  const built = restRequest(input.request, true);
-  define('request', built.request);
-  state.request = built.snapshotOf;
-} else {
-  define('request', restRequest(input.request, false).request);
-  define('response', restResponse(input.response));
-}
-`;
-
-const SOAP = String.raw`
-const soapRequest = (snapshot, writable) => {
-  const data = {
-    endpoint: snapshot.endpoint,
-    soapAction: snapshot.soapAction,
-    headers: snapshot.headers.map(([n, v]) => [n, v]),
-    envelope: snapshot.envelope,
-    body: snapshot.body === undefined ? undefined : JSON.parse(JSON.stringify(snapshot.body)),
-  };
-  const refuse = (what) => () => { throw new TypeError('The ' + what + ' of a sent request cannot be changed'); };
-  const noSchema = () => {
-    throw new TypeError('This operation\'s body has no schema element, so request.body is not available; use request.envelope');
-  };
-  const request = Object.freeze({
-    get endpoint() { return data.endpoint; },
-    set endpoint(value) { if (!writable) refuse('endpoint')(); data.endpoint = String(value); },
-    get soapAction() { return data.soapAction; },
-    set soapAction(value) {
-      if (!writable) refuse('SOAPAction')();
-      const text = String(value);
-      if (hasCrlf(text)) throw new ScriptValueInvalid('The SOAPAction may not hold CR, LF or NUL');
-      data.soapAction = text;
-    },
-    headers: pairsApi(data.headers, writable, 'header'),
-    get envelope() { return data.envelope; },
-    set envelope(value) { if (!writable) refuse('envelope')(); data.envelope = String(value); },
-    get body() {
-      if (snapshot.body === undefined) noSchema();
-      return writable ? data.body : deepFreeze(data.body);
-    },
-    set body(value) {
-      if (!writable) refuse('body')();
-      if (snapshot.body === undefined) noSchema();
-      const text = JSON.stringify(value);
-      if (text === undefined) throw new TypeError('request.body must be a JSON value');
-      data.body = JSON.parse(text);
-    },
-  });
-  const snapshotOf = () => ({
-    protocol: 'soap',
-    endpoint: data.endpoint,
-    soapAction: data.soapAction,
-    headers: data.headers,
-    envelope: data.envelope,
-    ...(data.body === undefined ? {} : { body: data.body }),
-  });
-  return { request, snapshotOf };
-};
-
-const soapResponse = (snapshot) => deepFreeze({
-  status: snapshot.status,
-  headers: pairsApi(snapshot.headers.map(([n, v]) => [n, v]), false, 'header'),
-  text: snapshot.text,
-  envelope: snapshot.text,
-  fault: snapshot.fault,
-  body: snapshot.body,
-  select: (xpath, namespaces) => JSON.parse(__host.xpath(snapshot.text, String(xpath), JSON.stringify(namespaces === undefined ? {} : namespaces))),
-  durationMs: snapshot.durationMs,
-});
-
-if (input.phase === 'pre') {
-  const built = soapRequest(input.request, true);
-  define('request', built.request);
-  state.request = built.snapshotOf;
-} else {
-  define('request', soapRequest(input.request, false).request);
-  define('response', soapResponse(input.response));
-}
-`;
-
-const GRPC = String.raw`
-const grpcRequest = (snapshot, writable) => {
-  const data = {
-    target: snapshot.target,
-    method: snapshot.method,
-    metadata: snapshot.metadata.map(([n, v]) => [n, v]),
-    message: JSON.parse(JSON.stringify(snapshot.message === undefined ? null : snapshot.message)),
-  };
-  const refuse = (what) => () => { throw new TypeError('The ' + what + ' of a sent request cannot be changed'); };
-  const request = Object.freeze({
-    get target() { return data.target; },
-    get method() { return data.method; },
-    metadata: pairsApi(data.metadata, writable, 'metadata'),
-    get message() { return writable ? data.message : deepFreeze(data.message); },
-    set message(value) {
-      if (!writable) refuse('message')();
-      const text = JSON.stringify(value);
-      if (text === undefined) throw new TypeError('request.message must be a JSON value');
-      data.message = JSON.parse(text);
-    },
-  });
-  const snapshotOf = () => ({ protocol: 'grpc', target: data.target, method: data.method, metadata: data.metadata, message: data.message });
-  return { request, snapshotOf };
-};
-
-const grpcResponse = (snapshot) => deepFreeze({
-  status: snapshot.status,
-  metadata: pairsApi(snapshot.metadata.map(([n, v]) => [n, v]), false, 'metadata'),
-  trailers: pairsApi(snapshot.trailers.map(([n, v]) => [n, v]), false, 'metadata'),
-  message: snapshot.message,
-  durationMs: snapshot.durationMs,
-});
-
-if (input.phase === 'pre') {
-  const built = grpcRequest(input.request, true);
-  define('request', built.request);
-  state.request = built.snapshotOf;
-} else {
-  define('request', grpcRequest(input.request, false).request);
-  define('response', grpcResponse(input.response));
-}
-`;
-
 const FINISH = String.raw`
 globalThis.__finish = () => ({
   tests: state.tests,
@@ -439,13 +224,10 @@ globalThis.__finish = () => ({
 });
 `;
 
-const PROTOCOL: Record<ScriptProtocol, string> = { rest: REST, soap: SOAP, grpc: GRPC };
-
 /**
- * The prelude for one script: the common API, the protocol's `request`/`response`, any extra layer
- * (the Postman one, spec §Postman) and `__finish`. `phase` is read from the input at run time; it is a
- * parameter here only so a layer that differs by phase can be chosen.
+ * The prelude for one script: the common API, the protocol's `request`/`response` from its
+ * scripting facet, any extra layer and `__finish`.
  */
-export function buildPrelude(protocol: ScriptProtocol, _phase: ScriptPhase, api: ScriptApi, layer = ''): string {
-  return `'use strict';\n(() => {\n${COMMON}\n${PROTOCOL[protocol]}\n${api === 'postman' ? layer : ''}\n${FINISH}\n})();\n`;
+export function buildPrelude(scripting: ProtocolScripting, phase: ScriptPhase, api: ScriptApi, layer = ''): string {
+  return `'use strict';\n(() => {\n${COMMON}\n${scripting.prelude(phase)}\n${api === 'postman' ? layer : ''}\n${FINISH}\n})();\n`;
 }

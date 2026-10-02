@@ -174,7 +174,7 @@ describe('ProjectHost — Update Definition', () => {
       expect(after).toEqual(before);
       expect(after.interfaces[0]?.definitionUrl).toContain('versioned/v1');
 
-      // The live `ImportResult` was never swapped: a plan against v2 still reports it as new,
+      // The live `WsdlImportResult` was never swapped: a plan against v2 still reports it as new,
       // which is only possible if the "previous" side of the diff is still v1.
       const plan = await txService.planDefinitionUpdate(txInterfaceId, { kind: 'file', path: v2Path });
       expect(plan.newOperations.map((ref) => ref.operationName)).toEqual(['Subtract']);

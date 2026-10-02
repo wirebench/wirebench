@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { apiDefinitionDir, definitionCacheDir, loadProject } from '@wirebench/engine';
+import { apiDefinitionDir, createApi, definitionCacheDir, loadProject, saveProject } from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
@@ -54,6 +54,20 @@ describe('op import', () => {
     await runOp(importOp, { source: CALCULATOR_WSDL }, fixture.base());
     const second = await runOp(importOp, { source: CALCULATOR_WSDL, name: 'Calc v2' }, fixture.base());
     expect(second.added[0]).toMatchObject({ name: 'Calc v2', slug: 'Calc v2' });
+  });
+
+  it('gives an interface another slug than an API, so the next save keeps the API', async () => {
+    const fixture = await emptyProject();
+    await updateProject(fixture.dir, (project) => ({ ...project, apis: [createApi('Shop', { id: 'A1' })] }));
+
+    const result = await runOp(importOp, { source: CALCULATOR_WSDL, name: 'Shop' }, fixture.base());
+
+    expect(result.added[0]).toMatchObject({ kind: 'soap', name: 'Shop', slug: 'Shop-2' });
+    const { project, problems } = await loadProject(fixture.dir);
+    expect(problems).toEqual([]);
+    expect(project.apis.map((api) => api.slug)).toEqual(['Shop']);
+    await saveProject(project, fixture.dir);
+    await access(join(fixture.dir, 'apis', 'Shop', 'api.yaml'));
   });
 
   it('does not cache a definition when the project does not', async () => {

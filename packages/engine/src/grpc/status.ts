@@ -2,32 +2,25 @@
  * gRPC status codes, as the protocol's status specification numbers and names them, and the
  * `grpc-message` percent-encoding that carries a status message in an HTTP/2 trailer.
  */
+import type { StatusNames } from '../assert/model.js';
+import { GRPC_STATUS_NAMES } from '../assert/status-names.js';
 
-/** The seventeen status codes. `0` is the only success. */
-export const GRPC_STATUS_NAMES: Readonly<Record<number, string>> = Object.freeze({
-  0: 'OK',
-  1: 'CANCELLED',
-  2: 'UNKNOWN',
-  3: 'INVALID_ARGUMENT',
-  4: 'DEADLINE_EXCEEDED',
-  5: 'NOT_FOUND',
-  6: 'ALREADY_EXISTS',
-  7: 'PERMISSION_DENIED',
-  8: 'RESOURCE_EXHAUSTED',
-  9: 'FAILED_PRECONDITION',
-  10: 'ABORTED',
-  11: 'OUT_OF_RANGE',
-  12: 'UNIMPLEMENTED',
-  13: 'INTERNAL',
-  14: 'UNAVAILABLE',
-  15: 'DATA_LOSS',
-  16: 'UNAUTHENTICATED',
-});
+export { GRPC_STATUS_NAMES };
 
 /** The name of a status code, or `UNKNOWN (n)` for a number the specification does not define. */
 export function grpcStatusName(code: number): string {
   return GRPC_STATUS_NAMES[code] ?? `UNKNOWN (${String(code)})`;
 }
+
+/**
+ * The status codes by name and back, as a gRPC answer's assertion subject carries them (spec §3.5).
+ *
+ * @internal Exported for the engine's own hosts; not yet a plugin API (ADR-0017).
+ */
+export const grpcStatusNames: StatusNames = Object.freeze({
+  byName: new Map(Object.entries(GRPC_STATUS_NAMES).map(([code, name]) => [name, Number(code)])),
+  nameOf: grpcStatusName,
+});
 
 /**
  * Decodes a `grpc-message` trailer value. The specification percent-encodes anything outside

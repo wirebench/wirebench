@@ -15,7 +15,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError } from '../../../src/errors.js';
 import { createHttpFetchDocument } from '../../../src/http/document-fetch.js';
 import { parseOpenApi } from '../../../src/rest/openapi/import.js';
-import type { SendAuth } from '../../../src/types.js';
+import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { generateServerCert, generateTestCa, type TestCertificate } from '../../helpers/test-certs.js';
 import { startTestProxy, type TestProxy } from '../../helpers/test-proxy.js';
 import {

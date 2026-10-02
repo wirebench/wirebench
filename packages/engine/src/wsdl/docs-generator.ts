@@ -3,14 +3,14 @@
  * single self-contained document — HTML (inline CSS, no scripts, everything
  * escaped) or Markdown (with a table of contents).
  *
- * Pure and deterministic: the same {@link ImportResult} always produces
+ * Pure and deterministic: the same {@link WsdlImportResult} always produces
  * byte-identical output, so the golden tests are meaningful and a regenerated
  * document is a clean diff. Nothing is fetched; every byte comes from the
  * bundle the import already resolved.
  */
 
 import type { SchemaSet } from '../xsd/schema-set.js';
-import type { ImportResult } from '../types.js';
+import type { WsdlImportResult } from '../soap/types.js';
 import type { Binding, BindingOperation, Message, Operation, Part, WsdlDefinition } from './model.js';
 import { findBinding, findMessage, findPortType } from './model.js';
 import type { QName } from './qname.js';
@@ -182,12 +182,12 @@ function escapeRegExp(value: string): string {
 }
 
 /** The bundle's document texts, keyed by canonical location. */
-function textsOf(result: ImportResult): ReadonlyMap<string, string> {
+function textsOf(result: WsdlImportResult): ReadonlyMap<string, string> {
   return new Map(result.bundle.documents.map((document) => [document.location, document.text]));
 }
 
 /** The overview block: where the definition came from, and what it is made of. */
-function overviewBlock(result: ImportResult, title: string): Block {
+function overviewBlock(result: WsdlImportResult, title: string): Block {
   const { definition, bundle, schemaSet } = result;
   return {
     heading: 'Overview',
@@ -344,7 +344,7 @@ function schemaBlock(schemaSet: SchemaSet, texts: ReadonlyMap<string, string>): 
 }
 
 /** The document's title: the caller's, then the first service's name, then the root file name. */
-function titleOf(result: ImportResult, options: GenerateDocsOptions): string {
+function titleOf(result: WsdlImportResult, options: GenerateDocsOptions): string {
   if (options.title !== undefined && options.title.trim() !== '') {
     return options.title.trim();
   }
@@ -494,7 +494,7 @@ function renderMarkdown(title: string, blocks: readonly Block[]): string {
  * @param options output format and an optional title
  * @returns the whole document as a string; the caller decides where it lands
  */
-export function generateDocs(result: ImportResult, options: GenerateDocsOptions): string {
+export function generateDocs(result: WsdlImportResult, options: GenerateDocsOptions): string {
   const title = titleOf(result, options);
   const texts = textsOf(result);
   const blocks: Block[] = [

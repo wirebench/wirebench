@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignFileNames } from '../../../src/wsdl/cache-naming.js';
+import { assignFileNames } from '../../../src/project/cache-naming.js';
 import type { BundledDocument } from '../../../src/wsdl/resolver.js';
 
 /** Builds a minimal `BundledDocument` for naming tests; only the fields `assignFileNames` reads matter. */

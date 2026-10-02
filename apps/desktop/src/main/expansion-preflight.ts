@@ -26,7 +26,7 @@ import type {
   Interface,
   Project,
   PropertyScopes,
-  RequestDef,
+  SoapRequestDef,
   SoapOwnerAuth,
   UnresolvedRef,
 } from '@wirebench/engine';
@@ -65,7 +65,7 @@ export interface PreflightResult {
  */
 function wsaSourceFor(
   iface: Interface,
-  request: RequestDef,
+  request: SoapRequestDef,
   endpoint: string | undefined,
   defaultAction: string,
 ): PreflightResult['wsa'] {
@@ -92,7 +92,11 @@ function wsaSourceFor(
  * the Auth inspector can explain inheritance. Only non-secret fields travel: never a password,
  * and not even the `passwordRef`.
  */
-function authSourceFor(iface: Interface, request: RequestDef, endpoint: Endpoint | undefined): RequestAuthSourceWire {
+function authSourceFor(
+  iface: Interface,
+  request: SoapRequestDef,
+  endpoint: Endpoint | undefined,
+): RequestAuthSourceWire {
   const authMode = endpoint?.authMode ?? 'override';
   const resolved: SoapOwnerAuth | undefined = effectiveAuth(request.auth, endpoint?.auth, authMode, iface.auth);
   // `username`/`preemptive` exist only on the Basic/NTLM arm; a token scheme reports its `type`
@@ -144,7 +148,7 @@ function toWire(ref: UnresolvedRef, field: ExpansionField, headerName?: string):
  */
 export type PreflightEndpointResolver = (
   iface: Interface,
-  request: RequestDef,
+  request: SoapRequestDef,
 ) => { url: string | undefined; source: EndpointSourceWire; endpoint?: Endpoint };
 
 /**

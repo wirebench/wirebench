@@ -7,7 +7,7 @@
 
 import { randomBytes, randomUUID } from 'node:crypto';
 import { NS } from '../xml/namespaces.js';
-import type { Keystore } from './keystore/model.js';
+import type { Keystore } from '../keystore/model.js';
 
 /** How a `wsse:UsernameToken` carries (or does not carry) its password. */
 export type WssPasswordType = 'text' | 'digest' | 'none';

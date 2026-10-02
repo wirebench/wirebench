@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prefixForNamespace, RESERVED_PREFIXES } from '../../../src/soap/prefixes.js';
+import { prefixForNamespace, RESERVED_PREFIXES } from '../../../src/xml/prefixes.js';
 
 describe('prefixForNamespace', () => {
   const none = new Set<string>();

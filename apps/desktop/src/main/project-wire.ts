@@ -28,7 +28,7 @@ import type {
   Interface,
   OperationDef,
   Project,
-  RequestDef,
+  SoapRequestDef,
   RequestScripts,
   UpdatePlan,
   WebhookCollection,
@@ -71,7 +71,7 @@ import { webhookCollectionId } from './webhook-ids.js';
 /** What the main process knows about one interface beyond the saved model. */
 export interface InterfaceRuntime {
   readonly hydration: HydrationStatus;
-  /** The summary produced from the engine `ImportResult`, once the definition is loaded. */
+  /** The summary produced from the engine `WsdlImportResult`, once the definition is loaded. */
   readonly summary?: InterfaceSummary;
 }
 
@@ -216,7 +216,7 @@ function scriptsField(scripts: RequestScripts | undefined): { scripts?: RequestS
   return wire === undefined ? {} : { scripts: wire };
 }
 
-export function toRequestWire(iface: Interface, operation: OperationDef, request: RequestDef): RequestWire {
+export function toRequestWire(iface: Interface, operation: OperationDef, request: SoapRequestDef): RequestWire {
   return {
     id: request.id,
     interfaceId: iface.id,
@@ -794,7 +794,7 @@ function toWssIncomingWire(ref: WssRef): WssIncomingWire {
 export interface RequestLocation {
   readonly iface: Interface;
   readonly operation: OperationDef;
-  readonly request: RequestDef;
+  readonly request: SoapRequestDef;
 }
 
 /** Locates a request (and its owning interface/operation) by id, or `undefined` when unknown. */

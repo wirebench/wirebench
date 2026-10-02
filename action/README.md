@@ -3,7 +3,7 @@
 Runs a Wirebench project's requests and fails the step on a red assertion.
 
 ```yaml
-- uses: wirebench/wirebench/action@v2.3.0
+- uses: wirebench/wirebench/action@v3.0.0
   with:
     project: ./api-tests
     env: staging
@@ -32,7 +32,7 @@ masking hides the value.
 | `insecure`           | `false`                                                                                 | `--insecure`                               |
 | `timeout`            | —                                                                                       | `--timeout`                                |
 | `sla`                | —                                                                                       | `--sla`                                    |
-| `version`            | this action's own ref when it is a version tag (e.g. `v2.3.0` → `2.3.0`), else `latest` | the `@wirebench/cli` version run via `npx` |
+| `version`            | this action's own ref when it is a version tag (e.g. `v3.0.0` → `3.0.0`), else `latest` | the `@wirebench/cli` version run via `npx` |
 | `node-version`       | `24`                                                                                    | `actions/setup-node`                       |
 
 ## Output

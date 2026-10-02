@@ -11,7 +11,7 @@
  */
 
 import type { Document, Element } from '@xmldom/xmldom';
-import type { SoapExchange } from '../../types.js';
+import type { SoapExchange } from '../../soap/types.js';
 import type { WsdlDefinition } from '../../wsdl/model.js';
 import type { DefinitionBundle } from '../../wsdl/resolver.js';
 import type { SchemaSet } from '../../xsd/schema-set.js';

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { findPortType } from '../../../src/wsdl/model.js';
 import type { Binding, WsdlDefinition } from '../../../src/wsdl/model.js';
 import { defaultAction, detectWsaDefaults, summarizeWsa, wsaActionKey } from '../../../src/wsa/policy-detect.js';

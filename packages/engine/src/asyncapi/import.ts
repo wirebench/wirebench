@@ -3,8 +3,8 @@
  * references that could not be followed added to the summary.
  */
 
-import type { OpenApiSource } from '../rest/openapi/import.js';
-import type { ResolvedDocument } from '../rest/openapi/refs.js';
+import type { OpenApiSource } from '../json/schema/source.js';
+import type { ResolvedDocument } from '../json/schema/refs.js';
 import { mapAsyncApi, type MapAsyncApiOptions, type MappedAsyncApi } from './map.js';
 import type { AsyncApiDocument } from './model.js';
 import { parseAsyncApi, type ParseAsyncApiOptions } from './parse.js';

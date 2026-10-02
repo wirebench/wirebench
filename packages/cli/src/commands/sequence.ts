@@ -173,6 +173,8 @@ export async function runSequences(
         signal: controller.signal,
         onStepDone: (step) => options.onStepDone(toResult(step)),
         ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+        // Steps are looked up in the registry the sender sends through.
+        ...(context.registry !== undefined ? { registry: context.registry } : {}),
         containsKnownSecret: options.containsKnownSecret,
         captures: options.captures,
         // The same scopes the step's request expands against, with the run's Sequence values.

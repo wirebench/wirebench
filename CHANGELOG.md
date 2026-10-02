@@ -6,11 +6,50 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+This release is 3.0.0. The major version is `@wirebench/engine`'s public exports: the names that
+dated from the SOAP-only engine are renamed, and what the new protocol registry replaces is removed,
+with no deprecated aliases. Existing projects and workspaces open unchanged, and the `wirebench`
+command line keeps its flags and report shape; the behaviour changes this release does make are listed
+under Changed and Fixed. The project format version does move, to `formatVersion: 6`, because of request
+scripts (see Added): a project this build saves opens only in a build that has them. The protocol
+modules themselves do not change the project folder format.
+
+### Breaking
+
+- **`@wirebench/engine`: SOAP-era names renamed.** `importDefinition` is `importWsdl`; `ImportSource`,
+  `ImportOptions`, `ImportCacheOptions`, `ImportProgress`, `ImportProblem` and `ImportResult` gain a
+  `Wsdl` prefix (`WsdlImportSource`, …); `summarizeOperations` and `OperationSummary` are
+  `summarizeSoapOperations` and `SoapOperationSummary`; `generateRequest` and `generateEmptyRequest`
+  are `generateSoapRequest` and `generateEmptySoapRequest`; `toSendInput`, `ToSendInputArgs` and
+  `SendRequestInput` are `toSoapSendInput`, `ToSoapSendInputArgs` and `SoapSendRequestInput`;
+  `SendAttachmentOptions` is `SoapAttachmentOptions`. Signatures are unchanged.
+- **`@wirebench/engine`: exports removed.** `prepareSend` and `PreparedSend` (send through
+  `createRunSender`); `assertSupportedKind` and `apiKindOf` (ask `ProtocolRegistry.status`);
+  `RequestDef` (it was an alias of `SoapRequestDef`); `scriptTypesFor`; `ScriptProtocol` (it is
+  `string`); and `RequestScriptTypes.soap`, which is now the opaque `binding`.
+- **`@wirebench/engine`: `protocol` is a `string`.** `RequestResult.protocol`,
+  `AssertionSubject.protocol` and `ScriptedRequest.protocol` were the union `'soap' | 'rest' | 'grpc'`.
+  The JSON report's `protocol` field is typed the same way; the values a run writes are unchanged.
+
+[`packages/engine/README.md`](packages/engine/README.md#migrating-to-30) has the full tables and a
+before and after for the two changes that need more than a rename. The package's subpaths (`./xml`,
+`./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) are unchanged.
+
 ### Added
 
 - **A landing site.** https://wirebench.github.io/wirebench/ now has a home page, a features page and a
   download page built from the latest release; the user guide moved to
   https://wirebench.github.io/wirebench/docs/.
+- **Protocol modules in the engine.** SOAP, REST, gRPC and WebSocket each sit behind one interface,
+  held in a registry, so the loader, the writer, the run loop and the script host no longer branch on
+  the protocol ([ADR-0017](docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md), #184). Two
+  things follow for a project. An interface or API of a kind this build does not know no longer stops
+  the project from opening: it is reported as a `container-unsupported` problem, the rest of the
+  project loads, and a save leaves that container's files exactly as they were. And `wirebench send`
+  names such a container, with the reason, where it answered that no request matched. The registry
+  also carries feature switches for each protocol and for scripts; every one is on, and nothing in the
+  app or the command line turns one off yet. `@wirebench/engine` exports the module interface for
+  Wirebench's own use, tagged `@internal`: it is not a plugin API.
 - **Agents over MCP, and the same verbs in the terminal.** `wirebench mcp` serves one project to a
   coding agent as MCP tools — `import`, `operations`, `generate`, `send`, `validate`, `query`,
   `history_list`, `history_diff` — over stdio, or over Streamable HTTP on 127.0.0.1 behind a bearer
@@ -187,8 +226,26 @@ All notable changes to this project are documented here. The format follows
 - **The catch-URL root is now Webhook inbox.** The Explorer node for a shared workspace's catch URLs,
   previously labelled *Webhooks*, is now **Webhook inbox** — the new per-project *Webhooks* node is
   for the webhook items described above. Nothing about catch URLs themselves changes.
+- **Script refusals, reworded and a little stricter.** The rules that refuse a script's changes to a
+  request (#63) are now applied in one place for every protocol, so five refusal messages read
+  differently, and a script result that breaks two REST rules at once may report the other of the two.
+  A destination that is not a URL with a host, such as a gRPC target `host:443`, must stay identical
+  (a URL keeps its scheme, host and port). A REST body handed back as uneditable when it was
+  editable is refused. With the `scripts` feature off, a request with active scripts is refused with
+  `feature-disabled` and nothing is sent. Where a gRPC request with active scripts has no cached
+  definition, the error is the script host's (`script-unavailable` or `script-type-error`) and no
+  longer `grpc-definition-missing`: still an error, and nothing is sent.
+- **A status assertion on an HTTP response.** One that names an all-capitals word which is not a status
+  name now errors instead of failing. A request file cannot hold one, because its schema
+  refuses it.
 
 ### Fixed
+
+- **A new SOAP interface no longer takes the folder name of a REST, gRPC or WebSocket API.** Adding an
+  interface in the app, importing a legacy project and `wirebench import` of a WSDL could give the new
+  interface the folder name an API already used. The next load then skipped that API, and the next save
+  deleted its folder. Every API kind now avoids the folder names of the other API kinds, and a new
+  interface avoids those of every API.
 
 - **A request file can't read a file outside its project.** The body file a REST request names, and
   the message file a gRPC request names, must now be a file beside the request, as a WebSocket

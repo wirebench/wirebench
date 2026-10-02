@@ -26,7 +26,7 @@ import {
   soapScriptTypes,
 } from '@wirebench/engine';
 import type {
-  ImportResult,
+  WsdlImportResult,
   OpenApiDocument,
   Project,
   PropertyMap,
@@ -38,7 +38,6 @@ import type {
   ScriptDiagnostic,
   ScriptModel,
   ScriptPhase,
-  ScriptProtocol,
   ScriptQuickInfo,
   ScriptSandbox,
   ScriptSignatureHelp,
@@ -59,7 +58,7 @@ export interface ScriptHostDeps {
   readonly openApiDocumentFor: (apiId: string) => Promise<OpenApiDocument>;
   readonly grpcProtoSetFor: (apiId: string) => Promise<ProtoSet>;
   /** The interface's loaded definition; throws, or returns `undefined`, when it is not loaded. */
-  readonly soapDefinitionFor: (interfaceId: string) => ImportResult | undefined;
+  readonly soapDefinitionFor: (interfaceId: string) => WsdlImportResult | undefined;
   /** A project's session values changed. */
   readonly onValuesChanged?: (projectId: string) => void;
   /** Tests substitute these; the app uses the engine's workers. */
@@ -80,7 +79,7 @@ export interface SessionValueListing {
 
 /** A request, wherever it is, with what its script types are built from. */
 interface Located {
-  readonly protocol: ScriptProtocol;
+  readonly protocol: string;
   readonly path: string;
   readonly name: string;
   readonly slug: string;
@@ -146,7 +145,7 @@ export class ScriptHost {
         slug: request.slug,
         scripts: request.scripts,
         types: () => {
-          let loaded: ImportResult | undefined;
+          let loaded: WsdlImportResult | undefined;
           try {
             loaded = this.deps.soapDefinitionFor(iface.id);
           } catch {
@@ -158,7 +157,7 @@ export class ScriptHost {
               const elements = soapOperationElements(loaded.definition, operation.bindingName, operation.name);
               return {
                 generated: soapScriptTypes(loaded.schemaSet, elements.input, elements.output),
-                soap: {
+                binding: {
                   schemas: loaded.schemaSet,
                   ...(elements.input !== undefined ? { input: elements.input } : {}),
                   ...(elements.output !== undefined ? { output: elements.output } : {}),

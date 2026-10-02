@@ -2,7 +2,7 @@
  * Property expansion for a REST send: every `${…}` reference in the base URL, the URL, the tables
  * and the body, resolved against the same scopes a SOAP send uses.
  *
- * Separate from `project/properties.ts`'s `expandSendInput` because the two inputs share no fields,
+ * Separate from `soap/expand.ts`'s `expandSendInput` because the two inputs share no fields,
  * but the rules are deliberately the same ones: names as well as values are expanded, an
  * unresolved reference is reported rather than guessed at, and escaping is applied to the body
  * alone — escaping a header value or a URL would corrupt it.

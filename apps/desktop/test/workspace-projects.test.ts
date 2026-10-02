@@ -4,7 +4,7 @@ import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { definitionCacheDir, loadProject, loadWorkspace, workspaceProjectDir } from '@wirebench/engine';
+import { definitionCacheDir, loadProject, loadWorkspace, workspaceDir, workspaceProjectDir } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
@@ -678,6 +678,112 @@ describe('WorkspaceService.locateProject', () => {
     await expect(service.locateProject(projectId, SENDER)).rejects.toMatchObject({
       code: 'project-not-relocatable',
     });
+    await service.close();
+  }, 60_000);
+});
+
+/**
+ * A container of a kind this build does not read is a placeholder (spec §6): `saveProject` writes
+ * nothing for it, so every copy of a project — move, export, import — has to carry its directory
+ * over itself, byte-for-byte, or the container is gone (and, for a move, gone for good once the
+ * source is trashed).
+ */
+describe('WorkspaceService — placeholders survive a copy of the project', () => {
+  const PLACEHOLDER_FILES: Readonly<Record<string, string>> = {
+    'api.yaml': 'kind: future-protocol\nname: Future\norder: 7\nsomething: [kept, as, written]\n',
+    'nested/deeper/data.bin': '\u0000\u0001binary-ish\r\nbytes',
+  };
+
+  /** Writes a placeholder container under `<projectDir>/apis/Future/`. */
+  async function writePlaceholder(projectDir: string): Promise<string> {
+    const dir = join(projectDir, 'apis', 'Future');
+    for (const [file, content] of Object.entries(PLACEHOLDER_FILES)) {
+      await mkdir(join(dir, file, '..'), { recursive: true });
+      await writeFile(join(dir, file), content);
+    }
+    return dir;
+  }
+
+  async function expectSameTree(copied: string, original: string): Promise<void> {
+    const files = await filesUnder(original);
+    // `filesUnder` gives the platform's separator; the fixture's keys use `/`.
+    expect(files).toEqual(
+      Object.keys(PLACEHOLDER_FILES)
+        .map((file) => join(...file.split('/')))
+        .sort(),
+    );
+    expect(await filesUnder(copied)).toEqual(files);
+    for (const file of files) {
+      expect(await readFile(join(copied, file))).toEqual(await readFile(join(original, file)));
+    }
+  }
+
+  /** A workspace, open, whose project "Payments" was loaded with a placeholder in it. */
+  async function openWithPlaceholder(service: WorkspaceService, name = 'Source') {
+    const source = await service.create(name);
+    const { projectId } = await service.addProject('Payments');
+    await service.saveAll('test');
+    const projectDir = workspaceProjectDir(source.dir, 'Payments');
+    const placeholderDir = await writePlaceholder(projectDir);
+    await service.close();
+    await service.open(source.id);
+    expect(service.hostFor(projectId).model()?.unsupported).toEqual([
+      { dir: 'apis', slug: 'Future', kind: 'future-protocol', reason: 'unknown-kind', name: 'Future', order: 7 },
+    ]);
+    return { source, projectId, projectDir, placeholderDir };
+  }
+
+  it('a move copies the placeholder folder byte-identical before the source is trashed', async () => {
+    const seenAtTrash: boolean[] = [];
+    let targetPlaceholder = '';
+    const service = newService({
+      trash: (path: string) => {
+        trashed.push(path);
+        seenAtTrash.push(existsSync(join(targetPlaceholder, 'nested', 'deeper', 'data.bin')));
+        return Promise.resolve();
+      },
+    });
+    const target = await service.create('Target');
+    await service.close();
+    targetPlaceholder = join(workspaceProjectDir(workspaceDir(root, target.id), 'Payments'), 'apis', 'Future');
+    const { projectId, projectDir, placeholderDir } = await openWithPlaceholder(service);
+
+    await service.moveProjectToWorkspace(projectId, target.id);
+
+    expect(trashed).toEqual([projectDir]);
+    expect(seenAtTrash).toEqual([true]);
+    await expectSameTree(targetPlaceholder, placeholderDir);
+    // The copy loads back with the same placeholder, so the next save keeps it too.
+    const { project } = await loadProject(workspaceProjectDir(workspaceDir(root, target.id), 'Payments'));
+    expect(project.unsupported?.map((placeholder) => placeholder.slug)).toEqual(['Future']);
+
+    await service.close();
+  }, 60_000);
+
+  it('an export copies the placeholder folder byte-identical', async () => {
+    const service = newService();
+    const { projectId, placeholderDir } = await openWithPlaceholder(service);
+    const target = join(root, 'export-target');
+    await mkdir(target, { recursive: true });
+    folderPick = target;
+
+    expect(await service.exportProject(projectId, SENDER)).toEqual({ dir: realDir(target) });
+
+    await expectSameTree(join(target, 'apis', 'Future'), placeholderDir);
+    await service.close();
+  }, 60_000);
+
+  it('an import copies the placeholder folder byte-identical', async () => {
+    const service = newService();
+    const { placeholderDir, projectDir } = await openWithPlaceholder(service);
+    await service.create('Other');
+    folderPick = projectDir;
+
+    await service.importProjectFolder(SENDER);
+
+    const other = service.snapshot();
+    const imported = workspaceProjectDir(other?.dir ?? '', 'Payments');
+    await expectSameTree(join(imported, 'apis', 'Future'), placeholderDir);
     await service.close();
   }, 60_000);
 });

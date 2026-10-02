@@ -407,7 +407,7 @@ The stable machine interface, its own `formatVersion` starting at 1:
 }
 ```
 
-`protocol` is `"soap"`, `"rest"` or `"grpc"`; for a gRPC request `status` is the gRPC status
+`protocol` is the request's kind: `"soap"`, `"rest"` or `"grpc"`; for a gRPC request `status` is the gRPC status
 code. A sequence step (`--sequence`) carries three more fields, added within `formatVersion` 1:
 `sequence` (`{ id, name, stepId }`), `transfers` (`[{ name, outcome, secret, value?, message? }]`, with no
 `value` for a secret transfer) and `origin`, where the step's request went. A request with scripts may carry
@@ -443,6 +443,15 @@ A missing WS-Security password or keystore password surfaces as `secret-missing`
 as a missing `passwordEnv`/`tokenEnv` variable, and a missing keystore file as `keystore-unreadable`
 (exit 3) — none of them is a usage mistake, since the project loaded fine and the problem is only
 that this machine has nothing to authenticate with.
+
+Three codes come from the engine's protocol modules and feature switches
+([ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)):
+
+| Code | Exit | When |
+| --- | --- | --- |
+| `feature-disabled` | 3 | A request's protocol is switched off, or the `scripts` feature is switched off and the request has active scripts. The request is not sent. The error's `details.feature` names the feature, and `details.requires` the feature it depends on when that one is what is off. No flag or variable of `wirebench` switches a feature off yet. |
+| `container-unsupported` | none: a warning | An interface or API whose `kind` this build has no enabled protocol for. It is printed at load as `warning: container-unsupported: …`, its folder is left untouched, and its requests cannot be selected. The rest of the project runs. |
+| `container-slug-conflict` | 3 | A save would write an interface or API into the folder of a container that was not loaded. Nothing is written. `wirebench import` does not run into it: it names the new folder around every container the project holds, loaded or not, so an import of `Shop` beside a `Shop` that was not loaded is written to `Shop-2`. |
 
 ## Proxy and TLS
 
@@ -489,7 +498,8 @@ Details that are easy to get wrong:
   placeholder in it is refused with `invalid-input`. The saved request's own body still expands
   placeholders as usual. Secrets come only from `WIREBENCH_SECRET_<NAME>` variables, and only the ones
   the saved request uses. gRPC and WebSocket items are in the project, but `operations` does not list
-  them and `send` refuses them with `unsupported-kind`. Server-sent events are a response mode of a REST
+  them and `send` refuses them with `unsupported-kind`, as it does an item inside a container that was
+  not loaded, naming the reason. Server-sent events are a response mode of a REST
   request, not an item kind. The response body in the result is cut at 256 Ki characters, and
   `bodyTruncated` says when it was (the same cut applies to the History entry).
   A send that got no response is not written to History. When the History file is busy (another
@@ -675,7 +685,7 @@ walkthrough.
 ### GitHub Actions
 
 ```yaml
-- uses: wirebench/wirebench/action@v2.3.0
+- uses: wirebench/wirebench/action@v3.0.0
   with:
     project: ./api-tests
     env: staging
@@ -693,12 +703,12 @@ output. Every input arrives through `env:`, never interpolated into the step's s
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v2.3.0/templates/gitlab/wirebench.gitlab-ci.yml
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v3.0.0/templates/gitlab/wirebench.gitlab-ci.yml
 
 api-tests:
   extends: .wirebench-run
   variables:
-    WIREBENCH_VERSION: '2.3.0'
+    WIREBENCH_VERSION: '3.0.0'
     WIREBENCH_PROJECT: api-tests
     WIREBENCH_ENV: staging
 ```
@@ -715,7 +725,7 @@ rather than relying on the `latest` default. Map a CI/CD variable to
 ```bash
 docker run --rm -v "$PWD:/work" \
   -e WIREBENCH_SECRET_BILLING_PASSWORD \
-  ghcr.io/wirebench/wirebench-cli:2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  ghcr.io/wirebench/wirebench-cli:3.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 The image (`linux/amd64` and `linux/arm64`) runs as the non-root `node` user with `WORKDIR /work`
@@ -727,7 +737,7 @@ secrets with `-e`.
 
 ```bash
 WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
-  npx --yes @wirebench/cli@2.3.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  npx --yes @wirebench/cli@3.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 Works on any CI runner with Node 24 already available and no other setup — the same package the

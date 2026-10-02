@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { GRPC_STATUS_NAMES } from '../grpc/status.js';
+import { GRPC_STATUS_NAMES } from './status-names.js';
 import { CALLBACK_LIMITS } from './model.js';
 import type { CallbackAssertion, CallbackBodyCheck, CallbackCheck, CallbackHeaderCheck } from './model.js';
 

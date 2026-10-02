@@ -4,7 +4,8 @@
  */
 import { createHmac } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { RestRequestSnapshot, RestResponseSnapshot, ScriptOutcome } from '../../../src/script/model.js';
+import type { RestRequestSnapshot, RestResponseSnapshot } from '../../../src/rest/scripting.js';
+import type { ScriptOutcome } from '../../../src/script/model.js';
 import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 

@@ -5,35 +5,38 @@
  * rewritten (so an autosave produces a one-file git diff, and file watchers
  * stay quiet), and every write goes through a temp file plus `rename`.
  *
- * Only Wirebench's own subtrees are managed. The definition cache
+ * Only Wirebench's own subtrees are managed: core lists its own files, and each
+ * protocol module lists those of its containers. The definition cache
  * (`interfaces/<slug>/definition/`) and `attachments/` belong to other
  * components and are never read or removed here — except when their owning
  * interface is deleted, in which case the whole interface folder goes.
  */
 
-import { dirname, join } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { dirname } from 'node:path';
+import { ProjectError } from '../errors.js';
+import type { ContainerDir } from '../protocol/module.js';
+import type { ProtocolRegistry } from '../protocol/registry.js';
+import { defaultRegistry } from '../protocols.js';
+import { SEQUENCES_DIR } from '../sequence/file.js';
+import { readSequences } from '../sequence/load.js';
+import type { FsLike } from './fs.js';
+import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from './fs.js';
+import { listApiTreeFiles, toAbsolute } from './managed-files.js';
+import { takenContainerSlugs, unsupportedOf } from './model.js';
 import type { Project } from './model.js';
 import {
-  API_FILE,
   APIS_DIR,
   ENVIRONMENTS_DIR,
-  FOLDER_FILE,
   INTERFACES_DIR,
-  OPERATIONS_DIR,
-  REQUEST_SUFFIX,
   REQUESTS_DIR,
   WEBHOOKS_DIR,
+  WEBHOOKS_FEATURE,
   WEBHOOKS_FILE,
   WSS_DIR,
 } from './paths.js';
-import type { FsLike } from './fs.js';
-import { nodeFs, readFileIfExists, readdirIfExists, writeFileAtomic } from './fs.js';
 import type { ProjectFiles } from './serialize.js';
 import { KEYSTORES_PATH, MANIFEST_PATH, projectFiles } from './serialize.js';
-import { readSequences } from '../sequence/load.js';
-import { ProjectError } from '../errors.js';
-import { SEQUENCES_DIR } from '../sequence/file.js';
-import { isScriptFileOf } from '../script/model.js';
 
 /** What a {@link saveProject} call did, as relative `/`-separated paths. */
 export interface SaveResult {
@@ -63,6 +66,12 @@ export interface SaveProjectOptions {
   /** Recorded in the manifest as `writtenBy`. Defaults to `'wirebench'`. */
   readonly writer?: string;
   /**
+   * The protocols this save can write: their containers are what is written, and their files what
+   * is managed. A container the project holds whose kind has no enabled module here is left on
+   * disk exactly as it is, as a placeholder is. Defaults to the built-in ones, all switched on.
+   */
+  readonly registry?: ProtocolRegistry;
+  /**
    * Relative `<slug>.xml.bak` paths naming the requests to back up before this save overwrites
    * their `<slug>.xml`, as produced by `wsdl/update-definition.ts`'s `applyUpdate`. The bytes
    * copied are whatever is on disk *now*, so the backup is the envelope as the user last saw it
@@ -81,30 +90,24 @@ export interface SaveProjectOptions {
   readonly now?: () => Date;
 }
 
-function toAbsolute(root: string, relative: string): string {
-  return join(root, ...relative.split('/'));
-}
-
 /**
- * Lists every file Wirebench manages under `root` — i.e. every file that
- * matches one of the format's own patterns:
+ * Lists the files core itself manages under `root` — every file that matches one of these
+ * patterns:
  *
  * - `wirebench.yaml`
  * - `environments/*.yaml`
- * - `interfaces/*\/interface.yaml`
- * - `interfaces/*\/operations/*\/*.request.yaml`, plus the sibling `*.xml` of
- *   any such file
  * - `wss/{outgoing,incoming}/*.yaml`
  * - `wss/keystores.yaml`
- * - `webhooks/webhooks.yaml`
- * - `webhooks/requests/**` (the collection's own request tree, same layout as an API's)
+ * - `webhooks/webhooks.yaml`, while the `rest` feature is on
+ * - `webhooks/requests/**` (the collection's own request tree, same layout as an API's), while the
+ *   `rest` feature is on
+ * - the `sequences/*.sequence.yaml` this build loaded
  *
- * Anything else on disk — a README, a `.gitkeep`, notes, an orphan `.xml`
- * with no matching `.request.yaml` — is a foreign file and is never a
- * deletion candidate, even when it sits inside a directory Wirebench
- * otherwise manages.
+ * A container's files are its protocol's to list (`storage.managed`). Anything else on disk — a
+ * README, a `.gitkeep`, notes — is a foreign file and is never a deletion candidate, even when it
+ * sits inside a directory Wirebench otherwise manages.
  */
-async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
+async function listCoreManagedFiles(fs: FsLike, root: string, registry: ProtocolRegistry): Promise<string[]> {
   const managed: string[] = [];
   if ((await readFileIfExists(fs, toAbsolute(root, MANIFEST_PATH))) !== undefined) {
     managed.push(MANIFEST_PATH);
@@ -128,20 +131,13 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
     managed.push(KEYSTORES_PATH);
   }
 
-  for (const entry of await readdirIfExists(fs, toAbsolute(root, APIS_DIR))) {
-    if (!entry.isDirectory) {
-      continue;
-    }
-    const base = `${APIS_DIR}/${entry.name}`;
-    if ((await readFileIfExists(fs, toAbsolute(root, `${base}/${API_FILE}`))) !== undefined) {
-      managed.push(`${base}/${API_FILE}`);
-    }
-    managed.push(...(await listApiTreeFiles(fs, root, `${base}/${REQUESTS_DIR}`)));
-  }
-
-  // The request tree is managed only beside its `webhooks.yaml`, as an API's is beside its `api.yaml`.
+  // The request tree is managed only beside its `webhooks.yaml`, as an API's is beside its `api.yaml`,
+  // and only while REST is on: with it off the collection was not loaded, and is not this save's.
   const webhooksFile = `${WEBHOOKS_DIR}/${WEBHOOKS_FILE}`;
-  if ((await readFileIfExists(fs, toAbsolute(root, webhooksFile))) !== undefined) {
+  if (
+    registry.features.isEnabled(WEBHOOKS_FEATURE) &&
+    (await readFileIfExists(fs, toAbsolute(root, webhooksFile))) !== undefined
+  ) {
     managed.push(webhooksFile);
     managed.push(...(await listApiTreeFiles(fs, root, `${WEBHOOKS_DIR}/${REQUESTS_DIR}`)));
   }
@@ -150,116 +146,6 @@ async function listManagedFiles(fs: FsLike, root: string): Promise<string[]> {
   // foreign, so a save can never delete a sequence the user has not seen (`sequence/load.ts`).
   for (const { file } of (await readSequences(fs, root)).loaded) {
     managed.push(file);
-  }
-
-  for (const entry of await readdirIfExists(fs, toAbsolute(root, INTERFACES_DIR))) {
-    if (!entry.isDirectory) {
-      continue;
-    }
-    const base = `${INTERFACES_DIR}/${entry.name}`;
-    const ifaceFile = `${base}/interface.yaml`;
-    if ((await readFileIfExists(fs, toAbsolute(root, ifaceFile))) !== undefined) {
-      managed.push(ifaceFile);
-    }
-
-    const opsDir = `${base}/${OPERATIONS_DIR}`;
-    for (const opEntry of await readdirIfExists(fs, toAbsolute(root, opsDir))) {
-      if (!opEntry.isDirectory) {
-        continue;
-      }
-      const opDir = `${opsDir}/${opEntry.name}`;
-      const requestSlugs = new Set<string>();
-      const opFiles = await readdirIfExists(fs, toAbsolute(root, opDir));
-      for (const fileEntry of opFiles) {
-        if (fileEntry.isFile && fileEntry.name.endsWith(REQUEST_SUFFIX)) {
-          requestSlugs.add(fileEntry.name.slice(0, -REQUEST_SUFFIX.length));
-          managed.push(`${opDir}/${fileEntry.name}`);
-        }
-      }
-      for (const fileEntry of opFiles) {
-        if (fileEntry.isFile && fileEntry.name.endsWith('.xml')) {
-          const slug = fileEntry.name.slice(0, -'.xml'.length);
-          if (requestSlugs.has(slug)) {
-            managed.push(`${opDir}/${fileEntry.name}`);
-          }
-        } else if (fileEntry.isFile && [...requestSlugs].some((slug) => isScriptFileOf(fileEntry.name, slug))) {
-          managed.push(`${opDir}/${fileEntry.name}`);
-        }
-      }
-    }
-  }
-  return managed;
-}
-
-/**
- * True when `name` is a WebSocket request's saved-message sibling for `requestSlug`:
- * `<requestSlug>.msg-<message-slug>.<ext>`, where `<ext>` is one `[A-Za-z0-9]+` run at the very
- * end. Matched by trying the known `requestSlug` as a literal prefix — never by a greedy regex
- * capture across the whole name — so a request slug that itself contains a dot or the literal text
- * `.msg-` cannot be mis-split from the message slug that follows it.
- */
-function isWsMessageSibling(name: string, requestSlug: string): boolean {
-  const prefix = `${requestSlug}.msg-`;
-  if (!name.startsWith(prefix)) {
-    return false;
-  }
-  const rest = name.slice(prefix.length);
-  const dot = rest.lastIndexOf('.');
-  // dot > 0 requires a non-empty message slug before the extension.
-  return dot > 0 && /^[A-Za-z0-9]+$/.test(rest.slice(dot + 1));
-}
-
-/**
- * Lists the managed files inside one directory of an API's request tree: its `folder.yaml`, every
- * `*.request.yaml`, and two conventions of per-request sibling file, each claimed only when it
- * belongs to a request slug actually present in this directory:
- *
- * - `<slug>.body.<ext>` — a REST raw body or a gRPC message, one file for the whole request.
- * - `<slug>.msg-<message-slug>.<ext>` — one WebSocket saved message, one file per message
- *   ({@link isWsMessageSibling}).
- * - `<slug>.pre.ts`, `<slug>.post.ts`, `<slug>.pre.js`, `<slug>.post.js` — a request's scripts (#63).
- *
- * Claiming only a sibling of a *known* request slug (rather than every file matching either
- * pattern) means a hand-placed file — notes, a `.body.json` or `.msg-x.txt` with no matching
- * request — is foreign and never a deletion candidate, exactly as in an operation folder.
- */
-async function listApiTreeFiles(fs: FsLike, root: string, dir: string): Promise<string[]> {
-  const managed: string[] = [];
-  const entries = await readdirIfExists(fs, toAbsolute(root, dir));
-  const requestSlugs = new Set<string>();
-  for (const entry of entries) {
-    if (!entry.isFile) {
-      continue;
-    }
-    if (entry.name === FOLDER_FILE) {
-      managed.push(`${dir}/${entry.name}`);
-      continue;
-    }
-    if (entry.name.endsWith(REQUEST_SUFFIX)) {
-      requestSlugs.add(entry.name.slice(0, -REQUEST_SUFFIX.length));
-      managed.push(`${dir}/${entry.name}`);
-    }
-  }
-  for (const entry of entries) {
-    if (!entry.isFile) {
-      continue;
-    }
-    const body = /^(.*)\.body\.[A-Za-z0-9]+$/.exec(entry.name);
-    if (body !== null && requestSlugs.has(body[1]!)) {
-      managed.push(`${dir}/${entry.name}`);
-      continue;
-    }
-    for (const slug of requestSlugs) {
-      if (isWsMessageSibling(entry.name, slug) || isScriptFileOf(entry.name, slug)) {
-        managed.push(`${dir}/${entry.name}`);
-        break;
-      }
-    }
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory) {
-      managed.push(...(await listApiTreeFiles(fs, root, `${dir}/${entry.name}`)));
-    }
   }
   return managed;
 }
@@ -317,14 +203,84 @@ async function refuseOverwritingForeignSequences(
 }
 
 /**
+ * Refuses a save that would write a container into a placeholder's directory (spec §6): the files
+ * there belong to a container this build could not read, and none of them may be replaced. Slugs
+ * are compared without case, as `uniqueSlug` compares them, because on most machines two names
+ * that differ only in case are one directory. A host that names containers with
+ * `takenContainerSlugs` never gets here.
+ *
+ * @throws ProjectError `container-slug-conflict`
+ */
+function refusePlaceholderConflicts(project: Project, registry: ProtocolRegistry): void {
+  const placeholders = unsupportedOf(project);
+  if (placeholders.length === 0) {
+    return;
+  }
+  for (const { storage } of registry.modules) {
+    for (const container of storage.containers(project)) {
+      const placeholder = placeholders.find(
+        (candidate) => candidate.dir === storage.dir && candidate.slug.toLowerCase() === container.slug.toLowerCase(),
+      );
+      if (placeholder !== undefined) {
+        throw new ProjectError(
+          'container-slug-conflict',
+          `"${container.name}" would be saved to ${storage.dir}/${placeholder.slug}, which holds a "${placeholder.kind}" container this build did not load; give it another name`,
+          {
+            details: {
+              dir: storage.dir,
+              slug: container.slug,
+              kind: placeholder.kind,
+              reason: placeholder.reason,
+            },
+          },
+        );
+      }
+    }
+  }
+}
+
+/**
  * Saves `project` into the directory `root`, creating it if needed.
  *
  * @returns which files were written, removed and left untouched.
+ * @throws ProjectError `container-slug-conflict` when a container has the slug of a placeholder in
+ * its directory; `sequence-file-conflict`; what {@link projectFiles} throws
  */
 export async function saveProject(project: Project, root: string, options?: SaveProjectOptions): Promise<SaveResult> {
   const fs = options?.fs ?? nodeFs;
-  const desired = projectFiles(project, options?.writer !== undefined ? { writer: options.writer } : undefined);
-  const existing = await listManagedFiles(fs, root);
+  const registry = options?.registry ?? defaultRegistry();
+  const desired = projectFiles(project, {
+    registry,
+    ...(options?.writer !== undefined ? { writer: options.writer } : {}),
+  });
+  refusePlaceholderConflicts(project, registry);
+
+  // Which container directories are alive: every container the project holds and every placeholder,
+  // whatever this save's registry can write (spec R6). A save never deletes what it cannot write.
+  const live: Record<ContainerDir, ReadonlySet<string>> = {
+    interfaces: takenContainerSlugs(project, 'interfaces'),
+    apis: takenContainerSlugs(project, 'apis'),
+  };
+  // An API whose slug an interface has is skipped on load (`api-slug-conflict`), so it is in no list
+  // above; its folder is still the user's and stays.
+  const interfaceKeys = new Set([...live.interfaces].map((slug) => slug.toLowerCase()));
+  const keptApiDir = (name: string): boolean => interfaceKeys.has(name.toLowerCase());
+
+  // On a file system that does not tell `Graph` from `graph`, a container renamed only by case still
+  // sits in its old folder; give the folder its new name before anything is written into it.
+  const foldsCase = await foldsCaseUnder(fs, root);
+  if (foldsCase) {
+    await renameContainersByCase(fs, root, live);
+  }
+  // What this save may delete: core's own files, then each module's word on each of its containers
+  // (spec §5.2). A placeholder, and a container no enabled module answers for, has no managed file,
+  // so nothing under its directory is removed or touched (spec §6).
+  const existing = await listCoreManagedFiles(fs, root, registry);
+  for (const { storage } of registry.modules) {
+    for (const container of storage.containers(project)) {
+      existing.push(...(await storage.managed(fs, root, container.slug)));
+    }
+  }
   await refuseOverwritingForeignSequences(fs, root, desired, existing);
 
   const backupsWritten: string[] = [];
@@ -362,19 +318,9 @@ export async function saveProject(project: Project, root: string, options?: Save
 
   // A deleted interface or API takes its whole folder with it, definition cache included.
   const goneEntities = new Set<string>();
-  for (const [dir, liveSlugs] of [
-    [INTERFACES_DIR, new Set(project.interfaces.map((i) => i.slug))],
-    [
-      APIS_DIR,
-      new Set([
-        ...project.apis.map((a) => a.slug),
-        ...project.grpcApis.map((a) => a.slug),
-        ...project.wsApis.map((a) => a.slug),
-      ]),
-    ],
-  ] as const) {
+  for (const dir of [INTERFACES_DIR, APIS_DIR] as const) {
     for (const entry of await readdirIfExists(fs, toAbsolute(root, dir))) {
-      if (entry.isDirectory && !liveSlugs.has(entry.name)) {
+      if (entry.isDirectory && !live[dir].has(entry.name) && !(dir === APIS_DIR && keptApiDir(entry.name))) {
         const relative = `${dir}/${entry.name}`;
         await fs.rm(toAbsolute(root, relative), { recursive: true, force: true });
         removed.push(relative);
@@ -383,8 +329,18 @@ export async function saveProject(project: Project, root: string, options?: Save
     }
   }
 
+  // The written path, by its case-folded form, for a file renamed only by case.
+  const desiredByKey = new Map([...desired.keys()].map((path) => [path.toLowerCase(), path]));
+  const renamedByCase = new Set<string>();
   for (const relative of existing) {
     if (desired.has(relative) || [...goneEntities].some((prefix) => relative.startsWith(prefix))) {
+      continue;
+    }
+    const sameFile = foldsCase ? desiredByKey.get(relative.toLowerCase()) : undefined;
+    if (sameFile !== undefined) {
+      // The write above went into this very file and kept its old name; removing it would remove
+      // the new content. Give it the new name instead.
+      await renamePathByCase(fs, root, relative, sameFile, renamedByCase);
       continue;
     }
     await fs.rm(toAbsolute(root, relative), { force: true });
@@ -428,4 +384,72 @@ async function timestampedBackupPath(fs: FsLike, root: string, backup: string, n
     n += 1;
   }
   return candidate;
+}
+
+/**
+ * Whether the file system under `root` treats two names that differ only by case as one entry, as
+ * the default ones on macOS and Windows do. Probed with an entry `root` already holds; a folder that
+ * holds nothing yet has nothing to rename, so it answers `false`.
+ */
+async function foldsCaseUnder(fs: FsLike, root: string): Promise<boolean> {
+  const names = (await readdirIfExists(fs, root)).map((entry) => entry.name);
+  const probe = names.find((name) => name.toLowerCase() !== name.toUpperCase());
+  if (probe === undefined) {
+    return false;
+  }
+  const swapped = probe === probe.toUpperCase() ? probe.toLowerCase() : probe.toUpperCase();
+  if (names.includes(swapped)) {
+    return false;
+  }
+  try {
+    await fs.stat(toAbsolute(root, swapped));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Renames `from` to `to`, two names of one entry, through a temporary name so the case change holds. */
+async function renameByCase(fs: FsLike, from: string, to: string): Promise<void> {
+  const hop = `${from}.case-${randomBytes(6).toString('hex')}`;
+  await fs.rename(from, hop);
+  await fs.rename(hop, to);
+}
+
+/** Gives each container folder whose container was renamed only by case its new name. */
+async function renameContainersByCase(
+  fs: FsLike,
+  root: string,
+  live: Readonly<Record<ContainerDir, ReadonlySet<string>>>,
+): Promise<void> {
+  for (const dir of [INTERFACES_DIR, APIS_DIR] as const) {
+    const byKey = new Map([...live[dir]].map((slug) => [slug.toLowerCase(), slug]));
+    for (const entry of await readdirIfExists(fs, toAbsolute(root, dir))) {
+      const slug = byKey.get(entry.name.toLowerCase());
+      if (entry.isDirectory && slug !== undefined && slug !== entry.name) {
+        await renameByCase(fs, toAbsolute(root, `${dir}/${entry.name}`), toAbsolute(root, `${dir}/${slug}`));
+      }
+    }
+  }
+}
+
+/**
+ * Gives the managed file `from` the name `to`, which differs from it only by case, renaming each
+ * folder on the way whose case changed too. `done` holds the case-folded paths already renamed.
+ */
+async function renamePathByCase(fs: FsLike, root: string, from: string, to: string, done: Set<string>): Promise<void> {
+  const fromParts = from.split('/');
+  const toParts = to.split('/');
+  for (let index = 0; index < toParts.length; index += 1) {
+    if (fromParts[index] === toParts[index]) {
+      continue;
+    }
+    const target = toParts.slice(0, index + 1).join('/');
+    if (done.has(target.toLowerCase())) {
+      continue;
+    }
+    const current = [...toParts.slice(0, index), fromParts[index]].join('/');
+    await renameByCase(fs, toAbsolute(root, current), toAbsolute(root, target));
+    done.add(target.toLowerCase());
+  }
 }

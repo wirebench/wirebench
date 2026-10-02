@@ -26,7 +26,7 @@ export function openRestRequestTab(requestId: string, fallbackTitle?: string): v
  * The owner whose OAuth2 configuration a request actually authenticates with: itself if it
  * configures one, else the nearest folder up its chain, else its API.
  *
- * The same walk `rest/auth.ts` does on the send path — first non-`inherit` wins — but answering
+ * The same walk `http/auth/apply-auth.ts` does on the send path — first non-`inherit` wins — but answering
  * "whose token is this?" rather than "what credentials go on the wire?". Returns `undefined` when
  * nothing in the chain uses OAuth2, which is what makes *Get OAuth2 Token* a no-op rather than an
  * error on a request that does not need one.

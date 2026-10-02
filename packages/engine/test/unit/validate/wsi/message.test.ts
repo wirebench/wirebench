@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SoapExchange } from '../../../../src/types.js';
+import type { SoapExchange } from '../../../../src/soap/types.js';
 import { WSI_MESSAGE_ASSERTIONS } from '../../../../src/validate/wsi/assertions/message/index.js';
 import { runMessageAssertions, wsiMessageContext } from '../../../../src/validate/wsi/run-message.js';
 import type { WsiMessageBinding, WsiReport } from '../../../../src/validate/wsi/types.js';

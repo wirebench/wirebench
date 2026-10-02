@@ -7,8 +7,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { runScript } from '../../../src/script/run.js';
 import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
-import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } from '../../../src/script/types/xsd.js';
-import type { SoapRequestSnapshot } from '../../../src/script/model.js';
+import { projectSoapBody, replaceSoapBody, soapBodyElement, soapScriptTypes } from '../../../src/soap/script-types.js';
+import type { SoapRequestSnapshot } from '../../../src/soap/scripting.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';
 import { typeErrors } from './ts-check.js';
 
@@ -181,7 +181,7 @@ describe('SOAP scripts with the projection', () => {
       props: {},
       secrets: {},
       requestName: 'Order',
-      soap: { schemas: set, input: INPUT, output: OUTPUT },
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
     });
     expect(outcome.ok).toBe(true);
     const sent = outcome.ok ? (outcome.request as SoapRequestSnapshot) : undefined;
@@ -190,6 +190,43 @@ describe('SOAP scripts with the projection', () => {
       quantity: 7,
       line: [{ sku: 'Z' }, { sku: 'C' }],
     });
+  });
+
+  it('a pre-request script cannot add a secret reference through request.body', async () => {
+    const outcome = await runScript({
+      sandbox,
+      phase: 'pre',
+      api: 'wirebench',
+      source: 'request.body.email = "${secret:other}";',
+      filename: 'Order.pre.ts',
+      request: REQUEST,
+      vars: {},
+      props: {},
+      secrets: {},
+      requestName: 'Order',
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
+    });
+    expect(outcome).toMatchObject({ ok: false, error: { code: 'script-secret-denied' } });
+  });
+
+  it('a secret the envelope already names may move within request.body', async () => {
+    const request: SoapRequestSnapshot = { ...REQUEST, envelope: ENVELOPE.replace('toys', '${secret:mail}') };
+    const outcome = await runScript({
+      sandbox,
+      phase: 'pre',
+      api: 'wirebench',
+      source: 'request.body.email = request.body.category!.name;',
+      filename: 'Order.pre.ts',
+      request,
+      vars: {},
+      props: {},
+      secrets: {},
+      requestName: 'Order',
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
+    });
+    expect(outcome.ok).toBe(true);
+    const sent = outcome.ok ? (outcome.request as SoapRequestSnapshot) : undefined;
+    expect(sent?.envelope).toContain('<email>${secret:mail}</email>');
   });
 
   it('an untouched body leaves the envelope byte for byte', async () => {
@@ -204,7 +241,7 @@ describe('SOAP scripts with the projection', () => {
       props: {},
       secrets: {},
       requestName: 'Order',
-      soap: { schemas: set, input: INPUT, output: OUTPUT },
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
     });
     expect(outcome).toMatchObject({ ok: true, request: { envelope: ENVELOPE }, log: { lines: ['3'] } });
   });
@@ -227,7 +264,7 @@ describe('SOAP scripts with the projection', () => {
       props: {},
       secrets: {},
       requestName: 'Order',
-      soap: { schemas: set, input: INPUT, output: OUTPUT },
+      binding: { schemas: set, input: INPUT, output: OUTPUT },
     });
     expect(outcome).toMatchObject({
       ok: true,

@@ -4,7 +4,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { AuthConfig } from '../../../src/project/model.js';
-import { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } from '../../../src/rest/auth.js';
+import {
+  applyAuth,
+  missingSecretRef,
+  resolveAuthChain,
+  resolveAuthChainIndex,
+} from '../../../src/http/auth/apply-auth.js';
 
 const inherit: AuthConfig = { type: 'inherit' };
 const none: AuthConfig = { type: 'none' };

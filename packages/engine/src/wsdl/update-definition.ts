@@ -3,7 +3,7 @@
  * project against it.
  *
  * The two halves are deliberately separate. {@link planUpdate} is a pure diff of
- * two {@link ImportResult}s — what a preview dialog shows before the user commits
+ * two {@link WsdlImportResult}s — what a preview dialog shows before the user commits
  * to anything. {@link applyUpdate} then rewrites the project model per the
  * options the user ticked, and is equally pure: it returns the next `Project`
  * plus the relative paths of the `.xml.bak` backups the save layer should write
@@ -11,18 +11,18 @@
  * itself.
  *
  * Nothing is ever deleted. Requests belonging to an operation the new definition
- * no longer has are kept and flagged {@link RequestDef.orphaned} rather than
+ * no longer has are kept and flagged {@link SoapRequestDef.orphaned} rather than
  * removed — the user decides whether a vanished operation means "clean
  * this up" or "the new WSDL is wrong".
  */
 
-import { generateRequest } from '../generate.js';
+import { generateSoapRequest } from '../soap/generate.js';
 import { createRequest, generateId } from '../project/model.js';
-import type { Endpoint, IdGenerator, Interface, OperationDef, Project, RequestDef } from '../project/model.js';
+import type { Endpoint, IdGenerator, Interface, OperationDef, Project, SoapRequestDef } from '../project/model.js';
 import { INTERFACES_DIR, OPERATIONS_DIR, uniqueSlug } from '../project/paths.js';
 import { recreateRequest } from '../soap/recreate.js';
 import type { OperationRef } from '../soap/request-builder.js';
-import type { ImportResult, OperationSummary } from '../types.js';
+import type { WsdlImportResult, SoapOperationSummary } from '../soap/types.js';
 import { generateElement, generateType } from '../xsd/sample-generator.js';
 import { findBinding, findPortType } from './model.js';
 import type { MessageRef, WsdlDefinition } from './model.js';
@@ -67,12 +67,12 @@ function operationKey(ref: OperationRef): string {
   return `${qnameToString(ref.bindingName)}#${ref.operationName}`;
 }
 
-function refOf(summary: OperationSummary): OperationRef {
+function refOf(summary: SoapOperationSummary): OperationRef {
   return { bindingName: summary.bindingName, operationName: summary.operationName };
 }
 
 /** Every `soap:address` the definition exposes, deduplicated, in document order. */
-function addressesOf(summary: readonly OperationSummary[]): string[] {
+function addressesOf(summary: readonly SoapOperationSummary[]): string[] {
   const seen = new Set<string>();
   for (const operation of summary) {
     for (const port of operation.ports) {
@@ -85,9 +85,9 @@ function addressesOf(summary: readonly OperationSummary[]): string[] {
 }
 
 /** The generated sample envelope for one operation, or `undefined` when it cannot be built. */
-function envelopeOf(result: ImportResult, ref: OperationRef): string | undefined {
+function envelopeOf(result: WsdlImportResult, ref: OperationRef): string | undefined {
   try {
-    return generateRequest(result, ref, DIFF_GENERATE_OPTIONS).envelopeXml;
+    return generateSoapRequest(result, ref, DIFF_GENERATE_OPTIONS).envelopeXml;
   } catch {
     return undefined;
   }
@@ -98,7 +98,11 @@ function envelopeOf(result: ImportResult, ref: OperationRef): string | undefined
  * the sample fragment its element/type would generate. There is no response
  * builder in the engine, so this stands in for "the response shape changed".
  */
-function outputSignature(definition: WsdlDefinition, schemaSet: ImportResult['schemaSet'], ref: OperationRef): string {
+function outputSignature(
+  definition: WsdlDefinition,
+  schemaSet: WsdlImportResult['schemaSet'],
+  ref: OperationRef,
+): string {
   const binding = findBinding(definition, ref.bindingName);
   if (binding === undefined) {
     return '';
@@ -134,10 +138,10 @@ function outputSignature(definition: WsdlDefinition, schemaSet: ImportResult['sc
 
 /** The first reason `next` differs from `previous`, or `undefined` when they match. */
 function changeReason(
-  oldImport: ImportResult,
-  newImport: ImportResult,
-  previous: OperationSummary,
-  next: OperationSummary,
+  oldImport: WsdlImportResult,
+  newImport: WsdlImportResult,
+  previous: SoapOperationSummary,
+  next: SoapOperationSummary,
 ): OperationChangeReason | undefined {
   if (previous.soapAction !== next.soapAction) {
     return 'soap-action';
@@ -173,7 +177,7 @@ function changeReason(
  * @param oldImport the definition the project was built from
  * @param newImport the freshly fetched definition
  */
-export function planUpdate(oldImport: ImportResult, newImport: ImportResult): UpdatePlan {
+export function planUpdate(oldImport: WsdlImportResult, newImport: WsdlImportResult): UpdatePlan {
   const oldByKey = new Map(oldImport.operations.map((op) => [operationKey(refOf(op)), op]));
   const newByKey = new Map(newImport.operations.map((op) => [operationKey(refOf(op)), op]));
 
@@ -257,12 +261,12 @@ function requireInterface(project: Project, interfaceId: string): Interface {
 }
 
 /** The `.xml.bak` path of one saved request, relative to the project root. */
-function backupPath(iface: Interface, operation: OperationDef, request: RequestDef): string {
+function backupPath(iface: Interface, operation: OperationDef, request: SoapRequestDef): string {
   return `${INTERFACES_DIR}/${iface.slug}/${OPERATIONS_DIR}/${operation.slug}/${request.slug}.xml.bak`;
 }
 
 /** The operation summary for `ref` in the new import, if the new definition still has it. */
-function summaryFor(result: ImportResult, key: string): OperationSummary | undefined {
+function summaryFor(result: WsdlImportResult, key: string): SoapOperationSummary | undefined {
   return result.operations.find((op) => operationKey(refOf(op)) === key);
 }
 
@@ -303,7 +307,7 @@ export function applyUpdate(
   project: Project,
   interfaceId: string,
   plan: UpdatePlan,
-  newImport: ImportResult,
+  newImport: WsdlImportResult,
   options: ApplyUpdateOptions,
 ): ApplyUpdateResult {
   const newId = options.newId ?? generateId;
@@ -325,7 +329,7 @@ export function applyUpdate(
     const orphaned = removedKeys.has(key);
     const recreate = options.recreateRequests && changedByKey.has(key);
     const requests = operation.requests.map((request) => {
-      let next: RequestDef = request;
+      let next: SoapRequestDef = request;
       if (orphaned) {
         if (request.orphaned !== true) {
           requestsOrphaned.push(request.id);
@@ -333,12 +337,12 @@ export function applyUpdate(
         next = { ...next, orphaned: true };
       } else if (request.orphaned === true) {
         // `exactOptionalPropertyTypes`: the flag is *absent* again, not `undefined`.
-        next = Object.fromEntries(Object.entries(next).filter(([key]) => key !== 'orphaned')) as RequestDef;
+        next = Object.fromEntries(Object.entries(next).filter(([key]) => key !== 'orphaned')) as SoapRequestDef;
       }
       if (recreate) {
         const summary = summaryFor(newImport, key);
         if (summary !== undefined) {
-          const generated = generateRequest(newImport, refOf(summary), generateOptions);
+          const generated = generateSoapRequest(newImport, refOf(summary), generateOptions);
           const merged = recreateRequest(next.envelopeXml, generated.envelopeXml, {
             keepValues: options.keepExisting,
             keepHeaders: options.keepSoapHeaders,
@@ -377,7 +381,7 @@ export function applyUpdate(
         order: iface.operations.length,
         requests: [],
       };
-      const generated = generateRequest(newImport, ref, generateOptions);
+      const generated = generateSoapRequest(newImport, ref, generateOptions);
       const name = 'Request 1';
       const request = createRequest(name, {
         id: newId(),

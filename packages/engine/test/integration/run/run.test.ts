@@ -3,13 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Assertion } from '../../../src/assert/model.js';
-import { importDefinition } from '../../../src/import.js';
+import { importWsdl } from '../../../src/soap/import.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Interface, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { definitionCacheDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
-import type { RunContext } from '../../../src/run/prepare.js';
+import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import type { RequestResult } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
@@ -232,7 +232,7 @@ describe('runRequests', () => {
 
   describe('with the definition cached in the project', () => {
     beforeAll(async () => {
-      await importDefinition(
+      await importWsdl(
         { kind: 'url', url: soap.wsdlUrl },
         { cache: { dir: definitionCacheDir(dir, 'Wsa'), mode: 'refresh' } },
       );

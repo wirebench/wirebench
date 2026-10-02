@@ -17,7 +17,7 @@ import { toCurl } from '../http/curl.js';
 import type { KeyValueEntry, RawLanguage, RestBody, RestMethod, RestRequestSettings } from './model.js';
 import { entry, RAW_LANGUAGE_CONTENT_TYPES } from './model.js';
 import type { RestSendInput } from './send.js';
-import { applyAuth } from './auth.js';
+import { applyAuth } from '../http/auth/apply-auth.js';
 import { findHeredoc, findHereString } from '../http/heredoc.js';
 import { expandBundles, takesNoValue } from '../http/curl-flags.js';
 import { composeUrl, splitQuery, trimTrailingSlashes } from './url.js';

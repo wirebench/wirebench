@@ -19,7 +19,7 @@ import type { RequestScripts } from '../script/model.js';
 import type { AuthConfig, CreateOptions, IdGenerator } from '../project/model.js';
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import { defaultTlsFor } from './shape.js';
 import type { GrpcMethodKind, GrpcReflectionVersion } from './shape.js';
 

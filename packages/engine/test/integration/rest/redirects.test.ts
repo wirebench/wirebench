@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sendRest } from '../../../src/rest/send.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
-import type { SendAuth } from '../../../src/types.js';
+import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
 let server: TestRestServer;

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { buildSampleRequest } from '../../../../src/soap/request-builder.js';
 import type { RequestBuildInput } from '../../../../src/soap/request-builder.js';
-import { createDefaultFetchDocument } from '../../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../../src/http/fetch-document.js';
 import { parseWsdl } from '../../../../src/wsdl/parse-wsdl.js';
 import { buildSchemaSet } from '../../../../src/xsd/schema-set.js';
 

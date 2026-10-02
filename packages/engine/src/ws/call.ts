@@ -10,9 +10,9 @@
  * the request's own query rows.
  */
 
-import type { SendAuth } from '../types.js';
-import { applyAuth } from '../rest/auth.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { SendAuth } from '../http/auth/send-auth.js';
+import { applyAuth } from '../http/auth/apply-auth.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import type { ProxyOptions, TlsOptions } from '../http/types.js';
 import { WsError } from '../errors.js';
 import { resolveWsUrl } from './url.js';
@@ -91,7 +91,7 @@ function authHeadersAndQuery(auth: SendAuth | undefined): {
     );
   }
   if (auth.type === 'basic') {
-    // `rest/auth.ts`'s `applyAuth` deliberately leaves Basic to the HTTP transport's challenge
+    // `http/auth/apply-auth.ts`'s `applyAuth` deliberately leaves Basic to the HTTP transport's challenge
     // flow, because a REST send can retry after a 401. A WebSocket handshake gets exactly one
     // request, so there is no challenge to wait for: the header goes straight on, same as REST's
     // "preemptive" Basic.

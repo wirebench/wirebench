@@ -1,17 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectError } from '../../../src/errors.js';
 import {
-  apiFileSchema,
   environmentFileSchema,
-  interfaceFileSchema,
   keystoresFileSchema,
   manifestSchema,
   parseFile,
-  requestFileSchema,
-  wsApiFileSchema,
   wssIncomingFileSchema,
   wssOutgoingFileSchema,
 } from '../../../src/project/schema.js';
+import { apiFileSchema } from '../../../src/rest/files.js';
+import { interfaceFileSchema, requestFileSchema } from '../../../src/soap/files.js';
+import { wsApiFileSchema } from '../../../src/ws/files.js';
 import { migrate } from '../../../src/project/migrate.js';
 import {
   DEFAULT_PROJECT_SETTINGS,

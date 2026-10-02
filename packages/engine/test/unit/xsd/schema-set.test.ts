@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseXml } from '../../../src/xml/parse.js';
 import { NS } from '../../../src/xml/namespaces.js';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { parseWsdl } from '../../../src/wsdl/parse-wsdl.js';
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';
 import { buildSchemaSet } from '../../../src/xsd/schema-set.js';

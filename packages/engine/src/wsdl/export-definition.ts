@@ -16,7 +16,7 @@ import type { FsLike } from '../project/fs.js';
 import { NS } from '../xml/namespaces.js';
 import { parseXml } from '../xml/parse.js';
 import { serializeXml } from '../xml/serialize.js';
-import { assignFileNames } from './cache-naming.js';
+import { assignFileNames } from '../project/cache-naming.js';
 import { childElements, firstChildElement, optionalAttribute } from './dom-utils.js';
 import type { BundledDocument, DefinitionBundle } from './resolver.js';
 

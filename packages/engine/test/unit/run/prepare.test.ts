@@ -2,8 +2,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { prepareSend } from '../../../src/run/prepare.js';
-import type { RunContext } from '../../../src/run/prepare.js';
+import { prepareFor } from '../../helpers/prepare-for.js';
+import type { RunContext } from '../../../src/run/context.js';
 import type { HttpExchange, HttpRequest } from '../../../src/http/types.js';
 import { selectRequests } from '../../../src/run/select.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
@@ -160,17 +160,17 @@ function restOf(project: Project) {
   return selectRequests(project, []).selected.find((s) => s.kind === 'rest')!;
 }
 
-describe('prepareSend — SOAP', () => {
+describe('prepareFor — SOAP', () => {
   it("uses the environment's endpoint over the request's", async () => {
     const project = makeProject();
-    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
     expect(prepared.kind).toBe('soap');
     expect(prepared.kind === 'soap' && prepared.input.endpoint).toBe('https://env.example.test/soap');
   });
 
   it('lets a --var override beat the environment property', async () => {
     const project = makeProject();
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       soapOf(project),
       contextFor(project, { environmentId: 'env-test', overrides: { tenant: 'cli-tenant' } }),
     );
@@ -179,13 +179,13 @@ describe('prepareSend — SOAP', () => {
 
   it('resolves request auth through the secret getter', async () => {
     const project = makeProject({ soapAuth: { type: 'basic', username: 'svc', passwordRef: 'sec_1' } });
-    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
     expect(prepared.kind === 'soap' && prepared.input.auth).toMatchObject({ username: 'svc', password: 'pw' });
   });
 
   it('refuses a request whose password is not supplied', async () => {
     const project = makeProject({ soapAuth: { type: 'basic', username: 'svc', passwordRef: 'sec_missing' } });
-    await expect(prepareSend(soapOf(project), contextFor(project))).rejects.toMatchObject({
+    await expect(prepareFor(soapOf(project), contextFor(project))).rejects.toMatchObject({
       code: 'secret-missing',
       details: { ref: 'sec_missing' },
     });
@@ -193,26 +193,26 @@ describe('prepareSend — SOAP', () => {
 
   it('resolves a bearer owner through the secret getter', async () => {
     const project = makeProject({ soapAuth: { type: 'bearer', tokenRef: 'sec_1' } });
-    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
     expect(prepared.kind === 'soap' && prepared.input.auth).toMatchObject({ type: 'bearer', token: 'pw' });
   });
 
   it("refuses a SOAP owner's authorization-code grant the same way a REST one is refused", async () => {
     const project = makeProject({ soapAuth: oauth('authorization-code') as SoapOwnerAuth });
-    await expect(
-      prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({
-      code: 'auth-grant-unsupported',
-      message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
-      details: { path: soapOf(project).path },
-    });
+    await expect(prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }))).rejects.toMatchObject(
+      {
+        code: 'auth-grant-unsupported',
+        message: 'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+        details: { path: soapOf(project).path },
+      },
+    );
   });
 
   it("sends a SOAP owner's client-credentials token, fetched with the run's timeout and masked", async () => {
     const project = makeProject({ soapAuth: oauth('client-credentials') as SoapOwnerAuth });
     const sent: HttpRequest[] = [];
     const seen: string[] = [];
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       soapOf(project),
       contextFor(project, {
         environmentId: 'env-test',
@@ -232,14 +232,14 @@ describe('prepareSend — SOAP', () => {
 
   it('refuses a request with no endpoint anywhere', async () => {
     const project = makeProject({ endpoints: [] });
-    await expect(prepareSend(soapOf(project), contextFor(project))).rejects.toMatchObject({
+    await expect(prepareFor(soapOf(project), contextFor(project))).rejects.toMatchObject({
       code: 'endpoint-unresolved',
     });
   });
 
   it('refuses an envelope with an unresolved property', async () => {
     const project = makeProject({ envelopeXml: '<Envelope>${nope}</Envelope>' });
-    await expect(prepareSend(soapOf(project), contextFor(project))).rejects.toMatchObject({
+    await expect(prepareFor(soapOf(project), contextFor(project))).rejects.toMatchObject({
       code: 'unresolved-properties',
       details: { unresolved: ['${nope}'] },
     });
@@ -247,7 +247,7 @@ describe('prepareSend — SOAP', () => {
 
   it('carries --timeout and --insecure into the input', async () => {
     const project = makeProject();
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       soapOf(project),
       contextFor(project, { environmentId: 'env-test', timeoutMs: 1234, insecure: true }),
     );
@@ -259,25 +259,25 @@ describe('prepareSend — SOAP', () => {
     const trusted = makeProject({
       endpoints: [{ id: 'ep-1', name: 'd', url: 'https://x.test', authMode: 'override', trustInvalid: true }],
     });
-    const prepared = await prepareSend(soapOf(trusted), contextFor(trusted, { overrides: { tenant: 't' } }));
+    const prepared = await prepareFor(soapOf(trusted), contextFor(trusted, { overrides: { tenant: 't' } }));
     expect(prepared.kind === 'soap' && prepared.input.tls?.rejectUnauthorized).toBe(false);
     const strict = makeProject();
-    const plain = await prepareSend(soapOf(strict), contextFor(strict, { environmentId: 'env-test' }));
+    const plain = await prepareFor(soapOf(strict), contextFor(strict, { environmentId: 'env-test' }));
     expect(plain.kind === 'soap' && plain.input.tls?.rejectUnauthorized).toBeUndefined();
   });
 
   it('sets WS-Addressing only when the effective configuration enables it', async () => {
     const on = makeProject({ ifaceWsa: { enabled: true, version: '2005/08' } });
-    const prepared = await prepareSend(soapOf(on), contextFor(on, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(soapOf(on), contextFor(on, { environmentId: 'env-test' }));
     expect(prepared.kind === 'soap' && prepared.input.wsa?.config.enabled).toBe(true);
     const off = makeProject();
-    const plain = await prepareSend(soapOf(off), contextFor(off, { environmentId: 'env-test' }));
+    const plain = await prepareFor(soapOf(off), contextFor(off, { environmentId: 'env-test' }));
     expect(plain.kind === 'soap' && plain.input.wsa).toBeUndefined();
   });
 
   it("takes the default wsa:Action from the host's hook, and leaves it empty without one", async () => {
     const on = makeProject({ ifaceWsa: { enabled: true, version: '2005/08' } });
-    const hooked = await prepareSend(
+    const hooked = await prepareFor(
       soapOf(on),
       contextFor(on, {
         environmentId: 'env-test',
@@ -285,7 +285,7 @@ describe('prepareSend — SOAP', () => {
       }),
     );
     expect(hooked.kind === 'soap' && hooked.input.wsa?.defaultAction).toBe('urn:default:Op');
-    const bare = await prepareSend(soapOf(on), contextFor(on, { environmentId: 'env-test' }));
+    const bare = await prepareFor(soapOf(on), contextFor(on, { environmentId: 'env-test' }));
     expect(bare.kind === 'soap' && bare.input.wsa?.defaultAction).toBe('');
   });
 
@@ -302,7 +302,7 @@ describe('prepareSend — SOAP', () => {
       source: { kind: 'path' as const, path: 'part.bin' },
     };
     const project = makeProject({ soap: { attachments: [attachment] as unknown as SoapRequestDef['attachments'] } });
-    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
     if (prepared.kind !== 'soap') throw new Error('expected soap');
     expect(prepared.input.attachments).toHaveLength(1);
     const bytes = await prepared.input.attachmentOptions!.resolver(prepared.input.attachments![0]!);
@@ -312,7 +312,7 @@ describe('prepareSend — SOAP', () => {
     });
 
     const bare = makeProject();
-    const plain = await prepareSend(soapOf(bare), contextFor(bare, { environmentId: 'env-test' }));
+    const plain = await prepareFor(soapOf(bare), contextFor(bare, { environmentId: 'env-test' }));
     expect(plain.kind === 'soap' && plain.input.attachments).toEqual([]);
   });
 
@@ -324,7 +324,7 @@ describe('prepareSend — SOAP', () => {
       document: { id: 'wss-out', name: 'Out' },
     };
     const selecting = makeProject({ outgoing: [outgoing], soap: { wssOutgoingRef: 'wss-out' } });
-    const prepared = await prepareSend(soapOf(selecting), contextFor(selecting, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(soapOf(selecting), contextFor(selecting, { environmentId: 'env-test' }));
     expect(prepared.kind === 'soap' && prepared.input.wss?.outgoing).toBeDefined();
     await expect(
       prepared.kind === 'soap' ? prepared.input.wss!.ctx.secrets('sec_missing') : undefined,
@@ -333,11 +333,11 @@ describe('prepareSend — SOAP', () => {
     });
 
     const none = makeProject();
-    const plain = await prepareSend(soapOf(none), contextFor(none, { environmentId: 'env-test' }));
+    const plain = await prepareFor(soapOf(none), contextFor(none, { environmentId: 'env-test' }));
     expect(plain.kind === 'soap' && plain.input.wss).toBeUndefined();
 
     const dangling = makeProject({ soap: { wssOutgoingRef: 'wss-gone' } });
-    await expect(prepareSend(soapOf(dangling), contextFor(dangling))).rejects.toMatchObject({
+    await expect(prepareFor(soapOf(dangling), contextFor(dangling))).rejects.toMatchObject({
       code: 'wss-config-missing',
       details: { configId: 'wss-gone' },
     });
@@ -359,35 +359,35 @@ describe('prepareSend — SOAP', () => {
       });
 
     const project = withKeys('ks-1');
-    const prepared = await prepareSend(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(soapOf(project), contextFor(project, { environmentId: 'env-test' }));
     expect(prepared.kind === 'soap' && prepared.input.tls?.cert).toContain('BEGIN CERTIFICATE');
     expect(prepared.kind === 'soap' && prepared.input.tls?.key).toBeDefined();
 
     const plainProject = makeProject();
-    const plain = await prepareSend(soapOf(plainProject), contextFor(plainProject, { environmentId: 'env-test' }));
+    const plain = await prepareFor(soapOf(plainProject), contextFor(plainProject, { environmentId: 'env-test' }));
     expect(plain.kind === 'soap' && plain.input.tls?.cert).toBeUndefined();
 
     const gone = withKeys('ks-gone');
-    await expect(prepareSend(soapOf(gone), contextFor(gone))).rejects.toMatchObject({ code: 'keystore-missing' });
+    await expect(prepareFor(soapOf(gone), contextFor(gone))).rejects.toMatchObject({ code: 'keystore-missing' });
     const locked = withKeys('ks-locked');
-    await expect(prepareSend(soapOf(locked), contextFor(locked))).rejects.toMatchObject({
+    await expect(prepareFor(soapOf(locked), contextFor(locked))).rejects.toMatchObject({
       code: 'secret-missing',
       details: { ref: 'sec_missing' },
     });
   });
 });
 
-describe('prepareSend — REST', () => {
+describe('prepareFor — REST', () => {
   it('expands the base URL and a path parameter, and refuses an unresolved property', async () => {
     const project = makeProject({ restUrl: '${baseUrl}/invoices/{id}' });
-    const prepared = await prepareSend(restOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(restOf(project), contextFor(project, { environmentId: 'env-test' }));
     if (prepared.kind !== 'rest') throw new Error('expected rest');
     expect(prepared.input.baseUrl).toBe('https://api.env.test');
     expect(prepared.input.request.url).toBe('https://base.example.test/invoices/{id}');
     expect(prepared.input.request.pathParams[0]?.value).toBe('42');
 
     const broken = makeProject({ restUrl: '/invoices/${nope}' });
-    await expect(prepareSend(restOf(broken), contextFor(broken, { environmentId: 'env-test' }))).rejects.toMatchObject({
+    await expect(prepareFor(restOf(broken), contextFor(broken, { environmentId: 'env-test' }))).rejects.toMatchObject({
       code: 'unresolved-properties',
       details: { unresolved: ['${nope}'] },
     });
@@ -395,16 +395,16 @@ describe('prepareSend — REST', () => {
 
   it('refuses the OAuth2 authorization-code grant, which needs a browser', async () => {
     const browser = makeProject({ restAuth: oauth('authorization-code') });
-    await expect(
-      prepareSend(restOf(browser), contextFor(browser, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({ code: 'auth-grant-unsupported' });
+    await expect(prepareFor(restOf(browser), contextFor(browser, { environmentId: 'env-test' }))).rejects.toMatchObject(
+      { code: 'auth-grant-unsupported' },
+    );
   });
 
   it("sends a client-credentials token as a bearer header, fetched with the request's timeout and proxy", async () => {
     const project = makeProject({ restAuth: oauth('client-credentials') });
     const sent: HttpRequest[] = [];
     const seen: string[] = [];
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       restOf(project),
       contextFor(project, {
         environmentId: 'env-test',
@@ -429,7 +429,7 @@ describe('prepareSend — REST', () => {
 
   it('carries --timeout and --insecure, and resolves a bearer token', async () => {
     const project = makeProject({ restAuth: { type: 'bearer', tokenRef: 'sec_1' } });
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       restOf(project),
       contextFor(project, { environmentId: 'env-test', timeoutMs: 1234, insecure: true }),
     );
@@ -444,7 +444,7 @@ describe('prepareSend — REST', () => {
     const project = makeProject({
       restBody: { kind: 'binary', source: { kind: 'path', path: 'body.bin' }, contentType: 'application/octet-stream' },
     });
-    const prepared = await prepareSend(restOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(restOf(project), contextFor(project, { environmentId: 'env-test' }));
     if (prepared.kind !== 'rest') throw new Error('expected rest');
     const bytes = await prepared.input.resolveFile!({ kind: 'path', path: 'body.bin' });
     expect(new TextDecoder().decode(bytes)).toBe('payload');
@@ -454,14 +454,14 @@ describe('prepareSend — REST', () => {
   });
 });
 
-describe('prepareSend — ${secret:name} tokens', () => {
+describe('prepareFor — ${secret:name} tokens', () => {
   const tokenSecrets = (ref: string): Promise<string | undefined> =>
     Promise.resolve(ref === 'secret:billing_key' ? 'ghp_FAKEvalue' : undefined);
 
   it('expands a REST token from the getter, asking for it by pseudo-ref', async () => {
     const project = makeProject({ restUrl: '${baseUrl}/invoices/{id}?key=${secret:billing_key}' });
     const seen: string[] = [];
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       restOf(project),
       contextFor(project, {
         environmentId: 'env-test',
@@ -477,7 +477,7 @@ describe('prepareSend — ${secret:name} tokens', () => {
 
   it('expands a SOAP token reached through a property, and returns it in the scopes', async () => {
     const project = makeProject({ envelopeXml: '<Envelope>${key}</Envelope>' });
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       soapOf(project),
       contextFor(project, {
         environmentId: 'env-test',
@@ -490,7 +490,7 @@ describe('prepareSend — ${secret:name} tokens', () => {
 
   it('refuses a token with no value as secret-missing, naming the secret', async () => {
     const project = makeProject({ restUrl: '${baseUrl}/x?key=${secret:nope}' });
-    await expect(prepareSend(restOf(project), contextFor(project, { getSecret: tokenSecrets }))).rejects.toMatchObject({
+    await expect(prepareFor(restOf(project), contextFor(project, { getSecret: tokenSecrets }))).rejects.toMatchObject({
       code: 'secret-missing',
       message: 'The secret "nope" is not on this machine — set it with Set Secret Token Value… (Secrets).',
       details: { ref: 'secret:nope' },
@@ -498,7 +498,7 @@ describe('prepareSend — ${secret:name} tokens', () => {
   });
 });
 
-describe('prepareSend — inside a workspace', () => {
+describe('prepareFor — inside a workspace', () => {
   // `linked` shares the project environment's slug, so that environment is laid over it;
   // `staging` has no project counterpart and applies on its own.
   const LINKED: WorkspaceEnvironment = {
@@ -537,22 +537,22 @@ describe('prepareSend — inside a workspace', () => {
 
   it('resolves ${#Workspace#name} from the workspace properties', async () => {
     const project = makeProject({ restUrl: '${#Workspace#host}/invoices' });
-    const prepared = await prepareSend(restOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
+    const prepared = await prepareFor(restOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
     expect(prepared.kind === 'rest' && prepared.input.request.url).toBe('https://ws.example.test/invoices');
 
     const soapProject = makeProject({ envelopeXml: '<Envelope>${#Workspace#host}</Envelope>' });
-    const soap = await prepareSend(soapOf(soapProject), inWorkspace(soapProject));
+    const soap = await prepareFor(soapOf(soapProject), inWorkspace(soapProject));
     expect(soap.kind === 'soap' && soap.scopes.workspace).toEqual({ host: 'https://ws.example.test' });
   });
 
   it('resolves ${name} and the endpoints through the workspace environment the run names', async () => {
     const project = makeProject();
-    const soap = await prepareSend(soapOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
+    const soap = await prepareFor(soapOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
     if (soap.kind !== 'soap') throw new Error('expected soap');
     expect(soap.input.endpoint).toBe('https://staging.example.test/soap');
     expect(soap.scopes.env).toMatchObject({ tenant: 'staging-tenant', id: '7' });
 
-    const rest = await prepareSend(restOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
+    const rest = await prepareFor(restOf(project), inWorkspace(project, { environmentId: 'wsenv-staging' }));
     if (rest.kind !== 'rest') throw new Error('expected rest');
     expect(rest.input.baseUrl).toBe('https://api.staging.test');
     expect(rest.input.request.pathParams[0]?.value).toBe('7');
@@ -560,7 +560,7 @@ describe('prepareSend — inside a workspace', () => {
 
   it('lays the linked project environment over the workspace one, as the app does', async () => {
     const project = makeProject({ envelopeXml: '<Envelope>${tenant} ${region}</Envelope>' });
-    const prepared = await prepareSend(soapOf(project), inWorkspace(project, { environmentId: 'wsenv-linked' }));
+    const prepared = await prepareFor(soapOf(project), inWorkspace(project, { environmentId: 'wsenv-linked' }));
     if (prepared.kind !== 'soap') throw new Error('expected soap');
     expect(prepared.scopes.env).toMatchObject({ tenant: 'env-tenant', region: 'eu-linked', id: '42' });
     expect(prepared.input.endpoint).toBe('https://env.example.test/soap');
@@ -569,13 +569,13 @@ describe('prepareSend — inside a workspace', () => {
   it("does not read the project's environment on its own: its id means nothing inside a workspace", async () => {
     const project = makeProject();
     await expect(
-      prepareSend(soapOf(project), inWorkspace(project, { environmentId: 'env-test' })),
+      prepareFor(soapOf(project), inWorkspace(project, { environmentId: 'env-test' })),
     ).rejects.toMatchObject({ code: 'unresolved-properties', details: { unresolved: ['${tenant}'] } });
   });
 
   it('lets a --var override beat the workspace environment property', async () => {
     const project = makeProject();
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       soapOf(project),
       inWorkspace(project, { environmentId: 'wsenv-staging', overrides: { tenant: 'cli-tenant' } }),
     );
@@ -584,7 +584,7 @@ describe('prepareSend — inside a workspace', () => {
 
   it('expands a ${secret:name} token a workspace environment property holds', async () => {
     const project = makeProject({ envelopeXml: '<Envelope>${key}</Envelope>' });
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       soapOf(project),
       inWorkspace(project, {
         environmentId: 'wsenv-staging',
@@ -595,7 +595,7 @@ describe('prepareSend — inside a workspace', () => {
   });
 });
 
-describe('prepareSend — gRPC', () => {
+describe('prepareFor — gRPC', () => {
   function grpcProject(request: Partial<GrpcRequestDef> = {}, folderAuth?: AuthConfig): Project {
     const api = createGrpcApi('Greeter', {
       id: 'api-greeter',
@@ -634,7 +634,7 @@ describe('prepareSend — gRPC', () => {
 
   it("targets the environment's override for the API, expands metadata and message, and inherits the API's auth", async () => {
     const project = grpcProject();
-    const prepared = await prepareSend(grpcOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const prepared = await prepareFor(grpcOf(project), contextFor(project, { environmentId: 'env-test' }));
     if (prepared.kind !== 'grpc') throw new Error('expected grpc');
     expect(prepared.input).toMatchObject({
       target: 'grpc.env.test:443',
@@ -649,7 +649,7 @@ describe('prepareSend — gRPC', () => {
 
   it("falls back to the API's target with no environment, and --timeout replaces the deadline", async () => {
     const project = grpcProject({ settings: { timeoutMs: 99 } });
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       grpcOf(project),
       contextFor(project, { overrides: { tenant: 't' }, timeoutMs: 1234 }),
     );
@@ -658,16 +658,16 @@ describe('prepareSend — gRPC', () => {
 
   it("turns verification off under --insecure or the request's trustInvalid", async () => {
     const project = grpcProject({ settings: { trustInvalid: true } });
-    const own = await prepareSend(grpcOf(project), contextFor(project, { environmentId: 'env-test' }));
+    const own = await prepareFor(grpcOf(project), contextFor(project, { environmentId: 'env-test' }));
     expect(own.kind === 'grpc' && own.input.tlsOptions?.rejectUnauthorized).toBe(false);
     const plain = grpcProject();
-    const flagged = await prepareSend(grpcOf(plain), contextFor(plain, { environmentId: 'env-test', insecure: true }));
+    const flagged = await prepareFor(grpcOf(plain), contextFor(plain, { environmentId: 'env-test', insecure: true }));
     expect(flagged.kind === 'grpc' && flagged.input.tlsOptions?.rejectUnauthorized).toBe(false);
   });
 
   it('expands a ${secret:name} token in the message from the getter', async () => {
     const project = grpcProject({ message: '{"key": "${secret:grpc_key}"}' });
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       grpcOf(project),
       contextFor(project, {
         environmentId: 'env-test',
@@ -679,7 +679,7 @@ describe('prepareSend — gRPC', () => {
 
   it('refuses a call with a property nothing resolves', async () => {
     const project = grpcProject();
-    await expect(prepareSend(grpcOf(project), contextFor(project))).rejects.toMatchObject({
+    await expect(prepareFor(grpcOf(project), contextFor(project))).rejects.toMatchObject({
       code: 'unresolved-properties',
       details: { path: 'Greeter/Admin/Hello', unresolved: ['${tenant}', '${tenant}'] },
     });
@@ -687,14 +687,14 @@ describe('prepareSend — gRPC', () => {
 
   it("sends a folder's client-credentials token, and refuses the authorization-code grant", async () => {
     const project = grpcProject({}, oauth('client-credentials'));
-    const prepared = await prepareSend(
+    const prepared = await prepareFor(
       grpcOf(project),
       contextFor(project, { environmentId: 'env-test', fetchToken: () => Promise.resolve(tokenExchange('tok-g')) }),
     );
     expect(prepared.kind === 'grpc' && prepared.input.auth).toEqual({ type: 'oauth2', accessToken: 'tok-g' });
     const browser = grpcProject({}, oauth('authorization-code'));
-    await expect(
-      prepareSend(grpcOf(browser), contextFor(browser, { environmentId: 'env-test' })),
-    ).rejects.toMatchObject({ code: 'auth-grant-unsupported', details: { path: 'Greeter/Admin/Hello' } });
+    await expect(prepareFor(grpcOf(browser), contextFor(browser, { environmentId: 'env-test' }))).rejects.toMatchObject(
+      { code: 'auth-grant-unsupported', details: { path: 'Greeter/Admin/Hello' } },
+    );
   });
 });

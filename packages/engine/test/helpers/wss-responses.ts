@@ -7,10 +7,10 @@
  */
 
 import { applyOutgoingWss } from '../../src/wss/apply.js';
-import { loadKeystore } from '../../src/wss/keystore/index.js';
+import { loadKeystore } from '../../src/keystore/index.js';
 import { createWssContext } from '../../src/wss/model.js';
 import { NS } from '../../src/xml/namespaces.js';
-import type { Keystore } from '../../src/wss/keystore/model.js';
+import type { Keystore } from '../../src/keystore/model.js';
 import type { WssEntry, WssOutgoingConfig } from '../../src/wss/model.js';
 import { generateUntrustedCert } from './test-certs.js';
 

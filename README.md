@@ -120,7 +120,7 @@ GitLab template, a container image or plain `npx`:
 
 ```yaml
 # GitHub Actions
-- uses: wirebench/wirebench/action@v2.3.0
+- uses: wirebench/wirebench/action@v3.0.0
   with:
     project: ./api-tests
     env: staging

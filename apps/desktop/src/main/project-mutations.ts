@@ -27,7 +27,7 @@ import type {
   Project,
   ProjectSettings,
   PropertyMap,
-  RequestDef,
+  SoapRequestDef,
   RequestProperties,
   SoapOwnerAuth,
   WsaConfig,
@@ -225,7 +225,7 @@ function ensureOperation(
 }
 
 /** Appends `request` to `operation`, keeping `order` contiguous. */
-function withRequest(operation: OperationDef, request: RequestDef): OperationDef {
+function withRequest(operation: OperationDef, request: SoapRequestDef): OperationDef {
   return { ...operation, requests: [...operation.requests, request] };
 }
 
@@ -262,7 +262,7 @@ function cloneRequest(project: Project, requestId: string): MutationResult {
   const location = findRequest(project, requestId) ?? notFound('request', requestId);
   const { iface, operation, request } = location;
   const name = `${request.name} (copy)`;
-  const clone: RequestDef = {
+  const clone: SoapRequestDef = {
     ...request,
     id: generateId(),
     name,
@@ -302,15 +302,15 @@ function updateRequest(project: Project, requestId: string, patch: RequestPatchW
     K extends 'endpointId' | 'endpointUrl' | 'soapAction' | 'description' | 'wssOutgoingRef' | 'wssIncomingRef',
   >(
     key: K,
-  ): Partial<Pick<RequestDef, K>> => {
+  ): Partial<Pick<SoapRequestDef, K>> => {
     const value = patch[key];
     if (value === undefined) {
-      return request[key] === undefined ? {} : ({ [key]: request[key] } as Pick<RequestDef, K>);
+      return request[key] === undefined ? {} : ({ [key]: request[key] } as Pick<SoapRequestDef, K>);
     }
-    return value === null ? {} : ({ [key]: value } as Pick<RequestDef, K>);
+    return value === null ? {} : ({ [key]: value } as Pick<SoapRequestDef, K>);
   };
 
-  const next: RequestDef = {
+  const next: SoapRequestDef = {
     kind: request.kind,
     id: request.id,
     name,
@@ -406,23 +406,23 @@ function toEngineWsa(wsa: WsaConfigWire): WsaConfig {
  */
 function updateRequestWsa(project: Project, requestId: string, wsa: WsaConfig | null): MutationResult {
   const location = findRequest(project, requestId) ?? notFound('request', requestId);
-  const next: RequestDef = { ...location.request };
-  const withWsa: RequestDef = wsa === null ? omitWsa(next) : { ...next, wsa };
+  const next: SoapRequestDef = { ...location.request };
+  const withWsa: SoapRequestDef = wsa === null ? omitWsa(next) : { ...next, wsa };
   return { project: replaceRequest(project, location, withWsa) };
 }
 
 /** A copy of `request` with `wsa` genuinely absent, which a spread cannot express. */
-function omitWsa(request: RequestDef): RequestDef {
+function omitWsa(request: SoapRequestDef): SoapRequestDef {
   const rest: Record<string, unknown> = { ...request };
   delete rest['wsa'];
-  return rest as unknown as RequestDef;
+  return rest as unknown as SoapRequestDef;
 }
 
 /** Sets (or clears, with `auth: null`) one request's own `auth`, leaving every other field alone. */
 function updateRequestAuth(project: Project, requestId: string, auth: SoapOwnerAuth | null): MutationResult {
   const location = findRequest(project, requestId) ?? notFound('request', requestId);
   const { iface, operation, request } = location;
-  const next: RequestDef = {
+  const next: SoapRequestDef = {
     kind: request.kind,
     id: request.id,
     name: request.name,
@@ -474,7 +474,7 @@ function updateRequestProperties(
   patch: RequestPropertiesPatchWire,
 ): MutationResult {
   const { iface, operation, request } = findRequest(project, requestId) ?? notFound('request', requestId);
-  const next: RequestDef = { ...request, properties: mergeRequestProperties(request.properties, patch) };
+  const next: SoapRequestDef = { ...request, properties: mergeRequestProperties(request.properties, patch) };
   const requests = operation.requests.map((candidate) => (candidate.id === requestId ? next : candidate));
   return { project: replaceInterface(project, replaceOperation(iface, { ...operation, requests })) };
 }
@@ -517,7 +517,7 @@ function basenameOf(path: string): string {
 }
 
 /** Replaces one request inside its operation, leaving every other request untouched. */
-function replaceRequest(project: Project, location: RequestLocation, next: RequestDef): Project {
+function replaceRequest(project: Project, location: RequestLocation, next: SoapRequestDef): Project {
   const requests = location.operation.requests.map((candidate) => (candidate.id === next.id ? next : candidate));
   return replaceInterface(project, replaceOperation(location.iface, { ...location.operation, requests }));
 }
@@ -585,7 +585,7 @@ export function appendAttachment(
     cached: input.source.kind === 'cache',
     source: input.source,
   };
-  const next: RequestDef = { ...location.request, attachments: [...location.request.attachments, attachment] };
+  const next: SoapRequestDef = { ...location.request, attachments: [...location.request.attachments, attachment] };
   return { project: replaceRequest(project, location, next), createdAttachmentId: id };
 }
 

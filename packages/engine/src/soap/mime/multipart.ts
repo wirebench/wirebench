@@ -10,6 +10,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
+import { mediaTypeOf } from '../../http/media-type.js';
 import type { BuildTransferEncoding, MimePart, MultipartPart, MultipartRoot, TransferEncoding } from './types.js';
 
 /** Default Content-ID of the envelope part when the caller does not choose one. */
@@ -45,11 +46,7 @@ export interface ParsedMultipart {
   readonly problems: readonly string[];
 }
 
-/** The media type of a `Content-Type` header value, without its parameters. */
-export function mediaTypeOf(contentType: string): string {
-  const semicolon = contentType.indexOf(';');
-  return (semicolon === -1 ? contentType : contentType.slice(0, semicolon)).trim();
-}
+export { mediaTypeOf };
 
 /** One parameter of a `Content-Type`-style header value, unquoted; case-insensitive on the name. */
 export function mimeParameter(header: string, name: string): string | undefined {

@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
+import { importWsdl } from '../../../src/soap/import.js';
 import { ProjectError } from '../../../src/errors.js';
-import { createDefaultFetchDocument } from '../../../src/wsdl/fetch.js';
+import { createDefaultFetchDocument } from '../../../src/http/fetch-document.js';
 import { resolveDefinition } from '../../../src/wsdl/resolver.js';
 import type { DefinitionBundle, FetchDocument, FetchedDocument } from '../../../src/wsdl/resolver.js';
 import { createCachedFetchDocument, readDefinitionCache, writeDefinitionCache } from '../../../src/wsdl/cache.js';
@@ -150,7 +150,7 @@ describe('createCachedFetchDocument', () => {
   });
 });
 
-describe('importDefinition — cache modes', () => {
+describe('importWsdl — cache modes', () => {
   const dirs: string[] = [];
   afterEach(async () => {
     await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
@@ -178,7 +178,7 @@ describe('importDefinition — cache modes', () => {
     dirs.push(dir);
 
     const counting = countingFetch();
-    const result = await importDefinition(
+    const result = await importWsdl(
       { kind: 'url', url: location },
       { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'refresh' } },
     );
@@ -195,7 +195,7 @@ describe('importDefinition — cache modes', () => {
     const dir = join(parent, 'unused');
 
     const counting = countingFetch();
-    const result = await importDefinition(
+    const result = await importWsdl(
       { kind: 'url', url: location },
       { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'none' } },
     );
@@ -209,9 +209,9 @@ describe('importDefinition — cache modes', () => {
   it('prefer-cache + valid cache: reads offline, fromCache true, no network calls', async () => {
     const dir = await tempDir();
     dirs.push(dir);
-    await importDefinition({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
+    await importWsdl({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
 
-    const second = await importDefinition(
+    const second = await importWsdl(
       { kind: 'url', url: location },
       { fetchDocument: throwingFetch, cache: { dir, mode: 'prefer-cache' } },
     );
@@ -225,7 +225,7 @@ describe('importDefinition — cache modes', () => {
     dirs.push(dir);
 
     const counting = countingFetch();
-    const result = await importDefinition(
+    const result = await importWsdl(
       { kind: 'url', url: location },
       { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'prefer-cache' } },
     );
@@ -239,14 +239,14 @@ describe('importDefinition — cache modes', () => {
   it('prefer-cache + corrupt cache: fetches from the network, reports the problem, and rewrites the cache', async () => {
     const dir = await tempDir();
     dirs.push(dir);
-    await importDefinition({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
+    await importWsdl({ kind: 'url', url: location }, { cache: { dir, mode: 'refresh' } });
     const files = (await readdir(dir)).filter((f) => f !== 'manifest.yaml');
     const victim = files[0];
     if (victim === undefined) throw new Error('expected at least one cached file');
     await writeFile(join(dir, victim), 'corrupted');
 
     const counting = countingFetch();
-    const result = await importDefinition(
+    const result = await importWsdl(
       { kind: 'url', url: location },
       { fetchDocument: counting.fetchDocument, cache: { dir, mode: 'prefer-cache' } },
     );
@@ -271,7 +271,7 @@ describe('importDefinition — cache modes', () => {
     const notADir = join(parent, 'not-a-directory');
     await writeFile(notADir, 'i am a file, not a directory');
 
-    const result = await importDefinition({ kind: 'url', url: location }, { cache: { dir: notADir, mode: 'refresh' } });
+    const result = await importWsdl({ kind: 'url', url: location }, { cache: { dir: notADir, mode: 'refresh' } });
 
     expect(result.operations.length).toBeGreaterThan(0);
     expect(result.problems).toEqual([

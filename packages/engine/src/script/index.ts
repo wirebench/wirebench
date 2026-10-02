@@ -15,26 +15,17 @@ export type {
 } from './check/host.js';
 export { isScriptFileOf, SCRIPT_OUTPUT_LIMITS, scriptFileName } from './model.js';
 export type {
-  GrpcRequestSnapshot,
-  GrpcResponseSnapshot,
   HeaderPair,
   RequestScripts,
-  RequestSnapshot,
-  ResponseSnapshot,
-  RestRequestSnapshot,
-  RestResponseSnapshot,
   ScriptApi,
   ScriptErrorCode,
   ScriptFailure,
   ScriptLog,
   ScriptOutcome,
   ScriptPhase,
-  ScriptProtocol,
   ScriptSource,
   ScriptTest,
   ScriptValue,
-  SoapRequestSnapshot,
-  SoapResponseSnapshot,
 } from './model.js';
 export {
   activeScripts,
@@ -49,29 +40,8 @@ export type {
   ScriptedRequest,
   ScriptRunValues,
 } from './request-scripts.js';
-export {
-  applyGrpcSnapshot,
-  applyRestSnapshot,
-  applySoapSnapshot,
-  grpcRequestSnapshot,
-  grpcResponseSnapshot,
-  restRequestSnapshot,
-  restResponseSnapshot,
-  SecretPlaceholders,
-  soapRequestSnapshot,
-  soapResponseSnapshot,
-} from './send.js';
-export {
-  grpcMessageTypes,
-  loadOpenApiDocument,
-  qnameFromClark,
-  restOperationFor,
-  soapOperationElements,
-} from './contracts.js';
+export { SecretPlaceholders } from './send.js';
 export { scriptProperties } from './props.js';
 export { apiDeclarations, apiReference, scriptDeclarations, secretNameType } from './types/api.js';
 export type { ApiReferenceSection } from './types/api.js';
-export { restScriptTypes } from './types/rest.js';
-export { grpcScriptTypes } from './types/grpc.js';
-export { projectSoapBody, replaceSoapBody, soapScriptTypes } from './types/xsd.js';
 export { stripTypes, StripError } from './strip.js';

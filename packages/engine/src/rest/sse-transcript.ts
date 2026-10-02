@@ -2,8 +2,8 @@
  * Caps on an SSE row list: the same head/tail/byte-budget shape as the WebSocket transcript's
  * `capFrames`, shared via `capByEnds`, plus an in-memory store for a live stream that keeps growing.
  */
-import type { CapLimits } from '../ws/transcript.js';
-import { capByEnds, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from '../ws/transcript.js';
+import type { CapLimits } from '../http/transcript-cap.js';
+import { capByEnds, WS_HISTORY_HEAD, WS_HISTORY_MAX_BYTES, WS_HISTORY_TAIL } from '../http/transcript-cap.js';
 import type { SseRow } from './sse.js';
 
 export const SSE_MEMORY_ROWS = 10_000;

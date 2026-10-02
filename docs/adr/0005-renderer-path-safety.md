@@ -41,7 +41,7 @@ Importing a definition is bound by the same rule at both ends. `definition.impor
 { kind: 'file' }` runs `allowsReadPath` before the engine opens anything, and once a document
 is open the WSDL's own nested references are confined too: a file-rooted definition may only
 reference files inside its folder, a remote one may never reference `file:` at all
-(`packages/engine/src/wsdl/ref-policy.ts`). A dropped file is not a pick, so the import dialog
+(`packages/engine/src/http/ref-policy.ts`). A dropped file is not a pick, so the import dialog
 reads dropped bytes in the renderer and sends them as text. Names the user types become path
 segments only through `slugify` (`packages/engine/src/project/paths.ts`), which strips
 characters illegal on any supported OS, refuses Windows device names, and cannot produce a

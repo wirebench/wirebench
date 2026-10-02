@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadProtoSet } from '../../../src/grpc/proto/load.js';
 import { apiDeclarations, secretNameType } from '../../../src/script/types/api.js';
-import { grpcScriptTypes } from '../../../src/script/types/grpc.js';
+import { grpcScriptTypes } from '../../../src/grpc/script-types.js';
 import { typeErrors } from './ts-check.js';
 
 const PROTO = `

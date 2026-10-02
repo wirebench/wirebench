@@ -6,7 +6,7 @@
  */
 
 import { quoteForShell } from '../http/curl.js';
-import type { KeyValueEntry } from '../rest/model.js';
+import type { KeyValueEntry } from '../http/entries.js';
 import type { GrpcSendInput } from './send.js';
 
 /** Options for {@link grpcToCommand}. */

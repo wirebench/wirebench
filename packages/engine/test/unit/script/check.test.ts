@@ -16,7 +16,7 @@ import {
   updateModel,
 } from '../../../src/script/check/service.js';
 import { scriptDeclarations } from '../../../src/script/types/api.js';
-import { restScriptTypes } from '../../../src/script/types/rest.js';
+import { restScriptTypes } from '../../../src/rest/script-types.js';
 
 const pet = {
   type: 'object',

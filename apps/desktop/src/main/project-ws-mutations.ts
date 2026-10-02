@@ -25,7 +25,7 @@ import type {
 } from '@wirebench/engine';
 import { ProjectError } from '@wirebench/engine';
 import type { WsApiPatchWire, WsRequestPatchWire, RestFolderPatchWire } from '../shared/wire-types.js';
-import { toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
+import { takenApiSlugs, toEngineAuthConfig, toEngineRows } from './project-rest-mutations.js';
 
 /** What a mutation produced: the next model, and the entity it created when it created one. */
 export interface WsMutationResult {
@@ -73,16 +73,6 @@ function takenMessageSlugs(request: WsRequestDef, exceptId?: string): Set<string
 /** Drops keys whose value ended up `undefined`, so a cleared optional is absent (see the REST arm). */
 function cleanUndefined<T extends object>(value: { readonly [K in keyof T]: T[K] | undefined }): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
-}
-
-/** Every slug an API or interface already uses at the project's top level. */
-export function takenApiSlugs(project: Project, exceptId?: string): Set<string> {
-  return new Set([
-    ...project.apis.map((api) => api.slug),
-    ...project.grpcApis.map((api) => api.slug),
-    ...project.wsApis.filter((api) => api.id !== exceptId).map((api) => api.slug),
-    ...project.interfaces.map((iface) => iface.slug),
-  ]);
 }
 
 function mapFolder(

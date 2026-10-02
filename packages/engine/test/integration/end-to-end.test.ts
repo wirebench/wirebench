@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { HttpError } from '../../src/errors.js';
-import { generateRequest } from '../../src/generate.js';
-import { importDefinition } from '../../src/import.js';
-import { sendSoapRequest } from '../../src/send.js';
+import { generateSoapRequest } from '../../src/soap/generate.js';
+import { importWsdl } from '../../src/soap/import.js';
+import { sendSoapRequest } from '../../src/soap/send.js';
 import { fileUrl } from '../helpers/fixtures.js';
 import { startTestSoapServer, type TestSoapServer } from '../helpers/test-soap-server.js';
 
@@ -21,7 +21,7 @@ describe('engine facade — end to end', () => {
 
   it('imports from a URL, generates a request, and sends/echoes it over SOAP 1.1', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
-    const result = await importDefinition({ kind: 'url', url: server.wsdlUrl });
+    const result = await importWsdl({ kind: 'url', url: server.wsdlUrl });
 
     expect(result.problems).toEqual([]);
 
@@ -29,7 +29,7 @@ describe('engine facade — end to end', () => {
     expect(add11).toHaveLength(1);
     expect(add11[0]?.ports[0]?.address).toBe(`${server.url}/soap`);
 
-    const generated = generateRequest(result, { bindingName: add11[0]!.bindingName, operationName: 'Add' });
+    const generated = generateSoapRequest(result, { bindingName: add11[0]!.bindingName, operationName: 'Add' });
     expect(generated.problems).toEqual([]);
     expect(generated.soapVersion).toBe('1.1');
     expect(generated.soapAction).toBe('http://tempuri.org/Add');
@@ -52,12 +52,12 @@ describe('engine facade — end to end', () => {
 
   it('does the same over SOAP 1.2', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
-    const result = await importDefinition({ kind: 'url', url: server.wsdlUrl });
+    const result = await importWsdl({ kind: 'url', url: server.wsdlUrl });
 
     const add12 = result.operations.find((op) => op.operationName === 'Add' && op.soapVersion === '1.2');
     expect(add12).toBeDefined();
 
-    const generated = generateRequest(result, { bindingName: add12!.bindingName, operationName: 'Add' });
+    const generated = generateSoapRequest(result, { bindingName: add12!.bindingName, operationName: 'Add' });
     expect(generated.soapVersion).toBe('1.2');
 
     const exchange = await sendSoapRequest({
@@ -80,7 +80,7 @@ describe('engine facade — end to end', () => {
 
   it('imports from a file path with nested wsdl:import/xs:import', async () => {
     const path = `${repoRoot}fixtures/wsdl/crafted/nested-imports/service.wsdl`;
-    const result = await importDefinition({ kind: 'file', path });
+    const result = await importWsdl({ kind: 'file', path });
 
     expect(result.problems).toEqual([]);
     expect(result.bundle.documents).toHaveLength(4);
@@ -88,10 +88,7 @@ describe('engine facade — end to end', () => {
 
   it('does not add an Authorization header when auth is given but every fetch is file://', async () => {
     const path = `${repoRoot}fixtures/wsdl/crafted/nested-imports/service.wsdl`;
-    const result = await importDefinition(
-      { kind: 'file', path },
-      { auth: { username: 'alice', password: 'wonderland' } },
-    );
+    const result = await importWsdl({ kind: 'file', path }, { auth: { username: 'alice', password: 'wonderland' } });
 
     expect(result.problems).toEqual([]);
   });
@@ -109,16 +106,16 @@ describe('engine facade — end to end', () => {
   </binding>
   <service name="S"><port name="P" binding="tns:B"><soap:address location="http://example.invalid/"/></port></service>
 </definitions>`;
-    const result = await importDefinition({ kind: 'text', text });
+    const result = await importWsdl({ kind: 'text', text });
     expect(result.problems).toEqual([]);
     expect(result.operations).toHaveLength(1);
   });
 
   it('surfaces a SOAP fault from the /fault route', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
-    const result = await importDefinition({ kind: 'url', url: server.wsdlUrl });
+    const result = await importWsdl({ kind: 'url', url: server.wsdlUrl });
     const add11 = result.operations.find((op) => op.operationName === 'Add' && op.soapVersion === '1.1')!;
-    const generated = generateRequest(result, { bindingName: add11.bindingName, operationName: 'Add' });
+    const generated = generateSoapRequest(result, { bindingName: add11.bindingName, operationName: 'Add' });
 
     const exchange = await sendSoapRequest({
       endpoint: `${server.url}/fault`,
@@ -226,7 +223,7 @@ describe('engine facade — end to end', () => {
   <import namespace="urn:wb:missing-import-target" location="does-not-exist.wsdl"/>
   <portType name="PT"><operation name="Op"/></portType>
 </definitions>`;
-    const result = await importDefinition({
+    const result = await importWsdl({
       kind: 'text',
       text,
       location: fileUrl(join(tmpdir(), 'wirebench-missing-import', 'root.wsdl')),
@@ -240,10 +237,7 @@ describe('engine facade — end to end', () => {
 
   it('adds a Basic auth Authorization header to the WSDL fetch when auth is given', async () => {
     server = await startTestSoapServer({ fixture: 'calculator' });
-    await importDefinition(
-      { kind: 'url', url: server.wsdlUrl },
-      { auth: { username: 'alice', password: 'wonderland' } },
-    );
+    await importWsdl({ kind: 'url', url: server.wsdlUrl }, { auth: { username: 'alice', password: 'wonderland' } });
 
     const wsdlRequest = server.requests.find((r) => r.url.includes('/service'));
     expect(wsdlRequest?.headers['authorization']).toBe(`Basic ${Buffer.from('alice:wonderland').toString('base64')}`);

@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { importDefinition } from '../../../src/import.js';
-import type { ImportResult } from '../../../src/types.js';
+import { importWsdl } from '../../../src/soap/import.js';
+import type { WsdlImportResult } from '../../../src/soap/types.js';
 import { bindingContextFor, validateMessage } from '../../../src/validate/index.js';
 import type { ValidationBinding } from '../../../src/validate/index.js';
 
@@ -25,11 +25,11 @@ function envelope(body: string, version: '1.1' | '1.2' = '1.1'): string {
 const ADD = '      <tem:Add><tem:intA>1</tem:intA><tem:intB>2</tem:intB></tem:Add>';
 
 describe('validateMessage', () => {
-  let calculator: ImportResult;
+  let calculator: WsdlImportResult;
   let binding: ValidationBinding;
 
   beforeAll(async () => {
-    calculator = await importDefinition({
+    calculator = await importWsdl({
       kind: 'file',
       path: `${repoRoot}fixtures/wsdl/public/calculator/service.wsdl`,
     });
@@ -87,10 +87,10 @@ describe('validateMessage', () => {
 });
 
 describe('bindingContextFor', () => {
-  let calculator: ImportResult;
+  let calculator: WsdlImportResult;
 
   beforeAll(async () => {
-    calculator = await importDefinition({
+    calculator = await importWsdl({
       kind: 'file',
       path: `${repoRoot}fixtures/wsdl/public/calculator/service.wsdl`,
     });
@@ -128,7 +128,7 @@ describe('bindingContextFor', () => {
   });
 
   it('carries rpc parts with their types', async () => {
-    const rpc = await importDefinition({
+    const rpc = await importWsdl({
       kind: 'file',
       path: `${repoRoot}fixtures/wsdl/crafted/rpc-literal/service.wsdl`,
     });

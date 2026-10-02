@@ -10,10 +10,11 @@
 
 import { HttpError, WirebenchError } from '../errors.js';
 import { redactUrl } from '../redact/index.js';
-import { applyAuth } from '../rest/auth.js';
-import type { SendAuth } from '../types.js';
-import { createDefaultFetchDocument, decodeXmlBytes } from '../wsdl/fetch.js';
-import type { FetchDocument, FetchedDocument } from '../wsdl/resolver.js';
+import { applyAuth } from './auth/apply-auth.js';
+import type { SendAuth } from './auth/send-auth.js';
+import { decodeXmlBytes } from '../xml/decode.js';
+import { createDefaultFetchDocument } from './fetch-document.js';
+import type { FetchDocument, FetchedDocument } from './fetch-document.js';
 import { basicAuthorization } from './auth/basic.js';
 import { sendHttp } from './client.js';
 import type { ProxyOptions, TlsOptions } from './types.js';
