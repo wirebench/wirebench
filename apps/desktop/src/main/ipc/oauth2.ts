@@ -23,7 +23,7 @@ export interface OAuth2ChannelDeps {
    * `soapAuthOf` is wired — a SOAP interface, endpoint or request.
    */
   readonly project: Pick<ProjectRouter, 'restAuthOf' | 'projectId'> &
-    Partial<Pick<ProjectRouter, 'soapAuthOf' | 'restTlsFor' | 'proxyFor'>>;
+    Partial<Pick<ProjectRouter, 'soapAuthOf' | 'proxyFor'>>;
   /** Resolves one keychain reference; the store in the app, a stub in tests. */
   readonly getSecret?: (ref: string) => Promise<string | undefined>;
   /** Stores a refresh token the user asked to be remembered. */

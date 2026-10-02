@@ -1,7 +1,6 @@
 // @vitest-environment node
 /**
- * `${secret:name}` tokens on the desktop send paths, which build their input in main rather than
- * through the engine's `prepare`: the name resolves to the store entry labelled for the request's
+ * `${secret:name}` tokens on the desktop's sends through the engine: the name resolves to the store entry labelled for the request's
  * own project, a missing one refuses the send as `secret-missing`, and every value the getter
  * handed out is masked wherever the HTTP log and History show a request.
  */
@@ -14,17 +13,20 @@ import {
   createApi,
   createGrpcApi,
   createGrpcRequest,
+  createInterface,
   createProject,
+  createRequest,
+  createRunScope,
+  grpcItemFor,
+  resolveExchange,
   createRestRequest,
   createWsApi,
   createWsRequest,
   entry,
+  wsItemFor,
 } from '@wirebench/engine';
-import type { GetSecret, Project, PropertyScopes } from '@wirebench/engine';
-import { EngineService } from '../src/main/engine-service.js';
-import { resolveGrpcSend } from '../src/main/grpc-send.js';
+import type { GetSecret, Project, SelectedRequest } from '@wirebench/engine';
 import { buildRestHistoryEntry } from '../src/main/history-service.js';
-import { sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import {
   recordSecretValue,
   redactHeaders,
@@ -33,13 +35,11 @@ import {
   redactUrl,
   redactXml,
 } from '../src/main/redact.js';
-import { resolveRestSend } from '../src/main/rest-send.js';
-import { projectSecretGetter, resolveWithStoredValues, secretStoreLabel } from '../src/main/secret-resolver.js';
+import { projectSecretGetter, secretStoreLabel } from '../src/main/secret-resolver.js';
 import { newSecretRef, SecretStore, type CryptoBackend } from '../src/main/secrets.js';
-import { sendAndRecordHistory } from '../src/main/send-with-history.js';
-import { resolveWsSend } from '../src/main/ws-send.js';
-
-const SCOPES: PropertyScopes = { project: {}, global: {}, system: {} };
+import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
+import { sendDepsFor } from './helpers/send-deps.js';
+import { desktopSendHost } from '../src/main/send/host.js';
 
 let dir: string;
 let store: SecretStore;
@@ -219,21 +219,8 @@ function restProject(header: string): Project {
   };
 }
 
-function restDeps(project: Project): RequestChannelDeps {
-  return {
-    project: {
-      scopesFor: () => SCOPES,
-      projectId: () => 'p1',
-      restSend: (requestId: string) =>
-        resolveRestSend({
-          project,
-          requestId,
-          scopes: SCOPES,
-          resolveBaseUrl: (api) => ({ url: api.baseUrl, source: 'api' }),
-        }),
-    } as unknown as RequestChannelDeps['project'],
-    secretsFor: getterFor,
-  };
+function restDeps(project: Project): SendThroughEngineDeps {
+  return sendDepsFor(project, { secretsFor: getterFor });
 }
 
 describe('a desktop REST send', () => {
@@ -241,9 +228,8 @@ describe('a desktop REST send', () => {
     await store.set('fake-billing-key-0001', { label: secretStoreLabel('p1', 'billing_key') });
     const before = server.requests.length;
 
-    const summary = await sendRestRequest(new EngineService(), restDeps(restProject('Key ${secret:billing_key}')), {
-      sendId: 'rest-1',
-      requestId: 'r1',
+    const summary = await sendThroughEngine(restDeps(restProject('Key ${secret:billing_key}')), 'rest-1', 'r1', {
+      draft: { kind: 'rest' },
     });
 
     expect(server.requests.slice(before)[0]?.headers['x-billing']).toBe('Key fake-billing-key-0001');
@@ -259,10 +245,7 @@ describe('a desktop REST send', () => {
     const before = server.requests.length;
 
     await expect(
-      sendRestRequest(new EngineService(), restDeps(restProject('${secret:not_stored}')), {
-        sendId: 'rest-2',
-        requestId: 'r1',
-      }),
+      sendThroughEngine(restDeps(restProject('${secret:not_stored}')), 'rest-2', 'r1', { draft: { kind: 'rest' } }),
     ).rejects.toMatchObject({ code: 'secret-missing', details: { ref: 'secret:not_stored' } });
     expect(server.requests.length).toBe(before);
   });
@@ -272,29 +255,25 @@ describe('a desktop SOAP send', () => {
   it('resolves a token in the envelope and masks it in the exchange', async () => {
     await store.set('fake-soap-password-01', { label: secretStoreLabel('p1', 'soap_pw') });
     const before = server.requests.length;
+    const request = {
+      ...createRequest('Add', {
+        id: 'req-1',
+        envelopeXml: '<Envelope><Pw>${secret:soap_pw}</Pw></Envelope>',
+        soapVersion: '1.1',
+      }),
+      endpointUrl: server.url,
+    };
+    const iface = createInterface('Calculator', {
+      id: 'iface-1',
+      definitionUrl: `${server.url}?wsdl`,
+      cacheDefinition: false,
+      operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
+    });
+    const project: Project = { ...createProject('Billing', { id: 'p1' }), interfaces: [iface] };
 
-    const summary = await sendAndRecordHistory(
-      new EngineService(),
-      {
-        project: {
-          scopesFor: () => SCOPES,
-          authFor: () => undefined,
-          requestMeta: () => undefined,
-          projectId: () => 'p1',
-        },
-        secretsFor: getterFor,
-      },
-      {
-        sendId: 'soap-1',
-        requestId: 'req-1',
-        input: {
-          endpoint: server.url,
-          envelopeXml: '<Envelope><Pw>${secret:soap_pw}</Pw></Envelope>',
-          soapVersion: '1.1',
-          timeoutMs: 5_000,
-        },
-      },
-    );
+    const summary = await sendThroughEngine(sendDepsFor(project, { secretsFor: getterFor }), 'soap-1', 'req-1', {
+      draft: { kind: 'soap' },
+    });
 
     expect(server.requests.slice(before)[0]?.body).toContain('<Pw>fake-soap-password-01</Pw>');
     expect(Buffer.from(summary.http.rawRequestBase64, 'base64').toString('utf8')).not.toContain(
@@ -302,6 +281,17 @@ describe('a desktop SOAP send', () => {
     );
   });
 });
+
+/** `item` of `project` resolved as its send resolves it, its tokens read through the project's getter. */
+async function resolvedThroughEngine(project: Project, item: SelectedRequest | undefined): Promise<unknown> {
+  if (item === undefined) throw new Error('no such request');
+  const host = await desktopSendHost(sendDepsFor(project, { secretsFor: getterFor }), {
+    sendId: '',
+    requestId: item.request.id,
+    projectId: project.id,
+  });
+  return await resolveExchange(item, host, createRunScope({ project, projectDir: '/tmp/none', overrides: {}, host }));
+}
 
 describe('gRPC and WebSocket resolution', () => {
   it('fills the secrets scope for a gRPC call', async () => {
@@ -324,19 +314,13 @@ describe('gRPC and WebSocket resolution', () => {
       ],
     };
 
-    const resolved = await resolveWithStoredValues(
-      () =>
-        resolveGrpcSend({
-          project,
-          requestId: 'q-1',
-          scopes: SCOPES,
-          resolveTarget: (api) => ({ url: api.target, source: 'api' }),
-        }),
-      getterFor('p1'),
-    );
+    const resolved = (await resolvedThroughEngine(project, grpcItemFor(project, 'q-1'))) as {
+      unresolved: unknown[];
+      input: { metadata: unknown[] };
+    };
 
-    expect(resolved?.unresolved).toEqual([]);
-    expect(resolved?.input.metadata).toContainEqual(entry('x-token', 'fake-grpc-token-0001'));
+    expect(resolved.unresolved).toEqual([]);
+    expect(resolved.input.metadata).toContainEqual(entry('x-token', 'fake-grpc-token-0001'));
   });
 
   it('fills the secrets scope for a WebSocket call, and refuses a missing one', async () => {
@@ -351,19 +335,11 @@ describe('gRPC and WebSocket resolution', () => {
         }),
       ],
     });
-    const resolve = (header: string) => () =>
-      resolveWsSend({
-        project: project(header),
-        requestId: 'q-1',
-        scopes: SCOPES,
-        resolveTarget: (api) => ({ url: api.url, source: 'api' }),
-      });
+    const resolve = (header: string) => resolvedThroughEngine(project(header), wsItemFor(project(header), 'q-1'));
 
-    const resolved = await resolveWithStoredValues(resolve('${secret:ws_token}'), getterFor('p1'));
-    expect(resolved?.input.request.headers).toEqual([entry('x-token', 'fake-ws-token-000001')]);
+    const resolved = (await resolve('${secret:ws_token}')) as { input: { request: { headers: unknown[] } } };
+    expect(resolved.input.request.headers).toEqual([entry('x-token', 'fake-ws-token-000001')]);
 
-    await expect(resolveWithStoredValues(resolve('${secret:gone}'), getterFor('p1'))).rejects.toMatchObject({
-      code: 'secret-missing',
-    });
+    await expect(resolve('${secret:gone}')).rejects.toMatchObject({ code: 'secret-missing' });
   });
 });

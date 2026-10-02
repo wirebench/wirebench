@@ -59,7 +59,7 @@ function newCertificate(publicKey: forge.pki.PublicKey, commonName: string): for
   return cert;
 }
 
-let cachedCa: (TestCertificate & { readonly commonName: string }) | undefined;
+const cachedCas = new Map<string, TestCertificate & { readonly commonName: string }>();
 
 /**
  * The self-signed CA every other certificate here is issued by. Memoised: the
@@ -68,8 +68,22 @@ let cachedCa: (TestCertificate & { readonly commonName: string }) | undefined;
  * @returns the CA's PEM certificate and private key
  */
 export function generateTestCa(): TestCertificate & { readonly commonName: string } {
+  return generateCa('Wirebench Test CA');
+}
+
+/**
+ * A second, unrelated authority: what a test needs to tell two trust sources apart, each trusting a
+ * server the other cannot. Memoised like {@link generateTestCa}.
+ *
+ * @returns the second CA's PEM certificate and private key
+ */
+export function generateSecondTestCa(): TestCertificate & { readonly commonName: string } {
+  return generateCa('Wirebench Second Test CA');
+}
+
+function generateCa(commonName: string): TestCertificate & { readonly commonName: string } {
+  const cachedCa = cachedCas.get(commonName);
   if (cachedCa !== undefined) return cachedCa;
-  const commonName = 'Wirebench Test CA';
   const keys = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
   const cert = newCertificate(keys.publicKey, commonName);
   cert.setIssuer(attributes(commonName));
@@ -78,12 +92,13 @@ export function generateTestCa(): TestCertificate & { readonly commonName: strin
     { name: 'keyUsage', keyCertSign: true, cRLSign: true, critical: true },
   ]);
   cert.sign(keys.privateKey, forge.md.sha256.create());
-  cachedCa = {
+  const ca = {
     certPem: forge.pki.certificateToPem(cert),
     keyPem: forge.pki.privateKeyToPem(keys.privateKey),
     commonName,
   };
-  return cachedCa;
+  cachedCas.set(commonName, ca);
+  return ca;
 }
 
 /** Turns SAN strings into forge's altNames entries: an IP literal becomes type 7, anything else type 2 (DNS). */
@@ -107,7 +122,7 @@ const cachedServerCerts = new Map<string, TestCertificate>();
 /**
  * A server certificate issued by `ca`, with `serverAuth` extended key usage and
  * the given SANs (default `localhost` + `127.0.0.1`). Memoised per
- * commonName/SAN combination.
+ * issuer/commonName/SAN combination.
  *
  * @param ca the issuing authority, from {@link generateTestCa}
  * @param options the leaf's common name and subject alternative names
@@ -119,7 +134,8 @@ export function generateServerCert(
 ): TestCertificate {
   const commonName = options?.commonName ?? 'localhost';
   const sans = options?.sans ?? ['localhost', '127.0.0.1'];
-  const cacheKey = `${commonName}|${sans.join(',')}`;
+  const issuer = forge.pki.certificateFromPem(ca.certPem).subject.getField('CN') as { value: string } | null;
+  const cacheKey = `${issuer?.value ?? ''}|${commonName}|${sans.join(',')}`;
   const cached = cachedServerCerts.get(cacheKey);
   if (cached !== undefined) return cached;
 

@@ -88,8 +88,23 @@ export type { UnsupportedContainer } from './project/model.js';
 
 // What three core files re-exported until 3.0, from the module that declares it.
 export { soapResponseSubject } from './soap/run.js';
+// The SOAP run facet's item and its effective credentials, for a host that sends one SOAP item itself.
+export { soapEffectiveAuth, soapItemFor } from './soap/run.js';
+export type { SoapOverride, SoapSelected } from './soap/run.js';
 export { restSubject } from './rest/run.js';
+// The REST run facet and its effective credentials, for a host that sends one REST item itself.
+export { restEffectiveAuth, restItemFor, restRun } from './rest/run.js';
+export type { RestSelected } from './rest/run.js';
 export { grpcSubject } from './grpc/run.js';
+// The gRPC run facet's item and its effective credentials, for a host that sends one gRPC item itself.
+export { grpcEffectiveAuth, grpcItemFor } from './grpc/run.js';
+export type { GrpcFailedInput, GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
+// The WebSocket run facet's item and its effective credentials, for a host that opens one itself.
+export { wsEffectiveAuth, wsItemFor } from './ws/run.js';
+export type { WsSelected } from './ws/run.js';
+// One WebSocket session as History records it, for every host that writes History.
+export { buildWsHistoryEntry, redactWsExchange } from './ws/history-entry.js';
+export type { WsHistoryInput, WsHistoryMasks } from './ws/history-entry.js';
 export type { RequestSnapshot, ResponseSnapshot } from './protocols.js';
 export { applySoapSnapshot, soapRequestSnapshot, soapResponseSnapshot } from './soap/scripting.js';
 export type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
@@ -450,6 +465,7 @@ export {
   DEFAULT_WEBHOOK_TARGET,
   WEBHOOKS_COLLECTION_PREFIX,
   WEBHOOK_TARGET_PROPERTY,
+  assertWebhookTarget,
   createWebhookCollection,
   createWebhookFolder,
   effectiveSigning,
@@ -1405,7 +1421,7 @@ export {
   redactUrl,
   redactXml,
 } from './redact/index.js';
-export { createSecretMasker } from './redact/literal.js';
+export { createSecretBytesMasker, createSecretMasker } from './redact/literal.js';
 
 // WebSocket: the fourth protocol, a sibling container to a SOAP interface, a REST API and a gRPC
 // API (ADR-0007).

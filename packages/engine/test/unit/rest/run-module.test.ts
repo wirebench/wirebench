@@ -171,23 +171,70 @@ describe('restRun.secretNeeds', () => {
   });
 });
 
-describe('restRun.send', () => {
-  it('prepares, sends once, and reports a REST subject with its exchange and origin', async () => {
+describe('restRun.open', () => {
+  it('resolves, connects, sends once, and reports a REST subject with its exchange and origin', async () => {
     const context: RunContext = {
       project,
       projectDir: '/nowhere',
       overrides: {},
-      getSecret: (ref) => {
-        events.push(`secret ${ref}`);
-        return Promise.resolve('abc123def456ghi789');
+      host: {
+        getSecret: (ref) => {
+          events.push(`secret ${ref}`);
+          return Promise.resolve('abc123def456ghi789');
+        },
       },
     };
     const list = itemAt('Billing/Invoices/List');
-    const sent = list && (await restRun.send(list, createRunScope(context)));
-    expect(events).toEqual(['secret ref-token', 'secret secret:tenant', 'send https://api.example.test/invoices']);
+    const scope = createRunScope(context);
+    const sent = list && (await restRun.open(list, scope, context.host, { scope, interactive: false }).result);
+    expect(events).toEqual(['secret secret:tenant', 'secret ref-token', 'send https://api.example.test/invoices']);
     expect(sent?.subject).toMatchObject({ protocol: 'rest', status: 200, bodyKind: 'json' });
     expect(sent?.exchange?.kind).toBe('rest');
     expect(sent?.origin).toBe('https://api.example.test');
+  });
+});
+
+describe('restRun.resolve', () => {
+  const resolveIn = (p: Project, path: string): Promise<unknown> => {
+    const context: RunContext = {
+      project: p,
+      projectDir: '/nowhere',
+      overrides: {},
+      host: {
+        getSecret: (ref) => {
+          events.push(`secret ${ref}`);
+          return Promise.resolve('abc123def456ghi789');
+        },
+      },
+    };
+    const item = restRun
+      .groups(p)
+      .flatMap((group) => group.candidates)
+      .find((candidate) => candidate.item.path === path)?.item;
+    if (item === undefined) throw new Error(`No request at ${path}`);
+    return restRun.resolve(item, createRunScope(context), context.host);
+  };
+
+  it('returns the input with its secret tokens expanded, no credentials, and nothing unresolved', async () => {
+    const resolved = await resolveIn(project, 'Billing/Invoices/List');
+    expect(resolved).toMatchObject({
+      input: { baseUrl: 'https://api.example.test', request: { url: '/invoices' } },
+      unresolved: [],
+    });
+    expect(resolved).not.toHaveProperty('input.auth');
+    // The token is asked for in connect, which resolve does not reach.
+    expect(events).toEqual(['secret secret:tenant']);
+  });
+
+  it('reports a reference nothing resolves, and does not throw it', async () => {
+    const withRef: Project = {
+      ...project,
+      apis: project.apis.map((api) => ({
+        ...api,
+        requests: api.requests.map((request) => ({ ...request, url: '/zed/${nope}' })),
+      })),
+    };
+    expect(await resolveIn(withRef, 'Billing/Zed')).toMatchObject({ unresolved: [{ expr: '${nope}' }] });
   });
 });
 

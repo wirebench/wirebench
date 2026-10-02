@@ -3,8 +3,10 @@
  * It holds the built-in registry every entry point falls back to, and the union types a host that
  * narrows on `kind` uses.
  */
+import type { GrpcCallResult } from './grpc/call.js';
+import type { GrpcLiveEvent } from './grpc/events.js';
 import { grpcProtocol } from './grpc/module.js';
-import type { GrpcSelected } from './grpc/run.js';
+import type { GrpcResolvedInput, GrpcSelected } from './grpc/run.js';
 import type { GrpcRequestSnapshot, GrpcResponseSnapshot } from './grpc/scripting.js';
 import type { FeatureDescriptor } from './protocol/features.js';
 import type { ProtocolModule } from './protocol/module.js';
@@ -13,12 +15,16 @@ import type { ProtocolRegistry } from './protocol/registry.js';
 import { restProtocol } from './rest/module.js';
 import type { RestSelected } from './rest/run.js';
 import type { RestRequestSnapshot, RestResponseSnapshot } from './rest/scripting.js';
-import type { RestExchange } from './rest/send.js';
+import type { RestLiveEvent } from './rest/events.js';
+import type { RestExchange, RestSendInput } from './rest/send.js';
 import { soapProtocol } from './soap/module.js';
 import type { SoapSelected } from './soap/run.js';
 import type { SoapRequestSnapshot, SoapResponseSnapshot } from './soap/scripting.js';
-import type { SoapExchange } from './soap/types.js';
+import type { SoapExchange, SoapSendInput, WsdlImportResult } from './soap/types.js';
+import type { WsLiveEvent } from './ws/events.js';
+import type { WsExchange } from './ws/model.js';
 import { wsProtocol } from './ws/module.js';
+import type { WsSelected } from './ws/run.js';
 
 /**
  * The four built-in protocols, in the order their containers tie-break in the explorer.
@@ -61,11 +67,43 @@ export function defaultRegistry(): ProtocolRegistry {
 }
 
 /** One saved request selected for a run, of any built-in protocol a run can send. */
-export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected;
+export type SelectedRequest = SoapSelected | RestSelected | GrpcSelected | WsSelected;
+
+/** A SOAP interface's definition as a host already holds it in memory: imported and compiled. */
+export type HeldSoapDefinition = Pick<WsdlImportResult, 'definition' | 'bundle' | 'schemaSet' | 'wsa'>;
 
 /** The exchange a request travelled as, for a host that keeps more of it than a report does. */
 export type SentExchange =
-  { readonly kind: 'soap'; readonly soap: SoapExchange } | { readonly kind: 'rest'; readonly rest: RestExchange };
+  | {
+      readonly kind: 'soap';
+      readonly soap: SoapExchange;
+      /** The request as resolved: references unexpanded, before its script and its credentials. */
+      readonly input: SoapSendInput;
+    }
+  | {
+      readonly kind: 'rest';
+      readonly rest: RestExchange;
+      /** What was sent: after the script, with the credentials resolved. */
+      readonly input: RestSendInput;
+      readonly contract?: unknown;
+    }
+  | {
+      readonly kind: 'grpc';
+      /** The call whole: every request message as sent, every response message decoded. */
+      readonly grpc: GrpcCallResult;
+      /** What was sent: after the script, with the credentials resolved. */
+      readonly input: GrpcResolvedInput;
+      /** The request message text as sent, after the script. */
+      readonly messageText: string;
+    }
+  | {
+      readonly kind: 'websocket';
+      /** The session whole: its handshake, every frame both ways, and how it closed. */
+      readonly ws: WsExchange;
+    };
+
+/** A message an open exchange reports, whatever its protocol. */
+export type LiveEvent = RestLiveEvent | GrpcLiveEvent | WsLiveEvent;
 
 /** The request snapshot of any built-in protocol that has scripts (spec §3.1). */
 export type RequestSnapshot = RestRequestSnapshot | SoapRequestSnapshot | GrpcRequestSnapshot;

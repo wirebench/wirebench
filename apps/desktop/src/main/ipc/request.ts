@@ -1,11 +1,10 @@
-import type { WebContents } from 'electron';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import {
+  applySoapAuth,
+  applyWsaHeaders,
   composeUrl,
   CURL_REDACTED,
-  expandWsMessage,
   fromCurl,
   fromRestCurl,
   grpcToCommand,
@@ -20,78 +19,60 @@ import {
   toWsSessionOptions,
   WirebenchError,
   writeFileAtomic,
-  joinBase,
-  failedRequestOf,
-  resolveSecretTokens,
-  secretNamesIn,
-  grpcMethodPath,
   wsToCommand,
-  SecretPlaceholders,
-  applyGrpcSnapshot,
-  applyRestSnapshot,
-  grpcRequestSnapshot,
-  grpcResponseSnapshot,
-  restRequestSnapshot,
-  restResponseSnapshot,
 } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
 import type {
   AuthConfig,
-  Cookie,
   OAuth2Auth,
-  ProxyOptions,
   RestBody,
   SendAuth,
-  TlsOptions,
   GetSecret,
   PropertyScopes,
   UnresolvedRef,
   WsSessionMaterial,
-  WsSessionOptions,
-  GrpcRequestSnapshot,
-  RestRequestSnapshot,
-  ScriptSession,
+  WsFrame,
   SentScripts,
+  SoapOwnerAuth,
+  SoapSendInput,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
-import { isSecretTokenRef, resolveAuthConfig, resolveWithStoredValues } from '../secret-resolver.js';
+import { isSecretTokenRef, resolveAuthConfig, resolveSoapAuth } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactUrl, redactXml } from '../redact.js';
-import { failedExchangeOf } from '../failed-exchange.js';
-import { reportSendFailed, sendAndRecordHistory } from '../send-with-history.js';
+import { AD_HOC_ID, soapOverrideOf } from '../send/draft.js';
+import { AD_HOC_NAME } from '../send/record.js';
 import {
-  finishScripts,
-  scriptsFailed,
-  scriptsForSend,
-  sessionValuesFor,
-  startScripts,
-  type SendScripts,
-} from '../script-send.js';
-import type { RestSendResolution, WebhookUrlSource } from '../rest-send.js';
-import { webhookSignFor, withSentSigningHeaders } from '../webhook-send.js';
-import type { GrpcSendResolution } from '../grpc-send.js';
-import type { WsSendResolution } from '../ws-send.js';
+  ExchangeRegistry,
+  previewGrpc,
+  previewRest,
+  previewWs,
+  sendThroughEngine,
+  type GrpcPreview,
+  previewSoap,
+  type RestPreview,
+  type RestUrlSource,
+  type SoapPreview,
+  type SendThroughEngineDeps,
+  type WsPreview,
+} from '../send/exchange.js';
+import { type SendScripts } from '../script-send.js';
+import { type WebhookUrlSource } from '../webhook-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
-import { toUnresolvedRefWire } from '../engine-wire.js';
+import { toUnresolvedRefWire, toWsFrameWire } from '../engine-wire.js';
 import type {
-  GrpcExchangeSummary,
   GrpcRequestPatchWire,
-  RequestSendGrpcRequest,
   RestRequestPatchWire,
   UnresolvedRefWire,
   EndpointSourceWire,
-  RequestSendRestRequest,
-  RestExchangeSummary,
   ExchangeSummary,
   HistoryEntryWire,
   FailedExchangeWire,
-  RequestSendRequest,
-  ResolvedSendRequest,
   RequestCurlRequest,
   RequestCurlResponse,
   RequestImportCurlRequest,
@@ -100,16 +81,9 @@ import type {
   RequestPatchWire,
   RequestRecreateRequest,
   RequestRecreateResponse,
-  RequestOpenWsRequest,
-  RequestWsSendRequest,
-  RequestWsCloseRequest,
-  RequestWsCloseResponse,
   WsExchangeSummary,
-  WsFrameWire,
-  WsHandshakeWire,
   WsRequestPatchWire,
   LogEntryWire,
-  RestLiveEvent,
 } from '../../shared/wire-types.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
 import { emitEvent } from './events.js';
@@ -120,14 +94,14 @@ export type RequestChannelProject = Pick<
   ProjectRouter,
   | 'scopesFor'
   | 'preflight'
-  | 'authFor'
   | 'requestMeta'
   | 'projectId'
   | 'projectMutate'
   | 'requestSource'
-  | 'buildLiveSendInput'
-  | 'sendInputFor'
   | 'dumpFileFor'
+  // Whether a SOAP request has an endpoint (under an environment, when one is named): the check a
+  // SOAP Log resend, sequence step and multi-environment send make before sending.
+  | 'endpointFor'
 > &
   // Optional for the same reason as on `HistorySendProject`: a stub (or an ad-hoc send) that
   // has no saved request behind it has no attachments to carry either.
@@ -138,31 +112,31 @@ export type RequestChannelProject = Pick<
       ProjectRouter,
       | 'sendAttachmentsFor'
       | 'tlsFor'
-      | 'wssFor'
       | 'hasOutgoingWss'
       | 'proxyFor'
-      // The REST half, optional for the same reason: a stub that never sends a REST request needs
-      // none of it.
-      | 'restSend'
       // Read to split an imported cURL URL against the API's own base URL.
       | 'projectSnapshot'
       // Read by *Send to environments…* to name and validate the environments asked for.
       | 'sendEnvironments'
-      | 'restTlsFor'
       | 'rememberRestCookies'
       | 'restMeta'
+      // What the send host (send/host.ts) lends the engine: the trust anchors, the client identity,
+      // the WS-Security keystores, the stored cookies, and the project and environment a send runs in.
+      | 'trustAnchorsFor'
+      | 'clientIdentityFor'
+      | 'keystoreFor'
+      | 'restCookiesFor'
+      | 'runContextFor'
+      // The default `wsa:Action` of a SOAP request's operation, from the definition loaded in memory.
+      | 'defaultWsaActionFor'
       // Read after a REST send, to check the response against its OpenAPI operation.
       | 'restContractFor'
       // Read by the body editor's form view.
       | 'restBodySchema'
       // The gRPC third, optional for the same reason.
-      | 'grpcSend'
-      | 'grpcTlsFor'
       | 'grpcMeta'
       | 'grpcProtoSetFor'
       // The WebSocket fourth, optional for the same reason.
-      | 'wsSend'
-      | 'wsTlsFor'
       | 'wsContractFor'
       | 'wsMeta'
     >
@@ -198,8 +172,7 @@ export interface RequestChannelDeps {
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
   /**
    * Called with the failure row of a send that threw, after History has recorded it, so main can
-   * broadcast `exchange.failed`. Shared with `sendAndRecordHistory`, which reads it off this same
-   * object for the SOAP path.
+   * broadcast `exchange.failed`.
    */
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
   /**
@@ -226,8 +199,9 @@ export interface RequestChannelDeps {
    * than quietly obtaining one.
    */
   readonly oauth2?: Pick<OAuth2Service, 'accessToken'> &
-    // Read by the SOAP cURL export, which uses a cached token but never obtains one.
-    Partial<Pick<OAuth2Service, 'status'>>;
+    // Read by the SOAP cURL export, which uses a cached token but never obtains one; and `clear`
+    // by a send through the engine, which forgets a token the server refused.
+    Partial<Pick<OAuth2Service, 'status' | 'clear'>>;
   /**
    * Resolves one keychain reference, for the client secret and the remembered refresh token an
    * OAuth2 token request needs. The engine service resolves every *other* reference itself; this is
@@ -253,11 +227,49 @@ export interface RequestChannelDeps {
   readonly scripts?: SendScripts;
   /** Told what a sequence step's scripts did; see `ScriptSendDeps.onScriptsRan`. */
   readonly onScriptsRan?: (sent: SentScripts) => void;
+  /**
+   * The app's exchanges in flight, which `request.cancel` and a project's close reach. Omitted in
+   * tests, which then get one of their own per registration.
+   */
+  readonly registry?: ExchangeRegistry;
 }
 
-/** The token getter for a send of `requestId`: its own project's, or one that finds nothing. */
-function tokenSecrets(deps: Pick<RequestChannelDeps, 'project' | 'secretsFor'>, requestId: string): GetSecret {
-  return deps.secretsFor?.(deps.project.projectId(requestId)) ?? (() => Promise.resolve(undefined));
+/**
+ * The dependencies a send through the engine (`send/exchange.ts`) takes, from the channels' own.
+ * `registry` is the one the channels cancel through.
+ */
+export function toSendDeps(
+  service: EngineService,
+  deps: RequestChannelDeps,
+  registry: ExchangeRegistry = deps.registry ?? new ExchangeRegistry(),
+): SendThroughEngineDeps {
+  const { oauth2, preferences, history } = deps;
+  return {
+    project: deps.project,
+    service,
+    registry,
+    ...(oauth2 !== undefined
+      ? {
+          oauth2: {
+            accessToken: (config, options) => oauth2.accessToken(config, options),
+            clear: (config) => oauth2.clear?.(config),
+          },
+        }
+      : {}),
+    ...(deps.getSecret !== undefined ? { getSecret: deps.getSecret } : {}),
+    ...(deps.secretsFor !== undefined ? { secretsFor: deps.secretsFor } : {}),
+    ...(preferences !== undefined ? { preferences: () => preferences.get() } : {}),
+    ...(history !== undefined
+      ? { history, newestHistory: (projectId, requestId) => history.newestFor(projectId, requestId) }
+      : {}),
+    ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),
+    ...(deps.showSecrets !== undefined ? { showSecrets: deps.showSecrets } : {}),
+    ...(deps.onSendFailed !== undefined ? { onSendFailed: deps.onSendFailed } : {}),
+    ...(deps.onExchange !== undefined ? { onExchange: deps.onExchange } : {}),
+    ...(deps.scripts !== undefined ? { scripts: deps.scripts } : {}),
+    ...(deps.onScriptsRan !== undefined ? { onScriptsRan: deps.onScriptsRan } : {}),
+    ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
+  };
 }
 
 /**
@@ -266,88 +278,6 @@ function tokenSecrets(deps: Pick<RequestChannelDeps, 'project' | 'secretsFor'>, 
  * write target; only a path chosen through the Save-as "Browse…" picker does.
  */
 export type DumpFilePicks = { hasWrite(path: string): boolean };
-
-/**
- * e2e-only: extra trust anchors for every send, as one PEM file named by
- * `WIREBENCH_E2E_EXTRA_CA_FILE`.
- *
- * Superseded, for real use, by the `ssl.caBundlePath` preference (see
- * `ProjectHost.trustAnchors`), which is how a user configures a private CA and which a spec
- * can now drive through the picker with `WIREBENCH_E2E_FILE_DIALOG_PATH`. This hook survives for
- * the specs that predate the preference and only need *some* anchor in place before the
- * Preferences UI exists in their flow; it adds to `tls.ca` exactly as the preference does.
- *
- * The Playwright suite talks to a TLS server signed by a CA it generates at run time, and
- * Wirebench must trust it *the way a user would* — by configuring trust, not by turning
- * verification off, and not by letting a client keystore double as a trust store (which is
- * exactly the confusion `toTlsClientIdentity` was changed to avoid). So a test build takes the
- * anchors from an env var no shipped build ever sets, alongside `WIREBENCH_E2E_OPEN_PATH`,
- * `WIREBENCH_E2E_SAVE_PATH`, `WIREBENCH_E2E_DIALOG_FOLDER`, `WIREBENCH_E2E_DIALOG_SAVE` and
- * `WIREBENCH_E2E_FILE_DIALOG_PATH`.
- *
- * TLS verification itself is untouched: these anchors are *added* to a send's `tls.ca`, and
- * `rejectUnauthorized` keeps its default. The file is read once and remembered; an unset or
- * unreadable variable simply yields no anchors, so an ordinary run pays nothing for it.
- */
-let e2eTrustAnchors: readonly string[] | undefined;
-function extraTrustAnchors(): readonly string[] {
-  if (e2eTrustAnchors === undefined) {
-    const path = process.env['WIREBENCH_E2E_EXTRA_CA_FILE'];
-    try {
-      e2eTrustAnchors = path === undefined || path.length === 0 ? [] : [readFileSync(path, 'utf-8')];
-    } catch {
-      e2eTrustAnchors = [];
-    }
-  }
-  return e2eTrustAnchors;
-}
-
-/**
- * Applies the saved request's properties (and the user's preferences) to the input the
- * renderer sent. The renderer owns what is *in* the editor — the envelope being typed, the
- * endpoint it resolved — and the main process owns the knobs around it, so the two are folded
- * together here rather than duplicating the mapping in the renderer. An ad-hoc send, or one
- * whose request has since been deleted, goes out exactly as the renderer built it.
- */
-export async function withRequestProperties(
-  project: RequestChannelProject,
-  request: RequestSendRequest,
-  envId?: string,
-): Promise<ResolvedSendRequest> {
-  if (request.requestId === undefined) {
-    return withExtraTrustAnchors(request);
-  }
-  const mapped = project.sendInputFor(
-    request.requestId,
-    {
-      endpoint: request.input.endpoint,
-      envelopeXml: request.input.envelopeXml,
-      ...(request.input.headers !== undefined ? { headers: { ...request.input.headers } } : {}),
-    },
-    envId,
-  );
-  // The client identity is resolved separately (and asynchronously): it means reading a file
-  // and decrypting a secret, and it must never reach the renderer or the cURL export — which
-  // is exactly why `sendInputFor` stays synchronous and material-free. A selected keystore
-  // that will not load throws here, failing the send loudly rather than quietly going out
-  // without the certificate the user asked for.
-  const tls = await project.tlsFor?.(request.requestId, envId);
-  const input = mapped ?? request.input;
-  return withExtraTrustAnchors({
-    ...request,
-    input: tls === undefined ? input : { ...input, tls: { ...input.tls, ...tls } },
-  });
-}
-
-/** Appends {@link extraTrustAnchors} to a send's `tls.ca`; a no-op outside the e2e suite. */
-function withExtraTrustAnchors(request: ResolvedSendRequest): ResolvedSendRequest {
-  const anchors = extraTrustAnchors();
-  if (anchors.length === 0) {
-    return request;
-  }
-  const tls = request.input.tls;
-  return { ...request, input: { ...request.input, tls: { ...tls, ca: [...(tls?.ca ?? []), ...anchors] } } };
-}
 
 /**
  * Resolves a dump-file target against the project folder and refuses one that would land
@@ -467,12 +397,6 @@ async function recreate(
 }
 
 /**
- * The `curl` command equivalent to sending this request today: the same live input
- * `request.send` builds, with the effective auth applied and properties expanded — but with
- * secret-bearing headers masked unless the session's show-secrets flag is on, since the
- * command is about to land on a clipboard.
- */
-/**
  * A credential's shape with no value in it, for an export that will redact it anyway.
  *
  * Every arm carries the marker rather than a secret, so the command shows *which* credential a
@@ -516,7 +440,7 @@ function placeholderAuth(auth: AuthConfig): SendAuth | undefined {
 async function restCurl(
   deps: RequestChannelDeps,
   request: RequestCurlRequest,
-  resolved: NonNullable<ReturnType<NonNullable<RequestChannelProject['restSend']>>>,
+  resolved: RestPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
   // With show-secrets off no secret is read at all: the command needs the *shape* of the credential,
@@ -546,40 +470,44 @@ async function restCurl(
   return { command, ...(notes.length > 0 ? { notes } : {}) };
 }
 
+/**
+ * The `curl` command equivalent to sending this request today: the request resolved through the
+ * engine as its send resolves it, with the effective auth applied and properties expanded — but
+ * with secret-bearing headers masked unless the session's show-secrets flag is on, since the
+ * command is about to land on a clipboard.
+ */
 async function curl(
   service: EngineService,
   deps: RequestChannelDeps,
+  sendDeps: SendThroughEngineDeps,
   request: RequestCurlRequest,
 ): Promise<RequestCurlResponse> {
   // Dispatch on what the id names rather than on a flag the renderer sends: the Code panel asks about
-  // whatever request is in front of the user, and only the model knows which protocol that is.
-  const rest = deps.project.restSend?.(request.requestId, request.draft);
+  // whatever request is in front of the user, and only the model knows which protocol that is. A
+  // REST request is resolved as its send resolves it, through the engine, with no secret read.
+  const rest = await previewRest(sendDeps, request.requestId, request.draft);
   if (rest !== undefined) {
     return await restCurl(deps, request, rest);
   }
-  const grpc = deps.project.grpcSend?.(request.requestId, request.grpcDraft);
+  // A gRPC request the same way: through the engine, with no secret read.
+  const grpc = await previewGrpc(sendDeps, request.requestId, request.grpcDraft);
   if (grpc !== undefined) {
     return await grpcCommand(deps, request, grpc);
   }
-  const ws = deps.project.wsSend?.(request.requestId, request.wsDraft);
+  // And a WebSocket request the same way.
+  const ws = await previewWs(sendDeps, request.requestId, request.wsDraft);
   if (ws !== undefined) {
     return await wsCommand(deps, request, ws);
   }
-  const live = deps.project.buildLiveSendInput(request.requestId);
-  if (live === undefined) {
-    throw unknownRequest(request.requestId);
-  }
-  // The export applies the owner's credentials exactly as a send would (`applySoapAuth`, inside
-  // `effectiveSendInput`). An OAuth2 token is never fetched for it: one already cached is used,
-  // otherwise `Authorization` is left out and a note says so.
-  const auth = deps.project.authFor(request.requestId);
-  const accessToken = auth?.type === 'oauth2' ? cachedAccessToken(deps, auth) : undefined;
-  const effective = await service.effectiveSendInput(live, {
-    scopes: deps.project.scopesFor(request.requestId),
-    ...(auth !== undefined ? { auth } : {}),
-    ...(accessToken !== undefined ? { accessToken } : {}),
-  });
+  // A SOAP request the same way, through the engine, its credentials applied as a send applies them:
+  // read only while the session shows secrets, a stand-in otherwise, masked all the same. An OAuth2
+  // token is never fetched for it: one already cached is used, otherwise `Authorization` is left out
+  // and a note says so.
+  const soap = await soapPreviewOrUnknown(sendDeps, request.requestId);
+  const { auth } = soap;
   const show = deps.showSecrets?.get() ?? false;
+  const accessToken = auth?.type === 'oauth2' ? cachedAccessToken(deps, auth) : undefined;
+  const effective = await soapCurlInput(deps, soap.input, auth, show, accessToken);
   const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
   // A header API key may be called anything, so its header is masked by name as well.
   const keyHeaders = auth?.type === 'api-key' && auth.in === 'header' ? [auth.name] : [];
@@ -600,9 +528,9 @@ async function curl(
   // with attachments would otherwise be silently exported as one without them. Saying so in a
   // leading comment keeps the command paste-able while making the difference impossible to miss.
   const count = deps.project.sendAttachmentsFor?.(request.requestId)?.attachments.length ?? 0;
-  // WS-Security is deliberately never applied to this preview (it needs secrets and a keystore
-  // `effectiveSendInput` never touches); a request that selects one would otherwise look, from
-  // the command alone, like it sends unsecured when it does not.
+  // WS-Security is deliberately never applied to this preview (it needs secrets and a keystore an
+  // export never touches); a request that selects one would otherwise look, from the command alone,
+  // like it sends unsecured when it does not.
   const notes: string[] = [];
   const comments: string[] = [];
   if (deps.project.hasOutgoingWss?.(request.requestId) === true) {
@@ -624,6 +552,90 @@ async function curl(
     command: comments.length === 0 ? command : `${comments.join('\n')}\n${command}`,
     ...(notes.length > 0 ? { notes } : {}),
   };
+}
+
+/**
+ * The saved SOAP request as its send would resolve it. One that no project holds, or that no
+ * endpoint resolves for, is refused as `unknown-request`, as the export always has.
+ */
+async function soapPreviewOrUnknown(sendDeps: SendThroughEngineDeps, requestId: string): Promise<SoapPreview> {
+  try {
+    const preview = await previewSoap(sendDeps, requestId);
+    if (preview !== undefined) {
+      return preview;
+    }
+  } catch (error) {
+    if (!isWirebenchError(error) || error.code !== 'endpoint-unresolved') {
+      throw error;
+    }
+  }
+  throw unknownRequest(requestId);
+}
+
+/**
+ * The exported request: basic credentials baked into an `Authorization` header (the command has no
+ * challenge loop), then WS-Addressing, then a token scheme through `applySoapAuth` — the send's own
+ * order, so `wsa:To` is the endpoint as configured rather than the one carrying an API key. A
+ * `messageId: 'auto'` mints a fresh UUID here, so the command carries a one-off MessageID.
+ */
+async function soapCurlInput(
+  deps: RequestChannelDeps,
+  input: SoapSendInput,
+  owner: SoapOwnerAuth | undefined,
+  show: boolean,
+  accessToken: string | undefined,
+): Promise<SoapSendInput> {
+  const auth = show
+    ? await resolveSoapAuth(
+        owner,
+        (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
+        accessToken !== undefined ? { accessToken } : {},
+      )
+    : placeholderSoapAuth(owner, accessToken);
+  const basic =
+    auth?.type === 'basic' &&
+    auth.preemptive !== false &&
+    !Object.keys(input.headers ?? {}).some((name) => name.toLowerCase() === 'authorization')
+      ? {
+          headers: {
+            ...input.headers,
+            Authorization: `Basic ${Buffer.from(`${auth.username}:${auth.password}`, 'utf8').toString('base64')}`,
+          },
+        }
+      : {};
+  const addressed = withWsaHeaders({ ...input, ...basic });
+  if (auth === undefined || auth.type === 'basic' || auth.type === 'ntlm') {
+    return addressed;
+  }
+  const applied = applySoapAuth(addressed.endpoint, addressed.headers, auth);
+  return { ...addressed, endpoint: applied.endpoint, headers: { ...applied.headers } };
+}
+
+/**
+ * A SOAP owner's credentials with no value in them, for an export that will mask them anyway: the
+ * command shows which credential a request sends and where it goes without the keychain being read.
+ * A cached OAuth2 token is the one value the export may carry, and is masked like the rest.
+ */
+function placeholderSoapAuth(owner: SoapOwnerAuth | undefined, accessToken: string | undefined): SendAuth | undefined {
+  if (owner?.type === 'oauth2') {
+    return accessToken === undefined ? undefined : { type: 'bearer', token: CURL_REDACTED };
+  }
+  return owner === undefined ? undefined : placeholderAuth(owner);
+}
+
+/** Bakes the input's WS-Addressing headers into its envelope, as a send writes them on the wire. */
+function withWsaHeaders(input: SoapSendInput): SoapSendInput {
+  if (input.wsa === undefined || !input.wsa.config.enabled) {
+    return input;
+  }
+  const envelopeXml = applyWsaHeaders(input.envelopeXml, input.wsa.config, {
+    endpoint: input.endpoint,
+    ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
+    defaultAction: input.wsa.defaultAction,
+    uuid: () => crypto.randomUUID(),
+    envelopeVersion: input.soapVersion,
+  });
+  return { ...input, envelopeXml };
 }
 
 /**
@@ -807,286 +819,12 @@ async function importCurlAsRest(
 }
 
 /**
- * Sends one REST request.
- *
- * Everything the renderer did not send is resolved here: the API's base URL under the active
- * environment, the properties, the credentials its folder chain lands on, its TLS identity. A send
- * whose URL is still incomplete — an unfilled `{param}`, an unresolved property — is refused before
- * it reaches the wire, with the problems that explain why.
- */
-/**
- * Exported for `log.resend`, which replays a saved REST request through this same path.
- *
- * `onLive` is passed by the editor's send alone: it is what turns an event-stream response into a
- * live one the renderer shows and can Stop. A resend has no pane registered for its send id, so it
- * omits it and the response is read to its end like any other body.
- */
-export async function sendRestRequest(
-  service: EngineService,
-  deps: RequestChannelDeps,
-  request: RequestSendRestRequest,
-  onLive?: (event: RestLiveEvent) => void,
-  envId?: string,
-): Promise<RestExchangeSummary> {
-  // Type-checked before anything is resolved: a script that does not check never reaches the wire.
-  const scripts = await scriptsForSend(deps, request.requestId);
-  const projectId = deps.project.projectId(request.requestId);
-  const getSecret = tokenSecrets(deps, request.requestId);
-  // With scripts, the secrets stand behind placeholders until the pre-request script has run.
-  const placeholders = scripts.kind === 'on' ? new SecretPlaceholders() : undefined;
-  const found = await resolveWithStoredValues(
-    () => deps.project.restSend?.(request.requestId, request.draft, envId, sessionValuesFor(deps, projectId)),
-    getSecret,
-    placeholders,
-  );
-  if (found === undefined) {
-    throw new ProjectError('unknown-entity', `No REST request with id "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  let resolved = found;
-  if (resolved.unresolved.length > 0) {
-    throw new WirebenchError('rest-unresolved-properties', 'Some property references could not be resolved', {
-      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
-    });
-  }
-
-  // The one query parameter an API key may be configured to travel in, so the URL is masked
-  // wherever it is logged even when the key is called something this build has never heard of.
-  const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
-  // And the header one may travel in, masked by name wherever the request's headers are shown.
-  const keyHeaders =
-    resolved.auth.type === 'api-key' && resolved.auth.in === 'header' ? [resolved.auth.name] : undefined;
-  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
-  let input: typeof resolved.input;
-  let sign: (typeof resolved.input)['sign'];
-  let accessToken: string | undefined;
-  let session: ScriptSession | undefined;
-  let scripted: RestRequestSnapshot | undefined;
-  try {
-    // The pre-request script, before the credentials, the TLS identity and the proxy are settled.
-    if (scripts.kind === 'on' && placeholders !== undefined) {
-      session = await startScripts(deps, scripts, deps.project.scopesFor(request.requestId, envId), getSecret);
-      const before = restRequestSnapshot(resolved.input);
-      scripted = await session.pre(before);
-      const changed = applyRestSnapshot(resolved.input, before, scripted);
-      const restored = await placeholders.restore({ baseUrl: changed.baseUrl, request: changed.request }, getSecret);
-      resolved = { ...resolved, input: { ...changed, ...restored } };
-    }
-    const tls = await deps.project.restTlsFor?.(request.requestId);
-    const anchors = extraTrustAnchors();
-    const baseCa = tls?.ca ?? resolved.input.tls?.ca ?? [];
-    const mergedTls = withoutUndefined<TlsOptions>({
-      ...resolved.input.tls,
-      ...tls,
-      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-    });
-    const owner = deps.project.projectId(request.requestId);
-    const proxyTarget = resolved.input.baseUrl === '' ? resolved.input.request.url : resolved.input.baseUrl;
-    const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
-    const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
-    // Signing is computed by the engine over the encoded body (§5.2); here it only gets its secret,
-    // inside the prepare stage so a missing one is logged as a send that never went out.
-    sign = await webhookSignFor(resolved.webhookSigning, getSecret);
-    input = {
-      ...resolved.input,
-      tls: mergedTls,
-      ...(proxy !== undefined ? { proxy } : {}),
-      ...(sign !== undefined ? { sign } : {}),
-    };
-
-    // The token is obtained here rather than inside the engine service: it needs a browser, a
-    // loopback listener and a cache, none of which the engine may own. A grant that would have to
-    // open a window refuses instead, and the user presses *Get new token*.
-    accessToken =
-      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-        ? await deps.oauth2.accessToken(resolved.auth, {
-            credentials: await oauth2Credentials(deps, resolved.auth),
-            ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
-            ...(proxy !== undefined ? { proxy } : {}),
-          })
-        : undefined;
-  } catch (error) {
-    // Before the request was built: a bad URL, a proxy lookup, an OAuth2 token fetch. The row says
-    // it never went on the wire; History is not written (nothing was sent).
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'rest',
-        requestId: request.requestId,
-        url: joinedOrConcat(resolved.input.baseUrl, resolved.input.request.url),
-        method: resolved.input.request.method,
-        headers: {},
-        startedAt: prepareStartedAt,
-        durationMs: Date.now() - prepareStartedAt,
-        error,
-        stage: 'prepare',
-        keyParams,
-        keyHeaders,
-      }),
-    );
-    throw error;
-  }
-
-  // Asked before the send, so the definition cache is read while the request is on the wire.
-  const contract = deps.project.restContractFor?.(request.requestId, {
-    method: resolved.input.request.method,
-    url: resolved.input.request.url,
-  });
-  // Handled here too: a cache that fails to read while the send itself fails is never awaited.
-  contract?.catch(() => undefined);
-  const startedAt = Date.now();
-  // The post-response script, on the exchange as it arrives: before the summary, the log row and
-  // the History entry exist, so a value it marks secret is masked in all three.
-  let ran: SentScripts | undefined;
-  const pending = session === undefined || scripted === undefined ? undefined : { session, sent: scripted };
-  const stopObserving =
-    pending === undefined
-      ? undefined
-      : service.observe(request.sendId, async (observed) => {
-          if (observed.kind !== 'rest') return;
-          ran = await pending.session.post(pending.sent, restResponseSnapshot(observed.exchange)).catch(scriptsFailed);
-        });
-  try {
-    const sent = await service.sendRestRequest(
-      { sendId: request.sendId, requestId: request.requestId, input },
-      {
-        showSecrets: deps.showSecrets?.get() ?? false,
-        auth: resolved.auth,
-        ...(accessToken !== undefined ? { accessToken } : {}),
-        ...(keyParams !== undefined ? { keyParams } : {}),
-        ...(keyHeaders !== undefined ? { keyHeaders } : {}),
-        ...(onLive !== undefined ? { onLive } : {}),
-        ...(contract !== undefined ? { contract } : {}),
-      },
-    );
-    const summary: RestExchangeSummary = {
-      ...sent,
-      ...(ran !== undefined ? finishScripts(deps, projectId, ran) : {}),
-      ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
-    };
-    deps.project.rememberRestCookies?.(
-      request.requestId,
-      summary.cookies.map((cookie) => withoutUndefined<Cookie>(cookie)),
-    );
-    // History keeps the signing headers as they went out, so its resend replays them (R1).
-    const recorded =
-      sign === undefined ? resolved : withSentSigningHeaders(resolved, sign.scheme, summary.http.request.headers);
-    await recordRest(deps, request.requestId, recorded, summary, Date.now() - startedAt, keyParams);
-    return summary;
-  } catch (error) {
-    const durationMs = Date.now() - startedAt;
-    await recordRest(deps, request.requestId, resolved, undefined, durationMs, keyParams, error);
-    // The failure row for the console's HTTP Log. When the transport got as far as building the
-    // request, the error carries it (final URL with path params and query, auth applied) and the
-    // row shows that; otherwise the base joined with the path and the enabled header rows. Either
-    // way it is redacted for good; `keyParams` masks the query parameter an API key travels in.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'rest',
-        requestId: request.requestId,
-        url: joinBase(resolved.input.baseUrl, resolved.input.request.url),
-        method: resolved.input.request.method,
-        headers: Object.fromEntries(
-          resolved.input.request.headers
-            .filter((header) => header.enabled)
-            .map((header) => [header.name, header.value]),
-        ),
-        startedAt,
-        durationMs,
-        error,
-        captured: failedRequestOf(error),
-        keyParams,
-        keyHeaders,
-      }),
-    );
-    throw error;
-  } finally {
-    stopObserving?.();
-  }
-}
-
-/** The base joined with the path, or the two texts side by side when the base does not parse. */
-function joinedOrConcat(baseUrl: string, path: string): string {
-  try {
-    return joinBase(baseUrl, path);
-  } catch {
-    return `${baseUrl}${path}`;
-  }
-}
-
-/** Appends one REST send's history entry, successful or not. A no-op without a history service. */
-async function recordRest(
-  deps: RequestChannelDeps,
-  requestId: string,
-  resolved: RestSendResolution,
-  summary: RestExchangeSummary | undefined,
-  durationMs: number,
-  keyParams: readonly string[] | undefined,
-  error?: unknown,
-): Promise<void> {
-  const projectId = deps.project.projectId(requestId);
-  if (deps.history === undefined || projectId === undefined) {
-    return;
-  }
-  const meta = deps.project.restMeta?.(requestId);
-  const body = resolved.input.request.body;
-  const entry = await deps.history.recordRestSend(projectId, {
-    requestId,
-    requestName: meta?.requestName ?? resolved.request.name,
-    apiName: meta?.apiName ?? resolved.api.name,
-    folderPath: meta?.folderPath ?? '',
-    method: resolved.input.request.method,
-    url: summary?.url ?? resolved.input.baseUrl,
-    requestHeaders: Object.fromEntries(
-      resolved.input.request.headers.filter((header) => header.enabled).map((header) => [header.name, header.value]),
-    ),
-    requestBody: body.kind === 'raw' ? body.text : '',
-    ...(summary !== undefined ? { exchange: summary } : {}),
-    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
-    durationMs,
-    ...(keyParams !== undefined ? { keyParams } : {}),
-    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
-  });
-  if (entry !== undefined) {
-    deps.onHistoryAppended?.(entry);
-  }
-}
-
-/**
  * The access token already cached for `config`, if one is still valid — never a new one. An export
  * must not open a browser or call a token endpoint behind the user's back.
  */
 function cachedAccessToken(deps: RequestChannelDeps, config: OAuth2Auth): string | undefined {
   const status = deps.oauth2?.status?.(config, { showSecrets: true });
   return status?.state === 'valid' ? status.token : undefined;
-}
-
-/** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
-async function oauth2Credentials(
-  deps: RequestChannelDeps,
-  config: OAuth2Auth,
-): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
-  const read = async (ref: string | undefined): Promise<string | undefined> =>
-    ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
-  const clientSecret = await read(config.clientSecretRef);
-  const refreshToken = await read(config.refreshTokenRef);
-  return {
-    ...(clientSecret !== undefined ? { clientSecret } : {}),
-    ...(refreshToken !== undefined ? { refreshToken } : {}),
-  };
-}
-
-/**
- * Drops the keys whose value came over as `undefined`.
- *
- * The wire's TLS shape has optional fields that may be present-and-undefined; the engine's has
- * fields that must be absent instead (`exactOptionalPropertyTypes`), and merging the two is exactly
- * where the difference bites.
- */
-function withoutUndefined<T extends object>(value: { readonly [K in keyof T]: T[K] | undefined }): T {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }
 
 /**
@@ -1098,27 +836,40 @@ function preflightUnresolved(unresolved: readonly UnresolvedRef[]): UnresolvedRe
 }
 
 /** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
-function isWebhookUrlSource(source: RestSendResolution['baseUrlSource']): source is WebhookUrlSource {
+function isWebhookUrlSource(source: RestUrlSource): source is WebhookUrlSource {
   return source === 'target' || source === 'callback' || source === 'callback-fallback';
 }
 
 /** A REST base URL's source in the endpoint vocabulary the editor's badge reads. */
-function endpointSourceOf(source: RestSendResolution['baseUrlSource']): EndpointSourceWire {
+function endpointSourceOf(source: RestUrlSource): EndpointSourceWire {
   return source === 'api' || isWebhookUrlSource(source) ? 'interface-default' : source;
+}
+
+/** What a preflight answers for a request no open project holds. */
+const NO_PREFLIGHT: PreflightResult = {
+  endpointSource: 'none',
+  unresolved: [],
+  auth: { type: 'none', source: 'none' },
+  wsa: { enabled: false },
+};
+
+/** The credentials a preflight names: their type, with an unresolved `inherit` as none. */
+function preflightAuth(auth: AuthConfig): PreflightResult['auth'] {
+  return { type: auth.type === 'inherit' ? 'none' : auth.type, source: 'request' };
 }
 
 /**
  * The dry run of a REST send: where it would go, what would not expand, and which credentials it
- * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
- * badge while the user types.
+ * would use. It resolves as the send resolves, through the engine, so the two never disagree; nothing
+ * is sent and no secret is read — which is what lets the editor show the badge while the user types.
  */
-function preflightRest(
-  deps: RequestChannelDeps,
+async function preflightRest(
+  sendDeps: SendThroughEngineDeps,
   request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },
-): PreflightResult {
-  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+): Promise<PreflightResult> {
+  const resolved = await previewRest(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
-    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+    return NO_PREFLIGHT;
   }
   const composed = composeUrl(
     resolved.input.baseUrl,
@@ -1146,7 +897,7 @@ function preflightRest(
     // and where it actually went is reported in `target`.
     endpointSource: endpointSourceOf(resolved.baseUrlSource),
     unresolved: [...preflightUnresolved(resolved.unresolved), ...missing],
-    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
     ...(isWebhookUrlSource(resolved.baseUrlSource)
       ? {
@@ -1161,29 +912,34 @@ function preflightRest(
 
 /**
  * The command-line form of a gRPC call: what a command-line gRPC client would be told to make the
- * same call, credentials resolved and then masked unless the session shows secrets, the `.proto`
- * files named from the API's cached roots.
+ * same call, the `.proto` files named from the API's cached roots. Credentials are read only while
+ * the session shows secrets; otherwise a stand-in takes their place, and is masked all the same.
  */
 async function grpcCommand(
   deps: RequestChannelDeps,
   request: RequestCurlRequest,
-  resolved: GrpcSendResolution,
+  resolved: GrpcPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
-  const auth = await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
+  const auth = show
+    ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
+    : placeholderAuth(resolved.auth);
   // A definition discovered by reflection has no .proto files on disk to name, and grpcurl asks the
   // server itself when it is given none — so the flags are dropped rather than pointing at nothing.
-  const fromFiles = resolved.api.definition !== undefined && resolved.api.definition.kind === 'proto';
+  const { definition } = resolved.item.api;
+  const fromFiles = definition !== undefined && definition.kind === 'proto';
   const command = grpcToCommand({ ...resolved.input, ...(auth !== undefined ? { auth } : {}) }, resolved.messageText, {
     redactSecrets: !show,
     shell: request.shell,
-    ...(fromFiles ? { protoFiles: [...(resolved.api.definition?.roots ?? [])] } : {}),
+    ...(fromFiles ? { protoFiles: [...definition.roots] } : {}),
   });
+  // A `${secret:name}` token is shown as typed too: an export never reads its value.
+  const asTyped = resolved.unresolved.length > 0 || resolved.secretTokens;
   const notes = [
     fromFiles
       ? 'The .proto files are named by import path; pass their folder with -import-path.'
       : 'No .proto files are named: this API was discovered by server reflection, which grpcurl uses by default.',
-    ...(resolved.unresolved.length > 0 ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
+    ...(asTyped ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
   ];
   return { command, notes };
 }
@@ -1196,7 +952,7 @@ async function grpcCommand(
 async function wsCommand(
   deps: RequestChannelDeps,
   request: RequestCurlRequest,
-  resolved: WsSendResolution,
+  resolved: WsPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
   const auth = show
@@ -1205,368 +961,36 @@ async function wsCommand(
   const material: WsSessionMaterial = { ...(auth !== undefined ? { auth } : {}) };
   const options = toWsSessionOptions(resolved.input, material);
   const command = wsToCommand(options, { shell: request.shell });
+  // A `${secret:name}` token is shown as typed too: an export never reads its value.
+  const asTyped = resolved.unresolved.length > 0 || resolved.secretTokens;
   const notes = [
     'Proxy, CA and client certificate settings are not reconstructable in this command.',
-    ...(resolved.unresolved.length > 0 ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
+    ...(asTyped ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
   ];
   return { command, notes };
 }
 
-/**
- * Makes one gRPC call.
- *
- * Everything the renderer did not send is resolved here: the API's target under the active
- * environment, the properties, the credentials the folder chain lands on, the TLS identity, and the
- * `.proto` set the message is encoded against. A call with an unresolved property is refused before
- * it reaches the wire.
- */
-/** Exported for `log.resend`, which replays a saved unary gRPC request through this same path. */
-export async function sendGrpcRequest(
-  service: EngineService,
-  deps: RequestChannelDeps,
-  request: RequestSendGrpcRequest,
-  sender: WebContents,
-): Promise<GrpcExchangeSummary> {
-  // As for REST: checked first, resolved with placeholders, the pre-request script before auth and TLS.
-  const scripts = await scriptsForSend(deps, request.requestId);
-  const projectId = deps.project.projectId(request.requestId);
-  const getSecret = tokenSecrets(deps, request.requestId);
-  const placeholders = scripts.kind === 'on' ? new SecretPlaceholders() : undefined;
-  const found = await resolveWithStoredValues(
-    () => deps.project.grpcSend?.(request.requestId, request.draft, sessionValuesFor(deps, projectId)),
-    getSecret,
-    placeholders,
-  );
-  if (found === undefined) {
-    throw new ProjectError('unknown-entity', `No gRPC request with id "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  let resolved = found;
-  if (resolved.unresolved.length > 0) {
-    throw new WirebenchError('grpc-unresolved-properties', 'Some property references could not be resolved', {
-      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
-    });
-  }
-  if (resolved.request.service === '' || resolved.request.method === '') {
-    throw new WirebenchError('grpc-method-unset', 'Choose the service and method this request calls first.', {
-      details: { requestId: request.requestId },
-    });
-  }
-  if (deps.project.grpcProtoSetFor === undefined) {
-    throw new ProjectError('unknown-entity', `No gRPC API owns "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
-  let set: Awaited<ReturnType<typeof deps.project.grpcProtoSetFor>>;
-  let tlsOptions: TlsOptions;
-  let accessToken: string | undefined;
-  let session: ScriptSession | undefined;
-  let scripted: GrpcRequestSnapshot | undefined;
-  try {
-    if (scripts.kind === 'on' && placeholders !== undefined) {
-      session = await startScripts(deps, scripts, deps.project.scopesFor(request.requestId), getSecret);
-      const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
-      scripted = await session.pre(before);
-      const changed = applyGrpcSnapshot(resolved.input, resolved.messageText, before, scripted);
-      const restored = await placeholders.restore(
-        { metadata: changed.input.metadata, messageText: changed.messageText },
-        getSecret,
-      );
-      resolved = {
-        ...resolved,
-        input: { ...resolved.input, metadata: restored.metadata },
-        messageText: restored.messageText,
-      };
-    }
-    set = await deps.project.grpcProtoSetFor(request.requestId);
-
-    const tls = await deps.project.grpcTlsFor?.(request.requestId);
-    const anchors = extraTrustAnchors();
-    const baseCa = tls?.ca ?? resolved.input.tlsOptions?.ca ?? [];
-    tlsOptions = withoutUndefined<TlsOptions>({
-      ...resolved.input.tlsOptions,
-      ...tls,
-      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-    });
-    accessToken =
-      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-        ? await deps.oauth2.accessToken(resolved.auth, {
-            credentials: await oauth2Credentials(deps, resolved.auth),
-            tls: tlsOptions,
-          })
-        : undefined;
-  } catch (error) {
-    // Before the call was built: the .proto set, the TLS identity, an OAuth2 token fetch.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'grpc',
-        requestId: request.requestId,
-        url: `${resolved.input.tls ? 'https' : 'http'}://${resolved.input.target}${grpcMethodPath(
-          resolved.input.service,
-          resolved.input.method,
-        )}`,
-        method: 'POST',
-        headers: {},
-        startedAt: prepareStartedAt,
-        durationMs: Date.now() - prepareStartedAt,
-        error,
-        stage: 'prepare',
-      }),
-    );
-    throw error;
-  }
-
-  const startedAt = Date.now();
-  let ran: SentScripts | undefined;
-  const pending = session === undefined || scripted === undefined ? undefined : { session, sent: scripted };
-  const stopObserving =
-    pending === undefined
-      ? undefined
-      : service.observe(request.sendId, async (observed) => {
-          if (observed.kind !== 'grpc') return;
-          ran = await pending.session.post(pending.sent, grpcResponseSnapshot(observed.result)).catch(scriptsFailed);
-        });
-  try {
-    const sent = await service.sendGrpcRequest(
-      {
-        sendId: request.sendId,
-        requestId: request.requestId,
-        set,
-        input: { ...resolved.input, tlsOptions },
-        messageText: resolved.messageText,
-      },
-      {
-        showSecrets: deps.showSecrets?.get() ?? false,
-        auth: resolved.auth,
-        ...(accessToken !== undefined ? { accessToken } : {}),
-        ...(request.interactive === true ? { interactive: true } : {}),
-        // The stream as it happens, alongside the invoke that is still open and will resolve with
-        // the whole exchange. A window that has gone away swallows its own events.
-        onLive: (event) => {
-          emitEvent(sender, events.grpc.live, event);
-        },
-      },
-    );
-    const summary: GrpcExchangeSummary = {
-      ...sent,
-      ...(ran !== undefined ? finishScripts(deps, projectId, ran) : {}),
-      ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
-    };
-    await recordGrpc(deps, request.requestId, resolved, summary, Date.now() - startedAt);
-    return summary;
-  } catch (error) {
-    const durationMs = Date.now() - startedAt;
-    await recordGrpc(deps, request.requestId, resolved, undefined, durationMs, error);
-    // The failure row for the console's HTTP Log. A gRPC call is an HTTP/2 POST to
-    // `/<service>/<method>`; when the transport built the request the error carries it and the row
-    // shows that instead. Redacted for good, like every other failure row.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'grpc',
-        requestId: request.requestId,
-        url: `${resolved.input.tls ? 'https' : 'http'}://${resolved.input.target}${grpcMethodPath(
-          resolved.input.service,
-          resolved.input.method,
-        )}`,
-        method: 'POST',
-        headers: Object.fromEntries(
-          resolved.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
-        ),
-        startedAt,
-        durationMs,
-        error,
-        captured: failedRequestOf(error),
-      }),
-    );
-    throw error;
-  } finally {
-    stopObserving?.();
-  }
-}
-
-/** Appends one gRPC send's history entry, successful or not. A no-op without a history service. */
-async function recordGrpc(
-  deps: RequestChannelDeps,
-  requestId: string,
-  resolved: GrpcSendResolution,
-  summary: GrpcExchangeSummary | undefined,
-  durationMs: number,
-  error?: unknown,
-): Promise<void> {
-  const projectId = deps.project.projectId(requestId);
-  if (deps.history === undefined || projectId === undefined) {
-    return;
-  }
-  const meta = deps.project.grpcMeta?.(requestId);
-  const entry = await deps.history.recordGrpcSend(projectId, {
-    requestId,
-    requestName: meta?.requestName ?? resolved.request.name,
-    apiName: meta?.apiName ?? resolved.api.name,
-    folderPath: meta?.folderPath ?? '',
-    target: summary?.target ?? resolved.input.target,
-    service: resolved.request.service,
-    method: resolved.request.method,
-    methodKind: resolved.request.methodKind,
-    requestMetadata: Object.fromEntries(
-      resolved.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
-    ),
-    requestMessage: resolved.messageText,
-    ...(summary !== undefined ? { exchange: summary } : {}),
-    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
-    durationMs,
-    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
-  });
-  if (entry !== undefined) {
-    deps.onHistoryAppended?.(entry);
-  }
-}
+/** What a push on a call that is not open, or never was, is refused with. */
+const GRPC_STREAM_UNKNOWN_MESSAGE = 'That call is no longer open for sending.';
 
 /**
- * The HTTP Log's row for a successful WebSocket handshake, written the moment it settles — not
- * when the session closes, since `request.openWs` stays pending for the whole session. Reported
- * through `deps.onExchange`, the live twin `onSendFailed` is for a send whose own invoke never
- * leaves main until long after the row should appear.
- *
- * Only ever called with a `status === 101` handshake: the engine's `onHandshake` hook (which this
- * is driven by, through `ws.live`'s `handshake` event) fires only for a handshake that actually
- * completed — a refused or failed one reaches `openWsRequest` solely through the settled
- * `summary` (see `reportWsHandshakeFailure`, called there instead).
+ * The dry run of a gRPC call: the target it would go to and what would not expand, resolved as the
+ * send resolves it. Nothing is sent and no secret is read, so the editor can show the badge while
+ * the user types.
  */
-function reportWsHandshake(
-  deps: RequestChannelDeps,
-  sendId: string,
-  requestId: string,
-  handshake: WsHandshakeWire,
-): void {
-  if (deps.onExchange === undefined) {
-    return;
-  }
-  const entry: LogEntryWire = {
-    kind: 'exchange',
-    requestId,
-    exchange: {
-      sendId,
-      protocol: 'websocket',
-      method: 'GET',
-      // `http(s)://` so the row filters/searches like every other; `wsUrl` keeps `ws(s)://` for display.
-      url: handshake.url.replace(/^ws/, 'http'),
-      wsUrl: handshake.url,
-      requestHeaders: handshake.requestHeaders,
-      ...(handshake.rawRequestHead !== undefined ? { rawRequestHead: handshake.rawRequestHead } : {}),
-      status: 101,
-      responseHeaders: handshake.responseHeaders ?? {},
-      startedAt: handshake.startedAt,
-      durationMs: handshake.durationMs,
-      ...(handshake.tls !== undefined ? { tls: handshake.tls } : {}),
-    },
-  };
-  try {
-    deps.onExchange(entry);
-  } catch {
-    // Deliberately ignored — a broadcast that fails must never affect the session, like `onSendFailed`'s own catch.
-  }
-}
-
-/**
- * The HTTP Log's row for a handshake that never opened: a refusal (e.g. 401) or a transport
- * failure before any response. Checked against the *settled* `summary` rather than a live event —
- * `openWsSession`'s `done` never rejects for this, and the engine's `onHandshake` hook never fires
- * for it either (only a handshake that actually opened reaches it) — so this is the one place such
- * a failure can be seen and reported, exactly like a prepare/send-stage failure. `recordWs` still
- * writes History for it afterwards (`closedBy: 'error'`).
- *
- * Guarded by `handshakeLogged` — set only by that same live event — rather than by
- * `summary.handshake.status !== 101`: `status` is *optional* on the engine's handshake (e.g. absent
- * through a proxy tunnel, which never populates it even for a session that opened fine), so testing
- * it here could report a failure row for a session that already got a success row. The two rows
- * must stay provably exclusive.
- */
-function reportWsHandshakeFailure(
-  deps: RequestChannelDeps,
-  sendId: string,
-  requestId: string,
-  summary: WsExchangeSummary,
-  keyParams: readonly string[] | undefined,
-  handshakeLogged: boolean,
-): void {
-  if (handshakeLogged) {
-    return;
-  }
-  const { handshake } = summary;
-  reportSendFailed(deps.onSendFailed, () =>
-    failedExchangeOf({
-      sendId,
-      protocol: 'websocket',
-      requestId,
-      url: handshake.url,
-      method: 'GET',
-      headers: handshake.requestHeaders,
-      startedAt: new Date(handshake.startedAt).getTime(),
-      durationMs: handshake.durationMs,
-      error:
-        handshake.error !== undefined
-          ? new WirebenchError('ws-handshake-failed', handshake.error)
-          : new WirebenchError('ws-handshake-refused', 'The server refused the WebSocket handshake.'),
-      keyParams,
-    }),
-  );
-}
-
-/**
- * Appends one WebSocket session's history entry, on close — successful or not. A no-op without a
- * history service. `handshakeOpened` is the same fact `reportWsHandshakeFailure` is guarded by
- * (the live `handshake` event actually fired), so History's `ok` follows it rather than
- * re-deriving from `summary.handshake.status`, which is optional and so cannot distinguish a
- * refusal from a session that opened but happens to carry no status (e.g. through a proxy tunnel).
- */
-async function recordWs(
-  deps: RequestChannelDeps,
-  requestId: string,
-  resolved: WsSendResolution,
-  summary: WsExchangeSummary,
-  keyParams: readonly string[] | undefined,
-  handshakeOpened: boolean,
-): Promise<void> {
-  const projectId = deps.project.projectId(requestId);
-  if (deps.history === undefined || projectId === undefined) {
-    return;
-  }
-  const meta = deps.project.wsMeta?.(requestId);
-  const entry = await deps.history.recordWsSession(projectId, {
-    requestId,
-    requestName: meta?.requestName ?? resolved.request.name,
-    apiName: meta?.apiName ?? resolved.api.name,
-    folderPath: meta?.folderPath ?? '',
-    exchange: summary,
-    handshakeOpened,
-    ...(keyParams !== undefined ? { keyParams } : {}),
-  });
-  if (entry !== undefined) {
-    deps.onHistoryAppended?.(entry);
-  }
-}
-
-/**
- * The dry run of a gRPC call: the target it would go to and what would not expand. Nothing is sent
- * and no secret is touched, so the editor can show the badge while the user types.
- */
-function preflightGrpc(
-  deps: RequestChannelDeps,
+async function preflightGrpc(
+  sendDeps: SendThroughEngineDeps,
   request: { readonly requestId: string; readonly draft?: GrpcRequestPatchWire | undefined },
-): PreflightResult {
-  const resolved = deps.project.grpcSend?.(request.requestId, request.draft);
+): Promise<PreflightResult> {
+  const resolved = await previewGrpc(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
-    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+    return NO_PREFLIGHT;
   }
   return {
     endpoint: resolved.input.target,
     endpointSource: resolved.targetSource === 'api' ? 'interface-default' : resolved.targetSource,
     unresolved: preflightUnresolved(resolved.unresolved),
-    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
   };
 }
@@ -1587,10 +1011,10 @@ function wsDisplayUrl(input: {
 }
 
 /**
- * The `openWsRequest` calls still running: one per open session, each settling only once its
+ * The `request.openWs` sends still running: one per open session, each settling only once its
  * History entry has been written.
  *
- * A session's History entry is written by whoever awaits `openWsSession`, which is the pending
+ * A session's History entry is written by whoever awaits the session, which is the pending
  * `request.openWs` invoke — so closing a session is not the same as having recorded it. The two
  * moments that close sessions on the app's behalf (quitting, and closing a project) must wait for
  * the recording, or the entry is written into a history file that has already been closed, or not
@@ -1641,7 +1065,7 @@ const openRestCalls = new Map<Promise<unknown>, string>();
 
 /**
  * Resolves once every editor REST send in flight whose request `matches` has recorded its History
- * entry, or after `timeoutMs`. Paired with `EngineService.abortRestStreamsWhere` wherever
+ * entry, or after `timeoutMs`. Paired with `ExchangeRegistry.endWhere(…, 'rest')` wherever
  * WebSocket sessions are closed on the app's behalf (quitting, closing a project).
  */
 export async function whenRestSendsRecorded(
@@ -1669,6 +1093,17 @@ export async function whenRestSendsRecorded(
   }
 }
 
+/** Registers one editor REST send in {@link openRestCalls} until it has recorded its History entry. */
+function trackRestSend<T>(requestId: string, call: Promise<T>): Promise<T> {
+  const settled = call.then(
+    () => undefined,
+    () => undefined,
+  );
+  openRestCalls.set(settled, requestId);
+  void settled.finally(() => openRestCalls.delete(settled));
+  return call;
+}
+
 /** Registers one `request.openWs` call in {@link openWsCalls} for the life of its session. */
 function trackOpenWs(requestId: string, call: Promise<WsExchangeSummary>): Promise<WsExchangeSummary> {
   // A rejection is a fact about that one session, not about the wait: `whenWsSessionsRecorded`
@@ -1682,254 +1117,31 @@ function trackOpenWs(requestId: string, call: Promise<WsExchangeSummary>): Promi
   return call;
 }
 
-/**
- * Opens one WebSocket session.
- *
- * Everything the renderer did not send is resolved here: the API's target under the active
- * environment, the properties, the credentials the folder chain lands on, the TLS identity and the
- * proxy (looked up against the resolved URL with `ws:`/`wss:` mapped to `http:`/`https:`, exactly as
- * REST looks its proxy up). A call with an unresolved property is refused before it reaches the wire.
- * The invoke stays pending for the life of the session — `service.openWsSession`'s `done` only
- * settles once the socket has closed — while `events.ws.live` reports the handshake and each frame
- * as they happen.
- */
-export async function openWsRequest(
-  service: EngineService,
-  deps: RequestChannelDeps,
-  request: RequestOpenWsRequest,
-  sender: WebContents,
-): Promise<WsExchangeSummary> {
-  const resolved = await resolveWithStoredValues(
-    () => deps.project.wsSend?.(request.requestId, request.draft),
-    tokenSecrets(deps, request.requestId),
-  );
-  if (resolved === undefined) {
-    throw new ProjectError('unknown-entity', `No WebSocket request with id "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  if (resolved.unresolved.length > 0) {
-    throw new WirebenchError('ws-unresolved-properties', 'Some property references could not be resolved', {
-      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
-    });
-  }
-
-  // The one query parameter an API key may be configured to travel in, so the URL is masked
-  // wherever it is logged even when the key is called something this build has never heard of —
-  // the same rule REST's `sendRestRequest` applies to its own `keyParams`.
-  const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
-  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
-  let options: Omit<WsSessionOptions, 'signal'>;
-  try {
-    const tls = await deps.project.wsTlsFor?.(request.requestId);
-    const anchors = extraTrustAnchors();
-    const baseCa = tls?.ca ?? [];
-    const mergedTls = withoutUndefined<TlsOptions>({
-      ...tls,
-      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-    });
-    const owner = deps.project.projectId(request.requestId);
-    const resolvedUrl = wsDisplayUrl(resolved.input);
-    const proxyTarget = resolvedUrl.replace(/^ws/, 'http');
-    const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
-    const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
-    const accessToken =
-      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-        ? await deps.oauth2.accessToken(resolved.auth, {
-            credentials: await oauth2Credentials(deps, resolved.auth),
-            ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
-            ...(proxy !== undefined ? { proxy } : {}),
-          })
-        : undefined;
-    const auth = await resolveAuthConfig(
-      resolved.auth,
-      (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
-      accessToken !== undefined ? { accessToken } : {},
-    );
-    const material: WsSessionMaterial = {
-      ...(auth !== undefined ? { auth } : {}),
-      ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
-      ...(proxy !== undefined ? { proxy } : {}),
-    };
-    options = toWsSessionOptions(resolved.input, material);
-  } catch (error) {
-    // Before the session was opened: the TLS identity, a proxy lookup, an OAuth2 token fetch.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'websocket',
-        requestId: request.requestId,
-        url: wsDisplayUrl(resolved.input),
-        method: 'GET',
-        headers: {},
-        startedAt: prepareStartedAt,
-        durationMs: Date.now() - prepareStartedAt,
-        error,
-        stage: 'prepare',
-        keyParams,
-      }),
-    );
-    throw error;
-  }
-
-  const startedAt = Date.now();
-  // Set by the live `handshake` event, which only ever fires for one that actually opened (see
-  // `reportWsHandshake`'s doc) — the one fact that decides which of the two rows below is written,
-  // rather than re-deriving it from `summary.handshake.status`, which is *optional* (e.g. absent
-  // through a proxy tunnel) and so cannot itself tell a success from a refusal.
-  let handshakeLogged = false;
-  // Asked for, never awaited: the contract loads while the handshake runs, and a session never
-  // waits on it (see `openWsSession`'s `contract`).
-  const contract = deps.project.wsContractFor?.(request.requestId);
-  try {
-    const summary = await service.openWsSession(
-      { sendId: request.sendId, requestId: request.requestId, options },
-      {
-        showSecrets: deps.showSecrets?.get() ?? false,
-        ...(contract !== undefined ? { contract } : {}),
-        ...(keyParams !== undefined ? { keyParams } : {}),
-        onLive: (event) => {
-          if (event.kind === 'handshake') {
-            // Only ever a `status === 101` handshake — see `reportWsHandshake`'s own doc.
-            handshakeLogged = true;
-            reportWsHandshake(deps, request.sendId, request.requestId, event.handshake);
-          }
-          emitEvent(sender, events.ws.live, event);
-        },
-      },
-    );
-    reportWsHandshakeFailure(deps, request.sendId, request.requestId, summary, keyParams, handshakeLogged);
-    await recordWs(deps, request.requestId, resolved, summary, keyParams, handshakeLogged);
-    return summary;
-  } catch (error) {
-    const durationMs = Date.now() - startedAt;
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'websocket',
-        requestId: request.requestId,
-        url: options.url,
-        method: 'GET',
-        headers: options.headers ?? {},
-        startedAt,
-        durationMs,
-        error,
-        keyParams,
-      }),
-    );
-    throw error;
-  }
-}
-
 /** `true` when `text` is strictly valid base64 (including the empty string). */
 function isValidBase64(text: string): boolean {
   return text.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(text);
 }
 
 /**
- * The tail of each open WebSocket session's queue of `request.wsSend` calls, by `sendId`. A message
- * holding a `${secret:name}` token waits on the keychain before it can be written, so without the
- * queue a plain message sent right after it would reach the wire first.
+ * The dry run of opening a WebSocket session: where it would go and what would not expand, resolved
+ * as the open resolves it. Nothing is dialled and no secret is read, so the editor can show the badge
+ * while the user types.
  */
-const wsSendQueues = new Map<string, Promise<unknown>>();
-
-/**
- * Runs `send` once every earlier `request.wsSend` of session `sendId` has settled (sent or
- * refused), so a session's messages go out in the order the renderer sent them.
- */
-function queueWsSend<T>(sendId: string, send: () => Promise<T>): Promise<T> {
-  const previous = wsSendQueues.get(sendId) ?? Promise.resolve();
-  const result = previous.then(send, send);
-  const tail = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  wsSendQueues.set(sendId, tail);
-  void tail.then(() => {
-    if (wsSendQueues.get(sendId) === tail) {
-      wsSendQueues.delete(sendId);
-    }
-  });
-  return result;
-}
-
-/**
- * One more message on an open WebSocket session.
- *
- * `format: 'text'` with `expand: true` property-expands `content` against the same scopes the
- * request resolves with, using its own `escapeProperties` setting, and refuses with
- * `ws-unresolved-properties` — sending nothing — rather than writing a literal `${…}` to the wire.
- * `format: 'binary'` never expands; `content` must be valid base64 or the send is refused with
- * `ws-bad-binary` before anything reaches the session. The frame it answers with has its text's
- * secret values masked unless the session shows secrets, as the live `frame` events do.
- */
-async function sendWsMessage(
-  service: EngineService,
-  deps: RequestChannelDeps,
-  request: RequestWsSendRequest,
-): Promise<WsFrameWire> {
-  const show = deps.showSecrets?.get() ?? false;
-  if (request.format === 'binary') {
-    if (!isValidBase64(request.content)) {
-      throw new WirebenchError('ws-bad-binary', 'The message is not valid base64.', {
-        details: { sendId: request.sendId },
-      });
-    }
-    return service.sendWsMessage(request.sendId, { base64: request.content }, { showSecrets: show });
-  }
-  let text = request.content;
-  if (request.expand) {
-    const resolved = deps.project.wsSend?.(request.requestId);
-    let scopes = deps.project.scopesFor(request.requestId);
-    // Awaited only when the message holds a token; `queueWsSend` keeps the next message behind it.
-    const names = secretNamesIn(text, scopes);
-    if (names.length > 0) {
-      scopes = { ...scopes, secrets: await resolveSecretTokens(names, tokenSecrets(deps, request.requestId)) };
-    }
-    const escape = resolved?.request.settings.escapeProperties === true;
-    const expanded = expandWsMessage(text, scopes, { escape });
-    if (expanded.unresolved.length > 0) {
-      throw new WirebenchError('ws-unresolved-properties', 'Some property references could not be resolved', {
-        details: { unresolved: expanded.unresolved.map((ref) => ref.expr) },
-      });
-    }
-    text = expanded.text;
-  }
-  return service.sendWsMessage(request.sendId, { text }, { showSecrets: show });
-}
-
-/** Closes an open WebSocket session. `{ closed: false }` when no such session is open. */
-function closeWsRequest(service: EngineService, request: RequestWsCloseRequest): RequestWsCloseResponse {
-  return service.closeWs(request.sendId, request.code, request.reason);
-}
-
-/**
- * The dry run of opening a WebSocket session: where it would go and what would not expand. Nothing
- * is dialled and no secret is touched, so the editor can show the badge while the user types.
- */
-function preflightWs(
-  deps: RequestChannelDeps,
+async function preflightWs(
+  sendDeps: SendThroughEngineDeps,
   request: { readonly requestId: string; readonly draft?: WsRequestPatchWire | undefined },
-): PreflightResult {
-  const resolved = deps.project.wsSend?.(request.requestId, request.draft);
+): Promise<PreflightResult> {
+  const resolved = await previewWs(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
-    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+    return NO_PREFLIGHT;
   }
   return {
     endpoint: wsDisplayUrl(resolved.input),
     endpointSource: resolved.urlSource === 'api' ? 'interface-default' : resolved.urlSource,
     unresolved: preflightUnresolved(resolved.unresolved),
-    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
   };
-}
-
-/** One failure, as a history line records it. */
-function restErrorDetail(error: unknown): { code: string; message: string } {
-  if (isWirebenchError(error)) {
-    return { code: error.code, message: error.message };
-  }
-  return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
 }
 
 /**
@@ -1941,68 +1153,122 @@ function restErrorDetail(error: unknown): { code: string; message: string } {
  * unresolved references before anything leaves the machine.
  */
 export function registerRequestChannels(service: EngineService, deps: RequestChannelDeps): void {
+  const sendDeps = toSendDeps(service, deps);
   registerHandler(channels.request.generate, (request) => {
     const options = request.options ?? generateOptionsFrom(deps.preferences?.get());
     return Promise.resolve(service.generate({ ...request, ...(options !== undefined ? { options } : {}) }));
   });
 
+  // The editor's envelope, endpoint and headers ride over the saved request as its override; a send
+  // with no saved request behind it goes as the renderer built it, as a synthetic item.
   registerHandler(channels.request.send, async (request) => {
-    const effective = await withRequestProperties(deps.project, request);
-    const summary = await sendAndRecordHistory(service, deps, effective);
-    return writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
-  });
-
-  registerHandler(channels.request.sendRest, (request, sender) => {
-    // The stream as it happens, alongside the invoke that is still open and will resolve with the
-    // whole exchange. A window that has gone away swallows its own events.
-    const call = sendRestRequest(service, deps, request, (event) => {
-      emitEvent(sender, events.rest.live, event);
+    const summary = await sendThroughEngine(sendDeps, request.sendId, request.requestId ?? AD_HOC_ID, {
+      draft: { kind: 'soap', override: soapOverrideOf(request.input) },
+      ...(request.requestId === undefined ? { adHoc: { input: request.input, names: AD_HOC_NAME } } : {}),
     });
-    const settled = call.then(
-      () => undefined,
-      () => undefined,
-    );
-    openRestCalls.set(settled, request.requestId);
-    void settled.finally(() => openRestCalls.delete(settled));
-    return call;
+    return request.requestId === undefined
+      ? summary
+      : writeDumpFile(deps.project, request.requestId, summary, deps.dialogPicks);
   });
 
-  registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
-
-  registerHandler(channels.request.sendGrpc, (request, sender) => sendGrpcRequest(service, deps, request, sender));
-  registerHandler(channels.request.grpcPush, (request) =>
-    Promise.resolve(service.pushGrpcMessage(request.sendId, request.messageText)),
+  // The stream as it happens, alongside the invoke that is still open and will resolve with the
+  // whole exchange. A window that has gone away swallows its own events.
+  registerHandler(channels.request.sendRest, (request, sender) =>
+    trackRestSend(
+      request.requestId,
+      sendThroughEngine(sendDeps, request.sendId, request.requestId, {
+        draft: { kind: 'rest', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
+        onLive: (live) => {
+          emitEvent(sender, events.rest.live, live);
+        },
+      }),
+    ),
   );
-  registerHandler(channels.request.grpcHalfClose, (request, sender) => {
-    const closed = service.halfCloseGrpc(request.sendId);
-    if (closed.closed) {
-      emitEvent(sender, events.grpc.live, { kind: 'closed', sendId: request.sendId });
+
+  registerHandler(channels.request.preflightRest, (request) => preflightRest(sendDeps, request));
+
+  // The call as it happens, its request side open for pushes when `interactive`; the `closed` event
+  // of a half-close comes from the engine with the rest of the call's events.
+  registerHandler(channels.request.sendGrpc, (request, sender) =>
+    sendThroughEngine(sendDeps, request.sendId, request.requestId, {
+      draft: { kind: 'grpc', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
+      interactive: request.interactive === true,
+      onLive: (live) => {
+        emitEvent(sender, events.grpc.live, live);
+      },
+    }),
+  );
+  registerHandler(channels.request.grpcPush, async ({ sendId, messageText }) => {
+    const handle = sendDeps.registry.get(sendId);
+    if (handle === undefined) {
+      throw new WirebenchError('grpc-stream-unknown', GRPC_STREAM_UNKNOWN_MESSAGE, { details: { sendId } });
     }
-    return Promise.resolve(closed);
+    return { json: JSON.stringify(await handle.push({ text: messageText }), null, 2) };
   });
-
-  registerHandler(channels.request.preflightGrpc, (request) => Promise.resolve(preflightGrpc(deps, request)));
-
-  registerHandler(channels.request.openWs, (request, sender) =>
-    trackOpenWs(request.requestId, openWsRequest(service, deps, request, sender)),
+  registerHandler(channels.request.grpcHalfClose, ({ sendId }) =>
+    Promise.resolve({ closed: sendDeps.registry.halfClose(sendId) }),
   );
-  registerHandler(channels.request.wsSend, (request) =>
-    queueWsSend(request.sendId, () => sendWsMessage(service, deps, request)),
+
+  registerHandler(channels.request.preflightGrpc, (request) => preflightGrpc(sendDeps, request));
+
+  // The session as it happens: the invoke stays pending until it closes, while `ws.live` reports the
+  // handshake, each frame and each frame's contract check. Its request side takes pushes and a close.
+  // A reused `sendId` never replaces a session in flight, which nothing could reach again: the
+  // registry refuses it with `ws-session-exists` from the moment the first open begins.
+  registerHandler(channels.request.openWs, async (request, sender) => {
+    return await trackOpenWs(
+      request.requestId,
+      sendThroughEngine(sendDeps, request.sendId, request.requestId, {
+        draft: { kind: 'websocket', ...(request.draft !== undefined ? { draft: request.draft } : {}) },
+        interactive: true,
+        onLive: (live) => {
+          emitEvent(sender, events.ws.live, live);
+        },
+      }),
+    );
+  });
+  // Pushed in the order the renderer sent them: a text waiting on the keychain holds back the next.
+  registerHandler(channels.request.wsSend, async (request) => {
+    const handle = sendDeps.registry.get(request.sendId, 'websocket');
+    if (handle === undefined) {
+      throw new WirebenchError('ws-session-unknown', 'That connection is no longer open.', {
+        details: { sendId: request.sendId },
+      });
+    }
+    // The engine sends what `Buffer.from` salvages of a bad base64: refused here, before the push.
+    if (request.format === 'binary' && !isValidBase64(request.content)) {
+      throw new WirebenchError('ws-bad-binary', 'The message is not valid base64.', {
+        details: { sendId: request.sendId },
+      });
+    }
+    // An expanded text reads the properties as they are now, an environment switched since the open
+    // included; its escaping follows the request as the session opened it.
+    const frame = await handle.push(
+      request.format === 'binary'
+        ? { base64: request.content }
+        : request.expand
+          ? { text: request.content, expand: true, scopes: deps.project.scopesFor(request.requestId) }
+          : { text: request.content },
+    );
+    return toWsFrameWire(frame as WsFrame, { show: deps.showSecrets?.get() ?? false });
+  });
+  registerHandler(channels.request.wsClose, (request) =>
+    Promise.resolve({ closed: sendDeps.registry.closeWs(request.sendId, request.code, request.reason) }),
   );
-  registerHandler(channels.request.wsClose, (request) => Promise.resolve(closeWsRequest(service, request)));
-  registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
+  registerHandler(channels.request.preflightWs, (request) => preflightWs(sendDeps, request));
 
-  registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(service, deps, request));
+  registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(sendDeps, deps, request));
 
-  registerHandler(channels.request.cancel, (request) =>
-    Promise.resolve(cancelEnvironmentBatch(service, request.sendId) ?? service.cancel(request.sendId)),
+  // Every send goes through the engine, so every one is cancelled through the registry.
+  registerHandler(channels.request.cancel, ({ sendId }) =>
+    Promise.resolve(cancelEnvironmentBatch(sendDeps.registry, sendId) ?? sendDeps.registry.cancel(sendId)),
   );
 
   registerHandler(channels.request.preflight, (request) => Promise.resolve(deps.project.preflight(request.requestId)));
 
   registerHandler(channels.request.recreate, (request) => recreate(service, deps, request));
 
-  registerHandler(channels.request.curl, (request) => curl(service, deps, request));
+  registerHandler(channels.request.curl, (request) => curl(service, deps, sendDeps, request));
 
   registerHandler(channels.request.importCurl, (request) => importCurl(deps, request));
 
@@ -2010,7 +1276,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     // The operation is found from what a send would call — the draft laid over the saved request and
     // its properties expanded — the same method and URL the contract check matches after a send, so
     // the form and the check never disagree about the operation.
-    const resolved = deps.project.restSend?.(request.requestId, request.draft);
+    const resolved = await previewRest(sendDeps, request.requestId, request.draft);
     const sent =
       resolved === undefined ? undefined : { method: resolved.input.request.method, url: resolved.input.request.url };
     const found = await deps.project.restBodySchema?.(request.requestId, sent);

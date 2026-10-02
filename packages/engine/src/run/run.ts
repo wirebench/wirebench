@@ -18,10 +18,13 @@ import { defaultRegistry } from '../protocols.js';
 import type { SelectedRequest, SentExchange } from '../protocols.js';
 import { scriptProperties } from '../script/props.js';
 import { activeScripts, type RequestScripting, type ScriptedRequest } from '../script/request-scripts.js';
+import type { RequestScripts } from '../script/model.js';
 import { SecretPlaceholders } from '../script/send.js';
 import type { TransferResult } from '../sequence/run.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
+import type { SendHost } from './host.js';
+import { openExchange } from './open.js';
 import { createRunTokenSource } from './oauth2-token.js';
 import { createRunScope, scopeWith } from './scope.js';
 import {
@@ -30,10 +33,11 @@ import {
   scriptAssertions,
   scriptSession,
   type ScriptSession,
+  type ScriptSessionOptions,
   type SentScripts,
 } from './script-support.js';
 
-export type { SentExchange } from '../protocols.js';
+export type { LiveEvent, SentExchange } from '../protocols.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
@@ -108,8 +112,13 @@ export interface RunOptions {
   readonly onSent?: (item: SelectedRequest, sent: SentRequest) => void;
 }
 
-/** A request's own assertions; a gRPC request that never had any carries none. */
-const assertionsOf = (item: SelectedRequest): readonly Assertion[] => item.request.assertions ?? [];
+/** A request's own assertions; a gRPC request that never had any, and a protocol without them, carry none. */
+const assertionsOf = (item: SelectedRequest): readonly Assertion[] =>
+  ('assertions' in item.request ? item.request.assertions : undefined) ?? [];
+
+/** A request's scripts, as saved; a protocol without scripts has none. */
+const scriptsOf = (item: SelectedRequest): RequestScripts | undefined =>
+  'scripts' in item.request ? item.request.scripts : undefined;
 
 /** Enough of each exchange to keep for a report: a failing response can be megabytes. */
 const EXCHANGE_CAP_BYTES = 64 * 1024;
@@ -145,7 +154,7 @@ function outcomeOf(assertions: readonly AssertionResult[]): RequestOutcome {
 export interface SentRequest {
   readonly subject: AssertionSubject;
   readonly raw: { readonly rawRequest: Uint8Array; readonly rawResponse: Uint8Array };
-  /** The whole SOAP or REST exchange; absent for a gRPC call. */
+  /** The whole exchange, of whichever protocol sent it. */
   readonly exchange?: SentExchange;
   /** Where the request went: a URL's origin, or a gRPC target. */
   readonly origin?: string;
@@ -172,20 +181,31 @@ function runOf(registry: ProtocolRegistry, item: SelectedBase): ProtocolRun {
 
 /**
  * The scripts of one send, opened when the module first runs one. The secrets a request lists for
- * its scripts are read then and not before, so they are asked for after everything preparing the
- * request asks for, as they always were.
+ * its scripts are read then and not before, so they are asked for after everything resolving the
+ * request asks for, and before anything connecting it does. Exported for the desktop's sends,
+ * which pass `options` to record each secret value a script sets as the app's other sends do.
  */
-function deferredSession(scripting: RequestScripting, scripted: ScriptedRequest, context: RunContext): ScriptSession {
+export function deferredSession(
+  scripting: RequestScripting,
+  scripted: ScriptedRequest,
+  context: RunContext,
+  options: ScriptSessionOptions = {},
+): ScriptSession {
   let opening: Promise<ScriptSession> | undefined;
   const open = (): Promise<ScriptSession> => {
-    opening ??= listedSecrets(scripted.scripts.secrets, context.getSecret).then((secrets) =>
+    opening ??= listedSecrets(scripted.scripts.secrets, context.host.getSecret).then((secrets) =>
       // The run records a value as it merges it (`mergeScriptValues`); nothing about the send is
       // shown before that.
-      scriptSession(scripting, scripted, {
-        vars: context.sequence ?? {},
-        props: scriptProperties(scopesFor(context)),
-        secrets,
-      }),
+      scriptSession(
+        scripting,
+        scripted,
+        {
+          vars: context.sequence ?? {},
+          props: scriptProperties(scopesFor(context)),
+          secrets,
+        },
+        options,
+      ),
     );
     return opening;
   };
@@ -226,23 +246,23 @@ function scriptsRefusal(item: SelectedBase, registry: ProtocolRegistry): Wireben
  * exactly as a selected request is. Which protocol sends a request is the registry's answer
  * (`context.registry`, the built-in protocols by default).
  *
- * A request with scripts (#63) is type-checked first; its module then prepares it with its secrets
- * behind placeholders, runs the pre-request script on that, puts the secrets back, sends, and runs
- * the post-response script on the response.
+ * A request with scripts (#63) is type-checked first; its module then resolves it with its secrets
+ * behind placeholders, runs the pre-request script on that, puts the secrets back, connects, sends,
+ * and runs the post-response script on the response.
  */
 export function createRunSender(context: RunContext): RunRequestSender {
   const registry = context.registry ?? defaultRegistry();
   // One token source for the whole run: requests behind the same OAuth2 configuration share a token.
-  const scope = createRunScope({
-    ...context,
-    tokenSource:
-      context.tokenSource ??
+  const host: SendHost = {
+    ...context.host,
+    tokens:
+      context.host.tokens ??
       createRunTokenSource({
-        getSecret: context.getSecret,
-        ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
-        ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+        getSecret: context.host.getSecret,
+        ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
       }),
-  });
+  };
+  const scope = createRunScope({ ...context, host });
 
   return async (item, overrides = {}) => {
     const itemContext: RunContext = {
@@ -253,10 +273,11 @@ export function createRunSender(context: RunContext): RunRequestSender {
     const itemScope = scopeWith(scope, itemContext);
     const run = runOf(registry, item);
 
-    const scripts = activeScripts(item.request.scripts);
+    const scripts = activeScripts(scriptsOf(item));
     if (scripts === undefined) {
-      const sent = await run.send(item, itemScope);
-      return item.request.scripts !== undefined ? { ...sent, scriptsOff: true } : sent;
+      const sent = await openExchange(item, itemContext.host, { scope: itemScope, interactive: false, run: true })
+        .result;
+      return scriptsOf(item) !== undefined ? { ...sent, scriptsOff: true } : sent;
     }
 
     const refused = scriptsRefusal(item, registry);
@@ -277,10 +298,12 @@ export function createRunSender(context: RunContext): RunRequestSender {
       types: await run.scriptTypes(item, itemScope),
     };
     await scripting.check(scripted);
-    return run.send(item, itemScope, {
-      session: deferredSession(scripting, scripted, itemContext),
-      placeholders: new SecretPlaceholders(),
-    });
+    return openExchange(item, itemContext.host, {
+      scope: itemScope,
+      interactive: false,
+      run: true,
+      scripts: { session: deferredSession(scripting, scripted, itemContext), placeholders: new SecretPlaceholders() },
+    }).result;
   };
 }
 
@@ -299,7 +322,7 @@ export async function checkRunScripts(
   const registry = context.registry ?? defaultRegistry();
   const scope = createRunScope(context);
   for (const item of selected) {
-    const scripts = activeScripts(item.request.scripts);
+    const scripts = activeScripts(scriptsOf(item));
     if (scripts === undefined) continue;
     const refused = scriptsRefusal(item, registry);
     if (refused !== undefined) {
@@ -434,14 +457,19 @@ export async function runRequests(
       };
     } else if (
       assertionsOf(item).length === 0 &&
-      activeScripts(item.request.scripts)?.post === undefined &&
+      activeScripts(scriptsOf(item))?.post === undefined &&
       options.requireAssertions === true
     ) {
       result = erroredResult(item, { code: 'assertions-required', message: 'This request has no assertions.' });
     } else {
       const ran = await runOne(item, send, options, { sequence: Object.fromEntries(runValues) }, context);
       result = ran.result;
-      mergeScriptValues(runValues, ran.sent?.script?.values ?? [], context.onSecretValue, context.containsKnownSecret);
+      mergeScriptValues(
+        runValues,
+        ran.sent?.script?.values ?? [],
+        context.host.onSecretValue,
+        context.containsKnownSecret,
+      );
     }
     results.push(result);
     options.onRequestDone?.(result);

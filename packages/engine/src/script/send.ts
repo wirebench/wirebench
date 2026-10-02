@@ -42,6 +42,14 @@ export class SecretPlaceholders {
     return this.byName.size;
   }
 
+  /** True when `text` holds one of this send's placeholders: a secret whose value is not in yet. */
+  holds(text: string): boolean {
+    for (const placeholder of this.byName.values()) {
+      if (text.includes(placeholder)) return true;
+    }
+    return false;
+  }
+
   /**
    * `value` with every placeholder replaced by its secret's value, in every string it holds.
    *

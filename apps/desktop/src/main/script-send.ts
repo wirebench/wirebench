@@ -1,28 +1,21 @@
 /**
- * A request's scripts in one of the app's sends (#63), shared by the SOAP, REST and gRPC paths.
+ * A request's scripts in one of the app's sends (#63): the lookup, the values a send starts from,
+ * and what is done with what the scripts did. The engine runs them (`send/exchange.ts` hands it
+ * the session).
  *
  * The order is the run's (spec §What a pre-request script can change): the request is resolved with
  * its secrets behind placeholders, the pre-request script runs on that, the placeholders are put
  * back, and only then do auth, TLS, the proxy, WS-Addressing and WS-Security apply. The
- * post-response script runs from `EngineService.observe`, before the summary, the HTTP Log row and
- * the History entry are built, so a value it marks secret is masked in all three.
+ * post-response script runs before the summary, the HTTP Log row and the History entry are built,
+ * so a value it marks secret is masked in all three.
  *
  * Where the values go (spec §Values): a sequence step hands them to the run (`onScriptsRan`); a
  * single send keeps them in its project's session, which `${#Sequence#name}` reads outside a run.
  */
 
-import { listedSecrets, scriptProperties, scriptSession } from '@wirebench/engine';
-import type {
-  GetSecret,
-  PropertyMap,
-  PropertyScopes,
-  RequestScripting,
-  ScriptSession,
-  ScriptValue,
-  SentScripts,
-} from '@wirebench/engine';
+import type { PropertyMap, RequestScripting, ScriptValue, SentScripts } from '@wirebench/engine';
 import type { ScriptLookup } from './script-host.js';
-import { containsRecordedSecret, recordSecretValue, redactSecretText } from './redact.js';
+import { redactSecretText } from './redact.js';
 import type { ScriptResultWire } from '../shared/wire-types.js';
 
 /** What a send needs of the app's script host. */
@@ -64,30 +57,6 @@ export async function scriptsForSend(deps: ScriptSendDeps, requestId: string | u
 export function sessionValuesFor(deps: ScriptSendDeps, projectId: string | undefined): PropertyMap | undefined {
   if (projectId === undefined || deps.scripts === undefined || deps.onScriptsRan !== undefined) return undefined;
   return deps.scripts.sessionValues(projectId);
-}
-
-/**
- * The scripts of one send, with what they may read: the run's or the session's values, the
- * properties, and the secrets `scripts.secrets` lists.
- */
-export async function startScripts(
-  deps: ScriptSendDeps,
-  lookup: Extract<ScriptLookup, { kind: 'on' }>,
-  scopes: PropertyScopes,
-  getSecret: GetSecret,
-): Promise<ScriptSession> {
-  const scripting = deps.scripts?.scripting;
-  if (scripting === undefined) throw new Error('startScripts without a script host');
-  return scriptSession(
-    scripting,
-    lookup.request,
-    {
-      vars: scopes.sequence ?? {},
-      props: scriptProperties(scopes),
-      secrets: await listedSecrets(lookup.request.scripts.secrets, getSecret),
-    },
-    { onSecretValue: recordSecretValue, containsKnownSecret: containsRecordedSecret },
-  );
 }
 
 /** A post-response run that could not finish, as what the scripts did. */

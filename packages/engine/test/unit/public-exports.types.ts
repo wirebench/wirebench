@@ -29,6 +29,8 @@ export type Added = [
   Engine.WhyDisabled,
   Engine.UnsupportedContainer,
   Engine.StatusNames,
+  Engine.SendHost,
+  Engine.RunContext['host'],
 ];
 
 /** Every type 3.0 renames, under its new name. */

@@ -11,11 +11,13 @@ import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
-import type { RestSendInput } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest } from '@wirebench/engine';
+import type { Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, whenRestSendsRecorded, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { toRestEventStreamWire } from '../src/main/engine-wire.js';
-import { restApiWire } from './helpers/wire-defaults.js';
+import { ExchangeRegistry, sendThroughEngine } from '../src/main/send/exchange.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 import type { FailedExchangeWire, RestExchangeSummary, RestLiveEvent } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -76,9 +78,9 @@ async function waitFor(predicate: () => boolean, what: string, timeoutMs = 8000)
   }
 }
 
-/** Reads `EngineService`'s private `sends` map; test-only, for "the send has registered". */
-function hasSend(service: EngineService, sendId: string): boolean {
-  return (service as unknown as { sends: Map<string, unknown> }).sends.has(sendId);
+/** True once the send is in flight in the registry: "the send has registered". */
+function hasSend(registry: ExchangeRegistry, sendId: string): boolean {
+  return registry.has(sendId);
 }
 
 let server: TestRestServer;
@@ -91,42 +93,44 @@ afterAll(async () => {
   await server.close();
 });
 
-/** A `RestSendResolution`-shaped object aimed at `baseUrl`/`path`, matching the project fakes elsewhere. */
-function resolution(baseUrl: string, path: string) {
-  const input: RestSendInput = {
-    baseUrl,
-    request: { method: 'GET', url: path, pathParams: [], query: [], headers: [], body: { kind: 'none' } },
+/** A project whose one API is aimed at `baseUrl`, holding request `rest-1` at `path`. */
+function resolution(baseUrl: string, path: string): Project {
+  const request = createRestRequest('Stream', {
+    id: 'rest-1',
+    url: path,
     settings: { timeoutMs: 5_000, followRedirects: true },
+  });
+  return {
+    ...createProject('Demo', { id: 'p1' }),
+    apis: [createApi('Api', { id: 'api-1', baseUrl, requests: [request] })],
   };
-  return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth: { type: 'none' } };
 }
 
-function project(restSend: (requestId: string) => ReturnType<typeof resolution> | undefined) {
+function project(restSend: (requestId: string) => Project | undefined) {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     preflight: () => undefined as never,
-    authFor: () => undefined,
     requestMeta: () => undefined,
     projectId: () => 'p1',
     requestSource: () => undefined as never,
-    buildLiveSendInput: () => undefined,
-    sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
-    restSend,
+    runContextFor: (requestId: string) => {
+      const model = restSend(requestId);
+      return model === undefined ? undefined : { project: model, projectDir: '/tmp/none' };
+    },
   } as unknown as RequestChannelDeps['project'];
 }
 
-function register(
-  overrides: Partial<RequestChannelDeps> = {},
-  restSend: (requestId: string) => ReturnType<typeof resolution> | undefined,
-) {
-  const service = new EngineService();
-  registerRequestChannels(service, {
+/** Registers the channels; answers the registry the sends are kept in. */
+function register(overrides: Partial<RequestChannelDeps> = {}, restSend: (requestId: string) => Project | undefined) {
+  const registry = new ExchangeRegistry();
+  registerRequestChannels(new EngineService(), {
     project: project(restSend),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
+    registry,
     ...overrides,
   });
-  return service;
+  return registry;
 }
 
 describe('request.sendRest streaming an event-stream response', () => {
@@ -173,13 +177,13 @@ describe('request.sendRest streaming an event-stream response', () => {
 
   it('request.cancel on a stream still in flight resolves as a normal completion, never a failure row', async () => {
     const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
-    const service = register({ onSendFailed }, (requestId) =>
+    const registry = register({ onSendFailed }, (requestId) =>
       requestId === 'rest-1' ? resolution(server.url, '/sse/forever') : undefined,
     );
     const { sender, events } = fakeSender();
 
     const sendPromise = invoke('request.sendRest', { sendId: 'r3', requestId: 'rest-1' }, sender);
-    await waitFor(() => hasSend(service, 'r3'), 'the send to register');
+    await waitFor(() => hasSend(registry, 'r3'), 'the send to register');
     // Wait for the first row, not just the send registering: under load, a cancel right after
     // registration can still land before `open`/the first row ever reaches this test's `events`,
     // making the "open event made it out" assertion below flaky.
@@ -238,7 +242,7 @@ describe('closing the app or a project over an open stream', () => {
       await recorded;
       return undefined;
     });
-    const service = register(
+    const registry = register(
       { history: { recordRestSend } as unknown as NonNullable<RequestChannelDeps['history']> },
       (requestId) => (requestId === 'rest-1' ? resolution(server.url, '/sse/forever') : undefined),
     );
@@ -248,8 +252,8 @@ describe('closing the app or a project over an open stream', () => {
     await waitFor(() => events.some((e) => e.kind === 'open'), 'the stream to open');
 
     // Another project's stream is left alone.
-    expect(service.abortRestStreamsWhere((requestId) => requestId === 'rest-other')).toBe(0);
-    expect(service.abortRestStreamsWhere(() => true)).toBe(1);
+    expect(registry.endWhere((requestId) => requestId === 'rest-other', 'rest')).toBe(0);
+    expect(registry.endWhere(() => true, 'rest')).toBe(1);
 
     let waited = false;
     const waiting = whenRestSendsRecorded(5_000).then(() => {
@@ -264,45 +268,30 @@ describe('closing the app or a project over an open stream', () => {
     expect(summary.stream?.endedBy).toBe('client');
   });
 
-  it('a plain send is not a stream to abort', async () => {
-    const service = register({}, (requestId) => (requestId === 'rest-1' ? resolution(server.url, '/echo') : undefined));
+  it('a send that has finished leaves nothing to end', async () => {
+    const registry = register({}, (requestId) =>
+      requestId === 'rest-1' ? resolution(server.url, '/echo') : undefined,
+    );
     unwrap(await invoke('request.sendRest', { sendId: 'q2', requestId: 'rest-1' }, fakeSender().sender));
-    expect(service.abortRestStreamsWhere(() => true)).toBe(0);
+    expect(registry.endWhere(() => true, 'rest')).toBe(0);
   });
 });
 
 describe('a live event that cannot be delivered', () => {
   it('is guarded so an onLive that always throws never affects the stream or the invoke', async () => {
-    const service = new EngineService();
+    const deps = sendDepsFor(resolution(server.url, '/sse/ticks?n=3&every=5'));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
-      const summary = await service.sendRestRequest(
-        {
-          sendId: 'g1',
-          requestId: 'req-1',
-          input: {
-            baseUrl: server.url,
-            request: {
-              method: 'GET',
-              url: '/sse/ticks?n=3&every=5',
-              pathParams: [],
-              query: [],
-              headers: [],
-              body: { kind: 'none' },
-            },
-            settings: { timeoutMs: 5_000, followRedirects: true },
-          },
+      const summary = await sendThroughEngine(deps, 'g1', 'rest-1', {
+        draft: { kind: 'rest' },
+        onLive: () => {
+          throw new Error('renderer window is gone');
         },
-        {
-          onLive: () => {
-            throw new Error('renderer window is gone');
-          },
-        },
-      );
+      });
 
       expect(summary.stream?.rows).toHaveLength(3);
       expect(summary.stream?.endedBy).toBe('server');
-      expect((service as unknown as { sends: Map<string, unknown> }).sends.has('g1')).toBe(false);
+      expect(deps.registry.has('g1')).toBe(false);
 
       expect(warn).toHaveBeenCalled();
       const logged = warn.mock.calls.map((call) => call.join(' ')).join('\n');
@@ -318,13 +307,13 @@ describe('a live event that cannot be delivered', () => {
 
 describe('a second request.cancel for the same sendId', () => {
   it('is a no-op once the first has already ended the send', async () => {
-    const service = register({}, (requestId) =>
+    const registry = register({}, (requestId) =>
       requestId === 'rest-1' ? resolution(server.url, '/sse/forever') : undefined,
     );
     const { sender } = fakeSender();
 
     const sendPromise = invoke('request.sendRest', { sendId: 'r6', requestId: 'rest-1' }, sender);
-    await waitFor(() => hasSend(service, 'r6'), 'the send to register');
+    await waitFor(() => hasSend(registry, 'r6'), 'the send to register');
 
     const first = unwrap<{ cancelled: boolean }>(await invoke('request.cancel', { sendId: 'r6' }));
     expect(first).toEqual({ cancelled: true });

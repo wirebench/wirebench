@@ -6,12 +6,13 @@ description: Chain saved requests, carry a value from one response into the next
 import { Steps } from '@astrojs/starlight/components';
 
 A sequence sends saved requests one after another. Each step can lift values out of its response (a
-token, an id, a cookie) for the steps after it, and check the response with assertions. A login
-followed by a call that needs its token is a two-step sequence.
+token, an id, a cookie) for the steps after it, and check the response with
+[assertions](/wirebench/docs/guides/assertions/). A login followed by a call that needs its token is a
+two-step sequence.
 
 A sequence runs no code. Everything it does is declared in its file, `sequences/<name>.sequence.yaml`,
 which you review and share like any other file in the project. A step's request can still have
-[scripts](/wirebench/guides/scripts/) of its own: they run in the step as they would on a single send,
+[scripts](/wirebench/docs/guides/scripts/) of its own: they run in the step as they would on a single send,
 and a value a script sets with `vars.set` reaches the later steps just as a transfer does.
 
 ## Build a sequence
@@ -20,9 +21,9 @@ and a value a script sets with `vars.set` reaches the later steps just as a tran
 
 1. Right-click the project in the explorer and choose **New Sequence**. It opens in its own tab and
    appears under **Sequences** in the project.
-2. Choose **Add step…** and pick a request. Add as many as you need; each step is a saved SOAP, REST or
-   unary gRPC request. A WebSocket request or a streaming gRPC call can't be a step, and the list says
-   so.
+2. Choose **Add step…** and pick a request. Add as many as you need; each step is a saved SOAP, REST,
+   gRPC or WebSocket request, streaming gRPC calls included. A request that is no longer in its
+   contract can't be a step, and the list says so.
 3. Select a step to give it **transfers** and **assertions**.
 4. Choose **Run** (`Ctrl+Enter`, `⌘↩` on macOS).
 
@@ -64,7 +65,7 @@ A step runs its request's own assertions first (turn off **Run the request's own
 skip them), then its own: status, a header, a body expression that equals, matches, is present or is
 absent, response time, a SOAP fault, or the schema.
 
-A step can also wait for the webhook its request causes: see [Callback assertions](/wirebench/guides/callback-assertions/).
+A step can also wait for the webhook its request causes: see [Callback assertions](/wirebench/docs/guides/callback-assertions/).
 
 ## Read a run
 

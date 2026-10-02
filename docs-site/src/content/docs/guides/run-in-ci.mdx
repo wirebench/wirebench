@@ -126,12 +126,12 @@ It takes `--var` like `run` does. Pass it the same ones: a token that only a `--
 holds is listed only when that `--var` is given.
 
 A token with no variable set fails that request with `secret-missing` — *Set
-WIREBENCH_SECRET_BILLING_KEY to run "…"* — rather than sending an empty value. See [Secret tokens and scanning](/wirebench/guides/secrets/#secret-tokens-and-scanning) for
+WIREBENCH_SECRET_BILLING_KEY to run "…"* — rather than sending an empty value. See [Secret tokens and scanning](/wirebench/docs/guides/secrets/#secret-tokens-and-scanning) for
 how a value ends up behind a token.
 
 ## Callback assertions
 
-A step or request with a [callback assertion](/wirebench/guides/callback-assertions/) waits for a
+A step or request with a [callback assertion](/wirebench/docs/guides/callback-assertions/) waits for a
 webhook at a catch URL of a Wirebench Server workspace. To check it in a pipeline:
 
 - Set `WIREBENCH_SERVER_URL` to the server, and `WIREBENCH_SERVER_TOKEN` to a CI token of the
@@ -156,7 +156,7 @@ Every recipe above is the same CLI underneath, so the outcome is identical which
 
 ## Related
 
-- [Secrets](/wirebench/guides/secrets/) — how a secret reference resolves, on the desktop and in
+- [Secrets](/wirebench/docs/guides/secrets/) — how a secret reference resolves, on the desktop and in
   the CLI.
 - [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md) — the full
   `wirebench run` and `wirebench secrets list` reference, including every assertion type and

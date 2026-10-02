@@ -6,7 +6,7 @@ description: From a fresh install to a SOAP response and a REST response.
 import { Aside, Steps } from '@astrojs/starlight/components';
 
 This walkthrough sends one SOAP request and one REST request against public test services. You
-need Wirebench [installed](/wirebench/getting-started/installation/) and an internet connection.
+need Wirebench [installed](/wirebench/docs/getting-started/installation/) and an internet connection.
 
 ## Part 1: a SOAP request
 
@@ -29,13 +29,13 @@ need Wirebench [installed](/wirebench/getting-started/installation/) and an inte
    Leave the format on **Auto-detect**, choose `Calculator` as the target project and import.
    Anything the WSDL imports or includes is fetched with it and stored beside the project.
 
-   ![The Import dialog with a WSDL URL filled in](/wirebench/images/getting-started/import-wsdl.png)
+   ![The Import dialog with a WSDL URL filled in](/wirebench/docs/images/getting-started/import-wsdl.png)
 
 4. **Open a request.** The explorer now lists the service's bindings and operations. Each
    operation has a `Request 1` whose envelope was generated from the schema. Expand
    **Operations → CalculatorSoap → Add** and open **Request 1**.
 
-   ![The generated Add request, open in the editor](/wirebench/images/getting-started/request-editor.png)
+   ![The generated Add request, open in the editor](/wirebench/docs/images/getting-started/request-editor.png)
 
 5. **Fill in the values.** Replace the two `?` placeholders with numbers, for example
    `<tem:intA>2</tem:intA>` and `<tem:intB>3</tem:intB>`. If you would rather not edit XML, switch
@@ -45,7 +45,7 @@ need Wirebench [installed](/wirebench/getting-started/installation/) and an inte
    opens beside the request, with its status, duration and size. The **HTTP Log** at the bottom
    records the exchange, and **History** keeps the run so you can send it again later.
 
-   ![The response next to the request, with the HTTP Log below](/wirebench/images/getting-started/response.png)
+   ![The response next to the request, with the HTTP Log below](/wirebench/docs/images/getting-started/response.png)
 
 </Steps>
 
@@ -69,7 +69,7 @@ need Wirebench [installed](/wirebench/getting-started/installation/) and an inte
 4. **Send.** Press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. httpbin echoes the request back as
    JSON, so the response shows the query parameters you sent.
 
-   ![A REST request and its JSON response](/wirebench/images/rest-client/rest-response.png)
+   ![A REST request and its JSON response](/wirebench/docs/images/rest-client/rest-response.png)
 
 </Steps>
 
@@ -81,9 +81,9 @@ the schema.
 
 ## Where next
 
-- [SOAP and WSDL](/wirebench/guides/soap-wsdl/): endpoints, WS-Security, attachments and XPath
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/): endpoints, WS-Security, attachments and XPath
   queries over responses.
-- [REST](/wirebench/guides/rest-client/): parameters, bodies, auth and OpenAPI import.
-- [Environments](/wirebench/guides/environments/): switch between test and production endpoints
+- [REST](/wirebench/docs/guides/rest-client/): parameters, bodies, auth and OpenAPI import.
+- [Environments](/wirebench/docs/guides/environments/): switch between test and production endpoints
   without editing requests.
-- [Shared workspaces](/wirebench/guides/shared-workspaces/): work on the same workspace with your team.
+- [Shared workspaces](/wirebench/docs/guides/shared-workspaces/): work on the same workspace with your team.

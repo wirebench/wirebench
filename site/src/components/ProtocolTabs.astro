@@ -1,0 +1,151 @@
+---
+/** The protocol switcher: SOAP, REST and gRPC tabs, each with a screenshot and three bullets. */
+const tabs = [
+  {
+    id: 'soap',
+    label: 'SOAP',
+    src: '/wirebench/images/home/response.png',
+    alt: 'A SOAP request and its response in the Wirebench shell',
+    bullets: ['Requests generated from the WSDL', 'WS-Security and WS-Addressing', 'MTOM/SwA attachments and WS-I validation'],
+  },
+  {
+    id: 'rest',
+    label: 'REST',
+    src: '/wirebench/images/home/rest-response.png',
+    alt: 'A REST request and its JSON response',
+    bullets: ['OpenAPI import, or start from a URL', 'Every body kind', 'Basic, NTLM, Bearer, API key and OAuth2'],
+  },
+  {
+    id: 'grpc',
+    label: 'gRPC',
+    src: '/wirebench/images/home/grpc-response.png',
+    alt: 'A unary gRPC call and its reply',
+    bullets: ['<code>.proto</code> import or server reflection', 'Unary and streaming calls', 'Status, replies and trailers in one pane'],
+  },
+];
+---
+
+<section class="protocols">
+  <div role="tablist" aria-label="Protocols" class="protocols__tabs">
+    {
+      tabs.map((tab, index) => (
+        <button
+          type="button"
+          role="tab"
+          id={`tab-${tab.id}`}
+          aria-controls={`panel-${tab.id}`}
+          aria-selected={index === 0 ? 'true' : 'false'}
+          tabindex={index === 0 ? undefined : '-1'}
+        >
+          {tab.label}
+        </button>
+      ))
+    }
+  </div>
+  {
+    tabs.map((tab, index) => (
+      <section role="tabpanel" id={`panel-${tab.id}`} aria-labelledby={`tab-${tab.id}`} tabindex="0" hidden={index !== 0} class="protocols__panel">
+        <img src={tab.src} width="1280" height="800" loading="lazy" alt={tab.alt} />
+        <ul>
+          {tab.bullets.map((bullet) => (
+            <li set:html={bullet} />
+          ))}
+        </ul>
+      </section>
+    ))
+  }
+  <p class="protocols__shared">All three share one project, one set of environments, one history and one HTTP stack.</p>
+</section>
+
+<script>
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>('.protocols [role="tab"]')];
+  function select(next: HTMLButtonElement): void {
+    for (const tab of tabs) {
+      const on = tab === next;
+      tab.setAttribute('aria-selected', String(on));
+      tab.tabIndex = on ? 0 : -1;
+      const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '');
+      if (panel) panel.hidden = !on;
+    }
+    next.focus();
+  }
+  tabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => select(tab));
+    tab.addEventListener('keydown', (event) => {
+      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (step === 0) return;
+      event.preventDefault();
+      select(tabs[(i + step + tabs.length) % tabs.length]!);
+    });
+  });
+</script>
+
+<style>
+  .protocols {
+    padding-block: 2rem;
+  }
+
+  .protocols__tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--wb-border);
+  }
+
+  [role='tab'] {
+    padding: 0.5rem 1rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--wb-fg-muted);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  [role='tab']:hover {
+    color: var(--wb-fg-default);
+  }
+
+  [role='tab'][aria-selected='true'] {
+    border-bottom-color: var(--wb-accent-default);
+    color: var(--wb-fg-default);
+  }
+
+  .protocols__panel {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+    align-items: start;
+    padding-top: 1.5rem;
+  }
+
+  .protocols__panel[hidden] {
+    display: none;
+  }
+
+  .protocols__panel img {
+    display: block;
+    border: 1px solid var(--wb-border);
+    border-radius: 8px;
+  }
+
+  .protocols__panel ul {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+
+  .protocols__panel li + li {
+    margin-top: 0.5rem;
+  }
+
+  .protocols__shared {
+    margin: 1.5rem 0 0;
+    color: var(--wb-fg-muted);
+  }
+
+  @media (max-width: 40rem) {
+    .protocols__panel {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

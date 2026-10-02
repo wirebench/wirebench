@@ -6,6 +6,11 @@
  * foreground/surface pairs the UI actually puts on screen. Text pairs must clear WCAG AA's
  * 4.5:1; borders, icons and other non-text UI must clear 3:1 (WCAG 2.1 SC 1.4.11).
  *
+ * It also checks `site/src/styles/tokens.css`, the landing site's own small palette. That file
+ * follows the visitor's system theme, so its light values sit under
+ * `@media (prefers-color-scheme: light) { :root { … } }` instead of a `data-theme` selector, and
+ * it is gated on its own, shorter pair list (`SITE_PAIRS`).
+ *
  * `node scripts/contrast-check.ts` prints the table and exits non-zero on any failure;
  * `--table` prints it and always exits 0 (what the task report was generated with). Wired as
  * `pnpm contrast:check`, and into `pnpm check`.
@@ -18,6 +23,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const TOKENS = fileURLToPath(new URL('../apps/desktop/src/renderer/styles/tokens.css', import.meta.url));
+const SITE_TOKENS = fileURLToPath(new URL('../site/src/styles/tokens.css', import.meta.url));
 
 /** AA for body text; the UI's smallest type is 11px, so the large-text 3:1 exemption never applies. */
 const TEXT_MINIMUM = 4.5;
@@ -173,23 +179,44 @@ const REPORT_PAIRS: readonly Pair[] = [
   { fg: '--wb-status-warning', bg: '--wb-bg-base', kind: 'text', where: 'html report skipped mark' },
 ];
 
+/**
+ * The foreground/surface combinations the landing site renders, by the part of the page that
+ * renders each. The site's palette is a handful of tokens, so this is the whole list: body and
+ * secondary copy on each of its three surfaces, links on the two surfaces they sit on, and the
+ * button label on the accent.
+ *
+ * `--wb-border` is deliberately not here. The site's hairlines are decorative, not an indicator a
+ * person needs in order to operate the page, so SC 1.4.11 does not gate them.
+ */
+export const SITE_PAIRS: readonly Pair[] = [
+  { fg: '--wb-fg-default', bg: '--wb-bg-base', kind: 'text', where: 'page body copy' },
+  { fg: '--wb-fg-default', bg: '--wb-bg-raised', kind: 'text', where: 'cards, feature panels' },
+  { fg: '--wb-fg-default', bg: '--wb-bg-sunken', kind: 'text', where: 'code blocks, footer' },
+  { fg: '--wb-fg-muted', bg: '--wb-bg-base', kind: 'text', where: 'secondary copy, captions' },
+  { fg: '--wb-fg-muted', bg: '--wb-bg-raised', kind: 'text', where: 'card descriptions' },
+  { fg: '--wb-fg-muted', bg: '--wb-bg-sunken', kind: 'text', where: 'footer links, code captions' },
+  { fg: '--wb-accent-default', bg: '--wb-bg-base', kind: 'text', where: 'links' },
+  { fg: '--wb-accent-default', bg: '--wb-bg-raised', kind: 'text', where: 'links inside cards' },
+  { fg: '--wb-accent-fg', bg: '--wb-accent-default', kind: 'text', where: 'primary button label' },
+];
+
 /** One `[data-theme]`-style block's declarations, as `--wb-token` -> literal value. */
 type Declarations = ReadonlyMap<string, string>;
 
-/** Pulls the declarations out of the first rule whose selector list contains `selector`. */
-export function parseBlock(css: string, selector: string): Declarations {
-  const start = css.indexOf(selector);
-  if (start === -1) {
-    throw new Error(`tokens.css has no ${selector} block`);
-  }
-  const open = css.indexOf('{', start);
+/**
+ * The text between the braces of the rule whose opening `{` is the first one at or after `from`,
+ * and the index one past its closing brace.
+ *
+ * Brace counting, not "the first `}`": a block may hold a nested at-rule (or, for a media query,
+ * whole nested rules), and stopping at the inner closing brace would silently drop every
+ * declaration after it.
+ */
+function blockBody(css: string, from: number, label: string): { readonly body: string; readonly end: number } {
+  const open = css.indexOf('{', from);
   if (open === -1) {
-    throw new Error(`${selector} block in tokens.css is not closed`);
+    throw new Error(`${label} block in tokens.css is not closed`);
   }
-  // Brace counting, not "the first `}`": a theme block may one day hold a nested at-rule, and
-  // stopping at the inner closing brace would silently drop every declaration after it.
   let depth = 0;
-  let close = -1;
   for (let index = open; index < css.length; index += 1) {
     const character = css[index];
     if (character === '{') {
@@ -197,22 +224,58 @@ export function parseBlock(css: string, selector: string): Declarations {
     } else if (character === '}') {
       depth -= 1;
       if (depth === 0) {
-        close = index;
-        break;
+        return { body: css.slice(open + 1, index), end: index + 1 };
       }
     }
   }
-  if (close === -1) {
-    throw new Error(`${selector} block in tokens.css is not closed`);
-  }
+  throw new Error(`${label} block in tokens.css is not closed`);
+}
+
+/** Reads every `--wb-token: value;` out of a block body. */
+function readDeclarations(body: string): Declarations {
   const declarations = new Map<string, string>();
-  for (const line of css.slice(open + 1, close).split(';')) {
+  for (const line of body.split(';')) {
     const match = /(--wb-[\w-]+)\s*:\s*(.+)/s.exec(line);
     if (match?.[1] !== undefined && match[2] !== undefined) {
       declarations.set(match[1], match[2].trim());
     }
   }
   return declarations;
+}
+
+/** Pulls the declarations out of the first rule whose selector list contains `selector`. */
+export function parseBlock(css: string, selector: string): Declarations {
+  const start = css.indexOf(selector);
+  if (start === -1) {
+    throw new Error(`tokens.css has no ${selector} block`);
+  }
+  return readDeclarations(blockBody(css, start, selector).body);
+}
+
+/** Where `@media (<query>) { … }` sits in `css`: its span, and the text between its braces. */
+function mediaSpan(
+  css: string,
+  query: string,
+): { readonly start: number; readonly end: number; readonly body: string } {
+  const escaped = query
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s*');
+  const media = new RegExp(`@media\\s*\\(\\s*${escaped}\\s*\\)`).exec(css);
+  if (media === null) {
+    throw new Error(`tokens.css has no @media (${query}) block`);
+  }
+  const { body, end } = blockBody(css, media.index + media[0].length, `@media (${query})`);
+  return { start: media.index, end, body };
+}
+
+/**
+ * The `:root` declarations inside `@media (<query>) { … }`, and only those: a `:root` block
+ * outside the query (the site's dark defaults) is not read. `query` is the condition without its
+ * parentheses, e.g. `prefers-color-scheme: light`.
+ */
+export function parseMediaBlock(css: string, query: string): Declarations {
+  return parseBlock(mediaSpan(css, query).body, ':root');
 }
 
 /**
@@ -275,18 +338,37 @@ export interface CheckResult {
   readonly passed: boolean;
 }
 
+export interface CheckOptions {
+  /** The pairs to gate; defaults to the desktop shell's (`PAIRS` and `REPORT_PAIRS`). */
+  readonly pairs?: readonly Pair[];
+  /** Where the light theme lives: a `[data-theme='light']` block (default) or a light `@media` query. */
+  readonly light?: 'data-theme' | 'media';
+}
+
 /** Runs every pair against both themes' resolved palettes. */
-export function checkTokens(css: string): readonly CheckResult[] {
-  const dark = parseBlock(css, ':root');
+export function checkTokens(css: string, options: CheckOptions = {}): readonly CheckResult[] {
+  const { pairs = [...PAIRS, ...REPORT_PAIRS], light: lightSource = 'data-theme' } = options;
+  // In the media variant the light query also holds a `:root`, so the dark palette is read from
+  // the stylesheet with that query cut out rather than from its first `:root` by position.
+  let darkCss = css;
+  if (lightSource === 'media') {
+    const { start, end } = mediaSpan(css, 'prefers-color-scheme: light');
+    darkCss = css.slice(0, start) + css.slice(end);
+  }
+  const dark = parseBlock(darkCss, ':root');
   // Light restates only what differs, so it layers on top of the dark block's declarations.
-  const light = new Map([...dark, ...parseBlock(css, "[data-theme='light']")]);
+  const lightOverrides =
+    lightSource === 'media'
+      ? parseMediaBlock(css, 'prefers-color-scheme: light')
+      : parseBlock(css, "[data-theme='light']");
+  const light = new Map([...dark, ...lightOverrides]);
   const palettes: readonly (readonly [Theme, Declarations])[] = [
     ['dark', dark],
     ['light', light],
   ];
 
   return palettes.flatMap(([theme, declarations]) =>
-    [...PAIRS, ...REPORT_PAIRS].map((pair) => {
+    pairs.map((pair) => {
       const fgValue = resolveToken(pair.fg, declarations);
       const bgValue = resolveToken(pair.bg, declarations);
       const ratio = Math.round(contrastRatio(fgValue, bgValue) * 100) / 100;
@@ -314,16 +396,22 @@ export function renderTable(results: readonly CheckResult[]): string {
 /** True when this module is the process entrypoint, so importing it in a test runs nothing. */
 const isEntrypoint = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
 
-async function main(): Promise<void> {
-  const css = await readFile(TOKENS, 'utf-8');
-  const results = checkTokens(css);
+interface Target {
+  readonly heading: string;
+  readonly path: string;
+  readonly options: CheckOptions;
+}
+
+/** The files the gate reads: the desktop shell's tokens, then the landing site's. */
+const TARGETS: readonly Target[] = [
+  { heading: 'desktop shell', path: TOKENS, options: {} },
+  { heading: 'landing site', path: SITE_TOKENS, options: { pairs: SITE_PAIRS, light: 'media' } },
+];
+
+/** Prints one file's failures and verdict under its heading; true when every pair passed. */
+function report(heading: string, results: readonly CheckResult[]): boolean {
   const failures = results.filter((result) => !result.passed);
-
-  if (process.argv.includes('--table')) {
-    process.stdout.write(`${renderTable(results)}\n`);
-    return;
-  }
-
+  process.stdout.write(`${heading}\n`);
   for (const failure of failures) {
     process.stderr.write(
       `${failure.theme}: ${failure.pair.fg} (${failure.fgValue}) on ${failure.pair.bg} (${failure.bgValue}) ` +
@@ -332,10 +420,32 @@ async function main(): Promise<void> {
   }
   if (failures.length > 0) {
     process.stderr.write(`contrast: ${String(failures.length)} of ${String(results.length)} pairs fail\n`);
-    process.exitCode = 1;
-    return;
+    return false;
   }
   process.stdout.write(`contrast: all ${String(results.length)} token pairs pass (both themes)\n`);
+  return true;
+}
+
+async function main(): Promise<void> {
+  const checked = await Promise.all(
+    TARGETS.map(async (target) => ({
+      heading: target.heading,
+      results: checkTokens(await readFile(target.path, 'utf-8'), target.options),
+    })),
+  );
+
+  if (process.argv.includes('--table')) {
+    for (const { heading, results } of checked) {
+      process.stdout.write(`## ${heading}\n\n${renderTable(results)}\n\n`);
+    }
+    return;
+  }
+
+  // Report every file before exiting, so a failure in one never hides the other's verdict.
+  const passed = checked.map(({ heading, results }) => report(heading, results));
+  if (passed.includes(false)) {
+    process.exitCode = 1;
+  }
 }
 
 if (isEntrypoint) {

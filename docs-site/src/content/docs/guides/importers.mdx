@@ -91,24 +91,24 @@ The credentials go only to the document's own origin — its scheme, host and po
 source, a progress message or an error. A server that answers 401 or 403 is reported as needing
 authentication, or as having refused the credentials given. The fetch uses the proxy and CA bundle
 from your preferences. The same **Authentication** section appears for an AsyncAPI document by URL;
-see [AsyncAPI](/wirebench/guides/asyncapi/#import-a-document).
+see [AsyncAPI](/wirebench/docs/guides/asyncapi/#import-a-document).
 
 The summary shows the declared version, the API version if the document gives one, the base URL,
 and the request and folder counts. When the document declares security schemes, they're listed
 with **Use** buttons to apply one to the API — credentials are yours to fill in afterwards on the
 API tab. Anything the import could not carry across is listed under "things not imported," with the
-reason next to each. See [From OpenAPI and Swagger](/wirebench/switching/openapi/) for every mapping.
+reason next to each. See [From OpenAPI and Swagger](/wirebench/docs/switching/openapi/) for every mapping.
 
 When the document declares any OpenAPI 3.1+ root `webhooks` or OpenAPI 3.0+ operation `callbacks`,
 the dialog shows an **Import webhooks & callbacks** checkbox, ticked by default: leave it ticked to
 add them to the project's own Webhooks collection, in a folder named after the API, or untick it to
 skip them for this import. `links` stay reported as skipped, on every version. Anything left out this
 way can still be brought in afterwards with **Import webhooks…** on the API. See
-[Sending webhooks](/wirebench/guides/sending-webhooks/#import-from-openapi) for the whole flow,
+[Sending webhooks](/wirebench/docs/guides/sending-webhooks/#import-from-openapi) for the whole flow,
 including how these items are kept in step by Update Definition.
 
 When the document later changes, don't import it again — that would make a second API. Use
-[Update Definition](/wirebench/guides/rest-client/#update-definition) on the API you already have:
+[Update Definition](/wirebench/docs/guides/rest-client/#update-definition) on the API you already have:
 it previews the added, removed and changed operations, keeps what you edited, and deletes nothing.
 
 ## Postman collections
@@ -129,7 +129,7 @@ Wirebench imports Postman Collection format v2.0 and v2.1 JSON — the app label
 What arrives: the collection's requests and folders, with a default authentication scheme noted if
 the collection declares one. Below the counts, the summary lists what the collection could not bring
 across, such as scripts, variable values and credentials. **Copy report** copies that list as text.
-See [From Postman collections](/wirebench/switching/postman/) for every mapping.
+See [From Postman collections](/wirebench/docs/switching/postman/) for every mapping.
 
 <Aside type="note">
 Postman import by URL is not supported. Download the collection file, or paste its JSON, instead.
@@ -159,9 +159,9 @@ you meant it — an operation, an API, or a folder.
 
 </Steps>
 
-![The Import cURL dialog with a pasted POST command, previewing the request, its headers, a raw body and Basic auth as ada](/wirebench/images/importers/curl-preview.png)
+![The Import cURL dialog with a pasted POST command, previewing the request, its headers, a raw body and Basic auth as ada](/wirebench/docs/images/importers/curl-preview.png)
 
-See [From cURL commands](/wirebench/switching/curl/) for every flag.
+See [From cURL commands](/wirebench/docs/switching/curl/) for every flag.
 
 The same command runs in reverse: **Copy as cURL**, from a request, and the **Code** panel's preview
 both give you the request back as a command — with secrets masked unless you turn on show-secrets.
@@ -194,7 +194,7 @@ Many SOAP testers keep their work in a legacy SOAP project file (one XML file fr
 SOAP workbench). Importing it reads that file and adds its interfaces, endpoints, saved requests,
 properties and environments to a Wirebench project. Definitions are read from the copy the file
 carries. Only a definition the file holds no copy of is fetched over HTTP(S), and the report notes it.
-See [From a legacy SOAP project](/wirebench/switching/legacy-soap-project/) for every mapping.
+See [From a legacy SOAP project](/wirebench/docs/switching/legacy-soap-project/) for every mapping.
 
 <Steps>
 
@@ -219,7 +219,7 @@ kept. Below the counts, two lists cover what needs attention:
 
 **Copy report** copies the full list as text.
 
-![The legacy SOAP project import summary, counting 2 interfaces and 6 requests, with a warning that the password was not imported](/wirebench/images/importers/legacy-summary.png)
+![The legacy SOAP project import summary, counting 2 interfaces and 6 requests, with a warning that the password was not imported](/wirebench/docs/images/importers/legacy-summary.png)
 
 ### Limits
 
@@ -237,8 +237,8 @@ kept. Below the counts, two lists cover what needs attention:
 
 ## Related
 
-- [SOAP and WSDL](/wirebench/guides/soap-wsdl/)
-- [REST](/wirebench/guides/rest-client/)
-- [Sending webhooks](/wirebench/guides/sending-webhooks/)
-- [Environments](/wirebench/guides/environments/)
-- [Ten-minute walkthrough](/wirebench/getting-started/walkthrough/)
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/)
+- [REST](/wirebench/docs/guides/rest-client/)
+- [Sending webhooks](/wirebench/docs/guides/sending-webhooks/)
+- [Environments](/wirebench/docs/guides/environments/)
+- [Ten-minute walkthrough](/wirebench/docs/getting-started/walkthrough/)

@@ -9,6 +9,7 @@ import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { ExchangeRegistry, sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
 
@@ -78,14 +79,14 @@ async function workspaceWithCalculator(): Promise<{
   };
 }
 
-/** Sends `requestId` exactly as `request.send` would: the host's input, the host's scopes. */
-async function sendThroughHost(service: WorkspaceService, projectId: string, requestId: string): Promise<void> {
-  const host = service.hostFor(projectId);
-  const input = host.sendInputFor(requestId);
-  if (input === undefined) {
-    throw new Error('the host resolved no send input');
-  }
-  await engine.send({ sendId: `send-${requestId}`, requestId, input }, { scopes: host.scopesFor() });
+/** Sends `requestId` exactly as `request.send` would: through the engine, over the workspace's projects. */
+async function sendThroughHost(service: WorkspaceService, _projectId: string, requestId: string): Promise<void> {
+  const deps = {
+    service: engine,
+    registry: new ExchangeRegistry(),
+    project: service as unknown as SendThroughEngineDeps['project'],
+  };
+  await sendThroughEngine(deps, `send-${requestId}`, requestId, { draft: { kind: 'soap' } });
 }
 
 /** A standalone project folder with its own `dev` environment, ready to be linked. */
@@ -131,10 +132,10 @@ describe('workspace environment routing', () => {
     });
 
     // Nothing is redirected until the environment is actually active.
-    expect(service.hostFor(projectId).sendInputFor(requestId)?.endpoint).toBe(`${primary.url}/soap`);
+    expect(service.hostFor(projectId).endpointFor(requestId)).toBe(`${primary.url}/soap`);
 
     await service.setActiveEnvironment(environmentId);
-    expect(service.hostFor(projectId).sendInputFor(requestId)?.endpoint).toBe(`${secondary.url}/soap`);
+    expect(service.hostFor(projectId).endpointFor(requestId)).toBe(`${secondary.url}/soap`);
     expect(service.hostFor(projectId).preflight(requestId).endpointSource).toBe('workspace-environment');
 
     await sendThroughHost(service, projectId, requestId);
@@ -195,7 +196,16 @@ describe('workspace properties', () => {
 
     expect(host.scopesFor().workspace).toEqual({ region: 'emea' });
     expect(host.preflight(requestId).unresolved.map((ref) => ref.expr)).toEqual(['${#Workspace#missing}']);
+    // A send refuses what the preflight reported, as every send through the engine does.
+    await expect(sendThroughHost(service, projectId, requestId)).rejects.toMatchObject({
+      code: 'unresolved-properties',
+    });
 
+    await host.mutate({
+      kind: 'update-request',
+      requestId,
+      patch: { headers: [{ name: 'X-Region', value: '${#Workspace#region}' }] },
+    });
     await sendThroughHost(service, projectId, requestId);
 
     expect(secondary.requests.at(-1)?.headers['x-region']).toBe('emea');

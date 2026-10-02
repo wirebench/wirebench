@@ -42,7 +42,7 @@ Apple, so Gatekeeper opens them without a warning.
 - Releases are created as drafts. A maintainer reviews the draft and publishes it by hand.
 - Each file carries a GitHub build attestation that links it to the commit and workflow run that
   built it. Each release also includes a CycloneDX SBOM of the app's dependencies. See
-  [Verify a download](/wirebench/getting-started/installation/#verify-a-download).
+  [Verify a download](/wirebench/docs/getting-started/installation/#verify-a-download).
 - The app talks to no server of the project's own. Update checks go to GitHub Releases, and only when
   you ask for one or turn on checking at launch, which is off by default.
 
@@ -52,4 +52,4 @@ This program will not transfer any information to other networked systems unless
 requested by the user.
 
 Wirebench sends no telemetry and collects no data. The requests it sends are the ones you send. See
-the [FAQ](/wirebench/help/faq/#does-wirebench-send-any-telemetry-or-usage-data).
+the [FAQ](/wirebench/docs/help/faq/#does-wirebench-send-any-telemetry-or-usage-data).

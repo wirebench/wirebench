@@ -1,7 +1,7 @@
 /**
  * OAuth2 access tokens for a run, which has no browser, no keychain and no token cache of its own
- * beyond the run itself. Only the client-credentials grant can work headless; the caller refuses
- * authorization-code before it gets here.
+ * beyond the run itself. Only the client-credentials grant can work headless; this source refuses
+ * authorization-code (a host's own source may serve it).
  *
  * One token per configuration per run: two requests behind the same configuration share one token
  * request, and a token is fetched again when `needsRefresh` says it is about to lapse, or after a
@@ -33,7 +33,7 @@ export interface TokenRequestContext {
   readonly scopes: PropertyScopes;
   readonly tls?: TlsOptions;
   /** The proxy for the token URL, chosen after it is expanded. */
-  readonly proxy?: (tokenUrl: string) => ProxyOptions | undefined;
+  readonly proxy?: (tokenUrl: string) => Promise<ProxyOptions | undefined>;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 }
@@ -93,6 +93,13 @@ export function createRunTokenSource(options: RunTokenSourceOptions): RunTokenSo
   const send = options.send ?? ((request: HttpRequest): Promise<HttpExchange> => sendHttp(request));
   return {
     async accessTokenFor(config, request) {
+      if (config.grant === 'authorization-code') {
+        throw new WirebenchError(
+          'auth-grant-unsupported',
+          'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
+          { details: { grant: config.grant } },
+        );
+      }
       const expanded = expandConfig(config, request.scopes);
       const key = cacheKey(expanded);
       const cached = tokens.get(key);
@@ -109,7 +116,7 @@ export function createRunTokenSource(options: RunTokenSourceOptions): RunTokenSo
           ...(request.signal !== undefined ? { signal: request.signal } : {}),
         },
       );
-      const proxy = request.proxy?.(expanded.tokenUrl);
+      const proxy = await request.proxy?.(expanded.tokenUrl);
       const exchange = await send({
         ...built,
         ...(request.tls !== undefined ? { tls: request.tls } : {}),

@@ -1,17 +1,26 @@
 // @vitest-environment node
 /**
- * The three WebSocket channels end to end: `request.openWs` against a real server, driven by
- * `request.wsSend`/`request.wsClose`, with `ws.live` events collected on a fake sender, plus the
- * prepare-stage failure row, the URL-masking of an API key configured "in query", the proxy path,
- * `request.preflightWs`, `request.curl` and `request.cancel`. Every wait is a bounded poll on an
- * observable condition — never a fixed sleep.
+ * The three WebSocket channels end to end: `request.openWs` against a real server, through the
+ * engine, driven by `request.wsSend`/`request.wsClose`, with `ws.live` events collected on a fake
+ * sender, plus the prepare-stage failure row, the URL-masking of an API key configured "in query",
+ * the proxy path, `request.preflightWs`, `request.curl`, `request.cancel` and the registry's
+ * closing of a project's sessions. Every wait is a bounded poll on an observable condition — never
+ * a fixed sleep.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startTestProxy, startTestWsServer, type TestProxy, type TestWsServer } from '@wirebench/engine/test-helpers';
-import { WirebenchError, type WsCallInput } from '@wirebench/engine';
+import {
+  createProject,
+  createWsApi,
+  createWsRequest,
+  entry,
+  WirebenchError,
+  type AuthConfig,
+  type Project,
+} from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, whenWsSessionsRecorded, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import type { WsSendResolution } from '../src/main/ws-send.js';
+import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import type { FailedExchangeWire, HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -82,11 +91,6 @@ function waitForHandshake(events: readonly unknown[]): Promise<void> {
   return waitFor(() => hasKind(events, 'handshake'), 'the handshake live event');
 }
 
-/** Reads `EngineService`'s private `sends` map; test-only, for "the prepare stage has registered". */
-function hasSend(service: EngineService, sendId: string): boolean {
-  return (service as unknown as { sends: Map<string, unknown> }).sends.has(sendId);
-}
-
 let server: TestWsServer;
 
 beforeAll(async () => {
@@ -97,83 +101,69 @@ afterAll(async () => {
   await server.close();
 });
 
-/** A `WsSendResolution` aimed at `path` on the running test server. */
-function resolution(
+/**
+ * A project whose WebSocket requests `ws-1` and `ws-2` dial `path` on the running test server, with an
+ * `Authorization` header unless `overrides` gives other headers.
+ */
+function model(
   path: string,
   overrides: {
     readonly headers?: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[];
     readonly query?: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[];
-    readonly auth?: WsSendResolution['auth'];
-    readonly unresolved?: readonly {
-      readonly expr: string;
-      readonly name?: string;
-      readonly code: 'missing' | 'unknown-scope' | 'cycle' | 'too-deep' | 'malformed';
-      readonly start: number;
-      readonly end: number;
-    }[];
+    readonly auth?: AuthConfig;
   } = {},
-): WsSendResolution {
-  const input: WsCallInput = {
-    serverUrl: server.url,
-    request: {
+): Project {
+  const request = (id: string, name: string) =>
+    createWsRequest(name, {
+      id,
       url: path,
-      query: overrides.query ?? [],
-      headers: overrides.headers ?? [{ name: 'Authorization', value: 'Bearer plain-token', enabled: true }],
-      subprotocols: [],
-      settings: {},
-    },
-    apiHeaders: [],
-  };
-  return {
-    input,
-    unresolved: overrides.unresolved ?? [],
-    api: { kind: 'websocket', id: 'w-1', name: 'Chat', slug: 'chat', order: 0, url: server.url, headers: [] },
-    request: {
-      kind: 'websocket',
-      id: 'q-1',
-      name: 'Echo',
-      slug: 'echo',
-      order: 0,
-      url: path,
-      query: input.request.query,
-      headers: input.request.headers,
-      subprotocols: [],
+      query: [...(overrides.query ?? [])],
+      headers: [...(overrides.headers ?? [entry('Authorization', 'Bearer plain-token')])],
       auth: overrides.auth ?? { type: 'none' },
-      settings: {},
-      messages: [],
-    },
-    urlSource: 'api',
-    auth: overrides.auth ?? { type: 'none' },
-  } as unknown as WsSendResolution;
+    });
+  return {
+    ...createProject('Demo', { id: 'p1' }),
+    wsApis: [
+      createWsApi('Chat', {
+        id: 'w-1',
+        url: server.url,
+        requests: [request('ws-1', 'Echo'), request('ws-2', 'Echo 2')],
+      }),
+    ],
+  };
+}
+
+/** The project stub's `runContextFor` over {@link model}: every `ws-` id is one of its requests. */
+function locatedAt(path: string, overrides: Parameters<typeof model>[1] = {}) {
+  const project = model(path, overrides);
+  return (requestId: string) => (requestId.startsWith('ws-') ? { project, projectDir: '/tmp/none' } : undefined);
 }
 
 function project(overrides: Record<string, unknown> = {}) {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     preflight: () => undefined as never,
-    authFor: () => undefined,
     requestMeta: () => undefined,
     projectId: () => 'p1',
     requestSource: () => undefined as never,
-    buildLiveSendInput: () => undefined,
-    sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
-    wsSend: (requestId: string) => (requestId.startsWith('ws-') ? resolution('/echo') : undefined),
-    wsTlsFor: () => Promise.resolve(undefined),
+    runContextFor: locatedAt('/echo'),
     wsMeta: () => ({ requestName: 'Echo', apiName: 'Chat', folderPath: '' }),
     ...overrides,
   } as unknown as RequestChannelDeps['project'];
 }
 
+/** Registers the channels; answers the registry they keep their sessions in. */
 function register(overrides: Partial<RequestChannelDeps> = {}, projectOverrides: Record<string, unknown> = {}) {
-  const service = new EngineService();
-  registerRequestChannels(service, {
+  const registry = new ExchangeRegistry();
+  registerRequestChannels(new EngineService(), {
     project: project(projectOverrides),
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
     getSecret: () => Promise.resolve(undefined),
+    registry,
     ...overrides,
   });
-  return service;
+  return registry;
 }
 
 describe('request.openWs → request.wsSend → request.wsClose', () => {
@@ -232,16 +222,13 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     // something `redactUrl`'s own built-in sensitive-name list would never catch on its own (that
     // list already masks `api_key`), so this actually exercises the `keyParams` plumbing derived
     // from the resolved auth, not the built-in default.
-    const withKeyInQuery = (requestId: string) =>
-      requestId.startsWith('ws-')
-        ? resolution('/echo', {
-            auth: { type: 'api-key', name: 'x-custom-cred', in: 'query', valueRef: 'sec_key' } as never,
-          })
-        : undefined;
+    const withKeyInQuery = locatedAt('/echo', {
+      auth: { type: 'api-key', name: 'x-custom-cred', in: 'query', valueRef: 'sec_key' } as never,
+    });
     const getSecret = () => Promise.resolve('shh-secret');
 
     // Hidden (default show-secrets).
-    register({ getSecret }, { wsSend: withKeyInQuery });
+    register({ getSecret }, { runContextFor: withKeyInQuery });
     const { sender: senderHidden, events: eventsHidden } = fakeSender();
     const openHidden = invoke('request.openWs', { sendId: 'k1', requestId: 'ws-1' }, senderHidden);
     await waitForHandshake(eventsHidden);
@@ -255,7 +242,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     expect(handshakeEventHidden.handshake.url).not.toContain('shh-secret');
 
     // Shown.
-    register({ showSecrets: { get: () => true }, getSecret }, { wsSend: withKeyInQuery });
+    register({ showSecrets: { get: () => true }, getSecret }, { runContextFor: withKeyInQuery });
     const { sender: senderShown, events: eventsShown } = fakeSender();
     const openShown = invoke('request.openWs', { sendId: 'k2', requestId: 'ws-1' }, senderShown);
     await waitForHandshake(eventsShown);
@@ -377,16 +364,28 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
   });
 
   it('request.cancel aborts a handshake still in flight', async () => {
-    const service = register(
-      {},
-      { wsSend: (requestId: string) => (requestId.startsWith('ws-') ? resolution('/hang') : undefined) },
+    const recordWsSession = vi.fn<(...args: unknown[]) => Promise<HistoryEntryWire>>(() =>
+      Promise.resolve({ id: 'h-cancel', kind: 'websocket' } as HistoryEntryWire),
     );
+    const registry = register({ history: { recordWsSession } as never }, { runContextFor: locatedAt('/hang') });
     const { sender } = fakeSender();
+    const before = server.handshakes.length;
     const openPromise = invoke('request.openWs', { sendId: 's5', requestId: 'ws-1' }, sender);
-    await waitFor(() => hasSend(service, 's5'), 'the prepare stage to register the send');
+    await waitFor(() => server.handshakes.length > before, 'the upgrade to reach the server');
+    expect(registry.has('s5')).toBe(true);
     unwrap(await invoke('request.cancel', { sendId: 's5' }));
-    const summary = unwrap<{ closed: { by: string } }>(await openPromise);
-    expect(summary.closed.by).toBe('error');
+    // The engine fails a session cancelled before its handshake, where the old path answered with
+    // its transcript closed by `error`.
+    const reply = (await openPromise) as { ok: boolean; error?: { code: string } };
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe('aborted');
+    // History keeps the attempt, as it always has: a session that never opened, closed by error.
+    expect(recordWsSession).toHaveBeenCalledTimes(1);
+    expect(recordWsSession.mock.calls[0]![1]).toMatchObject({
+      requestId: 'ws-1',
+      handshakeOpened: false,
+      exchange: { closed: { by: 'error' } },
+    });
   });
 
   it('reports a prepare-stage failure when the proxy lookup throws', async () => {
@@ -439,13 +438,10 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
 
   it('the successful log row masks a secret header and an API-key query parameter when secrets are hidden', async () => {
     const onExchange = vi.fn<(entry: LogEntryWire) => void>();
-    const withKeyInQuery = (requestId: string) =>
-      requestId.startsWith('ws-')
-        ? resolution('/echo', {
-            auth: { type: 'api-key', name: 'x-custom-cred', in: 'query', valueRef: 'sec_key' } as never,
-          })
-        : undefined;
-    register({ onExchange, getSecret: () => Promise.resolve('shh-secret') }, { wsSend: withKeyInQuery });
+    const withKeyInQuery = locatedAt('/echo', {
+      auth: { type: 'api-key', name: 'x-custom-cred', in: 'query', valueRef: 'sec_key' } as never,
+    });
+    register({ onExchange, getSecret: () => Promise.resolve('shh-secret') }, { runContextFor: withKeyInQuery });
     const { sender, events } = fakeSender();
     const openPromise = invoke('request.openWs', { sendId: 's8b', requestId: 'ws-1' }, sender);
     await waitForHandshake(events);
@@ -492,12 +488,12 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
       recorded = true;
       return { id: 'h-quit', kind: 'websocket' } as HistoryEntryWire;
     });
-    const service = register({ history: { recordWsSession } as never });
+    const registry = register({ history: { recordWsSession } as never });
     const { sender, events } = fakeSender();
     const openPromise = invoke('request.openWs', { sendId: 'quit-1', requestId: 'ws-1' }, sender);
     await waitForHandshake(events);
 
-    expect(service.closeAllWs()).toBe(1);
+    expect(registry.endWhere(() => true, 'websocket')).toBe(1);
     expect(recorded).toBe(false);
     await whenWsSessionsRecorded(8000);
 
@@ -516,15 +512,15 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
       recorded = true;
       return { id: 'h-late', kind: 'websocket' } as HistoryEntryWire;
     });
-    const service = register({ history: { recordWsSession } as never });
+    const registry = register({ history: { recordWsSession } as never });
     const { sender, events } = fakeSender();
     const openPromise = invoke('request.openWs', { sendId: 'late-1', requestId: 'ws-1' }, sender);
     await waitForHandshake(events);
 
-    // The user disconnected a moment before the quit: the socket is closing, so the engine has
+    // The user disconnected a moment before the quit: the socket is closing, so the registry has
     // nothing left to close — but the entry has not been written yet.
     unwrap(await invoke('request.wsClose', { sendId: 'late-1' }));
-    expect(service.closeAllWs()).toBe(0);
+    expect(registry.endWhere(() => true, 'websocket')).toBe(0);
     expect(recorded).toBe(false);
 
     await whenWsSessionsRecorded(8000);
@@ -539,7 +535,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     );
     // Two sessions, one per project, exactly as `closeWsSessions(projectId)` sees them.
     const owners: Record<string, string> = { 'ws-1': 'p1', 'ws-2': 'p2' };
-    const service = register({ history: { recordWsSession } as never }, { projectId: (id: string) => owners[id] });
+    const registry = register({ history: { recordWsSession } as never }, { projectId: (id: string) => owners[id] });
     const first = fakeSender();
     const second = fakeSender();
     const openOne = invoke('request.openWs', { sendId: 'c-1', requestId: 'ws-1' }, first.sender);
@@ -547,7 +543,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     await waitForHandshake(first.events);
     await waitForHandshake(second.events);
 
-    expect(service.closeWsWhere((requestId) => owners[requestId] === 'p1')).toBe(1);
+    expect(registry.endWhere((requestId) => owners[requestId] === 'p1', 'websocket')).toBe(1);
     await whenWsSessionsRecorded(8000, (requestId) => owners[requestId] === 'p1');
 
     // The other project's session is untouched: its invoke is still pending.
@@ -567,7 +563,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
     );
     register(
       { onSendFailed, onExchange, history: { recordWsSession } as never },
-      { wsSend: (requestId: string) => (requestId.startsWith('ws-') ? resolution('/refuse') : undefined) },
+      { runContextFor: locatedAt('/refuse') },
     );
     const { sender } = fakeSender();
     const summary = unwrap<{ closed: { by: string } }>(
@@ -585,17 +581,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
   });
 
   it('request.preflightWs returns the resolved URL, its source and unresolved expressions, without dialling', async () => {
-    register(
-      {},
-      {
-        wsSend: (requestId: string) =>
-          requestId.startsWith('ws-')
-            ? resolution('/echo', {
-                unresolved: [{ expr: '${nope}', name: 'nope', code: 'missing', start: 0, end: 7 }],
-              })
-            : undefined,
-      },
-    );
+    register({}, { runContextFor: locatedAt('/echo', { headers: [entry('X-Who', '${nope}')] }) });
     const before = server.received.length;
     const handshakesBefore = server.handshakes.length;
     const reply = unwrap<{

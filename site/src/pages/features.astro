@@ -1,0 +1,219 @@
+---
+import Base from '../layouts/Base.astro';
+import { DOCS_LINKS, docsUrl } from '../docs-links.ts';
+
+interface Link {
+  label: string;
+  slug: (typeof DOCS_LINKS)[keyof typeof DOCS_LINKS];
+}
+interface Section {
+  heading: string;
+  text: string;
+  links: Link[];
+  image?: { src: string; alt: string };
+}
+
+const sections: Section[] = [
+  {
+    heading: 'SOAP and WSDL',
+    text: 'Import a WSDL into an operations tree, get a sample envelope for every operation, and send it over HTTP or HTTPS. WS-Security, MTOM attachments and WS-I Basic Profile checks build on the same request.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.soapWsdl }],
+    image: { src: '/wirebench/images/features/wss-outgoing.png', alt: 'The outgoing WS-Security entries of a SOAP request, with a username and a digest password' },
+  },
+  {
+    heading: 'REST',
+    text: 'Group requests under an API that holds a base URL and, optionally, authentication every request under it inherits. The Query tab runs JSONPath or XPath over a JSON response without leaving it.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.restClient }],
+    image: { src: '/wirebench/images/features/body-tab.png', alt: 'The Body tab of a REST request with a raw JSON body' },
+  },
+  {
+    heading: 'gRPC',
+    text: 'Call gRPC services from imported .proto files or by asking a running server to describe itself over reflection. Unary and streaming calls both work.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.grpc }],
+    image: { src: '/wirebench/images/features/grpc.png', alt: 'A unary gRPC call to a Greeter service and its reply' },
+  },
+  {
+    heading: 'WebSocket and server-sent events',
+    text: 'A WebSocket API sits beside SOAP, REST and gRPC in the same project, workspace, environments, history and search. Requests under it connect, show every frame on a live timeline, and send messages while the connection is open. An API imported from an AsyncAPI document also checks every frame against its contract.',
+    links: [
+      { label: 'Read the WebSocket guide', slug: DOCS_LINKS.websocket },
+      { label: 'Read the AsyncAPI guide', slug: DOCS_LINKS.asyncapi },
+    ],
+  },
+  {
+    heading: 'Importers and switching',
+    text: 'Turn a WSDL, an OpenAPI document, a Postman collection, a curl command, a .proto file, a running gRPC server or a legacy SOAP project into requests you can run and edit. An OpenAPI or AsyncAPI document behind authentication is fetched with Basic, a bearer token or an API key. When an OpenAPI document changes, Update Definition re-reads it into the REST API you already have.',
+    links: [
+      { label: 'Read the guide', slug: DOCS_LINKS.importers },
+      { label: 'Switching from Postman', slug: DOCS_LINKS.switchingPostman },
+      { label: 'AsyncAPI contracts', slug: DOCS_LINKS.asyncapi },
+    ],
+    image: { src: '/wirebench/images/features/curl-preview.png', alt: 'The cURL import dialog with a pasted command and the request it produces' },
+  },
+  {
+    heading: 'Environments and properties',
+    text: 'Set variables once, in a scope, and reference them with ${...} in URLs, headers, envelopes and bodies, so one request works against local, staging and production without edits. Send a SOAP or REST request to several environments at once and compare the responses against a baseline.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.environments }],
+    image: { src: '/wirebench/images/features/endpoint-override.png', alt: 'An endpoint override pointing a SOAP request at another environment' },
+  },
+  {
+    heading: 'Authentication and secrets',
+    text: 'Request auth attaches credentials to the HTTP request; WS-Security signs or encrypts parts of a SOAP envelope; client certificates prove your identity at the TLS layer.',
+    links: [
+      { label: 'Read the auth guide', slug: DOCS_LINKS.auth },
+      { label: 'Read the secrets guide', slug: DOCS_LINKS.secrets },
+    ],
+  },
+  {
+    heading: 'HTTP Log and history',
+    text: 'The HTTP Log is the raw record of what went over the wire this session, failed sends included, with a waterfall of timings, a compare of two rows and Export HAR. History is the persistent record: re-send an entry, or compare two runs. Any request copies as a curl, grpcurl or websocat command.',
+    links: [
+      { label: 'Read the HTTP Log guide', slug: DOCS_LINKS.httpLog },
+      { label: 'Read the history guide', slug: DOCS_LINKS.history },
+      { label: 'Copy as a command', slug: DOCS_LINKS.copyAsCommand },
+    ],
+    image: { src: '/wirebench/images/features/failed-send.png', alt: 'A failed send selected in the HTTP Log, with its connection error in the response tab' },
+  },
+  {
+    heading: 'Request scripts',
+    text: 'A SOAP, REST or gRPC request can have two scripts. The pre-request script runs just before the request is sent and can change it: add a header, sign the body, fill in a field. The post-response script checks the response with tests and keeps a value for later requests. Scripts are TypeScript, typed from the request\'s own contract, so a path that does not exist is an error before anything is sent.',
+    links: [
+      { label: 'Read the guide', slug: DOCS_LINKS.scripts },
+      { label: 'Script API reference', slug: DOCS_LINKS.scriptApi },
+    ],
+  },
+  {
+    heading: 'Sequences',
+    text: 'A sequence sends saved requests one after another. Each step can lift values out of its response, such as a token, an id or a cookie, for the steps after it, and check the response with assertions.',
+    links: [
+      { label: 'Read the guide', slug: DOCS_LINKS.sequences },
+      { label: 'Read the assertions guide', slug: DOCS_LINKS.assertions },
+    ],
+  },
+  {
+    heading: 'Snapshot regression',
+    text: 'Keep a known-good response beside a SOAP or REST request. Every send compares the new response with it by meaning, not byte for byte, and lists what changed.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.snapshotRegression }],
+  },
+  {
+    heading: 'Shared workspaces',
+    text: 'Share a workspace with a team. Members join by URL or by pointing at an existing folder, and every save becomes a commit so everyone converges on the same projects and environments. An automatic commit that would carry a possible secret in plain text is held until you review it.',
+    links: [{ label: 'Read the guide', slug: DOCS_LINKS.sharedWorkspaces }],
+    image: { src: '/wirebench/images/features/sync-panel.png', alt: 'The sync panel of a shared workspace' },
+  },
+  {
+    heading: 'Teams and Wirebench Server',
+    text: 'Wirebench Server gives a team sign-in, teams, shared workspaces and live updates, on a machine you run. Team secrets share the values behind a workspace\'s secret references, encrypted for each approved machine.',
+    links: [
+      { label: 'Run Wirebench Server', slug: DOCS_LINKS.wirebenchServer },
+      { label: 'Read the shared workspaces guide', slug: DOCS_LINKS.sharedWorkspaces },
+    ],
+  },
+  {
+    heading: 'Webhooks',
+    text: 'Webhooks work in both directions. A catch URL on your Wirebench Server records every request sent to it, with its method, path, headers and body exactly as they arrived. A webhook item plays a provider calling your own receiver, so you can build that handler without waiting for a real delivery. Items can sign what they send, catch URLs can check what they receive, and a callback assertion makes a sequence step or a CI run wait for the webhook its request causes.',
+    links: [
+      { label: 'Webhook inbox', slug: DOCS_LINKS.webhooks },
+      { label: 'Sending webhooks', slug: DOCS_LINKS.sendingWebhooks },
+      { label: 'Webhook signatures', slug: DOCS_LINKS.webhookSignatures },
+      { label: 'Callback assertions', slug: DOCS_LINKS.callbackAssertions },
+    ],
+  },
+  {
+    heading: 'CLI and agents',
+    text: 'The wirebench command runs the requests saved in a project from a terminal or a pipeline and turns the result into an exit code and a report. It runs as a GitHub Action, a GitLab template, a container image or plain npx, all backed by the @wirebench/cli package. wirebench mcp serves a project to any MCP client.',
+    links: [
+      { label: 'Run in CI', slug: DOCS_LINKS.runInCi },
+      { label: 'Agents and MCP', slug: DOCS_LINKS.agentsMcp },
+    ],
+  },
+];
+
+const slugify = (heading: string): string =>
+  heading
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+---
+
+<Base
+  title="Features — Wirebench"
+  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, snapshots, shared workspaces, Wirebench Server, webhooks, CLI and agents."
+>
+  <div class="features">
+    <h1>Features</h1>
+    {
+      sections.map((section) => (
+        <section class="feature" aria-labelledby={slugify(section.heading)}>
+          <div class="feature__text">
+            <h2 id={slugify(section.heading)}>{section.heading}</h2>
+            <p>{section.text}</p>
+            <p class="feature__links">
+              {section.links.map((link) => (
+                <a href={docsUrl(link.slug)}>{link.label}</a>
+              ))}
+            </p>
+          </div>
+          {section.image && (
+            <img
+              src={section.image.src}
+              width="1280"
+              height="800"
+              loading="lazy"
+              alt={section.image.alt}
+            />
+          )}
+        </section>
+      ))
+    }
+  </div>
+</Base>
+
+<style>
+  .features {
+    padding-block: 2rem;
+  }
+
+  h1 {
+    margin: 0 0 1rem;
+  }
+
+  .feature {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 1.5rem;
+    align-items: start;
+    padding-block: 2rem;
+    border-top: 1px solid var(--wb-border);
+  }
+
+  .feature:not(:has(img)) {
+    grid-template-columns: 1fr;
+  }
+
+  h2 {
+    margin: 0 0 0.5rem;
+  }
+
+  .feature p {
+    margin: 0 0 0.75rem;
+  }
+
+  .feature__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+  }
+
+  img {
+    display: block;
+    border: 1px solid var(--wb-border);
+    border-radius: 8px;
+  }
+
+  @media (max-width: 40rem) {
+    .feature {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

@@ -15,27 +15,27 @@ project. Importing it adds four things to a Wirebench project:
 Credentials, assertions, test suites and mocks do not come across. The report lists every one of
 them against the request or interface it belonged to.
 
-To run the import, see [Legacy SOAP project](/wirebench/guides/importers/#legacy-soap-project) in
+To run the import, see [Legacy SOAP project](/wirebench/docs/guides/importers/#legacy-soap-project) in
 the importers guide. It reads the file from disk only; a pasted copy is refused.
 
-![The legacy SOAP project import summary, counting 2 interfaces and 6 requests, with a warning that the password was not imported](/wirebench/images/importers/legacy-summary.png)
+![The legacy SOAP project import summary, counting 2 interfaces and 6 requests, with a warning that the password was not imported](/wirebench/docs/images/importers/legacy-summary.png)
 
 ## What carries over
 
 | In the project file | In Wirebench | More |
 | --- | --- | --- |
-| A SOAP interface | An interface, built from the WSDL copy the file carries. Without a copy, the WSDL is fetched over HTTP(S) and the report notes it | [SOAP and WSDL](/wirebench/guides/soap-wsdl/) |
+| A SOAP interface | An interface, built from the WSDL copy the file carries. Without a copy, the WSDL is fetched over HTTP(S) and the report notes it | [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/) |
 | The interface's endpoints | The interface's endpoints | |
 | Operations | Operations, in the definition's order | |
-| A saved request | A request with the envelope exactly as saved, and its SOAP version, SOAPAction and endpoint | [Send a request](/wirebench/guides/soap-wsdl/#send-a-request) |
+| A saved request | A request with the envelope exactly as saved, and its SOAP version, SOAPAction and endpoint | [Send a request](/wirebench/docs/guides/soap-wsdl/#send-a-request) |
 | A request's character encoding and timeout | The request's `encoding` and `timeoutMs` properties | |
 | WS-Addressing turned on for a request | WS-Addressing turned on for that request | |
-| A request's username, with a domain or NTLM set | NTLM auth with the username and domain | [Authentication](/wirebench/guides/auth/) |
+| A request's username, with a domain or NTLM set | NTLM auth with the username and domain | [Authentication](/wirebench/docs/guides/auth/) |
 | A request's username otherwise | Basic auth with the username. Preemptive stays preemptive | |
-| Project properties | Project properties with the same names and values | [Environments and properties](/wirebench/guides/environments/) |
-| Environments, with their properties and endpoint overrides | Environments with the same properties and endpoint overrides | [Endpoint overrides](/wirebench/guides/environments/#endpoint-overrides) |
-| `${#Project#name}` where an imported environment defines `name` | Rewritten to `${name}`, so it follows the active environment | [Property syntax](/wirebench/reference/property-syntax/) |
-| `${#Project#name}`, `${#Global#name}`, `${#System#name}`, `${#Env#name}` otherwise | Kept as written. These scopes exist in Wirebench too | [Property syntax](/wirebench/reference/property-syntax/) |
+| Project properties | Project properties with the same names and values | [Environments and properties](/wirebench/docs/guides/environments/) |
+| Environments, with their properties and endpoint overrides | Environments with the same properties and endpoint overrides | [Endpoint overrides](/wirebench/docs/guides/environments/#endpoint-overrides) |
+| `${#Project#name}` where an imported environment defines `name` | Rewritten to `${name}`, so it follows the active environment | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `${#Project#name}`, `${#Global#name}`, `${#System#name}`, `${#Env#name}` otherwise | Kept as written. These scopes exist in Wirebench too | [Property syntax](/wirebench/docs/reference/property-syntax/) |
 | Scripts, on any element | Saved as they are under `imported-scripts/` in the project folder, and listed in the report. They are never run | |
 
 A request whose operation is no longer in the WSDL is kept, marked as orphaned, and noted in the
@@ -47,13 +47,13 @@ report.
 | --- | --- | --- |
 | A saved password | Not imported. The report lists each request that had one | Enter it in the request's **Auth** inspector. Wirebench stores it encrypted outside the project |
 | SPNEGO/Kerberos, OAuth 2.0 or OAuth 1.0 auth on a request | Not imported. The report lists the request | Set the request's auth again |
-| OAuth 2.0 and OAuth 1.0 profiles | Not imported. Reported once | Set up OAuth 2 on the endpoint or interface. See [OAuth 2](/wirebench/guides/auth/#oauth-2) |
+| OAuth 2.0 and OAuth 1.0 profiles | Not imported. Reported once | Set up OAuth 2 on the endpoint or interface. See [OAuth 2](/wirebench/docs/guides/auth/#oauth-2) |
 | Assertions on a request | Not imported. The report counts them per request | Recreate the checks you need |
-| Attachments on a request | Not imported. The report counts them per request | Add the files again. See [Attach files](/wirebench/guides/soap-wsdl/#attach-files) |
-| A request's WS-Security configuration, and the project's WS-Security configurations and keystores | Not imported. Reported by name | Set them up again. See [WS-Security](/wirebench/guides/auth/#ws-security-soap) |
+| Attachments on a request | Not imported. The report counts them per request | Add the files again. See [Attach files](/wirebench/docs/guides/soap-wsdl/#attach-files) |
+| A request's WS-Security configuration, and the project's WS-Security configurations and keystores | Not imported. Reported by name | Set them up again. See [WS-Security](/wirebench/docs/guides/auth/#ws-security-soap) |
 | Test suites and test cases | Not imported. Reported with the number of test cases | Rebuild the flows you need from the imported requests |
 | Mock services | Not imported. Reported | Not available in Wirebench |
-| REST and other non-SOAP services | Not imported. Reported | Import the API from its OpenAPI document instead. See [From OpenAPI and Swagger](/wirebench/switching/openapi/) |
+| REST and other non-SOAP services | Not imported. Reported | Import the API from its OpenAPI document instead. See [From OpenAPI and Swagger](/wirebench/docs/switching/openapi/) |
 | Database connections and requirements | Not imported. Reported | Not available in Wirebench |
 | Other per-request settings, such as custom HTTP headers | Not read, and not reported | Add them in the request's **Headers** inspector |
 | A request whose saved body is empty or can't be decompressed | Skipped. Reported | Recreate it from the operation |
@@ -71,7 +71,7 @@ did before the import. References you type after importing are not changed; writ
 <Aside type="caution" title="Secrets kept in properties">
 Property values are imported as plain text, and the report does not flag them. If a property held a
 password or a token, that value is now in the project files. Move it to a secret before you share the
-project. See [Secrets](/wirebench/guides/secrets/).
+project. See [Secrets](/wirebench/docs/guides/secrets/).
 </Aside>
 
 ## After importing
@@ -92,6 +92,6 @@ project. See [Secrets](/wirebench/guides/secrets/).
 
 ## Related
 
-- [Importing APIs](/wirebench/guides/importers/): the Import dialog and every format it reads.
-- [SOAP and WSDL](/wirebench/guides/soap-wsdl/): working with the imported interfaces.
-- [Environments and properties](/wirebench/guides/environments/): scopes and endpoint overrides.
+- [Importing APIs](/wirebench/docs/guides/importers/): the Import dialog and every format it reads.
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/): working with the imported interfaces.
+- [Environments and properties](/wirebench/docs/guides/environments/): scopes and endpoint overrides.

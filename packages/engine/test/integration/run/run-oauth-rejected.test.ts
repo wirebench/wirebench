@@ -18,8 +18,10 @@ import { apiDefinitionDir } from '../../../src/project/paths.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
+import { createRunTokenSource } from '../../../src/run/oauth2-token.js';
 import { runRequests } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
+import { testHost } from '../../helpers/send-host.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { readProtoFixture } from '../../helpers/proto-fixtures.js';
 import { startTestGrpcServer } from '../../helpers/test-grpc-server.js';
@@ -152,7 +154,10 @@ function grpcProject(calls: readonly { method: string; message: object }[]): Pro
 }
 
 /** A token endpoint that hands out `tok-1`, `tok-2`, … one per request, and counts them. */
-function tokenIssuer(): { fetched: HttpRequest[]; fetchToken: RunContext['fetchToken'] } {
+function tokenIssuer(): {
+  fetched: HttpRequest[];
+  fetchToken: NonNullable<Parameters<typeof createRunTokenSource>[0]['send']>;
+} {
   const fetched: HttpRequest[] = [];
   return {
     fetched,
@@ -179,8 +184,10 @@ async function run(project: Project, issuer: ReturnType<typeof tokenIssuer>) {
     project,
     projectDir: dir,
     overrides: {},
-    getSecret: () => Promise.resolve(undefined),
-    ...(issuer.fetchToken !== undefined ? { fetchToken: issuer.fetchToken } : {}),
+    host: testHost(
+      {},
+      { tokens: createRunTokenSource({ getSecret: () => Promise.resolve(undefined), send: issuer.fetchToken }) },
+    ),
   };
   return runRequests(selectRequests(project, []).selected, context);
 }

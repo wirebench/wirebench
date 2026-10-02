@@ -1,0 +1,130 @@
+---
+/** The installers of a release, one table per platform; a script lifts the visitor's platform to the top. */
+import type { Release } from '../data/release.ts';
+import { DOCS_LINKS, docsUrl } from '../docs-links.ts';
+
+interface Props {
+  release: Release;
+}
+const { release } = Astro.props;
+
+const platforms = [...new Set(release.installers.map((installer) => installer.platform))];
+const groups = platforms.map((platform) => ({
+  platform,
+  id: `download-${platform.toLowerCase()}`,
+  rows: release.installers
+    .filter((installer) => installer.platform === platform)
+    .map((installer) => ({
+      ...installer,
+      size: `${(installer.bytes / 1_048_576).toFixed(1)} MB`,
+    })),
+}));
+---
+
+<div class="download">
+  {
+    groups.map((group) => (
+      <section data-platform={group.platform} aria-labelledby={group.id}>
+        <h2 id={group.id}>{group.platform}</h2>
+        <div class="download__scroll">
+          <table>
+            <caption class="visually-hidden">{group.platform} installers</caption>
+            <thead>
+              <tr>
+                <th scope="col">Installer</th>
+                <th scope="col">File</th>
+                <th scope="col">Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.rows.map((row) => (
+                <tr>
+                  <td>{row.label}</td>
+                  <td>
+                    <a href={row.url}>
+                      <code>{row.file}</code>
+                    </a>
+                  </td>
+                  <td>{row.size}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    ))
+  }
+  <p class="download__notes">
+    macOS builds are signed and notarised, so they open without a warning. On first launch Windows may ask you to confirm the app (SmartScreen); the <a href={docsUrl(DOCS_LINKS.installation)}>install guide</a> covers the prompt and where Wirebench keeps its data.
+    Windows signing is still being set up; see the <a href={docsUrl(DOCS_LINKS.codeSigningPolicy)}>code-signing policy</a>.
+  </p>
+</div>
+
+<script is:inline>
+  {
+    const nav = navigator;
+    const platform = nav.userAgentData?.platform ?? nav.platform ?? '';
+    const match = /android/i.test(platform)
+      ? null
+      : /mac/i.test(platform)
+        ? 'macOS'
+        : /^win/i.test(platform)
+          ? 'Windows'
+          : /linux/i.test(platform)
+            ? 'Linux'
+            : null;
+    if (match) {
+      const section = document.querySelector(`[data-platform="${match}"]`);
+      if (section?.parentElement) {
+        const label = { macOS: 'Mac', Windows: 'PC', Linux: 'Linux machine' }[match];
+        const note = document.createElement('p');
+        note.className = 'download__match';
+        note.textContent = `For your ${label}`;
+        section.prepend(note);
+        section.parentElement.prepend(section);
+      }
+    }
+  }
+</script>
+
+<style>
+  section {
+    margin-bottom: 2rem;
+  }
+
+  h2 {
+    margin: 0 0 0.75rem;
+  }
+
+  .download__scroll {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--wb-border);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    color: var(--wb-fg-muted);
+    font-weight: 600;
+  }
+
+  .download__notes {
+    color: var(--wb-fg-muted);
+  }
+
+  :global(.download__match) {
+    margin: 0 0 0.5rem;
+    color: var(--wb-accent-default);
+    font-weight: 600;
+  }
+</style>

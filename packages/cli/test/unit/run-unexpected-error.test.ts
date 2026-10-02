@@ -15,7 +15,7 @@ const TOKEN = 'access-token-fetched-mid-run-9d2a';
 vi.mock('@wirebench/engine', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@wirebench/engine')>()),
   runRequests: (_selected: unknown, context: RunContext) => {
-    context.onSecretValue?.(TOKEN);
+    context.host.onSecretValue?.(TOKEN);
     return Promise.reject(new Error(`socket closed while sending Authorization: Bearer ${TOKEN}`));
   },
 }));

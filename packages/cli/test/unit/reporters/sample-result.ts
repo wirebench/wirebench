@@ -47,7 +47,7 @@ export const SAMPLE_RESULT: RunResult = {
       outcome: 'errored',
       assertions: [],
       error: {
-        code: 'unresolved-properties',
+        code: 'rest-unresolved-properties',
         message: '"demo/users/list" has property references nothing resolves: ${baseUrl}',
         details: { unresolved: ['${baseUrl}'] },
       },

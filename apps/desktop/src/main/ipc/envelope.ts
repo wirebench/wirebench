@@ -1,5 +1,6 @@
 import { isWirebenchError, WirebenchError } from '@wirebench/engine';
 import type { z } from 'zod';
+import { redactSecretValues } from '../redact.js';
 import type { ChannelRequest, ChannelResponse, IpcChannel, IpcError, IpcEvent, IpcResult } from '../../shared/ipc.js';
 
 /**
@@ -43,12 +44,14 @@ export function toIpcError(err: unknown): IpcError {
   if (isWirebenchError(err)) {
     return {
       code: err.code,
-      message: err.message,
+      // A message may quote what the request carried (the URL a socket could not dial): every secret
+      // value main has handed out is masked in it, whatever the show-secrets toggle says.
+      message: redactSecretValues(err.message),
       ...(err.details !== undefined ? { details: wireSafeDetails(err.details) } : {}),
     };
   }
   const message = err instanceof Error ? err.message : String(err);
-  return { code: 'internal-error', message };
+  return { code: 'internal-error', message: redactSecretValues(message) };
 }
 
 /**

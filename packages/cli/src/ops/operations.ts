@@ -28,6 +28,15 @@ export type OperationRow =
       readonly operationId?: string;
       readonly ref: string;
       readonly items: readonly string[];
+    }
+  | {
+      /** One saved WebSocket request: no contract operation for generate or validate, so its path is the ref. */
+      readonly kind: 'websocket';
+      readonly container: string;
+      /** The request's own URL, credentials and secret query values masked by pattern. */
+      readonly url: string;
+      readonly ref: string;
+      readonly items: readonly string[];
     };
 
 export interface OperationsResult {
@@ -37,7 +46,11 @@ export interface OperationsResult {
 }
 
 const input = z.object({
-  container: z.string().min(1).optional().describe('An interface or API, by name or slug; all of them when absent'),
+  container: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('An interface, a REST API or a WebSocket API, by name or slug; all of them when absent'),
 });
 
 const byOrder = <T extends { readonly order: number; readonly name: string }>(a: T, b: T): number =>
@@ -74,9 +87,9 @@ export const operationsOp = defineOp({
   name: 'operations',
   title: 'List operations',
   description:
-    "Lists the project's SOAP operations (interface, binding, operation, SOAP action) and REST endpoints " +
-    '(API, method, path, operationId). Each row carries the reference generate and validate take, and the ' +
-    'paths of the saved requests send takes. Reads only.',
+    "Lists the project's SOAP operations (interface, binding, operation, SOAP action), REST endpoints " +
+    '(API, method, path, operationId) and saved WebSocket requests (API, URL). Each row carries the reference ' +
+    'generate and validate take, and the paths of the saved requests send takes. Reads only.',
   input,
   async run(value, context): Promise<OperationsResult> {
     const { project } = await openProject(context);
@@ -85,23 +98,26 @@ export const operationsOp = defineOp({
       wanted === undefined || container.name === wanted || container.slug === wanted;
     const interfaces = [...project.interfaces].filter(matches).sort(byOrder);
     const apis = [...project.apis].filter(matches).sort(byOrder);
-    if (wanted !== undefined && interfaces.length + apis.length === 0) {
+    // gRPC APIs are left out: send refuses their requests, and generate and validate take none.
+    const wsApis = [...project.wsApis].filter(matches).sort(byOrder);
+    if (wanted !== undefined && interfaces.length + apis.length + wsApis.length === 0) {
       throw new OpsError('container-not-found', `No interface or API is named "${wanted}"`, { container: wanted });
     }
     const selected = selectRequests(project, []).selected;
     const notes: string[] = [];
     const shared = new Set(
-      [...project.interfaces, ...project.apis]
+      [...project.interfaces, ...project.apis, ...project.wsApis]
         .map((container) => container.name)
         .filter((name, index, names) => names.indexOf(name) !== index),
     );
     for (const name of shared) {
-      if ([...interfaces, ...apis].some((container) => container.name === name)) {
+      if ([...interfaces, ...apis, ...wsApis].some((container) => container.name === name)) {
         notes.push(`More than one interface or API is named "${name}"; a reference starting with it may be ambiguous`);
       }
     }
     const soapItems = selected.filter((item) => item.kind === 'soap');
     const restItems = selected.filter((item) => item.kind === 'rest');
+    const wsItems = selected.filter((item) => item.kind === 'websocket');
     const operations: OperationRow[] = [];
 
     for (const iface of interfaces) {
@@ -158,6 +174,17 @@ export const operationsOp = defineOp({
                 item.request.contract.path === operation.path,
             )
             .map((item) => item.path),
+        });
+      }
+    }
+    for (const api of wsApis) {
+      for (const item of wsItems.filter((candidate) => candidate.api.id === api.id)) {
+        operations.push({
+          kind: 'websocket',
+          container: api.name,
+          url: redactRequestUrl(item.request.url),
+          ref: item.path,
+          items: [item.path],
         });
       }
     }

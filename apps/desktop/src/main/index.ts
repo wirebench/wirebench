@@ -62,13 +62,13 @@ import { ScriptHost } from './script-host.js';
 import { registerScriptChannels } from './ipc/script.js';
 import {
   registerRequestChannels,
-  sendGrpcRequest,
-  sendRestRequest,
+  toSendDeps,
   whenRestSendsRecorded,
   whenWsSessionsRecorded,
   type RequestChannelDeps,
 } from './ipc/request.js';
 import { registerOAuth2Channels } from './ipc/oauth2.js';
+import { ExchangeRegistry } from './send/exchange.js';
 import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
 import { registerTeamChannels } from './ipc/team.js';
@@ -143,6 +143,8 @@ const secretsFor = (projectId: string | undefined) =>
 
 /** The single in-process engine instance backing every `definition.*`/`request.*` channel. */
 const engineService = new EngineService(secretsFor(undefined));
+/** The sends in flight through the engine's `openExchange`, which `request.cancel` and a close reach. */
+const exchanges = new ExchangeRegistry();
 /** The request scripts' host (#63), created with the request channels once the app is ready. */
 let scriptHost: ScriptHost | undefined;
 
@@ -350,7 +352,7 @@ const workspaceService = new WorkspaceService({
   closeWsSessions: async (projectId) => {
     const matches = projectId === undefined ? undefined : (id: string) => workspaceService.projectId(id) === projectId;
     if (matches === undefined) {
-      engineService.closeAllWs();
+      exchanges.endWhere(() => true, 'websocket');
       // The whole workspace is going: its REST checker worker goes with it (the next check starts one).
       void engineService.disposeRestContractChecker().catch((error: unknown) => {
         console.warn(
@@ -359,19 +361,23 @@ const workspaceService = new WorkspaceService({
         );
       });
     } else {
-      engineService.closeWsWhere(matches);
+      exchanges.endWhere(matches, 'websocket');
     }
-    // An event stream open on a REST request is the same kind of thing: stopped here, and its
-    // History entry — written by its own pending `request.sendRest` — waited for alongside.
-    engineService.abortRestStreamsWhere(matches ?? (() => true));
-    // Always awaited, never guarded by "did we just close anything": the engine drops a session
-    // from its map as the socket finishes, *before* the pending `request.openWs` has written the
-    // History entry. A session that closed a moment ago is therefore invisible here while its
-    // write is still in flight, and skipping the wait would race it against `history.close`.
+    // An event stream open on a REST request is the same kind of thing: stopped here (with any other
+    // REST send of the project still in flight), and its History entry — written by its own pending
+    // `request.sendRest` — waited for alongside.
+    exchanges.endWhere(matches ?? (() => true), 'rest');
+    // Always awaited, never guarded by "did we just close anything": a session already asked to
+    // close is not closed again, yet its pending `request.openWs` may not have written the History
+    // entry. A session that closed a moment ago is therefore invisible here while its write is
+    // still in flight, and skipping the wait would race it against `history.close`.
     // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
+    // Every other send through the engine — a resend, a sequence step, a multi-environment child —
+    // is waited for the same way.
     await Promise.all([
       whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
       whenRestSendsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+      exchanges.whenRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
     ]);
   },
   trash: trashFolder,
@@ -487,10 +493,11 @@ void app.whenReady().then(() => {
     storeSecret: (value, label) => secretStore.set(value, { label }),
     secretsFor,
     scripts,
+    registry: exchanges,
   };
   registerRequestChannels(engineService, requestDeps);
-  // A sequence's steps go through the very paths a single send takes, with the same dependencies.
-  registerSequenceChannels(new SequenceRunner(), engineService, {
+  // A sequence's steps go through the engine as a single send does, with the same dependencies.
+  registerSequenceChannels(new SequenceRunner(), {
     service: engineService,
     requests: requestDeps,
     modelOf: (entityId) => workspaceService.hostOfEntity(entityId).model(),
@@ -528,20 +535,10 @@ void app.whenReady().then(() => {
     // an unhandled rejection; accountService already reports per-account sign-in state via
     // onChange, so there is nothing further to log and never a token to log.
     .catch(() => {});
-  registerHistoryChannels(engineService, historyService, {
+  // A resend is a send like any other: the request channels' dependencies, scripts and registry.
+  registerHistoryChannels(historyService, {
     project: workspaceService,
-    adHocScopes: () => {
-      const state = globalProperties.get();
-      return { project: {}, global: enabledProperties(state.properties, state.disabled), system: process.env };
-    },
-    showSecrets: showSecretsFlag,
-    onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
-    onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
-    secretsFor,
-    oauth2: oauth2Service,
-    getSecret: secretsFor(undefined),
-    grpc: { send: (request, sender) => sendGrpcRequest(engineService, requestDeps, request, sender) },
-    rest: { send: (request) => sendRestRequest(engineService, requestDeps, request) },
+    send: toSendDeps(engineService, requestDeps),
   });
   registerProjectChannels({
     router: workspaceService,
@@ -751,7 +748,7 @@ app.on('before-quit', (event) => {
   // happens inside `workspaceService.close()` below, which owns the history files. Guarded: a
   // failure to close a socket must never be the reason the app fails to quit.
   try {
-    engineService.closeAllWs();
+    exchanges.endWhere(() => true, 'websocket');
   } catch (error) {
     console.warn('[ws] closeAllWs on quit failed', error instanceof Error ? error.message : String(error));
   }
@@ -767,7 +764,7 @@ app.on('before-quit', (event) => {
     );
   });
   try {
-    engineService.abortRestStreamsWhere(() => true);
+    exchanges.endWhere(() => true, 'rest');
   } catch (error) {
     console.warn('[rest] aborting streams on quit failed', error instanceof Error ? error.message : String(error));
   }

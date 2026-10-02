@@ -21,6 +21,12 @@ import type { WsExchange, WsFrame, WsHandshake, WsOpcode } from './model.js';
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 30_000;
 
+/**
+ * How a handshake that timed out begins its `error`: the one failure a caller tells apart from a
+ * refusal (the run facet fails a run's send with `timeout` for it). Not part of the public surface.
+ */
+export const HANDSHAKE_TIMEOUT_ERROR = 'The server did not answer the handshake within';
+
 /** Options for {@link openWsSession}. */
 export interface WsSessionOptions {
   readonly url: string;
@@ -34,6 +40,11 @@ export interface WsSessionOptions {
   readonly handshakeTimeoutMs?: number;
   /** Default unlimited. A larger received message ends the session from this side. */
   readonly maxMessageBytes?: number;
+  /**
+   * Default unlimited. How long a close from this side, or a cancel while it closes, waits for the
+   * server's answer before the connection is torn down and the session settles with 1006.
+   */
+  readonly closeGraceMs?: number;
   readonly signal?: AbortSignal;
 }
 
@@ -55,8 +66,13 @@ export interface WsSessionHandle {
   readonly done: Promise<WsExchange>;
 }
 
-/** RFC 6455 §7.4, as the WHATWG API enforces it: 1000, or the 3000–4999 range. */
-function assertCloseCode(code: number): void {
+/**
+ * RFC 6455 §7.4, as the WHATWG API enforces it: 1000, or the 3000–4999 range. Exported for the run
+ * facet, which refuses a bad code when it is asked to close rather than when the close goes out.
+ *
+ * @throws WsError `ws-bad-close`
+ */
+export function assertCloseCode(code: number): void {
   if (code !== 1000 && !(code >= 3000 && code <= 4999)) {
     throw new WsError('ws-bad-close', `${code} is not a close code an application may send (1000, or 3000–4999)`, {
       details: { code },
@@ -95,7 +111,7 @@ export function isUpgradeHeadFor(
   message: unknown,
   httpOrigin: string,
   pathAndSearch: string,
-): message is { headers: string; socket?: TlsSocketLike & { encrypted?: boolean } } {
+): message is { headers: string; socket?: TlsSocketLike & { encrypted?: boolean; destroy?: () => void } } {
   const m = message as { headers?: unknown; request?: { origin?: unknown; path?: string } };
   if (typeof m.headers !== 'string') return false;
   const origin =
@@ -136,6 +152,9 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
   let closedBy: 'client' | 'server' | 'error' | undefined;
   let failure: string | undefined;
   let settled = false;
+  /** The upgrade's socket, which a close the server never answers tears down after `closeGraceMs`. */
+  let connection: { destroy?: () => void } | undefined;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
 
   const record = (
     direction: WsFrame['direction'],
@@ -197,6 +216,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     if (rawRequestHead !== undefined) return;
     if (!isUpgradeHeadFor(message, httpOrigin, `${target.pathname}${target.search}`)) return;
     rawRequestHead = message.headers;
+    connection = message.socket;
     if (message.socket?.encrypted === true) tls = sslInfoForSocket(message.socket);
   };
   // Subscribed (and `socket` declared) before `new WebSocket(...)` runs: if a diagnostics channel
@@ -287,6 +307,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     if (settled) return;
     settled = true;
     clearTimeout(timer);
+    clearTimeout(closeTimer);
     options.signal?.removeEventListener('abort', onAbort);
     unsubscribeAll();
     const clean = wasClean && handshake !== undefined;
@@ -313,15 +334,34 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
     resolveDone(exchange);
   };
 
+  /**
+   * Lets go of a connection whose close the server never answered: the socket is destroyed, and the
+   * session settles with 1006 on the next macrotask if undici reports nothing of it.
+   */
+  const tearDown = (): void => {
+    if (settled) return;
+    connection?.destroy?.();
+    setTimeout(() => settle(1006, '', false), 0);
+  };
+  /** Gives a close from this side `closeGraceMs` to be answered, when the options bound it. */
+  const boundClose = (): void => {
+    if (options.closeGraceMs === undefined || closeTimer !== undefined) return;
+    closeTimer = setTimeout(tearDown, options.closeGraceMs);
+  };
   /** Ends a session the server never ended: a timeout, or an abort. */
   const fail = (message: string): void => {
     failure ??= message;
     closedBy ??= 'error';
+    // A cancel while the close waits for its answer, when the wait is bounded, waits no more.
+    if (ws.readyState === WebSocket.CLOSING && options.closeGraceMs !== undefined) {
+      tearDown();
+      return;
+    }
     // There is no abort for a connecting socket; close() on one fails the handshake, which is the point.
     ws.close();
   };
   const timer = setTimeout(() => {
-    if (handshake === undefined) fail(`The server did not answer the handshake within ${timeoutMs} ms`);
+    if (handshake === undefined) fail(`${HANDSHAKE_TIMEOUT_ERROR} ${timeoutMs} ms`);
   }, timeoutMs);
   const onAbort = (): void => fail('The connection was cancelled');
   if (options.signal?.aborted === true) queueMicrotask(onAbort);
@@ -376,6 +416,7 @@ export function openWsSession(options: WsSessionOptions, hooks: WsSessionHooks =
       closedBy ??= 'client';
       if (ws.readyState === WebSocket.OPEN) record('sent', 'close', reason, { code, reason });
       ws.close(code, reason);
+      boundClose();
     },
   };
 }

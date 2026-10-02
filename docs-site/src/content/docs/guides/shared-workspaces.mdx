@@ -60,7 +60,7 @@ Once a workspace is shared, the status bar shows a Sync badge whose label follow
 *No git* (a git share where git could not be found), or *Synced folder* (no Sync control at all).
 Click it to open the **Sync panel**:
 
-![The Sync panel of a workspace shared to a git remote](/wirebench/images/shared-workspaces/sync-panel.png)
+![The Sync panel of a workspace shared to a git remote](/wirebench/docs/images/shared-workspaces/sync-panel.png)
 
 - **Pull**, **Push** and **Fetch** buttons, and a commit-message field for when *Commit on save*
   is off — leave it empty and Wirebench writes a generated one.
@@ -85,7 +85,7 @@ changes and *Commit on save* is off.
 
 A **Commit** you make from the Sync panel first checks every open project for credentials in
 plain text, and lists anything it finds in the same review a manual save uses — see
-[Secret tokens and scanning](/wirebench/guides/secrets/#secret-tokens-and-scanning).
+[Secret tokens and scanning](/wirebench/docs/guides/secrets/#secret-tokens-and-scanning).
 
 An automatic commit — *Commit on save*, or the catch-up commit when the workspace opens — can't
 ask, so it waits instead. While an open project has a possible secret you haven't moved or kept,
@@ -116,7 +116,7 @@ conflict resolver. It lists each conflicted entity by name with three choices:
 **Cancel** aborts the whole merge, with a confirmation, since it discards every resolution made so
 far.
 
-![The conflict resolver naming a request both sides edited](/wirebench/images/shared-workspaces/conflict-resolver.png)
+![The conflict resolver naming a request both sides edited](/wirebench/docs/images/shared-workspaces/conflict-resolver.png)
 
 While a conflict is open, conflicted requests are read-only in the editor. Once every conflicted
 file is resolved, Wirebench commits the merge and reloads.
@@ -140,7 +140,7 @@ A `${secret:name}` token works the same way: the name travels in the file, and e
 their own value for it on their own machine, with **Set Secret Token Value…** from the command
 palette. Until you do, a send that uses it fails with *The secret "name" is not on this machine*, and
 the toast's **Set value…** button opens that same dialog on the missing token. See
-[Secret tokens and scanning](/wirebench/guides/secrets/#the-secretname-token).
+[Secret tokens and scanning](/wirebench/docs/guides/secrets/#the-secretname-token).
 
 ## Team secrets
 
@@ -202,7 +202,7 @@ place for you to delete by hand.
 
 ## Sign in to a server
 
-A team that runs Wirebench Server signs in to it from the app. Run **Account: Sign in to a
+A team that runs [Wirebench Server](/wirebench/docs/guides/wirebench-server/) signs in to it from the app. Run **Account: Sign in to a
 server…** from the command palette, use the status bar's **Sign in**, or **Add server…** under
 Settings → Accounts, then:
 
@@ -309,5 +309,5 @@ are signed in to, with its team and your role; an empty workspace appears once s
 
 ## Related
 
-- [Workspaces and projects](/wirebench/guides/workspaces/) — what a workspace and a project are,
+- [Workspaces and projects](/wirebench/docs/guides/workspaces/) — what a workspace and a project are,
   and managing them locally.

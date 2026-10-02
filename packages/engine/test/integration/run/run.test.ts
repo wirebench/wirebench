@@ -13,6 +13,7 @@ import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import type { RequestResult } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
+import { testHost } from '../../helpers/send-host.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestRestServer, startTestSoapServer } from '../../helpers/index.js';
 import type { TestRestServer, TestSoapServer } from '../../helpers/index.js';
@@ -106,7 +107,7 @@ function makeProject(
 }
 
 function contextFor(project: Project, extra: Partial<RunContext> = {}): RunContext {
-  return { project, projectDir: dir, overrides: {}, getSecret: () => Promise.resolve(undefined), ...extra };
+  return { project, projectDir: dir, overrides: {}, host: testHost(), ...extra };
 }
 
 const all = (project: Project) => selectRequests(project, []).selected;
@@ -220,7 +221,9 @@ describe('runRequests', () => {
             ? undefined
             : exchange.kind === 'soap'
               ? exchange.soap.http.status
-              : exchange.rest.status;
+              : exchange.kind === 'rest'
+                ? exchange.rest.status
+                : undefined;
         seen.push([item.request.name, exchange?.kind, status]);
       },
     });

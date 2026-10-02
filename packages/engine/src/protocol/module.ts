@@ -9,7 +9,8 @@ import type { FsLike } from '../project/fs.js';
 import type { ProjectProblem } from '../project/load.js';
 import type { Project } from '../project/model.js';
 import type { RunContext } from '../run/context.js';
-import type { SentRequest } from '../run/run.js';
+import type { ExchangeHandle, ExchangeOptions } from '../run/exchange.js';
+import type { SendHost } from '../run/host.js';
 import type { ScriptSession } from '../run/script-support.js';
 import type { SecretNeed } from '../secrets/env-names.js';
 import type { HeaderPair, RequestScripts, ScriptFailure, ScriptPhase } from '../script/model.js';
@@ -146,11 +147,12 @@ export interface ProtocolRun<S extends SelectedBase = SelectedBase> {
   /** For a request id found in this protocol's containers but not runnable: why. */
   whyNotRunnable(project: Project, requestId: string): string | undefined;
   /**
-   * Sends one request as a run does: prepare, run its scripts when `scripts` is given, send.
-   *
-   * @throws WirebenchError what preparing, the pre-request script or the send throws
+   * Opens one send (spec §4): resolve, pre-request script, connect, send. The send's own failure
+   * rejects `result`; it throws at once only for a request of another kind.
    */
-  send(selected: S, scope: RunScope, scripts?: ScriptedSend): Promise<SentRequest>;
+  open(selected: S, scope: RunScope, host: SendHost, options: ExchangeOptions): ExchangeHandle;
+  /** The resolve step alone (spec §3.3): what a send would send, with nothing connected. */
+  resolve(selected: S, scope: RunScope, host: SendHost): Promise<unknown>;
   /** The request's script types, from whatever contract the run has cached for it. */
   scriptTypes(selected: S, scope: RunScope): Promise<RequestScriptTypes>;
   /** The secrets this protocol's configuration needs: auth, keystores, signing, WS-Security. */
@@ -279,9 +281,13 @@ export function defineProtocol<S extends SelectedBase>(module: {
           run: {
             groups: (project) => run.groups(project),
             whyNotRunnable: (project, requestId) => run.whyNotRunnable(project, requestId),
-            send: (selected, scope, scripts) => {
+            open: (selected, scope, host, options) => {
               assertKind(module.kind, selected);
-              return run.send(selected as S, scope, scripts);
+              return run.open(selected as S, scope, host, options);
+            },
+            resolve: (selected, scope, host) => {
+              assertKind(module.kind, selected);
+              return run.resolve(selected as S, scope, host);
             },
             scriptTypes: (selected, scope) => {
               assertKind(module.kind, selected);

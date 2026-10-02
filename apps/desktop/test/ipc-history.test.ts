@@ -1,11 +1,100 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createRestRequest, entry, expand, WirebenchError } from '@wirebench/engine';
-import type { AuthConfig, CreateRestRequestInput, RestApi, RestSendInput, UnresolvedRef } from '@wirebench/engine';
-import { EngineService } from '../src/main/engine-service.js';
+import { createServer, type IncomingHttpHeaders } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createApi,
+  createGrpcApi,
+  createGrpcFolder,
+  createGrpcRequest,
+  createInterface,
+  createProject,
+  createRequest,
+  createRestRequest,
+  entry,
+  expand,
+  WirebenchError,
+} from '@wirebench/engine';
+import type { AuthConfig, CreateRestRequestInput, Project, SoapRequestDef } from '@wirebench/engine';
 import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
 import { grpcResendDraft, registerHistoryChannels, restResendDraft } from '../src/main/ipc/history.js';
-import type { RestSendResolution } from '../src/main/rest-send.js';
+import type { SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
+import { sendDepsFor, type SendDepsExtra } from './helpers/send-deps.js';
+
+/**
+ * The engine send every re-send goes through, spied on: it sends for real unless a test stubs it,
+ * and what it was asked to send is what is checked.
+ */
+const { engineSend, real } = vi.hoisted(() => ({
+  engineSend: vi.fn(),
+  real: { send: undefined as unknown as (...args: unknown[]) => unknown },
+}));
+
+vi.mock('../src/main/send/exchange.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/send/exchange.js')>();
+  real.send = actual.sendThroughEngine as never;
+  return { ...actual, sendThroughEngine: engineSend };
+});
+
+beforeEach(() => {
+  engineSend.mockReset();
+  engineSend.mockImplementation(real.send);
+});
+
+/** The `n`th engine send's request id and options. */
+function sent(n = 0): { sendId: string; requestId: string; options: Record<string, unknown> } {
+  const [, sendId, requestId, options] = engineSend.mock.calls[n] as [unknown, string, string, Record<string, unknown>];
+  return { sendId, requestId, options };
+}
+
+/** What the SOAP server below was sent, one request after another. */
+const received: { url: string; headers: IncomingHttpHeaders; body: string }[] = [];
+let soapUrl = '';
+const soapServer = createServer((req, res) => {
+  const chunks: Buffer[] = [];
+  req.on('data', (chunk: Buffer) => chunks.push(chunk));
+  req.on('end', () => {
+    received.push({ url: req.url ?? '', headers: req.headers, body: Buffer.concat(chunks).toString('utf8') });
+    res.writeHead(200, { 'content-type': 'text/xml' });
+    res.end('<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><ok/></s:Body></s:Envelope>');
+  });
+});
+
+beforeAll(async () => {
+  await new Promise<void>((resolve) => soapServer.listen(0, '127.0.0.1', resolve));
+  soapUrl = `http://127.0.0.1:${String((soapServer.address() as AddressInfo).port)}`;
+});
+
+afterAll(async () => {
+  await new Promise((resolve) => soapServer.close(resolve));
+});
+
+/** A project holding SOAP request `req-1` as it is saved now. */
+function soapModel(
+  extra: Partial<Parameters<typeof createRequest>[1]> & { endpointUrl?: string; auth?: SoapRequestDef['auth'] } = {},
+): Project {
+  const { endpointUrl, auth, ...input } = extra;
+  const request = {
+    ...createRequest('Add', { id: 'req-1', envelopeXml: '<Envelope/>', soapVersion: '1.1', ...input }),
+    ...(endpointUrl !== undefined ? { endpointUrl } : {}),
+    ...(auth !== undefined ? { auth } : {}),
+  };
+  const iface = createInterface('Calc', {
+    id: 'iface-1',
+    definitionUrl: 'http://127.0.0.1:1/x?wsdl',
+    cacheDefinition: false,
+    operations: [{ name: 'Add', bindingName: '{urn:t}B', slug: 'add', order: 0, requests: [request] }],
+  });
+  return { ...createProject('Calc', { id: 'proj-1' }), interfaces: [iface] };
+}
+
+/** The engine send's dependencies over `model` (a project with nothing in it by default). */
+function sendDeps(
+  model: Project = createProject('None', { id: 'proj-1' }),
+  extra: SendDepsExtra = {},
+): SendThroughEngineDeps {
+  return sendDepsFor(model, extra);
+}
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -48,10 +137,10 @@ function makeEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire 
 function noLiveRequests() {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
-    authFor: () => undefined,
     requestMeta: () => undefined,
-    projectId: () => 'proj-1',
-    buildLiveSendInput: () => undefined,
+    // Only `req-1` still exists; any other request an entry names has been deleted since.
+    projectId: (requestId: string) => (requestId === 'req-1' ? 'proj-1' : undefined),
+    endpointFor: () => undefined,
   };
 }
 
@@ -89,7 +178,7 @@ describe('registerHistoryChannels', () => {
   it('history.list returns entries and total from the history service', async () => {
     const entries = [makeEntry({ id: 'a', requestName: 'Alpha' }), makeEntry({ id: 'b', requestName: 'Beta' })];
     const history = fakeHistory(entries);
-    registerHistoryChannels(new EngineService(), history as never, {
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
     });
 
@@ -106,7 +195,7 @@ describe('registerHistoryChannels', () => {
       makeEntry({ id: 'b', requestName: 'Beta', projectId: 'proj-2' }),
     ];
     const history = fakeHistory(entries);
-    registerHistoryChannels(new EngineService(), history as never, {
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
     });
 
@@ -122,7 +211,7 @@ describe('registerHistoryChannels', () => {
   it('history.get returns the entry or undefined', async () => {
     const entries = [makeEntry({ id: 'a' })];
     const history = fakeHistory(entries);
-    registerHistoryChannels(new EngineService(), history as never, {
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
     });
 
@@ -133,7 +222,7 @@ describe('registerHistoryChannels', () => {
   it('history.clear empties the store and reports how many were cleared', async () => {
     const entries = [makeEntry({ id: 'a' }), makeEntry({ id: 'b' })];
     const history = fakeHistory(entries);
-    registerHistoryChannels(new EngineService(), history as never, {
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
     });
 
@@ -144,10 +233,10 @@ describe('registerHistoryChannels', () => {
   it.each(['websocket', 'rest', 'grpc'] as const)(
     'history.resend refuses a %s entry with history-resend-unsupported, sending nothing',
     async (kind) => {
-      const service = new EngineService();
-      const send = vi.spyOn(service, 'send');
-      registerHistoryChannels(service, fakeHistory([makeEntry({ id: 'k', kind })]) as never, {
+      const send = engineSend;
+      registerHistoryChannels(fakeHistory([makeEntry({ id: 'k', kind })]) as never, {
         project: noLiveRequests(),
+        send: sendDeps(),
       });
       const result = await invoke('history.resend', { id: 'k' });
       expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-unsupported' } });
@@ -157,7 +246,7 @@ describe('registerHistoryChannels', () => {
 
   it('history.resend rejects an unknown id with unknown-history-entry', async () => {
     const history = fakeHistory([]);
-    registerHistoryChannels(new EngineService(), history as never, {
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
     });
 
@@ -179,10 +268,10 @@ describe('registerHistoryChannels', () => {
       }),
     ];
     const history = fakeHistory(entries);
-    const engine = new EngineService();
-    const send = vi.spyOn(engine, 'send');
-    registerHistoryChannels(engine, history as never, {
+    const send = engineSend;
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
+      send: sendDeps(),
     });
 
     const result = await invoke('history.resend', { id: 'a' });
@@ -205,48 +294,30 @@ describe('registerHistoryChannels', () => {
       }),
     ];
     const history = fakeHistory(entries);
-    const engine = new EngineService();
-    const send = vi.spyOn(engine, 'send').mockResolvedValue({
-      sendId: 'ignored',
-      durationMs: 1,
-      http: {
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        rawHeaders: [],
-        bodyBase64: '',
-        rawBodyBase64: '',
-        rawRequestBase64: '',
-        rawResponseBase64: '',
-        truncated: false,
-        httpVersion: '1.1',
-        timings: { startedAt: '2026-01-01T00:00:00.000Z', totalMs: 1 },
-        redirects: [],
-        request: { url: 'http://dev.test/new-endpoint', method: 'POST', headers: {} },
-      },
-      problems: [],
+    // The request as it is saved now: its endpoint, envelope and headers, sent through the engine.
+    const model = soapModel({
+      endpointUrl: `${soapUrl}/new-endpoint`,
+      envelopeXml: '<Envelope>current, with the real password</Envelope>',
+      headers: [{ name: 'X-Live', value: 'yes' }],
     });
-    registerHistoryChannels(engine, history as never, {
+    registerHistoryChannels(history as never, {
       project: {
         ...noLiveRequests(),
-        buildLiveSendInput: (requestId: string) =>
-          requestId === 'req-1'
-            ? {
-                endpoint: 'http://dev.test/new-endpoint',
-                envelopeXml: '<Envelope>current, with the real password</Envelope>',
-                soapVersion: '1.1' as const,
-                headers: { 'X-Live': 'yes' },
-              }
-            : undefined,
+        endpointFor: (requestId: string) => (requestId === 'req-1' ? `${soapUrl}/new-endpoint` : undefined),
       },
+      send: sendDeps(model),
     });
 
     const result = await invoke('history.resend', { id: 'a' });
     expect(result).toMatchObject({ ok: true });
-    const [sentRequest] = send.mock.calls[0]!;
-    expect(sentRequest.input.endpoint).toBe('http://dev.test/new-endpoint');
-    expect(sentRequest.input.envelopeXml).toBe('<Envelope>current, with the real password</Envelope>');
-    expect(sentRequest.input.headers).toEqual({ 'X-Live': 'yes' });
+    // The saved request by id, nothing of the entry laid over it.
+    expect(sent()).toMatchObject({ requestId: 'req-1', options: { draft: { kind: 'soap', override: {} } } });
+    expect(sent().options).not.toHaveProperty('adHoc');
+    const sentRequest = received.at(-1)!;
+    expect(sentRequest.url).toBe('/new-endpoint');
+    expect(sentRequest.body).toBe('<Envelope>current, with the real password</Envelope>');
+    expect(sentRequest.headers['x-live']).toBe('yes');
+    expect(sentRequest.headers.authorization).toBeUndefined();
   });
 
   it('history.resend refuses a redacted entry whose original request no longer exists', async () => {
@@ -258,10 +329,10 @@ describe('registerHistoryChannels', () => {
       }),
     ];
     const history = fakeHistory(entries);
-    const engine = new EngineService();
-    const send = vi.spyOn(engine, 'send');
-    registerHistoryChannels(engine, history as never, {
-      project: noLiveRequests(), // buildLiveSendInput always undefined: the request is gone.
+    const send = engineSend;
+    registerHistoryChannels(history as never, {
+      project: noLiveRequests(), // endpointFor always undefined: the request is gone.
+      send: sendDeps(),
     });
 
     const result = await invoke('history.resend', { id: 'a' });
@@ -279,8 +350,8 @@ describe('registerHistoryChannels', () => {
       }),
     ];
     const history = fakeHistory(entries);
-    const engine = new EngineService();
-    const send = vi.spyOn(engine, 'send').mockResolvedValue({
+    // The entry as recorded, sent as a synthetic item: nothing of a project behind it.
+    const send = engineSend.mockResolvedValueOnce({
       sendId: 'ignored',
       durationMs: 1,
       http: {
@@ -300,25 +371,149 @@ describe('registerHistoryChannels', () => {
       },
       problems: [],
     });
-    registerHistoryChannels(engine, history as never, {
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
+      send: sendDeps(),
     });
 
     const result = await invoke('history.resend', { id: 'a' });
     expect(result).toMatchObject({ ok: true });
-    const [sentRequest] = send.mock.calls[0]!;
+    const [, , requestId, options] = send.mock.calls[0]! as [
+      unknown,
+      string,
+      string,
+      { adHoc: { input: { endpoint: string; envelopeXml: string; headers: unknown } } },
+    ];
+    const sentRequest = options.adHoc;
+    expect(requestId).toBe('ad-hoc');
     expect(sentRequest.input.endpoint).toBe('http://dev.test/orphan');
     expect(sentRequest.input.envelopeXml).toBe('<Envelope>plain</Envelope>');
     expect(sentRequest.input.headers).toEqual({ 'X-Foo': 'bar' });
+    // Recorded back into the History it came from, under its own names and its gone request.
+    expect(options.adHoc).toMatchObject({
+      names: { requestName: 'Add', interfaceName: 'Calc', operationName: 'Add', projectId: 'proj-1' },
+      requestId: 'req-gone',
+    });
+  });
+
+  it('history.resend sends a request that still exists, but maps no endpoint now, as its project sends it, to the recorded endpoint', async () => {
+    // The environment active now maps no endpoint for the interface, so the live input does not
+    // build; the request, its project's properties, auth, keychain and proxy are all still there.
+    const entries = [
+      makeEntry({
+        id: 'a',
+        requestId: 'req-1',
+        endpoint: `${soapUrl}/recorded`,
+        request: { envelopeXml: '<Envelope>old</Envelope>', headers: [] },
+      }),
+    ];
+    const model: Project = {
+      ...soapModel({
+        envelopeXml: '<Envelope>${#Project#token}</Envelope>',
+        auth: { type: 'basic', username: 'svc', passwordRef: 'sec_pw', preemptive: true },
+      }),
+      properties: { token: 'abc' },
+    };
+    const proxyFor = vi.fn(() => Promise.resolve(undefined));
+    registerHistoryChannels(fakeHistory(entries) as never, {
+      project: noLiveRequests(),
+      send: sendDeps(model, {
+        project: { proxyFor },
+        secretsFor: () => (ref) => Promise.resolve(ref === 'sec_pw' ? 'pw-1' : undefined),
+        adHocScopes: () => ({ project: {}, global: { token: 'from-globals' }, system: {} }),
+      }),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sent()).toMatchObject({
+      requestId: 'req-1',
+      options: { draft: { kind: 'soap', override: { endpoint: `${soapUrl}/recorded` } } },
+    });
+    expect(sent().options).not.toHaveProperty('adHoc');
+    const last = received.at(-1)!;
+    expect(last.url).toBe('/recorded');
+    expect(last.body).toBe('<Envelope>abc</Envelope>');
+    expect(last.headers.authorization).toBe(`Basic ${Buffer.from('svc:pw-1').toString('base64')}`);
+    expect(proxyFor).toHaveBeenCalledWith('proj-1', `${soapUrl}/recorded`);
+  });
+
+  it('history.resend refuses a request that maps no endpoint now when the recorded one holds a redacted value', async () => {
+    const entries = [makeEntry({ id: 'a', requestId: 'req-1', endpoint: `${soapUrl}/recorded?key=%3Credacted%3E` })];
+    registerHistoryChannels(fakeHistory(entries) as never, {
+      project: noLiveRequests(),
+      send: sendDeps(soapModel()),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-redacted' } });
+    expect(engineSend).not.toHaveBeenCalled();
+  });
+
+  it('history.resend sends an entry whose request was deleted ad hoc, never through a project', async () => {
+    const entries = [makeEntry({ id: 'a', requestId: 'req-gone', endpoint: `${soapUrl}/orphan` })];
+    registerHistoryChannels(fakeHistory(entries) as never, {
+      project: noLiveRequests(),
+      send: sendDeps(soapModel(), { project: { projectId: () => undefined } }),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sent()).toMatchObject({ requestId: 'ad-hoc', options: { adHoc: { requestId: 'req-gone' } } });
+  });
+
+  it('history.resend records an orphaned entry back into its History, naming the request it was sent from', async () => {
+    const entries = [
+      makeEntry({
+        id: 'a',
+        requestId: 'req-gone',
+        endpoint: `${soapUrl}/orphan`,
+        request: { envelopeXml: '<Envelope>plain</Envelope>', headers: [{ name: 'X-Foo', value: 'bar' }] },
+      }),
+    ];
+    const history = fakeHistory(entries);
+    const failures: unknown[] = [];
+    registerHistoryChannels(history as never, {
+      project: noLiveRequests(),
+      send: sendDeps(undefined, {
+        history: history as never,
+        project: { projectId: () => undefined },
+        onSendFailed: (failure) => failures.push(failure),
+      }),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+    expect(result).toMatchObject({ ok: true });
+    expect(received.at(-1)).toMatchObject({ url: '/orphan', body: '<Envelope>plain</Envelope>' });
+    expect(received.at(-1)!.headers['x-foo']).toBe('bar');
+    expect(history.recordSend).toHaveBeenCalledTimes(1);
+    expect(history.recordSend.mock.calls[0]).toMatchObject([
+      'proj-1',
+      {
+        requestId: 'req-gone',
+        requestName: 'Add',
+        interfaceName: 'Calc',
+        operationName: 'Add',
+        input: {
+          endpoint: `${soapUrl}/orphan`,
+          envelopeXml: '<Envelope>plain</Envelope>',
+          headers: { 'X-Foo': 'bar' },
+        },
+      },
+    ]);
+    expect(failures).toEqual([]);
   });
 
   it('history.resend reports a failed resend to onSendFailed as a soap failure row', async () => {
     const entries = [makeEntry({ id: 'dead', endpoint: 'http://127.0.0.1:1/nope' })];
     const history = fakeHistory(entries);
     const onSendFailed = vi.fn();
-    registerHistoryChannels(new EngineService(), history as never, {
+    registerHistoryChannels(history as never, {
       project: noLiveRequests(),
-      onSendFailed,
+      send: sendDeps(undefined, { onSendFailed }),
     });
 
     const result = await invoke('history.resend', { id: 'dead' });
@@ -352,11 +547,37 @@ function grpcEntry(methodKind: 'unary' | 'client-streaming' | 'bidi-streaming', 
   });
 }
 
+/**
+ * The engine send stubbed by `send`, which is handed each call as `request.sendGrpc` would take it:
+ * its send id, its request id and its draft, with the rest of the send's options beside them.
+ */
+function stubEngine(send: (call: Record<string, unknown>) => unknown): void {
+  engineSend.mockImplementation(
+    (_deps: unknown, sendId: string, requestId: string, options: { draft: { draft?: unknown } }) => {
+      const { draft, ...rest } = options;
+      return send({ sendId, requestId, ...(draft.draft !== undefined ? { draft: draft.draft } : {}), ...rest });
+    },
+  );
+}
+
+/** A project holding one gRPC call, `r-1`. */
+function grpcModel(): Project {
+  const call = createGrpcRequest('SayHello', { id: 'r-1', service: 'wirebench.greet.Greeter', method: 'SayHello' });
+  const api = createGrpcApi('Greeter', {
+    id: 'g-1',
+    target: '127.0.0.1:1',
+    tls: false,
+    folders: [createGrpcFolder('Greeter', { id: 'f-1', requests: [call] })],
+  });
+  return { ...createProject('Demo', { id: 'proj-1' }), grpcApis: [api] };
+}
+
 /** Registers the channels with a gRPC sender stub and a project that knows request `r-1`. */
 function registerGrpc(entries: HistoryEntryWire[], send = vi.fn(() => Promise.resolve({}))) {
-  registerHistoryChannels(new EngineService(), fakeHistory(entries) as never, {
-    project: { ...noLiveRequests(), grpcSend: ((id: string) => (id === 'r-1' ? {} : undefined)) as never },
-    grpc: { send: send as never },
+  stubEngine(send);
+  registerHistoryChannels(fakeHistory(entries) as never, {
+    project: noLiveRequests(),
+    send: sendDeps(grpcModel()),
   });
   return send;
 }
@@ -397,14 +618,15 @@ describe('history.resendGrpc', () => {
     // The stub's reply is no real exchange summary, so only what went out is checked here.
     await invoke('history.resendGrpc', { id: 'g' });
     expect(send).toHaveBeenCalledTimes(1);
-    const [sent, sender] = send.mock.calls[0]! as unknown as [Record<string, unknown>, unknown];
-    expect(sent).toMatchObject({
+    const [sentCall] = send.mock.calls[0]! as unknown as [Record<string, unknown>];
+    expect(sentCall).toMatchObject({
       requestId: 'r-1',
       draft: { service: 'pkg.Greeter', method: 'SayHello', methodKind: 'unary', message: '{"name":"Ada"}' },
     });
-    expect(typeof sent['sendId']).toBe('string');
-    expect(sent).not.toHaveProperty('interactive');
-    expect(sender).toEqual({});
+    expect(typeof sentCall['sendId']).toBe('string');
+    expect(sentCall).not.toHaveProperty('interactive');
+    // Nothing on screen holds a resend's send id, so it reports no live events to the window.
+    expect(sentCall).not.toHaveProperty('onLive');
   });
 
   it.each(['client-streaming', 'bidi-streaming'] as const)(
@@ -445,7 +667,7 @@ function restEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire 
   });
 }
 
-/** The saved request `r-1` as `project.restSend` resolves it: the request as typed, and its auth. */
+/** The saved request `r-1` as a resend takes it (`SavedRest`): the request as typed, and its auth. */
 function savedRest(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }) {
   return { request: createRestRequest('Pet', { id: 'r-1', ...input }), auth };
 }
@@ -719,24 +941,14 @@ describe('restResendDraft', () => {
 });
 
 /**
- * `deps.project.restSend`'s reply for `r-1`: `savedRest`'s request and auth, resolved to `ORIGIN` —
- * the property expansion `savedOriginOf` reads to decide whether the recorded URL is reusable.
- * `unresolved` stands for property references left unresolved *elsewhere* on the saved request
- * (a header, the body): `savedOriginOf` must ignore them and look at the URL alone.
+ * A project holding `savedRest`'s request `r-1`, with its auth, in an API at `ORIGIN`: what the
+ * resend resolves through the engine, the expansion `savedOriginOf` reads to decide whether the
+ * recorded URL is reusable.
  */
-function savedRestSend(
-  input: CreateRestRequestInput = {},
-  auth: AuthConfig = { type: 'none' },
-  unresolved: UnresolvedRef[] = [],
-): RestSendResolution {
-  const saved = savedRest(input, auth);
-  return {
-    ...saved,
-    input: { baseUrl: ORIGIN, request: { url: saved.request.url } } as RestSendInput,
-    unresolved,
-    api: {} as RestApi,
-    baseUrlSource: 'api',
-  };
+function savedModel(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }): Project {
+  const { request } = savedRest(input, auth);
+  const api = createApi('Petstore', { id: 'api-1', baseUrl: ORIGIN, requests: [{ ...request, auth }] });
+  return { ...createProject('Demo', { id: 'proj-1' }), apis: [api] };
 }
 
 /** Registers the channels with a REST sender stub and a project that knows request `r-1`. */
@@ -744,11 +956,12 @@ function registerRest(
   entries: HistoryEntryWire[],
   send = vi.fn(() => Promise.resolve({})),
   withSender = true,
-  saved: RestSendResolution = savedRestSend(),
+  model: Project = savedModel(),
 ) {
-  registerHistoryChannels(new EngineService(), fakeHistory(entries) as never, {
-    project: { ...noLiveRequests(), restSend: (id: string) => (id === 'r-1' ? saved : undefined) },
-    ...(withSender ? { rest: { send: send as never } } : {}),
+  stubEngine(send);
+  registerHistoryChannels(fakeHistory(entries) as never, {
+    project: noLiveRequests(),
+    ...(withSender ? { send: sendDeps(model) } : {}),
   });
   return send;
 }
@@ -775,7 +988,7 @@ describe('history.resendRest', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('refuses a REST entry when main has no REST sender', async () => {
+  it('refuses a REST entry when main has no engine send', async () => {
     registerRest([restEntry()], undefined, false);
     const result = await invoke('history.resendRest', { id: 'r' });
     expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-unsupported' } });
@@ -845,9 +1058,8 @@ describe('history.resendRest', () => {
 
   it('still reuses the recorded URL when a header elsewhere on the saved request has an unresolved ${secret:…}', async () => {
     const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
-    const saved = savedRestSend({ headers: [entry('Authorization', 'Bearer ${secret:token}')] }, undefined, [
-      { expr: '${secret:token}', scope: 'Secret', name: 'token', code: 'missing', start: 0, end: 0 },
-    ]);
+    // The token is in no keychain here: a resend's resolve reads no secret, so it stays as typed.
+    const saved = savedModel({ headers: [entry('Authorization', 'Bearer ${secret:token}')] });
     const send = registerRest([recorded], undefined, true, saved);
     await invoke('history.resendRest', { id: 'r' });
     const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: { url?: string } }];
@@ -857,7 +1069,7 @@ describe('history.resendRest', () => {
 
   it('refuses with history-resend-origin when the saved URL itself has an unresolved property reference', async () => {
     const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
-    const saved = savedRestSend({ url: '/pets/${#Env#id}' });
+    const saved = savedModel({ url: '/pets/${#Env#id}' });
     const send = registerRest([recorded], undefined, true, saved);
     const result = await invoke('history.resendRest', { id: 'r' });
     expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-origin' } });

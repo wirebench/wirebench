@@ -10,7 +10,16 @@ import { soapProtocol } from '../../../src/soap/module.js';
 import { soapRun } from '../../../src/soap/run.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 
-const { events } = vi.hoisted(() => ({ events: [] as string[] }));
+const { events, cacheReads } = vi.hoisted(() => ({ events: [] as string[], cacheReads: [] as string[] }));
+
+// Every read of an interface's definition cache, which holds nothing here: the run then has no definition.
+vi.mock('../../../src/wsdl/cache.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/wsdl/cache.js')>()),
+  readDefinitionCache: (dir: string) => {
+    cacheReads.push(dir);
+    return Promise.reject(new Error('no cache here'));
+  },
+}));
 
 vi.mock('../../../src/soap/send.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/soap/send.js')>()),
@@ -93,6 +102,7 @@ const items = () => soapRun.groups(project).flatMap((group) => group.candidates.
 
 beforeEach(() => {
   events.length = 0;
+  cacheReads.length = 0;
 });
 
 describe('soapRun.groups', () => {
@@ -142,24 +152,126 @@ describe('soapRun.secretNeeds', () => {
   });
 });
 
-describe('soapRun.send', () => {
-  it('prepares, sends once, and reports a SOAP subject with its exchange and origin', async () => {
+describe('soapRun.open', () => {
+  it('resolves, connects, sends once, and reports a SOAP subject with its exchange and origin', async () => {
     const context: RunContext = {
       project,
       projectDir: '/nowhere',
       overrides: {},
-      getSecret: (ref) => {
-        events.push(`secret ${ref}`);
-        return Promise.resolve('abc123def456ghi789');
+      host: {
+        getSecret: (ref) => {
+          events.push(`secret ${ref}`);
+          return Promise.resolve('abc123def456ghi789');
+        },
       },
     };
     const [get] = items();
-    const sent = get && (await soapRun.send(get, createRunScope(context)));
-    expect(events).toEqual(['secret ref-iface', 'secret secret:tenant', 'send https://soap.example.test/billing']);
+    const scope = createRunScope(context);
+    const sent = get && (await soapRun.open(get, scope, context.host, { scope, interactive: false }).result);
+    expect(events).toEqual(['secret secret:tenant', 'secret ref-iface', 'send https://soap.example.test/billing']);
     expect(sent?.subject).toMatchObject({ protocol: 'soap', status: 200 });
     expect(sent?.exchange?.kind).toBe('soap');
     expect(sent?.origin).toBe('https://soap.example.test');
     expect(sent?.scriptsOff).toBeUndefined();
+  });
+});
+
+describe('soapRun.open with a cached definition', () => {
+  const cached: Project = {
+    ...project,
+    interfaces: project.interfaces.map((i) => ({ ...i, cacheDefinition: true })),
+  };
+  const contextOf = (extra: Partial<RunContext> = {}): RunContext => ({
+    project: cached,
+    projectDir: '/nowhere',
+    overrides: {},
+    host: { getSecret: () => Promise.resolve('abc123def456ghi789') },
+    ...extra,
+  });
+  const sendOnce = async (context: RunContext): Promise<void> => {
+    const get = soapRun.groups(cached).flatMap((group) => group.candidates)[0]?.item;
+    if (get === undefined) throw new Error('No request to send');
+    const scope = createRunScope(context);
+    await soapRun.open(get, scope, context.host, { scope, interactive: false }).result;
+  };
+
+  it('reads the definition cache when the host holds no definition (the CLI)', async () => {
+    await sendOnce(contextOf());
+    expect(cacheReads).toHaveLength(1);
+  });
+
+  it('never reads the definition cache when the host lends the definition it holds', async () => {
+    const asked: string[] = [];
+    const held = {
+      definition: { bindings: [] },
+      bundle: {},
+      schemaSet: {},
+      wsa: { defaultActionByOperation: {} },
+    } as unknown as NonNullable<ReturnType<NonNullable<RunContext['loadedDefinitionFor']>>>;
+    await sendOnce(
+      contextOf({
+        loadedDefinitionFor: (selected) => {
+          asked.push(selected.iface.id);
+          return held;
+        },
+      }),
+    );
+    expect(asked).toEqual(['iface-Billing']);
+    expect(cacheReads).toEqual([]);
+    expect(events.at(-1)).toBe('send https://soap.example.test/billing');
+  });
+
+  it('reads the cache after all when the host holds nothing for the interface', async () => {
+    await sendOnce(contextOf({ loadedDefinitionFor: () => undefined }));
+    expect(cacheReads).toHaveLength(1);
+  });
+});
+
+describe('soapRun.resolve', () => {
+  const resolveIn = (p: Project, path: string): Promise<unknown> => {
+    const context: RunContext = {
+      project: p,
+      projectDir: '/nowhere',
+      overrides: {},
+      host: {
+        getSecret: (ref) => {
+          events.push(`secret ${ref}`);
+          return Promise.resolve('abc123def456ghi789');
+        },
+      },
+    };
+    const item = soapRun
+      .groups(p)
+      .flatMap((group) => group.candidates)
+      .find((candidate) => candidate.item.path === path)?.item;
+    if (item === undefined) throw new Error(`No request at ${path}`);
+    return soapRun.resolve(item, createRunScope(context), context.host);
+  };
+
+  it('returns the input and its scopes, no credentials, and nothing unresolved', async () => {
+    const resolved = await resolveIn(project, 'Billing/First/Get');
+    expect(resolved).toMatchObject({
+      input: { endpoint: 'https://soap.example.test/billing' },
+      scopes: { secrets: { tenant: 'abc123def456ghi789' } },
+      unresolved: [],
+    });
+    expect(resolved).not.toHaveProperty('input.auth');
+    // The interface's password is asked for in connect, which resolve does not reach.
+    expect(events).toEqual(['secret secret:tenant']);
+  });
+
+  it('reports a reference nothing resolves, and does not throw it', async () => {
+    const withRef: Project = {
+      ...project,
+      interfaces: project.interfaces.map((i) => ({
+        ...i,
+        operations: i.operations.map((operation) => ({
+          ...operation,
+          requests: operation.requests.map((r) => ({ ...r, envelopeXml: '<Envelope>${nope}</Envelope>' })),
+        })),
+      })),
+    };
+    expect(await resolveIn(withRef, 'Billing/First/Get')).toMatchObject({ unresolved: [{ expr: '${nope}' }] });
   });
 });
 

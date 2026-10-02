@@ -39,7 +39,7 @@ redirect policy, `Accept` header, or generation option always overrides what's h
 
 Proxy and SSL preferences aren't just stored for later — they're read on every send. A proxy
 password goes through the same secret store as any other credential (see
-[Secrets](/wirebench/guides/secrets/)); the CA bundle path is set only through **Browse…**, which
+[Secrets](/wirebench/docs/guides/secrets/)); the CA bundle path is set only through **Browse…**, which
 runs a native file picker, since Wirebench never trusts a path the interface alone claims.
 
 ### Locating git
@@ -54,7 +54,7 @@ Preferences → Accounts lists every server Wirebench knows about, each with its
 name, device name, and whether it's currently signed in. Per row, **Sign out** ends that session
 without forgetting the server, and **Remove** signs out and forgets it; **Add server…** opens the
 same sign-in dialog as the status bar item, to add another. See
-[Sign in to a server](/wirebench/guides/shared-workspaces/#sign-in-to-a-server) for what signing
+[Sign in to a server](/wirebench/docs/guides/shared-workspaces/#sign-in-to-a-server) for what signing
 in does and when Wirebench asks for it.
 
 **Show sign-in in the status bar** (on by default) controls only whether the status bar's account
@@ -79,14 +79,14 @@ Preferences → UI → **Theme** switches between **Dark**, **Light**, and **Fol
 
 </Steps>
 
-![Preferences open on Shortcuts, listing commands with their category and key binding](/wirebench/images/preferences/shortcuts.png)
+![Preferences open on Shortcuts, listing commands with their category and key binding](/wirebench/docs/images/preferences/shortcuts.png)
 
 A rebind takes effect immediately and is remembered across restarts. Some defaults you'll see
 listed: <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> for the command palette (also <kbd>⌘⇧P</kbd> /
 <kbd>Ctrl+Shift+P</kbd>), <kbd>⌘P</kbd> / <kbd>Ctrl+P</kbd> for quick open, <kbd>⌘I</kbd> /
 <kbd>Ctrl+I</kbd> for Import, <kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd> to save, <kbd>⌘⏎</kbd> /
 <kbd>Ctrl+Enter</kbd> to send, and <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd> for Preferences itself. The
-full, generated list is in [Commands and shortcuts](/wirebench/reference/commands/).
+full, generated list is in [Commands and shortcuts](/wirebench/docs/reference/commands/).
 
 ## Layout
 
@@ -110,8 +110,8 @@ panel's collapse is independent.
 
 ## Related
 
-- [Secrets](/wirebench/guides/secrets/) — how the proxy password and other credentials in
+- [Secrets](/wirebench/docs/guides/secrets/) — how the proxy password and other credentials in
   Preferences are stored.
-- [Authentication](/wirebench/guides/auth/) — client keystores and the CA bundle, in context.
-- [Commands and shortcuts](/wirebench/reference/commands/) — the full generated shortcut
+- [Authentication](/wirebench/docs/guides/auth/) — client keystores and the CA bundle, in context.
+- [Commands and shortcuts](/wirebench/docs/reference/commands/) — the full generated shortcut
   reference.

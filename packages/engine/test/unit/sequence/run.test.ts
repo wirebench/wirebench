@@ -30,7 +30,10 @@ function project(): Project {
     grpcApis: [
       createGrpcApi('Feed', {
         id: 'G',
-        requests: [createGrpcRequest('Watch', { id: 'watch', methodKind: 'server-streaming' })],
+        requests: [
+          createGrpcRequest('Watch', { id: 'watch', methodKind: 'server-streaming' }),
+          { ...createGrpcRequest('Old', { id: 'old', methodKind: 'server-streaming' }), orphaned: true },
+        ],
       }),
     ],
     wsApis: [createWsApi('Live', { id: 'W', requests: [createWsRequest('Socket', { id: 'socket' })] })],
@@ -211,23 +214,24 @@ describe('runSequence', () => {
     expect(calls.map((c) => c.step.step.requestId)).toEqual(['pay']);
   });
 
-  it('errors a missing, a WebSocket and a streaming step by name', async () => {
-    const { send, calls } = sender({});
+  it('errors a missing and an orphaned step by name, and sends a WebSocket and a streaming gRPC one', async () => {
+    const { send, calls } = sender({ socket: json([]), watch: json([]) });
     const result = await runSequence(
       createSequence('S', {
         id: 'S',
         settings: { stopOnFailure: false },
-        steps: [step('gone'), step('socket'), step('watch')],
+        steps: [step('gone'), step('socket'), step('watch'), step('old')],
       }),
       project(),
       send,
     );
     expect(result.steps.map((s) => s.error?.code)).toEqual([
       'sequence-step-missing-request',
-      'sequence-step-unsupported',
+      undefined,
+      undefined,
       'sequence-step-unsupported',
     ]);
-    expect(calls).toEqual([]);
+    expect(calls.map((c) => c.step.step.requestId)).toEqual(['socket', 'watch']);
   });
 
   it('turns a throwing sender into an errored step with the error’s code', async () => {

@@ -30,6 +30,15 @@ modules themselves do not change the project folder format.
 - **`@wirebench/engine`: `protocol` is a `string`.** `RequestResult.protocol`,
   `AssertionSubject.protocol` and `ScriptedRequest.protocol` were the union `'soap' | 'rest' | 'grpc'`.
   The JSON report's `protocol` field is typed the same way; the values a run writes are unchanged.
+- **`@wirebench/engine`: one send path.** `ProtocolRun.send` is replaced by `open`, which starts a send
+  and hands back an exchange (its events, `push`, `halfClose`, `close`, `cancel` and `result`), and
+  `resolve`, which gives what a send would send with nothing connected. `RunContext.host`, a `SendHost`,
+  replaces `getSecret`, `proxyFor`, `onSecretValue`, `fetchToken` and `tokenSource`, and also carries
+  what a host can lend a send: TLS anchors and identities, preferences, cookies, a contract check and
+  gRPC schemas. `prepareRest`, `prepareSoap` and `prepareGrpc`, the modules' own prepare functions (never exports of
+  the main entry), are removed. `openExchange`,
+  `resolveExchange` and `SendHost` are added, with the types around them (`ExchangeHandle`,
+  `ExchangeOptions`, `SendFailure`). The desktop, the command line and MCP all send through them.
 
 [`packages/engine/README.md`](packages/engine/README.md#migrating-to-30) has the full tables and a
 before and after for the two changes that need more than a rename. The package's subpaths (`./xml`,
@@ -37,6 +46,9 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **A landing site.** https://wirebench.github.io/wirebench/ now has a home page, a features page and a
+  download page built from the latest release; the user guide moved to
+  https://wirebench.github.io/wirebench/docs/.
 - **Protocol modules in the engine.** SOAP, REST, gRPC and WebSocket each sit behind one interface,
   held in a registry, so the loader, the writer, the run loop and the script host no longer branch on
   the protocol ([ADR-0017](docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md), #184). Two
@@ -55,6 +67,23 @@ before and after for the two changes that need more than a rename. The package's
   (`wirebench import`, `operations`, `generate`, `send`, `validate`, `query`, `history list|diff`),
   with `--json` for the exact result. A send from the terminal or an agent lands in the desktop's
   History, and an open History panel refreshes when another process writes the file (#32).
+- **`send` takes WebSocket requests.** `wirebench send` and the MCP `send` tool send a saved WebSocket
+  request as `wirebench run` does: open the socket, send the saved messages, wait for a reply, close,
+  and return the frames collected, masked. A session with no reply before the timeout fails with
+  `timeout`, returning no frames and writing no History; a server that refuses or cannot be reached
+  fails with `ws-handshake-refused`. The send lands in the desktop's History as the app's own
+  WebSocket sessions do, tagged `cli` or `mcp`. `operations` lists saved WebSocket requests by path. A name a REST and a WebSocket request
+  share is now ambiguous where it used to resolve to the REST request; gRPC requests are still refused.
+  A saved WebSocket request has no assertions of its own, so `--require-assertions` errors it in a run
+  (#184).
+- **Streaming requests run.** `wirebench run` with no selector, `wirebench run --sequence`, and a
+  sequence in the app now send WebSocket, streaming gRPC and Server-Sent Events requests, which a run
+  used to skip or refuse. A gRPC client or bidirectional stream sends its saved messages in order and
+  half-closes; a WebSocket request sends its saved messages and closes after the last reply; an event
+  stream is read until it ends. The run's timeout bounds every one of them, and a stream it cuts fails
+  with `timeout` instead of passing. Everything received is what the request's assertions and a
+  sequence's transfers read. A new error code, `exchange-not-streaming`, answers a message pushed to,
+  or a half-close asked of, a send that takes none (#184).
 - **Request scripts.** A SOAP, REST or gRPC request can have a pre-request script, which runs just
   before the send and can change it (sign the body, add a header, fill in a field), and a
   post-response script, which checks the response with tests and keeps values for later requests.
@@ -70,6 +99,14 @@ before and after for the two changes that need more than a rename. The package's
   run through a `pm` layer and switched off until someone switches them on. Request files move to
   `formatVersion: 6`; an older build refuses a project this one has saved.
 
+- **Wirebench Server.** A self-hosted server gives a team sign-in (local accounts, OpenID Connect or
+  both, invite-only), teams with viewer, editor and admin roles, workspaces shared over HTTP with no git
+  on members' machines, and live updates of pushes, role changes and who else has a workspace open. It
+  is one process with one PostgreSQL database and one data directory, run behind TLS. Each release
+  publishes it as the container image `ghcr.io/wirebench/wirebench-server` (`linux/amd64` +
+  `linux/arm64`), and `packages/server/compose.yaml` runs it beside PostgreSQL for a local try. See
+  [Wirebench Server](https://wirebench.github.io/wirebench/docs/guides/wirebench-server/).
+
 - **Webhook capture.** A workspace shared on Wirebench Server gets catch URLs. Each is a public address
   that records every request sent to it, with a configurable fixed response. Captures appear live in a
   tab under the Explorer's new *Webhooks* node, read with the same body and header viewers as a response,
@@ -77,15 +114,16 @@ before and after for the two changes that need more than a rename. The package's
   viewers read them. The server bounds captures by count, age, body size and rate, and the app never
   writes them to disk.
 
-- **Sequences.** A sequence sends saved SOAP, REST and unary gRPC requests one after another, and is
-  declared in its own file, `sequences/<name>.sequence.yaml`, with no code. A step can lift a value
-  from its response (a body expression, a header, a cookie or the status) for later steps to use as
-  `${#Sequence#name}`, and check the response with assertions, a header included. Build and run one
-  from the explorer and its tab, where the run panel fills in step by step; each step is logged and
-  kept in History like any other send. `wirebench run --sequence <name>` runs one in CI, one test per
-  step. A value from a response is data, never a template: it is used exactly as it arrived, escaped
-  for the body it lands in, can't choose the scheme, host or port of the next request, can't carry a
-  line break into a URL or header, and is masked everywhere once marked secret.
+- **Sequences.** A sequence sends saved SOAP, REST, gRPC and WebSocket requests one after another (a
+  streaming gRPC call and a WebSocket request can be steps too), and is declared in its own file,
+  `sequences/<name>.sequence.yaml`, with no code. A step can lift a value from its response (a body
+  expression, a header, a cookie or the status) for later steps to use as `${#Sequence#name}`, and check
+  the response with assertions, a header included. Build and run one from the explorer and its tab,
+  where the run panel fills in step by step; each step is logged and kept in History like any other
+  send. `wirebench run --sequence <name>` runs one in CI, one test per step. A value from a response is
+  data, never a template: it is used exactly as it arrived, escaped for the body it lands in, can't
+  choose the scheme, host or port of the next request, can't carry a line break into a URL or header,
+  and is masked everywhere once marked secret.
 
 - **Team secrets.** A shared workspace can share secret values, not just references: each value is
   encrypted for every approved machine and travels with the workspace, so a teammate's next send uses it
@@ -155,7 +193,7 @@ before and after for the two changes that need more than a rename. The package's
 
 - **CLI runner: unary gRPC and OAuth2 client credentials.** `wirebench run` now runs unary gRPC
   requests from an API's cached definition, with `status` (gRPC code or name), JSONPath `match` and
-  `sla` assertions — streaming requests are skipped, and an API without a cached definition errors
+  `sla` assertions, and an API without a cached definition errors
   with `grpc-definition-missing`. A REST or gRPC request behind OAuth2 client credentials fetches its
   token headlessly, once per configuration per run, with the client secret from
   `WIREBENCH_SECRET_<NAME>`; the token is masked in every report and output like any other secret.
@@ -203,7 +241,7 @@ before and after for the two changes that need more than a rename. The package's
   absolute URL — the editor's URL bar shows which and why. **Save as webhook…**, on a catch URL
   capture, turns a real delivery into a webhook item, dropping hop-by-hop headers and any header whose
   name mentions a signature. The collection is part of `formatVersion: 6`, with request scripts. See
-  [Sending webhooks](https://wirebench.github.io/wirebench/guides/sending-webhooks/).
+  [Sending webhooks](https://wirebench.github.io/wirebench/docs/guides/sending-webhooks/).
 
 - **Webhook signatures.** Webhook items, their folders and the Webhooks collection can sign what they
   send — *HMAC of body*, *Timestamped HMAC* or *Standard Webhooks* — with a secret from the keychain,
@@ -215,7 +253,7 @@ before and after for the two changes that need more than a rename. The package's
 - **Callback assertions.** A sequence step or a CI run waits for the webhook its request causes and
   checks it; CI tokens in Preferences → Devices & tokens, with `WIREBENCH_SERVER_URL` and
   `WIREBENCH_SERVER_TOKEN` for `wirebench run`. See
-  [Callback assertions](https://wirebench.github.io/wirebench/guides/callback-assertions/). A
+  [Callback assertions](https://wirebench.github.io/wirebench/docs/guides/callback-assertions/). A
   `callback` assertion is part of `formatVersion: 6`.
 
 ### Changed
@@ -235,9 +273,65 @@ before and after for the two changes that need more than a rename. The package's
 - **A status assertion on an HTTP response.** One that names an all-capitals word which is not a status
   name now errors instead of failing. A request file cannot hold one, because its schema
   refuses it.
+- **A webhook item's target is checked on the command line too.** `wirebench run` and the MCP `send`
+  refuse a webhook item whose target is empty (`webhook-target-missing`) or is not an `http(s)` URL
+  (`webhook-target-invalid`), before anything is sent, as the app always has. They used to try the
+  send and fail later with another code.
+- **One order for every send.** Each protocol now resolves the request, runs its pre-request script,
+  then obtains the OAuth2 token and the proxy, applies TLS and connects. A SOAP send used to fetch its
+  token and proxy before the script ran. The
+  OAuth2 token request now uses the proxy chosen for the token URL, not the one chosen for the
+  request's base URL. A cancel that lands while a send is still being prepared stops the send, for
+  every protocol.
+- **A send of any protocol takes the preferences a host lends.** The desktop's REST, SOAP, gRPC and
+  WebSocket sends honour the user's preferences, as each applies: the user agent, compression, the
+  timeouts, HTTP/2 and the TLS floor. The command line and MCP lend none, so their output is unchanged.
+- **`wirebench run` includes WebSocket and streaming gRPC requests.** With no selector a run now sends
+  them (see Added). A saved WebSocket request has no assertions, so `--require-assertions` errors it.
+  A sequence in `wirebench run --sequence` may have them as steps too.
+- **A response read by an assertion or a transfer from an event stream is a JSON array.** For any send
+  that is not live, which covers `wirebench run`, `send` and a desktop sequence step, the subject of an
+  assertion over a Server-Sent Events response is a JSON array of each event's `data`, where it was the
+  raw stream text. A saved `contains` or regular-expression assertion, or a transfer, written against
+  that text needs rewriting: `contains: "data: ok"` becomes `contains: "ok"`, or a `match` on `$[0]`.
+- **A sequence step on the desktop honours the step timeout**, and closing a project, or quitting,
+  now stops the re-sends, multi-environment sends and sequence REST and WebSocket sends still in
+  flight.
+- **A send refused for an unresolved reference is logged.** A REST or SOAP send with a `${…}` reference
+  nothing resolves is refused before anything is sent, and the HTTP Log now shows it as a row that
+  never went out (`rest-unresolved-properties`, `unresolved-properties`), with no History entry. A SOAP
+  send with such a reference used to go out with the reference left in it, on the desktop; it is
+  refused there now, as the command line always refused it. The command line and MCP report the same
+  codes. A gRPC call with such a
+  reference (`grpc-unresolved-properties`), or with no method chosen (`grpc-method-unset`), is logged
+  the same way, and so is a WebSocket connection with one (`ws-unresolved-properties`).
+- **A send whose credential secret is missing is refused before the call.** The HTTP Log shows a
+  prepare row and History records nothing (`secret-missing`).
+- **An interactive gRPC call's request side.** A push after the half-close is refused with
+  `grpc-stream-closed`. A half-close made before the call opens answers `{ closed: true }`, and the
+  request side closes once the call opens.
+- **A WebSocket connection's sending side.** A message sent or a disconnect asked for while the
+  handshake is still under way waits for it, rather than being refused as `ws-session-unknown`; a
+  message after the disconnect is refused with `ws-session-closed`. Cancelling a handshake the server
+  has not answered fails the connection with `aborted`, and the HTTP Log shows it as a failed row;
+  History still records the attempt as a session closed by an error. Closing a project, or quitting,
+  ends a handshake still under way at once rather than waiting for its timeout. A message sent with
+  its `${…}` references expanded is escaped as the request was when the connection opened, unsaved
+  edits included, where it used to follow the saved request; its values are still read as they are
+  when it is sent, so switching the environment mid-connection changes them.
 
 ### Fixed
 
+- **A response cut short reports why.** A body that the deadline, a cancel or a dropped connection cut
+  off reported `internal-error`. It now reports `timeout`, `aborted` or `network`. Exit codes are
+  unchanged.
+- **A scripted SOAP request re-sent from History runs its scripts**, and a SOAP re-send uses the
+  request's TLS settings, as the original send did.
+- **A sequence's Cancel stops the step in flight**, not only the steps after it.
+- **An error message no longer shows a secret from the request when secrets are hidden.** A failure
+  whose message quotes the URL it could not reach, with a `${secret:…}` value in its query, showed the
+  value in the HTTP Log row, its HAR export and the error the app reported. The value is masked there
+  now, for every protocol, as it is everywhere else.
 - **A new SOAP interface no longer takes the folder name of a REST, gRPC or WebSocket API.** Adding an
   interface in the app, importing a legacy project and `wirebench import` of a WSDL could give the new
   interface the folder name an API already used. The next load then skipped that API, and the next save

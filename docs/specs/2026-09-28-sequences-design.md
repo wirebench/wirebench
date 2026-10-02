@@ -14,7 +14,9 @@ This is the first slice of functional testing, and it runs no code. Scripting is
 
 ## Scope
 
-- SOAP, REST and unary gRPC requests as steps, because those are what the runner can already send.
+- SOAP, REST and gRPC requests as steps, with WebSocket requests too. (This slice sent only SOAP, REST and unary
+  gRPC, because those were what the runner could send. A WebSocket request and a streaming gRPC call became steps
+  with the one send path, #184: they run as a plain run does, bounded by the step's timeout.)
 - A linear chain: steps run in order, once each.
 - Property transfers from the response body (XPath 3.1, XQuery 3.1, JSONPath), a response header, or the status.
 - Step assertions, drawn from the runner's catalogue plus a new `header` assertion. The request's own assertions
@@ -23,8 +25,7 @@ This is the first slice of functional testing, and it runs no code. Scripting is
   History and the HTTP Log.
 - CLI: `wirebench run --sequence <name>`, with every reporter.
 
-**Not in scope:** loops, branches, conditions, retries, data-driven runs (item 14), scripts (item 13), WebSocket and
-streaming gRPC steps, parallel steps, cross-project steps, transfers into a saved property, and a step that sends a
+**Not in scope:** loops, branches, conditions, retries, data-driven runs (item 14), scripts (item 13), parallel steps, cross-project steps, transfers into a saved property, and a step that sends a
 request other than the saved one (no per-step body or header overrides). Every one of these can be added later
 without changing the v1 file shape.
 
@@ -225,8 +226,8 @@ interface SequenceRunResult { sequenceId; name; startedAt; outcome; steps: Seque
 
 - `findStepRequest(project, id)` in `run/select.ts` resolves a step's request among the candidates `selectRequests`
   walks, with the same `SelectedRequest` context. A request that exists but cannot run says why:
-  - a WebSocket request, a streaming gRPC call, or a request orphaned by its contract is
-    `sequence-step-unsupported`;
+  - a request orphaned by its contract is `sequence-step-unsupported` (a WebSocket request and a streaming
+    gRPC call were too, until #184);
   - an id that exists nowhere is `sequence-step-missing-request`.
 - `runSequence` never throws. A throwing sender becomes an errored step with the error's code.
 - The values are held in a `Map` and handed to the sender as a fresh object each step. A transfer may therefore be
@@ -279,8 +280,7 @@ wirebench secrets list <project> --sequence "Checkout flow" [--env staging]
     uses the active environment and that a later step uses a transfer as `${#Sequence#name}`.
   - **Steps**: an ordered list. Each row has a step number, an enable checkbox, the method or protocol badge, the
     step's (or its request's) name, the request's path, and *Move up*, *Move down* and *Remove*. A step whose
-    request is gone is marked *Missing request*. One whose request cannot be a step (WebSocket, a streaming gRPC call,
-    orphaned) says why.
+    request is gone is marked *Missing request*. One whose request cannot be a step (orphaned) says why.
   - *Add step…* opens a searchable list of the project's requests, like the command palette's quick-open. A request
     that cannot be a step is listed disabled, with the reason.
   - The selected step shows its own name, *Run the request's own assertions too*, and two tables:
@@ -492,7 +492,7 @@ the desktop, where sequence assertions run in the main process, it would freeze 
 - **Save error:** `sequence-file-conflict`.
 - **Step errors:**
   - `sequence-step-missing-request`
-  - `sequence-step-unsupported` (a WebSocket or streaming gRPC request)
+  - `sequence-step-unsupported` (an orphaned request)
   - `sequence-transfer-missing`
   - `sequence-transfer-failed`
   - `sequence-value-too-large`

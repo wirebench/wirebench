@@ -31,7 +31,7 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** How many requests reached the protocol's `send`. */
+/** How many requests reached the protocol's `open`. */
 let sends = 0;
 beforeEach(() => {
   sends = 0;
@@ -39,9 +39,9 @@ beforeEach(() => {
 
 const counted: ProtocolRun<EchoSelected> = {
   ...echoRun,
-  send: (selected, scope, scripted) => {
+  open: (selected, scope, host, options) => {
     sends += 1;
-    return echoRun.send(selected, scope, scripted);
+    return echoRun.open(selected, scope, host, options);
   },
 };
 const scriptable = defineProtocol({
@@ -97,7 +97,7 @@ function setup(scripts: RequestScripts | undefined, registry: ProtocolRegistry) 
     project: p,
     projectDir: dir,
     overrides: {},
-    getSecret: () => Promise.resolve(undefined),
+    host: { getSecret: () => Promise.resolve(undefined) },
     // No checker: these tests are about what is refused before a script is looked at.
     scripting: new RequestScripting({ sandbox, registry }),
     registry,

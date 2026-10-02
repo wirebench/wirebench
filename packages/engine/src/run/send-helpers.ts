@@ -69,14 +69,21 @@ export async function withSecrets(
   };
 }
 
-/** The refusal for a request whose text holds property references nothing resolves. */
-export function unresolvedError(path: string, unresolved: readonly UnresolvedRef[]): WirebenchError {
+/** A send resolved (spec §3.4): what it would send, and the references nothing resolves in it. */
+export interface Resolved<I> {
+  readonly input: I;
+  readonly unresolved: readonly UnresolvedRef[];
+}
+
+/**
+ * The refusal for a request whose text holds property references nothing resolves, under the code
+ * its protocol raises (spec §8).
+ */
+export function unresolvedError(code: string, path: string, unresolved: readonly UnresolvedRef[]): WirebenchError {
   const exprs = unresolved.map((ref) => ref.expr);
-  return new WirebenchError(
-    'unresolved-properties',
-    `"${path}" has property references nothing resolves: ${exprs.join(', ')}`,
-    { details: { path, unresolved: exprs } },
-  );
+  return new WirebenchError(code, `"${path}" has property references nothing resolves: ${exprs.join(', ')}`, {
+    details: { path, unresolved: exprs },
+  });
 }
 
 /**
@@ -92,8 +99,11 @@ export async function insideProject(context: RunContext, path: string, code: str
   return resolved;
 }
 
-/** Mirrors the app's keystore loading, minus its cache: a run loads each keystore it needs. */
-export async function loadKeystoreById(context: RunContext, keystoreId: string): Promise<Keystore | undefined> {
+/**
+ * Mirrors the app's keystore loading, minus its cache and its picked files: a run loads each keystore
+ * it needs, from inside the project folder. Reached through {@link keystoreFor} only.
+ */
+async function loadKeystoreById(context: RunContext, keystoreId: string): Promise<Keystore | undefined> {
   const ref = context.project.wss.keystores.find((candidate) => candidate.id === keystoreId);
   if (ref === undefined) {
     return undefined;
@@ -109,8 +119,16 @@ export async function loadKeystoreById(context: RunContext, keystoreId: string):
     });
   }
   const password =
-    def.passwordSecretRef === undefined ? undefined : await requiredSecret(def.passwordSecretRef, context.getSecret);
+    def.passwordSecretRef === undefined
+      ? undefined
+      : await requiredSecret(def.passwordSecretRef, context.host.getSecret);
   return loadKeystore(await readFile(path), { type: def.type, ...(password !== undefined ? { password } : {}) });
+}
+
+/** A keystore by its entry id: through the host's loader when it lends one, else from the project folder. */
+export async function keystoreFor(context: RunContext, keystoreId: string): Promise<Keystore | undefined> {
+  const { keystoreFor: lent } = context.host;
+  return lent !== undefined ? await lent(keystoreId) : await loadKeystoreById(context, keystoreId);
 }
 
 /** The `cert`/`key` a request's own keystore presents; there is no global keystore in a run. */
@@ -121,7 +139,7 @@ export async function clientIdentityFor(
   if (keystoreId === undefined || keystoreId.length === 0) {
     return undefined;
   }
-  const keystore = await loadKeystoreById(context, keystoreId);
+  const keystore = await keystoreFor(context, keystoreId);
   const def = context.project.wss.keystores.find((candidate) => candidate.id === keystoreId);
   if (keystore === undefined || def === undefined) {
     throw new WirebenchError('keystore-missing', 'This request selects a keystore the project no longer has.', {
@@ -138,22 +156,26 @@ export async function tlsFor(
   keystoreId: string | undefined,
   trustInvalid: boolean,
 ): Promise<TlsOptions | undefined> {
-  const identity = await clientIdentityFor(context, keystoreId);
+  const { tls } = context.host;
+  const identity =
+    tls?.identityFor !== undefined ? await tls.identityFor(keystoreId) : await clientIdentityFor(context, keystoreId);
   const skipVerify = context.insecure === true || trustInvalid;
-  if (identity === undefined && !skipVerify) {
-    return undefined;
-  }
-  return { ...identity, ...(skipVerify ? { rejectUnauthorized: false } : {}) };
+  const anchors = tls?.anchors;
+  if (identity === undefined && !skipVerify && anchors === undefined) return undefined;
+  return {
+    ...(identity !== undefined ? { cert: identity.cert, key: identity.key } : {}),
+    ...(anchors !== undefined ? { ca: [...anchors] } : {}),
+    ...(skipVerify ? { rejectUnauthorized: false } : {}),
+  };
 }
 
 /** The run's shared token source, or a fresh one for a send outside a run. */
 export function tokenSourceOf(context: RunContext): RunTokenSource {
   return (
-    context.tokenSource ??
+    context.host.tokens ??
     createRunTokenSource({
-      getSecret: context.getSecret,
-      ...(context.fetchToken !== undefined ? { send: context.fetchToken } : {}),
-      ...(context.onSecretValue !== undefined ? { onSecretValue: context.onSecretValue } : {}),
+      getSecret: context.host.getSecret,
+      ...(context.host.onSecretValue !== undefined ? { onSecretValue: context.host.onSecretValue } : {}),
     })
   );
 }
@@ -173,38 +195,68 @@ export async function authFor(
   tls: TlsOptions | undefined,
 ): Promise<Awaited<ReturnType<typeof resolveAuthConfig>>> {
   if (configured.type !== 'oauth2') {
-    return resolveAuthConfig(configured, context.getSecret);
-  }
-  if (configured.grant === 'authorization-code') {
-    throw new WirebenchError(
-      'auth-grant-unsupported',
-      'This request signs in through a browser (OAuth2 authorization code), which a pipeline cannot do.',
-      { details: { path, grant: configured.grant } },
-    );
+    return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret), context);
   }
   const accessToken = await tokenSourceOf(context).accessTokenFor(configured, {
     scopes: scopesFor(context),
     ...(tls !== undefined ? { tls } : {}),
-    ...(context.proxyFor !== undefined ? { proxy: context.proxyFor } : {}),
+    ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
     ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
-  return resolveAuthConfig(configured, context.getSecret, { accessToken });
+  return reportedAuth(await resolveAuthConfig(configured, context.host.getSecret, { accessToken }), context);
 }
 
-/** A REST API's base URL (or a gRPC API's target), through the workspace's environment likewise. */
-export function baseUrlFor(context: RunContext, api: { readonly slug: string; readonly baseUrl: string }): string {
+/**
+ * Tells the host each credential a resolved auth puts on the wire, in the form it travels there,
+ * so a server that echoes one back has it masked: an API key's value, a bearer or OAuth2 access
+ * token, and Basic's `base64(user:password)`. A password is never reported bare — people choose
+ * them, so one is often ordinary text — and NTLM's password never travels at all.
+ */
+export function reportedAuth(auth: SendAuth | undefined, context: RunContext): SendAuth | undefined {
+  const report = context.host.onSecretValue;
+  if (report === undefined || auth === undefined) return auth;
+  switch (auth.type) {
+    case 'api-key':
+      report(auth.value);
+      break;
+    case 'bearer':
+      report(auth.token);
+      break;
+    case 'oauth2':
+      report(auth.accessToken);
+      break;
+    case 'basic':
+      report(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
+      break;
+    default:
+      break;
+  }
+  return auth;
+}
+
+/**
+ * An API's base URL (or target) and where it came from, through the workspace's environment when
+ * the run has a workspace: what a preview reports beside the URL.
+ */
+export function resolvedBaseUrl(
+  context: Pick<RunContext, 'project' | 'environmentId' | 'workspace'>,
+  api: { readonly slug: string; readonly baseUrl: string },
+): { readonly url: string; readonly source: BaseUrlSource } {
   const { project, environmentId, workspace } = context;
-  const resolved: { url: string; source: BaseUrlSource } =
-    workspace === undefined
-      ? resolveApiBaseUrl(project, environmentId, api)
-      : resolveWorkspaceApiBaseUrl({
-          workspace: withActiveEnvironment(workspace.workspace, environmentId),
-          project,
-          projectSlug: workspace.projectSlug,
-          api,
-        });
-  return resolved.url;
+  return workspace === undefined
+    ? resolveApiBaseUrl(project, environmentId, api)
+    : resolveWorkspaceApiBaseUrl({
+        workspace: withActiveEnvironment(workspace.workspace, environmentId),
+        project,
+        projectSlug: workspace.projectSlug,
+        api,
+      });
+}
+
+/** An API's base URL (or target), through the workspace's environment likewise. */
+export function baseUrlFor(context: RunContext, api: { readonly slug: string; readonly baseUrl: string }): string {
+  return resolvedBaseUrl(context, api).url;
 }
 
 /**
@@ -214,7 +266,7 @@ export function baseUrlFor(context: RunContext, api: { readonly slug: string; re
  */
 export function dropRefusedToken(context: RunContext, auth: SendAuth | undefined, refused: boolean): void {
   if (refused && auth?.type === 'oauth2') {
-    context.tokenSource?.reject(auth.accessToken);
+    context.host.tokens?.reject(auth.accessToken);
   }
 }
 

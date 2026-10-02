@@ -1,19 +1,21 @@
 // @vitest-environment node
 /**
- * A SOAP send with a token owner auth (Bearer, API key, OAuth2): main resolves the reference or
- * the access token before the wire, a failure there is a `prepare` row with no History entry, and
+ * A SOAP send through the engine with a token owner auth (Bearer, API key, OAuth2): the reference or
+ * the access token resolves before the wire, a failure there is a `prepare` row with no History entry, and
  * an API key in the query string, or in a header under any name, is masked on every surface it reaches.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WirebenchError, type SoapOwnerAuth } from '@wirebench/engine';
+import { createInterface, createProject, createRequest, WirebenchError, type SoapOwnerAuth } from '@wirebench/engine';
+import type { Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { redactExchangeSummary } from '../src/main/engine-wire.js';
 import { harOf } from '../src/main/har.js';
 import { curlForLogEntry } from '../src/main/log-curl.js';
 import { buildHistoryEntry, type RecordSendInput } from '../src/main/history-service.js';
-import { sendAndRecordHistory } from '../src/main/send-with-history.js';
+import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import type { FailedExchangeWire, LogEntryWire } from '../src/shared/wire-types.js';
+import { sendDepsFor, type SendDepsExtra } from './helpers/send-deps.js';
 
 interface Seen {
   readonly url: string;
@@ -53,13 +55,38 @@ const OAUTH2: SoapOwnerAuth = {
   clientId: 'cid',
 } as SoapOwnerAuth;
 
-function projectWith(auth: SoapOwnerAuth | undefined) {
-  return {
-    scopesFor: () => ({ project: {}, global: {}, system: {} }),
-    authFor: () => auth,
-    requestMeta: () => ({ requestName: 'R', interfaceName: 'I', operationName: 'O' }),
-    projectId: () => 'proj-1',
+/** One interface holding `req-1`, sent to `endpoint` with `auth` as its own credentials. */
+function projectWith(auth: SoapOwnerAuth | undefined, endpoint: string): Project {
+  const request = {
+    ...createRequest('R', {
+      id: 'req-1',
+      envelopeXml: '<Envelope/>',
+      soapVersion: '1.1',
+      properties: { timeoutMs: 2_000 },
+    }),
+    endpointUrl: endpoint,
+    ...(auth !== undefined ? { auth } : {}),
   };
+  const iface = createInterface('I', {
+    id: 'iface-1',
+    definitionUrl: 'http://127.0.0.1:1/x?wsdl',
+    cacheDefinition: false,
+    operations: [{ name: 'O', bindingName: '{urn:t}B', slug: 'o', order: 0, requests: [request] }],
+  });
+  return { ...createProject('P', { id: 'proj-1' }), interfaces: [iface] };
+}
+
+/** The send's dependencies over `projectWith(auth, endpoint)`, as `request.send` builds them. */
+function depsWith(auth: SoapOwnerAuth | undefined, endpoint: string, extra: SendDepsExtra = {}): SendThroughEngineDeps {
+  return sendDepsFor(projectWith(auth, endpoint), {
+    ...extra,
+    project: { requestMeta: () => ({ requestName: 'R', interfaceName: 'I', operationName: 'O' }) },
+  });
+}
+
+/** One SOAP send of `req-1` through the engine. */
+function send(deps: SendThroughEngineDeps, sendId: string) {
+  return sendThroughEngine(deps, sendId, 'req-1', { draft: { kind: 'soap' } });
 }
 
 const secrets: Record<string, string> = { 'ref-token': 's3cr3t-token', 'ref-key': 'my key' };
@@ -76,24 +103,11 @@ describe('SOAP send with a token owner auth', () => {
     await server.close();
   });
 
-  const request = (sendId: string) => ({
-    sendId,
-    requestId: 'req-1',
-    input: {
-      endpoint: `${server.url}/calc`,
-      envelopeXml: '<Envelope/>',
-      soapVersion: '1.1' as const,
-      timeoutMs: 2_000,
-    },
-  });
+  const calc = (): string => `${server.url}/calc`;
 
   it('an OAuth2 owner fetches the token once and sends it as Bearer', async () => {
     const accessToken = vi.fn(() => Promise.resolve('tok-123'));
-    await sendAndRecordHistory(
-      new EngineService(getSecret),
-      { project: projectWith(OAUTH2), oauth2: { accessToken }, getSecret },
-      request('s-oauth'),
-    );
+    await send(depsWith(OAUTH2, calc(), { oauth2: { accessToken, clear: vi.fn() }, getSecret }), 's-oauth');
     expect(accessToken).toHaveBeenCalledTimes(1);
     expect(server.seen[0]!.headers.authorization).toBe('Bearer tok-123');
   });
@@ -103,16 +117,14 @@ describe('SOAP send with a token owner auth', () => {
     const recordSend = vi.fn(() => Promise.resolve(undefined));
     const accessToken = vi.fn(() => Promise.reject(new WirebenchError('oauth2-token-failed', 'denied')));
     await expect(
-      sendAndRecordHistory(
-        new EngineService(getSecret),
-        {
-          project: projectWith(OAUTH2),
-          oauth2: { accessToken },
+      send(
+        depsWith(OAUTH2, calc(), {
+          oauth2: { accessToken, clear: vi.fn() },
           getSecret,
           onSendFailed,
           history: { recordSend } as never,
-        },
-        request('s-oauth-fail'),
+        }),
+        's-oauth-fail',
       ),
     ).rejects.toThrow('denied');
     expect(onSendFailed.mock.calls[0]![0]).toMatchObject({ stage: 'prepare', error: { code: 'oauth2-token-failed' } });
@@ -124,15 +136,13 @@ describe('SOAP send with a token owner auth', () => {
     const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
     const recordSend = vi.fn(() => Promise.resolve(undefined));
     await expect(
-      sendAndRecordHistory(
-        new EngineService(getSecret),
-        {
-          project: projectWith({ type: 'bearer', tokenRef: 'ref-gone' }),
+      send(
+        depsWith({ type: 'bearer', tokenRef: 'ref-gone' }, calc(), {
           getSecret,
           onSendFailed,
           history: { recordSend } as never,
-        },
-        request('s-dangling'),
+        }),
+        's-dangling',
       ),
     ).rejects.toMatchObject({ code: 'secret-missing' });
     expect(onSendFailed.mock.calls[0]![0]).toMatchObject({ stage: 'prepare', error: { code: 'secret-missing' } });
@@ -146,10 +156,9 @@ describe('SOAP send with a token owner auth', () => {
     );
     const service = new EngineService(getSecret);
     const auth: SoapOwnerAuth = { type: 'api-key', name: 'api key', valueRef: 'ref-key', in: 'query' };
-    const summary = await sendAndRecordHistory(
-      service,
-      { project: projectWith(auth), getSecret, history: { recordSend } as never },
-      request('s-key'),
+    const summary = await send(
+      depsWith(auth, calc(), { service, getSecret, history: { recordSend } as never }),
+      's-key',
     );
     // On the wire, percent-encoded as one appended pair: a space is `%20`.
     expect(server.seen[0]!.url).toBe('/calc?api%20key=my%20key');
@@ -201,10 +210,9 @@ describe('SOAP send with a token owner auth', () => {
       valueRef: 'ref-key',
       in: 'header',
     };
-    const summary = await sendAndRecordHistory(
-      service,
-      { project: projectWith(auth), getSecret, history: { recordSend } as never },
-      request('s-hkey'),
+    const summary = await send(
+      depsWith(auth, calc(), { service, getSecret, history: { recordSend } as never }),
+      's-hkey',
     );
     expect(server.seen[0]!.headers['ocp-apim-subscription-key']).toBe('my key');
     const raw = (base64: string): string => Buffer.from(base64, 'base64').toString('latin1');
@@ -244,11 +252,7 @@ describe('SOAP send with a token owner auth', () => {
       in: 'header',
     };
     await expect(
-      sendAndRecordHistory(
-        new EngineService(getSecret),
-        { project: projectWith(auth), getSecret, onSendFailed },
-        { ...request('s-hkey-fail'), input: { ...request('s-hkey-fail').input, endpoint: 'http://127.0.0.1:1/nope' } },
-      ),
+      send(depsWith(auth, 'http://127.0.0.1:1/nope', { getSecret, onSendFailed }), 's-hkey-fail'),
     ).rejects.toMatchObject({ code: 'connection-refused' });
     const failure = onSendFailed.mock.calls[0]![0];
     expect(failure.rawRequestBase64).toBeDefined();
@@ -260,11 +264,7 @@ describe('SOAP send with a token owner auth', () => {
     const onSendFailed = vi.fn<(failure: FailedExchangeWire) => void>();
     const auth: SoapOwnerAuth = { type: 'api-key', name: 'api key', valueRef: 'ref-key', in: 'query' };
     await expect(
-      sendAndRecordHistory(
-        new EngineService(getSecret),
-        { project: projectWith(auth), getSecret, onSendFailed },
-        { ...request('s-key-fail'), input: { ...request('s-key-fail').input, endpoint: 'http://127.0.0.1:1/nope' } },
-      ),
+      send(depsWith(auth, 'http://127.0.0.1:1/nope', { getSecret, onSendFailed }), 's-key-fail'),
     ).rejects.toMatchObject({ code: 'connection-refused' });
     const failure = onSendFailed.mock.calls[0]![0];
     expect(failure.request.url).toContain('api+key=%3Credacted%3E');

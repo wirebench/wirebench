@@ -4,7 +4,7 @@ import starlightLinksValidator from 'starlight-links-validator';
 
 export default defineConfig({
   site: 'https://wirebench.github.io',
-  base: '/wirebench',
+  base: '/wirebench/docs',
   image: {
     service: passthroughImageService(),
   },
@@ -45,10 +45,13 @@ export default defineConfig({
             { label: 'Secrets', slug: 'guides/secrets' },
             { label: 'HTTP Log', slug: 'guides/http-log' },
             { label: 'History', slug: 'guides/history' },
+            { label: 'Copy as a command', slug: 'guides/copy-as-command' },
+            { label: 'Assertions', slug: 'guides/assertions' },
             { label: 'Sequences', slug: 'guides/sequences' },
             { label: 'Scripts', slug: 'guides/scripts' },
             { label: 'Snapshot regression', slug: 'guides/snapshot-regression' },
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
+            { label: 'Wirebench Server', slug: 'guides/wirebench-server' },
             { label: 'Webhook inbox', slug: 'guides/webhooks' },
             { label: 'Sending webhooks', slug: 'guides/sending-webhooks' },
             { label: 'Webhook signatures', slug: 'guides/webhook-signatures' },

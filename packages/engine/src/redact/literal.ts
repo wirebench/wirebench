@@ -71,3 +71,21 @@ function maskBasicCredentials(text: string, values: readonly string[]): string {
     return values.some((value) => decoded.includes(value)) ? `Basic ${REDACTED_MARKER}` : whole;
   });
 }
+
+/**
+ * Builds the same masker over a base64 run of raw bytes: each value's UTF-8 bytes are masked
+ * wherever they sit, whatever the bytes around them are (a binary WebSocket frame carrying JSON,
+ * MessagePack or CBOR). A run with nothing to mask comes back as the same string, not a re-encoding.
+ */
+export function createSecretBytesMasker(values: readonly string[]): (base64: string) => string {
+  if (values.length === 0) {
+    return (base64) => base64;
+  }
+  // Read as latin1 so bytes that are not UTF-8 survive the round trip unchanged.
+  const mask = createSecretMasker(values.map((value) => Buffer.from(value, 'utf8').toString('latin1')));
+  return (base64) => {
+    const text = Buffer.from(base64, 'base64').toString('latin1');
+    const masked = mask(text);
+    return masked === text ? base64 : Buffer.from(masked, 'latin1').toString('base64');
+  };
+}

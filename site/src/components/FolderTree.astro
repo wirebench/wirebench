@@ -1,0 +1,73 @@
+---
+/** "Projects live in git": a real project's folder tree beside three bullets. */
+import { DOCS_LINKS, docsUrl } from '../docs-links.ts';
+const tree = `my-service/
+  wirebench.yaml
+  environments/dev.yaml
+  interfaces/<Interface>/
+    interface.yaml
+    operations/<Operation>/
+      <Request>.request.yaml
+      <Request>.xml
+  apis/<Api>/
+    api.yaml
+    requests/<Request>.request.yaml
+  sequences/<Sequence>.sequence.yaml`;
+---
+
+<section class="folder" aria-labelledby="folder-heading">
+  <h2 id="folder-heading">Projects live in git</h2>
+  <div class="folder__body">
+    <pre>{tree}</pre>
+    <ul>
+      <li>Small YAML and XML files, made for review.</li>
+      <li>Export a project, or link an existing folder, when it meets git.</li>
+      <li><a href={docsUrl(DOCS_LINKS.secrets)}>Credentials never go in them</a>.</li>
+    </ul>
+  </div>
+  <p><a href={docsUrl(DOCS_LINKS.projectFormat)}>How a project is laid out</a></p>
+</section>
+
+<style>
+  .folder {
+    padding-block: 2rem;
+  }
+
+  h2 {
+    margin: 0 0 1rem;
+  }
+
+  .folder__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  pre {
+    margin: 0;
+    padding: 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--wb-border);
+    border-radius: 8px;
+    background: var(--wb-bg-sunken);
+    color: var(--wb-fg-default);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+
+  li + li {
+    margin-top: 0.5rem;
+  }
+
+  @media (max-width: 40rem) {
+    .folder__body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

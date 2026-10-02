@@ -1,0 +1,152 @@
+{
+  "assets": [
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/latest-linux-arm64.yml",
+      "name": "latest-linux-arm64.yml",
+      "size": 549
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/latest-linux.yml",
+      "name": "latest-linux.yml",
+      "size": 708
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/latest-mac.yml",
+      "name": "latest-mac.yml",
+      "size": 1157
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/latest.yml",
+      "name": "latest.yml",
+      "size": 541
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-linux-arm64.AppImage",
+      "name": "Wirebench-2.2.1-linux-arm64.AppImage",
+      "size": 132549907
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-linux-x86_64.AppImage",
+      "name": "Wirebench-2.2.1-linux-x86_64.AppImage",
+      "size": 131262649
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-arm64.dmg",
+      "name": "Wirebench-2.2.1-mac-arm64.dmg",
+      "size": 132812809
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-arm64.dmg.blockmap",
+      "name": "Wirebench-2.2.1-mac-arm64.dmg.blockmap",
+      "size": 139353
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-arm64.zip",
+      "name": "Wirebench-2.2.1-mac-arm64.zip",
+      "size": 132323618
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-arm64.zip.blockmap",
+      "name": "Wirebench-2.2.1-mac-arm64.zip.blockmap",
+      "size": 137500
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-universal.dmg",
+      "name": "Wirebench-2.2.1-mac-universal.dmg",
+      "size": 234223737
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-universal.dmg.blockmap",
+      "name": "Wirebench-2.2.1-mac-universal.dmg.blockmap",
+      "size": 245716
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-universal.zip",
+      "name": "Wirebench-2.2.1-mac-universal.zip",
+      "size": 233666787
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-universal.zip.blockmap",
+      "name": "Wirebench-2.2.1-mac-universal.zip.blockmap",
+      "size": 244149
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-x64.dmg",
+      "name": "Wirebench-2.2.1-mac-x64.dmg",
+      "size": 140134291
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-x64.dmg.blockmap",
+      "name": "Wirebench-2.2.1-mac-x64.dmg.blockmap",
+      "size": 147968
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-x64.zip",
+      "name": "Wirebench-2.2.1-mac-x64.zip",
+      "size": 139659850
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-mac-x64.zip.blockmap",
+      "name": "Wirebench-2.2.1-mac-x64.zip.blockmap",
+      "size": 146628
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-windows-arm64-setup.exe",
+      "name": "Wirebench-2.2.1-windows-arm64-setup.exe",
+      "size": 109542227
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-windows-arm64-setup.exe.blockmap",
+      "name": "Wirebench-2.2.1-windows-arm64-setup.exe.blockmap",
+      "size": 115828
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-windows-arm64.msi",
+      "name": "Wirebench-2.2.1-windows-arm64.msi",
+      "size": 125206528
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-windows-x64-setup.exe",
+      "name": "Wirebench-2.2.1-windows-x64-setup.exe",
+      "size": 115832880
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-windows-x64-setup.exe.blockmap",
+      "name": "Wirebench-2.2.1-windows-x64-setup.exe.blockmap",
+      "size": 121191
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/Wirebench-2.2.1-windows-x64.msi",
+      "name": "Wirebench-2.2.1-windows-x64.msi",
+      "size": 130306048
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/wirebench-2.2.1.cdx.json",
+      "name": "wirebench-2.2.1.cdx.json",
+      "size": 74420
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/wirebench-2.2.1.x86_64.rpm",
+      "name": "wirebench-2.2.1.x86_64.rpm",
+      "size": 92241961
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/wirebench_2.2.1_amd64.deb",
+      "name": "wirebench_2.2.1_amd64.deb",
+      "size": 103424852
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/wirebench_2.2.1_amd64.snap",
+      "name": "wirebench_2.2.1_amd64.snap",
+      "size": 112422912
+    },
+    {
+      "browser_download_url": "https://github.com/wirebench/wirebench/releases/download/v2.2.1/wirebench_2.2.1_arm64.deb",
+      "name": "wirebench_2.2.1_arm64.deb",
+      "size": 98662252
+    }
+  ],
+  "html_url": "https://github.com/wirebench/wirebench/releases/tag/v2.2.1",
+  "published_at": "2026-09-21T10:11:41Z",
+  "tag_name": "v2.2.1"
+}

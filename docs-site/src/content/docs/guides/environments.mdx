@@ -9,7 +9,7 @@ Environments let one request work against several deployments — local, staging
 without editing the URL or the body each time. You set variables once, in a scope, and reference
 them with `${...}` inside URLs, headers, envelopes and bodies. The syntax itself, and the full
 precedence rules, are covered in
-[Property expansion syntax](/wirebench/reference/property-syntax/); this page is about managing
+[Property expansion syntax](/wirebench/docs/reference/property-syntax/); this page is about managing
 environments day to day.
 
 ## Open the Environments view
@@ -55,7 +55,7 @@ Each scope's page (Globals, Workspace, or an environment) has its own table: nam
 
 1. Add a row and type a name and value.
 2. Turn on **Secret** for anything sensitive — a token, a password, an API key. See
-   [Secrets](/wirebench/guides/secrets/) for how secret values are stored and masked.
+   [Secrets](/wirebench/docs/guides/secrets/) for how secret values are stored and masked.
 3. Reference it anywhere property expansion is read — the address bar, headers, a JSON body, a
    SOAP envelope — with `${#Env#name}`, `${#Workspace#name}`, `${#Global#name}`, or the shorthand
    `${name}`.
@@ -80,7 +80,7 @@ API the workspace can reach. Filling in a row redirects every request under that
 to the address you type, instead of the one the WSDL or the API's own base URL declares — useful
 for pointing an imported definition at a different deployment of the same service.
 
-![The uat environment's page, with the Calculator interface's endpoint override set to a UAT address](/wirebench/images/environments/endpoint-override.png)
+![The uat environment's page, with the Calculator interface's endpoint override set to a UAT address](/wirebench/docs/images/environments/endpoint-override.png)
 
 A row shows which layer is currently winning when more than one could apply — for example, a
 linked project's own environment override beats a workspace environment's override for the same
@@ -133,9 +133,9 @@ environment — closing the Compare tab loses nothing. A History entry reads
 
 ## Related
 
-- [Property expansion syntax](/wirebench/reference/property-syntax/) — the full `${...}` grammar
+- [Property expansion syntax](/wirebench/docs/reference/property-syntax/) — the full `${...}` grammar
   and resolution order.
-- [Secrets](/wirebench/guides/secrets/) — how secret variables are stored and what never leaves
+- [Secrets](/wirebench/docs/guides/secrets/) — how secret variables are stored and what never leaves
   your machine.
-- [SOAP and WSDL](/wirebench/guides/soap-wsdl/) and [REST](/wirebench/guides/rest-client/) — where
+- [SOAP and WSDL](/wirebench/docs/guides/soap-wsdl/) and [REST](/wirebench/docs/guides/rest-client/) — where
   endpoints and base URLs come from.

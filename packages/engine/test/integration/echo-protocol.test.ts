@@ -71,7 +71,13 @@ function project(): Project {
 }
 
 function contextFor(p: Project, secrets: Readonly<Record<string, string>> = {}): RunContext {
-  return { project: p, projectDir: dir, overrides: {}, getSecret: (ref) => Promise.resolve(secrets[ref]), registry };
+  return {
+    project: p,
+    projectDir: dir,
+    overrides: {},
+    host: { getSecret: (ref) => Promise.resolve(secrets[ref]) },
+    registry,
+  };
 }
 
 describe('the echo protocol beside the built-in ones', () => {
@@ -123,7 +129,7 @@ describe('the echo protocol beside the built-in ones', () => {
       project: p,
       projectDir: dir,
       overrides: {},
-      getSecret: () => Promise.resolve(undefined),
+      host: { getSecret: () => Promise.resolve(undefined) },
     });
     expect(result.requests[0]).toMatchObject({ outcome: 'errored', error: { code: 'project-kind-not-supported' } });
   });
@@ -236,7 +242,9 @@ describe('an echo API in a project folder', () => {
         project: loaded.project,
         projectDir: folder,
         overrides: {},
-        getSecret: (ref) => Promise.resolve((secretNames as Record<string, string>)[ref.replace(/^secret:/, '')]),
+        host: {
+          getSecret: (ref) => Promise.resolve((secretNames as Record<string, string>)[ref.replace(/^secret:/, '')]),
+        },
         scripting: new RequestScripting({ sandbox, checker, registry }),
         registry,
       });

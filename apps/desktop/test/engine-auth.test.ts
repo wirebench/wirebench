@@ -2,8 +2,11 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startNtlmServer, type NtlmServer } from '@wirebench/engine/test-helpers';
-import { EngineService, toEngineAuth, withResolvedAuth } from '../src/main/engine-service.js';
+import { createInterface, createProject, createRequest } from '@wirebench/engine';
+import type { Project, SoapOwnerAuth } from '@wirebench/engine';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
 import { REDACTED_MARKER } from '../src/main/redact.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 
 const AUTHORIZATION = `Basic ${Buffer.from('user:pass', 'utf-8').toString('base64')}`;
 
@@ -32,58 +35,37 @@ async function startChallengeServer(): Promise<{ url: string; seen: string[]; cl
   };
 }
 
-describe('toEngineAuth', () => {
-  it('maps resolved basic credentials, defaulting preemptive to true', () => {
-    expect(toEngineAuth({ type: 'basic', username: 'u', password: 'p' })).toEqual({
-      type: 'basic',
-      username: 'u',
-      password: 'p',
-      preemptive: true,
-    });
-    expect(toEngineAuth({ type: 'basic', username: 'u', password: 'p', preemptive: false })).toMatchObject({
-      preemptive: false,
-    });
+/** One interface holding `req-1` at `endpointUrl`, authenticating with `auth`. */
+function seeded(endpointUrl: string, auth?: SoapOwnerAuth): Project {
+  const request = {
+    ...createRequest('Call', { id: 'req-1', envelopeXml: '<a/>', soapVersion: '1.1' }),
+    endpointUrl,
+    ...(auth !== undefined ? { auth } : {}),
+  };
+  const iface = createInterface('Svc', {
+    id: 'iface-1',
+    definitionUrl: 'http://127.0.0.1:1/svc?wsdl',
+    cacheDefinition: false,
+    operations: [{ name: 'Call', bindingName: '{urn:x}B', slug: 'call', order: 0, requests: [request] }],
   });
+  return { ...createProject('Demo', { id: 'p1' }), interfaces: [iface] };
+}
 
-  it('maps NTLM credentials with their domain and workstation', () => {
-    expect(toEngineAuth({ type: 'ntlm', username: 'u', password: 'p', domain: 'CORP' })).toEqual({
-      type: 'ntlm',
-      username: 'u',
-      password: 'p',
-      domain: 'CORP',
-    });
-    expect(toEngineAuth({ type: 'ntlm', username: 'u', password: 'p', domain: 'CORP', workstation: 'WS1' })).toEqual({
-      type: 'ntlm',
-      username: 'u',
-      password: 'p',
-      domain: 'CORP',
-      workstation: 'WS1',
-    });
-  });
+/** Sends `req-1` of `model` through the engine, with `ref-1` holding the password. */
+function send(model: Project) {
+  return sendThroughEngine(
+    sendDepsFor(model, { getSecret: (ref) => Promise.resolve(ref === 'ref-1' ? 'pass' : undefined) }),
+    's1',
+    'req-1',
+    { draft: { kind: 'soap' } },
+  );
+}
 
-  it('is undefined without credentials, for type none, and for an incomplete pair', () => {
-    expect(toEngineAuth(undefined)).toBeUndefined();
-    expect(toEngineAuth({ type: 'none' })).toBeUndefined();
-    expect(toEngineAuth({ type: 'basic', username: 'u' })).toBeUndefined();
-  });
-});
-
-describe('withResolvedAuth (cURL export path)', () => {
-  it('still bakes a preemptive header in, since an exported command has no challenge loop', () => {
-    const input = { endpoint: 'http://x.test', envelopeXml: '<a/>', soapVersion: '1.1' as const };
-    expect(withResolvedAuth(input, { type: 'basic', username: 'user', password: 'pass' }).headers).toEqual({
-      Authorization: AUTHORIZATION,
-    });
-  });
-});
-
-describe('EngineService.send — Basic authentication', () => {
+describe('a SOAP send through the engine — Basic authentication', () => {
   let server: Awaited<ReturnType<typeof startChallengeServer>>;
-  let service: EngineService;
 
   beforeEach(async () => {
     server = await startChallengeServer();
-    service = new EngineService((ref) => Promise.resolve(ref === 'ref-1' ? 'pass' : undefined));
   });
 
   afterEach(async () => {
@@ -91,12 +73,8 @@ describe('EngineService.send — Basic authentication', () => {
   });
 
   it('retries the 401 challenge and reports the auth summary, with the header redacted', async () => {
-    const exchange = await service.send(
-      {
-        sendId: 'send-auth-1',
-        input: { endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' },
-      },
-      { auth: { type: 'basic', username: 'user', passwordRef: 'ref-1', preemptive: false } },
+    const exchange = await send(
+      seeded(`${server.url}/soap`, { type: 'basic', username: 'user', passwordRef: 'ref-1', preemptive: false }),
     );
 
     expect(exchange.http.status).toBe(200);
@@ -110,12 +88,8 @@ describe('EngineService.send — Basic authentication', () => {
   });
 
   it('sends the header up front when preemptive, with a single attempt', async () => {
-    const exchange = await service.send(
-      {
-        sendId: 'send-auth-2',
-        input: { endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' },
-      },
-      { auth: { type: 'basic', username: 'user', passwordRef: 'ref-1', preemptive: true } },
+    const exchange = await send(
+      seeded(`${server.url}/soap`, { type: 'basic', username: 'user', passwordRef: 'ref-1', preemptive: true }),
     );
 
     expect(exchange.http.status).toBe(200);
@@ -124,22 +98,17 @@ describe('EngineService.send — Basic authentication', () => {
   });
 
   it('carries no auth summary when the request configures no credentials', async () => {
-    const exchange = await service.send({
-      sendId: 'send-auth-3',
-      input: { endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' },
-    });
+    const exchange = await send(seeded(`${server.url}/soap`));
     expect(exchange.http.status).toBe(401);
     expect(exchange.auth).toBeUndefined();
   });
 });
 
-describe('EngineService.send — NTLM authentication', () => {
+describe('a SOAP send through the engine — NTLM authentication', () => {
   let ntlm: NtlmServer;
-  let service: EngineService;
 
   beforeEach(async () => {
     ntlm = await startNtlmServer({ username: 'user', password: 'pass', domain: 'WORKGROUP' });
-    service = new EngineService((ref) => Promise.resolve(ref === 'ref-1' ? 'pass' : undefined));
   });
 
   afterEach(async () => {
@@ -147,9 +116,14 @@ describe('EngineService.send — NTLM authentication', () => {
   });
 
   it('completes the handshake and masks the Type 3 token in headers and raw bytes', async () => {
-    const exchange = await service.send(
-      { sendId: 'send-ntlm-1', input: { endpoint: ntlm.url, envelopeXml: '<a/>', soapVersion: '1.1' } },
-      { auth: { type: 'ntlm', username: 'user', passwordRef: 'ref-1', domain: 'WORKGROUP', workstation: 'WS1' } },
+    const exchange = await send(
+      seeded(ntlm.url, {
+        type: 'ntlm',
+        username: 'user',
+        passwordRef: 'ref-1',
+        domain: 'WORKGROUP',
+        workstation: 'WS1',
+      }),
     );
 
     expect(exchange.http.status).toBe(200);

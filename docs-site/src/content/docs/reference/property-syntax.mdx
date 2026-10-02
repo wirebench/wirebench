@@ -42,7 +42,7 @@ on your machine.
 | `Workspace` | The workspace's `properties` | When the project is inside a workspace |
 | `Global` | Properties set once for the whole app, independent of any project | Always |
 | `System` | The OS process environment (`process.env` by default) | Always, only via the explicit `${#System#name}` form |
-| `Sequence` | Values the earlier steps of a running [sequence](/wirebench/guides/sequences/) lifted from their responses, or that a request's [scripts](/wirebench/guides/scripts/) set | Only via the explicit `${#Sequence#name}` form: in a sequence run, in `wirebench run`, and in the app's single sends, which read the project's session values |
+| `Sequence` | Values the earlier steps of a running [sequence](/wirebench/docs/guides/sequences/) lifted from their responses, or that a request's [scripts](/wirebench/docs/guides/scripts/) set | Only via the explicit `${#Sequence#name}` form: in a sequence run, in `wirebench run`, and in the app's single sends, which read the project's session values |
 
 A `Sequence` value came from a server, so it follows stricter rules than the others. It is never
 expanded again, so `${…}` inside it stays as it is. It can't form another reference's name: in

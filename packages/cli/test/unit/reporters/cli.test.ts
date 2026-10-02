@@ -24,7 +24,7 @@ describe('createCliReporter', () => {
           status is 200 — expected 200, actual 500
           no SOAP fault — soap:Server — out of stock
       ! demo/users/list
-          unresolved-properties: "demo/users/list" has property references nothing resolves: \${baseUrl}
+          rest-unresolved-properties: "demo/users/list" has property references nothing resolves: \${baseUrl}
       - demo/users/create
 
       1 passed, 1 failed, 1 errored, 1 skipped in 1.2s

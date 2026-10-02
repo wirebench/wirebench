@@ -3,17 +3,16 @@
  * against. Apart from the run's own files so a protocol module can take a `RunContext` without
  * importing the run loop.
  */
-import type { HttpExchange, HttpRequest, ProxyOptions } from '../http/types.js';
 import { resolveScopes } from '../project/environments.js';
 import type { Project, PropertyMap } from '../project/model.js';
+import type { HeldSoapDefinition } from '../protocols.js';
 import type { PropertyScopes } from '../project/properties.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import type { RequestScripting } from '../script/request-scripts.js';
 import type { SecretPlaceholders } from '../script/send.js';
-import type { GetSecret } from '../secrets/resolve.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
-import type { RunTokenSource } from './oauth2-token.js';
+import type { SendHost } from './host.js';
 import type { SelectedRequest } from './select.js';
 
 /**
@@ -43,10 +42,12 @@ export interface RunContext {
   readonly workspace?: RunWorkspace;
   /** `--var` overrides, laid over the environment's properties. */
   readonly overrides: PropertyMap;
-  readonly getSecret: GetSecret;
+  /** The host's global properties, the `${#Global#…}` scope. Absent: none. */
+  readonly globals?: PropertyMap;
+  /** What the host lends each send: secrets, proxy, TLS, tokens, preferences (spec §3.1). */
+  readonly host: SendHost;
   readonly timeoutMs?: number;
   readonly insecure?: boolean;
-  readonly proxyFor?: (url: string) => ProxyOptions | undefined;
   readonly signal?: AbortSignal;
   /**
    * The WSDL-derived default `wsa:Action` for a SOAP request, as the app takes it from the
@@ -54,15 +55,14 @@ export interface RunContext {
    * an explicit `wsa:Action` or the request's SOAPAction then still applies.
    */
   readonly defaultWsaActionFor?: (selected: Extract<SelectedRequest, { kind: 'soap' }>) => string;
-  /** Told every OAuth2 access token the run obtains, so the host can mask it in all it prints. */
-  readonly onSecretValue?: (value: string) => void;
-  /** Sends an OAuth2 token request; the engine's `sendHttp` by default. A test seam. */
-  readonly fetchToken?: (request: HttpRequest) => Promise<HttpExchange>;
   /**
-   * The run's OAuth2 token cache. `runRequests` creates one per run so every request behind a
-   * configuration shares a token; a send outside a run gets a fresh source.
+   * The definition a host already holds for a SOAP request's interface (the app's, imported and
+   * compiled), so a send neither reads nor compiles the definition cache. Absent, or answering
+   * undefined: the run reads the interface's cached definition itself, once per run scope.
    */
-  readonly tokenSource?: RunTokenSource;
+  readonly loadedDefinitionFor?: (
+    selected: Extract<SelectedRequest, { kind: 'soap' }>,
+  ) => HeldSoapDefinition | undefined;
   /** A sequence step's `${#Sequence#…}` values, from the responses of the steps before it. */
   readonly sequence?: PropertyMap;
   /**
@@ -87,13 +87,14 @@ export interface RunContext {
 /** The property scopes a request of this run expands against, secrets not yet added. */
 export function scopesFor(context: RunContext): PropertyScopes {
   const { project, environmentId, workspace } = context;
+  const globals = context.globals ?? {};
   const scopes =
     workspace === undefined
-      ? resolveScopes(project, environmentId, {}, process.env)
+      ? resolveScopes(project, environmentId, globals, process.env)
       : resolveWorkspaceScopes({
           workspace: withActiveEnvironment(workspace.workspace, environmentId),
           project,
-          globals: {},
+          globals,
           system: process.env,
         });
   return {
