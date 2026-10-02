@@ -12,6 +12,7 @@ const names = new Set(Object.keys(engine));
 const valueOf = (name: string): unknown => Reflect.get(engine, name);
 
 const ADDED = [
+  'wsSubject',
   'BUILTIN_PROTOCOLS',
   'createBuiltinRegistry',
   'createFeatureSet',
