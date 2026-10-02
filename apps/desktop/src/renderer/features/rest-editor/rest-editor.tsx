@@ -280,7 +280,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
         )}
         {shownTab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
         {shownTab === 'assertions' && (
-          <AssertionsTab requestId={requestId} assertions={request.assertions} kinds={REQUEST_KINDS} />
+          <AssertionsTab key={requestId} requestId={requestId} assertions={request.assertions} kinds={REQUEST_KINDS} />
         )}
         {shownTab === 'settings' && (
           <SettingsTab

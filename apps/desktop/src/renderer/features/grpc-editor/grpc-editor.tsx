@@ -259,7 +259,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
         )}
         {tab === 'scripts' && <ScriptsTab requestId={requestId} scripts={request.scripts} />}
         {tab === 'assertions' && (
-          <AssertionsTab requestId={requestId} assertions={request.assertions} kinds={REQUEST_KINDS} />
+          <AssertionsTab key={requestId} requestId={requestId} assertions={request.assertions} kinds={REQUEST_KINDS} />
         )}
         {tab === 'settings' && (
           <GrpcSettingsTab

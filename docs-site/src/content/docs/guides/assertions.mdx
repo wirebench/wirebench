@@ -28,8 +28,10 @@ tab shows how each one fared. A callback assertion is checked in runs and sequen
 
 ## WebSocket
 
-A WebSocket request's assertions read the handshake status (`101`) and the messages received, in
-order, as a JSON array; a message that is JSON is its value, not its text. Received `{"type":"ready"}`,
+A WebSocket request's assertions read the handshake status and the messages received. The status is
+the handshake's: `101`, or `0` when the handshake is refused. The messages are the received **text**
+messages, in order, as a JSON array; a message that is JSON is its value, not its text. Binary, ping,
+pong and close frames are left out, and so are the messages you sent. When it receives `{"type":"ready"}`,
 `pong` and `{"id":7}`, the array is `[{"type":"ready"},"pong",{"id":7}]`, so `$[0].type` is `ready`:
 
 ```yaml

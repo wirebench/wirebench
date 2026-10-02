@@ -421,7 +421,7 @@ function SoapAssertionsInspector({ requestId }: { readonly requestId: string }) 
   const assertions = useProjectStore((state) => state.requests[requestId]?.assertions);
   return (
     <div className="h-80 min-h-0">
-      <AssertionsTab requestId={requestId} assertions={assertions} kinds={SOAP_REQUEST_KINDS} />
+      <AssertionsTab key={requestId} requestId={requestId} assertions={assertions} kinds={SOAP_REQUEST_KINDS} />
     </div>
   );
 }

@@ -236,7 +236,7 @@ export function WsEditor({ requestId }: WsEditorProps) {
           />
         )}
         {tab === 'assertions' && (
-          <AssertionsTab requestId={requestId} assertions={savedAssertions} kinds={REQUEST_KINDS} />
+          <AssertionsTab key={requestId} requestId={requestId} assertions={savedAssertions} kinds={REQUEST_KINDS} />
         )}
         {tab === 'settings' && (
           <WsSettingsTab

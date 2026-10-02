@@ -25,6 +25,7 @@ import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ScriptHost } from '../src/main/script-host.js';
+import { recordSecretValue, redactSecretText } from '../src/main/redact.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type {
   FailedExchangeWire,
@@ -785,5 +786,34 @@ describe("request.sendRest — the request's own assertions", () => {
       ['status', 'passed'],
       ['status', 'failed'],
     ]);
+  });
+
+  it('masks every string of a result, so a recorded secret never reaches the pane', async () => {
+    const secret = 'assert-secret-7e3f9a';
+    recordSecretValue(secret);
+    registerOver(
+      seeded([
+        {
+          ...createRestRequest('Echo', { id: 'req-1', url: '/echo' }),
+          assertions: [
+            { type: 'match', language: 'jsonpath', expression: '$.nothing', equals: secret, name: `wants ${secret}` },
+          ],
+        },
+      ]),
+      { secretsFor: () => secrets },
+    );
+
+    const summary = unwrap<RestExchangeSummary>(await invoke('request.sendRest', { sendId: 'a2', requestId: 'req-1' }));
+
+    const results = summary.assertions ?? [];
+    expect(results).toHaveLength(1);
+    const masked = redactSecretText(secret, { show: false });
+    expect(masked).not.toContain(secret);
+    for (const result of results) {
+      for (const text of [result.label, result.expected, result.actual, result.message]) {
+        expect(text ?? '').not.toContain(secret);
+      }
+    }
+    expect(JSON.stringify(results)).toContain(masked);
   });
 });
