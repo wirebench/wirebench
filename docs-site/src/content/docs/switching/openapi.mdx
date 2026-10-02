@@ -61,11 +61,11 @@ empty for you to fill in.
 | --- | --- | --- |
 | Credentials of any kind | Nothing to import: a document doesn't hold them | Fill them in on the API's **Auth** tab |
 | HTTP schemes other than basic and bearer (`digest`…) | Listed in the summary with the reason; no **Use** button | Send the header yourself |
-| `apiKey` in a cookie | Listed in the summary with the reason | Send a `Cookie` header yourself |
+| `apiKey` in a cookie | Not an **Auth** setting: each request sent under it gets a switched-off `Cookie` header with the key's name and a blank value | Fill in the value and switch the header on |
 | OAuth 2 flows that are only `implicit` or `password` | Listed in the summary with the reason | Use a client-credentials or authorization-code setup, or a Bearer token |
 | `openIdConnect` and `mutualTLS` schemes | Listed in the summary with the reason | For mutual TLS, see [Client certificates](/wirebench/docs/guides/auth/#client-certificates-and-keystores) |
-| Cookie parameters | Skipped, and listed | Send a `Cookie` header yourself |
-| `Accept`, `Content-Type` and `Authorization` header parameters | Skipped, and listed: the request sets these itself | Nothing |
+| Cookie parameters | Joined into one switched-off `Cookie` header per request, like other header parameters | Switch the header on |
+| `Accept`, `Content-Type`, `Authorization` and `Cookie` header parameters | Skipped, and listed: the request sets these itself | Nothing |
 | A second media type for a body | Skipped, and listed with the one that was chosen | Change the body on the **Body** tab |
 | `webhooks` (OpenAPI 3.1+) and operation `callbacks` | Imported as webhook items in the project's **Webhooks** collection, in a folder named after the API, when **Import webhooks & callbacks** is ticked (the default) | Point them at your own receiver. See [Sending webhooks](/wirebench/docs/guides/sending-webhooks/#import-from-openapi) |
 | `webhooks` in an OpenAPI 3.0 document | Skipped, and listed: webhooks need 3.1 | Nothing |
