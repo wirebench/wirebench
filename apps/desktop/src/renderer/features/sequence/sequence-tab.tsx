@@ -20,7 +20,7 @@ import type {
   StepAssertionWire,
 } from '../../../shared/wire-types.js';
 import { AddStepDialog } from './add-step-dialog.js';
-import { AssertionTable } from './assertion-table.js';
+import { AssertionTable } from '../assertions/assertion-table.js';
 import { RunPanel } from './run-panel.js';
 import { stepRequestInfo } from './step-requests.js';
 import { CheckField, CommitInput } from './step-fields.js';

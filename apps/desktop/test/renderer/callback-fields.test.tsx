@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { AssertionTable } from '../../src/renderer/features/sequence/assertion-table.js';
+import { AssertionTable } from '../../src/renderer/features/assertions/assertion-table.js';
 import { useWebhooksStore } from '../../src/renderer/state/webhooks.js';
 import type { CatchUrlWire, StepAssertionWire } from '../../src/shared/wire-types.js';
 
