@@ -4,6 +4,7 @@
  */
 import type { Cookie } from '../http/cookies.js';
 import type { ProxyOptions } from '../http/types.js';
+import type { Keystore } from '../keystore/index.js';
 import type { Preferences } from '../project/preferences.js';
 import type { SelectedBase } from '../protocol/module.js';
 import type { GetSecret } from '../secrets/resolve.js';
@@ -60,6 +61,13 @@ export interface SendHost {
     /** A request's keystore, or the host's default identity when the request names none. */
     identityFor?(keystoreId: string | undefined): Promise<ClientIdentity | undefined>;
   };
+  /**
+   * A WS-Security keystore by its project entry id, for signing, encryption, response verification
+   * and decryption alike; undefined when the project has no such entry. The app lends its own
+   * loader, which also reads a file its user picked this session; absent, a keystore is read from
+   * inside the project folder only.
+   */
+  readonly keystoreFor?: (keystoreId: string) => Promise<Keystore | undefined>;
   /** The OAuth2 token source; a run creates one per run when the host brings none. */
   readonly tokens?: RunTokenSource;
   readonly preferences?: Preferences;

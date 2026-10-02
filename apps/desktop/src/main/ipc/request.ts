@@ -121,9 +121,10 @@ export type RequestChannelProject = Pick<
       | 'rememberRestCookies'
       | 'restMeta'
       // What the send host (send/host.ts) lends the engine: the trust anchors, the client identity,
-      // the stored cookies, and the project and environment a send runs in.
+      // the WS-Security keystores, the stored cookies, and the project and environment a send runs in.
       | 'trustAnchorsFor'
       | 'clientIdentityFor'
+      | 'keystoreFor'
       | 'restCookiesFor'
       | 'runContextFor'
       // The default `wsa:Action` of a SOAP request's operation, from the definition loaded in memory.

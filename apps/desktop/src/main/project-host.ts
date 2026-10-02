@@ -1455,6 +1455,18 @@ export class ProjectHost {
   }
 
   /**
+   * One keystore's parsed material by its entry id, `undefined` when the project has no such entry:
+   * what the engine signs, encrypts, verifies and decrypts with on a send. It reads through
+   * {@link loadKeystoreFor}, so a file picked this session loads from outside the project folder.
+   *
+   * @throws WirebenchError `keystore-outside-project` | `keystore-unreadable` | `keystore-bad-password`
+   */
+  async keystoreFor(keystoreId: string): Promise<Keystore | undefined> {
+    const def = this.keystoreDef(keystoreId);
+    return def === undefined ? undefined : await this.loadKeystoreFor(def);
+  }
+
+  /**
    * What the Keystores view shows for one row: whether the file loads, and the aliases it holds.
    * Deliberately returns *metadata only* — never a key or a certificate PEM — because this is
    * the one keystore result that crosses the context bridge.
@@ -2062,10 +2074,7 @@ export class ProjectHost {
    */
   private wssContext(): WssContext {
     return createWssContext({
-      keystores: async (ref) => {
-        const def = this.keystoreDef(ref);
-        return def === undefined ? undefined : await this.loadKeystoreFor(def);
-      },
+      keystores: async (ref) => await this.keystoreFor(ref),
       secrets: async (ref) => await this.secrets?.get(ref),
     });
   }

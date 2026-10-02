@@ -1,7 +1,7 @@
 /**
  * The desktop's `SendHost` (spec §3.1): what the engine borrows from the app for one send. Each
  * member is the app's own service — the project's secret getter, its proxy and trust preferences,
- * the request's or the global client keystore, the session's OAuth2 token cache, the per-request
+ * the request's or the global client keystore, the WS-Security keystores, the session's OAuth2 token cache, the per-request
  * cookies, the REST contract check, a callback's URL from History, a gRPC API's schema — and the
  * two HTTP Log rows the desktop writes while a send is under way: a failure row, and a WebSocket
  * handshake's row.
@@ -97,6 +97,10 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
           : ({ cert: identity.cert, key: identity.key } satisfies ClientIdentity);
       },
     },
+    // The project's own loader: it also reads a keystore picked this session, outside the project folder.
+    ...(projectId !== undefined && project.keystoreFor !== undefined
+      ? { keystoreFor: async (keystoreId: string) => await project.keystoreFor?.(projectId, keystoreId) }
+      : {}),
     ...(tokens !== undefined ? { tokens } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
     cookies: {

@@ -2805,6 +2805,13 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
+  keystoreFor(
+    ...[projectId, keystoreId]: Parameters<ProjectRouter['keystoreFor']>
+  ): ReturnType<ProjectRouter['keystoreFor']> {
+    return this.hostFor(projectId).keystoreFor(keystoreId);
+  }
+
+  /** @inheritdoc */
   addInterface(
     ...[projectId, input]: Parameters<ProjectRouter['addInterface']>
   ): ReturnType<ProjectRouter['addInterface']> {

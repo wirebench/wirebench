@@ -50,6 +50,11 @@ export interface ProjectRouter {
     projectId: string,
     ...args: Parameters<ProjectHost['clientIdentityFor']>
   ): ReturnType<ProjectHost['clientIdentityFor']>;
+  /** A WS-Security keystore's parsed material, read with the session's picks; never crosses the bridge. */
+  keystoreFor(
+    projectId: string,
+    ...args: Parameters<ProjectHost['keystoreFor']>
+  ): ReturnType<ProjectHost['keystoreFor']>;
   /**
    * Imports a definition into the addressed project. `project.addInterface` carries a target of
    * `{ projectId }` (or `{ newProjectName }`, which a later task resolves to a project first).

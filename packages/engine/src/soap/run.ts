@@ -36,8 +36,8 @@ import {
   authFor,
   dropRefusedToken,
   insideProject,
+  keystoreFor,
   keystoreNeeds,
-  loadKeystoreById,
   originOf,
   present,
   reportedAuth,
@@ -172,7 +172,7 @@ function wssFor(selected: SoapSelected, context: RunContext): SoapSendWss | unde
     ...(outgoing !== undefined ? { outgoing } : {}),
     ...(incoming !== undefined ? { incoming } : {}),
     ctx: createWssContext({
-      keystores: (ref) => loadKeystoreById(context, ref),
+      keystores: (ref) => keystoreFor(context, ref),
       secrets: (ref) => requiredSecret(ref, context.host.getSecret),
     }),
     requestProperties: {

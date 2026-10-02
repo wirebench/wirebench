@@ -99,8 +99,11 @@ export async function insideProject(context: RunContext, path: string, code: str
   return resolved;
 }
 
-/** Mirrors the app's keystore loading, minus its cache: a run loads each keystore it needs. */
-export async function loadKeystoreById(context: RunContext, keystoreId: string): Promise<Keystore | undefined> {
+/**
+ * Mirrors the app's keystore loading, minus its cache and its picked files: a run loads each keystore
+ * it needs, from inside the project folder. Reached through {@link keystoreFor} only.
+ */
+async function loadKeystoreById(context: RunContext, keystoreId: string): Promise<Keystore | undefined> {
   const ref = context.project.wss.keystores.find((candidate) => candidate.id === keystoreId);
   if (ref === undefined) {
     return undefined;
@@ -122,6 +125,12 @@ export async function loadKeystoreById(context: RunContext, keystoreId: string):
   return loadKeystore(await readFile(path), { type: def.type, ...(password !== undefined ? { password } : {}) });
 }
 
+/** A keystore by its entry id: through the host's loader when it lends one, else from the project folder. */
+export async function keystoreFor(context: RunContext, keystoreId: string): Promise<Keystore | undefined> {
+  const { keystoreFor: lent } = context.host;
+  return lent !== undefined ? await lent(keystoreId) : await loadKeystoreById(context, keystoreId);
+}
+
 /** The `cert`/`key` a request's own keystore presents; there is no global keystore in a run. */
 export async function clientIdentityFor(
   context: RunContext,
@@ -130,7 +139,7 @@ export async function clientIdentityFor(
   if (keystoreId === undefined || keystoreId.length === 0) {
     return undefined;
   }
-  const keystore = await loadKeystoreById(context, keystoreId);
+  const keystore = await keystoreFor(context, keystoreId);
   const def = context.project.wss.keystores.find((candidate) => candidate.id === keystoreId);
   if (keystore === undefined || def === undefined) {
     throw new WirebenchError('keystore-missing', 'This request selects a keystore the project no longer has.', {
