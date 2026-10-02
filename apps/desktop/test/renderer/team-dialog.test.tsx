@@ -137,4 +137,31 @@ describe('TeamDialog (teams-access §3.5)', () => {
     await screen.findByTestId('team-name');
     expect(screen.queryByRole('tab', { name: 'License' })).toBeNull();
   });
+  it('drops the expiry banner once a renewed license is installed in the License tab', async () => {
+    const grace = {
+      edition: 'team',
+      status: 'grace',
+      seats: { used: 3, limit: 50 },
+      features: [],
+      expiresAt: '2026-09-01T00:00:00Z',
+      graceUntil: '2026-10-01T00:00:00.000Z',
+    };
+    const active = { ...grace, status: 'active' };
+    installWirebenchApi({
+      team: {
+        list: ok({ teams: [team('admin')], serverAdmin: true }),
+        listWorkspaces: ok({ workspaces: [] }),
+        members: ok({ members: [member('me', 'admin')] }),
+        invitations: ok({ invitations: [] }),
+      },
+      license: { get: ok(grace), install: ok(active) },
+    });
+    render(<TeamDialog />);
+    expect((await screen.findByTestId('license-banner')).textContent).toContain('Everything keeps working');
+    fireEvent.click(await screen.findByRole('tab', { name: 'License' }));
+    await screen.findByTestId('license-edition');
+    fireEvent.change(screen.getByTestId('license-input'), { target: { value: 'wbl1.eyJhIjoxfQ.c2ln' } });
+    fireEvent.click(screen.getByTestId('license-install'));
+    await vi.waitFor(() => expect(screen.queryByTestId('license-banner')).toBeNull());
+  });
 });

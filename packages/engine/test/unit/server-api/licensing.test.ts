@@ -77,6 +77,18 @@ describe('licensing wire shapes (licensing spec §3.1, §3.3)', () => {
     ).toBe('grace');
   });
 
+  it('parses a state from a newer server: an unknown feature and an unknown invalid reason', () => {
+    const state = licenseStateSchema.parse({
+      edition: 'enterprise',
+      status: 'invalid',
+      seats: { used: 1, limit: null },
+      features: ['scim'],
+      reason: 'future-reason',
+    });
+    expect(state.features).toEqual(['scim']);
+    expect(state.reason).toBe('future-reason');
+  });
+
   it('bounds the install body', () => {
     expect(licenseInstallRequestSchema.safeParse({ license: '' }).success).toBe(false);
     expect(licenseInstallRequestSchema.safeParse({ license: 'x'.repeat(8193) }).success).toBe(false);

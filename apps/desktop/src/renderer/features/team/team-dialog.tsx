@@ -9,6 +9,7 @@ import { useUiStore } from '../../state/ui.js';
 import { InvitationsTab } from './invitations-tab.js';
 import { LicenseBanner } from './license-banner.js';
 import { LicenseTab } from './license-tab.js';
+import { useLicenseStore } from '../../state/license.js';
 import { MembersTab } from './members-tab.js';
 import { INPUT_CLASS, SELECT_CLASS } from './roles.js';
 import { WorkspacesTab } from './workspaces-tab.js';
@@ -24,6 +25,7 @@ export function TeamDialog() {
   const setOpen = useUiStore((state) => state.setTeamDialogOpen);
   const servers = signedInServers(useAccountStore((state) => state.servers));
   const store = useTeamStore();
+  const license = useLicenseStore((s) => s.state);
   const team = selectedTeam(store);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -98,7 +100,9 @@ export function TeamDialog() {
               </select>
             )}
           </div>
-          {store.serverAdmin && url !== undefined && <LicenseBanner url={url} />}
+          {store.serverAdmin && !store.signedOut && url !== undefined && (
+            <LicenseBanner url={url} {...(license !== undefined ? { state: license } : {})} />
+          )}
 
           {store.signedOut ? (
             <div data-testid="team-signed-out" className="mt-6 flex flex-col items-start gap-3 text-sm text-fg-subtle">

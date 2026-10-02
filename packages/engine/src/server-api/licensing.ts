@@ -51,15 +51,15 @@ export const licenseStateSchema = z.object({
   status: z.enum(LICENSE_STATUSES),
   /** `limit: null` is unlimited. */
   seats: z.object({ used: z.number().int().nonnegative(), limit: z.number().int().positive().nullable() }),
-  /** The granted set: empty on Community and Team unless the license lists features. */
-  features: z.array(featureSchema),
+  /** The granted set: empty on Community and Team unless the license lists features. Open strings: a newer server may grant a feature this build does not know. */
+  features: z.array(z.string()),
   licenseId: z.string().optional(),
   customer: z.string().optional(),
   issuedAt: z.string().optional(),
   expiresAt: z.string().optional(),
   graceUntil: z.string().optional(),
-  /** Only with `status: 'invalid'`. */
-  reason: z.enum(['malformed', 'bad-signature', 'not-yet-valid']).optional(),
+  /** Only with `status: 'invalid'`. Open for the same reason as `features`; the server produces a `LicenseInvalidReason`. */
+  reason: z.string().optional(),
   message: z.string().optional(),
 });
 export type LicenseState = z.infer<typeof licenseStateSchema>;
