@@ -11,7 +11,7 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { launchApp, type LaunchedApp } from '../helpers/launch-app.js';
 import {
   createProject,
@@ -129,12 +129,15 @@ test.describe('request assertions', () => {
     launched = await launchApp({ userDataDir, keepUserDataDir: true });
     page = launched.window;
     await expectReopenedWorkspace(page, 'WS');
-    const reopenedApiRow = apiRowFor(page);
+    // The explorer's open state persists per workspace: wait for the tree before deciding to expand.
+    const reopenedApiRow = page.getByTestId('ws-api-row').filter({ hasText: 'Echo API' });
+    await expect(reopenedApiRow).toBeVisible({ timeout: 20_000 });
     const requestRow = page.getByTestId('ws-request-row').filter({ hasText: 'Echo' });
     if (!(await requestRow.isVisible())) {
       await reopenedApiRow.click();
     }
-    await requestRow.dblclick();
+    await expect(requestRow).toBeVisible({ timeout: 20_000 });
+    await requestRow.click();
     await expect(page.getByTestId('ws-editor')).toBeVisible({ timeout: 20_000 });
     await expect(
       page
@@ -158,8 +161,3 @@ test.describe('request assertions', () => {
     await expect(page.getByTestId('assertion-result').first().getByLabel('Passed')).toBeVisible({ timeout: 20_000 });
   });
 });
-
-/** The explorer row of the seeded WebSocket API, which a reopened workspace shows collapsed. */
-function apiRowFor(page: Page) {
-  return page.getByTestId('ws-api-row').filter({ hasText: 'Echo API' });
-}
