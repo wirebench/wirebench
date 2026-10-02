@@ -19,6 +19,11 @@ import { DOCS_LINKS } from '../docs-links.ts';
     <h2 id="beyond-heading">Beyond the desktop</h2>
     <div class="beyond__cards">
       <FeatureCard
+        title="Wirebench Server"
+        text="Self-host sign-in, teams, shared workspaces and team secrets for your team."
+        slug={DOCS_LINKS.wirebenchServer}
+      />
+      <FeatureCard
         title="Request scripts"
         text="Typed pre-request and post-response scripts that sign, check and carry values."
         slug={DOCS_LINKS.scripts}
@@ -62,21 +67,10 @@ import { DOCS_LINKS } from '../docs-links.ts';
     margin: 0 0 1rem;
   }
 
+  /* Seven cards: as many 16rem columns as fit (four at full width), never wider than the screen. */
   .beyond__cards {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
     gap: 1rem;
-  }
-
-  @media (max-width: 64rem) {
-    .beyond__cards {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 40rem) {
-    .beyond__cards {
-      grid-template-columns: minmax(0, 1fr);
-    }
   }
 </style>

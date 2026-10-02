@@ -22,7 +22,7 @@ const sections: Section[] = [
   },
   {
     heading: 'REST',
-    text: 'Group requests under an API that holds a base URL and, optionally, authentication every request under it inherits.',
+    text: 'Group requests under an API that holds a base URL and, optionally, authentication every request under it inherits. The Query tab runs JSONPath or XPath over a JSON response without leaving it.',
     links: [{ label: 'Read the guide', slug: DOCS_LINKS.restClient }],
     image: { src: '/wirebench/images/features/body-tab.png', alt: 'The Body tab of a REST request with a raw JSON body' },
   },
@@ -42,7 +42,7 @@ const sections: Section[] = [
   },
   {
     heading: 'Importers and switching',
-    text: 'Turn a WSDL, an OpenAPI document, a Postman collection, a curl command, a .proto file, a running gRPC server or a legacy SOAP project into requests you can run and edit.',
+    text: 'Turn a WSDL, an OpenAPI document, a Postman collection, a curl command, a .proto file, a running gRPC server or a legacy SOAP project into requests you can run and edit. An OpenAPI or AsyncAPI document behind authentication is fetched with Basic, a bearer token or an API key. When an OpenAPI document changes, Update Definition re-reads it into the REST API you already have.',
     links: [
       { label: 'Read the guide', slug: DOCS_LINKS.importers },
       { label: 'Switching from Postman', slug: DOCS_LINKS.switchingPostman },
@@ -51,7 +51,7 @@ const sections: Section[] = [
   },
   {
     heading: 'Environments and properties',
-    text: 'Set variables once, in a scope, and reference them with ${...} in URLs, headers, envelopes and bodies, so one request works against local, staging and production without edits.',
+    text: 'Set variables once, in a scope, and reference them with ${...} in URLs, headers, envelopes and bodies, so one request works against local, staging and production without edits. Send a SOAP or REST request to several environments at once and compare the responses against a baseline.',
     links: [{ label: 'Read the guide', slug: DOCS_LINKS.environments }],
     image: { src: '/wirebench/images/features/endpoint-override.png', alt: 'An endpoint override pointing a SOAP request at another environment' },
   },
@@ -65,10 +65,11 @@ const sections: Section[] = [
   },
   {
     heading: 'HTTP Log and history',
-    text: 'The HTTP Log is the raw record of what went over the wire this session, failed sends included. History is the persistent, re-sendable record.',
+    text: 'The HTTP Log is the raw record of what went over the wire this session, failed sends included, with a waterfall of timings, a compare of two rows and Export HAR. History is the persistent record: re-send an entry, or compare two runs. Any request copies as a curl, grpcurl or websocat command.',
     links: [
       { label: 'Read the HTTP Log guide', slug: DOCS_LINKS.httpLog },
       { label: 'Read the history guide', slug: DOCS_LINKS.history },
+      { label: 'Copy as a command', slug: DOCS_LINKS.copyAsCommand },
     ],
     image: { src: '/wirebench/images/features/failed-send.png', alt: 'A failed send selected in the HTTP Log, with its connection error in the response tab' },
   },
@@ -83,7 +84,10 @@ const sections: Section[] = [
   {
     heading: 'Sequences',
     text: 'A sequence sends saved requests one after another. Each step can lift values out of its response, such as a token, an id or a cookie, for the steps after it, and check the response with assertions.',
-    links: [{ label: 'Read the guide', slug: DOCS_LINKS.sequences }],
+    links: [
+      { label: 'Read the guide', slug: DOCS_LINKS.sequences },
+      { label: 'Read the assertions guide', slug: DOCS_LINKS.assertions },
+    ],
   },
   {
     heading: 'Snapshot regression',
@@ -92,9 +96,17 @@ const sections: Section[] = [
   },
   {
     heading: 'Shared workspaces',
-    text: 'Share a workspace with a team. Members join by URL or by pointing at an existing folder, and every save becomes a commit so everyone converges on the same projects and environments.',
+    text: 'Share a workspace with a team. Members join by URL or by pointing at an existing folder, and every save becomes a commit so everyone converges on the same projects and environments. An automatic commit that would carry a possible secret in plain text is held until you review it.',
     links: [{ label: 'Read the guide', slug: DOCS_LINKS.sharedWorkspaces }],
     image: { src: '/wirebench/images/features/sync-panel.png', alt: 'The sync panel of a shared workspace' },
+  },
+  {
+    heading: 'Teams and Wirebench Server',
+    text: 'Wirebench Server gives a team sign-in, teams, shared workspaces and live updates, on a machine you run. Team secrets share the values behind a workspace\'s secret references, encrypted for each approved machine.',
+    links: [
+      { label: 'Run Wirebench Server', slug: DOCS_LINKS.wirebenchServer },
+      { label: 'Read the shared workspaces guide', slug: DOCS_LINKS.sharedWorkspaces },
+    ],
   },
   {
     heading: 'Webhooks',
@@ -108,7 +120,7 @@ const sections: Section[] = [
   },
   {
     heading: 'CLI and agents',
-    text: 'The wirebench command runs the requests saved in a project from a terminal or a pipeline and turns the result into an exit code and a report. wirebench mcp serves a project to any MCP client.',
+    text: 'The wirebench command runs the requests saved in a project from a terminal or a pipeline and turns the result into an exit code and a report. It runs as a GitHub Action, a GitLab template, a container image or plain npx, all backed by the @wirebench/cli package. wirebench mcp serves a project to any MCP client.',
     links: [
       { label: 'Run in CI', slug: DOCS_LINKS.runInCi },
       { label: 'Agents and MCP', slug: DOCS_LINKS.agentsMcp },
@@ -125,7 +137,7 @@ const slugify = (heading: string): string =>
 
 <Base
   title="Features — Wirebench"
-  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, snapshots, shared workspaces, webhooks, CLI and agents."
+  description="SOAP, REST, gRPC and WebSocket in one workbench: importers, environments, auth and secrets, HTTP Log, request scripts, sequences, snapshots, shared workspaces, Wirebench Server, webhooks, CLI and agents."
 >
   <div class="features">
     <h1>Features</h1>
