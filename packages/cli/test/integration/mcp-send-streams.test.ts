@@ -109,6 +109,31 @@ describe('wirebench mcp — send on a WebSocket request', () => {
     });
   });
 
+  it("checks a WebSocket request's assertions and reports each one", async () => {
+    const project = await tempDir();
+    const historyDir = await tempDir();
+    await writeStreamsProject(project, {
+      wsUrl: ws.url,
+      wsAssertions: [
+        { type: 'status', equals: 101 },
+        { type: 'match', language: 'jsonpath', expression: '$[0]', equals: 'two' },
+      ],
+    });
+
+    const result = await callSend(project, historyDir, { item: 'Chat/Echo' });
+
+    const sent = JSON.parse(result.content[0]?.text ?? '{}') as {
+      outcome: string;
+      unasserted: boolean;
+      assertions: readonly { type: string; outcome: string }[];
+    };
+    expect(sent).toMatchObject({ outcome: 'failed', unasserted: false });
+    expect(sent.assertions.map((a) => [a.type, a.outcome])).toEqual([
+      ['status', 'passed'],
+      ['match', 'failed'],
+    ]);
+  });
+
   it('refuses a dead endpoint with ws-handshake-refused, and writes no History', async () => {
     const project = await tempDir();
     const historyDir = await tempDir();

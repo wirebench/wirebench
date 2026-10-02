@@ -140,7 +140,7 @@ export async function runSequences(
     const raw = new Map<string, SentRequest['raw']>();
     const sender: SequenceStepSender = async (step, sequenceScope) => {
       // A post-response script's tests count as the step's assertions (#63).
-      // A WebSocket request has neither assertions nor scripts of its own.
+      // A WebSocket request has no scripts of its own.
       const { request } = step.selected;
       const declared =
         (step.step.requestAssertions && 'assertions' in request ? (request.assertions ?? []).length : 0) +

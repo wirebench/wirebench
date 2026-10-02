@@ -183,8 +183,12 @@ A saved WebSocket request runs as `send` runs it: the socket opens, the saved me
 session closes after the reply that follows the last one, or when the request's timeout
 passes. A session that gets no reply by then fails with `timeout`; a server that refuses the handshake or
 cannot be reached fails with `ws-handshake-refused`. The texts received, in order, are a JSON array that `match`
-reads. A saved WebSocket request has no `assertions:`, so it passes with a note, and `--require-assertions`
-errors it.
+reads.
+
+A saved WebSocket request may carry `assertions:` like any other. They are checked against the
+handshake status (`101`) and the messages the server sent, in order, as a JSON array: a message
+that is JSON is its value, so `$[0].type` reads a field of the first one, and any other message
+is its text. One without assertions passes with a note, and `--require-assertions` errors it.
 
 A REST response of type `text/event-stream` is read until the stream ends or the timeout passes; a stream the
 timeout cuts fails with `timeout`. In a run, in `send` and in a sequence step the response an assertion or a

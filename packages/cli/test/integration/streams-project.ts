@@ -32,7 +32,12 @@ export interface StreamCall {
  */
 export async function writeStreamsProject(
   dir: string,
-  options: { readonly wsUrl: string; readonly grpcTarget?: string; readonly calls?: readonly StreamCall[] },
+  options: {
+    readonly wsUrl: string;
+    readonly grpcTarget?: string;
+    readonly calls?: readonly StreamCall[];
+    readonly wsAssertions?: readonly Assertion[];
+  },
 ): Promise<void> {
   const project = {
     ...createProject('Streams', { id: 'p-streams' }),
@@ -46,6 +51,7 @@ export async function writeStreamsProject(
           createWsRequest('Echo', {
             id: 'ws-echo',
             url: '/echo',
+            assertions: options.wsAssertions ?? [],
             messages: [
               createWsSavedMessage('One', { id: 'm1', content: 'one' }),
               createWsSavedMessage('Two', { id: 'm2', content: 'two' }),
