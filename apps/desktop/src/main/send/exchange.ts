@@ -9,12 +9,15 @@ import {
   createProject,
   createRunScope,
   deferredSession,
+  expandSendInput,
+  findWebhookRequest,
   grpcEffectiveAuth,
   isWirebenchError,
   openExchange,
   parseSecretPseudoRef,
   ProjectError,
   resolveExchange,
+  resolvedBaseUrl,
   restEffectiveAuth,
   SecretPlaceholders,
   soapEffectiveAuth,
@@ -23,6 +26,7 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  BaseUrlSource,
   ExchangeHandle,
   GrpcFailedInput,
   GrpcResolvedInput,
@@ -31,6 +35,7 @@ import type {
   PropertyMap,
   PropertyScopes,
   RestContractResult,
+  RestSelected,
   RestSendInput,
   RunContext,
   ScriptedRequest,
@@ -41,6 +46,8 @@ import type {
   SendHost,
   SentRequest,
   SentScripts,
+  SoapOwnerAuth,
+  SoapSelected,
   SoapSendInput,
   UnresolvedRef,
   WorkerFrameChecker,
@@ -52,7 +59,7 @@ import type {
 import type { HistoryService } from '../history-service.js';
 import { containsRecordedSecret, recordSecretValue } from '../redact.js';
 import { finishScripts, scriptsFailed, scriptsForSend, sessionValuesFor, type SendScripts } from '../script-send.js';
-import { withSentSigningHeaders } from '../webhook-send.js';
+import { callbackUrlFor, withSentSigningHeaders, type WebhookUrlSource } from '../webhook-send.js';
 import { adHocSoapItem, AD_HOC_ID, selectedFor, type DraftOf } from './draft.js';
 import { desktopSendHost, type DesktopSend, type DesktopSendDeps } from './host.js';
 import { toWireEvent } from './live.js';
@@ -599,18 +606,66 @@ function adHocContext(deps: SendThroughEngineDeps, input: ResolvedSendInputWire)
   };
 }
 
+/**
+ * What every preview resolves in: the saved request with the draft over it, the run context a send
+ * of it runs in, and a host that reads no secret. Each `${secret:name}` stands behind a placeholder
+ * while the request resolves and is put back as its token text (`asTyped`), so it stays in the output
+ * as written; `secretTokens` answers whether one was reached. Undefined: no such request of that kind.
+ */
+async function previewOf<K extends DraftOf['kind']>(
+  deps: SendThroughEngineDeps,
+  requestId: string,
+  draft: Extract<DraftOf, { kind: K }>,
+): Promise<
+  | {
+      readonly item: Extract<SelectedRequest, { kind: K }>;
+      readonly context: RunContext;
+      readonly placeholders: SecretPlaceholders;
+      readonly asTyped: (ref: string) => Promise<string | undefined>;
+      readonly secretTokens: () => boolean;
+    }
+  | undefined
+> {
+  const located = savedContext(deps, requestId, undefined);
+  const item = located === undefined ? undefined : selectedFor(located.project, requestId, draft);
+  if (located === undefined || item?.kind !== draft.kind) return undefined;
+  const send: DesktopSend = { sendId: '', requestId, projectId: deps.project.projectId(requestId) };
+  let reached = false;
+  const asTyped = (ref: string): Promise<string | undefined> => {
+    reached ||= parseSecretPseudoRef(ref) !== undefined;
+    return tokenText(ref);
+  };
+  const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: asTyped };
+  const placeholders = new SecretPlaceholders();
+  return {
+    item: item as Extract<SelectedRequest, { kind: K }>,
+    context: { ...runContextOf(located, host), secretPlaceholders: placeholders },
+    placeholders,
+    asTyped,
+    secretTokens: () => reached,
+  };
+}
+
+/** Where a REST request's base URL came from: an environment, the API, or a webhook item's target or callback. */
+export type RestUrlSource = BaseUrlSource | WebhookUrlSource;
+
 /** A REST request resolved as its send would resolve it, nothing connected and no secret read. */
 export interface RestPreview {
+  readonly item: RestSelected;
   readonly input: RestSendInput;
   readonly unresolved: readonly UnresolvedRef[];
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
+  /** Where the base URL came from, for the editor's badge. */
+  readonly baseUrlSource: RestUrlSource;
+  /** A webhook callback's editor note: where its URL came from, or why the target stands in. */
+  readonly targetDetail?: string;
 }
 
 /**
- * What a send of the REST request would send, for an export: resolved through the engine with no
- * secret read. Each `${secret:name}` stands behind a placeholder while the request resolves and is
- * put back as the token text, so it stays in the output as written. Undefined: no such REST request.
+ * What a send of the REST request would send, for an export or the editor's badge: resolved through
+ * the engine with no secret read, each `${secret:name}` put back as its token text. Undefined: no
+ * such REST request.
  *
  * @throws WirebenchError what resolving refuses: a webhook item's target, a file outside the project
  */
@@ -619,25 +674,42 @@ export async function previewRest(
   requestId: string,
   draft: RestRequestPatchWire | undefined,
 ): Promise<RestPreview | undefined> {
-  const located = deps.project.runContextFor?.(requestId);
-  const item =
-    located === undefined
-      ? undefined
-      : selectedFor(located.project, requestId, { kind: 'rest', ...(draft !== undefined ? { draft } : {}) });
-  if (located === undefined || item?.kind !== 'rest') return undefined;
-  const send: DesktopSend = { sendId: '', requestId, projectId: deps.project.projectId(requestId) };
-  const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: tokenText };
-  const placeholders = new SecretPlaceholders();
-  const context: RunContext = { ...runContextOf(located, host), secretPlaceholders: placeholders };
-  const resolved = (await resolveExchange(item, host, createRunScope(context))) as {
+  const preview = await previewOf(deps, requestId, { kind: 'rest', ...(draft !== undefined ? { draft } : {}) });
+  if (preview === undefined) return undefined;
+  const { item, context, placeholders, asTyped } = preview;
+  const resolved = (await resolveExchange(item, context.host, createRunScope(context))) as {
     readonly input: RestSendInput;
     readonly unresolved: readonly UnresolvedRef[];
   };
   return {
-    input: await placeholders.restore(resolved.input, tokenText),
+    item,
+    input: await placeholders.restore(resolved.input, asTyped),
     unresolved: resolved.unresolved,
     auth: restEffectiveAuth(item),
+    ...restUrlSourceOf(deps, item, context),
   };
+}
+
+/**
+ * Where a REST item's base URL comes from. A webhook item's is its target, or, for a callback, the
+ * URL its parent's newest exchange named (`callbackUrlFor`, which the send's host reads too); an
+ * API request's is the environment's override or the API's own base URL, as the send resolves it.
+ */
+function restUrlSourceOf(
+  deps: SendThroughEngineDeps,
+  item: RestSelected,
+  context: RunContext,
+): Pick<RestPreview, 'baseUrlSource' | 'targetDetail'> {
+  const { project } = context;
+  if (project.webhooks === undefined || findWebhookRequest(project.webhooks, item.request.id) === undefined) {
+    return { baseUrlSource: resolvedBaseUrl(context, item.api).source };
+  }
+  if (item.request.hook?.kind !== 'callback') return { baseUrlSource: 'target' };
+  const projectId = deps.project.projectId(item.request.id);
+  const callback = callbackUrlFor(project, item.request, (id) =>
+    projectId === undefined ? undefined : deps.newestHistory?.(projectId, id),
+  );
+  return { baseUrlSource: callback.source, targetDetail: callback.detail };
 }
 
 /** A gRPC call resolved as its send would resolve it, nothing connected and no secret read. */
@@ -650,33 +722,24 @@ export interface GrpcPreview {
   readonly secretTokens: boolean;
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
+  /** Where the target came from, for the editor's badge. */
+  readonly targetSource: BaseUrlSource;
 }
 
 /**
- * What a send of the gRPC request would send, for an export: resolved through the engine with no
- * secret read, each `${secret:name}` put back as its token text. Undefined: no such gRPC request.
+ * What a send of the gRPC request would send, for an export or the editor's badge: resolved through
+ * the engine with no secret read, each `${secret:name}` put back as its token text. Undefined: no
+ * such gRPC request.
  */
 export async function previewGrpc(
   deps: SendThroughEngineDeps,
   requestId: string,
   draft: GrpcRequestPatchWire | undefined,
 ): Promise<GrpcPreview | undefined> {
-  const located = deps.project.runContextFor?.(requestId);
-  const item =
-    located === undefined
-      ? undefined
-      : selectedFor(located.project, requestId, { kind: 'grpc', ...(draft !== undefined ? { draft } : {}) });
-  if (located === undefined || item?.kind !== 'grpc') return undefined;
-  const send: DesktopSend = { sendId: '', requestId, projectId: deps.project.projectId(requestId) };
-  let secretTokens = false;
-  const asTyped = (ref: string): Promise<string | undefined> => {
-    secretTokens ||= parseSecretPseudoRef(ref) !== undefined;
-    return tokenText(ref);
-  };
-  const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: asTyped };
-  const placeholders = new SecretPlaceholders();
-  const context: RunContext = { ...runContextOf(located, host), secretPlaceholders: placeholders };
-  const resolved = (await resolveExchange(item, host, createRunScope(context))) as {
+  const preview = await previewOf(deps, requestId, { kind: 'grpc', ...(draft !== undefined ? { draft } : {}) });
+  if (preview === undefined) return undefined;
+  const { item, context, placeholders, asTyped } = preview;
+  const resolved = (await resolveExchange(item, context.host, createRunScope(context))) as {
     readonly input: GrpcResolvedInput;
     readonly messageText: string;
     readonly unresolved: readonly UnresolvedRef[];
@@ -690,8 +753,9 @@ export async function previewGrpc(
     input: { ...resolved.input, metadata: restored.metadata },
     messageText: restored.messageText,
     unresolved: resolved.unresolved,
-    secretTokens,
+    secretTokens: preview.secretTokens(),
     auth: grpcEffectiveAuth(item),
+    targetSource: resolvedBaseUrl(context, { slug: item.api.slug, baseUrl: item.api.target }).source,
   };
 }
 
@@ -703,42 +767,74 @@ export interface WsPreview {
   readonly secretTokens: boolean;
   /** The credentials that apply, still as references. */
   readonly auth: AuthConfig;
+  /** Where the server URL came from, for the editor's badge. */
+  readonly urlSource: BaseUrlSource;
 }
 
 /**
- * What an open of the WebSocket request would dial, for an export: resolved through the engine with
- * no secret read, each `${secret:name}` put back as its token text. Undefined: no such WebSocket request.
+ * What an open of the WebSocket request would dial, for an export or the editor's badge: resolved
+ * through the engine with no secret read, each `${secret:name}` put back as its token text.
+ * Undefined: no such WebSocket request.
  */
 export async function previewWs(
   deps: SendThroughEngineDeps,
   requestId: string,
   draft: WsRequestPatchWire | undefined,
 ): Promise<WsPreview | undefined> {
-  const located = deps.project.runContextFor?.(requestId);
-  const item =
-    located === undefined
-      ? undefined
-      : selectedFor(located.project, requestId, { kind: 'websocket', ...(draft !== undefined ? { draft } : {}) });
-  if (located === undefined || item?.kind !== 'websocket') return undefined;
-  const send: DesktopSend = { sendId: '', requestId, projectId: deps.project.projectId(requestId) };
-  let secretTokens = false;
-  const asTyped = (ref: string): Promise<string | undefined> => {
-    secretTokens ||= parseSecretPseudoRef(ref) !== undefined;
-    return tokenText(ref);
-  };
-  const host: SendHost = { ...(await desktopSendHost(deps, send)), getSecret: asTyped };
-  const placeholders = new SecretPlaceholders();
-  const context: RunContext = { ...runContextOf(located, host), secretPlaceholders: placeholders };
-  const resolved = (await resolveExchange(item, host, createRunScope(context))) as {
+  const preview = await previewOf(deps, requestId, { kind: 'websocket', ...(draft !== undefined ? { draft } : {}) });
+  if (preview === undefined) return undefined;
+  const { item, context, placeholders, asTyped } = preview;
+  const resolved = (await resolveExchange(item, context.host, createRunScope(context))) as {
     readonly input: WsCallInput;
     readonly unresolved: readonly UnresolvedRef[];
   };
   return {
     input: await placeholders.restore(resolved.input, asTyped),
     unresolved: resolved.unresolved,
-    secretTokens,
+    secretTokens: preview.secretTokens(),
     auth: wsEffectiveAuth(item),
+    urlSource: resolvedBaseUrl(context, { slug: item.api.slug, baseUrl: item.api.url }).source,
   };
+}
+
+/** A SOAP request resolved as its send would resolve it, nothing connected and no secret read. */
+export interface SoapPreview {
+  /** Every property expanded and WS-Addressing still to apply; no credentials, no WS-Security. */
+  readonly input: SoapSendInput;
+  /** The credentials that apply, still as references. */
+  readonly auth: SoapOwnerAuth | undefined;
+}
+
+/**
+ * What a send of the saved SOAP request would send, for an export: resolved through the engine with
+ * no secret read, each `${secret:name}` put back as its token text and a reference nothing resolves
+ * left as written. WS-Security is never part of it (it needs secrets and a keystore), so a selected
+ * configuration is not looked up either. Undefined: no such SOAP request.
+ *
+ * @throws WirebenchError `endpoint-unresolved` when no endpoint resolves for it
+ */
+export async function previewSoap(deps: SendThroughEngineDeps, requestId: string): Promise<SoapPreview | undefined> {
+  const preview = await previewOf(deps, requestId, { kind: 'soap' });
+  if (preview === undefined) return undefined;
+  const { context, placeholders, asTyped } = preview;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+  const { wssOutgoingRef, wssIncomingRef, ...request } = preview.item.request;
+  const item: SoapSelected = { ...preview.item, request };
+  const resolved = (await resolveExchange(item, context.host, createRunScope(context))) as {
+    readonly input: SoapSendInput;
+    readonly scopes: PropertyScopes;
+  };
+  const expanded = expandSendInput(resolved.input, resolved.scopes).input;
+  const restored = await placeholders.restore(
+    {
+      endpoint: expanded.endpoint,
+      envelopeXml: expanded.envelopeXml,
+      ...(expanded.soapAction !== undefined ? { soapAction: expanded.soapAction } : {}),
+      ...(expanded.headers !== undefined ? { headers: expanded.headers } : {}),
+    },
+    asTyped,
+  );
+  return { input: { ...expanded, ...restored }, auth: soapEffectiveAuth(item) };
 }
 
 /** A `${secret:name}` token's own text, which a preview shows in place of its value. */

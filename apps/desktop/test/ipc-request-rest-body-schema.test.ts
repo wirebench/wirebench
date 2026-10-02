@@ -4,6 +4,8 @@
  * URL a send would use — the editor's draft laid over the saved request, properties expanded.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createApi, createProject, createRestRequest } from '@wirebench/engine';
+import type { Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 
@@ -23,15 +25,23 @@ async function invoke(payload: unknown): Promise<{ ok: boolean; value?: unknown 
   return (await handler({ sender: {} }, payload)) as { ok: boolean; value?: unknown };
 }
 
+/** A project holding REST request `rest-1`, `POST /pets` against `https://pets.example.test/v1`. */
+function model(): Project {
+  const request = createRestRequest('Add pet', { id: 'rest-1', method: 'POST', url: '/pets' });
+  const api = createApi('Pets', { id: 'api-1', baseUrl: 'https://pets.example.test/v1', requests: [request] });
+  return { ...createProject('Demo', { id: 'p1' }), properties: { base: 'https://pets.example.test/v1' }, apis: [api] };
+}
+
 function setup(
   restBodySchema?: (requestId: string, sent?: { method: string; url: string }) => Promise<unknown>,
-  restSend?: (requestId: string, draft?: unknown) => unknown,
+  located?: Project,
 ): void {
   handlers.clear();
   registerRequestChannels(new EngineService(), {
     project: {
+      projectId: () => 'p1',
+      runContextFor: () => (located === undefined ? undefined : { project: located, projectDir: '/tmp/none' }),
       ...(restBodySchema !== undefined ? { restBodySchema } : {}),
-      ...(restSend !== undefined ? { restSend } : {}),
     } as unknown as RequestChannelDeps['project'],
     adHocScopes: () => ({ project: {}, global: {}, system: {} }),
   });
@@ -51,19 +61,15 @@ describe('request.restBodySchema', () => {
 
   it('looks the operation up by the method and URL a send would use, draft included', async () => {
     const lookup = vi.fn().mockResolvedValue(undefined);
-    const restSend = vi.fn().mockReturnValue({
-      input: { request: { method: 'PUT', url: 'https://pets.example.test/v1/pets/7' } },
-    });
-    setup(lookup, restSend);
+    setup(lookup, model());
     const draft = { method: 'PUT', url: '${base}/pets/7' };
     await invoke({ requestId: 'rest-1', draft });
-    expect(restSend).toHaveBeenCalledWith('rest-1', draft);
     expect(lookup).toHaveBeenCalledWith('rest-1', { method: 'PUT', url: 'https://pets.example.test/v1/pets/7' });
   });
 
   it('falls back to the saved request when the send cannot be resolved', async () => {
     const lookup = vi.fn().mockResolvedValue(undefined);
-    setup(lookup, () => undefined);
+    setup(lookup);
     await invoke({ requestId: 'rest-1', draft: { method: 'PUT' } });
     expect(lookup).toHaveBeenCalledWith('rest-1', undefined);
   });

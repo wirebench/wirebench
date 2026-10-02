@@ -17,12 +17,10 @@ import {
   WirebenchError,
   type AuthConfig,
   type Project,
-  type WsCallInput,
 } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, whenWsSessionsRecorded, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
-import type { WsSendResolution } from '../src/main/ws-send.js';
 import type { FailedExchangeWire, HistoryEntryWire, LogEntryWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
@@ -141,56 +139,6 @@ function locatedAt(path: string, overrides: Parameters<typeof model>[1] = {}) {
   return (requestId: string) => (requestId.startsWith('ws-') ? { project, projectDir: '/tmp/none' } : undefined);
 }
 
-/** A `WsSendResolution` aimed at `path` on the running test server, for the preflight's old resolver. */
-function resolution(
-  path: string,
-  overrides: {
-    readonly headers?: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[];
-    readonly query?: readonly { readonly name: string; readonly value: string; readonly enabled: boolean }[];
-    readonly auth?: WsSendResolution['auth'];
-    readonly unresolved?: readonly {
-      readonly expr: string;
-      readonly name?: string;
-      readonly code: 'missing' | 'unknown-scope' | 'cycle' | 'too-deep' | 'malformed';
-      readonly start: number;
-      readonly end: number;
-    }[];
-  } = {},
-): WsSendResolution {
-  const input: WsCallInput = {
-    serverUrl: server.url,
-    request: {
-      url: path,
-      query: overrides.query ?? [],
-      headers: overrides.headers ?? [{ name: 'Authorization', value: 'Bearer plain-token', enabled: true }],
-      subprotocols: [],
-      settings: {},
-    },
-    apiHeaders: [],
-  };
-  return {
-    input,
-    unresolved: overrides.unresolved ?? [],
-    api: { kind: 'websocket', id: 'w-1', name: 'Chat', slug: 'chat', order: 0, url: server.url, headers: [] },
-    request: {
-      kind: 'websocket',
-      id: 'q-1',
-      name: 'Echo',
-      slug: 'echo',
-      order: 0,
-      url: path,
-      query: input.request.query,
-      headers: input.request.headers,
-      subprotocols: [],
-      auth: overrides.auth ?? { type: 'none' },
-      settings: {},
-      messages: [],
-    },
-    urlSource: 'api',
-    auth: overrides.auth ?? { type: 'none' },
-  } as unknown as WsSendResolution;
-}
-
 function project(overrides: Record<string, unknown> = {}) {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
@@ -202,7 +150,6 @@ function project(overrides: Record<string, unknown> = {}) {
     buildLiveSendInput: () => undefined,
     sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
-    wsSend: (requestId: string) => (requestId.startsWith('ws-') ? resolution('/echo') : undefined),
     runContextFor: locatedAt('/echo'),
     wsMeta: () => ({ requestName: 'Echo', apiName: 'Chat', folderPath: '' }),
     ...overrides,
@@ -637,17 +584,7 @@ describe('request.openWs → request.wsSend → request.wsClose', () => {
   });
 
   it('request.preflightWs returns the resolved URL, its source and unresolved expressions, without dialling', async () => {
-    register(
-      {},
-      {
-        wsSend: (requestId: string) =>
-          requestId.startsWith('ws-')
-            ? resolution('/echo', {
-                unresolved: [{ expr: '${nope}', name: 'nope', code: 'missing', start: 0, end: 7 }],
-              })
-            : undefined,
-      },
-    );
+    register({}, { runContextFor: locatedAt('/echo', { headers: [entry('X-Who', '${nope}')] }) });
     const before = server.received.length;
     const handshakesBefore = server.handshakes.length;
     const reply = unwrap<{

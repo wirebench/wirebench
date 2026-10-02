@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PropertyScopes } from '@wirebench/engine';
+import { createInterface, createProject, createRequest } from '@wirebench/engine';
+import type { Project, PropertyScopes, WsaConfig } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { PreflightResult } from '../src/main/expansion-preflight.js';
@@ -51,7 +52,7 @@ class FakeProject {
   headers: Record<string, string> = {};
   /** How many attachments the saved request carries; drives the cURL "not included" note. */
   attachmentCount = 0;
-  /** When set, `buildLiveSendInput` carries this WS-Addressing config on the send input. */
+  /** When set, the saved request carries this WS-Addressing config. */
   wsa: SoapSendInputWire['wsa'] = undefined;
   /** Drives the cURL "WS-Security is not included" note. */
   outgoingWss = false;
@@ -89,18 +90,32 @@ class FakeProject {
       envelopeXml: this.envelopeXml,
     };
   }
-  buildLiveSendInput(requestId: string): SoapSendInputWire | undefined {
+  /** The project a send of `req-1` runs in: the saved request as this fake holds it. */
+  runContextFor(requestId: string): { project: Project; projectDir: string } | undefined {
     if (requestId !== 'req-1') {
       return undefined;
     }
-    return {
-      endpoint: this.endpointUrl,
-      envelopeXml: this.envelopeXml,
-      soapVersion: '1.1',
-      soapAction: `${TEM}Add`,
-      headers: this.headers,
-      ...(this.wsa !== undefined ? { wsa: this.wsa } : {}),
+    const request = {
+      ...createRequest('Add', {
+        id: 'req-1',
+        envelopeXml: this.envelopeXml,
+        soapVersion: '1.1',
+        soapAction: `${TEM}Add`,
+        headers: Object.entries(this.headers).map(([name, value]) => ({ name, value })),
+      }),
+      endpointUrl: this.endpointUrl,
+      ...(this.wsa !== undefined ? { wsa: this.wsa.config as WsaConfig } : {}),
     };
+    const iface = createInterface('Calculator', {
+      id: this.interfaceId,
+      definitionUrl: 'http://dev.test/calc.asmx?wsdl',
+      cacheDefinition: false,
+      operations: [{ name: 'Add', bindingName: `{${TEM}}CalculatorSoap`, slug: 'add', order: 0, requests: [request] }],
+    });
+    return { project: { ...createProject('Demo', { id: 'proj-1' }), interfaces: [iface] }, projectDir: '/tmp/none' };
+  }
+  defaultWsaActionFor(): string {
+    return this.wsa?.defaultAction ?? '';
   }
   sendAttachmentsFor(requestId: string): { attachments: unknown[] } | undefined {
     if (requestId !== 'req-1' || this.attachmentCount === 0) {

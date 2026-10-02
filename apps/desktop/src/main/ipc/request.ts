@@ -2,6 +2,8 @@ import type { WebContents } from 'electron';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import {
+  applySoapAuth,
+  applyWsaHeaders,
   composeUrl,
   CURL_REDACTED,
   fromCurl,
@@ -51,9 +53,11 @@ import type {
   RestRequestSnapshot,
   ScriptSession,
   SentScripts,
+  SoapOwnerAuth,
+  SoapSendInput,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
-import { isSecretTokenRef, resolveAuthConfig, resolveWithStoredValues } from '../secret-resolver.js';
+import { isSecretTokenRef, resolveAuthConfig, resolveSoapAuth, resolveWithStoredValues } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
@@ -70,7 +74,10 @@ import {
   previewWs,
   sendThroughEngine,
   type GrpcPreview,
+  previewSoap,
   type RestPreview,
+  type RestUrlSource,
+  type SoapPreview,
   type SendThroughEngineDeps,
   type WsPreview,
 } from '../send/exchange.js';
@@ -82,8 +89,8 @@ import {
   startScripts,
   type SendScripts,
 } from '../script-send.js';
-import type { RestSendResolution, WebhookUrlSource } from '../rest-send.js';
-import { webhookSignFor, withSentSigningHeaders } from '../webhook-send.js';
+import type { RestSendResolution } from '../rest-send.js';
+import { webhookSignFor, withSentSigningHeaders, type WebhookUrlSource } from '../webhook-send.js';
 import type { GrpcSendResolution } from '../grpc-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
 import { toUnresolvedRefWire, toWsFrameWire } from '../engine-wire.js';
@@ -591,21 +598,15 @@ async function curl(
   if (ws !== undefined) {
     return await wsCommand(deps, request, ws);
   }
-  const live = deps.project.buildLiveSendInput(request.requestId);
-  if (live === undefined) {
-    throw unknownRequest(request.requestId);
-  }
-  // The export applies the owner's credentials exactly as a send would (`applySoapAuth`, inside
-  // `effectiveSendInput`). An OAuth2 token is never fetched for it: one already cached is used,
-  // otherwise `Authorization` is left out and a note says so.
-  const auth = deps.project.authFor(request.requestId);
-  const accessToken = auth?.type === 'oauth2' ? cachedAccessToken(deps, auth) : undefined;
-  const effective = await service.effectiveSendInput(live, {
-    scopes: deps.project.scopesFor(request.requestId),
-    ...(auth !== undefined ? { auth } : {}),
-    ...(accessToken !== undefined ? { accessToken } : {}),
-  });
+  // A SOAP request the same way, through the engine, its credentials applied as a send applies them:
+  // read only while the session shows secrets, a stand-in otherwise, masked all the same. An OAuth2
+  // token is never fetched for it: one already cached is used, otherwise `Authorization` is left out
+  // and a note says so.
+  const soap = await soapPreviewOrUnknown(sendDeps, request.requestId);
+  const { auth } = soap;
   const show = deps.showSecrets?.get() ?? false;
+  const accessToken = auth?.type === 'oauth2' ? cachedAccessToken(deps, auth) : undefined;
+  const effective = await soapCurlInput(deps, soap.input, auth, show, accessToken);
   const keyParams = auth?.type === 'api-key' && auth.in === 'query' ? [auth.name] : [];
   // A header API key may be called anything, so its header is masked by name as well.
   const keyHeaders = auth?.type === 'api-key' && auth.in === 'header' ? [auth.name] : [];
@@ -626,9 +627,9 @@ async function curl(
   // with attachments would otherwise be silently exported as one without them. Saying so in a
   // leading comment keeps the command paste-able while making the difference impossible to miss.
   const count = deps.project.sendAttachmentsFor?.(request.requestId)?.attachments.length ?? 0;
-  // WS-Security is deliberately never applied to this preview (it needs secrets and a keystore
-  // `effectiveSendInput` never touches); a request that selects one would otherwise look, from
-  // the command alone, like it sends unsecured when it does not.
+  // WS-Security is deliberately never applied to this preview (it needs secrets and a keystore an
+  // export never touches); a request that selects one would otherwise look, from the command alone,
+  // like it sends unsecured when it does not.
   const notes: string[] = [];
   const comments: string[] = [];
   if (deps.project.hasOutgoingWss?.(request.requestId) === true) {
@@ -650,6 +651,90 @@ async function curl(
     command: comments.length === 0 ? command : `${comments.join('\n')}\n${command}`,
     ...(notes.length > 0 ? { notes } : {}),
   };
+}
+
+/**
+ * The saved SOAP request as its send would resolve it. One that no project holds, or that no
+ * endpoint resolves for, is refused as `unknown-request`, as the export always has.
+ */
+async function soapPreviewOrUnknown(sendDeps: SendThroughEngineDeps, requestId: string): Promise<SoapPreview> {
+  try {
+    const preview = await previewSoap(sendDeps, requestId);
+    if (preview !== undefined) {
+      return preview;
+    }
+  } catch (error) {
+    if (!isWirebenchError(error) || error.code !== 'endpoint-unresolved') {
+      throw error;
+    }
+  }
+  throw unknownRequest(requestId);
+}
+
+/**
+ * The exported request: basic credentials baked into an `Authorization` header (the command has no
+ * challenge loop), then WS-Addressing, then a token scheme through `applySoapAuth` — the send's own
+ * order, so `wsa:To` is the endpoint as configured rather than the one carrying an API key. A
+ * `messageId: 'auto'` mints a fresh UUID here, so the command carries a one-off MessageID.
+ */
+async function soapCurlInput(
+  deps: RequestChannelDeps,
+  input: SoapSendInput,
+  owner: SoapOwnerAuth | undefined,
+  show: boolean,
+  accessToken: string | undefined,
+): Promise<SoapSendInput> {
+  const auth = show
+    ? await resolveSoapAuth(
+        owner,
+        (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
+        accessToken !== undefined ? { accessToken } : {},
+      )
+    : placeholderSoapAuth(owner, accessToken);
+  const basic =
+    auth?.type === 'basic' &&
+    auth.preemptive !== false &&
+    !Object.keys(input.headers ?? {}).some((name) => name.toLowerCase() === 'authorization')
+      ? {
+          headers: {
+            ...input.headers,
+            Authorization: `Basic ${Buffer.from(`${auth.username}:${auth.password}`, 'utf8').toString('base64')}`,
+          },
+        }
+      : {};
+  const addressed = withWsaHeaders({ ...input, ...basic });
+  if (auth === undefined || auth.type === 'basic' || auth.type === 'ntlm') {
+    return addressed;
+  }
+  const applied = applySoapAuth(addressed.endpoint, addressed.headers, auth);
+  return { ...addressed, endpoint: applied.endpoint, headers: { ...applied.headers } };
+}
+
+/**
+ * A SOAP owner's credentials with no value in them, for an export that will mask them anyway: the
+ * command shows which credential a request sends and where it goes without the keychain being read.
+ * A cached OAuth2 token is the one value the export may carry, and is masked like the rest.
+ */
+function placeholderSoapAuth(owner: SoapOwnerAuth | undefined, accessToken: string | undefined): SendAuth | undefined {
+  if (owner?.type === 'oauth2') {
+    return accessToken === undefined ? undefined : { type: 'bearer', token: CURL_REDACTED };
+  }
+  return owner === undefined ? undefined : placeholderAuth(owner);
+}
+
+/** Bakes the input's WS-Addressing headers into its envelope, as a send writes them on the wire. */
+function withWsaHeaders(input: SoapSendInput): SoapSendInput {
+  if (input.wsa === undefined || !input.wsa.config.enabled) {
+    return input;
+  }
+  const envelopeXml = applyWsaHeaders(input.envelopeXml, input.wsa.config, {
+    endpoint: input.endpoint,
+    ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
+    defaultAction: input.wsa.defaultAction,
+    uuid: () => crypto.randomUUID(),
+    envelopeVersion: input.soapVersion,
+  });
+  return { ...input, envelopeXml };
 }
 
 /**
@@ -1126,27 +1211,40 @@ function preflightUnresolved(unresolved: readonly UnresolvedRef[]): UnresolvedRe
 }
 
 /** True for a base URL the webhook collection supplied: its target, or a callback's own URL. */
-function isWebhookUrlSource(source: RestSendResolution['baseUrlSource']): source is WebhookUrlSource {
+function isWebhookUrlSource(source: RestUrlSource): source is WebhookUrlSource {
   return source === 'target' || source === 'callback' || source === 'callback-fallback';
 }
 
 /** A REST base URL's source in the endpoint vocabulary the editor's badge reads. */
-function endpointSourceOf(source: RestSendResolution['baseUrlSource']): EndpointSourceWire {
+function endpointSourceOf(source: RestUrlSource): EndpointSourceWire {
   return source === 'api' || isWebhookUrlSource(source) ? 'interface-default' : source;
+}
+
+/** What a preflight answers for a request no open project holds. */
+const NO_PREFLIGHT: PreflightResult = {
+  endpointSource: 'none',
+  unresolved: [],
+  auth: { type: 'none', source: 'none' },
+  wsa: { enabled: false },
+};
+
+/** The credentials a preflight names: their type, with an unresolved `inherit` as none. */
+function preflightAuth(auth: AuthConfig): PreflightResult['auth'] {
+  return { type: auth.type === 'inherit' ? 'none' : auth.type, source: 'request' };
 }
 
 /**
  * The dry run of a REST send: where it would go, what would not expand, and which credentials it
- * would use. Nothing is sent, and no secret is touched — which is what lets the editor show the
- * badge while the user types.
+ * would use. It resolves as the send resolves, through the engine, so the two never disagree; nothing
+ * is sent and no secret is read — which is what lets the editor show the badge while the user types.
  */
-function preflightRest(
-  deps: RequestChannelDeps,
+async function preflightRest(
+  sendDeps: SendThroughEngineDeps,
   request: { readonly requestId: string; readonly draft?: RestRequestPatchWire | undefined },
-): PreflightResult {
-  const resolved = deps.project.restSend?.(request.requestId, request.draft);
+): Promise<PreflightResult> {
+  const resolved = await previewRest(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
-    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+    return NO_PREFLIGHT;
   }
   const composed = composeUrl(
     resolved.input.baseUrl,
@@ -1174,7 +1272,7 @@ function preflightRest(
     // and where it actually went is reported in `target`.
     endpointSource: endpointSourceOf(resolved.baseUrlSource),
     unresolved: [...preflightUnresolved(resolved.unresolved), ...missing],
-    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
     ...(isWebhookUrlSource(resolved.baseUrlSource)
       ? {
@@ -1510,22 +1608,23 @@ function reportWsHandshake(
 const GRPC_STREAM_UNKNOWN_MESSAGE = 'That call is no longer open for sending.';
 
 /**
- * The dry run of a gRPC call: the target it would go to and what would not expand. Nothing is sent
- * and no secret is touched, so the editor can show the badge while the user types.
+ * The dry run of a gRPC call: the target it would go to and what would not expand, resolved as the
+ * send resolves it. Nothing is sent and no secret is read, so the editor can show the badge while
+ * the user types.
  */
-function preflightGrpc(
-  deps: RequestChannelDeps,
+async function preflightGrpc(
+  sendDeps: SendThroughEngineDeps,
   request: { readonly requestId: string; readonly draft?: GrpcRequestPatchWire | undefined },
-): PreflightResult {
-  const resolved = deps.project.grpcSend?.(request.requestId, request.draft);
+): Promise<PreflightResult> {
+  const resolved = await previewGrpc(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
-    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+    return NO_PREFLIGHT;
   }
   return {
     endpoint: resolved.input.target,
     endpointSource: resolved.targetSource === 'api' ? 'interface-default' : resolved.targetSource,
     unresolved: preflightUnresolved(resolved.unresolved),
-    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
   };
 }
@@ -1798,22 +1897,23 @@ function isValidBase64(text: string): boolean {
 }
 
 /**
- * The dry run of opening a WebSocket session: where it would go and what would not expand. Nothing
- * is dialled and no secret is touched, so the editor can show the badge while the user types.
+ * The dry run of opening a WebSocket session: where it would go and what would not expand, resolved
+ * as the open resolves it. Nothing is dialled and no secret is read, so the editor can show the badge
+ * while the user types.
  */
-function preflightWs(
-  deps: RequestChannelDeps,
+async function preflightWs(
+  sendDeps: SendThroughEngineDeps,
   request: { readonly requestId: string; readonly draft?: WsRequestPatchWire | undefined },
-): PreflightResult {
-  const resolved = deps.project.wsSend?.(request.requestId, request.draft);
+): Promise<PreflightResult> {
+  const resolved = await previewWs(sendDeps, request.requestId, request.draft);
   if (resolved === undefined) {
-    return { endpointSource: 'none', unresolved: [], auth: { type: 'none', source: 'none' }, wsa: { enabled: false } };
+    return NO_PREFLIGHT;
   }
   return {
     endpoint: wsDisplayUrl(resolved.input),
     endpointSource: resolved.urlSource === 'api' ? 'interface-default' : resolved.urlSource,
     unresolved: preflightUnresolved(resolved.unresolved),
-    auth: { type: resolved.auth.type === 'inherit' ? 'none' : resolved.auth.type, source: 'request' },
+    auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
   };
 }
@@ -1867,7 +1967,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     ),
   );
 
-  registerHandler(channels.request.preflightRest, (request) => Promise.resolve(preflightRest(deps, request)));
+  registerHandler(channels.request.preflightRest, (request) => preflightRest(sendDeps, request));
 
   // The call as it happens, its request side open for pushes when `interactive`; the `closed` event
   // of a half-close comes from the engine with the rest of the call's events.
@@ -1891,7 +1991,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     Promise.resolve({ closed: sendDeps.registry.halfClose(sendId) }),
   );
 
-  registerHandler(channels.request.preflightGrpc, (request) => Promise.resolve(preflightGrpc(deps, request)));
+  registerHandler(channels.request.preflightGrpc, (request) => preflightGrpc(sendDeps, request));
 
   // The session as it happens: the invoke stays pending until it closes, while `ws.live` reports the
   // handshake, each frame and each frame's contract check. Its request side takes pushes and a close.
@@ -1937,7 +2037,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
   registerHandler(channels.request.wsClose, (request) =>
     Promise.resolve({ closed: sendDeps.registry.closeWs(request.sendId, request.code, request.reason) }),
   );
-  registerHandler(channels.request.preflightWs, (request) => Promise.resolve(preflightWs(deps, request)));
+  registerHandler(channels.request.preflightWs, (request) => preflightWs(sendDeps, request));
 
   registerHandler(channels.request.sendToEnvironments, (request) => sendToEnvironments(sendDeps, deps, request));
 
@@ -1958,7 +2058,7 @@ export function registerRequestChannels(service: EngineService, deps: RequestCha
     // The operation is found from what a send would call — the draft laid over the saved request and
     // its properties expanded — the same method and URL the contract check matches after a send, so
     // the form and the check never disagree about the operation.
-    const resolved = deps.project.restSend?.(request.requestId, request.draft);
+    const resolved = await previewRest(sendDeps, request.requestId, request.draft);
     const sent =
       resolved === undefined ? undefined : { method: resolved.input.request.method, url: resolved.input.request.url };
     const found = await deps.project.restBodySchema?.(request.requestId, sent);

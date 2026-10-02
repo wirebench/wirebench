@@ -39,6 +39,9 @@ import type { RestSendResolution } from './rest-send.js';
 import { webhookCollectionId } from './webhook-ids.js';
 import type { HistoryEntryWire, RestRequestPatchWire } from '../shared/wire-types.js';
 
+/** Where a webhook item's URL came from: its target, its callback URL, or the target standing in. */
+export type WebhookUrlSource = 'target' | 'callback' | 'callback-fallback';
+
 /** A callback's URL, or why the target stands in for it; `detail` is the editor's note either way. */
 export type CallbackUrl =
   | { readonly url: string; readonly source: 'callback'; readonly detail: string }

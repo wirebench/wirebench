@@ -226,19 +226,28 @@ export function reportedAuth(auth: SendAuth | undefined, context: RunContext): S
   return auth;
 }
 
+/**
+ * A REST API's base URL (or a gRPC or WebSocket API's target) and where it came from, through the
+ * workspace's environment when the run has a workspace: what a preview reports beside the URL.
+ */
+export function resolvedBaseUrl(
+  context: Pick<RunContext, 'project' | 'environmentId' | 'workspace'>,
+  api: { readonly slug: string; readonly baseUrl: string },
+): { readonly url: string; readonly source: BaseUrlSource } {
+  const { project, environmentId, workspace } = context;
+  return workspace === undefined
+    ? resolveApiBaseUrl(project, environmentId, api)
+    : resolveWorkspaceApiBaseUrl({
+        workspace: withActiveEnvironment(workspace.workspace, environmentId),
+        project,
+        projectSlug: workspace.projectSlug,
+        api,
+      });
+}
+
 /** A REST API's base URL (or a gRPC API's target), through the workspace's environment likewise. */
 export function baseUrlFor(context: RunContext, api: { readonly slug: string; readonly baseUrl: string }): string {
-  const { project, environmentId, workspace } = context;
-  const resolved: { url: string; source: BaseUrlSource } =
-    workspace === undefined
-      ? resolveApiBaseUrl(project, environmentId, api)
-      : resolveWorkspaceApiBaseUrl({
-          workspace: withActiveEnvironment(workspace.workspace, environmentId),
-          project,
-          projectSlug: workspace.projectSlug,
-          api,
-        });
-  return resolved.url;
+  return resolvedBaseUrl(context, api).url;
 }
 
 /**

@@ -34,6 +34,7 @@ export { EventQueue } from './event-queue.js';
 export { exchangeController, notStreaming } from './exchange.js';
 export { openExchange, resolveExchange } from './open.js';
 export { createRunScope } from './scope.js';
+export { resolvedBaseUrl } from './send-helpers.js';
 export type {
   ExchangeController,
   ExchangeHandle,

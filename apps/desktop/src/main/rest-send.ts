@@ -32,6 +32,7 @@ import type {
 import { authChainFor, findRestRequest } from './project-rest-mutations.js';
 import { withSecretTokenScope } from './secret-resolver.js';
 import { withDraft } from './send/draft.js';
+import type { WebhookUrlSource } from './webhook-send.js';
 import type { RestRequestPatchWire } from '../shared/wire-types.js';
 
 /** What one resolved REST send knows about itself, beyond the input the engine will consume. */
@@ -54,9 +55,6 @@ export interface RestSendResolution {
   /** A webhook item's signing when it signs (webhook-signatures §5.2); its secret is read at send. */
   readonly webhookSigning?: EffectiveSigning;
 }
-
-/** Where a webhook item's URL came from: its target, its callback URL, or the target standing in. */
-export type WebhookUrlSource = 'target' | 'callback' | 'callback-fallback';
 
 /** Everything {@link resolveRestSend} needs. */
 export interface ResolveRestSendArgs {
