@@ -120,7 +120,7 @@ function harness(model: Project, keychain: Record<string, string>) {
   };
   const sendDeps = toSendDeps(engine, requestDeps);
   registerHistoryChannels(history as never, {
-    project: { projectId: () => 'p1' },
+    project: { projectId: () => 'p1', endpointFor: () => undefined },
     send: sendDeps,
   });
   registerLogChannels({

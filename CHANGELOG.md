@@ -86,15 +86,16 @@ before and after for the two changes that need more than a rename. The package's
   viewers read them. The server bounds captures by count, age, body size and rate, and the app never
   writes them to disk.
 
-- **Sequences.** A sequence sends saved SOAP, REST and unary gRPC requests one after another, and is
-  declared in its own file, `sequences/<name>.sequence.yaml`, with no code. A step can lift a value
-  from its response (a body expression, a header, a cookie or the status) for later steps to use as
-  `${#Sequence#name}`, and check the response with assertions, a header included. Build and run one
-  from the explorer and its tab, where the run panel fills in step by step; each step is logged and
-  kept in History like any other send. `wirebench run --sequence <name>` runs one in CI, one test per
-  step. A value from a response is data, never a template: it is used exactly as it arrived, escaped
-  for the body it lands in, can't choose the scheme, host or port of the next request, can't carry a
-  line break into a URL or header, and is masked everywhere once marked secret.
+- **Sequences.** A sequence sends saved SOAP, REST, gRPC and WebSocket requests one after another (a
+  streaming gRPC call and a WebSocket request can be steps too), and is declared in its own file,
+  `sequences/<name>.sequence.yaml`, with no code. A step can lift a value from its response (a body
+  expression, a header, a cookie or the status) for later steps to use as `${#Sequence#name}`, and check
+  the response with assertions, a header included. Build and run one from the explorer and its tab,
+  where the run panel fills in step by step; each step is logged and kept in History like any other
+  send. `wirebench run --sequence <name>` runs one in CI, one test per step. A value from a response is
+  data, never a template: it is used exactly as it arrived, escaped for the body it lands in, can't
+  choose the scheme, host or port of the next request, can't carry a line break into a URL or header,
+  and is masked everywhere once marked secret.
 
 - **Team secrets.** A shared workspace can share secret values, not just references: each value is
   encrypted for every approved machine and travels with the workspace, so a teammate's next send uses it

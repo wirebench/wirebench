@@ -108,6 +108,8 @@ const noActionSupport = {
     throw new Error('projectMutate is not stubbed in this test');
   },
   dumpFileFor: (): undefined => undefined,
+  // No saved SOAP request behind these sends.
+  endpointFor: (): undefined => undefined,
 };
 
 function invoke(channel: string, payload: unknown): Promise<unknown> {

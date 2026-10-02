@@ -90,7 +90,7 @@ export function registerLogChannels(deps: LogChannelDeps): void {
       );
     }
     // History's resend Path 1: the live request, never a redacted copy.
-    if (deps.request.project.endpointFor?.(request.requestId) === undefined) {
+    if (deps.request.project.endpointFor(request.requestId) === undefined) {
       throw new ProjectError('unknown-entity', `No request with id "${request.requestId}"`, {
         details: { requestId: request.requestId },
       });

@@ -2886,11 +2886,6 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  restTlsFor(...args: Parameters<ProjectRouter['restTlsFor']>): ReturnType<ProjectRouter['restTlsFor']> {
-    return this.hostOfEntity(args[0]).restTlsFor(...args);
-  }
-
-  /** @inheritdoc */
   restAuthOf(...args: Parameters<ProjectRouter['restAuthOf']>): ReturnType<ProjectRouter['restAuthOf']> {
     return this.hostOfEntity(args[0]).restAuthOf(...args);
   }

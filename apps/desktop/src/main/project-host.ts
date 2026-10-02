@@ -1592,29 +1592,6 @@ export class ProjectHost {
     this.restCookies.set(requestId, cookies);
   }
 
-  /**
-   * The TLS material a REST send needs: the trust anchors, the client identity its settings select,
-   * and its own `trustInvalid` flag. The REST counterpart of {@link tlsFor}, reading the request's
-   * settings rather than a SOAP request's properties and an endpoint's flag.
-   */
-  async restTlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
-    if (this.open === undefined) {
-      return undefined;
-    }
-    const request = this.restOrWebhookRequest(requestId);
-    const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
-    const ca = await this.trustAnchors();
-    const trustInvalid = request?.settings.trustInvalid === true;
-    if (identity === undefined && ca === undefined && !trustInvalid) {
-      return undefined;
-    }
-    return {
-      ...(identity !== undefined ? identity : {}),
-      ...(ca !== undefined ? { ca: [...ca] } : {}),
-      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
-    };
-  }
-
   /** The credentials configured on one gRPC API, folder or request — its own, not its chain's. */
   grpcAuthOf(ownerId: string): AuthConfig | undefined {
     if (this.open === undefined) {

@@ -92,7 +92,16 @@ import { registerHandler } from './register.js';
 /** The `ProjectRouter` surface the `request.*` channels drive; a stub stands in for it in tests. */
 export type RequestChannelProject = Pick<
   ProjectRouter,
-  'scopesFor' | 'preflight' | 'requestMeta' | 'projectId' | 'projectMutate' | 'requestSource' | 'dumpFileFor'
+  | 'scopesFor'
+  | 'preflight'
+  | 'requestMeta'
+  | 'projectId'
+  | 'projectMutate'
+  | 'requestSource'
+  | 'dumpFileFor'
+  // Whether a SOAP request has an endpoint (under an environment, when one is named): the check a
+  // SOAP Log resend, sequence step and multi-environment send make before sending.
+  | 'endpointFor'
 > &
   // Optional for the same reason as on `HistorySendProject`: a stub (or an ad-hoc send) that
   // has no saved request behind it has no attachments to carry either.
@@ -109,8 +118,6 @@ export type RequestChannelProject = Pick<
       | 'projectSnapshot'
       // Read by *Send to environments…* to name and validate the environments asked for.
       | 'sendEnvironments'
-      // Whether a SOAP request has an endpoint under an environment, which a send without one refuses.
-      | 'endpointFor'
       | 'rememberRestCookies'
       | 'restMeta'
       // What the send host (send/host.ts) lends the engine: the trust anchors, the client identity,
@@ -389,12 +396,6 @@ async function recreate(
 }
 
 /**
- * The `curl` command equivalent to sending this request today: the same live input
- * `request.send` builds, with the effective auth applied and properties expanded — but with
- * secret-bearing headers masked unless the session's show-secrets flag is on, since the
- * command is about to land on a clipboard.
- */
-/**
  * A credential's shape with no value in it, for an export that will redact it anyway.
  *
  * Every arm carries the marker rather than a secret, so the command shows *which* credential a
@@ -468,6 +469,12 @@ async function restCurl(
   return { command, ...(notes.length > 0 ? { notes } : {}) };
 }
 
+/**
+ * The `curl` command equivalent to sending this request today: the request resolved through the
+ * engine as its send resolves it, with the effective auth applied and properties expanded — but
+ * with secret-bearing headers masked unless the session's show-secrets flag is on, since the
+ * command is about to land on a clipboard.
+ */
 async function curl(
   service: EngineService,
   deps: RequestChannelDeps,

@@ -28,7 +28,7 @@ import { registerHandler } from './register.js';
 
 /** What the `history.*` channels need beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: Pick<ProjectRouter, 'projectId'> & Partial<Pick<ProjectRouter, 'endpointFor'>>;
+  readonly project: Pick<ProjectRouter, 'projectId' | 'endpointFor'>;
   /**
    * The engine send every re-send goes through: the request channels' own dependencies and their
    * registry, so a re-send runs its scripts, is cancelled and is recorded as any send is. Without
@@ -437,7 +437,7 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
     if (requestId !== undefined && deps.project.projectId(requestId) !== undefined) {
       // No endpoint resolves for it now (an environment that maps none): it goes to the one it went
       // to, still as its project sends it — properties, auth, keychain, WS-Security, proxy, scripts.
-      const live = deps.project.endpointFor?.(requestId) !== undefined;
+      const live = deps.project.endpointFor(requestId) !== undefined;
       if (!live && holdsUrlMarker(entry.endpoint)) {
         refuseRedacted(entry.id, 'URL');
       }

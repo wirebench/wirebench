@@ -1,8 +1,8 @@
 /**
  * What a sequence step's request is, as the step list and the Add-step picker show it: its name, a
- * protocol badge, the path to it, and whether a run can send it. Mirrors the engine's
- * `findStepRequest`: a WebSocket request and an orphaned request cannot be steps, and an id that is
- * gone is a missing request.
+ * protocol badge, the path to it, and whether a run can send it. As a run decides it: an orphaned
+ * request cannot be a step, every other request of any protocol can (a WebSocket session and a
+ * streaming gRPC call included), and an id that is gone is a missing request.
  */
 import type { useProjectStore } from '../../state/project.js';
 
@@ -61,7 +61,7 @@ export function stepRequestInfo(state: ProjectState, requestId: string): StepReq
       name: ws.name,
       badge: 'WS',
       path: state.wsApis[ws.apiId]?.name ?? '',
-      unsupported: 'A WebSocket request cannot be a step',
+      ...(ws.orphaned === true ? { unsupported: 'This request is no longer in its contract' } : {}),
     };
   }
   return undefined;

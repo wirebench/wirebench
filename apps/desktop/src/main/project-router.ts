@@ -103,9 +103,6 @@ export interface ProjectRouter {
   /** The environments a request can be sent under: its workspace's, else its project's. */
   sendEnvironments(requestId: string): ReturnType<ProjectHost['sendEnvironments']>;
 
-  /** The TLS material a REST send needs: anchors, client identity, its own trust decision. */
-  restTlsFor(...args: Parameters<ProjectHost['restTlsFor']>): ReturnType<ProjectHost['restTlsFor']>;
-
   /** The credentials configured on one API, folder or REST request — its own, not its chain's. */
   restAuthOf(...args: Parameters<ProjectHost['restAuthOf']>): ReturnType<ProjectHost['restAuthOf']>;
 

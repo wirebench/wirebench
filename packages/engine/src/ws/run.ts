@@ -108,7 +108,7 @@ export function effectiveWsSettings(
 }
 
 /**
- * The app's `resolveWsSend` (spec §3.4): the server URL through the environment's override for the
+ * A WebSocket request resolved for its send (spec §3.4): the server URL through the environment's override for the
  * API (the slot a REST base URL uses), the settings ladder, and one expansion pass over the server
  * URL, the request's URL, query, headers and subprotocols and the API's headers, nothing connected.
  * The run timeout, when given, is the handshake timeout. A reference nothing resolves is reported in

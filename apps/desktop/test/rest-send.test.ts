@@ -10,7 +10,13 @@
  * with the wrong credentials.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startTestProxy, startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
+import {
+  generateServerCert,
+  generateTestCa,
+  startTestProxy,
+  startTestRestServer,
+  type TestRestServer,
+} from '@wirebench/engine/test-helpers';
 import {
   DEFAULT_PREFERENCES,
   createApi,
@@ -196,7 +202,27 @@ describe('resolving a REST send (previewRest)', () => {
     expect(await resolve(seeded(), 'gone')).toBeUndefined();
   });
 
-  // The TLS half (the host's trust anchors on the request) is pinned by ipc-request-trust.test.ts.
+  it("sends past an untrusted certificate only when the request's settings trust it", async () => {
+    // A CA the process does not trust, and no anchors lent: only `trustInvalid` lets the send through.
+    const cert = generateServerCert(generateTestCa());
+    const https = await startTestRestServer({ tls: { cert: cert.certPem, key: cert.keyPem } });
+    try {
+      const sendWith = (trustInvalid: boolean) => {
+        const request = createRestRequest('Echo', { id: 'req-tls', url: '/echo' });
+        const project = seeded({
+          baseUrl: https.url,
+          auth: { type: 'none' },
+          requests: [{ ...request, settings: { ...request.settings, trustInvalid } }],
+        });
+        return sendThroughEngine(sendDepsFor(project), 's1', 'req-tls', { draft: { kind: 'rest' } });
+      };
+      expect((await sendWith(true)).http.status).toBe(200);
+      await expect(sendWith(false)).rejects.toMatchObject({ code: expect.stringMatching(/tls/) as unknown });
+    } finally {
+      await https.close();
+    }
+  });
+
   it('passes the host proxy through to the send', async () => {
     const proxy = await startTestProxy();
     try {

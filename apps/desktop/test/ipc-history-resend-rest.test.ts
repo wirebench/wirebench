@@ -98,7 +98,7 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
   };
   const sendDeps = toSendDeps(engine, requestDeps);
   registerHistoryChannels(history as never, {
-    project: { projectId: () => 'p1' },
+    project: { projectId: () => 'p1', endpointFor: () => undefined },
     send: sendDeps,
   });
   /** A fresh send of `requestId`, as the editor sends it. */

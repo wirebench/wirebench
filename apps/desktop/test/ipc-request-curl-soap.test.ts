@@ -165,6 +165,21 @@ describe('request.curl for a SOAP request', () => {
     });
   });
 
+  it('masks the credentials whether or not the keychain holds their secret, reading nothing, while secrets are hidden', async () => {
+    // The export never reads a secret while they are hidden, so it cannot know one is missing: Basic
+    // and a token scheme both go out masked, as the REST export's do. (The old export left a Basic
+    // header out, and failed a token scheme with secret-missing.)
+    for (const auth of [
+      { type: 'basic', username: 'ada', passwordRef: 'sec_gone' },
+      { type: 'bearer', tokenRef: 'sec_gone' },
+    ] as const) {
+      registerOver(seeded({}, auth));
+      const { command } = await curl();
+      expect(command.split('\n')).toContain("  --header 'Authorization: <redacted>' \\");
+    }
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it('pins a query API key, masked in the URL', async () => {
     registerOver(seeded({}, { type: 'api-key', name: 'api key', valueRef: 'sec_key', in: 'query' }));
     expect(await curl()).toEqual({

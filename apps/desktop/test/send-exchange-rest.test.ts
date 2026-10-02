@@ -199,8 +199,8 @@ describe('sendThroughEngine for a REST request', () => {
       ok: true,
       request: { envelopeXml: '', headers: [] },
       response: { envelopeXml: echo('<redacted>'), rawHeaders, status: 200, statusText: 'OK' },
-      // The response's raw bytes, whose server-timing and date headers vary in length between runs.
-      sizeBytes: expect.any(Number) as unknown,
+      // The response's raw bytes, as the summary carries them (its key masked).
+      sizeBytes: Buffer.from(summary.http.rawResponseBase64, 'base64').byteLength,
     });
     expect(normalise(summary)).toEqual({
       http: {

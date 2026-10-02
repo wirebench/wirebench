@@ -193,21 +193,37 @@ describe('sendThroughEngine for a SOAP request', () => {
       sizeBytes: 232,
     });
     const host = server.url.replace('http://', '');
-    expect(normalise(after)).toMatchObject({
+    // The whole summary, as the app's own SOAP path answered it.
+    expect(normalise(after)).toEqual({
       http: {
         status: 200,
         statusText: 'OK',
-        rawHeaders: echoRawHeaders,
-        bodyBase64: sentEnvelope,
+        headers: {
+          'content-type': 'text/xml;charset=UTF-8',
+          connection: 'keep-alive',
+          'keep-alive': 'timeout=5',
+          'transfer-encoding': 'chunked',
+        },
+        rawHeaders: [
+          ['content-type', 'text/xml;charset=UTF-8'],
+          null,
+          ['connection', 'keep-alive'],
+          ['keep-alive', 'timeout=5'],
+          ['transfer-encoding', 'chunked'],
+        ],
+        bodyBase64: '<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
+        rawBodyBase64: '<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
         rawRequestBase64:
-          `POST /calc HTTP/1.1\r\nhost: ${host}\r\ncontent-type: text/xml;charset=UTF-8\r\n` +
-          'SOAPAction: "urn:calc:Add"\r\nX-Trace: abc\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate\r\n' +
-          `content-length: 63\r\n\r\n${sentEnvelope}`,
+          'POST /calc HTTP/1.1\r\nhost: ' +
+          host +
+          '\r\ncontent-type: text/xml;charset=UTF-8\r\nSOAPAction: "urn:calc:Add"\r\nX-Trace: abc\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate\r\ncontent-length: 63\r\n\r\n<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
+        rawResponseBase64:
+          'HTTP/1.1 200 OK\r\ncontent-type: text/xml;charset=UTF-8\r\ndate: -\r\nconnection: keep-alive\r\nkeep-alive: timeout=5\r\ntransfer-encoding: chunked\r\n\r\n<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
         truncated: false,
         httpVersion: '1.1',
         redirects: [],
         request: {
-          url: `${server.url}/calc`,
+          url: 'http://' + host + '/calc',
           method: 'POST',
           headers: {
             'content-type': 'text/xml;charset=UTF-8',
@@ -218,7 +234,17 @@ describe('sendThroughEngine for a SOAP request', () => {
           },
         },
       },
-      response: { envelopeXml: sentEnvelope, isSoap: false, attachments: [] },
+      response: {
+        envelopeXml: '<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>',
+        isSoap: false,
+        attachments: [],
+      },
+      problems: [
+        {
+          code: 'xml-parse-error',
+          message: 'Error constructing the DOM: NamespaceError: prefix is non-null and namespace is null',
+        },
+      ],
       unresolved: [],
     });
   });
@@ -234,6 +260,60 @@ describe('sendThroughEngine for a SOAP request', () => {
       headers: { 'X-Trace': 'abc', 'User-Agent': 'Wirebench/0.1', 'Accept-Encoding': 'gzip, deflate' },
     };
     const resend = { ...META, requestName: 'Gone', projectId: 'p1' };
+    const host = server.url.replace('http://', '');
+    const adHocSummary = {
+      http: {
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          'content-type': 'text/xml;charset=UTF-8',
+          connection: 'keep-alive',
+          'keep-alive': 'timeout=5',
+          'transfer-encoding': 'chunked',
+        },
+        rawHeaders: [
+          ['content-type', 'text/xml;charset=UTF-8'],
+          null,
+          ['connection', 'keep-alive'],
+          ['keep-alive', 'timeout=5'],
+          ['transfer-encoding', 'chunked'],
+        ],
+        bodyBase64: '<Envelope>globe</Envelope>',
+        rawBodyBase64: '<Envelope>globe</Envelope>',
+        rawRequestBase64:
+          'POST /adhoc HTTP/1.1\r\nhost: ' +
+          host +
+          '\r\ncontent-type: text/xml;charset=UTF-8\r\nSOAPAction: ""\r\nX-Trace: abc\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate\r\ncontent-length: 26\r\n\r\n<Envelope>globe</Envelope>',
+        rawResponseBase64:
+          'HTTP/1.1 200 OK\r\ncontent-type: text/xml;charset=UTF-8\r\ndate: -\r\nconnection: keep-alive\r\nkeep-alive: timeout=5\r\ntransfer-encoding: chunked\r\n\r\n<Envelope>globe</Envelope>',
+        truncated: false,
+        httpVersion: '1.1',
+        redirects: [],
+        request: {
+          url: 'http://' + host + '/adhoc',
+          method: 'POST',
+          headers: {
+            'content-type': 'text/xml;charset=UTF-8',
+            SOAPAction: '""',
+            'X-Trace': 'abc',
+            'User-Agent': 'Wirebench/0.1',
+            'Accept-Encoding': 'gzip, deflate',
+          },
+        },
+      },
+      response: {
+        envelopeXml: '<Envelope>globe</Envelope>',
+        isSoap: false,
+        attachments: [],
+      },
+      problems: [
+        {
+          code: 'not-soap',
+          message: 'Response is not a SOAP Envelope',
+        },
+      ],
+      unresolved: [],
+    };
     const rows: (HistoryEntryWire | undefined)[] = [];
     for (const names of [AD_HOC_NAME, resend]) {
       const appended: HistoryEntryWire[] = [];
@@ -249,6 +329,8 @@ describe('sendThroughEngine for a SOAP request', () => {
       );
       expect(server.bodies.at(-1)).toBe('<Envelope>globe</Envelope>');
       expect(after.http.request.url).toBe(`${server.url}/adhoc`);
+      // The whole summary, as the app's own SOAP path answered it, for the send and the resend alike.
+      expect(normalise(after)).toEqual(adHocSummary);
       rows.push(appended[0]);
     }
     // A plain ad-hoc send names no project, so nothing was recorded; the resend went back into p1.

@@ -191,7 +191,7 @@ export class SequenceRunner {
       let ran: SentScripts | undefined;
       let described: { subject: AssertionSubject; origin?: string } | undefined;
       // Refused as it always was, before anything is prepared.
-      if (resolved.selected.kind === 'soap' && deps.requests.project.endpointFor?.(requestId) === undefined) {
+      if (resolved.selected.kind === 'soap' && deps.requests.project.endpointFor(requestId) === undefined) {
         return { error: { code: 'no-endpoint', message: 'No endpoint resolves for this request' } };
       }
       const stop = (): void => {
