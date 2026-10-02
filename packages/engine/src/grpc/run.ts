@@ -382,7 +382,7 @@ async function sendGrpcItem(
   mode: GrpcSendMode,
 ): Promise<SentRequest> {
   const { controller, live, run, stream } = mode;
-  const startedAt = Date.now();
+  let startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
   const failed = (
     stage: 'prepare' | 'send',
@@ -439,6 +439,8 @@ async function sendGrpcItem(
       throw error;
     }
     const sentText = messageText;
+    // The send stage's own clock: a send-stage failure never counts resolve, the script or the token.
+    startedAt = Date.now();
     let result: GrpcCallResult;
     try {
       result = await callGrpc({

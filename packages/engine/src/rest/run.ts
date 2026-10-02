@@ -338,7 +338,7 @@ async function connectAndSend(
   /** The pre-request script's step, inside the prepare stage so its failure is reported with it. */
   script?: (input: RestSendInput) => Promise<RestSendInput>,
 ): Promise<{ readonly connected: RestSendInput; readonly sent: SentRequest }> {
-  const startedAt = Date.now();
+  let startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
   const failed = (stage: 'prepare' | 'send', error: unknown, attempted: RestSendInput | undefined): void => {
     try {
@@ -366,6 +366,8 @@ async function connectAndSend(
     failed('prepare', error, input);
     throw error;
   }
+  // The send stage's own clock: a send-stage failure never counts resolve, the script, the token or the proxy.
+  startedAt = Date.now();
   let exchange: RestExchange;
   try {
     exchange = await sendRest({

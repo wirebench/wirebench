@@ -410,7 +410,7 @@ async function sendWsItem(
   interactive: boolean,
   run: boolean,
 ): Promise<SentRequest> {
-  const startedAt = Date.now();
+  let startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
   const failed = (
     stage: 'prepare' | 'send',
@@ -463,6 +463,8 @@ async function sendWsItem(
       throw error;
     }
     const sentAttempt: AttemptedRequest = { url: options.url, method: 'GET', headers: options.headers ?? {} };
+    // The send stage's own clock: a send-stage failure never counts resolve or the token.
+    startedAt = Date.now();
     let opened = false;
     let timedOut = false;
     let exchange: WsExchange | undefined;

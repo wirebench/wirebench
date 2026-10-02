@@ -514,6 +514,52 @@ describe('request.sendGrpc through the engine', () => {
     });
   });
 
+  // The bearer token is read in the prepare stage: a slow keychain is no part of the call's time.
+  const slowSecrets = (ref: string): Promise<string | undefined> => {
+    vi.setSystemTime(Date.now() + 500);
+    return secrets(ref);
+  };
+
+  it('History durationMs excludes a slow token read, on a call that succeeds', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const appended: HistoryEntryWire[] = [];
+      registerOver(seeded(), {
+        getSecret: slowSecrets,
+        history: await openHistory(),
+        onHistoryAppended: (wire) => appended.push(wire),
+      });
+      unwrap(await invoke('request.sendGrpc', { sendId: 'd1', requestId: 'q-1' }));
+      expect(appended).toHaveLength(1);
+      expect(appended[0]!.durationMs).toBeLessThan(500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('History durationMs and the send row exclude a slow token read, on a call that fails', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const appended: HistoryEntryWire[] = [];
+      const failures: FailedExchangeWire[] = [];
+      // Nothing listens on port 1: the call fails on the wire, after its token was read.
+      registerOver(seeded(request('SayHello'), '127.0.0.1:1'), {
+        getSecret: slowSecrets,
+        history: await openHistory(),
+        onHistoryAppended: (wire) => appended.push(wire),
+        onSendFailed: (failure) => failures.push(failure),
+      });
+      refusal(await invoke('request.sendGrpc', { sendId: 'd2', requestId: 'q-1' }));
+      expect(appended).toHaveLength(1);
+      expect(appended[0]!.durationMs).toBeLessThan(500);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]!.stage).toBeUndefined();
+      expect(failures[0]!.durationMs).toBeLessThan(500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("puts the user's preferred user agent on the wire", async () => {
     registerOver(seeded(), {
       preferences: {

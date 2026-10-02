@@ -23,8 +23,12 @@ export interface AttemptedRequest {
 export interface SendFailure {
   readonly stage: 'prepare' | 'send';
   readonly error: unknown;
-  /** `Date.now()` when the send began. */
+  /** `Date.now()` when the failed stage began: the prepare stage, or the send stage after it. */
   readonly startedAt: number;
+  /**
+   * How long the failed stage ran. A send-stage failure counts the send stage's own time only, never
+   * resolve, a script, a token fetch or a proxy lookup; a host's History records it as the duration.
+   */
   readonly durationMs: number;
   /**
    * What was about to go, or went, on the wire; absent when resolution itself failed. It can hold

@@ -459,7 +459,6 @@ async function sendReserved(
   deps.registry.attach(sendId, token, handle, options.interactive === true ? session?.opened : undefined);
   const show = deps.showSecrets?.get() ?? false;
   const forwarding = forwardLive(sendId, handle, { show, ...masks }, options.onLive, session);
-  const startedAt = Date.now();
   try {
     const sent = await handle.result;
     await forwarding;
@@ -475,7 +474,7 @@ async function sendReserved(
       ...recordedOf(item, masks, options),
       handshakeLogged: send.handshakeLogged === true,
     };
-    await record(deps, recorded, sent, full, summarised.unredacted, Date.now() - startedAt);
+    await record(deps, recorded, sent, full, summarised.unredacted);
     return full;
   } catch (error) {
     await forwarding;
@@ -483,7 +482,7 @@ async function sendReserved(
     if (failed !== undefined) {
       // As the app always has: History first, then the HTTP Log's row.
       const recorded = recordedOf(item, masks, options);
-      await recordFailure(deps, recorded, failed, error, Date.now() - startedAt, { sendId, show });
+      await recordFailure(deps, recorded, failed, error, { sendId, show });
       failed.report();
     }
     throw error;
@@ -1091,17 +1090,17 @@ async function record(
   sent: SentRequest,
   summary: SendSummary,
   unredacted: ExchangeSummary | undefined,
-  durationMs: number,
 ): Promise<void> {
   const { item, masks } = recorded;
   switch (item.kind) {
     case 'rest': {
-      const { input } = restSent(sent);
+      const { input, rest: exchange } = restSent(sent);
       // History keeps the signing headers as they went out, so its resend replays them (R1).
       const rest = summary as RestExchangeSummary;
       const sentInput =
         input.sign === undefined ? input : withSentSigningHeaders(input, input.sign.scheme, rest.http.request.headers);
-      await recordRest(deps, item, sentInput, rest, durationMs, masks.keyParams, undefined, recorded.label);
+      // The exchange's own time on the wire, as for every protocol: never the prepare stage's.
+      await recordRest(deps, item, sentInput, rest, exchange.durationMs, masks.keyParams, undefined, recorded.label);
       return;
     }
     case 'soap': {
@@ -1117,17 +1116,19 @@ async function record(
       });
       return;
     }
-    case 'grpc':
+    case 'grpc': {
+      const exchange = grpcSent(sent);
       await recordGrpc(
         deps,
         item,
-        grpcSent(sent),
+        exchange,
         summary as GrpcExchangeSummary,
-        durationMs,
+        exchange.grpc.exchange.durationMs,
         undefined,
         recorded.label,
       );
       return;
+    }
     case 'websocket': {
       // As the app always has: the refused handshake's Log row, then History.
       const ws = summary as WsExchangeSummary;
@@ -1144,7 +1145,6 @@ async function recordFailure(
   recorded: Recorded,
   failed: HeldFailure,
   error: unknown,
-  durationMs: number,
   summaryOf: { readonly sendId: string; readonly show: boolean },
 ): Promise<void> {
   const { item, masks } = recorded;
@@ -1156,7 +1156,7 @@ async function recordFailure(
         item,
         failed.input as RestSendInput,
         undefined,
-        durationMs,
+        failed.durationMs,
         masks.keyParams,
         error,
         recorded.label,
@@ -1176,7 +1176,7 @@ async function recordFailure(
       // The call as connected, with the message it was to send: a send-stage failure has both.
       const { messageText, ...input } = failed.input as GrpcFailedInput;
       if (messageText === undefined) return;
-      await recordGrpc(deps, item, { input, messageText }, undefined, durationMs, error, recorded.label);
+      await recordGrpc(deps, item, { input, messageText }, undefined, failed.durationMs, error, recorded.label);
       return;
     }
     case 'websocket': {

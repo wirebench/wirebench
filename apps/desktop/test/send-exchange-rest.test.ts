@@ -293,6 +293,60 @@ describe('sendThroughEngine for a REST request', () => {
     expect(appended).toEqual([]);
   });
 
+  it('History durationMs excludes a slow proxy lookup, on a send that succeeds', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const appended: HistoryEntryWire[] = [];
+      const deps = sendDepsFor(seeded(), {
+        getSecret: secrets,
+        history: await openHistory(),
+        onHistoryAppended: (wire) => appended.push(wire),
+        project: {
+          proxyFor: () => {
+            vi.setSystemTime(Date.now() + 500);
+            return Promise.resolve(undefined);
+          },
+        },
+      });
+      await sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } });
+      expect(appended).toHaveLength(1);
+      expect(appended[0]!.durationMs).toBeLessThan(500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('History durationMs and the send row exclude a slow proxy lookup, on a send that fails', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const appended: HistoryEntryWire[] = [];
+      const failures: FailedExchangeWire[] = [];
+      // Nothing listens on port 1: the send fails on the wire, after the proxy lookup.
+      const model = seeded();
+      const refused: Project = { ...model, apis: model.apis.map((api) => ({ ...api, baseUrl: 'http://127.0.0.1:1' })) };
+      const deps = sendDepsFor(refused, {
+        getSecret: secrets,
+        history: await openHistory(),
+        onHistoryAppended: (wire) => appended.push(wire),
+        onSendFailed: (failure) => failures.push(failure),
+        project: {
+          proxyFor: () => {
+            vi.setSystemTime(Date.now() + 500);
+            return Promise.resolve(undefined);
+          },
+        },
+      });
+      await expect(sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } })).rejects.toThrow();
+      expect(appended).toHaveLength(1);
+      expect(appended[0]!.durationMs).toBeLessThan(500);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]!.stage).toBeUndefined();
+      expect(failures[0]!.durationMs).toBeLessThan(500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('refuses a reference nothing resolves as rest-unresolved-properties', async () => {
     const model = seeded([createRestRequest('Nope', { id: 'req-1', url: '/echo', headers: [entry('x', '${nope}')] })]);
     const failures: FailedExchangeWire[] = [];
