@@ -172,6 +172,7 @@ function surface(projectId: string, model: Project) {
   return {
     runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
     grpcProtoSetFor: () => Promise.resolve(grpc.set),
+    // What a step's callback assertions expand against.
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     projectId: () => projectId,
     requestMeta: () => undefined,

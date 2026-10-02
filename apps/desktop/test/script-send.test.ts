@@ -21,14 +21,12 @@ import {
   createSequence,
   createSequenceStep,
   entry,
-  resolveApiBaseUrl,
 } from '@wirebench/engine';
-import type { PropertyMap, Project, RequestScripts, RestRequestDef } from '@wirebench/engine';
+import type { Project, RequestScripts, RestRequestDef } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { registerHistoryChannels } from '../src/main/ipc/history.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
-import { resolveRestSend } from '../src/main/rest-send.js';
 import { ScriptHost } from '../src/main/script-host.js';
 import { SequenceRunner } from '../src/main/sequence-runner.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
@@ -110,26 +108,13 @@ async function harness(model: Project): Promise<Harness> {
   const history = new HistoryService(userDataDir);
   await history.open('p1');
   const appended: HistoryEntryWire[] = [];
-  // The project's own `region` property, which the channels' stub hands over as `scopesFor`.
+  // The project's own `region` property, which every send here expands against.
   const located = { ...model, properties: { ...model.properties, region: 'eu' } };
   const deps: RequestChannelDeps = {
     project: {
       projectId: () => 'p1',
       runContextFor: () => ({ project: located, projectDir: '/tmp/none' }),
       restMeta: () => undefined,
-      scopesFor: () => ({ project: { region: 'eu' }, global: {}, system: {} }),
-      restSend: (requestId: string, _draft: unknown, _envId: unknown, sequence?: PropertyMap) =>
-        resolveRestSend({
-          project: model,
-          requestId,
-          scopes: {
-            project: { region: 'eu' },
-            global: {},
-            system: {},
-            ...(sequence !== undefined ? { sequence } : {}),
-          },
-          resolveBaseUrl: (api) => resolveApiBaseUrl(model, undefined, api),
-        }),
     } as unknown as RequestChannelDeps['project'],
     history,
     onHistoryAppended: (wire) => appended.push(wire),
@@ -456,7 +441,10 @@ describe('a SOAP resend from History', () => {
       registerHistoryChannels(
         { get: (id: string) => (id === 'h-1' ? entry : undefined) } as unknown as HistoryService,
         {
-          project: { buildLiveSendInput: () => ({ endpoint: '', envelopeXml: '<e/>', soapVersion: '1.1' }) } as never,
+          project: {
+            projectId: () => 'p1',
+            buildLiveSendInput: () => ({ endpoint: '', envelopeXml: '<e/>', soapVersion: '1.1' }),
+          } as never,
           send: sendDepsFor(model, { scripts: host }),
         },
       );

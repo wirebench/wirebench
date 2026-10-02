@@ -165,6 +165,41 @@ export class ExchangeRegistry {
   /** The contract workers of the WebSocket sessions in flight, by send id, while each runs. */
   readonly frameCheckers = new Map<string, WorkerFrameChecker>();
 
+  /** Every send still running, by the request it sends, each settling once its History is written. */
+  private readonly running = new Map<Promise<void>, string>();
+
+  /** Follows `send` until it settles — its History entry written or skipped — whatever its outcome. */
+  track(requestId: string, send: Promise<unknown>): void {
+    const settled = send.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.running.set(settled, requestId);
+    void settled.finally(() => this.running.delete(settled));
+  }
+
+  /**
+   * Resolves once every send whose request `matches` has settled, or after `timeoutMs`: a project's
+   * close waits on it, so a send it cancelled writes its History entry before the file closes.
+   */
+  async whenRecorded(timeoutMs: number, matches?: (requestId: string) => boolean): Promise<void> {
+    const waiting = [...this.running]
+      .filter(([, requestId]) => matches === undefined || matches(requestId))
+      .map(([send]) => send);
+    if (waiting.length === 0) return;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        Promise.all(waiting),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
   /**
    * Holds `sendId` for a send from its first moment, before it is prepared, and answers the token
    * that {@link attach} and {@link forget} name it by. A WebSocket session's id is its address for
@@ -343,8 +378,11 @@ async function sendItem(
 ): Promise<SendSummary> {
   // Held before the first await: a second open of the same session is refused even while this one prepares.
   const token = deps.registry.reserve(sendId, requestId, options.draft.kind);
+  const sending = sendReserved(deps, sendId, requestId, options, token);
+  // An ad-hoc resend is tracked under the request its entry names, the project's History it writes to.
+  deps.registry.track(options.adHoc?.requestId ?? requestId, sending);
   try {
-    return await sendReserved(deps, sendId, requestId, options, token);
+    return await sending;
   } finally {
     deps.registry.forget(sendId, token);
   }

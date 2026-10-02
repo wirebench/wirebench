@@ -372,9 +372,12 @@ const workspaceService = new WorkspaceService({
     // entry. A session that closed a moment ago is therefore invisible here while its write is
     // still in flight, and skipping the wait would race it against `history.close`.
     // `whenWsSessionsRecorded` returns immediately when nothing matches, so this costs nothing.
+    // Every other send through the engine — a resend, a sequence step, a multi-environment child —
+    // is waited for the same way.
     await Promise.all([
       whenWsSessionsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
       whenRestSendsRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
+      exchanges.whenRecorded(WS_SESSION_RECORD_TIMEOUT_MS, matches),
     ]);
   },
   trash: trashFolder,

@@ -16,6 +16,7 @@ import type {
   Project,
   RestApi,
   RestSendInput,
+  SoapRequestDef,
   UnresolvedRef,
 } from '@wirebench/engine';
 import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
@@ -74,11 +75,14 @@ afterAll(async () => {
 });
 
 /** A project holding SOAP request `req-1` as it is saved now. */
-function soapModel(extra: Partial<Parameters<typeof createRequest>[1]> & { endpointUrl?: string } = {}): Project {
-  const { endpointUrl, ...input } = extra;
+function soapModel(
+  extra: Partial<Parameters<typeof createRequest>[1]> & { endpointUrl?: string; auth?: SoapRequestDef['auth'] } = {},
+): Project {
+  const { endpointUrl, auth, ...input } = extra;
   const request = {
     ...createRequest('Add', { id: 'req-1', envelopeXml: '<Envelope/>', soapVersion: '1.1', ...input }),
     ...(endpointUrl !== undefined ? { endpointUrl } : {}),
+    ...(auth !== undefined ? { auth } : {}),
   };
   const iface = createInterface('Calc', {
     id: 'iface-1',
@@ -140,7 +144,8 @@ function noLiveRequests() {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     authFor: () => undefined,
     requestMeta: () => undefined,
-    projectId: () => 'proj-1',
+    // Only `req-1` still exists; any other request an entry names has been deleted since.
+    projectId: (requestId: string) => (requestId === 'req-1' ? 'proj-1' : undefined),
     buildLiveSendInput: () => undefined,
   };
 }
@@ -403,6 +408,75 @@ describe('registerHistoryChannels', () => {
       names: { requestName: 'Add', interfaceName: 'Calc', operationName: 'Add', projectId: 'proj-1' },
       requestId: 'req-gone',
     });
+  });
+
+  it('history.resend sends a request that still exists, but maps no endpoint now, as its project sends it, to the recorded endpoint', async () => {
+    // The environment active now maps no endpoint for the interface, so the live input does not
+    // build; the request, its project's properties, auth, keychain and proxy are all still there.
+    const entries = [
+      makeEntry({
+        id: 'a',
+        requestId: 'req-1',
+        endpoint: `${soapUrl}/recorded`,
+        request: { envelopeXml: '<Envelope>old</Envelope>', headers: [] },
+      }),
+    ];
+    const model: Project = {
+      ...soapModel({
+        envelopeXml: '<Envelope>${#Project#token}</Envelope>',
+        auth: { type: 'basic', username: 'svc', passwordRef: 'sec_pw', preemptive: true },
+      }),
+      properties: { token: 'abc' },
+    };
+    const proxyFor = vi.fn(() => Promise.resolve(undefined));
+    registerHistoryChannels(fakeHistory(entries) as never, {
+      project: noLiveRequests(),
+      send: sendDeps(model, {
+        project: { proxyFor },
+        secretsFor: () => (ref) => Promise.resolve(ref === 'sec_pw' ? 'pw-1' : undefined),
+        adHocScopes: () => ({ project: {}, global: { token: 'from-globals' }, system: {} }),
+      }),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sent()).toMatchObject({
+      requestId: 'req-1',
+      options: { draft: { kind: 'soap', override: { endpoint: `${soapUrl}/recorded` } } },
+    });
+    expect(sent().options).not.toHaveProperty('adHoc');
+    const last = received.at(-1)!;
+    expect(last.url).toBe('/recorded');
+    expect(last.body).toBe('<Envelope>abc</Envelope>');
+    expect(last.headers.authorization).toBe(`Basic ${Buffer.from('svc:pw-1').toString('base64')}`);
+    expect(proxyFor).toHaveBeenCalledWith('proj-1', `${soapUrl}/recorded`);
+  });
+
+  it('history.resend refuses a request that maps no endpoint now when the recorded one holds a redacted value', async () => {
+    const entries = [makeEntry({ id: 'a', requestId: 'req-1', endpoint: `${soapUrl}/recorded?key=%3Credacted%3E` })];
+    registerHistoryChannels(fakeHistory(entries) as never, {
+      project: noLiveRequests(),
+      send: sendDeps(soapModel()),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-redacted' } });
+    expect(engineSend).not.toHaveBeenCalled();
+  });
+
+  it('history.resend sends an entry whose request was deleted ad hoc, never through a project', async () => {
+    const entries = [makeEntry({ id: 'a', requestId: 'req-gone', endpoint: `${soapUrl}/orphan` })];
+    registerHistoryChannels(fakeHistory(entries) as never, {
+      project: noLiveRequests(),
+      send: sendDeps(soapModel(), { project: { projectId: () => undefined } }),
+    });
+
+    const result = await invoke('history.resend', { id: 'a' });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sent()).toMatchObject({ requestId: 'ad-hoc', options: { adHoc: { requestId: 'req-gone' } } });
   });
 
   it('history.resend records an orphaned entry back into its History, naming the request it was sent from', async () => {

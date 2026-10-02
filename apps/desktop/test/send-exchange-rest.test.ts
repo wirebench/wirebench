@@ -620,6 +620,38 @@ describe('closing a project over a plain REST send in flight', () => {
     expect(appended).toHaveLength(1);
     expect(appended[0]).toMatchObject({ ok: false, error: { code: 'aborted' } });
   });
+
+  it('lets the close wait until the cancelled send has written its History entry', async () => {
+    // Any send through the engine — a resend, a sequence step, a multi-environment child — not
+    // only the editor's: the History file must not close under its write.
+    const history = await openHistory();
+    let written = false;
+    const record = history.recordRestSend.bind(history);
+    vi.spyOn(history, 'recordRestSend').mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      written = true;
+      return await record(...args);
+    });
+    const deps = sendDepsFor(seeded([createRestRequest('Slow', { id: 'req-1', url: '/slow?ms=2000' })]), {
+      getSecret: secrets,
+      history,
+    });
+    const sending = sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } }).catch(() => undefined);
+    await waitFor(() => deps.registry.has('s1'), 'the send to be kept');
+    deps.registry.endWhere(() => true, 'rest');
+
+    await deps.registry.whenRecorded(5_000, (requestId) => requestId === 'req-1');
+
+    expect(written).toBe(true);
+    await sending;
+  });
+
+  it('waits for nothing when no send of a matching request is in flight', async () => {
+    const deps = sendDepsFor(seeded([]));
+    const started = performance.now();
+    await deps.registry.whenRecorded(5_000, () => true);
+    expect(performance.now() - started).toBeLessThan(50);
+  });
 });
 
 function never(): never {

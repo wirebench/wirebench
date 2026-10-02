@@ -29,7 +29,8 @@ import { registerHandler } from './register.js';
 
 /** What the `history.*` channels need beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: Pick<ProjectRouter, 'buildLiveSendInput'> & Partial<Pick<ProjectRouter, 'grpcSend' | 'restSend'>>;
+  readonly project: Pick<ProjectRouter, 'buildLiveSendInput' | 'projectId'> &
+    Partial<Pick<ProjectRouter, 'grpcSend' | 'restSend'>>;
   /**
    * The engine send every re-send goes through: the request channels' own dependencies and their
    * registry, so a re-send runs its scripts, is cancelled and is recorded as any send is. Without
@@ -417,9 +418,15 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
     // `request.send`. The stored entry was redacted before being written to disk, so it must never
     // be the source of a resend while a live copy is available.
     const { requestId } = entry;
-    if (requestId !== undefined && deps.project.buildLiveSendInput(requestId) !== undefined) {
+    if (requestId !== undefined && deps.project.projectId(requestId) !== undefined) {
+      // No endpoint resolves for it now (an environment that maps none): it goes to the one it went
+      // to, still as its project sends it — properties, auth, keychain, WS-Security, proxy, scripts.
+      const live = deps.project.buildLiveSendInput(requestId) !== undefined;
+      if (!live && holdsUrlMarker(entry.endpoint)) {
+        refuseRedacted(entry.id, 'URL');
+      }
       return sendThroughEngine(sendDepsOf(deps, request.id, kind), randomUUID(), requestId, {
-        draft: { kind: 'soap', override: {} },
+        draft: { kind: 'soap', override: live ? {} : { endpoint: entry.endpoint } },
       });
     }
     // Path 2: the original request is gone. An entry that carries a redacted secret can never
@@ -462,7 +469,7 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
       });
     }
     const { grpc } = entry;
-    if (entry.kind !== 'grpc' || grpc === undefined || deps.send === undefined) {
+    if (entry.kind !== 'grpc' || grpc === undefined) {
       throw new WirebenchError(
         'history-resend-unsupported',
         "This entry isn't a gRPC call, so it can't be re-sent as one.",
@@ -480,7 +487,7 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
       );
     }
     // No live hook: nothing on screen holds this send id, so its events would be dropped.
-    return sendThroughEngine(deps.send, randomUUID(), requestId, {
+    return sendThroughEngine(sendDepsOf(deps, request.id, 'grpc'), randomUUID(), requestId, {
       draft: { kind: 'grpc', draft: grpcResendDraft({ ...entry, grpc }) },
     });
   });
@@ -492,7 +499,7 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
         details: { id: request.id },
       });
     }
-    if (entry.kind !== 'rest' || deps.send === undefined) {
+    if (entry.kind !== 'rest') {
       throw new WirebenchError(
         'history-resend-unsupported',
         "This entry isn't a REST request, so it can't be re-sent as one.",
@@ -516,7 +523,7 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
         { details: { id: request.id } },
       );
     }
-    return sendThroughEngine(deps.send, randomUUID(), requestId, {
+    return sendThroughEngine(sendDepsOf(deps, request.id, 'rest'), randomUUID(), requestId, {
       draft: { kind: 'rest', draft: restResendDraft(entry, saved, savedOriginOf(saved)) },
     });
   });

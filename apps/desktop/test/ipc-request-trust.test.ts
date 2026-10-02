@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  generateClientCert,
   generateServerCert,
   generateSecondTestCa,
   generateTestCa,
@@ -41,6 +42,9 @@ const scopes: PropertyScopes = { project: {}, global: {}, env: {} };
 /** The CA the TLS servers below are signed by: trusted only when a send is given it. */
 const ANCHOR = generateTestCa().certPem;
 
+/** A client certificate the first CA signed: the project's TLS identity in the resend case. */
+const CLIENT = generateClientCert(generateTestCa());
+
 /** A second, unrelated CA: what the CA-bundle preference trusts in the union case. */
 const OWN = generateSecondTestCa().certPem;
 
@@ -49,6 +53,8 @@ let server: TestSoapServer;
 let tls12: TestSoapServer;
 /** A server signed by the second CA only. */
 let own: TestSoapServer;
+/** The first CA's server, asking for a client certificate the same CA signed. */
+let mtls: TestSoapServer;
 
 beforeAll(async () => {
   const ca = generateTestCa();
@@ -57,12 +63,16 @@ beforeAll(async () => {
   tls12 = await startTestSoapServer({ tls: { cert: leaf.certPem, key: leaf.keyPem, maxVersion: 'TLSv1.2' } });
   const ownLeaf = generateServerCert(generateSecondTestCa());
   own = await startTestSoapServer({ tls: { cert: ownLeaf.certPem, key: ownLeaf.keyPem } });
+  mtls = await startTestSoapServer({
+    tls: { cert: leaf.certPem, key: leaf.keyPem, ca: ca.certPem, requestCert: true },
+  });
 });
 
 afterAll(async () => {
   await server.close();
   await tls12.close();
   await own.close();
+  await mtls.close();
 });
 
 const dirs: string[] = [];
@@ -88,10 +98,10 @@ function anchorFile(pem = ANCHOR): string {
 }
 
 /** A project whose `req-1` is sent to the TLS server. */
-function seeded(): Project {
+function seeded(endpoint = `${server.url}/soap`): Project {
   const request = {
     ...createRequest('Req', { id: 'req-1', envelopeXml: '<a/>', soapVersion: '1.1' }),
-    endpointUrl: `${server.url}/soap`,
+    endpointUrl: endpoint,
   };
   const iface = createInterface('Svc', {
     id: 'iface-1',
@@ -241,15 +251,17 @@ describe('the send wire cannot loosen TLS', () => {
  * it: it trusts the anchors main resolves for the request's project, as `request.send` does.
  */
 describe('a SOAP resend trusts the anchors of its project', () => {
-  async function resendDeps() {
+  async function resendDeps(endpoint = `${server.url}/soap`) {
     const { toSendDeps } = await import('../src/main/ipc/request.js');
-    const model = seeded();
+    const model = seeded(endpoint);
     const project = {
       requestMeta: () => undefined,
       projectId: () => 'p1',
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
-      buildLiveSendInput: () => ({ endpoint: `${server.url}/soap`, envelopeXml: '<a/>', soapVersion: '1.1' }),
+      buildLiveSendInput: () => ({ endpoint, envelopeXml: '<a/>', soapVersion: '1.1' }),
       trustAnchorsFor: () => Promise.resolve([ANCHOR]),
+      // The project's client certificate, which the mutual-TLS server asks for.
+      clientIdentityFor: () => Promise.resolve({ cert: CLIENT.certPem, key: CLIENT.keyPem }),
     } as never;
     return { project, send: toSendDeps(new EngineService(), { project }) };
   }
@@ -293,5 +305,47 @@ describe('a SOAP resend trusts the anchors of its project', () => {
     const result = await handlers.get('log.resend')!({ sender: {} }, { protocol: 'soap', requestId: 'req-1' });
 
     expect(result).toMatchObject({ ok: true, value: { protocol: 'soap', exchange: { http: { status: 200 } } } });
+  });
+
+  /** Who the mutual-TLS server says connected, from a resend's summary. */
+  const peerOf = (result: unknown): { peerAuthorized: boolean; peerCN?: string } =>
+    JSON.parse(
+      Buffer.from((result as { value: { http: { bodyBase64: string } } }).value.http.bodyBase64, 'base64').toString(),
+    ) as { peerAuthorized: boolean; peerCN?: string };
+
+  it('presents the project client certificate, from History and from the HTTP Log', async () => {
+    const { registerHistoryChannels } = await import('../src/main/ipc/history.js');
+    const { registerLogChannels } = await import('../src/main/ipc/log.js');
+    const { project, send } = await resendDeps(`${mtls.url}/tls-info`);
+    const entry = {
+      id: 'h-1',
+      at: '2026-01-01T00:00:00.000Z',
+      projectId: 'p1',
+      requestId: 'req-1',
+      requestName: 'Req',
+      interfaceName: 'Svc',
+      operationName: 'Op',
+      endpoint: `${mtls.url}/tls-info`,
+      soapVersion: '1.1',
+      durationMs: 1,
+      ok: true,
+      request: { envelopeXml: '<a/>', headers: [] },
+      sizeBytes: 1,
+    };
+    registerHistoryChannels({ get: () => entry } as never, { project, send });
+    registerLogChannels({
+      showSecrets: { get: () => false },
+      service: new EngineService(),
+      request: { project },
+      picks: { rememberWrite: () => undefined },
+      appVersion: '0.0.0-test',
+    });
+
+    const fromHistory = await handlers.get('history.resend')!({ sender: {} }, { id: 'h-1' });
+    const fromLog = await handlers.get('log.resend')!({ sender: {} }, { protocol: 'soap', requestId: 'req-1' });
+
+    expect(peerOf(fromHistory)).toMatchObject({ peerAuthorized: true, peerCN: 'wirebench-client' });
+    const log = fromLog as { value: { exchange: unknown } };
+    expect(peerOf({ value: log.value.exchange })).toMatchObject({ peerAuthorized: true, peerCN: 'wirebench-client' });
   });
 });
