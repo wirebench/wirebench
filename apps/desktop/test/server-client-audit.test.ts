@@ -24,8 +24,10 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
 
   it('streamAuditExport hands each chunk to the sink and resolves at the end', async () => {
     const chunks: string[] = [];
+    const requests: { headers: Record<string, string>; followRedirects?: boolean }[] = [];
     const client = new ServerClient({
       send: (req) => {
+        requests.push(req);
         const sink = req.stream!.accept(200, { 'content-type': 'application/x-ndjson' })!;
         sink.onChunk(new TextEncoder().encode('{"a":1}\n'));
         sink.onChunk(new TextEncoder().encode('{"a":2}\n'));
@@ -44,6 +46,28 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
       () => (chunk) => chunks.push(new TextDecoder().decode(chunk)),
     );
     expect(chunks.join('')).toBe('{"a":1}\n{"a":2}\n');
+    expect(requests[0]!.headers['authorization']).toBe('Bearer tok');
+    expect(requests[0]!.headers['accept']).toBe('application/x-ndjson');
+    expect(requests[0]!.followRedirects).toBe(false);
+  });
+
+  it('a stream that ends in an error rejects as server-unreachable', async () => {
+    const client = new ServerClient({
+      send: (req) => {
+        req.stream!.accept(200, {})!.onChunk(new TextEncoder().encode('{"a":1}\n'));
+        return Promise.resolve({
+          status: 200,
+          headers: {},
+          body: new Uint8Array(),
+          streamEnd: { by: 'error', error: 'reset' },
+        } as never);
+      },
+    });
+    await expect(client.streamAuditExport('https://s.example', 'tok', {}, () => () => undefined)).rejects.toMatchObject(
+      {
+        code: 'server-unreachable',
+      },
+    );
   });
 
   it("a problem status is not streamed, never opens the sink, and rejects with the server's code", async () => {

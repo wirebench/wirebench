@@ -93,4 +93,30 @@ describe('audit.* channels (audit-log spec §3.6, §5.3)', () => {
     expect(await invoke('audit.export', { url: 'https://s.example', query: {} })).toMatchObject({ ok: false });
     expect(existsSync(path)).toBe(false);
   });
+
+  it('a failure after the file was opened resolves as an error and leaves the partial file closed', async () => {
+    const path = join(dir, 'partial.ndjson');
+    pickSaveFile.mockResolvedValue(path);
+    register({
+      queryAudit: vi.fn(),
+      streamAuditExport: vi.fn((_u: string, _t: string, _q: unknown, open: () => (c: Uint8Array) => void) => {
+        open()(new TextEncoder().encode('{"a":1}\n'));
+        return Promise.reject(new Error('stopped early'));
+      }),
+    });
+    expect(await invoke('audit.export', { url: 'https://s.example', query: {} })).toMatchObject({ ok: false });
+    expect(readFileSync(path, 'utf8')).toBe('{"a":1}\n');
+  });
+
+  it('a file that cannot be opened is an error, not a crash', async () => {
+    pickSaveFile.mockResolvedValue(join(dir, 'missing-dir', 'x.ndjson'));
+    register({
+      queryAudit: vi.fn(),
+      streamAuditExport: vi.fn((_u: string, _t: string, _q: unknown, open: () => (c: Uint8Array) => void) => {
+        open()(new TextEncoder().encode('{"a":1}\n'));
+        return Promise.resolve();
+      }),
+    });
+    expect(await invoke('audit.export', { url: 'https://s.example', query: {} })).toMatchObject({ ok: false });
+  });
 });

@@ -36,10 +36,15 @@ export function registerAuditChannels(deps: AuditChannelDeps): void {
     if (path === undefined) return { saved: false as const };
     let out: WriteStream | undefined;
     let count = 0;
+    let writeError: Error | undefined;
     try {
       await withToken(deps, r.url, (url, token) =>
         deps.client.streamAuditExport(url, token, r.query, () => {
           const file = createWriteStream(path);
+          // An unhandled 'error' on a stream would be an uncaught exception in main.
+          file.on('error', (e) => {
+            writeError ??= e;
+          });
           out = file;
           return (chunk) => {
             for (const byte of chunk) if (byte === 0x0a) count += 1;
@@ -48,11 +53,12 @@ export function registerAuditChannels(deps: AuditChannelDeps): void {
         }),
       );
     } finally {
-      if (out !== undefined) {
+      if (out !== undefined && !out.destroyed && !out.closed) {
         out.end();
         await once(out, 'close');
       }
     }
+    if (writeError !== undefined) throw writeError;
     return { saved: true as const, path, count };
   });
 }
