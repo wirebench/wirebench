@@ -7,6 +7,8 @@ import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, loadConfig } from '../config.js';
+import { auditHook } from '../audit-log/hook.js';
+import { runAuditCommand } from '../audit-log/cli.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
@@ -37,11 +39,13 @@ export async function runAdmin(
     db = createDatabase(config.databaseUrl);
     const now = options.now ?? (() => new Date());
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
+    const hooks = serverHooks();
+    hooks.audit.push(auditHook(now));
     env = {
       ctx: {
         db,
         config,
-        hooks: serverHooks(),
+        hooks,
         license: createLicenseService({ db, publicKeys, now }),
       },
       settings: identitySettings(config),
@@ -104,7 +108,13 @@ export async function runAdmin(
       case 'admin-license-install':
       case 'admin-license-show':
       case 'admin-license-remove':
-        return await runLicenseCommand(command, { db, publicKeys, now: env.now, license: env.ctx.license }, io);
+        return await runLicenseCommand(
+          command,
+          { db, publicKeys, now: env.now, license: env.ctx.license, hooks: env.ctx.hooks },
+          io,
+        );
+      case 'admin-audit-export':
+        return await runAuditCommand(command, { db, hooks: env.ctx.hooks, now: env.now }, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {

@@ -49,6 +49,7 @@ export async function main(argv: readonly string[], io: ServerIo, serveOptions: 
     case 'admin-license-install':
     case 'admin-license-show':
     case 'admin-license-remove':
+    case 'admin-audit-export':
       return runAdmin(command, io);
     case 'serve': {
       try {
