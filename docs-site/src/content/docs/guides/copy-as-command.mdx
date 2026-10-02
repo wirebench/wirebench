@@ -63,8 +63,10 @@ rather than as the saved request would be sent now.
 
 ## Secrets
 
-Secret values are masked as `<redacted>` by default: an `Authorization` header, a Basic password, a
-bearer token, an API key in a header or the query string. The panel says *Secrets are masked unless Show
+Credentials from a request's authentication settings are masked as `<redacted>` by default: a Basic
+password, a bearer token, an API key in a header or the query string. A SOAP or gRPC command also masks
+an `Authorization` header typed by hand. A REST or WebSocket command copies a typed header as written, so
+keep credentials in the authentication settings or behind a `${secret:…}` reference. The panel says *Secrets are masked unless Show
 secrets is on.*
 
 **Toggle Show Secrets in HTTP Log** from the command palette shows them for the current session, in the
