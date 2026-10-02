@@ -17,12 +17,12 @@ import type { RecordSendInput } from '../src/main/history-service.js';
 import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { PreflightResult } from '../src/main/expansion-preflight.js';
 import { wrapHandler } from '../src/main/ipc/envelope.js';
+import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import { channels } from '../src/shared/ipc.js';
 
 describe('request.* IPC validation', () => {
   it('rejects a malformed request.send payload with ipc-invalid-request', async () => {
-    const service = new EngineService();
-    const wrapped = wrapHandler(channels.request.send, (request) => service.send(request));
+    const wrapped = wrapHandler(channels.request.send, () => Promise.reject(new Error('never reached')));
 
     const result = await wrapped({ sendId: 'x' /* missing `input` */ });
 
@@ -30,8 +30,7 @@ describe('request.* IPC validation', () => {
   });
 
   it('rejects a request.send payload whose input.soapVersion is invalid', async () => {
-    const service = new EngineService();
-    const wrapped = wrapHandler(channels.request.send, (request) => service.send(request));
+    const wrapped = wrapHandler(channels.request.send, () => Promise.reject(new Error('never reached')));
 
     const result = await wrapped({
       sendId: 'x',
@@ -42,9 +41,9 @@ describe('request.* IPC validation', () => {
   });
 
   it('returns cancelled: false for an unknown sendId without touching the engine', async () => {
-    const service = new EngineService();
-    const cancelSpy = vi.spyOn(service, 'cancel');
-    const wrapped = wrapHandler(channels.request.cancel, (request) => Promise.resolve(service.cancel(request.sendId)));
+    const registry = new ExchangeRegistry();
+    const cancelSpy = vi.spyOn(registry, 'cancel');
+    const wrapped = wrapHandler(channels.request.cancel, (request) => Promise.resolve(registry.cancel(request.sendId)));
 
     const result = await wrapped({ sendId: 'never-sent' });
 
@@ -105,14 +104,9 @@ const noActionSupport = {
   requestSource: (): never => {
     throw new Error('requestSource is not stubbed in this test');
   },
-  buildLiveSendInput: (): never => {
-    throw new Error('buildLiveSendInput is not stubbed in this test');
-  },
   projectMutate: (): never => {
     throw new Error('projectMutate is not stubbed in this test');
   },
-  // No saved request behind these sends, so the property mapping is a pass-through.
-  sendInputFor: (): undefined => undefined,
   dumpFileFor: (): undefined => undefined,
 };
 
@@ -188,7 +182,6 @@ function stubProject(model: Project) {
   return {
     scopesFor: () => scopes,
     preflight: () => preflight,
-    authFor: () => undefined,
     requestMeta: () => undefined,
     projectId: () => 'p1',
     runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
@@ -297,7 +290,6 @@ describe('registerRequestChannels', () => {
     const project = {
       scopesFor: vi.fn().mockReturnValue(scopes),
       preflight: vi.fn().mockReturnValue(preflight),
-      authFor: vi.fn().mockReturnValue(undefined),
       requestMeta: vi.fn().mockReturnValue(undefined),
       projectId: vi.fn().mockReturnValue(undefined),
       ...noActionSupport,
@@ -315,7 +307,6 @@ describe('registerRequestChannels', () => {
       project: {
         scopesFor: () => scopes,
         preflight: () => preflight,
-        authFor: () => undefined,
         requestMeta: () => undefined,
         projectId: () => undefined,
         ...noActionSupport,

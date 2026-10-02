@@ -167,7 +167,6 @@ function registerWs(options: { header?: string; show?: boolean; secretsFor?: (id
     project: {
       scopesFor: () => SCOPES,
       projectId: () => 'p1',
-      authFor: () => undefined,
       requestMeta: () => undefined,
       runContextFor: () => ({ project, projectDir: '/tmp/none' }),
       wsMeta: () => ({ requestName: 'Echo', apiName: 'Chat', folderPath: '' }),
@@ -746,7 +745,6 @@ describe('an event stream that echoes a token value', () => {
     registerRequestChannels(new EngineService(), {
       project: {
         scopesFor: () => SCOPES,
-        authFor: () => undefined,
         requestMeta: () => undefined,
         projectId: () => 'p1',
         runContextFor: (requestId: string) =>
@@ -872,15 +870,10 @@ describe('a History resend with a token', () => {
     const history = { get: (id: string) => (id === 'h-1' ? entry : undefined), recordSend };
     const project = {
       scopesFor: () => SCOPES,
-      authFor: () => undefined,
       requestMeta: () => undefined,
       projectId: () => 'p1',
-      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
-      buildLiveSendInput: () => ({
-        endpoint: url,
-        envelopeXml: '<Envelope><Pw>${secret:resend_pw}</Pw></Envelope>',
-        soapVersion: '1.1',
-      }),
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
+      endpointFor: () => url,
     } as unknown as RequestChannelDeps['project'];
     registerHistoryChannels(history as never, {
       project,

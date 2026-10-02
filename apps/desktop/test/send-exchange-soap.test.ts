@@ -1,9 +1,8 @@
 // @vitest-environment node
 /**
- * A desktop SOAP send through the engine's `openExchange` (`sendThroughEngine`), ported from
- * `send-with-history.test.ts`: it records the same History row and answers the same summary as the
- * app's own SOAP path did, for a saved request with the editor's envelope over it and for an ad-hoc
- * send or resend; a failed send's row carries the redacted headers and leaves the send's own error;
+ * A desktop SOAP send through the engine's `openExchange` (`sendThroughEngine`): it records a fixed
+ * History row and answers a fixed summary, for a saved request with the editor's envelope over it
+ * and for an ad-hoc send or resend; a failed send's row carries the redacted headers and leaves the send's own error;
  * a prepare failure writes a row and no History; a reference nothing resolves is refused.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -17,22 +16,14 @@ import {
   createRequest,
   DEFAULT_PREFERENCES,
   normalizeWsa,
-  toSoapSendInput,
   WirebenchError,
 } from '@wirebench/engine';
 import type { HeaderEntry, Project, PropertyScopes, SoapRequestDef } from '@wirebench/engine';
-import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService, type RecordSendInput } from '../src/main/history-service.js';
-import { sendAndRecordHistory } from '../src/main/send-with-history.js';
 import { soapOverrideOf } from '../src/main/send/draft.js';
 import { sendThroughEngine, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { AD_HOC_NAME } from '../src/main/send/record.js';
-import type {
-  ExchangeSummary,
-  FailedExchangeWire,
-  HistoryEntryWire,
-  ResolvedSendInputWire,
-} from '../src/shared/wire-types.js';
+import type { FailedExchangeWire, HistoryEntryWire, ResolvedSendInputWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 
 interface EchoServer {
@@ -107,42 +98,6 @@ function editorInput(
   };
 }
 
-/** The input `withRequestProperties` built for the old path: the saved knobs over the editor's text. */
-function oldInput(model: Project, editor: ReturnType<typeof editorInput>): ResolvedSendInputWire {
-  const request = model.interfaces[0]!.operations[0]!.requests[0]!;
-  const input = toSoapSendInput({
-    request: {
-      properties: request.properties,
-      soapVersion: request.soapVersion,
-      ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
-      headers: Object.entries(editor.headers).map(([name, value]) => ({ name, value })),
-      envelopeXml: editor.envelopeXml,
-    },
-    endpoint: editor.endpoint,
-    preferences: DEFAULT_PREFERENCES,
-    projectSettings: model.settings,
-  });
-  return {
-    endpoint: input.endpoint,
-    envelopeXml: input.envelopeXml,
-    soapVersion: input.soapVersion,
-    ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
-    ...(input.headers !== undefined ? { headers: { ...input.headers } } : {}),
-    ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-    ...(input.encoding !== undefined ? { encoding: input.encoding } : {}),
-    ...(input.followRedirects !== undefined ? { followRedirects: input.followRedirects } : {}),
-    ...(input.skipSoapAction !== undefined ? { skipSoapAction: input.skipSoapAction } : {}),
-  };
-}
-
-const oldProject = (model: Project, extra: Record<string, unknown> = {}) => ({
-  scopesFor: () => ({ project: { ...model.properties }, global: {}, system: process.env }),
-  authFor: () => undefined,
-  requestMeta: () => META,
-  projectId: () => 'p1',
-  ...extra,
-});
-
 let server: EchoServer;
 let userDataDir: string;
 
@@ -193,37 +148,26 @@ const normalise = (value: unknown): unknown =>
         }),
       );
 
-/** One send through the app's own SOAP path, into a real History. */
-async function sendOld(
-  model: Project,
-  request: { requestId?: string; input: ResolvedSendInputWire },
-  fallback = AD_HOC_NAME,
-  scopes?: PropertyScopes,
-): Promise<{ entry: HistoryEntryWire | undefined; summary: ExchangeSummary }> {
-  const appended: HistoryEntryWire[] = [];
-  const summary = await sendAndRecordHistory(
-    new EngineService(),
-    {
-      project: oldProject(model),
-      history: await openHistory(),
-      onHistoryAppended: (wire) => appended.push(wire),
-      ...(scopes !== undefined ? { adHocScopes: () => scopes } : {}),
-    },
-    { sendId: 's0', ...request },
-    fallback,
-  );
-  return { entry: appended[0], summary };
-}
-
 describe('sendThroughEngine for a SOAP request', () => {
-  // Task 17 deletes these comparisons with the old path.
-  it('records the same History row and answers the same summary as the old SOAP path', async () => {
+  /** The response rows the echo server answers with, `date` dropped by {@link normalise}. */
+  const echoRawHeaders = [
+    ['content-type', 'text/xml;charset=UTF-8'],
+    null,
+    ['connection', 'keep-alive'],
+    ['keep-alive', 'timeout=5'],
+    ['transfer-encoding', 'chunked'],
+  ];
+  const sentHeaders = [
+    { name: 'X-Trace', value: 'abc' },
+    { name: 'User-Agent', value: 'Wirebench/0.1' },
+    { name: 'Accept-Encoding', value: 'gzip, deflate' },
+  ];
+
+  it('records the editor envelope as typed in History and answers the summary of what went out', async () => {
     const model = seeded('http://127.0.0.1:1/never');
-    const editor = editorInput(
-      `${server.url}/calc`,
-      '<soap:Envelope><soap:Body>${#Project#who} draft</soap:Body></soap:Envelope>',
-    );
-    const before = await sendOld(model, { requestId: 'req-1', input: oldInput(model, editor) });
+    const draftEnvelope = '<soap:Envelope><soap:Body>${#Project#who} draft</soap:Body></soap:Envelope>';
+    const sentEnvelope = '<soap:Envelope><soap:Body>ada draft</soap:Body></soap:Envelope>';
+    const editor = editorInput(`${server.url}/calc`, draftEnvelope);
     const appended: HistoryEntryWire[] = [];
     const after = await sendThroughEngine(
       depsFor(model, { history: await openHistory(), onHistoryAppended: (wire) => appended.push(wire) }),
@@ -232,11 +176,54 @@ describe('sendThroughEngine for a SOAP request', () => {
       { draft: { kind: 'soap', override: soapOverrideOf(editor) } },
     );
     expect(server.bodies.at(-1)).toContain('ada draft');
-    expect(normalise(appended[0])).toEqual(normalise(before.entry));
-    expect(normalise(after)).toEqual(normalise(before.summary));
+    expect(normalise(appended[0])).toEqual({
+      kind: 'soap',
+      projectId: 'p1',
+      requestId: 'req-1',
+      requestName: 'Add',
+      interfaceName: 'Calculator',
+      operationName: 'Add',
+      endpoint: `${server.url}/calc`,
+      soapVersion: '1.1',
+      soapAction: 'urn:calc:Add',
+      status: 200,
+      ok: true,
+      request: { envelopeXml: draftEnvelope, headers: sentHeaders },
+      response: { envelopeXml: sentEnvelope, rawHeaders: echoRawHeaders, status: 200, statusText: 'OK' },
+      sizeBytes: 232,
+    });
+    const host = server.url.replace('http://', '');
+    expect(normalise(after)).toMatchObject({
+      http: {
+        status: 200,
+        statusText: 'OK',
+        rawHeaders: echoRawHeaders,
+        bodyBase64: sentEnvelope,
+        rawRequestBase64:
+          `POST /calc HTTP/1.1\r\nhost: ${host}\r\ncontent-type: text/xml;charset=UTF-8\r\n` +
+          'SOAPAction: "urn:calc:Add"\r\nX-Trace: abc\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate\r\n' +
+          `content-length: 63\r\n\r\n${sentEnvelope}`,
+        truncated: false,
+        httpVersion: '1.1',
+        redirects: [],
+        request: {
+          url: `${server.url}/calc`,
+          method: 'POST',
+          headers: {
+            'content-type': 'text/xml;charset=UTF-8',
+            SOAPAction: '"urn:calc:Add"',
+            'X-Trace': 'abc',
+            'User-Agent': 'Wirebench/0.1',
+            'Accept-Encoding': 'gzip, deflate',
+          },
+        },
+      },
+      response: { envelopeXml: sentEnvelope, isSoap: false, attachments: [] },
+      unresolved: [],
+    });
   });
 
-  it('records the same History row for an ad-hoc send and an ad-hoc resend as the old path', async () => {
+  it('records an ad-hoc resend under its project and an ad-hoc send nowhere', async () => {
     const model = seeded('http://127.0.0.1:1/never');
     const scopes: PropertyScopes = { project: {}, global: { g: 'globe' }, system: process.env };
     const input: ResolvedSendInputWire = {
@@ -247,8 +234,8 @@ describe('sendThroughEngine for a SOAP request', () => {
       headers: { 'X-Trace': 'abc', 'User-Agent': 'Wirebench/0.1', 'Accept-Encoding': 'gzip, deflate' },
     };
     const resend = { ...META, requestName: 'Gone', projectId: 'p1' };
+    const rows: (HistoryEntryWire | undefined)[] = [];
     for (const names of [AD_HOC_NAME, resend]) {
-      const before = await sendOld(model, { input }, names, scopes);
       const appended: HistoryEntryWire[] = [];
       const after = await sendThroughEngine(
         depsFor(model, {
@@ -261,12 +248,32 @@ describe('sendThroughEngine for a SOAP request', () => {
         { draft: { kind: 'soap' }, adHoc: { input, names } },
       );
       expect(server.bodies.at(-1)).toBe('<Envelope>globe</Envelope>');
-      expect(normalise(appended[0])).toEqual(normalise(before.entry));
-      expect(normalise(after)).toEqual(normalise(before.summary));
+      expect(after.http.request.url).toBe(`${server.url}/adhoc`);
+      rows.push(appended[0]);
     }
     // A plain ad-hoc send names no project, so nothing was recorded; the resend went back into p1.
+    expect(rows[0]).toBeUndefined();
+    expect(normalise(rows[1])).toEqual({
+      kind: 'soap',
+      projectId: 'p1',
+      requestName: 'Gone',
+      interfaceName: 'Calculator',
+      operationName: 'Add',
+      endpoint: `${server.url}/adhoc`,
+      soapVersion: '1.1',
+      status: 200,
+      ok: true,
+      request: { envelopeXml: '<Envelope>${#Global#g}</Envelope>', headers: sentHeaders },
+      response: {
+        envelopeXml: '<Envelope>globe</Envelope>',
+        rawHeaders: echoRawHeaders,
+        status: 200,
+        statusText: 'OK',
+      },
+      sizeBytes: 195,
+    });
     const history = await openHistory();
-    expect(history.list().entries.map((entry) => entry.requestName)).toEqual(['Gone', 'Gone']);
+    expect(history.list().entries.map((entry) => entry.requestName)).toEqual(['Gone']);
   });
 
   it('sends an orphaned request, which a run skips', async () => {

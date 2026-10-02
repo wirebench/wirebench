@@ -3,8 +3,8 @@
  * A desktop WebSocket session through the engine's `openExchange`, over the `request.*` channels and
  * the exchange registry, against a real server: opening a session and driving it by `sendId`, its
  * live events, every teardown path (the registry empty afterward), a reused `sendId`, an `onLive`
- * that throws, a session the app ends before its handshake answers, the History row and Log rows
- * the old path wrote (secrets masked), and the refusals that now write a prepare row.
+ * that throws, a session the app ends before its handshake answers, the fixed History row and Log
+ * rows a session leaves (secrets masked), and the refusals that write a prepare row.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,10 +16,9 @@ import type { AuthConfig, ExchangeHandle, GetSecret, Project, WsRequestDef } fro
 import { EngineService } from '../src/main/engine-service.js';
 import { harOf } from '../src/main/har.js';
 import { HistoryService } from '../src/main/history-service.js';
-import { openWsRequest, registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { recordSecretValue } from '../src/main/redact.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
-import { resolveWsSend } from '../src/main/ws-send.js';
 import type {
   FailedExchangeWire,
   HistoryEntryWire,
@@ -142,12 +141,11 @@ function registerOver(
       scopesFor: () => ({ project: { ...model.properties }, global: {}, system: {} }),
       ...projectExtra,
       projectId: () => model.id,
-      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
       wsMeta: () => undefined,
       restMeta: () => undefined,
       grpcMeta: () => undefined,
       requestMeta: () => undefined,
-      buildLiveSendInput: () => undefined,
     } as unknown as RequestChannelDeps['project'],
     getSecret: secrets,
     registry,
@@ -531,42 +529,6 @@ describe('the History and Log rows a session leaves', () => {
     readonly summary: WsExchangeSummary;
   }
 
-  /** `q-1` opened through the old path, driven by `drive` over its live events, into a real History. */
-  async function openOld(
-    model: Project,
-    extra: Partial<RequestChannelDeps>,
-    drive: (sendId: string, events: readonly unknown[], service: EngineService) => Promise<void>,
-  ): Promise<Opened> {
-    const appended: HistoryEntryWire[] = [];
-    const failures: FailedExchangeWire[] = [];
-    const service = new EngineService();
-    const scopes = { project: { ...model.properties }, global: {}, system: {} };
-    const deps: RequestChannelDeps = {
-      project: {
-        projectId: () => 'p1',
-        scopesFor: () => scopes,
-        wsSend: (requestId: string) =>
-          resolveWsSend({
-            project: model,
-            requestId,
-            scopes,
-            resolveTarget: (api) => ({ url: api.url, source: 'api' }),
-          }),
-        wsTlsFor: () => Promise.resolve(undefined),
-        wsMeta: () => undefined,
-      } as unknown as RequestChannelDeps['project'],
-      getSecret: secrets,
-      history: await openHistory(),
-      onHistoryAppended: (wire) => appended.push(wire),
-      onSendFailed: (failure) => failures.push(failure),
-      ...extra,
-    };
-    const { sender, events } = fakeSender();
-    const opened = openWsRequest(service, deps, { sendId: 'o1', requestId: 'q-1' }, sender as never);
-    await drive('o1', events, service);
-    return { appended, failures, summary: await opened };
-  }
-
   /** `q-1` opened through `request.openWs`, driven by `drive` over its live events, into a real History. */
   async function openNew(
     model: Project,
@@ -590,15 +552,8 @@ describe('the History and Log rows a session leaves', () => {
   const echoed = (events: readonly unknown[]): boolean =>
     frames(events).some((frame) => frame.direction === 'received');
 
-  // Task 17 deletes this case with the old path.
-  it('records the same History row and answers the same summary as the old WebSocket path', async () => {
+  it('records the History row and answers the summary of a session, its token masked', async () => {
     const model = seeded('/echo', {}, { type: 'bearer', tokenRef: 'sec_tok' });
-    const before = await openOld(model, {}, async (sendId, events, service) => {
-      await waitFor(() => hasHandshake(events), 'the old session to open');
-      service.sendWsMessage(sendId, { text: 'hello' });
-      await waitFor(() => echoed(events), 'the old echo');
-      service.closeWs(sendId);
-    });
     const after = await openNew(model, {}, async (sendId, events) => {
       await waitFor(() => hasHandshake(events), 'the new session to open');
       unwrap(await push(sendId, 'hello'));
@@ -607,28 +562,223 @@ describe('the History and Log rows a session leaves', () => {
     });
     expect(server.handshakes.at(-1)?.headers['authorization']).toBe('Bearer good-token-41ab');
     expect(after.summary.handshake.status).toBe(101);
-    expect(before.appended).toHaveLength(1);
-    expect(normalise(after.appended)).toEqual(normalise(before.appended));
-    expect(normalise(after.summary)).toEqual(normalise(before.summary));
+    expect(after.appended).toHaveLength(1);
+    const host = server.url.replace('ws://', '');
+    expect(normalise(after.appended)).toEqual([
+      {
+        kind: 'websocket',
+        projectId: 'p1',
+        requestId: 'q-1',
+        requestName: 'Echo',
+        interfaceName: 'Chat',
+        operationName: '',
+        endpoint: 'ws://' + host + '/echo',
+        soapVersion: 'none',
+        method: 'GET',
+        status: 101,
+        ok: true,
+        request: {
+          envelopeXml: '',
+          headers: [
+            {
+              name: 'x-tenant',
+              value: 'acme',
+            },
+            {
+              name: 'x-trace',
+              value: 'abc',
+            },
+            {
+              name: 'Authorization',
+              value: '<redacted>',
+            },
+          ],
+        },
+        response: {
+          rawHeaders: [['upgrade', 'websocket'], ['connection', 'Upgrade'], null],
+          status: 101,
+          statusText: 'Switching Protocols',
+        },
+        ws: {
+          url: 'ws://' + host + '/echo',
+          status: 101,
+          closeCode: 1000,
+          closeReason: '',
+          closedBy: 'client',
+          counts: {
+            sent: 1,
+            received: 1,
+            bytesSent: 5,
+            bytesReceived: 5,
+          },
+          frames: [
+            {
+              index: 0,
+              direction: 'sent',
+              opcode: 'text',
+              size: 5,
+              text: 'hello',
+            },
+            {
+              index: 1,
+              direction: 'received',
+              opcode: 'text',
+              size: 5,
+              text: 'hello',
+            },
+            {
+              index: 2,
+              direction: 'sent',
+              opcode: 'close',
+              size: 0,
+              close: {
+                code: 1000,
+                reason: '',
+              },
+            },
+            {
+              index: 3,
+              direction: 'received',
+              opcode: 'close',
+              size: 0,
+              close: {
+                code: 1000,
+                reason: '',
+              },
+            },
+          ],
+        },
+        sizeBytes: 10,
+      },
+    ]);
+    expect(normalise(after.summary)).toEqual({
+      url: 'ws://' + host + '/echo',
+      handshake: {
+        url: 'ws://' + host + '/echo',
+        requestHeaders: {
+          'x-tenant': 'acme',
+          'x-trace': 'abc',
+          Authorization: '<redacted>',
+        },
+        requestedSubprotocols: [],
+        rawRequestHead:
+          'GET /echo HTTP/1.1\r\nhost: ' +
+          host +
+          '\r\nconnection: upgrade\r\nupgrade: websocket\r\nx-tenant: acme\r\nx-trace: abc\r\nAuthorization: <redacted>\r\nsec-websocket-key: -\r\nsec-websocket-version: 13\r\nsec-websocket-extensions: permessage-deflate; client_max_window_bits\r\naccept: */*\r\naccept-language: *\r\nsec-fetch-mode: websocket\r\nuser-agent: undici\r\npragma: no-cache\r\ncache-control: no-cache\r\naccept-encoding: gzip, deflate\r\n',
+        status: 101,
+        statusText: 'Switching Protocols',
+        responseHeaders: {
+          upgrade: 'websocket',
+          connection: 'Upgrade',
+        },
+      },
+      frames: [
+        {
+          index: 0,
+          direction: 'sent',
+          opcode: 'text',
+          size: 5,
+          text: 'hello',
+        },
+        {
+          index: 1,
+          direction: 'received',
+          opcode: 'text',
+          size: 5,
+          text: 'hello',
+        },
+        {
+          index: 2,
+          direction: 'sent',
+          opcode: 'close',
+          size: 0,
+          close: {
+            code: 1000,
+            reason: '',
+          },
+        },
+        {
+          index: 3,
+          direction: 'received',
+          opcode: 'close',
+          size: 0,
+          close: {
+            code: 1000,
+            reason: '',
+          },
+        },
+      ],
+      closed: {
+        code: 1000,
+        reason: '',
+        by: 'client',
+      },
+      counts: {
+        sent: 1,
+        received: 1,
+        bytesSent: 5,
+        bytesReceived: 5,
+      },
+    });
   });
 
-  it('records the same History row as the old path for a handshake cancelled before it opened', async () => {
+  it('records the History row of a handshake cancelled before it opened', async () => {
     const model = seeded('/hang');
-    let handshakes = server.handshakes.length;
-    const before = await openOld(model, {}, async (sendId, _events, service) => {
-      await waitFor(() => server.handshakes.length > handshakes, 'the old upgrade');
-      service.cancel(sendId);
-    });
-    handshakes = server.handshakes.length;
+    const handshakes = server.handshakes.length;
     const appended: HistoryEntryWire[] = [];
     registerOver(model, { history: await openHistory(), onHistoryAppended: (wire) => appended.push(wire) });
     const opened = open('o1', fakeSender().sender);
     await waitFor(() => server.handshakes.length > handshakes, 'the new upgrade');
     unwrap(await invoke('request.cancel', { sendId: 'o1' }));
     expect(refusal(await opened).code).toBe('aborted');
-    expect(before.appended).toHaveLength(1);
     expect(appended).toHaveLength(1);
-    expect(normalise(appended)).toEqual(normalise(before.appended));
+    const host = server.url.replace('ws://', '');
+    expect(normalise(appended)).toEqual([
+      {
+        kind: 'websocket',
+        projectId: 'p1',
+        requestId: 'q-1',
+        requestName: 'Echo',
+        interfaceName: 'Chat',
+        operationName: '',
+        endpoint: 'ws://' + host + '/hang',
+        soapVersion: 'none',
+        method: 'GET',
+        ok: false,
+        request: {
+          envelopeXml: '',
+          headers: [
+            {
+              name: 'x-tenant',
+              value: 'acme',
+            },
+            {
+              name: 'x-trace',
+              value: 'abc',
+            },
+          ],
+        },
+        error: {
+          code: 'ws-handshake-failed',
+          message: 'The connection was cancelled',
+        },
+        ws: {
+          url: 'ws://' + host + '/hang',
+          closeCode: 1006,
+          closeReason: '',
+          closedBy: 'error',
+          counts: {
+            sent: 0,
+            received: 0,
+            bytesSent: 0,
+            bytesReceived: 0,
+          },
+          frames: [],
+          error: 'The connection was cancelled',
+        },
+        sizeBytes: 0,
+      },
+    ]);
   });
 
   /** A getter that hands out `values` by token name, recording each as `projectSecretGetter` does. */
@@ -641,7 +791,7 @@ describe('the History and Log rows a session leaves', () => {
     };
   }
 
-  it('masks an expanded ${secret:…} in the headers and query of a refused handshake’s rows, as the old path did', async () => {
+  it('masks an expanded ${secret:…} in the headers and query of a refused handshake’s rows', async () => {
     const header = 'fake-ws-row-header-0001';
     const query = 'fake-ws-row-query-00001';
     const secretsFor = tokenSecrets({ row_header: header, row_query: query });
@@ -649,7 +799,6 @@ describe('the History and Log rows a session leaves', () => {
       query: [entry('k', '${secret:row_query}')],
       headers: [entry('x-token', '${secret:row_header}'), entry('x-trace', 'abc')],
     });
-    const before = await openOld(model, { secretsFor }, () => Promise.resolve());
     const after = await openNew(model, { secretsFor }, () => Promise.resolve());
 
     // Both went out on the wire.
@@ -663,12 +812,108 @@ describe('the History and Log rows a session leaves', () => {
     const written = JSON.stringify([after.failures, after.appended, after.summary]);
     expect(written).not.toContain(header);
     expect(written).not.toContain(query);
-    expect(normalise(after.failures)).toEqual(normalise(before.failures));
-    expect(normalise(after.appended)).toEqual(normalise(before.appended));
-    expect(normalise(after.summary)).toEqual(normalise(before.summary));
+    const host = server.url.replace('ws://', '');
+    expect(normalise(after.failures)).toEqual([
+      {
+        protocol: 'websocket',
+        requestId: 'q-1',
+        request: {
+          url: 'ws://' + host + '/refuse?k=<redacted>',
+          method: 'GET',
+          headers: {
+            'x-tenant': 'acme',
+            'x-token': '<redacted>',
+            'x-trace': 'abc',
+          },
+        },
+        error: {
+          code: 'ws-handshake-failed',
+          message: 'The server refused the WebSocket handshake',
+        },
+      },
+    ]);
+    expect(normalise(after.appended)).toEqual([
+      {
+        kind: 'websocket',
+        projectId: 'p1',
+        requestId: 'q-1',
+        requestName: 'Echo',
+        interfaceName: 'Chat',
+        operationName: '',
+        endpoint: 'ws://' + host + '/refuse?k=<redacted>',
+        soapVersion: 'none',
+        method: 'GET',
+        ok: false,
+        request: {
+          envelopeXml: '',
+          headers: [
+            {
+              name: 'x-tenant',
+              value: 'acme',
+            },
+            {
+              name: 'x-token',
+              value: '<redacted>',
+            },
+            {
+              name: 'x-trace',
+              value: 'abc',
+            },
+          ],
+        },
+        error: {
+          code: 'ws-handshake-failed',
+          message: 'The server refused the WebSocket handshake',
+        },
+        ws: {
+          url: 'ws://' + host + '/refuse?k=<redacted>',
+          closeCode: 1006,
+          closeReason: '',
+          closedBy: 'error',
+          counts: {
+            sent: 0,
+            received: 0,
+            bytesSent: 0,
+            bytesReceived: 0,
+          },
+          frames: [],
+          error: 'The server refused the WebSocket handshake',
+        },
+        sizeBytes: 0,
+      },
+    ]);
+    expect(normalise(after.summary)).toEqual({
+      url: 'ws://' + host + '/refuse?k=<redacted>',
+      handshake: {
+        url: 'ws://' + host + '/refuse?k=<redacted>',
+        requestHeaders: {
+          'x-tenant': 'acme',
+          'x-token': '<redacted>',
+          'x-trace': 'abc',
+        },
+        requestedSubprotocols: [],
+        rawRequestHead:
+          'GET /refuse?k=<redacted> HTTP/1.1\r\nhost: ' +
+          host +
+          '\r\nconnection: upgrade\r\nupgrade: websocket\r\nx-tenant: acme\r\nx-token: <redacted>\r\nx-trace: abc\r\nsec-websocket-key: -\r\nsec-websocket-version: 13\r\nsec-websocket-extensions: permessage-deflate; client_max_window_bits\r\naccept: */*\r\naccept-language: *\r\nsec-fetch-mode: websocket\r\nuser-agent: undici\r\npragma: no-cache\r\ncache-control: no-cache\r\naccept-encoding: gzip, deflate\r\n',
+        error: 'The server refused the WebSocket handshake',
+      },
+      frames: [],
+      closed: {
+        code: 1006,
+        reason: '',
+        by: 'error',
+      },
+      counts: {
+        sent: 0,
+        received: 0,
+        bytesSent: 0,
+        bytesReceived: 0,
+      },
+    });
   });
 
-  it('masks an expanded ${secret:…} in the headers and query of a send-stage row, as the old path did', async () => {
+  it('masks an expanded ${secret:…} in the headers and query of a send-stage row', async () => {
     const header = 'fake-ws-send-header-001';
     const query = 'fake-ws-send-query-0001';
     const secretsFor = tokenSecrets({ row_header: header, row_query: query });
@@ -678,10 +923,6 @@ describe('the History and Log rows a session leaves', () => {
       // A subprotocol list the WHATWG API refuses: the session fails as it is built, after resolving.
       subprotocols: ['chat', 'chat'],
     });
-    const oldRows: FailedExchangeWire[] = [];
-    await expect(
-      openOld(model, { secretsFor, onSendFailed: (failure) => oldRows.push(failure) }, () => Promise.resolve()),
-    ).rejects.toMatchObject({ code: 'ws-bad-options' });
     const failures: FailedExchangeWire[] = [];
     registerOver(model, { secretsFor, onSendFailed: (failure) => failures.push(failure) });
     const refused = refusal(await open('o1', fakeSender().sender));
@@ -700,7 +941,28 @@ describe('the History and Log rows a session leaves', () => {
       expect(refused.message).not.toContain(value);
     }
     expect(refused.message).toContain('?k=<redacted>');
-    expect(normalise(failures)).toEqual(normalise(oldRows));
+    const host = server.url.replace('ws://', '');
+    expect(normalise(failures)).toEqual([
+      {
+        protocol: 'websocket',
+        requestId: 'q-1',
+        request: {
+          url: 'ws://' + host + '/echo?k=<redacted>',
+          method: 'GET',
+          headers: {
+            'x-tenant': 'acme',
+            'x-token': '<redacted>',
+          },
+        },
+        error: {
+          code: 'ws-bad-options',
+          message:
+            'The WebSocket options for "ws://' +
+            host +
+            '/echo?k=<redacted>" are invalid: Invalid Sec-WebSocket-Protocol value',
+        },
+      },
+    ]);
   });
 });
 

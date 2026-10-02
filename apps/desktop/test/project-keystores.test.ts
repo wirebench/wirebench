@@ -21,6 +21,7 @@ import {
   updateKeystore,
 } from '../src/main/project-keystore-mutations.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { ExchangeRegistry, previewSoap, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { toProjectWire } from '../src/main/project-wire.js';
 
 const PASSWORD = 'p12-password';
@@ -274,8 +275,17 @@ describe('ProjectHost keystores', () => {
     // so selecting a keystore must never change whom the send trusts.
     expect(tls?.ca).toBeUndefined();
     expect(Object.keys(tls ?? {}).sort()).toEqual(['cert', 'key']);
-    // The live send input the renderer (and the cURL export) sees carries no key material.
-    expect(JSON.stringify(service.buildLiveSendInput(requestId))).not.toContain('BEGIN');
+    // The input the cURL export resolves carries no key material.
+    const preview = await previewSoap(
+      {
+        service: new EngineService(),
+        registry: new ExchangeRegistry(),
+        project: service as unknown as SendThroughEngineDeps['project'],
+      },
+      requestId,
+    );
+    expect(preview?.input.endpoint).toBeDefined();
+    expect(JSON.stringify(preview?.input)).not.toContain('BEGIN');
 
     // Removing the keystore clears the selection rather than leaving a send to fail — and drops
     // the parsed (decrypted) copy rather than leaving key material in memory.

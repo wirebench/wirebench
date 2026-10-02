@@ -2849,11 +2849,6 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  authFor(...args: Parameters<ProjectRouter['authFor']>): ReturnType<ProjectRouter['authFor']> {
-    return this.hostOfEntity(args[0]).authFor(...args);
-  }
-
-  /** @inheritdoc */
   requestMeta(...args: Parameters<ProjectRouter['requestMeta']>): ReturnType<ProjectRouter['requestMeta']> {
     return this.hostOfEntity(args[0]).requestMeta(...args);
   }
@@ -2864,22 +2859,15 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  buildLiveSendInput(
-    ...args: Parameters<ProjectRouter['buildLiveSendInput']>
-  ): ReturnType<ProjectRouter['buildLiveSendInput']> {
-    return this.hostOfEntity(args[0]).buildLiveSendInput(...args);
-  }
-
-  /** @inheritdoc */
-  sendInputFor(...args: Parameters<ProjectRouter['sendInputFor']>): ReturnType<ProjectRouter['sendInputFor']> {
-    return this.hostOfEntity(args[0]).sendInputFor(...args);
-  }
-
-  /** @inheritdoc */
   sendAttachmentsFor(
     ...args: Parameters<ProjectRouter['sendAttachmentsFor']>
   ): ReturnType<ProjectRouter['sendAttachmentsFor']> {
     return this.hostOfEntity(args[0]).sendAttachmentsFor(...args);
+  }
+
+  /** @inheritdoc */
+  endpointFor(...args: Parameters<ProjectRouter['endpointFor']>): ReturnType<ProjectRouter['endpointFor']> {
+    return this.hostOfEntity(args[0]).endpointFor(...args);
   }
 
   /** @inheritdoc */
@@ -2895,11 +2883,6 @@ export class WorkspaceService implements ProjectRouter {
   /** @inheritdoc */
   sendEnvironments(requestId: string): ReturnType<ProjectRouter['sendEnvironments']> {
     return this.hostOfEntity(requestId).sendEnvironments();
-  }
-
-  /** @inheritdoc */
-  restSend(...args: Parameters<ProjectRouter['restSend']>): ReturnType<ProjectRouter['restSend']> {
-    return this.hostOfEntity(args[0]).restSend(...args);
   }
 
   /** @inheritdoc */
@@ -2952,16 +2935,6 @@ export class WorkspaceService implements ProjectRouter {
     ...args: Parameters<ProjectRouter['rememberRestCookies']>
   ): ReturnType<ProjectRouter['rememberRestCookies']> {
     return this.hostOfEntity(args[0]).rememberRestCookies(...args);
-  }
-
-  /** @inheritdoc */
-  grpcSend(...args: Parameters<ProjectRouter['grpcSend']>): ReturnType<ProjectRouter['grpcSend']> {
-    return this.hostOfEntity(args[0]).grpcSend(...args);
-  }
-
-  /** @inheritdoc */
-  grpcTlsFor(...args: Parameters<ProjectRouter['grpcTlsFor']>): ReturnType<ProjectRouter['grpcTlsFor']> {
-    return this.hostOfEntity(args[0]).grpcTlsFor(...args);
   }
 
   /** @inheritdoc */
@@ -3049,18 +3022,8 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  wsTlsFor(...args: Parameters<ProjectRouter['wsTlsFor']>): ReturnType<ProjectRouter['wsTlsFor']> {
-    return this.hostOfEntity(args[0]).wsTlsFor(...args);
-  }
-
-  /** @inheritdoc */
   wsMeta(...args: Parameters<ProjectRouter['wsMeta']>): ReturnType<ProjectRouter['wsMeta']> {
     return this.hostOfEntity(args[0]).wsMeta(...args);
-  }
-
-  /** @inheritdoc */
-  wsSend(...args: Parameters<ProjectRouter['wsSend']>): ReturnType<ProjectRouter['wsSend']> {
-    return this.hostOfEntity(args[0]).wsSend(...args);
   }
 
   /**
@@ -3077,11 +3040,6 @@ export class WorkspaceService implements ProjectRouter {
       }
     }
     return trustInvalid ? { rejectUnauthorized: false } : undefined;
-  }
-
-  /** @inheritdoc */
-  wssFor(...args: Parameters<ProjectRouter['wssFor']>): ReturnType<ProjectRouter['wssFor']> {
-    return this.hostOfEntity(args[0]).wssFor(...args);
   }
 
   /** @inheritdoc */

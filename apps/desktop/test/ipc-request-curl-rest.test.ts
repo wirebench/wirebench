@@ -69,12 +69,9 @@ function project(options: { readonly rest?: Project | undefined; readonly change
     changes,
     scopesFor: () => ({ project: {}, global: {}, env: {} }),
     preflight: () => undefined as never,
-    authFor: () => undefined,
     requestMeta: () => undefined,
     projectId: () => 'p1',
     requestSource: () => undefined as never,
-    buildLiveSendInput: () => undefined,
-    sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
     runContextFor: (requestId: string) =>
       requestId.startsWith('rest-') && options.rest !== undefined

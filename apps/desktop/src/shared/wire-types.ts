@@ -450,7 +450,7 @@ const soapSendInputWireSchema = z.object({
   /**
    * WS-Addressing for this send, present only when the effective configuration is enabled.
    * Pure data (no secret, no closure), so unlike WS-Security it rides on the send input the
-   * renderer sees, and `request.curl`'s `effectiveSendInput` bakes its `wsa:*` headers into the
+   * renderer sees, and `request.curl` bakes its `wsa:*` headers into the
    * exported envelope the same way a send does (a `messageId: 'auto'` mints a one-off UUID for
    * the export, which will not match any real send's). The cURL export does *not* include
    * WS-Security (it needs secrets and a keystore the export never touches) or attachments (they

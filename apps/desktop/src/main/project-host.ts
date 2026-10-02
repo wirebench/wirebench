@@ -55,11 +55,8 @@ import {
   writeProtoDefinitionCache,
   PROTOS_DIR,
   protoPathSegments,
-  resolveApiBaseUrl,
-  resolveAuthEndpoint,
   resolveEndpoint,
   resolveScopes,
-  resolveWorkspaceApiBaseUrl,
   resolveWorkspaceEndpoint,
   resolveWorkspaceScopes,
   saveProject,
@@ -170,9 +167,6 @@ import type {
 } from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
 import type {
-  GrpcRequestPatchWire,
-  WsRequestPatchWire,
-  RestRequestPatchWire,
   ApplyUpdateWire,
   DefinitionUpdateOptions,
   DefinitionUpdateSource,
@@ -186,7 +180,6 @@ import type {
   ProjectSaveResult,
   KeystoresInspectResponse,
   ProjectWire,
-  SoapSendInputWire,
   ProxyOptionsWire,
   TlsOptionsWire,
   UpdatePlanWire,
@@ -208,18 +201,10 @@ import {
   linkedWebhookFolder,
   webhookKeysUnder,
 } from './project-webhook-mutations.js';
-import { resolveWebhookSend } from './webhook-send.js';
 import type { RestContractTarget } from './rest-contract.js';
-import { resolveRestSend } from './rest-send.js';
-import type { RestSendResolution } from './rest-send.js';
-import { resolveGrpcSend } from './grpc-send.js';
-import type { GrpcSendResolution } from './grpc-send.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
 import { findWsRequest, locateWsRequest, wsApiOwning } from './project-ws-mutations.js';
-import { resolveWsSend } from './ws-send.js';
-import type { WsSendResolution } from './ws-send.js';
 import type { SecretStore } from './secrets.js';
-import { effectiveAuth } from './project-auth.js';
 import { allowsReadPath } from './path-access.js';
 import {
   addRequest,
@@ -566,7 +551,7 @@ export class ProjectHost {
    * What the engine runs a send of `requestId` in: the open project, its folder, the environment
    * resolution reads under `envId` (the active one when absent), inside a workspace the workspace
    * with that environment active, and the enabled global properties. `undefined` when no project
-   * is open or the environment is unknown, as {@link restSend} refuses it. The request itself is
+   * is open or the environment is unknown. The request itself is
    * not looked up: the caller selects it from `project`.
    */
   runContextFor(
@@ -661,78 +646,8 @@ export class ProjectHost {
   }
 
   /**
-   * Folds a request's saved properties, the project's settings and the user's preferences into
-   * the send input for `requestId` — the single place those three layers meet (see the engine's
-   * `toSoapSendInput`). `overrides` carries what the *editor* currently holds (an envelope the user
-   * has typed but that has not been autosaved yet, and the endpoint the renderer resolved), so
-   * a send always puts the visible request on the wire, with the saved knobs applied to it.
-   *
-   * `undefined` when no project is open, the request is unknown, or no endpoint resolves.
-   */
-  sendInputFor(
-    requestId: string,
-    overrides?: {
-      readonly endpoint?: string;
-      readonly envelopeXml?: string;
-      readonly headers?: Record<string, string>;
-    },
-    envId?: string,
-  ): SoapSendInputWire | undefined {
-    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
-      return undefined;
-    }
-    const location = findRequest(this.open.project, requestId);
-    if (location === undefined) {
-      return undefined;
-    }
-    const { iface, request } = location;
-    const endpoint = overrides?.endpoint ?? this.resolveEndpointFor(this.open.project, iface, request, envId).url;
-    if (endpoint === undefined) {
-      return undefined;
-    }
-    const headers =
-      overrides?.headers !== undefined
-        ? Object.entries(overrides.headers).map(([name, value]) => ({ name, value }))
-        : request.headers;
-    const wsa = this.wsaFor(requestId);
-    const input = toSoapSendInput({
-      request: {
-        properties: request.properties,
-        soapVersion: request.soapVersion,
-        ...(request.soapAction !== undefined ? { soapAction: request.soapAction } : {}),
-        headers,
-        envelopeXml: overrides?.envelopeXml ?? request.envelopeXml,
-      },
-      endpoint,
-      ...(this.prefs() !== undefined ? { preferences: this.prefs() as Preferences } : {}),
-      projectSettings: this.open.project.settings,
-    });
-    return {
-      endpoint: input.endpoint,
-      envelopeXml: input.envelopeXml,
-      soapVersion: input.soapVersion,
-      ...(input.soapAction !== undefined ? { soapAction: input.soapAction } : {}),
-      ...(input.headers !== undefined ? { headers: { ...input.headers } } : {}),
-      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-      ...(input.encoding !== undefined ? { encoding: input.encoding } : {}),
-      ...(input.followRedirects !== undefined ? { followRedirects: input.followRedirects } : {}),
-      ...(input.maxSizeBytes !== undefined ? { maxSizeBytes: input.maxSizeBytes } : {}),
-      ...(input.skipSoapAction !== undefined ? { skipSoapAction: input.skipSoapAction } : {}),
-      ...(input.localAddress !== undefined ? { localAddress: input.localAddress } : {}),
-      ...(input.compressBody !== undefined ? { compressBody: input.compressBody } : {}),
-      ...(input.entitize !== undefined ? { entitize: input.entitize } : {}),
-      // Only the preference-level TLS floor reaches the renderer here; trust anchors, the
-      // client identity and a per-endpoint trust decision are resolved in main (`tlsFor`) and
-      // merged on at send time, so no key material or trust decision rides this wire shape.
-      ...(input.tls?.minVersion !== undefined ? { tls: { minVersion: input.tls.minVersion } } : {}),
-      ...(input.allowH2 !== undefined ? { allowH2: input.allowH2 } : {}),
-      ...(wsa !== undefined ? { wsa } : {}),
-    };
-  }
-
-  /**
    * The attachments (and the MTOM/SwA options the request's properties ask for) that a send of
-   * `requestId` must carry. Deliberately NOT part of {@link SoapSendInputWire}: it holds the
+   * `requestId` must carry. Deliberately NOT part of `SoapSendInputWire`: it holds the
    * resolver closures that read bytes, which cannot — and must not — cross IPC.
    *
    * `undefined` when no project is open or the request is unknown (an ad-hoc send, which has
@@ -749,7 +664,7 @@ export class ProjectHost {
     const { request } = location;
     // Built through `toSoapSendInput` rather than by mapping the seven MTOM flags here a second
     // time: that mapping is the engine's, and duplicating it is how the two drift apart. Only
-    // the attachment fields of the result are used; the rest is rebuilt by `sendInputFor`.
+    // the attachment fields of the result are used.
     const input = toSoapSendInput({
       request: {
         properties: request.properties,
@@ -945,24 +860,6 @@ export class ProjectHost {
   }
 
   /**
-   * The auth that should apply when sending `requestId`: request auth overrides its endpoint's,
-   * which overrides its interface's (see `effectiveAuth`). `undefined` when the request is
-   * unknown or nothing configures auth at any level. Any non-`inherit` scheme: a SOAP owner may
-   * hold a Bearer, API-key or OAuth2 configuration as well as Basic/NTLM.
-   */
-  authFor(requestId: string): SoapOwnerAuth | undefined {
-    if (this.open === undefined) {
-      return undefined;
-    }
-    const location = findRequest(this.open.project, requestId);
-    if (location === undefined) {
-      return undefined;
-    }
-    const endpoint = resolveAuthEndpoint(location.iface, location.request);
-    return effectiveAuth(location.request.auth, endpoint?.auth, endpoint?.authMode ?? 'override', location.iface.auth);
-  }
-
-  /**
    * The credentials configured on one SOAP interface, endpoint or request — its own, not its
    * effective ones.
    *
@@ -1045,18 +942,6 @@ export class ProjectHost {
       interfaceName: location.iface.name,
       operationName: location.operation.name,
     };
-  }
-
-  /**
-   * The send input for a still-*saved* request, built from its LIVE model — current envelope,
-   * headers and effective endpoint, exactly what `request.send` would use today. `undefined`
-   * when no project is open, the request no longer exists, or its endpoint cannot be resolved.
-   *
-   * Used by `history.resend`: a re-send must replay the current request, not the (redacted)
-   * copy captured in the history entry at send time.
-   */
-  buildLiveSendInput(requestId: string): SoapSendInputWire | undefined {
-    return this.sendInputFor(requestId);
   }
 
   /**
@@ -1608,80 +1493,6 @@ export class ProjectHost {
   }
 
   /**
-   * The TLS options a send of `requestId` must use, or `undefined` when nothing in the
-   * project or the preferences has anything to say about TLS.
-   *
-   * Three independent things are folded in here, all of which need main's file system or its
-   * secret store and so cannot live in the synchronous {@link sendInputFor} whose result also
-   * feeds the cURL export: the client identity (the request's keystore, else the global one
-   * from preferences — request wins), the extra trust anchors from the preferred CA bundle,
-   * and the resolved endpoint's `trustInvalid` opt-out.
-   *
-   * A selected-but-unloadable keystore throws rather than silently sending without a client
-   * certificate: a mutual-TLS request that quietly degrades is the worst possible outcome.
-   * A CA bundle that will not load is *not* fatal — it only ever adds anchors, so a bad path
-   * leaves verification exactly as strict as it was.
-   */
-  /**
-   * Resolves one REST send the way this project is actually open: the API's base URL under the
-   * active environment (a linked project's own first, then the workspace's), property expansion
-   * across every scope, the folder chain's credentials, and the settings ladder.
-   *
-   * Synchronous and material-free, like `sendInputFor`: the credentials come back as `secretRef`s
-   * and the TLS identity is resolved separately, so the same result can feed the cURL export and
-   * the preflight badge without touching the keychain.
-   */
-  restSend(
-    requestId: string,
-    draft?: RestRequestPatchWire,
-    envId?: string,
-    sequence?: PropertyMap,
-  ): RestSendResolution | undefined {
-    if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
-      return undefined;
-    }
-    const project = this.open.project;
-    const context = this.workspaceContextFor(envId);
-    const preferences = this.prefs();
-    // A sequence step's `${#Sequence#…}` values ride along; the expanders hold them to ADR-0015.
-    const scopes = { ...this.scopesFor(envId), ...(sequence !== undefined ? { sequence } : {}) };
-    const cookies = this.sentRestCookiesFor(requestId);
-    if (
-      findRestRequest(project, requestId) === undefined &&
-      project.webhooks !== undefined &&
-      findWebhookRequest(project.webhooks, requestId) !== undefined
-    ) {
-      return resolveWebhookSend({
-        project,
-        projectId: project.id,
-        requestId,
-        scopes,
-        newest: (id) => this.hooks.newestRest?.(project.id, id),
-        ...(draft !== undefined ? { draft } : {}),
-        ...(preferences !== undefined ? { preferences } : {}),
-        ...(cookies !== undefined ? { cookies } : {}),
-      });
-    }
-    return resolveRestSend({
-      project,
-      requestId,
-      ...(draft !== undefined ? { draft } : {}),
-      scopes,
-      ...(preferences !== undefined ? { preferences } : {}),
-      resolveBaseUrl: (api) =>
-        context === undefined
-          ? resolveApiBaseUrl(project, envId ?? project.activeEnvironmentId, api)
-          : resolveWorkspaceApiBaseUrl({
-              workspace: context.workspace,
-              project,
-              projectSlug: context.projectSlug,
-              api,
-            }),
-      ...(cookies !== undefined ? { cookies } : {}),
-    });
-  }
-
-  /**
    * The credentials configured on one API, folder or REST request — its own, not its chain's.
    *
    * What the Auth inspector edits and what the OAuth2 channels read: a token is obtained for the
@@ -1765,20 +1576,6 @@ export class ProjectHost {
   }
 
   /**
-   * The cookies this REST request's own last response set, when its *send cookies* setting is on.
-   *
-   * Session-only and per request, deliberately: there is no jar, so one request's send never
-   * depends on another's, and nothing about cookies reaches disk.
-   */
-  private sentRestCookiesFor(requestId: string): readonly Cookie[] | undefined {
-    const request = this.restOrWebhookRequest(requestId);
-    if (request?.settings.sendCookies !== true) {
-      return undefined;
-    }
-    return this.restCookiesFor(requestId);
-  }
-
-  /**
    * The cookies stored for this REST request, whatever its *send cookies* setting: the engine
    * reads the setting itself, so the send host lends what is stored.
    */
@@ -1818,39 +1615,6 @@ export class ProjectHost {
     };
   }
 
-  /**
-   * Resolves one gRPC call the way this project is open: the API's target under the active
-   * environment (the same override slot a REST base URL has, keyed by the API's slug), property
-   * expansion, the folder chain's credentials as refs, and the settings ladder. Synchronous and
-   * material-free like {@link restSend}; the `.proto` set and the secrets are resolved by the caller.
-   */
-  grpcSend(requestId: string, draft?: GrpcRequestPatchWire, sequence?: PropertyMap): GrpcSendResolution | undefined {
-    if (this.open === undefined) {
-      return undefined;
-    }
-    const project = this.open.project;
-    const context = this.workspaceContext?.();
-    const preferences = this.prefs();
-    return resolveGrpcSend({
-      project,
-      requestId,
-      ...(draft !== undefined ? { draft } : {}),
-      scopes: { ...this.scopesFor(), ...(sequence !== undefined ? { sequence } : {}) },
-      ...(preferences !== undefined ? { preferences } : {}),
-      resolveTarget: (api) => {
-        const asApi = { slug: api.slug, baseUrl: api.target };
-        return context === undefined
-          ? resolveApiBaseUrl(project, project.activeEnvironmentId, asApi)
-          : resolveWorkspaceApiBaseUrl({
-              workspace: context.workspace,
-              project,
-              projectSlug: context.projectSlug,
-              api: asApi,
-            });
-      },
-    });
-  }
-
   /** The credentials configured on one gRPC API, folder or request — its own, not its chain's. */
   grpcAuthOf(ownerId: string): AuthConfig | undefined {
     if (this.open === undefined) {
@@ -1888,25 +1652,6 @@ export class ProjectHost {
     };
   }
 
-  /** The TLS material a gRPC call needs, read from the request's settings as {@link restTlsFor} does. */
-  async grpcTlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
-    if (this.open === undefined) {
-      return undefined;
-    }
-    const request = findGrpcRequest(this.open.project, requestId);
-    const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
-    const ca = await this.trustAnchors();
-    const trustInvalid = request?.settings.trustInvalid === true;
-    if (identity === undefined && ca === undefined && !trustInvalid) {
-      return undefined;
-    }
-    return {
-      ...(identity !== undefined ? identity : {}),
-      ...(ca !== undefined ? { ca: [...ca] } : {}),
-      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
-    };
-  }
-
   /** What History names a WebSocket send by: the request, its API, and the folder path inside it. */
   wsMeta(
     requestId: string,
@@ -1923,58 +1668,6 @@ export class ProjectHost {
       apiName: located.api.name,
       folderPath: located.folders.map((folder) => folder.name).join(' / '),
     };
-  }
-
-  /** The TLS material a WebSocket call needs, read from the request's settings as {@link grpcTlsFor} does. */
-  async wsTlsFor(requestId: string): Promise<TlsOptionsWire | undefined> {
-    if (this.open === undefined) {
-      return undefined;
-    }
-    const request = findWsRequest(this.open.project, requestId);
-    const identity = await this.clientIdentityFor(request?.settings.sslKeystoreRef);
-    const ca = await this.trustAnchors();
-    const trustInvalid = request?.settings.trustInvalid === true;
-    if (identity === undefined && ca === undefined && !trustInvalid) {
-      return undefined;
-    }
-    return {
-      ...(identity !== undefined ? identity : {}),
-      ...(ca !== undefined ? { ca: [...ca] } : {}),
-      ...(trustInvalid ? { rejectUnauthorized: false } : {}),
-    };
-  }
-
-  /**
-   * Resolves one WebSocket call the way this project is open: the API's target under the active
-   * environment (the same override slot a REST/gRPC target has, keyed by the API's slug), property
-   * expansion, the folder chain's credentials as refs, and the settings ladder. Synchronous and
-   * material-free like {@link grpcSend}; secrets are resolved by the caller.
-   */
-  wsSend(requestId: string, draft?: WsRequestPatchWire): WsSendResolution | undefined {
-    if (this.open === undefined) {
-      return undefined;
-    }
-    const project = this.open.project;
-    const context = this.workspaceContext?.();
-    const preferences = this.prefs();
-    return resolveWsSend({
-      project,
-      requestId,
-      ...(draft !== undefined ? { draft } : {}),
-      scopes: this.scopesFor(),
-      ...(preferences !== undefined ? { preferences } : {}),
-      resolveTarget: (api) => {
-        const asApi = { slug: api.slug, baseUrl: api.url };
-        return context === undefined
-          ? resolveApiBaseUrl(project, project.activeEnvironmentId, asApi)
-          : resolveWorkspaceApiBaseUrl({
-              workspace: context.workspace,
-              project,
-              projectSlug: context.projectSlug,
-              api: asApi,
-            });
-      },
-    });
   }
 
   /** The gRPC API that is, or that holds, `entityId`. */
@@ -2248,6 +1941,20 @@ export class ProjectHost {
     return { ...(ca !== undefined ? { ca: [...ca] } : {}), ...(trustInvalid ? { rejectUnauthorized: false } : {}) };
   }
 
+  /**
+   * The TLS options a send of `requestId` must use, or `undefined` when nothing in the
+   * project or the preferences has anything to say about TLS.
+   *
+   * Three independent things are folded in here, all of which need main's file system or its
+   * secret store: the client identity (the request's keystore, else the global one
+   * from preferences — request wins), the extra trust anchors from the preferred CA bundle,
+   * and the resolved endpoint's `trustInvalid` opt-out.
+   *
+   * A selected-but-unloadable keystore throws rather than silently sending without a client
+   * certificate: a mutual-TLS request that quietly degrades is the worst possible outcome.
+   * A CA bundle that will not load is *not* fatal — it only ever adds anchors, so a bad path
+   * leaves verification exactly as strict as it was.
+   */
   async tlsFor(requestId: string, envId?: string): Promise<TlsOptionsWire | undefined> {
     if (this.open === undefined) {
       return undefined;
@@ -2388,9 +2095,8 @@ export class ProjectHost {
 
   /**
    * The WS-Security half of a send of `requestId`, or `undefined` when the request selects
-   * neither an outgoing nor an incoming configuration. Async and secret-bearing, so — exactly like {@link tlsFor} — it is
-   * kept out of the synchronous {@link sendInputFor} whose result also feeds the cURL export
-   * and the renderer.
+   * neither an outgoing nor an incoming configuration. Async and secret-bearing, exactly like
+   * {@link tlsFor}.
    *
    * A selected-but-missing configuration throws rather than sending an unsecured request: a
    * WS-Security send that quietly degrades is as bad as a mutual-TLS one that does.
@@ -2485,8 +2191,7 @@ export class ProjectHost {
 
   /**
    * The WS-Addressing half of a send of `requestId`, or `undefined` when the effective
-   * configuration is disabled. Unlike {@link wssFor} this is synchronous and carries no secret,
-   * so it rides on {@link sendInputFor}'s result rather than being folded in at send time.
+   * configuration is disabled. Unlike {@link wssFor} this is synchronous and carries no secret.
    */
   wsaFor(requestId: string): { config: WsaConfig; defaultAction: string } | undefined {
     if (this.open === undefined) {

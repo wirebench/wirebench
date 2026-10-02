@@ -443,8 +443,8 @@ describe('a SOAP resend from History', () => {
         {
           project: {
             projectId: () => 'p1',
-            buildLiveSendInput: () => ({ endpoint: '', envelopeXml: '<e/>', soapVersion: '1.1' }),
-          } as never,
+            endpointFor: () => 'http://h/s',
+          },
           send: sendDepsFor(model, { scripts: host }),
         },
       );

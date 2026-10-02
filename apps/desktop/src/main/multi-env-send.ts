@@ -68,10 +68,7 @@ async function sendOne(
   if (request.soap !== undefined) {
     const headers = request.soap.headers !== undefined ? { headers: { ...request.soap.headers } } : {};
     // Refused as it always was, naming the environment, before anything is prepared.
-    if (
-      sendDeps.project.sendInputFor(request.requestId, { envelopeXml: request.soap.envelopeXml, ...headers }, envId) ===
-      undefined
-    ) {
+    if (sendDeps.project.endpointFor?.(request.requestId, envId) === undefined) {
       return errorResult(
         envId,
         envName,

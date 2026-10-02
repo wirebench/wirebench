@@ -7,7 +7,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startTestRestServer, type TestRestServer } from '@wirebench/engine/test-helpers';
-import { createApi, createProject, createRestRequest, entry, resolveApiBaseUrl } from '@wirebench/engine';
+import { createApi, createProject, createRestRequest, entry } from '@wirebench/engine';
 import type { GetSecret, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import {
@@ -18,9 +18,8 @@ import {
 } from '../src/main/history-service.js';
 import { registerHistoryChannels } from '../src/main/ipc/history.js';
 import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { resolveRestSend } from '../src/main/rest-send.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
-import type { HistoryEntryWire, RestRequestPatchWire } from '../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -87,28 +86,19 @@ function harness(model: Project, secrets: GetSecret = () => Promise.resolve(unde
     },
     get: (id: string) => entries.find((candidate) => candidate.id === id),
   };
-  const restSend = (requestId: string, draft?: RestRequestPatchWire) =>
-    resolveRestSend({
-      project: model,
-      requestId,
-      ...(draft !== undefined ? { draft } : {}),
-      scopes: { project: {}, global: {}, system: {} },
-      resolveBaseUrl: (api) => resolveApiBaseUrl(model, undefined, api),
-    });
   const keychain: GetSecret = (ref) => (ref === 'sec_key' ? Promise.resolve('good-key') : secrets(ref));
   const requestDeps: RequestChannelDeps = {
     project: {
       projectId: () => 'p1',
-      restSend,
       restMeta: () => undefined,
-      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
     } as unknown as RequestChannelDeps['project'],
     history: history as unknown as HistoryService,
     secretsFor: () => keychain,
   };
   const sendDeps = toSendDeps(engine, requestDeps);
   registerHistoryChannels(history as never, {
-    project: { projectId: () => 'p1', buildLiveSendInput: () => undefined, restSend },
+    project: { projectId: () => 'p1' },
     send: sendDeps,
   });
   /** A fresh send of `requestId`, as the editor sends it. */

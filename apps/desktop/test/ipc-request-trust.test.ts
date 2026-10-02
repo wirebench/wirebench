@@ -129,20 +129,18 @@ async function register(options: { readonly trustAnchorsFor?: () => Promise<read
         wsa: { enabled: false },
         unresolved: [],
       }),
-      authFor: () => undefined,
       requestMeta: () => undefined,
       projectId: () => 'p1',
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
       requestSource: () => {
         throw new Error('not stubbed');
       },
-      buildLiveSendInput: () => {
+      endpointFor: () => {
         throw new Error('not stubbed');
       },
       projectMutate: () => {
         throw new Error('not stubbed');
       },
-      sendInputFor: () => undefined,
       dumpFileFor: () => undefined,
       ...(options.trustAnchorsFor !== undefined ? { trustAnchorsFor: options.trustAnchorsFor } : {}),
     } as never,
@@ -258,7 +256,7 @@ describe('a SOAP resend trusts the anchors of its project', () => {
       requestMeta: () => undefined,
       projectId: () => 'p1',
       runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
-      buildLiveSendInput: () => ({ endpoint, envelopeXml: '<a/>', soapVersion: '1.1' }),
+      endpointFor: () => endpoint,
       trustAnchorsFor: () => Promise.resolve([ANCHOR]),
       // The project's client certificate, which the mutual-TLS server asks for.
       clientIdentityFor: () => Promise.resolve({ cert: CLIENT.certPem, key: CLIENT.keyPem }),

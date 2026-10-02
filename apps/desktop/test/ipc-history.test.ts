@@ -2,6 +2,10 @@ import { createServer, type IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  createApi,
+  createGrpcApi,
+  createGrpcFolder,
+  createGrpcRequest,
   createInterface,
   createProject,
   createRequest,
@@ -10,18 +14,9 @@ import {
   expand,
   WirebenchError,
 } from '@wirebench/engine';
-import type {
-  AuthConfig,
-  CreateRestRequestInput,
-  Project,
-  RestApi,
-  RestSendInput,
-  SoapRequestDef,
-  UnresolvedRef,
-} from '@wirebench/engine';
+import type { AuthConfig, CreateRestRequestInput, Project, SoapRequestDef } from '@wirebench/engine';
 import { buildRestHistoryEntry, isTruncatedBody } from '../src/main/history-service.js';
 import { grpcResendDraft, registerHistoryChannels, restResendDraft } from '../src/main/ipc/history.js';
-import type { RestSendResolution } from '../src/main/rest-send.js';
 import type { SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 import { sendDepsFor, type SendDepsExtra } from './helpers/send-deps.js';
@@ -142,11 +137,10 @@ function makeEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire 
 function noLiveRequests() {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
-    authFor: () => undefined,
     requestMeta: () => undefined,
     // Only `req-1` still exists; any other request an entry names has been deleted since.
     projectId: (requestId: string) => (requestId === 'req-1' ? 'proj-1' : undefined),
-    buildLiveSendInput: () => undefined,
+    endpointFor: () => undefined,
   };
 }
 
@@ -309,15 +303,7 @@ describe('registerHistoryChannels', () => {
     registerHistoryChannels(history as never, {
       project: {
         ...noLiveRequests(),
-        buildLiveSendInput: (requestId: string) =>
-          requestId === 'req-1'
-            ? {
-                endpoint: `${soapUrl}/new-endpoint`,
-                envelopeXml: '<Envelope>current, with the real password</Envelope>',
-                soapVersion: '1.1' as const,
-                headers: { 'X-Live': 'yes' },
-              }
-            : undefined,
+        endpointFor: (requestId: string) => (requestId === 'req-1' ? `${soapUrl}/new-endpoint` : undefined),
       },
       send: sendDeps(model),
     });
@@ -345,7 +331,7 @@ describe('registerHistoryChannels', () => {
     const history = fakeHistory(entries);
     const send = engineSend;
     registerHistoryChannels(history as never, {
-      project: noLiveRequests(), // buildLiveSendInput always undefined: the request is gone.
+      project: noLiveRequests(), // endpointFor always undefined: the request is gone.
       send: sendDeps(),
     });
 
@@ -574,12 +560,24 @@ function stubEngine(send: (call: Record<string, unknown>) => unknown): void {
   );
 }
 
+/** A project holding one gRPC call, `r-1`. */
+function grpcModel(): Project {
+  const call = createGrpcRequest('SayHello', { id: 'r-1', service: 'wirebench.greet.Greeter', method: 'SayHello' });
+  const api = createGrpcApi('Greeter', {
+    id: 'g-1',
+    target: '127.0.0.1:1',
+    tls: false,
+    folders: [createGrpcFolder('Greeter', { id: 'f-1', requests: [call] })],
+  });
+  return { ...createProject('Demo', { id: 'proj-1' }), grpcApis: [api] };
+}
+
 /** Registers the channels with a gRPC sender stub and a project that knows request `r-1`. */
 function registerGrpc(entries: HistoryEntryWire[], send = vi.fn(() => Promise.resolve({}))) {
   stubEngine(send);
   registerHistoryChannels(fakeHistory(entries) as never, {
-    project: { ...noLiveRequests(), grpcSend: ((id: string) => (id === 'r-1' ? {} : undefined)) as never },
-    send: sendDeps(),
+    project: noLiveRequests(),
+    send: sendDeps(grpcModel()),
   });
   return send;
 }
@@ -669,7 +667,7 @@ function restEntry(overrides: Partial<HistoryEntryWire> = {}): HistoryEntryWire 
   });
 }
 
-/** The saved request `r-1` as `project.restSend` resolves it: the request as typed, and its auth. */
+/** The saved request `r-1` as a resend takes it (`SavedRest`): the request as typed, and its auth. */
 function savedRest(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }) {
   return { request: createRestRequest('Pet', { id: 'r-1', ...input }), auth };
 }
@@ -943,24 +941,14 @@ describe('restResendDraft', () => {
 });
 
 /**
- * `deps.project.restSend`'s reply for `r-1`: `savedRest`'s request and auth, resolved to `ORIGIN` —
- * the property expansion `savedOriginOf` reads to decide whether the recorded URL is reusable.
- * `unresolved` stands for property references left unresolved *elsewhere* on the saved request
- * (a header, the body): `savedOriginOf` must ignore them and look at the URL alone.
+ * A project holding `savedRest`'s request `r-1`, with its auth, in an API at `ORIGIN`: what the
+ * resend resolves through the engine, the expansion `savedOriginOf` reads to decide whether the
+ * recorded URL is reusable.
  */
-function savedRestSend(
-  input: CreateRestRequestInput = {},
-  auth: AuthConfig = { type: 'none' },
-  unresolved: UnresolvedRef[] = [],
-): RestSendResolution {
-  const saved = savedRest(input, auth);
-  return {
-    ...saved,
-    input: { baseUrl: ORIGIN, request: { url: saved.request.url } } as RestSendInput,
-    unresolved,
-    api: {} as RestApi,
-    baseUrlSource: 'api',
-  };
+function savedModel(input: CreateRestRequestInput = {}, auth: AuthConfig = { type: 'none' }): Project {
+  const { request } = savedRest(input, auth);
+  const api = createApi('Petstore', { id: 'api-1', baseUrl: ORIGIN, requests: [{ ...request, auth }] });
+  return { ...createProject('Demo', { id: 'proj-1' }), apis: [api] };
 }
 
 /** Registers the channels with a REST sender stub and a project that knows request `r-1`. */
@@ -968,12 +956,12 @@ function registerRest(
   entries: HistoryEntryWire[],
   send = vi.fn(() => Promise.resolve({})),
   withSender = true,
-  saved: RestSendResolution = savedRestSend(),
+  model: Project = savedModel(),
 ) {
   stubEngine(send);
   registerHistoryChannels(fakeHistory(entries) as never, {
-    project: { ...noLiveRequests(), restSend: (id: string) => (id === 'r-1' ? saved : undefined) },
-    ...(withSender ? { send: sendDeps() } : {}),
+    project: noLiveRequests(),
+    ...(withSender ? { send: sendDeps(model) } : {}),
   });
   return send;
 }
@@ -1070,9 +1058,8 @@ describe('history.resendRest', () => {
 
   it('still reuses the recorded URL when a header elsewhere on the saved request has an unresolved ${secret:…}', async () => {
     const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
-    const saved = savedRestSend({ headers: [entry('Authorization', 'Bearer ${secret:token}')] }, undefined, [
-      { expr: '${secret:token}', scope: 'Secret', name: 'token', code: 'missing', start: 0, end: 0 },
-    ]);
+    // The token is in no keychain here: a resend's resolve reads no secret, so it stays as typed.
+    const saved = savedModel({ headers: [entry('Authorization', 'Bearer ${secret:token}')] });
     const send = registerRest([recorded], undefined, true, saved);
     await invoke('history.resendRest', { id: 'r' });
     const [{ draft }] = send.mock.calls[0]! as unknown as [{ draft: { url?: string } }];
@@ -1082,7 +1069,7 @@ describe('history.resendRest', () => {
 
   it('refuses with history-resend-origin when the saved URL itself has an unresolved property reference', async () => {
     const recorded = restEntry({ endpoint: 'https://api.test/pets/9?expand=owner' });
-    const saved = savedRestSend({ url: '/pets/${#Env#id}' });
+    const saved = savedModel({ url: '/pets/${#Env#id}' });
     const send = registerRest([recorded], undefined, true, saved);
     const result = await invoke('history.resendRest', { id: 'r' });
     expect(result).toMatchObject({ ok: false, error: { code: 'history-resend-origin' } });

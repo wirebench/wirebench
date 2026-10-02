@@ -3,9 +3,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EngineService } from '../src/main/engine-service.js';
+import { createInterface, createProject, createRequest, type Project } from '@wirebench/engine';
 import { HistoryService, historyFilePath } from '../src/main/history-service.js';
-import { sendAndRecordHistory } from '../src/main/send-with-history.js';
+import { AD_HOC_ID, soapOverrideOf } from '../src/main/send/draft.js';
+import { sendThroughEngine } from '../src/main/send/exchange.js';
+import { AD_HOC_NAME, type HistoryNameFallback } from '../src/main/send/record.js';
+import type { ResolvedSendInputWire } from '../src/shared/wire-types.js';
+import { sendDepsFor } from './helpers/send-deps.js';
 
 interface EchoServer {
   readonly url: string;
@@ -34,12 +38,28 @@ async function startEchoServer(): Promise<EchoServer> {
   };
 }
 
-const noopProject = {
-  scopesFor: () => ({ project: {}, global: {}, system: process.env }),
-  authFor: () => undefined,
-  requestMeta: () => undefined,
-  projectId: () => 'proj-1',
-};
+/** A project holding one SOAP request, `req-b`, at `endpointUrl`. */
+function holding(endpointUrl: string): Project {
+  const request = {
+    ...createRequest('Add', { id: 'req-b', envelopeXml: '<Envelope/>', soapVersion: '1.1' }),
+    endpointUrl,
+  };
+  const iface = createInterface('Calc', {
+    id: 'iface-1',
+    definitionUrl: 'http://127.0.0.1:1/calc?wsdl',
+    cacheDefinition: false,
+    operations: [{ name: 'Add', bindingName: '{urn:calc}B', slug: 'add', order: 0, requests: [request] }],
+  });
+  return { ...createProject('Demo', { id: 'proj-b' }), interfaces: [iface] };
+}
+
+/** Sends `input` ad hoc through the engine, recorded under `names`, as `request.send` does with no request. */
+function sendAdHoc(history: HistoryService, sendId: string, input: ResolvedSendInputWire, names: HistoryNameFallback) {
+  return sendThroughEngine(sendDepsFor(createProject('None', { id: 'none' }), { history }), sendId, AD_HOC_ID, {
+    draft: { kind: 'soap', override: soapOverrideOf(input) },
+    adHoc: { input, names },
+  });
+}
 
 describe('HistoryService', () => {
   let server: EchoServer;
@@ -77,21 +97,17 @@ describe('HistoryService', () => {
   });
 
   it('records an entry after a real send, redacting the Authorization header (no plaintext on disk)', async () => {
-    const engine = new EngineService();
     const history = new HistoryService(userDataDir);
     await history.open('proj-2');
 
-    const result = await sendAndRecordHistory(
-      engine,
-      { project: noopProject, history },
+    const result = await sendAdHoc(
+      history,
+      'send-1',
       {
-        sendId: 'send-1',
-        input: {
-          endpoint: `${server.url}/soap`,
-          envelopeXml: '<soap:Envelope><soap:Body/></soap:Envelope>',
-          soapVersion: '1.1',
-          headers: { Authorization: 'Basic dG9wc2VjcmV0OnBhc3M=' },
-        },
+        endpoint: `${server.url}/soap`,
+        envelopeXml: '<soap:Envelope><soap:Body/></soap:Envelope>',
+        soapVersion: '1.1',
+        headers: { Authorization: 'Basic dG9wc2VjcmV0OnBhc3M=' },
       },
       // No saved request behind this send: it is keyed to the project the caller names.
       { requestName: 'Ad-hoc request', interfaceName: '', operationName: '', projectId: 'proj-2' },
@@ -113,23 +129,14 @@ describe('HistoryService', () => {
   });
 
   it('records a transport-error entry when the send fails', async () => {
-    const engine = new EngineService();
     const history = new HistoryService(userDataDir);
     await history.open('proj-3');
 
     await expect(
-      sendAndRecordHistory(
-        engine,
-        { project: noopProject, history },
-        {
-          sendId: 'send-err',
-          input: {
-            endpoint: 'http://127.0.0.1:1/nope',
-            envelopeXml: '<Envelope/>',
-            soapVersion: '1.1',
-            timeoutMs: 200,
-          },
-        },
+      sendAdHoc(
+        history,
+        'send-err',
+        { endpoint: 'http://127.0.0.1:1/nope', envelopeXml: '<Envelope/>', soapVersion: '1.1', timeoutMs: 200 },
         { requestName: 'Ad-hoc request', interfaceName: '', operationName: '', projectId: 'proj-3' },
       ),
     ).rejects.toThrow();
@@ -142,17 +149,19 @@ describe('HistoryService', () => {
   });
 
   it('keys a send to the project owning its request, and records nothing for one no project owns', async () => {
-    const engine = new EngineService();
     const history = new HistoryService(userDataDir);
     await history.open('proj-a');
     await history.open('proj-b');
     const owners: Record<string, string> = { 'req-b': 'proj-b' };
-    const project = { ...noopProject, projectId: (entityId: string) => owners[entityId] };
     const input = { endpoint: `${server.url}/soap`, envelopeXml: '<Envelope/>', soapVersion: '1.1' as const };
 
-    await sendAndRecordHistory(engine, { project, history }, { sendId: 's-owned', requestId: 'req-b', input });
+    const deps = sendDepsFor(holding(`${server.url}/soap`), {
+      history,
+      project: { projectId: (entityId: string) => owners[entityId] },
+    });
+    await sendThroughEngine(deps, 's-owned', 'req-b', { draft: { kind: 'soap' } });
     // No request, no named project: nothing owns it, so nothing records it.
-    await sendAndRecordHistory(engine, { project, history }, { sendId: 's-adhoc', input });
+    await sendAdHoc(history, 's-adhoc', input, AD_HOC_NAME);
 
     expect(history.list({ projectId: 'proj-b' }).total).toBe(1);
     expect(history.list({ projectId: 'proj-a' }).total).toBe(0);

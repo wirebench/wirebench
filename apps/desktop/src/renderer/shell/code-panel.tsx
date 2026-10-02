@@ -105,7 +105,7 @@ export function CodePanel() {
   const setShell = useUiStore((state) => state.setCodeShell);
   const showSecrets = useSecretsVisibilityStore((state) => state.show);
   const draft = useProjectStore((state) => (requestId === undefined ? undefined : state.requests[requestId]));
-  // Main builds the command from `buildLiveSendInput` + `effectiveSendInput`, which resolve the
+  // Main builds the command by resolving the request through the engine, which resolves the
   // active environment's endpoint override and expand `${...}` references against environment,
   // project and global properties — so the preview must regenerate on any of those, not just on
   // edits to the request draft itself.

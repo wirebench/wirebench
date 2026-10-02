@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { isWirebenchError } from '../../../src/errors.js';
-import { resolveEndpointAuth, resolveSoapAuth } from '../../../src/secrets/resolve.js';
+import { resolveEndpointAuth, resolveSoapAuth, toSendAuth } from '../../../src/secrets/resolve.js';
 
 describe('resolveEndpointAuth', () => {
   it('returns undefined when there is no auth', async () => {
@@ -113,5 +113,41 @@ describe('resolveSoapAuth', () => {
       accessToken: 'at',
     });
     expect(await resolveSoapAuth(oauth, getSecret)).toBeUndefined();
+  });
+});
+
+describe('toSendAuth', () => {
+  it('maps resolved basic credentials, defaulting preemptive to true', () => {
+    expect(toSendAuth({ type: 'basic', username: 'u', password: 'p' })).toEqual({
+      type: 'basic',
+      username: 'u',
+      password: 'p',
+      preemptive: true,
+    });
+    expect(toSendAuth({ type: 'basic', username: 'u', password: 'p', preemptive: false })).toMatchObject({
+      preemptive: false,
+    });
+  });
+
+  it('maps NTLM credentials with their domain and workstation', () => {
+    expect(toSendAuth({ type: 'ntlm', username: 'u', password: 'p', domain: 'CORP' })).toEqual({
+      type: 'ntlm',
+      username: 'u',
+      password: 'p',
+      domain: 'CORP',
+    });
+    expect(toSendAuth({ type: 'ntlm', username: 'u', password: 'p', domain: 'CORP', workstation: 'WS1' })).toEqual({
+      type: 'ntlm',
+      username: 'u',
+      password: 'p',
+      domain: 'CORP',
+      workstation: 'WS1',
+    });
+  });
+
+  it('is undefined without credentials, for type none, and for an incomplete pair', () => {
+    expect(toSendAuth(undefined)).toBeUndefined();
+    expect(toSendAuth({ type: 'none' })).toBeUndefined();
+    expect(toSendAuth({ type: 'basic', username: 'u' })).toBeUndefined();
   });
 });

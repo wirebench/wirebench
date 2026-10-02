@@ -64,12 +64,9 @@ function project() {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     preflight: () => undefined as never,
-    authFor: () => undefined,
     requestMeta: () => undefined,
     projectId: () => 'p1',
     requestSource: () => undefined as never,
-    buildLiveSendInput: () => undefined,
-    sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
     runContextFor: located(resolution()),
   } as unknown as RequestChannelDeps['project'];

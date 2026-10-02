@@ -6,8 +6,8 @@
  * two HTTP Log rows the desktop writes while a send is under way: a failure row, and a WebSocket
  * handshake's row.
  *
- * Every member is a port of what `ipc/request.ts` and `send-with-history.ts` do today, so a send
- * through the engine logs, masks and checks exactly as the desktop always has.
+ * Every member is a port of what the desktop's own send paths did before every send went through
+ * the engine, so a send logs, masks and checks exactly as the desktop always has.
  */
 import { readFileSync } from 'node:fs';
 import { failedRequestOf, findWebhookRequest, SIGNING_PSEUDO_REF_PREFIX } from '@wirebench/engine';
@@ -180,8 +180,8 @@ async function oauth2Credentials(
 }
 
 /**
- * A REST response checked against its OpenAPI operation, as `EngineService.sendRestRequest` checks
- * it: only a JSON body that is not a stream, within the service's deadline. The operation is found
+ * A REST response checked against its OpenAPI operation, as the desktop always checked it: only a
+ * JSON body that is not a stream, within the service's deadline. The operation is found
  * from the method and the request's own URL as they were sent (the path, not the base URL joined to
  * it), as the send path always matched it; the exchange's URL stands in when the input is absent.
  */

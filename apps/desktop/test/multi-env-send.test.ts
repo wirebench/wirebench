@@ -106,17 +106,15 @@ function fakeProject(project: Project) {
     runContextFor: vi.fn((_requestId: string, envId?: string) => ({
       project,
       projectDir: '/tmp/none',
+      globals: {},
       ...(envId !== undefined ? { environmentId: envId } : {}),
     })),
     requestMeta: () => ({ requestName: 'Add', interfaceName: 'Calc', operationName: 'Add' }),
     restMeta: () => ({ requestName: 'List pets', apiName: 'Pets', folderPath: '' }),
     projectId: () => 'p1',
     projectSnapshot: () => ({ environments: ENVS, activeEnvironmentId: active.id }),
-    sendInputFor: vi.fn(
-      (_requestId: string, overrides: { envelopeXml?: string; headers?: Record<string, string> }, envId?: string) =>
-        ENVS.some((env) => env.id === envId)
-          ? { endpoint: `http://${envId}.example/soap`, envelopeXml: overrides.envelopeXml ?? '' }
-          : undefined,
+    endpointFor: vi.fn((_requestId: string, envId?: string) =>
+      ENVS.some((env) => env.id === envId) ? `http://${envId}.example/soap` : undefined,
     ),
   };
 }

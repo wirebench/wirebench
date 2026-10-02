@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { joinBase, signatureHeaderNames, splitQuery, WirebenchError } from '@wirebench/engine';
+import { grpcItemFor, joinBase, signatureHeaderNames, splitQuery, WirebenchError } from '@wirebench/engine';
 import { channels } from '../../shared/ipc.js';
 import type {
   GrpcRequestPatchWire,
@@ -21,16 +21,14 @@ import type {
 import { isTruncatedBody, type HistoryService } from '../history-service.js';
 import { containsRedaction } from '../redact.js';
 import type { ProjectRouter } from '../project-router.js';
-import type { RestSendResolution } from '../rest-send.js';
-import type { RestBody } from '@wirebench/engine';
+import type { AuthConfig, EffectiveSigning, RestBody, RestRequestDef } from '@wirebench/engine';
 import { AD_HOC_ID } from '../send/draft.js';
-import { sendThroughEngine, type SendThroughEngineDeps } from '../send/exchange.js';
+import { previewRest, sendThroughEngine, type RestPreview, type SendThroughEngineDeps } from '../send/exchange.js';
 import { registerHandler } from './register.js';
 
 /** What the `history.*` channels need beyond `EngineService`/`HistoryService`. */
 export interface HistoryChannelDeps {
-  readonly project: Pick<ProjectRouter, 'buildLiveSendInput' | 'projectId'> &
-    Partial<Pick<ProjectRouter, 'grpcSend' | 'restSend'>>;
+  readonly project: Pick<ProjectRouter, 'projectId'> & Partial<Pick<ProjectRouter, 'endpointFor'>>;
   /**
    * The engine send every re-send goes through: the request channels' own dependencies and their
    * registry, so a re-send runs its scripts, is cancelled and is recorded as any send is. Without
@@ -47,6 +45,24 @@ function sendDepsOf(deps: HistoryChannelDeps, id: string, kind: string): SendThr
     });
   }
   return deps.send;
+}
+
+/** What a REST resend takes from the saved request: its request as saved, its credentials and its signing. */
+export interface SavedRest {
+  readonly request: RestRequestDef;
+  readonly auth: AuthConfig;
+  /** A webhook item's signing, when it signs. */
+  readonly webhookSigning?: EffectiveSigning;
+}
+
+/** The saved request a REST resend goes out through, resolved as its send resolves it. */
+function savedRestOf(preview: RestPreview): SavedRest {
+  const { signing } = preview.item;
+  return {
+    request: preview.item.request,
+    auth: preview.auth,
+    ...(signing?.signing.mode === 'sign' ? { webhookSigning: signing } : {}),
+  };
 }
 
 /**
@@ -163,7 +179,7 @@ function typedQuery(url: string): KeyValueWire[] {
  */
 function resendUrl(
   entry: HistoryEntryWire,
-  saved: Pick<RestSendResolution, 'request' | 'auth'>,
+  saved: Pick<SavedRest, 'request' | 'auth'>,
 ): Pick<RestRequestPatchWire, 'url' | 'query' | 'pathParams'> {
   const { path, query } = splitQuery(entry.endpoint);
   if (holdsUrlMarker(path)) {
@@ -269,7 +285,7 @@ function resendBody(text: string, saved: RestBody): RestBodyWire | undefined {
  */
 export function restResendDraft(
   entry: HistoryEntryWire,
-  saved: Pick<RestSendResolution, 'request' | 'auth' | 'webhookSigning'>,
+  saved: SavedRest,
   savedOrigin: string | undefined,
 ): RestRequestPatchWire {
   const { request } = saved;
@@ -313,7 +329,7 @@ export function restResendDraft(
 }
 
 /** Whether `entry` recorded every header the item's signing scheme writes (names case-insensitive). */
-function carriesSignature(entry: HistoryEntryWire, signing: RestSendResolution['webhookSigning']): boolean {
+function carriesSignature(entry: HistoryEntryWire, signing: SavedRest['webhookSigning']): boolean {
   if (signing === undefined || signing.signing.mode !== 'sign') {
     return false;
   }
@@ -336,14 +352,14 @@ function isStreamEntry(entry: HistoryEntryWire): boolean {
 }
 
 /**
- * The saved request's resolved origin: the base and path joined the same synchronous way
- * `sendRestRequest` does before it separately fills in `${secret:…}` tokens. Only a reference left
- * unresolved *in that joined URL itself* makes this `undefined` — a `${secret:…}` (or any other
- * property reference) in a header, the body, or elsewhere on the saved request expands on its own
- * path and must not affect this. Also `undefined` when the joined text doesn't parse as a URL.
- * `restResendDraft` refuses an entry with a response in either case.
+ * The saved request's resolved origin: the base and path joined as its send resolves them, with a
+ * `${secret:…}` token kept as typed. Only a reference left unresolved *in that joined URL itself*
+ * makes this `undefined` — a `${secret:…}` (or any other property reference) in a header, the body,
+ * or elsewhere on the saved request expands on its own path and must not affect this. Also
+ * `undefined` when the joined text doesn't parse as a URL. `restResendDraft` refuses an entry with
+ * a response in either case.
  */
-function savedOriginOf(saved: RestSendResolution): string | undefined {
+function savedOriginOf(saved: Pick<RestPreview, 'input'>): string | undefined {
   const joined = joinBase(saved.input.baseUrl, saved.input.request.url);
   if (joined.includes('${')) {
     return undefined;
@@ -421,7 +437,7 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
     if (requestId !== undefined && deps.project.projectId(requestId) !== undefined) {
       // No endpoint resolves for it now (an environment that maps none): it goes to the one it went
       // to, still as its project sends it — properties, auth, keychain, WS-Security, proxy, scripts.
-      const live = deps.project.buildLiveSendInput(requestId) !== undefined;
+      const live = deps.project.endpointFor?.(requestId) !== undefined;
       if (!live && holdsUrlMarker(entry.endpoint)) {
         refuseRedacted(entry.id, 'URL');
       }
@@ -479,7 +495,9 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
     // The call goes out through the saved request (its endpoint, metadata, auth and TLS), so an
     // entry whose request is gone has nothing to resend through.
     const { requestId } = entry;
-    if (requestId === undefined || deps.project.grpcSend?.(requestId) === undefined) {
+    const send = sendDepsOf(deps, request.id, 'grpc');
+    const located = requestId === undefined ? undefined : send.project.runContextFor?.(requestId);
+    if (requestId === undefined || located === undefined || grpcItemFor(located.project, requestId) === undefined) {
       throw new WirebenchError(
         'history-resend-orphan',
         "The request this call was sent from no longer exists, so it can't be re-sent.",
@@ -487,12 +505,12 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
       );
     }
     // No live hook: nothing on screen holds this send id, so its events would be dropped.
-    return sendThroughEngine(sendDepsOf(deps, request.id, 'grpc'), randomUUID(), requestId, {
+    return sendThroughEngine(send, randomUUID(), requestId, {
       draft: { kind: 'grpc', draft: grpcResendDraft({ ...entry, grpc }) },
     });
   });
 
-  registerHandler(channels.history.resendRest, (request) => {
+  registerHandler(channels.history.resendRest, async (request) => {
     const entry = history.get(request.id);
     if (entry === undefined) {
       throw new WirebenchError('unknown-history-entry', 'This entry is no longer in History.', {
@@ -515,7 +533,8 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
     // Auth, TLS, proxy and settings come from the saved request, so an entry whose request is gone
     // has nothing to resend through.
     const { requestId } = entry;
-    const saved = requestId === undefined ? undefined : deps.project.restSend?.(requestId);
+    const send = sendDepsOf(deps, request.id, 'rest');
+    const saved = requestId === undefined ? undefined : await previewRest(send, requestId, undefined);
     if (requestId === undefined || saved === undefined) {
       throw new WirebenchError(
         'history-resend-orphan',
@@ -523,8 +542,8 @@ export function registerHistoryChannels(history: HistoryService, deps: HistoryCh
         { details: { id: request.id } },
       );
     }
-    return sendThroughEngine(sendDepsOf(deps, request.id, 'rest'), randomUUID(), requestId, {
-      draft: { kind: 'rest', draft: restResendDraft(entry, saved, savedOriginOf(saved)) },
+    return await sendThroughEngine(send, randomUUID(), requestId, {
+      draft: { kind: 'rest', draft: restResendDraft(entry, savedRestOf(saved), savedOriginOf(saved)) },
     });
   });
 }

@@ -47,6 +47,7 @@ import type {
   SentRequest,
   SentScripts,
   SoapOwnerAuth,
+  SoapOverride,
   SoapSelected,
   SoapSendInput,
   UnresolvedRef,
@@ -608,14 +609,17 @@ function adHocContext(deps: SendThroughEngineDeps, input: ResolvedSendInputWire)
 
 /**
  * What every preview resolves in: the saved request with the draft over it, the run context a send
- * of it runs in, and a host that reads no secret. Each `${secret:name}` stands behind a placeholder
+ * of it runs in (under `envId` when one is named, else the active environment), and a host that
+ * reads no secret. Each `${secret:name}` stands behind a placeholder
  * while the request resolves and is put back as its token text (`asTyped`), so it stays in the output
- * as written; `secretTokens` answers whether one was reached. Undefined: no such request of that kind.
+ * as written; `secretTokens` answers whether one was reached. Undefined: no such request of that
+ * kind, or no such environment.
  */
 async function previewOf<K extends DraftOf['kind']>(
   deps: SendThroughEngineDeps,
   requestId: string,
   draft: Extract<DraftOf, { kind: K }>,
+  envId?: string,
 ): Promise<
   | {
       readonly item: Extract<SelectedRequest, { kind: K }>;
@@ -626,10 +630,15 @@ async function previewOf<K extends DraftOf['kind']>(
     }
   | undefined
 > {
-  const located = savedContext(deps, requestId, undefined);
+  const located = savedContext(deps, requestId, envId);
   const item = located === undefined ? undefined : selectedFor(located.project, requestId, draft);
   if (located === undefined || item?.kind !== draft.kind) return undefined;
-  const send: DesktopSend = { sendId: '', requestId, projectId: deps.project.projectId(requestId) };
+  const send: DesktopSend = {
+    sendId: '',
+    requestId,
+    projectId: deps.project.projectId(requestId),
+    ...(envId !== undefined ? { envId } : {}),
+  };
   let reached = false;
   const asTyped = (ref: string): Promise<string | undefined> => {
     reached ||= parseSecretPseudoRef(ref) !== undefined;
@@ -673,8 +682,9 @@ export async function previewRest(
   deps: SendThroughEngineDeps,
   requestId: string,
   draft: RestRequestPatchWire | undefined,
+  envId?: string,
 ): Promise<RestPreview | undefined> {
-  const preview = await previewOf(deps, requestId, { kind: 'rest', ...(draft !== undefined ? { draft } : {}) });
+  const preview = await previewOf(deps, requestId, { kind: 'rest', ...(draft !== undefined ? { draft } : {}) }, envId);
   if (preview === undefined) return undefined;
   const { item, context, placeholders, asTyped } = preview;
   const resolved = (await resolveExchange(item, context.host, createRunScope(context))) as {
@@ -813,8 +823,18 @@ export interface SoapPreview {
  *
  * @throws WirebenchError `endpoint-unresolved` when no endpoint resolves for it
  */
-export async function previewSoap(deps: SendThroughEngineDeps, requestId: string): Promise<SoapPreview | undefined> {
-  const preview = await previewOf(deps, requestId, { kind: 'soap' });
+export async function previewSoap(
+  deps: SendThroughEngineDeps,
+  requestId: string,
+  override?: SoapOverride,
+  envId?: string,
+): Promise<SoapPreview | undefined> {
+  const preview = await previewOf(
+    deps,
+    requestId,
+    { kind: 'soap', ...(override !== undefined ? { override } : {}) },
+    envId,
+  );
   if (preview === undefined) return undefined;
   const { context, placeholders, asTyped } = preview;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it

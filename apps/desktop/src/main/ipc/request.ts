@@ -1,4 +1,3 @@
-import type { WebContents } from 'electron';
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import {
@@ -20,53 +19,34 @@ import {
   toWsSessionOptions,
   WirebenchError,
   writeFileAtomic,
-  joinBase,
-  failedRequestOf,
-  grpcMethodPath,
   wsToCommand,
-  SecretPlaceholders,
-  applyGrpcSnapshot,
-  applyRestSnapshot,
-  grpcRequestSnapshot,
-  grpcResponseSnapshot,
-  restRequestSnapshot,
-  restResponseSnapshot,
 } from '@wirebench/engine';
 import { channels, events } from '../../shared/ipc.js';
 import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
 import type {
   AuthConfig,
-  Cookie,
   OAuth2Auth,
-  ProxyOptions,
   RestBody,
   SendAuth,
-  TlsOptions,
   GetSecret,
   PropertyScopes,
   UnresolvedRef,
   WsSessionMaterial,
   WsFrame,
-  WsSessionOptions,
-  GrpcRequestSnapshot,
-  RestRequestSnapshot,
-  ScriptSession,
   SentScripts,
   SoapOwnerAuth,
   SoapSendInput,
 } from '@wirebench/engine';
 import type { ProjectRouter } from '../project-router.js';
-import { isSecretTokenRef, resolveAuthConfig, resolveSoapAuth, resolveWithStoredValues } from '../secret-resolver.js';
+import { isSecretTokenRef, resolveAuthConfig, resolveSoapAuth } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
 import { redactHeaders, redactUrl, redactXml } from '../redact.js';
-import { failedExchangeOf } from '../failed-exchange.js';
 import { AD_HOC_ID, soapOverrideOf } from '../send/draft.js';
-import { extraTrustAnchors, reportSendFailed } from '../send/host.js';
-import { AD_HOC_NAME, recordWs, reportWsHandshakeFailure } from '../send/record.js';
+import { AD_HOC_NAME } from '../send/record.js';
 import {
   ExchangeRegistry,
   previewGrpc,
@@ -81,33 +61,18 @@ import {
   type SendThroughEngineDeps,
   type WsPreview,
 } from '../send/exchange.js';
-import {
-  finishScripts,
-  scriptsFailed,
-  scriptsForSend,
-  sessionValuesFor,
-  startScripts,
-  type SendScripts,
-} from '../script-send.js';
-import type { RestSendResolution } from '../rest-send.js';
-import { webhookSignFor, withSentSigningHeaders, type WebhookUrlSource } from '../webhook-send.js';
-import type { GrpcSendResolution } from '../grpc-send.js';
+import { type SendScripts } from '../script-send.js';
+import { type WebhookUrlSource } from '../webhook-send.js';
 import type { PreflightResult } from '../expansion-preflight.js';
 import { toUnresolvedRefWire, toWsFrameWire } from '../engine-wire.js';
 import type {
-  GrpcExchangeSummary,
   GrpcRequestPatchWire,
-  RequestSendGrpcRequest,
   RestRequestPatchWire,
   UnresolvedRefWire,
   EndpointSourceWire,
-  RequestSendRestRequest,
-  RestExchangeSummary,
   ExchangeSummary,
   HistoryEntryWire,
   FailedExchangeWire,
-  RequestSendRequest,
-  ResolvedSendRequest,
   RequestCurlRequest,
   RequestCurlResponse,
   RequestImportCurlRequest,
@@ -116,12 +81,9 @@ import type {
   RequestPatchWire,
   RequestRecreateRequest,
   RequestRecreateResponse,
-  RequestOpenWsRequest,
   WsExchangeSummary,
-  WsHandshakeWire,
   WsRequestPatchWire,
   LogEntryWire,
-  RestLiveEvent,
 } from '../../shared/wire-types.js';
 import { cancelEnvironmentBatch, sendToEnvironments } from '../multi-env-send.js';
 import { emitEvent } from './events.js';
@@ -130,16 +92,7 @@ import { registerHandler } from './register.js';
 /** The `ProjectRouter` surface the `request.*` channels drive; a stub stands in for it in tests. */
 export type RequestChannelProject = Pick<
   ProjectRouter,
-  | 'scopesFor'
-  | 'preflight'
-  | 'authFor'
-  | 'requestMeta'
-  | 'projectId'
-  | 'projectMutate'
-  | 'requestSource'
-  | 'buildLiveSendInput'
-  | 'sendInputFor'
-  | 'dumpFileFor'
+  'scopesFor' | 'preflight' | 'requestMeta' | 'projectId' | 'projectMutate' | 'requestSource' | 'dumpFileFor'
 > &
   // Optional for the same reason as on `HistorySendProject`: a stub (or an ad-hoc send) that
   // has no saved request behind it has no attachments to carry either.
@@ -150,17 +103,14 @@ export type RequestChannelProject = Pick<
       ProjectRouter,
       | 'sendAttachmentsFor'
       | 'tlsFor'
-      | 'wssFor'
       | 'hasOutgoingWss'
       | 'proxyFor'
-      // The REST half, optional for the same reason: a stub that never sends a REST request needs
-      // none of it.
-      | 'restSend'
       // Read to split an imported cURL URL against the API's own base URL.
       | 'projectSnapshot'
       // Read by *Send to environments…* to name and validate the environments asked for.
       | 'sendEnvironments'
-      | 'restTlsFor'
+      // Whether a SOAP request has an endpoint under an environment, which a send without one refuses.
+      | 'endpointFor'
       | 'rememberRestCookies'
       | 'restMeta'
       // What the send host (send/host.ts) lends the engine: the trust anchors, the client identity,
@@ -176,13 +126,9 @@ export type RequestChannelProject = Pick<
       // Read by the body editor's form view.
       | 'restBodySchema'
       // The gRPC third, optional for the same reason.
-      | 'grpcSend'
-      | 'grpcTlsFor'
       | 'grpcMeta'
       | 'grpcProtoSetFor'
       // The WebSocket fourth, optional for the same reason.
-      | 'wsSend'
-      | 'wsTlsFor'
       | 'wsContractFor'
       | 'wsMeta'
     >
@@ -218,8 +164,7 @@ export interface RequestChannelDeps {
   readonly onHistoryAppended?: (entry: HistoryEntryWire) => void;
   /**
    * Called with the failure row of a send that threw, after History has recorded it, so main can
-   * broadcast `exchange.failed`. Shared with `sendAndRecordHistory`, which reads it off this same
-   * object for the SOAP path.
+   * broadcast `exchange.failed`.
    */
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
   /**
@@ -319,64 +264,12 @@ export function toSendDeps(
   };
 }
 
-/** The token getter for a send of `requestId`: its own project's, or one that finds nothing. */
-function tokenSecrets(deps: Pick<RequestChannelDeps, 'project' | 'secretsFor'>, requestId: string): GetSecret {
-  return deps.secretsFor?.(deps.project.projectId(requestId)) ?? (() => Promise.resolve(undefined));
-}
-
 /**
  * The subset of the session's picked-path memory the dump-file check needs — write picks only.
  * A path merely picked to *read* (the attachments "Add" dialog) must not qualify a Dump File
  * write target; only a path chosen through the Save-as "Browse…" picker does.
  */
 export type DumpFilePicks = { hasWrite(path: string): boolean };
-
-/**
- * Applies the saved request's properties (and the user's preferences) to the input the
- * renderer sent. The renderer owns what is *in* the editor — the envelope being typed, the
- * endpoint it resolved — and the main process owns the knobs around it, so the two are folded
- * together here rather than duplicating the mapping in the renderer. An ad-hoc send, or one
- * whose request has since been deleted, goes out exactly as the renderer built it.
- */
-export async function withRequestProperties(
-  project: RequestChannelProject,
-  request: RequestSendRequest,
-  envId?: string,
-): Promise<ResolvedSendRequest> {
-  if (request.requestId === undefined) {
-    return withExtraTrustAnchors(request);
-  }
-  const mapped = project.sendInputFor(
-    request.requestId,
-    {
-      endpoint: request.input.endpoint,
-      envelopeXml: request.input.envelopeXml,
-      ...(request.input.headers !== undefined ? { headers: { ...request.input.headers } } : {}),
-    },
-    envId,
-  );
-  // The client identity is resolved separately (and asynchronously): it means reading a file
-  // and decrypting a secret, and it must never reach the renderer or the cURL export — which
-  // is exactly why `sendInputFor` stays synchronous and material-free. A selected keystore
-  // that will not load throws here, failing the send loudly rather than quietly going out
-  // without the certificate the user asked for.
-  const tls = await project.tlsFor?.(request.requestId, envId);
-  const input = mapped ?? request.input;
-  return withExtraTrustAnchors({
-    ...request,
-    input: tls === undefined ? input : { ...input, tls: { ...input.tls, ...tls } },
-  });
-}
-
-/** Appends {@link extraTrustAnchors} to a send's `tls.ca`; a no-op outside the e2e suite. */
-function withExtraTrustAnchors(request: ResolvedSendRequest): ResolvedSendRequest {
-  const anchors = extraTrustAnchors();
-  if (anchors.length === 0) {
-    return request;
-  }
-  const tls = request.input.tls;
-  return { ...request, input: { ...request.input, tls: { ...tls, ca: [...(tls?.ca ?? []), ...anchors] } } };
-}
 
 /**
  * Resolves a dump-file target against the project folder and refuses one that would land
@@ -918,288 +811,12 @@ async function importCurlAsRest(
 }
 
 /**
- * Sends one REST request.
- *
- * Everything the renderer did not send is resolved here: the API's base URL under the active
- * environment, the properties, the credentials its folder chain lands on, its TLS identity. A send
- * whose URL is still incomplete — an unfilled `{param}`, an unresolved property — is refused before
- * it reaches the wire, with the problems that explain why.
- */
-/**
- * Exported for `log.resend`, which replays a saved REST request through this same path.
- *
- * `onLive` is passed by the editor's send alone: it is what turns an event-stream response into a
- * live one the renderer shows and can Stop. A resend has no pane registered for its send id, so it
- * omits it and the response is read to its end like any other body.
- */
-export async function sendRestRequest(
-  service: EngineService,
-  deps: RequestChannelDeps,
-  request: RequestSendRestRequest,
-  onLive?: (event: RestLiveEvent) => void,
-  envId?: string,
-): Promise<RestExchangeSummary> {
-  // Type-checked before anything is resolved: a script that does not check never reaches the wire.
-  const scripts = await scriptsForSend(deps, request.requestId);
-  const projectId = deps.project.projectId(request.requestId);
-  const getSecret = tokenSecrets(deps, request.requestId);
-  // With scripts, the secrets stand behind placeholders until the pre-request script has run.
-  const placeholders = scripts.kind === 'on' ? new SecretPlaceholders() : undefined;
-  const found = await resolveWithStoredValues(
-    () => deps.project.restSend?.(request.requestId, request.draft, envId, sessionValuesFor(deps, projectId)),
-    getSecret,
-    placeholders,
-  );
-  if (found === undefined) {
-    throw new ProjectError('unknown-entity', `No REST request with id "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  let resolved = found;
-  if (resolved.unresolved.length > 0) {
-    throw new WirebenchError('rest-unresolved-properties', 'Some property references could not be resolved', {
-      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
-    });
-  }
-
-  // The one query parameter an API key may be configured to travel in, so the URL is masked
-  // wherever it is logged even when the key is called something this build has never heard of.
-  const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
-  // And the header one may travel in, masked by name wherever the request's headers are shown.
-  const keyHeaders =
-    resolved.auth.type === 'api-key' && resolved.auth.in === 'header' ? [resolved.auth.name] : undefined;
-  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
-  let input: typeof resolved.input;
-  let sign: (typeof resolved.input)['sign'];
-  let accessToken: string | undefined;
-  let session: ScriptSession | undefined;
-  let scripted: RestRequestSnapshot | undefined;
-  try {
-    // The pre-request script, before the credentials, the TLS identity and the proxy are settled.
-    if (scripts.kind === 'on' && placeholders !== undefined) {
-      session = await startScripts(deps, scripts, deps.project.scopesFor(request.requestId, envId), getSecret);
-      const before = restRequestSnapshot(resolved.input);
-      scripted = await session.pre(before);
-      const changed = applyRestSnapshot(resolved.input, before, scripted);
-      const restored = await placeholders.restore({ baseUrl: changed.baseUrl, request: changed.request }, getSecret);
-      resolved = { ...resolved, input: { ...changed, ...restored } };
-    }
-    const tls = await deps.project.restTlsFor?.(request.requestId);
-    const anchors = extraTrustAnchors();
-    const baseCa = tls?.ca ?? resolved.input.tls?.ca ?? [];
-    const mergedTls = withoutUndefined<TlsOptions>({
-      ...resolved.input.tls,
-      ...tls,
-      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-    });
-    const owner = deps.project.projectId(request.requestId);
-    const proxyTarget = resolved.input.baseUrl === '' ? resolved.input.request.url : resolved.input.baseUrl;
-    const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
-    const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
-    // Signing is computed by the engine over the encoded body (§5.2); here it only gets its secret,
-    // inside the prepare stage so a missing one is logged as a send that never went out.
-    sign = await webhookSignFor(resolved.webhookSigning, getSecret);
-    input = {
-      ...resolved.input,
-      tls: mergedTls,
-      ...(proxy !== undefined ? { proxy } : {}),
-      ...(sign !== undefined ? { sign } : {}),
-    };
-
-    // The token is obtained here rather than inside the engine service: it needs a browser, a
-    // loopback listener and a cache, none of which the engine may own. A grant that would have to
-    // open a window refuses instead, and the user presses *Get new token*.
-    accessToken =
-      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-        ? await deps.oauth2.accessToken(resolved.auth, {
-            credentials: await oauth2Credentials(deps, resolved.auth),
-            ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
-            ...(proxy !== undefined ? { proxy } : {}),
-          })
-        : undefined;
-  } catch (error) {
-    // Before the request was built: a bad URL, a proxy lookup, an OAuth2 token fetch. The row says
-    // it never went on the wire; History is not written (nothing was sent).
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'rest',
-        requestId: request.requestId,
-        url: joinedOrConcat(resolved.input.baseUrl, resolved.input.request.url),
-        method: resolved.input.request.method,
-        headers: {},
-        startedAt: prepareStartedAt,
-        durationMs: Date.now() - prepareStartedAt,
-        error,
-        stage: 'prepare',
-        keyParams,
-        keyHeaders,
-      }),
-    );
-    throw error;
-  }
-
-  // Asked before the send, so the definition cache is read while the request is on the wire.
-  const contract = deps.project.restContractFor?.(request.requestId, {
-    method: resolved.input.request.method,
-    url: resolved.input.request.url,
-  });
-  // Handled here too: a cache that fails to read while the send itself fails is never awaited.
-  contract?.catch(() => undefined);
-  const startedAt = Date.now();
-  // The post-response script, on the exchange as it arrives: before the summary, the log row and
-  // the History entry exist, so a value it marks secret is masked in all three.
-  let ran: SentScripts | undefined;
-  const pending = session === undefined || scripted === undefined ? undefined : { session, sent: scripted };
-  const stopObserving =
-    pending === undefined
-      ? undefined
-      : service.observe(request.sendId, async (observed) => {
-          if (observed.kind !== 'rest') return;
-          ran = await pending.session.post(pending.sent, restResponseSnapshot(observed.exchange)).catch(scriptsFailed);
-        });
-  try {
-    const sent = await service.sendRestRequest(
-      { sendId: request.sendId, requestId: request.requestId, input },
-      {
-        showSecrets: deps.showSecrets?.get() ?? false,
-        auth: resolved.auth,
-        ...(accessToken !== undefined ? { accessToken } : {}),
-        ...(keyParams !== undefined ? { keyParams } : {}),
-        ...(keyHeaders !== undefined ? { keyHeaders } : {}),
-        ...(onLive !== undefined ? { onLive } : {}),
-        ...(contract !== undefined ? { contract } : {}),
-      },
-    );
-    const summary: RestExchangeSummary = {
-      ...sent,
-      ...(ran !== undefined ? finishScripts(deps, projectId, ran) : {}),
-      ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
-    };
-    deps.project.rememberRestCookies?.(
-      request.requestId,
-      summary.cookies.map((cookie) => withoutUndefined<Cookie>(cookie)),
-    );
-    // History keeps the signing headers as they went out, so its resend replays them (R1).
-    const recorded =
-      sign === undefined
-        ? resolved
-        : { ...resolved, input: withSentSigningHeaders(resolved.input, sign.scheme, summary.http.request.headers) };
-    await recordRest(deps, request.requestId, recorded, summary, Date.now() - startedAt, keyParams);
-    return summary;
-  } catch (error) {
-    const durationMs = Date.now() - startedAt;
-    await recordRest(deps, request.requestId, resolved, undefined, durationMs, keyParams, error);
-    // The failure row for the console's HTTP Log. When the transport got as far as building the
-    // request, the error carries it (final URL with path params and query, auth applied) and the
-    // row shows that; otherwise the base joined with the path and the enabled header rows. Either
-    // way it is redacted for good; `keyParams` masks the query parameter an API key travels in.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'rest',
-        requestId: request.requestId,
-        url: joinBase(resolved.input.baseUrl, resolved.input.request.url),
-        method: resolved.input.request.method,
-        headers: Object.fromEntries(
-          resolved.input.request.headers
-            .filter((header) => header.enabled)
-            .map((header) => [header.name, header.value]),
-        ),
-        startedAt,
-        durationMs,
-        error,
-        captured: failedRequestOf(error),
-        keyParams,
-        keyHeaders,
-      }),
-    );
-    throw error;
-  } finally {
-    stopObserving?.();
-  }
-}
-
-/** The base joined with the path, or the two texts side by side when the base does not parse. */
-function joinedOrConcat(baseUrl: string, path: string): string {
-  try {
-    return joinBase(baseUrl, path);
-  } catch {
-    return `${baseUrl}${path}`;
-  }
-}
-
-/** Appends one REST send's history entry, successful or not. A no-op without a history service. */
-async function recordRest(
-  deps: RequestChannelDeps,
-  requestId: string,
-  resolved: RestSendResolution,
-  summary: RestExchangeSummary | undefined,
-  durationMs: number,
-  keyParams: readonly string[] | undefined,
-  error?: unknown,
-): Promise<void> {
-  const projectId = deps.project.projectId(requestId);
-  if (deps.history === undefined || projectId === undefined) {
-    return;
-  }
-  const meta = deps.project.restMeta?.(requestId);
-  const body = resolved.input.request.body;
-  const entry = await deps.history.recordRestSend(projectId, {
-    requestId,
-    requestName: meta?.requestName ?? resolved.request.name,
-    apiName: meta?.apiName ?? resolved.api.name,
-    folderPath: meta?.folderPath ?? '',
-    method: resolved.input.request.method,
-    url: summary?.url ?? resolved.input.baseUrl,
-    requestHeaders: Object.fromEntries(
-      resolved.input.request.headers.filter((header) => header.enabled).map((header) => [header.name, header.value]),
-    ),
-    requestBody: body.kind === 'raw' ? body.text : '',
-    ...(summary !== undefined ? { exchange: summary } : {}),
-    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
-    durationMs,
-    ...(keyParams !== undefined ? { keyParams } : {}),
-    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
-  });
-  if (entry !== undefined) {
-    deps.onHistoryAppended?.(entry);
-  }
-}
-
-/**
  * The access token already cached for `config`, if one is still valid — never a new one. An export
  * must not open a browser or call a token endpoint behind the user's back.
  */
 function cachedAccessToken(deps: RequestChannelDeps, config: OAuth2Auth): string | undefined {
   const status = deps.oauth2?.status?.(config, { showSecrets: true });
   return status?.state === 'valid' ? status.token : undefined;
-}
-
-/** The client secret and remembered refresh token an OAuth2 token request needs, if any. */
-async function oauth2Credentials(
-  deps: RequestChannelDeps,
-  config: OAuth2Auth,
-): Promise<{ readonly clientSecret?: string; readonly refreshToken?: string }> {
-  const read = async (ref: string | undefined): Promise<string | undefined> =>
-    ref === undefined || ref === '' ? undefined : await deps.getSecret?.(ref);
-  const clientSecret = await read(config.clientSecretRef);
-  const refreshToken = await read(config.refreshTokenRef);
-  return {
-    ...(clientSecret !== undefined ? { clientSecret } : {}),
-    ...(refreshToken !== undefined ? { refreshToken } : {}),
-  };
-}
-
-/**
- * Drops the keys whose value came over as `undefined`.
- *
- * The wire's TLS shape has optional fields that may be present-and-undefined; the engine's has
- * fields that must be absent instead (`exactOptionalPropertyTypes`), and merging the two is exactly
- * where the difference bites.
- */
-function withoutUndefined<T extends object>(value: { readonly [K in keyof T]: T[K] | undefined }): T {
-  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }
 
 /**
@@ -1345,265 +962,6 @@ async function wsCommand(
   return { command, notes };
 }
 
-/**
- * Makes one gRPC call.
- *
- * Everything the renderer did not send is resolved here: the API's target under the active
- * environment, the properties, the credentials the folder chain lands on, the TLS identity, and the
- * `.proto` set the message is encoded against. A call with an unresolved property is refused before
- * it reaches the wire.
- */
-/** Exported for `log.resend`, which replays a saved unary gRPC request through this same path. */
-export async function sendGrpcRequest(
-  service: EngineService,
-  deps: RequestChannelDeps,
-  request: RequestSendGrpcRequest,
-  sender: WebContents,
-): Promise<GrpcExchangeSummary> {
-  // As for REST: checked first, resolved with placeholders, the pre-request script before auth and TLS.
-  const scripts = await scriptsForSend(deps, request.requestId);
-  const projectId = deps.project.projectId(request.requestId);
-  const getSecret = tokenSecrets(deps, request.requestId);
-  const placeholders = scripts.kind === 'on' ? new SecretPlaceholders() : undefined;
-  const found = await resolveWithStoredValues(
-    () => deps.project.grpcSend?.(request.requestId, request.draft, sessionValuesFor(deps, projectId)),
-    getSecret,
-    placeholders,
-  );
-  if (found === undefined) {
-    throw new ProjectError('unknown-entity', `No gRPC request with id "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  let resolved = found;
-  if (resolved.unresolved.length > 0) {
-    throw new WirebenchError('grpc-unresolved-properties', 'Some property references could not be resolved', {
-      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
-    });
-  }
-  if (resolved.request.service === '' || resolved.request.method === '') {
-    throw new WirebenchError('grpc-method-unset', 'Choose the service and method this request calls first.', {
-      details: { requestId: request.requestId },
-    });
-  }
-  if (deps.project.grpcProtoSetFor === undefined) {
-    throw new ProjectError('unknown-entity', `No gRPC API owns "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
-  let set: Awaited<ReturnType<typeof deps.project.grpcProtoSetFor>>;
-  let tlsOptions: TlsOptions;
-  let accessToken: string | undefined;
-  let session: ScriptSession | undefined;
-  let scripted: GrpcRequestSnapshot | undefined;
-  try {
-    if (scripts.kind === 'on' && placeholders !== undefined) {
-      session = await startScripts(deps, scripts, deps.project.scopesFor(request.requestId), getSecret);
-      const before = grpcRequestSnapshot(resolved.input, resolved.messageText);
-      scripted = await session.pre(before);
-      const changed = applyGrpcSnapshot(resolved.input, resolved.messageText, before, scripted);
-      const restored = await placeholders.restore(
-        { metadata: changed.input.metadata, messageText: changed.messageText },
-        getSecret,
-      );
-      resolved = {
-        ...resolved,
-        input: { ...resolved.input, metadata: restored.metadata },
-        messageText: restored.messageText,
-      };
-    }
-    set = await deps.project.grpcProtoSetFor(request.requestId);
-
-    const tls = await deps.project.grpcTlsFor?.(request.requestId);
-    const anchors = extraTrustAnchors();
-    const baseCa = tls?.ca ?? resolved.input.tlsOptions?.ca ?? [];
-    tlsOptions = withoutUndefined<TlsOptions>({
-      ...resolved.input.tlsOptions,
-      ...tls,
-      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-    });
-    accessToken =
-      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-        ? await deps.oauth2.accessToken(resolved.auth, {
-            credentials: await oauth2Credentials(deps, resolved.auth),
-            tls: tlsOptions,
-          })
-        : undefined;
-  } catch (error) {
-    // Before the call was built: the .proto set, the TLS identity, an OAuth2 token fetch.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'grpc',
-        requestId: request.requestId,
-        url: `${resolved.input.tls ? 'https' : 'http'}://${resolved.input.target}${grpcMethodPath(
-          resolved.input.service,
-          resolved.input.method,
-        )}`,
-        method: 'POST',
-        headers: {},
-        startedAt: prepareStartedAt,
-        durationMs: Date.now() - prepareStartedAt,
-        error,
-        stage: 'prepare',
-      }),
-    );
-    throw error;
-  }
-
-  const startedAt = Date.now();
-  let ran: SentScripts | undefined;
-  const pending = session === undefined || scripted === undefined ? undefined : { session, sent: scripted };
-  const stopObserving =
-    pending === undefined
-      ? undefined
-      : service.observe(request.sendId, async (observed) => {
-          if (observed.kind !== 'grpc') return;
-          ran = await pending.session.post(pending.sent, grpcResponseSnapshot(observed.result)).catch(scriptsFailed);
-        });
-  try {
-    const sent = await service.sendGrpcRequest(
-      {
-        sendId: request.sendId,
-        requestId: request.requestId,
-        set,
-        input: { ...resolved.input, tlsOptions },
-        messageText: resolved.messageText,
-      },
-      {
-        showSecrets: deps.showSecrets?.get() ?? false,
-        auth: resolved.auth,
-        ...(accessToken !== undefined ? { accessToken } : {}),
-        ...(request.interactive === true ? { interactive: true } : {}),
-        // The stream as it happens, alongside the invoke that is still open and will resolve with
-        // the whole exchange. A window that has gone away swallows its own events.
-        onLive: (event) => {
-          emitEvent(sender, events.grpc.live, event);
-        },
-      },
-    );
-    const summary: GrpcExchangeSummary = {
-      ...sent,
-      ...(ran !== undefined ? finishScripts(deps, projectId, ran) : {}),
-      ...(scripts.kind === 'off' ? { scriptsOff: true } : {}),
-    };
-    await recordGrpc(deps, request.requestId, resolved, summary, Date.now() - startedAt);
-    return summary;
-  } catch (error) {
-    const durationMs = Date.now() - startedAt;
-    await recordGrpc(deps, request.requestId, resolved, undefined, durationMs, error);
-    // The failure row for the console's HTTP Log. A gRPC call is an HTTP/2 POST to
-    // `/<service>/<method>`; when the transport built the request the error carries it and the row
-    // shows that instead. Redacted for good, like every other failure row.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'grpc',
-        requestId: request.requestId,
-        url: `${resolved.input.tls ? 'https' : 'http'}://${resolved.input.target}${grpcMethodPath(
-          resolved.input.service,
-          resolved.input.method,
-        )}`,
-        method: 'POST',
-        headers: Object.fromEntries(
-          resolved.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
-        ),
-        startedAt,
-        durationMs,
-        error,
-        captured: failedRequestOf(error),
-      }),
-    );
-    throw error;
-  } finally {
-    stopObserving?.();
-  }
-}
-
-/** Appends one gRPC send's history entry, successful or not. A no-op without a history service. */
-async function recordGrpc(
-  deps: RequestChannelDeps,
-  requestId: string,
-  resolved: GrpcSendResolution,
-  summary: GrpcExchangeSummary | undefined,
-  durationMs: number,
-  error?: unknown,
-): Promise<void> {
-  const projectId = deps.project.projectId(requestId);
-  if (deps.history === undefined || projectId === undefined) {
-    return;
-  }
-  const meta = deps.project.grpcMeta?.(requestId);
-  const entry = await deps.history.recordGrpcSend(projectId, {
-    requestId,
-    requestName: meta?.requestName ?? resolved.request.name,
-    apiName: meta?.apiName ?? resolved.api.name,
-    folderPath: meta?.folderPath ?? '',
-    target: summary?.target ?? resolved.input.target,
-    service: resolved.request.service,
-    method: resolved.request.method,
-    methodKind: resolved.request.methodKind,
-    requestMetadata: Object.fromEntries(
-      resolved.input.metadata.filter((row) => row.enabled).map((row) => [row.name, row.value]),
-    ),
-    requestMessage: resolved.messageText,
-    ...(summary !== undefined ? { exchange: summary } : {}),
-    ...(error !== undefined ? { error: restErrorDetail(error) } : {}),
-    durationMs,
-    ...(meta?.tags !== undefined ? { tags: meta.tags } : {}),
-  });
-  if (entry !== undefined) {
-    deps.onHistoryAppended?.(entry);
-  }
-}
-
-/**
- * The HTTP Log's row for a successful WebSocket handshake, written the moment it settles — not
- * when the session closes, since `request.openWs` stays pending for the whole session. Reported
- * through `deps.onExchange`, the live twin `onSendFailed` is for a send whose own invoke never
- * leaves main until long after the row should appear.
- *
- * Only ever called with a `status === 101` handshake: the engine's `onHandshake` hook (which this
- * is driven by, through `ws.live`'s `handshake` event) fires only for a handshake that actually
- * completed — a refused or failed one reaches `openWsRequest` solely through the settled
- * `summary` (see `reportWsHandshakeFailure`, called there instead).
- */
-function reportWsHandshake(
-  deps: RequestChannelDeps,
-  sendId: string,
-  requestId: string,
-  handshake: WsHandshakeWire,
-): void {
-  if (deps.onExchange === undefined) {
-    return;
-  }
-  const entry: LogEntryWire = {
-    kind: 'exchange',
-    requestId,
-    exchange: {
-      sendId,
-      protocol: 'websocket',
-      method: 'GET',
-      // `http(s)://` so the row filters/searches like every other; `wsUrl` keeps `ws(s)://` for display.
-      url: handshake.url.replace(/^ws/, 'http'),
-      wsUrl: handshake.url,
-      requestHeaders: handshake.requestHeaders,
-      ...(handshake.rawRequestHead !== undefined ? { rawRequestHead: handshake.rawRequestHead } : {}),
-      status: 101,
-      responseHeaders: handshake.responseHeaders ?? {},
-      startedAt: handshake.startedAt,
-      durationMs: handshake.durationMs,
-      ...(handshake.tls !== undefined ? { tls: handshake.tls } : {}),
-    },
-  };
-  try {
-    deps.onExchange(entry);
-  } catch {
-    // Deliberately ignored — a broadcast that fails must never affect the session, like `onSendFailed`'s own catch.
-  }
-}
-
 /** What a push on a call that is not open, or never was, is refused with. */
 const GRPC_STREAM_UNKNOWN_MESSAGE = 'That call is no longer open for sending.';
 
@@ -1645,10 +1003,10 @@ function wsDisplayUrl(input: {
 }
 
 /**
- * The `openWsRequest` calls still running: one per open session, each settling only once its
+ * The `request.openWs` sends still running: one per open session, each settling only once its
  * History entry has been written.
  *
- * A session's History entry is written by whoever awaits `openWsSession`, which is the pending
+ * A session's History entry is written by whoever awaits the session, which is the pending
  * `request.openWs` invoke — so closing a session is not the same as having recorded it. The two
  * moments that close sessions on the app's behalf (quitting, and closing a project) must wait for
  * the recording, or the entry is written into a history file that has already been closed, or not
@@ -1751,146 +1109,6 @@ function trackOpenWs(requestId: string, call: Promise<WsExchangeSummary>): Promi
   return call;
 }
 
-/**
- * Opens one WebSocket session the way the app did before its sessions went through the engine.
- * Kept only for the test that compares the two paths' History rows; Task 17 deletes it.
- *
- * Everything the renderer did not send is resolved here: the API's target under the active
- * environment, the properties, the credentials the folder chain lands on, the TLS identity and the
- * proxy (looked up against the resolved URL with `ws:`/`wss:` mapped to `http:`/`https:`, exactly as
- * REST looks its proxy up). A call with an unresolved property is refused before it reaches the wire.
- * The invoke stays pending for the life of the session — `service.openWsSession`'s `done` only
- * settles once the socket has closed — while `events.ws.live` reports the handshake and each frame
- * as they happen.
- */
-export async function openWsRequest(
-  service: EngineService,
-  deps: RequestChannelDeps,
-  request: RequestOpenWsRequest,
-  sender: WebContents,
-): Promise<WsExchangeSummary> {
-  const resolved = await resolveWithStoredValues(
-    () => deps.project.wsSend?.(request.requestId, request.draft),
-    tokenSecrets(deps, request.requestId),
-  );
-  if (resolved === undefined) {
-    throw new ProjectError('unknown-entity', `No WebSocket request with id "${request.requestId}"`, {
-      details: { requestId: request.requestId },
-    });
-  }
-  if (resolved.unresolved.length > 0) {
-    throw new WirebenchError('ws-unresolved-properties', 'Some property references could not be resolved', {
-      details: { unresolved: resolved.unresolved.map((ref) => ref.expr) },
-    });
-  }
-
-  // The one query parameter an API key may be configured to travel in, so the URL is masked
-  // wherever it is logged even when the key is called something this build has never heard of —
-  // the same rule REST's `sendRestRequest` applies to its own `keyParams`.
-  const keyParams = resolved.auth.type === 'api-key' && resolved.auth.in === 'query' ? [resolved.auth.name] : undefined;
-  const prepareStartedAt = Date.now(); // log-only: a prepare row's duration, never History's
-  let options: Omit<WsSessionOptions, 'signal'>;
-  try {
-    const tls = await deps.project.wsTlsFor?.(request.requestId);
-    const anchors = extraTrustAnchors();
-    const baseCa = tls?.ca ?? [];
-    const mergedTls = withoutUndefined<TlsOptions>({
-      ...tls,
-      ...(anchors.length > 0 ? { ca: [...baseCa, ...anchors] } : {}),
-    });
-    const owner = deps.project.projectId(request.requestId);
-    const resolvedUrl = wsDisplayUrl(resolved.input);
-    const proxyTarget = resolvedUrl.replace(/^ws/, 'http');
-    const wireProxy = owner === undefined ? undefined : await deps.project.proxyFor?.(owner, proxyTarget);
-    const proxy = wireProxy === undefined ? undefined : withoutUndefined<ProxyOptions>(wireProxy);
-    const accessToken =
-      resolved.auth.type === 'oauth2' && deps.oauth2 !== undefined
-        ? await deps.oauth2.accessToken(resolved.auth, {
-            credentials: await oauth2Credentials(deps, resolved.auth),
-            ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
-            ...(proxy !== undefined ? { proxy } : {}),
-          })
-        : undefined;
-    const auth = await resolveAuthConfig(
-      resolved.auth,
-      (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined),
-      accessToken !== undefined ? { accessToken } : {},
-    );
-    const material: WsSessionMaterial = {
-      ...(auth !== undefined ? { auth } : {}),
-      ...(mergedTls !== undefined ? { tls: mergedTls } : {}),
-      ...(proxy !== undefined ? { proxy } : {}),
-    };
-    options = toWsSessionOptions(resolved.input, material);
-  } catch (error) {
-    // Before the session was opened: the TLS identity, a proxy lookup, an OAuth2 token fetch.
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'websocket',
-        requestId: request.requestId,
-        url: wsDisplayUrl(resolved.input),
-        method: 'GET',
-        headers: {},
-        startedAt: prepareStartedAt,
-        durationMs: Date.now() - prepareStartedAt,
-        error,
-        stage: 'prepare',
-        keyParams,
-      }),
-    );
-    throw error;
-  }
-
-  const startedAt = Date.now();
-  // Set by the live `handshake` event, which only ever fires for one that actually opened (see
-  // `reportWsHandshake`'s doc) — the one fact that decides which of the two rows below is written,
-  // rather than re-deriving it from `summary.handshake.status`, which is *optional* (e.g. absent
-  // through a proxy tunnel) and so cannot itself tell a success from a refusal.
-  let handshakeLogged = false;
-  // Asked for, never awaited: the contract loads while the handshake runs, and a session never
-  // waits on it (see `openWsSession`'s `contract`).
-  const contract = deps.project.wsContractFor?.(request.requestId);
-  try {
-    const summary = await service.openWsSession(
-      { sendId: request.sendId, requestId: request.requestId, options },
-      {
-        showSecrets: deps.showSecrets?.get() ?? false,
-        ...(contract !== undefined ? { contract } : {}),
-        ...(keyParams !== undefined ? { keyParams } : {}),
-        onLive: (event) => {
-          if (event.kind === 'handshake') {
-            // Only ever a `status === 101` handshake — see `reportWsHandshake`'s own doc.
-            handshakeLogged = true;
-            reportWsHandshake(deps, request.sendId, request.requestId, event.handshake);
-          }
-          emitEvent(sender, events.ws.live, event);
-        },
-      },
-    );
-    reportWsHandshakeFailure(deps, request.sendId, request.requestId, summary, keyParams, handshakeLogged);
-    await recordWs(deps, resolved, summary, keyParams, handshakeLogged);
-    return summary;
-  } catch (error) {
-    const durationMs = Date.now() - startedAt;
-    reportSendFailed(deps.onSendFailed, () =>
-      failedExchangeOf({
-        sendId: request.sendId,
-        protocol: 'websocket',
-        requestId: request.requestId,
-        url: options.url,
-        method: 'GET',
-        headers: options.headers ?? {},
-        startedAt,
-        durationMs,
-        error,
-        keyParams,
-      }),
-    );
-    throw error;
-  }
-}
-
 /** `true` when `text` is strictly valid base64 (including the empty string). */
 function isValidBase64(text: string): boolean {
   return text.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(text);
@@ -1916,14 +1134,6 @@ async function preflightWs(
     auth: preflightAuth(resolved.auth),
     wsa: { enabled: false },
   };
-}
-
-/** One failure, as a history line records it. */
-function restErrorDetail(error: unknown): { code: string; message: string } {
-  if (isWirebenchError(error)) {
-    return { code: error.code, message: error.message };
-  }
-  return { code: 'internal-error', message: error instanceof Error ? error.message : String(error) };
 }
 
 /**

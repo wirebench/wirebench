@@ -1,8 +1,8 @@
 /**
  * What a sequence step's request is, as the step list and the Add-step picker show it: its name, a
  * protocol badge, the path to it, and whether a run can send it. Mirrors the engine's
- * `findStepRequest`: a WebSocket request, a streaming gRPC call and an orphaned request cannot be
- * steps, and an id that is gone is a missing request.
+ * `findStepRequest`: a WebSocket request and an orphaned request cannot be steps, and an id that is
+ * gone is a missing request.
  */
 import type { useProjectStore } from '../../state/project.js';
 
@@ -50,11 +50,8 @@ export function stepRequestInfo(state: ProjectState, requestId: string): StepReq
       name: grpc.name,
       badge: 'gRPC',
       path: `${state.grpcApis[grpc.apiId]?.name ?? ''}/${grpc.service}/${grpc.method}`,
-      ...(grpc.methodKind !== 'unary'
-        ? { unsupported: 'A streaming gRPC call cannot be a step; only unary calls can' }
-        : grpc.orphaned === true
-          ? { unsupported: 'This request is no longer in its contract' }
-          : {}),
+      // A streaming call runs as a step too: to its end, or until the step's timeout cuts it.
+      ...(grpc.orphaned === true ? { unsupported: 'This request is no longer in its contract' } : {}),
     };
   }
   const ws = state.wsRequests[requestId];

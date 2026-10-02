@@ -27,8 +27,7 @@ import { registerHistoryChannels } from '../src/main/ipc/history.js';
 import { registerLogChannels } from '../src/main/ipc/log.js';
 import { toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
-import { resolveWebhookSend } from '../src/main/webhook-send.js';
-import type { HistoryEntryWire, RestRequestPatchWire } from '../src/shared/wire-types.js';
+import type { HistoryEntryWire } from '../src/shared/wire-types.js';
 
 const handlers = new Map<string, (event: unknown, payload: unknown) => Promise<unknown>>();
 
@@ -109,21 +108,11 @@ function harness(model: Project, keychain: Record<string, string>) {
     },
     get: (id: string) => entries.find((candidate) => candidate.id === id),
   };
-  const restSend = (requestId: string, draft?: RestRequestPatchWire) =>
-    resolveWebhookSend({
-      project: box.model,
-      projectId: 'p1',
-      requestId,
-      scopes: { project: {}, global: {}, system: {} },
-      newest: () => undefined,
-      ...(draft !== undefined ? { draft } : {}),
-    });
   const requestDeps: RequestChannelDeps = {
     project: {
       projectId: () => 'p1',
-      restSend,
       restMeta: () => undefined,
-      runContextFor: () => ({ project: box.model, projectDir: '/tmp/none' }),
+      runContextFor: () => ({ project: box.model, projectDir: '/tmp/none', globals: {} }),
       scopesFor: () => ({ project: {}, global: {}, system: {} }),
     } as unknown as RequestChannelDeps['project'],
     history: history as unknown as HistoryService,
@@ -131,7 +120,7 @@ function harness(model: Project, keychain: Record<string, string>) {
   };
   const sendDeps = toSendDeps(engine, requestDeps);
   registerHistoryChannels(history as never, {
-    project: { projectId: () => 'p1', buildLiveSendInput: () => undefined, restSend },
+    project: { projectId: () => 'p1' },
     send: sendDeps,
   });
   registerLogChannels({

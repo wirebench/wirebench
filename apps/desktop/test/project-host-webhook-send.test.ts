@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * `ProjectHost` sending a webhook item: `restSend` routes an id the APIs do not hold to the webhook
- * collection, `restMeta` names it for History, `restAuthOf` answers for the collection, and the
+ * `ProjectHost` sending a webhook item: its send (`previewRest`) routes an id the APIs do not hold
+ * to the webhook collection, `restMeta` names it for History, `restAuthOf` answers for the collection, and the
  * contract checker never runs for it.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
+import { ExchangeRegistry, previewRest, type SendThroughEngineDeps } from '../src/main/send/exchange.js';
 import { webhookCollectionId } from '../src/main/webhook-ids.js';
 
 let dir: string;
@@ -52,10 +53,22 @@ async function webhookItem(): Promise<{ projectId: string; requestId: string }> 
   return { projectId: project?.id as string, requestId: project?.webhooks?.folders[0]?.requests[0]?.id as string };
 }
 
+/** `requestId` resolved as the host's send would resolve it. */
+const resolve = (requestId: string) =>
+  previewRest(
+    {
+      service: new EngineService(),
+      registry: new ExchangeRegistry(),
+      project: host as unknown as SendThroughEngineDeps['project'],
+    },
+    requestId,
+    undefined,
+  );
+
 describe('ProjectHost sending a webhook item', () => {
   it('resolves the send against the collection target, with the collection credentials', async () => {
     const { requestId } = await webhookItem();
-    const resolution = host.restSend(requestId);
+    const resolution = await resolve(requestId);
     expect(resolution?.input.baseUrl).toBe('https://receiver.test/in');
     expect(resolution?.input.request.url).toBe('/paid');
     expect(resolution?.baseUrlSource).toBe('target');
@@ -65,7 +78,7 @@ describe('ProjectHost sending a webhook item', () => {
   it('refuses a target left empty', async () => {
     const { requestId } = await webhookItem();
     await host.mutate({ kind: 'set-project-property', name: 'webhookTarget', value: '' });
-    expect(() => host.restSend(requestId)).toThrow(expect.objectContaining({ code: 'webhook-target-missing' }));
+    await expect(resolve(requestId)).rejects.toMatchObject({ code: 'webhook-target-missing' });
   });
 
   it('names the item for History and never checks it against a contract', async () => {

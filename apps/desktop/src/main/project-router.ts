@@ -91,23 +91,17 @@ export interface ProjectRouter {
   /** The property scopes a send expands against, resolved for the request's own project. */
   scopesFor(requestId: string, ...args: Parameters<ProjectHost['scopesFor']>): ReturnType<ProjectHost['scopesFor']>;
   preflight(...args: Parameters<ProjectHost['preflight']>): ReturnType<ProjectHost['preflight']>;
-  authFor(...args: Parameters<ProjectHost['authFor']>): ReturnType<ProjectHost['authFor']>;
   requestMeta(...args: Parameters<ProjectHost['requestMeta']>): ReturnType<ProjectHost['requestMeta']>;
   requestSource(...args: Parameters<ProjectHost['requestSource']>): ReturnType<ProjectHost['requestSource']>;
-  buildLiveSendInput(
-    ...args: Parameters<ProjectHost['buildLiveSendInput']>
-  ): ReturnType<ProjectHost['buildLiveSendInput']>;
-  sendInputFor(...args: Parameters<ProjectHost['sendInputFor']>): ReturnType<ProjectHost['sendInputFor']>;
   sendAttachmentsFor(
     ...args: Parameters<ProjectHost['sendAttachmentsFor']>
   ): ReturnType<ProjectHost['sendAttachmentsFor']>;
+  /** The endpoint a SOAP request is sent to under an environment; none when nothing resolves one. */
+  endpointFor(...args: Parameters<ProjectHost['endpointFor']>): ReturnType<ProjectHost['endpointFor']>;
   dumpFileFor(...args: Parameters<ProjectHost['dumpFileFor']>): ReturnType<ProjectHost['dumpFileFor']>;
   tlsFor(...args: Parameters<ProjectHost['tlsFor']>): ReturnType<ProjectHost['tlsFor']>;
   /** The environments a request can be sent under: its workspace's, else its project's. */
   sendEnvironments(requestId: string): ReturnType<ProjectHost['sendEnvironments']>;
-
-  /** Resolves one REST send: base URL, expansion, credentials as refs, settings. */
-  restSend(...args: Parameters<ProjectHost['restSend']>): ReturnType<ProjectHost['restSend']>;
 
   /** The TLS material a REST send needs: anchors, client identity, its own trust decision. */
   restTlsFor(...args: Parameters<ProjectHost['restTlsFor']>): ReturnType<ProjectHost['restTlsFor']>;
@@ -138,10 +132,6 @@ export interface ProjectRouter {
     ...args: Parameters<ProjectHost['rememberRestCookies']>
   ): ReturnType<ProjectHost['rememberRestCookies']>;
 
-  /** Resolves one gRPC call: target, expansion, credentials as refs, settings. */
-  grpcSend(...args: Parameters<ProjectHost['grpcSend']>): ReturnType<ProjectHost['grpcSend']>;
-  /** The TLS material a gRPC call needs: anchors, client identity, its own trust decision. */
-  grpcTlsFor(...args: Parameters<ProjectHost['grpcTlsFor']>): ReturnType<ProjectHost['grpcTlsFor']>;
   /** What History names a gRPC send by: the request, its API, and its folder path. */
   grpcMeta(...args: Parameters<ProjectHost['grpcMeta']>): ReturnType<ProjectHost['grpcMeta']>;
   /** The credentials configured on one gRPC API, folder or request — its own, not its chain's. */
@@ -160,13 +150,8 @@ export interface ProjectRouter {
   ): ReturnType<ProjectHost['refreshGrpcDefinition']>;
   /** The messages of a WebSocket request's contract channel, for checking its live frames. */
   wsContractFor(...args: Parameters<ProjectHost['wsContractFor']>): ReturnType<ProjectHost['wsContractFor']>;
-  /** The TLS material a WebSocket call needs: anchors, client identity, its own trust decision. */
-  wsTlsFor(...args: Parameters<ProjectHost['wsTlsFor']>): ReturnType<ProjectHost['wsTlsFor']>;
   /** What History names a WebSocket send by: the request, its API, and its folder path. */
   wsMeta(...args: Parameters<ProjectHost['wsMeta']>): ReturnType<ProjectHost['wsMeta']>;
-  /** Resolves one WebSocket call: target, expansion, credentials as refs, settings. */
-  wsSend(...args: Parameters<ProjectHost['wsSend']>): ReturnType<ProjectHost['wsSend']>;
-  wssFor(...args: Parameters<ProjectHost['wssFor']>): ReturnType<ProjectHost['wssFor']>;
   hasOutgoingWss(...args: Parameters<ProjectHost['hasOutgoingWss']>): ReturnType<ProjectHost['hasOutgoingWss']>;
   validationTargetFor(
     ...args: Parameters<ProjectHost['validationTargetFor']>

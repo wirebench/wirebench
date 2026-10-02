@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The gRPC send path in main: the resolver's target, chain and expansion; a send through the engine
+ * The gRPC send path in main: the target, chain and expansion a send resolves (`previewGrpc`); a send through the engine
  * against a real gRPC server with credentials from the store, redacted on the way back; and the
  * history line.
  */
@@ -8,9 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startTestGrpcServer, type TestGrpcServer } from '@wirebench/engine/test-helpers';
 import { createGrpcApi, createGrpcFolder, createGrpcRequest, createProject, entry } from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
-import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import { buildGrpcHistoryEntry } from '../src/main/history-service.js';
-import { sendThroughEngine } from '../src/main/send/exchange.js';
+import { previewGrpc, sendThroughEngine } from '../src/main/send/exchange.js';
 import type { GrpcRequestPatchWire } from '../src/shared/wire-types.js';
 import { sendDepsFor } from './helpers/send-deps.js';
 
@@ -54,14 +53,11 @@ function project(): Project {
   };
 }
 
-function resolve(overrides: { readonly draft?: { message?: string } } = {}) {
-  return resolveGrpcSend({
-    project: project(),
-    requestId: 'q-1',
-    ...(overrides.draft !== undefined ? { draft: overrides.draft } : {}),
-    scopes: { project: { who: 'Ada', tenant: 'acme', host: server.target }, global: {}, system: {} },
-    resolveTarget: (api) => ({ url: api.target, source: 'api' }),
-  });
+/** `requestId` resolved as its send would resolve it, the server's target in `${host}`. */
+function resolve(overrides: { readonly draft?: GrpcRequestPatchWire; readonly requestId?: string } = {}) {
+  const model = project();
+  const withHost: Project = { ...model, properties: { ...model.properties, host: server.target } };
+  return previewGrpc(sendDepsFor(withHost), overrides.requestId ?? 'q-1', overrides.draft);
 }
 
 /**
@@ -85,24 +81,17 @@ function send(
   });
 }
 
-describe('resolveGrpcSend', () => {
-  it('applies the draft, expands target, metadata and message, and resolves the chain', () => {
-    const resolved = resolve()!;
+describe('resolving a gRPC call (previewGrpc)', () => {
+  it('applies the draft, expands target, metadata and message, and resolves the chain', async () => {
+    const resolved = (await resolve())!;
     expect(resolved.input.target).toBe(server.target);
     expect(resolved.input.metadata).toEqual([entry('x-tenant', 'acme'), entry('x-trace', 'abc')]);
     expect(resolved.messageText).toBe('{"name": "Ada"}');
     expect(resolved.auth).toEqual({ type: 'bearer', tokenRef: 'sec_tok' });
     expect(resolved.unresolved).toEqual([]);
-    const drafted = resolve({ draft: { message: '{"name": "${nope}"}' } })!;
+    const drafted = (await resolve({ draft: { message: '{"name": "${nope}"}' } }))!;
     expect(drafted.unresolved.map((ref) => ref.name)).toEqual(['nope']);
-    expect(
-      resolveGrpcSend({
-        project: project(),
-        requestId: 'zz',
-        scopes: { project: {}, global: {}, system: {} },
-        resolveTarget: () => ({ url: '', source: 'api' }),
-      }),
-    ).toBeUndefined();
+    expect(await resolve({ requestId: 'zz' })).toBeUndefined();
   });
 });
 
@@ -161,7 +150,7 @@ describe('a gRPC server stream sent from the editor', () => {
 
 describe('buildGrpcHistoryEntry', () => {
   it('records the call with its messages, redacting the metadata', async () => {
-    const resolved = resolve()!;
+    const resolved = (await resolve())!;
     const summary = await send('s5', () => Promise.resolve('good-token'));
     const entry = buildGrpcHistoryEntry('p1', {
       requestId: 'q-1',

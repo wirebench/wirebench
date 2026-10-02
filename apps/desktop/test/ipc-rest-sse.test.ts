@@ -110,12 +110,9 @@ function project(restSend: (requestId: string) => Project | undefined) {
   return {
     scopesFor: () => ({ project: {}, global: {}, system: {} }),
     preflight: () => undefined as never,
-    authFor: () => undefined,
     requestMeta: () => undefined,
     projectId: () => 'p1',
     requestSource: () => undefined as never,
-    buildLiveSendInput: () => undefined,
-    sendInputFor: () => undefined,
     dumpFileFor: () => undefined,
     runContextFor: (requestId: string) => {
       const model = restSend(requestId);

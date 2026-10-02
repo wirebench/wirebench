@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * A desktop gRPC call through the engine's `openExchange`, over the `request.*` channels: it records
- * the same History row and answers the same summary as the app's own gRPC path did, drives an
+ * a fixed History row and answers a fixed summary, drives an
  * interactive call by push and half-close, refuses what it cannot send (each with a prepare row in
  * the HTTP Log), masks a secret the failure row would show, honours the user's preferences, and
  * exports the call as a command with its `${secret:…}` tokens as typed and no secret read.
@@ -23,9 +23,8 @@ import {
 } from '@wirebench/engine';
 import type { ExchangeHandle, GrpcMethodKind, GrpcRequestDef, Project } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
-import { resolveGrpcSend } from '../src/main/grpc-send.js';
 import { HistoryService } from '../src/main/history-service.js';
-import { registerRequestChannels, sendGrpcRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { recordSecretValue } from '../src/main/redact.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
 import type {
@@ -151,12 +150,11 @@ function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): 
   registerRequestChannels(new EngineService(), {
     project: {
       projectId: () => model.id,
-      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
       grpcProtoSetFor: () => Promise.resolve(server.set),
       grpcMeta: () => undefined,
       restMeta: () => undefined,
       requestMeta: () => undefined,
-      buildLiveSendInput: () => undefined,
     } as unknown as RequestChannelDeps['project'],
     getSecret: secrets,
     ...extra,
@@ -179,35 +177,6 @@ const normalise = (value: unknown): unknown =>
     }),
   );
 
-/** `q-1` sent through the app's own gRPC path, into a real History. */
-async function sendOld(model: Project): Promise<{ entry: HistoryEntryWire; summary: GrpcExchangeSummary }> {
-  const appended: HistoryEntryWire[] = [];
-  const deps: RequestChannelDeps = {
-    project: {
-      projectId: () => 'p1',
-      grpcSend: (requestId: string) =>
-        resolveGrpcSend({
-          project: model,
-          requestId,
-          scopes: { project: { ...model.properties }, global: {}, system: {} },
-          resolveTarget: (api) => ({ url: api.target, source: 'api' }),
-        }),
-      grpcProtoSetFor: () => Promise.resolve(server.set),
-      grpcTlsFor: () => Promise.resolve(undefined),
-      grpcMeta: () => undefined,
-    } as unknown as RequestChannelDeps['project'],
-    history: await openHistory(),
-    onHistoryAppended: (wire) => appended.push(wire),
-  };
-  const summary = await sendGrpcRequest(
-    new EngineService(secrets),
-    deps,
-    { sendId: 's0', requestId: 'q-1' },
-    fakeSender().sender as never,
-  );
-  return { entry: appended[0]!, summary };
-}
-
 /** `q-1` sent through `request.sendGrpc`, into a real History. */
 async function sendNew(model: Project): Promise<{ entry: HistoryEntryWire; summary: GrpcExchangeSummary }> {
   const appended: HistoryEntryWire[] = [];
@@ -228,13 +197,121 @@ async function waitFor(predicate: () => boolean, what: string, timeoutMs = 8000)
 }
 
 describe('request.sendGrpc through the engine', () => {
-  // Task 17 deletes this case with the old path.
-  it('records the same History row and answers the same summary as the old gRPC path', async () => {
-    const before = await sendOld(seeded());
+  it('records the History row and answers the summary of the call, its token masked', async () => {
     const after = await sendNew(seeded());
     expect(after.summary.status).toBe(0);
-    expect(normalise(after.entry)).toEqual(normalise(before.entry));
-    expect(normalise(after.summary)).toEqual(normalise(before.summary));
+    expect(normalise(after.entry)).toEqual({
+      kind: 'grpc',
+      projectId: 'p1',
+      requestId: 'q-1',
+      requestName: 'SayHello',
+      interfaceName: 'Greeter',
+      operationName: '',
+      endpoint: server.target,
+      soapVersion: 'none',
+      status: 200,
+      ok: true,
+      request: {
+        envelopeXml: '{"name": "Ada"}',
+        headers: [
+          {
+            name: 'x-tenant',
+            value: 'acme',
+          },
+          {
+            name: 'x-trace',
+            value: 'abc',
+          },
+        ],
+      },
+      response: {
+        envelopeXml:
+          '{\n  "message": "Hello, Ada",\n  "echo": {\n    "name": "Ada"\n  },\n  "metadata": {\n    "x-tenant": "acme",\n    "x-trace": "abc"\n  }\n}',
+        rawHeaders: [['content-type', 'application/grpc+proto'], ['x-served-by', 'test-grpc-server'], null],
+        status: 200,
+        statusText: 'OK',
+      },
+      grpc: {
+        service: 'wirebench.greet.Greeter',
+        method: 'SayHello',
+        methodKind: 'unary',
+        status: 0,
+        statusName: 'OK',
+        requestMessages: ['{\n  "name": "Ada"\n}'],
+        responseMessages: [
+          '{\n  "message": "Hello, Ada",\n  "echo": {\n    "name": "Ada"\n  },\n  "metadata": {\n    "x-tenant": "acme",\n    "x-trace": "abc"\n  }\n}',
+        ],
+        trailers: [
+          {
+            name: 'grpc-status',
+            value: '0',
+          },
+        ],
+      },
+      sizeBytes: 198,
+    });
+    expect(normalise(after.summary)).toEqual({
+      http: {
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          'content-type': 'application/grpc+proto',
+          'x-served-by': 'test-grpc-server',
+        },
+        rawHeaders: [['content-type', 'application/grpc+proto'], ['x-served-by', 'test-grpc-server'], null],
+        bodyBase64:
+          '{\n  "message": "Hello, Ada",\n  "echo": {\n    "name": "Ada"\n  },\n  "metadata": {\n    "x-tenant": "acme",\n    "x-trace": "abc"\n  }\n}',
+        rawBodyBase64:
+          '\n\nHello, Ada\u0012\u0005\n\u0003Ada\u001a\u0010\n\bx-tenant\u0012\u0004acme\u001a\u000e\n\u0007x-trace\u0012\u0003abc',
+        rawRequestBase64:
+          ':method: POST\r\n:scheme: http\r\n:authority: ' +
+          server.target +
+          '\r\n:path: /wirebench.greet.Greeter/SayHello\r\ncontent-type: application/grpc+proto\r\nte: trailers\r\ngrpc-accept-encoding: identity,gzip,deflate\r\ngrpc-timeout: 60000m\r\nuser-agent: Wirebench/0.1\r\nauthorization: <redacted>\r\nx-tenant: acme\r\nx-trace: abc\r\n\r\n\u0000\u0000\u0000\u0000\u0005\n\u0003Ada',
+        rawResponseBase64:
+          'HTTP/2 200\r\ncontent-type: application/grpc+proto\r\nx-served-by: test-grpc-server\r\ndate: -\r\n\r\n\u0000\u0000\u0000\u00005\n\nHello, Ada\u0012\u0005\n\u0003Ada\u001a\u0010\n\bx-tenant\u0012\u0004acme\u001a\u000e\n\u0007x-trace\u0012\u0003abc\r\ngrpc-status: 0\r\n\r\n',
+        truncated: false,
+        httpVersion: '2',
+        redirects: [],
+        request: {
+          url: `http://${server.target}/wirebench.greet.Greeter/SayHello`,
+          method: 'POST',
+          headers: {
+            'content-type': 'application/grpc+proto',
+            te: 'trailers',
+            'grpc-accept-encoding': 'identity,gzip,deflate',
+            'grpc-timeout': '60000m',
+            'user-agent': 'Wirebench/0.1',
+            authorization: '<redacted>',
+            'x-tenant': 'acme',
+            'x-trace': 'abc',
+          },
+        },
+      },
+      target: server.target,
+      service: 'wirebench.greet.Greeter',
+      method: 'SayHello',
+      methodKind: 'unary',
+      status: 0,
+      statusName: 'OK',
+      statusSource: 'trailers',
+      headers: {
+        'content-type': 'application/grpc+proto',
+        'x-served-by': 'test-grpc-server',
+      },
+      trailers: {
+        'grpc-status': '0',
+      },
+      requestMessages: ['{\n  "name": "Ada"\n}'],
+      responseMessages: [
+        {
+          json: '{\n  "message": "Hello, Ada",\n  "echo": {\n    "name": "Ada"\n  },\n  "metadata": {\n    "x-tenant": "acme",\n    "x-trace": "abc"\n  }\n}',
+          base64: 'CgpIZWxsbywgQWRhEgUKA0FkYRoQCgh4LXRlbmFudBIEYWNtZRoOCgd4LXRyYWNlEgNhYmM=',
+          bytes: 53,
+        },
+      ],
+      truncated: false,
+      problems: [],
+    });
     expect(server.calls.at(-1)?.headers['authorization']).toBe(`Bearer ${TOKEN}`);
   });
 
@@ -330,35 +407,6 @@ describe('request.sendGrpc through the engine', () => {
       if (found !== undefined) recordSecretValue(found);
       return Promise.resolve(found);
     };
-    // Today's row, from the app's own gRPC path.
-    const oldRows: FailedExchangeWire[] = [];
-    const oldAppended: HistoryEntryWire[] = [];
-    await expect(
-      sendGrpcRequest(
-        new EngineService(secrets),
-        {
-          project: {
-            projectId: () => 'p1',
-            scopesFor: () => ({ project: {}, global: {}, system: {} }),
-            grpcSend: (requestId: string) =>
-              resolveGrpcSend({
-                project: model,
-                requestId,
-                scopes: { project: { ...model.properties }, global: {}, system: {} },
-                resolveTarget: (api) => ({ url: api.target, source: 'api' }),
-              }),
-            grpcProtoSetFor: () => Promise.resolve(server.set),
-            grpcTlsFor: () => Promise.resolve(undefined),
-          } as unknown as RequestChannelDeps['project'],
-          secretsFor,
-          history: await openHistory(),
-          onHistoryAppended: (wire) => oldAppended.push(wire),
-          onSendFailed: (failure) => oldRows.push(failure),
-        },
-        { sendId: 'r1', requestId: 'q-1' },
-        fakeSender().sender as never,
-      ),
-    ).rejects.toBeDefined();
     // Nothing listens on port 1: the call fails on the wire, after its metadata was resolved.
     registerOver(model, {
       secretsFor,
@@ -374,13 +422,72 @@ describe('request.sendGrpc through the engine', () => {
     expect(failures[0]!.request.headers['x-token']).toBe('<redacted>');
     expect(failures[0]!.request.headers['x-trace']).toBe('abc');
     expect(JSON.stringify(failures)).not.toContain(value);
-    expect(normalise(failures)).toEqual(normalise(oldRows));
+    // The row and the History entry, the token masked in both, as the app's own gRPC path wrote them.
+    expect(normalise(failures)).toEqual([
+      {
+        protocol: 'grpc',
+        requestId: 'q-1',
+        request: {
+          url: 'http://127.0.0.1:1/wirebench.greet.Greeter/SayHello',
+          method: 'POST',
+          headers: {
+            'x-tenant': 'acme',
+            'x-token': '<redacted>',
+            'x-trace': 'abc',
+          },
+        },
+        error: {
+          code: 'connection-refused',
+          message: 'Connection refused.',
+        },
+      },
+    ]);
+    expect(normalise(appended)).toEqual([
+      {
+        kind: 'grpc',
+        projectId: 'p1',
+        requestId: 'q-1',
+        requestName: 'SayHello',
+        interfaceName: 'Greeter',
+        operationName: '',
+        endpoint: '127.0.0.1:1',
+        soapVersion: 'none',
+        ok: false,
+        request: {
+          envelopeXml: '{"name": "Ada"}',
+          headers: [
+            {
+              name: 'x-tenant',
+              value: 'acme',
+            },
+            {
+              name: 'x-token',
+              value: '<redacted>',
+            },
+            {
+              name: 'x-trace',
+              value: 'abc',
+            },
+          ],
+        },
+        error: {
+          code: 'connection-refused',
+          message: 'Connection refused.',
+        },
+        grpc: {
+          service: 'wirebench.greet.Greeter',
+          method: 'SayHello',
+          methodKind: 'unary',
+          requestMessages: ['{"name": "Ada"}'],
+          responseMessages: [],
+          trailers: [],
+        },
+        sizeBytes: 15,
+      },
+    ]);
     expect(appended).toHaveLength(1);
     expect(appended[0]!.ok).toBe(false);
     expect(JSON.stringify(appended)).not.toContain(value);
-    // The failed call's History row, rebuilt from the engine's failure, is today's row.
-    expect(oldAppended).toHaveLength(1);
-    expect(normalise(appended)).toEqual(normalise(oldAppended));
   });
 
   it('refuses a credential missing from the keychain before the call: one prepare row, no History', async () => {

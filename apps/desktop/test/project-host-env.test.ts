@@ -1,7 +1,8 @@
 // @vitest-environment node
 /**
  * `ProjectHost` resolving a request under a *named* environment rather than the active one:
- * the REST base URL and property values, the SOAP endpoint, and the SOAP send input all follow
+ * the REST base URL and property values, the SOAP endpoint, and the SOAP send input (resolved
+ * through the engine, as a send resolves them) all follow
  * the `envId` asked for, and the active environment is never touched.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -13,16 +14,36 @@ import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test
 import { DialogPicks } from '../src/main/dialog-picks.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
-import type { RestSendResolution } from '../src/main/rest-send.js';
+import {
+  ExchangeRegistry,
+  previewRest,
+  previewSoap,
+  type RestPreview,
+  type SendThroughEngineDeps,
+} from '../src/main/send/exchange.js';
 
 let dir: string;
 let host: ProjectHost;
 let server: TestSoapServer;
 
 /** Where a resolved REST send goes: its expanded base URL joined to its expanded path. */
-function target(resolution: RestSendResolution | undefined): string | undefined {
+function target(resolution: RestPreview | undefined): string | undefined {
   return resolution === undefined ? undefined : `${resolution.input.baseUrl}${resolution.input.request.url}`;
 }
+
+/** The host as a send's dependencies see it. */
+const deps = (): SendThroughEngineDeps => ({
+  service: new EngineService(),
+  registry: new ExchangeRegistry(),
+  project: host as unknown as SendThroughEngineDeps['project'],
+});
+
+/** `requestId` resolved as its send would resolve it, under `envId` or the active environment. */
+const restSend = (requestId: string, envId?: string) => previewRest(deps(), requestId, undefined, envId);
+
+/** The SOAP input a send of `requestId` would resolve, under `envId` or the active environment. */
+const soapInput = async (requestId: string, envId?: string) =>
+  (await previewSoap(deps(), requestId, undefined, envId))?.input;
 
 async function addEnvironment(
   name: string,
@@ -70,20 +91,20 @@ afterEach(async () => {
 describe('ProjectHost under a named environment', () => {
   it('resolves a REST send against the named environment, leaving the active one alone', async () => {
     const { requestId, dev, test } = await restProject();
-    const active = host.restSend(requestId);
+    const active = await restSend(requestId);
     expect(target(active)).toBe('https://dev.example/pets/alpha');
-    expect(target(host.restSend(requestId, undefined, dev))).toBe(target(active));
+    expect(target(await restSend(requestId, dev))).toBe(target(active));
 
-    const other = host.restSend(requestId, undefined, test);
+    const other = await restSend(requestId, test);
     expect(target(other)).toBe('https://test.example/pets/beta');
     expect(other?.baseUrlSource).toBe('environment');
     expect(host.model()?.activeEnvironmentId).toBe(dev);
-    expect(target(host.restSend(requestId))).toBe('https://dev.example/pets/alpha');
+    expect(target(await restSend(requestId))).toBe('https://dev.example/pets/alpha');
   });
 
   it('refuses an environment the project does not have', async () => {
     const { requestId } = await restProject();
-    expect(host.restSend(requestId, undefined, 'no-such-env')).toBeUndefined();
+    expect(await restSend(requestId, 'no-such-env')).toBeUndefined();
   });
 
   it('resolves a SOAP endpoint and send input under the named environment', async () => {
@@ -97,10 +118,10 @@ describe('ProjectHost under a named environment', () => {
 
     expect(host.endpointFor(requestId)).toBe('http://dev.example/soap');
     expect(host.endpointFor(requestId, test)).toBe('http://test.example/soap');
-    expect(host.sendInputFor(requestId)?.endpoint).toBe('http://dev.example/soap');
-    expect(host.sendInputFor(requestId, undefined, test)?.endpoint).toBe('http://test.example/soap');
+    expect((await soapInput(requestId))?.endpoint).toBe('http://dev.example/soap');
+    expect((await soapInput(requestId, test))?.endpoint).toBe('http://test.example/soap');
     expect(host.endpointFor(requestId, 'no-such-env')).toBeUndefined();
-    expect(host.sendInputFor(requestId, undefined, 'no-such-env')).toBeUndefined();
+    expect(await soapInput(requestId, 'no-such-env')).toBeUndefined();
     expect(host.model()?.activeEnvironmentId).toBe(dev);
   });
 });
@@ -147,16 +168,16 @@ describe('ProjectHost under a named workspace environment', () => {
     await host.mutate({ kind: 'update-rest-request', requestId, patch: { url: '/pets/${tenant}' } });
     const ws = insideWorkspace(api.slug);
 
-    const before = target(host.restSend(requestId));
+    const before = target(await restSend(requestId));
     expect(before).toBe('https://wdev.example/pets/alpha');
-    const other = host.restSend(requestId, undefined, 'wtest');
+    const other = await restSend(requestId, 'wtest');
     expect(target(other)).toBe('https://wtest.example/pets/beta');
     expect(other?.baseUrlSource).toBe('workspace-environment');
     expect(host.scopesFor('wtest').env).toEqual({ tenant: 'beta' });
     expect(host.scopesFor().env).toEqual({ tenant: 'alpha' });
 
     expect(ws.workspace().activeEnvironmentId).toBe('wdev');
-    expect(target(host.restSend(requestId))).toBe(before);
+    expect(target(await restSend(requestId))).toBe(before);
     expect(host.sendEnvironments()).toEqual({
       environments: [
         { id: 'wdev', name: 'WDEV' },
@@ -173,8 +194,8 @@ describe('ProjectHost under a named workspace environment', () => {
     const requestId = (host.model()?.apis[0] as RestApi).requests[0]?.id as string;
     const projectEnv = await addEnvironment('dev', { endpoints: { [api.slug]: 'https://dev.example' } });
     insideWorkspace(api.slug);
-    expect(host.restSend(requestId, undefined, 'no-such-env')).toBeUndefined();
-    expect(host.restSend(requestId, undefined, projectEnv)).toBeUndefined();
+    expect(await restSend(requestId, 'no-such-env')).toBeUndefined();
+    expect(await restSend(requestId, projectEnv)).toBeUndefined();
   });
 
   it('resolves a SOAP endpoint under the named workspace environment', async () => {
@@ -186,8 +207,8 @@ describe('ProjectHost under a named workspace environment', () => {
 
     expect(host.endpointFor(requestId)).toBe('https://wdev.example');
     expect(host.endpointFor(requestId, 'wtest')).toBe('https://wtest.example');
-    expect(host.sendInputFor(requestId, undefined, 'wtest')?.endpoint).toBe('https://wtest.example');
-    expect(host.sendInputFor(requestId)?.endpoint).toBe('https://wdev.example');
+    expect((await soapInput(requestId, 'wtest'))?.endpoint).toBe('https://wtest.example');
+    expect((await soapInput(requestId))?.endpoint).toBe('https://wdev.example');
     expect(host.endpointFor(requestId, 'no-such-env')).toBeUndefined();
     expect(ws.workspace().activeEnvironmentId).toBe('wdev');
   });
@@ -229,7 +250,7 @@ describe('ProjectHost for the send host', () => {
     host.rememberRestCookies(requestId, [cookie]);
     expect(host.restCookiesFor(requestId)).toEqual([cookie]);
     // The request's own resolution still sends none: its setting is off.
-    expect(host.restSend(requestId)?.input.cookies).toBeUndefined();
+    expect((await restSend(requestId))?.input.cookies).toBeUndefined();
     host.rememberRestCookies(requestId, []);
     expect(host.restCookiesFor(requestId)).toBeUndefined();
   });

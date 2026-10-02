@@ -1,7 +1,7 @@
 /**
  * Add step…: a searchable list of the project's requests, as the command palette's quick-open lists
- * operations. A request a run cannot send (WebSocket, a streaming gRPC call, orphaned) is listed but
- * disabled, with the reason, so the user sees why it is not offered rather than wondering where it went.
+ * operations. A request a run cannot send (WebSocket, orphaned) is listed but disabled, with the
+ * reason, so the user sees why it is not offered rather than wondering where it went.
  */
 import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'cmdk';

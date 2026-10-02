@@ -5,7 +5,17 @@
  * (History's resend Path 1), REST and unary gRPC as the editor sends them, never live.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createProject, type RestSendInput } from '@wirebench/engine';
+import {
+  createApi,
+  createGrpcApi,
+  createGrpcFolder,
+  createGrpcRequest,
+  createProject,
+  createRestRequest,
+  entry,
+  type GrpcMethodKind,
+  type Project,
+} from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import { registerLogChannels } from '../src/main/ipc/log.js';
 import type { RequestChannelDeps } from '../src/main/ipc/request.js';
@@ -25,7 +35,6 @@ function sent(n = 0): { sendId: string; requestId: string; options: Record<strin
   return { sendId, requestId, options };
 }
 import type { ExchangeSummary, RestExchangeSummary } from '../src/shared/wire-types.js';
-import { restApiWire } from './helpers/wire-defaults.js';
 
 const LOG_EXTRA = { picks: { rememberWrite: () => undefined }, appVersion: '0.0.0-test' };
 
@@ -86,13 +95,31 @@ function restExchange(): RestExchangeSummary {
   };
 }
 
-function restResolution(headers: RestSendInput['request']['headers'] = []) {
-  const input: RestSendInput = {
-    baseUrl: 'http://h',
-    request: { method: 'GET', url: '/r', pathParams: [], query: [], headers, body: { kind: 'none' } },
-    settings: { timeoutMs: 2_000, followRedirects: true },
+/** A project holding REST request `rest-1` (with `accept`, if given) and gRPC call `grpc-1` of `grpcKind`. */
+function model(options: { accept?: string; grpcKind?: GrpcMethodKind } = {}): Project {
+  const rest = createRestRequest('R', {
+    id: 'rest-1',
+    url: '/r',
+    ...(options.accept !== undefined ? { headers: [entry('Accept', options.accept)] } : {}),
+  });
+  const call = createGrpcRequest('M', {
+    id: 'grpc-1',
+    service: 's',
+    method: 'm',
+    methodKind: options.grpcKind ?? 'unary',
+  });
+  return {
+    ...createProject('P', { id: 'p1' }),
+    apis: [createApi('Api', { id: 'api-1', baseUrl: 'http://h', requests: [rest] })],
+    grpcApis: [
+      createGrpcApi('G', {
+        id: 'g-1',
+        target: 'h:1',
+        tls: false,
+        folders: [createGrpcFolder('G', { id: 'f-1', requests: [call] })],
+      }),
+    ],
   };
-  return { input, unresolved: [], api: restApiWire(), request: {}, baseUrlSource: 'api', auth: { type: 'none' } };
 }
 
 function requestDeps(overrides: Record<string, unknown>): RequestChannelDeps {
@@ -100,14 +127,12 @@ function requestDeps(overrides: Record<string, unknown>): RequestChannelDeps {
     project: {
       scopesFor: () => ({ project: {}, global: {}, system: {} }),
       preflight: () => undefined as never,
-      authFor: () => undefined,
       requestMeta: () => undefined,
       projectId: () => 'p1',
       requestSource: () => undefined as never,
-      buildLiveSendInput: () => undefined,
-      sendInputFor: () => undefined,
+      endpointFor: () => undefined,
       dumpFileFor: () => undefined,
-      restSend: (requestId: string) => (requestId.startsWith('rest-') ? restResolution() : undefined),
+      runContextFor: () => ({ project: model(), projectDir: '/tmp/none', globals: {} }),
       ...overrides,
     } as unknown as RequestChannelDeps['project'],
   };
@@ -122,16 +147,11 @@ describe('log.resend', () => {
 
   it('SOAP: sends the live request of the row through the engine and returns the exchange', async () => {
     engineSend.mockResolvedValue(soapExchange());
-    const buildLiveSendInput = vi.fn(() => ({
-      endpoint: 'http://h/s',
-      envelopeXml: '<e/>',
-      soapVersion: '1.1' as const,
-      headers: {},
-    }));
+    const endpointFor = vi.fn(() => 'http://h/s');
     registerLogChannels({
       showSecrets: { get: () => false },
       service: new EngineService(),
-      request: requestDeps({ buildLiveSendInput }),
+      request: requestDeps({ endpointFor }),
       ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', { protocol: 'soap', requestId: 'req-1' })) as {
@@ -140,7 +160,7 @@ describe('log.resend', () => {
     };
     expect(reply.ok).toBe(true);
     expect(reply.value.protocol).toBe('soap');
-    expect(buildLiveSendInput).toHaveBeenCalledWith('req-1');
+    expect(endpointFor).toHaveBeenCalledWith('req-1');
     // The saved request as it is now: the engine builds its endpoint and envelope from the project.
     expect(sent()).toMatchObject({ requestId: 'req-1', options: { draft: { kind: 'soap', override: {} } } });
   });
@@ -192,11 +212,15 @@ describe('log.resend', () => {
   it('REST: a row with no cached exchange falls back to the request current Accept header', async () => {
     // Only an ad-hoc/failure row (no sendId, since it never produced an exchange) takes this path.
     const sendRest = engineSend;
-    const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: 'text/event-stream', enabled: true }]));
+    const runContextFor = () => ({
+      project: model({ accept: 'text/event-stream' }),
+      projectDir: '/tmp/none',
+      globals: {},
+    });
     registerLogChannels({
       showSecrets: { get: () => false },
       service: new EngineService(),
-      request: requestDeps({ restSend }),
+      request: requestDeps({ runContextFor }),
       ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', { protocol: 'rest', requestId: 'rest-1' })) as {
@@ -212,7 +236,7 @@ describe('log.resend', () => {
     const sendRest = engineSend;
     // The saved request's current Accept says nothing about streaming: the refusal must not depend
     // on it once the row's own exchange is known.
-    const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: '*/*', enabled: true }]));
+    const runContextFor = () => ({ project: model({ accept: '*/*' }), projectDir: '/tmp/none', globals: {} });
     const service = new EngineService();
     service.exchanges.putRest(
       'send-streamed',
@@ -233,7 +257,7 @@ describe('log.resend', () => {
     registerLogChannels({
       showSecrets: { get: () => false },
       service,
-      request: requestDeps({ restSend }),
+      request: requestDeps({ runContextFor }),
       ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', {
@@ -248,13 +272,17 @@ describe('log.resend', () => {
 
   it('REST: a buffered row resends even though the saved request has since grown a streaming Accept', async () => {
     const sendRest = engineSend.mockResolvedValue(restExchange());
-    const restSend = vi.fn(() => restResolution([{ name: 'Accept', value: 'text/event-stream', enabled: true }]));
+    const runContextFor = () => ({
+      project: model({ accept: 'text/event-stream' }),
+      projectDir: '/tmp/none',
+      globals: {},
+    });
     const service = new EngineService();
     service.exchanges.putRest('send-buffered', restExchange(), new Uint8Array());
     registerLogChannels({
       showSecrets: { get: () => false },
       service,
-      request: requestDeps({ restSend }),
+      request: requestDeps({ runContextFor }),
       ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', {
@@ -277,8 +305,7 @@ describe('log.resend', () => {
       showSecrets: { get: () => false },
       service,
       request: requestDeps({
-        restSend: () => undefined,
-        runContextFor: () => ({ project: createProject('P', { id: 'p1' }), projectDir: '/tmp/none' }),
+        runContextFor: () => ({ project: createProject('P', { id: 'p1' }), projectDir: '/tmp/none', globals: {} }),
       }),
       ...LOG_EXTRA,
     });
@@ -294,14 +321,15 @@ describe('log.resend', () => {
 
   it('gRPC: a streaming method is refused before anything is sent', async () => {
     const sendGrpc = engineSend;
-    const grpcSend = vi.fn(() => ({
-      unresolved: [],
-      request: { service: 's', method: 'm', methodKind: 'server-streaming' },
-    }));
+    const runContextFor = () => ({
+      project: model({ grpcKind: 'server-streaming' }),
+      projectDir: '/tmp/none',
+      globals: {},
+    });
     registerLogChannels({
       showSecrets: { get: () => false },
       service: new EngineService(),
-      request: requestDeps({ grpcSend }),
+      request: requestDeps({ runContextFor }),
       ...LOG_EXTRA,
     });
     const reply = (await invoke('log.resend', { protocol: 'grpc', requestId: 'grpc-1' })) as {
@@ -315,11 +343,10 @@ describe('log.resend', () => {
 
   it('gRPC: a unary call goes through the engine with a fresh sendId, no draft and no live hook', async () => {
     engineSend.mockResolvedValue({ sendId: 'x' });
-    const grpcSend = vi.fn(() => ({ unresolved: [], request: { service: 's', method: 'm', methodKind: 'unary' } }));
     registerLogChannels({
       showSecrets: { get: () => false },
       service: new EngineService(),
-      request: requestDeps({ grpcSend }),
+      request: requestDeps({}),
       ...LOG_EXTRA,
     });
     await invoke('log.resend', { protocol: 'grpc', requestId: 'grpc-1' });

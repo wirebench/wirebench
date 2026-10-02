@@ -24,7 +24,7 @@ interface CachedExchange {
    * asks `attachments.saveResponse`/`openResponse` to move the bytes by `sendId` + index.
    */
   readonly attachments: readonly ResponseAttachment[];
-  /** The engine exchange behind the summary, when the send went through `EngineService.send`. */
+  /** The engine exchange behind the summary, when the send kept one. */
   readonly engine?: CachedEngineExchange;
 }
 

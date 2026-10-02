@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * A desktop REST send through the engine's `openExchange` (`sendThroughEngine`): it records the same
- * History row and answers the same summary as the app's own REST path did, streams live, cancels,
+ * A desktop REST send through the engine's `openExchange` (`sendThroughEngine`): it records a fixed
+ * History row and answers a fixed summary, streams live, cancels,
  * logs a prepare failure without History, refuses what nothing resolves, runs scripts, lets a draft's
  * credentials replace the request's own, and resolves `${#Global#…}` from the project's globals.
  */
@@ -17,15 +17,13 @@ import {
   createWebhookCollection,
   createWebhookFolder,
   entry,
-  resolveApiBaseUrl,
   verifyWebhook,
 } from '@wirebench/engine';
 import type { Project, RequestScripts, RestRequestDef, WebhookSigning } from '@wirebench/engine';
 import { buildRestHistoryEntry, toHistoryEntryWire, type RecordRestSendInput } from '../src/main/history-service.js';
 import { EngineService } from '../src/main/engine-service.js';
 import { HistoryService } from '../src/main/history-service.js';
-import { registerRequestChannels, sendRestRequest, type RequestChannelDeps } from '../src/main/ipc/request.js';
-import { resolveRestSend } from '../src/main/rest-send.js';
+import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import { ScriptHost } from '../src/main/script-host.js';
 import { sendThroughEngine } from '../src/main/send/exchange.js';
 import type {
@@ -69,10 +67,9 @@ function registerOver(model: Project, extra: Partial<RequestChannelDeps> = {}): 
   registerRequestChannels(new EngineService(), {
     project: {
       projectId: () => model.id,
-      runContextFor: () => ({ project: model, projectDir: '/tmp/none' }),
+      runContextFor: () => ({ project: model, projectDir: '/tmp/none', globals: {} }),
       restMeta: () => undefined,
       requestMeta: () => undefined,
-      buildLiveSendInput: () => undefined,
     } as unknown as RequestChannelDeps['project'],
     ...extra,
   });
@@ -136,28 +133,6 @@ const normalise = (value: unknown): unknown =>
     }),
   );
 
-/** `req-1` sent through the app's own REST path, into a real History. */
-async function sendOld(model: Project): Promise<{ entry: HistoryEntryWire; summary: RestExchangeSummary }> {
-  const engine = new EngineService(secrets);
-  const appended: HistoryEntryWire[] = [];
-  const deps: RequestChannelDeps = {
-    project: {
-      projectId: () => 'p1',
-      restSend: (requestId: string) =>
-        resolveRestSend({
-          project: model,
-          requestId,
-          scopes: { project: {}, global: {}, system: {} },
-          resolveBaseUrl: (api) => resolveApiBaseUrl(model, undefined, api),
-        }),
-    } as unknown as RequestChannelDeps['project'],
-    history: await openHistory(),
-    onHistoryAppended: (wire) => appended.push(wire),
-  };
-  const summary = await sendRestRequest(engine, deps, { sendId: 's0', requestId: 'req-1' });
-  return { entry: appended[0]!, summary };
-}
-
 /** `req-1` sent through the engine, into a real History. */
 async function sendNew(model: Project): Promise<{ entry: HistoryEntryWire; summary: RestExchangeSummary }> {
   const appended: HistoryEntryWire[] = [];
@@ -182,12 +157,86 @@ async function waitFor(predicate: () => boolean, what: string, timeoutMs = 8000)
 }
 
 describe('sendThroughEngine for a REST request', () => {
-  // Task 17 deletes this case with the old path.
-  it('records the same History row as the old REST path', async () => {
-    const before = await sendOld(seeded());
-    const after = await sendNew(seeded());
-    expect(normalise(after.entry)).toEqual(normalise(before.entry));
-    expect(normalise(after.summary)).toEqual(normalise(before.summary));
+  it('records the History row and answers the summary of what went out, the query key masked', async () => {
+    const { entry: row, summary } = await sendNew(seeded());
+    const host = server.url.replace('http://', '');
+    /** The test server's echo of the call, with the key as `key` reads it. */
+    const echo = (key: string): string =>
+      JSON.stringify({
+        method: 'GET',
+        path: '/echo',
+        query: { x: '1', api_key: key },
+        headers: {
+          host,
+          connection: 'keep-alive',
+          'user-agent': 'Wirebench/0.1',
+          'accept-encoding': 'gzip, deflate, br',
+        },
+        body: '',
+        contentType: null,
+      });
+    const length = String(Buffer.byteLength(echo(KEY)));
+    const rawHeaders = [
+      null,
+      ['content-type', 'application/json'],
+      ['content-length', length],
+      null,
+      ['connection', 'keep-alive'],
+      ['keep-alive', 'timeout=5'],
+    ];
+    const url = `${server.url}/echo?x=1&api_key=%3Credacted%3E`;
+    expect(normalise(row)).toEqual({
+      kind: 'rest',
+      projectId: 'p1',
+      requestId: 'req-1',
+      requestName: 'Echo',
+      interfaceName: 'Petstore',
+      operationName: '',
+      endpoint: url,
+      method: 'GET',
+      soapVersion: 'none',
+      status: 200,
+      ok: true,
+      request: { envelopeXml: '', headers: [] },
+      response: { envelopeXml: echo('<redacted>'), rawHeaders, status: 200, statusText: 'OK' },
+      // The response's raw bytes, whose server-timing and date headers vary in length between runs.
+      sizeBytes: expect.any(Number) as unknown,
+    });
+    expect(normalise(summary)).toEqual({
+      http: {
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': length,
+          connection: 'keep-alive',
+          'keep-alive': 'timeout=5',
+        },
+        rawHeaders,
+        bodyBase64: echo(KEY),
+        rawBodyBase64: echo(KEY),
+        rawRequestBase64: `GET /echo?x=1&api_key=%3Credacted%3E HTTP/1.1\r\nhost: ${host}\r\nUser-Agent: Wirebench/0.1\r\nAccept-Encoding: gzip, deflate, br\r\n\r\n`,
+        rawResponseBase64:
+          `HTTP/1.1 200 OK\r\nx-server-ms: -\r\ncontent-type: application/json\r\ncontent-length: ${length}\r\n` +
+          `date: -\r\nconnection: keep-alive\r\nkeep-alive: timeout=5\r\n\r\n${echo('<redacted>')}`,
+        truncated: false,
+        httpVersion: '1.1',
+        redirects: [],
+        request: {
+          url,
+          method: 'GET',
+          headers: { 'User-Agent': 'Wirebench/0.1', 'Accept-Encoding': 'gzip, deflate, br' },
+        },
+        keyNames: { params: ['api_key'], headers: [] },
+      },
+      url,
+      method: 'GET',
+      text: echo(KEY),
+      language: 'json',
+      cookies: [],
+      methodChanged: false,
+      problems: [],
+    });
   });
 
   it('hands every rest.live event over before the send resolves', async () => {
@@ -488,7 +537,10 @@ describe('sendThroughEngine for a webhook item', () => {
       sendThroughEngine(sendDepsFor(hooks(server.url), { secretsFor: keychain({}).secretsFor }), 's2', 'w1', {
         draft: { kind: 'rest' },
       }),
-    ).rejects.toMatchObject({ code: 'webhook-signing-secret' });
+    ).rejects.toMatchObject({
+      code: 'webhook-signing-secret',
+      message: 'Signing is set on the folder “Orders” but its secret is not set',
+    });
     expect(server.requests.length).toBe(before);
   });
 

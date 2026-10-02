@@ -1,9 +1,9 @@
 /**
  * Builds the `FailedExchangeWire` the console's HTTP Log shows for a send that never produced a
- * response. Called from the same catch blocks that write History (`send-with-history.ts` for SOAP
- * sends and resends, `ipc/request.ts` for REST). When the transport got as far as building the
- * request, the error carries it (`failedRequestOf`), so the row shows the URL, method, headers and
- * body as they were about to go on the wire; otherwise the resolved pre-build request is used.
+ * response. Called from the send's host (`send/host.ts`), as History records the failure. When the
+ * transport got as far as building the request, the error carries it (`failedRequestOf`), so the
+ * row shows the URL, method, headers and body as they were about to go on the wire; otherwise the
+ * resolved pre-build request is used.
  *
  * Redaction is unconditional here — `show: false`, whatever the session's show-secrets flag says. A
  * failure is never held in the unredacted `ExchangeCache`, so there is nothing to re-fetch later:
