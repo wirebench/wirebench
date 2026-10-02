@@ -48,6 +48,9 @@ export async function createInvitation(
   let row: repo.InvitationRow;
   try {
     row = await env.ctx.db.transaction(async (tx) => {
+      // licensing §3.4: refused here, so the admin learns before the invitee does. Every caller shares
+      // this function: POST /invitations, a team invitation, and `admin invite`.
+      await env.ctx.license.assertSeatAvailable(tx);
       await repo.revokeExpiredInvitesOf(tx, lower, now);
       const inserted = await repo.insertInvitation(tx, {
         id: newId(),
@@ -141,6 +144,9 @@ export async function acceptInvitation(env: IdentityEnv, input: InvitationAccept
       return existing;
     }
     if ((await repo.findUserByEmail(tx, invitation.emailLower)) !== undefined) throw userExists();
+    // licensing §3.4: after the claim, so a refusal rolls the claim back and the invitation stays open.
+    // A reset (the branch above) never counts: it changes nothing about who is enabled.
+    await env.ctx.license.assertSeatAvailable(tx);
     const displayName = input.displayName.trim() || (invitation.email.split('@')[0] ?? invitation.email);
     const created = await repo.insertUser(tx, {
       id: newId(),

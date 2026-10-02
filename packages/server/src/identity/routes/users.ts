@@ -66,6 +66,8 @@ export const userRoutes =
             await repo.setDisabled(tx, id, now);
             await repo.revokeTokensOfUser(tx, id, now); // disabling revokes every token (§3.1)
           } else if (body.disabled === false) {
+            // licensing §3.4: only restoring a disabled account takes a seat.
+            if (user.disabledAt !== null) await env.ctx.license.assertSeatAvailable(tx);
             await repo.setDisabled(tx, id, null);
           }
         });

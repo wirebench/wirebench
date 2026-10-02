@@ -3,6 +3,7 @@
  * up, then the writes each decision needs. Rule order is the whole point: a known identity wins
  * before `email_verified` is even consulted, and an unverified email can never link or create.
  */
+import { isWirebenchError } from '@wirebench/engine';
 import { runInvitationAccepted } from '../context.js';
 import type { IdentityEnv } from './env.js';
 import type { OidcClaims } from './oidc.js';
@@ -10,7 +11,8 @@ import * as repo from './repo.js';
 import { emailLower } from './sessions.js';
 import { newId } from './tokens.js';
 
-export type LinkRefusal = 'identity-user-disabled' | 'identity-email-unverified' | 'identity-not-invited';
+export type LinkRefusal =
+  'identity-user-disabled' | 'identity-email-unverified' | 'identity-not-invited' | 'licensing-seat-limit';
 
 export interface LinkFacts {
   readonly identity?: { readonly userId: string; readonly disabled: boolean };
@@ -83,26 +85,35 @@ export async function linkClaims(env: IdentityEnv, claims: OidcClaims): Promise<
     case 'create': {
       const email = claims.email!;
       const displayName = claims.name?.trim() || (email.split('@')[0] ?? email);
-      // Claim the invitation first, as the local accept does: two concurrent first sign-ins race
-      // on that single conditional UPDATE, and the loser creates nothing.
-      const user = await db.transaction(async (tx) => {
-        if (!(await repo.acceptInvitation(tx, decision.invitationId, now))) return undefined;
-        const created = await repo.insertUser(tx, {
-          id: newId(),
-          email,
-          displayName,
-          serverAdmin: decision.serverAdmin,
-          at: now,
+      let user: repo.UserRow | undefined;
+      try {
+        // Claim the invitation first, as the local accept does: two concurrent first sign-ins race
+        // on that single conditional UPDATE, and the loser creates nothing.
+        user = await db.transaction(async (tx) => {
+          if (!(await repo.acceptInvitation(tx, decision.invitationId, now))) return undefined;
+          // licensing §3.4: a refusal rolls the claim back, so the invitation stays open.
+          await env.ctx.license.assertSeatAvailable(tx);
+          const created = await repo.insertUser(tx, {
+            id: newId(),
+            email,
+            displayName,
+            serverAdmin: decision.serverAdmin,
+            at: now,
+          });
+          await repo.insertOidcIdentity(tx, {
+            issuer: claims.issuer,
+            subject: claims.subject,
+            userId: created.id,
+            at: now,
+          });
+          await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: decision.invitationId, userId: created.id });
+          return created;
         });
-        await repo.insertOidcIdentity(tx, {
-          issuer: claims.issuer,
-          subject: claims.subject,
-          userId: created.id,
-          at: now,
-        });
-        await runInvitationAccepted(env.ctx.hooks, tx, { invitationId: decision.invitationId, userId: created.id });
-        return created;
-      });
+      } catch (error) {
+        if (isWirebenchError(error) && error.code === 'licensing-seat-limit')
+          return { ok: false, code: 'licensing-seat-limit' };
+        throw error;
+      }
       if (user === undefined) return { ok: false, code: 'identity-not-invited' };
       return { ok: true, user };
     }
