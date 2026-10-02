@@ -117,12 +117,13 @@ function makeProject(streams: Streams): Project {
               id: 'api-chat',
               slug: 'chat',
               url: streams.ws.url ?? ws.url,
-              // A saved WebSocket request has no assertions of its own yet; a run evaluates any it carries.
               requests: [
-                Object.assign(
-                  createWsRequest('Echo', { id: 'ws-echo', url: streams.ws.path, messages: streams.ws.messages }),
-                  { assertions: streams.ws.assertions ?? [] },
-                ),
+                createWsRequest('Echo', {
+                  id: 'ws-echo',
+                  url: streams.ws.path,
+                  messages: streams.ws.messages,
+                  assertions: streams.ws.assertions ?? [],
+                }),
               ],
             }),
           ],

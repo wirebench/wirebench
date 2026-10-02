@@ -27,7 +27,7 @@ export interface StreamCall {
 
 /**
  * Saves a project of streams in `dir`: a WebSocket API `Chat` on `wsUrl` whose `Echo` request sends
- * `one` then `two` (no assertions, as a saved WebSocket request has none), and, when `grpcTarget` is
+ * `one` then `two`, and, when `grpcTarget` is
  * given, the greeter's `calls` under a gRPC API `Greeter` with its proto definition cached.
  */
 export async function writeStreamsProject(

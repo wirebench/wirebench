@@ -4,6 +4,8 @@
  * message in a sibling `<slug>.msg-<message slug>.<ext>`.
  */
 
+import type { Assertion } from '../assert/model.js';
+import { toCallbackAssertion } from '../assert/schema.js';
 import { ProjectError } from '../errors.js';
 import type { FsLike } from '../project/fs.js';
 import { readFileIfExists } from '../project/fs.js';
@@ -82,6 +84,7 @@ function wsRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): 
       auth: authConfig(parsed.auth),
       settings: exact<WsRequestSettings>(parsed.settings),
       messages,
+      assertions: parsed.assertions.map((a) => (a.type === 'callback' ? toCallbackAssertion(a) : exact<Assertion>(a))),
       ...(parsed.contract !== undefined ? { contract: { channel: parsed.contract.channel } } : {}),
       ...(parsed.orphaned === true ? { orphaned: true } : {}),
     };
@@ -131,6 +134,7 @@ const writeWsRequest: RequestWriter<WsRequestDef> = (files, dir, request) => {
         auth: authDocument(request.auth),
         settings: Object.keys(request.settings).length > 0 ? compact({ ...request.settings }) : undefined,
         messages: messages.length > 0 ? messages : undefined,
+        assertions: request.assertions.length > 0 ? request.assertions.map((a) => compact({ ...a })) : undefined,
         contract: request.contract === undefined ? undefined : { channel: request.contract.channel },
         orphaned: request.orphaned === true ? true : undefined,
       }),

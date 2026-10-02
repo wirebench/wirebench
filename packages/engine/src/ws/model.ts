@@ -19,6 +19,7 @@ import type { AuthConfig, CreateOptions, DefinitionAuth, IdGenerator } from '../
 import { generateId } from '../project/model.js';
 import { slugify } from '../project/paths.js';
 import type { JsonSchemaProblem } from '../json/schema-validate.js';
+import type { Assertion } from '../assert/model.js';
 import type { KeyValueEntry } from '../http/entries.js';
 import type { SslInfo } from '../http/tls.js';
 
@@ -80,6 +81,8 @@ export interface WsRequestDef {
   readonly auth: AuthConfig;
   readonly settings: WsRequestSettings;
   readonly messages: readonly WsSavedMessage[];
+  /** Checked against the received messages, in order, as a JSON array (request-assertions spec §3). */
+  readonly assertions: readonly Assertion[];
   /** Set when the request was imported from the API's contract. */
   readonly contract?: WsContractLink;
   /** The contract no longer has the channel this request was imported from. */
@@ -263,6 +266,7 @@ export interface CreateWsRequestInput extends CreateOptions {
   readonly auth?: AuthConfig;
   readonly settings?: WsRequestSettings;
   readonly messages?: readonly WsSavedMessage[];
+  readonly assertions?: readonly Assertion[];
   readonly contract?: WsContractLink;
 }
 
@@ -282,6 +286,7 @@ export function createWsRequest(name: string, input: CreateWsRequestInput = {}):
     auth: input.auth ?? { type: 'inherit' },
     settings: input.settings ?? {},
     messages: input.messages ?? [],
+    assertions: input.assertions ?? [],
     ...(input.contract !== undefined ? { contract: input.contract } : {}),
   };
 }
