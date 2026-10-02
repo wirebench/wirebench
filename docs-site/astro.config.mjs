@@ -45,6 +45,8 @@ export default defineConfig({
             { label: 'Secrets', slug: 'guides/secrets' },
             { label: 'HTTP Log', slug: 'guides/http-log' },
             { label: 'History', slug: 'guides/history' },
+            { label: 'Copy as a command', slug: 'guides/copy-as-command' },
+            { label: 'Assertions', slug: 'guides/assertions' },
             { label: 'Sequences', slug: 'guides/sequences' },
             { label: 'Scripts', slug: 'guides/scripts' },
             { label: 'Snapshot regression', slug: 'guides/snapshot-regression' },

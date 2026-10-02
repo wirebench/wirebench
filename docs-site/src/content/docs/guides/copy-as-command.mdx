@@ -1,0 +1,106 @@
+---
+title: Copy as a command
+description: Turn a SOAP, REST, gRPC or WebSocket request into the command a shell would run — curl, grpcurl or websocat — from the Code panel or the command palette.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Wirebench can give you any saved request back as a command line, to paste into a terminal, a script or
+a bug report. The command is built from the same input a send uses: the active environment applied,
+properties expanded and the request's credentials in place, masked unless you choose to show secrets.
+
+| Request   | Command    |
+| --------- | ---------- |
+| SOAP      | `curl`     |
+| REST      | `curl`     |
+| gRPC      | `grpcurl`  |
+| WebSocket | `websocat` |
+
+Each command comes in two shell flavours: **POSIX shell** and **PowerShell**.
+
+## The Code panel
+
+The **Code** panel shows the command for the request in front of you and regenerates it as you edit.
+
+<Steps>
+
+1. Open a request, or select one in the Explorer. The panel follows the request you are editing, or the
+   one selected in the Explorer.
+2. Open the panel with the **Code** icon on the right rail, **Toggle Code Panel**
+   (<kbd>⌘⌥B</kbd> / <kbd>Ctrl+Alt+B</kbd>), or, in a SOAP request, **Request: Show Code** from the
+   command palette.
+3. Choose the **Shell**: **POSIX shell** or **PowerShell**. Wirebench remembers the choice.
+4. Click **Copy**.
+
+</Steps>
+
+Notes under the command name what it leaves out (see [What the command leaves out](#what-the-command-leaves-out)).
+For a SOAP or REST request, **Import cURL…** beside **Copy** does the reverse: it turns a pasted
+`curl` command into a new request. See [cURL commands](/wirebench/docs/guides/importers/#curl-commands).
+
+Press <kbd>Escape</kbd> or the close icon to dismiss the panel.
+
+## From the command palette
+
+Each request editor has a command that copies straight to the clipboard, without opening the panel:
+
+| Request   | Command                                                                    |
+| --------- | -------------------------------------------------------------------------- |
+| SOAP      | **Request: Copy as cURL** and **Request: Copy as cURL (PowerShell)**       |
+| REST      | **REST: Copy as cURL**                                                     |
+| gRPC      | **gRPC: Copy as Command**                                                  |
+| WebSocket | **WebSocket: Copy as Command**                                             |
+
+Each is offered while that kind of request is the active editor. The REST, gRPC and WebSocket commands
+use the shell last chosen in the Code panel. None has a default shortcut; see
+[Commands and shortcuts](/wirebench/docs/reference/commands/).
+
+## From the HTTP Log
+
+A row in the [HTTP Log](/wirebench/docs/guides/http-log/#copy-resend-or-open-a-row) has **Copy as cURL
+(POSIX)** and **Copy as cURL (PowerShell)** in its menu. That copies the request as it was actually sent,
+rather than as the saved request would be sent now.
+
+## Secrets
+
+Secret values are masked as `<redacted>` by default: an `Authorization` header, a Basic password, a
+bearer token, an API key in a header or the query string. The panel says *Secrets are masked unless Show
+secrets is on.*
+
+**Toggle Show Secrets in HTTP Log** from the command palette shows them for the current session, in the
+HTTP Log and in the command alike. A command copied with secrets showing carries real credentials, so
+treat it as a secret.
+
+Some things stay out whatever the setting:
+
+- **An OAuth 2 access token.** A REST command never carries one; a note says the command carries the
+  configuration only. A SOAP command uses a token only when one is already cached, and otherwise leaves
+  the `Authorization` header out and says so.
+- **A `${secret:name}` token** in a REST request stays in the command as written. Only a send resolves it.
+
+## What the command leaves out
+
+A note under the command says when it differs from a real send:
+
+- **Unresolved properties.** The command is still produced, so you can read and edit it. For a REST
+  request, a note lists each `${…}` reference that did not resolve. For a gRPC or WebSocket request, a
+  note says some did not, and they are shown as typed.
+- **SOAP: WS-Security** is not included.
+- **SOAP: attachments** are not included. The command starts with a `# note:` comment line saying how many.
+- **SOAP: the connection.** A proxy, custom trust anchors, certificate verification turned off for the
+  endpoint, or a client certificate is named in a note and a `# note:` line, but not reproduced.
+- **gRPC: the `.proto` files** are named with `-proto`; pass their folder with `-import-path`. An API
+  discovered by server reflection names none, and `grpcurl` asks the server.
+- **WebSocket: proxy, CA and client certificate** settings are not reconstructable in the command.
+
+<Aside>
+A REST request whose `Accept` header asks for `text/event-stream` gets `-N`, so `curl` prints the events
+as they arrive. One with certificate verification turned off gets `--insecure`.
+</Aside>
+
+## Related
+
+- [HTTP Log](/wirebench/docs/guides/http-log/) — every exchange of the session, with its own copy actions.
+- [History](/wirebench/docs/guides/history/) — re-send and compare past sends.
+- [From cURL commands](/wirebench/docs/switching/curl/) — the reverse: which `curl` flags an import reads.
+- [Secrets](/wirebench/docs/guides/secrets/) — where secret values live and how they are masked.
