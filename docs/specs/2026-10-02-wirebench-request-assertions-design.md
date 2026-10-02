@@ -1,6 +1,6 @@
 # Wirebench: request assertions for every protocol, WebSocket included — design
 
-Date: 2026-10-02 · Status: approved in sections; awaiting review of this document · Issue #192.
+Date: 2026-10-02 · Status: approved; refined at planning (§10) · Issue #192.
 
 - Builds on:
   - The one-send-path spec (`docs/specs/2026-10-01-wirebench-one-send-path-design.md`), §5.2 and §13:
@@ -23,9 +23,9 @@ Date: 2026-10-02 · Status: approved in sections; awaiting review of this docume
 
 In:
 
-- `WsRequestDef.assertions`, its storage, and project format 7.
+- `WsRequestDef.assertions` and its storage, in project format 6 (§2.3).
 - The WebSocket subject parses JSON messages.
-- An engine module that picks a subject for a sent request and checks a request's assertions.
+- An engine function that checks a request's own assertions, used by runs and the desktop.
 - One `set-request-assertions` save change for the four protocols.
 - The shared `AssertionTable`, and an Assertions tab on the REST, SOAP, gRPC and WebSocket editors.
 - Assertion results on editor Sends, in a response-pane Assertions tab.
@@ -63,11 +63,10 @@ request.
 
 ### 2.3 Format version
 
-- `FORMAT_VERSION` (`packages/engine/src/project/model.ts`) goes from 6 to 7.
-- The version comment gains: "7 adds `assertions` to WebSocket requests".
-- A version-6 project loads unchanged.
-- A version-7 project refuses to load in a build that knows only 6, with the existing
-  `project-format-too-new`.
+- `FORMAT_VERSION` stays 6. Version 6 is unreleased, and unreleased changes share it
+  (`packages/engine/src/project/model.ts`).
+- The version comment gains: "`assertions` on a WebSocket request (#192)".
+- A file without the key loads as before (§2.2).
 
 ### 2.4 Kinds that cannot apply
 
@@ -103,9 +102,6 @@ Example: received `{"type":"ready"}`, then `pong`, then `{"id":7}`. The subject 
 New module `packages/engine/src/assert/check.ts`, exported from the package index:
 
 ```ts
-/** The response of a sent request as assertions see it, whichever protocol sent it. */
-export function subjectOf(sent: SentRequest): AssertionSubject;
-
 /**
  * A request's own assertions checked against a subject, in order. The default SLA is added when
  * the request has none of its own. Callback assertions are left out: a run waits for them.
@@ -117,13 +113,10 @@ export function checkRequestAssertions(
 ): Promise<AssertionResult[]>;
 ```
 
-- **`subjectOf`** takes over the switch in the desktop sequence runner's `describe()`:
-  - SOAP goes to `soapResponseSubject`;
-  - REST goes to `restSubject`;
-  - gRPC goes to `grpcSubject`;
-  - anything else, which is a WebSocket session, uses `sent.subject`.
-
-  `describe()` keeps working out the origin and calls `subjectOf` for the subject.
+- **The subject** is the engine's `SentRequest.subject`, which every protocol's send already sets
+  (`restSubject`, `grpcSubject`, `wsSubject`, and for SOAP `soapSubject`, which adds contract
+  validation). No separate subject picker is needed. The desktop sequence runner's `describe()`
+  keeps its own switch; changing it is out of scope.
 - **`runOne`** (`packages/engine/src/run/run.ts`) replaces its inline default-SLA and callback filter
   with `checkRequestAssertions`. The callback wait (`sendAwaitingCallbacks`) and the script results
   are unchanged, and so are run results for REST, SOAP and gRPC.
@@ -147,11 +140,11 @@ export function checkRequestAssertions(
 
 `{ kind: 'set-request-assertions', requestId, assertions }` on `project.mutate`. The main process:
 
-1. finds the request and its protocol (`request-not-found` otherwise);
+1. finds the request, whichever protocol (`unknown-entity` otherwise, as every request change does);
 2. converts the wire assertions as `update-sequence` does, and parses them through the engine's
    `assertionsSchema`;
-3. refuses a value that does not parse, with the same code and message an invalid sequence step
-   gets. Two examples: a regex that does not compile, and a `match` with none or more than one of
+3. refuses a value that does not parse with `request-assertions-invalid`, listing the issues as an
+   invalid sequence does. Two examples: a regex that does not compile, and a `match` with none or more than one of
    `equals`, `matches` and `exists`;
 4. replaces the request's `assertions` and writes it through that protocol's storage.
 
@@ -188,7 +181,7 @@ The existing per-protocol update changes keep leaving `assertions` untouched.
 
 - **Source:** main reads the request's saved assertions by `requestId`. Because the tab saves each
   edit, these are the assertions the tab shows.
-- **When they are checked:** once, with `subjectOf` and `checkRequestAssertions`:
+- **When they are checked:** once, with `checkRequestAssertions` over `sent.subject`:
   - a unary REST, SOAP or gRPC Send is checked when its response arrives;
   - an interactive WebSocket session, or a streaming gRPC call, is checked when it ends, against
     everything it received.
@@ -215,19 +208,17 @@ The existing per-protocol update changes keep leaving `assertions` untouched.
 
 | Case                                          | Result                                                      |
 | --------------------------------------------- | ----------------------------------------------------------- |
-| `set-request-assertions`, unknown request     | refused, `request-not-found`                                |
-| `set-request-assertions`, invalid assertion   | refused with the sequence step's code; nothing written      |
+| `set-request-assertions`, unknown request     | refused, `unknown-entity`                                   |
+| `set-request-assertions`, invalid assertion   | refused, `request-assertions-invalid`; nothing written      |
 | Inapplicable kind found in a file             | loads; reports `errored` when checked                       |
-| Version-7 project in an older build           | `project-format-too-new`                                    |
 | Assertion check throws                        | that assertion reports `errored`; the send result still shows |
 
 ## 8. Tests
 
 - **Engine:**
   - a WebSocket request file round-trips its assertions, and a file without the key loads `[]`;
-  - a version-6 project loads, and the format is written as 7;
   - `wsSubject` with JSON messages, non-JSON messages and binary frames;
-  - `subjectOf` for each protocol, and `checkRequestAssertions` with the default SLA and callbacks;
+  - `checkRequestAssertions` with the default SLA and callbacks;
   - a WebSocket run that passes, and one that fails;
   - `--require-assertions` sends a WebSocket request with assertions;
   - existing run tests unchanged.
@@ -248,12 +239,24 @@ The existing per-protocol update changes keep leaving `assertions` untouched.
 - **`docs-site/.../guides/assertions.mdx`:** the editor tab, WebSocket assertions with the JSON
   example from §3, and checking on Send.
 - **`docs/cli.md`:** remove the lines saying a WebSocket request has no assertions (around 182–186).
-- **`docs-site/.../reference/project-format.md`:** version 7, and `assertions` on WebSocket
-  requests.
+- **`docs-site/.../reference/project-format.md`:** `assertions` on WebSocket requests, part of
+  version 6.
 - **The comment in `packages/cli/src/commands/sequence.ts:142`.**
 - **`CHANGELOG.md` `[Unreleased]`:**
   - Added: the Assertions tab, WebSocket assertions, results on Send.
-  - Changed:
-    - project format 7;
-    - the WebSocket subject parses JSON messages, with a before and after example.
+  - Changed: the WebSocket subject parses JSON messages, with a before and after example.
 - **Issue #192:** retitled to "Request assertions for every protocol, WebSocket included".
+
+## 10. Refined at planning (2026-10-02)
+
+The plan is `docs/plans/2026-10-02-wirebench-request-assertions-plan.md`.
+
+1. **The format stays 6.** Version 6 is unreleased, and unreleased changes share it (§2.3). The
+   move to 7 is withdrawn.
+2. **No `subjectOf`.** `SentRequest.subject` is already each protocol's subject, and for SOAP a
+   stronger one than the desktop's `describe()` builds (§4).
+3. **Codes.** An unknown request is refused with `unknown-entity`, and an invalid list with
+   `request-assertions-invalid` (§5.2, §7).
+4. **Shared helpers.** The request-walking helpers of the scripts change move to a shared module.
+   That module reaches WebSocket requests only when asked, so a scripts edit never touches one.
+5. **History.** Assertion results are added to a send's result after History is written.
