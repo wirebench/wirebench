@@ -3,7 +3,8 @@
  * resolves the request and refuses one with a reference nothing resolves, connects (its TLS
  * identity, the proxy, its credentials with an OAuth2 token), then opens the session (spec §3.4).
  * A host that opens it interactive drives the session with push and close; a run sends the saved
- * messages in order and closes after the last one.
+ * messages in order, waits for a reply after the last one, then closes, all within the run timeout
+ * (spec §5.2).
  */
 import type { AssertionSubject } from '../assert/model.js';
 import { HttpError, WsError } from '../errors.js';
@@ -110,14 +111,15 @@ export function effectiveWsSettings(
  * The app's `resolveWsSend` (spec §3.4): the server URL through the environment's override for the
  * API (the slot a REST base URL uses), the settings ladder, and one expansion pass over the server
  * URL, the request's URL, query, headers and subprotocols and the API's headers, nothing connected.
- * A reference nothing resolves is reported in `unresolved`, not thrown: the send refuses it, a
- * preview shows it.
+ * The run timeout, when given, is the handshake timeout. A reference nothing resolves is reported in
+ * `unresolved`, not thrown: the send refuses it, a preview shows it.
  *
  * @throws WirebenchError `secret-missing`
  */
 export async function resolveWs(selected: WsSelected, context: RunContext): Promise<Resolved<WsCallInput>> {
   const { api, request } = selected;
   const scopes = scopesFor(context);
+  const settings = effectiveWsSettings(request, context.project, context.host.preferences);
   const unexpanded: WsCallInput = {
     serverUrl: baseUrlFor(context, { slug: api.slug, baseUrl: api.url }),
     request: {
@@ -125,7 +127,7 @@ export async function resolveWs(selected: WsSelected, context: RunContext): Prom
       query: request.query,
       headers: request.headers,
       subprotocols: request.subprotocols,
-      settings: effectiveWsSettings(request, context.project, context.host.preferences),
+      settings: context.timeoutMs !== undefined ? { ...settings, handshakeTimeoutMs: context.timeoutMs } : settings,
     },
     apiHeaders: api.headers,
   };
@@ -322,6 +324,41 @@ function handshakeFailure(handshake: WsHandshake): HttpError | WsError {
   });
 }
 
+/**
+ * When a run's session has its answer: a text or binary frame received once the last saved message
+ * has gone out, or the first one when there is none.
+ */
+interface ReplyWatch {
+  /** Given every frame the session records. */
+  frame(frame: WsFrame): void;
+  readonly replied: Promise<void>;
+  readonly hasReplied: boolean;
+}
+
+function replyWatch(saved: number): ReplyWatch {
+  let sent = 0;
+  let hasReplied = false;
+  let resolve!: () => void;
+  const replied = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return {
+    replied,
+    get hasReplied() {
+      return hasReplied;
+    },
+    frame(frame) {
+      if (frame.opcode !== 'text' && frame.opcode !== 'binary') return;
+      if (frame.direction === 'sent') {
+        sent += 1;
+      } else if (sent >= saved && !hasReplied) {
+        hasReplied = true;
+        resolve();
+      }
+    },
+  };
+}
+
 /** The handshake's response head, as `raw` keeps it: status line and headers. */
 function responseHead(handshake: WsHandshake): string {
   if (handshake.status === undefined) return '';
@@ -357,7 +394,9 @@ export function wsSubject(exchange: WsExchange): AssertionSubject {
  * prepare stage. A cancel before the handshake fails the send, with `aborted`; a cancel after it
  * ends the session, which settles with what it recorded. Otherwise an interactive session's outcome
  * is a result, a refused handshake included, which the host shows; a run's session that never opened
- * fails, with `ws-handshake-refused` or `timeout`, so a dead endpoint never passes a run.
+ * fails, with `ws-handshake-refused` or `timeout`, so a dead endpoint never passes a run. A run's
+ * session closes with 1000 once a reply comes after its last saved message; one the run timeout
+ * closes first fails with `timeout`, never a pass.
  */
 async function sendWsItem(
   selected: WsSelected,
@@ -388,6 +427,8 @@ async function sendWsItem(
       // Deliberately ignored — see above.
     }
   };
+  let watch: ReplyWatch | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
     let input: WsCallInput | undefined;
     let options: WsSessionOptions;
@@ -403,7 +444,8 @@ async function sendWsItem(
           throw unresolvedError('ws-unresolved-properties', selected.path, saved.unresolved);
         }
         for (const payload of saved.payloads) void state.send(() => Promise.resolve(payload)).catch(() => undefined);
-        state.close(1000);
+        watch = replyWatch(saved.payloads.length);
+        void watch.replied.then(() => state.close(1000));
       }
       options = await connectWs(selected, context, input, controller.signal);
     } catch (error) {
@@ -412,8 +454,17 @@ async function sendWsItem(
     }
     const sentAttempt: AttemptedRequest = { url: options.url, method: 'GET', headers: options.headers ?? {} };
     let opened = false;
+    let timedOut = false;
     let exchange: WsExchange | undefined;
     try {
+      // The run timeout bounds the whole session; it is also the handshake's, so either ends it. The
+      // settings ladder always gives one.
+      if (watch !== undefined && options.handshakeTimeoutMs !== undefined) {
+        deadline = setTimeout(() => {
+          timedOut = true;
+          state.close(1000);
+        }, options.handshakeTimeoutMs);
+      }
       const session: WsSessionHandle = openWsSession(options, {
         onHandshake: (handshake) => {
           opened = true;
@@ -428,7 +479,10 @@ async function sendWsItem(
           // After this hook returns: `session` is assigned by then, and the socket is open.
           queueMicrotask(() => state.opened(session));
         },
-        onFrame: (frame) => controller.queue.push({ protocol: 'websocket', kind: 'frame', frame }),
+        onFrame: (frame) => {
+          watch?.frame(frame);
+          controller.queue.push({ protocol: 'websocket', kind: 'frame', frame });
+        },
         onClosed: () => controller.queue.push({ protocol: 'websocket', kind: 'closed' }),
       });
       exchange = await session.done;
@@ -437,6 +491,9 @@ async function sendWsItem(
       }
       // A host shows a refused handshake from the transcript; a run has nothing to assert on, so it fails.
       if (!opened && !interactive) throw handshakeFailure(exchange.handshake);
+      if (timedOut && watch?.hasReplied === false) {
+        throw new HttpError('timeout', 'The request timed out.', { details: { url: exchange.url } });
+      }
     } catch (error) {
       // A session that settled before failing (cancelled before it opened) keeps its transcript.
       failed('send', error, sentAttempt, input, exchange);
@@ -452,6 +509,7 @@ async function sendWsItem(
       ...originOf(exchange.url),
     };
   } finally {
+    clearTimeout(deadline);
     state.settled();
   }
 }

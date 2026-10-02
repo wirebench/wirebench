@@ -97,6 +97,7 @@ describe('a protocol switched off', () => {
   it('has no request to select, so a selector naming one is unmatched', () => {
     expect(selectRequests(project, []).selected.map((item) => item.path)).toEqual([
       'Api/Ping',
+      'Greeter/Chat',
       'Greeter/Hello',
       'Feed/Ticker',
     ]);
@@ -113,7 +114,8 @@ describe('a protocol switched off', () => {
 
   it('leaves a step naming its request missing, with or without a reason to give', () => {
     expect(findStepRequest(project, 'g-hello').kind).toBe('found');
-    expect(findStepRequest(project, 'g-chat').kind).toBe('unsupported');
+    // A streaming gRPC call is a step like any other now that a run sends it.
+    expect(findStepRequest(project, 'g-chat').kind).toBe('found');
     expect(findStepRequest(project, 'g-hello', withoutGrpc)).toEqual({ kind: 'missing' });
     expect(findStepRequest(project, 'g-chat', withoutGrpc)).toEqual({ kind: 'missing' });
     // A WebSocket request is a step like any other now that its module runs it.

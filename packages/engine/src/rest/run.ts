@@ -2,7 +2,8 @@
  * REST's run facet (spec §3.3): the requests of every API, and the project's webhook items as a
  * group a run sends only when a selector names it. A send resolves the request (its properties and
  * secret tokens), runs its pre-request script, connects (its TLS identity, a webhook item's signing
- * secret, its credentials with an OAuth2 token, the proxy), then goes on the wire (spec §3.4).
+ * secret, its credentials with an OAuth2 token, the proxy), then goes on the wire (spec §3.4). A
+ * send that is not live reads an event stream to its end or the timeout (spec §5.2).
  */
 import { readFile } from 'node:fs/promises';
 import type { AssertionSubject } from '../assert/model.js';
@@ -31,6 +32,7 @@ import type { Resolved } from '../run/send-helpers.js';
 import { ORPHANED_STEP_REASON, byOrder, findInTree, walkTree } from '../run/tree.js';
 import { applyRestSnapshot, restRequestSnapshot, restResponseSnapshot } from './scripting.js';
 import type { RestRequestSnapshot } from './scripting.js';
+import { createSseParser, isEventStream } from './sse.js';
 import type { SseRow } from './sse.js';
 import { loadOpenApiDocument, restOperationFor, restScriptTypes } from './script-types.js';
 import { secretNeedsOfAuth } from '../secrets/env-names.js';
@@ -183,14 +185,34 @@ export async function connectRest(
   };
 }
 
-/** A REST response as assertions and sequence transfers see it. */
+/**
+ * The data of every event in a buffered event stream, in order: what a run read of the stream, to
+ * its end or the timeout. Undefined for any other response, and for one a live send streamed.
+ */
+function bufferedEvents(exchange: RestExchange): string[] | undefined {
+  if (exchange.stream !== undefined || !isEventStream(exchange.headers['content-type'])) return undefined;
+  const events: string[] = [];
+  const parser = createSseParser((row) => {
+    if (row.kind === 'event') events.push(row.data);
+  });
+  parser.push(exchange.body, 0);
+  parser.end();
+  return events;
+}
+
+/**
+ * A REST response as assertions and sequence transfers see it. A buffered event stream is the data
+ * of its events, in order, as a JSON array (spec §5.2).
+ */
 export function restSubject(exchange: RestExchange): AssertionSubject {
+  const events = bufferedEvents(exchange);
   return {
     protocol: 'rest',
     status: exchange.status,
     durationMs: exchange.durationMs,
-    bodyText: exchange.text,
-    bodyKind: exchange.language === 'json' ? 'json' : exchange.language === 'xml' ? 'xml' : 'other',
+    bodyText: events !== undefined ? JSON.stringify(events) : exchange.text,
+    bodyKind:
+      events !== undefined || exchange.language === 'json' ? 'json' : exchange.language === 'xml' ? 'xml' : 'other',
     headers: exchange.rawHeaders,
   };
 }

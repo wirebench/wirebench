@@ -79,7 +79,7 @@ function build(method: string, message: unknown, slug: string, extra: { target?:
     requests: [request],
   });
   const p: Project = { ...createProject('gRPC exchange', { id: 'p-grpc' }), grpcApis: [api] };
-  // Built by hand: a run selects unary calls only, and a host sends any of them.
+  // Built by hand, as a host builds the item it sends.
   const item: GrpcSelected = {
     kind: 'grpc',
     path: `Greeter/${method}`,

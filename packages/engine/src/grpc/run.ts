@@ -1,13 +1,14 @@
 /**
- * gRPC's run facet (spec §3.3). A run selects unary calls only, since a stream needs an assertion
- * model a run does not have yet; a host opens any method kind, and drives a client or bidi stream's
- * request side when it opens one interactive (spec §5.2). A send resolves the call and refuses one
+ * gRPC's run facet (spec §3.3). A run selects every method kind: a client or bidi stream sends its
+ * saved messages in order, then half-closes, and the run timeout bounds every stream (spec §5.2). A
+ * host drives a client or bidi stream's request side when it opens one interactive. A send resolves
+ * the call and refuses one
  * it cannot make, loads the API's schema (without a schema there is no call, so no token is worth
  * fetching; a schema that does not load is remembered for the run), runs its pre-request script,
  * connects, then calls (spec §3.4).
  */
 import type { AssertionSubject } from '../assert/model.js';
-import { GrpcError, isWirebenchError, WirebenchError } from '../errors.js';
+import { GrpcError, HttpError, isWirebenchError, WirebenchError } from '../errors.js';
 import type { AuthConfig, Project } from '../project/model.js';
 import { apiDefinitionDir } from '../project/paths.js';
 import type { ProtocolRun, RunGroup, RunScope, ScriptedSend } from '../protocol/module.js';
@@ -63,8 +64,8 @@ export interface GrpcSelected {
  */
 export type GrpcFailedInput = GrpcResolvedInput & { readonly messageText?: string };
 
-/** A unary call ready for `callGrpc`, which also takes the API's proto set and the message. */
-// The streaming hooks are left out: a run makes unary calls, and wants only the result.
+/** A call ready for `callGrpc`, which also takes the API's proto set and the message text. */
+// The streaming hooks are left out: the send adds the ones a live or interactive call asks for.
 export type GrpcResolvedInput = Omit<GrpcSendInput, 'messages' | 'onMessage' | 'onOpen'>;
 
 /** The same chain for a gRPC request: request, its folders inside-out, the API. */
@@ -74,9 +75,9 @@ export function grpcEffectiveAuth(selected: GrpcSelected): AuthConfig {
 }
 
 /**
- * The gRPC item for `requestId`, built as a run builds it — and found whatever its method kind, and
- * even when its contract no longer has it (`orphaned`), both of which a run skips and a person may
- * still send. Undefined when no gRPC request has that id.
+ * The gRPC item for `requestId`, built as a run builds it — and found even when its contract no
+ * longer has it (`orphaned`), which a run skips and a person may still send. Undefined when no gRPC
+ * request has that id.
  */
 export function grpcItemFor(project: Project, requestId: string): GrpcSelected | undefined {
   const candidates: { item: GrpcSelected; diskPath: string }[] = [];
@@ -208,18 +209,22 @@ async function loadProtoSetFor(projectDir: string, api: GrpcSelected['api']): Pr
 }
 
 /**
- * A unary call's answer as assertions see it: the gRPC status code (0 = OK), and the one response
- * message as JSON. No message, or one that did not decode, leaves nothing a `match` can read.
+ * A call's answer as assertions see it: the gRPC status code (0 = OK), and its response as JSON. A
+ * unary or client-streaming call has one message: none, or one that did not decode, leaves nothing a
+ * `match` can read. A server-streaming or bidi call has every message, in order, as a JSON array,
+ * one that did not decode as `null` so the others keep their index.
  * Exported for its unit test; not part of the run module's public surface.
  */
 export function grpcSubject(result: GrpcCallResult): AssertionSubject {
   const first = result.responseMessages[0];
-  const decoded = first !== undefined && first.json !== undefined;
+  const streamed = result.methodKind === 'server-streaming' || result.methodKind === 'bidi-streaming';
+  const decoded = streamed || (first !== undefined && first.json !== undefined);
+  const body = streamed ? result.responseMessages.map((message) => message.json ?? null) : first?.json;
   return {
     protocol: 'grpc',
     status: result.exchange.status,
     durationMs: result.exchange.durationMs,
-    bodyText: decoded ? JSON.stringify(first.json) : '',
+    bodyText: decoded ? JSON.stringify(body) : '',
     bodyKind: decoded ? 'json' : 'other',
     // Metadata first, then trailers: a header assertion or transfer takes the first value it finds.
     headers: [...Object.entries(result.exchange.headers), ...Object.entries(result.exchange.trailers)],
@@ -229,6 +234,22 @@ export function grpcSubject(result: GrpcCallResult): AssertionSubject {
 
 /** gRPC's `UNAUTHENTICATED`: the server's word for a credential it will not accept. */
 const GRPC_UNAUTHENTICATED = 16;
+
+/** gRPC's `DEADLINE_EXCEEDED`. */
+const GRPC_DEADLINE_EXCEEDED = 4;
+
+/**
+ * True when the deadline cut a stream a run made: the local deadline ended it, or the server said so
+ * once the deadline had passed. A unary call keeps `DEADLINE_EXCEEDED` as its status, for assertions.
+ */
+function deadlineCut(result: GrpcCallResult, timeoutMs: number): boolean {
+  const { exchange } = result;
+  return (
+    result.methodKind !== 'unary' &&
+    exchange.status === GRPC_DEADLINE_EXCEEDED &&
+    (exchange.statusSource === 'local' || exchange.durationMs >= timeoutMs)
+  );
+}
 
 /**
  * The API's schema: the host's when it lends one, otherwise read from the definition cache once per
@@ -240,8 +261,6 @@ async function protoSetFor(selected: GrpcSelected, scope: RunScope, context: Run
   const { api } = selected;
   return scope.memo(`grpc:${api.id}:proto-set`, () => loadProtoSetFor(scope.context.projectDir, api));
 }
-
-const STREAMING_STEP_REASON = 'A streaming gRPC call cannot be a sequence step; only unary calls can';
 
 /**
  * What a failed call was about to put on the wire: an HTTP/2 POST to `/<service>/<method>`, its
@@ -344,6 +363,8 @@ function grpcStreamState(controller: ExchangeController<GrpcLiveEvent>): GrpcStr
 interface GrpcSendMode {
   readonly controller: ExchangeController<GrpcLiveEvent>;
   readonly live: boolean;
+  /** A host drives it; otherwise a run, where a stream the deadline cuts fails with `timeout`. */
+  readonly interactive: boolean;
   readonly stream?: GrpcStreamState;
 }
 
@@ -359,7 +380,7 @@ async function sendGrpcItem(
   scripts: ScriptedSend | undefined,
   mode: GrpcSendMode,
 ): Promise<SentRequest> {
-  const { controller, live, stream } = mode;
+  const { controller, live, interactive, stream } = mode;
   const startedAt = Date.now();
   // Never masks the send's own error: a row that cannot be built, or a host that throws, is dropped.
   const failed = (
@@ -435,6 +456,9 @@ async function sendGrpcItem(
           : {}),
         ...(stream !== undefined ? { onOpen: (handle: GrpcCallStreamHandle) => stream.opened(handle) } : {}),
       });
+      if (!interactive && deadlineCut(result, connected.timeoutMs)) {
+        throw new HttpError('timeout', 'The request timed out.', { details: { target: connected.target } });
+      }
     } catch (error) {
       failed('send', error, connected, sentText);
       throw error;
@@ -465,7 +489,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
         api.name,
         `apis/${api.slug}/requests`,
         (request, chain, group) =>
-          request.orphaned === true || request.methodKind !== 'unary'
+          request.orphaned === true
             ? undefined
             : { kind: 'grpc', path: `${group}/${request.name}`, group, api, chain, request },
         candidates,
@@ -478,9 +502,6 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     for (const api of project.grpcApis) {
       const request = findInTree(api, requestId);
       if (request !== undefined) {
-        if (request.methodKind !== 'unary') {
-          return STREAMING_STEP_REASON;
-        }
         return request.orphaned === true ? ORPHANED_STEP_REASON : undefined;
       }
     }
@@ -496,6 +517,7 @@ export const grpcRun: ProtocolRun<GrpcSelected> = {
     const mode: GrpcSendMode = {
       controller,
       live: options.live === true,
+      interactive: options.interactive,
       ...(stream !== undefined ? { stream } : {}),
     };
     return controller.handle(() => sendGrpcItem(selected, scope, context, options.scripts, mode), stream?.streaming);

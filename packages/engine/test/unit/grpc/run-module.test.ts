@@ -122,7 +122,7 @@ const itemAt = (path: string) =>
     .find((candidate) => candidate.item.path === path)?.item;
 
 describe('grpcRun.groups', () => {
-  it('offers one group per API with its unary, non-orphaned requests in explorer order', () => {
+  it('offers one group per API with its non-orphaned requests of every method kind in explorer order', () => {
     expect(grpcRun.groups(project).map((group) => [group.order, group.name, group.explicitOnly])).toEqual([
       [1, 'Greeter', undefined],
       [0, 'Uncached', undefined],
@@ -130,6 +130,7 @@ describe('grpcRun.groups', () => {
     const [greeter] = grpcRun.groups(project);
     expect(greeter?.candidates.map((candidate) => [candidate.item.path, candidate.diskPath])).toEqual([
       ['Greeter/Admin/Fail', 'apis/greeter/requests/admin/fail'],
+      ['Greeter/Chat', 'apis/greeter/requests/Chat'],
       ['Greeter/Hello', 'apis/greeter/requests/hello'],
     ]);
   });
@@ -142,10 +143,9 @@ describe('grpcRun.groups', () => {
 });
 
 describe('grpcRun.whyNotRunnable', () => {
-  it('names streaming before orphaned, and says nothing for a unary call', () => {
-    const streaming = 'A streaming gRPC call cannot be a sequence step; only unary calls can';
-    expect(grpcRun.whyNotRunnable(project, 'greeter-chat')).toBe(streaming);
-    expect(grpcRun.whyNotRunnable(project, 'greeter-both')).toBe(streaming);
+  it('names orphaned whatever the method kind, and says nothing for a unary or a streaming call', () => {
+    expect(grpcRun.whyNotRunnable(project, 'greeter-chat')).toBeUndefined();
+    expect(grpcRun.whyNotRunnable(project, 'greeter-both')).toBe('The request is no longer in its contract (orphaned)');
     expect(grpcRun.whyNotRunnable(project, 'greeter-gone')).toBe('The request is no longer in its contract (orphaned)');
     expect(grpcRun.whyNotRunnable(project, 'greeter-fail')).toBeUndefined();
     expect(grpcRun.whyNotRunnable(project, 'nowhere')).toBeUndefined();
