@@ -615,6 +615,15 @@ test.describe('docs site screenshots', () => {
     await window.getByTestId('import-openapi-paste').fill(SWITCHING_OPENAPI);
     await window.getByTestId('import-openapi-submit').click();
     await expect(window.getByTestId('import-openapi-skipped')).toBeVisible();
+    // The import writes the project's files, so the watcher raises a "changed on disk" banner behind
+    // the dialog. Its overlay swallows a pointer click, so Ignore is dispatched directly.
+    const ignore = window.locator('[data-testid^="changed-on-disk-ignore"]');
+    await expect(ignore.first()).toBeVisible({ timeout: 10_000 });
+    while ((await ignore.count()) > 0) {
+      await ignore.first().dispatchEvent('click');
+    }
+    await expect(window.locator('[data-testid^="changed-on-disk-banner"]')).toHaveCount(0);
+    await expect(window.getByTestId('import-openapi-skipped')).toBeVisible();
     await shoot(window, 'switching/openapi-summary');
   });
 });
