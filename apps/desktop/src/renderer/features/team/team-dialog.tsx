@@ -7,6 +7,8 @@ import { signedInServers, useAccountStore } from '../../state/account.js';
 import { selectedTeam, useTeamStore, type TeamTab } from '../../state/team.js';
 import { useUiStore } from '../../state/ui.js';
 import { InvitationsTab } from './invitations-tab.js';
+import { LicenseBanner } from './license-banner.js';
+import { LicenseTab } from './license-tab.js';
 import { MembersTab } from './members-tab.js';
 import { INPUT_CLASS, SELECT_CLASS } from './roles.js';
 import { WorkspacesTab } from './workspaces-tab.js';
@@ -40,11 +42,18 @@ export function TeamDialog() {
   }, [team?.id, team?.name]);
 
   const isAdmin = team?.myRole === 'admin';
-  const tabs: TabItem<TeamTab>[] = [
-    { id: 'members', label: 'Members' },
-    { id: 'workspaces', label: 'Workspaces' },
-    ...(isAdmin ? [{ id: 'invitations' as const, label: 'Invitations' }] : []),
-  ];
+  const licenseTab: TabItem<TeamTab>[] = store.serverAdmin ? [{ id: 'license', label: 'License' }] : [];
+  // A server admin with no team selected still has the License tab (plan ruling 10).
+  const tabs: TabItem<TeamTab>[] =
+    team === undefined
+      ? licenseTab
+      : [
+          { id: 'members', label: 'Members' },
+          { id: 'workspaces', label: 'Workspaces' },
+          ...(isAdmin ? [{ id: 'invitations' as const, label: 'Invitations' }] : []),
+          ...licenseTab,
+        ];
+  const activeTab: TeamTab = team === undefined ? 'license' : store.tab;
 
   const submitNew = async (): Promise<void> => {
     if (newName.trim().length === 0) return;
@@ -89,6 +98,7 @@ export function TeamDialog() {
               </select>
             )}
           </div>
+          {store.serverAdmin && url !== undefined && <LicenseBanner url={url} />}
 
           {store.signedOut ? (
             <div data-testid="team-signed-out" className="mt-6 flex flex-col items-start gap-3 text-sm text-fg-subtle">
@@ -176,42 +186,45 @@ export function TeamDialog() {
                   ))}
               </div>
 
-              {team !== undefined && (
+              {(team !== undefined || store.serverAdmin) && (
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex items-center gap-2">
-                    <input
-                      data-testid="team-name"
-                      aria-label="Team name"
-                      readOnly={!isAdmin}
-                      className={`${INPUT_CLASS} flex-1 text-md font-medium`}
-                      value={name}
-                      onChange={(event) => {
-                        setName(event.target.value);
-                      }}
-                      onBlur={submitRename}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') submitRename();
-                      }}
-                    />
-                    {store.serverAdmin && (
-                      <Button
-                        variant="ghost"
-                        data-testid="team-delete"
-                        onClick={() => {
-                          setConfirmDelete(true);
+                  {team !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        data-testid="team-name"
+                        aria-label="Team name"
+                        readOnly={!isAdmin}
+                        className={`${INPUT_CLASS} flex-1 text-md font-medium`}
+                        value={name}
+                        onChange={(event) => {
+                          setName(event.target.value);
                         }}
-                      >
-                        Delete team
-                      </Button>
-                    )}
-                  </div>
+                        onBlur={submitRename}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') submitRename();
+                        }}
+                      />
+                      {store.serverAdmin && (
+                        <Button
+                          variant="ghost"
+                          data-testid="team-delete"
+                          onClick={() => {
+                            setConfirmDelete(true);
+                          }}
+                        >
+                          Delete team
+                        </Button>
+                      )}
+                    </div>
+                  )}
                   <div className="mt-2 border-b border-hairline">
-                    <Tabs label="Team" items={tabs} active={store.tab} onSelect={store.setTab} />
+                    <Tabs label="Team" items={tabs} active={activeTab} onSelect={store.setTab} />
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto pt-3">
-                    {store.tab === 'members' && <MembersTab />}
-                    {store.tab === 'workspaces' && <WorkspacesTab />}
-                    {store.tab === 'invitations' && isAdmin && <InvitationsTab />}
+                    {activeTab === 'members' && <MembersTab />}
+                    {activeTab === 'workspaces' && <WorkspacesTab />}
+                    {activeTab === 'invitations' && isAdmin && <InvitationsTab />}
+                    {activeTab === 'license' && store.serverAdmin && url !== undefined && <LicenseTab url={url} />}
                   </div>
                 </div>
               )}

@@ -125,4 +125,16 @@ describe('TeamDialog (teams-access §3.5)', () => {
     expect(useUiStore.getState().signInDialog).toEqual({ open: true, url: URL_ });
     expect(useUiStore.getState().teamDialog.open).toBe(false);
   });
+
+  it('shows a License tab to a server admin only', async () => {
+    // A server admin who is a plain member of this team still gets the License tab.
+    install('member', {}, true);
+    render(<TeamDialog />);
+    expect(await screen.findByRole('tab', { name: 'License' })).not.toBeNull();
+    cleanup();
+    install('admin', {}, false);
+    render(<TeamDialog />);
+    await screen.findByTestId('team-name');
+    expect(screen.queryByRole('tab', { name: 'License' })).toBeNull();
+  });
 });

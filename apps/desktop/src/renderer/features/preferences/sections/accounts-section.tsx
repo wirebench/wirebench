@@ -2,6 +2,7 @@ import { Button } from '../../../components/button.js';
 import { BooleanSetting, SettingsGroup } from '../../../components/settings-grid.js';
 import { useAccountStore } from '../../../state/account.js';
 import { useUiStore } from '../../../state/ui.js';
+import { LicenseBanner } from '../../team/license-banner.js';
 import type { SectionProps } from './section-props.js';
 
 function hostOf(url: string): string {
@@ -43,6 +44,7 @@ export function AccountsSection({ preferences, update }: SectionProps) {
                     {server.email} · {server.displayName} · {server.signedOut ? 'Signed out' : 'Signed in'} ·{' '}
                     {server.deviceName}
                   </div>
+                  {!server.signedOut && <LicenseBanner url={server.url} />}
                 </div>
                 {server.signedOut ? (
                   <Button

@@ -73,4 +73,18 @@ describe('AccountsSection', () => {
     fireEvent.click(live.querySelector('[data-testid="account-row-manage-teams"]')!);
     expect(useUiStore.getState().teamDialog).toEqual({ open: true, url: 'https://wb.test' });
   });
+
+  it('shows the expiry banner under a server whose license has lapsed', async () => {
+    installWirebenchApi({
+      license: {
+        get: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { edition: 'community', status: 'expired', seats: { used: 7, limit: 5 }, features: [] },
+        }),
+      },
+    });
+    useAccountStore.setState({ servers: [account('https://one.test')] });
+    render(<AccountsSection preferences={DEFAULT_PREFERENCES_WIRE} update={vi.fn()} />);
+    expect((await screen.findByTestId('license-banner')).textContent).toContain('7 of 5 seats are in use');
+  });
 });
