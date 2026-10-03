@@ -26,8 +26,7 @@ export async function sinkFromConfig(config: ForwardConfig): Promise<ForwardSink
     return new SyslogSink({
       host,
       port: Number(url.port),
-      connectTimeoutMs: FORWARD_TIMEOUT_MS,
-      writeTimeoutMs: FORWARD_TIMEOUT_MS,
+      timeoutMs: FORWARD_TIMEOUT_MS,
       ...(url.protocol === 'syslog+tls:' ? { tls: ca !== undefined ? { ca } : {} } : {}),
     });
   }

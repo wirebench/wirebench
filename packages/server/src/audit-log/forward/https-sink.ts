@@ -6,12 +6,15 @@
  * loopback collector; config refuses it anywhere else.
  *
  * The whole request, response body included, is bounded by `timeoutMs`, since the forwarder holds its
- * claimed queue rows locked during a send. Error messages carry the status and the host, never the
+ * claimed queue rows locked during a send. A collector may reset an idle keep-alive connection just as
+ * it is reused; that one case (`ECONNRESET` on a reused socket) is retried once, within the same
+ * deadline. Error messages carry the status and the host, never the
  * token or a response body.
  */
 import { Agent as HttpAgent, request as httpRequest, type IncomingMessage } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import type { AuditEvent } from '@wirebench/engine';
+import { isLoopback } from '../../config.js';
 import type { ForwardSink } from './forwarder.js';
 import { reason, trustAnchors } from './trust.js';
 
@@ -32,6 +35,10 @@ export class HttpsSink implements ForwardSink {
 
   constructor(options: HttpsSinkOptions) {
     this.url = new URL(options.url);
+    if (this.url.protocol !== 'https:' && this.url.protocol !== 'http:')
+      throw new Error('an audit forward URL for this sink must be https://');
+    if (this.url.protocol === 'http:' && !isLoopback(this.url.hostname))
+      throw new Error('an audit forward to http:// is accepted only for a loopback host; use https://');
     this.token = options.token;
     this.timeoutMs = options.timeoutMs;
     const ca = trustAnchors(options.ca);
@@ -41,20 +48,30 @@ export class HttpsSink implements ForwardSink {
         : new HttpAgent({ keepAlive: true });
   }
 
-  send(events: AuditEvent[]): Promise<void> {
-    if (this.closed) return Promise.reject(new Error('the HTTPS audit sink is closed'));
-    if (events.length === 0) return Promise.resolve();
+  async send(events: AuditEvent[]): Promise<void> {
+    if (this.closed) throw new Error('the HTTPS audit sink is closed');
+    if (events.length === 0) return;
     const body = JSON.stringify({ events });
+    const deadline = Date.now() + this.timeoutMs;
+    const first = await this.attempt(body, this.timeoutMs);
+    if (first === undefined) return;
+    if (!first.retryable) throw first.error;
+    const second = await this.attempt(body, Math.max(1, deadline - Date.now()));
+    if (second !== undefined) throw second.error;
+  }
+
+  /** One request: `undefined` when the batch was accepted, else why not and whether a retry may help. */
+  private attempt(body: string, timeoutMs: number): Promise<{ error: Error; retryable: boolean } | undefined> {
     const host = this.url.host;
-    return new Promise<void>((resolve, reject) => {
+    return new Promise((resolve) => {
       let settled = false;
-      const settle = (error?: Error) => {
+      const settle = (outcome?: { error: Error; retryable: boolean }) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        if (error === undefined) resolve();
-        else reject(error);
+        resolve(outcome);
       };
+      const fail = (message: string, retryable = false) => settle({ error: new Error(message), retryable });
       const request = this.url.protocol === 'https:' ? httpsRequest : httpRequest;
       const req = request(
         this.url,
@@ -72,7 +89,7 @@ export class HttpsSink implements ForwardSink {
           res.on('error', () => undefined);
           if (status < 200 || status > 299) {
             const redirect = status >= 300 && status <= 399 ? '; redirects are not followed' : '';
-            settle(new Error(`audit forward to ${host} answered ${status}${redirect}`));
+            fail(`audit forward to ${host} answered ${status}${redirect}`);
             req.destroy();
             return;
           }
@@ -81,10 +98,12 @@ export class HttpsSink implements ForwardSink {
         },
       );
       const timer = setTimeout(() => {
-        settle(new Error(`audit forward to ${host} timed out after ${this.timeoutMs} ms`));
+        fail(`audit forward to ${host} timed out after ${this.timeoutMs} ms`);
         req.destroy();
-      }, this.timeoutMs);
-      req.on('error', (error) => settle(new Error(`audit forward to ${host} failed: ${reason(error)}`)));
+      }, timeoutMs);
+      req.on('error', (error: NodeJS.ErrnoException) => {
+        fail(`audit forward to ${host} failed: ${reason(error)}`, error.code === 'ECONNRESET' && req.reusedSocket);
+      });
       req.end(body);
     });
   }

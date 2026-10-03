@@ -123,6 +123,55 @@ describe('HttpsSink', () => {
     expect(receiver.requests).toHaveLength(0);
   });
 
+  it('retries once when the collector resets a reused keep-alive connection', async () => {
+    let seen = 0;
+    const receiver = track(
+      await httpReceiver((res) => {
+        seen += 1;
+        // The second request arrives on the kept-alive socket: drop it without an answer.
+        if (seen === 2) res.socket?.destroy();
+        else res.writeHead(204).end();
+      }),
+    );
+    const sink = track(new HttpsSink({ url: `http://127.0.0.1:${receiver.port}/`, timeoutMs: 1_000 }));
+    await sink.send([auditEvent({ id: 'e1' })]);
+    await sink.send([auditEvent({ id: 'e2' })]);
+    expect(receiver.requests.map((r) => (JSON.parse(r.body) as { events: { id: string }[] }).events[0]!.id)).toEqual([
+      'e1',
+      'e2',
+      'e2',
+    ]);
+  });
+
+  it('does not retry a reset on a fresh connection, nor a second reset', async () => {
+    const fresh = track(await httpReceiver((res) => res.socket?.destroy()));
+    const once = track(new HttpsSink({ url: `http://127.0.0.1:${fresh.port}/`, timeoutMs: 1_000 }));
+    await expect(once.send([auditEvent()])).rejects.toThrow(/ECONNRESET|socket hang up/);
+    expect(fresh.requests).toHaveLength(1);
+
+    let seen = 0;
+    const flaky = track(
+      await httpReceiver((res) => {
+        seen += 1;
+        if (seen === 1) res.writeHead(204).end();
+        else res.socket?.destroy();
+      }),
+    );
+    const sink = track(new HttpsSink({ url: `http://127.0.0.1:${flaky.port}/`, timeoutMs: 1_000 }));
+    await sink.send([auditEvent()]);
+    await expect(sink.send([auditEvent()])).rejects.toThrow(/ECONNRESET|socket hang up/);
+    expect(flaky.requests).toHaveLength(3);
+  });
+
+  it('refuses http:// to a host that is not loopback, and any other scheme', () => {
+    expect(() => new HttpsSink({ url: 'http://collector.example/', timeoutMs: 500 })).toThrow(/loopback/);
+    expect(() => new HttpsSink({ url: 'ftp://127.0.0.1/', timeoutMs: 500 })).toThrow(/https/);
+    for (const url of ['http://localhost:1/', 'http://127.0.0.2:1/', 'http://[::1]:1/']) {
+      const sink = new HttpsSink({ url, timeoutMs: 500 });
+      void sink.close();
+    }
+  });
+
   it('sends nothing for an empty batch', async () => {
     const receiver = track(await httpReceiver());
     const sink = track(new HttpsSink({ url: `http://127.0.0.1:${receiver.port}/`, timeoutMs: 500 }));

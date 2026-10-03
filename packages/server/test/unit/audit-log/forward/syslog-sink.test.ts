@@ -1,3 +1,5 @@
+import { Socket } from 'node:net';
+import { Duplex } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { frame, SyslogSink, syslogMessage } from '../../../../src/audit-log/forward/syslog-sink.js';
 import {
@@ -9,7 +11,7 @@ import { silentListener, syslogReceiver, type SyslogReceiver } from '../../../he
 import { freePort } from '../../../helpers/net.js';
 import { auditEvent } from './fixtures.js';
 
-const SHORT = { connectTimeoutMs: 300, writeTimeoutMs: 300 } as const;
+const SHORT = { timeoutMs: 300 } as const;
 
 describe('syslogMessage and frame', () => {
   it('builds the RFC 5424 line: PRI 110, version 1, timestamp, host, app, no procid, action, no SD', () => {
@@ -21,6 +23,22 @@ describe('syslogMessage and frame', () => {
 
   it('uses - for an empty hostname', () => {
     expect(syslogMessage(auditEvent(), '')).toMatch(/^<110>1 2026-10-03T12:00:00.000Z - wirebench-server - /);
+  });
+
+  it('cuts the MSGID to 32 characters; the JSON keeps the full action', () => {
+    const action = 'workspace.desktop_recording_changed';
+    expect(action).toHaveLength(35);
+    const event = auditEvent({ action });
+    expect(syslogMessage(event, 'wb-1')).toBe(
+      `<110>1 2026-10-03T12:00:00.000Z wb-1 wirebench-server - ${action.slice(0, 32)} - ${JSON.stringify(event)}`,
+    );
+  });
+
+  it('keeps only printable US-ASCII in HOSTNAME, at most 255 characters, else -', () => {
+    const host = (name: string) => syslogMessage(auditEvent(), name).split(' ')[2];
+    expect(host('wb 1\tzürich\u007f.example')).toBe('wb1zrich.example');
+    expect(host('a'.repeat(300))).toBe('a'.repeat(255));
+    expect(host(' \u00e9\n')).toBe('-');
   });
 
   it('frames a message with its octet count (RFC 6587)', () => {
@@ -94,14 +112,38 @@ describe('SyslogSink', () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
-  it('rejects when a stalled peer never takes the batch, within the write timeout', async () => {
-    const peer = track(await silentListener());
-    const sink = track(new SyslogSink({ host: '127.0.0.1', port: peer.port, ...SHORT }));
-    // Far more than the loopback socket buffers hold, so the write cannot flush while the peer stalls.
-    const big = auditEvent({ details: { blob: 'x'.repeat(64 * 1024 * 1024) } });
+  it('rejects when a stalled peer never takes the batch, and destroys the connection', async () => {
+    let writes = 0;
+    const stalled = new Duplex({
+      read() {},
+      write() {
+        writes += 1; // never calls back: the bytes never flush
+      },
+    });
+    const connect = vi.fn(() => stalled);
+    const sink = track(new SyslogSink({ host: 'collector.test', port: 6514, connect, ...SHORT }));
+    await expect(sink.send([auditEvent()])).rejects.toThrow(/collector\.test:6514 timed out after 300 ms/);
+    expect(connect).toHaveBeenCalledOnce();
+    expect(writes).toBe(1);
+    expect(stalled.destroyed).toBe(true);
+    expect(sink.connected).toBe(false);
+  });
+
+  it('bounds the connect and the write together by one deadline', async () => {
+    // A socket that connects after 200 ms of the 300 ms deadline, then never flushes its write.
+    const socket = new Socket();
+    socket.write = () => true;
+    const connect = () => {
+      setTimeout(() => socket.emit('connect'), 200);
+      return socket;
+    };
+    const sink = track(new SyslogSink({ host: 'collector.test', port: 6514, connect, ...SHORT }));
     const started = Date.now();
-    await expect(sink.send([big])).rejects.toThrow(/timed out/);
-    expect(Date.now() - started).toBeLessThan(5_000);
+    await expect(sink.send([auditEvent()])).rejects.toThrow(/timed out after 300 ms/);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(250);
+    expect(elapsed).toBeLessThan(450);
+    expect(socket.destroyed).toBe(true);
   });
 
   it('reconnects on the next send after the receiver drops the connection', async () => {

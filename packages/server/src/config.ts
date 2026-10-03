@@ -46,7 +46,7 @@ const keyText = z
   );
 
 /** `localhost`, `127.0.0.0/8` or `::1`: where a plain-http collector may listen (issue #209). */
-function isLoopback(hostname: string): boolean {
+export function isLoopback(hostname: string): boolean {
   const host = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
   if (host.toLowerCase() === 'localhost') return true;
   if (isIP(host) === 4) return host.startsWith('127.');
