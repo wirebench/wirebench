@@ -9,13 +9,15 @@ from a version tag in the public repository. Nothing is built or signed on a dev
 
 ## Windows
 
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
-[SignPath Foundation](https://signpath.org/).
+Windows releases are signed with Microsoft's
+[Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/) service, under a Public Trust
+certificate profile. The release workflow signs in to Azure through GitHub's OpenID Connect, so no
+signing key or client secret is stored in the repository or on a developer's machine.
 
 - **What is signed:** the program files (`Wirebench.exe` and the other executables it ships) and the
   installers built around them (`…-setup.exe` and `.msi`), for x64 and arm64.
-- **Who approves:** every signing request is approved in SignPath by an approver named under
-  [Team roles](#team-roles) before it is signed.
+- **Who approves:** only the release workflow may sign, and every release stays a draft until an
+  approver named under [Team roles](#team-roles) publishes it.
 - **What the workflow checks first:** a release is built only after the project's full check suite
   (`pnpm check`) passes.
 
@@ -28,9 +30,9 @@ installers, so Windows names an unknown publisher when they run.
 | --- | --- | --- |
 | Authors | [Mohammed Naami (@mnaami)](https://github.com/mnaami) | Trusted to change the source code without a further review. |
 | Reviewers | [Mohammed Naami (@mnaami)](https://github.com/mnaami) | Review every change proposed by someone who is not an author before it is merged. |
-| Approvers | [Mohammed Naami (@mnaami)](https://github.com/mnaami) | Approve each signing request in SignPath. |
+| Approvers | [Mohammed Naami (@mnaami)](https://github.com/mnaami) | Review and publish each release. |
 
-Everyone in these roles uses multi-factor authentication on GitHub and on SignPath.
+Everyone in these roles uses multi-factor authentication on GitHub and on Azure.
 
 ## macOS
 
