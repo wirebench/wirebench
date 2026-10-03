@@ -38,6 +38,9 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` | no | `50` | Catch URLs a workspace may hold (1–1000). |
 | `WIREBENCH_SERVER_HOOKS_SECRET_KEY` | no | — | Encrypts catch URL signature secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, signature settings are refused. Never logged. |
 | `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` | no | `365` | Audit events older than this many days are deleted (30–3650). |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_URL` | no | — | Forward every audit event (Enterprise): `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…` (`http://` only on a loopback host). Unset, nothing is forwarded. |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN` | no | — | Sent as `Authorization: Bearer …` with each HTTPS batch. Refused with a syslog URL. Never logged. |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE` | no | — | A PEM bundle added to the system roots for `syslog+tls` and `https` forwarding. Certificates are always verified. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 

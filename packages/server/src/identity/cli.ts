@@ -40,7 +40,8 @@ export async function runAdmin(
     const now = options.now ?? (() => new Date());
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
     const hooks = serverHooks();
-    hooks.audit.push(auditHook(now));
+    // Events the CLI records are queued like the server's, for the running server to forward.
+    hooks.audit.push(auditHook(now, { forward: Boolean(config.auditForwardUrl) }));
     env = {
       ctx: {
         db,

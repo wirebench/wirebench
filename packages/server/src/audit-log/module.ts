@@ -30,7 +30,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
     migrationsDir: AUDIT_LOG_MIGRATIONS_DIR,
     // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      ctx.hooks.audit.push(auditHook(now));
+      ctx.hooks.audit.push(auditHook(now, { forward: Boolean(ctx.config.auditForwardUrl) }));
       ctx.hooks.licenseChanged.push(licenseListener({ db: ctx.db, hooks: ctx.hooks, log: ctx.log }));
       ctx.meta.addCapability('audit-log');
       auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);

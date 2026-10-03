@@ -152,6 +152,31 @@ export async function listAuditEventsAscending(
   return (await db.query<Raw>(sql, params)).rows.map(toEvent);
 }
 
+/** Queues an event for the forwarder (issue #209), in the transaction that recorded it. */
+export async function enqueueForward(db: Querier, eventId: string): Promise<void> {
+  await db.query('insert into audit_forward_queue (event_id) values ($1)', [eventId]);
+}
+
+/**
+ * Claims up to `limit` queued events, oldest first by `(at, id)`, as the API returns them. The queue
+ * rows stay locked (`skip locked`, so a concurrent claim takes others) until the caller's transaction
+ * ends: call it inside one, and delete with {@link deleteForwarded} once the sink accepts.
+ */
+export async function claimForwardBatch(tx: Querier, limit: number): Promise<AuditEvent[]> {
+  const rows = await tx.query<Raw>(
+    `select ${COLUMNS} from audit_forward_queue q join audit_events e on e.id = q.event_id
+     order by e.at, e.id limit $1 for update of q skip locked`,
+    [limit],
+  );
+  return rows.rows.map(toEvent);
+}
+
+/** Removes forwarded events from the queue; the events themselves stay. */
+export async function deleteForwarded(tx: Querier, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await tx.query('delete from audit_forward_queue where event_id = any($1::text[])', [ids]);
+}
+
 /** Retention (§3.3): at most `limit` rows older than `cutoff`, oldest first; returns how many went. */
 export async function deleteAuditEventsBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(

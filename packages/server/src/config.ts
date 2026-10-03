@@ -4,6 +4,7 @@
  * `scripts/docs-server-config.ts` (the README's table) and for the zod schema, so the three can
  * never disagree. Values are never echoed: a problem names the variable and the rule it broke.
  */
+import { isIP } from 'node:net';
 import { isAbsolute, resolve } from 'node:path';
 import { isCanonicalBase64 } from '@wirebench/engine';
 import { z } from 'zod';
@@ -44,6 +45,36 @@ const keyText = z
     'must be 32 bytes, base64-encoded',
   );
 
+/** `localhost`, `127.0.0.0/8` or `::1`: where a plain-http collector may listen (issue #209). */
+function isLoopback(hostname: string): boolean {
+  const host = hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  if (host.toLowerCase() === 'localhost') return true;
+  if (isIP(host) === 4) return host.startsWith('127.');
+  return isIP(host) === 6 && host === '::1';
+}
+
+/** The schemes an audit forward URL may use; `http:` only on a loopback host. */
+export const AUDIT_FORWARD_SCHEMES = ['syslog+tcp:', 'syslog+tls:', 'https:', 'http:'] as const;
+
+/**
+ * Where audit events are forwarded: `syslog+tcp://host:port`, `syslog+tls://host:port`, `https://…`,
+ * or `http://…` on a loopback host. The messages never quote the URL.
+ */
+const auditForwardUrlText = z.string().superRefine((value, ctx) => {
+  const fail = (message: string) => {
+    ctx.addIssue({ code: 'custom', message });
+  };
+  if (!URL.canParse(value)) return fail('must be a URL');
+  const url = new URL(value);
+  if (!(AUDIT_FORWARD_SCHEMES as readonly string[]).includes(url.protocol))
+    return fail('must be syslog+tcp://host:port, syslog+tls://host:port or https://…');
+  if (url.hostname === '') return fail('must name a host');
+  if (url.protocol === 'http:' && !isLoopback(url.hostname))
+    return fail('must be https://; http:// is accepted only for localhost, 127.0.0.0/8 or ::1');
+  if (url.protocol.startsWith('syslog') && url.port === '') return fail('a syslog URL must name a port');
+  return undefined;
+});
+
 const inputSchema = z.object({
   databaseUrl: z.string().min(1),
   publicUrl: originText,
@@ -77,6 +108,9 @@ const inputSchema = z.object({
   hooksBurst: integerText(1, 10_000, '50'),
   hooksPerWorkspace: integerText(1, 1_000, '50'),
   hooksSecretKey: keyText.optional(),
+  auditForwardUrl: auditForwardUrlText.optional(),
+  auditForwardToken: z.string().min(1).optional(),
+  auditForwardCaFile: z.string().min(1).optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -318,6 +352,29 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     secret: false,
     description: 'Audit events older than this many days are deleted (30–3650).',
   },
+  {
+    env: 'WIREBENCH_SERVER_AUDIT_FORWARD_URL',
+    key: 'auditForwardUrl',
+    required: false,
+    secret: false,
+    description:
+      'Forward every audit event (Enterprise): `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…` (`http://` only on a loopback host). Unset, nothing is forwarded.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
+    key: 'auditForwardToken',
+    required: false,
+    secret: true,
+    description: 'Sent as `Authorization: Bearer …` with each HTTPS batch. Refused with a syslog URL.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE',
+    key: 'auditForwardCaFile',
+    required: false,
+    secret: false,
+    description:
+      'A PEM bundle added to the system roots for `syslog+tls` and `https` forwarding. Certificates are always verified.',
+  },
 ];
 
 /** One thing wrong with the environment, phrased without the offending value. */
@@ -402,6 +459,12 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
           'must be https://; set WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL=true for an http:// development issuer',
       });
     }
+  }
+  if (config.auditForwardToken !== undefined && config.auditForwardUrl?.startsWith('syslog') === true) {
+    problems.push({
+      variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
+      message: 'is for https:// forwarding only; unset it with a syslog URL',
+    });
   }
   if (!config.localAuth && config.oidcIssuer === undefined) {
     problems.push({

@@ -185,6 +185,9 @@ describe('describeConfig', () => {
     expect(CONFIG_VARIABLES.map((v) => v.env).sort()).toEqual(
       [
         'WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL',
+        'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE',
+        'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
+        'WIREBENCH_SERVER_AUDIT_FORWARD_URL',
         'WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS',
         'WIREBENCH_SERVER_BODY_LIMIT_MB',
         'WIREBENCH_SERVER_DATABASE_URL',
@@ -275,5 +278,95 @@ describe('identity configuration (§4.1)', () => {
 
   it('marks the client secret as a secret so config check and the README never print it', () => {
     expect(CONFIG_VARIABLES.find((v) => v.env === 'WIREBENCH_SERVER_OIDC_CLIENT_SECRET')?.secret).toBe(true);
+  });
+});
+
+describe('audit forwarding configuration (issue #209)', () => {
+  const URL_VAR = 'WIREBENCH_SERVER_AUDIT_FORWARD_URL';
+  const TOKEN_VAR = 'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN';
+  const caught = (env: NodeJS.ProcessEnv): ConfigError => {
+    try {
+      loadConfig({ ...required, ...env }, '1');
+    } catch (error) {
+      if (error instanceof ConfigError) return error;
+      throw error;
+    }
+    throw new Error('expected a ConfigError');
+  };
+
+  it('is off by default: no URL, no token, no CA file', () => {
+    const config = loadConfig(required, '1');
+    expect(config.auditForwardUrl).toBeUndefined();
+    expect(config.auditForwardToken).toBeUndefined();
+    expect(config.auditForwardCaFile).toBeUndefined();
+  });
+
+  it('accepts syslog over TCP or TLS, https, and http on a loopback host', () => {
+    for (const url of [
+      'syslog+tcp://collector.example.com:514',
+      'syslog+tls://collector.example.com:6514',
+      'https://siem.example.com/ingest/wirebench',
+      'http://localhost:8088/audit',
+      'http://127.0.0.1:8088/audit',
+      'http://127.9.9.9/audit',
+      'http://[::1]:8088/audit',
+    ]) {
+      expect(loadConfig({ ...required, [URL_VAR]: url }, '1').auditForwardUrl).toBe(url);
+    }
+    const tls = loadConfig(
+      {
+        ...required,
+        [URL_VAR]: 'https://siem.example.com/ingest',
+        [TOKEN_VAR]: 'tok-123',
+        WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE: '/etc/ssl/corp.pem',
+      },
+      '1',
+    );
+    expect(tls.auditForwardToken).toBe('tok-123');
+    expect(tls.auditForwardCaFile).toBe('/etc/ssl/corp.pem');
+  });
+
+  it('refuses http on a host that is not loopback, without echoing the URL', () => {
+    for (const url of ['http://siem.example.com/ingest', 'http://10.0.0.5:8088/x', 'http://localhost.evil.example/x']) {
+      const error = caught({ [URL_VAR]: url });
+      expect(error.problems.map((p) => p.variable)).toEqual([URL_VAR]);
+      expect(JSON.stringify(error.problems)).not.toContain(new URL(url).hostname);
+      expect(error.message).not.toContain(url);
+    }
+  });
+
+  it('refuses an unknown scheme, a syslog URL without a port, and text that is no URL', () => {
+    for (const url of [
+      'syslog+udp://collector.example.com:514',
+      'ftp://collector.example.com/x',
+      'syslog://collector.example.com:514',
+      'syslog+tcp://collector.example.com',
+      'not a url at all',
+    ]) {
+      const error = caught({ [URL_VAR]: url });
+      expect(error.problems.map((p) => p.variable)).toEqual([URL_VAR]);
+      expect(error.message).not.toContain('collector');
+      expect(error.message).not.toContain(url);
+    }
+  });
+
+  it('refuses a token with a syslog URL, without echoing the token', () => {
+    const error = caught({ [URL_VAR]: 'syslog+tls://collector.example.com:6514', [TOKEN_VAR]: 'sekrit-token' });
+    expect(error.problems.map((p) => p.variable)).toEqual([TOKEN_VAR]);
+    expect(error.message).not.toContain('sekrit-token');
+    expect(error.message).not.toContain('collector');
+  });
+
+  it('marks the token as a secret and documents all three variables', () => {
+    const forward = CONFIG_VARIABLES.filter((v) => v.env.startsWith('WIREBENCH_SERVER_AUDIT_FORWARD_'));
+    expect(forward.map((v) => [v.env, v.secret, v.required])).toEqual([
+      [URL_VAR, false, false],
+      [TOKEN_VAR, true, false],
+      ['WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE', false, false],
+    ]);
+    expect(describeConfig({ ...required, [URL_VAR]: 'http://siem.example.com/x' })).toContainEqual({
+      variable: URL_VAR,
+      status: 'invalid',
+    });
   });
 });
