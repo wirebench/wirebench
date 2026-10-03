@@ -13,6 +13,8 @@ export interface AuditFilter {
   readonly range: RangePreset;
   readonly group: ActionGroup | 'all';
   readonly workspaceId: string | undefined;
+  /** The team whose events are read: set for a team admin, left out for a server admin (all events). */
+  readonly teamId: string | undefined;
 }
 
 export interface AuditSnapshot {
@@ -31,6 +33,8 @@ export interface AuditSnapshot {
 
 interface AuditActions {
   setFilter(url: string, patch: Partial<AuditFilter>): Promise<void>;
+  /** Moves the scope to another team: drops the rows and the workspace narrowing, then reloads. */
+  setTeam(url: string, teamId: string | undefined): Promise<void>;
   load(url: string): Promise<void>;
   loadMore(url: string): Promise<void>;
   select(id: string | undefined): void;
@@ -49,7 +53,7 @@ const EMPTY: AuditSnapshot = {
   exporting: false,
   error: undefined,
   errorCode: undefined,
-  filter: { range: '7d', group: 'all', workspaceId: undefined },
+  filter: { range: '7d', group: 'all', workspaceId: undefined, teamId: undefined },
   selectedId: undefined,
 };
 
@@ -60,6 +64,7 @@ export function filterQueryOf(filter: AuditFilter, now: Date): AuditQueryWire {
     ...(range.from !== undefined ? { from: range.from } : {}),
     ...(filter.group !== 'all' ? { action: `${filter.group}.` } : {}),
     ...(filter.workspaceId !== undefined ? { workspaceId: filter.workspaceId } : {}),
+    ...(filter.teamId !== undefined ? { teamId: filter.teamId } : {}),
   };
 }
 
@@ -74,6 +79,16 @@ export const useAuditStore = create<AuditSnapshot & AuditActions>((set, get) => 
   ...EMPTY,
   async setFilter(url, patch) {
     set({ filter: { ...get().filter, ...patch }, selectedId: undefined });
+    await get().load(url);
+  },
+  async setTeam(url, teamId) {
+    if (get().filter.teamId === teamId) return;
+    set({
+      filter: { ...get().filter, teamId, workspaceId: undefined },
+      events: [],
+      next: undefined,
+      selectedId: undefined,
+    });
     await get().load(url);
   },
   async load(url) {

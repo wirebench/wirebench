@@ -45,12 +45,12 @@ export function TeamDialog() {
   }, [team?.id, team?.name]);
 
   const isAdmin = team?.myRole === 'admin';
-  const adminTabs: TabItem<TeamTab>[] = store.serverAdmin
-    ? [
-        { id: 'license', label: 'License' },
-        { id: 'audit', label: 'Audit' },
-      ]
-    : [];
+  // A team admin reads the audit events of the selected team only; a server admin reads them all.
+  const canAudit = store.serverAdmin || isAdmin;
+  const adminTabs: TabItem<TeamTab>[] = [
+    ...(store.serverAdmin ? [{ id: 'license' as const, label: 'License' }] : []),
+    ...(canAudit ? [{ id: 'audit' as const, label: 'Audit' }] : []),
+  ];
   // A server admin with no team selected still has the License and Audit tabs (plan rulings 10, 15).
   const teamTabs: TabItem<TeamTab>[] = [
     { id: 'members', label: 'Members' },
@@ -232,9 +232,10 @@ export function TeamDialog() {
                     {activeTab === 'workspaces' && <WorkspacesTab />}
                     {activeTab === 'invitations' && isAdmin && <InvitationsTab />}
                     {activeTab === 'license' && store.serverAdmin && url !== undefined && <LicenseTab url={url} />}
-                    {activeTab === 'audit' && store.serverAdmin && url !== undefined && (
+                    {activeTab === 'audit' && canAudit && url !== undefined && (
                       <AuditTab
                         url={url}
+                        teamId={store.serverAdmin ? undefined : team?.id}
                         workspaces={teamWorkspaces(store).map((workspace) => ({
                           id: workspace.id,
                           name: workspace.name,
