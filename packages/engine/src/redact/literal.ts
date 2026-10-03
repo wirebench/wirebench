@@ -40,6 +40,10 @@ function encodedForms(value: string): string[] {
 /**
  * Builds a function that replaces every occurrence of `values` — and the base64, percent-, form-,
  * XML- and JSON-escaped forms of each — with the redaction marker.
+ *
+ * Every match is found on the original text and overlapping or touching matches are merged before
+ * anything is replaced. Masking one needle first would hide the start of another that overlaps it
+ * (`token` inside a cut `token-abcdef-12…`), leaving the rest of that one in the output.
  */
 export function createSecretMasker(values: readonly string[]): (text: string) => string {
   const plain = values.filter((value) => value.length >= MIN_MASKED_LENGTH);
@@ -53,27 +57,62 @@ export function createSecretMasker(values: readonly string[]): (text: string) =>
       }
     }
   }
-  // Longest first: a value that is a prefix of another must not leave the other's tail behind.
-  const ordered = [...needles].sort((a, b) => b.length - a.length);
-  return (text) => {
-    let out = maskBasicCredentials(text, plain);
-    for (const needle of ordered) {
-      out = out.split(needle).join(REDACTED_MARKER);
+  return (text) =>
+    replaceRanges(text, [
+      ...basicCredentialRanges(text, plain),
+      ...needleRanges(text, needles),
+      ...cutPrefixRanges(text, needles),
+    ]);
+}
+
+/** A span of the original text to mask, `start` inclusive and `end` exclusive. */
+interface Range {
+  start: number;
+  end: number;
+}
+
+/** Replaces each run of overlapping or touching ranges with one marker. */
+function replaceRanges(text: string, ranges: Range[]): string {
+  if (ranges.length === 0) {
+    return text;
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  let out = '';
+  let kept = 0;
+  let current = { ...ranges[0]! };
+  for (const range of ranges.slice(1)) {
+    if (range.start <= current.end) {
+      current.end = Math.max(current.end, range.end);
+    } else {
+      out += text.slice(kept, current.start) + REDACTED_MARKER;
+      kept = current.end;
+      current = { ...range };
     }
-    return maskCutPrefixes(out, ordered);
-  };
+  }
+  return out + text.slice(kept, current.start) + REDACTED_MARKER + text.slice(current.end);
+}
+
+/** Every occurrence of every needle, overlapping ones included. */
+function needleRanges(text: string, needles: Iterable<string>): Range[] {
+  const ranges: Range[] = [];
+  for (const needle of needles) {
+    for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + 1)) {
+      ranges.push({ start: at, end: at + needle.length });
+    }
+  }
+  return ranges;
 }
 
 /** The marker every report cap writes where it cut a value. */
 const CUT_MARKER = '\u2026';
 
 /**
- * A report cap can cut a value inside a secret, so no whole needle is left to match. Masks the
+ * A report cap can cut a value inside a secret, so no whole needle is left to match. Finds the
  * longest needle prefix that ends where a cut was made: just before each `…`, after stepping back
  * over the `\n` of `\n… truncated` and any U+FFFD a byte cap left of a split character.
  */
-function maskCutPrefixes(text: string, needles: readonly string[]): string {
-  let out = '';
+function cutPrefixRanges(text: string, needles: Iterable<string>): Range[] {
+  const ranges: Range[] = [];
   let start = 0;
   for (let at = text.indexOf(CUT_MARKER); at !== -1; at = text.indexOf(CUT_MARKER, at + 1)) {
     let end = at;
@@ -83,18 +122,21 @@ function maskCutPrefixes(text: string, needles: readonly string[]): string {
     while (end > start && text[end - 1] === '\uFFFD') {
       end -= 1;
     }
-    out += maskCutTail(text.slice(start, end), needles) + text.slice(end, at + 1);
+    const length = cutTailLength(text.slice(start, end), needles);
+    if (length > 0) {
+      ranges.push({ start: end - length, end });
+    }
     start = at + 1;
   }
-  return out + text.slice(start);
+  return ranges;
 }
 
-/** Masks a cut `Basic` credential whole, else the longest proper needle prefix `head` ends with. */
-function maskCutTail(head: string, needles: readonly string[]): string {
+/** The length of the cut `Basic` base64 run, else of the longest proper needle prefix `head` ends with. */
+function cutTailLength(head: string, needles: Iterable<string>): number {
   // Cut base64 cannot be decoded and checked, and it is a credential either way.
-  const basic = /\bBasic\s+[A-Za-z0-9+/=]+$/.exec(head);
+  const basic = /\bBasic\s+([A-Za-z0-9+/=]+)$/.exec(head);
   if (basic) {
-    return `${head.slice(0, basic.index)}Basic ${REDACTED_MARKER}`;
+    return basic[1]!.length;
   }
   let longest = 0;
   for (const needle of needles) {
@@ -105,15 +147,21 @@ function maskCutTail(head: string, needles: readonly string[]): string {
       }
     }
   }
-  return longest > 0 ? head.slice(0, head.length - longest) + REDACTED_MARKER : head;
+  return longest;
 }
 
 /** A Basic credential is base64 of `user:password`, so the password never appears literally. */
-function maskBasicCredentials(text: string, values: readonly string[]): string {
-  return text.replace(/\bBasic\s+([A-Za-z0-9+/=]{8,})/g, (whole, encoded: string) => {
+function basicCredentialRanges(text: string, values: readonly string[]): Range[] {
+  const ranges: Range[] = [];
+  for (const match of text.matchAll(/\bBasic\s+([A-Za-z0-9+/=]{8,})/g)) {
+    const encoded = match[1]!;
     const decoded = Buffer.from(encoded, 'base64').toString('utf8');
-    return values.some((value) => decoded.includes(value)) ? `Basic ${REDACTED_MARKER}` : whole;
-  });
+    if (values.some((value) => decoded.includes(value))) {
+      const end = match.index + match[0].length;
+      ranges.push({ start: end - encoded.length, end });
+    }
+  }
+  return ranges;
 }
 
 /**

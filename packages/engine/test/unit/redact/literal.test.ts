@@ -14,6 +14,11 @@ describe('createSecretMasker', () => {
     expect(mask('x abcdefgh y')).toBe('x <redacted> y');
   });
 
+  it('masks two overlapping secrets as one range', () => {
+    const mask = createSecretMasker(['abc-token', 'token-xyz']);
+    expect(mask('x abc-token-xyz y')).toBe('x <redacted> y');
+  });
+
   it('masks the base64 and percent-encoded forms a header or URL would carry', () => {
     const mask = createSecretMasker(['p@ss word']);
     const basic = Buffer.from('user:p@ss word').toString('base64');
@@ -101,6 +106,16 @@ describe('createSecretMasker', () => {
 
     it('masks a whole needle followed by a cut once', () => {
       expect(mask(`a ${secret}…`)).toBe('a <redacted>…');
+    });
+
+    it('masks a cut secret whole when a shorter secret starts it', () => {
+      const overlapping = createSecretMasker(['token', 'token-abcdef-123456']);
+      expect(overlapping('Authorization: token-abcdef-12…')).toBe('Authorization: <redacted>…');
+    });
+
+    it('masks a cut password that starts with the username', () => {
+      const credentials = createSecretMasker(['admin', 'admin-s3cret-99']);
+      expect(credentials('login admin with admin-s3cr…')).toBe('login <redacted> with <redacted>…');
     });
 
     it('leaves a needle prefix that no cut follows', () => {
