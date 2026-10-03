@@ -43,6 +43,7 @@ const WORKSPACE = {
 function fakes(...args: [] | [string | undefined]) {
   const token = args.length === 0 ? TOKEN : args[0];
   const client = {
+    meta: vi.fn().mockResolvedValue({ capabilities: ['identity', 'teams', 'desktop-activity'] }),
     me: vi.fn().mockResolvedValue({ user: { id: USER_ID, email: 'a@b.co', displayName: 'A', serverAdmin: true } }),
     listTeams: vi.fn().mockResolvedValue([TEAM]),
     createTeam: vi.fn().mockResolvedValue(TEAM),
@@ -86,10 +87,30 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
     registerTeamChannels(f);
     expect(await invoke('team.list', { url: 'https://WB.test/some/path' })).toEqual({
       ok: true,
-      value: { teams: [TEAM], serverAdmin: true },
+      value: { teams: [TEAM], serverAdmin: true, desktopActivity: true },
     });
     expect(f.accounts.tokenFor).toHaveBeenCalledWith('https://wb.test');
     expect(f.client.listTeams).toHaveBeenCalledWith('https://wb.test', TOKEN);
+  });
+
+  it('team.list reports desktopActivity false when the server lacks the capability', async () => {
+    const f = fakes();
+    f.client.meta.mockResolvedValue({ capabilities: ['identity', 'teams'] });
+    registerTeamChannels(f);
+    expect(await invoke('team.list', { url: 'https://wb.test' })).toMatchObject({
+      ok: true,
+      value: { desktopActivity: false },
+    });
+  });
+
+  it('team.list still answers, with desktopActivity false, when GET /meta fails', async () => {
+    const f = fakes();
+    f.client.meta.mockRejectedValue(new Error('down'));
+    registerTeamChannels(f);
+    expect(await invoke('team.list', { url: 'https://wb.test' })).toMatchObject({
+      ok: true,
+      value: { teams: [TEAM], desktopActivity: false },
+    });
   });
 
   it('with no token it answers account-signed-out and never calls the server', async () => {

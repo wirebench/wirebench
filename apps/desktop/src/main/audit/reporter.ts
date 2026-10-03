@@ -9,7 +9,7 @@
  * queued events never go out under someone else who signs in later, they are dropped and counted.
  */
 import { DESKTOP_AUDIT_LIMITS, isWirebenchError } from '@wirebench/engine';
-import type { DesktopAuditBatch, DesktopAuditEvent, ServerAccount } from '@wirebench/engine';
+import type { DesktopAuditBatch, DesktopAuditEvent, ServerAccount, WorkspaceRole } from '@wirebench/engine';
 import type { AccountService } from '../account-service.js';
 import { normalizeServerUrl } from '../server-client.js';
 import type { ServerClient } from '../server-client.js';
@@ -31,12 +31,14 @@ export interface AuditTarget {
   readonly dir: string;
   /** The last fetched head's `recordDesktopActivity`. */
   readonly recording: boolean;
+  /** The role the last fetched head gave this account; `undefined` before any fetch. */
+  readonly role: WorkspaceRole | undefined;
 }
 
 export interface AuditReporterDeps {
   readonly client: Pick<ServerClient, 'reportDesktopEvents'>;
   /** The token, and who each server's account is (`list`) to stamp and match queued events. */
-  readonly accounts: TokenSource & Pick<AccountService, 'list'>;
+  readonly accounts: TokenSource & Pick<AccountService, 'list' | 'ready'>;
   readonly now: () => Date;
   readonly setTimeout: (fn: () => void, ms: number) => unknown;
   readonly clearTimeout: (handle: unknown) => void;
@@ -48,16 +50,30 @@ type Outcome = 'done' | 'signed-out' | 'stopped' | 'failed' | 'offline';
 class AccountChanged extends Error {}
 
 const sameTarget = (a: AuditTarget, b: AuditTarget): boolean =>
-  a.url === b.url && a.workspaceId === b.workspaceId && a.dir === b.dir && a.recording === b.recording;
+  a.url === b.url &&
+  a.workspaceId === b.workspaceId &&
+  a.dir === b.dir &&
+  a.recording === b.recording &&
+  a.role === b.role;
 
 export class AuditReporter {
   private target: AuditTarget | undefined;
   private outbox: AuditOutbox | undefined;
-  /** Set by a 409, 403 or 404; cleared by a new target, or the same one fetched as recording again. */
-  private serverOff = false;
+  /**
+   * Set by a 409, 403 or 404. A 409 (`recording-off`) is lifted by a new target, or the same one fetched
+   * as recording again. A 403 or 404 (`forbidden`) is lifted only by a different role, workspace, server
+   * or directory: a fetch that changes nothing about who may report does not make the server accept it.
+   */
+  private serverOff: 'recording-off' | 'forbidden' | undefined;
+  /** The role held when a `forbidden` stop was recorded. */
+  private stopRole: WorkspaceRole | undefined;
   private signedOut = false;
   private timer: unknown;
+  /** What the armed timer is: only a back-off holds a fetch's send back. */
+  private timerKind: 'backoff' | 'debounce' | undefined;
   private backoffMs = 0;
+  /** The `Retry-After` of the failure that ended the last drain, if it carried one. */
+  private retryAfterMs: number | undefined;
   private running: Promise<void> | undefined;
   private again = false;
   private disposed = false;
@@ -66,19 +82,28 @@ export class AuditReporter {
 
   /**
    * Follows the open workspace. The same target again (every fetch tells it) changes nothing, so a
-   * back-off in progress keeps its pace; only a stop the server asked for ends, when the fetch says the
-   * workspace records again.
+   * back-off in progress keeps its pace; a `recording-off` stop ends when the fetch says the workspace
+   * records again, a `forbidden` one only when the role, workspace, server or directory changes.
    */
   setTarget(target: AuditTarget | undefined): void {
     if (target !== undefined && this.target !== undefined && sameTarget(target, this.target)) {
-      if (target.recording) this.serverOff = false;
+      if (target.recording && this.serverOff === 'recording-off') this.serverOff = undefined;
       return;
     }
+    const keepForbidden =
+      this.serverOff === 'forbidden' &&
+      target !== undefined &&
+      this.target !== undefined &&
+      target.url === this.target.url &&
+      target.workspaceId === this.target.workspaceId &&
+      target.dir === this.target.dir &&
+      target.role === this.stopRole;
     this.cancelTimer();
-    this.serverOff = false;
+    if (!keepForbidden) this.serverOff = undefined;
     this.backoffMs = 0;
+    const kept = keepForbidden ? this.outbox : undefined;
     this.target = target;
-    this.outbox = target === undefined ? undefined : outboxFor(target.dir);
+    this.outbox = target === undefined ? undefined : (kept ?? outboxFor(target.dir));
   }
 
   /** The workspace events are queued for now; a caller takes it when its send or run starts. */
@@ -94,9 +119,30 @@ export class AuditReporter {
    */
   async enqueue(event: DesktopAuditEvent, workspaceId: string | undefined): Promise<void> {
     const outbox = this.outbox;
+    const before = this.target;
+    if (this.disposed || outbox === undefined || before?.recording !== true || this.serverOff !== undefined) return;
+    if (workspaceId === undefined || workspaceId !== before.workspaceId) return;
+    // The accounts may not be loaded yet (right after launch): wait, so the event is not counted as lost.
+    await this.deps.accounts.ready;
+    // The target may have changed, or stopped recording, while this waited.
     const target = this.target;
-    if (this.disposed || outbox === undefined || target?.recording !== true || this.serverOff) return;
-    if (workspaceId === undefined || workspaceId !== target.workspaceId) return;
+    if (
+      this.disposed ||
+      this.outbox !== outbox ||
+      target?.recording !== true ||
+      this.serverOff !== undefined ||
+      workspaceId !== target.workspaceId
+    ) {
+      // Same outbox, but it stopped recording meanwhile: the gap is counted so the trail shows it.
+      if (!this.disposed && this.outbox === outbox) {
+        try {
+          await outbox.addDropped(1);
+        } catch {
+          return;
+        }
+      }
+      return;
+    }
     try {
       const userId = this.accountOf(target.url)?.userId;
       if (userId === undefined) await outbox.addDropped(1);
@@ -105,7 +151,7 @@ export class AuditReporter {
       return;
     }
     if (this.running !== undefined) this.again = true;
-    else if (this.timer === undefined && !this.signedOut) this.schedule(AUDIT_DEBOUNCE_MS);
+    else if (this.timer === undefined && !this.signedOut) this.schedule(AUDIT_DEBOUNCE_MS, 'debounce');
   }
 
   /** Sends what is queued. Resolves when the outbox is empty or a send did not go through; never rejects. */
@@ -118,8 +164,8 @@ export class AuditReporter {
     const run = this.drainLoop().finally(() => {
       this.running = undefined;
       // An enqueue can land after the loop's last check but before this runs: nothing else would send it.
-      if (this.again && !this.disposed && this.timer === undefined && !this.signedOut && !this.serverOff) {
-        this.schedule(AUDIT_DEBOUNCE_MS);
+      if (this.again && !this.disposed && this.timer === undefined && !this.signedOut && this.serverOff === undefined) {
+        this.schedule(AUDIT_DEBOUNCE_MS, 'debounce');
       }
     });
     this.running = run;
@@ -140,6 +186,8 @@ export class AuditReporter {
   /** A fetch went through, so the account is signed in: send now, keeping any back-off's pace. */
   afterFetch(): Promise<void> {
     this.signedOut = false;
+    // A pending back-off timer keeps its pace: the fetch must not send ahead of it.
+    if (this.timerKind === 'backoff') return this.running ?? Promise.resolve();
     return this.flush();
   }
 
@@ -161,7 +209,7 @@ export class AuditReporter {
             this.backoffMs === 0 ? AUDIT_BACKOFF_START_MS : this.backoffMs * 2,
             AUDIT_BACKOFF_MAX_MS,
           );
-          this.schedule(this.backoffMs);
+          this.schedule(Math.min(Math.max(this.backoffMs, this.retryAfterMs ?? 0), AUDIT_BACKOFF_MAX_MS), 'backoff');
           return;
         }
         if (outcome === 'signed-out') {
@@ -179,7 +227,8 @@ export class AuditReporter {
   private async drain(): Promise<Outcome> {
     const target = this.target;
     const outbox = this.outbox;
-    if (this.disposed || target === undefined || outbox === undefined || this.serverOff) return 'done';
+    this.retryAfterMs = undefined;
+    if (this.disposed || target === undefined || outbox === undefined || this.serverOff !== undefined) return 'done';
     for (;;) {
       const peeked = await outbox.peek(DESKTOP_AUDIT_LIMITS.maxBatch);
       if (peeked.length === 0 && (await outbox.dropped()) === 0) return 'done';
@@ -193,7 +242,8 @@ export class AuditReporter {
       }
       const items = peeked.filter((i) => i.userId === account.userId);
       if (items.length === 0 && foreign.length > 0) continue;
-      const dropped = await outbox.dropped();
+      // The server takes at most `maxDropped` in a batch; the rest goes in the next one.
+      const dropped = Math.min(await outbox.dropped(), DESKTOP_AUDIT_LIMITS.maxDropped);
       if (items.length === 0 && dropped === 0) return 'done';
       const batch: DesktopAuditBatch = {
         events: items.map((i) => i.event),
@@ -214,9 +264,13 @@ export class AuditReporter {
           : undefined;
         if (code === 'account-signed-out' || code === 'identity-unauthenticated') return 'signed-out';
         if (code === 'audit-desktop-recording-off' || status === 403 || status === 404) {
-          // The server will not take this workspace's events: drop them and stop until the next target.
+          // The server will not take this workspace's events: drop them and stop. A 409 ends when a fetch
+          // says the workspace records; a 403 or 404 when the role (or the target) changes.
           await outbox.clear();
-          if (this.target === target) this.serverOff = true;
+          if (this.target === target) {
+            this.serverOff = code === 'audit-desktop-recording-off' ? 'recording-off' : 'forbidden';
+            this.stopRole = target.role;
+          }
           return 'stopped';
         }
         if (status === 400) {
@@ -229,6 +283,10 @@ export class AuditReporter {
           await outbox.addDropped(items.length);
           continue;
         }
+        const retryAfter = isWirebenchError(error)
+          ? (error.details as { retryAfterMs?: unknown } | undefined)?.retryAfterMs
+          : undefined;
+        if (typeof retryAfter === 'number' && retryAfter > 0) this.retryAfterMs = retryAfter;
         // Anything else, a 429 rate limit and a 5xx included, keeps the files and backs off.
         return code !== undefined && (OFFLINE_CODES.has(code) || code === 'server-unreachable') ? 'offline' : 'failed';
       }
@@ -244,11 +302,13 @@ export class AuditReporter {
     return this.deps.accounts.list().find((account) => account.url === origin);
   }
 
-  private schedule(ms: number): void {
+  private schedule(ms: number, kind: 'backoff' | 'debounce'): void {
     this.cancelTimer();
     if (this.disposed) return;
+    this.timerKind = kind;
     this.timer = this.deps.setTimeout(() => {
       this.timer = undefined;
+      this.timerKind = undefined;
       void this.flush();
     }, ms);
   }
@@ -256,5 +316,6 @@ export class AuditReporter {
   private cancelTimer(): void {
     if (this.timer !== undefined) this.deps.clearTimeout(this.timer);
     this.timer = undefined;
+    this.timerKind = undefined;
   }
 }

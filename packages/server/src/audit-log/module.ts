@@ -36,6 +36,8 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       ctx.hooks.audit.push(auditHook(now, { forward: sink !== undefined }));
       ctx.hooks.licenseChanged.push(licenseListener({ db: ctx.db, hooks: ctx.hooks, log: ctx.log }));
       ctx.meta.addCapability('audit-log');
+      // The workspace `recordDesktopActivity` setting (#211); a server without it ignores the field, so the desktop hides the switch.
+      ctx.meta.addCapability('desktop-activity');
       auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
       desktopRoutes({ db: ctx.db, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
       const sweeper = new CaptureSweeper({

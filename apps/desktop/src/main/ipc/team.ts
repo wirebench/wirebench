@@ -13,6 +13,7 @@ export interface TeamChannelDeps {
   readonly client: Pick<
     ServerClient,
     | 'me'
+    | 'meta'
     | 'listTeams'
     | 'createTeam'
     | 'renameTeam'
@@ -35,6 +36,9 @@ export interface TeamChannelDeps {
   readonly accounts: TokenSource;
 }
 
+/** `GET /meta` lists it when the server stores the workspace `recordDesktopActivity` setting. */
+const DESKTOP_ACTIVITY_CAPABILITY = 'desktop-activity';
+
 const DONE = { done: true } as const;
 
 export function registerTeamChannels(deps: TeamChannelDeps): void {
@@ -42,8 +46,16 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
 
   registerHandler(channels.team.list, (r) =>
     withToken(deps, r.url, async (url, token) => {
-      const [teams, me] = await Promise.all([c.listTeams(url, token), c.me(url, token)]);
-      return { teams, serverAdmin: me.user.serverAdmin };
+      const [teams, me, meta] = await Promise.all([
+        c.listTeams(url, token),
+        c.me(url, token),
+        c.meta(url).catch(() => undefined),
+      ]);
+      return {
+        teams,
+        serverAdmin: me.user.serverAdmin,
+        desktopActivity: meta?.capabilities.includes(DESKTOP_ACTIVITY_CAPABILITY) === true,
+      };
     }),
   );
   registerHandler(channels.team.create, (r) =>

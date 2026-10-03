@@ -72,7 +72,8 @@ knows from the session is masked too, wherever it appears in the URL. A URL long
 is cut.
 
 **Turning it on.** A workspace admin opens the **Workspaces** tab in **Account: Manage teams** and
-switches on **Record desktop activity**. Everyone else sees the line *Desktop activity is recorded*.
+switches on **Record desktop activity**. Everyone else sees the line *Desktop activity is recorded*. Both show only on a server that supports
+desktop activity.
 Each desktop learns of a change on its next sync fetch. Turning it off stops it on the server at once.
 Recording is on for every edition, like the rest of the log.
 
@@ -82,12 +83,15 @@ recorded without knowing.
 
 **Offline and signed out.** The app writes each event to a queue in the workspace's folder first, then
 sends the queue in batches of at most 100. If the server cannot be reached the app tries again later,
-starting at 5 seconds and doubling up to 5 minutes, and keeps the queue. Signed out, it keeps the queue
+starting at 5 seconds and doubling up to 5 minutes, and keeps the queue. A server that asks it to wait
+(`429`) is obeyed when its `Retry-After` is longer, up to the same 5 minutes. Signed out, it keeps the queue
 until the next sign-in. The queue holds 5000 events; beyond that the oldest are discarded and their
-count is sent with the next batch as `desktop.events_dropped`. A batch the server can never accept
+count is sent with the next batch as `desktop.events_dropped`, at most 1,000,000 to a batch and the rest
+in the next. A batch the server can never accept
 (a `400` answer) is discarded the same way and counted. If the server answers that the workspace no
 longer records (`409`), or that the workspace is closed to the person (`403` or `404`), the app empties
-its queue and stops recording until the workspace is fetched again. Delivery is at least once, so if the server's reply to a batch is
+its queue and stops recording: after a `409`, until the workspace is fetched and records again; after a
+`403` or `404`, until the person's role in the workspace changes, the workspace is reopened, or the desktop restarts. Delivery is at least once, so if the server's reply to a batch is
 lost, the app sends that batch again and its events can appear twice. Events queued while one person
 was signed in are sent only as that person: if someone else signs in to the same server, they are
 discarded and counted instead.

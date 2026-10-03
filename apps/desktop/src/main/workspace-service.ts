@@ -1635,6 +1635,7 @@ export class WorkspaceService implements ProjectRouter {
       workspaceId: server.workspaceId,
       dir: join(open.dir, SERVER_STATE_DIR, AUDIT_OUTBOX_DIR),
       recording: open.recording,
+      role: open.sync?.status().role,
     };
   }
 

@@ -55,6 +55,26 @@ describe('useTeamStore (teams-access §3.5)', () => {
     expect(api.team.invitations).toHaveBeenCalledWith({ url: URL_, teamId: 'A' });
   });
 
+  it('carries the server desktop-activity capability into the state, false when absent', async () => {
+    const lists = (desktopActivity?: boolean) => ({
+      list: ok({
+        teams: [team('A')],
+        serverAdmin: false,
+        ...(desktopActivity === undefined ? {} : { desktopActivity }),
+      }),
+      listWorkspaces: ok({ workspaces: [] }),
+      members: ok({ members: [] }),
+      invitations: ok({ invitations: [] }),
+    });
+    installWirebenchApi({ team: lists(true) });
+    await useTeamStore.getState().open(URL_);
+    expect(useTeamStore.getState().desktopActivity).toBe(true);
+    useTeamStore.getState().reset();
+    installWirebenchApi({ team: lists(false) });
+    await useTeamStore.getState().open(URL_);
+    expect(useTeamStore.getState().desktopActivity).toBe(false);
+  });
+
   it('a plain member never asks for invitations', async () => {
     const api = installWirebenchApi({
       team: {

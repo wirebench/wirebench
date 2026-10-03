@@ -86,6 +86,7 @@ function setup(
   send: (b: DesktopAuditBatch) => Promise<void> = () => Promise.resolve(),
   tokenOf: () => string | undefined = () => 'tok',
   accountsOf: () => readonly ServerAccount[] = () => [account('u1')],
+  ready: Promise<void> = Promise.resolve(),
 ) {
   const clock = new Clock();
   const batches: DesktopAuditBatch[] = [];
@@ -100,13 +101,14 @@ function setup(
       tokenFor: () => Promise.resolve(tokenOf()),
       markSignedOut: () => undefined,
       list: () => accountsOf(),
+      ready,
     },
     now: () => new Date(clock.time),
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
   });
   clock.idle = () => reporter.idle();
-  reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
+  reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true, role: undefined });
   return { clock, batches, reporter };
 }
 const files = async (): Promise<string[]> => (await readdir(dir)).filter((f) => f !== 'dropped.json');
@@ -144,10 +146,158 @@ describe('AuditReporter', () => {
     await reporter.enqueue(ev(3), 'w1');
     expect(await files()).toEqual([]);
     off = false;
-    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true, role: undefined });
     await reporter.enqueue(ev(4), 'w1');
     expect(await files()).toHaveLength(1);
     expect(batches).toHaveLength(1);
+  });
+
+  it('a 403 stays stopped for the same role and sends again when the role changes', async () => {
+    let calls = 0;
+    const { batches, reporter } = setup(() => {
+      calls++;
+      return Promise.reject(new WirebenchError('sync-forbidden', 'no', { details: { status: 403 } }));
+    });
+    const target = (role: 'viewer' | 'editor', recording = true) => ({
+      url: 'https://s.example',
+      workspaceId: 'w1',
+      dir,
+      recording,
+      role,
+    });
+    reporter.setTarget(target('viewer'));
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(calls).toBe(1);
+    // Fetches that change nothing about the role, even through a recording flip, do not lift it.
+    reporter.setTarget(target('viewer'));
+    reporter.setTarget(target('viewer', false));
+    reporter.setTarget(target('viewer'));
+    await reporter.enqueue(ev(2), 'w1');
+    await reporter.afterFetch();
+    expect(calls).toBe(1);
+    expect(await files()).toEqual([]);
+    reporter.setTarget(target('editor'));
+    await reporter.enqueue(ev(3), 'w1');
+    await reporter.flush();
+    expect(calls).toBe(2);
+    expect(batches).toHaveLength(2);
+  });
+
+  it('a 404 behaves like a 403', async () => {
+    let calls = 0;
+    const { reporter } = setup(() => {
+      calls++;
+      return Promise.reject(new WirebenchError('not-found', 'gone', { details: { status: 404 } }));
+    });
+    const same = { url: 'https://s.example', workspaceId: 'w1', dir, recording: true, role: undefined };
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    reporter.setTarget(same);
+    await reporter.enqueue(ev(2), 'w1');
+    await reporter.afterFetch();
+    expect(calls).toBe(1);
+    expect(await files()).toEqual([]);
+    reporter.setTarget({ ...same, role: 'admin' });
+    await reporter.enqueue(ev(3), 'w1');
+    await reporter.flush();
+    expect(calls).toBe(2);
+  });
+
+  it('an event enqueued before the accounts load is queued under the account that loads', async () => {
+    let loaded = false;
+    let release: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { batches, reporter } = setup(
+      () => Promise.resolve(),
+      () => 'tok',
+      () => (loaded ? [account('u1')] : []),
+      ready,
+    );
+    const pending = reporter.enqueue(ev(1), 'w1');
+    loaded = true;
+    release();
+    await pending;
+    await reporter.flush();
+    expect(batches).toHaveLength(1);
+    expect(batches[0]!.events).toEqual([ev(1)]);
+    expect(batches[0]!.dropped).toBeUndefined();
+  });
+
+  it('an event enqueued while the accounts load is refused if the target changed meanwhile', async () => {
+    let release: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { reporter } = setup(undefined, undefined, undefined, ready);
+    const pending = reporter.enqueue(ev(1), 'w1');
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w2', dir, recording: true, role: undefined });
+    release();
+    await pending;
+    expect(await files()).toEqual([]);
+  });
+
+  it('an event is counted as dropped when recording goes off while the accounts load', async () => {
+    let release: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { reporter } = setup(undefined, undefined, undefined, ready);
+    const pending = reporter.enqueue(ev(1), 'w1');
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: false, role: undefined });
+    release();
+    await pending;
+    expect(await files()).toEqual([]);
+    expect(await outboxFor(dir).dropped()).toBe(1);
+  });
+
+  it('dispose during the accounts wait queues nothing', async () => {
+    let release: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { reporter } = setup(undefined, undefined, undefined, ready);
+    const pending = reporter.enqueue(ev(1), 'w1');
+    reporter.dispose();
+    release();
+    await pending;
+    expect(await files()).toEqual([]);
+    expect(await outboxFor(dir).dropped()).toBe(0);
+  });
+
+  it('a 403 stop survives a recording flip that keeps the same role', async () => {
+    let calls = 0;
+    const { reporter } = setup(() => {
+      calls++;
+      return Promise.reject(new WirebenchError('sync-forbidden', 'no', { details: { status: 403 } }));
+    });
+    const target = (recording: boolean) => ({
+      url: 'https://s.example',
+      workspaceId: 'w1',
+      dir,
+      recording,
+      role: 'viewer' as const,
+    });
+    reporter.setTarget(target(true));
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(calls).toBe(1);
+    reporter.setTarget(target(false));
+    reporter.setTarget(target(true));
+    await reporter.enqueue(ev(2), 'w1');
+    await reporter.flush();
+    expect(calls).toBe(1);
+    expect(await files()).toEqual([]);
+  });
+
+  it('with the accounts loaded and none known, the event is only counted as dropped', async () => {
+    const { batches, reporter } = setup(undefined, undefined, () => []);
+    await reporter.enqueue(ev(1), 'w1');
+    expect(await files()).toEqual([]);
+    expect(await outboxFor(dir).dropped()).toBe(1);
+    expect(batches).toHaveLength(0);
   });
 
   it('backs off 5 s doubling to 300 s on a network failure, then retries', async () => {
@@ -188,6 +338,84 @@ describe('AuditReporter', () => {
     expect(await files()).toEqual([]);
   });
 
+  it('sends a local dropped count over the cap in clamped batches', async () => {
+    const { batches, reporter } = setup();
+    await outboxFor(dir).addDropped(1_500_000);
+    await reporter.flush();
+    expect(batches).toEqual([
+      { events: [], dropped: 1_000_000 },
+      { events: [], dropped: 500_000 },
+    ]);
+    expect(await outboxFor(dir).dropped()).toBe(0);
+  });
+
+  it('afterFetch sends nothing while a back-off timer is pending, until it fires', async () => {
+    let fail = true;
+    const { clock, batches, reporter } = setup(() =>
+      fail ? Promise.reject(new WirebenchError('server-unreachable', 'down')) : Promise.resolve(),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(clock.pending).toEqual([5000]);
+    fail = false;
+    await reporter.afterFetch();
+    expect(batches).toHaveLength(1);
+    expect(clock.pending).toEqual([5000]);
+    await clock.fireNext();
+    expect(batches).toHaveLength(2);
+    expect(await files()).toEqual([]);
+  });
+
+  it('afterFetch sends at once through the enqueue debounce and leaves no timer', async () => {
+    const { clock, batches, reporter } = setup();
+    await reporter.enqueue(ev(1), 'w1');
+    expect(clock.pending).toEqual([2000]);
+    await reporter.afterFetch();
+    expect(batches).toHaveLength(1);
+    expect(clock.pending).toEqual([]);
+  });
+
+  it('a 429 with a retry-after shorter than the back-off keeps the 5 s back-off', async () => {
+    const { clock, reporter } = setup(() =>
+      Promise.reject(
+        new WirebenchError('audit-desktop-rate-limited', 'slow', { details: { status: 429, retryAfterMs: 1000 } }),
+      ),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(clock.pending).toEqual([5000]);
+  });
+
+  it('afterFetch sends at once when no timer is pending', async () => {
+    const { clock, batches, reporter } = setup();
+    await outboxFor(dir).append(ev(1), 'u1');
+    await reporter.afterFetch();
+    expect(batches).toHaveLength(1);
+    expect(clock.pending).toEqual([]);
+  });
+
+  it('a 429 with a retry-after longer than the back-off schedules that long', async () => {
+    const { clock, reporter } = setup(() =>
+      Promise.reject(
+        new WirebenchError('audit-desktop-rate-limited', 'slow', { details: { status: 429, retryAfterMs: 60_000 } }),
+      ),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(clock.pending).toEqual([60_000]);
+  });
+
+  it('caps a retry-after of 900 s at 300 s', async () => {
+    const { clock, reporter } = setup(() =>
+      Promise.reject(
+        new WirebenchError('audit-desktop-rate-limited', 'slow', { details: { status: 429, retryAfterMs: 900_000 } }),
+      ),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(clock.pending).toEqual([300_000]);
+  });
+
   it('signed out keeps the files and waits for onSignedIn', async () => {
     let token = undefined as string | undefined;
     const { clock, batches, reporter } = setup(undefined, () => token);
@@ -205,7 +433,7 @@ describe('AuditReporter', () => {
 
   it('ignores enqueue for a non-recording or missing target', async () => {
     const { clock, reporter } = setup();
-    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: false });
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: false, role: undefined });
     await reporter.enqueue(ev(1), 'w1');
     reporter.setTarget(undefined);
     await reporter.enqueue(ev(2), 'w1');
@@ -300,7 +528,7 @@ describe('AuditReporter', () => {
       await reporter.enqueue(ev(1), 'w1');
       const flushing = reporter.flush();
       await until(() => release !== undefined);
-      reporter.setTarget({ url: 'https://s.example', workspaceId: 'w2', dir: dirB, recording: true });
+      reporter.setTarget({ url: 'https://s.example', workspaceId: 'w2', dir: dirB, recording: true, role: undefined });
       release?.();
       await flushing;
       await reporter.enqueue(ev(2), 'w2');
@@ -312,7 +540,7 @@ describe('AuditReporter', () => {
 
   it('keeps every event when setTarget is called again on the same directory while appending', async () => {
     const { reporter } = setup();
-    const target = { url: 'https://s.example', workspaceId: 'w1', dir, recording: true } as const;
+    const target = { url: 'https://s.example', workspaceId: 'w1', dir, recording: true, role: undefined } as const;
     const pending: Promise<void>[] = [];
     for (let i = 0; i < 20; i++) {
       pending.push(reporter.enqueue(ev(i), 'w1'));
@@ -449,10 +677,10 @@ describe('AuditReporter', () => {
     await reporter.flush();
     await clock.fireNext();
     expect(clock.pending).toEqual([10000]);
-    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true, role: undefined });
     expect(clock.pending).toEqual([10000]);
     await reporter.afterFetch();
-    expect(clock.pending).toEqual([20000]);
+    expect(clock.pending).toEqual([10000]);
   });
 
   it('an unchanged target fetched as recording again after a 409 resumes', async () => {
@@ -465,7 +693,7 @@ describe('AuditReporter', () => {
     await reporter.enqueue(ev(2), 'w1');
     expect(await files()).toEqual([]);
     off = false;
-    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true, role: undefined });
     await reporter.enqueue(ev(3), 'w1');
     await reporter.afterFetch();
     expect(batches.at(-1)).toEqual({ events: [ev(3)] });

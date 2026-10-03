@@ -85,6 +85,12 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
   const enterprise = async (h: IdentityHarness, admin: SignedInUser) => {
     const res = await call(h, admin, 'PUT', '/license', { license: license(keys, { edition: 'enterprise' }) });
     expect(res.status).toBe(200);
+    // `license.installed` is recorded after the answer; wait for it, or it can be queued after a pass's
+    // claim and leave the queue not yet empty when a test expects it drained.
+    await vi.waitFor(async () => {
+      const row = await h.db.query(`select 1 from audit_events where action = 'license.installed'`);
+      expect(row.rows).toHaveLength(1);
+    }, WAIT);
   };
   const createTeam = async (h: IdentityHarness, admin: SignedInUser, name: string) => {
     const res = await call<{ id: string }>(h, admin, 'POST', '/teams', { name });
