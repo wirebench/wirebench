@@ -152,6 +152,34 @@
           </xs:all>
         </xs:complexType>
       </xs:element>
+      <xs:element name="Node">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="label" type="xs:string"/>
+            <xs:element ref="tns:Node" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:simpleType name="Either">
+        <xs:restriction base="xs:string">
+          <xs:pattern value="[a-z]+"/>
+          <xs:pattern value="[0-9]+"/>
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Octets">
+        <xs:restriction base="xs:hexBinary"><xs:length value="2"/></xs:restriction>
+      </xs:simpleType>
+      <xs:element name="Edge">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="either" type="tns:Either"/>
+            <xs:element name="octets" type="tns:Octets"/>
+            <xs:choice>
+              <xs:element name="a" type="xs:string"/>
+            </xs:choice>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
       <xs:element name="OrderResult">
         <xs:complexType>
           <xs:sequence>

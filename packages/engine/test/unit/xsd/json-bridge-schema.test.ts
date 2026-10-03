@@ -205,6 +205,29 @@ describe('jsonSchemaOf', () => {
     expect(validateJsonSchema({ ...valid, fixed: 'abc' }, schema)).not.toEqual([]);
   });
 
+  it('terminates on a self-referencing anonymous type, through $defs', () => {
+    const { schema } = jsonSchemaOf(wsdl.schemaSet, element('Node'));
+    expect(JSON.parse(JSON.stringify(schema))).toEqual(schema);
+    const nested = { label: 'a', Node: { label: 'b', Node: { label: 'c' } } };
+    expect(validateJsonSchema(nested, schema)).toEqual([]);
+    expect(schema).toMatchObject({ $ref: '#/$defs/Node', $defs: { Node: { required: ['label'] } } });
+  });
+
+  it('ORs several patterns of one step, and leaves octet lengths to the XSD check', () => {
+    const { schema } = jsonSchemaOf(wsdl.schemaSet, element('Edge'));
+    const props = schema['properties'] as Record<string, Record<string, unknown>>;
+    expect(props['octets']).toEqual({ type: 'string', contentEncoding: 'base16' });
+    const valid = { either: 'abc', octets: '0a0b', a: 'x' };
+    expect(validateJsonSchema(valid, schema)).toEqual([]);
+    expect(validateJsonSchema({ ...valid, either: '123' }, schema)).toEqual([]);
+    expect(validateJsonSchema({ ...valid, either: 'a1' }, schema)).not.toEqual([]);
+  });
+
+  it('keeps a single-branch choice: its key stays required', () => {
+    const { schema } = jsonSchemaOf(wsdl.schemaSet, element('Edge'));
+    expect(validateJsonSchema({ either: 'abc', octets: '0a0b' }, schema)).not.toEqual([]);
+  });
+
   it('maps a type target (an rpc part), and shares $defs across targets of one writer', () => {
     expect(
       jsonSchemaOf(wsdl.schemaSet, {

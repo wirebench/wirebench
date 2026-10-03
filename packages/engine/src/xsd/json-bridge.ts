@@ -421,17 +421,27 @@ export function typedLexical(kind: JsonKind, text: string): unknown {
  */
 const XSD_ONLY_PATTERN = /\\[iIcC]|\\[pP]\{|-\[/;
 
-/** An XSD pattern as a JSON Schema one (XSD patterns are anchored), or undefined when it has none. */
-function jsonPattern(pattern: string): string | undefined {
+/** An XSD pattern's body as an ECMAScript one (XSD patterns are anchored by the caller), or undefined. */
+function jsonPatternBody(pattern: string): string | undefined {
   if (XSD_ONLY_PATTERN.test(pattern)) {
     return undefined;
   }
-  const anchored = `^(?:${pattern})$`;
   try {
-    return new RegExp(anchored, 'u').source.length > 0 ? anchored : undefined;
+    return new RegExp(`^(?:${pattern})$`, 'u').source.length > 0 ? pattern : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** The pattern facets of the nearest restriction step that has any: alternatives of one another. */
+function patternsOf(chain: readonly SimpleType[]): string[] {
+  for (const simple of chain) {
+    const found = simple.facets.flatMap((candidate) => (candidate.kind === 'pattern' ? [candidate.value] : []));
+    if (found.length > 0) {
+      return found;
+    }
+  }
+  return [];
 }
 
 function simpleSchema(set: SchemaSet, ref: SimpleTypeRef, notes: string[], where: string): JsonSchemaObject {
@@ -450,13 +460,20 @@ function simpleSchema(set: SchemaSet, ref: SimpleTypeRef, notes: string[], where
   if (enumeration !== undefined) {
     schema['enum'] = enumeration.values.map((value) => typedLexical(kind, value) ?? value);
   }
-  const pattern = facet(chain, 'pattern');
-  if (pattern !== undefined) {
-    const translated = jsonPattern(pattern.value);
-    if (translated === undefined) {
-      notes.push(`${where}: the XSD pattern ${pattern.value} has no JSON Schema form; the XSD check still applies it`);
+  // Several patterns in one restriction step are alternatives; a step further up is a further constraint
+  // that JSON Schema's single `pattern` cannot add, so only the nearest step with patterns is used.
+  const patterns = patternsOf(chain);
+  if (patterns.length > 0) {
+    const translated = patterns.map(jsonPatternBody);
+    if (translated.some((body) => body === undefined)) {
+      notes.push(
+        `${where}: the XSD pattern ${patterns.join(' | ')} has no JSON Schema form; the XSD check still applies it`,
+      );
     } else if (kind === 'string') {
-      schema['pattern'] = translated;
+      schema['pattern'] =
+        translated.length === 1
+          ? `^(?:${translated[0] ?? ''})$`
+          : `^(?:${translated.map((body) => `(?:${body ?? ''})`).join('|')})$`;
     }
   }
   if (kind === 'integer' || kind === 'number') {
@@ -475,7 +492,8 @@ function simpleSchema(set: SchemaSet, ref: SimpleTypeRef, notes: string[], where
     if (exclusiveMinimum !== undefined) schema['exclusiveMinimum'] = exclusiveMinimum;
     if (exclusiveMaximum !== undefined) schema['exclusiveMaximum'] = exclusiveMaximum;
   }
-  if (kind === 'string') {
+  // On a binary type the length facets count octets, not characters: the XSD check enforces them.
+  if (kind === 'string' && !(local !== undefined && Object.hasOwn(ENCODINGS, local))) {
     const length = facet(chain, 'length');
     const minLength = facet(chain, 'minLength')?.value ?? length?.value;
     const maxLength = facet(chain, 'maxLength')?.value ?? length?.value;
@@ -526,6 +544,8 @@ class SchemaWriter implements JsonSchemaWriter {
   private readonly definitions = new Map<string, JsonSchemaObject>();
   /** Clark name of a named complex type → its `$defs` key. */
   private readonly defKeys = new Map<string, string>();
+  /** Anonymous complex types being written, and the `$defs` key one took when it was reached again. */
+  private readonly active = new Map<ComplexType, { key: string | undefined }>();
 
   constructor(private readonly set: SchemaSet) {}
 
@@ -535,7 +555,7 @@ class SchemaWriter implements JsonSchemaWriter {
       this.found.push(`no element ${'element' in target ? qnameToString(target.element) : ''} in the schema`);
       return {};
     }
-    return this.content(type, true, '');
+    return this.content(type, true, '', 'element' in target ? target.element.localName : target.name.localName);
   }
 
   defs(): JsonSchemaObject | undefined {
@@ -546,7 +566,7 @@ class SchemaWriter implements JsonSchemaWriter {
     return this.found;
   }
 
-  private content(type: ResolvedType, inline: boolean, where: string): JsonSchemaObject {
+  private content(type: ResolvedType, inline: boolean, where: string, label = 'Anonymous'): JsonSchemaObject {
     switch (type.kind) {
       case 'anyType':
         return { type: 'string', description: FRAGMENT_DESCRIPTION };
@@ -556,8 +576,38 @@ class SchemaWriter implements JsonSchemaWriter {
       case 'simple':
         return simpleSchema(this.set, type.ref, this.found, where);
       case 'complex':
-        return inline || type.type.name === undefined ? this.object(type.type) : this.ref(type.type, type.type.name);
+        if (type.type.name !== undefined) {
+          return inline ? this.object(type.type) : this.ref(type.type, type.type.name);
+        }
+        return this.anonymous(type.type, label);
     }
+  }
+
+  /** An anonymous complex type; one that reaches itself again (through an element reference) becomes a `$defs` entry. */
+  private anonymous(type: ComplexType, label: string): JsonSchemaObject {
+    const active = this.active.get(type);
+    if (active !== undefined) {
+      active.key ??= this.freshKey(label);
+      return { $ref: `#/$defs/${active.key}` };
+    }
+    const state: { key: string | undefined } = { key: undefined };
+    this.active.set(type, state);
+    const schema = this.object(type);
+    this.active.delete(type);
+    if (state.key === undefined) {
+      return schema;
+    }
+    this.definitions.set(state.key, schema);
+    return { $ref: `#/$defs/${state.key}` };
+  }
+
+  private freshKey(base: string): string {
+    let key = base;
+    for (let n = 2; this.definitions.has(key); n += 1) {
+      key = `${base}_${String(n)}`;
+    }
+    this.definitions.set(key, {});
+    return key;
   }
 
   private ref(type: ComplexType, name: QName): JsonSchemaObject {
@@ -600,7 +650,7 @@ class SchemaWriter implements JsonSchemaWriter {
     switch (member.kind) {
       case 'element': {
         const { decl } = member;
-        let schema = this.content(typeOfDecl(this.set, decl), false, member.key);
+        let schema = this.content(typeOfDecl(this.set, decl), false, member.key, decl.name.localName);
         if (decl.nillable) {
           schema = { anyOf: [schema, { type: 'null' }] };
         }
@@ -659,7 +709,7 @@ class SchemaWriter implements JsonSchemaWriter {
     for (const inner of branches) {
       Object.assign(parts.properties, inner.properties);
     }
-    if (options.length > 1) {
+    if (options.length > 0) {
       parts.allOf.push({ oneOf: options });
     }
   }
