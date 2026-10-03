@@ -75,7 +75,7 @@ function scriptedServer(role: 'viewer' | 'editor' = 'editor'): { sent: HttpReque
     sent.push(request);
     const path = new URL(request.url).pathname;
     if (path.endsWith('/sync/head')) {
-      return Promise.resolve(json(200, { head: HEAD, commits: 1, behind: 0, role }));
+      return Promise.resolve(json(200, { head: HEAD, commits: 1, behind: 0, role, recordDesktopActivity: false }));
     }
     if (path.endsWith('/sync/log')) {
       return Promise.resolve(json(200, []));
@@ -282,7 +282,8 @@ it('close waits for a push already in flight, so a reopen never shares the sync 
   const send = async (request: HttpRequest): Promise<HttpExchange> => {
     sent.push(request);
     const path = new URL(request.url).pathname;
-    if (path.endsWith('/sync/head')) return json(200, { head: HEAD, commits: 1, behind: 0, role: 'editor' });
+    if (path.endsWith('/sync/head'))
+      return json(200, { head: HEAD, commits: 1, behind: 0, role: 'editor', recordDesktopActivity: false });
     if (path.endsWith('/sync/commits')) {
       await pushAnswered;
       return json(201, { head: PUSHED, ids: [PUSHED] });

@@ -30,6 +30,7 @@ export const ACTION_GROUPS = [
   'ci_token',
   'license',
   'audit',
+  'desktop',
 ] as const;
 export type ActionGroup = (typeof ACTION_GROUPS)[number];
 export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
@@ -42,6 +43,7 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   ci_token: 'CI tokens',
   license: 'License',
   audit: 'Audit log',
+  desktop: 'Desktop activity',
 };
 
 export function actionLabel(action: string): string {

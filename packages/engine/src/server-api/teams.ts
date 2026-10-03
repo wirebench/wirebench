@@ -102,6 +102,8 @@ export const teamWorkspaceSchema = z.object({
   defaultRole: defaultRoleSchema,
   myRole: workspaceRoleSchema,
   source: roleSourceSchema,
+  /** Whether the desktop uploads request and run metadata for this workspace to the audit log. */
+  recordDesktopActivity: z.boolean(),
   createdAt: z.string(),
 });
 export type TeamWorkspace = z.infer<typeof teamWorkspaceSchema>;
@@ -116,6 +118,7 @@ export type TeamWorkspaceCreateRequest = z.infer<typeof teamWorkspaceCreateReque
 export const teamWorkspaceUpdateRequestSchema = z.object({
   name: teamsNameSchema.optional(),
   defaultRole: defaultRoleSchema.optional(),
+  recordDesktopActivity: z.boolean().optional(),
 });
 export type TeamWorkspaceUpdateRequest = z.infer<typeof teamWorkspaceUpdateRequestSchema>;
 export const teamWorkspaceParamsSchema = z.object({ workspaceId: teamsIdSchema });

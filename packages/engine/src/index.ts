@@ -1746,6 +1746,7 @@ export {
   AUDIT_ACTOR_KINDS,
   AUDIT_LIMITS,
   AUDIT_TARGET_KINDS,
+  DESKTOP_AUDIT_LIMITS,
   auditActionSchema,
   auditActorSchema,
   auditDetailsSchema,
@@ -1753,6 +1754,10 @@ export {
   auditExportQuerySchema,
   auditPageSchema,
   auditQuerySchema,
+  desktopAuditBatchSchema,
+  desktopAuditEventSchema,
+  desktopRequestSentDetailsSchema,
+  desktopRunFinishedDetailsSchema,
 } from './server-api/audit.js';
 export type {
   AuditAction,
@@ -1765,6 +1770,10 @@ export type {
   AuditPage,
   AuditQuery,
   AuditTargetKind,
+  DesktopAuditBatch,
+  DesktopAuditEvent,
+  DesktopRequestSentDetails,
+  DesktopRunFinishedDetails,
 } from './server-api/audit.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';

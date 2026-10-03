@@ -38,6 +38,7 @@ export function toWorkspace(row: repo.WorkspaceRow, myRole: WorkspaceRole, sourc
     defaultRole: row.defaultRole,
     myRole,
     source,
+    recordDesktopActivity: false,
     createdAt: row.createdAt,
   };
 }

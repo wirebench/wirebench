@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUDIT_ACTION_GROUPS,
   AUDIT_ACTIONS,
   AUDIT_LIMITS,
+  DESKTOP_AUDIT_LIMITS,
+  desktopAuditBatchSchema,
   auditEventSchema,
   auditPageSchema,
   auditQuerySchema,
@@ -39,7 +42,7 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
     }
     for (const action of AUDIT_ACTIONS) expect(action).toMatch(/^[a-z_]+\.[a-z_]+$/);
     expect(new Set(AUDIT_ACTIONS).size).toBe(AUDIT_ACTIONS.length);
-    expect(AUDIT_ACTIONS).toHaveLength(40);
+    expect(AUDIT_ACTIONS).toHaveLength(44);
   });
 
   it('parses an event and refuses an unknown action or a nested details value', () => {
@@ -70,5 +73,103 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
   it('a page is events plus an optional cursor', () => {
     expect(auditPageSchema.parse({ events: [EVENT] }).next).toBeUndefined();
     expect(auditPageSchema.parse({ events: [], next: 'abc' }).next).toBe('abc');
+  });
+
+  describe('desktop events', () => {
+    const SENT = {
+      protocol: 'rest',
+      method: 'GET',
+      url: 'https://api.example.com/orders',
+      status: 200,
+      outcome: 'ok',
+      durationMs: 42,
+      environment: 'staging',
+      requestId: '01J9ZK3V8Q00000000000000R1',
+      requestName: 'List orders',
+      sentAt: '2026-10-03T09:00:00.000Z',
+    };
+    const RUN = {
+      sequenceId: '01J9ZK3V8Q00000000000000S1',
+      name: 'Checkout flow',
+      outcome: 'passed',
+      passed: 3,
+      failed: 0,
+      errored: 0,
+      skipped: 1,
+      durationMs: 1200,
+      hosts: ['https://api.example.com'],
+      environment: null,
+      startedAt: '2026-10-03T09:00:00.000Z',
+      sentAt: '2026-10-03T09:00:01.200Z',
+    };
+    const requestEvent = (details: object = SENT) => ({ action: 'desktop.request_sent', details });
+    const runEvent = (details: object = RUN) => ({ action: 'desktop.run_finished', details });
+
+    it('adds the four actions and the desktop group, and names the limits', () => {
+      for (const a of [
+        'workspace.desktop_recording_changed',
+        'desktop.request_sent',
+        'desktop.run_finished',
+        'desktop.events_dropped',
+      ]) {
+        expect(AUDIT_ACTIONS).toContain(a);
+      }
+      expect(AUDIT_ACTION_GROUPS).toContain('desktop');
+      expect(DESKTOP_AUDIT_LIMITS).toEqual({ maxBatch: 100, maxOutbox: 5000, maxUrlLength: 2048, maxHosts: 64 });
+    });
+
+    it('parses a request-sent and a run-finished event', () => {
+      expect(desktopAuditBatchSchema.parse({ events: [requestEvent(), runEvent()] }).events).toHaveLength(2);
+      expect(
+        desktopAuditBatchSchema.safeParse({
+          events: [
+            requestEvent({
+              ...SENT,
+              protocol: 'grpc',
+              method: null,
+              status: null,
+              outcome: 'failed',
+              environment: null,
+            }),
+          ],
+        }).success,
+      ).toBe(true);
+      expect(desktopAuditBatchSchema.safeParse({ events: [runEvent({ ...RUN, outcome: 'cancelled' })] }).success).toBe(
+        true,
+      );
+    });
+
+    it('refuses unknown keys, an oversized url, too many hosts, and an unknown action', () => {
+      expect(desktopAuditBatchSchema.safeParse({ events: [requestEvent({ ...SENT, body: 'x' })] }).success).toBe(false);
+      expect(desktopAuditBatchSchema.safeParse({ events: [runEvent({ ...RUN, extra: 1 })] }).success).toBe(false);
+      expect(
+        desktopAuditBatchSchema.safeParse({ events: [requestEvent({ ...SENT, url: 'h'.repeat(2049) })] }).success,
+      ).toBe(false);
+      expect(
+        desktopAuditBatchSchema.safeParse({ events: [requestEvent({ ...SENT, url: 'h'.repeat(2048) })] }).success,
+      ).toBe(true);
+      const hosts = (n: number) => Array.from({ length: n }, (_, i) => `https://h${i}.example.com`);
+      expect(desktopAuditBatchSchema.safeParse({ events: [runEvent({ ...RUN, hosts: hosts(65) })] }).success).toBe(
+        false,
+      );
+      expect(desktopAuditBatchSchema.safeParse({ events: [runEvent({ ...RUN, hosts: hosts(64) })] }).success).toBe(
+        true,
+      );
+      expect(desktopAuditBatchSchema.safeParse({ events: [{ action: 'auth.signed_in', details: {} }] }).success).toBe(
+        false,
+      );
+      expect(desktopAuditBatchSchema.safeParse({ events: [requestEvent({ ...SENT, sentAt: 'now' })] }).success).toBe(
+        false,
+      );
+    });
+
+    it('bounds the batch and needs events or a dropped count', () => {
+      const many = (n: number) => Array.from({ length: n }, () => requestEvent());
+      expect(desktopAuditBatchSchema.safeParse({ events: many(100) }).success).toBe(true);
+      expect(desktopAuditBatchSchema.safeParse({ events: many(101) }).success).toBe(false);
+      expect(desktopAuditBatchSchema.safeParse({ events: [] }).success).toBe(false);
+      expect(desktopAuditBatchSchema.parse({ events: [], dropped: 3 })).toEqual({ events: [], dropped: 3 });
+      expect(desktopAuditBatchSchema.safeParse({ events: [], dropped: 0 }).success).toBe(false);
+    });
   });
 });

@@ -49,9 +49,25 @@ describe('server-api teams schemas', () => {
         defaultRole: 'viewer',
         myRole: 'editor',
         source: 'grant',
+        recordDesktopActivity: false,
         createdAt: '2026-09-25T10:00:00.000Z',
       }).source,
     ).toBe('grant');
+    expect(
+      teamWorkspaceSchema.safeParse({
+        id: ID,
+        name: 'Integration',
+        teamId: ID,
+        teamName: 'Payments QA',
+        defaultRole: 'viewer',
+        myRole: 'editor',
+        source: 'grant',
+        createdAt: '2026-09-25T10:00:00.000Z',
+      }).success,
+    ).toBe(false);
+    expect(teamWorkspaceUpdateRequestSchema.parse({ recordDesktopActivity: true })).toEqual({
+      recordDesktopActivity: true,
+    });
     expect(
       accessEntrySchema.parse({
         userId: ID,

@@ -49,6 +49,10 @@ export const AUDIT_ACTIONS = [
   'license.installed',
   'license.removed',
   'audit.exported',
+  'workspace.desktop_recording_changed',
+  'desktop.request_sent',
+  'desktop.run_finished',
+  'desktop.events_dropped',
 ] as const;
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof auditActionSchema>;
@@ -64,6 +68,7 @@ export const AUDIT_ACTION_GROUPS = [
   'ci_token',
   'license',
   'audit',
+  'desktop',
 ] as const;
 export type AuditActionGroup = (typeof AUDIT_ACTION_GROUPS)[number];
 
@@ -151,3 +156,57 @@ export type AuditExportQuery = z.infer<typeof auditExportQuerySchema>;
 
 export const auditPageSchema = z.object({ events: z.array(auditEventSchema), next: z.string().optional() });
 export type AuditPage = z.infer<typeof auditPageSchema>;
+
+// ---- desktop events ----------------------------------------------------------------------
+
+/** Bounds on what the desktop records and uploads (desktop audit events spec §2.2). */
+export const DESKTOP_AUDIT_LIMITS = { maxBatch: 100, maxOutbox: 5000, maxUrlLength: 2048, maxHosts: 64 } as const;
+
+/** One request the desktop sent. Metadata only: no headers, no body, no response. */
+export const desktopRequestSentDetailsSchema = z.strictObject({
+  protocol: z.enum(['rest', 'soap', 'grpc', 'websocket']),
+  method: z.string().min(1).max(256).nullable(),
+  url: z.string().min(1).max(DESKTOP_AUDIT_LIMITS.maxUrlLength),
+  status: z.number().int().nullable(),
+  outcome: z.enum(['ok', 'failed']),
+  durationMs: z.number().int().min(0),
+  environment: z.string().min(1).max(256).nullable(),
+  requestId: z.string().min(1).max(128),
+  requestName: z.string().max(256),
+  sentAt: z.string().datetime(),
+});
+export type DesktopRequestSentDetails = z.infer<typeof desktopRequestSentDetailsSchema>;
+
+/** One finished sequence run: the engine's `SequenceOutcome` values, plus `cancelled`. */
+export const desktopRunFinishedDetailsSchema = z.strictObject({
+  sequenceId: z.string().min(1).max(128),
+  name: z.string().max(256),
+  outcome: z.enum(['passed', 'failed', 'errored', 'skipped', 'cancelled']),
+  passed: z.number().int().min(0),
+  failed: z.number().int().min(0),
+  errored: z.number().int().min(0),
+  skipped: z.number().int().min(0),
+  durationMs: z.number().int().min(0),
+  hosts: z.array(z.string().min(1).max(DESKTOP_AUDIT_LIMITS.maxUrlLength)).max(DESKTOP_AUDIT_LIMITS.maxHosts),
+  environment: z.string().max(256).nullable(),
+  startedAt: z.string().datetime(),
+  sentAt: z.string().datetime(),
+});
+export type DesktopRunFinishedDetails = z.infer<typeof desktopRunFinishedDetailsSchema>;
+
+export const desktopAuditEventSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('desktop.request_sent'), details: desktopRequestSentDetailsSchema }),
+  z.strictObject({ action: z.literal('desktop.run_finished'), details: desktopRunFinishedDetailsSchema }),
+]);
+export type DesktopAuditEvent = z.infer<typeof desktopAuditEventSchema>;
+
+/** `dropped` counts events the outbox discarded before this batch, so the server can record the gap. */
+export const desktopAuditBatchSchema = z
+  .strictObject({
+    events: z.array(desktopAuditEventSchema).max(DESKTOP_AUDIT_LIMITS.maxBatch),
+    dropped: z.number().int().min(1).optional(),
+  })
+  .refine((batch) => batch.events.length > 0 || batch.dropped !== undefined, {
+    message: 'a batch carries events or a dropped count',
+  });
+export type DesktopAuditBatch = z.infer<typeof desktopAuditBatchSchema>;

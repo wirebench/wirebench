@@ -149,6 +149,7 @@ class StubServer {
       defaultRole: 'viewer',
       myRole: input.role ?? 'editor',
       source: 'default',
+      recordDesktopActivity: false,
       createdAt: '2026-09-25T00:00:00.000Z',
     };
     const files = new Map<string, TreeFile>(input.files ?? []);
@@ -216,7 +217,13 @@ class StubServer {
     return answer(() => {
       const found = this.visible(workspaceId);
       const behind = from === undefined || from === null ? {} : { behind: from === found.head ? 0 : found.commits };
-      return { head: found.head, commits: found.commits, ...behind, role: found.row.myRole };
+      return {
+        head: found.head,
+        commits: found.commits,
+        ...behind,
+        role: found.row.myRole,
+        recordDesktopActivity: false,
+      };
     });
   }
 
