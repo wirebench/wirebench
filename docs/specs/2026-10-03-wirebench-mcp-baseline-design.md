@@ -102,11 +102,10 @@ readonly baseline?: {
 - `missing` is the "no baseline saved" answer the issue asks for. The field says so on its own; no
   assertion and no error are added.
 
-**Redaction.** A response can echo a secret, so every string from the comparison passes through the
-send's `mask` (every secret value the send resolved), as the response body does:
-
-- each change's `expected` and `actual`, and `error`;
-- the `baseline` assertion's `label` and `message`.
+**Redaction.** A response can echo a secret. Every op result already passes through the op layer's
+literal mask (`runOp`'s `redactResult` over every secret value the send revealed), so the comparison's
+`changes`, `error` and the `baseline` assertion's text are masked with the rest of the result; a test
+checks it end to end.
 
 `redactAssertions` pairs a result with a saved assertion by position. The `baseline` result is
 skipped there, as `script` is, so it never takes a saved assertion's slot. It then gets the URL

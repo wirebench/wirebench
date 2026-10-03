@@ -286,42 +286,6 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
   }
 }
 
-/**
- * The golden comparison and its assertion with every secret the send resolved masked (spec §4): a
- * response can echo a secret, and the changes carry response values.
- */
-export function maskedBaseline(result: RequestResult, mask: (text: string) => string): RequestResult {
-  const { baseline } = result;
-  if (baseline === undefined) {
-    return result;
-  }
-  return {
-    ...result,
-    baseline: {
-      ...baseline,
-      ...(baseline.error !== undefined ? { error: mask(baseline.error) } : {}),
-      ...(baseline.changes !== undefined
-        ? {
-            changes: baseline.changes.map((change) => ({
-              ...change,
-              ...(change.expected !== undefined ? { expected: mask(change.expected) } : {}),
-              ...(change.actual !== undefined ? { actual: mask(change.actual) } : {}),
-            })),
-          }
-        : {}),
-    },
-    assertions: result.assertions.map((assertion) =>
-      assertion.type === 'baseline'
-        ? {
-            ...assertion,
-            label: mask(assertion.label),
-            ...(assertion.message !== undefined ? { message: mask(assertion.message) } : {}),
-          }
-        : assertion,
-    ),
-  };
-}
-
 /** What every result carries, whatever the protocol. */
 function commonOf(
   item: SendableItem,
@@ -441,13 +405,7 @@ export const sendOp = defineOp({
     const sandbox = createScriptSandbox();
     const checker = createScriptChecker();
     try {
-      const {
-        result: sent,
-        exchange,
-        mask,
-        maskBase64,
-        historyId,
-      } = await sendAndRecord({
+      const { result, exchange, mask, maskBase64, historyId } = await sendAndRecord({
         item,
         needsOf: found,
         opened,
@@ -472,7 +430,6 @@ export const sendOp = defineOp({
           }
         },
       });
-      const result = maskedBaseline(sent, mask);
       if (exchange.kind === 'websocket' && item.kind === 'websocket') {
         return wsResultOf(item, result, exchange, { text: mask, base64: maskBase64 }, historyId);
       }
