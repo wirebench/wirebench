@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
 import type { DesktopAuditBatch, DesktopAuditEvent } from '@wirebench/engine';
-import { AuditOutbox } from '../src/main/audit/outbox.js';
+import { AuditOutbox, outboxFor } from '../src/main/audit/outbox.js';
 import { AuditReporter } from '../src/main/audit/reporter.js';
 
 const ev = (n: number): DesktopAuditEvent => ({
@@ -275,14 +275,54 @@ describe('AuditReporter', () => {
     expect(await files()).toHaveLength(20);
   });
 
-  it('schedules a flush for an enqueue that lands as a flush ends', async () => {
-    const { clock, reporter } = setup();
+  it('schedules a flush for an enqueue whose append resolves after the last drain check', async () => {
+    // One microtask puts the append's resolution after drainLoop's last check and before `running` clears.
+    const TICKS = 1;
+    const { clock, batches, reporter } = setup();
+    const outbox = outboxFor(dir);
     await reporter.enqueue(ev(1));
+    // Hold the late enqueue's append open, and release it just as the final drain pass finds nothing.
+    let openGate: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (openGate = r));
+    outbox.append = async () => gate;
+    const realDropped = outbox.dropped.bind(outbox);
+    const realAppend = AuditOutbox.prototype.append.bind(outbox);
+    let calls = 0;
+    outbox.dropped = async () => {
+      const n = await realDropped();
+      if (++calls === 2) {
+        await realAppend(ev(2));
+        void (async () => {
+          for (let i = 0; i < TICKS; i++) await Promise.resolve();
+          openGate();
+        })();
+      }
+      return n;
+    };
     const flushing = reporter.flush();
-    await reporter.enqueue(ev(2));
-    await flushing;
-    await settle();
+    const late = reporter.enqueue(ev(2));
+    await Promise.all([flushing, late]);
+    expect(clock.pending).toEqual([2000]);
+    await clock.fireNext();
+    expect(batches.flatMap((b) => b.events)).toEqual([ev(1), ev(2)]);
     expect(await files()).toEqual([]);
-    expect(clock.pending.length).toBeLessThanOrEqual(1);
+  });
+
+  it('a refused dropped-only batch subtracts only the count it carried', async () => {
+    let calls = 0;
+    const { batches, reporter } = setup(async () => {
+      calls++;
+      if (calls === 1) {
+        // Two more events are dropped while this request is in flight.
+        await outboxFor(dir).addDropped(2);
+        throw new WirebenchError('server-bad-request', 'bad', { details: { status: 400 } });
+      }
+    });
+    await outboxFor(dir).addDropped(3);
+    await reporter.flush();
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toEqual({ events: [], dropped: 3 });
+    expect(batches[1]).toEqual({ events: [], dropped: 2 });
+    expect(await outboxFor(dir).dropped()).toBe(0);
   });
 });

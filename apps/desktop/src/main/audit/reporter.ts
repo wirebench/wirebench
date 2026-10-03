@@ -81,6 +81,10 @@ export class AuditReporter {
     this.cancelTimer();
     const run = this.drainLoop().finally(() => {
       this.running = undefined;
+      // An enqueue can land after the loop's last check but before this runs: nothing else would send it.
+      if (this.again && !this.disposed && this.timer === undefined && !this.signedOut && !this.serverOff) {
+        this.schedule(AUDIT_DEBOUNCE_MS);
+      }
     });
     this.running = run;
     return run;
@@ -122,11 +126,6 @@ export class AuditReporter {
       } while (this.again && !this.disposed);
     } catch {
       /* never into the caller */
-    } finally {
-      // An enqueue that arrived as the loop ended (or while it was backing off) must still go out.
-      if (this.again && !this.disposed && this.timer === undefined && !this.signedOut && !this.serverOff) {
-        this.schedule(AUDIT_DEBOUNCE_MS);
-      }
     }
   }
 
@@ -161,8 +160,8 @@ export class AuditReporter {
         if (status === 400) {
           // This batch can never be accepted: drop it, and let the server hear of the gap.
           if (items.length === 0) {
-            await outbox.clearDropped();
-            return 'done';
+            await outbox.clearDropped(dropped);
+            continue;
           }
           await outbox.remove(items.map((i) => i.name));
           await outbox.addDropped(items.length);
