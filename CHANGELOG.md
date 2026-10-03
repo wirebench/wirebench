@@ -126,8 +126,9 @@ before and after for the two changes that need more than a rename. The package's
   [Editions and licenses](https://wirebench.github.io/wirebench/docs/guides/server-licensing/).
 - **Server audit log.** Wirebench Server records sign-ins, user, team and workspace changes, pushes,
   team-secret changes, catch URLs, CI tokens and license changes as immutable events, on every edition.
-  Server admins on Enterprise read them in the new Audit tab, and team admins read and export their own
-  team's events there, as newline-delimited JSON, from the app or with `wirebench-server admin audit export`. Retention is by age
+  Server admins on Enterprise read and export them in the new Audit tab, as newline-delimited JSON, and
+  team admins read and export their own team's events the same way, from the app or the API. Whoever
+  runs the server can also export with `wirebench-server admin audit export`. Retention is by age
   (`WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`, default a year). A workspace admin can also switch on
   **Record desktop activity** for a workspace: the app then reports each request sent and each test-suite
   run to the server's log (the masked URL and a few details, never headers or bodies), keeps them in a

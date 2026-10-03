@@ -100,8 +100,9 @@ discarded and counted instead.
   only those.
 - A plain team member, a CI token and anyone not signed in cannot read the log.
 
-Events that belong to no team stay with server admins. Sign-ins, password changes, user accounts, the
-server itself, the license and the CI tokens that carry no team are never shown to a team admin.
+An event about a workspace (a push, a team-secret change, a catch URL, a CI token) belongs to the
+workspace's team. Events that belong to no team stay with server admins: sign-ins, password changes,
+user accounts, the server itself and the license are never shown to a team admin.
 
 Over the API, `GET /audit` and `GET /audit/export` take a `teamId`. A server admin may leave it out. Anyone
 else must name a team they administer, and the read is pinned to that team, whatever other filters they add:
