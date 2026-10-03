@@ -9,6 +9,7 @@ import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
+import { AuditSealer } from './chain/sealer.js';
 import { desktopEventsLimiter, desktopRoutes } from './desktop-routes.js';
 import { AuditForwarder } from './forward/forwarder.js';
 import { sinkFromConfig } from './forward/sink.js';
@@ -55,9 +56,15 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
           ? undefined
           : new AuditForwarder({ db: ctx.db, sink, license: () => ctx.license, now, setTimer, log: ctx.log });
       forwarder?.start();
-      // Before `startServer` drains and closes the pool (host spec §3.7): a sweep or a forward batch under
-      // way finishes (or rolls back, leaving its events queued), and only then is the sink closed.
+      // Only with a chain key (audit-chain spec §3.2); without one nothing is built and no timer armed.
+      const key = ctx.config.auditChainKey;
+      const sealer = key === undefined ? undefined : new AuditSealer({ db: ctx.db, key, now, setTimer, log: ctx.log });
+      sealer?.start();
+      // Before `startServer` drains and closes the pool (host spec §3.7): a sealing pass under way commits
+      // before the sweeper stops, a sweep or a forward batch under way finishes (or rolls back, leaving its
+      // events queued), and only then is the sink closed.
       app.addHook('onClose', async () => {
+        await sealer?.stop();
         await sweeper.stop();
         await forwarder?.stop();
         await sink?.close();
