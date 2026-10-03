@@ -126,6 +126,11 @@ export class AuditReporter {
     return run;
   }
 
+  /** Resolves once no flush is running, including follow-ups a flush started. */
+  async idle(): Promise<void> {
+    while (this.running !== undefined) await this.running;
+  }
+
   onSignedIn(): Promise<void> {
     this.signedOut = false;
     this.backoffMs = 0;

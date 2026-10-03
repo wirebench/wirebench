@@ -27,6 +27,8 @@ class Clock {
   private timers: { id: number; at: number; fn: () => void }[] = [];
   private seq = 0;
   time = 0;
+  /** Waits for the work a fired timer started, so assertions never race real file I/O. */
+  idle: () => Promise<void> = () => Promise.resolve();
   setTimeout = (fn: () => void, ms: number): number => {
     const id = ++this.seq;
     this.timers.push({ id, at: this.time + ms, fn });
@@ -46,10 +48,19 @@ class Clock {
     this.time = t.at;
     t.fn();
     await settle();
+    await this.idle();
   }
 }
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 60; i++) await new Promise((r) => setImmediate(r));
+};
+/** Polls until `ready()` holds; real file I/O on a slow runner can take more than a few turns. */
+const until = async (ready: () => boolean): Promise<void> => {
+  const deadline = Date.now() + 4000;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error('condition never held');
+    await new Promise((r) => setTimeout(r, 5));
+  }
 };
 
 let dir: string;
@@ -94,6 +105,7 @@ function setup(
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
   });
+  clock.idle = () => reporter.idle();
   reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
   return { clock, batches, reporter };
 }
@@ -225,11 +237,12 @@ describe('AuditReporter', () => {
     });
     await reporter.enqueue(ev(1), 'w1');
     const first = reporter.flush();
-    await settle();
+    await until(() => active === 1);
     await reporter.enqueue(ev(2), 'w1');
     const second = reporter.flush();
-    release();
-    await settle();
+    const releaseFirst = release;
+    releaseFirst();
+    await until(() => active === 1 && release !== releaseFirst);
     release();
     await Promise.all([first, second]);
     expect(maxActive).toBe(1);
@@ -277,7 +290,7 @@ describe('AuditReporter', () => {
   it('a 409 for the old target after setTarget(B) does not switch B off', async () => {
     const dirB = await mkdtemp(join(tmpdir(), 'wb-reporter-b-'));
     try {
-      let release: () => void = () => undefined;
+      let release: (() => void) | undefined;
       const { reporter } = setup(
         () =>
           new Promise<void>((_ok, fail) => {
@@ -286,9 +299,9 @@ describe('AuditReporter', () => {
       );
       await reporter.enqueue(ev(1), 'w1');
       const flushing = reporter.flush();
-      await settle();
+      await until(() => release !== undefined);
       reporter.setTarget({ url: 'https://s.example', workspaceId: 'w2', dir: dirB, recording: true });
-      release();
+      release?.();
       await flushing;
       await reporter.enqueue(ev(2), 'w2');
       expect(await readdir(dirB)).toHaveLength(1);
