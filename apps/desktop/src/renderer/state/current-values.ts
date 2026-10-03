@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { scopeKeyString } from '../../shared/current-value-keys.js';
 import type { CurrentValuesStateWire, PropertyMapWire, ScopeKeyWire } from '../../shared/wire-types.js';
-import type { CurrentColumn } from '../features/environments/variables-table.js';
+import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 
 /**
@@ -9,6 +9,15 @@ import { ipc } from './ipc-client.js';
  * `scopeKeyString`. Main is the only writer and keeps them in memory only; every action takes the
  * whole state main answers, and `currentValues.changed` keeps every window in step.
  */
+/** The Current column (cookie jar spec §6): session-only values laid over this scope's committed ones. */
+export interface CurrentColumn {
+  /** This scope's current values, by name. */
+  readonly values: PropertyMapWire;
+  readonly onSet: (name: string, value: string) => void;
+  /** Resets one name's current value, or every one of the scope when `name` is omitted. */
+  readonly onReset: (name?: string) => void;
+}
+
 export interface CurrentValuesStore {
   readonly byScope: Readonly<Record<string, PropertyMapWire>>;
   readonly load: () => Promise<void>;
@@ -40,6 +49,8 @@ export const useCurrentValuesStore = create<CurrentValuesStore>((set) => ({
     const result = await ipc().currentValues.set({ key, name, value });
     if (result.ok) {
       set({ byScope: byScopeOf(result.value) });
+    } else {
+      showToast(result.error.message);
     }
   },
 
@@ -47,6 +58,8 @@ export const useCurrentValuesStore = create<CurrentValuesStore>((set) => ({
     const result = await ipc().currentValues.reset({ key, ...(name !== undefined ? { name } : {}) });
     if (result.ok) {
       set({ byScope: byScopeOf(result.value) });
+    } else {
+      showToast(result.error.message);
     }
   },
 }));

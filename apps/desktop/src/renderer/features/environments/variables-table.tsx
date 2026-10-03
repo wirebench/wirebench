@@ -5,6 +5,7 @@ import { KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js'
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import type { PropertyMapWire } from '../../../shared/wire-types.js';
+import type { CurrentColumn } from '../../state/current-values.js';
 
 /**
  * A scope below this one in the precedence chain, nearest first — Workspace and Globals below an
@@ -21,14 +22,7 @@ export interface InheritedScope {
   readonly current?: PropertyMapWire;
 }
 
-/** The Current column (cookie jar spec §6): session-only values laid over this scope's committed ones. */
-export interface CurrentColumn {
-  /** This scope's current values, by name. */
-  readonly values: PropertyMapWire;
-  readonly onSet: (name: string, value: string) => void;
-  /** Resets one name's current value, or every one of the scope when `name` is omitted. */
-  readonly onReset: (name?: string) => void;
-}
+export type { CurrentColumn };
 
 /**
  * What one variables table edits: the map, which names are disabled, and how to save each kind
@@ -235,7 +229,33 @@ function CurrentCell({
   onCommit,
   onReset,
 }: CurrentCellProps & { readonly name: string; readonly committed: string }) {
+  // A masked cell never binds the override: it would land in the DOM's `value`. It is write-only.
+  const [typed, setTyped] = useState('');
   const field = useCommittedDraft(current ?? '', onCommit);
+  const maskedField = {
+    value: typed,
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      setTyped(event.target.value);
+    },
+    onBlur: () => {
+      if (typed !== '') {
+        onCommit(typed);
+      }
+      setTyped('');
+    },
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        if (typed !== '') {
+          onCommit(typed);
+        }
+        setTyped('');
+      }
+      if (event.key === 'Escape') {
+        setTyped('');
+        event.stopPropagation();
+      }
+    },
+  };
   return (
     <td className="px-2 py-1">
       <div className="flex items-center gap-1">
@@ -247,7 +267,7 @@ function CurrentCell({
           placeholder={masked ? MASKED : committed}
           readOnly={readOnly}
           title={readOnly ? 'Edit it on the scope that owns it' : 'Session only: never saved, never shared'}
-          {...field}
+          {...(masked ? maskedField : field)}
         />
         {current !== undefined && !readOnly && (
           <IconButton

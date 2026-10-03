@@ -778,11 +778,37 @@ describe('VariablesTable — the Current column', () => {
   it('masks the Current cell of a secret variable while secrets are hidden', () => {
     const { current } = withCurrent({ token: 'typed-secret' });
     renderTable(baseTarget({ properties: { token: '${secret:api}' }, current }));
-    expect(screen.getByLabelText<HTMLInputElement>('Current value of token').type).toBe('password');
+    const masked = screen.getByLabelText<HTMLInputElement>('Current value of token');
+    expect(masked.type).toBe('password');
+    expect(masked.value).toBe('');
+    expect(masked.placeholder).toBe('••••••');
+    expect(document.body.innerHTML).not.toContain('typed-secret');
+    expect(screen.getAllByTestId('env-variable-current-dot')).toHaveLength(1);
     cleanup();
     useSecretsVisibilityStore.setState({ show: true });
     renderTable(baseTarget({ properties: { token: '${secret:api}' }, current }));
     expect(screen.getByLabelText<HTMLInputElement>('Current value of token').type).toBe('text');
+  });
+
+  it('commits a draft typed into a masked cell, then clears it', () => {
+    const { current, onSet } = withCurrent();
+    renderTable(baseTarget({ properties: { token: '${secret:api}' }, current }));
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of token');
+    fireEvent.change(cell, { target: { value: 'new-secret' } });
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    expect(onSet).toHaveBeenCalledWith('token', 'new-secret');
+    expect(cell.value).toBe('');
+  });
+
+  it('reverts a draft on Escape without setting or resetting anything', () => {
+    const { current, onSet, onReset } = withCurrent({ host: 'mine.test' });
+    renderTable(baseTarget({ current }));
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of host');
+    fireEvent.change(cell, { target: { value: 'other.test' } });
+    fireEvent.keyDown(cell, { key: 'Escape' });
+    expect(cell.value).toBe('mine.test');
+    expect(onSet).not.toHaveBeenCalled();
+    expect(onReset).not.toHaveBeenCalled();
   });
 
   it('has no Current column without a current target', () => {

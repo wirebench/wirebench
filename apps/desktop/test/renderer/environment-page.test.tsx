@@ -478,6 +478,54 @@ describe('EnvironmentPage — current values', () => {
     });
   });
 
+  it('binds a workspace environment and a linked project environment to their own scope keys', () => {
+    const set = vi.fn().mockResolvedValue({ ok: true, value: { scopes: [] } });
+    installWirebenchApi({ currentValues: { set } });
+    const typeInto = (name: string, value: string): void => {
+      const cell = screen.getByLabelText<HTMLInputElement>(`Current value of ${name}`);
+      fireEvent.change(cell, { target: { value } });
+      fireEvent.keyDown(cell, { key: 'Enter' });
+    };
+
+    useWorkspaceStore.setState({
+      workspace: workspaceWire({
+        environments: [
+          { id: 'we', name: 'uat', slug: 'uat', order: 0, endpoints: {}, properties: { a: '1' }, disabled: [] },
+        ],
+      }),
+    });
+    renderPage({ kind: 'environment', id: 'we' });
+    typeInto('a', 'x');
+    expect(set).toHaveBeenLastCalledWith({
+      key: { scope: 'workspaceEnvironment', environmentId: 'we' },
+      name: 'a',
+      value: 'x',
+    });
+    cleanup();
+
+    useWorkspaceStore.setState({ workspace: workspaceWire({}) });
+    useProjectStore.setState({
+      projects: {
+        p1: {
+          id: 'p1',
+          name: 'Demo',
+          environments: [
+            { id: 'pe', name: 'dev', slug: 'dev', order: 0, endpoints: {}, properties: { b: '2' }, disabled: [] },
+          ],
+        } as unknown as ProjectWire,
+      },
+      projectOf: { pe: 'p1' },
+    });
+    renderPage({ kind: 'environment', id: 'pe' });
+    typeInto('b', 'y');
+    expect(set).toHaveBeenLastCalledWith({
+      key: { scope: 'projectEnvironment', projectId: 'p1', environmentId: 'pe' },
+      name: 'b',
+      value: 'y',
+    });
+    useProjectStore.getState().reset();
+  });
+
   it("shows a global's current value on the Workspace page's inherited row", () => {
     installWirebenchApi();
     useWorkspaceStore.setState({ workspace: workspaceWire({}) });
