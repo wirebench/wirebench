@@ -357,6 +357,49 @@ describe('audit forwarding configuration (issue #209)', () => {
     expect(error.message).not.toContain('collector');
   });
 
+  it('judges the token rule on the parsed scheme, whatever its case or leading space', () => {
+    for (const url of ['SYSLOG+TCP://collector.example.com:514', ' syslog+tls://collector.example.com:6514']) {
+      const error = caught({ [URL_VAR]: url, [TOKEN_VAR]: 'sekrit-token' });
+      expect(error.problems.map((p) => p.variable)).toEqual([TOKEN_VAR]);
+    }
+  });
+
+  it('refuses a token without a URL', () => {
+    const error = caught({ [TOKEN_VAR]: 'sekrit-token' });
+    expect(error.problems.map((p) => p.variable)).toEqual([TOKEN_VAR]);
+    expect(error.message).not.toContain('sekrit-token');
+  });
+
+  it('refuses a CA file without a URL', () => {
+    const error = caught({ WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE: '/etc/ssl/corp.pem' });
+    expect(error.problems.map((p) => p.variable)).toEqual(['WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE']);
+    expect(error.message).not.toContain('corp.pem');
+  });
+
+  it('refuses a CA file with an http URL, which has no TLS to verify', () => {
+    const error = caught({
+      [URL_VAR]: 'HTTP://127.0.0.1:8088/audit',
+      WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE: '/etc/ssl/corp.pem',
+    });
+    expect(error.problems.map((p) => p.variable)).toEqual(['WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE']);
+    expect(error.message).not.toContain('corp.pem');
+    for (const url of ['syslog+tls://collector.example.com:6514', 'https://siem.example.com/x']) {
+      expect(
+        loadConfig({ ...required, [URL_VAR]: url, WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE: '/etc/ssl/corp.pem' }, '1')
+          .auditForwardCaFile,
+      ).toBe('/etc/ssl/corp.pem');
+    }
+  });
+
+  it('refuses a URL carrying credentials, without echoing them', () => {
+    for (const url of ['https://user:pa55word@siem.example.com/x', 'syslog+tcp://user@collector.example.com:514']) {
+      const error = caught({ [URL_VAR]: url });
+      expect(error.problems.map((p) => p.variable)).toEqual([URL_VAR]);
+      expect(error.message).not.toContain('pa55word');
+      expect(error.message).not.toContain('user');
+    }
+  });
+
   it('marks the token as a secret and documents all three variables', () => {
     const forward = CONFIG_VARIABLES.filter((v) => v.env.startsWith('WIREBENCH_SERVER_AUDIT_FORWARD_'));
     expect(forward.map((v) => [v.env, v.secret, v.required])).toEqual([

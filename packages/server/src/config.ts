@@ -69,6 +69,8 @@ const auditForwardUrlText = z.string().superRefine((value, ctx) => {
   if (!(AUDIT_FORWARD_SCHEMES as readonly string[]).includes(url.protocol))
     return fail('must be syslog+tcp://host:port, syslog+tls://host:port or https://…');
   if (url.hostname === '') return fail('must name a host');
+  if (url.username !== '' || url.password !== '')
+    return fail('must not carry credentials; use WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN for https://');
   if (url.protocol === 'http:' && !isLoopback(url.hostname))
     return fail('must be https://; http:// is accepted only for localhost, 127.0.0.0/8 or ::1');
   if (url.protocol.startsWith('syslog') && url.port === '') return fail('a syslog URL must name a port');
@@ -460,11 +462,31 @@ export function loadConfig(env: NodeJS.ProcessEnv, version: string): ServerConfi
       });
     }
   }
-  if (config.auditForwardToken !== undefined && config.auditForwardUrl?.startsWith('syslog') === true) {
-    problems.push({
-      variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
-      message: 'is for https:// forwarding only; unset it with a syslog URL',
-    });
+  // Judged on the parsed scheme, which URL lower-cases and trims, like the public URL above.
+  const forwardScheme = config.auditForwardUrl === undefined ? undefined : new URL(config.auditForwardUrl).protocol;
+  if (config.auditForwardToken !== undefined) {
+    if (forwardScheme === undefined)
+      problems.push({
+        variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
+        message: 'is set but WIREBENCH_SERVER_AUDIT_FORWARD_URL is not; set the URL or unset the token',
+      });
+    else if (forwardScheme.startsWith('syslog'))
+      problems.push({
+        variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
+        message: 'is for https:// forwarding only; unset it with a syslog URL',
+      });
+  }
+  if (config.auditForwardCaFile !== undefined) {
+    if (forwardScheme === undefined)
+      problems.push({
+        variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE',
+        message: 'is set but WIREBENCH_SERVER_AUDIT_FORWARD_URL is not; set the URL or unset the CA file',
+      });
+    else if (forwardScheme === 'http:')
+      problems.push({
+        variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE',
+        message: 'is for syslog+tls:// and https:// forwarding only; unset it with an http:// URL',
+      });
   }
   if (!config.localAuth && config.oidcIssuer === undefined) {
     problems.push({

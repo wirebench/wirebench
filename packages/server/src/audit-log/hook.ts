@@ -6,7 +6,7 @@
 import { AUDIT_LIMITS, type AuditDetails } from '@wirebench/engine';
 import type { AuditHook, AuditInput, Querier } from '../context.js';
 import { newId } from '../identity/tokens.js';
-import { enqueueForward, insertAuditEvent, workspaceTeamId } from './repo.js';
+import { insertAuditEvent, workspaceTeamId } from './repo.js';
 
 const size = (value: AuditDetails): number => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
@@ -43,20 +43,22 @@ export interface AuditHookOptions {
  * An event that names a workspace but no team takes the workspace's team (issue #208), read with the
  * caller's querier so it sees the same transaction. Workspaces never change team. When the row is
  * already gone, the team stays null. With `forward`, the event's id goes into the outbox in the same
- * transaction, so only a committed event is ever forwarded.
+ * statement, so only a committed event is ever forwarded, even when the caller passes the pool.
  */
 export function auditHook(now: () => Date, options: AuditHookOptions = { forward: false }): AuditHook {
   return async (tx: Querier, event: AuditInput) => {
     const teamId =
       event.teamId ?? (event.workspaceId !== undefined ? await workspaceTeamId(tx, event.workspaceId) : undefined);
-    const id = newId();
-    await insertAuditEvent(tx, {
-      ...event,
-      ...(teamId !== undefined ? { teamId } : {}),
-      id,
-      at: now(),
-      details: boundDetails(event.details),
-    });
-    if (options.forward) await enqueueForward(tx, id);
+    await insertAuditEvent(
+      tx,
+      {
+        ...event,
+        ...(teamId !== undefined ? { teamId } : {}),
+        id: newId(),
+        at: now(),
+        details: boundDetails(event.details),
+      },
+      { forward: options.forward },
+    );
   };
 }

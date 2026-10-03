@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   AuditForwarder,
   FORWARD_BACKOFF_MAX_MS,
+  FORWARD_BACKOFF_MIN_MS,
   FORWARD_BUSY_MS,
   FORWARD_IDLE_MS,
   FORWARD_UNLICENSED_MS,
@@ -25,8 +26,15 @@ class FakeSink implements ForwardSink {
   gate: Promise<void> | undefined;
   closed = false;
   entered = 0;
+  private waiters: { count: number; resolve: () => void }[] = [];
+  /** Resolves once `count` sends have started. */
+  enteredAtLeast(count: number): Promise<void> {
+    if (this.entered >= count) return Promise.resolve();
+    return new Promise((resolve) => this.waiters.push({ count, resolve }));
+  }
   async send(events: AuditEvent[]): Promise<void> {
     this.entered += 1;
+    for (const waiter of this.waiters.filter((w) => w.count <= this.entered)) waiter.resolve();
     if (this.gate !== undefined) await this.gate;
     if (this.failure !== undefined) throw this.failure;
     this.batches.push(events);
@@ -168,6 +176,16 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       expect((await db.query('select id from audit_events')).rows).toHaveLength(0);
     });
 
+    it('outside a transaction (on the pool), the event and its queue row are written together', async () => {
+      const pool = { query: db.query.bind(db) };
+      await forwarding(pool, event(1));
+      const rows = await db.query<{ id: string; event_id: string | null }>(
+        'select e.id, q.event_id from audit_events e left join audit_forward_queue q on q.event_id = e.id',
+      );
+      expect(rows.rows).toHaveLength(1);
+      expect(rows.rows[0]!.event_id).toBe(rows.rows[0]!.id);
+    });
+
     it('unconfigured, records the event and queues nothing', async () => {
       await plain(db, event(1));
       expect((await db.query('select id from audit_events')).rows).toHaveLength(1);
@@ -257,8 +275,7 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       const b = forwarder(sink, { batchSize: 3 }).runOnce();
       // Both passes have claimed and reached the sink before either send resolves, so each
       // transaction still holds its rows' locks while the other claims.
-      for (let i = 0; i < 1_000 && sink.entered < 2; i++) await new Promise((r) => setImmediate(r));
-      expect(sink.entered).toBe(2);
+      await sink.enteredAtLeast(2);
       release();
       const passes = await Promise.all([a, b]);
       expect(passes.map((p) => p.sent).sort()).toEqual([2, 3]);
@@ -292,6 +309,29 @@ describeDb('the audit forward outbox and forwarder (issue #209)', () => {
       await f.stop();
       expect(timer.armed.every((entry) => entry.cancelled)).toBe(true);
       expect(sink.closed).toBe(false);
+    });
+
+    it('a pass that rejects is logged and the loop re-arms', async () => {
+      await forwarding(db, event(1));
+      const timer = manualTimer();
+      const sink = new FakeSink();
+      sink.failure = new Error('down');
+      const { lines, log } = recordingLog();
+      // A logger that throws makes the pass itself reject, past its own catch.
+      const throwing = Object.assign(Object.create(log) as FastifyBaseLogger, {
+        warn: () => {
+          throw new Error('logger broke');
+        },
+      });
+      const f = forwarder(sink, { setTimer: timer.setTimer, log: throwing });
+      f.start();
+      await expect(f.runOnce()).rejects.toThrow('logger broke');
+      expect(timer.delays()).toEqual([FORWARD_BACKOFF_MIN_MS]);
+      expect(lines.filter((l) => l.level === 'error')).toHaveLength(1);
+      sink.failure = undefined;
+      timer.fire();
+      expect((await f.runOnce()).outcome).toBe('sent');
+      await f.stop();
     });
 
     it('stop waits for a batch under way, which still commits, and nothing runs after', async () => {

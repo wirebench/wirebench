@@ -82,13 +82,27 @@ export class AuditForwarder {
 
   private tick(): void {
     if (this.stopped) return;
-    void this.runOnce().then((pass) => {
-      if (this.stopped) return;
-      this.timer = this.deps.setTimer(() => {
-        this.timer = undefined;
-        this.tick();
-      }, pass.nextDelayMs);
-    });
+    void this.runOnce()
+      .then(
+        (pass) => {
+          this.arm(pass.nextDelayMs);
+        },
+        (error: unknown) => {
+          // A pass handles its own failures; this is the last guard so nothing can end the loop.
+          this.arm(FORWARD_BACKOFF_MIN_MS);
+          this.deps.log.error({ reason: reasonOf(error) }, 'audit forwarding pass failed unexpectedly');
+        },
+      )
+      // The timer is already re-armed; only a throwing logger lands here.
+      .catch(() => undefined);
+  }
+
+  private arm(delayMs: number): void {
+    if (this.stopped) return;
+    this.timer = this.deps.setTimer(() => {
+      this.timer = undefined;
+      this.tick();
+    }, delayMs);
   }
 
   private async pass(): Promise<ForwardPass> {
