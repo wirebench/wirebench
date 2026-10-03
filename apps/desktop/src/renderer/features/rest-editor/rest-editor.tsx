@@ -24,6 +24,7 @@ import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
 import { folderChainOf, selectApiOf, useProjectStore } from '../../state/project.js';
 import { isAbsoluteUrl, queryFromUrl, syncPathParams } from '../../state/rest-url.js';
+import { useCurrentValuesStore } from '../../state/current-values.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { groupOrientation, useEditorLayout } from '../request-editor/layout.js';
 import type { AuthConfigWire, RequestPreflightResponse, RestRequestPatchWire } from '../../../shared/wire-types.js';
@@ -115,6 +116,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
   // A base URL can come from the active environment, which lives on the workspace, so an
   // environment switch has to re-run the preflight as well as a project change.
   const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const currentValues = useCurrentValuesStore((state) => state.byScope);
   const layout = useEditorLayout(requestId);
   const [tab, setTab] = useState<TabId>('params');
   const [resolved, setResolved] = useState<PreflightState>({});
@@ -151,7 +153,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
     };
     // A webhook item's target lives on its collection and folders, so a target set in Webhooks
     // settings while the item is open has to re-run the preflight too.
-  }, [requestId, url, activeEnvironment, webhookCollection, folders]);
+  }, [requestId, url, activeEnvironment, webhookCollection, folders, currentValues]);
 
   const stage = useCallback(
     (patch: RestRequestPatchWire) => {

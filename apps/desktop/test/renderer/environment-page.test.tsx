@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { EnvironmentPage } from '../../src/renderer/features/environments/environment-page.js';
+import { useCurrentValuesStore } from '../../src/renderer/state/current-values.js';
+import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import { useGlobalsStore } from '../../src/renderer/state/globals.js';
 import { useProjectStore } from '../../src/renderer/state/project.js';
 import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
@@ -446,5 +448,42 @@ describe("EnvironmentPage — a linked project's own environment", () => {
     expect(updateEnvironment).toHaveBeenCalledWith('p1', 'e1', {
       properties: { portnum: '8080' },
     });
+  });
+});
+
+describe('EnvironmentPage — current values', () => {
+  afterEach(() => {
+    cleanup();
+    useCurrentValuesStore.setState({ byScope: {} });
+    useGlobalsStore.setState({ properties: {}, disabled: [] });
+    useWorkspaceStore.setState({ workspace: null });
+  });
+
+  it('gives Globals a Current column bound to the global scope', async () => {
+    const set = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { scopes: [{ key: { scope: 'global' }, values: { token: 'mine' } }] } });
+    installWirebenchApi({ currentValues: { set } });
+    useGlobalsStore.setState({ properties: { token: 'abc' }, disabled: [] });
+    renderPage({ kind: 'globals' });
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of token');
+    expect(cell.placeholder).toBe('abc');
+    fireEvent.change(cell, { target: { value: 'mine' } });
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith({ key: { scope: 'global' }, name: 'token', value: 'mine' });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLInputElement>('Current value of token').value).toBe('mine');
+    });
+  });
+
+  it("shows a global's current value on the Workspace page's inherited row", () => {
+    installWirebenchApi();
+    useWorkspaceStore.setState({ workspace: workspaceWire({}) });
+    useGlobalsStore.setState({ properties: { region: 'eu' }, disabled: [] });
+    useCurrentValuesStore.setState({ byScope: { global: { region: 'us' } } });
+    renderPage({ kind: 'workspace' });
+    expect(screen.getByLabelText<HTMLInputElement>('Current value of region').value).toBe('us');
   });
 });

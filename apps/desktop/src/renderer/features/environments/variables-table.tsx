@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { RotateCcw, Trash2 } from 'lucide-react';
 import { IconButton } from '../../components/icon-button.js';
 import { KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
+import { useSecretsVisibilityStore } from '../../state/secrets-visibility.js';
 import type { PropertyMapWire } from '../../../shared/wire-types.js';
 
 /**
@@ -16,6 +17,17 @@ export interface InheritedScope {
   readonly label: string;
   readonly properties: PropertyMapWire;
   readonly disabled: readonly string[];
+  /** That scope's current values, shown (read-only) on its inherited rows. */
+  readonly current?: PropertyMapWire;
+}
+
+/** The Current column (cookie jar spec §6): session-only values laid over this scope's committed ones. */
+export interface CurrentColumn {
+  /** This scope's current values, by name. */
+  readonly values: PropertyMapWire;
+  readonly onSet: (name: string, value: string) => void;
+  /** Resets one name's current value, or every one of the scope when `name` is omitted. */
+  readonly onReset: (name?: string) => void;
 }
 
 /**
@@ -70,6 +82,8 @@ export interface VariablesTableTarget {
    */
   readonly renameDisabledUnsupported?: boolean;
   readonly emptyMessage?: string;
+  /** The Current column. Absent: the table has none. */
+  readonly current?: CurrentColumn;
 }
 
 /** True when `scope` defines `name` at all, whether or not it disables it there. */
@@ -183,6 +197,72 @@ function parsePastedVariables(text: string): readonly PastedVariable[] {
 // mutation" and the way an editable cell looks are the same promise in both.
 const INPUT_CLASS = KV_INPUT_CLASS;
 
+const SECRET_TOKEN = /\$\{secret:/;
+const MASKED = '••••••';
+const CURRENT_NOTE = 'Current value set for this session';
+
+/** The Current cell's state for one row; `undefined` when the table has no Current column. */
+interface CurrentCellProps {
+  /** The current value, or `undefined` when the committed value applies. */
+  readonly current: string | undefined;
+  /** Masked like a secret's Value while secrets are hidden. */
+  readonly masked: boolean;
+  /** An inherited row's: shown, never edited here. */
+  readonly readOnly: boolean;
+  readonly onCommit: (next: string) => void;
+  readonly onReset: () => void;
+}
+
+function CurrentDot() {
+  return (
+    <span
+      role="img"
+      aria-label={CURRENT_NOTE}
+      title={CURRENT_NOTE}
+      data-testid="env-variable-current-dot"
+      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+    />
+  );
+}
+
+/** One Current cell: empty shows the committed value as its placeholder, and that value applies. */
+function CurrentCell({
+  name,
+  committed,
+  current,
+  masked,
+  readOnly,
+  onCommit,
+  onReset,
+}: CurrentCellProps & { readonly name: string; readonly committed: string }) {
+  const field = useCommittedDraft(current ?? '', onCommit);
+  return (
+    <td className="px-2 py-1">
+      <div className="flex items-center gap-1">
+        <input
+          aria-label={`Current value of ${name}`}
+          data-testid="env-variable-current"
+          className={INPUT_CLASS}
+          type={masked ? 'password' : 'text'}
+          placeholder={masked ? MASKED : committed}
+          readOnly={readOnly}
+          title={readOnly ? 'Edit it on the scope that owns it' : 'Session only: never saved, never shared'}
+          {...field}
+        />
+        {current !== undefined && !readOnly && (
+          <IconButton
+            label={`Reset current value of ${name}`}
+            data-testid="env-variable-current-reset"
+            onClick={onReset}
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+          </IconButton>
+        )}
+      </div>
+    </td>
+  );
+}
+
 interface RowProps {
   readonly name: string;
   readonly value: string;
@@ -194,6 +274,7 @@ interface RowProps {
   readonly onCommitValue: (next: string) => void;
   readonly onToggleEnabled: (next: boolean) => void;
   readonly onRemove: () => void;
+  readonly currentCell: CurrentCellProps | undefined;
 }
 
 /** One name/value pair. Edits are local until Enter, Tab or blur, so a keystroke is never a mutation. */
@@ -207,6 +288,7 @@ function VariableRow({
   onCommitValue,
   onToggleEnabled,
   onRemove,
+  currentCell,
 }: RowProps) {
   const nameField = useCommittedDraft(name, onCommitName);
   const valueField = useCommittedDraft(value, onCommitValue);
@@ -232,7 +314,15 @@ function VariableRow({
         />
       </td>
       <td className="px-2 py-1">
-        <input aria-label={`Name of ${name}`} data-testid="env-variable-name" className={INPUT_CLASS} {...nameField} />
+        <div className="flex items-center gap-1">
+          <input
+            aria-label={`Name of ${name}`}
+            data-testid="env-variable-name"
+            className={INPUT_CLASS}
+            {...nameField}
+          />
+          {currentCell?.current !== undefined && <CurrentDot />}
+        </div>
       </td>
       <td className="px-2 py-1">
         <input
@@ -242,6 +332,7 @@ function VariableRow({
           {...valueField}
         />
       </td>
+      {currentCell !== undefined && <CurrentCell name={name} committed={value} {...currentCell} />}
       <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
         {origin}
       </td>
@@ -268,6 +359,7 @@ interface InheritedRowProps {
    * to create the override — there's no separate "override" button.
    */
   readonly onCommitValue: (next: string) => void;
+  readonly currentCell: CurrentCellProps | undefined;
 }
 
 /**
@@ -276,7 +368,15 @@ interface InheritedRowProps {
  * until an override exists — but the value is editable: committing a value here promotes the row
  * to an override, written into this scope's own properties via `onCommitValue`.
  */
-function InheritedVariableRow({ name, value, enabled, ownerLabel, origin, onCommitValue }: InheritedRowProps) {
+function InheritedVariableRow({
+  name,
+  value,
+  enabled,
+  ownerLabel,
+  origin,
+  onCommitValue,
+  currentCell,
+}: InheritedRowProps) {
   const valueField = useCommittedDraft(value, onCommitValue);
 
   return (
@@ -296,13 +396,16 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, origin, onComm
         />
       </td>
       <td className="px-2 py-1">
-        <input
-          aria-label={`Name of ${name}`}
-          data-testid="env-variable-name"
-          className={INPUT_CLASS}
-          value={name}
-          readOnly
-        />
+        <div className="flex items-center gap-1">
+          <input
+            aria-label={`Name of ${name}`}
+            data-testid="env-variable-name"
+            className={INPUT_CLASS}
+            value={name}
+            readOnly
+          />
+          {currentCell?.current !== undefined && <CurrentDot />}
+        </div>
       </td>
       <td className="px-2 py-1">
         <input
@@ -313,6 +416,7 @@ function InheritedVariableRow({ name, value, enabled, ownerLabel, origin, onComm
           {...valueField}
         />
       </td>
+      {currentCell !== undefined && <CurrentCell name={name} committed={value} {...currentCell} />}
       <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
         {origin}
       </td>
@@ -341,6 +445,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
     onSetEnabled,
     renameDisabledUnsupported = false,
     emptyMessage = 'No variables yet.',
+    current,
   } = target;
   const [newName, setNewName] = useState('');
   const [newValue, setNewValue] = useState('');
@@ -349,6 +454,23 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
   const newNameRef = useRef<HTMLInputElement>(null);
 
   const disabledSet = new Set(disabled);
+  const showSecrets = useSecretsVisibilityStore((state) => state.show);
+  const columns = current === undefined ? 5 : 6;
+  const masks = (committed: string): boolean => !showSecrets && SECRET_TOKEN.test(committed);
+
+  /** Commits a typed current value: empty, or the committed value itself, removes the override. */
+  const commitCurrent = (name: string, committed: string, next: string): void => {
+    if (current === undefined) {
+      return;
+    }
+    if (next === '' || next === committed) {
+      if (Object.hasOwn(current.values, name)) {
+        current.onReset(name);
+      }
+      return;
+    }
+    current.onSet(name, next);
+  };
   const names = Object.keys(properties).sort((a, b) => a.localeCompare(b));
 
   // Group 2: names some inherited scope defines that this scope's own `properties` does not —
@@ -484,6 +606,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
             <col className="w-11" />
             <col className="w-[22%]" />
             <col />
+            {current !== undefined && <col className="w-[22%]" />}
             <col className="w-[26%]" />
             <col className="w-9" />
           </colgroup>
@@ -494,6 +617,23 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
               </th>
               <th className="px-2 py-1.5 font-medium">Variable</th>
               <th className="px-2 py-1.5 font-medium">Value</th>
+              {current !== undefined && (
+                <th className="px-2 py-1.5 font-medium">
+                  <div className="flex items-center gap-1">
+                    <span title="Session only: never saved, never shared">Current</span>
+                    <IconButton
+                      label="Reset current values"
+                      data-testid="env-current-reset-all"
+                      disabled={Object.keys(current.values).length === 0}
+                      onClick={() => {
+                        current.onReset();
+                      }}
+                    >
+                      <RotateCcw size={12} aria-hidden="true" />
+                    </IconButton>
+                  </div>
+                </th>
+              )}
               <th className="px-2 py-1.5 font-medium">Resolves from</th>
               <th className="px-2 py-1.5" />
             </tr>
@@ -501,7 +641,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
           <tbody>
             {names.length === 0 && inheritedOnlyNames.length === 0 && (
               <tr className="border-b border-hairline">
-                <td colSpan={5} className="px-2 py-2 text-sm text-fg-subtle">
+                <td colSpan={columns} className="px-2 py-2 text-sm text-fg-subtle">
                   {emptyMessage}
                 </td>
               </tr>
@@ -510,7 +650,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
               <tr data-testid="env-variable-group" className="bg-surface-raised">
                 <th
                   scope="colgroup"
-                  colSpan={5}
+                  colSpan={columns}
                   className="border-b border-hairline px-2 py-1 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
                 >
                   {`Set here · ${scopeLabel}`}
@@ -541,6 +681,21 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                   onRemove={() => {
                     onRemove(name);
                   }}
+                  currentCell={
+                    current === undefined
+                      ? undefined
+                      : {
+                          current: current.values[name],
+                          masked: masks(properties[name] ?? ''),
+                          readOnly: false,
+                          onCommit: (next) => {
+                            commitCurrent(name, properties[name] ?? '', next);
+                          },
+                          onReset: () => {
+                            current.onReset(name);
+                          },
+                        }
+                  }
                 />
               );
             })}
@@ -548,7 +703,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
               <tr data-testid="env-variable-group" className="bg-surface-raised">
                 <th
                   scope="colgroup"
-                  colSpan={5}
+                  colSpan={columns}
                   className="border-b border-hairline px-2 py-1 text-left text-xs font-medium tracking-wider text-fg-subtle uppercase"
                 >
                   Inherited · read-only
@@ -576,6 +731,17 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                       onSet(name, next);
                     }
                   }}
+                  currentCell={
+                    current === undefined
+                      ? undefined
+                      : {
+                          current: owner.current?.[name],
+                          masked: masks(ownerValue),
+                          readOnly: true,
+                          onCommit: () => undefined,
+                          onReset: () => undefined,
+                        }
+                  }
                 />
               );
             })}
@@ -628,6 +794,7 @@ export function VariablesTable({ target }: { readonly target: VariablesTableTarg
                   }}
                 />
               </td>
+              {current !== undefined && <td className="px-2 py-1" />}
               <td className="px-2 py-1 text-xs text-fg-subtle" data-testid="env-variable-origin">
                 {addRowOrigin}
               </td>

@@ -6,6 +6,7 @@ import {
   type InheritedScope,
   type VariablesTableTarget,
 } from '../../src/renderer/features/environments/variables-table.js';
+import { useSecretsVisibilityStore } from '../../src/renderer/state/secrets-visibility.js';
 
 function baseTarget(patch: Partial<VariablesTableTarget> = {}): VariablesTableTarget {
   return {
@@ -695,5 +696,97 @@ describe('VariablesTable — overriding an inherited row', () => {
     );
     expect(screen.getByLabelText<HTMLInputElement>('Name of token').readOnly).toBe(true);
     expect(screen.getByLabelText<HTMLInputElement>('Enable token').disabled).toBe(true);
+  });
+});
+
+describe('VariablesTable — the Current column', () => {
+  function withCurrent(values: Record<string, string> = {}) {
+    const onSet = vi.fn();
+    const onReset = vi.fn();
+    return { current: { values, onSet, onReset }, onSet, onReset };
+  }
+
+  afterEach(() => {
+    cleanup();
+    useSecretsVisibilityStore.setState({ show: false });
+  });
+
+  it('shows the committed value as a placeholder, and sets a current value on Enter', () => {
+    const { current, onSet } = withCurrent();
+    renderTable(baseTarget({ current }));
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of host');
+    expect(cell.value).toBe('');
+    expect(cell.placeholder).toBe('one.test');
+    fireEvent.change(cell, { target: { value: 'mine.test' } });
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    expect(onSet).toHaveBeenCalledWith('host', 'mine.test');
+  });
+
+  it('removes the override when the committed value is committed', () => {
+    const { current, onSet, onReset } = withCurrent({ host: 'mine.test' });
+    renderTable(baseTarget({ current }));
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of host');
+    expect(cell.value).toBe('mine.test');
+    fireEvent.change(cell, { target: { value: 'one.test' } });
+    fireEvent.blur(cell);
+    expect(onReset).toHaveBeenCalledWith('host');
+    expect(onSet).not.toHaveBeenCalled();
+  });
+
+  it('removes the override when the cell is emptied', () => {
+    const { current, onReset } = withCurrent({ host: 'mine.test' });
+    renderTable(baseTarget({ current }));
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of host');
+    fireEvent.change(cell, { target: { value: '' } });
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    expect(onReset).toHaveBeenCalledWith('host');
+  });
+
+  it('marks an overridden row, and resets one value or all of them', () => {
+    const { current, onReset } = withCurrent({ host: 'mine.test' });
+    renderTable(baseTarget({ properties: { host: 'one.test', port: '80' }, current }));
+    expect(screen.getAllByTestId('env-variable-current-dot')).toHaveLength(1);
+    expect(screen.getByLabelText('Current value set for this session')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('env-variable-current-reset'));
+    expect(onReset).toHaveBeenCalledWith('host');
+    fireEvent.click(screen.getByTestId('env-current-reset-all'));
+    expect(onReset).toHaveBeenLastCalledWith();
+  });
+
+  it('disables Reset current values while nothing is overridden', () => {
+    const { current } = withCurrent();
+    renderTable(baseTarget({ current }));
+    expect(screen.getByTestId<HTMLButtonElement>('env-current-reset-all').disabled).toBe(true);
+  });
+
+  it("shows an inherited row's current value, marked and read-only", () => {
+    const { current } = withCurrent();
+    renderTable(
+      baseTarget({
+        properties: {},
+        current,
+        inherited: [scope({ label: 'Workspace', properties: { region: 'eu' }, current: { region: 'us' } })],
+      }),
+    );
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of region');
+    expect(cell.value).toBe('us');
+    expect(cell.readOnly).toBe(true);
+    expect(screen.getAllByTestId('env-variable-current-dot')).toHaveLength(1);
+    expect(screen.queryByTestId('env-variable-current-reset')).toBeNull();
+  });
+
+  it('masks the Current cell of a secret variable while secrets are hidden', () => {
+    const { current } = withCurrent({ token: 'typed-secret' });
+    renderTable(baseTarget({ properties: { token: '${secret:api}' }, current }));
+    expect(screen.getByLabelText<HTMLInputElement>('Current value of token').type).toBe('password');
+    cleanup();
+    useSecretsVisibilityStore.setState({ show: true });
+    renderTable(baseTarget({ properties: { token: '${secret:api}' }, current }));
+    expect(screen.getByLabelText<HTMLInputElement>('Current value of token').type).toBe('text');
+  });
+
+  it('has no Current column without a current target', () => {
+    renderTable(baseTarget());
+    expect(screen.queryAllByTestId('env-variable-current')).toHaveLength(0);
   });
 });
