@@ -3,7 +3,8 @@
  *
  * In `http/` because a sequence's transfers read a response's cookies whatever protocol sent the
  * request, and core imports no protocol folder (protocol modules spec §7.2). `rest/response.ts`
- * re-exports both names. The jar's types live here for the same reason; the jar itself is `rest/cookie-jar.ts`.
+ * re-exports both names. The jar's types live here for the same reason; the jar itself is
+ * `rest/cookie-jar.ts`.
  */
 
 /** One cookie a response set, with the attributes it declared. */

@@ -30,6 +30,11 @@ export const MAX_COOKIE_BYTES = 4096;
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 const encoder = new TextEncoder();
 
+/** Strip IPv6 brackets from hostname (URL.hostname keeps them). */
+function stripIpv6Brackets(hostname: string): string {
+  return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+}
+
 function isIpAddress(host: string): boolean {
   return IPV4.test(host) || host.includes(':') || host.startsWith('[');
 }
@@ -122,7 +127,7 @@ export class CookieJar {
     } catch {
       return [];
     }
-    const host = target.hostname.toLowerCase();
+    const host = stripIpv6Brackets(target.hostname).toLowerCase();
     const secureContext = target.protocol === 'https:';
     const path = target.pathname === '' ? '/' : target.pathname;
     return [...this.cookies.values()]
@@ -183,7 +188,8 @@ export class CookieJar {
     if (cookie.secure === true && !secureContext) {
       return rejected('secure-over-http');
     }
-    const scope = scopeOf(cookie, target.hostname.toLowerCase());
+    const host = stripIpv6Brackets(target.hostname).toLowerCase();
+    const scope = scopeOf(cookie, host);
     if (typeof scope === 'string') {
       return rejected(scope);
     }
@@ -194,6 +200,19 @@ export class CookieJar {
     const existing = this.cookies.get(id);
     if (existing?.secure === true && !secureContext) {
       return rejected('secure-over-http');
+    }
+    // RFC 6265bis §5.3 step 13: refuse a non-Secure cookie if the jar holds a Secure cookie shadowing it
+    if (!secureContext && cookie.secure !== true) {
+      for (const candidate of this.cookies.values()) {
+        if (
+          candidate.secure &&
+          candidate.name === cookie.name &&
+          (domainMatches(candidate.domain, scope.domain) || domainMatches(scope.domain, candidate.domain)) &&
+          pathMatches(path, candidate.path)
+        ) {
+          return rejected('secure-over-http');
+        }
+      }
     }
     const expiresAt = expiresAtOf(cookie, now);
     if (expiresAt !== undefined && expiresAt <= now) {

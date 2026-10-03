@@ -79,6 +79,24 @@ describe('CookieJar — host-only and Domain', () => {
       ['local', 'localhost', true],
     ]);
   });
+
+  it('strips IPv6 brackets from hostname, storing and sending cookies for http://[::1]/', () => {
+    const jar = new CookieJar();
+    expect(jar.store('http://[::1]/', [cookie('ipv6')], NOW)).toEqual([{ stored: true }]);
+    expect(jar.list(NOW)).toEqual([
+      {
+        name: 'ipv6',
+        value: 'ipv6-value',
+        domain: '::1',
+        hostOnly: true,
+        path: '/',
+        secure: false,
+        httpOnly: false,
+        createdAt: NOW,
+      },
+    ]);
+    expect(names(jar.cookiesFor('http://[::1]/x', NOW))).toEqual(['ipv6']);
+  });
 });
 
 describe('CookieJar — paths and order', () => {
@@ -185,6 +203,15 @@ describe('CookieJar — Secure', () => {
       { stored: false, reason: 'secure-over-http' },
     ]);
     expect(jar.list(NOW)[0]?.value).toBe('safe');
+  });
+
+  it('refuses a non-Secure cookie if a Secure cookie shadows it (RFC 6265bis §5.3 step 13)', () => {
+    const jar = new CookieJar();
+    jar.store('https://api.test/', [cookie('sid', { value: 'secure', path: '/', secure: true })], NOW);
+    expect(jar.store('http://api.test/', [cookie('sid', { value: 'forged', path: '/api' })], NOW)).toEqual([
+      { stored: false, reason: 'secure-over-http' },
+    ]);
+    expect(jar.list(NOW)[0]?.value).toBe('secure');
   });
 });
 
