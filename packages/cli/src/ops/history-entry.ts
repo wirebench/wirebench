@@ -59,6 +59,11 @@ export interface HistoryEntryInput {
   readonly mask: (text: string) => string;
   /** The same over a base64 run of bytes: a binary WebSocket frame. */
   readonly maskBase64: (base64: string) => string;
+  /**
+   * A temporary request a contract tool built (#33): no saved request to point at, so no `requestId`;
+   * the name History shows, and the operation it called.
+   */
+  readonly adHoc?: { readonly requestName: string; readonly operationName: string };
 }
 
 type WsItem = Extract<SendableItem, { kind: 'websocket' }>;
@@ -97,8 +102,8 @@ export function historyEntryFor(input: HistoryEntryInput): HistoryEntry {
     id: generateHistoryId(),
     at: new Date().toISOString(),
     projectId: input.projectId,
-    requestId: item.request.id,
-    requestName: item.request.name,
+    ...(input.adHoc === undefined ? { requestId: item.request.id } : {}),
+    requestName: input.adHoc?.requestName ?? item.request.name,
     durationMs: input.durationMs,
     tags: [input.origin],
   };
@@ -116,7 +121,8 @@ export function historyEntryFor(input: HistoryEntryInput): HistoryEntry {
       ...(item.request.soapAction !== undefined ? { soapAction: item.request.soapAction } : {}),
       status: http.status,
       ok: http.status >= 200 && http.status < 300 && fault === undefined,
-      ...(fault !== undefined ? { fault: { code: fault.code, reason: fault.reason } } : {}),
+      // The server may echo a credential back in its fault, as anywhere else in the response.
+      ...(fault !== undefined ? { fault: { code: mask(fault.code), reason: mask(fault.reason) } } : {}),
       request: {
         envelopeXml: storedText(redactXml(bodyOfRaw(http.rawRequest), { show: false }), mask),
         headers: headerRows(http.request.headers, mask),
@@ -136,7 +142,7 @@ export function historyEntryFor(input: HistoryEntryInput): HistoryEntry {
       ...common,
       kind: 'rest',
       interfaceName: item.api.name,
-      operationName: item.chain.map((folder) => folder.name).join(' / '),
+      operationName: input.adHoc?.operationName ?? item.chain.map((folder) => folder.name).join(' / '),
       endpoint: mask(redactUrl(rest.request.url, { show: false })),
       method: rest.request.method,
       soapVersion: 'none',

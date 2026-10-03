@@ -2,6 +2,7 @@
 import { loadOpenApiDocument, redactUrl, selectRequests, summarizeSoapOperations } from '@wirebench/engine';
 import type { Interface, SoapOperationSummary } from '@wirebench/engine';
 import { z } from 'zod';
+import { byOrder, toolNamesByRef } from './contract-tools.js';
 import { defineOp } from './context.js';
 import { OpsError } from './errors.js';
 import { restRef, soapRef } from './operation-refs.js';
@@ -17,6 +18,8 @@ export type OperationRow =
       readonly soapAction?: string;
       /** What `generate` and `validate` take. */
       readonly ref: string;
+      /** The MCP tool and `wirebench call` name, when the definition is readable. */
+      readonly tool?: string;
       /** The saved requests `send` takes. */
       readonly items: readonly string[];
     }
@@ -27,6 +30,8 @@ export type OperationRow =
       readonly path: string;
       readonly operationId?: string;
       readonly ref: string;
+      /** The MCP tool and `wirebench call` name, when the definition is readable. */
+      readonly tool?: string;
       readonly items: readonly string[];
     }
   | {
@@ -52,9 +57,6 @@ const input = z.object({
     .optional()
     .describe('An interface, a REST API or a WebSocket API, by name or slug; all of them when absent'),
 });
-
-const byOrder = <T extends { readonly order: number; readonly name: string }>(a: T, b: T): number =>
-  a.order - b.order || a.name.localeCompare(b.name);
 
 async function soapSummaries(
   projectDir: string,
@@ -119,6 +121,11 @@ export const operationsOp = defineOp({
     const restItems = selected.filter((item) => item.kind === 'rest');
     const wsItems = selected.filter((item) => item.kind === 'websocket');
     const operations: OperationRow[] = [];
+    const tools = await toolNamesByRef(project, context.projectDir);
+    const toolOf = (key: string): { readonly tool?: string } => {
+      const tool = tools.get(key);
+      return tool !== undefined ? { tool } : {};
+    };
 
     for (const iface of interfaces) {
       const summaries = await soapSummaries(context.projectDir, iface, notes);
@@ -135,6 +142,7 @@ export const operationsOp = defineOp({
           operation: operation.name,
           ...(soapAction !== undefined ? { soapAction } : {}),
           ref: soapRef(iface, operation),
+          ...toolOf(`soap:${soapRef(iface, operation)}`),
           items: soapItems
             .filter((item) => item.iface.id === iface.id && item.operation.slug === operation.slug)
             .map((item) => item.path),
@@ -167,6 +175,7 @@ export const operationsOp = defineOp({
           path: operation.path,
           ...(operation.operationId !== undefined ? { operationId: operation.operationId } : {}),
           ref: restRef(api, operation),
+          ...toolOf(`rest:${restRef(api, operation)}`),
           items: own
             .filter(
               (item) =>

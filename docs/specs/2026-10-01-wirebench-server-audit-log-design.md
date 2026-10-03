@@ -23,7 +23,8 @@ of `docs/specs/2026-09-24-wirebench-server-capability-map.md` (fourth slice, sec
 
 1. **The reader is a server admin.** Team admins reading events scoped to their team is a follow-up.
 2. **Pull, not push.** A SIEM collects by polling the export endpoint or by a scheduled
-   `wirebench-server admin audit export` on the box. Syslog and HTTP push are follow-ups.
+   `wirebench-server admin audit export` on the box. Syslog and HTTP push are
+   follow-ups: see `docs/plans/2026-10-03-wirebench-audit-forwarding-plan.md`.
 3. **Details never carry a secret or a body.** The `details` object holds names, roles, heads and
    counts. Nothing from a request or response body, no token, no secret value, no password hash.
 4. **Retention is by age only**, default 365 days, set by one environment variable. Count-based
@@ -56,7 +57,8 @@ reviewer. A compliance team points their collector at the export endpoint once a
 
 - Desktop-side events (what the app sent where): added in the second slice, see
   `docs/specs/2026-10-03-wirebench-desktop-audit-events-design.md`.
-- Team-scoped readers, syslog or HTTP push, alerting on events, signing or hash-chaining the log.
+- Team-scoped readers: added later, see `docs/plans/2026-10-03-wirebench-team-audit-reads-plan.md`.
+- Syslog or HTTP push (added later, see `docs/plans/2026-10-03-wirebench-audit-forwarding-plan.md`), alerting on events, signing or hash-chaining the log.
 - Recording reads: who looked at what is not recorded, except the export itself.
 
 ## 2. Concept model

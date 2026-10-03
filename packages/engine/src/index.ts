@@ -259,6 +259,24 @@ export type {
 } from './xsd/form-model.js';
 export { applyFormEdit } from './xsd/form-edits.js';
 export type { FormEdit } from './xsd/form-edits.js';
+export {
+  createJsonSchemaWriter,
+  jsonFromXml,
+  jsonSchemaOf,
+  lexical,
+  MAX_FILL_ROUNDS,
+  MAX_PROPERTY_DESCRIPTION,
+  xmlFromJson,
+} from './xsd/json-bridge.js';
+export type {
+  BridgeTarget,
+  JsonFromXmlResult,
+  JsonSchemaObject,
+  JsonSchemaOfResult,
+  JsonSchemaWriter,
+  XmlFromJsonOptions,
+  XmlFromJsonResult,
+} from './xsd/json-bridge.js';
 
 export type {
   All,
@@ -303,6 +321,8 @@ export { buildEmptyRequest, buildSampleRequest } from './soap/request-builder.js
 export type { GeneratedRequest, OperationRef, RequestBuildInput, RequestBuildOptions } from './soap/request-builder.js';
 export { buildRequestForm } from './soap/form-request.js';
 export type { RequestForm } from './soap/form-request.js';
+export { envelopeFromJson, faultDetailJson, jsonFromEnvelope, operationJsonSchema } from './soap/json-operation.js';
+export type { JsonEnvelope, OperationSchema } from './soap/json-operation.js';
 export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';
@@ -664,6 +684,8 @@ export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './json/schema/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './json/schema/sample.js';
 export type { SampleOptions, SampleXmlOptions } from './json/schema/sample.js';
+export { validateJsonSchema } from './json/schema-validate.js';
+export type { JsonSchemaProblem, ValidateJsonOptions } from './json/schema-validate.js';
 export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
 export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
 export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';

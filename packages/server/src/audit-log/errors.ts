@@ -7,3 +7,5 @@ export const cursorInvalid = (): WirebenchError =>
 
 export const desktopRecordingOff = (): WirebenchError =>
   problem('audit-desktop-recording-off', 'This workspace does not record desktop activity.', 409);
+
+export const teamRequired = (): WirebenchError => problem('audit-team-required', 'Name a team you administer.', 403);

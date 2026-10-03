@@ -55,9 +55,14 @@ export async function identityHarness(
     readonly git?: GitCli;
     /** Where the server's log lines go, for a test reading them. */
     readonly logStream?: NodeJS.WritableStream;
+    /**
+     * A schema an earlier harness used, to start the server again over the same data (a restart).
+     * The harness migrates it (a no-op when current) and leaves it open on `close`; its owner closes it.
+     */
+    readonly db?: Awaited<ReturnType<typeof testDatabase>>;
   } = {},
 ): Promise<IdentityHarness> {
-  const db = await testDatabase();
+  const db = options.db ?? (await testDatabase());
   const dataDir = await mkTempDir();
   const clock: TestClock = {
     now: new Date('2026-09-24T12:00:00.000Z'),
@@ -107,7 +112,7 @@ export async function identityHarness(
     dataDir,
     close: async () => {
       await app.close();
-      await db.close();
+      if (options.db === undefined) await db.close();
       await removeTempDir(dataDir);
     },
   };

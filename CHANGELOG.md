@@ -48,6 +48,13 @@ before and after for the two changes that need more than a rename. The package's
 
 - **`wirebench run --baseline`** compares each response with its committed golden and fails on a
   semantic difference; `--require-baseline` makes a missing golden an error (#36).
+- **Contract operations as MCP tools (#33).** `wirebench mcp` lists every imported SOAP operation and
+  OpenAPI endpoint as a tool of its own, with a JSON Schema built from the XSD or the OpenAPI schemas.
+  An agent calls it with JSON; Wirebench builds the envelope or request, sends it under the interface's
+  or API's endpoint, auth and secrets, records it in History, and returns the response as JSON. The
+  list follows the project as it changes, at most 128 tools are served, and `--tools` picks the
+  interfaces and APIs. `wirebench call` runs the same from a terminal, and `operations` rows show each
+  operation's tool name.
 - **An Assertions tab on every editor.** The REST, SOAP, gRPC and WebSocket editors have an Assertions tab.
   Every editor Send checks the request's assertions and shows the result in the response pane's
   Assertions tab; callback assertions are still checked in runs and sequences only (#192).
@@ -128,12 +135,16 @@ before and after for the two changes that need more than a rename. The package's
   [Editions and licenses](https://wirebench.github.io/wirebench/docs/guides/server-licensing/).
 - **Server audit log.** Wirebench Server records sign-ins, user, team and workspace changes, pushes,
   team-secret changes, catch URLs, CI tokens and license changes as immutable events, on every edition.
-  Server admins on Enterprise read them in the new Audit tab and export them as newline-delimited JSON,
-  from the app or with `wirebench-server admin audit export`. Retention is by age
+  Server admins on Enterprise read and export them in the new Audit tab, as newline-delimited JSON, and
+  team admins read and export their own team's events the same way, from the app or the API. Whoever
+  runs the server can also export with `wirebench-server admin audit export`. Retention is by age
   (`WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`, default a year). A workspace admin can also switch on
   **Record desktop activity** for a workspace: the app then reports each request sent and each test-suite
   run to the server's log (the masked URL and a few details, never headers or bodies), keeps them in a
-  queue while offline, and shows **Recorded** in the status bar. See
+  queue while offline, and shows **Recorded** in the status bar.
+  Enterprise servers can also forward every audit event to one collector, as RFC 5424 syslog over TCP or
+  TLS or as JSON batches over HTTPS (`WIREBENCH_SERVER_AUDIT_FORWARD_URL`, with an optional token and CA
+  bundle), at least once (for syslog, a batch counts as delivered once it is in the OS socket buffer). See
   [Audit log](https://wirebench.github.io/wirebench/docs/guides/server-audit-log/).
 
 - **Sequences.** A sequence sends saved SOAP, REST, gRPC and WebSocket requests one after another (a

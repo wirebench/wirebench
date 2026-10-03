@@ -59,6 +59,10 @@ describe('the op verbs', () => {
     expect(listed.code).toBe(ExitCode.Ok);
     const parsed = JSON.parse(listed.stdout) as { operations: { ref: string }[] };
     expect(parsed.operations.map((row) => row.ref)).toEqual(['CalculatorService/Add']);
+    const text = await cli(['operations', '--project', fixture.dir]);
+    expect(text.stdout).toContain(
+      'CalculatorService/Add  (urn:wirebench:calculator/Add)\n  tool: calculator_service_add\n',
+    );
 
     const generated = await cli(['generate', 'CalculatorService/Add', '--project', fixture.dir]);
     expect(generated.code).toBe(ExitCode.Ok);

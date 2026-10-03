@@ -9,6 +9,7 @@
   },
   "include": [
     "test",
+    "../engine/test/helpers/test-certs.ts",
     "../../apps/desktop/test/sync/backend-contract.ts",
     "../../apps/desktop/src/main/sync/backend.ts",
     "../../apps/desktop/src/main/sync/types.ts",

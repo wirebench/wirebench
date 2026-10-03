@@ -64,6 +64,7 @@ wirebench import <source> [--name <name>]
 wirebench operations [<interface-or-api>]
 wirebench generate <operation> [--optional all|required]
 wirebench send <item> [-e <env>] [--body <text> | --body-file <file>]
+wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema]
 wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
 wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]
 wirebench history list [--item <text>] [--limit <n>]
@@ -72,7 +73,7 @@ wirebench history diff <from-id> <to-id> [--ignore <path>]…
                        (default: the current directory) and --json; the ones that touch History take
                        --history-dir <dir>.
 
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>]
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
                        Serves those verbs as MCP tools to a coding agent, over stdio or on 127.0.0.1.
 
 wirebench --version | --help
@@ -525,9 +526,10 @@ to [`wirebench mcp`](#wirebench-mcp).
 | Verb | Does |
 | --- | --- |
 | `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
-| `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) and saved WebSocket requests (API, URL), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. |
+| `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) and saved WebSocket requests (API, URL), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. Each SOAP and REST row also carries `tool`, the name of the operation's tool (see [Contract operations as tools](#contract-operations-as-tools)), when its definition is readable. |
 | `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
 | `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
+| `wirebench call <operation> [--args <json\|@file>] [-e <env>] [--schema]` | Calls one operation of an imported contract with JSON arguments, as its MCP tool does: builds the request a new request of the operation would be, sends it under the interface's or API's endpoint, auth and `WIREBENCH_SECRET_*` secrets, records it in History tagged `cli`, and prints the response (`--json`: the result as JSON, the same object the tool returns). `<operation>` is the `operations` reference or the tool name. `--args` takes JSON or `@<file>`; `--schema` prints the arguments' JSON Schema and sends nothing. A response is exit 0, a SOAP fault or a 4xx/5xx included. |
 | `wirebench validate <history-id\|file> [--operation <ref>] [--direction request\|response] [--status <n>]` | Validates a SOAP message against the WSDL's XSD and SOAP rules (line and column), or a REST response body against its OpenAPI response schema (JSON path and keyword). |
 | `wirebench query <expression> <history-id\|file> [--namespace <prefix>=<uri>]… [--direction request\|response]` | XPath 3.1 on XML (the document's own prefixes are known), JSONPath on JSON; one result per line. |
 | `wirebench history list [--item <text>] [--limit <n>]` | The project's History, newest first: id, time, item, status and duration. `--item` matches part of the item path, in any case. `--limit` is 1 to 200 and defaults to 20. |
@@ -667,27 +669,29 @@ The error goes to stderr as `code: message`. Exit 2 is exactly these codes: `inv
 `project-not-found`, `workspace-not-project`, `file-not-found`, `item-not-found`, `item-ambiguous`,
 `operation-not-found`, `container-not-found`, `environment-required`, `environment-not-found`,
 `environment-not-allowed`, `history-entry-not-found`, `history-no-response`, `unsupported-kind`,
-`unsupported-format`, `write-not-allowed`, `send-not-allowed`, `definition-cache-missing` and
-`query-failed`.
+`unsupported-format`, `write-not-allowed`, `send-not-allowed`, `definition-cache-missing`,
+`query-failed`, `operation-gone`, `no-endpoint` and `too-many-tools`.
 
 ## `wirebench mcp`
 
 ```text
-wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>]
+wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
 ```
 
 Serves the verbs above as MCP tools to a coding agent: `import`, `operations`, `generate`, `send`,
-`validate`, `query`, `history_list` and `history_diff`. Each tool takes the same input as its verb and
-returns the same JSON as `--json`; a refusal is a tool result with `isError` and `{ "code", "message" }`.
-No model runs inside Wirebench, and nothing is sent anywhere except the requests you or the agent ask
-`send` to make.
+`validate`, `query`, `history_list` and `history_diff`, and one tool per operation of the project's
+imported contracts (below). Each of the eight takes the same input as its verb and returns the same
+JSON as `--json`; a refusal is a tool result with `isError` and `{ "code", "message" }`. No model runs
+inside Wirebench, and nothing is sent anywhere except the requests you or the agent ask `send` or a
+contract tool to make.
 
 | Flag | Meaning |
 | --- | --- |
 | `--project <dir>` | The project the tools work on (default: the current directory). Checked at start: a folder that is not a project exits 2. |
 | `--allow-write` | Lets `import` write the project. Off: `import` answers `write-not-allowed`. |
-| `--allow-send` | Lets `send` make requests. Off: `send` answers `send-not-allowed`. |
-| `-e, --env <a,b>` | The environments `send` may use, by name, slug or id; any other is `environment-not-allowed`. Under `-e`, a send that resolves no environment (a project that defines none) is refused too. |
+| `--allow-send` | Lets `send` and the contract tools make requests. Off: they answer `send-not-allowed`. |
+| `-e, --env <a,b>` | The environments `send` and the contract tools may use, by name, slug or id; any other is `environment-not-allowed`. Under `-e`, a call that resolves no environment (a project that defines none) is refused too. |
+| `--tools <a,b\|none>` | The interfaces and APIs, by name or slug, whose operations are tools (default: all). `none` serves the eight tools above only. A name the project does not have exits 2. |
 | `--history-dir <dir>` | The folder that holds the History `.jsonl` files (default: the desktop's, see [History location](#history-location)). |
 | `--http <port>` | Streamable HTTP on `http://127.0.0.1:<port>/mcp` instead of stdio. A port from 1 to 65535, except 80: clients drop the default port from `Host` and `Origin`, so `--http 80` is refused. See below. |
 
@@ -700,6 +704,43 @@ The server ends when stdin closes or when the client closes the transport. Secre
 own environment, as for `run`, are masked in every result, and are never an input of any tool. Every
 `WIREBENCH_SECRET_*` value of 8 characters or more that the server was started with is masked in every
 result, not only the ones a call used.
+
+### Contract operations as tools
+
+Every SOAP operation of an interface with a cached definition, and every endpoint of an API with a
+cached OpenAPI document, is a tool of its own. The agent passes typed JSON and gets JSON back; it never
+reads or writes an envelope.
+
+- **Names.** `<container>_<operation>` in snake_case: `CalculatorService` and `Add` make
+  `calculator_service_add`; a REST endpoint uses its `operationId`, or its method and path. At most 64
+  characters (the container part is cut first). A name a fixed tool or an earlier operation already has
+  gets `_2`, `_3`…; one operation bound twice (SOAP 1.1 and 1.2) is two tools. `wirebench operations`
+  shows each row's `tool`.
+- **Arguments.** A SOAP tool's arguments are its body element's content: one property per child
+  element, `@name` for an attribute, `#text` for simple or mixed content, arrays where the XSD allows
+  more than one, `null` for a nillable element, and an XML string for `xs:any` and `anyType`. A REST
+  tool takes `path`, `query`, `headers` (not the ones the API's auth sets) and `body`. Every tool also
+  takes `environment`, with `send`'s rules (`wirebench_environment` when the operation has an argument
+  of that name).
+- **Checks.** Arguments are checked against the tool's own JSON Schema and refused with `invalid-input`
+  when they do not fit, or when a string holds `${`; a SOAP envelope is then checked against the XSD,
+  and refused the same way. Nothing is sent after a refusal.
+- **Sending.** The request is the one a new request of the operation would be: the binding's SOAP
+  version and action, the interface's or API's endpoint for the environment, and the auth a new request
+  there inherits. No endpoint is `no-endpoint`. Each call is recorded in History as `<operation> (MCP)`,
+  tagged `mcp`.
+- **Results.** `status`, `ok` (2xx and no fault), the redacted headers, and `result`: the SOAP body or
+  the REST JSON as JSON. A fault comes back as `fault` with `code`, `reason` and its `detail`, a normal
+  result rather than an error. A body that cannot be read as JSON comes back as `body` text, with a note.
+- **The cap.** At most 128 contract tools. Above that, the server refuses to start (`too-many-tools`,
+  exit 2) and names each container's count; pick some with `--tools`. When a change to the project takes
+  the count over the cap while serving, the contract tools are withdrawn until it falls back.
+- **Kept current.** The server watches the project folder. After a change (an `import`, an edit in the
+  app) it rebuilds the tools and tells every session (`notifications/tools/list_changed`). A call to an
+  operation the project no longer has is `operation-gone`.
+- Each tool needs `--allow-send`, as `send` does, and is listed whatever the flags.
+
+`wirebench call` runs the same core from a terminal, without the cap and the gates.
 
 ### Streamable HTTP
 

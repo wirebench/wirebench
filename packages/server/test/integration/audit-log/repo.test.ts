@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 
-const AUDIT_DIR = fileURLToPath(new URL('../../../migrations/audit-log/', import.meta.url));
+const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
 
 describeDb('audit_events repo (audit-log spec §3.4, §4.2)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
@@ -16,10 +16,14 @@ describeDb('audit_events repo (audit-log spec §3.4, §4.2)', () => {
 
   beforeAll(async () => {
     db = await testDatabase();
-    await migrate(db, [
-      ...(await loadMigrations(MIGRATIONS_DIR)),
-      ...(await loadMigrations(AUDIT_DIR, { contiguous: false })),
-    ]);
+    // 0010 and the hook read workspaces.team_id, which the teams migration adds.
+    const modules = await Promise.all(
+      ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
+    );
+    await migrate(
+      db,
+      [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
+    );
     for (let i = 0; i < 7; i++) {
       await record(db, {
         actor: i % 2 === 0 ? { kind: 'user', userId: 'U1', email: 'a@example.com' } : { kind: 'system' },

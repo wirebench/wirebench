@@ -23,6 +23,7 @@ import {
 } from '@wirebench/engine';
 import type {
   AssertionResult,
+  CaptureSource,
   LocatedSecretNeed,
   RequestResult,
   RunContext,
@@ -37,13 +38,16 @@ import { proxyFromEnv } from '../proxy-env.js';
 import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { defineOp } from './context.js';
+import type { OpsContext } from './context.js';
 import { cutText } from './cut.js';
 import { OpsError } from './errors.js';
 import { historyEntryFor, MAX_STORED_CHARS, redactedWsExchange } from './history-entry.js';
+import type { HistoryEntryInput } from './history-entry.js';
 import { resolveItem } from './items.js';
 import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
 import { environmentFor, openProject } from './project.js';
+import type { OpenedProject } from './project.js';
 import { redactAssertions, redactBody, redactUrlsInText } from './redact.js';
 
 export interface SendResult {
@@ -145,12 +149,125 @@ function checkOverride(body: string): void {
 }
 
 /** The engine's refusal, with `wirebench run`'s advice for a secret the environment does not set. */
-function failure(result: RequestResult, needs: readonly LocatedSecretNeed[]): OpsError {
+export function sendFailure(result: RequestResult, needs: readonly LocatedSecretNeed[]): OpsError {
   const explained = explainMissingSecret(result, needs).error ?? {
     code: 'send-failed',
     message: `"${result.path}" got no response`,
   };
   return new OpsError(explained.code, explained.message, explained.details);
+}
+
+/** What one send came back with: the run's result, the exchange, its maskers, and the History entry written. */
+export interface RecordedSend {
+  readonly result: RequestResult;
+  readonly exchange: Exclude<SentExchange, { kind: 'grpc' }>;
+  /** Masks every secret value the send resolved. */
+  readonly mask: (text: string) => string;
+  readonly maskBase64: (base64: string) => string;
+  /** Absent when History could not be written (a warning says why). */
+  readonly historyId?: string;
+}
+
+export interface SendAndRecordInput {
+  readonly item: SendableItem;
+  /** The item whose secrets the send reads: the saved one when `item` carries an override. Default: `item`. */
+  readonly needsOf?: SendableItem;
+  readonly opened: OpenedProject;
+  readonly environment: { readonly id: string } | undefined;
+  readonly context: OpsContext;
+  /** Secret values known before the send (a capture token); every value the send resolves joins them. */
+  readonly tokens?: Set<string>;
+  readonly scripting?: RequestScripting;
+  readonly captures?: CaptureSource;
+  /** Runs under the run context before the send: `send`'s script check. */
+  readonly before?: (runContext: RunContext) => Promise<void>;
+  /** A caller's own refusal of a send that got no exchange, before the engine's. */
+  readonly refuse?: (result: RequestResult) => OpsError | undefined;
+  /** A temporary request's History names (#33). */
+  readonly adHoc?: HistoryEntryInput['adHoc'];
+}
+
+/**
+ * One item through `runRequests` as `wirebench run` sends it — `WIREBENCH_SECRET_*` secrets, the
+ * environment, `onSent` for the exchange — then its History entry, written with `keepAtLeastCurrent`.
+ * A busy or unwritable History warns and leaves `historyId` out. Every secret value the send resolved
+ * is added to `context.revealed`, whether it succeeded or not. Shared by `send` and a contract tool's call.
+ *
+ * @throws OpsError — the caller's refusal, or the engine's (with `wirebench run`'s advice) when no exchange came back
+ */
+export async function sendAndRecord(input: SendAndRecordInput): Promise<RecordedSend> {
+  const { item, opened, environment, context } = input;
+  const { project, workspace } = opened;
+  // From the saved item, never from an override: the override adds no secret to read.
+  const needs = secretNeedsOf([input.needsOf ?? item], project, {}, workspace?.workspace);
+  const secrets = createEnvSecrets(needs, context.env);
+  const tokens = input.tokens ?? new Set<string>();
+  const known = (): string[] => [...secrets.values(), ...tokens];
+  const runContext: RunContext = {
+    project,
+    projectDir: context.projectDir,
+    ...(workspace !== undefined ? { workspace } : {}),
+    ...(environment !== undefined ? { environmentId: environment.id } : {}),
+    overrides: {},
+    host: cliSendHost({
+      getSecret: secrets.getSecret,
+      env: context.env,
+      onSecretValue: (secret) => tokens.add(secret),
+    }),
+    containsKnownSecret: (text) => knownSecretIn(text, known()),
+    ...(input.scripting !== undefined ? { scripting: input.scripting } : {}),
+  };
+  try {
+    await input.before?.(runContext);
+    const seen: { sent?: SentRequest } = {};
+    const run = await runRequests([item], runContext, {
+      ...(input.captures !== undefined ? { captures: input.captures } : {}),
+      onSent: (_item, sent) => {
+        seen.sent = sent;
+      },
+    });
+    const [result] = run.requests;
+    const exchange = seen.sent?.exchange;
+    if (result === undefined) {
+      throw new Error('the run returned no result');
+    }
+    // A gRPC item never gets this far (`resolveItem` refuses it); the narrowing says so.
+    if (exchange === undefined || exchange.kind === 'grpc') {
+      throw input.refuse?.(result) ?? sendFailure(result, needs);
+    }
+    // Checked before History is written: a send reported as an error leaves no row.
+    if (exchange.kind !== item.kind) {
+      throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
+    }
+    const mask = createSecretMasker(known());
+    const maskBase64 = createSecretBytesMasker(known());
+    let historyId: string | undefined;
+    try {
+      const entry = historyEntryFor({
+        item,
+        exchange,
+        projectId: project.id,
+        origin: context.origin,
+        durationMs: result.durationMs ?? 0,
+        mask,
+        maskBase64,
+        ...(input.adHoc !== undefined ? { adHoc: input.adHoc } : {}),
+      });
+      // The desktop may keep more than the default cap: a send from here never drops a kept entry.
+      await appendHistory(historyFileFor(context.historyDir, project.id), entry, { keepAtLeastCurrent: true });
+      historyId = entry.id;
+    } catch (error) {
+      // The send happened; a busy or unwritable History must not hide its result.
+      context.warn(
+        `History not written: ${isWirebenchError(error) ? `${error.code}: ${error.message}` : String(error)}`,
+      );
+    }
+    return { result, exchange, mask, maskBase64, ...(historyId !== undefined ? { historyId } : {}) };
+  } finally {
+    for (const secret of known()) {
+      context.revealed.add(secret);
+    }
+  }
 }
 
 /** What every result carries, whatever the protocol. */
@@ -254,16 +371,11 @@ export const sendOp = defineOp({
     const opened = await openProject(context);
     const environment = environmentFor(opened, value.environment, context.gates.environments);
     const found = resolveItem(opened.project, value.item);
-    const { project, workspace } = opened;
-    // From the saved item, never from the override: the override adds no secret to read.
-    const needs = secretNeedsOf([found], project, {}, workspace?.workspace);
     if (value.body !== undefined) {
       checkOverride(value.body);
     }
     const item = value.body === undefined ? found : withBody(found, value.body);
-    const secrets = createEnvSecrets(needs, context.env);
     const tokens = new Set<string>();
-    const known = (): string[] => [...secrets.values(), ...tokens];
     const proxyFor = proxyFromEnv(context.env);
     const captures = captureSourceFromEnv(context.env, { proxyFor });
     if (captures.token !== undefined) {
@@ -271,67 +383,23 @@ export const sendOp = defineOp({
     }
     const sandbox = createScriptSandbox();
     const checker = createScriptChecker();
-    const runContext: RunContext = {
-      project,
-      projectDir: context.projectDir,
-      ...(workspace !== undefined ? { workspace } : {}),
-      ...(environment !== undefined ? { environmentId: environment.id } : {}),
-      overrides: {},
-      host: cliSendHost({
-        getSecret: secrets.getSecret,
-        env: context.env,
-        onSecretValue: (secret) => tokens.add(secret),
-      }),
-      containsKnownSecret: (text) => knownSecretIn(text, known()),
-      scripting: new RequestScripting({ sandbox, checker, onSecretValue: (secret) => tokens.add(secret) }),
-    };
     try {
-      const [scriptError] = await checkRunScripts([item], runContext);
-      if (scriptError !== undefined) {
-        throw scriptError;
-      }
-      const seen: { sent?: SentRequest } = {};
-      const run = await runRequests([item], runContext, {
+      const { result, exchange, mask, maskBase64, historyId } = await sendAndRecord({
+        item,
+        needsOf: found,
+        opened,
+        environment,
+        context,
+        tokens,
+        scripting: new RequestScripting({ sandbox, checker, onSecretValue: (secret) => tokens.add(secret) }),
         captures: captures.source,
-        onSent: (_item, sent) => {
-          seen.sent = sent;
+        before: async (runContext) => {
+          const [scriptError] = await checkRunScripts([item], runContext);
+          if (scriptError !== undefined) {
+            throw scriptError;
+          }
         },
       });
-      const [result] = run.requests;
-      const exchange = seen.sent?.exchange;
-      if (result === undefined) {
-        throw new Error('the run returned no result');
-      }
-      // A gRPC item never gets this far (`resolveItem` refuses it); the narrowing says so.
-      if (exchange === undefined || exchange.kind === 'grpc') {
-        throw failure(result, needs);
-      }
-      // Checked before History is written: a send reported as an error leaves no row.
-      if ((exchange.kind === 'websocket') !== (item.kind === 'websocket')) {
-        throw new Error(`a ${item.kind} request came back with a ${exchange.kind} exchange`);
-      }
-      const mask = createSecretMasker(known());
-      const maskBase64 = createSecretBytesMasker(known());
-      let historyId: string | undefined;
-      try {
-        const entry = historyEntryFor({
-          item,
-          exchange,
-          projectId: project.id,
-          origin: context.origin,
-          durationMs: result.durationMs ?? 0,
-          mask,
-          maskBase64,
-        });
-        // The desktop may keep more than the default cap: a send from here never drops a kept entry.
-        await appendHistory(historyFileFor(context.historyDir, project.id), entry, { keepAtLeastCurrent: true });
-        historyId = entry.id;
-      } catch (error) {
-        // The send happened; a busy or unwritable History must not hide its result.
-        context.warn(
-          `History not written: ${isWirebenchError(error) ? `${error.code}: ${error.message}` : String(error)}`,
-        );
-      }
       if (exchange.kind === 'websocket' && item.kind === 'websocket') {
         return wsResultOf(item, result, exchange, { text: mask, base64: maskBase64 }, historyId);
       }
@@ -340,9 +408,6 @@ export const sendOp = defineOp({
       }
       return resultOf(item, result, exchange, mask, historyId);
     } finally {
-      for (const secret of known()) {
-        context.revealed.add(secret);
-      }
       await Promise.all([sandbox.dispose(), checker.dispose()]);
     }
   },

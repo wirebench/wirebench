@@ -266,6 +266,37 @@ describe('op send', () => {
     await expect(historyText(fixture.historyDir)).rejects.toThrow();
   });
 
+  it("masks a resolved secret in a fault's code and reason in History", async () => {
+    const fixture = await soapProject();
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      interfaces: project.interfaces.map((iface) => ({
+        ...iface,
+        auth: { type: 'basic', username: 'calc', passwordRef: 'calcPass', preemptive: true },
+      })),
+    }));
+    const calculator = await server(() => ({
+      status: 500,
+      headers: { 'Content-Type': 'text/xml' },
+      body:
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><soapenv:Fault>' +
+        `<faultcode>soapenv:Server.${SECRET}</faultcode><faultstring>bad ${SECRET}</faultstring>` +
+        '</soapenv:Fault></soapenv:Body></soapenv:Envelope>',
+    }));
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: calculator.url });
+
+    await runOp(
+      sendOp,
+      { item: SOAP_ITEM, environment: 'local' },
+      fixture.base({ env: { WIREBENCH_SECRET_CALCPASS: SECRET } }),
+    );
+
+    const history = await historyText(fixture.historyDir);
+    const entry = JSON.parse(history.trim()) as { fault?: { code: string; reason: string } };
+    expect(entry.fault?.reason).toMatch(/^bad /);
+    expect(history).not.toContain(SECRET);
+  });
+
   it('still returns the result, without a historyId, when History is busy, and warns', async () => {
     const fixture = await soapProject();
     const calculator = await server(() => ({ headers: { 'Content-Type': 'text/xml' }, body: ADD_RESPONSE }));

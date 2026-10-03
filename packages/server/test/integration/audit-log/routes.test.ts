@@ -55,10 +55,10 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
     }
   });
 
-  it('a member hears identity-forbidden before the feature is checked', async () => {
+  it('a member naming no team hears audit-team-required before the feature is checked', async () => {
     const res = await get('/audit', member);
     expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({ code: 'identity-forbidden' });
+    expect(res.json()).toMatchObject({ code: 'audit-team-required' });
   });
 
   it('Team: still refused, and the install is recorded all the same (recording is on for every edition)', async () => {
@@ -106,7 +106,16 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
     expect(new Set(lines.map((l) => l.id)).size).toBe(1005);
     for (let i = 1; i < lines.length; i++) expect(lines[i]!.at >= lines[i - 1]!.at).toBe(true);
     const exported = (await get('/audit?action=audit.exported')).json<Page>().events[0]!;
-    expect(exported.details).toMatchObject({ action: 'hook.cleared', count: 1005 });
+    expect(exported.details).toEqual({
+      from: null,
+      to: null,
+      action: 'hook.cleared',
+      workspaceId: null,
+      actorUserId: null,
+      targetKind: null,
+      targetId: null,
+      count: 1005,
+    });
     expect(exported.actor.email).toBe('root@example.com');
   });
 

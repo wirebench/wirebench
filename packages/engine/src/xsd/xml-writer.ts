@@ -105,6 +105,11 @@ export class PrefixTable {
 
   constructor(private readonly preferred: Readonly<Record<string, string>>) {}
 
+  /** Keeps `prefix` from being allocated: it is already bound in an enclosing scope. */
+  reserve(prefix: string): void {
+    this.taken.add(prefix);
+  }
+
   /** The prefix for `uri`, allocating one on first use. The empty namespace has no prefix. */
   prefixFor(uri: string, hint?: string): string {
     if (uri === '') {

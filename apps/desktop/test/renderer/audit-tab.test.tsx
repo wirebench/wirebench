@@ -119,4 +119,41 @@ describe('AuditTab (audit-log spec §3.6)', () => {
     await store().loadMore(url);
     expect(store().events.map((e) => e.id)).toEqual([event(3).id, event(4).id]);
   });
+
+  it('a teamId scope rides on every query and on the export', async () => {
+    query.mockResolvedValue({ ok: true, value: { events: [event(1)], next: 'c1' } });
+    exportMock.mockResolvedValue({ ok: true, value: { saved: false } });
+    render(<AuditTab url="https://s.example" teamId="T1" workspaces={[]} />);
+    await screen.findAllByTestId('audit-row');
+    expect(lastQuery(query)).toMatchObject({ teamId: 'T1' });
+    fireEvent.click(screen.getByTestId('audit-load-more'));
+    await waitFor(() => expect(query.mock.calls.length).toBe(2));
+    expect(lastQuery(query)).toMatchObject({ teamId: 'T1', after: 'c1' });
+    fireEvent.change(screen.getByTestId('audit-group'), { target: { value: 'auth' } });
+    await waitFor(() => expect(lastQuery(query)).toMatchObject({ teamId: 'T1', action: 'auth.' }));
+    fireEvent.click(screen.getByTestId('audit-export'));
+    await waitFor(() => expect(exportMock).toHaveBeenCalled());
+    expect(lastQuery(exportMock)).toMatchObject({ teamId: 'T1' });
+  });
+
+  it('without a teamId no query carries one', async () => {
+    query.mockResolvedValue({ ok: true, value: { events: [] } });
+    render(<AuditTab url="https://s.example" workspaces={[]} />);
+    await screen.findByTestId('audit-range');
+    expect('teamId' in lastQuery(query)).toBe(false);
+  });
+
+  it('switching the team clears the rows and reloads with the new id', async () => {
+    query.mockResolvedValueOnce({ ok: true, value: { events: [event(1)] } });
+    const url = 'https://s.example';
+    const { rerender } = render(<AuditTab url={url} teamId="T1" workspaces={[]} />);
+    expect(await screen.findAllByTestId('audit-row')).toHaveLength(1);
+    let answer: (value: unknown) => void = () => undefined;
+    query.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    rerender(<AuditTab url={url} teamId="T2" workspaces={[]} />);
+    await waitFor(() => expect(lastQuery(query)).toMatchObject({ teamId: 'T2' }));
+    expect(useAuditStore.getState().events).toEqual([]);
+    answer({ ok: true, value: { events: [event(2), event(3)] } });
+    await waitFor(() => expect(screen.getAllByTestId('audit-row')).toHaveLength(2));
+  });
 });

@@ -262,3 +262,46 @@ describe('run --baseline', () => {
     );
   });
 });
+
+describe('parseCliArgs — mcp --tools', () => {
+  it('reads a list of containers, and none', () => {
+    expect(parseCliArgs(['mcp', '--tools', 'Pets, CalculatorService'])).toMatchObject({
+      command: 'mcp',
+      tools: ['Pets', 'CalculatorService'],
+    });
+    expect(parseCliArgs(['mcp', '--tools', 'none'])).toMatchObject({ command: 'mcp', tools: [] });
+    expect(parseCliArgs(['mcp'])).not.toHaveProperty('tools');
+  });
+
+  it('refuses an empty list', () => {
+    expect(() => parseCliArgs(['mcp', '--tools', ' , '])).toThrow(UsageError);
+  });
+
+  it('refuses --tools on another verb', () => {
+    expect(() => parseCliArgs(['operations', '--tools', 'Pets'])).toThrow(UsageError);
+  });
+});
+
+describe('parseCliArgs — call', () => {
+  it('reads the operation, --args, -e, --schema and the common flags', () => {
+    expect(parseCliArgs(['call', 'Pets/listPets', '--args', '{"a":1}', '-e', 'local', '--json'])).toEqual({
+      command: 'call',
+      operation: 'Pets/listPets',
+      project: '.',
+      json: true,
+      args: '{"a":1}',
+      environment: 'local',
+      schema: false,
+    });
+    expect(parseCliArgs(['call', 'x', '--schema', '--history-dir', 'h'])).toMatchObject({
+      schema: true,
+      historyDir: 'h',
+    });
+  });
+
+  it('needs exactly one operation, and refuses flags it does not take', () => {
+    expect(() => parseCliArgs(['call'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['call', 'a', 'b'])).toThrow(UsageError);
+    expect(() => parseCliArgs(['call', 'a', '--allow-send'])).toThrow(UsageError);
+  });
+});
