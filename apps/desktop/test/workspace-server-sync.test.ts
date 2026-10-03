@@ -267,6 +267,7 @@ it("keeps a fetched head's recordDesktopActivity: the audit target, the share an
     workspaceId: id,
     dir: join(dir, SERVER_STATE_DIR, 'audit-outbox'),
     recording: true,
+    role: 'editor',
   };
   await vi.waitFor(() => expect(service.auditTarget()).toEqual(recording), WAIT);
   expect(service.snapshot()?.share?.server).toEqual({
@@ -279,7 +280,7 @@ it("keeps a fetched head's recordDesktopActivity: the audit target, the share an
   expect(changed.at(-1)?.share?.server?.recording).toBe(true);
   expect((await new ServerState(join(dir, SERVER_STATE_DIR)).read()).recordDesktopActivity).toBe(true);
   // Opened first (not yet recording), then the fetch that said so.
-  expect(targets[0]).toEqual({ target: { ...recording, recording: false }, fetched: false });
+  expect(targets[0]).toEqual({ target: { ...recording, recording: false, role: undefined }, fetched: false });
   expect(targets.at(-1)).toEqual({ target: recording, fetched: true });
 
   await service.close();
