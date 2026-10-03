@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createGrpcApi,
@@ -26,6 +26,7 @@ import {
   startServer,
   updateProject,
   updateRestRequest,
+  writeGolden,
 } from './helpers.js';
 import type { TestServer } from './helpers.js';
 
@@ -491,11 +492,129 @@ describe('op send', () => {
   });
 });
 
+describe('op send with baseline', () => {
+  /** The REST fixture's GET /pets, served by a stub that answers `body` as JSON. */
+  async function petsSend(body: unknown): Promise<{ fixture: Awaited<ReturnType<typeof restProject>>; item: string }> {
+    const fixture = await restProject();
+    const pets = await server(() => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+    await addEnvironment(fixture.dir, 'local', { Pets: pets.url });
+    return { fixture, item: await restItem(fixture.dir, 'GET', '/pets') };
+  }
+
+  it('reports a match, counting what the ignore rules hid', async () => {
+    const { fixture, item } = await petsSend({ ok: true, at: '2026-10-03' });
+    await writeGolden(fixture.dir, item, { body: '{"ok": true, "at": "2026-01-01"}', ignore: ['/at'] });
+
+    const result = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+
+    expect(result.outcome).toBe('passed');
+    expect(result.baseline).toMatchObject({ status: 'matched', format: 'json', ignored: 1 });
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ type: 'baseline', outcome: 'passed', label: 'matches the baseline (1 ignored)' }),
+    );
+  });
+
+  it('fails on a difference, listing kind, path, expected and actual', async () => {
+    const { fixture, item } = await petsSend({ ok: true });
+    await writeGolden(fixture.dir, item, { body: '{"ok": false}' });
+
+    const result = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+
+    expect(result.outcome).toBe('failed');
+    expect(result.baseline).toMatchObject({
+      status: 'differs',
+      changes: [{ kind: 'changed', path: '/ok', expected: 'false', actual: 'true' }],
+    });
+    expect(result.baseline?.truncated).toBeUndefined();
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ type: 'baseline', outcome: 'failed', label: '1 difference from the baseline' }),
+    );
+  });
+
+  it('keeps the first 100 changes and says more were cut', async () => {
+    const { fixture, item } = await petsSend(Array.from({ length: 101 }, (_, n) => n + 1));
+    await writeGolden(fixture.dir, item, { body: JSON.stringify(Array.from({ length: 101 }, (_, n) => n)) });
+
+    const result = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+
+    expect(result.baseline?.status).toBe('differs');
+    expect(result.baseline?.changes).toHaveLength(100);
+    expect(result.baseline?.truncated).toBe(true);
+  });
+
+  it('reports a missing golden without failing the send', async () => {
+    const { fixture, item } = await petsSend({ ok: true });
+
+    const result = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+
+    expect(result.outcome).toBe('passed');
+    expect(result.baseline).toEqual({ status: 'missing' });
+    expect(result.assertions.some((assertion) => assertion.type === 'baseline')).toBe(false);
+  });
+
+  it('errors on a golden that is a symbolic link, and on one too large to compare', async () => {
+    const { fixture, item } = await petsSend({ ok: true });
+    const file = await writeGolden(fixture.dir, item, { body: '{}' });
+    const elsewhere = join(fixture.dir, 'elsewhere.yaml');
+    await writeFile(elsewhere, await readFile(file, 'utf8'));
+    await rm(file);
+    await symlink(elsewhere, file);
+
+    const linked = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+    expect(linked.outcome).toBe('errored');
+    expect(linked.baseline?.status).toBe('unreadable');
+
+    await rm(file);
+    await writeGolden(fixture.dir, item, { body: 'x'.repeat(2 * 1024 * 1024 + 1) });
+    const large = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+    expect(large.outcome).toBe('errored');
+    expect(large.baseline?.status).toBe('too-large');
+  });
+
+  it("compares a body override's response with the saved request's golden", async () => {
+    const { fixture, item } = await petsSend({ ok: true });
+    await writeGolden(fixture.dir, item, { body: '{"ok": true}' });
+
+    const result = await runOp(
+      sendOp,
+      { item, environment: 'local', body: '{"changed": 1}', baseline: true },
+      fixture.base(),
+    );
+
+    expect(result.baseline?.status).toBe('matched');
+  });
+
+  it('reads no golden and adds no field without the flag', async () => {
+    const { fixture, item } = await petsSend({ ok: true });
+    await writeGolden(fixture.dir, item, { body: '{"ok": false}' });
+
+    const result = await runOp(sendOp, { item, environment: 'local' }, fixture.base());
+
+    expect(result.outcome).toBe('passed');
+    expect(result).not.toHaveProperty('baseline');
+  });
+});
+
 describe('op send on a WebSocket request', () => {
   const sockets: TestWsServer[] = [];
 
   afterEach(async () => {
     await Promise.all(sockets.splice(0).map((socket) => socket.close()));
+  });
+
+  it('reports a WebSocket request as not compared', async () => {
+    const echo = await startTestWsServer();
+    sockets.push(echo);
+    const fixture = await wsProject(echo.url);
+
+    const result = await runOp(
+      sendOp,
+      { item: 'Chat/Echo', baseline: true },
+      fixture.base({ env: { WIREBENCH_SECRET_WSKEY: SECRET } }),
+    );
+
+    expect(result.outcome).toBe('passed');
+    expect(result.baseline).toEqual({ status: 'unsupported' });
   });
 
   /** An empty project with one WebSocket request on `url`: a secret header and two saved messages. */
