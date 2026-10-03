@@ -47,7 +47,7 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 - **Sealed row:** an `audit_events` row with `chain_seq` and `chain_hash` set. An unsealed row has both null.
 - **Sequence number (`chain_seq`):** the row's place in the chain, given at sealing and gapless from the anchor. The chain is ordered by sequence number, not by `at`: a row whose transaction commits late gets a later number than rows with a later `at`.
 - **Link (`chain_hash`):** `HMAC-SHA256(key, prev_hash ‖ seq ‖ canonical row)`, where `prev_hash` is the hash of the row with `seq − 1`, or the anchor's hash.
-- **Anchor:** the chain's starting point. It holds the sequence number and hash just before the oldest kept row, plus the key's id. At first sealing it is the genesis: `seq` 0 and `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")`.
+- **Anchor:** the chain's starting point. It holds the sequence number and hash just before the oldest kept row, the key's id, and `head_seq`: the highest sequence number ever sealed, which never goes back. At first sealing it is the genesis: `seq` 0 and `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")`.
 - **Head:** the highest sealed `(seq, hash)`.
 - **Key id:** the first 8 bytes of `SHA-256(key)`, in hex. It tells a wrong key apart from a tampered chain. It is not secret.
 
@@ -69,9 +69,9 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 1. `select pg_try_advisory_xact_lock(<audit chain lock id>)`. If another instance holds the lock, the pass ends as `busy-elsewhere` and the sealer tries again at the idle delay.
 2. Read the anchor; if there is none, insert the genesis anchor with this key's id.
 3. Check the key. If the anchor's key id differs from this key's id, refuse to seal. Log one `error` (`audit chain key does not match the chain's key id <id>`), re-arm at the idle delay, and log again only after the key changes and fails again. Inserts are never affected.
-4. The head is `max(chain_seq)`, or the anchor when nothing is sealed.
+4. The head is the highest sealed row's `(chain_seq, chain_hash)`, or the anchor's `(seq, hash)` when nothing is sealed. The next sequence number is `max(head.seq, anchor.head_seq) + 1`, linked to the head's hash. So after sealed rows were deleted from outside (the newest, or all of them), sealing resumes past the gap and never reuses a number.
 5. Claim up to **500** unsealed rows: `where chain_seq is null order by at, id limit 500 for update skip locked`. Uncommitted rows are invisible, so only committed rows are sealed.
-6. For each row in that order: `seq = head.seq + 1`, then `hash = HMAC(key, head.hash ‖ seq ‖ canonical(row))`. Update the row and advance the head.
+6. For each row in that order: `seq` is the next sequence number (step 4), then `hash = HMAC(key, head.hash ‖ seq ‖ canonical(row))`. Update the row and advance the head. If the batch sealed anything, set `anchor.head_seq` to the new head's sequence number, in the same transaction.
 7. Commit. If the batch sealed anything, log at `info`: `audit chain sealed to <seq>:<hash hex>` with `{ sealed: n }`.
 
 **Canonical row:**
@@ -100,11 +100,11 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 **With the key set:**
 - The sweeper deletes only sealed rows, and only from the oldest end of the chain, so the kept chain stays gapless.
 - On each batch it finds `S`, the highest sequence number whose row and every row before it are older than the cutoff: `S = (min chain_seq where at >= cutoff) − 1`, or `max(chain_seq)` when no sealed row is that new.
-- It deletes `chain_seq <= least(S, anchor.seq + 1000)`, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)`. The key id stays.
+- It deletes `chain_seq <= least(S, anchor.seq + 1000)`, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)`. The key id and `head_seq` stay.
 - Unsealed rows past the cutoff stay until they are sealed.
 - A row that commits late with an old `at` can hold back deletion of the rows sealed after it until it, too, is past the cutoff. That costs a little extra storage, never a gap.
 
-**Without the key:** retention is unchanged, deleting by `at`. If the key is set later, sealing starts from the rows still present. If the key is unset later, rows stay sealed and new rows stay unsealed until it is set again. If any rows were deleted while the key was unset, the next verify reports a gap.
+**Without the key:** retention is unchanged, deleting by `at`. If the key is set later, sealing starts from the rows still present. If the key is unset later, rows stay sealed and new rows stay unsealed until it is set again. If any sealed rows were deleted while the key was unset, the next verify reports a gap: sealing resumes after `anchor.head_seq`, so it never reuses their sequence numbers.
 
 **Unchanged:** the forward queue cascade, and the rule that the sweep is not itself an event.
 
@@ -119,7 +119,7 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 - It walks the sealed rows in `chain_seq` order, 1000 at a time, recomputing each link from the anchor.
 - It stops at the first broken link and reports its sequence number, the row id when there is one, and the reason:
   - `edited`: the hash does not match the row's content. An edited sequence number or hash, a swapped row and an edited anchor all show up here or as a gap.
-  - `missing`: a sequence number is skipped. A deleted row lands here.
+  - `missing`: a sequence number is skipped. A deleted row lands here. It also reports `missing` when the highest sealed sequence number is below `anchor.head_seq`: the newest sealed rows, or all of them, were removed.
   - `out of order`: a sequence number repeats or goes backwards.
 
 **`--head <seq>:<hex>`:** a head copied from the server log must exist with exactly that hash. Otherwise it reports `head <seq> not found: newer rows were removed` or `head <seq> does not match`.
@@ -157,7 +157,8 @@ create table audit_chain_anchor (
   only_row boolean primary key default true check (only_row),
   seq      bigint not null,
   hash     bytea  not null,
-  key_id   text   not null
+  key_id   text   not null,
+  head_seq bigint not null default 0
 );
 ```
 

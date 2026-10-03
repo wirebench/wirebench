@@ -222,9 +222,11 @@ export interface ChainLink {
   readonly hash: Buffer;
 }
 
-/** The chain's starting point, and the id of the key that built it. */
+/** The chain's starting point, the id of the key that built it, and the highest seq ever sealed. */
 export interface ChainAnchor extends ChainLink {
   readonly keyId: string;
+  /** Never goes back: the next seq is above it even when every sealed row was removed from outside. */
+  readonly headSeq: bigint;
 }
 
 /** A sealed row as verify walks it. */
@@ -239,11 +241,18 @@ const seqOf = (value: string): bigint => BigInt(value);
 
 export async function readAnchor(db: Querier): Promise<ChainAnchor | undefined> {
   const row = (
-    await db.query<{ seq: string; hash: Buffer; key_id: string }>(
-      'select seq::text as seq, hash, key_id from audit_chain_anchor',
+    await db.query<{ seq: string; hash: Buffer; key_id: string; head_seq: string }>(
+      'select seq::text as seq, hash, key_id, head_seq::text as head_seq from audit_chain_anchor',
     )
   ).rows[0];
-  return row === undefined ? undefined : { seq: seqOf(row.seq), hash: row.hash, keyId: row.key_id };
+  return row === undefined
+    ? undefined
+    : { seq: seqOf(row.seq), hash: row.hash, keyId: row.key_id, headSeq: seqOf(row.head_seq) };
+}
+
+/** Records the head after a sealing pass, in its transaction; `greatest` keeps it from ever going back. */
+export async function setAnchorHead(tx: Querier, headSeq: bigint): Promise<void> {
+  await tx.query('update audit_chain_anchor set head_seq = greatest(head_seq, $1::bigint)', [headSeq.toString()]);
 }
 
 /**

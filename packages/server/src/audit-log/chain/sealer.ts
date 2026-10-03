@@ -11,7 +11,15 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database, Querier } from '../../context.js';
 import type { SetTimer } from '../../hooks/env.js';
-import { chainHead, claimUnsealed, insertGenesis, readAnchor, sealRow, type ChainLink } from '../repo.js';
+import {
+  chainHead,
+  claimUnsealed,
+  insertGenesis,
+  readAnchor,
+  sealRow,
+  setAnchorHead,
+  type ChainLink,
+} from '../repo.js';
 import { genesisHash, keyId, link } from './canonical.js';
 
 export const SEAL_BATCH = 500;
@@ -159,7 +167,10 @@ export class AuditSealer {
     const anchor = (await readAnchor(tx)) ?? (await insertGenesis(tx, genesisHash(this.deps.key), this.keyId));
     // Before any row is touched: a wrong key must not extend the chain with links verify would reject.
     if (anchor.keyId !== this.keyId) return { kind: 'wrong-key', chainKeyId: anchor.keyId };
-    let head: ChainLink = (await chainHead(tx)) ?? { seq: anchor.seq, hash: anchor.hash };
+    // Linked to the highest sealed row's hash, or the anchor's; numbered past `head_seq` too, so rows
+    // removed from outside (the newest, or all of them) leave a gap verify reports, never a reused seq.
+    const last: ChainLink = (await chainHead(tx)) ?? { seq: anchor.seq, hash: anchor.hash };
+    let head: ChainLink = { seq: last.seq > anchor.headSeq ? last.seq : anchor.headSeq, hash: last.hash };
     const rows = await claimUnsealed(tx, this.deps.batchSize ?? SEAL_BATCH);
     for (const row of rows) {
       /* c8 ignore next -- id is the primary key */
@@ -169,6 +180,7 @@ export class AuditSealer {
       await sealRow(tx, row.id, seq, hash);
       head = { seq, hash };
     }
+    if (rows.length > 0) await setAnchorHead(tx, head.seq);
     return { kind: 'sealed', sealed: rows.length, head };
   }
 }

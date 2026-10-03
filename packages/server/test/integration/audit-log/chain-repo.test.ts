@@ -110,7 +110,7 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   it('has no anchor until the genesis, which keeps the first anchor', async () => {
     expect(await readAnchor(db)).toBeUndefined();
     const anchor = await insertGenesis(db, genesisHash(KEY), keyId(KEY));
-    expect(anchor).toEqual({ seq: 0n, hash: genesisHash(KEY), keyId: keyId(KEY) });
+    expect(anchor).toEqual({ seq: 0n, hash: genesisHash(KEY), keyId: keyId(KEY), headSeq: 0n });
     expect(await insertGenesis(db, Buffer.alloc(32), 'ffffffffffffffff')).toEqual(anchor);
     expect(await readAnchor(db)).toEqual(anchor);
   });

@@ -19,7 +19,7 @@ import {
 } from '../../../src/audit-log/chain/sealer.js';
 import { auditHook } from '../../../src/audit-log/hook.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
-import { insertGenesis, readAnchor, sealedPage } from '../../../src/audit-log/repo.js';
+import { insertGenesis, readAnchor, sealedPage, type ChainLink } from '../../../src/audit-log/repo.js';
 import type { AuditInput, Database, Querier } from '../../../src/context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
@@ -164,7 +164,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       await insert(db, '01J9ZK3V8Q00000000000000A0', '2026-10-03T00:00:03Z');
       expect(await readAnchor(db)).toBeUndefined();
       expect(await sealer().runOnce()).toEqual({ outcome: 'sealed', sealed: 4, nextDelayMs: SEAL_BUSY_MS });
-      expect(await readAnchor(db)).toEqual({ seq: 0n, hash: genesisHash(KEY), keyId: keyId(KEY) });
+      expect(await readAnchor(db)).toEqual({ seq: 0n, hash: genesisHash(KEY), keyId: keyId(KEY), headSeq: 4n });
       expect(await rows()).toEqual([
         ['01J9ZK3V8Q00000000000000A1', 1],
         ['01J9ZK3V8Q00000000000000B2', 2],
@@ -269,7 +269,90 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       expect(JSON.stringify(lines)).not.toContain(KEY);
       expect(JSON.stringify(lines)).not.toContain(keyId(KEY));
       expect((await rows()).map(([, seq]) => seq)).toEqual([null, null]);
-      expect(await readAnchor(db)).toEqual({ seq: 0n, hash: genesisHash(OTHER_KEY), keyId: keyId(OTHER_KEY) });
+      expect(await readAnchor(db)).toEqual({
+        seq: 0n,
+        hash: genesisHash(OTHER_KEY),
+        keyId: keyId(OTHER_KEY),
+        headSeq: 0n,
+      });
+    });
+
+    it('a sealing pass records head_seq in the anchor; an idle pass leaves it', async () => {
+      for (let n = 1; n <= 3; n++) await record(db, event(n));
+      const s = sealer();
+      expect((await s.runOnce()).sealed).toBe(3);
+      expect((await readAnchor(db))?.headSeq).toBe(3n);
+      expect((await s.runOnce()).outcome).toBe('idle');
+      expect((await readAnchor(db))?.headSeq).toBe(3n);
+      await record(db, event(4));
+      expect((await s.runOnce()).sealed).toBe(1);
+      expect((await readAnchor(db))?.headSeq).toBe(4n);
+    });
+
+    it('with every sealed row deleted from outside, the next pass seals at head_seq + 1, linked to the anchor', async () => {
+      for (let n = 1; n <= 3; n++) await record(db, event(n));
+      const s = sealer();
+      await s.runOnce();
+      // The old retention, run while the key was unset, deletes by `at` alone.
+      await db.query('delete from audit_events');
+      await record(db, event(4));
+      expect((await s.runOnce()).sealed).toBe(1);
+      const anchor = (await readAnchor(db))!;
+      expect(anchor.seq).toBe(0n);
+      expect(anchor.headSeq).toBe(4n);
+      const [row] = await sealedPage(db, 0n, 10);
+      expect(row?.seq).toBe(4n);
+      expect(row?.hash).toEqual(link(KEY, anchor.hash, 4n, row!.row));
+    });
+
+    it('with the newest sealed rows deleted from outside, sealing resumes past the gap from the highest kept row', async () => {
+      for (let n = 1; n <= 4; n++) await record(db, event(n));
+      const s = sealer();
+      await s.runOnce();
+      await db.query('delete from audit_events where chain_seq >= 3');
+      await record(db, event(5));
+      expect((await s.runOnce()).sealed).toBe(1);
+      const page = await sealedPage(db, 0n, 10);
+      expect(page.map((r) => r.seq)).toEqual([1n, 2n, 5n]);
+      expect(page[2]?.hash).toEqual(link(KEY, page[1]!.hash, 5n, page[2]!.row));
+      expect((await readAnchor(db))?.headSeq).toBe(5n);
+    });
+
+    it('a batch that fails mid-way seals nothing and keeps head_seq; the next pass seals from the same head', async () => {
+      await record(db, event(1));
+      await record(db, event(2));
+      await sealer().runOnce();
+      const before = (await sealedPage(db, 1n, 1))[0]!;
+      for (let n = 3; n <= 5; n++) await record(db, event(n));
+      let updates = 0;
+      const failing: Database = {
+        query: db.query.bind(db),
+        close: () => db.close(),
+        transaction: (fn) =>
+          db.transaction((tx) =>
+            fn({
+              query: <R extends Record<string, unknown>>(text: string, params?: readonly unknown[]) => {
+                if (/^update audit_events set chain_seq/.test(text) && ++updates === 2) {
+                  return Promise.reject(new Error('the second seal failed'));
+                }
+                return tx.query<R>(text, params);
+              },
+            }),
+          ),
+      };
+      expect(await sealer({ db: failing }).runOnce()).toEqual({
+        outcome: 'failed',
+        sealed: 0,
+        nextDelayMs: backoff(1),
+      });
+      expect(updates).toBe(2);
+      expect((await rows()).map(([, seq]) => seq)).toEqual([1, 2, null, null, null]);
+      expect((await readAnchor(db))?.headSeq).toBe(2n);
+      const head: ChainLink | undefined = (await sealedPage(db, 1n, 1))[0];
+      expect(head?.hash).toEqual(before.hash);
+      expect((await sealer().runOnce()).sealed).toBe(3);
+      expect(await walk()).toEqual([1, 2, 3, 4, 5]);
+      expect((await readAnchor(db))?.headSeq).toBe(5n);
     });
 
     it('logs the head at info after a batch that sealed something, and not after an empty one', async () => {
@@ -339,7 +422,9 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       const stopping = s.stop().then(() => {
         stopped = true;
       });
-      await Promise.resolve();
+      // A macrotask and a database round-trip: a stop that did not wait would have resolved by now.
+      await new Promise(setImmediate);
+      await db.query('select 1');
       expect(stopped).toBe(false);
       held.release();
       await stopping;
