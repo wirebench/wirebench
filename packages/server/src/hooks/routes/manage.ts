@@ -266,7 +266,8 @@ export const manageRoutes =
               ...(body.rejectUnverified !== undefined ? { rejectUnverified: body.rejectUnverified } : {}),
             });
             if (!done) return false;
-            // hook.changed is for what the signature events do not say: a name, the switch, the reject flag.
+            // hook.changed is for what the signature events do not say: a name, the switch, the reject flag,
+            // and that the canned response was set (`response: true`; its body is never recorded).
             const changed: Record<string, string | boolean> = {};
             if (name !== undefined && name !== current.name) {
               changed['name'] = name;
@@ -276,6 +277,7 @@ export const manageRoutes =
             if (body.rejectUnverified !== undefined && body.rejectUnverified !== current.rejectUnverified) {
               changed['rejectUnverified'] = body.rejectUnverified;
             }
+            if (body.response !== undefined) changed['response'] = true;
             if (Object.keys(changed).length > 0) {
               await recordAudit(env.ctx.hooks, tx, {
                 ...source,
@@ -285,7 +287,9 @@ export const manageRoutes =
                 details: changed,
               });
             }
-            if (signature === null) {
+            // Clearing a catch URL that had no signature changes nothing, so it records nothing.
+            const hadSignature = current.signature !== null || current.secretSet;
+            if (signature === null && hadSignature) {
               await recordAudit(env.ctx.hooks, tx, {
                 ...source,
                 action: 'hook.signature_cleared',
@@ -293,7 +297,7 @@ export const manageRoutes =
                 workspaceId,
                 details: { scheme: current.signature?.kind ?? null },
               });
-            } else if (signature !== undefined) {
+            } else if (signature !== undefined && signature !== null) {
               await recordAudit(env.ctx.hooks, tx, {
                 ...source,
                 action: 'hook.signature_set',

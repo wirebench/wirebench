@@ -102,6 +102,17 @@ describeDb('sync, webhook and CI-token fire sites (audit-log spec §3.2, plan ru
     expect(last(events, 'hook.signature_cleared').details).toEqual({ scheme: 'hmac' });
     expect(last(events, 'hook.changed').details).toMatchObject({ name: 'orders-v2', previousName: 'orders' });
 
+    const before = events.length;
+    await call(h, admin, 'PATCH', `${base}/${hook.id}`, { signature: null });
+    expect(events.slice(before).map((e) => e.action)).toEqual([]);
+
+    expect(
+      (await call(h, admin, 'PATCH', `${base}/${hook.id}`, { response: { status: 202, body: 'queued' } })).status,
+    ).toBe(200);
+    expect(events.slice(before).map((e) => e.action)).toEqual(['hook.changed']);
+    expect(last(events, 'hook.changed').details).toEqual({ response: true });
+    expect(JSON.stringify(last(events, 'hook.changed'))).not.toContain('queued');
+
     await call(h, admin, 'POST', `${base}/${hook.id}/rotate`);
     expect(last(events, 'hook.rotated').details).toEqual({ name: 'orders-v2' });
     await call(h, admin, 'DELETE', `${base}/${hook.id}/captures`);
