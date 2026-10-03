@@ -239,3 +239,22 @@ describe('parseCliArgs — mcp', () => {
     expect(() => parseCliArgs(argv)).toThrow(UsageError);
   });
 });
+
+describe('parseCliArgs — mcp --tools', () => {
+  it('reads a list of containers, and none', () => {
+    expect(parseCliArgs(['mcp', '--tools', 'Pets, CalculatorService'])).toMatchObject({
+      command: 'mcp',
+      tools: ['Pets', 'CalculatorService'],
+    });
+    expect(parseCliArgs(['mcp', '--tools', 'none'])).toMatchObject({ command: 'mcp', tools: [] });
+    expect(parseCliArgs(['mcp'])).not.toHaveProperty('tools');
+  });
+
+  it('refuses an empty list', () => {
+    expect(() => parseCliArgs(['mcp', '--tools', ' , '])).toThrow(UsageError);
+  });
+
+  it('refuses --tools on another verb', () => {
+    expect(() => parseCliArgs(['operations', '--tools', 'Pets'])).toThrow(UsageError);
+  });
+});
