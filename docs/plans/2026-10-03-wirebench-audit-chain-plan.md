@@ -18,7 +18,7 @@
   - **Genesis:** `seq` 0, with `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")` and `head_seq` 0.
   - **Anchor MAC** (ruled in fix round 1 of Task 4): `audit_chain_anchor.mac bytea not null` is `anchorMac(key, seq, hash, headSeq) = HMAC-SHA256(key, "wirebench-audit-chain-anchor" ‖ seq (8 bytes BE) ‖ hash (32 raw bytes) ‖ headSeq (8 bytes BE))`. Every anchor write (`insertGenesis`, the sealer's `setAnchorHead`, retention's anchor move) sets it in the same statement.
   - **Canonical row:** every column, in the spec's §3.2 order, written as `len:value`, where `len` is the value's length in UTF-8 bytes; a null is written as `-1:`.
-  - **Field forms:** `at` is `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, `ip` is `abbrev(ip)` (it keeps a netmask other than /32 or /128 and prints a single host bare; ruled in fix round 1 of Task 1) and `details` is `details::text`, all rendered by Postgres.
+  - **Field forms:** `at` is `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` followed by ` BC` for an instant before year 1 (Postgres prints a BC date like its AD twin), `ip` is `abbrev(ip)` (it keeps a netmask other than /32 or /128 and prints a single host bare; ruled in fix round 1 of Task 1) and `details` is `details::text`, all rendered by Postgres.
 - **Sealer:**
   - **Batch:** 500 rows per pass, written in one `update … from unnest($1::text[], $2::bigint[], $3::bytea[])` statement (ruled in the final review).
   - **Genesis:** inserted only when there is no anchor and no row is sealed (`chainHead(tx) === undefined`); with sealed rows and no anchor the pass ends `bad-anchor` (ruled in the final review).

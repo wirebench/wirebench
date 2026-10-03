@@ -65,6 +65,15 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
     expect(row?.details).toBe('{}');
   });
 
+  it('marks a BC at, so flipping the era breaks the link', async () => {
+    await insert('01J9ZK3V8Q0000000000000003', '2026-10-03T00:00:00Z');
+    await insert('01J9ZK3V8Q0000000000000004', '2026-10-03 00:00:00+00 BC');
+    expect((await claimUnsealed(db, 10)).map((r) => r.at).sort()).toEqual([
+      '2026-10-03T00:00:00.000000Z',
+      '2026-10-03T00:00:00.000000Z BC',
+    ]);
+  });
+
   it('covers the netmask of ip, and prints a single host without one', async () => {
     for (const [id, ip] of [
       ['01J9ZK3V8Q00000000000000E1', '10.0.0.5'],

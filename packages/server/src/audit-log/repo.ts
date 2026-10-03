@@ -230,7 +230,9 @@ export async function deleteUnsealedBefore(db: Querier, cutoff: Date, limit: num
  * (`host(ip)` drops it), while a single host prints bare (`ip::text` would always add `/32` or `/128`).
  */
 export const CANONICAL_COLUMNS =
-  `id, to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at, ` +
+  // A BC instant renders as its AD twin; the suffix keeps an era flip from passing as unchanged.
+  `id, to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || ` +
+  `case when at < timestamptz '0001-01-01 00:00:00+00' then ' BC' else '' end as at, ` +
   'actor_kind as "actorKind", actor_user_id as "actorUserId", actor_email as "actorEmail", ' +
   'actor_token_id as "actorTokenId", actor_workspace_id as "actorWorkspaceId", action, ' +
   'target_kind as "targetKind", target_id as "targetId", workspace_id as "workspaceId", team_id as "teamId", ' +

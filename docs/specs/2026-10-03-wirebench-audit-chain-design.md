@@ -81,7 +81,7 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 - Postgres renders the columns as text and Node builds the hash, so the key never reaches the database.
 - Columns, in a fixed order, each written as its length in bytes, a colon, then the value (`len:value`):
   - `id`;
-  - `at` as `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+  - `at` as `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` followed by ` BC` for an instant before year 1 (Postgres prints a BC date like its AD twin);
   - `actor_kind`, `actor_user_id`, `actor_email`, `actor_token_id`, `actor_workspace_id`;
   - `action`, `target_kind`, `target_id`;
   - `workspace_id`, `team_id`;
@@ -210,12 +210,13 @@ Existing rows start unsealed. With a key set they are sealed oldest first on the
   - edit, move or replace the anchor without verify catching it, because the anchor carries a keyed MAC. That stops:
     - cutting off the oldest rows and copying a later row's `(seq, hash)` into the anchor, up to deleting every row and setting the anchor to the head;
     - lowering `head_seq` to hide deleted newest rows, or to have the sealer re-seal edited rows at the same sequence numbers: the sealer refuses an anchor that fails its MAC.
-    - deleting the anchor so that the sealer starts a fresh genesis over the sealed rows: it never does while a row is sealed (§3.2 step 2), and verify reports `edited` at the first row.
+    - deleting the anchor so that the sealer starts a fresh genesis over the sealed rows: it never does while a row is sealed (§3.2 step 2), and verify reports `edited` at the first row. (Clearing every seal as well is a full reseal; see "What remains".)
   - get retention to delete recent rows by backdating them, and so have the anchor re-signed past them: retention recomputes every link in its window before deleting, ends at the first one that fails (or at a gap) and logs an error (§3.3). The backdated rows stay for verify to report as `edited`.
   - make retention wait on the forwarder while it holds the chain's lock: it skips queue rows another transaction holds.
 - What remains:
   - **Rollback.** They can put back an earlier genuine anchor, with its MAC, and delete every row sealed since. While no retention has run since that anchor was written, the rolled-back chain is internally consistent. A `--head` check from the log catches it.
   - **Rows forged before sealing.** The chain proves that nothing changed after sealing, not who wrote a row: a row inserted directly into the table is sealed like any other. They can also delete or edit rows in the unsealed window. The window is documented, and widens while a backlog lasts (§3.2 timing).
+  - **A full reseal.** They can clear `chain_seq` and `chain_hash` on every row, edit rows, and delete the anchor. With no anchor and nothing sealed, the sealer starts a genesis and seals every row afresh, so the chain verifies. Partial versions are caught (clearing some seals, or keeping the anchor, leaves a gap above `head_seq`). A `--head` check from the log catches it, and the head log then shows sequence numbers sealed twice.
   - **Keeping retention busy.** A tampered row stops retention at that point, so sealed rows from there on are kept past the age limit. The error log line and verify point at it; the cost is storage, never a gap.
   - **Everything deleted.** They can delete every row and the anchor together. Verify then reports an empty chain, which `--head` catches.
 

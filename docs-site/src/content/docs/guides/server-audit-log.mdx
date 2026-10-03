@@ -228,8 +228,8 @@ A script should read `result` in the `--json` output and not rely on the exit co
 - editing, deleting or reordering sealed events;
 - deleting the oldest events or moving the chain's starting point (the _anchor_): the anchor is keyed, so
   a moved one fails its check;
-- deleting the anchor: the sealer never starts a new chain over sealed events, and verify reports the
-  first one as `edited`;
+- deleting the anchor while events stay sealed: the sealer never starts a new chain over sealed events,
+  and verify reports the first one as `edited`;
 - backdating events so that retention deletes them: retention checks each event's link before deleting
   it, so it stops at an edited event and the edit stays for verify to find;
 - deleting the newest events: the anchor remembers the highest sequence number ever sealed, and `--head`
@@ -243,6 +243,9 @@ A script should read `result` in the `--json` output and not rely on the exit co
 - Rolling the anchor and the events back to an earlier genuine state, when retention has not run since.
   Only a `--head` taken from the log afterwards catches this. A sequence number that appears twice in the
   head log lines is a sign of it.
+- Clearing the seals of every event, editing events and deleting the anchor. The sealer then starts a new
+  chain and seals every event afresh, so verify reports it intact. Only a `--head` taken from the log
+  catches it, and the head log then shows sequence numbers sealed twice.
 - Deleting every event and the anchor together. Verify then reports an empty chain; only a `--head` taken
   from the log catches it.
 - An edited key id in the anchor. It looks exactly like a wrong key. If you are sure the key is right,
