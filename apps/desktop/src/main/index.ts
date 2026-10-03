@@ -865,10 +865,14 @@ app.on('before-quit', (event) => {
   });
   void stashed
     .then(async () => {
-      await workspaceService.close();
-      // Cookies with an expiry still waiting on the debounce are written before the app goes.
-      await cookieStore.flush();
-      cookieStore.dispose();
+      try {
+        await workspaceService.close();
+      } finally {
+        // Cookies with an expiry still waiting on the debounce are written before the app goes,
+        // even when closing the workspace failed.
+        await cookieStore.flush().catch(() => undefined);
+        cookieStore.dispose();
+      }
     })
     .catch(() => undefined)
     .finally(() => {

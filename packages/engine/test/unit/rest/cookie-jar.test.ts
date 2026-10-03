@@ -351,3 +351,26 @@ describe('jarCookieHost', () => {
     expect(host.cookiesFor('https://api.test/')).toEqual([]);
   });
 });
+
+describe('CookieJar.set — the manager keeps the jar bounded', () => {
+  function stored(name: string, domain: string): StoredCookie {
+    return { name, value: 'v', domain, hostOnly: true, path: '/', secure: false, httpOnly: false, createdAt: NOW };
+  }
+
+  it('evicts past the per-domain limit like a stored cookie', () => {
+    const jar = new CookieJar();
+    for (let index = 0; index <= MAX_COOKIES_PER_DOMAIN; index += 1) {
+      jar.set({ ...stored(`c${index}`, 'a.test'), createdAt: NOW + index }, NOW);
+    }
+    expect(jar.list(NOW)).toHaveLength(MAX_COOKIES_PER_DOMAIN);
+    expect(names(jar.list(NOW))).not.toContain('c0');
+  });
+
+  it('evicts past the total limit', () => {
+    const jar = new CookieJar();
+    for (let index = 0; index <= MAX_COOKIES; index += 1) {
+      jar.set({ ...stored('c', `d${index}.test`), createdAt: NOW + index }, NOW);
+    }
+    expect(jar.list(NOW)).toHaveLength(MAX_COOKIES);
+  });
+});

@@ -159,7 +159,7 @@ export class CookieStore {
     if (replaces !== undefined) {
       jar.remove(replaces);
     }
-    jar.set(cookie);
+    jar.set(cookie, this.now());
     return this.changed(this.currentId);
   }
 

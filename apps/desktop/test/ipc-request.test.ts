@@ -14,7 +14,7 @@ import {
 } from '@wirebench/engine';
 import { EngineService } from '../src/main/engine-service.js';
 import type { RecordSendInput } from '../src/main/history-service.js';
-import { registerRequestChannels, type RequestChannelDeps } from '../src/main/ipc/request.js';
+import { registerRequestChannels, toSendDeps, type RequestChannelDeps } from '../src/main/ipc/request.js';
 import type { PreflightResult } from '../src/main/expansion-preflight.js';
 import { wrapHandler } from '../src/main/ipc/envelope.js';
 import { ExchangeRegistry } from '../src/main/send/exchange.js';
@@ -216,6 +216,15 @@ describe('plaintext credentials never validate', () => {
       auth: { username: 'alice', passwordRef: 'sec_1' },
     });
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe('toSendDeps', () => {
+  it('lends the workspace cookie jar to every send, and none when the channel has none', () => {
+    const cookies = { cookiesFor: () => [], remember: () => [] };
+    const project = stubProject(seeded({ envelopeXml: '<a/>' }));
+    expect(toSendDeps(new EngineService(), { project, cookies }).cookies).toBe(cookies);
+    expect(toSendDeps(new EngineService(), { project }).cookies).toBeUndefined();
   });
 });
 

@@ -9,6 +9,7 @@ export function toStoredCookie(wire: StoredCookieWire): StoredCookie {
   const { expiresAt, sameSite, ...rest } = wire;
   return {
     ...rest,
+    domain: wire.domain.toLowerCase().replace(/^\./, ''),
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(sameSite !== undefined ? { sameSite } : {}),
   };

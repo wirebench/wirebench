@@ -146,9 +146,13 @@ export class CookieJar {
     return [...this.cookies.values()].sort(listOrder);
   }
 
-  /** Stores `cookie` as given, replacing one of the same identity. The manager's edit. */
-  set(cookie: StoredCookie): void {
+  /**
+   * Stores `cookie` as given, replacing one of the same identity. The manager's edit: the domain and
+   * Secure rules are skipped (it picks its own domain), but the jar's size limits still hold.
+   */
+  set(cookie: StoredCookie, now: number = Date.now()): void {
     this.cookies.set(idOf(cookie), cookie);
+    this.enforceLimits(cookie.domain, now);
   }
 
   remove(key: CookieKey): boolean {

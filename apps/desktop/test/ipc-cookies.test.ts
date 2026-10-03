@@ -24,6 +24,7 @@ let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'wb-ipc-cookies-'));
   registeredHandlers.clear();
+  onChanged.mockClear();
 });
 
 afterEach(() => {
@@ -44,9 +45,11 @@ function names(result: Result): string[] {
   return (result.value?.cookies ?? []).map((cookie) => cookie.name);
 }
 
+const onChanged = vi.fn();
+
 function newStore(): CookieStore {
   const crypto = { available: false, encrypt: () => Buffer.from(''), decrypt: () => '' };
-  return new CookieStore({ userDataDir: dir, crypto, now: () => NOW });
+  return new CookieStore({ userDataDir: dir, crypto, now: () => NOW, onChanged });
 }
 
 describe('registerCookiesChannels', () => {
@@ -80,5 +83,68 @@ describe('registerCookiesChannels', () => {
   it('refuses something that is not a cookie', async () => {
     registerCookiesChannels(newStore());
     expect((await invoke(channels.cookies.set.name, { cookie: { name: 'x' } })).ok).toBe(false);
+  });
+
+  it('announces the jar once per mutating channel', async () => {
+    const store = newStore();
+    registerCookiesChannels(store);
+    store.host().remember('https://api.test/', [{ name: 'a', value: '1', path: '/' }]);
+    onChanged.mockClear();
+    const a = (await invoke(channels.cookies.list.name, undefined)).value!.cookies[0]!;
+    expect(onChanged).not.toHaveBeenCalled();
+    await invoke(channels.cookies.set.name, { cookie: { ...a, value: '2' } });
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    await invoke(channels.cookies.remove.name, { key: { name: 'a', domain: 'api.test', path: '/' } });
+    expect(onChanged).toHaveBeenCalledTimes(2);
+    await invoke(channels.cookies.removeDomain.name, { domain: 'api.test' });
+    expect(onChanged).toHaveBeenCalledTimes(3);
+    await invoke(channels.cookies.clear.name, undefined);
+    expect(onChanged).toHaveBeenCalledTimes(4);
+  });
+
+  describe('cookies.set refuses what a jar cookie cannot be', () => {
+    const base = {
+      name: 'n',
+      value: 'v',
+      domain: 'api.test',
+      hostOnly: true,
+      path: '/',
+      secure: false,
+      httpOnly: false,
+      createdAt: NOW,
+    };
+    async function setting(extra: Record<string, unknown>): Promise<{ result: Result; store: CookieStore }> {
+      const store = newStore();
+      registerCookiesChannels(store);
+      const result = await invoke(channels.cookies.set.name, { cookie: { ...base, ...extra } });
+      return { result, store };
+    }
+
+    it.each([
+      ['a semicolon in the value', { value: 'a;b' }],
+      ['a CR in the value', { value: 'a\rb' }],
+      ['an LF in the value', { value: 'a\nb' }],
+      ['a NUL in the value', { value: 'a\0b' }],
+      ['a semicolon in the name', { name: 'a;b' }],
+      ['an equals sign in the name', { name: 'a=b' }],
+      ['whitespace in the name', { name: 'a b' }],
+      ['an empty name', { name: '' }],
+      ['a pair over 4096 bytes', { value: 'x'.repeat(4097) }],
+      ['a pair over 4096 bytes in UTF-8 but not in characters', { value: '\u00e9'.repeat(2049) }],
+      ['a path without a leading slash', { path: 'x' }],
+    ])('%s', async (_label, extra) => {
+      const { result, store } = await setting(extra);
+      expect(result.ok).toBe(false);
+      expect(store.state().cookies).toEqual([]);
+    });
+
+    it('accepts a pair of exactly 4096 bytes', async () => {
+      expect((await setting({ value: 'x'.repeat(4095) })).result.ok).toBe(true);
+    });
+
+    it('lowercases the domain and strips a leading dot', async () => {
+      const { result } = await setting({ domain: '.API.Test', hostOnly: false });
+      expect(result.value?.cookies.map((cookie) => cookie.domain)).toEqual(['api.test']);
+    });
   });
 });

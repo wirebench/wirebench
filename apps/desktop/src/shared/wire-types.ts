@@ -2005,18 +2005,26 @@ export type CookieWire = z.infer<typeof cookieWireSchema>;
  * One cookie of the workspace jar (cookie jar spec §2.2), as the manager shows and edits it. A leaf
  * schema mirroring the engine's `StoredCookie`; nothing here imports the engine.
  */
-export const storedCookieWireSchema = z.object({
-  name: z.string().min(1),
-  value: z.string(),
-  domain: z.string().min(1),
-  hostOnly: z.boolean(),
-  path: z.string().min(1),
-  expiresAt: z.number().optional(),
-  secure: z.boolean(),
-  httpOnly: z.boolean(),
-  sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
-  createdAt: z.number(),
-});
+export const storedCookieWireSchema = z
+  .object({
+    // Nothing that would break the `Cookie` header it is sent in: no separator, `=` or whitespace.
+    name: z
+      .string()
+      .min(1)
+      .regex(/^[^;=\s]+$/),
+    value: z.string().regex(/^[^;\r\n\0]*$/),
+    domain: z.string().min(1),
+    hostOnly: z.boolean(),
+    path: z.string().startsWith('/'),
+    expiresAt: z.number().optional(),
+    secure: z.boolean(),
+    httpOnly: z.boolean(),
+    sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
+    createdAt: z.number(),
+  })
+  .refine((cookie) => new TextEncoder().encode(cookie.name + cookie.value).length <= 4096, {
+    message: 'A cookie, name and value together, is at most 4096 bytes',
+  });
 export type StoredCookieWire = z.infer<typeof storedCookieWireSchema>;
 
 /** What names one jar cookie. */
