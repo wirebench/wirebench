@@ -3,7 +3,7 @@
  *
  * In `http/` because a sequence's transfers read a response's cookies whatever protocol sent the
  * request, and core imports no protocol folder (protocol modules spec §7.2). `rest/response.ts`
- * re-exports both names; the cookie jar itself stays in `rest/cookies.ts`.
+ * re-exports both names. The jar's types live here for the same reason; the jar itself is `rest/cookie-jar.ts`.
  */
 
 /** One cookie a response set, with the attributes it declared. */
@@ -20,6 +20,55 @@ export interface Cookie {
   readonly sameSite?: 'Strict' | 'Lax' | 'None';
   /** Set when the header could not be parsed as a cookie; `name` then holds the whole line. */
   readonly malformed?: boolean;
+}
+
+/**
+ * One cookie the jar holds (cookie jar spec §1.1). Its identity is `(name, domain, path)`; the
+ * response-side {@link Cookie} becomes one only when the jar stores it, because only then is the
+ * request URL known.
+ */
+export interface StoredCookie {
+  readonly name: string;
+  readonly value: string;
+  /** The Domain attribute (no leading dot), or the request host for a host-only cookie. */
+  readonly domain: string;
+  /** True when the response gave no Domain: the cookie goes back to that exact host only. */
+  readonly hostOnly: boolean;
+  /** The Path attribute, or the default path of the URL that set it (RFC 6265 §5.1.4). */
+  readonly path: string;
+  /** Absolute expiry in epoch ms, from Max-Age first and then Expires; absent for a session cookie. */
+  readonly expiresAt?: number;
+  readonly secure: boolean;
+  readonly httpOnly: boolean;
+  readonly sameSite?: 'Strict' | 'Lax' | 'None';
+  /** Epoch ms when first stored; kept when a later response replaces the value (§5.3 step 11). */
+  readonly createdAt: number;
+}
+
+/** What names one stored cookie. */
+export interface CookieKey {
+  readonly name: string;
+  readonly domain: string;
+  readonly path: string;
+}
+
+/** Why the jar did not store a cookie a response set. */
+export type CookieRejection =
+  'deleted' | 'domain-mismatch' | 'domain-not-allowed' | 'secure-over-http' | 'too-large' | 'malformed';
+
+/** The jar's verdict on one cookie a response set. */
+export type CookieVerdict = { readonly stored: true } | { readonly stored: false; readonly reason: CookieRejection };
+
+/**
+ * What a host lends a send for its cookies (cookie jar spec §1.4): every REST send reports what each
+ * response set, redirect hops included, and a request whose `sendCookies` is on carries what the jar
+ * matches for each hop's URL. Here, in core, so `run/host.ts` can name it without importing `rest/`.
+ */
+export interface CookieJarHost {
+  /** The jar cookies a request to `url` would carry, in RFC 6265 §5.4 order. */
+  cookiesFor(url: string): readonly StoredCookie[];
+  /** Stores what a response to `url` set; one verdict per cookie, in order. */
+  remember(url: string, cookies: readonly Cookie[]): readonly CookieVerdict[];
 }
 
 /**
