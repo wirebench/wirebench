@@ -38,15 +38,20 @@ afterEach(async () => {
 });
 
 /** A watcher the test fires by hand. */
-function fakeWatch(): { watch: WatchProject; fire(): void } {
+function fakeWatch(): { watch: WatchProject; fire(): void; fail(error: Error): void } {
   const listeners: (() => void)[] = [];
+  const failures: ((error: Error) => void)[] = [];
   return {
-    watch: (_dir, onChange) => {
+    watch: (_dir, onChange, onError) => {
       listeners.push(onChange);
+      failures.push(onError);
       return { close: () => undefined };
     },
     fire: () => {
       for (const listener of listeners) listener();
+    },
+    fail: (error) => {
+      for (const failure of failures) failure(error);
     },
   };
 }
@@ -247,6 +252,17 @@ describe('contract tools over MCP', () => {
     await tools.whenSettled();
     expect(later).toBe(2);
     expect(tools.current().tools.map((tool) => tool.name)).toContain('many_op0');
+  });
+
+  it('warns once on stderr when the project watch fails, and keeps serving the last set', async () => {
+    const fixture = await soapProject();
+    const watcher = fakeWatch();
+    const tools = await host(fixture.base(), watcher.watch);
+    watcher.fail(Object.assign(new Error('watch ENOSPC'), { code: 'ENOSPC' }));
+    watcher.fail(new Error('again'));
+    const lines = fixture.warnings.filter((line) => line.includes('no longer follow project changes'));
+    expect(lines).toEqual(['wirebench mcp: contract tools no longer follow project changes: watch ENOSPC']);
+    expect(tools.current().tools.map((tool) => tool.name)).toEqual(['calculator_service_add']);
   });
 
   it('keeps the last good set and warns when a rebuild cannot read the project', async () => {

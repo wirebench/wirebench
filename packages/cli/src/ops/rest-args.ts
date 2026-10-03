@@ -4,7 +4,7 @@
  * schemas are a `$ref`-inlined, possibly cyclic, graph; a node reached more than once becomes one
  * `$defs` entry, so the published schema is a tree.
  */
-import { createRestRequest, entry, NO_BODY } from '@wirebench/engine';
+import { createRestRequest, entry, lexical, NO_BODY } from '@wirebench/engine';
 import type {
   JsonSchema,
   JsonSchemaObject,
@@ -15,6 +15,7 @@ import type {
   RestBody,
   RestRequestDef,
 } from '@wirebench/engine';
+import { OpsError } from './errors.js';
 import { isRecord } from './records.js';
 
 export interface RestToolSchema {
@@ -216,13 +217,6 @@ export function restToolSchema(api: RestApi, operation: OpenApiOperation): RestT
   };
 }
 
-/** A scalar's lexical form; anything else as its JSON. */
-function lexical(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return JSON.stringify(value) ?? '';
-}
-
 /** OpenAPI's `simple` style: an array joined by `,`, an object as `k=v,k=v`. */
 function simpleValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(lexical).join(',');
@@ -238,6 +232,34 @@ function formRows(name: string, value: unknown): KeyValueEntry[] {
   if (Array.isArray(value)) return value.map((item) => entry(name, lexical(item)));
   if (isRecord(value)) return Object.entries(value).map(([key, item]) => entry(key, lexical(item)));
   return [entry(name, lexical(value))];
+}
+
+/**
+ * A tool value goes out as written. The engine leaves a valid `%XX` escape alone when it encodes (a
+ * saved request's pasted escape means what it says), so a tool's `%` is escaped first: `%2e%2e` or
+ * `%2F` from an argument is then text, never a dot segment or a path separator.
+ */
+const literal = (text: string): string => text.replaceAll('%', '%25');
+
+/**
+ * The path rows. A value that is empty, `.` or `..` would drop or climb a segment, sending the
+ * request (with the API's auth) to a path the operation does not describe, so it is refused.
+ *
+ * @throws OpsError `invalid-input`, naming the parameter
+ */
+function pathRows(path: Readonly<Record<string, unknown>>): KeyValueEntry[] {
+  return Object.entries(path).map(([key, value]) => {
+    const text = simpleValue(value);
+    if (text === '' || text === '.' || text === '..') {
+      const pointer = `/path/${key.replaceAll('~', '~0').replaceAll('/', '~1')}`;
+      throw new OpsError(
+        'invalid-input',
+        `${pointer}: a path value may not be empty, "." or ".."; it would change which path is called`,
+        { paths: [pointer] },
+      );
+    }
+    return entry(key, literal(text));
+  });
 }
 
 /** A JSON body under the JSON media type; any other media type's body is sent as written. */
@@ -258,9 +280,12 @@ function bodyOf(operation: OpenApiOperation, value: unknown): RestBody {
 }
 
 /**
- * The temporary request for a REST tool's arguments (spec §4.1, revision R3): the rows hold the raw
- * values, since the engine percent-encodes path and query values when it sends. Auth is inherited
- * from the API, as for a new request.
+ * The temporary request for a REST tool's arguments (spec §4.1, revision R3): the rows hold the
+ * values with only `%` escaped, since the engine percent-encodes path and query values when it
+ * sends. Headers are not URL-encoded, so they hold the raw values. Auth is inherited from the API,
+ * as for a new request.
+ *
+ * @throws OpsError `invalid-input` for an empty, `.` or `..` path value
  */
 export function restRequestOf(
   operation: OpenApiOperation,
@@ -273,10 +298,14 @@ export function restRequestOf(
   return createRestRequest(name, {
     method: operation.method.toUpperCase(),
     url: operation.path,
-    pathParams: Object.entries(path).map(([key, value]) => entry(key, simpleValue(value))),
-    query: Object.entries(query).flatMap(([key, value]) => formRows(key, value)),
+    pathParams: pathRows(path),
+    query: Object.entries(query)
+      .flatMap(([key, value]) => formRows(key, value))
+      .map((row) => ({ ...row, name: literal(row.name), value: literal(row.value) })),
     headers: Object.entries(headers).map(([key, value]) => entry(key, simpleValue(value))),
     body: bodyOf(operation, args['body']),
     contract: { method: operation.method.toLowerCase(), path: operation.path },
+    // The escapes above assume the values are encoded on send, whatever a request would inherit.
+    settings: { encodeUrl: true },
   });
 }

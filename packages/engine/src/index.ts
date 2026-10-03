@@ -263,6 +263,7 @@ export {
   createJsonSchemaWriter,
   jsonFromXml,
   jsonSchemaOf,
+  lexical,
   MAX_FILL_ROUNDS,
   MAX_PROPERTY_DESCRIPTION,
   xmlFromJson,

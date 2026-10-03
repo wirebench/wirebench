@@ -72,7 +72,10 @@ request that is not a real `initialize` closes nobody's session. All clients sha
 
 Every tool is always listed. One whose flag is off answers with an error that names the flag, so the
 agent can tell you what to allow. `-e local,staging` limits the environments `send` may use, and with
-`-e` a send that would use no environment is refused. That holds for the contract tools below as well: each one needs `--allow-send`.
+`-e` a send that would use no environment is refused.
+
+Both flags apply to the contract tools below as well. Each one needs `--allow-send`, and `-e` limits
+the environments it may use in the same way, refusing a call that would use no environment.
 
 `validate` and `query` read a History entry (`historyId`), a file (`file`) or the text itself (`text`);
 pass exactly one. A `file` is any regular file of 16 MiB or less that the server process can read; any

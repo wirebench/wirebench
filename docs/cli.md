@@ -670,7 +670,7 @@ contract tool to make.
 | `--project <dir>` | The project the tools work on (default: the current directory). Checked at start: a folder that is not a project exits 2. |
 | `--allow-write` | Lets `import` write the project. Off: `import` answers `write-not-allowed`. |
 | `--allow-send` | Lets `send` and the contract tools make requests. Off: they answer `send-not-allowed`. |
-| `-e, --env <a,b>` | The environments `send` may use, by name, slug or id; any other is `environment-not-allowed`. Under `-e`, a send that resolves no environment (a project that defines none) is refused too. |
+| `-e, --env <a,b>` | The environments `send` and the contract tools may use, by name, slug or id; any other is `environment-not-allowed`. Under `-e`, a call that resolves no environment (a project that defines none) is refused too. |
 | `--tools <a,b\|none>` | The interfaces and APIs, by name or slug, whose operations are tools (default: all). `none` serves the eight tools above only. A name the project does not have exits 2. |
 | `--history-dir <dir>` | The folder that holds the History `.jsonl` files (default: the desktop's, see [History location](#history-location)). |
 | `--http <port>` | Streamable HTTP on `http://127.0.0.1:<port>/mcp` instead of stdio. A port from 1 to 65535, except 80: clients drop the default port from `Host` and `Origin`, so `--http 80` is refused. See below. |

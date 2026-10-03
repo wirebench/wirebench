@@ -15,10 +15,11 @@ export interface ProjectWatch {
   close(): void;
 }
 
-export type WatchProject = (dir: string, onChange: () => void) => ProjectWatch;
+/** `onError` hears a watch that has stopped: no `onChange` follows it. */
+export type WatchProject = (dir: string, onChange: () => void, onError: (error: Error) => void) => ProjectWatch;
 
 /** Every change under the project folder, `.git` left out. */
-export const watchProjectDir: WatchProject = (dir, onChange) => {
+export const watchProjectDir: WatchProject = (dir, onChange, onError) => {
   const watcher = watch(dir, { recursive: true }, (_event, file) => {
     const name = typeof file === 'string' ? file : '';
     if (name.split(/[\\/]/)[0] !== '.git') {
@@ -26,7 +27,7 @@ export const watchProjectDir: WatchProject = (dir, onChange) => {
     }
   });
   // A watch error (the folder removed, a handle limit) must not end the process; the last set stays.
-  watcher.on('error', () => undefined);
+  watcher.on('error', onError);
   return { close: () => watcher.close() };
 };
 
@@ -159,7 +160,16 @@ export async function startContractTools(
         .finally(() => done?.resolve());
     }, debounceMs);
   };
-  const watcher = (options.watch ?? watchProjectDir)(base.projectDir, schedule);
+  let watchFailed = false;
+  const watchFailure = (error: Error): void => {
+    if (watchFailed || closed) {
+      return;
+    }
+    watchFailed = true;
+    // Spec §6 keeps the list current; when it no longer can, say so once and keep serving the last set.
+    base.warn(`wirebench mcp: contract tools no longer follow project changes: ${error.message}`);
+  };
+  const watcher = (options.watch ?? watchProjectDir)(base.projectDir, schedule, watchFailure);
 
   return {
     current: () => set,

@@ -98,7 +98,7 @@ async function prepareSoap(
   resolved: SoapResolved,
   args: Readonly<Record<string, unknown>>,
   origin: 'cli' | 'mcp',
-): Promise<SoapSelected> {
+): Promise<{ readonly item: SoapSelected; readonly notes: readonly string[] }> {
   const { iface, operation, wsdl } = resolved;
   const op = { bindingName: clarkToQName(operation.bindingName), operationName: operation.name };
   const built = envelopeFromJson(wsdl, op, args);
@@ -135,17 +135,21 @@ async function prepareSoap(
   const name = requestNameFor(operation.name, origin);
   const group = `${iface.name}/${operation.name}`;
   return {
-    kind: 'soap',
-    path: `${group}/${name}`,
-    group,
-    iface,
-    operation,
-    request: createRequest(name, {
-      envelopeXml: built.envelopeXml,
-      soapVersion: built.soapVersion,
-      ...(built.soapAction !== undefined ? { soapAction: built.soapAction } : {}),
-      ...(endpointId !== undefined ? { endpointId } : {}),
-    }),
+    item: {
+      kind: 'soap',
+      path: `${group}/${name}`,
+      group,
+      iface,
+      operation,
+      request: createRequest(name, {
+        envelopeXml: built.envelopeXml,
+        soapVersion: built.soapVersion,
+        ...(built.soapAction !== undefined ? { soapAction: built.soapAction } : {}),
+        ...(endpointId !== undefined ? { endpointId } : {}),
+      }),
+    },
+    // What the envelope met while it was written: schema gaps the call ran into, returned with the result.
+    notes: built.notes,
   };
 }
 
@@ -324,10 +328,11 @@ export const callOp = defineOp({
       resolved.kind === 'soap'
         ? resolved.operation.name
         : (resolved.operation.operationId ?? `${resolved.operation.method.toUpperCase()} ${resolved.operation.path}`);
-    const item =
+    const prepared =
       resolved.kind === 'soap'
         ? await prepareSoap(resolved, args, context.origin)
-        : prepareRest(resolved, args, operationName, context.origin);
+        : { item: prepareRest(resolved, args, operationName, context.origin), notes: [] };
+    const { item } = prepared;
     const container = resolved.kind === 'soap' ? resolved.iface.name : resolved.api.name;
     const sent = await sendAndRecord({
       item,
@@ -367,7 +372,7 @@ export const callOp = defineOp({
           }
         : {}),
       ...(outcome.body !== undefined ? { body: outcome.body, bodyTruncated: outcome.bodyTruncated === true } : {}),
-      notes: outcome.notes,
+      notes: [...prepared.notes, ...outcome.notes],
       ...(sent.historyId !== undefined ? { historyId: sent.historyId } : {}),
     };
   },

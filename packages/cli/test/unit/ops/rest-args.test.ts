@@ -127,6 +127,8 @@ describe('restRequestOf', () => {
       body: { kind: 'raw', language: 'json', contentType: 'application/vnd.item+json', text: '{"name":"Rex"}' },
       auth: { type: 'inherit' },
       contract: { method: 'post', path: '/items/{id}' },
+      // Encoding is never left to an inherited setting: the escapes below rely on it.
+      settings: { encodeUrl: true },
     });
   });
 
@@ -135,6 +137,21 @@ describe('restRequestOf', () => {
     expect(restRequestOf(operation, { path: { point: { x: 1, y: true } } }, 'm').pathParams).toEqual([
       { name: 'point', value: 'x=1,y=true', enabled: true },
     ]);
+  });
+
+  it('escapes % in path and query names and values, but not in headers', () => {
+    const operation = { method: 'get', path: '/items/{id}', parameters: [] } as unknown as OpenApiOperation;
+    const request = restRequestOf(
+      operation,
+      { path: { id: ['%41', '%2e'] }, query: { filter: { 'k%20': '%20' }, q: '%' }, headers: { 'X-Note': '%41' } },
+      'm',
+    );
+    expect(request.pathParams).toEqual([{ name: 'id', value: '%2541,%252e', enabled: true }]);
+    expect(request.query).toEqual([
+      { name: 'k%2520', value: '%2520', enabled: true },
+      { name: 'q', value: '%25', enabled: true },
+    ]);
+    expect(request.headers).toEqual([{ name: 'X-Note', value: '%41', enabled: true }]);
   });
 
   it('sends a non-JSON body as written, and no body when none is given', () => {

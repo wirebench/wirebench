@@ -128,8 +128,9 @@ placeholders) to get the literal-masking guarantee as well.
 person who started the server allowed. The CLI verbs (`wirebench send`, `import` and the rest) are
 not gated: the person typing the command has allowed it. The gates belong to the server.
 
-- **Gates.** `send` makes requests only with `--allow-send`, and only under the environments `--env`
-  lists when it is given; under `--env`, a send that resolves no environment is refused. `import`
+- **Gates.** `send` and the contract tools (one per imported operation) make requests only with
+  `--allow-send`, and only under the environments `--env` lists when it is given; under `--env`, a
+  call that resolves no environment is refused. `import`
   writes the project only with `--allow-write`. A gated tool is still listed and answers
   `send-not-allowed` or `write-not-allowed`, naming the flag.
 - **Redaction, by pattern.** Every tool result and every error passes one step before it leaves: the

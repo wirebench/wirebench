@@ -214,7 +214,7 @@ only protocol frames.
 --history-dir <dir>    Where send records History. Default: the desktop's History folder for this OS.
 --allow-write          Let import add definitions to the project. Off by default.
 --allow-send           Let send and the contract tools make requests. Off by default.
--e, --env <a,b>        The environments send may use. Default: any.
+-e, --env <a,b>        The environments send and the contract tools may use. Default: any.
 --http <port>          Serve Streamable HTTP on http://127.0.0.1:<port>/mcp instead of stdio. Every
                        request needs "Authorization: Bearer <token>": WIREBENCH_MCP_TOKEN, or one
                        made at start and printed once to stderr.

@@ -312,6 +312,82 @@ describe('op call, REST', () => {
     expect(result).not.toHaveProperty('body');
   });
 
+  /** An API with a string path parameter, an array one, a query and a header: each value sent as written. */
+  async function photos(): Promise<{ fixture: Fixture; server: TestServer }> {
+    const file = join(await tempDir(), 'photos.openapi.yaml');
+    await writeFile(
+      file,
+      `openapi: 3.0.3
+info:
+  title: Photos
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:9
+paths:
+  /v1/pets/{id}/photos:
+    get:
+      operationId: listPhotos
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: X-Note, in: header, schema: { type: string } }
+      responses:
+        '200':
+          description: ok
+  /v1/tags/{tags}:
+    get:
+      operationId: byTags
+      parameters:
+        - { name: tags, in: path, required: true, schema: { type: array, items: { type: string } } }
+      responses:
+        '200':
+          description: ok
+`,
+    );
+    const fixture = await emptyProject();
+    await runOp(importOp, { source: file }, fixture.base());
+    const server = await startServer(() => ({ status: 204, body: '' }));
+    servers.push(server);
+    await addEnvironment(fixture.dir, 'local', { Photos: server.url });
+    return { fixture, server };
+  }
+
+  const listPhotos = (fixture: Fixture, args: Record<string, unknown>) =>
+    callRest(fixture, 'photos_list_photos', 'Photos/GET /v1/pets/{id}/photos', { environment: 'local', ...args });
+
+  it('refuses ".", ".." and empty path values, naming the parameter, and sends nothing', async () => {
+    const { fixture, server } = await photos();
+    for (const id of ['.', '..', '']) {
+      await expect(listPhotos(fixture, { path: { id } })).rejects.toMatchObject({
+        code: 'invalid-input',
+        message: expect.stringContaining('/path/id') as unknown,
+      });
+    }
+    await expect(
+      callRest(fixture, 'photos_by_tags', 'Photos/GET /v1/tags/{tags}', { environment: 'local', path: { tags: [] } }),
+    ).rejects.toMatchObject({ code: 'invalid-input', message: expect.stringContaining('/path/tags') as unknown });
+    expect(server.received).toEqual([]);
+  });
+
+  it('sends a path, query or header value literally: escapes and dot segments never reach another path', async () => {
+    const { fixture, server } = await photos();
+    await listPhotos(fixture, { path: { id: '%2e%2e' } });
+    await listPhotos(fixture, { path: { id: '..%2Fadmin' } });
+    await listPhotos(fixture, { path: { id: 'a%2F..%2F..%2Fadmin' } });
+    await listPhotos(fixture, { path: { id: '%41' }, query: { q: '%41&x=1' }, headers: { 'X-Note': '%41' } });
+    const urls = server.received.map((request) => request.url);
+    expect(urls).toEqual([
+      '/v1/pets/%252e%252e/photos',
+      '/v1/pets/..%252Fadmin/photos',
+      '/v1/pets/a%252F..%252F..%252Fadmin/photos',
+      '/v1/pets/%2541/photos?q=%2541%26x%3D1',
+    ]);
+    const last = new URL(urls[3] ?? '', 'http://host');
+    expect(decodeURIComponent(last.pathname.split('/')[3] ?? '')).toBe('%41');
+    expect(last.searchParams.get('q')).toBe('%41&x=1');
+    expect(server.received[3]?.headers['x-note']).toBe('%41');
+  });
+
   it('refuses with no-endpoint when the API has no base URL', async () => {
     const fixture = await restProject();
     await updateProject(fixture.dir, (project) => ({
