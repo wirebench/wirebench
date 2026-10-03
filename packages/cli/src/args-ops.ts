@@ -158,7 +158,7 @@ wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <t
                        3 for a run error.
 wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--project <dir>]
                        Calls one contract operation with JSON arguments, as its MCP tool does, records it
-                       in History, and prints the response as JSON.
+                       in History, and prints the response.
 wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
                        Serves these capabilities as MCP tools over stdio, or on 127.0.0.1 with --http
                        (see wirebench mcp --help).`;
@@ -203,8 +203,8 @@ XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
 -e, --env <name>       The environment; required when the project defines any.
 --schema               Print the arguments' JSON Schema and send nothing.
 Builds the request from the arguments, sends it under the interface's or API's endpoint, auth and
-secrets, records it in History, and prints the response as JSON. Exit 0 on any response, a fault
-included; 2 for a refused call or bad arguments; 3 when nothing answered.`,
+secrets, records it in History, and prints the response (--json: the result as JSON). Exit 0 on any
+response, a fault included; 2 for a refused call or bad arguments; 3 when nothing answered.`,
   mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
 
 Serves the project's tools to an MCP client, over stdio unless --http is given: import, operations, generate, send,
@@ -213,7 +213,7 @@ only protocol frames.
 --project <dir>        The project to serve. Default: the current directory.
 --history-dir <dir>    Where send records History. Default: the desktop's History folder for this OS.
 --allow-write          Let import add definitions to the project. Off by default.
---allow-send           Let send make requests. Off by default.
+--allow-send           Let send and the contract tools make requests. Off by default.
 -e, --env <a,b>        The environments send may use. Default: any.
 --http <port>          Serve Streamable HTTP on http://127.0.0.1:<port>/mcp instead of stdio. Every
                        request needs "Authorization: Bearer <token>": WIREBENCH_MCP_TOKEN, or one

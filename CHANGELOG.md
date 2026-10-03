@@ -46,6 +46,13 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **Contract operations as MCP tools (#33).** `wirebench mcp` lists every imported SOAP operation and
+  OpenAPI endpoint as a tool of its own, with a JSON Schema built from the XSD or the OpenAPI schemas.
+  An agent calls it with JSON; Wirebench builds the envelope or request, sends it under the interface's
+  or API's endpoint, auth and secrets, records it in History, and returns the response as JSON. The
+  list follows the project as it changes, at most 128 tools are served, and `--tools` picks the
+  interfaces and APIs. `wirebench call` runs the same from a terminal, and `operations` rows show each
+  operation's tool name.
 - **An Assertions tab on every editor.** The REST, SOAP, gRPC and WebSocket editors have an Assertions tab.
   Every editor Send checks the request's assertions and shows the result in the response pane's
   Assertions tab; callback assertions are still checked in runs and sequences only (#192).

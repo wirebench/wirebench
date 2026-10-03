@@ -164,6 +164,16 @@ not gated: the person typing the command has allowed it. The gates belong to the
   would expand against the server's own environment (`${#System#NAME}` reads the process
   environment). The saved request's own body still expands placeholders as usual, and the override
   reaches no secret the saved request does not already use.
+- **Contract tools (#33).** Every imported operation is also a tool, gated by `--allow-send` like
+  `send`. Its description carries the contract's own documentation (the WSDL's or the OpenAPI
+  document's text, cut at 1,000 characters): text the user imported, shown to the agent as data, as
+  `operations` already shows it. Its arguments are checked against the tool's JSON Schema, a string
+  holding `${` is refused (it would expand against the server's environment), and a SOAP body is
+  checked against the XSD before anything is sent; nothing in the arguments is ever expanded. An `xs:any`
+  argument is an XML fragment inserted as written once a strict parser reads it whole. The request takes
+  its endpoint, auth and secrets from the project, never from the arguments, and its result passes the
+  same redaction as `send`'s, with every number or boolean that holds a resolved secret masked too.
+  `--tools` limits which interfaces and APIs are served; at most 128 contract tools are served at once.
 - **Local HTTP only.** `--http` binds `127.0.0.1` and nothing else. Every request needs
   `Authorization: Bearer <token>` (`WIREBENCH_MCP_TOKEN`, or 32 random bytes made at start and
   printed once to stderr), compared in constant time; a missing or wrong token gets 401. The variable
