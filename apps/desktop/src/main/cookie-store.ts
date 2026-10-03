@@ -51,10 +51,12 @@ interface Entry {
   /** The JSON of the persistent cookies as last written or read, so a session-only change writes nothing. */
   saved: string;
   timer?: ReturnType<typeof setTimeout>;
+  /** The write in flight or last queued, so writes for one workspace run in order. */
+  writing: Promise<void>;
 }
 
 function sessionOnly(): Entry {
-  return { jar: new CookieJar(), persistable: false, saved: '[]' };
+  return { jar: new CookieJar(), persistable: false, saved: '[]', writing: Promise.resolve() };
 }
 
 function isMissing(error: unknown): boolean {
@@ -115,7 +117,9 @@ export class CookieStore {
       if (id === this.currentId) {
         return;
       }
-      await this.flushEntry(this.currentId);
+      await this.flushEntry(this.currentId).catch((error: unknown) => {
+        this.warn(this.failure(error));
+      });
       if (!this.entries.has(id)) {
         this.entries.set(id, await this.load(id));
       }
@@ -178,7 +182,19 @@ export class CookieStore {
   async flush(): Promise<void> {
     await this.switching;
     for (const id of [...this.entries.keys()]) {
-      await this.flushEntry(id);
+      await this.flushEntry(id).catch((error: unknown) => {
+        this.warn(this.failure(error));
+      });
+    }
+  }
+
+  /** Cancels every pending debounced write. Call after the quit-time flush. */
+  dispose(): void {
+    for (const entry of this.entries.values()) {
+      if (entry.timer !== undefined) {
+        clearTimeout(entry.timer);
+        delete entry.timer;
+      }
     }
   }
 
@@ -190,6 +206,7 @@ export class CookieStore {
       clearTimeout(entry.timer);
     }
     this.entries.delete(workspaceId);
+    await entry?.writing.catch(() => undefined);
     if (workspaceId === this.currentId) {
       this.currentId = NO_WORKSPACE;
       this.announce();
@@ -225,6 +242,10 @@ export class CookieStore {
     this.options.warn?.(message);
   }
 
+  private failure(error: unknown): string {
+    return `Saving the cookies failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
   private announce(): CookieJarState {
     const state = this.state();
     this.options.onChanged?.(state);
@@ -241,7 +262,7 @@ export class CookieStore {
         }
         entry.timer = setTimeout(() => {
           this.flushEntry(id).catch((error: unknown) => {
-            this.warn(`Saving the cookies failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.warn(this.failure(error));
           });
         }, this.options.debounceMs ?? DEFAULT_DEBOUNCE_MS);
       }
@@ -249,40 +270,48 @@ export class CookieStore {
     return id === this.currentId ? this.announce() : this.state();
   }
 
-  private async flushEntry(id: string): Promise<void> {
+  private flushEntry(id: string): Promise<void> {
     const entry = this.entries.get(id);
     if (entry === undefined) {
-      return;
+      return Promise.resolve();
     }
     if (entry.timer !== undefined) {
       clearTimeout(entry.timer);
       delete entry.timer;
     }
-    if (!entry.persistable || !this.options.crypto.available) {
-      return;
-    }
-    const json = JSON.stringify(entry.jar.persistent(this.now()));
-    if (json === entry.saved) {
-      return;
-    }
-    const data = this.options.crypto.encrypt(json).toString('base64');
-    await writeFileAtomic(nodeFs, this.fileOf(id), JSON.stringify({ version: COOKIE_FILE_VERSION, data }));
-    entry.saved = json;
+    const run = entry.writing
+      .catch(() => undefined)
+      .then(async () => {
+        if (!entry.persistable || !this.options.crypto.available || this.entries.get(id) !== entry) {
+          return;
+        }
+        const json = JSON.stringify(entry.jar.persistent(this.now()));
+        if (json === entry.saved) {
+          return;
+        }
+        const data = this.options.crypto.encrypt(json).toString('base64');
+        await writeFileAtomic(nodeFs, this.fileOf(id), JSON.stringify({ version: COOKIE_FILE_VERSION, data }));
+        entry.saved = json;
+      });
+    entry.writing = run;
+    return run;
   }
 
   private async load(id: string): Promise<Entry> {
     if (!SAFE_ID.test(id)) {
       return sessionOnly();
     }
+    if (!this.options.crypto.available) {
+      // The file may be perfectly good; without the keychain it can only be left alone, unread.
+      return sessionOnly();
+    }
     let text: string;
     try {
       text = await readFile(this.fileOf(id), 'utf8');
     } catch (error) {
-      return isMissing(error) ? { jar: new CookieJar(), persistable: true, saved: '[]' } : await this.setAside(id);
-    }
-    if (!this.options.crypto.available) {
-      // The file may be perfectly good; without the keychain it can only be left alone, unread.
-      return sessionOnly();
+      return isMissing(error)
+        ? { jar: new CookieJar(), persistable: true, saved: '[]', writing: Promise.resolve() }
+        : await this.setAside(id);
     }
     let file: unknown;
     try {
@@ -291,7 +320,7 @@ export class CookieStore {
       return await this.setAside(id);
     }
     const { version, data } = (typeof file === 'object' && file !== null ? file : {}) as Record<string, unknown>;
-    if (typeof version !== 'number' || typeof data !== 'string') {
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 1 || typeof data !== 'string') {
       return await this.setAside(id);
     }
     if (version > COOKIE_FILE_VERSION) {
@@ -305,14 +334,18 @@ export class CookieStore {
       return await this.setAside(id);
     }
     const jar = new CookieJar(cookies);
-    return { jar, persistable: true, saved: JSON.stringify(jar.persistent(this.now())) };
+    return { jar, persistable: true, saved: JSON.stringify(jar.persistent(this.now())), writing: Promise.resolve() };
   }
 
   /** Renames an unreadable file to `<id>.json.corrupt` and starts that workspace empty. */
   private async setAside(id: string): Promise<Entry> {
     const file = this.fileOf(id);
-    this.warn(`The cookies of workspace ${id} could not be read; the file was set aside as ${id}.json.corrupt.`);
-    await rename(file, `${file}.corrupt`).catch(() => undefined);
-    return { jar: new CookieJar(), persistable: true, saved: '[]' };
+    try {
+      await rename(file, `${file}.corrupt`);
+      this.warn(`The cookies of workspace ${id} could not be read; the file was set aside as ${id}.json.corrupt.`);
+    } catch {
+      this.warn(`The cookies of workspace ${id} could not be read, and the file could not be set aside.`);
+    }
+    return { jar: new CookieJar(), persistable: true, saved: '[]', writing: Promise.resolve() };
   }
 }

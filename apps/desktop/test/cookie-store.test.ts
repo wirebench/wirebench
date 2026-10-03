@@ -4,11 +4,11 @@
  * cookies with an expiry, only encrypted, never without secure storage, and never over a file a
  * newer build wrote.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Cookie } from '@wirebench/engine';
+import { nodeFs, type Cookie } from '@wirebench/engine';
 import { COOKIES_DIR, CookieStore, type CookieJarState, type CookieStoreOptions } from '../src/main/cookie-store.js';
 import type { CryptoBackend } from '../src/main/secrets.js';
 
@@ -221,5 +221,94 @@ describe('CookieStore — no secure storage at load', () => {
     await s.flush();
     expect(readFileSync(fileOf('w1'), 'utf8')).toBe(before);
     expect(existsSync(`${fileOf('w1')}.corrupt`)).toBe(false);
+  });
+});
+
+describe('CookieStore — failures and races', () => {
+  it('switches workspace even when saving the one it leaves fails, and flush finishes its loop', async () => {
+    const warn = vi.fn();
+    const failing = fakeCrypto();
+    const s = store({
+      crypto: {
+        ...failing,
+        encrypt: () => {
+          throw new Error('keychain locked');
+        },
+      },
+      warn,
+    });
+    await s.switchTo('w1');
+    s.host().remember('https://api.test/login', LOGIN);
+    await expect(s.switchTo('w2')).resolves.toBeUndefined();
+    expect(s.state().cookies).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    await s.switchTo('w3');
+    s.host().remember('https://api.test/login', LOGIN);
+    await expect(s.flush()).resolves.toBeUndefined();
+  });
+
+  it('does not let a write in flight recreate the file of a deleted workspace', async () => {
+    const s = store();
+    await s.switchTo('w1');
+    s.host().remember('https://api.test/login', LOGIN);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realRename = nodeFs.rename.bind(nodeFs);
+    const spy = vi.spyOn(nodeFs, 'rename').mockImplementation(async (from, to) => {
+      await gate;
+      await realRename(from, to);
+    });
+    try {
+      const flushing = s.flush();
+      await vi.waitFor(() => {
+        expect(spy).toHaveBeenCalled();
+      });
+      const deleting = s.deleteWorkspace('w1');
+      release();
+      await Promise.all([flushing, deleting]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(existsSync(fileOf('w1'))).toBe(false);
+  });
+
+  it('sets aside a file whose version is not a positive integer', async () => {
+    mkdirSync(join(dir, COOKIES_DIR), { recursive: true });
+    const text = JSON.stringify({ version: 0, data: 'x' });
+    writeFileSync(fileOf('w1'), text);
+    const s = store({ warn: vi.fn() });
+    await s.switchTo('w1');
+    expect(readFileSync(`${fileOf('w1')}.corrupt`, 'utf8')).toBe(text);
+  });
+
+  it('keeps a traversal id session only and deletes nothing outside cookies/', async () => {
+    const outside = join(dir, 'x.json');
+    writeFileSync(outside, 'keep');
+    const s = store();
+    await s.switchTo('../x');
+    s.host().remember('https://api.test/login', LOGIN);
+    await s.flush();
+    await s.deleteWorkspace('../x');
+    expect(readFileSync(outside, 'utf8')).toBe('keep');
+    expect(existsSync(join(dir, COOKIES_DIR))).toBe(false);
+  });
+
+  it('leaves no temp files behind after a flush', async () => {
+    const s = store();
+    await s.switchTo('w1');
+    s.host().remember('https://api.test/login', LOGIN);
+    await s.flush();
+    expect(readdirSync(join(dir, COOKIES_DIR))).toEqual(['w1.json']);
+  });
+
+  it('dispose cancels pending writes', async () => {
+    const s = store({ debounceMs: 10 });
+    await s.switchTo('w1');
+    s.host().remember('https://api.test/login', LOGIN);
+    s.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(existsSync(fileOf('w1'))).toBe(false);
   });
 });
