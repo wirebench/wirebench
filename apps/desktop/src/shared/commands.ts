@@ -20,6 +20,7 @@ export const COMMAND_IDS = [
   'view.showSearch',
   'view.showHistory',
   'view.showWss',
+  'view.showCookies',
   'view.showSettings',
   'view.toggleTheme',
   'preferences.open',

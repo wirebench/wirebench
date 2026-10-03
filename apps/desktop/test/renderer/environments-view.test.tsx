@@ -221,4 +221,10 @@ describe('EnvironmentsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     expect(useUiStore.getState().sidebar.visible).toBe(false);
   });
+
+  it('opens the Cookies tab from its header', () => {
+    setUp();
+    fireEvent.click(screen.getByTestId('environments-cookies'));
+    expect(useEditorsStore.getState().activeId).toBe('cookies');
+  });
 });
