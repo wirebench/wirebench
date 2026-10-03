@@ -14,10 +14,11 @@ import {
   redactStructuredBody,
   validateMessage,
 } from '@wirebench/engine';
-import type { RequestResult, RestSelected, SentExchange, SoapSelected } from '@wirebench/engine';
+import type { Project, RequestResult, RestSelected, SentExchange, SoapSelected } from '@wirebench/engine';
 import { z } from 'zod';
 import { defineOp } from './context.js';
-import { checkArgs, toolSchemaOf } from './contract-tools.js';
+import { checkArgs, contractOperations, toolSchemaOf } from './contract-tools.js';
+import type { ContractTool } from './contract-tools.js';
 import { cutText } from './cut.js';
 import { OpsError } from './errors.js';
 import { MAX_STORED_CHARS } from './history-entry.js';
@@ -371,3 +372,43 @@ export const callOp = defineOp({
     };
   },
 });
+
+/**
+ * The tool `wanted` names: an `operations` reference of any form first (as `generate` takes it), else
+ * a tool name. The cap does not apply here, since one operation is called; neither does `--tools`,
+ * which is `wirebench mcp`'s.
+ *
+ * @throws OpsError `operation-not-found`, `definition-cache-missing`
+ */
+export async function findContractTool(project: Project, projectDir: string, wanted: string): Promise<ContractTool> {
+  const entries = await contractOperations(project, projectDir, []);
+  let resolved: ResolvedOperation | undefined;
+  try {
+    resolved = await resolveOperation(project, projectDir, wanted);
+  } catch (error) {
+    if (!(error instanceof OpsError) || error.code !== 'operation-not-found') {
+      throw error;
+    }
+  }
+  const entry =
+    resolved !== undefined
+      ? entries.find((candidate) => candidate.kind === resolved.kind && candidate.ref === resolved.ref)
+      : entries.find((candidate) => candidate.name === wanted && candidate.resolved !== undefined);
+  if (entry === undefined) {
+    throw new OpsError(
+      'operation-not-found',
+      `No operation or tool matches "${wanted}"; wirebench operations lists the references`,
+      { operation: wanted },
+    );
+  }
+  const schema = toolSchemaOf(resolved ?? (entry.resolved as ResolvedOperation));
+  return {
+    name: entry.name,
+    ref: entry.ref,
+    kind: entry.kind,
+    container: entry.container.name,
+    description: '',
+    inputSchema: schema.inputSchema,
+    environmentKey: schema.environmentKey,
+  };
+}

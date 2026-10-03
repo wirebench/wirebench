@@ -42,6 +42,8 @@ export const OP_OPTIONS = {
   'allow-send': { type: 'boolean' },
   http: { type: 'string' },
   tools: { type: 'string' },
+  args: { type: 'string' },
+  schema: { type: 'boolean' },
 } as const;
 
 export type OptionValues = Readonly<Record<string, string | boolean | readonly string[] | undefined>>;
@@ -65,6 +67,43 @@ const USAGE: Readonly<Record<OpName, string>> = {
 const OP_ONLY_FLAGS: readonly string[] = Object.keys(OP_OPTIONS);
 
 const COMMON = ['project', 'json'] as const;
+
+export interface CallArgs {
+  readonly command: 'call';
+  /** An operations ref or a tool name. */
+  readonly operation: string;
+  readonly project: string;
+  readonly historyDir?: string;
+  readonly json: boolean;
+  /** `--args`: JSON, or `@<file>` holding it. Absent: `{}`. */
+  readonly args?: string;
+  readonly environment?: string;
+  readonly schema: boolean;
+}
+
+const CALL_FLAGS = ['project', 'json', 'args', 'env', 'schema', 'history-dir'];
+
+/** @throws UsageError */
+export function parseCall(rest: readonly string[], values: OptionValues): CallArgs {
+  refuseForeign(values, CALL_FLAGS, 'wirebench call');
+  const [operation, ...extra] = rest;
+  if (operation === undefined || extra.length > 0) {
+    throw new UsageError('usage: wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema]');
+  }
+  const historyDir = str(values, 'history-dir');
+  const args = str(values, 'args');
+  const environment = str(values, 'env');
+  return {
+    command: 'call',
+    operation,
+    project: str(values, 'project') ?? '.',
+    ...(historyDir !== undefined ? { historyDir } : {}),
+    json: values['json'] === true,
+    ...(args !== undefined ? { args } : {}),
+    ...(environment !== undefined ? { environment } : {}),
+    schema: values['schema'] === true,
+  };
+}
 
 export interface McpArgs {
   readonly command: 'mcp';
@@ -117,6 +156,9 @@ wirebench history list [--item <text>] [--limit <n>] | history diff <from-id> <t
                        result exactly), --history-dir <dir> (default: the desktop's History folder).
                        Exit 0; 1 for a failed assertion or an invalid message; 2 for a refused call;
                        3 for a run error.
+wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--project <dir>]
+                       Calls one contract operation with JSON arguments, as its MCP tool does, records it
+                       in History, and prints the response as JSON.
 wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
                        Serves these capabilities as MCP tools over stdio, or on 127.0.0.1 with --http
                        (see wirebench mcp --help).`;
@@ -153,6 +195,16 @@ Exit 1 when the message is invalid; a REST body that could not be checked prints
 
 <history-id|file>      A file when one exists at that path, else a History id.
 XML gets XPath 3.1, with the document's own prefixes; JSON gets JSONPath.`,
+  call: `wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema] [--project <dir>] [--history-dir <dir>] [--json]
+
+<operation>            An operations reference (Interface/Operation, API/operationId, API/METHOD /path) or
+                       the tool name operations shows.
+--args                 The arguments as JSON, or @<file> holding them. Default: {}.
+-e, --env <name>       The environment; required when the project defines any.
+--schema               Print the arguments' JSON Schema and send nothing.
+Builds the request from the arguments, sends it under the interface's or API's endpoint, auth and
+secrets, records it in History, and prints the response as JSON. Exit 0 on any response, a fault
+included; 2 for a refused call or bad arguments; 3 when nothing answered.`,
   mcp: `wirebench mcp [--project <dir>] [--allow-write] [--allow-send] [-e <a,b>] [--history-dir <dir>] [--http <port>] [--tools <name,…|none>]
 
 Serves the project's tools to an MCP client, over stdio unless --http is given: import, operations, generate, send,
