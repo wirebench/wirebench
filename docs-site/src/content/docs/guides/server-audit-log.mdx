@@ -52,7 +52,7 @@ workspace admin turns it on.
   (the gRPC `service/method`, or none), the URL, the status, whether it worked, how long it took, the
   environment name, the request's id and name, and the time on the person's machine.
 - `desktop.run_finished`: one per test-suite run that ends, including a run the person stopped. It
-  carries the suite's id and name, the outcome, the counts of passed, failed, errored and skipped steps,
+  carries the suite's id and name (`sequenceName`), the outcome, the counts of passed, failed, errored and skipped steps,
   the duration, the environment, the hosts the steps reached (up to 64) and the start and send times.
 - `desktop.events_dropped`: a count of events the app had to discard (see below), so a gap in the trail
   is itself on the record.
@@ -86,7 +86,10 @@ until the next sign-in. The queue holds 5000 events; beyond that the oldest are 
 count is sent with the next batch as `desktop.events_dropped`. A batch the server can never accept
 (a `400` answer) is discarded the same way and counted. If the server answers that the workspace no
 longer records (`409`), or that the workspace is closed to the person (`403` or `404`), the app empties
-its queue and stops recording until the workspace is fetched again.
+its queue and stops recording until the workspace is fetched again. Delivery is at least once, so if the server's reply to a batch is
+lost, the app sends that batch again and its events can appear twice. Events queued while one person
+was signed in are sent only as that person: if someone else signs in to the same server, they are
+discarded and counted instead.
 
 ## Reading the log
 
