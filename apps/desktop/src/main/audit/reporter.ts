@@ -10,7 +10,8 @@ import type { ServerClient } from '../server-client.js';
 import { OFFLINE_CODES } from '../sync/sync-service.js';
 import { withToken } from '../server-token.js';
 import type { TokenSource } from '../server-token.js';
-import { AuditOutbox } from './outbox.js';
+import { outboxFor } from './outbox.js';
+import type { AuditOutbox } from './outbox.js';
 
 /** A send follows its event by about this long, so a burst goes out as one batch. */
 export const AUDIT_DEBOUNCE_MS = 2000;
@@ -34,7 +35,7 @@ export interface AuditReporterDeps {
   readonly clearTimeout: (handle: unknown) => void;
 }
 
-type Outcome = 'done' | 'signed-out' | 'recording-off' | 'failed' | 'offline';
+type Outcome = 'done' | 'signed-out' | 'stopped' | 'failed' | 'offline';
 
 export class AuditReporter {
   private target: AuditTarget | undefined;
@@ -55,7 +56,7 @@ export class AuditReporter {
     this.serverOff = false;
     this.backoffMs = 0;
     this.target = target;
-    this.outbox = target === undefined ? undefined : new AuditOutbox(target.dir);
+    this.outbox = target === undefined ? undefined : outboxFor(target.dir);
   }
 
   /** Writes the event to the outbox and schedules a send. A no-op unless the target records. */
@@ -100,7 +101,10 @@ export class AuditReporter {
     try {
       do {
         this.again = false;
+        const target = this.target;
         const outcome = await this.drain();
+        // A target swapped mid-flush owns the state now; the old one's answer must not touch it.
+        if (this.target !== target) continue;
         if (outcome === 'offline' || outcome === 'failed') {
           this.backoffMs = Math.min(
             this.backoffMs === 0 ? AUDIT_BACKOFF_START_MS : this.backoffMs * 2,
@@ -113,11 +117,16 @@ export class AuditReporter {
           this.signedOut = true;
           return;
         }
-        if (outcome === 'recording-off') return;
+        if (outcome === 'stopped') return;
         this.backoffMs = 0;
       } while (this.again && !this.disposed);
     } catch {
       /* never into the caller */
+    } finally {
+      // An enqueue that arrived as the loop ended (or while it was backing off) must still go out.
+      if (this.again && !this.disposed && this.timer === undefined && !this.signedOut && !this.serverOff) {
+        this.schedule(AUDIT_DEBOUNCE_MS);
+      }
     }
   }
 
@@ -139,11 +148,25 @@ export class AuditReporter {
         );
       } catch (error) {
         const code = isWirebenchError(error) ? error.code : undefined;
+        const status = isWirebenchError(error)
+          ? (error.details as { status?: unknown } | undefined)?.status
+          : undefined;
         if (code === 'account-signed-out' || code === 'identity-unauthenticated') return 'signed-out';
-        if (code === 'audit-desktop-recording-off') {
-          this.serverOff = true;
+        if (code === 'audit-desktop-recording-off' || status === 403 || status === 404) {
+          // The server will not take this workspace's events: drop them and stop until the next target.
           await outbox.clear();
-          return 'recording-off';
+          if (this.target === target) this.serverOff = true;
+          return 'stopped';
+        }
+        if (status === 400) {
+          // This batch can never be accepted: drop it, and let the server hear of the gap.
+          if (items.length === 0) {
+            await outbox.clearDropped();
+            return 'done';
+          }
+          await outbox.remove(items.map((i) => i.name));
+          await outbox.addDropped(items.length);
+          continue;
         }
         return code !== undefined && (OFFLINE_CODES.has(code) || code === 'server-unreachable') ? 'offline' : 'failed';
       }

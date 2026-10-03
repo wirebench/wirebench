@@ -14,6 +14,28 @@ describe('maskAuditUrl', () => {
     expect(masked).toContain('q=1');
   });
 
+  it('cuts before a redaction marker the cut would split', () => {
+    const head = 'https://a.example/?q=';
+    const prefix = `${head}${'x'.repeat(2045 - head.length - '&api_key='.length)}&api_key=`;
+    expect(prefix).toHaveLength(2045);
+    const masked = maskAuditUrl(`${prefix}abc`);
+    expect(masked).toBe(prefix);
+  });
+
+  it('masks the sensitive query values of a URL that does not parse', () => {
+    const masked = maskAuditUrl('127.0.0.1:50051?token=x&keep=1&api_key=y');
+    expect(masked).not.toContain('=x');
+    expect(masked).not.toContain('=y');
+    expect(masked).toContain('keep=1');
+  });
+
+  it('matches a recorded secret before redactUrl re-encodes it', () => {
+    recordSecretValue('a b+c');
+    const masked = maskAuditUrl('https://a.example/p?q=a b+c');
+    expect(masked).not.toContain('a b');
+    expect(masked).not.toContain('b+c');
+  });
+
   it('cuts at 2048 characters', () => {
     expect(maskAuditUrl(`https://a.example/${'x'.repeat(5000)}`)).toHaveLength(2048);
   });

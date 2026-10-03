@@ -3,7 +3,7 @@
  * (§2.3). Pure: the callers (`send/`, the sequence runner) hand over what happened and the clock.
  * Electron-free.
  */
-import { DESKTOP_AUDIT_LIMITS, redactUrl } from '@wirebench/engine';
+import { DESKTOP_AUDIT_LIMITS, isSensitiveQueryParam, redactUrl } from '@wirebench/engine';
 import type {
   DesktopAuditEvent,
   DesktopRequestSentDetails,
@@ -12,9 +12,49 @@ import type {
 } from '@wirebench/engine';
 import { redactSecretValues } from '../redact.js';
 
-/** The URL as it may leave the machine: credentials masked whatever the show-secrets toggle says. */
+const MARKER = /<redacted>|%3Credacted%3E/gi;
+
+/** For a URL `new URL` cannot parse: the value of every sensitive query parameter still becomes the marker. */
+function maskQueryText(text: string): string {
+  return text.replace(/([?&;])([^=&#;]+)=([^&#;]*)/g, (whole, sep: string, name: string) => {
+    let decoded = name;
+    try {
+      decoded = decodeURIComponent(name);
+    } catch {
+      /* keep the raw name */
+    }
+    return isSensitiveQueryParam(decoded) ? `${sep}${name}=<redacted>` : whole;
+  });
+}
+
+/** Cuts `text` at `max`, before a redaction marker the cut would split. */
+function cutWhole(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max;
+  for (const match of text.matchAll(MARKER)) {
+    if (match.index < max && match.index + match[0].length > max) {
+      end = match.index;
+      break;
+    }
+  }
+  return text.slice(0, end);
+}
+
+/**
+ * The URL as it may leave the machine: credentials masked whatever the show-secrets toggle says. The
+ * session secrets are masked before `redactUrl` (it re-encodes, which could hide one from the masker)
+ * and again after it.
+ */
 export function maskAuditUrl(url: string): string {
-  return redactSecretValues(redactUrl(url, { show: false })).slice(0, DESKTOP_AUDIT_LIMITS.maxUrlLength);
+  let parsable = true;
+  try {
+    new URL(url);
+  } catch {
+    parsable = false;
+  }
+  const first = redactSecretValues(url);
+  const masked = redactSecretValues(parsable ? redactUrl(first, { show: false }) : maskQueryText(first));
+  return cutWhole(masked, DESKTOP_AUDIT_LIMITS.maxUrlLength);
 }
 
 export type RequestSentInput = Omit<DesktopRequestSentDetails, 'durationMs'> & { readonly durationMs: number };

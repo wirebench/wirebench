@@ -70,4 +70,18 @@ describe('AuditOutbox', () => {
     await o.append(ev(2));
     expect(urls(await o.peek(10))).toEqual(['1', '2']);
   });
+
+  it('counts a corrupt file it deletes as dropped', async () => {
+    const o = new AuditOutbox(dir);
+    await writeFile(join(dir, '0000000001.json'), '{nope');
+    expect(await o.peek(10)).toEqual([]);
+    expect(await o.dropped()).toBe(1);
+  });
+
+  it('addDropped adds to the counter', async () => {
+    const o = new AuditOutbox(dir);
+    await o.addDropped(2);
+    await o.addDropped(3);
+    expect(await o.dropped()).toBe(5);
+  });
 });

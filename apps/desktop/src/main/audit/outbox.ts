@@ -1,3 +1,15 @@
+const outboxes = new Map<string, AuditOutbox>();
+
+/** One outbox per folder for the process: two instances could pick the same sequence number. */
+export function outboxFor(dir: string): AuditOutbox {
+  let outbox = outboxes.get(dir);
+  if (outbox === undefined) {
+    outbox = new AuditOutbox(dir);
+    outboxes.set(dir, outbox);
+  }
+  return outbox;
+}
+
 /**
  * The durable queue of desktop audit events (desktop audit events spec §2.4): one JSON file per event
  * in a folder, named by a zero-padded sequence so a directory listing is the order, each written
@@ -60,7 +72,8 @@ export class AuditOutbox {
       } catch {
         /* unreadable: handled below */
       }
-      await this.rmAll([name]);
+      await this.remove([name]);
+      await this.addDropped(1);
     }
     return items;
   }
@@ -84,6 +97,13 @@ export class AuditOutbox {
     } catch {
       return 0;
     }
+  }
+
+  /** Counts events that were discarded outside the cap (a batch the server refused, a corrupt file). */
+  addDropped(count: number): Promise<void> {
+    return this.serial(async () => {
+      if (count > 0) await this.writeDropped((await this.dropped()) + count);
+    });
   }
 
   /** Subtracts what a batch carried; events dropped while it was in flight stay counted. */

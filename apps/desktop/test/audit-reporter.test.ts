@@ -209,4 +209,80 @@ describe('AuditReporter', () => {
     await expect(reporter.flush()).resolves.toBeUndefined();
     reporter.dispose();
   });
+
+  it('a 400 drops that batch, counts it, and sends the count with the next batch', async () => {
+    let n = 0;
+    const { batches, reporter } = setup(() => {
+      n++;
+      return n === 1
+        ? Promise.reject(new WirebenchError('server-bad-request', 'bad', { details: { status: 400 } }))
+        : Promise.resolve();
+    });
+    for (let i = 0; i < 3; i++) await reporter.enqueue(ev(i));
+    await reporter.flush();
+    expect(batches).toHaveLength(2);
+    expect(batches[1]!.events).toEqual([]);
+    expect(batches[1]!.dropped).toBe(3);
+    expect(await files()).toEqual([]);
+    expect(await new AuditOutbox(dir).dropped()).toBe(0);
+  });
+
+  it.each([403, 404])('a %i clears the outbox and stops until the next setTarget', async (status) => {
+    const { clock, batches, reporter } = setup(() =>
+      Promise.reject(new WirebenchError('server-forbidden', 'no', { details: { status } })),
+    );
+    await reporter.enqueue(ev(1));
+    await reporter.flush();
+    expect(await files()).toEqual([]);
+    expect(clock.pending).toEqual([]);
+    await reporter.enqueue(ev(2));
+    expect(await files()).toEqual([]);
+    expect(batches).toHaveLength(1);
+  });
+
+  it('a 409 for the old target after setTarget(B) does not switch B off', async () => {
+    const dirB = await mkdtemp(join(tmpdir(), 'wb-reporter-b-'));
+    try {
+      let release: () => void = () => undefined;
+      const { reporter } = setup(
+        () =>
+          new Promise<void>((_ok, fail) => {
+            release = () => fail(new WirebenchError('audit-desktop-recording-off', 'off'));
+          }),
+      );
+      await reporter.enqueue(ev(1));
+      const flushing = reporter.flush();
+      await settle();
+      reporter.setTarget({ url: 'https://s.example', workspaceId: 'w2', dir: dirB, recording: true });
+      release();
+      await flushing;
+      await reporter.enqueue(ev(2));
+      expect(await readdir(dirB)).toHaveLength(1);
+    } finally {
+      await rm(dirB, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps every event when setTarget is called again on the same directory while appending', async () => {
+    const { reporter } = setup();
+    const target = { url: 'https://s.example', workspaceId: 'w1', dir, recording: true } as const;
+    const pending: Promise<void>[] = [];
+    for (let i = 0; i < 20; i++) {
+      pending.push(reporter.enqueue(ev(i)));
+      reporter.setTarget(target);
+    }
+    await Promise.all(pending);
+    expect(await files()).toHaveLength(20);
+  });
+
+  it('schedules a flush for an enqueue that lands as a flush ends', async () => {
+    const { clock, reporter } = setup();
+    await reporter.enqueue(ev(1));
+    const flushing = reporter.flush();
+    await reporter.enqueue(ev(2));
+    await flushing;
+    await settle();
+    expect(await files()).toEqual([]);
+    expect(clock.pending.length).toBeLessThanOrEqual(1);
+  });
 });
