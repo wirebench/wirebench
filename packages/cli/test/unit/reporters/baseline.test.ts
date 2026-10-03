@@ -1,7 +1,9 @@
 import { PassThrough } from 'node:stream';
-import type { RequestResult, RunResult } from '@wirebench/engine';
+import type { RequestResult, RunResult, RunSummary } from '@wirebench/engine';
 import { describe, expect, it } from 'vitest';
 import { createCliReporter } from '../../../src/reporters/cli.js';
+import { renderHtml } from '../../../src/reporters/html.js';
+import { renderJunit } from '../../../src/reporters/junit.js';
 import { toJsonReport } from '../../../src/reporters/json.js';
 import { maskRequestResult } from '../../../src/reporters/mask.js';
 
@@ -129,5 +131,94 @@ describe('baseline in reports', () => {
     const withChanges = maskRequestResult({ ...differs, baseline: { ...differs.baseline!, error: note } }, hide);
     expect(JSON.stringify(withChanges)).not.toContain('s3cret-value');
     expect(withChanges.baseline?.error).toContain('****');
+  });
+});
+
+const updated: RequestResult = {
+  ...differs,
+  outcome: 'passed',
+  assertions: [{ type: 'baseline', label: 'baseline updated', outcome: 'passed' }],
+  baseline: {
+    status: 'updated',
+    format: 'json',
+    ignored: 0,
+    file: 'apis/demo/requests/ok.golden.yaml',
+    changes: [{ kind: 'changed', path: '/ok', expected: 'false', actual: 'true' }],
+  },
+};
+const created: RequestResult = {
+  ...updated,
+  assertions: [{ type: 'baseline', label: 'baseline created', outcome: 'passed' }],
+  baseline: { status: 'created', file: 'apis/demo/requests/new.golden.yaml' },
+};
+const skipped: RequestResult = { ...differs, assertions: [], baseline: { status: 'skipped', reason: 'failed' } };
+const refused: RequestResult = {
+  ...differs,
+  outcome: 'errored',
+  assertions: [
+    {
+      type: 'baseline',
+      label: 'baseline not written',
+      outcome: 'errored',
+      message: 'The response holds a secret value, so its baseline was not written.',
+    },
+  ],
+  baseline: { status: 'refused', reason: 'secret' },
+};
+
+const ONE: RunSummary = { total: 1, passed: 1, failed: 0, errored: 0, skipped: 0, durationMs: 1 };
+const TOOL = { name: 'wirebench', version: '0.0.0' };
+
+async function runText(requests: RequestResult[]): Promise<string> {
+  const out = new PassThrough();
+  let text = '';
+  out.on('data', (chunk: Buffer) => (text += chunk.toString()));
+  await createCliReporter(out, { color: false, quiet: false, verbose: false }).onRunDone?.({
+    startedAt: 's',
+    requests,
+    summary: {
+      total: requests.length,
+      passed: 2,
+      failed: 1,
+      errored: 1,
+      skipped: 0,
+      durationMs: 10,
+      baselineUpdate: { updated: 1, created: 1, matched: 0, skipped: 1, refused: 1 },
+    },
+  });
+  return text;
+}
+
+describe('baseline updates in reports', () => {
+  it('cli: names what happened on the request line', () => {
+    expect(cliText(updated)).toContain('baseline: updated');
+    expect(cliText(created)).toContain('baseline: created');
+    expect(cliText(skipped)).toContain('(baseline not written: failed)');
+    expect(cliText(refused)).toContain('baseline not written — The response holds a secret value');
+  });
+
+  it('cli: sums the update and lists the written files', async () => {
+    const text = await runText([updated, created, skipped, refused]);
+    expect(text).toContain('baseline: 1 updated, 1 created, 0 matched, 1 not written, 1 refused\n');
+    expect(text).toContain('written:\n  apis/demo/requests/ok.golden.yaml\n  apis/demo/requests/new.golden.yaml\n');
+  });
+
+  it('junit: notes the written file in system-out', () => {
+    const xml = renderJunit({ startedAt: 's', requests: [updated], summary: ONE });
+    expect(xml).toContain('<system-out>baseline updated: apis/demo/requests/ok.golden.yaml</system-out>');
+  });
+
+  it('html: shows the written file and what moved', () => {
+    const html = renderHtml({ startedAt: 's', requests: [updated], summary: ONE }, TOOL);
+    expect(html).toContain('Baseline updated: apis/demo/requests/ok.golden.yaml');
+    expect(html).toContain('<td>/ok</td>');
+  });
+
+  it('json: carries the update fields as they are', () => {
+    const report = toJsonReport({ startedAt: 's', requests: [updated], summary: ONE }, TOOL);
+    expect(report.requests[0]?.baseline).toMatchObject({
+      status: 'updated',
+      file: 'apis/demo/requests/ok.golden.yaml',
+    });
   });
 });

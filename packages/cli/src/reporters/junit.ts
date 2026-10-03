@@ -12,8 +12,18 @@ function assertionMessage(assertion: AssertionResult): string {
   return `${assertion.label} — ${assertion.message ?? assertion.outcome}`;
 }
 
+/** What a request's baseline adds to its system-out: a missing golden (#36), or the file written (#217). */
+function baselineNote(result: RequestResult): string | undefined {
+  const baseline = result.baseline;
+  if (baseline?.status === 'missing') return 'no baseline saved';
+  if ((baseline?.status === 'updated' || baseline?.status === 'created') && baseline.file !== undefined) {
+    return `baseline ${baseline.status}: ${baseline.file}`;
+  }
+  return undefined;
+}
+
 function renderSystemOut(result: RequestResult): string {
-  const notes = result.baseline?.status === 'missing' ? 'no baseline saved' : undefined;
+  const notes = baselineNote(result);
   if (result.exchange === undefined) {
     return notes === undefined ? '' : `<system-out>${escapeXml(notes)}</system-out>`;
   }
