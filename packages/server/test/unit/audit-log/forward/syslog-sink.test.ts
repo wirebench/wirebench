@@ -137,13 +137,24 @@ describe('SyslogSink', () => {
       setTimeout(() => socket.emit('connect'), 200);
       return socket;
     };
-    const sink = track(new SyslogSink({ host: 'collector.test', port: 6514, connect, ...SHORT }));
-    const started = Date.now();
-    await expect(sink.send([auditEvent()])).rejects.toThrow(/timed out after 300 ms/);
-    const elapsed = Date.now() - started;
-    expect(elapsed).toBeGreaterThanOrEqual(250);
-    expect(elapsed).toBeLessThan(450);
-    expect(socket.destroyed).toBe(true);
+    vi.useFakeTimers();
+    try {
+      const sink = track(new SyslogSink({ host: 'collector.test', port: 6514, connect, ...SHORT }));
+      let outcome: unknown;
+      const sent = sink.send([auditEvent()]).then(
+        () => (outcome = 'sent'),
+        (error: unknown) => (outcome = error),
+      );
+      // Separate connect and write timeouts would fire at 200 + 300 ms; one deadline fires at 300 ms.
+      await vi.advanceTimersByTimeAsync(299);
+      expect(outcome).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await sent;
+      expect(String(outcome)).toMatch(/timed out after 300 ms/);
+      expect(socket.destroyed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reconnects on the next send after the receiver drops the connection', async () => {
