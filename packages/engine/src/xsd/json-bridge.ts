@@ -836,13 +836,43 @@ function rootDecl(set: SchemaSet, target: BridgeTarget): ElementDecl | undefined
 const ENTITY_OR_REFERENCE = /^&(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-fA-F]+);/;
 const MARKUP_START = /^<[A-Za-z_:/!?]/;
 
+type LiteralSection = readonly [open: string, close: string];
+
+const COMMENT: LiteralSection = ['<!--', '-->'];
+const LITERAL_SECTIONS: readonly LiteralSection[] = [['<![CDATA[', ']]>'], COMMENT, ['<?', '?>']];
+
+/**
+ * `text` without the given sections, in one linear pass. The text is untrusted (a tool argument or
+ * a response), so no backtracking regex walks it. An unterminated section is kept as it is: the
+ * XML parser reports it.
+ */
+export function withoutSections(text: string, sections: readonly LiteralSection[]): string {
+  let out = '';
+  let at = 0;
+  for (let lt = text.indexOf('<'); lt !== -1; lt = text.indexOf('<', at)) {
+    const section = sections.find(([open]) => text.startsWith(open, lt));
+    if (section === undefined) {
+      out += text.slice(at, lt + 1);
+      at = lt + 1;
+      continue;
+    }
+    const end = text.indexOf(section[1], lt + section[0].length);
+    if (end === -1) {
+      break;
+    }
+    out += text.slice(at, lt);
+    at = end + section[1].length;
+  }
+  return out + text.slice(at);
+}
+
 /**
  * What the parser lets through that is not well formed: a `&` that starts no predefined entity or
  * character reference, and a `<` that starts no markup. CDATA sections, comments and processing
  * instructions are skipped, since both are literal there.
  */
 function fragmentLexicalProblem(text: string): string | undefined {
-  const outside = text.replace(/<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>/g, '');
+  const outside = withoutSections(text, LITERAL_SECTIONS);
   for (let at = outside.indexOf('&'); at !== -1; at = outside.indexOf('&', at + 1)) {
     if (!ENTITY_OR_REFERENCE.test(outside.slice(at))) {
       return `an unescaped "&" (write &amp;) at "${outside.slice(at, at + 12)}"`;
@@ -1384,7 +1414,7 @@ class Reader {
     ];
     const runs: string[] = [];
     for (let at = 0; at + 1 < bounds.length; at += 2) {
-      const raw = this.source.slice(bounds[at], bounds[at + 1]).replace(/<!--[\s\S]*?-->/g, '');
+      const raw = withoutSections(this.source.slice(bounds[at], bounds[at + 1]), [COMMENT]);
       const run = decodeEntities(raw).trim();
       if (run !== '') {
         runs.push(run);

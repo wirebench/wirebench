@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { importWsdl } from '../../../src/soap/import.js';
 import type { WsdlImportResult } from '../../../src/soap/types.js';
 import type { BridgeTarget } from '../../../src/xsd/json-bridge.js';
-import { jsonFromXml, jsonSchemaOf, xmlFromJson } from '../../../src/xsd/json-bridge.js';
+import { jsonFromXml, jsonSchemaOf, withoutSections, xmlFromJson } from '../../../src/xsd/json-bridge.js';
 
 const FIXTURE = fileURLToPath(new URL('../../fixtures/json-bridge/service.wsdl', import.meta.url));
 const BRIDGE = 'urn:wb:bridge';
@@ -243,5 +243,28 @@ describe('what cannot be written', () => {
     for (const free of ['Tom &amp; Jerry &#38; &#x26;', '<a><![CDATA[a & b < c]]></a>', '<!-- a & b --><a/>']) {
       expect(xmlFromJson(wsdl.schemaSet, element('Tagged'), { ...base, free }).problems, free).toEqual([]);
     }
+  });
+});
+
+describe('withoutSections', () => {
+  const sections = [
+    ['<![CDATA[', ']]>'],
+    ['<!--', '-->'],
+    ['<?', '?>'],
+  ] as const;
+
+  it('drops CDATA sections, comments and processing instructions, and keeps the rest', () => {
+    expect(withoutSections('a<!-- x -->b<![CDATA[<&]]>c<?pi d?>e<f/>', sections)).toBe('abce<f/>');
+  });
+
+  it('keeps an unterminated section as it is', () => {
+    expect(withoutSections('a<!-- open', sections)).toBe('a<!-- open');
+  });
+
+  it('stays linear on a long run of section openers', () => {
+    const hostile = '<!--'.repeat(50_000) + '<![CDATA['.repeat(50_000) + '<?'.repeat(50_000);
+    const started = performance.now();
+    expect(withoutSections(hostile, sections)).toBe(hostile);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });

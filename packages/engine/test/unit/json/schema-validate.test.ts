@@ -257,7 +257,8 @@ describe('redactValues', () => {
 });
 
 describe('uncheckedPatterns', () => {
-  const unsafe = '^(?:([A-Z]+ ?)+)$';
+  // A lookahead: refused as unsafe without being slow itself.
+  const unsafe = '^(?=A)A$';
 
   it('reports a pattern it does not run by default', () => {
     expect(validateJsonSchema('X', { type: 'string', pattern: unsafe })).toEqual([
