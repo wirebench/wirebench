@@ -213,6 +213,7 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
       getSecret: secrets.getSecret,
       env: context.env,
       onSecretValue: (secret) => tokens.add(secret),
+      ...(context.cookies !== undefined ? { cookies: context.cookies } : {}),
     }),
     containsKnownSecret: (text) => knownSecretIn(text, known()),
     ...(input.scripting !== undefined ? { scripting: input.scripting } : {}),
