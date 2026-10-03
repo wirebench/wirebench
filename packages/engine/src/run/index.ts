@@ -13,6 +13,7 @@ export {
   scriptReport,
 } from './run.js';
 export type {
+  BaselineSource,
   RequestOutcome,
   RequestResult,
   RunOptions,

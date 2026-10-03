@@ -7,12 +7,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { Document, parse as parseYamlText } from 'yaml';
-import { requestFileLocation, WirebenchError } from '@wirebench/engine';
+import { readGoldenFile, requestFileLocation, WirebenchError } from '@wirebench/engine';
 import type { Project } from '@wirebench/engine';
-import { snapshotSchema } from '../shared/wire-types.js';
 import type { SnapshotReadResponse, SnapshotWire } from '../shared/wire-types.js';
 import { isInsideReal, realpathOfPrefix } from './path-containment.js';
 
@@ -45,16 +44,20 @@ export class SnapshotStore {
   constructor(private readonly lookup: SavedProjectLookup) {}
 
   async read({ requestId }: { requestId: string }): Promise<SnapshotReadResponse> {
-    const sidecar = await this.locate(requestId);
-    if (sidecar === undefined) {
+    const saved = this.lookup(requestId);
+    // `locate` is the store's "unsaved" test: no saved project, no file location, an escaped folder,
+    // or no `*.request.yaml` yet.
+    if (saved === undefined || (await this.locate(requestId)) === undefined) {
       return { status: 'unsaved' };
     }
-    if (sidecar.kind === 'other') {
-      console.warn('[snapshot] ignoring a snapshot path that is not a regular file', sidecar.file);
-      return { status: 'none' };
+    const read = await readGoldenFile(saved.dir, saved.project, requestId);
+    if (read.status === 'present') {
+      return { status: 'present', snapshot: { ...read.golden, ignore: [...read.golden.ignore] } };
     }
-    const snapshot = await readSidecar(sidecar.file);
-    return snapshot === undefined ? { status: 'none' } : { status: 'present', snapshot };
+    if (read.status === 'unreadable') {
+      console.warn('[snapshot] ignoring an unreadable snapshot file', requestId, read.reason);
+    }
+    return { status: 'none' };
   }
 
   write(input: {
@@ -79,12 +82,14 @@ export class SnapshotStore {
   setIgnore({ requestId, ignore }: { requestId: string; ignore: readonly string[] }): Promise<{ savedAt: string }> {
     return this.serial(requestId, async () => {
       const sidecar = await this.require(requestId);
-      const current = sidecar.kind === 'file' ? await readSidecar(sidecar.file) : undefined;
-      if (current === undefined) {
+      const saved = this.lookup(requestId);
+      const read = saved === undefined ? undefined : await readGoldenFile(saved.dir, saved.project, requestId);
+      if (read?.status !== 'present') {
         throw new WirebenchError('snapshot-missing', 'No snapshot is saved for this request', {
           details: { requestId },
         });
       }
+      const current = read.golden;
       // `savedAt` records when the body was captured; changing the ignore rules does not recapture it.
       await writeSidecar(sidecar.file, { ...current, ignore: [...ignore] });
       return { savedAt: current.savedAt };
@@ -182,30 +187,6 @@ function refuseNonFile(requestId: string, sidecar: SidecarPath): void {
       details: { requestId },
     });
   }
-}
-
-/** The sidecar at `file`, or `undefined` when there is none or it is malformed (with a warning). */
-async function readSidecar(file: string): Promise<SnapshotWire | undefined> {
-  let text: string;
-  try {
-    text = await readFile(file, 'utf8');
-  } catch {
-    return undefined;
-  }
-  try {
-    const parsed = snapshotSchema.safeParse(parseYamlText(text));
-    if (parsed.success) {
-      return parsed.data;
-    }
-    console.warn('[snapshot] ignoring a malformed snapshot file', file, parsed.error.message);
-  } catch (error) {
-    console.warn(
-      '[snapshot] ignoring a malformed snapshot file',
-      file,
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-  return undefined;
 }
 
 /**

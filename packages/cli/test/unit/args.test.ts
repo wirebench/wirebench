@@ -240,6 +240,29 @@ describe('parseCliArgs — mcp', () => {
   });
 });
 
+describe('run --baseline', () => {
+  it('defaults both flags off', () => {
+    expect(parseCliArgs(['run', 'p'])).toMatchObject({ baseline: false, requireBaseline: false });
+  });
+
+  it('reads both flags', () => {
+    expect(parseCliArgs(['run', 'p', '--baseline', '--require-baseline'])).toMatchObject({
+      baseline: true,
+      requireBaseline: true,
+    });
+  });
+
+  it('refuses --require-baseline alone', () => {
+    expect(() => parseCliArgs(['run', 'p', '--require-baseline'])).toThrow('--require-baseline needs --baseline');
+  });
+
+  it('refuses --baseline with --sequence', () => {
+    expect(() => parseCliArgs(['run', 'p', '--baseline', '--sequence', 's'])).toThrow(
+      '--baseline cannot be combined with --sequence',
+    );
+  });
+});
+
 describe('parseCliArgs — mcp --tools', () => {
   it('reads a list of containers, and none', () => {
     expect(parseCliArgs(['mcp', '--tools', 'Pets, CalculatorService'])).toMatchObject({
