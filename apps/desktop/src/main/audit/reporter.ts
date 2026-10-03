@@ -57,6 +57,8 @@ export class AuditReporter {
   private serverOff = false;
   private signedOut = false;
   private timer: unknown;
+  /** What the armed timer is: only a back-off holds a fetch's send back. */
+  private timerKind: 'backoff' | 'debounce' | undefined;
   private backoffMs = 0;
   /** The `Retry-After` of the failure that ended the last drain, if it carried one. */
   private retryAfterMs: number | undefined;
@@ -107,7 +109,7 @@ export class AuditReporter {
       return;
     }
     if (this.running !== undefined) this.again = true;
-    else if (this.timer === undefined && !this.signedOut) this.schedule(AUDIT_DEBOUNCE_MS);
+    else if (this.timer === undefined && !this.signedOut) this.schedule(AUDIT_DEBOUNCE_MS, 'debounce');
   }
 
   /** Sends what is queued. Resolves when the outbox is empty or a send did not go through; never rejects. */
@@ -121,7 +123,7 @@ export class AuditReporter {
       this.running = undefined;
       // An enqueue can land after the loop's last check but before this runs: nothing else would send it.
       if (this.again && !this.disposed && this.timer === undefined && !this.signedOut && !this.serverOff) {
-        this.schedule(AUDIT_DEBOUNCE_MS);
+        this.schedule(AUDIT_DEBOUNCE_MS, 'debounce');
       }
     });
     this.running = run;
@@ -143,7 +145,7 @@ export class AuditReporter {
   afterFetch(): Promise<void> {
     this.signedOut = false;
     // A pending back-off timer keeps its pace: the fetch must not send ahead of it.
-    if (this.timer !== undefined) return this.running ?? Promise.resolve();
+    if (this.timerKind === 'backoff') return this.running ?? Promise.resolve();
     return this.flush();
   }
 
@@ -165,7 +167,7 @@ export class AuditReporter {
             this.backoffMs === 0 ? AUDIT_BACKOFF_START_MS : this.backoffMs * 2,
             AUDIT_BACKOFF_MAX_MS,
           );
-          this.schedule(Math.min(Math.max(this.backoffMs, this.retryAfterMs ?? 0), AUDIT_BACKOFF_MAX_MS));
+          this.schedule(Math.min(Math.max(this.backoffMs, this.retryAfterMs ?? 0), AUDIT_BACKOFF_MAX_MS), 'backoff');
           return;
         }
         if (outcome === 'signed-out') {
@@ -254,11 +256,13 @@ export class AuditReporter {
     return this.deps.accounts.list().find((account) => account.url === origin);
   }
 
-  private schedule(ms: number): void {
+  private schedule(ms: number, kind: 'backoff' | 'debounce'): void {
     this.cancelTimer();
     if (this.disposed) return;
+    this.timerKind = kind;
     this.timer = this.deps.setTimeout(() => {
       this.timer = undefined;
+      this.timerKind = undefined;
       void this.flush();
     }, ms);
   }
@@ -266,5 +270,6 @@ export class AuditReporter {
   private cancelTimer(): void {
     if (this.timer !== undefined) this.deps.clearTimeout(this.timer);
     this.timer = undefined;
+    this.timerKind = undefined;
   }
 }

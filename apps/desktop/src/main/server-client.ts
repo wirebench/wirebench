@@ -687,9 +687,11 @@ export class ServerClient {
 function parseRetryAfter(value: string | undefined, now: number = Date.now()): number | undefined {
   const text = value?.trim();
   if (text === undefined || text === '') return undefined;
-  if (/^\d+$/.test(text)) return Number(text) * 1000;
-  const at = Date.parse(text);
-  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
+  let ms: number;
+  if (/^\d+$/.test(text)) ms = Number(text) * 1000;
+  else if (/[A-Za-z]/.test(text)) ms = Date.parse(text) - now;
+  else return undefined;
+  return Number.isNaN(ms) || ms <= 0 ? undefined : ms;
 }
 
 /** The TLS and proxy settings a request to this server carries, only the ones that are set. */

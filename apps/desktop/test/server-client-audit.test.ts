@@ -148,6 +148,13 @@ describe('ServerClient reportDesktopEvents (desktop audit events spec §2.4)', (
     expect(details.retryAfterMs).toBeLessThanOrEqual(60_000);
   });
 
+  it.each(['-5', '1.5', '0', new Date(Date.now() - 60_000).toUTCString()])(
+    'omits retryAfterMs for %s',
+    async (value) => {
+      expect(await detailsOf({ 'retry-after': value })).toEqual({ status: 429 });
+    },
+  );
+
   it('ignores a garbage retry-after', async () => {
     expect(await detailsOf({ 'retry-after': 'soon' })).toEqual({ status: 429 });
   });
