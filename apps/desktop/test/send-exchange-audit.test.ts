@@ -129,6 +129,23 @@ describe('the audit hook of a send through the engine', () => {
     expect(events).toEqual([]);
   });
 
+  it('hands the hook the workspace that was open when the send started', async () => {
+    const reported: (string | undefined)[] = [];
+    let open = 'ws-A';
+    const deps = sendDepsFor(seeded(), {
+      getSecret: secrets,
+      audit: (_event, workspaceId) => reported.push(workspaceId),
+      auditWorkspace: () => {
+        const now = open;
+        // Another workspace is open by the time the send ends.
+        open = 'ws-B';
+        return now;
+      },
+    });
+    await sendThroughEngine(deps, 's1', 'req-1', { draft: { kind: 'rest' } });
+    expect(reported).toEqual(['ws-A']);
+  });
+
   it('a hook that throws never fails the send', async () => {
     const deps = sendDepsFor(seeded(), {
       getSecret: secrets,

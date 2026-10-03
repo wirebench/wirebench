@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
-import type { DesktopAuditBatch, DesktopAuditEvent } from '@wirebench/engine';
+import type { DesktopAuditBatch, DesktopAuditEvent, ServerAccount } from '@wirebench/engine';
 import { AuditOutbox, outboxFor } from '../src/main/audit/outbox.js';
 import { AuditReporter } from '../src/main/audit/reporter.js';
 
@@ -60,9 +60,21 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+const account = (userId: string, signedOut = false): ServerAccount => ({
+  url: 'https://s.example',
+  userId,
+  email: `${userId}@example.com`,
+  displayName: userId,
+  deviceName: 'laptop',
+  tokenRef: 'ref',
+  addedAt: '2026-10-03T09:00:00.000Z',
+  ...(signedOut ? { signedOut: true } : {}),
+});
+
 function setup(
   send: (b: DesktopAuditBatch) => Promise<void> = () => Promise.resolve(),
   tokenOf: () => string | undefined = () => 'tok',
+  accountsOf: () => readonly ServerAccount[] = () => [account('u1')],
 ) {
   const clock = new Clock();
   const batches: DesktopAuditBatch[] = [];
@@ -73,7 +85,11 @@ function setup(
         await send(batch);
       },
     },
-    accounts: { tokenFor: () => Promise.resolve(tokenOf()), markSignedOut: () => undefined },
+    accounts: {
+      tokenFor: () => Promise.resolve(tokenOf()),
+      markSignedOut: () => undefined,
+      list: () => accountsOf(),
+    },
     now: () => new Date(clock.time),
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
@@ -86,7 +102,7 @@ const files = async (): Promise<string[]> => (await readdir(dir)).filter((f) => 
 describe('AuditReporter', () => {
   it('flushes about 2 s after an event is queued', async () => {
     const { clock, batches, reporter } = setup();
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     expect(clock.pending).toEqual([2000]);
     expect(batches).toHaveLength(0);
     await clock.fireNext();
@@ -96,7 +112,7 @@ describe('AuditReporter', () => {
 
   it('sends 250 events as 100, 100, 50 oldest first', async () => {
     const { batches, reporter } = setup();
-    for (let n = 0; n < 250; n++) await reporter.enqueue(ev(n));
+    for (let n = 0; n < 250; n++) await reporter.enqueue(ev(n), 'w1');
     await reporter.flush();
     expect(batches.map((b) => b.events.length)).toEqual([100, 100, 50]);
     expect(batches[0]!.events[0]).toEqual(ev(0));
@@ -109,15 +125,15 @@ describe('AuditReporter', () => {
     const { batches, reporter } = setup(() =>
       off ? Promise.reject(new WirebenchError('audit-desktop-recording-off', 'off')) : Promise.resolve(),
     );
-    await reporter.enqueue(ev(1));
-    await reporter.enqueue(ev(2));
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.enqueue(ev(2), 'w1');
     await reporter.flush();
     expect(await files()).toEqual([]);
-    await reporter.enqueue(ev(3));
+    await reporter.enqueue(ev(3), 'w1');
     expect(await files()).toEqual([]);
     off = false;
     reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
-    await reporter.enqueue(ev(4));
+    await reporter.enqueue(ev(4), 'w1');
     expect(await files()).toHaveLength(1);
     expect(batches).toHaveLength(1);
   });
@@ -127,7 +143,7 @@ describe('AuditReporter', () => {
     const { clock, batches, reporter } = setup(() =>
       fail ? Promise.reject(new WirebenchError('server-unreachable', 'down')) : Promise.resolve(),
     );
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     await reporter.flush();
     expect(clock.pending).toEqual([5000]);
     await clock.fireNext();
@@ -149,7 +165,7 @@ describe('AuditReporter', () => {
         ? Promise.reject(new WirebenchError('audit-desktop-rate-limited', 'slow down', { details: { status: 429 } }))
         : Promise.resolve(),
     );
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     await reporter.flush();
     expect(await files()).toHaveLength(1);
     expect(await new AuditOutbox(dir).dropped()).toBe(0);
@@ -163,11 +179,11 @@ describe('AuditReporter', () => {
   it('signed out keeps the files and waits for onSignedIn', async () => {
     let token = undefined as string | undefined;
     const { clock, batches, reporter } = setup(undefined, () => token);
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     await reporter.flush();
     expect(await files()).toHaveLength(1);
     expect(clock.pending).toEqual([]);
-    await reporter.enqueue(ev(2));
+    await reporter.enqueue(ev(2), 'w1');
     expect(clock.pending).toEqual([]);
     token = 'tok';
     await reporter.onSignedIn();
@@ -178,9 +194,9 @@ describe('AuditReporter', () => {
   it('ignores enqueue for a non-recording or missing target', async () => {
     const { clock, reporter } = setup();
     reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: false });
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     reporter.setTarget(undefined);
-    await reporter.enqueue(ev(2));
+    await reporter.enqueue(ev(2), 'w1');
     expect(await files()).toEqual([]);
     expect(clock.pending).toEqual([]);
   });
@@ -188,11 +204,11 @@ describe('AuditReporter', () => {
   it('reports the dropped count once, with the first batch', async () => {
     const { batches, reporter } = setup();
     const o = new AuditOutbox(dir, { max: 2 });
-    for (let n = 0; n < 5; n++) await o.append(ev(n));
+    for (let n = 0; n < 5; n++) await o.append(ev(n), 'u1');
     await reporter.flush();
     expect(batches).toHaveLength(1);
     expect(batches[0]!.dropped).toBe(3);
-    await reporter.enqueue(ev(9));
+    await reporter.enqueue(ev(9), 'w1');
     await reporter.flush();
     expect(batches[1]!.dropped).toBeUndefined();
   });
@@ -207,10 +223,10 @@ describe('AuditReporter', () => {
       await new Promise<void>((r) => (release = r));
       active--;
     });
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     const first = reporter.flush();
     await settle();
-    await reporter.enqueue(ev(2));
+    await reporter.enqueue(ev(2), 'w1');
     const second = reporter.flush();
     release();
     await settle();
@@ -223,7 +239,7 @@ describe('AuditReporter', () => {
 
   it('never throws into its caller', async () => {
     const { reporter } = setup(() => Promise.reject(new Error('boom')));
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     await expect(reporter.flush()).resolves.toBeUndefined();
     reporter.dispose();
   });
@@ -236,7 +252,7 @@ describe('AuditReporter', () => {
         ? Promise.reject(new WirebenchError('server-bad-request', 'bad', { details: { status: 400 } }))
         : Promise.resolve();
     });
-    for (let i = 0; i < 3; i++) await reporter.enqueue(ev(i));
+    for (let i = 0; i < 3; i++) await reporter.enqueue(ev(i), 'w1');
     await reporter.flush();
     expect(batches).toHaveLength(2);
     expect(batches[1]!.events).toEqual([]);
@@ -249,11 +265,11 @@ describe('AuditReporter', () => {
     const { clock, batches, reporter } = setup(() =>
       Promise.reject(new WirebenchError('server-forbidden', 'no', { details: { status } })),
     );
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     await reporter.flush();
     expect(await files()).toEqual([]);
     expect(clock.pending).toEqual([]);
-    await reporter.enqueue(ev(2));
+    await reporter.enqueue(ev(2), 'w1');
     expect(await files()).toEqual([]);
     expect(batches).toHaveLength(1);
   });
@@ -268,13 +284,13 @@ describe('AuditReporter', () => {
             release = () => fail(new WirebenchError('audit-desktop-recording-off', 'off'));
           }),
       );
-      await reporter.enqueue(ev(1));
+      await reporter.enqueue(ev(1), 'w1');
       const flushing = reporter.flush();
       await settle();
       reporter.setTarget({ url: 'https://s.example', workspaceId: 'w2', dir: dirB, recording: true });
       release();
       await flushing;
-      await reporter.enqueue(ev(2));
+      await reporter.enqueue(ev(2), 'w2');
       expect(await readdir(dirB)).toHaveLength(1);
     } finally {
       await rm(dirB, { recursive: true, force: true });
@@ -286,7 +302,7 @@ describe('AuditReporter', () => {
     const target = { url: 'https://s.example', workspaceId: 'w1', dir, recording: true } as const;
     const pending: Promise<void>[] = [];
     for (let i = 0; i < 20; i++) {
-      pending.push(reporter.enqueue(ev(i)));
+      pending.push(reporter.enqueue(ev(i), 'w1'));
       reporter.setTarget(target);
     }
     await Promise.all(pending);
@@ -298,7 +314,7 @@ describe('AuditReporter', () => {
     const TICKS = 1;
     const { clock, batches, reporter } = setup();
     const outbox = outboxFor(dir);
-    await reporter.enqueue(ev(1));
+    await reporter.enqueue(ev(1), 'w1');
     // Hold the late enqueue's append open, and release it just as the final drain pass finds nothing.
     let openGate: () => void = () => undefined;
     const gate = new Promise<void>((r) => (openGate = r));
@@ -309,7 +325,7 @@ describe('AuditReporter', () => {
     outbox.dropped = async () => {
       const n = await realDropped();
       if (++calls === 2) {
-        await realAppend(ev(2));
+        await realAppend(ev(2), 'u1');
         void (async () => {
           for (let i = 0; i < TICKS; i++) await Promise.resolve();
           openGate();
@@ -318,7 +334,7 @@ describe('AuditReporter', () => {
       return n;
     };
     const flushing = reporter.flush();
-    const late = reporter.enqueue(ev(2));
+    const late = reporter.enqueue(ev(2), 'w1');
     await Promise.all([flushing, late]);
     expect(clock.pending).toEqual([2000]);
     await clock.fireNext();
@@ -342,5 +358,104 @@ describe('AuditReporter', () => {
     expect(batches[0]).toEqual({ events: [], dropped: 3 });
     expect(batches[1]).toEqual({ events: [], dropped: 2 });
     expect(await outboxFor(dir).dropped()).toBe(0);
+  });
+
+  it("never sends one account's queued events as another: they are dropped and counted", async () => {
+    let accounts = [account('u1')];
+    let token: string | undefined = 'tok';
+    const { batches, reporter } = setup(
+      undefined,
+      () => token,
+      () => accounts,
+    );
+    // Signed out: the queue keeps u1's events, stamped with the last account known.
+    accounts = [account('u1', true)];
+    token = undefined;
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.enqueue(ev(2), 'w1');
+    await reporter.flush();
+    expect(batches).toHaveLength(0);
+    expect(await files()).toHaveLength(2);
+    // Someone else signs in to the same server.
+    accounts = [account('u2')];
+    token = 'tok2';
+    await reporter.onSignedIn();
+    expect(batches).toEqual([{ events: [], dropped: 2 }]);
+    expect(await files()).toEqual([]);
+    // u2's own events go out as theirs.
+    await reporter.enqueue(ev(3), 'w1');
+    await reporter.flush();
+    expect(batches[1]).toEqual({ events: [ev(3)] });
+  });
+
+  it('sends the signed-in account its own events and drops the others in the same batch', async () => {
+    const { batches, reporter } = setup();
+    await outboxFor(dir).append(ev(1), 'u1');
+    await outboxFor(dir).append(ev(2), 'u2');
+    await outboxFor(dir).append(ev(3), 'u1');
+    await reporter.flush();
+    expect(batches).toEqual([{ events: [ev(1), ev(3)], dropped: 1 }]);
+  });
+
+  it('counts an event as dropped when no account was ever known for the server', async () => {
+    const { reporter } = setup(undefined, undefined, () => []);
+    await reporter.enqueue(ev(1), 'w1');
+    expect(await files()).toEqual([]);
+    expect(await outboxFor(dir).dropped()).toBe(1);
+  });
+
+  it('re-picks the batch when the account changes while its token is read', async () => {
+    let accounts = [account('u1')];
+    let reads = 0;
+    const { batches, reporter } = setup(
+      undefined,
+      () => {
+        // Someone else signs in between the batch being picked and the token being read.
+        if (++reads === 1) accounts = [account('u2')];
+        return 'tok';
+      },
+      () => accounts,
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(batches).toEqual([{ events: [], dropped: 1 }]);
+  });
+
+  it('refuses an event for a workspace other than the current target', async () => {
+    const { clock, reporter } = setup();
+    await reporter.enqueue(ev(1), 'w-closed');
+    await reporter.enqueue(ev(2), undefined);
+    expect(await files()).toEqual([]);
+    expect(clock.pending).toEqual([]);
+    expect(reporter.workspaceId).toBe('w1');
+  });
+
+  it('an unchanged target keeps its back-off', async () => {
+    const { clock, reporter } = setup(() => Promise.reject(new WirebenchError('server-unreachable', 'down')));
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    await clock.fireNext();
+    expect(clock.pending).toEqual([10000]);
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
+    expect(clock.pending).toEqual([10000]);
+    await reporter.afterFetch();
+    expect(clock.pending).toEqual([20000]);
+  });
+
+  it('an unchanged target fetched as recording again after a 409 resumes', async () => {
+    let off = true;
+    const { batches, reporter } = setup(() =>
+      off ? Promise.reject(new WirebenchError('audit-desktop-recording-off', 'off')) : Promise.resolve(),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    await reporter.enqueue(ev(2), 'w1');
+    expect(await files()).toEqual([]);
+    off = false;
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
+    await reporter.enqueue(ev(3), 'w1');
+    await reporter.afterFetch();
+    expect(batches.at(-1)).toEqual({ events: [ev(3)] });
+    expect(await files()).toEqual([]);
   });
 });

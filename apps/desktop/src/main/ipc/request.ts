@@ -235,9 +235,12 @@ export interface RequestChannelDeps {
   readonly registry?: ExchangeRegistry;
   /**
    * Told of each send and each finished run the audit log keeps (desktop audit events spec §2.2):
-   * the reporter's queue in the app. Omitted in tests that don't care.
+   * the reporter's queue in the app. Omitted in tests that don't care. `workspaceId` is
+   * {@link auditWorkspace} as it was when the send or run started.
    */
-  readonly audit?: (event: DesktopAuditEvent) => void;
+  readonly audit?: (event: DesktopAuditEvent, workspaceId: string | undefined) => void;
+  /** The server workspace audit events are queued for now; read when a send or run starts. */
+  readonly auditWorkspace?: () => string | undefined;
 }
 
 /**
@@ -276,6 +279,7 @@ export function toSendDeps(
     ...(deps.onScriptsRan !== undefined ? { onScriptsRan: deps.onScriptsRan } : {}),
     ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
     ...(deps.audit !== undefined ? { audit: deps.audit } : {}),
+    ...(deps.auditWorkspace !== undefined ? { auditWorkspace: deps.auditWorkspace } : {}),
   };
 }
 

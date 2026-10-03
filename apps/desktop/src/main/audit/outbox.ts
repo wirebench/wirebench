@@ -1,3 +1,15 @@
+/**
+ * The durable queue of desktop audit events (desktop audit events spec §2.4): one JSON file per event
+ * in a folder, named by a zero-padded sequence so a directory listing is the order, each written
+ * atomically. Past the cap the oldest are deleted and counted in `dropped.json`, which travels with
+ * the next batch. Each entry is stamped with the account that queued it (`{ userId, event }`): the stamp
+ * stays here, only the event goes on the wire, and the reporter sends an entry only as that account.
+ * Electron-free.
+ */
+import { DESKTOP_AUDIT_LIMITS, desktopAuditEventSchema, nodeFs, writeFileAtomic } from '@wirebench/engine';
+import type { DesktopAuditEvent } from '@wirebench/engine';
+import { join } from 'node:path';
+
 const outboxes = new Map<string, AuditOutbox>();
 
 /** One outbox per folder for the process: two instances could pick the same sequence number. */
@@ -10,21 +22,13 @@ export function outboxFor(dir: string): AuditOutbox {
   return outbox;
 }
 
-/**
- * The durable queue of desktop audit events (desktop audit events spec §2.4): one JSON file per event
- * in a folder, named by a zero-padded sequence so a directory listing is the order, each written
- * atomically. Past the cap the oldest are deleted and counted in `dropped.json`, which travels with
- * the next batch. Electron-free.
- */
-import { DESKTOP_AUDIT_LIMITS, desktopAuditEventSchema, nodeFs, writeFileAtomic } from '@wirebench/engine';
-import type { DesktopAuditEvent } from '@wirebench/engine';
-import { join } from 'node:path';
-
 const EVENT_FILE = /^\d{10}\.json$/;
 const DROPPED_FILE = 'dropped.json';
 
 export interface OutboxItem {
   readonly name: string;
+  /** The account that queued the event; never sent. */
+  readonly userId: string;
   readonly event: DesktopAuditEvent;
 }
 
@@ -41,12 +45,12 @@ export class AuditOutbox {
     this.max = options.max ?? DESKTOP_AUDIT_LIMITS.maxOutbox;
   }
 
-  append(event: DesktopAuditEvent): Promise<void> {
+  append(event: DesktopAuditEvent, userId: string): Promise<void> {
     return this.serial(async () => {
       const names = await this.names();
       this.nextSeq ??= (names.length > 0 ? Number(names[names.length - 1]!.slice(0, 10)) : 0) + 1;
       const name = `${String(this.nextSeq++).padStart(10, '0')}.json`;
-      await writeFileAtomic(nodeFs, join(this.dir, name), JSON.stringify(event));
+      await writeFileAtomic(nodeFs, join(this.dir, name), JSON.stringify({ userId, event }));
       names.push(name);
       const over = names.length - this.max;
       if (over > 0) {
@@ -56,17 +60,22 @@ export class AuditOutbox {
     });
   }
 
-  /** The oldest `n` events. A file that is unreadable or no longer a valid event is deleted, not returned. */
+  /**
+   * The oldest `n` events. A file that is unreadable, carries no owner, or is no longer a valid event is
+   * deleted and counted as dropped, not returned.
+   */
   async peek(n: number): Promise<OutboxItem[]> {
     const items: OutboxItem[] = [];
     for (const name of await this.names()) {
       if (items.length >= n) break;
       try {
-        const parsed = desktopAuditEventSchema.safeParse(
-          JSON.parse((await nodeFs.readFile(join(this.dir, name))).toString('utf-8')),
-        );
-        if (parsed.success) {
-          items.push({ name, event: parsed.data });
+        const entry = JSON.parse((await nodeFs.readFile(join(this.dir, name))).toString('utf-8')) as {
+          readonly userId?: unknown;
+          readonly event?: unknown;
+        } | null;
+        const parsed = desktopAuditEventSchema.safeParse(entry?.event);
+        if (typeof entry?.userId === 'string' && entry.userId.length > 0 && parsed.success) {
+          items.push({ name, userId: entry.userId, event: parsed.data });
           continue;
         }
       } catch {

@@ -333,6 +333,54 @@ describe('SequenceRunner', () => {
     });
   });
 
+  it('reports a run to the workspace it started in, even if another is open when it ends', async () => {
+    const { runner, deps } = await harness([LOGIN, ME], 'P-audit-ws');
+    const reported: { event: DesktopAuditEvent; workspaceId: string | undefined }[] = [];
+    let open = 'ws-A';
+    const audited = {
+      ...deps,
+      // The workspace changes as soon as the first step ends.
+      emit: (event: SequenceProgressEvent) => {
+        deps.emit(event);
+        open = 'ws-B';
+      },
+      requests: {
+        ...deps.requests,
+        audit: (event: DesktopAuditEvent, workspaceId: string | undefined) => reported.push({ event, workspaceId }),
+        auditWorkspace: () => open,
+      },
+    };
+
+    await runner.run({ sequenceId: 'S1', runId: 'R-audit-ws' }, audited);
+
+    expect(reported).toHaveLength(1);
+    expect(reported[0]!.workspaceId).toBe('ws-A');
+  });
+
+  it('reports a run that breaks off as errored, with the steps it reached', async () => {
+    const { runner, deps } = await harness([LOGIN, ME], 'P-audit-broken');
+    const events: DesktopAuditEvent[] = [];
+    let ended = 0;
+    const audited = {
+      ...deps,
+      emit: (event: SequenceProgressEvent) => {
+        deps.emit(event);
+        if (++ended === 2) throw new Error('the renderer went away');
+      },
+      requests: { ...deps.requests, audit: (event: DesktopAuditEvent) => events.push(event) },
+    };
+
+    await expect(runner.run({ sequenceId: 'S1', runId: 'R-audit-broken' }, audited)).rejects.toThrow(
+      'the renderer went away',
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: 'desktop.run_finished',
+      details: { sequenceId: 'S1', sequenceName: 'Checkout', outcome: 'errored', passed: 2, hosts: [url] },
+    });
+  });
+
   it('refuses a sequence the project does not have', async () => {
     const { runner, deps } = await harness([], 'P-none');
     await expect(runner.run({ sequenceId: 'nope', runId: 'R4' }, deps)).rejects.toMatchObject({

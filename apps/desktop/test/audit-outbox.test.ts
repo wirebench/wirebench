@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -34,16 +34,16 @@ afterEach(async () => {
 describe('AuditOutbox', () => {
   it('keeps order across a new outbox on the same directory', async () => {
     const a = new AuditOutbox(dir);
-    for (const n of [1, 2, 3]) await a.append(ev(n));
+    for (const n of [1, 2, 3]) await a.append(ev(n), 'u1');
     const b = new AuditOutbox(dir);
-    await b.append(ev(4));
+    await b.append(ev(4), 'u1');
     expect(urls(await b.peek(10))).toEqual(['1', '2', '3', '4']);
     expect(urls(await b.peek(2))).toEqual(['1', '2']);
   });
 
   it('removes by name and clears everything', async () => {
     const o = new AuditOutbox(dir);
-    for (const n of [1, 2, 3]) await o.append(ev(n));
+    for (const n of [1, 2, 3]) await o.append(ev(n), 'u1');
     const items = await o.peek(2);
     await o.remove(items.map((i) => i.name));
     expect(urls(await o.peek(10))).toEqual(['3']);
@@ -54,7 +54,7 @@ describe('AuditOutbox', () => {
 
   it('drops the oldest past the cap and counts them', async () => {
     const o = new AuditOutbox(dir, { max: 3 });
-    for (const n of [1, 2, 3, 4, 5]) await o.append(ev(n));
+    for (const n of [1, 2, 3, 4, 5]) await o.append(ev(n), 'u1');
     expect(urls(await o.peek(10))).toEqual(['3', '4', '5']);
     expect(await o.dropped()).toBe(2);
     expect(await new AuditOutbox(dir, { max: 3 }).dropped()).toBe(2);
@@ -65,9 +65,9 @@ describe('AuditOutbox', () => {
 
   it('skips a corrupt file instead of throwing', async () => {
     const o = new AuditOutbox(dir);
-    await o.append(ev(1));
+    await o.append(ev(1), 'u1');
     await writeFile(join(dir, '9999999999.json'), '{nope');
-    await o.append(ev(2));
+    await o.append(ev(2), 'u1');
     expect(urls(await o.peek(10))).toEqual(['1', '2']);
   });
 
@@ -83,5 +83,16 @@ describe('AuditOutbox', () => {
     await o.addDropped(2);
     await o.addDropped(3);
     expect(await o.dropped()).toBe(5);
+  });
+
+  it('keeps the owner beside the event, and drops an entry that has none', async () => {
+    const o = new AuditOutbox(dir);
+    await o.append(ev(1), 'u1');
+    const [item] = await o.peek(1);
+    expect(item).toMatchObject({ userId: 'u1', event: ev(1) });
+    expect(JSON.parse(await readFile(join(dir, item!.name), 'utf-8'))).toEqual({ userId: 'u1', event: ev(1) });
+    await writeFile(join(dir, '0000000009.json'), JSON.stringify(ev(2)));
+    expect((await o.peek(10)).map((i) => i.userId)).toEqual(['u1']);
+    expect(await o.dropped()).toBe(1);
   });
 });

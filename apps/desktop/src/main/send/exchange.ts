@@ -364,8 +364,11 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
   /**
    * Told of each saved request's send that reached the wire, successful or failed (desktop audit
    * events spec §2.2); never of a run's step, an ad-hoc send, or one that failed while prepared.
+   * `workspaceId` is {@link auditWorkspace} as it was when the send started.
    */
-  readonly audit?: (event: DesktopAuditEvent) => void;
+  readonly audit?: (event: DesktopAuditEvent, workspaceId: string | undefined) => void;
+  /** The server workspace audit events are queued for now. */
+  readonly auditWorkspace?: () => string | undefined;
 }
 
 /** What the "no such request" refusal calls a kind, as the app always has. */
@@ -456,6 +459,8 @@ async function sendReserved(
     containsKnownSecret: containsRecordedSecret,
   };
   const scope = createRunScope(context);
+  // The workspace this send happens in: one that closes before the send ends must not take it.
+  const auditWorkspaceId = deps.auditWorkspace?.();
   const scripted =
     scripts.kind === 'on' && deps.scripts !== undefined
       ? scriptedSend(deps.scripts, scripts.request, context)
@@ -489,7 +494,7 @@ async function sendReserved(
       handshakeLogged: send.handshakeLogged === true,
     };
     await record(deps, recorded, sent, full, summarised.unredacted);
-    reportSend(deps, options, projectId, located, item, () => sentAudit(sent, full));
+    reportSend(deps, options, projectId, located, item, auditWorkspaceId, () => sentAudit(sent, full));
     // After History is written, so a result never reaches it (request-assertions spec §6).
     const own = options.checkAssertions === true && 'assertions' in item.request ? (item.request.assertions ?? []) : [];
     const assertions = await editorAssertionResults(own, sent.subject);
@@ -504,7 +509,7 @@ async function sendReserved(
         handshakeLogged: send.handshakeLogged === true,
       };
       await recordFailure(deps, recorded, failed, error, { sendId, show });
-      reportSend(deps, options, projectId, located, item, () => failedAudit(item, failed));
+      reportSend(deps, options, projectId, located, item, auditWorkspaceId, () => failedAudit(item, failed));
       failed.report();
     }
     throw error;
@@ -1255,6 +1260,7 @@ function reportSend(
   projectId: string | undefined,
   located: Located,
   item: SelectedRequest,
+  workspaceId: string | undefined,
   of: () => AuditedSend | undefined,
 ): void {
   if (deps.audit === undefined || options.run === true || projectId === undefined) return;
@@ -1270,6 +1276,7 @@ function reportSend(
         requestName: item.request.name,
         sentAt: new Date().toISOString(),
       }),
+      workspaceId,
     );
   } catch (error) {
     console.warn(`[audit] a send could not be reported: ${error instanceof Error ? error.message : String(error)}`);

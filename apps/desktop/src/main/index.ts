@@ -80,7 +80,7 @@ import { registerAuditChannels } from './ipc/audit.js';
 import { registerHooksChannels } from './ipc/hooks.js';
 import { AccountService } from './account-service.js';
 import { AuditReporter } from './audit/reporter.js';
-import { ServerClient } from './server-client.js';
+import { normalizeServerUrl, ServerClient } from './server-client.js';
 import { LiveClients } from './live/live-clients.js';
 import { mainHttpOptions, type MainHttpDeps } from './network-options.js';
 import { OpenApiImportService } from './openapi-import.js';
@@ -215,6 +215,15 @@ const accountService = new AccountService({
   openExternal: openExternalChecked,
   defaultDeviceName: hostname,
 });
+
+/** A server URL by origin, the way accounts are kept; `undefined` for text that is no server URL. */
+function sameOrigin(url: string): string | undefined {
+  try {
+    return normalizeServerUrl(url);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Reports the open workspace's sends and test runs to its server's audit log while the last fetched
@@ -441,9 +450,10 @@ const workspaceService = new WorkspaceService({
     },
     onAuditTarget: (target, fetched) => {
       auditReporter.setTarget(target);
-      // A fetch went through with this account's token: it is signed in, and the queue goes out now.
+      // A fetch went through with this account's token: it is signed in, and the queue goes out now,
+      // at the pace of any back-off already under way.
       if (target !== undefined && fetched) {
-        void auditReporter.onSignedIn();
+        void auditReporter.afterFetch();
       }
     },
   },
@@ -519,9 +529,10 @@ void app.whenReady().then(() => {
     scripts,
     registry: exchanges,
     // Queued to the open workspace's outbox; the reporter drops it unless the workspace records.
-    audit: (event) => {
-      void auditReporter.enqueue(event);
+    audit: (event, workspaceId) => {
+      void auditReporter.enqueue(event, workspaceId);
     },
+    auditWorkspace: () => auditReporter.workspaceId,
   };
   registerRequestChannels(engineService, requestDeps);
   // A sequence's steps go through the engine as a single send does, with the same dependencies.
@@ -560,8 +571,10 @@ void app.whenReady().then(() => {
   let auditSignedIn = false;
   accountService.onChange((servers) => {
     const target = workspaceService.auditTarget();
+    const origin = target === undefined ? undefined : sameOrigin(target.url);
     const signedIn =
-      target !== undefined && servers.some((account) => account.url === target.url && account.signedOut !== true);
+      origin !== undefined &&
+      servers.some((account) => sameOrigin(account.url) === origin && account.signedOut !== true);
     if (signedIn && !auditSignedIn) {
       void auditReporter.onSignedIn();
     }
