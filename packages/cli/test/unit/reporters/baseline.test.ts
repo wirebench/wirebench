@@ -84,4 +84,14 @@ describe('baseline in reports', () => {
     expect(JSON.stringify(masked)).not.toContain('s3cret-value');
     expect(masked.baseline?.changes?.[0]?.expected).toBe('****');
   });
+
+  it('mask: hides a secret in the baseline parse note, with and without changes', () => {
+    const hide = (text: string): string => text.replaceAll('s3cret-value', '****');
+    const note = 'Unexpected token s3cret-value in JSON at position 4';
+    const alone = maskRequestResult({ ...missing, baseline: { status: 'unreadable', error: note } }, hide);
+    expect(alone.baseline?.error).toBe('Unexpected token **** in JSON at position 4');
+    const withChanges = maskRequestResult({ ...differs, baseline: { ...differs.baseline!, error: note } }, hide);
+    expect(JSON.stringify(withChanges)).not.toContain('s3cret-value');
+    expect(withChanges.baseline?.error).toContain('****');
+  });
 });

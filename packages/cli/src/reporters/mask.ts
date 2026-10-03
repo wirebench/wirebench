@@ -45,16 +45,22 @@ export function maskRequestResult(result: RequestResult, mask: Mask): RequestRes
       ...(assertion.actual !== undefined ? { actual: mask(assertion.actual) } : {}),
       ...(assertion.message !== undefined ? { message: mask(assertion.message) } : {}),
     })),
-    ...(baseline?.changes !== undefined
+    ...(baseline !== undefined
       ? {
           baseline: {
             ...baseline,
-            changes: baseline.changes.map((change) => ({
-              ...change,
-              path: mask(change.path),
-              ...(change.expected !== undefined ? { expected: mask(change.expected) } : {}),
-              ...(change.actual !== undefined ? { actual: mask(change.actual) } : {}),
-            })),
+            // The parse note quotes a snippet of the body, so it is masked whether or not changes exist.
+            ...(baseline.error !== undefined ? { error: mask(baseline.error) } : {}),
+            ...(baseline.changes !== undefined
+              ? {
+                  changes: baseline.changes.map((change) => ({
+                    ...change,
+                    path: mask(change.path),
+                    ...(change.expected !== undefined ? { expected: mask(change.expected) } : {}),
+                    ...(change.actual !== undefined ? { actual: mask(change.actual) } : {}),
+                  })),
+                }
+              : {}),
           },
         }
       : {}),
