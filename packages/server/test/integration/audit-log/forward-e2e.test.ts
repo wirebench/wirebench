@@ -2,6 +2,10 @@
  * Audit forwarding from a running server (issue #209): the audit-log module with a forward URL pointed
  * at a local HTTP receiver, real actions through the routes, and the forwarder's timer fired by hand.
  */
+import { writeFile } from 'node:fs/promises';
+import type { ServerResponse } from 'node:http';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { AuditEvent } from '@wirebench/engine';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
@@ -11,7 +15,9 @@ import {
   FORWARD_UNLICENSED_MS,
 } from '../../../src/audit-log/forward/forwarder.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
+import { ConfigError } from '../../../src/config.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
+import { mkTempDir, removeTempDir } from '../../helpers/git.js';
 import { httpReceiver, type HttpReceiver } from '../../helpers/forward-receivers.js';
 import { signedInUser, type IdentityHarness, type SignedInUser } from '../../helpers/identity.js';
 import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
@@ -26,6 +32,8 @@ const FORWARD_DELAYS = [
 const WAIT = { timeout: 5_000, interval: 20 };
 /** Each test starts its own server over a fresh schema (two, for the restart). */
 const TEST_TIMEOUT_MS = 30_000;
+/** How long a close that should be waiting on a held batch is watched for finishing early. */
+const CLOSE_PROBE_MS = 300;
 
 /** The forwarder's armed delay, once its pass under way has finished. */
 async function settled(timers: ManualTimers): Promise<number> {
@@ -132,7 +140,11 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
       await settled(timers);
       await enterprise(h, admin);
       const { eventId } = await createTeam(h, admin, 'Down');
+      // backoff(1) equals the idle delay, so the first pass alone cannot tell a failure from an empty
+      // queue: the event still being queued, and the second delay doubling to backoff(2), can.
       expect(await pass(timers)).toBe(backoff(1));
+      expect(await queued(h, eventId)).toBe(1);
+      expect(backoff(2)).not.toBe(FORWARD_IDLE_MS);
       expect(await pass(timers)).toBe(backoff(2));
       expect(await queued(h, eventId)).toBe(1);
       const r = await receiver(port);
@@ -169,17 +181,53 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
   );
 
   it(
-    'shutting down mid-batch loses no event; after a restart it arrives (at least once)',
+    'shutting down mid-batch waits for the batch, which commits, before the server closes',
     async () => {
       const db = await testDatabase();
       cleanup.push(() => db.close());
-      // The first receiver records each batch and never answers.
-      const held = await receiver(undefined, () => undefined);
+      // Records each batch and holds its response until the test answers it.
+      const pending: ServerResponse[] = [];
+      const held = await httpReceiver((res) => pending.push(res));
       const first = await server(`http://127.0.0.1:${String(held.port)}/audit`, db);
+      // Registered after the server, so on a failure it closes first and no held request outlives the test.
+      cleanup.push(() => held.close());
       const admin = await signedInUser(first.h, { email: 'root@example.com', serverAdmin: true });
       await settled(first.timers);
       await enterprise(first.h, admin);
       const { eventId } = await createTeam(first.h, admin, 'Shutdown');
+      first.timers.fire(await settled(first.timers));
+      await vi.waitFor(() => {
+        expect(received(held).map((e) => e.id)).toContain(eventId);
+      }, WAIT);
+      let closed = false;
+      const closing = first.close().then(() => {
+        closed = true;
+      });
+      // The close waits on the forwarder's batch; without that it would finish at once.
+      await delay(CLOSE_PROBE_MS);
+      expect(closed).toBe(false);
+      for (const res of pending.splice(0)) res.writeHead(204).end();
+      await closing;
+      // Acknowledged before the close finished, so the batch committed.
+      expect(await queued({ db }, eventId)).toBe(0);
+      expect(await queued({ db })).toBe(0);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'a batch the sink drops at shutdown stays queued, and arrives after a restart (at least once)',
+    async () => {
+      const db = await testDatabase();
+      cleanup.push(() => db.close());
+      // Records each batch and never answers.
+      const held = await httpReceiver(() => undefined);
+      const first = await server(`http://127.0.0.1:${String(held.port)}/audit`, db);
+      cleanup.push(() => held.close());
+      const admin = await signedInUser(first.h, { email: 'root@example.com', serverAdmin: true });
+      await settled(first.timers);
+      await enterprise(first.h, admin);
+      const { eventId } = await createTeam(first.h, admin, 'Dropped');
       first.timers.fire(await settled(first.timers));
       await vi.waitFor(() => {
         expect(received(held).map((e) => e.id)).toContain(eventId);
@@ -197,6 +245,42 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
       expect(await settled(second.timers)).toBe(FORWARD_BUSY_MS);
       expect(received(r).map((e) => e.id)).toContain(eventId);
       expect(await queued({ db })).toBe(0);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'a CA file that cannot be read or holds no certificate refuses the start, without quoting the file',
+    async () => {
+      const dir = await mkTempDir('wbs-forward-ca-');
+      cleanup.push(() => removeTempDir(dir));
+      const notCa = join(dir, 'not-a-ca.pem');
+      await writeFile(notCa, 'CA-FILE-CONTENTS-MARKER\n');
+      for (const [file, message] of [
+        [join(dir, 'missing.pem'), 'could not be read'],
+        [notCa, 'holds no PEM certificate'],
+      ] as const) {
+        const db = await testDatabase();
+        cleanup.push(() => db.close());
+        const start = licensingHarness(keys, {
+          env: {
+            WIREBENCH_SERVER_AUDIT_FORWARD_URL: 'https://127.0.0.1:1/audit',
+            WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE: file,
+          },
+          db,
+          extra: (clock) => [auditLogModule({ now: () => clock.now, setTimer: manualTimers().setTimer })],
+        });
+        const error: unknown = await start.then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(ConfigError);
+        const problems = (error as ConfigError).problems;
+        expect(problems).toEqual([
+          { variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE', message: expect.stringContaining(message) as string },
+        ]);
+        expect(JSON.stringify(problems) + String(error)).not.toContain('CA-FILE-CONTENTS-MARKER');
+      }
     },
     TEST_TIMEOUT_MS,
   );
