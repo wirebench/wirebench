@@ -55,10 +55,10 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
     }
   });
 
-  it('a member hears identity-forbidden before the feature is checked', async () => {
+  it('a member naming no team hears audit-team-required before the feature is checked', async () => {
     const res = await get('/audit', member);
     expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({ code: 'identity-forbidden' });
+    expect(res.json()).toMatchObject({ code: 'audit-team-required' });
   });
 
   it('Team: still refused, and the install is recorded all the same (recording is on for every edition)', async () => {
