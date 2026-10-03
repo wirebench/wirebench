@@ -79,6 +79,7 @@ import { registerLicenseChannels } from './ipc/license.js';
 import { registerAuditChannels } from './ipc/audit.js';
 import { registerHooksChannels } from './ipc/hooks.js';
 import { AccountService } from './account-service.js';
+import { AuditReporter } from './audit/reporter.js';
 import { ServerClient } from './server-client.js';
 import { LiveClients } from './live/live-clients.js';
 import { mainHttpOptions, type MainHttpDeps } from './network-options.js';
@@ -213,6 +214,20 @@ const accountService = new AccountService({
   secrets: secretStore,
   openExternal: openExternalChecked,
   defaultDeviceName: hostname,
+});
+
+/**
+ * Reports the open workspace's sends and test runs to its server's audit log while the last fetched
+ * head says it records (desktop audit events §2.4). Its target follows the open workspace.
+ */
+const auditReporter = new AuditReporter({
+  client: serverClient,
+  accounts: accountService,
+  now: () => new Date(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
 });
 
 /**
@@ -424,6 +439,13 @@ const workspaceService = new WorkspaceService({
     onGitIdentityNeeded: (workspaceId) => {
       broadcast(events.git.identityNeeded, { workspaceId });
     },
+    onAuditTarget: (target, fetched) => {
+      auditReporter.setTarget(target);
+      // A fetch went through with this account's token: it is signed in, and the queue goes out now.
+      if (target !== undefined && fetched) {
+        void auditReporter.onSignedIn();
+      }
+    },
   },
 });
 
@@ -496,6 +518,10 @@ void app.whenReady().then(() => {
     secretsFor,
     scripts,
     registry: exchanges,
+    // Queued to the open workspace's outbox; the reporter drops it unless the workspace records.
+    audit: (event) => {
+      void auditReporter.enqueue(event);
+    },
   };
   registerRequestChannels(engineService, requestDeps);
   // A sequence's steps go through the engine as a single send does, with the same dependencies.
@@ -530,6 +556,17 @@ void app.whenReady().then(() => {
   registerAuditChannels({ client: serverClient, accounts: accountService, picks: dialogPicks });
   registerHooksChannels({ hooks: hooksService });
   accountService.onChange((servers) => broadcast(events.account.changed, { servers: servers.map(toAccountWire) }));
+  // Signing in to the open workspace's server sends what its audit outbox kept while signed out.
+  let auditSignedIn = false;
+  accountService.onChange((servers) => {
+    const target = workspaceService.auditTarget();
+    const signedIn =
+      target !== undefined && servers.some((account) => account.url === target.url && account.signedOut !== true);
+    if (signedIn && !auditSignedIn) {
+      void auditReporter.onSignedIn();
+    }
+    auditSignedIn = signedIn;
+  });
   // One `GET /me` per signed-in account at launch, so a token revoked while the app was closed
   // shows as signed out now rather than on the first action; no account, no call (§3.8).
   void accountService
@@ -758,6 +795,8 @@ app.on('before-quit', (event) => {
   }
   // The catch URL views and their subscriptions go first; nothing of them outlives the process.
   hooksService.dispose();
+  // Its timers must not hold up the quit; what is queued stays in the outbox for the next launch.
+  auditReporter.dispose();
   // The live sockets close 1000, so the server drops this device from presence now rather than at
   // its next heartbeat (live-updates §3.4). Not awaited: a socket that will not close must never
   // hold up the quit.

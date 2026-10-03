@@ -36,15 +36,17 @@ import type {
   SelectedRequest,
   SentRequest,
   SentScripts,
+  SequenceRunResult,
   SequenceStepResult,
   SequenceStepSender,
 } from '@wirebench/engine';
+import { runFinishedEvent } from './audit/desktop-events.js';
 import type { EngineService } from './engine-service.js';
 import { UNLINKED_WORKSPACE_MESSAGE } from './hooks/capture-source.js';
 import { toSendDeps, type RequestChannelDeps } from './ipc/request.js';
 import { containsRecordedSecret, recordSecretValue, redactSecretText } from './redact.js';
 import type { DraftOf } from './send/draft.js';
-import { sendThroughEngine } from './send/exchange.js';
+import { environmentNameOf, sendThroughEngine } from './send/exchange.js';
 import type {
   SequenceProgressEvent,
   SequenceRunRequest,
@@ -151,6 +153,21 @@ function toWire(step: SequenceStepResult, sendId: string | undefined): SequenceS
     ...(step.scriptsOff === true ? { scriptsOff: true } : {}),
     ...(sendId !== undefined ? { sendId } : {}),
   };
+}
+
+/**
+ * Hands the audit hook one `desktop.run_finished` for a run that ended, cancelled included (desktop
+ * audit events spec §2.2); its steps are never reported one by one. Never fails the run.
+ */
+function reportRun(requests: RequestChannelDeps, result: SequenceRunResult, cancelled: boolean): void {
+  if (requests.audit === undefined) return;
+  try {
+    const located = requests.project.runContextFor?.(result.sequenceId);
+    const environment = located === undefined ? null : environmentNameOf(located);
+    requests.audit(runFinishedEvent(result, result.startedAt, new Date(), environment, cancelled));
+  } catch (error) {
+    console.warn(`[audit] a run could not be reported: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /** Every sequence run in progress, by run id. One run per sequence at a time. */
@@ -264,6 +281,7 @@ export class SequenceRunner {
             waiting: waiting.map((one) => ({ label: mask(one.label), catchUrl: one.catchUrl, withinMs: one.withinMs })),
           }),
       });
+      reportRun(deps.requests, result, active.controller.signal.aborted);
       return {
         runId: request.runId,
         sequenceId: result.sequenceId,

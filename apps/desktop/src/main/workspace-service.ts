@@ -86,12 +86,14 @@ import type { SecretScanSessions } from './secret-scan-session.js';
 import type { SecretUse, TeamSecretsService } from './team-secrets-service.js';
 import type { SecretStore } from './secrets.js';
 import type { AccountService } from './account-service.js';
+import type { AuditTarget } from './audit/reporter.js';
 import type { TokenSource } from './server-token.js';
 import type { ConflictSides } from './sync/backend.js';
 import { createSyncBackend, type ServerSyncServices } from './sync/create-backend.js';
 import { HeldChanges } from './sync/held-changes.js';
 import type { HeldBatch } from './sync/held-changes.js';
 import { fillConflictProjectIds, planPull } from './sync/pull-plan.js';
+import { readRecordDesktopActivity, SERVER_STATE_DIR } from './sync/server-state.js';
 import { SyncService } from './sync/sync-service.js';
 import type { SyncServiceDeps } from './sync/sync-service.js';
 import type { SyncConflictWire, SyncPulledEvent, SyncStatusWire } from './sync/types.js';
@@ -185,6 +187,12 @@ export interface WorkspaceHooks {
   readonly onSyncConflict?: (workspaceId: string, conflicts: readonly SyncConflictWire[]) => void;
   /** A commit needs a name and email first; `sync().setIdentity` retries it. */
   readonly onGitIdentityNeeded?: (workspaceId: string) => void;
+  /**
+   * Where the open workspace's desktop audit events go (desktop audit events §2.4): told as a
+   * workspace opens, `undefined` as it closes, and again after each fetch (`fetched`), which carries
+   * the head's `recordDesktopActivity`. A local or folder workspace's target is `undefined`.
+   */
+  readonly onAuditTarget?: (target: AuditTarget | undefined, fetched: boolean) => void;
 }
 
 /** Everything {@link WorkspaceService} needs; all of it injected, none of it from `electron`. */
@@ -325,7 +333,14 @@ interface OpenWorkspace {
   readonly teamPulled: Map<string, number>;
   /** Settles once `startSync` has built and started the sync service (at once for a local workspace). Never rejects. */
   syncReady: Promise<void>;
+  /** A server share's last fetched head said `recordDesktopActivity` (kept in `server/state.yaml`). */
+  recording: boolean;
+  /** The `lastSyncAt` of the last sync status seen: a new one means a fetch (or a push) went through. */
+  lastSyncAt: string | undefined;
 }
+
+/** Under `<workspaceDir>/server/`: the desktop audit events not yet reported (desktop audit events §2.4). */
+const AUDIT_OUTBOX_DIR = 'audit-outbox';
 
 /**
  * Refuses a project id that cannot safely be used as a single path segment.
@@ -466,7 +481,7 @@ function withoutActiveEnvironment(workspace: Workspace): Workspace {
  * true when the tree lives inside app data — a git or server share never sets `share.path` (its
  * tree is the managed `<dir>/tree`); a folder share always does (an external, user-picked folder).
  */
-function shareWire(share: WorkspaceShare | undefined): WorkspaceShareWire | undefined {
+function shareWire(share: WorkspaceShare | undefined, recording = false): WorkspaceShareWire | undefined {
   if (share === undefined) {
     return undefined;
   }
@@ -483,6 +498,7 @@ function shareWire(share: WorkspaceShare | undefined): WorkspaceShareWire | unde
             url: server.url,
             workspaceId: server.workspaceId,
             ...(server.teamName !== undefined ? { teamName: server.teamName } : {}),
+            recording,
           },
         }
       : {}),
@@ -789,6 +805,8 @@ export class WorkspaceService implements ProjectRouter {
       teamHeld: new Set(),
       teamPulled: new Map(),
       syncReady: Promise.resolve(),
+      recording: false,
+      lastSyncAt: undefined,
     };
     this.current = open;
     this.failure = undefined;
@@ -848,7 +866,10 @@ export class WorkspaceService implements ProjectRouter {
       };
 
       await this.state.remember(id, this.now().toISOString());
+      // The last fetched head's, as kept: a desktop that opens offline records as it did before.
+      open.recording = share?.kind === 'server' && (await readRecordDesktopActivity(join(dir, SERVER_STATE_DIR)));
       this.deps.hooks?.onChanged?.(this.snapshot());
+      this.deps.hooks?.onAuditTarget?.(this.auditTargetOf(open), false);
       // Never awaited: a shared workspace opens on its files alone, and git (a missing
       // executable, a slow remote) only ever shows up in the sync status.
       this.attachTeamSecrets(open);
@@ -1109,6 +1130,7 @@ export class WorkspaceService implements ProjectRouter {
     // against its own captured `open` and will no-op once it runs, but there is no reason to make
     // the next workspace's first queued op wait behind it.
     this.workspaceOps = Promise.resolve();
+    this.deps.hooks?.onAuditTarget?.(undefined, false);
     this.deps.hooks?.onChanged?.(null);
     return null;
   }
@@ -1567,6 +1589,10 @@ export class WorkspaceService implements ProjectRouter {
     const holding = status.state === 'syncing' || status.state === 'conflict';
     const batch = open.held.setHolding(holding);
     this.deps.hooks?.onSyncStatus?.(open.workspace.id, status);
+    if (status.kind === 'server' && status.lastSyncAt !== undefined && status.lastSyncAt !== open.lastSyncAt) {
+      open.lastSyncAt = status.lastSyncAt;
+      void this.afterServerFetch(open);
+    }
     if (!holding && open.teamHeld.size > 0) {
       const teamPaths = [...open.teamHeld];
       open.teamHeld.clear();
@@ -1575,6 +1601,41 @@ export class WorkspaceService implements ProjectRouter {
     if (batch !== undefined) {
       void this.enqueueWorkspaceOp(() => this.replayHeld(open, batch));
     }
+  }
+
+  /**
+   * After a server fetch: the head's `recordDesktopActivity`, as the backend kept it, reaches the share
+   * the renderer is shown (only when it changed) and the audit reporter (always: it sends after a fetch).
+   */
+  private async afterServerFetch(open: OpenWorkspace): Promise<void> {
+    const recording = await readRecordDesktopActivity(join(open.dir, SERVER_STATE_DIR));
+    if (this.stale(open)) {
+      return;
+    }
+    if (recording !== open.recording) {
+      open.recording = recording;
+      this.deps.hooks?.onChanged?.(this.snapshot());
+    }
+    this.deps.hooks?.onAuditTarget?.(this.auditTargetOf(open), true);
+  }
+
+  /** Where the open workspace's desktop audit events go; `undefined` unless it is shared to a server. */
+  auditTarget(): AuditTarget | undefined {
+    const open = this.current;
+    return open === undefined || open.closing ? undefined : this.auditTargetOf(open);
+  }
+
+  private auditTargetOf(open: OpenWorkspace): AuditTarget | undefined {
+    const server = open.share?.kind === 'server' ? open.share.server : undefined;
+    if (server === undefined) {
+      return undefined;
+    }
+    return {
+      url: server.url,
+      workspaceId: server.workspaceId,
+      dir: join(open.dir, SERVER_STATE_DIR, AUDIT_OUTBOX_DIR),
+      recording: open.recording,
+    };
   }
 
   private async replayHeld(open: OpenWorkspace, batch: HeldBatch): Promise<void> {
@@ -2616,7 +2677,7 @@ export class WorkspaceService implements ProjectRouter {
           ...(entry.message !== undefined ? { message: entry.message } : {}),
         };
       }),
-      ...(shareWire(open.share) !== undefined ? { share: shareWire(open.share) } : {}),
+      ...(shareWire(open.share, open.recording) !== undefined ? { share: shareWire(open.share, open.recording) } : {}),
     };
   }
 

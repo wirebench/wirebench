@@ -116,12 +116,17 @@ const STAGING: TeamWorkspaceWire = {
   myRole: 'editor',
   source: 'grant',
   createdAt: '2026-09-25T10:00:00.000Z',
+  recordDesktopActivity: false,
 };
 const ok = <T,>(value: T) => vi.fn().mockResolvedValue({ ok: true, value });
 const shared = () =>
   ok({
     workspace: workspaceWire({
-      share: { kind: 'server', managed: true, server: { url: SERVER, workspaceId: STAGING.id, teamName: TEAM.name } },
+      share: {
+        kind: 'server',
+        managed: true,
+        server: { url: SERVER, workspaceId: STAGING.id, teamName: TEAM.name, recording: false },
+      },
     }),
   });
 

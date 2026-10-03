@@ -5137,7 +5137,18 @@ export const workspaceShareWireSchema = z.object({
   managed: z.boolean(),
   remote: z.string().optional(),
   branch: z.string().optional(),
-  server: z.object({ url: z.string(), workspaceId: z.string(), teamName: z.string().optional() }).optional(),
+  server: z
+    .object({
+      url: z.string(),
+      workspaceId: z.string(),
+      teamName: z.string().optional(),
+      /**
+       * The open workspace's last fetched head said `recordDesktopActivity`: its sends and test runs
+       * are reported to the server's audit log (desktop audit events §2.2). False for a summary.
+       */
+      recording: z.boolean(),
+    })
+    .optional(),
   autoFetchSeconds: z.number().int().min(0).max(86_400).optional(),
   commitOnSave: z.boolean().optional(),
   pushOnSave: z.boolean().optional(),
@@ -5762,6 +5773,8 @@ export const teamWorkspaceWireSchema = z.object({
   myRole: workspaceRoleWireSchema,
   source: roleSourceWireSchema,
   createdAt: z.string(),
+  /** Restates the engine's `TeamWorkspace.recordDesktopActivity` (desktop audit events §2.1). */
+  recordDesktopActivity: z.boolean(),
 });
 export type TeamWorkspaceWire = z.infer<typeof teamWorkspaceWireSchema>;
 export const accessEntryWireSchema = z.object({
@@ -5811,6 +5824,7 @@ export const teamUpdateWorkspaceRequestWireSchema = z.object({
   workspaceId: z.string(),
   name: z.string().optional(),
   defaultRole: defaultRoleWireSchema.optional(),
+  recordDesktopActivity: z.boolean().optional(),
 });
 export const teamSetAccessRequestWireSchema = z.object({
   url: z.string(),

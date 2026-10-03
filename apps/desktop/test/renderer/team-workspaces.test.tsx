@@ -16,6 +16,7 @@ const workspace = (overrides: Partial<TeamWorkspaceWire> = {}): TeamWorkspaceWir
   myRole: 'viewer',
   source: 'default',
   createdAt: '2026-09-25T10:00:00.000Z',
+  recordDesktopActivity: false,
   ...overrides,
 });
 const entry = (userId: string, overrides: Partial<AccessEntryWire> = {}): AccessEntryWire => ({

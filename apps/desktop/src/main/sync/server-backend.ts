@@ -293,6 +293,7 @@ export class ServerBackend implements SyncBackend {
     const merging = (await this.state.readMerge()) !== undefined;
     await this.state.update({
       role: answer.role,
+      recordDesktopActivity: answer.recordDesktopActivity === true,
       lastSyncAt: this.now().toISOString(),
       ...(merging
         ? {}

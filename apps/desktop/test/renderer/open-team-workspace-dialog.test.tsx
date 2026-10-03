@@ -32,6 +32,7 @@ const teamWorkspace = (id: string, name: string, myRole: TeamWorkspaceWire['myRo
   myRole,
   source: 'default',
   createdAt: '2026-09-25T10:00:00.000Z',
+  recordDesktopActivity: false,
 });
 const INTEGRATION = teamWorkspace('01J8ZK6Q3V4W5X6Y7Z8A9B0C1A', 'Integration', 'viewer');
 const STAGING = teamWorkspace('01J8ZK6Q3V4W5X6Y7Z8A9B0C1B', 'Staging', 'editor');

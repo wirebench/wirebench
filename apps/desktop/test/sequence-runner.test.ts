@@ -35,6 +35,7 @@ import {
 import type {
   Assertion,
   CallbackAssertion,
+  DesktopAuditEvent,
   CaptureSource,
   Project,
   RestSendInput,
@@ -280,6 +281,56 @@ describe('SequenceRunner', () => {
     expect(appended).toHaveLength(1);
     expect(appended[0]).toMatchObject({ ok: false, tags: ['sequence:S1', 'run:R2'] });
     expect(runner.cancel('R2')).toEqual({ cancelled: false });
+  });
+
+  it('reports one run_finished with its counts and hosts, and none of its steps one by one', async () => {
+    const { runner, deps } = await harness([LOGIN, ME], 'P-audit');
+    const events: DesktopAuditEvent[] = [];
+    const audited = {
+      ...deps,
+      requests: { ...deps.requests, audit: (event: DesktopAuditEvent) => events.push(event) },
+    };
+
+    await runner.run({ sequenceId: 'S1', runId: 'R-audit' }, audited);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: 'desktop.run_finished',
+      details: {
+        sequenceId: 'S1',
+        name: 'Checkout',
+        outcome: 'passed',
+        passed: 2,
+        failed: 0,
+        errored: 0,
+        skipped: 0,
+        hosts: [url],
+        environment: null,
+      },
+    });
+  });
+
+  it('reports a cancelled run once, as cancelled', async () => {
+    const hang = createSequenceStep('hang', { id: 'T3' });
+    const { runner, deps } = await harness([hang, ME], 'P-audit-cancel');
+    const events: DesktopAuditEvent[] = [];
+    const audited = {
+      ...deps,
+      requests: { ...deps.requests, audit: (event: DesktopAuditEvent) => events.push(event) },
+    };
+    const running = runner.run({ sequenceId: 'S1', runId: 'R-audit-cancel' }, audited);
+    await vi.waitFor(() => expect(release).toBeDefined());
+
+    runner.cancel('R-audit-cancel');
+    await running;
+    release?.();
+    release = undefined;
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: 'desktop.run_finished',
+      details: { sequenceId: 'S1', outcome: 'cancelled', errored: 1, skipped: 1 },
+    });
   });
 
   it('refuses a sequence the project does not have', async () => {

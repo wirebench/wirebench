@@ -6,6 +6,7 @@
  */
 import { tmpdir } from 'node:os';
 import {
+  composeUrl,
   createProject,
   createRunScope,
   deferredSession,
@@ -27,6 +28,7 @@ import {
 import type {
   AuthConfig,
   BaseUrlSource,
+  DesktopAuditEvent,
   ExchangeHandle,
   GrpcFailedInput,
   GrpcResolvedInput,
@@ -57,6 +59,7 @@ import type {
   WsExchange,
   WsFrameContract,
 } from '@wirebench/engine';
+import { requestSentEvent } from '../audit/desktop-events.js';
 import type { HistoryService } from '../history-service.js';
 import { containsRecordedSecret, recordSecretValue } from '../redact.js';
 import { finishScripts, scriptsFailed, scriptsForSend, sessionValuesFor, type SendScripts } from '../script-send.js';
@@ -358,6 +361,11 @@ export interface SendThroughEngineDeps extends DesktopSendDeps {
   readonly adHocScopes?: () => PropertyScopes;
   /** For tests: substitutes a WebSocket contract checker's worker script or its deadline. */
   readonly wsFrameChecker?: WorkerFrameCheckerOptions;
+  /**
+   * Told of each saved request's send that reached the wire, successful or failed (desktop audit
+   * events spec §2.2); never of a run's step, an ad-hoc send, or one that failed while prepared.
+   */
+  readonly audit?: (event: DesktopAuditEvent) => void;
 }
 
 /** What the "no such request" refusal calls a kind, as the app always has. */
@@ -481,6 +489,7 @@ async function sendReserved(
       handshakeLogged: send.handshakeLogged === true,
     };
     await record(deps, recorded, sent, full, summarised.unredacted);
+    reportSend(deps, options, projectId, located, item, () => sentAudit(sent, full));
     // After History is written, so a result never reaches it (request-assertions spec §6).
     const own = options.checkAssertions === true && 'assertions' in item.request ? (item.request.assertions ?? []) : [];
     const assertions = await editorAssertionResults(own, sent.subject);
@@ -495,6 +504,7 @@ async function sendReserved(
         handshakeLogged: send.handshakeLogged === true,
       };
       await recordFailure(deps, recorded, failed, error, { sendId, show });
+      reportSend(deps, options, projectId, located, item, () => failedAudit(item, failed));
       failed.report();
     }
     throw error;
@@ -1213,6 +1223,120 @@ async function recordFailure(
       });
       await recordWs(deps, item, summary, masks.keyParams, recorded.handshakeLogged === true, recorded.label);
       return;
+    }
+  }
+}
+
+/** What the audit log keeps of one send beyond its request: where it went and how it ended. */
+interface AuditedSend {
+  readonly method: string | null;
+  /** Unredacted: `requestSentEvent` masks it. */
+  readonly url: string;
+  readonly status: number | null;
+  readonly outcome: 'ok' | 'failed';
+  readonly durationMs: number;
+}
+
+/** The environment a send ran under, by name: the workspace's when it runs inside one, else the project's. */
+export function environmentNameOf(located: Pick<Located, 'environmentId' | 'workspace' | 'project'>): string | null {
+  const id = located.environmentId;
+  if (id === undefined) return null;
+  const environments = located.workspace?.workspace.environments ?? located.project.environments;
+  return environments.find((environment) => environment.id === id)?.name ?? null;
+}
+
+/**
+ * Hands the audit hook a saved request's send. A run's step is covered by its run's event, and an
+ * ad-hoc send belongs to no project. Nothing here may fail the send it reports.
+ */
+function reportSend(
+  deps: SendThroughEngineDeps,
+  options: SendOptions,
+  projectId: string | undefined,
+  located: Located,
+  item: SelectedRequest,
+  of: () => AuditedSend | undefined,
+): void {
+  if (deps.audit === undefined || options.run === true || projectId === undefined) return;
+  try {
+    const sent = of();
+    if (sent === undefined || sent.url.length === 0) return;
+    deps.audit(
+      requestSentEvent({
+        protocol: item.kind,
+        ...sent,
+        environment: environmentNameOf(located),
+        requestId: item.request.id,
+        requestName: item.request.name,
+        sentAt: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    console.warn(`[audit] a send could not be reported: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** A send that got its answer: the URL as it went out, the status, and the time the summary shows. */
+function sentAudit(sent: SentRequest, summary: SendSummary): AuditedSend | undefined {
+  const { exchange } = sent;
+  const durationMs = summary.durationMs;
+  switch (exchange?.kind) {
+    case 'rest': {
+      const { request, status } = exchange.rest;
+      return { method: request.method, url: request.url, status, outcome: 'ok', durationMs };
+    }
+    case 'soap': {
+      const { request, status } = exchange.soap.http;
+      return { method: request.method, url: request.url, status, outcome: 'ok', durationMs };
+    }
+    case 'grpc': {
+      const { input } = exchange;
+      const status = 'statusName' in summary ? summary.status : null;
+      return { method: `${input.service}/${input.method}`, url: input.target, status, outcome: 'ok', durationMs };
+    }
+    case 'websocket': {
+      const { ws } = exchange;
+      const opened = ws.handshake.error === undefined;
+      return {
+        method: null,
+        url: ws.url,
+        status: ws.handshake.status ?? null,
+        outcome: opened ? 'ok' : 'failed',
+        durationMs,
+      };
+    }
+    case undefined:
+      return undefined;
+  }
+}
+
+/** A send that failed on the wire (desktop audit events plan, ruling 8): no status, where it was going. */
+function failedAudit(item: SelectedRequest, failed: HeldFailure): AuditedSend | undefined {
+  const base = { status: null, outcome: 'failed', durationMs: failed.durationMs } as const;
+  switch (item.kind) {
+    case 'rest': {
+      const input = failed.input as RestSendInput | undefined;
+      if (input === undefined) return undefined;
+      const { request, settings } = input;
+      const { url } = composeUrl(input.baseUrl, request.url, request.pathParams, request.query, {
+        ...(settings.encodeUrl !== undefined ? { encode: settings.encodeUrl } : {}),
+      });
+      return { ...base, method: request.method, url };
+    }
+    case 'soap': {
+      const input = failed.input as SoapSendInput | undefined;
+      return input === undefined ? undefined : { ...base, method: 'POST', url: input.endpoint };
+    }
+    case 'grpc': {
+      const input = failed.input as GrpcFailedInput | undefined;
+      return input === undefined
+        ? undefined
+        : { ...base, method: `${input.service}/${input.method}`, url: input.target };
+    }
+    case 'websocket': {
+      // A session that failed as it was built has no transcript, and never reached the wire.
+      const exchange = failed.exchange as WsExchange | undefined;
+      return exchange === undefined ? undefined : { ...base, method: null, url: exchange.url };
     }
   }
 }
