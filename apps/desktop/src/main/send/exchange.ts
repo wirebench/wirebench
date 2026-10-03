@@ -6,6 +6,7 @@
  */
 import { tmpdir } from 'node:os';
 import {
+  applyAuth,
   composeUrl,
   createProject,
   createRunScope,
@@ -1325,9 +1326,15 @@ function failedAudit(item: SelectedRequest, failed: HeldFailure): AuditedSend | 
       const input = failed.input as RestSendInput | undefined;
       if (input === undefined) return undefined;
       const { request, settings } = input;
-      const { url } = composeUrl(input.baseUrl, request.url, request.pathParams, request.query, {
-        ...(settings.encodeUrl !== undefined ? { encode: settings.encodeUrl } : {}),
-      });
+      // Built as a successful send's URL is: the auth the input already carries (resolved values;
+      // nothing is fetched here) adds its query rows, and the audit event masks the key's value.
+      const { url } = composeUrl(
+        input.baseUrl,
+        request.url,
+        request.pathParams,
+        [...request.query, ...applyAuth(input.auth).query],
+        { ...(settings.encodeUrl !== undefined ? { encode: settings.encodeUrl } : {}) },
+      );
       return { ...base, method: request.method, url };
     }
     case 'soap': {

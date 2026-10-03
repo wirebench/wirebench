@@ -381,6 +381,34 @@ describe('SequenceRunner', () => {
     });
   });
 
+  it('reports a run that breaks off after it was cancelled as cancelled', async () => {
+    const hang = createSequenceStep('hang', { id: 'T3' });
+    const { runner, deps } = await harness([hang, ME], 'P-audit-cancel-broken');
+    const events: DesktopAuditEvent[] = [];
+    const audited = {
+      ...deps,
+      emit: (event: SequenceProgressEvent) => {
+        deps.emit(event);
+        if ('step' in event) throw new Error('the renderer went away');
+      },
+      requests: { ...deps.requests, audit: (event: DesktopAuditEvent) => events.push(event) },
+    };
+    const running = runner.run({ sequenceId: 'S1', runId: 'R-audit-cancel-broken' }, audited);
+    const failed = expect(running).rejects.toThrow('the renderer went away');
+    await vi.waitFor(() => expect(release).toBeDefined());
+
+    runner.cancel('R-audit-cancel-broken');
+    await failed;
+    release?.();
+    release = undefined;
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: 'desktop.run_finished',
+      details: { sequenceId: 'S1', outcome: 'cancelled' },
+    });
+  });
+
   it('refuses a sequence the project does not have', async () => {
     const { runner, deps } = await harness([], 'P-none');
     await expect(runner.run({ sequenceId: 'nope', runId: 'R4' }, deps)).rejects.toMatchObject({

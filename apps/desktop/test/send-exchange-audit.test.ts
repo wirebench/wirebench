@@ -105,8 +105,9 @@ describe('the audit hook of a send through the engine', () => {
       details: { protocol: 'rest', method: 'GET', status: null, outcome: 'failed', requestId: 'req-1' },
     });
     const { url } = events[0]!.details as { url: string };
-    // Where it was going, from the request as resolved: credentials are added later, so never in it.
-    expect(url).toBe('http://127.0.0.1:1/echo?x=1');
+    // Where it was going, with the auth's query rows applied as a successful send's URL has them.
+    expect(url.startsWith('http://127.0.0.1:1/echo?x=1&api_key=')).toBe(true);
+    expect(url).not.toContain(KEY);
   });
 
   it('reports nothing for a send that failed while it was prepared', async () => {

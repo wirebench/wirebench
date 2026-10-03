@@ -312,11 +312,12 @@ export class SequenceRunner {
             }),
         });
       } catch (error) {
-        // The run broke off: what it reached is still reported, as errored.
+        // The run broke off: what it reached is still reported, as errored, or as cancelled when
+        // it was cancelled first.
         reportRun(
           deps.requests,
           { sequenceId: sequence.id, name: sequence.name, startedAt, outcome: 'errored', steps: done },
-          false,
+          active.controller.signal.aborted,
           audit,
         );
         throw error;
