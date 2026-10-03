@@ -5,8 +5,8 @@
  * folding and find. It is disabled above `preferences.rest.prettyPrintMaxBytes`, because formatting a
  * very large body means parsing it twice and re-laying it out — the kind of pause that reads as a
  * hang. **Raw** shows the bytes as they arrived, line by line and virtualised, so a huge body costs
- * only the lines on screen. **Preview** renders an image, and shows a hex dump for anything else
- * binary: a response that is not text still has to be inspectable.
+ * only the lines on screen. **Preview** renders an image, HTML in a sandboxed frame, and a hex dump
+ * for anything else: a response that is not text still has to be inspectable.
  *
  * A JSON node's *Copy path* gives a JSONPath-style path, which is what the Query tab will take.
  */
@@ -21,6 +21,7 @@ import { usePreferencesStore } from '../../../state/preferences.js';
 import { formatRawBody } from '../body-tab.js';
 import { contractRange, setContractMarkers } from '../../../editor/markers.js';
 import { useContractRevealStore } from './contract.js';
+import { HtmlPreview } from './html-preview.js';
 import type * as Monaco from 'monaco-editor';
 import type { RestExchangeSummary } from '../../../../shared/wire-types.js';
 
@@ -224,7 +225,7 @@ export function BodyView({ exchange, onCopyPath, requestId }: BodyViewProps) {
 
       <div data-testid={`rest-response-view-${mode}-panel`} className="min-h-0 flex-1">
         {mode === 'preview' ? (
-          <PreviewView exchange={exchange} />
+          <PreviewView exchange={exchange} tooLarge={tooLargeToPretty} />
         ) : mode === 'raw' ? (
           <RawBody text={exchange.text} reveal={rawReveal} />
         ) : (
@@ -292,8 +293,8 @@ function RawBody({
   );
 }
 
-/** An image, or a hex dump of whatever else came back. */
-function PreviewView({ exchange }: { readonly exchange: BodyViewExchange }) {
+/** An image, HTML in a sandboxed frame, or a hex dump of whatever else came back. */
+function PreviewView({ exchange, tooLarge }: { readonly exchange: BodyViewExchange; readonly tooLarge: boolean }) {
   const [objectUrl, setObjectUrl] = useState<string | undefined>(undefined);
   const image = isImage(exchange);
   const contentType = exchange.http.headers['content-type'] ?? 'application/octet-stream';
@@ -311,6 +312,14 @@ function PreviewView({ exchange }: { readonly exchange: BodyViewExchange }) {
       setObjectUrl(undefined);
     };
   }, [image, exchange.http.bodyBase64, contentType]);
+
+  if (exchange.language === 'html') {
+    return tooLarge ? (
+      <p className="p-3 text-sm text-fg-subtle">Too large to preview. Raw shows the markup.</p>
+    ) : (
+      <HtmlPreview html={exchange.text} />
+    );
+  }
 
   if (image) {
     return (
