@@ -31,6 +31,9 @@ export const USAGE_CODES: ReadonlySet<string> = new Set([
   'send-not-allowed',
   'definition-cache-missing',
   'query-failed',
+  'operation-gone',
+  'no-endpoint',
+  'too-many-tools',
 ]);
 
 /** Any thrown value as an `OpsError`, keeping an engine error's code and details. */
