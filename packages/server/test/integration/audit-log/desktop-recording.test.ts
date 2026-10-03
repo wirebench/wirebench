@@ -36,6 +36,11 @@ describeDb('the workspace desktop-recording setting (#211)', () => {
       .recordDesktopActivity;
   const changes = () => events.filter((e) => e.action === 'workspace.desktop_recording_changed');
 
+  it('meta lists the desktop-activity capability', async () => {
+    const meta = await call<{ capabilities: string[] }>(h, undefined, 'GET', '/meta');
+    expect(meta.body.capabilities).toContain('desktop-activity');
+  });
+
   it('is off by default', async () => {
     expect(await recording()).toBe(false);
   });

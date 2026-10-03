@@ -5838,7 +5838,12 @@ export const teamAccessRefRequestWireSchema = z.object({
   userId: z.string(),
 });
 
-export const teamListResponseWireSchema = z.object({ teams: z.array(teamWireSchema), serverAdmin: z.boolean() });
+export const teamListResponseWireSchema = z.object({
+  teams: z.array(teamWireSchema),
+  serverAdmin: z.boolean(),
+  /** The server's `GET /meta` lists `desktop-activity`: it stores the workspace recording setting. */
+  desktopActivity: z.boolean(),
+});
 export type TeamListResponse = z.infer<typeof teamListResponseWireSchema>;
 export const teamResponseWireSchema = z.object({ team: teamWireSchema });
 export const teamMembersResponseWireSchema = z.object({ members: z.array(teamMemberWireSchema) });

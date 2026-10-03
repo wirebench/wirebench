@@ -20,6 +20,7 @@ interface WorkspaceRowProps {
 function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
   const updateWorkspace = useTeamStore((state) => state.updateWorkspace);
   const openAccess = useTeamStore((state) => state.openAccess);
+  const desktopActivity = useTeamStore((state) => state.desktopActivity);
   const [name, setName] = useState(workspace.name);
   const isAdmin = workspace.myRole === 'admin';
 
@@ -56,17 +57,19 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
       </div>
       {isAdmin ? (
         <>
-          <label className="flex items-center gap-1 text-xs text-fg-muted whitespace-nowrap">
-            <input
-              type="checkbox"
-              data-testid={`workspace-record-${workspace.id}`}
-              checked={workspace.recordDesktopActivity}
-              onChange={(event) => {
-                void updateWorkspace(workspace.id, { recordDesktopActivity: event.target.checked });
-              }}
-            />
-            Record desktop activity
-          </label>
+          {desktopActivity && (
+            <label className="flex items-center gap-1 text-xs text-fg-muted whitespace-nowrap">
+              <input
+                type="checkbox"
+                data-testid={`workspace-record-${workspace.id}`}
+                checked={workspace.recordDesktopActivity}
+                onChange={(event) => {
+                  void updateWorkspace(workspace.id, { recordDesktopActivity: event.target.checked });
+                }}
+              />
+              Record desktop activity
+            </label>
+          )}
           <select
             data-testid={`workspace-default-${workspace.id}`}
             aria-label={`Default role in ${workspace.name}`}
@@ -91,6 +94,7 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
           </Button>
         </>
       ) : (
+        desktopActivity &&
         workspace.recordDesktopActivity && (
           <span data-testid={`workspace-recorded-${workspace.id}`} className="text-xs text-fg-subtle">
             Desktop activity is recorded

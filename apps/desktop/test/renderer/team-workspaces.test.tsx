@@ -34,7 +34,7 @@ const ok = <T,>(value: T) => vi.fn().mockResolvedValue({ ok: true, value });
 async function openWith(spaces: TeamWorkspaceWire[], extra: Record<string, unknown> = {}) {
   const api = installWirebenchApi({
     team: {
-      list: ok({ teams: [team], serverAdmin: false }),
+      list: ok({ teams: [team], serverAdmin: false, desktopActivity: true }),
       listWorkspaces: ok({ workspaces: spaces }),
       members: ok({ members: [] }),
       ...extra,
@@ -105,6 +105,23 @@ describe('WorkspacesTab (teams-access §3.5)', () => {
     cleanup();
     useTeamStore.getState().reset();
     await openWith([workspace()]);
+    expect(screen.queryByTestId('workspace-recorded-W1')).toBeNull();
+  });
+
+  it('without the desktop-activity capability the admin sees no switch, a member no note, and nothing is sent', async () => {
+    const updateWorkspace = ok({ workspace: workspace({ myRole: 'admin' }) });
+    const list = ok({ teams: [team], serverAdmin: false, desktopActivity: false });
+    await openWith([workspace({ myRole: 'admin', source: 'grant', recordDesktopActivity: true })], {
+      list,
+      updateWorkspace,
+    });
+    expect(screen.queryByLabelText('Record desktop activity')).toBeNull();
+    expect(screen.queryByTestId('workspace-record-W1')).toBeNull();
+    expect(screen.getByTestId('workspace-default-W1')).toBeTruthy();
+    expect(updateWorkspace).not.toHaveBeenCalled();
+    cleanup();
+    useTeamStore.getState().reset();
+    await openWith([workspace({ recordDesktopActivity: true })], { list });
     expect(screen.queryByTestId('workspace-recorded-W1')).toBeNull();
   });
 

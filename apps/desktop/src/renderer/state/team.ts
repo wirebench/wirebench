@@ -25,6 +25,8 @@ export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license' | 'au
 export interface TeamState {
   readonly url: string | undefined;
   readonly serverAdmin: boolean;
+  /** The server stores the desktop-recording setting; without it the switch is hidden. */
+  readonly desktopActivity: boolean;
   readonly teams: readonly TeamWire[];
   readonly teamId: string | undefined;
   readonly tab: TeamTab;
@@ -74,6 +76,7 @@ export interface TeamStore extends TeamState {
 const INITIAL: TeamState = {
   url: undefined,
   serverAdmin: false,
+  desktopActivity: false,
   teams: [],
   teamId: undefined,
   tab: 'members',
@@ -188,6 +191,7 @@ export const useTeamStore = create<TeamStore>((set, get) => {
       set({
         teams: list.teams,
         serverAdmin: list.serverAdmin,
+        desktopActivity: list.desktopActivity === true,
         workspaces: spaces?.workspaces ?? get().workspaces,
         teamId,
       });
