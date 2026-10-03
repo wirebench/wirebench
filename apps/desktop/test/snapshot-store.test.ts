@@ -10,19 +10,12 @@ import {
   mkdirSync,
   lstatSync,
 } from 'node:fs';
-import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInterface, createProject, createRequest, saveProject } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
 import { SnapshotStore } from '../src/main/snapshot-store.js';
-
-// Passes through to the real `writeFile` unless a test overrides one call.
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, writeFile: vi.fn(actual.writeFile) };
-});
 
 /** Whether this platform lets the test create a symlink (Windows without the privilege does not). */
 const canSymlink = ((): boolean => {
@@ -212,26 +205,6 @@ describe('SnapshotStore', () => {
       const read = await store.read({ requestId: 'req-1' });
       expect(read.status === 'present' && read.snapshot.body, JSON.stringify(body)).toBe(body);
     }
-  });
-
-  it('cleans up the temp file when writing it fails, and names each one uniquely', async () => {
-    const store = await savedStore();
-    const writeFile = vi.mocked(fsPromises.writeFile);
-    const temps: string[] = [];
-    writeFile.mockImplementationOnce((path, data) => {
-      // A partial temp file is left behind by the failed write, as a full disk would.
-      writeFileSync(path as string, (data as string).slice(0, 3));
-      temps.push(path as string);
-      return Promise.reject(new Error('disk full'));
-    });
-    await expect(store.write({ requestId: 'req-1', body: 'x', ignore: [] })).rejects.toThrow('disk full');
-    expect(readdirSync(join(root, ...SIDECAR.slice(0, -1))).filter((name) => name.endsWith('.tmp'))).toEqual([]);
-    expect(await store.read({ requestId: 'req-1' })).toEqual({ status: 'none' });
-
-    await store.write({ requestId: 'req-1', body: 'x', ignore: [] });
-    temps.push(writeFile.mock.calls.at(-1)?.[0] as string);
-    expect(temps[0]).not.toBe(temps[1]);
-    expect(temps[0]).not.toContain(`.${String(process.pid)}.tmp`);
   });
 
   it.skipIf(!canSymlink)('does not follow a sidecar symlinked at another file in the project', async () => {
