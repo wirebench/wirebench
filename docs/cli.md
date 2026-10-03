@@ -384,8 +384,8 @@ committing.
 
 A request whose own assertions fail is not written, and fails the run (exit 1). A refusal errors the
 request (exit 3) and leaves the file alone: a response that holds a secret value, a golden that is
-malformed, a golden path that is not a regular file, a request file that is not on disk, or a write
-that fails. `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence` is a usage
+malformed, a golden path that is not a regular file, a request file that is not on disk, a body with
+no text form (binary), or a write that fails. `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence` is a usage
 error (exit 2).
 
 The summary ends with the counts and the files it wrote:
@@ -505,7 +505,7 @@ A report's directory is created if missing; a report that cannot be written is e
 | 0 | Every selected request passed. |
 | 1 | At least one assertion failed, or a response differs from its baseline; nothing errored. |
 | 2 | Usage or load problem: bad flag, path is no project, unknown environment or selector, `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence`, invalid `assertions:`, project format too new, report not writable. Nothing was sent. |
-| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. With `--baseline`, a golden that cannot be read or is too large (over 2 MiB) to compare; under `--require-baseline`, also a request with no golden. With `--update-baseline`, a golden that was refused (a secret in the response, a malformed golden, a golden path that is not a file) or could not be written. Takes precedence over 1. |
+| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. With `--baseline`, a golden that cannot be read or is too large (over 2 MiB) to compare; under `--require-baseline`, also a request with no golden. With `--update-baseline`, a golden that was refused (a secret in the response, a malformed golden, a golden path that is not a file, a request file not saved on disk) or could not be written. Takes precedence over 1. |
 | 130 | Interrupted (`SIGINT`); reports are flushed with what ran. |
 
 An errored request outranks a failed assertion (exit 3 over 1): a pipeline that could not reach the

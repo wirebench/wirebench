@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -16,6 +16,9 @@ import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import type { RequestResult } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
+import { createScriptChecker } from '../../../src/script/check/host.js';
+import { RequestScripting } from '../../../src/script/request-scripts.js';
+import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { testHost } from '../../helpers/send-host.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestRestServer, startTestSoapServer } from '../../helpers/index.js';
@@ -459,6 +462,37 @@ describe('runRequests updating baselines', () => {
     expect(only?.outcome).toBe('errored');
     expect(only?.baseline).toEqual({ status: 'refused', reason: 'write-failed' });
   });
+
+  it(
+    'writes nothing for a request whose post-response script errored, though it got a 200',
+    { timeout: 30_000 },
+    async () => {
+      const sandbox = createScriptSandbox();
+      const checker = createScriptChecker();
+      try {
+        const base = restRequest('ur', 0, '/text-plain-json', OK_REST);
+        const project = makeProject(
+          [],
+          [
+            {
+              ...base,
+              scripts: { api: 'wirebench', enabled: true, secrets: [], post: { text: "throw new Error('late');\n" } },
+            },
+          ],
+        );
+        const file = saveGolden(project, 'rest-ur');
+        const context = contextFor(project, { scripting: new RequestScripting({ sandbox, checker }) });
+        const [only] = (await runRequests(all(project), context, update(project))).requests;
+        expect(only?.outcome).toBe('errored');
+        expect(only?.error?.code).toBe('script-error');
+        expect(only?.baseline).toBeUndefined();
+        expect(existsSync(file)).toBe(false);
+      } finally {
+        await sandbox.dispose();
+        await checker.dispose();
+      }
+    },
+  );
 
   it('adds nothing for a request that errored on send', async () => {
     const project = makeProject([soapRequest('ux', 0, await deadUrl(), OK_SOAP)]);

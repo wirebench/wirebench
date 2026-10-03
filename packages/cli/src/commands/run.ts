@@ -36,7 +36,7 @@ import { pickEnvironment } from '../ops/environment.js';
 import { OpsError } from '../ops/errors.js';
 import { cliSendHost } from '../send-host.js';
 import { proxyFromEnv } from '../proxy-env.js';
-import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
+import { explainMissingSecret, maskerDetects } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { createCliReporter } from '../reporters/cli.js';
 import { renderHtml } from '../reporters/html.js';
@@ -238,7 +238,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
     ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
     insecure: args.insecure,
     signal: controller.signal,
-    containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
+    containsKnownSecret: maskerDetects(maskNow),
     scripting: new RequestScripting({ sandbox, checker, onSecretValue: (value) => tokens.add(value) }),
   };
   let result: RunResult;
@@ -260,7 +260,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
             ...(args.slaMs !== undefined ? { slaMs: args.slaMs } : {}),
             signal: controller.signal,
             onStepDone: (step) => output.onRequestDone(step),
-            containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
+            containsKnownSecret: maskerDetects(maskNow),
             captures: captures.source,
             onCallbackWaiting,
           })

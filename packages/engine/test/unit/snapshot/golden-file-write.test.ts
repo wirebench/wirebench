@@ -85,6 +85,21 @@ describe('writeGoldenFile', () => {
     expect(existsSync(join(folder, `${slug}.golden.yaml`))).toBe(false);
   });
 
+  it('refuses when the request folder escapes the project through a symlink', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'wb-golden-out-'));
+    try {
+      rmSync(join(dir, 'apis'), { recursive: true });
+      mkdirSync(join(outside, 'requests'), { recursive: true });
+      writeFileSync(join(outside, 'requests', `${slug}.request.yaml`), 'x\n');
+      mkdirSync(join(dir, 'apis'));
+      symlinkSync(outside, join(dir, 'apis', 'api'));
+      expect(await writeGoldenFile(dir, project, 'r1', GOLDEN)).toEqual({ status: 'refused', reason: 'unsaved' });
+      expect(readdirSync(join(outside, 'requests'))).toEqual([`${slug}.request.yaml`]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a sidecar that is a symlink and leaves its target alone', async () => {
     const target = join(dir, 'target.txt');
     writeFileSync(target, 'keep');

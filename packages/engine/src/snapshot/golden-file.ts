@@ -3,6 +3,9 @@
  * file (snapshot regression, #34). Shared by the desktop's Snapshot tab and the runner's `--baseline`
  * (#36) and `--update-baseline` (#217), so the file is read and written one way. Uses `node:fs`, so it is exported from the main entry only —
  * never from the `@wirebench/engine/snapshot` subpath, which the renderer imports.
+ *
+ * An ancestor folder swapped for a symlink between the containment check and the rename is not
+ * guarded: Node has no `openat` (#219).
  */
 
 import { randomUUID } from 'node:crypto';
@@ -156,7 +159,7 @@ export async function writeGoldenFile(
   }
   const temp = `${sidecar.file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temp, goldenText(golden), 'utf8');
+    await writeFile(temp, goldenText(golden), { encoding: 'utf8', flag: 'wx' });
     await rename(temp, sidecar.file);
   } catch (error) {
     await rm(temp, { force: true });
