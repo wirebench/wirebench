@@ -1,13 +1,13 @@
 /**
  * Verify's walk over the audit chain (issue #210, audit-chain spec §3.4). It recomputes every sealed
- * row's link from the anchor and stops at the first broken one. The whole walk, the unsealed count and
+ * row's link from the anchor, after checking the anchor's own MAC, and stops at the first broken one. The whole walk, the unsealed count and
  * the `--head` check read one `repeatable read, read only` snapshot: retention may move the anchor and
  * delete rows between two pages, and a walk across separate snapshots would then see a gap that is not
  * there. It takes no lock, so it never holds up sealing or retention.
  */
 import type { Database, Querier } from '../../context.js';
 import { readAnchor, sealedPage, type ChainLink, type SealedRow } from '../repo.js';
-import { keyId, link } from './canonical.js';
+import { anchorMacValid, keyId, link } from './canonical.js';
 
 /** Rows per page of the walk. */
 export const VERIFY_PAGE = 1000;
@@ -22,6 +22,8 @@ export interface BrokenLink {
   /** The row at fault, when there is one: a `missing` seq has none. */
   readonly id?: string;
   readonly reason: BrokenReason;
+  /** The anchor itself fails its MAC check (`edited` at the anchor's seq): it was moved or edited. */
+  readonly anchor?: true;
 }
 
 export interface VerifySummary {
@@ -92,6 +94,11 @@ export async function verifyChain(
     });
 
     // The head's stored hash, once the walk has verified the row at its seq.
+    // An anchor moved forward (the oldest rows cut off), with its head_seq lowered, or edited at all.
+    if (anchor !== undefined && !anchorMacValid(key, anchor)) {
+      return summary({ seq: anchor.seq, reason: 'edited', anchor: true });
+    }
+
     let headHash: Buffer | undefined;
     if (anchor === undefined) {
       // No anchor: nothing sealed is an empty chain, but a sealed row without one means the anchor was removed.

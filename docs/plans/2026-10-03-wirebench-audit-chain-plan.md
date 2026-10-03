@@ -15,7 +15,8 @@
 - **Config:** `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` is optional, `secret: true`, and at least 32 characters. A shorter key is a config error that does not echo the value. Add it to both the zod schema and the documented variable list in `packages/server/src/config.ts`, and regenerate the configuration reference with the existing generator (`docs:server-config`).
 - **Key:** the key never reaches the database, a log line or an error. The key id is the first 8 bytes of `SHA-256(key)`, in hex.
 - **Link:** `HMAC-SHA256(key, prev_hash(32 raw bytes) ‖ seq(8 bytes, big-endian) ‖ canonical(row))`.
-  - **Genesis:** `seq` 0, with `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")`.
+  - **Genesis:** `seq` 0, with `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")` and `head_seq` 0.
+  - **Anchor MAC** (ruled in fix round 1 of Task 4): `audit_chain_anchor.mac bytea not null` is `anchorMac(key, seq, hash, headSeq) = HMAC-SHA256(key, "wirebench-audit-chain-anchor" ‖ seq (8 bytes BE) ‖ hash (32 raw bytes) ‖ headSeq (8 bytes BE))`. Every anchor write (`insertGenesis`, the sealer's `setAnchorHead`, retention's anchor move) sets it in the same statement.
   - **Canonical row:** every column, in the spec's §3.2 order, written as `len:value`, where `len` is the value's length in UTF-8 bytes; a null is written as `-1:`.
   - **Field forms:** `at` is `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, `ip` is `abbrev(ip)` (it keeps a netmask other than /32 or /128 and prints a single host bare; ruled in fix round 1 of Task 1) and `details` is `details::text`, all rendered by Postgres.
 - **Sealer:**
@@ -25,18 +26,21 @@
   - **Claim:** `where chain_seq is null order by at, id limit 500 for update skip locked`.
   - **Head:** the highest sealed row's `(seq, hash)`, or the anchor's when nothing is sealed. The next seq is `max(head.seq, anchor.head_seq) + 1`, linked to the head's hash. A pass that seals anything sets `anchor.head_seq` to the new head seq in the same transaction (ruled in fix round 1 of Task 2).
   - **Wrong key:** refuse to seal, logging one `error` per distinct key.
+  - **Bad anchor:** after the key-id check and before touching any row, check the anchor's MAC. On a failure, refuse to seal (outcome `bad-anchor`), log one `error` per distinct anchor state (`audit chain anchor fails its check: run wirebench-server admin audit verify`), and re-arm at the idle delay.
   - **Head log line:** `audit chain sealed to <seq>:<hex>` at `info`, with `{ sealed: n }`.
   - **Shutdown:** stop from `onClose`, before the sweeper, finishing the pass under way.
 - **Retention with a key:**
   - It deletes only sealed rows: of the first 1000 sealed rows after `anchor.seq` in seq order (the limit counts rows, not seqs), those before the first with `at >= cutoff`. It reads no row outside that window.
   - Each batch is one transaction that starts with `tryLockChain`; while a sealing pass holds the lock, the batch deletes nothing and returns 0 (ruled in fix round 1 of Task 3).
-  - It moves the anchor in the same transaction, keeping its key id and `head_seq`.
+  - It moves the anchor in the same transaction, keeping its key id and `head_seq`, with its new MAC. `deleteSealedBefore(db, key, cutoff, limit)` takes the module's key.
+  - An anchor that fails its MAC check is never moved: the batch deletes nothing and returns 0.
   - Unsealed rows are never deleted.
 - **Retention without a key:** unchanged.
 - **Verify:**
   - Command: `wirebench-server admin audit verify [--head <seq>:<hex>] [--json]`.
   - **Exit codes:** 0 intact, 1 broken, 2 config error or wrong key.
   - **Reasons:** `edited`, `missing`, `out of order`. It also reports `missing` when the highest sealed seq is below `anchor.head_seq`.
+  - **Anchor MAC:** checked after the key id. A failure is `edited` at the anchor's seq with no row id, printed `anchor edited`, exit 1.
   - **Messages:** `wrong key (chain key id <id>)`, `head <seq> not found: newer rows were removed`, `head <seq> does not match`.
   - **Record:** it records `audit.verified` (`actor: system`) with `{ checked, firstSeq, lastSeq, unsealed, result, brokenSeq? }`.
   - **License:** none needed.

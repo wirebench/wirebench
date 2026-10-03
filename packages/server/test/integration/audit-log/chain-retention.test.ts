@@ -6,7 +6,7 @@
 import { fileURLToPath } from 'node:url';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
-import { genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
+import { anchorMac, keyId, link } from '../../../src/audit-log/chain/canonical.js';
 import { AUDIT_CHAIN_LOCK_CLASS, tryLockChain } from '../../../src/audit-log/chain/lock.js';
 import { AuditSealer, type SealPass } from '../../../src/audit-log/chain/sealer.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
@@ -151,15 +151,21 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     for (let n = 1; n <= 5; n++) await insert(t(n));
     expect(await seal()).toBe(5);
     const before = await hashes();
-    expect(await deleteSealedBefore(db, cutoff(3), 1000)).toBe(3);
-    expect(await readAnchor(db)).toEqual({ seq: 3n, hash: before.get(3n), keyId: keyId(KEY), headSeq: 5n });
+    expect(await deleteSealedBefore(db, KEY, cutoff(3), 1000)).toBe(3);
+    expect(await readAnchor(db)).toEqual({
+      seq: 3n,
+      hash: before.get(3n),
+      keyId: keyId(KEY),
+      headSeq: 5n,
+      mac: anchorMac(KEY, 3n, before.get(3n)!, 5n),
+    });
     expect((await rows()).map(([, seq]) => seq)).toEqual([4, 5]);
   });
 
   it('the kept rows recompute from the new anchor, and sealing links on from the kept head', async () => {
     for (let n = 1; n <= 6; n++) await insert(t(n));
     expect(await seal()).toBe(6);
-    expect(await deleteSealedBefore(db, cutoff(4), 1000)).toBe(4);
+    expect(await deleteSealedBefore(db, KEY, cutoff(4), 1000)).toBe(4);
     expect(await walk()).toEqual([5, 6]);
     await insert(t(7));
     expect(await seal()).toBe(1);
@@ -171,12 +177,12 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     await insert(t(2));
     expect(await seal()).toBe(2);
     const unsealed = await insert(t(1));
-    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(2);
+    expect(await deleteSealedBefore(db, KEY, cutoff(5), 1000)).toBe(2);
     expect(await rows()).toEqual([[unsealed, null]]);
     expect(await seal()).toBe(1);
     expect(await rows()).toEqual([[unsealed, 3]]);
     expect(await walk()).toEqual([3]);
-    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(1);
+    expect(await deleteSealedBefore(db, KEY, cutoff(5), 1000)).toBe(1);
     expect(await rows()).toEqual([]);
     expect(await readAnchor(db)).toMatchObject({ seq: 3n, headSeq: 3n });
   });
@@ -191,18 +197,18 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect(await seal()).toBe(2);
 
     // Seqs 3 and 4 are past the cutoff, but seq 2 is not: only seq 1 goes.
-    expect(await deleteSealedBefore(db, cutoff(4), 1000)).toBe(1);
+    expect(await deleteSealedBefore(db, KEY, cutoff(4), 1000)).toBe(1);
     expect(await rows()).toEqual([
       [recent, 2],
       [lateA, 3],
       [lateB, 4],
     ]);
     expect(await walk()).toEqual([2, 3, 4]);
-    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(0);
+    expect(await deleteSealedBefore(db, KEY, cutoff(5), 1000)).toBe(0);
 
     // Once seq 2 passes the cutoff, it and the rows it held back go together.
     const before = await hashes();
-    expect(await deleteSealedBefore(db, cutoff(6), 1000)).toBe(3);
+    expect(await deleteSealedBefore(db, KEY, cutoff(6), 1000)).toBe(3);
     expect(await rows()).toEqual([]);
     expect(await readAnchor(db)).toMatchObject({ seq: 4n, hash: before.get(4n), headSeq: 4n });
   });
@@ -214,7 +220,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     const before = await hashes();
     const counts: number[] = [];
     for (;;) {
-      const deleted = await deleteSealedBefore(db, cutoff(10), 3);
+      const deleted = await deleteSealedBefore(db, KEY, cutoff(10), 3);
       counts.push(deleted);
       if (deleted === 0) break;
       const anchor = await readAnchor(db);
@@ -226,21 +232,35 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect(await readAnchor(db)).toMatchObject({ seq: 7n, hash: before.get(7n), headSeq: 8n });
   });
 
+  it('deletes nothing and leaves the anchor while its MAC fails the check, or was made with another key', async () => {
+    for (let n = 1; n <= 4; n++) await insert(t(n));
+    expect(await seal()).toBe(4);
+    await db.query('update audit_chain_anchor set head_seq = 9');
+    const tampered = await readAnchor(db);
+    expect(await deleteSealedBefore(db, KEY, cutoff(10), 1000)).toBe(0);
+    expect(await readAnchor(db)).toEqual(tampered);
+    expect(await rows()).toHaveLength(4);
+    await db.query('update audit_chain_anchor set head_seq = 4');
+    expect(await deleteSealedBefore(db, 'another-chain-key-9876543210zyxwvuts', cutoff(10), 1000)).toBe(0);
+    expect(await rows()).toHaveLength(4);
+    expect(await deleteSealedBefore(db, KEY, cutoff(10), 1000)).toBe(4);
+  });
+
   it('deletes nothing without an anchor, with nothing sealed, or with nothing sealed past the cutoff', async () => {
     await insert(t(1));
-    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(0);
+    expect(await deleteSealedBefore(db, KEY, cutoff(5), 1000)).toBe(0);
     expect(await readAnchor(db)).toBeUndefined();
     expect(await rows()).toHaveLength(1);
 
     // An anchor, but no sealed row: the old row is unsealed.
-    await insertGenesis(db, genesisHash(KEY), keyId(KEY));
-    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(0);
+    await insertGenesis(db, KEY);
+    expect(await deleteSealedBefore(db, KEY, cutoff(5), 1000)).toBe(0);
     expect(await rows()).toHaveLength(1);
 
     // Sealed, but younger than the cutoff.
     expect(await seal()).toBe(1);
     const anchor = await readAnchor(db);
-    expect(await deleteSealedBefore(db, cutoff(0), 1000)).toBe(0);
+    expect(await deleteSealedBefore(db, KEY, cutoff(0), 1000)).toBe(0);
     expect(await readAnchor(db)).toEqual(anchor);
     expect(await rows()).toHaveLength(1);
   });
@@ -249,8 +269,14 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     for (let n = 1; n <= 4; n++) await insert(t(n));
     expect(await seal()).toBe(4);
     const before = await hashes();
-    expect(await deleteSealedBefore(db, cutoff(10), 1000)).toBe(4);
-    expect(await readAnchor(db)).toEqual({ seq: 4n, hash: before.get(4n), keyId: keyId(KEY), headSeq: 4n });
+    expect(await deleteSealedBefore(db, KEY, cutoff(10), 1000)).toBe(4);
+    expect(await readAnchor(db)).toEqual({
+      seq: 4n,
+      hash: before.get(4n),
+      keyId: keyId(KEY),
+      headSeq: 4n,
+      mac: anchorMac(KEY, 4n, before.get(4n)!, 4n),
+    });
     const next = await insert(t(20));
     expect(await seal()).toBe(1);
     expect(await rows()).toEqual([[next, 5]]);
@@ -273,11 +299,11 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
       [AUDIT_CHAIN_LOCK_CLASS],
     );
     expect(granted.rows).toHaveLength(1);
-    expect(await deleteSealedBefore(db, cutoff(10), 1000)).toBe(0);
+    expect(await deleteSealedBefore(db, KEY, cutoff(10), 1000)).toBe(0);
     expect((await rows()).map(([, seq]) => seq)).toEqual([1, 2, 3, null, null, null]);
     held.release();
     expect((await pass).sealed).toBe(3);
-    expect(await deleteSealedBefore(db, cutoff(10), 1000)).toBe(6);
+    expect(await deleteSealedBefore(db, KEY, cutoff(10), 1000)).toBe(6);
     expect(await readAnchor(db)).toMatchObject({ seq: 6n, headSeq: 6n });
     await insert(t(20));
     expect(await seal()).toBe(1);
@@ -289,7 +315,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect(await seal()).toBe(3);
     await insert(t(4));
     const held = gated(db, /pg_try_advisory_xact_lock/);
-    const batch = deleteSealedBefore(held.db, cutoff(2), 1000);
+    const batch = deleteSealedBefore(held.db, KEY, cutoff(2), 1000);
     await held.entered;
     expect(await sealer().runOnce()).toMatchObject({ outcome: 'busy-elsewhere', sealed: 0 });
     held.release();
@@ -320,13 +346,13 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     const s = sealer({ batchSize: 4 });
     const outcomes: SealPass['outcome'][] = [];
     for (let round = 0; round < 20; round++) {
-      const [pass] = await Promise.all([s.runOnce(), deleteSealedBefore(db, cutoff(5), 3)]);
+      const [pass] = await Promise.all([s.runOnce(), deleteSealedBefore(db, KEY, cutoff(5), 3)]);
       outcomes.push(pass.outcome);
     }
     expect(outcomes).not.toContain('failed');
     // Then a closing pass and sweep, one at a time, settle whatever the race left.
     while ((await seal()) > 0);
-    while ((await deleteSealedBefore(db, cutoff(5), 3)) > 0);
+    while ((await deleteSealedBefore(db, KEY, cutoff(5), 3)) > 0);
     expect(await readAnchor(db)).toMatchObject({ seq: 18n, headSeq: 30n });
     expect(await walk()).toEqual(Array.from({ length: 12 }, (_, i) => i + 19));
     expect((await rows()).every(([, seq]) => seq !== null)).toBe(true);
@@ -336,7 +362,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     await insert(t(1));
     const atCutoff = await insert(t(2));
     expect(await seal()).toBe(2);
-    expect(await deleteSealedBefore(db, new Date(t(2)), 1000)).toBe(1);
+    expect(await deleteSealedBefore(db, KEY, new Date(t(2)), 1000)).toBe(1);
     expect(await rows()).toEqual([[atCutoff, 2]]);
   });
 
@@ -347,10 +373,10 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     // Seqs 1 to 7 deleted while the key was unset: a gap wider than the batch limit of 3.
     await db.query('delete from audit_events where chain_seq <= 7');
     const before = await hashes();
-    expect(await deleteSealedBefore(db, cutoff(20), 3)).toBe(3);
+    expect(await deleteSealedBefore(db, KEY, cutoff(20), 3)).toBe(3);
     expect(await readAnchor(db)).toMatchObject({ seq: 10n, hash: before.get(10n) });
     expect(await walk()).toEqual([11]);
-    expect(await deleteSealedBefore(db, cutoff(20), 3)).toBe(0);
+    expect(await deleteSealedBefore(db, KEY, cutoff(20), 3)).toBe(0);
   });
 
   it('a young row deleted from outside just above old rows leaves its gap visible above the anchor', async () => {
@@ -360,7 +386,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect(await seal()).toBe(5);
     await db.query('delete from audit_events where chain_seq = 4');
     const before = await hashes();
-    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(3);
+    expect(await deleteSealedBefore(db, KEY, cutoff(5), 1000)).toBe(3);
     // The anchor stops at the last old row, below the gap, so a walk still finds seq 4 missing.
     expect(await readAnchor(db)).toMatchObject({ seq: 3n, hash: before.get(3n) });
     expect((await sealedPage(db, 3n, 10)).map((row) => row.seq)).toEqual([5n]);

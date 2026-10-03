@@ -53,7 +53,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
         deleteBefore:
           key === undefined
             ? deleteAuditEventsBefore
-            : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, cutoff, limit),
+            : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, key, cutoff, limit),
         label: 'audit sweep',
       });
       sweeper.start();

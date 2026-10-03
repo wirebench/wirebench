@@ -1,7 +1,7 @@
 /** The append-only `audit_events` table (audit-log spec §4.2). Raw SQL over `Querier`, like every module's repo. */
 import type { AuditDetails, AuditEvent, AuditTargetKind } from '@wirebench/engine';
 import type { AuditInput, Database, Querier } from '../context.js';
-import type { CanonicalRow } from './chain/canonical.js';
+import { anchorMac, anchorMacValid, genesisHash, keyId, type CanonicalRow } from './chain/canonical.js';
 import { tryLockChain } from './chain/lock.js';
 import type { Cursor } from './cursor.js';
 
@@ -228,6 +228,8 @@ export interface ChainAnchor extends ChainLink {
   readonly keyId: string;
   /** Never goes back: the next seq is above it even when every sealed row was removed from outside. */
   readonly headSeq: bigint;
+  /** `anchorMac(key, seq, hash, headSeq)`: set by every write, in the same statement. */
+  readonly mac: Buffer;
 }
 
 /** A sealed row as verify walks it. */
@@ -242,28 +244,39 @@ const seqOf = (value: string): bigint => BigInt(value);
 
 export async function readAnchor(db: Querier): Promise<ChainAnchor | undefined> {
   const row = (
-    await db.query<{ seq: string; hash: Buffer; key_id: string; head_seq: string }>(
-      'select seq::text as seq, hash, key_id, head_seq::text as head_seq from audit_chain_anchor',
+    await db.query<{ seq: string; hash: Buffer; key_id: string; head_seq: string; mac: Buffer }>(
+      'select seq::text as seq, hash, key_id, head_seq::text as head_seq, mac from audit_chain_anchor',
     )
   ).rows[0];
   return row === undefined
     ? undefined
-    : { seq: seqOf(row.seq), hash: row.hash, keyId: row.key_id, headSeq: seqOf(row.head_seq) };
-}
-
-/** Records the head after a sealing pass, in its transaction; `greatest` keeps it from ever going back. */
-export async function setAnchorHead(tx: Querier, headSeq: bigint): Promise<void> {
-  await tx.query('update audit_chain_anchor set head_seq = greatest(head_seq, $1::bigint)', [headSeq.toString()]);
+    : { seq: seqOf(row.seq), hash: row.hash, keyId: row.key_id, headSeq: seqOf(row.head_seq), mac: row.mac };
 }
 
 /**
- * Inserts the genesis anchor (`seq` 0) unless an anchor exists, and returns the anchor now in place.
- * The sealer calls it under its advisory lock, so the existing anchor wins only a race it cannot lose.
+ * Records the head after a sealing pass, in its transaction and under the chain's lock, with the
+ * anchor's new MAC in the same statement. `anchor` is the one the pass read (and checked); the head
+ * never goes back below its `headSeq`.
  */
-export async function insertGenesis(tx: Querier, hash: Buffer, keyId: string): Promise<ChainAnchor> {
+export async function setAnchorHead(tx: Querier, key: string, anchor: ChainAnchor, headSeq: bigint): Promise<void> {
+  const next = headSeq > anchor.headSeq ? headSeq : anchor.headSeq;
+  await tx.query('update audit_chain_anchor set head_seq = $1, mac = $2', [
+    next.toString(),
+    anchorMac(key, anchor.seq, anchor.hash, next),
+  ]);
+}
+
+/**
+ * Inserts this key's genesis anchor (`seq` 0, `head_seq` 0, with its MAC) unless an anchor exists, and
+ * returns the anchor now in place. The sealer calls it under its advisory lock, so the existing anchor
+ * wins only a race it cannot lose.
+ */
+export async function insertGenesis(tx: Querier, key: string): Promise<ChainAnchor> {
+  const hash = genesisHash(key);
   await tx.query(
-    'insert into audit_chain_anchor (seq, hash, key_id) values (0, $1, $2) on conflict (only_row) do nothing',
-    [hash, keyId],
+    `insert into audit_chain_anchor (seq, hash, key_id, head_seq, mac) values (0, $1, $2, 0, $3)
+     on conflict (only_row) do nothing`,
+    [hash, keyId(key), anchorMac(key, 0n, hash, 0n)],
   );
   const anchor = await readAnchor(tx);
   /* c8 ignore next -- the row was just inserted or already there */
@@ -315,20 +328,22 @@ export async function sealedPage(db: Querier, afterSeq: bigint, limit: number): 
  * chain only, so the kept chain stays gapless and verifies from the moved anchor. A batch reads the
  * first `limit` sealed rows after the anchor, in seq order, and deletes them up to the first one not
  * older than `cutoff` (`S`, found within that window only); the anchor moves to the last deleted row's
- * `(seq, hash)` in the same transaction, keeping its key id and `head_seq`. The limit counts rows, not
+ * `(seq, hash)` in the same transaction, keeping its key id and `head_seq`, with its new MAC. The limit counts rows, not
  * seqs, so seqs already missing past the anchor (rows deleted while the key was unset) never stall it.
  * Unsealed rows are never touched: they go once sealed and past the cutoff. A late row (sealed after a
  * row with a newer `at`) waits behind that row: a little extra storage, never a gap.
  *
  * It only tries the chain's lock: while a sealing pass holds it, the batch deletes nothing and the sweep
- * resumes next time, so a long backlog sweep never starves the sealer. Returns how many rows went: 0
- * with the lock busy, no anchor, or nothing to delete.
+ * resumes next time, so a long backlog sweep never starves the sealer. An anchor whose MAC fails this
+ * key's check (edited, or built by another key) is never moved: the batch deletes nothing, and verify
+ * reports it. Returns how many rows went: 0 with the lock busy, no anchor, a failing anchor, or nothing
+ * to delete.
  */
-export async function deleteSealedBefore(db: Database, cutoff: Date, limit: number): Promise<number> {
+export async function deleteSealedBefore(db: Database, key: string, cutoff: Date, limit: number): Promise<number> {
   return db.transaction(async (tx) => {
     if (!(await tryLockChain(tx))) return 0;
     const anchor = await readAnchor(tx);
-    if (anchor === undefined) return 0;
+    if (anchor === undefined || !anchorMacValid(key, anchor)) return 0;
     const window = await tx.query<{ seq: string; hash: Buffer; young: boolean }>(
       `select chain_seq::text as seq, chain_hash as hash, at >= $2 as young from audit_events
        where chain_seq > $1 order by chain_seq limit $3`,
@@ -342,7 +357,11 @@ export async function deleteSealedBefore(db: Database, cutoff: Date, limit: numb
       anchor.seq.toString(),
       last.seq,
     ]);
-    await tx.query('update audit_chain_anchor set seq = $1, hash = $2', [last.seq, last.hash]);
+    await tx.query('update audit_chain_anchor set seq = $1, hash = $2, mac = $3', [
+      last.seq,
+      last.hash,
+      anchorMac(key, seqOf(last.seq), last.hash, anchor.headSeq),
+    ]);
     return deleted.rowCount ?? 0;
   });
 }

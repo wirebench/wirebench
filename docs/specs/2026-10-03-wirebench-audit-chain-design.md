@@ -47,7 +47,8 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 - **Sealed row:** an `audit_events` row with `chain_seq` and `chain_hash` set. An unsealed row has both null.
 - **Sequence number (`chain_seq`):** the row's place in the chain, given at sealing and gapless from the anchor. The chain is ordered by sequence number, not by `at`: a row whose transaction commits late gets a later number than rows with a later `at`.
 - **Link (`chain_hash`):** `HMAC-SHA256(key, prev_hash ‖ seq ‖ canonical row)`, where `prev_hash` is the hash of the row with `seq − 1`, or the anchor's hash.
-- **Anchor:** the chain's starting point. It holds the sequence number and hash just before the oldest kept row, the key's id, and `head_seq`: the highest sequence number ever sealed, which never goes back. At first sealing it is the genesis: `seq` 0 and `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")`.
+- **Anchor:** the chain's starting point. It holds the sequence number and hash just before the oldest kept row, the key's id, and `head_seq`: the highest sequence number ever sealed, which never goes back. At first sealing it is the genesis: `seq` 0, `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")` and `head_seq` 0.
+- **Anchor MAC (`mac`):** `HMAC-SHA256(key, "wirebench-audit-chain-anchor" ‖ seq ‖ hash ‖ head_seq)`, each sequence number as 8 bytes big-endian and the hash as its 32 raw bytes. Every write of the anchor sets it in the same statement, so the anchor cannot be moved or have its `head_seq` changed without the key.
 - **Head:** the highest sealed `(seq, hash)`.
 - **Key id:** the first 8 bytes of `SHA-256(key)`, in hex. It tells a wrong key apart from a tampered chain. It is not secret.
 
@@ -67,11 +68,12 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 **Each pass is one transaction:**
 
 1. `select pg_try_advisory_xact_lock(<audit chain lock class>, hashtext(current_schema()))`. The lock is per schema, so servers on different schemas of one database never share it. If another instance's pass or a retention batch holds the lock, the pass ends as `busy-elsewhere` and the sealer tries again at the idle delay.
-2. Read the anchor; if there is none, insert the genesis anchor with this key's id.
+2. Read the anchor; if there is none, insert the genesis anchor with this key's id and its MAC.
 3. Check the key. If the anchor's key id differs from this key's id, refuse to seal. Log one `error` (`audit chain key does not match the chain's key id <id>`), re-arm at the idle delay, and log again only after the key changes and fails again. Inserts are never affected.
+   Then check the anchor's MAC, before touching any row. If it fails, refuse to seal, so an edited anchor is never re-signed by sealing past it. Log one `error` per distinct anchor state (`audit chain anchor fails its check: run wirebench-server admin audit verify`) and re-arm at the idle delay.
 4. The head is the highest sealed row's `(chain_seq, chain_hash)`, or the anchor's `(seq, hash)` when nothing is sealed. The next sequence number is `max(head.seq, anchor.head_seq) + 1`, linked to the head's hash. So after sealed rows were deleted from outside (the newest, or all of them), sealing resumes past the gap and never reuses a number.
 5. Claim up to **500** unsealed rows: `where chain_seq is null order by at, id limit 500 for update skip locked`. Uncommitted rows are invisible, so only committed rows are sealed.
-6. For each row in that order: `seq` is the next sequence number (step 4), then `hash = HMAC(key, head.hash ‖ seq ‖ canonical(row))`. Update the row and advance the head. If the batch sealed anything, set `anchor.head_seq` to the new head's sequence number, in the same transaction.
+6. For each row in that order: `seq` is the next sequence number (step 4), then `hash = HMAC(key, head.hash ‖ seq ‖ canonical(row))`. Update the row and advance the head. If the batch sealed anything, set `anchor.head_seq` to the new head's sequence number, and the anchor's MAC, in one statement of the same transaction.
 7. Commit. If the batch sealed anything, log at `info`: `audit chain sealed to <seq>:<hash hex>` with `{ sealed: n }`.
 
 **Canonical row:**
@@ -102,7 +104,8 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 - Each batch is one transaction that first tries the chain's lock (§3.2 step 1, the same per-schema lock). If a sealing pass holds it, the batch deletes nothing and the sweep resumes at its next run, so a long backlog sweep never starves the sealer.
 - The batch takes the first **1000** sealed rows after `anchor.seq`, in `chain_seq` order. The limit counts rows, not sequence numbers, so sequence numbers already missing past the anchor never stall retention.
 - Within that window it finds `S`, the highest sequence number whose row and every row before it are older than the cutoff: `S` is just before the first row with `at >= cutoff`, or the window's last row when none is that new. A row whose `at` equals the cutoff is kept. Rows outside the window are not read.
-- It deletes the window's rows up to `S`, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)`. The key id and `head_seq` stay.
+- Before deleting, it checks the anchor's MAC with the module's key. If it fails (an edited anchor, or one built with another key), the batch deletes nothing and moves nothing; verify reports the anchor.
+- It deletes the window's rows up to `S`, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)` and sets the anchor's new MAC in the same statement. The key id and `head_seq` stay.
 - Unsealed rows past the cutoff stay until they are sealed.
 - A row that commits late with an old `at` can hold back deletion of the rows sealed after it until it, too, is past the cutoff. That costs a little extra storage, never a gap.
 
@@ -118,9 +121,10 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 
 **The walk:**
 - It reads the anchor and compares key ids. A mismatch is reported as `wrong key (chain key id <id>)`, exit 2.
+- It checks the anchor's MAC. A failure is broken: `edited` at the anchor's sequence number, with no row id, printed as `anchor edited`, exit 1. A moved anchor (the oldest rows cut off), a changed `head_seq` and an edited anchor hash all land here. With no anchor but sealed rows, the anchor was removed: `edited` at the first row.
 - It walks the sealed rows in `chain_seq` order, 1000 at a time, recomputing each link from the anchor.
 - It stops at the first broken link and reports its sequence number, the row id when there is one, and the reason:
-  - `edited`: the hash does not match the row's content. An edited sequence number or hash, a swapped row and an edited anchor all show up here or as a gap.
+  - `edited`: the hash does not match the row's content. An edited sequence number or hash, a swapped row and a forged row all show up here or as a gap.
   - `missing`: a sequence number is skipped. A deleted row lands here. It also reports `missing` when the highest sealed sequence number is below `anchor.head_seq`: the newest sealed rows, or all of them, were removed.
   - `out of order`: a sequence number repeats or goes backwards.
 
@@ -160,7 +164,8 @@ create table audit_chain_anchor (
   seq      bigint not null,
   hash     bytea  not null,
   key_id   text   not null,
-  head_seq bigint not null default 0
+  head_seq bigint not null default 0,
+  mac      bytea  not null
 );
 ```
 
@@ -186,10 +191,14 @@ Existing rows start unsealed. With a key set they are sealed oldest first on the
 - The key id is a truncated hash of the key, so revealing it does not help forge links.
 - A database-only attacker (assumption 1) cannot:
   - edit, delete or reorder a sealed row without verify catching it;
-  - delete the newest sealed rows without a `--head` check from the log catching it;
-  - move or edit the anchor without verify catching it, because the first kept row's link no longer matches.
-- They can delete or edit rows in the unsealed window. The window is documented.
-- They can also delete everything, chain and anchor together. Verify then reports an empty chain, which `--head` catches.
+  - delete the newest sealed rows without verify catching it: the anchor's `head_seq` remembers the highest sequence number sealed, and a `--head` check from the log catches it too;
+  - edit, move or replace the anchor without verify catching it, because the anchor carries a keyed MAC. That stops:
+    - cutting off the oldest rows and copying a later row's `(seq, hash)` into the anchor, up to deleting every row and setting the anchor to the head;
+    - lowering `head_seq` to hide deleted newest rows, or to have the sealer re-seal edited rows at the same sequence numbers: the sealer refuses an anchor that fails its MAC.
+- What remains:
+  - **Rollback.** They can put back an earlier genuine anchor, with its MAC, and delete every row sealed since. While no retention has run since that anchor was written, the rolled-back chain is internally consistent. A `--head` check from the log catches it.
+  - **Rows forged before sealing.** The chain proves that nothing changed after sealing, not who wrote a row: a row inserted directly into the table is sealed like any other. They can also delete or edit rows in the unsealed window. The window is documented.
+  - **Everything deleted.** They can delete every row and the anchor together. Verify then reports an empty chain, which `--head` catches.
 
 ## 7. Testing
 
@@ -203,7 +212,7 @@ Existing rows start unsealed. With a key set they are sealed oldest first on the
     - a wrong key is refused with one error log, and nothing is sealed;
     - with no key, nothing is sealed.
   - Verify:
-    - it reports `edited` for an edited row, a changed `details` key and an edited anchor;
+    - it reports `edited` for an edited row and a changed `details` key, and `anchor edited` for a moved or edited anchor or a changed `head_seq`;
     - it reports `missing` for a deleted middle row;
     - it reports a broken link when two rows' sequence numbers are swapped;
     - `--head` reports newer rows removed when the tail is deleted;

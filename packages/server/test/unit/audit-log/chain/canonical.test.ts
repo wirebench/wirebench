@@ -1,7 +1,14 @@
 import { createHash, createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { FIXED_ROW } from '../../../helpers/audit-chain.js';
-import { canonicalBytes, genesisHash, keyId, link } from '../../../../src/audit-log/chain/canonical.js';
+import {
+  anchorMac,
+  anchorMacValid,
+  canonicalBytes,
+  genesisHash,
+  keyId,
+  link,
+} from '../../../../src/audit-log/chain/canonical.js';
 
 const KEY = 'test-chain-key-0123456789abcdefghij';
 
@@ -25,6 +32,7 @@ const EXPECTED_CANONICAL =
 // Computed once with this implementation, checked by hand below, then pinned.
 const GENESIS_HEX = '800f54c462b8ff5b798c1a7bd0e8997b1c9c15230670e49855266f4c88f5e75b';
 const LINK_1_HEX = '9487d760a9b39573e9f4df0f487465eada2baa99fed40268180a66b6a6ad9a40';
+const ANCHOR_MAC_HEX = 'c841f230a3c6c48ddca456ce150b50241f90663f0d63041ae77bf1ac19dc3eb4';
 
 describe('the audit chain link (audit-chain spec §2, §3.2)', () => {
   it('writes every column in order as len:value in UTF-8 bytes, a null as -1:', () => {
@@ -81,5 +89,33 @@ describe('the audit chain link (audit-chain spec §2, §3.2)', () => {
     expect(keyId(KEY)).toBe(createHash('sha256').update(KEY).digest('hex').slice(0, 16));
     expect(keyId(KEY)).toBe('900b9d516df2388a');
     expect(keyId(`${KEY}x`)).not.toBe(keyId(KEY));
+  });
+
+  it('pins the anchor MAC: HMAC-SHA256(key, "wirebench-audit-chain-anchor" ‖ seq ‖ hash ‖ head_seq)', () => {
+    const hash = Buffer.from(LINK_1_HEX, 'hex');
+    const message = Buffer.concat([
+      Buffer.from('wirebench-audit-chain-anchor', 'utf8'),
+      Buffer.from([0, 0, 0, 0, 0, 0, 0, 3]),
+      hash,
+      Buffer.from([0, 0, 0, 0, 0, 0, 0, 7]),
+    ]);
+    expect(createHmac('sha256', Buffer.from(KEY, 'utf8')).update(message).digest('hex')).toBe(ANCHOR_MAC_HEX);
+    expect(anchorMac(KEY, 3n, hash, 7n).toString('hex')).toBe(ANCHOR_MAC_HEX);
+  });
+
+  it('the anchor MAC changes with the key and every field, and the check refuses anything else', () => {
+    const hash = Buffer.from(LINK_1_HEX, 'hex');
+    const mac = anchorMac(KEY, 3n, hash, 7n);
+    expect(anchorMacValid(KEY, { seq: 3n, hash, headSeq: 7n, mac })).toBe(true);
+    expect(anchorMacValid(`${KEY}x`, { seq: 3n, hash, headSeq: 7n, mac })).toBe(false);
+    expect(anchorMacValid(KEY, { seq: 4n, hash, headSeq: 7n, mac })).toBe(false);
+    expect(anchorMacValid(KEY, { seq: 3n, hash: genesisHash(KEY), headSeq: 7n, mac })).toBe(false);
+    expect(anchorMacValid(KEY, { seq: 3n, hash, headSeq: 6n, mac })).toBe(false);
+    expect(anchorMacValid(KEY, { seq: 3n, hash, headSeq: 7n, mac: mac.subarray(0, 31) })).toBe(false);
+    // Malformed fields fail the check instead of throwing.
+    expect(anchorMacValid(KEY, { seq: 3n, hash: Buffer.alloc(31), headSeq: 7n, mac })).toBe(false);
+    expect(anchorMacValid(KEY, { seq: -1n, hash, headSeq: 7n, mac })).toBe(false);
+    expect(() => anchorMac(KEY, 0n, Buffer.alloc(33), 0n)).toThrow(RangeError);
+    expect(() => anchorMac(KEY, 0n, hash, 2n ** 63n)).toThrow(RangeError);
   });
 });

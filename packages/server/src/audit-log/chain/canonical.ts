@@ -3,7 +3,7 @@
  * a row, so the key stays in this process and never reaches the database. `CANONICAL_COLUMNS` in
  * `repo.ts` renders those texts for both the sealer and verify.
  */
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 /** One `audit_events` row as Postgres renders it for the chain; `null` where the column is null. */
 export interface CanonicalRow {
@@ -47,8 +47,16 @@ export const CANONICAL_FIELDS = [
 ] as const satisfies readonly (keyof CanonicalRow)[];
 
 const GENESIS_MESSAGE = 'wirebench-audit-chain-genesis';
+const ANCHOR_MESSAGE = 'wirebench-audit-chain-anchor';
 const HASH_BYTES = 32;
 const MAX_SEQ = 2n ** 63n - 1n;
+
+/** A sequence number as 8 bytes, big-endian. */
+const seqBytes = (seq: bigint): Buffer => {
+  const bytes = Buffer.alloc(8);
+  bytes.writeBigInt64BE(seq);
+  return bytes;
+};
 
 /** The first 8 bytes of `SHA-256(key)`, in hex: tells a wrong key from a tampered chain. Not secret. */
 export function keyId(key: string): string {
@@ -79,7 +87,38 @@ export function canonicalBytes(row: CanonicalRow): Buffer {
 export function link(key: string, prevHash: Buffer, seq: bigint, row: CanonicalRow): Buffer {
   if (prevHash.length !== HASH_BYTES) throw new RangeError(`a previous hash is ${String(HASH_BYTES)} bytes`);
   if (seq < 1n || seq > MAX_SEQ) throw new RangeError('a sealed row has a sequence number from 1 to 2^63 - 1');
-  const seqBytes = Buffer.alloc(8);
-  seqBytes.writeBigInt64BE(seq);
-  return createHmac('sha256', key).update(prevHash).update(seqBytes).update(canonicalBytes(row)).digest();
+  return createHmac('sha256', key).update(prevHash).update(seqBytes(seq)).update(canonicalBytes(row)).digest();
+}
+
+/**
+ * The anchor's MAC: `HMAC-SHA256(key, "wirebench-audit-chain-anchor" ‖ seq ‖ hash ‖ head_seq)`, each seq
+ * as 8 bytes big-endian and the hash as its 32 raw bytes. Without the key nobody can move the anchor
+ * forward (truncating the chain's oldest end), lower `head_seq` or edit the anchor's hash.
+ */
+export function anchorMac(key: string, seq: bigint, hash: Buffer, headSeq: bigint): Buffer {
+  if (hash.length !== HASH_BYTES) throw new RangeError(`an anchor hash is ${String(HASH_BYTES)} bytes`);
+  if (seq < 0n || seq > MAX_SEQ || headSeq < 0n || headSeq > MAX_SEQ) {
+    throw new RangeError("an anchor's sequence numbers are from 0 to 2^63 - 1");
+  }
+  return createHmac('sha256', key)
+    .update(ANCHOR_MESSAGE, 'utf8')
+    .update(seqBytes(seq))
+    .update(hash)
+    .update(seqBytes(headSeq))
+    .digest();
+}
+
+/** True when the anchor's stored MAC is this key's MAC of its fields; false for any edited or malformed field. */
+export function anchorMacValid(
+  key: string,
+  anchor: { readonly seq: bigint; readonly hash: Buffer; readonly headSeq: bigint; readonly mac: Buffer },
+): boolean {
+  let expected: Buffer;
+  try {
+    expected = anchorMac(key, anchor.seq, anchor.hash, anchor.headSeq);
+  } catch (error) {
+    if (error instanceof RangeError) return false;
+    throw error;
+  }
+  return Buffer.isBuffer(anchor.mac) && anchor.mac.length === expected.length && timingSafeEqual(anchor.mac, expected);
 }

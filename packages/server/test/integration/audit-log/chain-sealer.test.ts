@@ -6,7 +6,7 @@
 import { fileURLToPath } from 'node:url';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
+import { anchorMac, genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
 import {
   AuditSealer,
   backoff,
@@ -161,7 +161,13 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
       await insert(db, '01J9ZK3V8Q00000000000000A0', '2026-10-03T00:00:03Z');
       expect(await readAnchor(db)).toBeUndefined();
       expect(await sealer().runOnce()).toEqual({ outcome: 'sealed', sealed: 4, nextDelayMs: SEAL_BUSY_MS });
-      expect(await readAnchor(db)).toEqual({ seq: 0n, hash: genesisHash(KEY), keyId: keyId(KEY), headSeq: 4n });
+      expect(await readAnchor(db)).toEqual({
+        seq: 0n,
+        hash: genesisHash(KEY),
+        keyId: keyId(KEY),
+        headSeq: 4n,
+        mac: anchorMac(KEY, 0n, genesisHash(KEY), 4n),
+      });
       expect(await rows()).toEqual([
         ['01J9ZK3V8Q00000000000000A1', 1],
         ['01J9ZK3V8Q00000000000000B2', 2],
@@ -250,7 +256,7 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     });
 
     it('an anchor with a different key id leaves every row unsealed and logs one error, without the key', async () => {
-      await insertGenesis(db, genesisHash(OTHER_KEY), keyId(OTHER_KEY));
+      await insertGenesis(db, OTHER_KEY);
       await record(db, event(1));
       await record(db, event(2));
       const { lines, of, log } = recordingLog();
@@ -271,7 +277,31 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
         hash: genesisHash(OTHER_KEY),
         keyId: keyId(OTHER_KEY),
         headSeq: 0n,
+        mac: anchorMac(OTHER_KEY, 0n, genesisHash(OTHER_KEY), 0n),
       });
+    });
+
+    it('an anchor failing its MAC leaves every row unsealed and logs one error per anchor state', async () => {
+      for (let n = 1; n <= 3; n++) await record(db, event(n));
+      expect((await sealer().runOnce()).sealed).toBe(3);
+      await db.query('update audit_chain_anchor set head_seq = 1');
+      await record(db, event(4));
+      const { lines, of, log } = recordingLog();
+      const s = sealer({ log });
+      expect(await s.runOnce()).toEqual({ outcome: 'bad-anchor', sealed: 0, nextDelayMs: SEAL_IDLE_MS });
+      expect(of('error')).toHaveLength(1);
+      expect(of('error')[0]!.args).toEqual([
+        { anchorSeq: '0' },
+        'audit chain anchor fails its check: run wirebench-server admin audit verify',
+      ]);
+      expect((await s.runOnce()).outcome).toBe('bad-anchor');
+      expect(of('error')).toHaveLength(1);
+      await db.query('update audit_chain_anchor set head_seq = 2');
+      expect((await s.runOnce()).outcome).toBe('bad-anchor');
+      expect(of('error')).toHaveLength(2);
+      expect(JSON.stringify(lines)).not.toContain(KEY);
+      expect((await rows()).map(([, seq]) => seq)).toEqual([1, 2, 3, null]);
+      expect((await readAnchor(db))?.headSeq).toBe(2n);
     });
 
     it('a sealing pass records head_seq in the anchor; an idle pass leaves it', async () => {

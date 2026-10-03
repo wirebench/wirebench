@@ -1,6 +1,6 @@
 /**
  * Seals committed audit rows into the keyed chain (issue #210, audit-chain spec §3.2). Each pass is one
- * transaction: it takes the chain's advisory lock, reads (or creates) the anchor, checks the key, then
+ * transaction: it takes the chain's advisory lock, reads (or creates) the anchor, checks the key and the anchor's MAC, then
  * claims up to a batch of unsealed rows in `(at, id)` order and links each to the head. Rows another
  * transaction has not committed are invisible to the claim, so only committed rows are ever sealed.
  * Inserts never touch the lock, so no audited action waits on a pass.
@@ -20,13 +20,13 @@ import {
   setAnchorHead,
   type ChainLink,
 } from '../repo.js';
-import { genesisHash, keyId, link } from './canonical.js';
+import { anchorMacValid, keyId, link } from './canonical.js';
 import { tryLockChain } from './lock.js';
 
 export const SEAL_BATCH = 500;
 /** The next pass while the last one sealed something. */
 export const SEAL_BUSY_MS = 2_000;
-/** The next pass when nothing was unsealed, the chain lock was held (another pass or a retention batch), or the key was refused. */
+/** The next pass when nothing was unsealed, the chain lock was held (another pass or a retention batch), the key was refused, or the anchor failed its MAC check. */
 export const SEAL_IDLE_MS = 5_000;
 /** The first wait after a failure; it doubles up to {@link SEAL_BACKOFF_MAX_MS}. */
 export const SEAL_BACKOFF_MIN_MS = 5_000;
@@ -43,7 +43,7 @@ export interface SealerDeps {
   readonly batchSize?: number;
 }
 
-export type SealOutcome = 'sealed' | 'idle' | 'busy-elsewhere' | 'wrong-key' | 'failed' | 'stopped';
+export type SealOutcome = 'sealed' | 'idle' | 'busy-elsewhere' | 'wrong-key' | 'bad-anchor' | 'failed' | 'stopped';
 
 export interface SealPass {
   readonly outcome: SealOutcome;
@@ -56,6 +56,8 @@ export interface SealPass {
 type Sealing =
   | { readonly kind: 'busy-elsewhere' }
   | { readonly kind: 'wrong-key'; readonly chainKeyId: string }
+  /** `state` names the anchor's stored fields, so one state is logged once. */
+  | { readonly kind: 'bad-anchor'; readonly anchorSeq: bigint; readonly state: string }
   | { readonly kind: 'sealed'; readonly sealed: number; readonly head: ChainLink };
 
 export class AuditSealer {
@@ -65,6 +67,8 @@ export class AuditSealer {
   private failures = 0;
   /** The anchor key id last refused, so a refusal is logged once, not once per pass. */
   private refusedKeyId: string | undefined;
+  /** The anchor state last refused for a failing MAC, likewise logged once. */
+  private refusedAnchor: string | undefined;
   private readonly keyId: string;
 
   constructor(private readonly deps: SealerDeps) {
@@ -143,8 +147,18 @@ export class AuditSealer {
         }
         this.refusedKeyId = result.chainKeyId;
         return { outcome: 'wrong-key', sealed: 0, nextDelayMs: SEAL_IDLE_MS };
+      case 'bad-anchor':
+        if (this.refusedAnchor !== result.state) {
+          this.deps.log.error(
+            { anchorSeq: result.anchorSeq.toString() },
+            'audit chain anchor fails its check: run wirebench-server admin audit verify',
+          );
+        }
+        this.refusedAnchor = result.state;
+        return { outcome: 'bad-anchor', sealed: 0, nextDelayMs: SEAL_IDLE_MS };
       case 'sealed':
         this.refusedKeyId = undefined;
+        this.refusedAnchor = undefined;
         if (result.sealed === 0) return { outcome: 'idle', sealed: 0, nextDelayMs: SEAL_IDLE_MS };
         this.deps.log.info(
           { sealed: result.sealed },
@@ -157,9 +171,14 @@ export class AuditSealer {
   /** The pass's transaction: §3.2 steps 1 to 6; the caller's commit is step 7. */
   private async seal(tx: Querier): Promise<Sealing> {
     if (!(await tryLockChain(tx))) return { kind: 'busy-elsewhere' };
-    const anchor = (await readAnchor(tx)) ?? (await insertGenesis(tx, genesisHash(this.deps.key), this.keyId));
+    const anchor = (await readAnchor(tx)) ?? (await insertGenesis(tx, this.deps.key));
     // Before any row is touched: a wrong key must not extend the chain with links verify would reject.
     if (anchor.keyId !== this.keyId) return { kind: 'wrong-key', chainKeyId: anchor.keyId };
+    // Nor may an edited anchor (moved forward, or head_seq lowered) be re-signed by sealing past it.
+    if (!anchorMacValid(this.deps.key, anchor)) {
+      const state = [anchor.seq, anchor.hash.toString('hex'), anchor.headSeq, anchor.mac.toString('hex')].join(':');
+      return { kind: 'bad-anchor', anchorSeq: anchor.seq, state };
+    }
     // Linked to the highest sealed row's hash, or the anchor's; numbered past `head_seq` too, so rows
     // removed from outside (the newest, or all of them) leave a gap verify reports, never a reused seq.
     const last: ChainLink = (await chainHead(tx)) ?? { seq: anchor.seq, hash: anchor.hash };
@@ -173,7 +192,7 @@ export class AuditSealer {
       await sealRow(tx, row.id, seq, hash);
       head = { seq, hash };
     }
-    if (rows.length > 0) await setAnchorHead(tx, head.seq);
+    if (rows.length > 0) await setAnchorHead(tx, this.deps.key, anchor, head.seq);
     return { kind: 'sealed', sealed: rows.length, head };
   }
 }

@@ -171,17 +171,23 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
     expect(run.stdout).toContain(`broken: edited at seq 2 (row ${made[1]!})`);
   });
 
-  it('an edited anchor hash is edited at the first kept row; a removed anchor is edited at the first row', async () => {
+  it('an edited anchor hash fails the anchor MAC; a removed anchor is edited at the first row', async () => {
     const made = await sealed(3);
     await db.query(`update audit_chain_anchor set hash = sha256('forged'::bytea)`);
     let run = await verify();
-    expect(run.code).toBe(1);
-    expect(run.stdout).toContain(`broken: edited at seq 1 (row ${made[0]!})`);
+    expect(run).toEqual({ code: 1, stdout: 'checked 0 sealed rows; 0 unsealed\nbroken: anchor edited\n', stderr: '' });
+    const json = await verify({ json: true });
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      result: 'broken',
+      brokenSeq: '0',
+      broken: { seq: '0', reason: 'edited', message: 'anchor edited' },
+    });
+    expect((JSON.parse(json.stdout) as { broken: object }).broken).not.toHaveProperty('id');
 
     await db.query('delete from audit_chain_anchor');
     run = await verify();
     expect(run.code).toBe(1);
-    expect(run.stdout).toBe(`checked 0 sealed rows; 1 unsealed\nbroken: edited at seq 1 (row ${made[0]!})\n`);
+    expect(run.stdout).toBe(`checked 0 sealed rows; 2 unsealed\nbroken: edited at seq 1 (row ${made[0]!})\n`);
   });
 
   it('a deleted middle row is missing at its seq', async () => {
@@ -205,7 +211,7 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
 
   it('a sealed seq at or below the anchor is out of order', async () => {
     const made = await sealed(5);
-    expect(await deleteSealedBefore(db, new Date(Date.parse(t(2)) + 500), 1000)).toBe(2);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(2)) + 500), 1000)).toBe(2);
     await db.query('update audit_events set chain_seq = 1 where chain_seq = 3');
     const run = await verify();
     expect(run.code).toBe(1);
@@ -229,16 +235,15 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
   it('--head: a head from before the two newest rows were deleted is not found; a wrong hex does not match', async () => {
     await sealed(5);
     const head5 = await hashAt(5);
-    const head3 = await hashAt(3);
     expect(await verify({ head: { seq: 5n, hash: head5 } })).toMatchObject({
       code: 0,
       stdout: 'checked 5 sealed rows, seq 1 to 5; 0 unsealed\nhead 5 matches\nintact\n',
     });
+    await db.query(`delete from audit_events where action = 'audit.verified'`);
 
-    // The attacker deletes the newest rows and lowers head_seq too: only the logged head catches it.
+    // Without --head, head_seq reports the gap; with it, the head check comes first and names the cause.
     await db.query('delete from audit_events where chain_seq >= 4');
-    await db.query('update audit_chain_anchor set head_seq = 3');
-    expect((await verify()).code).toBe(0);
+    expect((await verify()).stdout).toContain('broken: missing at seq 4\n');
     await db.query(`delete from audit_events where action = 'audit.verified'`);
     expect(await verify({ head: { seq: 5n, hash: head5 } })).toEqual({
       code: 1,
@@ -248,17 +253,124 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
     const wrong = await verify({ head: { seq: 3n, hash: 'ab'.repeat(32) } });
     expect(wrong.code).toBe(1);
     expect(wrong.stdout).toContain('broken: head 3 does not match\n');
-    expect((await verify({ head: { seq: 3n, hash: head3 } })).code).toBe(0);
+  });
+
+  it('a rollback to an earlier genuine anchor, its newer rows deleted, passes alone and is caught by --head', async () => {
+    await sealed(3);
+    const earlier = (await db.query<Record<string, unknown>>('select * from audit_chain_anchor')).rows[0]!;
+    for (let n = 4; n <= 5; n++) await insert(n);
+    expect(await seal()).toBe(2);
+    const head5 = await hashAt(5);
+    await db.query('delete from audit_events where chain_seq >= 4');
+    await db.query('update audit_chain_anchor set seq = $1, hash = $2, head_seq = $3, mac = $4', [
+      earlier['seq'],
+      earlier['hash'],
+      earlier['head_seq'],
+      earlier['mac'],
+    ]);
+    expect((await verify()).code).toBe(0);
+    expect((await verify({ head: { seq: 5n, hash: head5 } })).stdout).toContain(
+      'broken: head 5 not found: newer rows were removed\n',
+    );
+  });
+
+  it('--head equal to the anchor seq is checked against the anchor hash', async () => {
+    await sealed(5);
+    const head3 = await hashAt(3);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000)).toBe(3);
+    expect(await verify({ head: { seq: 3n, hash: head3 } })).toMatchObject({
+      code: 0,
+      stdout: 'checked 2 sealed rows, seq 4 to 5; 0 unsealed\nhead 3 matches\nintact\n',
+    });
+    expect((await verify({ head: { seq: 3n, hash: 'cd'.repeat(32) } })).stdout).toContain(
+      'broken: head 3 does not match\n',
+    );
   });
 
   it('--head older than the kept chain passes once retention moved past it', async () => {
     await sealed(5);
     const head2 = await hashAt(2);
-    expect(await deleteSealedBefore(db, new Date(Date.parse(t(3)) + 500), 1000)).toBe(3);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000)).toBe(3);
     expect(await verify({ head: { seq: 2n, hash: head2 } })).toMatchObject({
       code: 0,
       stdout: 'checked 2 sealed rows, seq 4 to 5; 0 unsealed\nhead 2 is older than the kept chain\nintact\n',
     });
+  });
+
+  it('retention mimicry: the oldest rows deleted and a later row copied into the anchor is anchor edited', async () => {
+    await sealed(5);
+    const hash3 = await hashAt(3);
+    await db.query('delete from audit_events where chain_seq <= 3');
+    await db.query(`update audit_chain_anchor set seq = 3, hash = decode($1, 'hex')`, [hash3]);
+    expect(await verify()).toMatchObject({
+      code: 1,
+      stdout: 'checked 0 sealed rows; 0 unsealed\nbroken: anchor edited\n',
+    });
+  });
+
+  it('retention mimicry to the head: every row deleted and the anchor set to the head is anchor edited', async () => {
+    await sealed(5);
+    const head5 = await hashAt(5);
+    await db.query('delete from audit_events');
+    await db.query(`update audit_chain_anchor set seq = 5, hash = decode($1, 'hex')`, [head5]);
+    expect(await verify({ head: { seq: 5n, hash: head5 } })).toMatchObject({
+      code: 1,
+      stdout: 'checked 0 sealed rows; 0 unsealed\nbroken: anchor edited\n',
+    });
+  });
+
+  it('head rewrite: head_seq lowered and the newest rows unsealed and edited is refused by the sealer and caught', async () => {
+    await sealed(5);
+    await db.query('update audit_chain_anchor set head_seq = 3');
+    await db.query(
+      `update audit_events set chain_seq = null, chain_hash = null, details = '{"name":"Forged"}'::jsonb where chain_seq >= 4`,
+    );
+    const pass = await new AuditSealer({
+      db,
+      key: KEY,
+      now: () => new Date(),
+      setTimer: manualTimers().setTimer,
+      log: silentLog,
+    }).runOnce();
+    expect(pass).toMatchObject({ outcome: 'bad-anchor', sealed: 0 });
+    expect(await verify()).toMatchObject({
+      code: 1,
+      stdout: 'checked 0 sealed rows; 2 unsealed\nbroken: anchor edited\n',
+    });
+  });
+
+  it('a raised head_seq fails the anchor MAC before it could show as missing', async () => {
+    await sealed(3);
+    await db.query('update audit_chain_anchor set head_seq = 9');
+    expect((await verify()).stdout).toBe('checked 0 sealed rows; 0 unsealed\nbroken: anchor edited\n');
+  });
+
+  it('a directly edited chain_hash, and a null one, are edited at their seq', async () => {
+    const made = await sealed(4);
+    await db.query(`update audit_events set chain_hash = sha256('x'::bytea) where chain_seq = 2`);
+    expect((await verify()).stdout).toContain(`broken: edited at seq 2 (row ${made[1]!})\n`);
+    await db.query('update audit_events set chain_hash = null where chain_seq = 2');
+    expect((await verify()).stdout).toContain(`broken: edited at seq 2 (row ${made[1]!})\n`);
+  });
+
+  it('a nulled middle chain_seq is missing at that seq, and the row counts as unsealed', async () => {
+    await sealed(5);
+    await db.query('update audit_events set chain_seq = null where chain_seq = 3');
+    expect(await verify()).toMatchObject({
+      code: 1,
+      stdout: 'checked 2 sealed rows, seq 1 to 2; 1 unsealed\nbroken: missing at seq 3\n',
+    });
+  });
+
+  it('a forged sealed row past the head is edited at its seq', async () => {
+    await sealed(3);
+    const forged = await insert(9);
+    await db.query(`update audit_events set chain_seq = 4, chain_hash = sha256('forged'::bytea) where id = $1`, [
+      forged,
+    ]);
+    expect((await verify()).stdout).toBe(
+      `checked 3 sealed rows, seq 1 to 3; 0 unsealed\nbroken: edited at seq 4 (row ${forged})\n`,
+    );
   });
 
   it('a malformed --head exits 2 naming the flag', async () => {
@@ -360,7 +472,7 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
     };
     const walking = verifyChain(gated, KEY, { pageSize: 2 });
     await entered;
-    expect(await deleteSealedBefore(db, new Date(Date.parse(t(4)) + 500), 1000)).toBe(4);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(4)) + 500), 1000)).toBe(4);
     release();
     expect(await walking).toEqual({
       kind: 'checked',

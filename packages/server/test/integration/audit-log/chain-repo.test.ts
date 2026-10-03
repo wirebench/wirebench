@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
-import { genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
+import { anchorMac, genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
 import {
   CANONICAL_COLUMNS,
   chainHead,
@@ -16,6 +16,7 @@ import { describeDb, testDatabase } from '../../helpers/database.js';
 
 const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
 const KEY = 'test-chain-key-0123456789abcdefghij';
+const OTHER_KEY = 'another-chain-key-9876543210zyxwvuts';
 
 describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
@@ -109,9 +110,15 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
 
   it('has no anchor until the genesis, which keeps the first anchor', async () => {
     expect(await readAnchor(db)).toBeUndefined();
-    const anchor = await insertGenesis(db, genesisHash(KEY), keyId(KEY));
-    expect(anchor).toEqual({ seq: 0n, hash: genesisHash(KEY), keyId: keyId(KEY), headSeq: 0n });
-    expect(await insertGenesis(db, Buffer.alloc(32), 'ffffffffffffffff')).toEqual(anchor);
+    const anchor = await insertGenesis(db, KEY);
+    expect(anchor).toEqual({
+      seq: 0n,
+      hash: genesisHash(KEY),
+      keyId: keyId(KEY),
+      headSeq: 0n,
+      mac: anchorMac(KEY, 0n, genesisHash(KEY), 0n),
+    });
+    expect(await insertGenesis(db, OTHER_KEY)).toEqual(anchor);
     expect(await readAnchor(db)).toEqual(anchor);
   });
 
@@ -119,7 +126,7 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
     await insert('01J9ZK3V8Q00000000000000B2', '2026-10-03T00:00:02Z');
     await insert('01J9ZK3V8Q00000000000000A1', '2026-10-03T00:00:01Z');
     await insert('01J9ZK3V8Q00000000000000C2', '2026-10-03T00:00:02Z');
-    const anchor = await insertGenesis(db, genesisHash(KEY), keyId(KEY));
+    const anchor = await insertGenesis(db, KEY);
     expect(await chainHead(db)).toBeUndefined();
 
     const claimed = await db.transaction(async (tx) => {

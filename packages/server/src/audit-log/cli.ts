@@ -48,6 +48,7 @@ function brokenText(broken: BrokenLink): string {
     case 'head does not match':
       return `head ${seq} does not match`;
     default:
+      if (broken.anchor === true) return 'anchor edited';
       return `${broken.reason} at seq ${seq}${broken.id !== undefined ? ` (row ${broken.id})` : ''}`;
   }
 }
