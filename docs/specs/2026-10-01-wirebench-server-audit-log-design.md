@@ -54,7 +54,8 @@ reviewer. A compliance team points their collector at the export endpoint once a
 
 ### 1.2 Not in scope
 
-- Desktop-side events (what the app sent where).
+- Desktop-side events (what the app sent where): added in the second slice, see
+  `docs/specs/2026-10-03-wirebench-desktop-audit-events-design.md`.
 - Team-scoped readers, syslog or HTTP push, alerting on events, signing or hash-chaining the log.
 - Recording reads: who looked at what is not recorded, except the export itself.
 

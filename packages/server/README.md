@@ -100,6 +100,10 @@ edition:
 
     docker compose -f packages/server/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
 
+A workspace admin can turn on **Record desktop activity** for a workspace: the app then reports each
+request sent and each test-suite run (`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no
+headers or bodies.
+
 Events older than `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` (default 365) are deleted. See the docs site's
 _Audit log_ guide for what each event carries and how to handle personal data.
 

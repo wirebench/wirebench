@@ -128,7 +128,10 @@ before and after for the two changes that need more than a rename. The package's
   team-secret changes, catch URLs, CI tokens and license changes as immutable events, on every edition.
   Server admins on Enterprise read them in the new Audit tab and export them as newline-delimited JSON,
   from the app or with `wirebench-server admin audit export`. Retention is by age
-  (`WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`, default a year). See
+  (`WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`, default a year). A workspace admin can also switch on
+  **Record desktop activity** for a workspace: the app then reports each request sent and each test-suite
+  run to the server's log (the masked URL and a few details, never headers or bodies), keeps them in a
+  queue while offline, and shows **Recorded** in the status bar. See
   [Audit log](https://wirebench.github.io/wirebench/docs/guides/server-audit-log/).
 
 - **Sequences.** A sequence sends saved SOAP, REST, gRPC and WebSocket requests one after another (a
