@@ -14,7 +14,13 @@ import { defineOp, runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
 import { exitCodeForError, OpsError, toOpsError } from '../../../src/ops/errors.js';
 import { defaultHistoryDir, defaultUserDataDir, historyFileFor } from '../../../src/ops/paths.js';
-import { redactAssertions, redactBody, redactError, redactUrlsInText } from '../../../src/ops/redact.js';
+import {
+  redactAssertions,
+  redactBaseline,
+  redactBody,
+  redactError,
+  redactUrlsInText,
+} from '../../../src/ops/redact.js';
 
 const SECRET = 'abc123def456ghi789';
 
@@ -352,6 +358,82 @@ describe('redactAssertions', () => {
 
     expect(JSON.stringify(redacted)).not.toContain(SECRET);
     expect(redacted?.label).toContain('example.test');
+  });
+});
+
+describe('redactBaseline', () => {
+  it('shows the marker on both sides of a change under a secret key, in any path form', () => {
+    const paths = [
+      '/token',
+      '/token/0',
+      '/auth/access_token',
+      '/auth/token/expires',
+      '/Envelope/Body/Login/Password[1]',
+      '/wsse:Security/wsse:Password',
+      '/Envelope/Header/Login/@password',
+    ];
+
+    const report = redactBaseline({
+      status: 'differs',
+      changes: paths.map((path) => ({ kind: 'changed' as const, path, expected: '"old"', actual: `"${SECRET}"` })),
+    });
+
+    expect(report.changes?.map((change) => [change.expected, change.actual])).toEqual(
+      paths.map(() => [REDACTED_MARKER, REDACTED_MARKER]),
+    );
+  });
+
+  it('runs other values through the body redactors, and keeps what holds no credential', () => {
+    const report = redactBaseline({
+      status: 'differs',
+      format: 'json',
+      error: `could not parse https://user:${SECRET}@example.test/`,
+      changes: [
+        { kind: 'changed', path: '/name', expected: '"Rex"', actual: '"Fido"' },
+        { kind: 'added', path: '/auth', actual: JSON.stringify({ token: SECRET, user: 'ann' }) },
+        { kind: 'removed', path: '/Header', expected: `<Security><Password>${SECRET}</Password></Security>` },
+        { kind: 'changed', path: '/tokens', expected: '1', actual: '2' },
+      ],
+    });
+
+    expect(report.changes?.[0]).toEqual({ kind: 'changed', path: '/name', expected: '"Rex"', actual: '"Fido"' });
+    expect(JSON.parse(report.changes?.[1]?.actual ?? '')).toEqual({ token: REDACTED_MARKER, user: 'ann' });
+    expect(report.changes?.[2]?.expected).toContain(`<Password>${REDACTED_MARKER}</Password>`);
+    expect(report.changes?.[3]).toMatchObject({ expected: '1', actual: '2' });
+    expect(report.error).toContain('example.test');
+    expect(JSON.stringify(report)).not.toContain(SECRET);
+  });
+
+  it("rebuilds a failed baseline assertion's message from the redacted changes", () => {
+    const raw = {
+      status: 'differs' as const,
+      error: 'Unexpected token',
+      changes: Array.from({ length: 21 }, (_, n) =>
+        n === 0
+          ? { kind: 'changed' as const, path: '/token', expected: '"x"', actual: `"${SECRET}"` }
+          : { kind: 'added' as const, path: `/n${n}`, actual: String(n) },
+      ),
+    };
+    const message = [
+      'compared as text: Unexpected token',
+      `changed /token: "x" → "${SECRET}"`,
+      ...Array.from({ length: 19 }, (_, n) => `added /n${n + 1}: ${n + 1}`),
+      '… and 1 more',
+    ].join('\n');
+
+    const [redacted] = redactAssertions(
+      [{ type: 'baseline', label: '21 differences from the baseline', outcome: 'failed', message }],
+      [],
+      redactBaseline(raw),
+    );
+
+    const lines = redacted?.message?.split('\n');
+    expect(lines?.[0]).toBe('compared as text: Unexpected token');
+    expect(lines?.[1]).toBe(`changed /token: ${REDACTED_MARKER} → ${REDACTED_MARKER}`);
+    expect(lines?.[2]).toBe('added /n1: 1');
+    expect(lines).toHaveLength(22);
+    expect(lines?.at(-1)).toBe('… and 1 more');
+    expect(redacted?.message).not.toContain(SECRET);
   });
 });
 

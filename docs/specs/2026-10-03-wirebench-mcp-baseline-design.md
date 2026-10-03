@@ -105,11 +105,15 @@ readonly baseline?: {
 **Redaction.** A response can echo a secret. Every op result already passes through the op layer's
 literal mask (`runOp`'s `redactResult` over every secret value the send revealed), so the comparison's
 `changes`, `error` and the `baseline` assertion's text are masked with the rest of the result; a test
-checks it end to end.
+checks it end to end. The comparison also goes through the same pattern redaction as the body and
+the `match` assertions (`redactBaseline` in the op layer), since a server-issued token is no revealed
+secret: a change under a secret key shows the marker on both sides, other values pass through the
+body redactors, and the `baseline` assertion's change lines are rebuilt from the redacted changes.
 
 `redactAssertions` pairs a result with a saved assertion by position. The `baseline` result is
-skipped there, as `script` is, so it never takes a saved assertion's slot. It then gets the URL
-redaction every message gets.
+skipped there, as `script` is, so it never takes a saved assertion's slot. A failed one's message is
+rebuilt from the redacted changes, keeping the engine's `compared as text:` line (URLs redacted) and
+its `… and N more` line; any other gets the URL redaction every message gets.
 
 ## 5. CLI
 

@@ -52,7 +52,7 @@ import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
 import { environmentFor, openProject } from './project.js';
 import type { OpenedProject } from './project.js';
-import { redactAssertions, redactBody, redactUrlsInText } from './redact.js';
+import { redactAssertions, redactBaseline, redactBody, redactUrlsInText } from './redact.js';
 
 export interface SendResult {
   readonly item: string;
@@ -295,6 +295,7 @@ function commonOf(
   SendResult,
   'item' | 'kind' | 'outcome' | 'unasserted' | 'durationMs' | 'assertions' | 'baseline' | 'error' | 'historyId'
 > {
+  const baseline = result.baseline === undefined ? undefined : redactBaseline(result.baseline);
   return {
     item: item.path,
     kind: item.kind,
@@ -305,8 +306,9 @@ function commonOf(
     assertions: redactAssertions(
       result.assertions,
       'assertions' in item.request ? (item.request.assertions ?? []) : [],
+      baseline,
     ),
-    ...(result.baseline !== undefined ? { baseline: result.baseline } : {}),
+    ...(baseline !== undefined ? { baseline } : {}),
     ...(result.error !== undefined
       ? { error: { code: result.error.code, message: redactUrlsInText(result.error.message) } }
       : {}),

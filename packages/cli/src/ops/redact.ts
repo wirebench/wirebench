@@ -11,7 +11,7 @@ import {
   redactXml,
   SECRET_BODY_KEYS,
 } from '@wirebench/engine';
-import type { AssertionResult, StepAssertion } from '@wirebench/engine';
+import type { AssertionResult, BaselineReport, StepAssertion } from '@wirebench/engine';
 import { maskDeep } from '../reporters/mask.js';
 import { OpsError } from './errors.js';
 
@@ -171,16 +171,94 @@ function actualOf(result: AssertionResult, own: StepAssertion | undefined, actua
   return redactUrlsInText(result.type === 'match' ? redactValue(actual) : actual);
 }
 
+type BaselineChange = NonNullable<BaselineReport['changes']>[number];
+
+/** Changes the engine lists in a failed `baseline` assertion's message. */
+const BASELINE_MESSAGE_CHANGES = 20;
+
+/**
+ * Whether a baseline change's path lies under a secret key: any name in it, as JSON Pointer (`/token`,
+ * `/token/0`, `/auth/token`) or as the XML diff writes it (`/Envelope/Body/Login/Password[1]`, an
+ * attribute's `@name`, a `prefix:` kept). Any name, not only the last: the body redactors hide the
+ * whole value under a secret key, so a change inside it (`/token/expires`) is hidden too.
+ */
+function underSecretKey(path: string): boolean {
+  return path
+    .split('/')
+    .map((segment) =>
+      segment
+        .replace(/~1/g, '/')
+        .replace(/~0/g, '~')
+        .replace(/\[\d+\]$/, '')
+        .replace(/^@/, '')
+        .replace(/^[\w.-]+:/, '')
+        .toLowerCase(),
+    )
+    .some((name) => SECRET_KEYS.has(name));
+}
+
+/** A value a baseline change shows: JSON-encoded or XML text, through the body redactors. */
+function baselineValue(value: string): string {
+  return redactUrlsInText(redactValue(value));
+}
+
+function redactChange(change: BaselineChange): BaselineChange {
+  const hide = underSecretKey(change.path);
+  const shown = (value: string): string => (hide ? REDACTED_MARKER : baselineValue(value));
+  return {
+    ...change,
+    ...(change.expected !== undefined ? { expected: shown(change.expected) } : {}),
+    ...(change.actual !== undefined ? { actual: shown(change.actual) } : {}),
+  };
+}
+
+/**
+ * A baseline comparison as an op returns it (#218): each change's values through the same pattern
+ * redaction as the body and the `match` assertions — the marker on both sides under a secret key,
+ * the body redactors on anything else — and URLs in the fallback error redacted.
+ */
+export function redactBaseline(report: BaselineReport): BaselineReport {
+  return {
+    ...report,
+    ...(report.changes !== undefined ? { changes: report.changes.map(redactChange) } : {}),
+    ...(report.error !== undefined ? { error: redactUrlsInText(report.error) } : {}),
+  };
+}
+
+/** One line of a failed baseline assertion's message, as the engine writes it. */
+function changeLine(change: BaselineChange): string {
+  if (change.kind === 'added') return `added ${change.path}: ${change.actual ?? ''}`;
+  if (change.kind === 'removed') return `removed ${change.path}: ${change.expected ?? ''}`;
+  return `changed ${change.path}: ${change.expected ?? ''} → ${change.actual ?? ''}`;
+}
+
+/**
+ * A failed baseline assertion's message rebuilt from the redacted changes, so it carries no raw value:
+ * the engine's leading `compared as text:` line (URLs redacted) and trailing `… and N more` line kept.
+ */
+function baselineMessage(message: string, baseline: BaselineReport | undefined): string {
+  const lines = message.split('\n');
+  const first = lines[0] ?? '';
+  const last = lines.at(-1) ?? '';
+  return [
+    ...(first.startsWith('compared as text: ') ? [redactUrlsInText(first)] : []),
+    ...(baseline?.changes ?? []).slice(0, BASELINE_MESSAGE_CHANGES).map(changeLine),
+    ...(/^… and \d+ more$/.test(last) ? [last] : []),
+  ].join('\n');
+}
+
 /**
  * Assertion results as an op returns them (spec §2.2): URLs in every text redacted by pattern, and
  * the value a header or `match` assertion read shown as the marker when it is a credential — a
  * sensitive header, or a JSONPath/XPath whose last name is a secret key. `assertions` are the
  * request's own, in order: the run reports the immediate ones first, then callbacks, then script
- * tests; a `baseline` result (#218) is the run's own and pairs with none.
+ * tests; a `baseline` result (#218) is the run's own and pairs with none. A failed one's message is
+ * rebuilt from `baseline`, the comparison already through {@link redactBaseline}.
  */
 export function redactAssertions(
   results: readonly AssertionResult[],
   assertions: readonly StepAssertion[],
+  baseline?: BaselineReport,
 ): AssertionResult[] {
   const immediate = assertions.filter((assertion) => assertion.type !== 'callback');
   let next = 0;
@@ -190,10 +268,14 @@ export function redactAssertions(
       own = immediate[next];
       next += 1;
     }
-    const message =
-      result.message === undefined
-        ? undefined
-        : redactUrlsInText(result.type === 'callback' ? maskCallbackValues(result.message) : result.message);
+    let message: string | undefined;
+    if (result.message !== undefined) {
+      if (result.type === 'baseline' && result.outcome === 'failed') {
+        message = baselineMessage(result.message, baseline);
+      } else {
+        message = redactUrlsInText(result.type === 'callback' ? maskCallbackValues(result.message) : result.message);
+      }
+    }
     return {
       ...result,
       label: redactUrlsInText(result.label),

@@ -632,6 +632,59 @@ describe('op send with baseline', () => {
 
     expect(result.assertions.map((assertion) => assertion.type)).toEqual(['match', 'baseline']);
     expect(result.assertions[0]).toMatchObject({ outcome: 'failed', actual: REDACTED_MARKER });
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  it('shows the marker for a secret-keyed change, in the changes and in the message, and keeps other values', async () => {
+    const { fixture, item } = await petsSend({ token: SECRET, name: 'Fido' });
+    await writeGolden(fixture.dir, item, { body: '{"token": "x", "name": "Rex"}' });
+
+    const result = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+
+    expect(result.baseline?.changes).toEqual(
+      expect.arrayContaining([
+        { kind: 'changed', path: '/token', expected: REDACTED_MARKER, actual: REDACTED_MARKER },
+        { kind: 'changed', path: '/name', expected: '"Rex"', actual: '"Fido"' },
+      ]),
+    );
+    const message = result.assertions.find((assertion) => assertion.type === 'baseline')?.message ?? '';
+    expect(message.split('\n')).toEqual(
+      expect.arrayContaining([
+        `changed /token: ${REDACTED_MARKER} → ${REDACTED_MARKER}`,
+        'changed /name: "Rex" → "Fido"',
+      ]),
+    );
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  it('redacts a secret key inside an added object', async () => {
+    const { fixture, item } = await petsSend({ name: 'Rex', auth: { token: SECRET, user: 'ann' } });
+    await writeGolden(fixture.dir, item, { body: '{"name": "Rex"}' });
+
+    const result = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+
+    const added = result.baseline?.changes?.find((change) => change.path === '/auth');
+    expect(added?.kind).toBe('added');
+    expect(JSON.parse(added?.actual ?? '')).toEqual({ token: REDACTED_MARKER, user: 'ann' });
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  it('shows the marker for a SOAP Password element that differs from the golden', async () => {
+    const fixture = await soapProject();
+    const withPassword = (value: string): string =>
+      ADD_RESPONSE.replace('<c:result>5</c:result>', `<c:result>5</c:result><c:Password>${value}</c:Password>`);
+    const calculator = await server(() => ({ headers: { 'Content-Type': 'text/xml' }, body: withPassword(SECRET) }));
+    await addEnvironment(fixture.dir, 'local', { CalculatorService: `${calculator.url}/calculator` });
+    await writeGolden(fixture.dir, SOAP_ITEM, { body: withPassword('x') });
+
+    const result = await runOp(sendOp, { item: SOAP_ITEM, environment: 'local', baseline: true }, fixture.base());
+
+    expect(result.baseline?.status).toBe('differs');
+    expect(result.baseline?.changes).toEqual([
+      expect.objectContaining({ kind: 'changed', expected: REDACTED_MARKER, actual: REDACTED_MARKER }),
+    ]);
+    expect(result.baseline?.changes?.[0]?.path).toMatch(/Password$/);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
   });
 });
 
