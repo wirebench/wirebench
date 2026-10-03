@@ -221,6 +221,12 @@ describe('RestEditor', () => {
     expect(timeout.closest('div')?.parentElement?.textContent).toContain('Timeout');
   });
 
+  it('shows Send cookies off unless the request turns it on, which is what the engine sends', () => {
+    mount();
+    fireEvent.click(screen.getByRole('tab', { name: 'Settings' }));
+    expect(screen.getByTestId<HTMLInputElement>('rest-setting-send-cookies').checked).toBe(false);
+  });
+
   it('sends the request id and its unsaved draft, never a resolved URL', async () => {
     mount();
     fireEvent.change(screen.getByTestId('rest-url'), { target: { value: '/pets' } });

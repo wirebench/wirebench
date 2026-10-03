@@ -290,7 +290,8 @@ export function RestEditor({ requestId }: RestEditorProps) {
               followRedirects: preferences.rest.followRedirects,
               maxRedirects: preferences.rest.maxRedirects,
               encodeUrl: true,
-              sendCookies: true,
+              // Off: the engine sends jar cookies only when a request turns this on (REST spec §3.3).
+              sendCookies: false,
             }}
             onChange={stage}
           />
