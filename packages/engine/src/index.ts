@@ -259,6 +259,8 @@ export type {
 } from './xsd/form-model.js';
 export { applyFormEdit } from './xsd/form-edits.js';
 export type { FormEdit } from './xsd/form-edits.js';
+export { createJsonSchemaWriter, jsonSchemaOf, MAX_PROPERTY_DESCRIPTION } from './xsd/json-bridge.js';
+export type { BridgeTarget, JsonSchemaObject, JsonSchemaOfResult, JsonSchemaWriter } from './xsd/json-bridge.js';
 
 export type {
   All,

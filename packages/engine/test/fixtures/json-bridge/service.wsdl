@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="urn:wb:bridge"
+                  targetNamespace="urn:wb:bridge">
+  <wsdl:types>
+    <xs:schema targetNamespace="urn:wb:bridge:loose" elementFormDefault="unqualified">
+      <xs:element name="Loose">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="a" type="xs:string"/>
+            <xs:element name="b" type="xs:int"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="id" type="xs:string"/>
+    </xs:schema>
+    <xs:schema targetNamespace="urn:wb:bridge" elementFormDefault="qualified"
+               xmlns:loose="urn:wb:bridge:loose">
+      <xs:import namespace="urn:wb:bridge:loose"/>
+      <xs:element name="Order">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="id" type="xs:int">
+              <xs:annotation><xs:documentation>The order number.</xs:documentation></xs:annotation>
+            </xs:element>
+            <xs:element name="customer" type="tns:Customer"/>
+            <xs:element name="line" type="tns:Line" maxOccurs="unbounded"/>
+            <xs:element name="note" type="xs:string" minOccurs="0" nillable="true"/>
+            <xs:choice>
+              <xs:element name="card" type="xs:string"/>
+              <xs:element name="invoice">
+                <xs:complexType>
+                  <xs:attribute name="days" type="xs:int" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:choice>
+            <xs:element name="priority" type="tns:Priority"/>
+            <xs:element name="placed" type="xs:date"/>
+            <xs:element name="paid" type="xs:boolean"/>
+            <xs:element name="total" type="xs:decimal"/>
+            <xs:element name="blob" type="xs:base64Binary" minOccurs="0"/>
+            <xs:any namespace="##other" processContents="lax" minOccurs="0"/>
+          </xs:sequence>
+          <xs:attribute name="channel" type="xs:string" use="required"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:complexType name="Customer">
+        <xs:sequence>
+          <xs:element name="name" type="xs:string"/>
+          <xs:element name="email" type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Line">
+        <xs:sequence>
+          <xs:element name="sku" type="tns:Sku"/>
+          <xs:element name="qty" type="tns:Quantity"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:simpleType name="Sku">
+        <xs:restriction base="xs:string"><xs:pattern value="[A-Z]{3}-\d+"/></xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Quantity">
+        <xs:restriction base="xs:int">
+          <xs:minInclusive value="1"/>
+          <xs:maxInclusive value="99"/>
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Priority">
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="LOW"/>
+          <xs:enumeration value="HIGH"/>
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Code">
+        <xs:restriction base="xs:string"><xs:pattern value="\i\c*"/></xs:restriction>
+      </xs:simpleType>
+      <xs:complexType name="Tree">
+        <xs:sequence>
+          <xs:element name="label" type="xs:string"/>
+          <xs:element name="child" type="tns:Tree" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:element name="Root" type="tns:Tree"/>
+      <xs:element name="Price">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="xs:decimal">
+              <xs:attribute name="currency" type="xs:string" use="required"/>
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Remark">
+        <xs:complexType mixed="true">
+          <xs:sequence>
+            <xs:element name="em" type="xs:string" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Tagged">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="code" type="tns:Code"/>
+            <xs:element name="small" type="xs:short"/>
+            <xs:element name="hex" type="xs:hexBinary"/>
+            <xs:element name="at" type="xs:dateTime"/>
+            <xs:element name="token" type="xs:token"/>
+            <xs:element name="free" type="xs:anyType"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Steps">
+        <xs:complexType>
+          <xs:sequence maxOccurs="unbounded">
+            <xs:element name="name" type="xs:string"/>
+            <xs:element name="wait" type="xs:int"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Pair">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="id" type="xs:int"/>
+            <xs:element ref="loose:id"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:simpleType name="Open">
+        <xs:restriction base="xs:int">
+          <xs:minExclusive value="0"/>
+          <xs:maxExclusive value="10"/>
+        </xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Fixed">
+        <xs:restriction base="xs:string"><xs:length value="4"/></xs:restriction>
+      </xs:simpleType>
+      <xs:simpleType name="Letters">
+        <xs:restriction base="xs:string"><xs:pattern value="\p{L}+"/></xs:restriction>
+      </xs:simpleType>
+      <xs:element name="Facets">
+        <xs:complexType>
+          <xs:all>
+            <xs:element name="open" type="tns:Open"/>
+            <xs:element name="fixed" type="tns:Fixed"/>
+            <xs:element name="link" type="xs:anyURI"/>
+            <xs:element name="at" type="xs:time"/>
+            <xs:element name="ratio" type="xs:float"/>
+            <xs:element name="big" type="xs:double"/>
+            <xs:element name="letters" type="tns:Letters" minOccurs="0"/>
+          </xs:all>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="OrderResult">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="orderId" type="xs:int"/>
+            <xs:element name="status" type="xs:string"/>
+            <xs:element name="tags" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="OrderFault">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="reason" type="xs:string"/>
+            <xs:element name="code" type="xs:int"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="PlaceOrderIn"><wsdl:part name="parameters" element="tns:Order"/></wsdl:message>
+  <wsdl:message name="PlaceOrderOut"><wsdl:part name="parameters" element="tns:OrderResult"/></wsdl:message>
+  <wsdl:message name="OrderFaultMsg"><wsdl:part name="fault" element="tns:OrderFault"/></wsdl:message>
+  <wsdl:message name="QuoteIn">
+    <wsdl:part name="item" type="xs:string"/>
+    <wsdl:part name="count" type="xs:int"/>
+  </wsdl:message>
+  <wsdl:message name="QuoteOut"><wsdl:part name="price" type="xs:decimal"/></wsdl:message>
+  <wsdl:portType name="BridgePort">
+    <wsdl:operation name="PlaceOrder">
+      <wsdl:documentation>Places an order.</wsdl:documentation>
+      <wsdl:input message="tns:PlaceOrderIn"/>
+      <wsdl:output message="tns:PlaceOrderOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:portType name="BridgeRpcPort">
+    <wsdl:operation name="Quote">
+      <wsdl:input message="tns:QuoteIn"/>
+      <wsdl:output message="tns:QuoteOut"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="BridgeSoap" type="tns:BridgePort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="PlaceOrder">
+      <soap:operation soapAction="urn:wb:bridge/PlaceOrder"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="BridgeRpc" type="tns:BridgeRpcPort">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Quote">
+      <soap:operation soapAction="urn:wb:bridge/Quote"/>
+      <wsdl:input><soap:body use="literal" namespace="urn:wb:bridge:rpc"/></wsdl:input>
+      <wsdl:output><soap:body use="literal" namespace="urn:wb:bridge:rpc"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="BridgeService">
+    <wsdl:port name="BridgeSoapPort" binding="tns:BridgeSoap">
+      <soap:address location="http://127.0.0.1:9/bridge"/>
+    </wsdl:port>
+    <wsdl:port name="BridgeRpcPort" binding="tns:BridgeRpc">
+      <soap:address location="http://127.0.0.1:9/bridge-rpc"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
