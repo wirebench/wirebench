@@ -74,10 +74,19 @@ function sendText(result: SendResult): string {
   return lines(
     `${result.outcome.toUpperCase()}  ${result.method} ${result.url} -> ${String(result.status)} ${result.statusText} (${String(result.durationMs)} ms)`,
     ...(result.unasserted ? ['  (no assertions)'] : []),
-    ...result.assertions.map(
-      (assertion) =>
-        `  ${mark(assertion.outcome)} ${assertion.label}${assertion.message !== undefined ? `: ${assertion.message}` : ''}`,
+    ...result.assertions.flatMap((assertion) =>
+      // A baseline difference lists one change per line under its label, as the run's cli reporter does.
+      assertion.type === 'baseline' && assertion.outcome === 'failed'
+        ? [
+            `  ${mark(assertion.outcome)} ${assertion.label}`,
+            ...(assertion.message ?? '').split('\n').map((line) => `    ${line}`),
+          ]
+        : [
+            `  ${mark(assertion.outcome)} ${assertion.label}${assertion.message !== undefined ? `: ${assertion.message}` : ''}`,
+          ],
     ),
+    ...(result.baseline?.status === 'missing' ? ['  baseline: no baseline saved'] : []),
+    ...(result.baseline?.status === 'unsupported' ? [`  baseline: not compared (${result.kind})`] : []),
     ...(result.error !== undefined ? [`  error: ${result.error.code}: ${result.error.message}`] : []),
     '',
     ...headerLines(result.headers),
