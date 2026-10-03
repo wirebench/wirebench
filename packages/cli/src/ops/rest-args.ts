@@ -4,7 +4,18 @@
  * schemas are a `$ref`-inlined, possibly cyclic, graph; a node reached more than once becomes one
  * `$defs` entry, so the published schema is a tree.
  */
-import type { JsonSchema, JsonSchemaObject, OpenApiOperation, OpenApiParameter, RestApi } from '@wirebench/engine';
+import { createRestRequest, entry, NO_BODY } from '@wirebench/engine';
+import type {
+  JsonSchema,
+  JsonSchemaObject,
+  KeyValueEntry,
+  OpenApiOperation,
+  OpenApiParameter,
+  RestApi,
+  RestBody,
+  RestRequestDef,
+} from '@wirebench/engine';
+import { isRecord } from './records.js';
 
 export interface RestToolSchema {
   readonly schema: JsonSchemaObject;
@@ -203,4 +214,69 @@ export function restToolSchema(api: RestApi, operation: OpenApiOperation): RestT
     },
     cookies,
   };
+}
+
+/** A scalar's lexical form; anything else as its JSON. */
+function lexical(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value) ?? '';
+}
+
+/** OpenAPI's `simple` style: an array joined by `,`, an object as `k=v,k=v`. */
+function simpleValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(lexical).join(',');
+  if (isRecord(value))
+    return Object.entries(value)
+      .map(([key, item]) => `${key}=${lexical(item)}`)
+      .join(',');
+  return lexical(value);
+}
+
+/** OpenAPI's `form` style, exploded: an array repeats the name, an object is one row per property. */
+function formRows(name: string, value: unknown): KeyValueEntry[] {
+  if (Array.isArray(value)) return value.map((item) => entry(name, lexical(item)));
+  if (isRecord(value)) return Object.entries(value).map(([key, item]) => entry(key, lexical(item)));
+  return [entry(name, lexical(value))];
+}
+
+/** A JSON body under the JSON media type; any other media type's body is sent as written. */
+function bodyOf(operation: OpenApiOperation, value: unknown): RestBody {
+  const jsonType = jsonMediaType(operation);
+  const bodyType = jsonType ?? Object.keys(operation.requestBody?.content ?? {})[0];
+  if (value === undefined || bodyType === undefined) {
+    return NO_BODY;
+  }
+  return jsonType !== undefined
+    ? { kind: 'raw', language: 'json', contentType: jsonType, text: JSON.stringify(value) }
+    : {
+        kind: 'raw',
+        language: 'text',
+        contentType: bodyType,
+        text: typeof value === 'string' ? value : JSON.stringify(value),
+      };
+}
+
+/**
+ * The temporary request for a REST tool's arguments (spec §4.1, revision R3): the rows hold the raw
+ * values, since the engine percent-encodes path and query values when it sends. Auth is inherited
+ * from the API, as for a new request.
+ */
+export function restRequestOf(
+  operation: OpenApiOperation,
+  args: Readonly<Record<string, unknown>>,
+  name: string,
+): RestRequestDef {
+  const path = isRecord(args['path']) ? args['path'] : {};
+  const query = isRecord(args['query']) ? args['query'] : {};
+  const headers = isRecord(args['headers']) ? args['headers'] : {};
+  return createRestRequest(name, {
+    method: operation.method.toUpperCase(),
+    url: operation.path,
+    pathParams: Object.entries(path).map(([key, value]) => entry(key, simpleValue(value))),
+    query: Object.entries(query).flatMap(([key, value]) => formRows(key, value)),
+    headers: Object.entries(headers).map(([key, value]) => entry(key, simpleValue(value))),
+    body: bodyOf(operation, args['body']),
+    contract: { method: operation.method.toLowerCase(), path: operation.path },
+  });
 }

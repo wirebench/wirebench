@@ -11,13 +11,14 @@ import {
   CALCULATOR_WSDL,
   emptyProject,
   removeTempDirs,
+  restProject,
   SECRET,
   soapProject,
   startServer,
   tempDir,
   updateProject,
 } from './helpers.js';
-import type { Fixture, Reply, TestServer } from './helpers.js';
+import type { Fixture, Received, Reply, TestServer } from './helpers.js';
 
 const ADD_RESPONSE =
   '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
@@ -217,5 +218,109 @@ describe('op call, SOAP', () => {
     expect(server.received[0]?.headers.authorization).toBe(`Basic ${Buffer.from(`calc:${SECRET}`).toString('base64')}`);
     expect(JSON.stringify(result)).not.toContain(SECRET);
     expect(JSON.stringify(await historyLines(fixture))).not.toContain(SECRET);
+  });
+});
+
+describe('op call, REST', () => {
+  async function pets(reply: (request: Received) => Reply): Promise<{ fixture: Fixture; server: TestServer }> {
+    const fixture = await restProject();
+    const server = await startServer((request) => reply(request));
+    servers.push(server);
+    await addEnvironment(fixture.dir, 'local', { Pets: server.url });
+    return { fixture, server };
+  }
+
+  const callRest = (
+    fixture: Fixture,
+    tool: string,
+    ref: string,
+    args: Record<string, unknown>,
+    overrides: Partial<OpsBase> = {},
+  ) => runOp(callOp, { tool, ref, args }, fixture.base(overrides));
+
+  it('fills the path, parses a JSON response, and records the operationId in History', async () => {
+    const { fixture, server } = await pets(() => ({
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"id":3,"name":"Rex"}',
+    }));
+    const result = await callRest(fixture, 'pets_show_pet', 'Pets/GET /pets/{petId}', {
+      environment: 'local',
+      path: { petId: 3 },
+    });
+    expect(server.received[0]).toMatchObject({ method: 'GET', url: '/pets/3' });
+    expect(result).toMatchObject({ kind: 'rest', status: 200, ok: true, result: { id: 3, name: 'Rex' }, notes: [] });
+    const [entry] = await historyLines(fixture);
+    expect(entry).toMatchObject({ kind: 'rest', requestName: 'showPet (MCP)', operationName: 'showPet' });
+    expect(entry).not.toHaveProperty('requestId');
+  });
+
+  it('sends the JSON body with its media type, and refuses a body the schema refuses', async () => {
+    const { fixture, server } = await pets(() => ({
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"id":1,"name":"Rex"}',
+    }));
+    await callRest(fixture, 'pets_create_pet', 'Pets/POST /pets', {
+      environment: 'local',
+      body: { name: 'Rex', tag: 'dog' },
+    });
+    expect(server.received[0]?.method).toBe('POST');
+    expect(JSON.parse(server.received[0]?.body ?? '')).toEqual({ name: 'Rex', tag: 'dog' });
+    expect(server.received[0]?.headers['content-type']).toContain('application/json');
+    await expect(
+      callRest(fixture, 'pets_create_pet', 'Pets/POST /pets', { environment: 'local', body: { tag: 'dog' } }),
+    ).rejects.toMatchObject({ code: 'invalid-input' });
+    expect(server.received).toHaveLength(1);
+  });
+
+  it("applies the API's key, and masks it where the server echoes it", async () => {
+    const { fixture, server } = await pets((request) => ({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([{ id: 1, name: 'Rex', echo: request.headers['x-api-key'] }]),
+    }));
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      apis: project.apis.map((api) => ({
+        ...api,
+        auth: { type: 'api-key', name: 'X-Api-Key', in: 'header', valueRef: 'petsKey' },
+      })),
+    }));
+    const result = await callRest(
+      fixture,
+      'pets_list_pets',
+      'Pets/GET /pets',
+      { environment: 'local' },
+      { env: { WIREBENCH_SECRET_PETSKEY: SECRET } },
+    );
+    expect(server.received[0]?.headers['x-api-key']).toBe(SECRET);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+    expect(JSON.stringify(await historyLines(fixture))).not.toContain(SECRET);
+  });
+
+  it('returns a body that is not JSON as text, with a note', async () => {
+    const { fixture } = await pets(() => ({ headers: { 'Content-Type': 'text/plain' }, body: 'hello' }));
+    const result = await callRest(fixture, 'pets_list_pets', 'Pets/GET /pets', { environment: 'local' });
+    expect(result).toMatchObject({ body: 'hello', bodyTruncated: false, notes: [expect.stringContaining('not JSON')] });
+    expect(result).not.toHaveProperty('result');
+  });
+
+  it('notes an empty response body', async () => {
+    const { fixture } = await pets(() => ({ status: 204, body: '' }));
+    const result = await callRest(fixture, 'pets_list_pets', 'Pets/GET /pets', { environment: 'local' });
+    expect(result).toMatchObject({ status: 204, ok: true, notes: ['the response has no body'] });
+    expect(result).not.toHaveProperty('result');
+    expect(result).not.toHaveProperty('body');
+  });
+
+  it('refuses with no-endpoint when the API has no base URL', async () => {
+    const fixture = await restProject();
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      apis: project.apis.map((api) => ({ ...api, baseUrl: '', servers: [] })),
+    }));
+    await expect(callRest(fixture, 'pets_list_pets', 'Pets/GET /pets', {})).rejects.toMatchObject({
+      code: 'no-endpoint',
+      message: expect.stringContaining('"Pets"') as unknown,
+    });
   });
 });

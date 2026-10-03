@@ -27,6 +27,7 @@ import { clarkToQName, environmentFor, openProject } from './project.js';
 import type { OpenedProject } from './project.js';
 import { isRecord } from './records.js';
 import { redactBody } from './redact.js';
+import { restRequestOf } from './rest-args.js';
 import { sendAndRecord } from './send.js';
 
 export interface CallResult {
@@ -61,6 +62,7 @@ const input = z.object({
 type SoapResolved = Extract<ResolvedOperation, { kind: 'soap' }>;
 type RestResolved = Extract<ResolvedOperation, { kind: 'rest' }>;
 type SoapExchange = Extract<SentExchange, { kind: 'soap' }>;
+type RestExchange = Extract<SentExchange, { kind: 'rest' }>;
 
 function requestNameFor(operationName: string, origin: 'cli' | 'mcp'): string {
   return `${operationName} (${origin === 'mcp' ? 'MCP' : 'CLI'})`;
@@ -146,11 +148,22 @@ async function prepareSoap(
   };
 }
 
-/** Task 6 replaces this with the REST call. */
-function prepareRest(resolved: RestResolved): RestSelected {
-  throw new OpsError('unsupported-kind', `${resolved.ref}: REST operations cannot be called yet`, {
-    ref: resolved.ref,
-  });
+/** Spec §4.1 REST: a new request of the endpoint, filled from the arguments, under the API. */
+function prepareRest(
+  resolved: RestResolved,
+  args: Readonly<Record<string, unknown>>,
+  operationName: string,
+  origin: 'cli' | 'mcp',
+): RestSelected {
+  const name = requestNameFor(operationName, origin);
+  return {
+    kind: 'rest',
+    path: `${resolved.api.name}/${name}`,
+    group: resolved.api.name,
+    api: resolved.api,
+    chain: [],
+    request: restRequestOf(resolved.operation, args, name),
+  };
 }
 
 /** The engine could not tell where to send: no endpoint (SOAP) or no base URL (REST) — spec revision R4. */
@@ -225,6 +238,28 @@ function soapOutcome(resolved: SoapResolved, exchange: SoapExchange, mask: (text
   return { ...rawBody(text, http.headers['content-type'], mask, http.truncated), notes };
 }
 
+/** A JSON body parsed; anything else, or JSON cut short, as text with a note (spec §4.2). */
+function restOutcome(exchange: RestExchange, mask: (text: string) => string): Outcome {
+  const { rest } = exchange;
+  const contentType = rest.headers['content-type'];
+  if (rest.text.trim() === '') {
+    return { notes: ['the response has no body'] };
+  }
+  const looksJson = /json/i.test(contentType ?? '') || /^\s*[[{]/.test(rest.text);
+  if (looksJson && !rest.truncated) {
+    try {
+      return { result: JSON.parse(rest.text) as unknown, notes: [] };
+    } catch {
+      // Returned as text below.
+    }
+  }
+  const why = !looksJson ? 'not JSON' : rest.truncated ? 'cut short' : 'not valid JSON';
+  return {
+    ...rawBody(rest.text, contentType, mask, rest.truncated),
+    notes: [`the response body is ${why}; it is returned as text`],
+  };
+}
+
 /** A number or boolean, or a key, that holds a resolved secret, masked; strings are `runOp`'s step. */
 function maskScalars(value: unknown, mask: (text: string) => string): unknown {
   if (typeof value === 'number' || typeof value === 'boolean') {
@@ -284,11 +319,14 @@ export const callOp = defineOp({
       context.gates.environments,
     );
     const args = Object.fromEntries(Object.entries(value.args).filter(([key]) => key !== environmentKey));
-    const item = resolved.kind === 'soap' ? await prepareSoap(resolved, args, context.origin) : prepareRest(resolved);
     const operationName =
       resolved.kind === 'soap'
         ? resolved.operation.name
         : (resolved.operation.operationId ?? `${resolved.operation.method.toUpperCase()} ${resolved.operation.path}`);
+    const item =
+      resolved.kind === 'soap'
+        ? await prepareSoap(resolved, args, context.origin)
+        : prepareRest(resolved, args, operationName, context.origin);
     const container = resolved.kind === 'soap' ? resolved.iface.name : resolved.api.name;
     const sent = await sendAndRecord({
       item,
@@ -299,11 +337,15 @@ export const callOp = defineOp({
       adHoc: { requestName: requestNameFor(operationName, context.origin), operationName },
     });
     const { exchange } = sent;
-    if (exchange.kind !== 'soap' || resolved.kind !== 'soap') {
+    let outcome: Outcome;
+    if (exchange.kind === 'soap' && resolved.kind === 'soap') {
+      outcome = soapOutcome(resolved, exchange, sent.mask);
+    } else if (exchange.kind === 'rest' && resolved.kind === 'rest') {
+      outcome = restOutcome(exchange, sent.mask);
+    } else {
       throw new Error(`a ${resolved.kind} call came back with a ${exchange.kind} exchange`);
     }
-    const outcome = soapOutcome(resolved, exchange, sent.mask);
-    const http = exchange.soap.http;
+    const http = exchange.kind === 'soap' ? exchange.soap.http : exchange.rest;
     return {
       tool: value.tool,
       operation: resolved.ref,

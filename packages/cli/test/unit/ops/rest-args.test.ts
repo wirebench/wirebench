@@ -1,7 +1,7 @@
 // packages/cli/test/unit/ops/rest-args.test.ts
 import { describe, expect, it } from 'vitest';
 import type { OpenApiOperation, RestApi } from '@wirebench/engine';
-import { restToolSchema } from '../../../src/ops/rest-args.js';
+import { restRequestOf, restToolSchema } from '../../../src/ops/rest-args.js';
 
 const API = {
   auth: { type: 'api-key', name: 'X-Key', in: 'header', valueRef: 'key' },
@@ -90,5 +90,66 @@ describe('restToolSchema', () => {
     expect(restToolSchema(API, operation).schema['properties']).toEqual({
       body: { type: 'string', description: 'Sent as text/plain' },
     });
+  });
+});
+
+describe('restRequestOf', () => {
+  it('fills path rows (simple), query rows (form, exploded) and headers, raw values, and the JSON body', () => {
+    const operation = {
+      method: 'post',
+      path: '/items/{id}',
+      parameters: [],
+      requestBody: { content: { 'application/vnd.item+json': { schema: { type: 'object' } } } },
+    } as unknown as OpenApiOperation;
+    const request = restRequestOf(
+      operation,
+      {
+        path: { id: ['a b', 'c'] },
+        query: { tag: ['x', 'y'], filter: { size: 2, color: 'red' }, q: 'a&b' },
+        headers: { 'X-Trace': 7 },
+        body: { name: 'Rex' },
+      },
+      'createItem (CLI)',
+    );
+    expect(request).toMatchObject({
+      name: 'createItem (CLI)',
+      method: 'POST',
+      url: '/items/{id}',
+      pathParams: [{ name: 'id', value: 'a b,c', enabled: true }],
+      query: [
+        { name: 'tag', value: 'x', enabled: true },
+        { name: 'tag', value: 'y', enabled: true },
+        { name: 'size', value: '2', enabled: true },
+        { name: 'color', value: 'red', enabled: true },
+        { name: 'q', value: 'a&b', enabled: true },
+      ],
+      headers: [{ name: 'X-Trace', value: '7', enabled: true }],
+      body: { kind: 'raw', language: 'json', contentType: 'application/vnd.item+json', text: '{"name":"Rex"}' },
+      auth: { type: 'inherit' },
+      contract: { method: 'post', path: '/items/{id}' },
+    });
+  });
+
+  it('writes an object path value as k=v pairs', () => {
+    const operation = { method: 'get', path: '/m/{point}', parameters: [] } as unknown as OpenApiOperation;
+    expect(restRequestOf(operation, { path: { point: { x: 1, y: true } } }, 'm').pathParams).toEqual([
+      { name: 'point', value: 'x=1,y=true', enabled: true },
+    ]);
+  });
+
+  it('sends a non-JSON body as written, and no body when none is given', () => {
+    const operation = {
+      method: 'put',
+      path: '/notes',
+      parameters: [],
+      requestBody: { content: { 'text/plain': {} } },
+    } as unknown as OpenApiOperation;
+    expect(restRequestOf(operation, { body: 'hello' }, 'n').body).toEqual({
+      kind: 'raw',
+      language: 'text',
+      contentType: 'text/plain',
+      text: 'hello',
+    });
+    expect(restRequestOf(operation, {}, 'n').body).toEqual({ kind: 'none' });
   });
 });
