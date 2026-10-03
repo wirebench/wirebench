@@ -758,7 +758,7 @@ export interface XmlFromJsonResult {
 
 /**
  * How many times one path through a value may be expanded below the form's depth cut (spec revision
- * R8), each expansion five levels deep. A value nested deeper is refused, never cut short.
+ * R10), each expansion five levels deep. A value nested deeper is refused, never cut short.
  */
 export const MAX_FILL_ROUNDS = 64;
 
@@ -1128,7 +1128,7 @@ class Filler {
  * XML for `target` from a JSON value shaped by {@link jsonSchemaOf}: the form model is built, filled,
  * and serialised, so names, prefixes and element order are the desktop form's. Where the value reaches
  * below the form's depth cut, that element is built again from its declaration and filled in turn
- * (spec revision R8), up to {@link MAX_FILL_ROUNDS} times along one path; deeper is a problem.
+ * (spec revision R10), up to {@link MAX_FILL_ROUNDS} times along one path; deeper is a problem.
  * Written with no indentation, so text values stay exact.
  */
 export function xmlFromJson(
@@ -1165,6 +1165,15 @@ export interface JsonFromXmlResult {
   readonly value: unknown;
   /** Values that could not be typed, and elements the schema does not declare. */
   readonly notes: readonly string[];
+}
+
+/** `name`, or `name_2`, `name_3`… when `out` already has that key: where an unread child is kept. */
+export function freeKey(out: Readonly<Record<string, unknown>>, name: string): string {
+  let key = name;
+  for (let n = 2; key in out; n += 1) {
+    key = `${name}_${String(n)}`;
+  }
+  return key;
 }
 
 const localOf = (name: string): string => (name.includes(':') ? name.slice(name.indexOf(':') + 1) : name);
@@ -1241,11 +1250,7 @@ class Reader {
       out[wildcard.key] = leftovers.map((child) => this.slice(child)).join('\n');
     } else {
       for (const child of leftovers) {
-        let key = child.localName;
-        for (let n = 2; key in out; n += 1) {
-          key = `${child.localName}_${String(n)}`;
-        }
-        out[key] = this.slice(child);
+        out[freeKey(out, child.localName)] = this.slice(child);
         this.notes.push(`${where}/${child.localName}: not in the schema; kept as its XML`);
       }
     }

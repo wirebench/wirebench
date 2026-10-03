@@ -7,13 +7,15 @@ import type { MessageDirection } from '../validate/index.js';
 import { bindingContextFor } from '../validate/index.js';
 import { findBinding, findMessage, findPortType } from '../wsdl/model.js';
 import type { QName } from '../wsdl/qname.js';
+import { qnameToString } from '../wsdl/qname.js';
 import { NS } from '../xml/namespaces.js';
 import { prefixForNamespace } from '../xml/prefixes.js';
-import { createJsonSchemaWriter, jsonFromXml, xmlFromJson } from '../xsd/json-bridge.js';
+import { createJsonSchemaWriter, freeKey, jsonFromXml, targetType, xmlFromJson } from '../xsd/json-bridge.js';
 import type { BridgeTarget, JsonFromXmlResult, JsonSchemaObject } from '../xsd/json-bridge.js';
 import { scanXml } from '../xsd/xml-scan.js';
 import type { ScannedElement } from '../xsd/xml-scan.js';
 import { escapeAttribute } from '../xsd/xml-writer.js';
+import type { SchemaSet } from '../xsd/schema-set.js';
 import { createEnvelope } from './envelope.js';
 import type { SoapEnvelopeVersion } from './envelope.js';
 import { findBody, namespacesInScope } from './form-request.js';
@@ -79,6 +81,28 @@ function bodyShape(input: RequestBuildInput, op: OperationRef, direction: Messag
   };
 }
 
+/**
+ * Whether a body element's content is a value rather than an object (a simple type, `anyType`, a
+ * SOAP-encoded array): its one argument is then `#text`. Decided by the resolved type, so the schema,
+ * the writer and the reader agree whatever shape the generated schema takes.
+ */
+function textBodied(set: SchemaSet, target: BridgeTarget): boolean {
+  const kind = targetType(set, target)?.kind;
+  return kind !== undefined && kind !== 'complex';
+}
+
+const DEFS_REF = '#/$defs/';
+
+/** A root that came out as a `$ref` (a type that refers back to itself), as the definition it names. */
+function inlineRoot(content: JsonSchemaObject, defs: JsonSchemaObject | undefined): JsonSchemaObject {
+  const ref = content['$ref'];
+  if (typeof ref !== 'string' || !ref.startsWith(DEFS_REF) || defs === undefined) {
+    return content;
+  }
+  const def = defs[ref.slice(DEFS_REF.length).replaceAll('~1', '/').replaceAll('~0', '~')];
+  return typeof def === 'object' && def !== null && !Array.isArray(def) ? (def as JsonSchemaObject) : content;
+}
+
 const OBJECT_OF_NOTHING: JsonSchemaObject = { type: 'object', properties: {}, additionalProperties: false };
 
 /** The JSON Schema of an operation's input (or output) body, `$defs` shared across its parts. */
@@ -99,11 +123,9 @@ export function operationJsonSchema(
   const [first] = shape.parts;
   if (shape.single && first !== undefined) {
     const content = writer.schemaOf(first.target);
-    // A body element of simple type takes its value as `#text`.
-    schema =
-      content['type'] === 'object'
-        ? content
-        : { type: 'object', properties: { '#text': content }, required: ['#text'], additionalProperties: false };
+    schema = textBodied(input.schemaSet, first.target)
+      ? { type: 'object', properties: { '#text': content }, required: ['#text'], additionalProperties: false }
+      : inlineRoot(content, writer.defs());
   } else {
     schema = {
       type: 'object',
@@ -150,7 +172,7 @@ export function envelopeFromJson(
   const [first] = shape.parts;
   let bodyXml: string;
   if (shape.single && first !== undefined) {
-    bodyXml = write(first.target, args);
+    bodyXml = write(first.target, textBodied(input.schemaSet, first.target) ? args['#text'] : args);
   } else {
     const pieces = shape.parts.map((part) => write(part.target, args[part.name])).filter((piece) => piece !== '');
     const wrapper = shape.wrapper;
@@ -176,6 +198,9 @@ function matches(element: ScannedElement, name: QName): boolean {
   return element.localName === name.localName && element.namespaceUri === name.namespaceUri;
 }
 
+const nameOf = (element: ScannedElement): string =>
+  qnameToString({ namespaceUri: element.namespaceUri, localName: element.localName });
+
 /** An envelope's body read back as the JSON {@link envelopeFromJson} takes. */
 export function jsonFromEnvelope(
   input: RequestBuildInput,
@@ -189,33 +214,74 @@ export function jsonFromEnvelope(
     return { value: undefined, notes: ['the message has no SOAP Body this operation describes'] };
   }
   const inScope = namespacesInScope(xml).byPrefix;
+  const slice = (element: ScannedElement): string => xml.slice(element.range.start, element.range.end);
   const read = (target: BridgeTarget, element: ScannedElement): JsonFromXmlResult =>
-    jsonFromXml(input.schemaSet, target, xml.slice(element.range.start, element.range.end), { inScope });
+    jsonFromXml(input.schemaSet, target, slice(element), { inScope });
   const [first] = shape.parts;
-  const [child] = body.children;
-  if (shape.single && first !== undefined) {
-    if (child === undefined) {
-      return { value: undefined, notes: ['the SOAP Body is empty'] };
-    }
-    const result = read(first.target, child);
-    const isObject = typeof result.value === 'object' && result.value !== null && !Array.isArray(result.value);
-    return isObject || result.value === undefined ? result : { value: { '#text': result.value }, notes: result.notes };
+  const [child, ...rest] = body.children;
+  const notes = rest.map((extra) => `the SOAP Body holds ${nameOf(extra)} after the body element; not read`);
+  /** The element the body should start with: the single part's (or a substitute), or the rpc wrapper. */
+  const expected =
+    shape.single && first !== undefined && 'element' in first.target ? first.target.element : shape.wrapper;
+  if (expected === undefined) {
+    return readParts(op, shape.parts, body.children, read, slice);
   }
-  const holder = shape.wrapper === undefined ? body : child;
-  if (holder === undefined) {
+  if (child === undefined) {
     return { value: undefined, notes: ['the SOAP Body is empty'] };
   }
+  const named =
+    matches(child, expected) ||
+    (shape.single && input.schemaSet.substitutionsFor(expected).some((decl) => matches(child, decl.name)));
+  if (!named) {
+    return {
+      value: slice(child),
+      notes: [`the SOAP Body holds ${nameOf(child)}, not ${qnameToString(expected)}; kept as its XML`, ...notes],
+    };
+  }
+  if (shape.single && first !== undefined) {
+    const result = read(first.target, child);
+    const value =
+      textBodied(input.schemaSet, first.target) && result.value !== undefined
+        ? { '#text': result.value }
+        : result.value;
+    return { value, notes: [...result.notes, ...notes] };
+  }
+  const parts = readParts(op, shape.parts, child.children, read, slice);
+  return { value: parts.value, notes: [...parts.notes, ...notes] };
+}
+
+/**
+ * One property per part, each read from the child of its element name (rpc: its part name); a part
+ * with no child is noted, and a child no part names is kept under its local name as its XML (§5).
+ */
+function readParts(
+  op: OperationRef,
+  parts: readonly BodyPart[],
+  children: readonly ScannedElement[],
+  read: (target: BridgeTarget, element: ScannedElement) => JsonFromXmlResult,
+  slice: (element: ScannedElement) => string,
+): JsonFromXmlResult {
   const value: Record<string, unknown> = {};
   const notes: string[] = [];
-  for (const part of shape.parts) {
-    const element = holder.children.find((candidate) =>
-      'element' in part.target ? matches(candidate, part.target.element) : candidate.localName === part.name,
+  const unread = new Set(children);
+  for (const part of parts) {
+    const element = children.find(
+      (candidate) =>
+        unread.has(candidate) &&
+        ('element' in part.target ? matches(candidate, part.target.element) : candidate.localName === part.name),
     );
-    if (element !== undefined) {
-      const result = read(part.target, element);
-      value[part.name] = result.value;
-      notes.push(...result.notes);
+    if (element === undefined) {
+      notes.push(`${part.name}: the message has no element for this part`);
+      continue;
     }
+    unread.delete(element);
+    const result = read(part.target, element);
+    value[part.name] = result.value;
+    notes.push(...result.notes);
+  }
+  for (const element of unread) {
+    value[freeKey(value, element.localName)] = slice(element);
+    notes.push(`${element.localName}: not a part of ${op.operationName}; kept as its XML`);
   }
   return { value, notes };
 }

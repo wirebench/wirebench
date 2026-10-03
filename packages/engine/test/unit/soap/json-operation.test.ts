@@ -104,3 +104,104 @@ describe('a SOAP operation as JSON', () => {
     expect(faultDetailJson(wsdl, PLACE, '<other>1</other>')).toBeUndefined();
   });
 });
+
+const SHAPES_FIXTURE = fileURLToPath(new URL('../../fixtures/json-bridge/shapes.wsdl', import.meta.url));
+const SHAPES = 'urn:wb:shapes';
+const shapesOp = (binding: string, operationName: string) => ({
+  bindingName: { namespaceUri: SHAPES, localName: binding },
+  operationName,
+});
+const GROW = shapesOp('ShapesSoap', 'Grow');
+const SAY = shapesOp('ShapesSoap', 'Say');
+const CARRY = shapesOp('ShapesSoap', 'Carry');
+const BOTH = shapesOp('ShapesSoap', 'Both');
+const ASK = shapesOp('ShapesRpc', 'Ask');
+
+const envelope = (body: string): string =>
+  '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body>' +
+  body +
+  '</soapenv:Body></soapenv:Envelope>';
+
+describe('the shapes of a SOAP body as JSON', () => {
+  let shapes: WsdlImportResult;
+
+  beforeAll(async () => {
+    shapes = await importWsdl({ kind: 'file', path: SHAPES_FIXTURE });
+  });
+
+  it('takes a self-referencing body element as an object of its own content', () => {
+    const { schema } = operationJsonSchema(shapes, GROW);
+    expect(schema['type']).toBe('object');
+    expect(schema['properties']).toHaveProperty('label');
+    expect(schema['properties']).not.toHaveProperty('#text');
+    const args = { label: 'a', Tree: [{ label: 'b' }] };
+    const built = envelopeFromJson(shapes, GROW, args);
+    expect(built.problems).toEqual([]);
+    expect(jsonFromEnvelope(shapes, GROW, built.envelopeXml, 'request')).toEqual({ value: args, notes: [] });
+  });
+
+  it('takes a simple-type body element as #text, and reads it back', () => {
+    expect(operationJsonSchema(shapes, SAY).schema).toEqual({
+      type: 'object',
+      properties: { '#text': { type: 'integer', minimum: -2147483648, maximum: 2147483647 } },
+      required: ['#text'],
+      additionalProperties: false,
+    });
+    const built = envelopeFromJson(shapes, SAY, { '#text': 5 });
+    expect(built.problems).toEqual([]);
+    expect(built.envelopeXml).toMatch(/<([A-Za-z][\w.-]*):Note xmlns:\1="urn:wb:shapes">5<\/\1:Note>/);
+    expect(jsonFromEnvelope(shapes, SAY, built.envelopeXml, 'request')).toEqual({ value: { '#text': 5 }, notes: [] });
+  });
+
+  it('takes an anyType body element as #text holding its fragment', () => {
+    const { schema } = operationJsonSchema(shapes, CARRY);
+    expect(schema['required']).toEqual(['#text']);
+    const built = envelopeFromJson(shapes, CARRY, { '#text': '<x>1</x>' });
+    expect(built.problems).toEqual([]);
+    expect(built.envelopeXml).toMatch(/:Blob xmlns:[\w.-]+="urn:wb:shapes">\s*<x>1<\/x>\s*<\//);
+    expect(jsonFromEnvelope(shapes, CARRY, built.envelopeXml, 'request').value).toEqual({ '#text': '<x>1</x>' });
+  });
+
+  it('keeps a body element of another name as its XML, with a note', () => {
+    const wrong = '<t:Wrong xmlns:t="urn:wb:shapes"><t:label>a</t:label></t:Wrong>';
+    expect(jsonFromEnvelope(shapes, GROW, envelope(wrong))).toEqual({
+      value: wrong,
+      notes: ['the SOAP Body holds {urn:wb:shapes}Wrong, not {urn:wb:shapes}Tree; kept as its XML'],
+    });
+  });
+
+  it('notes a second body element it does not read', () => {
+    const tree = '<t:Tree xmlns:t="urn:wb:shapes"><t:label>a</t:label></t:Tree>';
+    expect(jsonFromEnvelope(shapes, GROW, envelope(tree + '<t:Extra xmlns:t="urn:wb:shapes"/>'))).toEqual({
+      value: { label: 'a' },
+      notes: ['the SOAP Body holds {urn:wb:shapes}Extra after the body element; not read'],
+    });
+  });
+
+  it('keeps an rpc wrapper of another name as its XML, with a note', () => {
+    const wrong = '<r:Other xmlns:r="urn:wb:shapes:rpc"><item>tea</item></r:Other>';
+    expect(jsonFromEnvelope(shapes, ASK, envelope(wrong), 'request')).toEqual({
+      value: wrong,
+      notes: ['the SOAP Body holds {urn:wb:shapes:rpc}Other, not {urn:wb:shapes:rpc}Ask; kept as its XML'],
+    });
+  });
+
+  it('notes a missing part and keeps an undeclared child as its XML', () => {
+    const body = '<r:Ask xmlns:r="urn:wb:shapes:rpc"><item>tea</item><extra>1</extra></r:Ask>';
+    expect(jsonFromEnvelope(shapes, ASK, envelope(body), 'request')).toEqual({
+      value: { item: 'tea', extra: '<extra>1</extra>' },
+      notes: ['count: the message has no element for this part', 'extra: not a part of Ask; kept as its XML'],
+    });
+  });
+
+  it('reads document parts by element name and keeps the rest as XML', () => {
+    const body =
+      '<t:Note xmlns:t="urn:wb:shapes">5</t:Note>' +
+      '<t:Tree xmlns:t="urn:wb:shapes"><t:label>a</t:label></t:Tree>' +
+      '<t:Stray xmlns:t="urn:wb:shapes">x</t:Stray>';
+    expect(jsonFromEnvelope(shapes, BOTH, envelope(body))).toEqual({
+      value: { note: 5, tree: { label: 'a' }, Stray: '<t:Stray xmlns:t="urn:wb:shapes">x</t:Stray>' },
+      notes: ['Stray: not a part of Both; kept as its XML'],
+    });
+  });
+});

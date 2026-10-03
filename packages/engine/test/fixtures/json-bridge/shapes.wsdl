@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="urn:wb:shapes"
+                  targetNamespace="urn:wb:shapes">
+  <wsdl:types>
+    <xs:schema targetNamespace="urn:wb:shapes" elementFormDefault="qualified">
+      <xs:element name="Tree">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="label" type="xs:string"/>
+            <xs:element ref="tns:Tree" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Note" type="xs:int"/>
+      <xs:element name="Blob" type="xs:anyType"/>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="TreeMsg"><wsdl:part name="parameters" element="tns:Tree"/></wsdl:message>
+  <wsdl:message name="NoteMsg"><wsdl:part name="parameters" element="tns:Note"/></wsdl:message>
+  <wsdl:message name="BlobMsg"><wsdl:part name="parameters" element="tns:Blob"/></wsdl:message>
+  <wsdl:message name="BothMsg">
+    <wsdl:part name="note" element="tns:Note"/>
+    <wsdl:part name="tree" element="tns:Tree"/>
+  </wsdl:message>
+  <wsdl:message name="AskIn">
+    <wsdl:part name="item" type="xs:string"/>
+    <wsdl:part name="count" type="xs:int"/>
+  </wsdl:message>
+  <wsdl:portType name="ShapesPort">
+    <wsdl:operation name="Grow"><wsdl:input message="tns:TreeMsg"/><wsdl:output message="tns:TreeMsg"/></wsdl:operation>
+    <wsdl:operation name="Say"><wsdl:input message="tns:NoteMsg"/><wsdl:output message="tns:NoteMsg"/></wsdl:operation>
+    <wsdl:operation name="Carry"><wsdl:input message="tns:BlobMsg"/><wsdl:output message="tns:BlobMsg"/></wsdl:operation>
+    <wsdl:operation name="Both"><wsdl:input message="tns:BothMsg"/><wsdl:output message="tns:BothMsg"/></wsdl:operation>
+  </wsdl:portType>
+  <wsdl:portType name="ShapesRpcPort">
+    <wsdl:operation name="Ask"><wsdl:input message="tns:AskIn"/><wsdl:output message="tns:AskIn"/></wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="ShapesSoap" type="tns:ShapesPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Grow">
+      <soap:operation soapAction="urn:wb:shapes/Grow"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Say">
+      <soap:operation soapAction="urn:wb:shapes/Say"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Carry">
+      <soap:operation soapAction="urn:wb:shapes/Carry"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Both">
+      <soap:operation soapAction="urn:wb:shapes/Both"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="ShapesRpc" type="tns:ShapesRpcPort">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Ask">
+      <soap:operation soapAction="urn:wb:shapes/Ask"/>
+      <wsdl:input><soap:body use="literal" namespace="urn:wb:shapes:rpc"/></wsdl:input>
+      <wsdl:output><soap:body use="literal" namespace="urn:wb:shapes:rpc"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="ShapesService">
+    <wsdl:port name="ShapesSoap" binding="tns:ShapesSoap"><soap:address location="http://localhost/shapes"/></wsdl:port>
+    <wsdl:port name="ShapesRpc" binding="tns:ShapesRpc"><soap:address location="http://localhost/shapes/rpc"/></wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
