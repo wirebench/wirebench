@@ -188,6 +188,64 @@ describe('AuditReporter', () => {
     expect(await files()).toEqual([]);
   });
 
+  it('sends a local dropped count over the cap in clamped batches', async () => {
+    const { batches, reporter } = setup();
+    await outboxFor(dir).addDropped(1_500_000);
+    await reporter.flush();
+    expect(batches).toEqual([
+      { events: [], dropped: 1_000_000 },
+      { events: [], dropped: 500_000 },
+    ]);
+    expect(await outboxFor(dir).dropped()).toBe(0);
+  });
+
+  it('afterFetch sends nothing while a back-off timer is pending, until it fires', async () => {
+    let fail = true;
+    const { clock, batches, reporter } = setup(() =>
+      fail ? Promise.reject(new WirebenchError('server-unreachable', 'down')) : Promise.resolve(),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(clock.pending).toEqual([5000]);
+    fail = false;
+    await reporter.afterFetch();
+    expect(batches).toHaveLength(1);
+    expect(clock.pending).toEqual([5000]);
+    await clock.fireNext();
+    expect(batches).toHaveLength(2);
+    expect(await files()).toEqual([]);
+  });
+
+  it('afterFetch sends at once when no timer is pending', async () => {
+    const { clock, batches, reporter } = setup();
+    await outboxFor(dir).append(ev(1), 'u1');
+    await reporter.afterFetch();
+    expect(batches).toHaveLength(1);
+    expect(clock.pending).toEqual([]);
+  });
+
+  it('a 429 with a retry-after longer than the back-off schedules that long', async () => {
+    const { clock, reporter } = setup(() =>
+      Promise.reject(
+        new WirebenchError('audit-desktop-rate-limited', 'slow', { details: { status: 429, retryAfterMs: 60_000 } }),
+      ),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(clock.pending).toEqual([60_000]);
+  });
+
+  it('caps a retry-after of 900 s at 300 s', async () => {
+    const { clock, reporter } = setup(() =>
+      Promise.reject(
+        new WirebenchError('audit-desktop-rate-limited', 'slow', { details: { status: 429, retryAfterMs: 900_000 } }),
+      ),
+    );
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(clock.pending).toEqual([300_000]);
+  });
+
   it('signed out keeps the files and waits for onSignedIn', async () => {
     let token = undefined as string | undefined;
     const { clock, batches, reporter } = setup(undefined, () => token);
@@ -452,12 +510,12 @@ describe('AuditReporter', () => {
     reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
     expect(clock.pending).toEqual([10000]);
     await reporter.afterFetch();
-    expect(clock.pending).toEqual([20000]);
+    expect(clock.pending).toEqual([10000]);
   });
 
   it('an unchanged target fetched as recording again after a 409 resumes', async () => {
     let off = true;
-    const { batches, reporter } = setup(() =>
+    const { clock, batches, reporter } = setup(() =>
       off ? Promise.reject(new WirebenchError('audit-desktop-recording-off', 'off')) : Promise.resolve(),
     );
     await reporter.enqueue(ev(1), 'w1');
@@ -468,6 +526,7 @@ describe('AuditReporter', () => {
     reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: true });
     await reporter.enqueue(ev(3), 'w1');
     await reporter.afterFetch();
+    await clock.fireNext();
     expect(batches.at(-1)).toEqual({ events: [ev(3)] });
     expect(await files()).toEqual([]);
   });

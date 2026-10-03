@@ -160,7 +160,13 @@ export type AuditPage = z.infer<typeof auditPageSchema>;
 // ---- desktop events ----------------------------------------------------------------------
 
 /** Bounds on what the desktop records and uploads (desktop audit events spec §2.2). */
-export const DESKTOP_AUDIT_LIMITS = { maxBatch: 100, maxOutbox: 5000, maxUrlLength: 2048, maxHosts: 64 } as const;
+export const DESKTOP_AUDIT_LIMITS = {
+  maxBatch: 100,
+  maxOutbox: 5000,
+  maxUrlLength: 2048,
+  maxHosts: 64,
+  maxDropped: 1_000_000,
+} as const;
 
 /** One request the desktop sent. Metadata only: no headers, no body, no response. */
 export const desktopRequestSentDetailsSchema = z.strictObject({
@@ -205,7 +211,7 @@ export type DesktopAuditEvent = z.infer<typeof desktopAuditEventSchema>;
 export const desktopAuditBatchSchema = z
   .strictObject({
     events: z.array(desktopAuditEventSchema).max(DESKTOP_AUDIT_LIMITS.maxBatch),
-    dropped: z.number().int().min(1).max(1_000_000).optional(),
+    dropped: z.number().int().min(1).max(DESKTOP_AUDIT_LIMITS.maxDropped).optional(),
   })
   .refine((batch) => batch.events.length > 0 || batch.dropped !== undefined, {
     message: 'a batch carries events or a dropped count',

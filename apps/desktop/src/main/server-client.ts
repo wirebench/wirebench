@@ -674,13 +674,22 @@ export class ServerClient {
   private throwProblem(origin: string, exchange: HttpExchange): never {
     const json = parseJson(new TextDecoder().decode(exchange.body), exchange.headers['content-type']);
     const problem = json as { readonly code?: unknown; readonly message?: unknown } | undefined;
+    const retryAfterMs = parseRetryAfter(exchange.headers['retry-after']);
+    const details = { status: exchange.status, ...(retryAfterMs !== undefined ? { retryAfterMs } : {}) };
     if (typeof problem?.code === 'string' && typeof problem.message === 'string') {
-      throw new WirebenchError(problem.code, problem.message, { details: { status: exchange.status } });
+      throw new WirebenchError(problem.code, problem.message, { details });
     }
-    throw new WirebenchError('server-bad-response', `${origin} answered ${String(exchange.status)}`, {
-      details: { status: exchange.status },
-    });
+    throw new WirebenchError('server-bad-response', `${origin} answered ${String(exchange.status)}`, { details });
   }
+}
+
+/** A `Retry-After` as milliseconds: whole seconds or an HTTP-date. Anything else is ignored. */
+function parseRetryAfter(value: string | undefined, now: number = Date.now()): number | undefined {
+  const text = value?.trim();
+  if (text === undefined || text === '') return undefined;
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  const at = Date.parse(text);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }
 
 /** The TLS and proxy settings a request to this server carries, only the ones that are set. */

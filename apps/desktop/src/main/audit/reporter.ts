@@ -58,6 +58,8 @@ export class AuditReporter {
   private signedOut = false;
   private timer: unknown;
   private backoffMs = 0;
+  /** The `Retry-After` of the failure that ended the last drain, if it carried one. */
+  private retryAfterMs: number | undefined;
   private running: Promise<void> | undefined;
   private again = false;
   private disposed = false;
@@ -140,6 +142,8 @@ export class AuditReporter {
   /** A fetch went through, so the account is signed in: send now, keeping any back-off's pace. */
   afterFetch(): Promise<void> {
     this.signedOut = false;
+    // A pending back-off timer keeps its pace: the fetch must not send ahead of it.
+    if (this.timer !== undefined) return this.running ?? Promise.resolve();
     return this.flush();
   }
 
@@ -161,7 +165,7 @@ export class AuditReporter {
             this.backoffMs === 0 ? AUDIT_BACKOFF_START_MS : this.backoffMs * 2,
             AUDIT_BACKOFF_MAX_MS,
           );
-          this.schedule(this.backoffMs);
+          this.schedule(Math.min(Math.max(this.backoffMs, this.retryAfterMs ?? 0), AUDIT_BACKOFF_MAX_MS));
           return;
         }
         if (outcome === 'signed-out') {
@@ -179,6 +183,7 @@ export class AuditReporter {
   private async drain(): Promise<Outcome> {
     const target = this.target;
     const outbox = this.outbox;
+    this.retryAfterMs = undefined;
     if (this.disposed || target === undefined || outbox === undefined || this.serverOff) return 'done';
     for (;;) {
       const peeked = await outbox.peek(DESKTOP_AUDIT_LIMITS.maxBatch);
@@ -193,7 +198,8 @@ export class AuditReporter {
       }
       const items = peeked.filter((i) => i.userId === account.userId);
       if (items.length === 0 && foreign.length > 0) continue;
-      const dropped = await outbox.dropped();
+      // The server takes at most `maxDropped` in a batch; the rest goes in the next one.
+      const dropped = Math.min(await outbox.dropped(), DESKTOP_AUDIT_LIMITS.maxDropped);
       if (items.length === 0 && dropped === 0) return 'done';
       const batch: DesktopAuditBatch = {
         events: items.map((i) => i.event),
@@ -229,6 +235,10 @@ export class AuditReporter {
           await outbox.addDropped(items.length);
           continue;
         }
+        const retryAfter = isWirebenchError(error)
+          ? (error.details as { retryAfterMs?: unknown } | undefined)?.retryAfterMs
+          : undefined;
+        if (typeof retryAfter === 'number' && retryAfter > 0) this.retryAfterMs = retryAfter;
         // Anything else, a 429 rate limit and a 5xx included, keeps the files and backs off.
         return code !== undefined && (OFFLINE_CODES.has(code) || code === 'server-unreachable') ? 'offline' : 'failed';
       }

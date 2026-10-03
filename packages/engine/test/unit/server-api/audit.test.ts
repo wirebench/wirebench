@@ -115,7 +115,13 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
         expect(AUDIT_ACTIONS).toContain(a);
       }
       expect(AUDIT_ACTION_GROUPS).toContain('desktop');
-      expect(DESKTOP_AUDIT_LIMITS).toEqual({ maxBatch: 100, maxOutbox: 5000, maxUrlLength: 2048, maxHosts: 64 });
+      expect(DESKTOP_AUDIT_LIMITS).toEqual({
+        maxBatch: 100,
+        maxOutbox: 5000,
+        maxUrlLength: 2048,
+        maxHosts: 64,
+        maxDropped: 1_000_000,
+      });
     });
 
     it('parses a request-sent and a run-finished event', () => {

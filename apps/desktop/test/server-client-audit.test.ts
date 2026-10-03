@@ -119,6 +119,39 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
 describe('ServerClient reportDesktopEvents (desktop audit events spec §2.4)', () => {
   const batch = { events: [], dropped: 3 };
 
+  const limited = (headers: Record<string, string>) =>
+    new ServerClient({
+      send: () =>
+        Promise.resolve({
+          status: 429,
+          headers: { 'content-type': 'application/json', ...headers },
+          body: new TextEncoder().encode(JSON.stringify({ code: 'audit-desktop-rate-limited', message: 'slow' })),
+        } as never),
+    });
+  const detailsOf = async (headers: Record<string, string>): Promise<unknown> => {
+    try {
+      await limited(headers).reportDesktopEvents('https://s.example', 'tok', 'w1', batch);
+    } catch (error) {
+      return (error as { details?: unknown }).details;
+    }
+    throw new Error('did not reject');
+  };
+
+  it('a 429 with retry-after in seconds carries retryAfterMs', async () => {
+    expect(await detailsOf({ 'retry-after': '30' })).toEqual({ status: 429, retryAfterMs: 30_000 });
+  });
+
+  it('a 429 with an HTTP-date retry-after carries the wait until then', async () => {
+    const at = new Date(Date.now() + 60_000).toUTCString();
+    const details = (await detailsOf({ 'retry-after': at })) as { retryAfterMs: number };
+    expect(details.retryAfterMs).toBeGreaterThan(50_000);
+    expect(details.retryAfterMs).toBeLessThanOrEqual(60_000);
+  });
+
+  it('ignores a garbage retry-after', async () => {
+    expect(await detailsOf({ 'retry-after': 'soon' })).toEqual({ status: 429 });
+  });
+
   it('POSTs the batch to the workspace route and resolves on 204', async () => {
     const seen: { url: string; method: string; body: string; auth: string | undefined }[] = [];
     const client = new ServerClient({
