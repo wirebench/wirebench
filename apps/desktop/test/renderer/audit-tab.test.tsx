@@ -87,6 +87,19 @@ describe('AuditTab (audit-log spec §3.6)', () => {
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Exported 3 events to /tmp/a.ndjson'));
   });
 
+  it('a selected workspace that leaves the workspaces list stops narrowing the query', async () => {
+    query.mockResolvedValue({ ok: true, value: { events: [] } });
+    const url = 'https://s.example';
+    const { rerender } = render(<AuditTab url={url} workspaces={[{ id: 'W1', name: 'Payments' }]} />);
+    fireEvent.change(await screen.findByTestId('audit-workspace'), { target: { value: 'W1' } });
+    await waitFor(() => expect(lastQuery(query)).toMatchObject({ workspaceId: 'W1' }));
+    const before = query.mock.calls.length;
+    rerender(<AuditTab url={url} workspaces={[{ id: 'W2', name: 'Billing' }]} />);
+    await waitFor(() => expect(query.mock.calls.length).toBeGreaterThan(before));
+    expect('workspaceId' in lastQuery(query)).toBe(false);
+    expect(useAuditStore.getState().filter.workspaceId).toBeUndefined();
+  });
+
   it('a load that starts while a load-more is pending leaves the store usable', async () => {
     let answerMore: (value: unknown) => void = () => undefined;
     query

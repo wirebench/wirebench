@@ -81,7 +81,13 @@ test.describe('audit log (audit-log spec §3.6)', () => {
     await expect(dialog.getByTestId('audit-details-json')).toContainText('"name": "Payments"');
 
     await dialog.getByTestId('audit-export').click();
-    await expect.poll(() => readFileSync(exportPath, 'utf8').trim().split('\n').length).toBe(1);
+    // An empty file is no lines, not one empty line, so the poll cannot pass before the export lands.
+    const exportedLines = (): string[] => {
+      const text = readFileSync(exportPath, 'utf8').trim();
+      return text === '' ? [] : text.split('\n');
+    };
+    await expect.poll(() => exportedLines().length).toBe(1);
+    expect((JSON.parse(exportedLines()[0]!) as { action: string }).action).toBe('team.created');
     expect(server.requests.some((r) => r.method === 'GET' && r.path.startsWith('/api/v1/audit/export'))).toBe(true);
   });
 });

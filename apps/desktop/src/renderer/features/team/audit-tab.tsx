@@ -26,6 +26,12 @@ export function AuditTab({
       useAuditStore.getState().reset();
     };
   }, [url]);
+  // The tab stays mounted across a team switch: a workspace the filter bar no longer offers stops narrowing.
+  const selectedWorkspace = store.filter.workspaceId;
+  const staleWorkspace = selectedWorkspace !== undefined && !workspaces.some((w) => w.id === selectedWorkspace);
+  useEffect(() => {
+    if (staleWorkspace) void useAuditStore.getState().setFilter(url, { workspaceId: undefined });
+  }, [staleWorkspace, url]);
   const nav = useGridNavigation(store.events.length, { onActiveRowChange: (i) => store.select(store.events[i]?.id) });
   const selected = store.events.find((e) => e.id === store.selectedId);
 
