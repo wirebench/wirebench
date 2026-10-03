@@ -12,11 +12,6 @@ import type { Querier } from '../../context.js';
 /** The lock's first key, an int4 (the ASCII of "wbac"); the second is the schema's `hashtext`. */
 export const AUDIT_CHAIN_LOCK_CLASS = 0x77626163;
 
-/** Waits for the chain's lock; it is released when the transaction ends. */
-export async function lockChain(tx: Querier): Promise<void> {
-  await tx.query('select pg_advisory_xact_lock($1::int, hashtext(current_schema()))', [AUDIT_CHAIN_LOCK_CLASS]);
-}
-
 /** Takes the chain's lock if it is free, without waiting; true when taken. */
 export async function tryLockChain(tx: Querier): Promise<boolean> {
   const result = await tx.query<{ locked: boolean }>(

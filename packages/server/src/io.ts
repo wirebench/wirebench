@@ -9,8 +9,11 @@ export interface ServerIo {
   readonly env: NodeJS.ProcessEnv;
 }
 
-/** Host spec §3.1, §3.4, §3.8: 0 ok, 1 migrations pending, 2 configuration or usage, 3 migration failed. */
-export const ExitCode = { Ok: 0, Pending: 1, Config: 2, Migration: 3 } as const;
+/**
+ * Host spec §3.1, §3.4, §3.8: 0 ok, 1 migrations pending, 2 configuration or usage, 3 migration failed.
+ * `Broken` is `admin audit verify`'s 1: the audit chain has a broken link (audit-chain spec §3.4).
+ */
+export const ExitCode = { Ok: 0, Pending: 1, Broken: 1, Config: 2, Migration: 3 } as const;
 
 export function packageVersion(): string {
   const { version } = require('../package.json') as { readonly version: string };

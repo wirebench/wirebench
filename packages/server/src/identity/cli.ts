@@ -8,7 +8,7 @@ import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, loadConfig } from '../config.js';
 import { auditHook } from '../audit-log/hook.js';
-import { runAuditCommand } from '../audit-log/cli.js';
+import { runAuditCommand, runVerifyCommand } from '../audit-log/cli.js';
 import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
@@ -116,6 +116,8 @@ export async function runAdmin(
         );
       case 'admin-audit-export':
         return await runAuditCommand(command, { db, hooks: env.ctx.hooks, now: env.now }, io);
+      case 'admin-audit-verify':
+        return await runVerifyCommand(command, { db, hooks: env.ctx.hooks, key: env.ctx.config.auditChainKey }, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {
