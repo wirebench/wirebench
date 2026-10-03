@@ -409,6 +409,26 @@ backtracking pattern such as `(a+)+$` against a long near-miss runs for minutes.
 running `RegExp`, so a thread that can be terminated is the only bound. A timeout or an invalid pattern is an
 `errored` assertion (`packages/engine/test/unit/assert/match-regex.test.ts`).
 
+## An HTML preview is a frame with nothing granted
+
+Preview renders an HTML response or webhook capture inside `<iframe sandbox="" srcdoc>`. The empty
+`sandbox` attribute sets every flag and grants no exception (no `allow-*` token, pinned by a test), so
+the document gets an opaque origin, no script, no forms, no popups and no navigation of its parent.
+The document also leads with its own policy, declared before anything the server sent:
+
+```
+default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'
+```
+
+That is `HTML_PREVIEW_CSP` (`apps/desktop/src/shared/html-preview-csp.ts`). Inline styles and `data:`
+images and fonts render; every other fetch is refused, and the referrer is `no-referrer`. In the main
+process a `will-frame-navigate` handler (`denySubframeNavigation`) denies every subframe navigation, so
+a meta refresh or a link click that slipped past the sandbox still goes nowhere. A body over
+`rest.prettyPrintMaxBytes` is not framed at all.
+
+The residual risk is a Chromium sandbox escape, which keeping Electron current mitigates. Spec §4
+(`docs/specs/2026-10-03-wirebench-html-response-preview-design.md`) has the full threat table.
+
 ## A response value is data, never a template
 
 A [sequence](specs/2026-09-28-sequences-design.md) lifts values out of one response (a token, an id,

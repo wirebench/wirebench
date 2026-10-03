@@ -46,6 +46,8 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **HTML preview.** The Preview tab renders an HTML response or webhook capture as a static page in a
+  sandboxed frame: no scripts, forms, navigation or network (#48).
 - **Contract operations as MCP tools (#33).** `wirebench mcp` lists every imported SOAP operation and
   OpenAPI endpoint as a tool of its own, with a JSON Schema built from the XSD or the OpenAPI schemas.
   An agent calls it with JSON; Wirebench builds the envelope or request, sends it under the interface's
