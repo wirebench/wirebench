@@ -8,7 +8,7 @@ in the app or over the API needs the Enterprise edition (see
 [Editions and licenses](/wirebench/docs/guides/server-licensing/)). Server admins can read everything; a team
 admin can read their own team's events (see _Who can read it_, below).
 The `wirebench-server admin audit export` console command, below, works on any edition, for whoever can
-run it against the server's database.
+run it against the server's database. Forwarding to a collector, below, is Enterprise.
 
 An event says who did it, what they did, which target it touched, when, and from where. Events are never
 edited and no route deletes one. The only way an event leaves is retention, below.
@@ -152,12 +152,56 @@ be one `cron` line, which takes exactly the previous day, so two runs never over
 An export is itself recorded as `audit.exported`, once the whole export has been written. An export that
 the reader abandons halfway leaves no event.
 
+## Forwarding
+
+An Enterprise server can push every audit event to one collector as it is recorded, so a SIEM does not have to poll the export. Three variables set it up; with `WIREBENCH_SERVER_AUDIT_FORWARD_URL` unset, nothing is forwarded.
+
+| Variable                                 | What it does                                                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_URL`     | `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…`. A syslog URL must name a port, and no URL may carry credentials. `http://` is accepted only for `localhost`, `127.0.0.0/8` or `::1`. |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN`   | Sent as `Authorization: Bearer …` with each HTTPS batch. Needs an `https://` or loopback `http://` URL; refused with a syslog URL. Never logged. |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE` | A PEM bundle added to the system roots for `syslog+tls` and `https`. Certificates are always verified. Refused with an `http://` URL. |
+
+A token or a CA file without the URL, or a combination listed above, is a configuration error at start-up. So is a CA file that cannot be read or holds no certificate: the server does not start.
+
+Every event is queued in the same transaction that records it. The forwarder sends the oldest 100 queued events at a time, and removes them from the queue only after the collector accepts them.
+
+**Syslog** (RFC 5424 over TCP or TLS, RFC 6587 octet-counting framing, one connection reused between batches) carries one message per event:
+
+```
+<110>1 2026-10-03T09:12:44.318Z wb-server-1 wirebench-server - team.deleted - {"id":"evt_8f2c…","at":"2026-10-03T09:12:44.318Z","actor":{"kind":"user","userId":"usr_41ab…","email":"ada@example.com"},"action":"team.deleted","target":{"kind":"team","id":"team_77d0…"},"workspaceId":null,"teamId":"team_77d0…","ip":"203.0.113.9","userAgent":"Wirebench/1.4","details":{}}
+```
+
+The priority is facility 13 (log audit) and severity 6 (informational), the application name is `wirebench-server`, and there is no process id or structured data. HOSTNAME is the operating system's host name, kept to printable ASCII and at most 255 characters, or `-`. MSGID is the action cut to 32 characters, the RFC 5424 limit; the JSON always carries the full action. The message is plain UTF-8 JSON with no byte-order mark.
+
+**HTTPS** sends one `POST` per batch with `Content-Type: application/json` and this body, each event in the shape of an exported line:
+
+```json
+{ "events": [ { "id": "evt_8f2c…", "at": "2026-10-03T09:12:44.318Z", "action": "team.deleted", "…": "…" } ] }
+```
+
+Any `2xx` answer accepts the batch. Any other status does not, and redirects are never followed, so a token never travels to another origin.
+
+**When a batch counts as sent.** Over HTTPS, on a `2xx`. Over syslog, once its bytes are in the operating system's socket buffer: TCP has no application acknowledgement, so a collector that fails after that point can lose them. One 10 second deadline covers a whole send: the connect and the writes, or the whole HTTPS request. A reused HTTPS keep-alive connection that the collector has reset is retried once, inside the same deadline.
+
+**At least once.** A batch that fails, or that was sent just before a crash, goes out again, so an event can arrive more than once. Receivers should de-duplicate on the event's `id`.
+
+**Failures.** A failed batch stays queued and is tried again after 5 seconds, doubling up to 300 seconds. The server logs one `warn` line, `audit forwarding failing`, when forwarding starts failing, and one `info` line when it recovers. It never logs one line per attempt, and never the token or an event.
+
+**Without the Enterprise `audit-log` feature**, forwarding pauses (one `info` line) and the queue keeps filling. Retention still deletes old events and their queue rows. When a license returns, the backlog goes out.
+
+To see how far behind the collector is, count the queue:
+
+```sql
+select count(*) from audit_forward_queue;
+```
+
 ## Retention
 
 Events older than a set age are deleted. The age is `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`: a whole number
 of days from 30 to 3650, and 365 when unset. The server sweeps every ten minutes.
 
-If a regime asks you to keep events longer, export them before they age out.
+If a regime asks you to keep events longer, export them before they age out. An event that ages out before it was forwarded is never sent (see _Forwarding_, above).
 
 ## Personal data
 

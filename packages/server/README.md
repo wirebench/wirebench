@@ -107,6 +107,10 @@ A workspace admin can turn on **Record desktop activity** for a workspace: the a
 request sent and each test-suite run (`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no
 headers or bodies.
 
+On an Enterprise server, `WIREBENCH_SERVER_AUDIT_FORWARD_URL` forwards every audit event to one collector as
+RFC 5424 syslog over TCP or TLS (`syslog+tcp://`, `syslog+tls://`) or as JSON batches over HTTPS, with an
+optional bearer token and CA bundle. Delivery is at least once: de-duplicate on the event `id`.
+
 Events older than `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` (default 365) are deleted. See the docs site's
 _Audit log_ guide for what each event carries and how to handle personal data.
 
