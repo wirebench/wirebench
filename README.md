@@ -1,125 +1,111 @@
+<div align="center">
+
 # Wirebench
 
-Wirebench is an open-source desktop **SOAP, REST and gRPC** workbench with a modern IDE shell, built on Electron,
-TypeScript and React. Import a WSDL, get a request generated from the contract, send it, and read the response — with
-WS-Security, WS-Addressing, MTOM/SwA attachments, schema and WS-I validation, environments, property expansion and
-searchable history along the way. Or import an OpenAPI document (or start from a URL and a method) and get the same
-shell for REST: folders of requests, every body kind, Basic/NTLM/Bearer/API-key/OAuth2 auth, cookies, redirects and a
-response pane with pretty, raw, headers, timing and TLS. Or import a `.proto` set and call a gRPC method — unary or
-streaming — with the message as JSON and the status, replies and trailers in the same pane. All three protocols
-share one project, one set of environments, one history and one HTTP stack.
+**A contract-first desktop workbench for SOAP, REST, gRPC and WebSocket APIs.**
 
-Projects are folders of small YAML and XML files, made to live in git. Credentials never go in them.
+Import a WSDL, OpenAPI, AsyncAPI or `.proto` contract, get correct requests generated from it, send them,
+and keep everything as plain files in git.
+
+[![CI](https://github.com/wirebench/wirebench/actions/workflows/ci.yml/badge.svg)](https://github.com/wirebench/wirebench/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/wirebench/wirebench?sort=semver)](https://github.com/wirebench/wirebench/releases/latest)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+[Website](https://wirebench.github.io/wirebench/) ·
+[Download](https://github.com/wirebench/wirebench/releases/latest) ·
+[User guide](https://wirebench.github.io/wirebench/docs/) ·
+[Changelog](CHANGELOG.md)
 
 ![The Wirebench shell with a request and its response](docs/images/response.png)
 
-## Quick start
+</div>
 
-Five minutes from nothing to a real SOAP response. You need [Node 24](https://nodejs.org) and pnpm 9
-(`corepack enable`).
+## Why Wirebench
 
-```
-git clone <this repository>
+- **It reads the contract.** Requests are generated from the schema — the right elements, in the right order,
+  in the right namespaces — and responses are validated against it.
+- **One tool for a mixed estate.** SOAP, REST, gRPC and WebSocket share one project, one set of environments,
+  one history and one HTTP stack.
+- **Projects are files.** A project is a folder of small YAML and XML files, made to be reviewed and versioned
+  in git. Credentials never go in them.
+- **Local-first, no account.** The app is fully usable on its own. Teams can share over git, a synced folder,
+  or a self-hosted server.
+- **Built for automation.** The same saved requests run in CI from the command line, and coding agents can
+  drive the engine over MCP — with no AI inside the app.
+
+## Features
+
+| Area                       | What you get                                                                                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SOAP**                   | WSDL import with every import and include cached byte for byte; generated envelopes and a form editor; WS-Security, WS-Addressing, MTOM/SwA attachments; schema and WS-I validation                           |
+| **REST**                   | OpenAPI 3.x, Swagger 1.x/2.0 and Postman Collection import; folders of requests; every body kind; cookies and redirects; response validation against the contract; Server-Sent Events rendered event by event |
+| **gRPC**                   | `.proto` import and server reflection; unary and every streaming shape over HTTP/2, including interactive bidirectional streams; a JSON message editor with completion                                        |
+| **WebSocket**              | AsyncAPI 2.x/3.0 import; a request per channel; a live frame timeline and a composer for text and binary messages                                                                                             |
+| **Auth**                   | Basic, NTLM, Bearer, API key and OAuth2 across protocols; client certificates and custom CA bundles                                                                                                           |
+| **Inspect**                | HTTP Log with a timing waterfall, search, compare and HAR export; XPath 3.1, XQuery 3.1 and JSONPath queries; History with re-send and diff; copy as `curl`                                                   |
+| **Test**                   | Declarative assertions on every request; sequences with property transfer; sandboxed TypeScript pre-request scripts typed from the contract; snapshot regression against golden responses                     |
+| **Environments & secrets** | Workspace-wide environments and endpoint overrides; `${…}` property expansion; secrets kept outside project files                                                                                             |
+| **Webhooks**               | Outbound webhooks with signatures; catch URLs and callback assertions on a server-shared workspace                                                                                                            |
+| **Collaboration**          | Shared workspaces over git or a synced folder, with in-app Sync and a conflict resolver; encrypted team secrets                                                                                               |
+| **Migration**              | Import of legacy single-file SOAP projects — interfaces, endpoints, saved requests, properties and environments — with a report of everything not carried over                                                |
+
+Some of the above is on `main` and arrives with the next release; the [changelog](CHANGELOG.md) says which.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/rest-response.png" alt="A REST request and its response"></td>
+    <td width="50%"><img src="docs/images/sync-panel.png" alt="The Sync panel of a shared workspace"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>A REST request and its response</sub></td>
+    <td align="center"><sub>Syncing a shared workspace</sub></td>
+  </tr>
+</table>
+
+## Install
+
+Download the installer for macOS, Windows or Linux from the
+[latest release](https://github.com/wirebench/wirebench/releases/latest). macOS builds are signed and notarised;
+Windows signing is in progress ([#114](https://github.com/wirebench/wirebench/issues/114)). The
+[installation guide](https://wirebench.github.io/wirebench/docs/getting-started/installation/) has per-platform
+notes and silent installs.
+
+To build from source you need [Node 24](https://nodejs.org) and pnpm 9 (`corepack enable`):
+
+```bash
+git clone https://github.com/wirebench/wirebench.git
 cd wirebench
 pnpm install
 pnpm dev
 ```
 
-**1. Create a workspace.** On first launch you get the workspace picker — type a name and choose **Create
-workspace**. There is no folder to pick: the workspace and everything you put in it live in app data, and you never
-manage that location yourself.
+## Quick start
 
-![The workspace picker](docs/images/workspace-picker.png)
+From nothing to a real SOAP response in five minutes:
 
-**2. Add a project.** Inside the workspace, choose **New project** and give it a name. A project is still a folder of
-small YAML and XML files under the hood — reviewable, made to live in git — but Wirebench places and owns it inside
-the workspace; _Export project…_ and _Link existing project folder…_ are how a project meets git when you want that.
+1. **Create a workspace.** On first launch, type a name in the workspace picker and choose **Create workspace**.
+   Wirebench keeps it in app data; there is no folder to manage.
+2. **Add a project.** Choose **New project**. _Export project…_ and _Link existing project folder…_ are how a
+   project meets git when you want it to.
+3. **Import a contract.** **Import WSDL…** (`Mod+I`) or **Import OpenAPI…** (`Mod+Shift+I`) takes a URL or a
+   file, and **Import…** detects every other format. No contract? **New API** takes a base URL and
+   **New Request** a method and a path.
+4. **Open a request.** The explorer fills with the operations, each with a request generated from the schema.
+5. **Send.** Fill in the values — in the raw editor or the **Form** tab — and press **Send**. The response opens
+   beside the request, the HTTP Log shows the timing breakdown, and the run lands in History.
 
-**3. Import a WSDL.** Choose **Import WSDL…** (`Mod+I`) and paste a URL or pick a file, into the project you just
-created or a new one. Anything the document imports or includes is fetched with it and cached beside the project,
-byte for byte.
+No service to hand? Try `http://www.dneonline.com/calculator.asmx?WSDL`.
 
-![Importing a WSDL by URL](docs/images/import-wsdl.png)
+`Mod` is `⌘` on macOS and `Ctrl` elsewhere. Every action is a command: `Mod+K` opens the palette, and the
+[command reference](https://wirebench.github.io/wirebench/docs/reference/commands/) lists every shortcut. The
+[walkthrough](https://wirebench.github.io/wirebench/docs/getting-started/walkthrough/) goes further.
 
-Try one of these public services if you do not have one to hand:
+## Command line and CI
 
-- `http://www.dneonline.com/calculator.asmx?WSDL`
-- `https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL`
-- `http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?WSDL`
-
-**4. Open a request.** The explorer fills with the service's bindings and operations, each with a `Request 1` whose
-envelope was generated from the schema — the right elements, in the right order, in the right namespaces.
-
-![The generated request, open in the editor](docs/images/request-editor.png)
-
-**5. Fill in the values and send.** Replace the `?` placeholders (or switch to the **Form** tab and type into fields),
-then press **Send**. The response arrives beside the request with its status, duration, size, headers and raw bytes;
-the HTTP Log at the bottom shows the timing breakdown, and the run is in History for re-sending or diffing later.
-
-**6. Or do the same for a REST API.** Choose **Import OpenAPI…** (`Mod+Shift+I`) and paste a URL or pick a file —
-the explorer fills with folders and requests, each with its parameters and a body sampled from the schema. There is no
-document needed either: **New API** takes a name and a base URL, and **New Request** takes a method and a path. Send
-is the same button, and the send lands in the same History, badged with its method.
-
-![A REST request and its response](docs/images/rest-response.png)
-
-**7. Or bring a legacy SOAP project across.** Many SOAP projects live in one XML project file from an older desktop
-workbench. Choose **Import Legacy SOAP Project…** from the command palette (or pick _Legacy SOAP project_ as the
-format in **Import…**) and pick the file. Its interfaces, endpoints, saved requests, properties and environments
-arrive in the project you choose. The definitions come from the copy the file carries, so no network is needed.
-Passwords are never copied, scripts are kept under `imported-scripts/` without being run, and test suites and mocks
-are not imported. A report lists each of these, so nothing is dropped silently.
-
-That is the whole loop. From here: a workspace holds any number of projects, with tabs spanning all of them; **Query**
-evaluates XPath 3.1 and XQuery 3.1 over the response, plus JSONPath when the body is JSON; the request editor's
-inspector strip carries _Details_,
-_Properties_, _Headers_, _Attachments_, _Auth_, _WS-A_ and _SSL_, one inspector each; `Mod+K` opens the command
-palette; **Environments**, reached from the
-activity bar, is workspace-wide — one set of environments and endpoint overrides shared by every project, switched
-without touching a request, with a per-variable checkbox to disable a value without deleting it; and a workspace can
-be **shared with a team** over git or a synced folder, with an in-app Sync control and conflict resolver — see
-[Collaborate on a shared workspace](docs/collaborate.md).
-
-## Keyboard shortcuts
-
-Every action in Wirebench is a command with an id, and every shortcut is that command's binding — the command palette
-(`⌘K` / `Ctrl+K`) lists them all. `Mod` is `⌘` on macOS and `Ctrl` elsewhere.
-
-| Command                 | Shortcut      |
-| ----------------------- | ------------- |
-| Show All Commands       | `Mod+K`       |
-| Toggle Sidebar          | `Mod+B`       |
-| Toggle Console          | `Mod+J`       |
-| Toggle Code Panel       | `Mod+Alt+B`   |
-| Show Explorer           | `Mod+Shift+E` |
-| Show Search             | `Mod+Shift+S` |
-| Show History            | `Mod+Shift+Y` |
-| Show Settings           | `Mod+,`       |
-| Import WSDL…            | `Mod+I`       |
-| Import OpenAPI…         | `Mod+Shift+I` |
-| New Project             | `Mod+Shift+N` |
-| Save All                | `Mod+S`       |
-| Next Environment        | `Mod+Alt+E`   |
-| Toggle Light/Dark Theme | —             |
-
-`Toggle Code Panel` (`view.toggleCode`) opens and closes the right-rail slide-over that shows the current request as
-`curl`; the old Details-panel toggle it replaces is gone (there is no right panel any more — see
-[Architecture overview](docs/architecture/overview.md)). `Show Environments` (`view.showEnvironments`) opens the
-Environments view in the sidebar; it has no default shortcut of its own, only the command-palette entry.
-
-Workspace management (create, switch, manage, link/import/export a project) is reachable from the command palette and
-the workspace switcher; it has no default keyboard shortcuts of its own.
-
-`Mod+Shift+F` is deliberately unassigned here: it is reserved for Format XML.
-
-## Run in CI
-
-`@wirebench/cli` (binary `wirebench`) runs the requests already saved in a project from a
-pipeline, with assertions, exit codes and reports a CI system understands — as a GitHub Action, a
-GitLab template, a container image or plain `npx`:
+[`@wirebench/cli`](packages/cli) (binary `wirebench`) runs the requests saved in a project — with assertions,
+exit codes, and JUnit or JSON reports — as a GitHub Action, a GitLab template, a container image or plain `npx`:
 
 ```yaml
-# GitHub Actions
 - uses: wirebench/wirebench/action@v3.0.0
   with:
     project: ./api-tests
@@ -129,138 +115,88 @@ GitLab template, a container image or plain `npx`:
     WIREBENCH_SECRET_BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
 ```
 
-See [Run in CI](https://wirebench.github.io/wirebench/docs/guides/run-in-ci/) on the docs site for all
-four recipes, or [`docs/cli.md`](docs/cli.md#run-in-ci) for the full command reference —
-assertions, environment-variable secrets, all four reporters and the exit-code table.
+`wirebench mcp` serves a project to a coding agent over stdio or local HTTP: import, generate, send, validate,
+query and diff History, each tool also a CLI verb, with sends and writes behind explicit flags.
 
-## Development
+See [Run in CI](https://wirebench.github.io/wirebench/docs/guides/run-in-ci/),
+[Agents over MCP](https://wirebench.github.io/wirebench/docs/guides/agents-mcp/) and the full
+[CLI reference](docs/cli.md).
 
-```
-pnpm install                       # bootstrap workspace (Node 24, pnpm 9)
-pnpm dev                           # electron-vite dev: main/preload/renderer with HMR
-pnpm build                         # pnpm typecheck && electron-vite build (all workspaces)
-pnpm package                       # electron-builder --dir (unpacked app for the current OS)
-pnpm package:mac | package:win | package:linux
-pnpm test                          # vitest run
-pnpm lint                          # eslint . --max-warnings 0 && prettier --check .
-pnpm typecheck                     # tsc -b
-pnpm check                         # lint + typecheck + test ← the pre-commit and CI gate
-pnpm test:e2e                      # Playwright against the built Electron app
-pnpm test:interop                  # live public SOAP services (opt-in; see below)
-pnpm bench                         # vitest benchmarks over the engine's budgeted scenarios
+## Wirebench Server
+
+A self-hosted server for teams: sign-in with local accounts or OpenID Connect, team roles, server-backed shared
+workspaces with live updates, team secrets and webhook capture. One process, one PostgreSQL database:
+
+```bash
+docker compose -f packages/server/compose.yaml up
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
-
-### Performance budgets
-
-`pnpm check` includes the engine's performance gate (`packages/engine/test/perf/budgets.test.ts`), and `pnpm test:e2e`
-includes the app's (`e2e/specs/perf.spec.ts`). Both take the median of several samples and allow generous headroom, so
-they catch a real regression rather than a busy machine — but on a slow or heavily loaded one they can still be noise.
-Set `WIREBENCH_SKIP_PERF=1` to skip both:
-
-```
-WIREBENCH_SKIP_PERF=1 pnpm check
-```
-
-`pnpm bench` reports the same scenarios as trend numbers instead of pass/fail. The budgets themselves live in one map,
-`packages/engine/test/bench/budgets.ts`.
-
-### Interop against live services
-
-Every test in the repo is hermetic except one project. `pnpm test:interop` imports four public WSDLs over the real
-network and makes one read-only call against each — the part a committed fixture cannot prove. It is gated behind
-`WIREBENCH_NETWORK_TESTS=1` and runs on a schedule in
-[`nightly.yml`](.github/workflows/nightly.yml), never on a pull request: somebody else's outage must not turn a PR red.
-
-### Screenshots in this README
-
-They are produced by a spec, not by hand:
-
-```
-pnpm build && WIREBENCH_SCREENSHOTS=1 pnpm test:e2e -- screenshots.spec.ts
-```
-
-`e2e/specs/screenshots.spec.ts` writes `docs/images/*.png` from the fixture project in dark theme at 1280×800, and
-skips itself otherwise.
-
-## Packaging
-
-`pnpm package` (or `package:mac` / `package:win` / `package:linux`) builds an installable app into
-`apps/desktop/release/`. Releases are cut by pushing a `v*` tag; see [`docs/release.md`](docs/release.md) for the
-signing secrets, the Electron fuse table and how the opt-in update check behaves.
-
-The `repository` URL in `apps/desktop/package.json` is `https://github.com/wirebench/wirebench.git`, the public
-repository. It is what the opt-in update feed is derived from.
+Configuration and operations are in the [server README](packages/server/README.md) and the
+[server guide](https://wirebench.github.io/wirebench/docs/guides/wirebench-server/). The desktop app never
+requires it.
 
 ## Documentation
 
-- [Website](https://wirebench.github.io/wirebench/) — what Wirebench does, and the installers for the latest release.
-- [User guide](https://wirebench.github.io/wirebench/docs/) — install, a ten-minute walkthrough, a guide per feature, the
-  command reference, troubleshooting and FAQ
-- [Architecture overview](docs/architecture/overview.md) — the renderer/main/engine split, and one send end to end
-- [CLI reference](docs/cli.md) — `wirebench run`/`secrets list`, assertions, secrets, reports and exit codes,
-  and `wirebench mcp` with its verbs
-- [Security model](docs/security.md) — the sandbox, secrets, path safety, TLS, fuses and the test hooks
-- [Architecture decision records](docs/adr/) — ADR-0001 to ADR-0008
-- [Success criteria and their evidence](docs/success-criteria.md) — every criterion, SOAP and REST, and what proves it
-- [Release checklist](docs/release.md)
-- [Roadmap](docs/roadmap.md) — what 2.0 leaves out, in the order it is worth building, and what each item unlocks
-- [WS-I assertions implemented](docs/ws-i-assertions.md)
-- [Design spec](docs/specs/2026-09-09-wirebench-v1-explore-and-send-design.md) and
-  [implementation plan](docs/plans/2026-09-09-wirebench-v1-explore-and-send-plan.md)
-- [Workspaces design spec](docs/specs/2026-09-11-wirebench-workspaces-design.md) and
-  [implementation plan](docs/plans/2026-09-11-wirebench-workspaces-plan.md)
-- [REST client design spec](docs/specs/2026-09-13-wirebench-rest-client-design.md) and
-  [implementation plan](docs/plans/2026-09-13-wirebench-rest-client-plan.md) — APIs, folders and requests beside
-  SOAP interfaces, OpenAPI import, OAuth2, and what it fixed so gRPC could follow
-- [gRPC client design spec](docs/specs/2026-09-16-wirebench-grpc-client-design.md) and
-  [implementation plan](docs/plans/2026-09-16-wirebench-grpc-client-plan.md) — `.proto` import, the JSON message
-  editor, every streaming shape over HTTP/2, and the status-first response pane
-- [Collaborate on a shared workspace](docs/collaborate.md) — sharing, syncing and resolving
-  conflicts as a team, and
-  [shared-workspaces design spec](docs/specs/2026-09-13-wirebench-shared-workspaces-design.md)
-- [Changelog](CHANGELOG.md)
+| For                | Read                                                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Using Wirebench    | [User guide](https://wirebench.github.io/wirebench/docs/) — installation, walkthrough, a guide per feature, reference, troubleshooting   |
+| Working as a team  | [Collaborate on a shared workspace](docs/collaborate.md)                                                                                 |
+| Automation         | [CLI reference](docs/cli.md)                                                                                                             |
+| How it is built    | [Architecture overview](docs/architecture/overview.md) · [Architecture decision records](docs/adr/) · [Security model](docs/security.md) |
+| What it guarantees | [Success criteria and their evidence](docs/success-criteria.md) · [WS-I assertions implemented](docs/ws-i-assertions.md)                 |
+| What comes next    | [Roadmap](docs/roadmap.md) · [Project board](https://github.com/orgs/wirebench/projects/1)                                               |
+| Releasing          | [Release process](docs/release.md) — signing, Electron fuses and the opt-in update check                                                 |
 
 ## Roadmap
 
-Explore-and-send works across workspaces, for SOAP, REST and gRPC, and a workspace can be shared with a team.
-What comes next, in the order it is worth building; the [full roadmap](docs/roadmap.md) has the reasoning,
-sizes, the detail per theme, and what a review of the surrounding tools changed on 2026-09-13.
+Open work is tracked as issues in [milestones](https://github.com/wirebench/wirebench/milestones) and on the
+[project board](https://github.com/orgs/wirebench/projects/1); the [full roadmap](docs/roadmap.md) argues the order.
 
-1. **Windows code signing** — macOS releases are signed and notarised, and the MSI and SBOM ship; Windows signing
-   through SignPath Foundation is waiting on their review ([#114](https://github.com/wirebench/wirebench/issues/114)).
-2. **Documentation site** — the [user guide](https://wirebench.github.io/wirebench/docs/) is live; a switching guide and
-   a published benchmark are still to come.
-3. **CLI runner** — `wirebench run` with assertions, JUnit and JSON reports, CI recipes, and a baseline mode that
-   compares responses with committed golden files.
-4. **MCP server** — `wirebench mcp` is on `main`: a coding agent imports, lists, generates, sends, validates,
-   queries and diffs History over stdio or local HTTP, each tool also a CLI verb, with sends and writes behind
-   flags and no AI inside the app ([CLI reference](docs/cli.md#wirebench-mcp)). Contract operations as MCP tools
-   are next ([#33](https://github.com/wirebench/wirebench/issues/33)).
-5. **Snapshot regression** — send to several environments at once, diff semantically, replay baselines in CI.
-6. **Secrets** — resolved from external secret managers at send time; encrypted team secrets in shared workspaces.
-7. **Enterprise authentication** — Kerberos/SPNEGO and WS-Trust for STS-issued SAML tokens.
-8. **REST follow-ups** — resend and diff a REST send from History, a shared cookie jar, an HTML response
-   preview, and the token-style auth kinds for SOAP owners. The importers shipped in 2.1.0;
-   _Update Definition_ for an API and response validation against the contract are on `main`.
-9. **Contract diff** — two WSDLs or OpenAPI documents compared, breaking changes classified, runnable in CI.
-10. **WS-Security debugger** — why a signature or decryption failed, and configuration proposed from the WSDL's policy.
-11. **Mock services** — generated from the contract, validating requests, recorded from live traffic, stored as files.
-12. **Functional testing in three slices** — Sequences with declarative assertions, TypeScript typed from the
-    contract, then suites with data-driven runs and a callback listener.
-13. **Wirebench Server** — self-hosted sign-in, teams and SSO, on top of the shipped git-native shared workspaces.
-    The app stays fully usable without an account.
+| Milestone                                                                                | Still open                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [3.0 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) | Windows code signing ([#114](https://github.com/wirebench/wirebench/issues/114)), runner `--baseline` mode ([#36](https://github.com/wirebench/wirebench/issues/36)), contract operations as MCP tools ([#33](https://github.com/wirebench/wirebench/issues/33)) |
+| [3.1 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3)      | Persistent cookie jar ([#44](https://github.com/wirebench/wirebench/issues/44)), HTML response preview ([#48](https://github.com/wirebench/wirebench/issues/48))                                                                                                 |
+| [3.2 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4)             | Server audit log ([#198](https://github.com/wirebench/wirebench/issues/198)), license binding, secrets from external managers, Kerberos/SPNEGO and WS-Trust, WS-Security debugger, managed preferences, portable Windows build                                   |
+| [4.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | Contract diff ([#56](https://github.com/wirebench/wirebench/issues/56)), mock services and a recording proxy, more importers and exporters, a published project-file schema, multi-window                                                                        |
+| [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6)              | GraphQL, test suites and data-driven runs, JKS keystores, WS-ReliableMessaging, a plugin API, localisation                                                                                                                                                       |
 
-After these, on demand: GraphQL, and the gRPC follow-ups (server reflection, interactive bidirectional streams);
-JKS keystores and WS-ReliableMessaging.
-Deferred: load testing, WSDL coverage and refactoring, code generation. Watched only: MQTT, Kafka and JMS.
+Server editions shipped on `main`: Community, Team and Enterprise, decided by a signed offline license file
+([ADR-0018](docs/adr/0018-licensing-is-a-product-boundary.md)).
+
+## Development
+
+The repository is a pnpm monorepo:
+
+| Path                | Contents                                                            |
+| ------------------- | ------------------------------------------------------------------- |
+| `packages/engine`   | `@wirebench/engine` — the protocol library, one module per protocol |
+| `packages/cli`      | `@wirebench/cli` — the `wirebench` binary and its MCP server        |
+| `packages/server`   | Wirebench Server                                                    |
+| `apps/desktop`      | The Electron app                                                    |
+| `action`            | The GitHub Action                                                   |
+| `e2e`               | Playwright against the built app                                    |
+| `site`, `docs-site` | The website and the user guide                                      |
+
+```bash
+pnpm dev          # the desktop app with hot reload
+pnpm check        # lint, typecheck and tests: the pre-commit and CI gate
+pnpm build        # every package and app
+pnpm test:e2e     # Playwright against the built app (build first)
+pnpm package      # an installable app in apps/desktop/release/
+```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the full workflow: the gate, testing conventions, performance budgets,
+live interop tests, screenshots, and adding a protocol.
+
+## Contributing and security
+
+Issues and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. To report a vulnerability,
+follow the reporting note in the [security model](docs/security.md) rather than opening a public issue.
 
 ## License
 
-[Apache-2.0](LICENSE). Wirebench is a clean-room implementation built from public specifications and published,
-user-facing documentation; no code from other SOAP tools is copied into it.
+[Apache-2.0](LICENSE), every line in the repository. Wirebench is a clean-room implementation built from public
+specifications and published, user-facing documentation; no code from other SOAP tools is copied into it.
 
-The packages Wirebench ships with are listed, with their licenses and notices, in
-[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) — generated by `pnpm licenses:third-party`, verified by `pnpm check`,
-and copied into every installer's resources.
+Bundled third-party packages and their notices are listed in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md),
+generated by `pnpm licenses:third-party`, verified by `pnpm check`, and shipped in every installer.

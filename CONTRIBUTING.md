@@ -81,6 +81,30 @@ pull request.
 it, then refactor. Golden fixtures must be deterministic (inject the clock and id generator). No
 test touches the network except `packages/engine/test/interop`.
 
+### Performance budgets
+
+`pnpm check` includes the engine's performance gate (`packages/engine/test/perf/budgets.test.ts`), and
+`pnpm test:e2e` includes the app's (`e2e/specs/perf.spec.ts`). Both take the median of several samples
+and allow generous headroom, so they catch a real regression rather than a busy machine, but on a slow
+or heavily loaded one they can still be noise; `WIREBENCH_SKIP_PERF=1` skips both. `pnpm bench` reports
+the same scenarios as trend numbers. The budgets live in one map, `packages/engine/test/bench/budgets.ts`.
+
+### Interop against live services
+
+`pnpm test:interop` imports four public WSDLs over the real network and makes one read-only call
+against each, the part a committed fixture cannot prove. It is gated behind
+`WIREBENCH_NETWORK_TESTS=1` and runs on a schedule in `.github/workflows/nightly.yml`, never on a
+pull request: somebody else's outage must not turn a PR red.
+
+### README screenshots
+
+The images in `docs/images/` are produced by a spec, not by hand. `e2e/specs/screenshots.spec.ts`
+shoots them from the fixture project in dark theme at 1280×800, and skips itself unless asked:
+
+```
+pnpm build && WIREBENCH_SCREENSHOTS=1 pnpm test:e2e -- screenshots.spec.ts
+```
+
 ## Adding a protocol
 
 A protocol is one module behind the `ProtocolModule` interface
