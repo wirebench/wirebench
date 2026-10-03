@@ -421,9 +421,10 @@ default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; fo
 ```
 
 That is `HTML_PREVIEW_CSP` (`apps/desktop/src/shared/html-preview-csp.ts`). Inline styles and `data:`
-images and fonts render; every other fetch is refused, and the referrer is `no-referrer`. In the main
-process a `will-frame-navigate` handler (`denySubframeNavigation`) denies every subframe navigation, so
-a meta refresh or a link click that slipped past the sandbox still goes nowhere. A body over
+images render; fonts fall back to the system fonts, because the frame also inherits the app CSP
+(`font-src 'self'`) and both policies are enforced. Every other fetch is refused, and the referrer is
+`no-referrer`. In the main process a `will-frame-navigate` handler (`denySubframeNavigation`) denies
+every subframe navigation except the preview's own `about:srcdoc` load, so a meta refresh or a link click that slipped past the sandbox still goes nowhere. A body over
 `rest.prettyPrintMaxBytes` is not framed at all.
 
 The residual risk is a Chromium sandbox escape, which keeping Electron current mitigates. Spec §4

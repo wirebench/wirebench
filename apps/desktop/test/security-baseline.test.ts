@@ -9,8 +9,8 @@ import {
   APP_SCHEME_PRIVILEGES,
   CONTENT_SECURITY_POLICY,
   MAIN_WINDOW_WEB_PREFERENCES,
-  isExternalUrlAllowed,
   denySubframeNavigation,
+  isExternalUrlAllowed,
 } from '../src/main/security.js';
 import { HTML_PREVIEW_CSP } from '../src/shared/html-preview-csp.js';
 
@@ -61,11 +61,12 @@ describe('security baseline', () => {
     );
   });
 
-  it('denies every subframe navigation and leaves the main frame to will-navigate', () => {
-    const navigation = (isMainFrame: boolean) => {
+  it('denies subframe navigation except the preview own srcdoc load, and leaves the main frame to will-navigate', () => {
+    const navigation = (isMainFrame: boolean, url: string) => {
       let prevented = false;
       return {
         isMainFrame,
+        url,
         preventDefault: () => {
           prevented = true;
         },
@@ -74,10 +75,13 @@ describe('security baseline', () => {
         },
       };
     };
-    const sub = navigation(false);
-    denySubframeNavigation(sub);
-    expect(sub.prevented).toBe(true);
-    const main = navigation(true);
+    const srcdoc = navigation(false, 'about:srcdoc');
+    denySubframeNavigation(srcdoc);
+    expect(srcdoc.prevented).toBe(false);
+    const away = navigation(false, 'http://127.0.0.1/x');
+    denySubframeNavigation(away);
+    expect(away.prevented).toBe(true);
+    const main = navigation(true, 'http://127.0.0.1/x');
     denySubframeNavigation(main);
     expect(main.prevented).toBe(false);
   });
