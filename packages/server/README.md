@@ -38,6 +38,9 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` | no | `50` | Catch URLs a workspace may hold (1–1000). |
 | `WIREBENCH_SERVER_HOOKS_SECRET_KEY` | no | — | Encrypts catch URL signature secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, signature settings are refused. Never logged. |
 | `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` | no | `365` | Audit events older than this many days are deleted (30–3650). |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_URL` | no | — | Forward every audit event (Enterprise): `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…` (`http://` only on a loopback host). Unset, nothing is forwarded. |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN` | no | — | Sent as `Authorization: Bearer …` with each HTTPS batch. Refused with a syslog URL. Never logged. |
+| `WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE` | no | — | A PEM bundle added to the system roots for `syslog+tls` and `https` forwarding. Certificates are always verified. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
@@ -103,6 +106,10 @@ Enterprise license; the console export works on any edition:
 A workspace admin can turn on **Record desktop activity** for a workspace: the app then reports each
 request sent and each test-suite run (`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no
 headers or bodies.
+
+On an Enterprise server, `WIREBENCH_SERVER_AUDIT_FORWARD_URL` forwards every audit event to one collector as
+RFC 5424 syslog over TCP or TLS (`syslog+tcp://`, `syslog+tls://`) or as JSON batches over HTTPS, with an
+optional bearer token and CA bundle. Delivery is at least once (for syslog, a batch counts as delivered once it is in the OS socket buffer; see the guide): de-duplicate on the event `id`.
 
 Events older than `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` (default 365) are deleted. See the docs site's
 _Audit log_ guide for what each event carries and how to handle personal data.

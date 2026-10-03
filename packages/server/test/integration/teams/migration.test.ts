@@ -18,6 +18,7 @@ describeDb('0003_teams (§4.1)', () => {
     expect(list.slice(0, 3)).toEqual(['1_init', '2_identity', '3_teams']);
     expect(list[8]).toBe('9_desktop-recording');
     expect(list[9]).toBe('10_audit-team-index');
+    expect(list[10]).toBe('11_audit-forward-queue');
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
       'licensing',

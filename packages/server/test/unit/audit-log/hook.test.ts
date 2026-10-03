@@ -55,6 +55,20 @@ describe('auditHook (audit-log spec §3.1, §4.2)', () => {
     expect(p[14]).toBeNull();
   });
 
+  it('with forward on, the event and its queue row go in one statement, so a pool querier cannot split them', async () => {
+    const { db, statements } = capturing();
+    await auditHook(() => new Date(), { forward: true })(db, {
+      actor: { kind: 'system' },
+      action: 'team.created',
+      target: { kind: 'team', id: 'TEAM1' },
+      teamId: 'TEAM1',
+    });
+    expect(statements).toHaveLength(1);
+    expect(statements[0]!.text).toMatch(
+      /insert into audit_events[\s\S]*returning id[\s\S]*insert into audit_forward_queue/,
+    );
+  });
+
   it('a system actor has no ids, an absent ip is null, no details is {}', async () => {
     const { db, statements } = capturing();
     await auditHook(() => new Date())(db, {

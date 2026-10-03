@@ -55,12 +55,15 @@ export function licensingHarness(
     readonly provider?: OidcProvider;
     readonly logStream?: NodeJS.WritableStream;
     readonly extra?: (clock: TestClock) => readonly ServerModule[];
+    /** Restarts over an earlier harness's schema; see {@link identityHarness}. */
+    readonly db?: IdentityHarness['db'];
   } = {},
 ): Promise<IdentityHarness> {
   return identityHarness({
     ...(options.env !== undefined ? { env: options.env } : {}),
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
+    ...(options.db !== undefined ? { db: options.db } : {}),
     modules: (clock) => [
       licensingModule({ now: () => clock.now, publicKeys: [keys.publicKey] }),
       teamsModule({ now: () => clock.now }),

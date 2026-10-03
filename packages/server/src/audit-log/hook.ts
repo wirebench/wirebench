@@ -34,21 +34,31 @@ export function boundDetails(details: AuditDetails | undefined): AuditDetails {
   return cut;
 }
 
+export interface AuditHookOptions {
+  /** Forwarding is configured: queue each event for the forwarder in the same transaction (issue #209). */
+  readonly forward: boolean;
+}
+
 /**
  * An event that names a workspace but no team takes the workspace's team (issue #208), read with the
  * caller's querier so it sees the same transaction. Workspaces never change team. When the row is
- * already gone, the team stays null.
+ * already gone, the team stays null. With `forward`, the event's id goes into the outbox in the same
+ * statement, so only a committed event is ever forwarded, even when the caller passes the pool.
  */
-export function auditHook(now: () => Date): AuditHook {
+export function auditHook(now: () => Date, options: AuditHookOptions = { forward: false }): AuditHook {
   return async (tx: Querier, event: AuditInput) => {
     const teamId =
       event.teamId ?? (event.workspaceId !== undefined ? await workspaceTeamId(tx, event.workspaceId) : undefined);
-    await insertAuditEvent(tx, {
-      ...event,
-      ...(teamId !== undefined ? { teamId } : {}),
-      id: newId(),
-      at: now(),
-      details: boundDetails(event.details),
-    });
+    await insertAuditEvent(
+      tx,
+      {
+        ...event,
+        ...(teamId !== undefined ? { teamId } : {}),
+        id: newId(),
+        at: now(),
+        details: boundDetails(event.details),
+      },
+      { forward: options.forward },
+    );
   };
 }
