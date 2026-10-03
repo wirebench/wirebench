@@ -83,6 +83,8 @@ import {
   DESCRIPTORS_FILE,
   descriptorSetBytes,
   expand,
+  overlayCurrent,
+  withCurrentValues,
   protoSetFromDescriptorSet,
   readGrpcDefinitionCache,
   reconcileGrpcApi,
@@ -90,6 +92,7 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  CurrentValues,
   LegacyImportReport,
   LegacyProject,
   ResolvedLegacyInterface,
@@ -440,6 +443,12 @@ export class ProjectHost {
    */
   private workspaceContext: WorkspaceContext | undefined;
 
+  /**
+   * The session's current values for this host's project, read afresh on every resolution (cookie
+   * jar spec §5.2). Set by `WorkspaceService`; absent for a standalone project and in tests.
+   */
+  private currentValues: (() => CurrentValues | undefined) | undefined;
+
   constructor(
     private readonly engine: EngineService,
     private readonly hooks: ProjectHostHooks = {},
@@ -477,6 +486,11 @@ export class ProjectHost {
    */
   setWorkspaceContext(context: WorkspaceContext | undefined): void {
     this.workspaceContext = context;
+  }
+
+  /** Tells this host where its project's current values come from; `undefined` drops them. */
+  setCurrentValues(source: (() => CurrentValues | undefined) | undefined): void {
+    this.currentValues = source;
   }
 
   /**
@@ -556,6 +570,7 @@ export class ProjectHost {
         readonly environmentId?: string;
         readonly workspace?: RunWorkspace;
         readonly globals: PropertyMap;
+        readonly current?: CurrentValues;
       }
     | undefined {
     if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
@@ -563,6 +578,7 @@ export class ProjectHost {
     }
     const { project, dir } = this.open;
     const workspace = this.workspaceContextFor(envId);
+    const current = this.currentValues?.();
     const environmentId =
       workspace === undefined ? (envId ?? project.activeEnvironmentId) : workspace.workspace.activeEnvironmentId;
     return {
@@ -571,6 +587,7 @@ export class ProjectHost {
       ...(environmentId !== undefined ? { environmentId } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       globals: this.enabledGlobals(),
+      ...(current !== undefined ? { current } : {}),
     };
   }
 
@@ -803,22 +820,31 @@ export class ProjectHost {
    */
   scopesFor(envId?: string): PropertyScopes {
     const globals = this.enabledGlobals();
+    const current = this.currentValues?.();
     if (this.open === undefined) {
-      return { project: {}, global: globals, system: process.env };
+      return { project: {}, global: overlayCurrent(globals, current?.global), system: process.env };
     }
     const context = this.workspaceContextFor(envId);
+    const laid = withCurrentValues(
+      {
+        project: this.open.project,
+        ...(context !== undefined ? { workspace: context.workspace } : {}),
+        globals,
+      },
+      current,
+    );
     if (context !== undefined) {
       // Inside a workspace the active environment is the *workspace's*, and the project
       // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`
       // names a workspace environment here, resolved without changing the active one.
       return resolveWorkspaceScopes({
-        workspace: context.workspace,
-        project: this.open.project,
-        globals,
+        workspace: laid.workspace ?? context.workspace,
+        project: laid.project,
+        globals: laid.globals,
         system: process.env,
       });
     }
-    return resolveScopes(this.open.project, envId ?? this.open.project.activeEnvironmentId, globals, process.env);
+    return resolveScopes(laid.project, envId ?? this.open.project.activeEnvironmentId, laid.globals, process.env);
   }
 
   /** The enabled global properties, the `${#Global#…}` scope every send of this project reads. */

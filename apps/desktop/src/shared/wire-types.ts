@@ -3948,6 +3948,30 @@ export const globalsRemoveRequestSchema = z.object({ name: z.string() });
 /** Request payload for `globals.setEnabled`. */
 export const globalsSetEnabledRequestSchema = z.object({ name: z.string(), enabled: z.boolean() });
 
+/** Which committed variables a current value overrides (cookie jar spec §5.1). */
+export const scopeKeyWireSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('global') }),
+  z.object({ scope: z.literal('workspace') }),
+  z.object({ scope: z.literal('workspaceEnvironment'), environmentId: z.string() }),
+  z.object({ scope: z.literal('project'), projectId: z.string() }),
+  z.object({ scope: z.literal('projectEnvironment'), projectId: z.string(), environmentId: z.string() }),
+]);
+export type ScopeKeyWire = z.infer<typeof scopeKeyWireSchema>;
+
+/** The open workspace's current values, one entry per scope that has any. Session only. */
+export const currentValuesStateWireSchema = z.object({
+  scopes: z.array(z.object({ key: scopeKeyWireSchema, values: z.record(z.string(), z.string()) })),
+});
+export type CurrentValuesStateWire = z.infer<typeof currentValuesStateWireSchema>;
+
+export const currentValuesSetRequestSchema = z.object({
+  key: scopeKeyWireSchema,
+  name: z.string().min(1),
+  value: z.string(),
+});
+/** `name` omitted resets the whole scope. */
+export const currentValuesResetRequestSchema = z.object({ key: scopeKeyWireSchema, name: z.string().optional() });
+
 // ---------------------------------------------------------------------------
 // Secrets (Task 23): keychain-backed store. There is deliberately no `secrets.get`
 // channel — the renderer can create/replace/check/delete/list refs, but can never

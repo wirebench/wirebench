@@ -123,6 +123,11 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       removeDomain: fail('cookies.removeDomain'),
       clear: fail('cookies.clear'),
     },
+    currentValues: {
+      get: vi.fn().mockResolvedValue({ ok: true, value: { scopes: [] } }),
+      set: fail('currentValues.set'),
+      reset: fail('currentValues.reset'),
+    },
     globals: {
       get: fail('globals.get'),
       set: fail('globals.set'),

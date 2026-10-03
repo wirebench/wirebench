@@ -270,3 +270,15 @@ describe('ProjectHost.runContextFor with global properties', () => {
     }
   });
 });
+
+describe('ProjectHost with current values', () => {
+  it('lays the session current values over committed ones, for a send and for the scopes', async () => {
+    const { requestId, dev, test } = await restProject();
+    const current = { projectEnvironments: { [dev]: { tenant: 'mine' }, [test]: { tenant: 'theirs' } } };
+    host.setCurrentValues(() => current);
+    expect(target(await restSend(requestId))).toBe('https://dev.example/pets/mine');
+    expect(target(await restSend(requestId, test))).toBe('https://test.example/pets/theirs');
+    expect(host.scopesFor().env).toEqual({ tenant: 'mine' });
+    expect(host.runContextFor(requestId)?.current).toEqual(current);
+  });
+});

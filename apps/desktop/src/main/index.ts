@@ -10,6 +10,7 @@ import {
   GitCli,
   WirebenchError,
   enabledProperties,
+  overlayCurrent,
   type ConnectOptions,
 } from '@wirebench/engine';
 import { app, BrowserWindow, dialog, protocol, safeStorage, session, shell } from 'electron';
@@ -52,7 +53,9 @@ import { registerValidateChannels } from './ipc/validate.js';
 import { registerWsiChannels } from './ipc/wsi.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
 import { CookieStore } from './cookie-store.js';
+import { CurrentValuesStore } from './current-values.js';
 import { registerCookiesChannels } from './ipc/cookies.js';
+import { registerCurrentValuesChannels } from './ipc/current-values.js';
 import { registerHistoryChannels } from './ipc/history.js';
 import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerApiChannels } from './ipc/api.js';
@@ -316,6 +319,11 @@ const cookieStore = new CookieStore({
   },
 });
 
+/** The session's current values (cookie jar spec §5): in memory per workspace, never written anywhere. */
+const currentValues = new CurrentValuesStore((state) => {
+  broadcast(events.currentValues.changed, state);
+});
+
 /** Persistent request history — one jsonl file per open project under `userData`, watched for other writers. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap, {
   watch: watchHistoryFile,
@@ -389,6 +397,7 @@ const workspaceService = new WorkspaceService({
   preferences: preferencesService,
   picks: dialogPicks,
   history: historyService,
+  currentValues,
   // A session's History entry is written by its own pending `request.openWs`, so a project (or a
   // whole workspace) closing has to ask the sockets to close *and* wait for the entries before
   // the history files go with it.
@@ -439,12 +448,15 @@ const workspaceService = new WorkspaceService({
       void cookieStore.switchTo(workspace?.id ?? null).catch((error: unknown) => {
         console.warn('[cookies] switching jars failed', error instanceof Error ? error.message : String(error));
       });
+      currentValues.syncWorkspace(workspace);
     },
     onDeleted: (workspaceId) => {
       void cookieStore.deleteWorkspace(workspaceId).catch(() => undefined);
+      currentValues.forgetWorkspace(workspaceId);
     },
     onProjectChanged: (projectId, project) => {
       secretScans.projectChanged(projectId, project);
+      currentValues.syncProject(projectId, project);
       broadcast(events.project.changed, { projectId, project });
     },
     onProjectChangedOnDisk: (projectId, paths) => {
@@ -536,7 +548,11 @@ void app.whenReady().then(() => {
     project: workspaceService,
     adHocScopes: () => {
       const state = globalProperties.get();
-      return { project: {}, global: enabledProperties(state.properties, state.disabled), system: process.env };
+      const global = overlayCurrent(
+        enabledProperties(state.properties, state.disabled),
+        currentValues.overlaysFor(undefined).global,
+      );
+      return { project: {}, global, system: process.env };
     },
     showSecrets: showSecretsFlag,
     cookies: cookieStore.host(),
@@ -662,7 +678,9 @@ void app.whenReady().then(() => {
   });
   registerGlobalsChannels(globalProperties, (state) => {
     broadcast(events.globals.changed, state);
+    currentValues.syncGlobals(state);
   });
+  registerCurrentValuesChannels(currentValues);
   registerCookiesChannels(cookieStore);
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
@@ -770,6 +788,8 @@ void app.whenReady().then(() => {
   void globalProperties.load().then(
     (state) => {
       broadcast(events.globals.changed, state);
+      // The committed globals a global current value needs, once the file has been read.
+      currentValues.syncGlobals(state);
     },
     (error: unknown) => {
       // A globals file this build refuses (one stamped with a newer format version) must not
