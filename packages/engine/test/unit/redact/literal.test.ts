@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createSecretMasker } from '../../../src/redact/literal.js';
+import { diffSnapshot } from '../../../src/snapshot/diff.js';
+import { truncateValue } from '../../../src/snapshot/format.js';
 
 describe('createSecretMasker', () => {
   it('masks every occurrence of every value', () => {
@@ -50,5 +52,60 @@ describe('createSecretMasker', () => {
   it('ignores empty and very short values rather than shredding the text', () => {
     const mask = createSecretMasker(['', 'ab']);
     expect(mask('abab')).toBe('abab');
+  });
+
+  describe('a secret cut short by a report cap', () => {
+    const secret = 's3cret-value-0042';
+    const mask = createSecretMasker([secret]);
+
+    it('masks the prefix a truncateValue cut leaves', () => {
+      const cut = truncateValue('x'.repeat(190) + secret);
+      expect(cut).toContain('s3cret-va…');
+      const masked = mask(cut);
+      expect(masked).toBe(`${'x'.repeat(190)}<redacted>…`);
+    });
+
+    it('masks the cut prefix in diffSnapshot values for JSON, an XML attribute and a text body', () => {
+      const quoted = 'ab"cd-efgh-1234';
+      const maskQuoted = createSecretMasker([quoted]);
+      const pad = 'x'.repeat(190);
+      const json = diffSnapshot(JSON.stringify({ v: pad + quoted }), JSON.stringify({ v: 'other' }), {
+        format: 'json',
+        ignore: [],
+      });
+      const xml = diffSnapshot(`<r a="${pad}${secret}"/>`, '<r a="other"/>', { format: 'xml', ignore: [] });
+      const text = diffSnapshot(pad + secret, 'other', { format: 'text', ignore: [] });
+      expect(json.changes[0]?.expected).toContain('ab\\"cd-e…');
+      expect(maskQuoted(json.changes[0]?.expected ?? '')).toBe(`"${pad}<redacted>…`);
+      expect(mask(xml.changes[0]?.expected ?? '')).toBe(`${pad}<redacted>…`);
+      expect(mask(text.changes[0]?.expected ?? '')).toBe(`${pad}<redacted>…`);
+    });
+
+    it('masks a prefix before the exchange cap and one split by a byte cap', () => {
+      expect(mask('body s3cret\n… truncated')).toBe('body <redacted>\n… truncated');
+      expect(mask('body s3cr\uFFFD\uFFFD\n… truncated')).toBe('body <redacted>\uFFFD\uFFFD\n… truncated');
+      expect(mask('body s3c\uFFFD…')).toBe('body <redacted>\uFFFD…');
+    });
+
+    it('masks a prefix before the closing quote of a callback actual', () => {
+      expect(mask('"token=s3cret-v…"')).toBe('"token=<redacted>…"');
+    });
+
+    it('masks a cut Basic credential whole', () => {
+      expect(mask('Authorization: Basic dXNlcjpw…')).toBe('Authorization: Basic <redacted>…');
+    });
+
+    it('leaves text before a cut that matches no needle prefix', () => {
+      expect(mask('nothing secret here…')).toBe('nothing secret here…');
+    });
+
+    it('masks a whole needle followed by a cut once', () => {
+      expect(mask(`a ${secret}…`)).toBe('a <redacted>…');
+    });
+
+    it('leaves a needle prefix that no cut follows', () => {
+      expect(mask('a s3cret-va b')).toBe('a s3cret-va b');
+      expect(mask('a s3cret-va')).toBe('a s3cret-va');
+    });
   });
 });

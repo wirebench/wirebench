@@ -60,8 +60,52 @@ export function createSecretMasker(values: readonly string[]): (text: string) =>
     for (const needle of ordered) {
       out = out.split(needle).join(REDACTED_MARKER);
     }
-    return out;
+    return maskCutPrefixes(out, ordered);
   };
+}
+
+/** The marker every report cap writes where it cut a value. */
+const CUT_MARKER = '\u2026';
+
+/**
+ * A report cap can cut a value inside a secret, so no whole needle is left to match. Masks the
+ * longest needle prefix that ends where a cut was made: just before each `…`, after stepping back
+ * over the `\n` of `\n… truncated` and any U+FFFD a byte cap left of a split character.
+ */
+function maskCutPrefixes(text: string, needles: readonly string[]): string {
+  let out = '';
+  let start = 0;
+  for (let at = text.indexOf(CUT_MARKER); at !== -1; at = text.indexOf(CUT_MARKER, at + 1)) {
+    let end = at;
+    if (end > start && text[end - 1] === '\n') {
+      end -= 1;
+    }
+    while (end > start && text[end - 1] === '\uFFFD') {
+      end -= 1;
+    }
+    out += maskCutTail(text.slice(start, end), needles) + text.slice(end, at + 1);
+    start = at + 1;
+  }
+  return out + text.slice(start);
+}
+
+/** Masks a cut `Basic` credential whole, else the longest proper needle prefix `head` ends with. */
+function maskCutTail(head: string, needles: readonly string[]): string {
+  // Cut base64 cannot be decoded and checked, and it is a credential either way.
+  const basic = /\bBasic\s+[A-Za-z0-9+/=]+$/.exec(head);
+  if (basic) {
+    return `${head.slice(0, basic.index)}Basic ${REDACTED_MARKER}`;
+  }
+  let longest = 0;
+  for (const needle of needles) {
+    for (let length = Math.min(needle.length - 1, head.length); length > longest; length -= 1) {
+      if (head.endsWith(needle.slice(0, length))) {
+        longest = length;
+        break;
+      }
+    }
+  }
+  return longest > 0 ? head.slice(0, head.length - longest) + REDACTED_MARKER : head;
 }
 
 /** A Basic credential is base64 of `user:password`, so the password never appears literally. */
