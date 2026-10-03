@@ -422,10 +422,25 @@ describe('audit chain key (issue #210)', () => {
     expect(loadConfig(required, '1').auditChainKey).toBeUndefined();
   });
 
-  it('accepts a key of 32 characters or more', () => {
-    for (const key of ['k'.repeat(32), 'a much longer chain key, with spaces and ünïcödé, 0123456789']) {
+  it('accepts a key of 32 UTF-8 bytes or more, however many characters', () => {
+    const multiByte = `é${'k'.repeat(30)}`;
+    expect([multiByte.length, Buffer.byteLength(multiByte, 'utf8')]).toEqual([31, 32]);
+    for (const key of ['k'.repeat(32), multiByte, 'a much longer chain key, with spaces and ünïcödé, 0123456789']) {
       expect(loadConfig({ ...required, [KEY_VAR]: key }, '1').auditChainKey).toBe(key);
     }
+  });
+
+  it('counts bytes, not characters: 31 bytes are refused, saying "at least 32 bytes"', () => {
+    const key = `${'é'.repeat(11)}${'k'.repeat(9)}`;
+    expect([key.length, Buffer.byteLength(key, 'utf8')]).toEqual([20, 31]);
+    let caught: unknown;
+    try {
+      loadConfig({ ...required, [KEY_VAR]: key }, '1');
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ConfigError);
+    expect((caught as ConfigError).problems).toEqual([{ variable: KEY_VAR, message: 'must be at least 32 bytes' }]);
   });
 
   it('refuses a shorter key without echoing it', () => {

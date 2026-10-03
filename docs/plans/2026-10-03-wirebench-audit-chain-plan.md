@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Config:** `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` is optional, `secret: true`, and at least 32 characters. A shorter key is a config error that does not echo the value. Add it to both the zod schema and the documented variable list in `packages/server/src/config.ts`, and regenerate the configuration reference with the existing generator (`docs:server-config`).
+- **Config:** `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` is optional, `secret: true`, and at least 32 bytes, counted in UTF-8 with `Buffer.byteLength` (ruled in the final review); the message is `must be at least 32 bytes`. A shorter key is a config error that does not echo the value. Every instance on one database must share the key. Add it to both the zod schema and the documented variable list in `packages/server/src/config.ts`, and regenerate the configuration reference with the existing generator (`docs:server-config`).
 - **Key:** the key never reaches the database, a log line or an error. The key id is the first 8 bytes of `SHA-256(key)`, in hex.
 - **Link:** `HMAC-SHA256(key, prev_hash(32 raw bytes) ‖ seq(8 bytes, big-endian) ‖ canonical(row))`.
   - **Genesis:** `seq` 0, with `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")` and `head_seq` 0.
@@ -20,8 +20,9 @@
   - **Canonical row:** every column, in the spec's §3.2 order, written as `len:value`, where `len` is the value's length in UTF-8 bytes; a null is written as `-1:`.
   - **Field forms:** `at` is `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, `ip` is `abbrev(ip)` (it keeps a netmask other than /32 or /128 and prints a single host bare; ruled in fix round 1 of Task 1) and `details` is `details::text`, all rendered by Postgres.
 - **Sealer:**
-  - **Batch:** 500 rows per pass.
-  - **Timing:** 2 s while busy, 5 s when idle. After an unexpected error, back off from 5 s, doubling, up to 300 s. Log one `warn` when it starts failing and one `info` when it recovers.
+  - **Batch:** 500 rows per pass, written in one `update … from unnest($1::text[], $2::bigint[], $3::bytea[])` statement (ruled in the final review).
+  - **Genesis:** inserted only when there is no anchor and no row is sealed (`chainHead(tx) === undefined`); with sealed rows and no anchor the pass ends `bad-anchor` (ruled in the final review).
+  - **Timing:** 0 ms after a pass that sealed a full batch, 2 s after a partial one, 5 s when idle (ruled in the final review); new events wait behind a backlog while it lasts. After an unexpected error, back off from 5 s, doubling, up to 300 s. Log one `warn` when it starts failing and one `info` when it recovers.
   - **Lock:** each pass is one transaction that starts with `tryLockChain` from `chain/lock.ts`: `pg_try_advisory_xact_lock(<const int4>, hashtext(current_schema()))`, so the lock is per schema (ruled in fix round 1 of Task 3).
   - **Claim:** `where chain_seq is null order by at, id limit 500 for update skip locked`.
   - **Head:** the highest sealed row's `(seq, hash)`, or the anchor's when nothing is sealed. The next seq is `max(head.seq, anchor.head_seq) + 1`, linked to the head's hash. A pass that seals anything sets `anchor.head_seq` to the new head seq in the same transaction (ruled in fix round 1 of Task 2).
@@ -30,18 +31,21 @@
   - **Head log line:** `audit chain sealed to <seq>:<hex>` at `info`, with `{ sealed: n }`.
   - **Shutdown:** stop from `onClose`, before the sweeper, finishing the pass under way.
 - **Retention with a key:**
-  - It deletes only sealed rows: of the first 1000 sealed rows after `anchor.seq` in seq order (the limit counts rows, not seqs), those before the first with `at >= cutoff`. It reads no row outside that window.
+  - It deletes only sealed rows whose links it checked: it reads the first 1000 sealed rows after `anchor.seq` through `sealedPage` (the limit counts rows, not seqs), recomputes each link from the anchor with `link()`, and ends the prefix at the first gap, link that does not match, or row with `at >= cutoff`. It reads no row outside that window (ruled in the final review: `at` alone is never trusted).
+  - At a gap or a bad link it deletes nothing from there on and logs one `error` per distinct seq: `audit chain retention stopped at seq <n>: run wirebench-server admin audit verify`. `RetentionStopLog` (`chain/retention-log.ts`) holds that state; the module passes one.
+  - Before deleting, it locks the prefix's `audit_forward_queue` rows `for update skip locked`; a queued row it cannot lock ends the prefix just before it, so a batch never waits on `sink.send` under the chain lock.
   - Each batch is one transaction that starts with `tryLockChain`; while a sealing pass holds the lock, the batch deletes nothing and returns 0 (ruled in fix round 1 of Task 3).
-  - It moves the anchor in the same transaction, keeping its key id and `head_seq`, with its new MAC. `deleteSealedBefore(db, key, cutoff, limit)` takes the module's key.
+  - It moves the anchor in the same transaction, keeping its key id and `head_seq`, with its new MAC. `deleteSealedBefore(db, key, cutoff, limit, stops)` takes the module's key and stop log.
   - An anchor that fails its MAC check is never moved: the batch deletes nothing and returns 0.
   - Unsealed rows are never deleted.
-- **Retention without a key:** unchanged.
+- **Retention without a key:** with no anchor, unchanged (`deleteAuditEventsBefore`). With an anchor, only unsealed rows past the cutoff go (`deleteUnsealedBefore`); sealed rows are kept and the table grows until the key is back. The module reads the anchor per sweep batch (ruled in the final review).
 - **Verify:**
   - Command: `wirebench-server admin audit verify [--head <seq>:<hex>] [--json]`.
   - **Exit codes:** 0 intact, 1 broken, 2 config error or wrong key.
   - **Reasons:** `edited`, `missing`, `out of order`. It also reports `missing` when the highest sealed seq is below `anchor.head_seq`.
   - **Anchor MAC:** checked after the key id. A failure is `edited` at the anchor's seq with no row id, printed `anchor edited`, exit 1.
   - **Messages:** `wrong key (chain key id <id>)`, `head <seq> not found: newer rows were removed`, `head <seq> does not match`.
+  - **`--json`:** the summary's fields; when broken, `brokenSeq` and `broken: { seq, id?, reason, message }`, `message` being the plain output's text after `broken:`; with `--head` on an intact chain, `head: { seq, olderThanKeptChain }`.
   - **Record:** it records `audit.verified` (`actor: system`) with `{ checked, firstSeq, lastSeq, unsealed, result, brokenSeq? }`.
   - **License:** none needed.
 - **Migration:** `packages/server/migrations/audit-log/0012_audit-chain.sql`, exactly as in the spec's §4. The migration-list test (`packages/server/test/integration/teams/migration.test.ts`) gains `12_audit-chain`.

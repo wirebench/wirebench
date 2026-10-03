@@ -113,7 +113,11 @@ const inputSchema = z.object({
   auditForwardUrl: auditForwardUrlText.optional(),
   auditForwardToken: z.string().min(1).optional(),
   auditForwardCaFile: z.string().min(1).optional(),
-  auditChainKey: z.string().min(32, 'must be at least 32 characters').optional(),
+  // Counted in UTF-8 bytes, the form the HMAC uses.
+  auditChainKey: z
+    .string()
+    .refine((value) => Buffer.byteLength(value, 'utf8') >= 32, 'must be at least 32 bytes')
+    .optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -384,7 +388,7 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     required: false,
     secret: true,
     description:
-      'Seals audit events into a keyed hash chain that `admin audit verify` checks: at least 32 characters, kept outside the database and never changed. Unset, nothing is sealed.',
+      'Seals audit events into a keyed hash chain that `admin audit verify` checks: at least 32 bytes, kept outside the database and never changed. Unset, nothing is sealed.',
   },
 ];
 

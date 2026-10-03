@@ -57,9 +57,10 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 ### 3.1 Configuration
 
 `WIREBENCH_SERVER_AUDIT_CHAIN_KEY`:
-- optional, `secret: true`, at least 32 characters, used as UTF-8 bytes;
-- unset means no sealing, and retention works as today (§3.3);
-- shorter than 32 characters is a config error, phrased without the value.
+- optional, `secret: true`, at least 32 bytes, counted in UTF-8 (`Buffer.byteLength`), the form the HMAC uses;
+- unset means no sealing; retention is as today on a database with no chain, and keeps sealed rows on one that has a chain (§3.3);
+- shorter than 32 bytes is a config error (`must be at least 32 bytes`), phrased without the value;
+- every instance on one database must have the same key, or none: an instance without it keeps the sealed rows (§3.3), and one with another key refuses to seal (§3.2 step 3).
 
 ### 3.2 Sealing
 
@@ -68,12 +69,12 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 **Each pass is one transaction:**
 
 1. `select pg_try_advisory_xact_lock(<audit chain lock class>, hashtext(current_schema()))`. The lock is per schema, so servers on different schemas of one database never share it. If another instance's pass or a retention batch holds the lock, the pass ends as `busy-elsewhere` and the sealer tries again at the idle delay.
-2. Read the anchor; if there is none, insert the genesis anchor with this key's id and its MAC.
+2. Read the anchor. If there is none and no row is sealed, insert the genesis anchor with this key's id and its MAC. If there is none but a row is sealed, the anchor was removed: never re-create a genesis over sealed rows, which would re-sign whatever removed it. The pass ends as `bad-anchor`, as in step 3, logged once with `{ anchorSeq: null }`; verify reports `edited` at the first row (§3.4).
 3. Check the key. If the anchor's key id differs from this key's id, refuse to seal. Log one `error` (`audit chain key does not match the chain's key id <id>`), re-arm at the idle delay, and log again only after the key changes and fails again. Inserts are never affected.
    Then check the anchor's MAC, before touching any row. If it fails, refuse to seal, so an edited anchor is never re-signed by sealing past it. Log one `error` per distinct anchor state (`audit chain anchor fails its check: run wirebench-server admin audit verify`) and re-arm at the idle delay.
 4. The head is the highest sealed row's `(chain_seq, chain_hash)`, or the anchor's `(seq, hash)` when nothing is sealed. The next sequence number is `max(head.seq, anchor.head_seq) + 1`, linked to the head's hash. So after sealed rows were deleted from outside (the newest, or all of them), sealing resumes past the gap and never reuses a number.
 5. Claim up to **500** unsealed rows: `where chain_seq is null order by at, id limit 500 for update skip locked`. Uncommitted rows are invisible, so only committed rows are sealed.
-6. For each row in that order: `seq` is the next sequence number (step 4), then `hash = HMAC(key, head.hash ‖ seq ‖ canonical(row))`. Update the row and advance the head. If the batch sealed anything, set `anchor.head_seq` to the new head's sequence number, and the anchor's MAC, in one statement of the same transaction.
+6. For each row in that order: `seq` is the next sequence number (step 4), then `hash = HMAC(key, head.hash ‖ seq ‖ canonical(row))`, and advance the head. Write the whole batch in one statement: `update audit_events a set chain_seq = v.seq, chain_hash = v.hash from unnest($1::text[], $2::bigint[], $3::bytea[]) as v(id, seq, hash) where a.id = v.id`. If the batch sealed anything, set `anchor.head_seq` to the new head's sequence number, and the anchor's MAC, in one statement of the same transaction.
 7. Commit. If the batch sealed anything, log at `info`: `audit chain sealed to <seq>:<hash hex>` with `{ sealed: n }`.
 
 **Canonical row:**
@@ -91,25 +92,35 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 - `jsonb` text output is normalised by Postgres (key order, whitespace), so the same `details` always hashes the same.
 
 **Timing:**
-- Every **2 s** while the last pass sealed something, every **5 s** when idle.
+- At once (**0 ms**) after a pass that sealed a full batch, so a backlog drains at the database's pace, 500 rows a transaction; **2 s** after a pass that sealed a partial batch; **5 s** when idle (nothing to seal, the lock held elsewhere, a wrong key or a bad anchor).
+- Rows are claimed in `(at, id)` order, so while a backlog lasts (the first passes over an existing table, or after sealing could not run) new events wait behind it, unsealed for longer than the usual window.
 - After an unexpected error it backs off from 5 s, doubling, to 300 s. It logs one `warn` when it starts failing and one `info` when it recovers.
 - It stops from `onClose`, before the sweeper, and a pass under way finishes.
 
-**Exposure window:** a row is unsealed from its commit until the next pass, normally under 5 s. Verify reports unsealed rows separately and never treats them as broken.
+**Exposure window:** a row is unsealed from its commit until the pass that seals it, normally under 5 s, longer while a backlog lasts. Verify reports unsealed rows separately and never treats them as broken.
 
 ### 3.3 Retention
 
 **With the key set:**
-- The sweeper deletes only sealed rows, and only from the oldest end of the chain, so the kept chain stays gapless.
+- The sweeper deletes only sealed rows whose links it has checked, and only from the oldest end of the chain, so the kept chain stays gapless. It never trusts `at` alone: someone who backdates recent rows must not get them deleted and the anchor re-signed past them.
 - Each batch is one transaction that first tries the chain's lock (§3.2 step 1, the same per-schema lock). If a sealing pass holds it, the batch deletes nothing and the sweep resumes at its next run, so a long backlog sweep never starves the sealer.
-- The batch takes the first **1000** sealed rows after `anchor.seq`, in `chain_seq` order. The limit counts rows, not sequence numbers, so sequence numbers already missing past the anchor never stall retention.
-- Within that window it finds `S`, the highest sequence number whose row and every row before it are older than the cutoff: `S` is just before the first row with `at >= cutoff`, or the window's last row when none is that new. A row whose `at` equals the cutoff is kept. Rows outside the window are not read.
-- Before deleting, it checks the anchor's MAC with the module's key. If it fails (an edited anchor, or one built with another key), the batch deletes nothing and moves nothing; verify reports the anchor.
-- It deletes the window's rows up to `S`, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)` and sets the anchor's new MAC in the same statement. The key id and `head_seq` stay.
+- Before reading rows, it checks the anchor's MAC with the module's key. If it fails (an edited anchor, or one built with another key), the batch deletes nothing and moves nothing; verify reports the anchor.
+- The batch reads the first **1000** sealed rows after `anchor.seq`, in `chain_seq` order, through the canonical path (`sealedPage`, the columns verify reads), and recomputes each link from the anchor. Rows outside that window are not read.
+- The deletable prefix ends at the first of:
+  - a skipped sequence number (a gap);
+  - a row whose link does not match;
+  - a row with `at >= cutoff` (a row whose `at` equals the cutoff is kept);
+  - a row whose `audit_forward_queue` entry another transaction holds. The batch locks the prefix's queue rows with `for update skip locked`; one it cannot lock is the forwarder's, perhaps waiting on its sink, so the prefix ends just before that row. The batch never waits on a send while it holds the chain's lock.
+- At a gap or a link that does not match, it deletes nothing from there on and logs one `error`, at most once per distinct sequence number per process: `audit chain retention stopped at seq <n>: run wirebench-server admin audit verify`. Sealed rows from there on are then kept past the age limit until the break is dealt with.
+- It deletes the prefix, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)` and sets the anchor's new MAC in the same statement. The key id and `head_seq` stay.
 - Unsealed rows past the cutoff stay until they are sealed.
 - A row that commits late with an old `at` can hold back deletion of the rows sealed after it until it, too, is past the cutoff. That costs a little extra storage, never a gap.
 
-**Without the key:** retention is unchanged, deleting by `at`. If the key is set later, sealing starts from the rows still present. If the key is unset later, rows stay sealed and new rows stay unsealed until it is set again. If any sealed rows were deleted while the key was unset, the next verify reports a gap: sealing resumes after `anchor.head_seq`, so it never reuses their sequence numbers.
+**Without the key:**
+- On a database with no anchor, retention is unchanged, deleting by `at` (`deleteAuditEventsBefore`).
+- On a database with an anchor (a chain exists, built by this instance earlier or by another), it deletes only **unsealed** rows past the cutoff (`deleteUnsealedBefore`), so legitimate operation never cuts a gap. Sealed rows are kept, and the table grows, until the key is set again. Each sweep batch reads the anchor to decide.
+- If the key is set later, sealing starts from the rows still present. If the key is unset later, rows stay sealed and new rows stay unsealed until it is set again.
+- If sealed rows are deleted from outside meanwhile, the next verify reports a gap: sealing resumes after `anchor.head_seq`, so it never reuses their sequence numbers.
 
 **Unchanged:** the forward queue cascade, and the rule that the sweep is not itself an event.
 
@@ -134,7 +145,9 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 - the rows checked, the first and last sequence numbers, and the number of unsealed rows;
 - the broken link, if there is one.
 
-`--json` prints the same summary as one JSON object.
+`--json` prints the same summary as one JSON object: `checked`, `firstSeq`, `lastSeq` (sequence numbers as strings, or null), `unsealed`, `result`, and:
+- when broken, `brokenSeq` and a `broken` object: `seq`, `id` (only when a row is at fault), `reason` (one of the reasons above, `head not found` or `head does not match`) and `message`, the text the plain output prints after `broken:` (for example `anchor edited` or `head 5 not found: newer rows were removed`);
+- with `--head` on an intact chain, a `head` object: `seq` and `olderThanKeptChain`, true when the head is below the anchor because retention moved past it.
 
 **Exit codes:** 0 intact, 1 broken, 2 config error or wrong key.
 
@@ -177,11 +190,13 @@ Existing rows start unsealed. With a key set they are sealed oldest first on the
   - `canonical.ts`: the canonical bytes of a row and the link function. Pure, and unit-tested against fixed vectors.
   - `sealer.ts`: `AuditSealer`.
   - `verify.ts`: the walk, shared by the command line.
+  - `retention-log.ts`: `RetentionStopLog`, retention's error line, once per distinct seq.
 - `repo.ts`:
-  - `readAnchor`, `insertGenesis`, `chainHead`, `claimUnsealed(tx, limit)`, `sealRow(tx, id, seq, hash)`;
+  - `readAnchor`, `insertGenesis`, `chainHead`, `claimUnsealed(tx, limit)`, `sealRows(tx, seals)` (one statement per batch);
   - `sealedPage(db, afterSeq, limit)`;
-  - `deleteSealedBefore(db, cutoff, limit)`, which moves the anchor.
-- `module.ts`: build and start the sealer when the key is set. Hand the sweeper `deleteSealedBefore` in place of `deleteAuditEventsBefore`. On close, stop the sealer before the sweeper.
+  - `deleteSealedBefore(db, key, cutoff, limit, stops)`, which checks the window's links and moves the anchor;
+  - `deleteUnsealedBefore(db, cutoff, limit)`, retention without the key once a chain exists.
+- `module.ts`: build and start the sealer when the key is set. With the key, hand the sweeper `deleteSealedBefore` in place of `deleteAuditEventsBefore`; without it, `deleteUnsealedBefore` when an anchor exists, else `deleteAuditEventsBefore`. On close, stop the sealer before the sweeper.
 - `identity/cli.ts` (where `admin audit export` lives): `admin audit verify`.
 - `config.ts`: `auditChainKey`.
 
@@ -195,9 +210,13 @@ Existing rows start unsealed. With a key set they are sealed oldest first on the
   - edit, move or replace the anchor without verify catching it, because the anchor carries a keyed MAC. That stops:
     - cutting off the oldest rows and copying a later row's `(seq, hash)` into the anchor, up to deleting every row and setting the anchor to the head;
     - lowering `head_seq` to hide deleted newest rows, or to have the sealer re-seal edited rows at the same sequence numbers: the sealer refuses an anchor that fails its MAC.
+    - deleting the anchor so that the sealer starts a fresh genesis over the sealed rows: it never does while a row is sealed (§3.2 step 2), and verify reports `edited` at the first row.
+  - get retention to delete recent rows by backdating them, and so have the anchor re-signed past them: retention recomputes every link in its window before deleting, ends at the first one that fails (or at a gap) and logs an error (§3.3). The backdated rows stay for verify to report as `edited`.
+  - make retention wait on the forwarder while it holds the chain's lock: it skips queue rows another transaction holds.
 - What remains:
   - **Rollback.** They can put back an earlier genuine anchor, with its MAC, and delete every row sealed since. While no retention has run since that anchor was written, the rolled-back chain is internally consistent. A `--head` check from the log catches it.
-  - **Rows forged before sealing.** The chain proves that nothing changed after sealing, not who wrote a row: a row inserted directly into the table is sealed like any other. They can also delete or edit rows in the unsealed window. The window is documented.
+  - **Rows forged before sealing.** The chain proves that nothing changed after sealing, not who wrote a row: a row inserted directly into the table is sealed like any other. They can also delete or edit rows in the unsealed window. The window is documented, and widens while a backlog lasts (§3.2 timing).
+  - **Keeping retention busy.** A tampered row stops retention at that point, so sealed rows from there on are kept past the age limit. The error log line and verify point at it; the cost is storage, never a gap.
   - **Everything deleted.** They can delete every row and the anchor together. Verify then reports an empty chain, which `--head` catches.
 
 ## 7. Testing
@@ -221,7 +240,11 @@ Existing rows start unsealed. With a key set they are sealed oldest first on the
   - Retention:
     - after sweeping, verify is intact from the new anchor;
     - an unsealed old row is not deleted;
-    - a late old row holds back deletion without a gap.
+    - a late old row holds back deletion without a gap;
+    - recent rows backdated from outside are not deleted, and verify reports `edited`; an old row edited in place, and a gap, each stop retention there with one error line;
+    - a forward-queue row held by another transaction ends the prefix before its event, without waiting;
+    - without the key and with a chain, sealed rows survive and old unsealed ones go.
+  - Sealing also: a deleted anchor over sealed rows is refused (`bad-anchor`) and nothing is sealed; a full batch re-arms at 0 ms.
 - **Concurrency:** a burst of audited actions in parallel transactions completes while the sealer runs, and no action waits on the sealer's lock. The chain's lock is advisory and taken only by sealer passes and retention batches.
 - The migration-list test covers `12_audit-chain`.
 

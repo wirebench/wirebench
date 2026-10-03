@@ -1,8 +1,9 @@
 /** The append-only `audit_events` table (audit-log spec §4.2). Raw SQL over `Querier`, like every module's repo. */
 import type { AuditDetails, AuditEvent, AuditTargetKind } from '@wirebench/engine';
 import type { AuditInput, Database, Querier } from '../context.js';
-import { anchorMac, anchorMacValid, genesisHash, keyId, type CanonicalRow } from './chain/canonical.js';
+import { anchorMac, anchorMacValid, genesisHash, keyId, link, type CanonicalRow } from './chain/canonical.js';
 import { tryLockChain } from './chain/lock.js';
+import type { RetentionStopLog } from './chain/retention-log.js';
 import type { Cursor } from './cursor.js';
 
 export interface AuditRowInput extends AuditInput {
@@ -192,10 +193,28 @@ export async function deleteForwarded(tx: Querier, ids: readonly string[]): Prom
   await tx.query('delete from audit_forward_queue where event_id = any($1::text[])', [ids]);
 }
 
-/** Retention without a chain key (§3.3): at most `limit` rows older than `cutoff`, oldest first; returns how many went. */
+/**
+ * Retention without a chain key and without a chain (§3.3): at most `limit` rows older than `cutoff`,
+ * oldest first; returns how many went. Once an anchor exists, retention without the key uses
+ * {@link deleteUnsealedBefore} instead.
+ */
 export async function deleteAuditEventsBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(
     'delete from audit_events where id in (select id from audit_events where at < $1 order by at, id limit $2)',
+    [cutoff, limit],
+  );
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Retention without the key while a chain exists (audit-chain spec §3.3): at most `limit` unsealed rows
+ * older than `cutoff`, oldest first. Sealed rows stay, so retention never cuts a gap into the chain while
+ * the key is unset; the table grows until the key is back.
+ */
+export async function deleteUnsealedBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
+  const result = await db.query(
+    `delete from audit_events where id in
+       (select id from audit_events where chain_seq is null and at < $1 order by at, id limit $2)`,
     [cutoff, limit],
   );
   return result.rowCount ?? 0;
@@ -309,8 +328,19 @@ export async function claimUnsealed(tx: Querier, limit: number): Promise<Canonic
   return rows.rows;
 }
 
-export async function sealRow(tx: Querier, id: string, seq: bigint, hash: Buffer): Promise<void> {
-  await tx.query('update audit_events set chain_seq = $2, chain_hash = $3 where id = $1', [id, seq.toString(), hash]);
+/** A claimed row's place in the chain, as a pass computed it. */
+export interface RowSeal extends ChainLink {
+  readonly id: string;
+}
+
+/** Seals a pass's batch in one statement, not one update per row. */
+export async function sealRows(tx: Querier, seals: readonly RowSeal[]): Promise<void> {
+  if (seals.length === 0) return;
+  await tx.query(
+    `update audit_events a set chain_seq = v.seq, chain_hash = v.hash
+     from unnest($1::text[], $2::bigint[], $3::bytea[]) as v(id, seq, hash) where a.id = v.id`,
+    [seals.map((s) => s.id), seals.map((s) => s.seq.toString()), seals.map((s) => s.hash)],
+  );
 }
 
 /** Sealed rows with a sequence number above `afterSeq`, in chain order, for verify's walk. */
@@ -323,45 +353,109 @@ export async function sealedPage(db: Querier, afterSeq: bigint, limit: number): 
   return rows.rows.map(({ chainSeq, chainHash, ...row }) => ({ seq: seqOf(chainSeq), hash: chainHash, row }));
 }
 
+/** A canonical `at` (`YYYY-MM-DDTHH:MM:SS.ffffffZ`) is before `cutoff`. Truncating it to the millisecond is exact against a `Date`. */
+function olderThan(at: string | null, cutoff: Date): boolean {
+  if (at === null) return false;
+  const ms = Date.parse(`${at.slice(0, 23)}Z`);
+  return Number.isFinite(ms) && ms < cutoff.getTime();
+}
+
+/** The link `sealed` should carry after `prev`, or undefined when none can be built (a seq out of range). */
+function expectedLink(key: string, prev: ChainLink, sealed: SealedRow): Buffer | undefined {
+  try {
+    return link(key, prev.hash, sealed.seq, sealed.row);
+  } catch (error) {
+    /* c8 ignore next 2 -- link throws only RangeError */
+    if (error instanceof RangeError) return undefined;
+    throw error;
+  }
+}
+
 /**
  * Retention with a chain key (audit-chain spec §3.3): deletes sealed rows from the oldest end of the
- * chain only, so the kept chain stays gapless and verifies from the moved anchor. A batch reads the
- * first `limit` sealed rows after the anchor, in seq order, and deletes them up to the first one not
- * older than `cutoff` (`S`, found within that window only); the anchor moves to the last deleted row's
- * `(seq, hash)` in the same transaction, keeping its key id and `head_seq`, with its new MAC. The limit counts rows, not
- * seqs, so seqs already missing past the anchor (rows deleted while the key was unset) never stall it.
- * Unsealed rows are never touched: they go once sealed and past the cutoff. A late row (sealed after a
- * row with a newer `at`) waits behind that row: a little extra storage, never a gap.
+ * chain only, and only rows whose links it has checked, so `at` is never trusted on its own. A batch
+ * reads the first `limit` sealed rows after the anchor through the canonical path ({@link sealedPage}),
+ * recomputes each link from the anchor, and ends its deletable prefix at the first of:
+ * - a skipped seq (a gap) or a link that does not match: nothing past it is deleted, and `stops` logs
+ *   one error for that seq, since only verify can say what happened there;
+ * - a row with `at >= cutoff`;
+ * - a row whose forward-queue entry another transaction holds (the forwarder, perhaps waiting on its
+ *   sink), so the batch never waits on a send while it holds the chain's lock.
+ *
+ * The anchor moves to the last deleted row's `(seq, hash)` in the same transaction, keeping its key id
+ * and `head_seq`, with its new MAC. Unsealed rows are never touched: they go once sealed and past the
+ * cutoff. A late row (sealed after a row with a newer `at`) waits behind that row: a little extra
+ * storage, never a gap.
  *
  * It only tries the chain's lock: while a sealing pass holds it, the batch deletes nothing and the sweep
  * resumes next time, so a long backlog sweep never starves the sealer. An anchor whose MAC fails this
  * key's check (edited, or built by another key) is never moved: the batch deletes nothing, and verify
- * reports it. Returns how many rows went: 0 with the lock busy, no anchor, a failing anchor, or nothing
- * to delete.
+ * reports it. Returns how many rows went.
  */
-export async function deleteSealedBefore(db: Database, key: string, cutoff: Date, limit: number): Promise<number> {
+export async function deleteSealedBefore(
+  db: Database,
+  key: string,
+  cutoff: Date,
+  limit: number,
+  stops: RetentionStopLog,
+): Promise<number> {
   return db.transaction(async (tx) => {
     if (!(await tryLockChain(tx))) return 0;
     const anchor = await readAnchor(tx);
     if (anchor === undefined || !anchorMacValid(key, anchor)) return 0;
-    const window = await tx.query<{ seq: string; hash: Buffer; young: boolean }>(
-      `select chain_seq::text as seq, chain_hash as hash, at >= $2 as young from audit_events
-       where chain_seq > $1 order by chain_seq limit $3`,
-      [anchor.seq.toString(), cutoff, limit],
-    );
-    const firstYoung = window.rows.findIndex((row) => row.young);
-    const last = (firstYoung === -1 ? window.rows : window.rows.slice(0, firstYoung)).at(-1);
+    const old: SealedRow[] = [];
+    let prev: ChainLink = { seq: anchor.seq, hash: anchor.hash };
+    for (const sealed of await sealedPage(tx, anchor.seq, limit)) {
+      const next = prev.seq + 1n;
+      // Seqs are unique and above the anchor here, so a row that is not `next` lies past a gap.
+      if (sealed.seq !== next) {
+        stops.stoppedAt(next);
+        break;
+      }
+      const expected = expectedLink(key, prev, sealed);
+      if (expected === undefined || !Buffer.isBuffer(sealed.hash) || !expected.equals(sealed.hash)) {
+        stops.stoppedAt(sealed.seq);
+        break;
+      }
+      if (!olderThan(sealed.row.at, cutoff)) break;
+      old.push(sealed);
+      prev = sealed;
+    }
+    const last = (await unheldByForwarder(tx, old)).at(-1);
     if (last === undefined) return 0;
-    // Under the lock nothing is sealed meanwhile, so this range holds exactly the window's old prefix.
+    // Under the lock nothing is sealed meanwhile, and every seq up to `last` was just checked present.
     const deleted = await tx.query('delete from audit_events where chain_seq > $1 and chain_seq <= $2', [
       anchor.seq.toString(),
-      last.seq,
+      last.seq.toString(),
     ]);
     await tx.query('update audit_chain_anchor set seq = $1, hash = $2, mac = $3', [
-      last.seq,
+      last.seq.toString(),
       last.hash,
-      anchorMac(key, seqOf(last.seq), last.hash, anchor.headSeq),
+      anchorMac(key, last.seq, last.hash, anchor.headSeq),
     ]);
     return deleted.rowCount ?? 0;
   });
+}
+
+/**
+ * Locks the prefix's forward-queue rows (`skip locked`), so the delete's cascade never waits, and ends
+ * the prefix just before the first row whose queue entry another transaction holds.
+ */
+async function unheldByForwarder(tx: Querier, prefix: readonly SealedRow[]): Promise<readonly SealedRow[]> {
+  const ids = prefix.flatMap((sealed) => (sealed.row.id === null ? [] : [sealed.row.id]));
+  if (ids.length === 0) return prefix;
+  const queued = (
+    await tx.query<{ id: string }>('select event_id as id from audit_forward_queue where event_id = any($1::text[])', [
+      ids,
+    ])
+  ).rows.map((row) => row.id);
+  if (queued.length === 0) return prefix;
+  const locked = await tx.query<{ id: string }>(
+    'select event_id as id from audit_forward_queue where event_id = any($1::text[]) for update skip locked',
+    [queued],
+  );
+  const mine = new Set(locked.rows.map((row) => row.id));
+  const held = new Set(queued.filter((id) => !mine.has(id)));
+  const firstHeld = prefix.findIndex((sealed) => sealed.row.id !== null && held.has(sealed.row.id));
+  return firstHeld === -1 ? prefix : prefix.slice(0, firstHeld);
 }

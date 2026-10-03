@@ -7,6 +7,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import type { ServerCommand } from '../../../src/args.js';
 import { keyId } from '../../../src/audit-log/chain/canonical.js';
+import { RetentionStopLog } from '../../../src/audit-log/chain/retention-log.js';
 import { AuditSealer } from '../../../src/audit-log/chain/sealer.js';
 import { verifyChain } from '../../../src/audit-log/chain/verify.js';
 import { deleteSealedBefore } from '../../../src/audit-log/repo.js';
@@ -37,6 +38,8 @@ const silentLog = (() => {
   };
   return logger as unknown as FastifyBaseLogger;
 })();
+
+const stops = new RetentionStopLog(silentLog);
 
 /** `2026-10-03T00:00:<n>Z`: row times in whole seconds. */
 const t = (n: number) => `2026-10-03T00:00:${String(n).padStart(2, '0')}Z`;
@@ -211,7 +214,7 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
 
   it('a sealed seq at or below the anchor is out of order', async () => {
     const made = await sealed(5);
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(2)) + 500), 1000)).toBe(2);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(2)) + 500), 1000, stops)).toBe(2);
     await db.query('update audit_events set chain_seq = 1 where chain_seq = 3');
     const run = await verify();
     expect(run.code).toBe(1);
@@ -277,7 +280,7 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
   it('--head equal to the anchor seq is checked against the anchor hash', async () => {
     await sealed(5);
     const head3 = await hashAt(3);
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000)).toBe(3);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000, stops)).toBe(3);
     expect(await verify({ head: { seq: 3n, hash: head3 } })).toMatchObject({
       code: 0,
       stdout: 'checked 2 sealed rows, seq 4 to 5; 0 unsealed\nhead 3 matches\nintact\n',
@@ -290,7 +293,7 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
   it('--head older than the kept chain passes once retention moved past it', async () => {
     await sealed(5);
     const head2 = await hashAt(2);
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000)).toBe(3);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(3)) + 500), 1000, stops)).toBe(3);
     expect(await verify({ head: { seq: 2n, hash: head2 } })).toMatchObject({
       code: 0,
       stdout: 'checked 2 sealed rows, seq 4 to 5; 0 unsealed\nhead 2 is older than the kept chain\nintact\n',
@@ -472,7 +475,7 @@ describeDb('wirebench-server admin audit verify (audit-chain spec §3.4)', () =>
     };
     const walking = verifyChain(gated, KEY, { pageSize: 2 });
     await entered;
-    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(4)) + 500), 1000)).toBe(4);
+    expect(await deleteSealedBefore(db, KEY, new Date(Date.parse(t(4)) + 500), 1000, stops)).toBe(4);
     release();
     expect(await walking).toEqual({
       kind: 'checked',

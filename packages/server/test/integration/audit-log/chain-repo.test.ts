@@ -8,7 +8,7 @@ import {
   insertGenesis,
   readAnchor,
   sealedPage,
-  sealRow,
+  sealRows,
 } from '../../../src/audit-log/repo.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { FIXED_ROW } from '../../helpers/audit-chain.js';
@@ -132,11 +132,13 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
     const claimed = await db.transaction(async (tx) => {
       const rows = await claimUnsealed(tx, 2);
       let head = { seq: anchor.seq, hash: anchor.hash };
+      const seals = [];
       for (const row of rows) {
         const seq = head.seq + 1n;
         head = { seq, hash: link(KEY, head.hash, seq, row) };
-        await sealRow(tx, row.id ?? '', seq, head.hash);
+        seals.push({ id: row.id ?? '', ...head });
       }
+      await sealRows(tx, seals);
       return rows.map((r) => r.id);
     });
     expect(claimed).toEqual(['01J9ZK3V8Q00000000000000A1', '01J9ZK3V8Q00000000000000B2']);

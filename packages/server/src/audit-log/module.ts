@@ -9,13 +9,14 @@ import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
+import { RetentionStopLog } from './chain/retention-log.js';
 import { AuditSealer } from './chain/sealer.js';
 import { desktopEventsLimiter, desktopRoutes } from './desktop-routes.js';
 import { AuditForwarder } from './forward/forwarder.js';
 import { sinkFromConfig } from './forward/sink.js';
 import { auditHook } from './hook.js';
 import { licenseListener } from './license-listener.js';
-import { deleteAuditEventsBefore, deleteSealedBefore } from './repo.js';
+import { deleteAuditEventsBefore, deleteSealedBefore, deleteUnsealedBefore, readAnchor } from './repo.js';
 import { auditRoutes } from './routes.js';
 
 export const AUDIT_LOG_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/audit-log/', import.meta.url));
@@ -42,8 +43,10 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
       desktopRoutes({ db: ctx.db, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
       const key = ctx.config.auditChainKey;
-      // With a chain key, retention deletes only sealed rows from the chain's oldest end and moves the
-      // anchor (audit-chain spec §3.3); without one, it deletes by `at` as before.
+      const stops = new RetentionStopLog(ctx.log);
+      // With a chain key, retention deletes only checked sealed rows from the chain's oldest end and moves
+      // the anchor (audit-chain spec §3.3). Without one it deletes by `at`, but once a chain exists only
+      // unsealed rows, so a missing key never cuts a gap; each batch reads the anchor, which is cheap.
       const sweeper = new CaptureSweeper({
         db: ctx.db,
         maxAgeDays: ctx.config.auditMaxAgeDays,
@@ -52,8 +55,11 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
         log: ctx.log,
         deleteBefore:
           key === undefined
-            ? deleteAuditEventsBefore
-            : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, key, cutoff, limit),
+            ? async (db, cutoff, limit) =>
+                (await readAnchor(db)) === undefined
+                  ? deleteAuditEventsBefore(db, cutoff, limit)
+                  : deleteUnsealedBefore(db, cutoff, limit)
+            : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, key, cutoff, limit, stops),
         label: 'audit sweep',
       });
       sweeper.start();

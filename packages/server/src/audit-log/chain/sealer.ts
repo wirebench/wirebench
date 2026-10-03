@@ -16,15 +16,18 @@ import {
   claimUnsealed,
   insertGenesis,
   readAnchor,
-  sealRow,
+  sealRows,
   setAnchorHead,
   type ChainLink,
+  type RowSeal,
 } from '../repo.js';
 import { anchorMacValid, keyId, link } from './canonical.js';
 import { tryLockChain } from './lock.js';
 
 export const SEAL_BATCH = 500;
-/** The next pass while the last one sealed something. */
+/** The next pass after one that sealed a full batch: a backlog is drained without waiting. */
+export const SEAL_BACKLOG_MS = 0;
+/** The next pass after one that sealed a partial batch. */
 export const SEAL_BUSY_MS = 2_000;
 /** The next pass when nothing was unsealed, the chain lock was held (another pass or a retention batch), the key was refused, or the anchor failed its MAC check. */
 export const SEAL_IDLE_MS = 5_000;
@@ -56,9 +59,12 @@ export interface SealPass {
 type Sealing =
   | { readonly kind: 'busy-elsewhere' }
   | { readonly kind: 'wrong-key'; readonly chainKeyId: string }
-  /** `state` names the anchor's stored fields, so one state is logged once. */
-  | { readonly kind: 'bad-anchor'; readonly anchorSeq: bigint; readonly state: string }
-  | { readonly kind: 'sealed'; readonly sealed: number; readonly head: ChainLink };
+  /**
+   * `state` names the anchor's stored fields, so one state is logged once. `anchorSeq` is null when the
+   * anchor is gone while rows are sealed: a genesis is never re-created over them.
+   */
+  | { readonly kind: 'bad-anchor'; readonly anchorSeq: bigint | null; readonly state: string }
+  | { readonly kind: 'sealed'; readonly sealed: number; readonly full: boolean; readonly head: ChainLink };
 
 export class AuditSealer {
   private timer: { cancel(): void } | undefined;
@@ -150,7 +156,7 @@ export class AuditSealer {
       case 'bad-anchor':
         if (this.refusedAnchor !== result.state) {
           this.deps.log.error(
-            { anchorSeq: result.anchorSeq.toString() },
+            { anchorSeq: result.anchorSeq?.toString() ?? null },
             'audit chain anchor fails its check: run wirebench-server admin audit verify',
           );
         }
@@ -164,14 +170,19 @@ export class AuditSealer {
           { sealed: result.sealed },
           `audit chain sealed to ${result.head.seq.toString()}:${result.head.hash.toString('hex')}`,
         );
-        return { outcome: 'sealed', sealed: result.sealed, nextDelayMs: SEAL_BUSY_MS };
+        return { outcome: 'sealed', sealed: result.sealed, nextDelayMs: result.full ? SEAL_BACKLOG_MS : SEAL_BUSY_MS };
     }
   }
 
   /** The pass's transaction: §3.2 steps 1 to 6; the caller's commit is step 7. */
   private async seal(tx: Querier): Promise<Sealing> {
     if (!(await tryLockChain(tx))) return { kind: 'busy-elsewhere' };
-    const anchor = (await readAnchor(tx)) ?? (await insertGenesis(tx, this.deps.key));
+    let anchor = await readAnchor(tx);
+    if (anchor === undefined) {
+      // A genesis only starts a chain: over sealed rows it would re-sign whatever removed the anchor.
+      if ((await chainHead(tx)) !== undefined) return { kind: 'bad-anchor', anchorSeq: null, state: 'missing' };
+      anchor = await insertGenesis(tx, this.deps.key);
+    }
     // Before any row is touched: a wrong key must not extend the chain with links verify would reject.
     if (anchor.keyId !== this.keyId) return { kind: 'wrong-key', chainKeyId: anchor.keyId };
     // Nor may an edited anchor (moved forward, or head_seq lowered) be re-signed by sealing past it.
@@ -183,17 +194,22 @@ export class AuditSealer {
     // removed from outside (the newest, or all of them) leave a gap verify reports, never a reused seq.
     const last: ChainLink = (await chainHead(tx)) ?? { seq: anchor.seq, hash: anchor.hash };
     let head: ChainLink = { seq: last.seq > anchor.headSeq ? last.seq : anchor.headSeq, hash: last.hash };
-    const rows = await claimUnsealed(tx, this.deps.batchSize ?? SEAL_BATCH);
+    const batch = this.deps.batchSize ?? SEAL_BATCH;
+    const rows = await claimUnsealed(tx, batch);
+    const seals: RowSeal[] = [];
     for (const row of rows) {
       /* c8 ignore next -- id is the primary key */
       if (row.id === null) throw new Error('an audit event has no id');
       const seq = head.seq + 1n;
       const hash = link(this.deps.key, head.hash, seq, row);
-      await sealRow(tx, row.id, seq, hash);
+      seals.push({ id: row.id, seq, hash });
       head = { seq, hash };
     }
-    if (rows.length > 0) await setAnchorHead(tx, this.deps.key, anchor, head.seq);
-    return { kind: 'sealed', sealed: rows.length, head };
+    if (seals.length > 0) {
+      await sealRows(tx, seals);
+      await setAnchorHead(tx, this.deps.key, anchor, head.seq);
+    }
+    return { kind: 'sealed', sealed: rows.length, full: rows.length >= batch, head };
   }
 }
 
