@@ -120,6 +120,17 @@ export interface LaunchOptions {
   readonly keepUserDataDir?: boolean;
   /** Extra env vars for the launched process — e.g. `WIREBENCH_E2E_SAVE_PATH`/`WIREBENCH_E2E_OPEN_PATH`. */
   readonly extraEnv?: Readonly<Record<string, string>>;
+  /**
+   * Console errors this one spec expects, on top of {@link BENIGN_CONSOLE_PATTERNS} — e.g. the
+   * browser's own refusals when a spec deliberately loads a hostile page into a sandbox.
+   * Only {@link launchApp} honours this (and the next option); the packaged launcher does not.
+   */
+  readonly expectedConsoleErrors?: readonly RegExp[];
+  /**
+   * Console errors whose source (`message.location().url`) is exactly one of these are ignored,
+   * e.g. `about:srcdoc` for a sandboxed preview frame. Sturdier than matching message text.
+   */
+  readonly ignoreConsoleErrorsFromUrls?: readonly string[];
 }
 
 /** The env vars {@link LaunchOptions} translate into, shared by both launchers. */
@@ -183,7 +194,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
         // Every renderer console line with its source, for diagnosing a failing console gate.
         console.log(`[renderer:${message.type()}] ${message.text()} @ ${JSON.stringify(message.location())}`);
       }
-      if (message.type() === 'error') {
+      if (message.type() === 'error' && !(options.ignoreConsoleErrorsFromUrls ?? []).includes(message.location().url)) {
         consoleErrors.push(message.text());
       }
     });
@@ -200,7 +211,10 @@ export async function launchApp(options: LaunchOptions = {}): Promise<LaunchedAp
           removeDirSync(userDataDir);
         }
         const unexpected = consoleErrors.filter(
-          (text) => !BENIGN_CONSOLE_PATTERNS.some((pattern) => pattern.test(text)),
+          (text) =>
+            ![...BENIGN_CONSOLE_PATTERNS, ...(options.expectedConsoleErrors ?? [])].some((pattern) =>
+              pattern.test(text),
+            ),
         );
         expect(unexpected, `unexpected renderer console errors:\n${unexpected.join('\n')}`).toEqual([]);
       },

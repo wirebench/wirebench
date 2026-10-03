@@ -151,4 +151,13 @@ describe('CaptureViewer (webhook-capture §4.2)', () => {
     expect(button.disabled).toBe(true);
     expect(button.title).toBe('A binary body cannot be saved as a webhook.');
   });
+
+  it('previews an HTML capture in a sandboxed frame', () => {
+    const page = '<p>hi</p>';
+    mount(
+      capture({ contentType: 'text/html', text: page, language: 'html', bodyBase64: b64(page), bodySize: page.length }),
+    );
+    fireEvent.click(screen.getByTestId('rest-response-view-preview'));
+    expect(screen.getByTestId('rest-response-html-preview').getAttribute('sandbox')).toBe('');
+  });
 });

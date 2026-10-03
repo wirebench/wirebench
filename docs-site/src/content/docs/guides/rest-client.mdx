@@ -71,6 +71,12 @@ Choose **Send**, or press <kbd>⌘⏎</kbd> / <kbd>Ctrl+Enter</kbd>. The respons
   exchange each on their own tab.
 - **Query** — run XPath 3.1 or JSONPath over a JSON body directly, without leaving the response.
 
+**Preview** also renders an HTML body, as a static page: scripts do not run, forms do not submit,
+links do not navigate, and nothing the page points at is fetched — inline styles and embedded
+(`data:`) images still show. A page that relies on external stylesheets therefore looks unstyled.
+HTML still opens in Pretty; switch to Preview when you want to see it rendered. Webhook captures
+preview the same way.
+
 A request with an unresolved `{path}` placeholder or a property expansion that doesn't resolve is
 refused before anything reaches the server, and the response pane says why.
 

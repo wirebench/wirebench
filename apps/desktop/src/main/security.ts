@@ -57,3 +57,18 @@ const ALLOWED_EXTERNAL_URL_PATTERN = /^https?:\/\//;
 export function isExternalUrlAllowed(url: string): boolean {
   return ALLOWED_EXTERNAL_URL_PATTERN.test(url);
 }
+
+/**
+ * `will-frame-navigate` handler: no subframe may navigate, except to its own `srcdoc` (#48). The
+ * app has no frame of its own that navigates; the HTML preview's frame must stay on its document
+ * whatever its markup does. Setting `srcdoc` itself starts a subframe navigation to `about:srcdoc`,
+ * which is the preview's own document: page content cannot navigate a frame to `about:srcdoc`, so
+ * allowing it opens nothing. The main frame is `will-navigate`'s.
+ */
+export function denySubframeNavigation(event: {
+  readonly isMainFrame: boolean;
+  readonly url: string;
+  preventDefault(): void;
+}): void {
+  if (!event.isMainFrame && event.url !== 'about:srcdoc') event.preventDefault();
+}

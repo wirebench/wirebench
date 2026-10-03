@@ -9,8 +9,10 @@ import {
   APP_SCHEME_PRIVILEGES,
   CONTENT_SECURITY_POLICY,
   MAIN_WINDOW_WEB_PREFERENCES,
+  denySubframeNavigation,
   isExternalUrlAllowed,
 } from '../src/main/security.js';
+import { HTML_PREVIEW_CSP } from '../src/shared/html-preview-csp.js';
 
 describe('security baseline', () => {
   it('locks down BrowserWindow webPreferences', () => {
@@ -51,6 +53,37 @@ describe('security baseline', () => {
         "supportFetchAPI": true,
       }
     `);
+  });
+
+  it('keeps the HTML preview offline and inert', () => {
+    expect(HTML_PREVIEW_CSP).toMatchInlineSnapshot(
+      `"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'"`,
+    );
+  });
+
+  it('denies subframe navigation except the preview own srcdoc load, and leaves the main frame to will-navigate', () => {
+    const navigation = (isMainFrame: boolean, url: string) => {
+      let prevented = false;
+      return {
+        isMainFrame,
+        url,
+        preventDefault: () => {
+          prevented = true;
+        },
+        get prevented() {
+          return prevented;
+        },
+      };
+    };
+    const srcdoc = navigation(false, 'about:srcdoc');
+    denySubframeNavigation(srcdoc);
+    expect(srcdoc.prevented).toBe(false);
+    const away = navigation(false, 'http://127.0.0.1/x');
+    denySubframeNavigation(away);
+    expect(away.prevented).toBe(true);
+    const main = navigation(true, 'http://127.0.0.1/x');
+    denySubframeNavigation(main);
+    expect(main.prevented).toBe(false);
   });
 });
 

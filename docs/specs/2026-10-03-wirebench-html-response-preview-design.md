@@ -12,7 +12,7 @@ from the network. The markup stays one click away in Pretty and Raw.
 
 1. **Scripts never run.** There is no opt-in. This is a preview, not a browser.
 2. **No remote resources.** Images, stylesheets and fonts the HTML points at are not loaded. Inline
-   styles and `data:` images still render. A page that relies on external CSS looks unstyled, and a
+   styles and `data:` images still render; fonts fall back to the system fonts. A page that relies on external CSS looks unstyled, and a
    note says why.
 3. **Scope: REST responses and webhook captures.** Both already render through `BodyView`.
 4. **Pretty stays the default** for HTML. Nothing renders until the user opens Preview.
@@ -105,12 +105,13 @@ guard:
 
 ```ts
 win.webContents.on('will-frame-navigate', (event) => {
-  if (!event.isMainFrame) event.preventDefault();
+  if (!event.isMainFrame && event.url !== 'about:srcdoc') event.preventDefault();
 });
 ```
 
-The app has no frame of its own that navigates. Denying every subframe navigation therefore costs
-nothing, and it stops a navigation that slipped past the sandbox: a meta refresh, or a link click.
+The app has no frame of its own that navigates. Denying every subframe navigation but one therefore
+costs nothing. The exception is `about:srcdoc`: setting `srcdoc` starts a subframe navigation to it,
+it is the preview's own document, and page content cannot navigate a frame there. The guard stops a navigation that slipped past the sandbox: a meta refresh, or a link click.
 The handler is a one-line function exported from `security.ts` (`denySubframeNavigation`), so it is
 unit-tested without Electron.
 
@@ -133,7 +134,7 @@ off. A subframe document is untrusted content placed inside that renderer proces
 | Script reaches the app (`window.parent`, the preload API, IPC) | No script runs. Even if it did, the frame has an opaque origin (no `allow-same-origin`), so `parent` is cross-origin. The preload API exists only in the main frame's isolated world. | renderer test: no `allow-*` token on the frame |
 | A request tells a server the response was opened (beacon, IP leak) | `default-src 'none'`, `img-src data:` and `font-src data:` block every fetch. `referrer` is `no-referrer`. | e2e: `<img>`, `<link rel=stylesheet>`, `@import`, CSS `url()` and `@font-face` all point at a local server, which records zero requests |
 | A form posts data | Sandbox without `allow-forms`, plus `form-action 'none'` | e2e: an auto-submitting form sends nothing |
-| The page navigates the frame or the app (link, meta refresh, `target=_top`) | Sandbox without `allow-top-navigation*`; the parent's `frame-src` (from `default-src 'self'`) refuses any other origin; the main-process `will-frame-navigate` guard denies every subframe navigation; `will-navigate` already denies the main frame | e2e: a meta refresh and a clicked link leave the frame on its document; unit: `denySubframeNavigation` |
+| The page navigates the frame or the app (link, meta refresh, `target=_top`) | Sandbox without `allow-top-navigation*`; the parent's `frame-src` (from `default-src 'self'`) refuses any other origin; the main-process `will-frame-navigate` guard denies every subframe navigation except `about:srcdoc`; `will-navigate` already denies the main frame | e2e: a meta refresh and a clicked link leave the frame on its document; unit: `denySubframeNavigation` |
 | Popups, `window.open`, `target=_blank` | Sandbox without `allow-popups`; `setWindowOpenHandler` already denies everything | covered by the link-click case |
 | A `<base href>` redirects relative URLs | `base-uri 'none'` | unit: part of the policy snapshot |
 | `<object>`, `<embed>`, plugins | `default-src 'none'` covers `object-src`; the sandbox blocks plugins | e2e: an `<object data>` makes no request |
@@ -141,7 +142,7 @@ off. A subframe document is untrusted content placed inside that renderer proces
 | An oversized or pathological document freezes the pane | The `prettyPrintMaxBytes` cut-off. The frame's layout runs in the renderer, as Monaco does today. | renderer test: over the limit, no frame |
 | A Chromium sandbox escape | Residual risk. It is mitigated by keeping Electron current, and it is the same exposure every Chromium-based tool has when it shows HTML | — |
 
-**What stays allowed:** inline `<style>` and `style` attributes, `data:` images and `data:` fonts.
+**What stays allowed:** inline `<style>` and `style` attributes, `data:` images. `data:` fonts do not render: the frame inherits the app CSP, whose `font-src 'self'` is enforced alongside the preview policy, so fonts fall back to the system fonts.
 These are what the preview exists to show, and none of them can reach the network or run code.
 
 ## 5. Testing
