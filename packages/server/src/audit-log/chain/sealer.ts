@@ -31,8 +31,9 @@ export const SEAL_IDLE_MS = 5_000;
 export const SEAL_BACKOFF_MIN_MS = 5_000;
 export const SEAL_BACKOFF_MAX_MS = 300_000;
 /**
- * The transaction-scoped advisory lock every sealer takes first (the ASCII of "wbaudcha"). Only sealers
- * take it, so it serialises passes across server instances and nothing else.
+ * The transaction-scoped advisory lock every sealer takes first (the ASCII of "wbaudcha"). It serialises
+ * passes across server instances, and retention's batches (`deleteSealedBefore`, which waits for it)
+ * against passes, since a batch moves the anchor a pass reads. Inserts never take it.
  */
 export const AUDIT_CHAIN_LOCK_ID = 0x7762617564636861n;
 

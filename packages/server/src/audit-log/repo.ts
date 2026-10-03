@@ -1,7 +1,8 @@
 /** The append-only `audit_events` table (audit-log spec §4.2). Raw SQL over `Querier`, like every module's repo. */
 import type { AuditDetails, AuditEvent, AuditTargetKind } from '@wirebench/engine';
-import type { AuditInput, Querier } from '../context.js';
+import type { AuditInput, Database, Querier } from '../context.js';
 import type { CanonicalRow } from './chain/canonical.js';
+import { AUDIT_CHAIN_LOCK_ID } from './chain/sealer.js';
 import type { Cursor } from './cursor.js';
 
 export interface AuditRowInput extends AuditInput {
@@ -191,7 +192,7 @@ export async function deleteForwarded(tx: Querier, ids: readonly string[]): Prom
   await tx.query('delete from audit_forward_queue where event_id = any($1::text[])', [ids]);
 }
 
-/** Retention (§3.3): at most `limit` rows older than `cutoff`, oldest first; returns how many went. */
+/** Retention without a chain key (§3.3): at most `limit` rows older than `cutoff`, oldest first; returns how many went. */
 export async function deleteAuditEventsBefore(db: Querier, cutoff: Date, limit: number): Promise<number> {
   const result = await db.query(
     'delete from audit_events where id in (select id from audit_events where at < $1 order by at, id limit $2)',
@@ -307,4 +308,52 @@ export async function sealedPage(db: Querier, afterSeq: bigint, limit: number): 
     [afterSeq.toString(), limit],
   );
   return rows.rows.map(({ chainSeq, chainHash, ...row }) => ({ seq: seqOf(chainSeq), hash: chainHash, row }));
+}
+
+/**
+ * Retention with a chain key (audit-chain spec §3.3): deletes sealed rows from the oldest end of the
+ * chain only, so the kept chain stays gapless and verifies from the moved anchor. `S` is the highest
+ * seq whose row and every row before it are older than `cutoff`; up to `limit` rows past the anchor, to
+ * `S`, go in one transaction that moves the anchor to the last deleted row's `(seq, hash)`, keeping
+ * its key id and `head_seq`. Unsealed rows are never touched: they go once sealed and past the cutoff.
+ * A late row (sealed after rows with a newer `at`) holds back the rows sealed after it while those
+ * newer rows are kept: a little extra storage, never a gap.
+ *
+ * It takes the sealer's advisory lock, waiting for it, so a sealing pass (which reads the head and the
+ * anchor) and a batch (which moves the anchor) never interleave; a pass that finds it held ends
+ * `busy-elsewhere` and tries again. Returns how many rows went: 0 with no anchor or nothing to delete.
+ */
+export async function deleteSealedBefore(db: Database, cutoff: Date, limit: number): Promise<number> {
+  return db.transaction(async (tx) => {
+    await tx.query('select pg_advisory_xact_lock($1::bigint)', [AUDIT_CHAIN_LOCK_ID.toString()]);
+    const anchor = await readAnchor(tx);
+    if (anchor === undefined) return 0;
+    const s = (
+      await tx.query<{ s: string | null }>(
+        `select coalesce(
+           (select min(chain_seq) - 1 from audit_events where chain_seq is not null and at >= $1),
+           (select max(chain_seq) from audit_events where chain_seq is not null)
+         )::text as s`,
+        [cutoff],
+      )
+    ).rows[0]?.s;
+    if (s === null || s === undefined) return 0;
+    const byLimit = anchor.seq + BigInt(limit);
+    const bound = seqOf(s) < byLimit ? seqOf(s) : byLimit;
+    if (bound <= anchor.seq) return 0;
+    const deleted = await tx.query<{ seq: string; hash: Buffer }>(
+      `delete from audit_events where chain_seq > $1 and chain_seq <= $2
+       returning chain_seq::text as seq, chain_hash as hash`,
+      [anchor.seq.toString(), bound.toString()],
+    );
+    // The last deleted row is the new anchor: on an intact chain it is the row at `bound`.
+    let last: ChainLink | undefined;
+    for (const row of deleted.rows) {
+      const seq = seqOf(row.seq);
+      if (last === undefined || seq > last.seq) last = { seq, hash: row.hash };
+    }
+    if (last === undefined) return 0;
+    await tx.query('update audit_chain_anchor set seq = $1, hash = $2', [last.seq.toString(), last.hash]);
+    return deleted.rows.length;
+  });
 }

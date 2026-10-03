@@ -1,0 +1,393 @@
+/**
+ * Retention with a chain key (issue #210, audit-chain spec §3.3) against Postgres: only sealed rows go,
+ * from the chain's oldest end, and the anchor moves to the last deleted row in the same transaction, so
+ * the kept chain still verifies. Links are recomputed with `canonical.ts` after every deletion.
+ */
+import { fileURLToPath } from 'node:url';
+import type { FastifyBaseLogger } from 'fastify';
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
+import { AUDIT_CHAIN_LOCK_ID, AuditSealer, type SealPass } from '../../../src/audit-log/chain/sealer.js';
+import { auditLogModule } from '../../../src/audit-log/module.js';
+import { deleteSealedBefore, insertGenesis, readAnchor, sealedPage } from '../../../src/audit-log/repo.js';
+import type { Database, Querier } from '../../../src/context.js';
+import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
+import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
+import { describeDb, oneChainTestFileAtATime, testDatabase } from '../../helpers/database.js';
+import { licensingHarness, testKeys } from '../../helpers/licensing.js';
+import { manualTimers } from '../../helpers/timers.js';
+
+const dir = (name: string) => fileURLToPath(new URL(`../../../migrations/${name}/`, import.meta.url));
+const KEY = 'test-chain-key-0123456789abcdefghij';
+
+const silentLog = (() => {
+  const noop = () => undefined;
+  const logger = {
+    level: 'info',
+    fatal: noop,
+    error: noop,
+    warn: noop,
+    info: noop,
+    debug: noop,
+    trace: noop,
+    silent: noop,
+    child: (): unknown => logger,
+  };
+  return logger as unknown as FastifyBaseLogger;
+})();
+
+/** `2026-10-03T00:00:<n>Z`: row times in whole seconds. */
+const t = (n: number) => `2026-10-03T00:00:${String(n).padStart(2, '0')}Z`;
+/** Half a second after `t(n)`: rows at `n` or earlier are past it, rows after `n` are not. */
+const cutoff = (n: number) => new Date(Date.parse(t(n)) + 500);
+
+/**
+ * The database, with each transaction paused just after a statement matching `after` until `release`,
+ * so a test holds a pass or a batch at a known point while it acts on other clients.
+ */
+function gated(db: Database, after: RegExp) {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reached: () => void = () => undefined;
+  const entered = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const wrapped: Database = {
+    query: db.query.bind(db),
+    close: () => db.close(),
+    transaction: (fn) =>
+      db.transaction((tx) =>
+        fn({
+          query: async <R extends Record<string, unknown>>(text: string, params?: readonly unknown[]) => {
+            const result = await tx.query<R>(text, params);
+            if (after.test(text)) {
+              reached();
+              await gate;
+            }
+            return result;
+          },
+        }),
+      ),
+  };
+  return { db: wrapped, entered, release: () => release() };
+}
+
+// Advisory locks are database-wide; the files that take the chain's lock must not run side by side.
+oneChainTestFileAtATime();
+
+describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
+  let db: Awaited<ReturnType<typeof testDatabase>>;
+  let ids = 0;
+  /** Inserts a row with the given `at` and returns its id; ids sort in insert order. */
+  const insert = async (at: string, q: Querier = db) => {
+    ids += 1;
+    const id = `01J9ZK3V8Q${String(ids).padStart(16, '0')}`;
+    await q.query(
+      `insert into audit_events (id, at, actor_kind, action, target_kind, details)
+       values ($1, $2, 'system', 'team.created', 'team', '{}'::jsonb)`,
+      [id, at],
+    );
+    return id;
+  };
+  const sealer = (extra: Partial<ConstructorParameters<typeof AuditSealer>[0]> = {}) =>
+    new AuditSealer({
+      db,
+      key: KEY,
+      now: () => new Date(),
+      setTimer: manualTimers().setTimer,
+      log: silentLog,
+      ...extra,
+    });
+  /** Seals everything unsealed now, in one pass. */
+  const seal = async () => (await sealer().runOnce()).sealed;
+  /** Every row as `[id, seq]`, sealed rows in chain order and unsealed ones (seq null) after. */
+  const rows = async () =>
+    (
+      await db.query<{ id: string; seq: string | null }>(
+        'select id, chain_seq::text as seq from audit_events order by chain_seq nulls last, at, id',
+      )
+    ).rows.map((r) => [r.id, r.seq === null ? null : Number(r.seq)]);
+  /** Every sealed row's hash by seq, read before a deletion. */
+  const hashes = async () =>
+    new Map(
+      (
+        await db.query<{ seq: string; hash: Buffer }>(
+          'select chain_seq::text as seq, chain_hash as hash from audit_events where chain_seq is not null',
+        )
+      ).rows.map((r) => [BigInt(r.seq), r.hash]),
+    );
+  /** Recomputes every kept link from the anchor with canonical.ts and returns the seqs walked. */
+  const walk = async (): Promise<number[]> => {
+    const anchor = await readAnchor(db);
+    expect(anchor).toBeDefined();
+    let prev = { seq: anchor!.seq, hash: anchor!.hash };
+    const seqs: number[] = [];
+    for (const sealed of await sealedPage(db, anchor!.seq, 10_000)) {
+      expect(sealed.seq).toBe(prev.seq + 1n);
+      expect(sealed.hash).toEqual(link(KEY, prev.hash, sealed.seq, sealed.row));
+      prev = { seq: sealed.seq, hash: sealed.hash };
+      seqs.push(Number(sealed.seq));
+    }
+    return seqs;
+  };
+
+  beforeAll(async () => {
+    db = await testDatabase();
+    const modules = await Promise.all(
+      ['identity', 'teams-access', 'audit-log'].map((name) => loadMigrations(dir(name), { contiguous: false })),
+    );
+    await migrate(
+      db,
+      [...(await loadMigrations(MIGRATIONS_DIR)), ...modules.flat()].sort((a, b) => a.version - b.version),
+    );
+  });
+  afterAll(() => db.close());
+  beforeEach(async () => {
+    await db.query('delete from audit_events');
+    await db.query('delete from audit_chain_anchor');
+  });
+
+  it('deletes the old sealed rows and moves the anchor to the last deleted row, keeping key id and head_seq', async () => {
+    for (let n = 1; n <= 5; n++) await insert(t(n));
+    expect(await seal()).toBe(5);
+    const before = await hashes();
+    expect(await deleteSealedBefore(db, cutoff(3), 1000)).toBe(3);
+    expect(await readAnchor(db)).toEqual({ seq: 3n, hash: before.get(3n), keyId: keyId(KEY), headSeq: 5n });
+    expect((await rows()).map(([, seq]) => seq)).toEqual([4, 5]);
+  });
+
+  it('the kept rows recompute from the new anchor, and sealing links on from the kept head', async () => {
+    for (let n = 1; n <= 6; n++) await insert(t(n));
+    expect(await seal()).toBe(6);
+    expect(await deleteSealedBefore(db, cutoff(4), 1000)).toBe(4);
+    expect(await walk()).toEqual([5, 6]);
+    await insert(t(7));
+    expect(await seal()).toBe(1);
+    expect(await walk()).toEqual([5, 6, 7]);
+  });
+
+  it('an unsealed old row is not deleted; once sealed and past the cutoff it goes', async () => {
+    await insert(t(1));
+    await insert(t(2));
+    expect(await seal()).toBe(2);
+    const unsealed = await insert(t(1));
+    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(2);
+    expect(await rows()).toEqual([[unsealed, null]]);
+    expect(await seal()).toBe(1);
+    expect(await rows()).toEqual([[unsealed, 3]]);
+    expect(await walk()).toEqual([3]);
+    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(1);
+    expect(await rows()).toEqual([]);
+    expect(await readAnchor(db)).toMatchObject({ seq: 3n, headSeq: 3n });
+  });
+
+  it('late rows (old at, high seq) wait behind a younger row sealed before them, then go with it; no gap appears', async () => {
+    // seq 1 at 1 s and seq 2 at 6 s; then rows committed late, with older times, seal at seqs 3 and 4.
+    await insert(t(1));
+    const recent = await insert(t(6));
+    expect(await seal()).toBe(2);
+    const lateA = await insert(t(2));
+    const lateB = await insert(t(3));
+    expect(await seal()).toBe(2);
+
+    // Seqs 3 and 4 are past the cutoff, but seq 2 is not: only seq 1 goes.
+    expect(await deleteSealedBefore(db, cutoff(4), 1000)).toBe(1);
+    expect(await rows()).toEqual([
+      [recent, 2],
+      [lateA, 3],
+      [lateB, 4],
+    ]);
+    expect(await walk()).toEqual([2, 3, 4]);
+    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(0);
+
+    // Once seq 2 passes the cutoff, it and the rows it held back go together.
+    const before = await hashes();
+    expect(await deleteSealedBefore(db, cutoff(6), 1000)).toBe(3);
+    expect(await rows()).toEqual([]);
+    expect(await readAnchor(db)).toMatchObject({ seq: 4n, hash: before.get(4n), headSeq: 4n });
+  });
+
+  it('respects the batch limit across repeated calls, the anchor and the kept chain verifying after each', async () => {
+    for (let n = 1; n <= 7; n++) await insert(t(n));
+    await insert(t(30));
+    expect(await seal()).toBe(8);
+    const before = await hashes();
+    const counts: number[] = [];
+    for (;;) {
+      const deleted = await deleteSealedBefore(db, cutoff(10), 3);
+      counts.push(deleted);
+      if (deleted === 0) break;
+      const anchor = await readAnchor(db);
+      expect(anchor!.hash).toEqual(before.get(anchor!.seq));
+      expect((await walk())[0]).toBe(Number(anchor!.seq) + 1);
+    }
+    expect(counts).toEqual([3, 3, 1, 0]);
+    expect((await rows()).map(([, seq]) => seq)).toEqual([8]);
+    expect(await readAnchor(db)).toMatchObject({ seq: 7n, hash: before.get(7n), headSeq: 8n });
+  });
+
+  it('deletes nothing without an anchor, with nothing sealed, or with nothing sealed past the cutoff', async () => {
+    await insert(t(1));
+    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(0);
+    expect(await readAnchor(db)).toBeUndefined();
+    expect(await rows()).toHaveLength(1);
+
+    // An anchor, but no sealed row: the old row is unsealed.
+    await insertGenesis(db, genesisHash(KEY), keyId(KEY));
+    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(0);
+    expect(await rows()).toHaveLength(1);
+
+    // Sealed, but younger than the cutoff.
+    expect(await seal()).toBe(1);
+    const anchor = await readAnchor(db);
+    expect(await deleteSealedBefore(db, cutoff(0), 1000)).toBe(0);
+    expect(await readAnchor(db)).toEqual(anchor);
+    expect(await rows()).toHaveLength(1);
+  });
+
+  it('after retention deletes every sealed row, the next pass seals at head_seq + 1, linked to the moved anchor', async () => {
+    for (let n = 1; n <= 4; n++) await insert(t(n));
+    expect(await seal()).toBe(4);
+    const before = await hashes();
+    expect(await deleteSealedBefore(db, cutoff(10), 1000)).toBe(4);
+    expect(await readAnchor(db)).toEqual({ seq: 4n, hash: before.get(4n), keyId: keyId(KEY), headSeq: 4n });
+    const next = await insert(t(20));
+    expect(await seal()).toBe(1);
+    expect(await rows()).toEqual([[next, 5]]);
+    const [row] = await sealedPage(db, 4n, 10);
+    expect(row!.hash).toEqual(link(KEY, before.get(4n)!, 5n, row!.row));
+    expect(await walk()).toEqual([5]);
+  });
+
+  it('a batch waits for a sealing pass holding the lock, then runs on what it committed', async () => {
+    for (let n = 1; n <= 3; n++) await insert(t(n));
+    expect(await seal()).toBe(3);
+    for (let n = 4; n <= 6; n++) await insert(t(n));
+    const held = gated(db, /for update skip locked/);
+    const pass = sealer({ db: held.db }).runOnce();
+    await held.entered;
+    let batchDone = false;
+    const batch = deleteSealedBefore(db, cutoff(10), 1000).then((n) => {
+      batchDone = true;
+      return n;
+    });
+    // The batch waits on the advisory lock while the pass is mid-transaction.
+    await vi.waitFor(
+      async () => {
+        const waiting = await db.query(
+          `select 1 from pg_locks where locktype = 'advisory' and not granted and classid::text = $1 and objid::text = $2`,
+          [(AUDIT_CHAIN_LOCK_ID >> 32n).toString(), (AUDIT_CHAIN_LOCK_ID & 0xffffffffn).toString()],
+        );
+        expect(waiting.rows).toHaveLength(1);
+      },
+      { timeout: 5_000, interval: 20 },
+    );
+    expect(batchDone).toBe(false);
+    held.release();
+    expect((await pass).sealed).toBe(3);
+    // It ran after the pass committed, so it saw all six sealed rows.
+    expect(await batch).toBe(6);
+    expect(await readAnchor(db)).toMatchObject({ seq: 6n, headSeq: 6n });
+    await insert(t(20));
+    expect(await seal()).toBe(1);
+    expect(await walk()).toEqual([7]);
+  });
+
+  it('a pass finding a batch holding the lock ends busy-elsewhere; the next pass links to the moved anchor', async () => {
+    for (let n = 1; n <= 3; n++) await insert(t(n));
+    expect(await seal()).toBe(3);
+    await insert(t(4));
+    const held = gated(db, /pg_advisory_xact_lock/);
+    const batch = deleteSealedBefore(held.db, cutoff(2), 1000);
+    await held.entered;
+    expect(await sealer().runOnce()).toMatchObject({ outcome: 'busy-elsewhere', sealed: 0 });
+    held.release();
+    expect(await batch).toBe(2);
+    expect(await seal()).toBe(1);
+    expect((await rows()).map(([, seq]) => seq)).toEqual([3, 4]);
+    expect(await walk()).toEqual([3, 4]);
+  });
+
+  it('sealer passes and retention batches racing on separate clients leave a gapless, verifying chain', async () => {
+    for (let n = 1; n <= 30; n++) await insert(t(n % 10));
+    const s = sealer({ batchSize: 4 });
+    const outcomes: SealPass['outcome'][] = [];
+    let deleted = 0;
+    for (let round = 0; round < 60; round++) {
+      const [pass, batch] = await Promise.all([s.runOnce(), deleteSealedBefore(db, cutoff(5), 3)]);
+      outcomes.push(pass.outcome);
+      deleted += batch;
+      if (pass.outcome === 'idle' && batch === 0) break;
+    }
+    expect(outcomes).not.toContain('failed');
+    expect(outcomes).toContain('idle');
+    const anchor = await readAnchor(db);
+    expect(anchor?.headSeq).toBe(30n);
+    expect(anchor?.seq).toBe(BigInt(deleted));
+    expect(await walk()).toEqual(Array.from({ length: 30 - deleted }, (_, i) => deleted + i + 1));
+    expect((await rows()).every(([, seq]) => seq !== null)).toBe(true);
+  });
+});
+
+describeDb('retention with a chain key in a running server (audit-chain spec §3.3)', () => {
+  const keys = testKeys();
+  const WAIT = { timeout: 5_000, interval: 20 };
+  const cleanup: (() => Promise<void>)[] = [];
+  afterEach(async () => {
+    for (const step of cleanup.splice(0).reverse()) await step();
+  });
+
+  async function server(env: Record<string, string>) {
+    const timers = manualTimers();
+    const h = await licensingHarness(keys, {
+      env,
+      extra: (clock) => [auditLogModule({ now: () => clock.now, setTimer: timers.setTimer })],
+    });
+    cleanup.push(() => h.close());
+    return { h, timers };
+  }
+  /** A row far past the default retention of 365 days on the harness clock. */
+  const insertOld = (db: Querier, id: string) =>
+    db.query(
+      `insert into audit_events (id, at, actor_kind, action, target_kind, details)
+       values ($1, '2024-01-01T00:00:00Z', 'system', 'team.created', 'team', '{}'::jsonb)`,
+      [id],
+    );
+  const idsOf = async (db: Querier) =>
+    (await db.query<{ id: string }>('select id from audit_events order by id')).rows.map((r) => r.id);
+
+  it('with the key, the sweep deletes the old sealed row, keeps the old unsealed one and moves the anchor', async () => {
+    const { h, timers } = await server({ WIREBENCH_SERVER_AUDIT_CHAIN_KEY: KEY });
+    await insertOld(h.db, '01J9ZK3V8Q0000000000000SE1');
+    const outside = new AuditSealer({
+      db: h.db,
+      key: KEY,
+      now: () => new Date(),
+      setTimer: manualTimers().setTimer,
+      log: silentLog,
+    });
+    // The module's own pass at start may hold the lock; pass until this row is sealed.
+    await vi.waitFor(async () => {
+      await outside.runOnce();
+      const sealed = await h.db.query('select 1 from audit_events where chain_seq is not null');
+      expect(sealed.rows).toHaveLength(1);
+    }, WAIT);
+    await insertOld(h.db, '01J9ZK3V8Q0000000000000UN1');
+    timers.fire(SWEEP_INTERVAL_MS);
+    await vi.waitFor(async () => {
+      expect(await idsOf(h.db)).toEqual(['01J9ZK3V8Q0000000000000UN1']);
+    }, WAIT);
+    expect((await readAnchor(h.db))?.seq).toBe(1n);
+  }, 30_000);
+
+  it('without the key, the sweep deletes old rows by at, unsealed or not', async () => {
+    const { h, timers } = await server({});
+    await insertOld(h.db, '01J9ZK3V8Q0000000000000UN2');
+    timers.fire(SWEEP_INTERVAL_MS);
+    await vi.waitFor(async () => {
+      expect(await idsOf(h.db)).toEqual([]);
+    }, WAIT);
+  }, 30_000);
+});

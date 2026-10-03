@@ -15,7 +15,7 @@ import { AuditForwarder } from './forward/forwarder.js';
 import { sinkFromConfig } from './forward/sink.js';
 import { auditHook } from './hook.js';
 import { licenseListener } from './license-listener.js';
-import { deleteAuditEventsBefore } from './repo.js';
+import { deleteAuditEventsBefore, deleteSealedBefore } from './repo.js';
 import { auditRoutes } from './routes.js';
 
 export const AUDIT_LOG_MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/audit-log/', import.meta.url));
@@ -41,13 +41,19 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       ctx.meta.addCapability('desktop-activity');
       auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
       desktopRoutes({ db: ctx.db, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
+      const key = ctx.config.auditChainKey;
+      // With a chain key, retention deletes only sealed rows from the chain's oldest end and moves the
+      // anchor (audit-chain spec §3.3); without one, it deletes by `at` as before.
       const sweeper = new CaptureSweeper({
         db: ctx.db,
         maxAgeDays: ctx.config.auditMaxAgeDays,
         now,
         setTimer,
         log: ctx.log,
-        deleteBefore: deleteAuditEventsBefore,
+        deleteBefore:
+          key === undefined
+            ? deleteAuditEventsBefore
+            : (_db, cutoff, limit) => deleteSealedBefore(ctx.db, cutoff, limit),
         label: 'audit sweep',
       });
       sweeper.start();
@@ -57,7 +63,6 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
           : new AuditForwarder({ db: ctx.db, sink, license: () => ctx.license, now, setTimer, log: ctx.log });
       forwarder?.start();
       // Only with a chain key (audit-chain spec §3.2); without one nothing is built and no timer armed.
-      const key = ctx.config.auditChainKey;
       const sealer = key === undefined ? undefined : new AuditSealer({ db: ctx.db, key, now, setTimer, log: ctx.log });
       sealer?.start();
       // Before `startServer` drains and closes the pool (host spec §3.7): a sealing pass under way commits

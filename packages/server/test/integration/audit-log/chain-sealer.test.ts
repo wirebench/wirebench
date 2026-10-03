@@ -23,7 +23,7 @@ import { insertGenesis, readAnchor, sealedPage, type ChainLink } from '../../../
 import type { AuditInput, Database, Querier } from '../../../src/context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
-import { describeDb, testDatabase } from '../../helpers/database.js';
+import { describeDb, oneChainTestFileAtATime, testDatabase } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
 import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call } from '../../helpers/teams.js';
@@ -87,6 +87,9 @@ function gated(db: Database, after: RegExp) {
   };
   return { db: wrapped, entered, release: () => release() };
 }
+
+// Advisory locks are database-wide; the files that take the chain's lock must not run side by side.
+oneChainTestFileAtATime();
 
 describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
