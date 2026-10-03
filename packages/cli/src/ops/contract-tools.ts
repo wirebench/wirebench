@@ -9,7 +9,7 @@ import {
   summarizeSoapOperations,
   validateJsonSchema,
 } from '@wirebench/engine';
-import type { JsonSchemaObject, JsonSchemaProblem, Project } from '@wirebench/engine';
+import type { JsonSchemaObject, Project } from '@wirebench/engine';
 import type { OpName } from '../args-ops.js';
 import type { Gates } from './context.js';
 import { OpsError, toOpsError } from './errors.js';
@@ -73,7 +73,8 @@ function uniqueName(base: string, taken: ReadonlySet<string>): string {
   }
   for (let n = 2; ; n += 1) {
     const suffix = `_${String(n)}`;
-    const candidate = `${base.slice(0, MAX_TOOL_NAME - suffix.length)}${suffix}`;
+    // A cut that ends on `_` drops it, so the suffix never follows a doubled underscore.
+    const candidate = `${base.slice(0, MAX_TOOL_NAME - suffix.length).replace(/_+$/, '')}${suffix}`;
     if (!taken.has(candidate)) {
       return candidate;
     }
@@ -294,35 +295,26 @@ export function dereferenced(schema: JsonSchemaObject): JsonSchemaObject {
   return walk(schema) as JsonSchemaObject;
 }
 
-/** The JSON Pointer of the first string holding `${`, or undefined. */
-function placeholderIn(value: unknown, path: string): string | undefined {
+const pointerSegment = (key: string): string => key.replace(/~/g, '~0').replace(/\//g, '~1');
+
+/** The JSON Pointer of every string value, and every object key, holding `${`, in document order. */
+function placeholdersIn(value: unknown, path: string, found: string[] = []): string[] {
   if (typeof value === 'string') {
-    return value.includes('${') ? path || '/' : undefined;
-  }
-  if (Array.isArray(value)) {
-    for (const [index, item] of value.entries()) {
-      const found = placeholderIn(item, `${path}/${String(index)}`);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  if (isRecord(value)) {
+    if (value.includes('${')) found.push(path || '/');
+  } else if (Array.isArray(value)) {
+    value.forEach((item, index) => placeholdersIn(item, `${path}/${String(index)}`, found));
+  } else if (isRecord(value)) {
     for (const [key, item] of Object.entries(value)) {
-      const found = placeholderIn(item, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`);
-      if (found !== undefined) return found;
+      const at = `${path}/${pointerSegment(key)}`;
+      if (key.includes('${')) found.push(at);
+      placeholdersIn(item, at, found);
     }
   }
-  return undefined;
+  return found;
 }
 
-/**
- * What the validator says when it could not check something, rather than that a value is wrong: a
- * pattern it will not run (unsafe, or a value too long to test) and a spent node budget. None is a
- * refusal; the XSD check at call time still applies to a SOAP body.
- */
-function isNotice(problem: JsonSchemaProblem): boolean {
-  return problem.keyword === 'budget' || problem.message.startsWith('pattern not checked');
-}
+/** How many placeholder pointers the message lists; the rest are counted. */
+const MAX_LISTED_PLACEHOLDERS = 20;
 
 /**
  * Spec §3.3 steps 1 and 2: the arguments against the tool's own schema, then no `${` anywhere.
@@ -330,9 +322,13 @@ function isNotice(problem: JsonSchemaProblem): boolean {
  * @throws OpsError `invalid-input`, listing each JSON Pointer and keyword
  */
 export function checkArgs(inputSchema: JsonSchemaObject, args: Readonly<Record<string, unknown>>): void {
-  const problems = validateJsonSchema(args, dereferenced(inputSchema), { redactValues: true }).filter(
-    (problem) => !isNotice(problem),
-  );
+  // A pattern the validator will not run passes (it neither fills the problem cap nor fails a
+  // branch): the XSD check at call time still applies it to a SOAP body. A spent node budget is
+  // no verdict on the arguments either, so its closing problem is dropped.
+  const problems = validateJsonSchema(args, dereferenced(inputSchema), {
+    redactValues: true,
+    uncheckedPatterns: 'pass',
+  }).filter((problem) => problem.keyword !== 'budget');
   if (problems.length > 0) {
     throw new OpsError(
       'invalid-input',
@@ -340,12 +336,15 @@ export function checkArgs(inputSchema: JsonSchemaObject, args: Readonly<Record<s
       { problems: problems.map((problem) => ({ path: problem.path, keyword: problem.keyword })) },
     );
   }
-  const placeholder = placeholderIn(args, '');
-  if (placeholder !== undefined) {
+  const placeholders = placeholdersIn(args, '');
+  if (placeholders.length > 0) {
+    const listed = placeholders.slice(0, MAX_LISTED_PLACEHOLDERS).join(', ');
+    const more = placeholders.length - MAX_LISTED_PLACEHOLDERS;
     throw new OpsError(
       'invalid-input',
-      `${placeholder}: arguments are sent as written and may not contain \${…} placeholders`,
-      { path: placeholder },
+      `${listed}${more > 0 ? ` and ${String(more)} more` : ''}: arguments are sent as written and may not ` +
+        'contain ${…} placeholders',
+      { paths: placeholders },
     );
   }
 }

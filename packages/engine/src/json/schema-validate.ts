@@ -31,6 +31,13 @@ export interface ValidateJsonOptions {
    * than 0". The schema's own values (bounds, patterns) and the value's keys still appear.
    */
   readonly redactValues?: boolean;
+  /**
+   * What a `pattern` (or `patternProperties` key) the validator will not run comes to: an unsafe
+   * pattern, or a value too long to test. `'report'` (the default) adds a "pattern not checked"
+   * problem; `'pass'` adds nothing, so the check neither fills the problem cap nor fails a
+   * combinator branch, for a caller whose own later check applies the pattern.
+   */
+  readonly uncheckedPatterns?: 'report' | 'pass';
 }
 
 export const MAX_VALIDATE_NODES = 10_000;
@@ -153,6 +160,7 @@ interface Budget {
   /** Set when the depth cap (rather than the node cap) is what stopped the walk. */
   outOfDepth: boolean;
   readonly redact: boolean;
+  readonly passUnchecked: boolean;
 }
 
 /** Nested `walk` calls past this stop the walk (as the node cap does) instead of the stack. */
@@ -182,6 +190,7 @@ function branchBudget(outer: Budget, maxProblems: number): Budget {
     outOfNodes: false,
     outOfDepth: false,
     redact: outer.redact,
+    passUnchecked: outer.passUnchecked,
   };
 }
 
@@ -226,6 +235,7 @@ export function validateJsonSchema(
     depth: 0,
     outOfDepth: false,
     redact: options?.redactValues === true,
+    passUnchecked: options?.uncheckedPatterns === 'pass',
   };
   walk(value, schema, '', budget);
   if (
@@ -409,15 +419,19 @@ function walkSchema(value: unknown, schema: Schema, path: string, budget: Budget
     if (typeof schema.pattern === 'string') {
       const compiled = safeCompile(schema.pattern);
       if (compiled === 'unsafe') {
-        report(budget, path, 'pattern', 'pattern not checked: unsafe for evaluation');
+        if (!budget.passUnchecked) {
+          report(budget, path, 'pattern', 'pattern not checked: unsafe for evaluation');
+        }
       } else if (compiled !== 'invalid') {
         if (value.length > MAX_PATTERN_VALUE_LENGTH) {
-          report(
-            budget,
-            path,
-            'pattern',
-            `pattern not checked: value longer than ${MAX_PATTERN_VALUE_LENGTH} characters`,
-          );
+          if (!budget.passUnchecked) {
+            report(
+              budget,
+              path,
+              'pattern',
+              `pattern not checked: value longer than ${MAX_PATTERN_VALUE_LENGTH} characters`,
+            );
+          }
         } else if (!compiled.test(value)) {
           report(budget, path, 'pattern', `does not match /${schema.pattern}/`);
         }
@@ -566,7 +580,9 @@ function walkSchema(value: unknown, schema: Schema, path: string, budget: Budget
         if (!isPlainObject(sub)) continue;
         const compiled = safeCompile(pattern);
         if (compiled === 'unsafe') {
-          report(budget, path, 'patternProperties', 'pattern not checked: unsafe for evaluation');
+          if (!budget.passUnchecked) {
+            report(budget, path, 'patternProperties', 'pattern not checked: unsafe for evaluation');
+          }
         } else if (compiled !== 'invalid') {
           compiledPatterns.push([compiled, sub]);
         }

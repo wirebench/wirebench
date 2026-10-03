@@ -65,6 +65,9 @@ describe('tool names', () => {
     expect(FIXED_TOOL_NAMES).toEqual(Object.keys(OPS));
     expect(assignNames(['send', 'a_b', 'a_b', 'a_b'])).toEqual(['send_2', 'a_b', 'a_b_2', 'a_b_3']);
     expect(assignNames(['x'.repeat(64), 'x'.repeat(64)])).toEqual(['x'.repeat(64), `${'x'.repeat(62)}_2`]);
+    // A base cut just after an underscore drops it, rather than doubling it before the suffix.
+    const base = `${'x'.repeat(61)}_yy`;
+    expect(assignNames([base, base])).toEqual([base, `${'x'.repeat(61)}_2`]);
   });
 });
 
@@ -253,5 +256,35 @@ describe('checkArgs', () => {
     expect(() => checkArgs(schema, { list: Array.from({ length: 20_000 }, (_, index) => index) })).not.toThrow();
     // A real violation is still refused.
     expect(() => checkArgs(schema, { word: 'A1' })).toThrow(/\/word pattern/);
+  });
+
+  it('keeps a real violation past many unchecked patterns, and lets a branch with one pass', () => {
+    const unsafe = '^(?:([A-Z]+ ?)+)$';
+    const schema = {
+      type: 'object',
+      properties: {
+        codes: { type: 'array', items: { type: 'string', pattern: unsafe } },
+        long: { type: 'array', items: { type: 'string', pattern: '^[a-z]+$' } },
+        n: { type: 'integer' },
+        c: { anyOf: [{ type: 'string', pattern: unsafe }, { type: 'integer' }] },
+      },
+      additionalProperties: false,
+    };
+    expect(() => checkArgs(schema, { codes: Array<string>(25).fill('X'), n: 'oops' })).toThrow(/\/n type/);
+    expect(() => checkArgs(schema, { long: Array<string>(25).fill('a'.repeat(5_000)), n: 'oops' })).toThrow(/\/n type/);
+    expect(() => checkArgs(schema, { c: 'ABC' })).not.toThrow();
+  });
+
+  it('lists every placeholder, in values and in keys', () => {
+    const schema = { type: 'object' };
+    let message = '';
+    try {
+      checkArgs(schema, { a: 'x ${one}', b: { c: ['ok', '${two}'] }, ['${key}']: 1 });
+    } catch (error) {
+      message = (error as OpsError).message;
+    }
+    expect(message).toContain('/a');
+    expect(message).toContain('/b/c/1');
+    expect(message).toContain('/${key}');
   });
 });
