@@ -300,3 +300,50 @@ picks how to register them: the SDK's low-level `tools/list` and `tools/call` ha
 - `docs/security.md`: contract text appears in tool descriptions; arguments are checked and never
   expanded.
 - `CHANGELOG.md`, and the item 4 status in `docs/roadmap.md`.
+
+## Revisions after planning
+
+Checked against the code while writing `docs/plans/2026-10-03-wirebench-mcp-contract-tools-plan.md`.
+The decisions above stand; these correct facts.
+
+- **R1 — The JSON Schema validator does not follow `$ref`.** `validateJsonSchema`
+  (`packages/engine/src/json/schema-validate.ts`, the validator the REST contract check runs on its
+  worker) accepts any `$ref` without checking it, and does not assert `format`. It is not exported from
+  the engine yet. §3.3 step 1 therefore validates the arguments against a copy of the tool's schema
+  whose `#/$defs/…` references are replaced by the definitions themselves (a graph, which the validator
+  walks under its own cycle and depth caps), in process. The published `inputSchema` keeps its `$ref`s.
+- **R2 — The loaded OpenAPI document keeps only part of a schema, already dereferenced.** The document
+  `loadOpenApiDocument` returns has every `$ref` inlined into one shared, possibly cyclic, object graph,
+  and `parseSchema` (`rest/openapi/parse.ts`) keeps only `type`, `format`, `title`, `description`,
+  `default`, `example(s)`, `enum`, `const`, `properties`, `required`, `items`, `additionalProperties`,
+  `allOf`/`oneOf`/`anyOf`, `discriminator`, `nullable`, `deprecated`, `readOnly`, `writeOnly` and
+  `xml`. So in §3.2 a REST tool's schema carries no numeric bounds, lengths or patterns (the server is
+  the check for those), and "resolved with its `$ref`s into `$defs`" becomes: a schema node the graph
+  reaches more than once (shared or recursive) becomes one `$defs` entry, named after its `title` or
+  `Schema<n>`, since the component names are gone by then.
+- **R3 — The engine already percent-encodes path and query values.** `composeUrl`
+  (`rest/url.ts`) encodes every path-parameter and query value on send (a request's `encodeUrl`
+  setting, on by default). §4.1's REST call fills the temporary request's path-parameter and query rows
+  with the raw values; encoding them first would encode them twice.
+- **R4 — Endpoints resolve in `project/environments.ts`, not `project/endpoints.ts`.** `endpoints.ts`
+  holds `effectiveAuth`; the endpoint and the base URL resolve in `project/environments.ts`
+  (`resolveEndpoint`, `resolveApiBaseUrl`) and, inside a workspace, through the workspace's
+  environment, where one helper the run uses (`withActiveEnvironment`) is not exported. §4.1's
+  `no-endpoint` is therefore the engine's own verdict on the send: SOAP's `endpoint-unresolved`, or
+  REST's `rest-url-incomplete` with a `no-host` problem (no base URL and a relative path).
+- **R5 — REST auth inherits through `resolveAuthChain`.** `project/inherit.ts`'s `inherited` is the
+  settings ladder, not the auth one. A REST request whose auth is `inherit` takes its folders' and then
+  its API's (`restEffectiveAuth`, built on `resolveAuthChain`); a SOAP request with no auth of its own
+  takes its endpoint's and then its interface's (`soapEffectiveAuth`, built on `effectiveAuth`). The
+  engine applies both when it sends, so the temporary request only leaves its own auth unset.
+- **R6 — `operations` rows without a tool.** Besides WebSocket rows, `tool` is absent from a SOAP row
+  whose interface has no readable cached definition, and from a REST row that `operations` lists from
+  a saved request because the API's document is not cached: neither yields a tool (§2.1).
+- **R7 — The form model writes no text in a complex element.** `applyForm` emits a `group` node's
+  children and never a text value, so mixed content's `#text` (§3.1) is written by the bridge as a text
+  node ahead of the element's children, and an `xs:any` fragment as a verbatim node; `applyForm`
+  re-indents such a node line by line, so a fragment's own line indentation is not kept.
+- **R8 — `buildForm` cuts recursion at a depth when nothing is written there.** A fresh form stops
+  expanding a complex element past `maxDepth` (5) unless the source document goes that deep. The bridge
+  builds the form, fills it, and when the arguments reach below a cut it builds the form again from the
+  XML it wrote, one level deeper each round, up to 64 rounds.
