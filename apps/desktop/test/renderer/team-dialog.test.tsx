@@ -137,6 +137,22 @@ describe('TeamDialog (teams-access §3.5)', () => {
     await screen.findByTestId('team-name');
     expect(screen.queryByRole('tab', { name: 'License' })).toBeNull();
   });
+  it('shows an Audit tab to a server admin only, selectable even with no team', async () => {
+    const query = ok({ events: [] });
+    installWirebenchApi({
+      team: { list: ok({ teams: [], serverAdmin: true }), listWorkspaces: ok({ workspaces: [] }) },
+      audit: { query, export: ok({ saved: false }) },
+    });
+    render(<TeamDialog />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Audit' }));
+    expect(await screen.findByTestId('audit-tab')).not.toBeNull();
+    expect(query).toHaveBeenCalled();
+    cleanup();
+    install('admin', {}, false);
+    render(<TeamDialog />);
+    await screen.findByTestId('team-name');
+    expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull();
+  });
   it('drops the expiry banner once a renewed license is installed in the License tab', async () => {
     const grace = {
       edition: 'team',

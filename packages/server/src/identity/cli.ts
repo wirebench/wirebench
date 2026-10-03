@@ -7,7 +7,9 @@ import type { KeyObject } from 'node:crypto';
 import { WirebenchError } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
 import { ConfigError, loadConfig } from '../config.js';
-import { serverHooks } from '../context.js';
+import { auditHook } from '../audit-log/hook.js';
+import { runAuditCommand } from '../audit-log/cli.js';
+import { SYSTEM_SOURCE, serverHooks } from '../context.js';
 import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
@@ -37,11 +39,13 @@ export async function runAdmin(
     db = createDatabase(config.databaseUrl);
     const now = options.now ?? (() => new Date());
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
+    const hooks = serverHooks();
+    hooks.audit.push(auditHook(now));
     env = {
       ctx: {
         db,
         config,
-        hooks: serverHooks(),
+        hooks,
         license: createLicenseService({ db, publicKeys, now }),
       },
       settings: identitySettings(config),
@@ -66,6 +70,7 @@ export async function runAdmin(
           email: command.email,
           serverAdmin: command.serverAdmin,
           createdBy: null,
+          source: SYSTEM_SOURCE,
         });
         io.stdout.write(
           `Invitation for ${created.email} (${command.serverAdmin ? 'server admin' : 'member'})\n${created.url}\nExpires ${created.expiresAt}\n`,
@@ -93,7 +98,7 @@ export async function runAdmin(
         return ExitCode.Ok;
       }
       case 'admin-revoke-invitation': {
-        if (!(await revokeOpenInvitation(env, command.id))) {
+        if (!(await revokeOpenInvitation(env, command.id, SYSTEM_SOURCE))) {
           io.stderr.write(`identity-not-found: no open invitation with id ${command.id}\n`);
           return 1;
         }
@@ -103,7 +108,13 @@ export async function runAdmin(
       case 'admin-license-install':
       case 'admin-license-show':
       case 'admin-license-remove':
-        return await runLicenseCommand(command, { db, publicKeys, now: env.now, license: env.ctx.license }, io);
+        return await runLicenseCommand(
+          command,
+          { db, publicKeys, now: env.now, license: env.ctx.license, hooks: env.ctx.hooks },
+          io,
+        );
+      case 'admin-audit-export':
+        return await runAuditCommand(command, { db, hooks: env.ctx.hooks, now: env.now }, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {

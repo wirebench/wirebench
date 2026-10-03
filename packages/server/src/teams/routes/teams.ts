@@ -9,6 +9,7 @@ import {
   type TeamRole,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { auditSource, recordAudit } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { requireServerAdmin, requireUser } from '../../identity/guard.js';
 import { newId } from '../../identity/tokens.js';
@@ -61,6 +62,13 @@ export const teamRoutes =
             const row = await repo.insertTeam(tx, { id: newId(), name, at });
             // §3.2: the creator is the first admin, so a team never exists without one.
             await repo.insertMember(tx, { teamId: row.id, userId: caller.id, role: 'admin', at });
+            await recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              action: 'team.created',
+              target: { kind: 'team', id: row.id },
+              teamId: row.id,
+              details: { name },
+            });
             return row;
           })
           .catch(nameTakenOr);
@@ -77,7 +85,23 @@ export const teamRoutes =
       async (request) => {
         const { teamId } = request.params as { readonly teamId: string };
         const name = cleanName((request.body as TeamNameRequest).name);
-        const row = await repo.renameTeam(db, teamId, name).catch(nameTakenOr);
+        const row = await db
+          .transaction(async (tx) => {
+            const previous = await repo.teamById(tx, teamId);
+            if (previous === undefined) throw teamNotFound();
+            const renamed = await repo.renameTeam(tx, teamId, name);
+            if (previous.name !== name) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...auditSource(request),
+                action: 'team.renamed',
+                target: { kind: 'team', id: teamId },
+                teamId,
+                details: { name, previousName: previous.name },
+              });
+            }
+            return renamed;
+          })
+          .catch(nameTakenOr);
         return toTeam(row, request.teamAccess!.role);
       },
     );
@@ -88,7 +112,15 @@ export const teamRoutes =
         .transaction(async (tx) => {
           if (!(await repo.lockTeam(tx, teamId))) throw teamNotFound();
           if (await repo.teamHasWorkspaces(tx, teamId)) throw notEmpty();
+          const team = await repo.teamById(tx, teamId);
           await repo.deleteTeam(tx, teamId);
+          await recordAudit(env.ctx.hooks, tx, {
+            ...auditSource(request),
+            action: 'team.deleted',
+            target: { kind: 'team', id: teamId },
+            teamId,
+            details: { name: team?.name ?? null },
+          });
         })
         .catch((error: unknown) => {
           // A workspace created between the check and the delete: the foreign key refuses it.

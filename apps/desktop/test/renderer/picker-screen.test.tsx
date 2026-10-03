@@ -241,7 +241,12 @@ describe('WorkspacePicker', () => {
       share: {
         kind: 'server',
         managed: true,
-        server: { url: 'https://wb.example.com', workspaceId: '01J8ZK6Q3V4W5X6Y7Z8A9B0C1D', teamName: 'Payments QA' },
+        server: {
+          url: 'https://wb.example.com',
+          workspaceId: '01J8ZK6Q3V4W5X6Y7Z8A9B0C1D',
+          teamName: 'Payments QA',
+          recording: false,
+        },
       },
     };
     installWirebenchApi({ workspace: { list: listing([shared]) } });

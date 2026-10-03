@@ -176,6 +176,7 @@ describe('ServerClient — teams (teams-access §3.2)', () => {
     defaultRole: 'viewer',
     myRole: 'admin',
     source: 'grant',
+    recordDesktopActivity: false,
     createdAt: '2026-09-25T10:00:00.000Z',
   };
   const body = (request: HttpRequest | undefined): unknown =>
@@ -283,13 +284,24 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
 
   it('builds head and log queries from the defined values only, with the short timeout', async () => {
     const { client: c, sent } = client(
-      exchange(200, { head: null, commits: 0, role: 'editor' }),
-      exchange(200, { head: B, commits: 2, behind: 1, role: 'viewer' }),
-      exchange(200, { head: B, commits: 2, role: 'viewer' }),
+      exchange(200, { head: null, commits: 0, role: 'editor', recordDesktopActivity: false }),
+      exchange(200, { head: B, commits: 2, behind: 1, role: 'viewer', recordDesktopActivity: false }),
+      exchange(200, { head: B, commits: 2, role: 'viewer', recordDesktopActivity: false }),
       exchange(200, [{ id: B, subject: 'Add QA', author: 'Ada <ada@example.com>', at: '2026-09-25T10:00:00.000Z' }]),
     );
-    expect(await c.syncHead(SERVER, TOKEN, WS_ID)).toEqual({ head: null, commits: 0, role: 'editor' });
-    expect(await c.syncHead(SERVER, TOKEN, WS_ID, A)).toEqual({ head: B, commits: 2, behind: 1, role: 'viewer' });
+    expect(await c.syncHead(SERVER, TOKEN, WS_ID)).toEqual({
+      head: null,
+      commits: 0,
+      role: 'editor',
+      recordDesktopActivity: false,
+    });
+    expect(await c.syncHead(SERVER, TOKEN, WS_ID, A)).toEqual({
+      head: B,
+      commits: 2,
+      behind: 1,
+      role: 'viewer',
+      recordDesktopActivity: false,
+    });
     await c.syncHead(SERVER, TOKEN, WS_ID, null);
     expect((await c.syncLog(SERVER, TOKEN, WS_ID, 50))[0]?.subject).toBe('Add QA');
     expect(sent.map((r) => [r.method, r.url, r.timeoutMs])).toEqual([
@@ -330,7 +342,7 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
   it('passes a rejected push through with its status, and refuses a head that is not a commit id', async () => {
     const { client: c } = client(
       exchange(409, { code: 'sync-push-rejected', message: 'The workspace has moved on; pull first.' }),
-      exchange(200, { head: '--upload-pack=x', commits: 1, role: 'editor' }),
+      exchange(200, { head: '--upload-pack=x', commits: 1, role: 'editor', recordDesktopActivity: false }),
     );
     await expect(c.pushCommits(SERVER, TOKEN, WS_ID, PUSH)).rejects.toMatchObject({
       code: 'sync-push-rejected',
@@ -342,7 +354,7 @@ describe('ServerClient — sync (server-sync §3.2)', () => {
   it('a per-call timeout wins over the client-wide one', async () => {
     const sent: HttpRequest[] = [];
     const answers = [
-      exchange(200, { head: null, commits: 0, role: 'admin' }),
+      exchange(200, { head: null, commits: 0, role: 'admin', recordDesktopActivity: false }),
       exchange(200, { head: null, files: [] }),
     ];
     const c = new ServerClient({

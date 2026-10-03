@@ -116,6 +116,7 @@ with the variable's name and the rule it broke, never the value.
 | `WIREBENCH_SERVER_HOOKS_BURST` | no | `50` | Requests a catch URL accepts at once before the rate applies (1–10000). |
 | `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` | no | `50` | Catch URLs a workspace may hold (1–1000). |
 | `WIREBENCH_SERVER_HOOKS_SECRET_KEY` | no | — | Encrypts catch URL signature secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, signature settings are refused. Never logged. |
+| `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` | no | `365` | Audit events older than this many days are deleted (30–3650). |
 {/* config:end */}
 {/* prettier-ignore-end */}
 
@@ -265,3 +266,4 @@ admin turns team secrets on, everyone in the workspace should update the app.
 - [Callback assertions](/wirebench/docs/guides/callback-assertions/) — waiting for a webhook in a sequence
   or a CI run.
 - [Editions and licenses](/wirebench/docs/guides/server-licensing/) — seats, editions and installing a license.
+- [Audit log](/wirebench/docs/guides/server-audit-log/) — who did what on the server, read and exported by server admins.

@@ -1,5 +1,6 @@
 /** Minting a session for a user who just proved who they are, and the sweep that ends stale ones. */
 import { MAX_DEVICE_NAME_LENGTH, type ServerUser, type SignInResponse } from '@wirebench/engine';
+import { recordAudit, type AuditSource, type Querier } from '../context.js';
 import type { IdentityEnv } from './env.js';
 import * as repo from './repo.js';
 import { mintToken, newId } from './tokens.js';
@@ -11,16 +12,45 @@ export function publicUser(user: repo.UserRow): ServerUser {
 }
 
 /** The token is returned here and nowhere else (§3.5); the row keeps only its hash. */
-export async function issueToken(env: IdentityEnv, user: repo.UserRow, deviceName: string): Promise<SignInResponse> {
+export async function issueToken(
+  env: IdentityEnv,
+  user: repo.UserRow,
+  deviceName: string,
+  db: Querier = env.ctx.db,
+): Promise<{ response: SignInResponse; tokenId: string }> {
   const { token, hash } = mintToken();
-  await repo.insertToken(env.ctx.db, {
-    id: newId(),
+  const id = newId();
+  await repo.insertToken(db, {
+    id,
     userId: user.id,
     tokenHash: hash,
-    deviceName: deviceName.trim().slice(0, MAX_DEVICE_NAME_LENGTH) || 'device',
+    deviceName: deviceLabel(deviceName),
     at: env.now(),
   });
-  return { token, user: publicUser(user) };
+  return { response: { token, user: publicUser(user) }, tokenId: id };
+}
+
+const deviceLabel = (name: string): string => name.trim().slice(0, MAX_DEVICE_NAME_LENGTH) || 'device';
+
+/** The token and its `auth.signed_in` event (audit-log §3.2), committed together. */
+export async function signIn(
+  env: IdentityEnv,
+  user: repo.UserRow,
+  method: 'local' | 'oidc',
+  deviceName: string,
+  source: AuditSource,
+): Promise<SignInResponse> {
+  return env.ctx.db.transaction(async (tx) => {
+    const issued = await issueToken(env, user, deviceName, tx);
+    await recordAudit(env.ctx.hooks, tx, {
+      ...source,
+      actor: { kind: 'user', userId: user.id, email: user.email, tokenId: issued.tokenId },
+      action: 'auth.signed_in',
+      target: { kind: 'user', id: user.id },
+      details: { method, device: deviceLabel(deviceName), tokenId: issued.tokenId },
+    });
+    return issued.response;
+  });
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

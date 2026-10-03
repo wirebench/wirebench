@@ -4,6 +4,7 @@ import type { GitCli } from '@wirebench/engine';
 import { loadConfig } from '../../src/config.js';
 import type { ServerHooks, ServerModule } from '../../src/context.js';
 import { migrate } from '../../src/db/migrate.js';
+import { BUILTIN_MODULES } from '../../src/modules.js';
 import { identityModule } from '../../src/identity/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
@@ -84,7 +85,9 @@ export async function identityHarness(
   });
   const extra = typeof options.modules === 'function' ? options.modules(clock) : (options.modules ?? []);
   const modules = [identity, ...extra];
-  await migrate(db, await allMigrations(modules));
+  // Every built-in module's migrations, whichever modules this suite registers: versions are checked for
+  // contiguity across modules, so a partial set would leave a gap. Only `modules` get routes and hooks.
+  await migrate(db, await allMigrations(BUILTIN_MODULES));
   await RepoStore.prepare(dataDir);
   const repos = new RepoStore({ git: options.git ?? testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
   // R13: ctx.git (and the commit store's ctx.git.withPlumbing()) gets the same hermetic client as the

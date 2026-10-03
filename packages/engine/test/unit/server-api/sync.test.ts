@@ -60,17 +60,25 @@ describe('server-api sync schemas', () => {
   it('head: a null head for an empty workspace, behind only when counted, and a workspace role', () => {
     expect(syncHeadQuerySchema.parse({})).toEqual({});
     expect(syncHeadQuerySchema.safeParse({ from: 'HEAD' }).success).toBe(false);
-    expect(syncHeadResponseSchema.parse({ head: null, commits: 0, role: 'viewer' })).toEqual({
+    expect(
+      syncHeadResponseSchema.parse({ head: null, commits: 0, role: 'viewer', recordDesktopActivity: false }),
+    ).toEqual({
       head: null,
       commits: 0,
       role: 'viewer',
+      recordDesktopActivity: false,
     });
-    expect(syncHeadResponseSchema.parse({ head: SHA1, commits: 3, behind: 2, role: 'editor' }).behind).toBe(2);
+    expect(
+      syncHeadResponseSchema.parse({ head: SHA1, commits: 3, behind: 2, role: 'editor', recordDesktopActivity: true })
+        .behind,
+    ).toBe(2);
+    // An older server omits the flag: it reads as off.
+    expect(syncHeadResponseSchema.parse({ head: null, commits: 0, role: 'viewer' }).recordDesktopActivity).toBe(false);
     for (const bad of [
-      { head: null, commits: -1, role: 'viewer' },
-      { head: null, commits: 0, behind: 1.5, role: 'viewer' },
-      { head: null, commits: 0, role: 'none' },
-      { head: 'main', commits: 0, role: 'admin' },
+      { head: null, commits: -1, role: 'viewer', recordDesktopActivity: false },
+      { head: null, commits: 0, behind: 1.5, role: 'viewer', recordDesktopActivity: false },
+      { head: null, commits: 0, role: 'none', recordDesktopActivity: false },
+      { head: 'main', commits: 0, role: 'admin', recordDesktopActivity: false },
     ]) {
       expect(syncHeadResponseSchema.safeParse(bad).success).toBe(false);
     }

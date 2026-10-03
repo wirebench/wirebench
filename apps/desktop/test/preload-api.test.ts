@@ -46,6 +46,7 @@ describe('buildApi', () => {
       'api',
       'app',
       'attachments',
+      'audit',
       'ciTokens',
       'definition',
       'dialogs',

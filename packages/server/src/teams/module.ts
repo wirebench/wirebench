@@ -34,7 +34,7 @@ export function teamsModule(options: TeamsOptions = {}): ServerModule {
       teamInvitationRoutes(env)(app);
       workspaceRoutes(env)(app);
       accessRoutes(env)(app);
-      ctx.hooks.invitationAccepted.push(addInvitedMember(now));
+      ctx.hooks.invitationAccepted.push(addInvitedMember(now, ctx.hooks));
       await Promise.resolve();
     },
   };

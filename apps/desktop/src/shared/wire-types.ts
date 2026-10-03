@@ -5137,7 +5137,18 @@ export const workspaceShareWireSchema = z.object({
   managed: z.boolean(),
   remote: z.string().optional(),
   branch: z.string().optional(),
-  server: z.object({ url: z.string(), workspaceId: z.string(), teamName: z.string().optional() }).optional(),
+  server: z
+    .object({
+      url: z.string(),
+      workspaceId: z.string(),
+      teamName: z.string().optional(),
+      /**
+       * The open workspace's last fetched head said `recordDesktopActivity`: its sends and test runs
+       * are reported to the server's audit log (desktop audit events §2.2). False for a summary.
+       */
+      recording: z.boolean(),
+    })
+    .optional(),
   autoFetchSeconds: z.number().int().min(0).max(86_400).optional(),
   commitOnSave: z.boolean().optional(),
   pushOnSave: z.boolean().optional(),
@@ -5762,6 +5773,8 @@ export const teamWorkspaceWireSchema = z.object({
   myRole: workspaceRoleWireSchema,
   source: roleSourceWireSchema,
   createdAt: z.string(),
+  /** Restates the engine's `TeamWorkspace.recordDesktopActivity` (desktop audit events §2.1). */
+  recordDesktopActivity: z.boolean(),
 });
 export type TeamWorkspaceWire = z.infer<typeof teamWorkspaceWireSchema>;
 export const accessEntryWireSchema = z.object({
@@ -5811,6 +5824,7 @@ export const teamUpdateWorkspaceRequestWireSchema = z.object({
   workspaceId: z.string(),
   name: z.string().optional(),
   defaultRole: defaultRoleWireSchema.optional(),
+  recordDesktopActivity: z.boolean().optional(),
 });
 export const teamSetAccessRequestWireSchema = z.object({
   url: z.string(),
@@ -6138,3 +6152,56 @@ export const licenseInstallRequestWireSchema = licenseRequestWireSchema.extend({
   license: z.string().min(1).max(8192),
 });
 export const licenseRemoveResponseWireSchema = z.object({ removed: z.literal(true) });
+
+// --- Server audit log (audit-log spec §3.4, §5.3) ------------------------------------------------
+
+/** What `GET /api/v1/audit` answers, restated for the bridge; the renderer imports only the types. */
+export const auditActorWireSchema = z.object({
+  kind: z.enum(['user', 'ci-token', 'system', 'anonymous']),
+  userId: z.string().optional(),
+  email: z.string().optional(),
+  tokenId: z.string().optional(),
+  workspaceId: z.string().optional(),
+});
+export const auditEventWireSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  actor: auditActorWireSchema,
+  action: z.string(),
+  target: z.object({ kind: z.string(), id: z.string().nullable() }),
+  workspaceId: z.string().nullable(),
+  teamId: z.string().nullable(),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  details: z.record(z.string(), z.unknown()),
+});
+export const auditQueryWireSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  action: z
+    .string()
+    .regex(/^[a-z_]+\.([a-z_]+)?$/)
+    .optional(),
+  actorUserId: z.string().optional(),
+  workspaceId: z.string().optional(),
+  teamId: z.string().optional(),
+  targetKind: z.string().optional(),
+  targetId: z.string().optional(),
+  after: z.string().optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+});
+export const auditPageWireSchema = z.object({ events: z.array(auditEventWireSchema), next: z.string().optional() });
+export const auditQueryRequestWireSchema = z.object({ url: z.string(), query: auditQueryWireSchema });
+export const auditExportRequestWireSchema = z.object({
+  url: z.string(),
+  query: auditQueryWireSchema.omit({ after: true, limit: true }),
+});
+export const auditExportResponseWireSchema = z.union([
+  z.object({ saved: z.literal(false) }),
+  z.object({ saved: z.literal(true), path: z.string(), count: z.number().int().nonnegative() }),
+]);
+export type AuditEventWire = z.infer<typeof auditEventWireSchema>;
+export type AuditPageWire = z.infer<typeof auditPageWireSchema>;
+export type AuditQueryWire = z.infer<typeof auditQueryWireSchema>;
+export type AuditExportQueryWire = z.infer<typeof auditExportRequestWireSchema>['query'];
+export type AuditExportResponseWire = z.infer<typeof auditExportResponseWireSchema>;

@@ -28,7 +28,7 @@ import {
 } from '@wirebench/engine';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../../db/errors.js';
 import { newId } from '../../identity/tokens.js';
 import { jsonSchema } from '../../schema.js';
@@ -198,6 +198,7 @@ export const manageRoutes =
         const name = cleanName(body.name);
         checkResponse(body.response);
         const id = newId();
+        const source = auditSource(request);
         try {
           await db.transaction(async (tx) => {
             if (!(await repo.lockWorkspace(tx, workspaceId))) throw workspaceNotFound();
@@ -218,6 +219,13 @@ export const manageRoutes =
               },
               createdBy: request.caller!.id,
               at: env.now(),
+            });
+            await recordAudit(env.ctx.hooks, tx, {
+              ...source,
+              action: 'hook.created',
+              target: { kind: 'hook', id },
+              workspaceId,
+              details: { name },
             });
           });
         } catch (error) {
@@ -244,14 +252,61 @@ export const manageRoutes =
         const current = await found(workspaceId, hookId);
         checkResponse(body.response);
         const signature = signaturePatchOf(body, current, env.settings.secretKey);
+        const name = body.name !== undefined ? cleanName(body.name) : undefined;
+        const source = auditSource(request);
+        const target = { kind: 'hook', id: hookId } as const;
         let updated: boolean;
         try {
-          updated = await repo.updateCatchUrl(db, hookId, {
-            ...(body.name !== undefined ? { name: cleanName(body.name) } : {}),
-            ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-            ...(body.response !== undefined ? { response: body.response } : {}),
-            ...(signature !== undefined ? { signature } : {}),
-            ...(body.rejectUnverified !== undefined ? { rejectUnverified: body.rejectUnverified } : {}),
+          updated = await db.transaction(async (tx) => {
+            const done = await repo.updateCatchUrl(tx, hookId, {
+              ...(name !== undefined ? { name } : {}),
+              ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+              ...(body.response !== undefined ? { response: body.response } : {}),
+              ...(signature !== undefined ? { signature } : {}),
+              ...(body.rejectUnverified !== undefined ? { rejectUnverified: body.rejectUnverified } : {}),
+            });
+            if (!done) return false;
+            // hook.changed is for what the signature events do not say: a name, the switch, the reject flag,
+            // and that the canned response was set (`response: true`; its body is never recorded).
+            const changed: Record<string, string | boolean> = {};
+            if (name !== undefined && name !== current.name) {
+              changed['name'] = name;
+              changed['previousName'] = current.name;
+            }
+            if (body.enabled !== undefined && body.enabled !== current.enabled) changed['enabled'] = body.enabled;
+            if (body.rejectUnverified !== undefined && body.rejectUnverified !== current.rejectUnverified) {
+              changed['rejectUnverified'] = body.rejectUnverified;
+            }
+            if (body.response !== undefined) changed['response'] = true;
+            if (Object.keys(changed).length > 0) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                action: 'hook.changed',
+                target,
+                workspaceId,
+                details: changed,
+              });
+            }
+            // Clearing a catch URL that had no signature changes nothing, so it records nothing.
+            const hadSignature = current.signature !== null || current.secretSet;
+            if (signature === null && hadSignature) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                action: 'hook.signature_cleared',
+                target,
+                workspaceId,
+                details: { scheme: current.signature?.kind ?? null },
+              });
+            } else if (signature !== undefined && signature !== null) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                action: 'hook.signature_set',
+                target,
+                workspaceId,
+                details: { scheme: signature.scheme.kind },
+              });
+            }
+            return true;
           });
         } catch (error) {
           conflictOr(error);
@@ -267,10 +322,19 @@ export const manageRoutes =
       { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams, response: { 200: one } } },
       async (request): Promise<CatchUrl> => {
         const { workspaceId, hookId } = hookOf(request);
-        await found(workspaceId, hookId);
+        const row = await found(workspaceId, hookId);
+        const source = auditSource(request);
         // The old URL answers 404 from the moment this commits (§3.5).
-        const rotated = await repo.rotateSecret(db, hookId, mintCatchSecret());
-        if (!rotated) throw catchUrlNotFound();
+        await db.transaction(async (tx) => {
+          if (!(await repo.rotateSecret(tx, hookId, mintCatchSecret()))) throw catchUrlNotFound();
+          await recordAudit(env.ctx.hooks, tx, {
+            ...source,
+            action: 'hook.rotated',
+            target: { kind: 'hook', id: hookId },
+            workspaceId,
+            details: { name: row.name },
+          });
+        });
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
         return toCatchUrl(await found(workspaceId, hookId), config.publicUrl, viewOf(request));
       },
@@ -281,8 +345,18 @@ export const manageRoutes =
       { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
       async (request, reply) => {
         const { workspaceId, hookId } = hookOf(request);
-        await found(workspaceId, hookId);
-        if (!(await repo.deleteCatchUrl(db, hookId))) throw catchUrlNotFound();
+        const row = await found(workspaceId, hookId);
+        const source = auditSource(request);
+        await db.transaction(async (tx) => {
+          if (!(await repo.deleteCatchUrl(tx, hookId))) throw catchUrlNotFound();
+          await recordAudit(env.ctx.hooks, tx, {
+            ...source,
+            action: 'hook.deleted',
+            target: { kind: 'hook', id: hookId },
+            workspaceId,
+            details: { name: row.name },
+          });
+        });
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
         return reply.code(204).send();
       },
@@ -337,8 +411,18 @@ export const manageRoutes =
       { preHandler: requireWorkspaceRole(db, 'editor'), schema: { params: hookParams } },
       async (request, reply) => {
         const { workspaceId, hookId } = hookOf(request);
-        await found(workspaceId, hookId);
-        await repo.clearCaptures(db, hookId);
+        const row = await found(workspaceId, hookId);
+        const source = auditSource(request);
+        await db.transaction(async (tx) => {
+          const removed = await repo.clearCaptures(tx, hookId);
+          await recordAudit(env.ctx.hooks, tx, {
+            ...source,
+            action: 'hook.cleared',
+            target: { kind: 'hook', id: hookId },
+            workspaceId,
+            details: { name: row.name, captures: removed },
+          });
+        });
         announce(env.ctx.hooks.hooksChanged, { workspaceId }, request.log);
         return reply.code(204).send();
       },

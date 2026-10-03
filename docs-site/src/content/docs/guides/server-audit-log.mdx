@@ -1,0 +1,165 @@
+---
+title: Audit log
+description: What Wirebench Server records about who did what, how long it keeps it, and how a server admin reads or exports it.
+---
+
+Wirebench Server records who did what, on the server and, when a workspace turns it on, in the desktop app. Recording is on for every edition. Reading and exporting the log
+in the app or over the API needs the Enterprise edition (see
+[Editions and licenses](/wirebench/docs/guides/server-licensing/)), and only server admins can do either.
+The `wirebench-server admin audit export` console command, below, works on any edition, for whoever can
+run it against the server's database.
+
+An event says who did it, what they did, which target it touched, when, and from where. Events are never
+edited and no route deletes one. The only way an event leaves is retention, below.
+
+## What is recorded
+
+| Group        | What is recorded                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| Sign-ins     | Sign-ins, failed sign-ins, sign-outs and password changes                                         |
+| Users        | Invitations and their revocation, new accounts, disabling and enabling, admin rights, reset links |
+| Teams        | A team created, renamed or deleted, and members added, removed or given another role              |
+| Workspaces   | A workspace created, renamed or deleted, its default role, role grants, and every push            |
+| Team secrets | A secret shared or rotated, and a change to who can read it. Never a value                        |
+| Catch URLs   | A catch URL created, changed, rotated, deleted or cleared, and its signature set or cleared       |
+| CI tokens    | A token created or revoked                                                                        |
+| License      | A license installed or removed                                                                    |
+| Exports      | Each export of the audit log itself                                                               |
+| Desktop      | Requests sent and test-suite runs in a workspace that records them, and a gap in that trail       |
+
+A push and a license change are recorded right after they complete. Everything else is recorded in the
+same transaction as the change, so a change that is not saved leaves no event, and an event that cannot
+be saved stops the change.
+
+Desktop events arrive from the app, not from the server's own actions. See _Desktop activity_, below.
+
+Not recorded: reads, captures arriving at a catch URL, sync fetches and live sockets.
+
+An event carries a few details, such as the previous and new role. It never carries a secret, a token, a
+password hash, or the body of a request or response. A change to a workspace's *Record desktop activity*
+setting is recorded as `workspace.desktop_recording_changed`, with the new and previous value.
+
+## Desktop activity
+
+A team that has to show what was sent where, for example to a production host, can have the desktop app
+report each request and each test-suite run to the server. It is off for every workspace until a
+workspace admin turns it on.
+
+**What is recorded**, only for a workspace that is shared to the team server and has recording on:
+
+- `desktop.request_sent`: one per request sent from the editor, History, the HTTP log or a
+  multi-environment send, whether it worked or failed on the wire. It carries the protocol, the method
+  (the gRPC `service/method`, or none), the URL, the status, whether it worked, how long it took, the
+  environment name, the request's id and name, and the time on the person's machine.
+- `desktop.run_finished`: one per test-suite run that ends, including a run the person stopped. It
+  carries the suite's id and name (`sequenceName`), the outcome, the counts of passed, failed, errored and skipped steps,
+  the duration, the environment, the hosts the steps reached (up to 64) and the start and send times.
+- `desktop.events_dropped`: a count of events the app had to discard (see below), so a gap in the trail
+  is itself on the record.
+
+The person who sent the request is the actor. The time of an event is when the server received it; the
+time on the person's machine stays in the details as `sentAt`.
+
+**Not recorded:** headers, bodies, responses, and anything else a request carries besides its URL.
+Steps of a test-suite run are not listed one by one, the run's event covers them. Sends that belong to
+no project in the workspace, local workspaces, folder or Git shares, and requests made by the command
+line or the MCP server are not recorded. Wirebench has no load runs.
+
+**The URL is masked** before it leaves the app, whatever the show-secrets setting says. A password in
+the URL and the values of secret-like query parameters become `<redacted>`. Any secret value the app
+knows from the session is masked too, wherever it appears in the URL. A URL longer than 2048 characters
+is cut.
+
+**Turning it on.** A workspace admin opens the **Workspaces** tab in **Account: Manage teams** and
+switches on **Record desktop activity**. Everyone else sees the line *Desktop activity is recorded*.
+Each desktop learns of a change on its next sync fetch. Turning it off stops it on the server at once.
+Recording is on for every edition, like the rest of the log.
+
+**The notice.** While the open workspace records, the status bar shows **Recorded**. Its tooltip says
+that requests and test runs in this workspace are recorded in the team server's audit log, so nobody is
+recorded without knowing.
+
+**Offline and signed out.** The app writes each event to a queue in the workspace's folder first, then
+sends the queue in batches of at most 100. If the server cannot be reached the app tries again later,
+starting at 5 seconds and doubling up to 5 minutes, and keeps the queue. Signed out, it keeps the queue
+until the next sign-in. The queue holds 5000 events; beyond that the oldest are discarded and their
+count is sent with the next batch as `desktop.events_dropped`. A batch the server can never accept
+(a `400` answer) is discarded the same way and counted. If the server answers that the workspace no
+longer records (`409`), or that the workspace is closed to the person (`403` or `404`), the app empties
+its queue and stops recording until the workspace is fetched again. Delivery is at least once, so if the server's reply to a batch is
+lost, the app sends that batch again and its events can appear twice. Events queued while one person
+was signed in are sent only as that person: if someone else signs in to the same server, they are
+discarded and counted instead.
+
+## Reading the log
+
+A server admin on an Enterprise server opens **Account: Manage teams** and chooses the **Audit** tab. It
+works with no team selected.
+
+- **Range** picks the last 24 hours, 7 days, 30 days, or all time.
+- **Kind** picks one group from the table above, `desktop` included.
+- **Workspace** appears when a team is selected and narrows the list to one of its workspaces.
+
+Events are listed newest first. Click one to see its detail: when, who, what, the target, workspace and
+team, the address and client it came from, its event id and its details. **Load more** fetches the next
+page.
+
+On a server without the Enterprise edition the audit routes refuse with a message that names the
+feature.
+
+## Exporting
+
+Click **Export…** in the Audit tab. Wirebench asks where to save the file and writes the events that match
+the current filters as newline-delimited JSON, one event per line, oldest first.
+
+On the machine that runs the server, the same export is a command:
+
+```bash
+wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]
+```
+
+It writes to standard output. `--from` is inclusive and `--to` exclusive. `--action` is one action name,
+such as `team.deleted`, or a group followed by a dot, such as `secret.`. A nightly copy for an archive can
+be one `cron` line, which takes exactly the previous day, so two runs never overlap:
+
+```bash
+15 2 * * * docker compose -f /srv/wirebench/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from "$(date -u -d yesterday +\%Y-\%m-\%dT00:00:00Z)" --to "$(date -u +\%Y-\%m-\%dT00:00:00Z)" >> /var/archive/wirebench-audit.ndjson
+```
+
+An export is itself recorded as `audit.exported`, once the whole export has been written. An export that
+the reader abandons halfway leaves no event.
+
+## Retention
+
+Events older than a set age are deleted. The age is `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS`: a whole number
+of days from 30 to 3650, and 365 when unset. The server sweeps every ten minutes.
+
+If a regime asks you to keep events longer, export them before they age out.
+
+## Personal data
+
+The log holds personal data, under the same retention as everything else.
+
+- `actor.email` is the email address the person had when the event happened. It stays in the event after
+  the account is renamed or deleted.
+- The address an event came from is an IP address.
+- A failed sign-in keeps the email that was typed, lower-cased, so that repeated attempts are readable.
+
+To answer a request to erase one person, export the log first, then purge that person's events. A person
+appears in an event as its actor, as its target (a `user` target holds the user id), or by email in the
+details of an invitation, an invitation revoked, a new account or a failed sign-in (`emailLower`). The
+operator runs this in the database, with the person's user id as `$1` and their email, lower-cased, as `$2`:
+
+```sql
+delete from audit_events
+ where actor_user_id = $1
+    or (target_kind = 'user' and target_id = $1)
+    or details->>'emailLower' = $2;
+```
+
+Nothing in the server removes events one person at a time, so this is a deliberate step by the operator.
+
+## Related
+
+- [Wirebench Server](/wirebench/docs/guides/wirebench-server/) — running the server, accounts and sign-in.
+- [Editions and licenses](/wirebench/docs/guides/server-licensing/) — seats, editions and installing a license.

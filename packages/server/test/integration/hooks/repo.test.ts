@@ -1,14 +1,10 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { CATCH_URL_DEFAULT_RESPONSE } from '@wirebench/engine';
 import { isForeignKeyViolation, isUniqueViolation } from '../../../src/db/errors.js';
-import { hooksModule } from '../../../src/hooks/module.js';
 import * as repo from '../../../src/hooks/repo.js';
-import { identityModule } from '../../../src/identity/module.js';
 import { newId } from '../../../src/identity/tokens.js';
 import { allMigrations } from '../../../src/serve.js';
-import { syncModule } from '../../../src/sync/module.js';
 import * as teamsRepo from '../../../src/teams/repo.js';
-import { teamsModule } from '../../../src/teams/module.js';
 import { describeDb } from '../../helpers/database.js';
 import { hooksRepoHarness, newCapture, seedCatchUrl } from '../../helpers/hooks.js';
 import type { IdentityHarness } from '../../helpers/identity.js';
@@ -25,11 +21,9 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
   afterEach(() => h.close());
 
   it('0004 and 0005 follow teams-access across modules, and production runs them before live-updates', async () => {
-    const list = (await allMigrations([identityModule(), teamsModule(), syncModule(), hooksModule()])).map(
-      (m) => `${m.version}_${m.name}`,
-    );
-    expect(list).toEqual(['1_init', '2_identity', '3_teams', '4_webhook-capture', '5_webhook-signatures']);
     const { BUILTIN_MODULES } = await import('../../../src/modules.js');
+    const list = (await allMigrations(BUILTIN_MODULES)).map((m) => `${m.version}_${m.name}`);
+    expect(list.slice(0, 5)).toEqual(['1_init', '2_identity', '3_teams', '4_webhook-capture', '5_webhook-signatures']);
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
       'licensing',
@@ -38,6 +32,7 @@ describeDb('webhook-capture repository (§3.2, §3.4)', () => {
       'webhook-capture',
       'ci-tokens',
       'live-updates',
+      'audit-log',
     ]);
   });
 

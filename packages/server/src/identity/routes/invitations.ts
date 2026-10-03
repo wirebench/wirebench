@@ -11,6 +11,7 @@ import {
   type InvitationCreateRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
+import { auditSource } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import { notFound } from '../errors.js';
@@ -43,6 +44,7 @@ export const invitationRoutes =
           email: body.email,
           serverAdmin: body.serverAdmin ?? false,
           createdBy: request.caller!.id,
+          source: auditSource(request),
         });
         return reply.code(201).send(created);
       },
@@ -59,7 +61,7 @@ export const invitationRoutes =
       { preHandler: requireServerAdmin, schema: { params: jsonSchema(identityIdParamsSchema, { io: 'input' }) } },
       async (request, reply) => {
         const { id } = request.params as { id: string };
-        if (!(await revokeOpenInvitation(env, id))) throw notFound('Invitation');
+        if (!(await revokeOpenInvitation(env, id, auditSource(request)))) throw notFound('Invitation');
         return reply.code(204).send();
       },
     );
@@ -86,6 +88,8 @@ export const invitationRoutes =
         },
       },
       async (request, reply) =>
-        reply.code(201).send(await acceptInvitation(env, request.body as InvitationAcceptRequest)),
+        reply
+          .code(201)
+          .send(await acceptInvitation(env, request.body as InvitationAcceptRequest, auditSource(request))),
     );
   };

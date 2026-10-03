@@ -5,6 +5,7 @@
  * desktop then proves the verifier and the grant at `/complete` and gets a device token. The
  * ID token never leaves this process and the desktop never sees the IdP.
  */
+import { ANONYMOUS_SOURCE, auditSource, recordAudit } from '../../context.js';
 import {
   oidcCallbackQuerySchema,
   oidcCompleteRequestSchema,
@@ -25,7 +26,7 @@ import { linkClaims } from '../linking.js';
 import type { OidcClaims } from '../oidc.js';
 import { ipKey, rateLimit } from '../rate-limit.js';
 import * as repo from '../repo.js';
-import { issueToken } from '../sessions.js';
+import { signIn } from '../sessions.js';
 import { hashSecret, mintSecret, newId, pkceChallenge } from '../tokens.js';
 
 /** §2: a pending flow lives ten minutes. */
@@ -113,6 +114,14 @@ export const authOidcRoutes =
         const provider = env.provider;
         if (provider === undefined) throw methodDisabled();
         const query = request.query as OidcCallbackQuery;
+        const refused = (reason: string, email?: string) =>
+          recordAudit(env.ctx.hooks, env.ctx.db, {
+            ...auditSource(request),
+            ...ANONYMOUS_SOURCE,
+            action: 'auth.sign_in_failed',
+            target: { kind: 'server' },
+            details: { method: 'oidc', reason, emailLower: email?.toLowerCase() ?? null },
+          });
         const flow = await repo.flowByState(env.ctx.db, query.state);
         if (flow === undefined || flow.grantHash !== null || Date.parse(flow.expiresAt) <= env.now().getTime()) {
           return htmlPage(
@@ -123,6 +132,7 @@ export const authOidcRoutes =
         }
         if (query.code === undefined || query.error !== undefined) {
           await repo.deleteFlow(env.ctx.db, flow.id);
+          await refused('identity-oidc-refused');
           return redirectToLoopback(reply, flow, { error: 'identity-oidc-refused' });
         }
         let claims: OidcClaims;
@@ -135,15 +145,18 @@ export const authOidcRoutes =
         } catch (error) {
           request.log.warn({ err: error, flowId: flow.id }, 'oidc code exchange failed');
           await repo.deleteFlow(env.ctx.db, flow.id);
+          await refused('identity-oidc-failed');
           return redirectToLoopback(reply, flow, { error: 'identity-oidc-failed' });
         }
         if (claims.issuer !== provider.issuer) {
           await repo.deleteFlow(env.ctx.db, flow.id); // §6: the issuer is pinned from configuration
+          await refused('identity-oidc-failed', claims.email);
           return redirectToLoopback(reply, flow, { error: 'identity-oidc-failed' });
         }
-        const linked = await linkClaims(env, claims);
+        const linked = await linkClaims(env, claims, auditSource(request));
         if (!linked.ok) {
           await repo.deleteFlow(env.ctx.db, flow.id);
+          await refused(linked.code, claims.email);
           return redirectToLoopback(reply, flow, { error: linked.code });
         }
         const grant = mintSecret();
@@ -181,7 +194,7 @@ export const authOidcRoutes =
         if (!(await repo.claimGrantedFlow(env.ctx.db, flow.id, flow.grantHash))) throw flowInvalid();
         const user = await repo.findUserById(env.ctx.db, flow.userId);
         if (user === undefined || user.disabledAt !== null) throw flowInvalid();
-        return reply.code(201).send(await issueToken(env, user, flow.deviceName));
+        return reply.code(201).send(await signIn(env, user, 'oidc', flow.deviceName, auditSource(request)));
       },
     );
   };

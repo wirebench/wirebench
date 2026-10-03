@@ -13,7 +13,7 @@ import {
   type TeamSecretsKeyRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
 import { unauthenticated } from '../../identity/errors.js';
 import { callerKey, rateLimit } from '../../identity/rate-limit.js';
 import { findUserById } from '../../identity/repo.js';
@@ -71,6 +71,17 @@ export const keyRequestRoutes =
             { name: user.displayName, email: user.email },
           );
         });
+        try {
+          await recordAudit(hooks, db, {
+            ...auditSource(request),
+            action: 'secret.access_changed',
+            target: { kind: 'workspace', id: workspaceId },
+            workspaceId,
+            details: { entries: 0, keyRequests: 1, keyId: body.keyId, head: result.head },
+          });
+        } catch (error) {
+          request.log.warn({ err: error, workspaceId }, 'audit: key request not recorded');
+        }
         announce(hooks.headMoved, { workspaceId, head: result.head, tokenId: request.caller!.tokenId }, request.log);
         return reply.code(201).send({ head: result.head });
       },

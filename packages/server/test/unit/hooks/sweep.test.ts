@@ -157,4 +157,25 @@ describe('CaptureSweeper (webhook-capture §3.4)', () => {
     await flush();
     expect(f.calls).toHaveLength(1);
   });
+
+  it('deletes through an injected function in batches', async () => {
+    const limits: number[] = [];
+    const t = timers();
+    const sweeper = new CaptureSweeper({
+      db: fakeDb([]).db,
+      maxAgeDays: 1,
+      now: () => new Date(),
+      setTimer: t.setTimer,
+      log: log([]),
+      batchSize: 2,
+      label: 'audit sweep',
+      deleteBefore: (_db, _cutoff, limit) => {
+        limits.push(limit);
+        return Promise.resolve(limits.length === 1 ? 2 : 0);
+      },
+    });
+    expect(await sweeper.runOnce()).toBe(2);
+    expect(limits).toEqual([2, 2]);
+    await sweeper.stop();
+  });
 });

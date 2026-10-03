@@ -27,6 +27,7 @@ const workspace = (id: string, teamId: string): TeamWorkspaceWire => ({
   myRole: 'admin',
   source: 'team-admin',
   createdAt: '2026-09-25T10:00:00.000Z',
+  recordDesktopActivity: false,
 });
 const ok = <T>(value: T) => vi.fn().mockResolvedValue({ ok: true, value });
 const err = (code: string, message = 'nope') => vi.fn().mockResolvedValue({ ok: false, error: { code, message } });

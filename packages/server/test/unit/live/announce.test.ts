@@ -90,6 +90,7 @@ describe('serverHooks and ServerModule (live-updates §5.1, §14)', () => {
     const one = serverHooks();
     expect(one).toEqual({
       invitationAccepted: [],
+      audit: [],
       headMoved: [],
       accessChanged: [],
       sessionEnded: [],

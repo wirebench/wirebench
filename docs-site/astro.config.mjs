@@ -53,6 +53,7 @@ export default defineConfig({
             { label: 'Shared workspaces', slug: 'guides/shared-workspaces' },
             { label: 'Wirebench Server', slug: 'guides/wirebench-server' },
             { label: 'Editions and licenses', slug: 'guides/server-licensing' },
+            { label: 'Audit log', slug: 'guides/server-audit-log' },
             { label: 'Webhook inbox', slug: 'guides/webhooks' },
             { label: 'Sending webhooks', slug: 'guides/sending-webhooks' },
             { label: 'Webhook signatures', slug: 'guides/webhook-signatures' },

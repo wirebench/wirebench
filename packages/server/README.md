@@ -37,6 +37,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_HOOKS_BURST` | no | `50` | Requests a catch URL accepts at once before the rate applies (1–10000). |
 | `WIREBENCH_SERVER_HOOKS_PER_WORKSPACE` | no | `50` | Catch URLs a workspace may hold (1–1000). |
 | `WIREBENCH_SERVER_HOOKS_SECRET_KEY` | no | — | Encrypts catch URL signature secrets at rest: 32 random bytes, base64-encoded (`openssl rand -base64 32`). Unset, signature settings are refused. Never logged. |
+| `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` | no | `365` | Audit events older than this many days are deleted (30–3650). |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
@@ -89,6 +90,22 @@ built into the server; nothing is sent anywhere. Install it from the app's Licen
 `admin license show` prints the edition, seats and expiry; `admin license remove` returns the server to
 Community. An expired license keeps its edition for 30 days, then the server is Community again, with
 nobody signed out and nothing locked. See the docs site's _Editions and licenses_ guide.
+
+## Audit log
+
+The server records who did what: sign-ins and failed sign-ins, users, teams, workspace roles, pushes,
+team-secret changes, catch URLs, CI tokens and license changes. Recording is on for every edition. Server
+admins read it in the app's Audit tab, which needs an Enterprise license; the console export works on any
+edition:
+
+    docker compose -f packages/server/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
+
+A workspace admin can turn on **Record desktop activity** for a workspace: the app then reports each
+request sent and each test-suite run (`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no
+headers or bodies.
+
+Events older than `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` (default 365) are deleted. See the docs site's
+_Audit log_ guide for what each event carries and how to handle personal data.
 
 ## Teams
 

@@ -107,6 +107,7 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
       workspace: await c.updateWorkspace(url, token, r.workspaceId, {
         ...(r.name !== undefined ? { name: r.name } : {}),
         ...(r.defaultRole !== undefined ? { defaultRole: r.defaultRole } : {}),
+        ...(r.recordDesktopActivity !== undefined ? { recordDesktopActivity: r.recordDesktopActivity } : {}),
       }),
     })),
   );

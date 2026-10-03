@@ -33,6 +33,7 @@ export interface WorkspaceRow {
   readonly teamId: string;
   readonly teamName: string;
   readonly defaultRole: DefaultRole;
+  readonly recordDesktopActivity: boolean;
   readonly createdBy: string | null;
   readonly createdAt: string;
 }
@@ -76,7 +77,8 @@ const MEMBER_SELECT = `select m.user_id as "userId", u.email, u.display_name as 
   u.disabled_at is not null as disabled, m.added_at as "addedAt"
   from team_members m join users u on u.id = m.user_id`;
 const WORKSPACE_SELECT = `select w.id, w.name, w.team_id as "teamId", t.name as "teamName",
-  w.default_role as "defaultRole", w.created_by as "createdBy", w.created_at as "createdAt"
+  w.default_role as "defaultRole", w.record_desktop_activity as "recordDesktopActivity",
+  w.created_by as "createdBy", w.created_at as "createdAt"
   from workspaces w join teams t on t.id = w.team_id`;
 
 // ---- teams -------------------------------------------------------------------------------
@@ -280,11 +282,12 @@ export async function workspaceById(db: Querier, id: string): Promise<WorkspaceR
 export async function updateWorkspace(
   db: Querier,
   id: string,
-  patch: { readonly name?: string; readonly defaultRole?: DefaultRole },
+  patch: { readonly name?: string; readonly defaultRole?: DefaultRole; readonly recordDesktopActivity?: boolean },
 ): Promise<void> {
   await db.query(
-    'update workspaces set name = coalesce($2, name), default_role = coalesce($3, default_role) where id = $1',
-    [id, patch.name ?? null, patch.defaultRole ?? null],
+    `update workspaces set name = coalesce($2, name), default_role = coalesce($3, default_role),
+       record_desktop_activity = coalesce($4, record_desktop_activity) where id = $1`,
+    [id, patch.name ?? null, patch.defaultRole ?? null, patch.recordDesktopActivity ?? null],
   );
 }
 
@@ -334,6 +337,7 @@ export async function visibleWorkspaces(
   return (
     await db.query(
       `select w.id, w.name, w.team_id as "teamId", t.name as "teamName", w.default_role as "defaultRole",
+              w.record_desktop_activity as "recordDesktopActivity",
               w.created_by as "createdBy", w.created_at as "createdAt", m.role as "teamRole", g.role as "grant"
        from workspaces w
        join teams t on t.id = w.team_id
@@ -384,6 +388,15 @@ export async function upsertGrant(
   );
 }
 
-export async function deleteGrant(db: Querier, workspaceId: string, userId: string): Promise<void> {
-  await db.query('delete from workspace_grants where workspace_id = $1 and user_id = $2', [workspaceId, userId]);
+/** The removed grant's role, or `undefined` when there was none, so a no-op delete records nothing (audit-log plan ruling 7). */
+export async function deleteGrant(
+  db: Querier,
+  workspaceId: string,
+  userId: string,
+): Promise<WorkspaceRole | undefined> {
+  const result = await db.query<{ role: WorkspaceRole }>(
+    'delete from workspace_grants where workspace_id = $1 and user_id = $2 returning role',
+    [workspaceId, userId],
+  );
+  return result.rows[0]?.role;
 }

@@ -1740,6 +1740,41 @@ export type {
   LicenseState,
   LicenseStatus,
 } from './server-api/licensing.js';
+export {
+  AUDIT_ACTION_GROUPS,
+  AUDIT_ACTIONS,
+  AUDIT_ACTOR_KINDS,
+  AUDIT_LIMITS,
+  AUDIT_TARGET_KINDS,
+  DESKTOP_AUDIT_LIMITS,
+  auditActionSchema,
+  auditActorSchema,
+  auditDetailsSchema,
+  auditEventSchema,
+  auditExportQuerySchema,
+  auditPageSchema,
+  auditQuerySchema,
+  desktopAuditBatchSchema,
+  desktopAuditEventSchema,
+  desktopRequestSentDetailsSchema,
+  desktopRunFinishedDetailsSchema,
+} from './server-api/audit.js';
+export type {
+  AuditAction,
+  AuditActionGroup,
+  AuditActor,
+  AuditActorKind,
+  AuditDetails,
+  AuditEvent,
+  AuditExportQuery,
+  AuditPage,
+  AuditQuery,
+  AuditTargetKind,
+  DesktopAuditBatch,
+  DesktopAuditEvent,
+  DesktopRequestSentDetails,
+  DesktopRunFinishedDetails,
+} from './server-api/audit.js';
 export { ACCOUNTS_FILE_VERSION, accountsFileSchema, parseAccountsFile, serverAccountSchema } from './account/schema.js';
 export type { AccountsFile, ServerAccount } from './account/schema.js';
 export * from './sequence/index.js';

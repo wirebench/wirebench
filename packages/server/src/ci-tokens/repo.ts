@@ -70,13 +70,18 @@ export async function ciTokensOfWorkspace(db: Querier, workspaceId: string): Pro
   return rows.map(rowOf);
 }
 
-/** `false` when there is no live token by that id in that workspace. */
-export async function revokeCiToken(db: Querier, workspaceId: string, id: string, at: Date): Promise<boolean> {
-  const result = await db.query(
-    'update ci_tokens set revoked_at = $3 where id = $1 and workspace_id = $2 and revoked_at is null',
+/** The revoked token's name, or `undefined` when none was live (audit-log plan ruling 7). */
+export async function revokeCiToken(
+  db: Querier,
+  workspaceId: string,
+  id: string,
+  at: Date,
+): Promise<string | undefined> {
+  const result = await db.query<{ name: string }>(
+    'update ci_tokens set revoked_at = $3 where id = $1 and workspace_id = $2 and revoked_at is null returning name',
     [id, workspaceId, at],
   );
-  return (result.rowCount ?? 0) > 0;
+  return result.rows[0]?.name;
 }
 
 export async function touchCiToken(db: Querier, id: string, at: Date): Promise<void> {

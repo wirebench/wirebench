@@ -11,7 +11,7 @@ import {
   type SetAccessRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { TeamsEnv } from '../env.js';
 import { notAMember } from '../errors.js';
@@ -67,6 +67,15 @@ export const accessRoutes =
         await db.transaction(async (tx) => {
           if (!(await repo.isTeamMemberOfWorkspace(tx, workspaceId, userId))) throw notAMember();
           await repo.upsertGrant(tx, { workspaceId, userId, role, at: env.now() });
+          const ws = await repo.workspaceById(tx, workspaceId);
+          await recordAudit(env.ctx.hooks, tx, {
+            ...auditSource(request),
+            action: 'workspace.grant_set',
+            target: { kind: 'user', id: userId },
+            workspaceId,
+            ...(ws !== undefined ? { teamId: ws.teamId } : {}),
+            details: { role },
+          });
         });
         // Committed: the hub re-resolves the workspace's subscribers and tells the changed ones (§3.2).
         announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
@@ -79,7 +88,18 @@ export const accessRoutes =
       { preHandler: requireWorkspaceRole(db, 'admin'), schema: { params } },
       async (request, reply) => {
         const { workspaceId, userId } = request.params as AccessParams;
-        await repo.deleteGrant(db, workspaceId, userId);
+        await db.transaction(async (tx) => {
+          const removed = await repo.deleteGrant(tx, workspaceId, userId);
+          if (removed !== undefined) {
+            await recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              action: 'workspace.grant_removed',
+              target: { kind: 'user', id: userId },
+              workspaceId,
+              details: { role: removed },
+            });
+          }
+        });
         announce(env.ctx.hooks.accessChanged, { workspaceId }, request.log);
         return reply.code(204).send();
       },

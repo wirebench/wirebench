@@ -16,6 +16,9 @@ import { useProblemsStore } from '../state/problems.js';
 import { useProjectStore } from '../state/project.js';
 import { useUiStore } from '../state/ui.js';
 
+/** The *Recorded* item's tooltip (desktop audit events §2.6). */
+const RECORDED_TOOLTIP = "Requests and test runs in this workspace are recorded in the team server's audit log.";
+
 /** The indicator's glyph per preference; `system` gets the split icon whichever way it resolved. */
 const THEME_ICON = { dark: Moon, light: Sun, system: SunMoon } as const;
 
@@ -172,6 +175,20 @@ export function StatusBar() {
               ·
             </span>
             <SyncBadge />
+          </>
+        )}
+        {workspace?.share?.server?.recording === true && (
+          <>
+            <span aria-hidden="true" className="text-fg-faint">
+              ·
+            </span>
+            <span
+              data-testid="status-bar-recorded"
+              title={RECORDED_TOOLTIP}
+              aria-label={`Recorded. ${RECORDED_TOOLTIP}`}
+            >
+              Recorded
+            </span>
           </>
         )}
         <AccountStatusItem />

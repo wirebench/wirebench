@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { permissiveLicense } from '../../../src/context.js';
+import { SYSTEM_SOURCE, permissiveLicense } from '../../../src/context.js';
 import { createInvitation } from '../../../src/identity/invitations.js';
 import * as repo from '../../../src/identity/repo.js';
 import { mintSecret } from '../../../src/identity/tokens.js';
@@ -219,15 +219,17 @@ describeDb('invitations (§3.1, §3.7)', () => {
       now: () => h.clock.now,
     } as never;
     await expect(
-      createInvitation(env, { email: 'erin@example.com', serverAdmin: false, createdBy: null }, () =>
-        Promise.reject(new Error('attach failed')),
+      createInvitation(
+        env,
+        { email: 'erin@example.com', serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE },
+        () => Promise.reject(new Error('attach failed')),
       ),
     ).rejects.toThrow('attach failed');
     expect(await repo.openInvitationByEmail(h.db, 'erin@example.com', h.clock.now)).toBeUndefined();
     const attached: string[] = [];
     const created = await createInvitation(
       env,
-      { email: 'erin@example.com', serverAdmin: false, createdBy: null },
+      { email: 'erin@example.com', serverAdmin: false, createdBy: null, source: SYSTEM_SOURCE },
       (tx, id) => {
         attached.push(id);
         return tx.query('select 1').then(() => undefined);

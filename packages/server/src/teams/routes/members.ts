@@ -13,7 +13,7 @@ import {
   type MemberRoleRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
 import { isForeignKeyViolation } from '../../db/errors.js';
 import { findUserByEmail } from '../../identity/repo.js';
 import { emailLower } from '../../identity/sessions.js';
@@ -60,9 +60,18 @@ export const memberRoutes =
         const user = await findUserByEmail(db, emailLower(body.email));
         if (user === undefined) throw userUnknown();
         try {
-          if (!(await repo.insertMember(db, { teamId, userId: user.id, role: body.role, at: env.now() }))) {
-            throw alreadyMember();
-          }
+          await db.transaction(async (tx) => {
+            if (!(await repo.insertMember(tx, { teamId, userId: user.id, role: body.role, at: env.now() }))) {
+              throw alreadyMember();
+            }
+            await recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              action: 'team.member_added',
+              target: { kind: 'user', id: user.id },
+              teamId,
+              details: { role: body.role },
+            });
+          });
         } catch (error) {
           // A racing team delete: the guard passed, but the team was gone by the time this insert
           // ran. Answer like the guard would have (§3.1: not found, never forbidden).
@@ -94,6 +103,15 @@ export const memberRoutes =
           if (current === undefined) throw memberNotFound();
           if (current === 'admin' && role !== 'admin' && (await repo.countAdmins(tx, teamId)) <= 1) throw lastAdmin();
           await repo.setMemberRole(tx, teamId, userId, role);
+          if (current !== role) {
+            await recordAudit(env.ctx.hooks, tx, {
+              ...auditSource(request),
+              action: 'team.member_role_changed',
+              target: { kind: 'user', id: userId },
+              teamId,
+              details: { role, previousRole: current },
+            });
+          }
         });
         // Committed: a refused last-admin demotion threw inside the transaction and never gets here.
         announce(env.ctx.hooks.accessChanged, { teamId, userId }, request.log);
@@ -116,6 +134,13 @@ export const memberRoutes =
           // §6: their access to every team workspace ends with the membership, in one transaction.
           await repo.deleteGrantsInTeam(tx, teamId, userId);
           await repo.deleteMember(tx, teamId, userId);
+          await recordAudit(env.ctx.hooks, tx, {
+            ...auditSource(request),
+            action: 'team.member_removed',
+            target: { kind: 'user', id: userId },
+            teamId,
+            details: { role: current, self: userId === request.caller!.id },
+          });
         });
         announce(env.ctx.hooks.accessChanged, { teamId, userId }, request.log);
         return reply.code(204).send();

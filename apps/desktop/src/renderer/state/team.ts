@@ -20,7 +20,7 @@ import type {
 import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 
-export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license';
+export type TeamTab = 'members' | 'workspaces' | 'invitations' | 'license' | 'audit';
 
 export interface TeamState {
   readonly url: string | undefined;
@@ -58,7 +58,11 @@ export interface TeamStore extends TeamState {
   readonly createWorkspace: (name: string, defaultRole?: DefaultRoleWire) => Promise<boolean>;
   readonly updateWorkspace: (
     workspaceId: string,
-    patch: { readonly name?: string; readonly defaultRole?: DefaultRoleWire },
+    patch: {
+      readonly name?: string;
+      readonly defaultRole?: DefaultRoleWire;
+      readonly recordDesktopActivity?: boolean;
+    },
   ) => Promise<boolean>;
   readonly deleteWorkspace: (workspaceId: string) => Promise<boolean>;
   readonly openAccess: (workspaceId: string) => Promise<void>;
@@ -188,7 +192,7 @@ export const useTeamStore = create<TeamStore>((set, get) => {
         teamId,
       });
       // The License tab is a server admin's (licensing §3.8).
-      if (!list.serverAdmin && get().tab === 'license') set({ tab: 'members' });
+      if (!list.serverAdmin && (get().tab === 'license' || get().tab === 'audit')) set({ tab: 'members' });
       await loadTeam();
       await reloadAccess();
       set({ loading: false });

@@ -34,6 +34,7 @@ const WORKSPACE = {
   myRole: 'admin',
   source: 'grant',
   createdAt: '2026-09-25T10:00:00.000Z',
+  recordDesktopActivity: false,
 };
 
 // A default parameter also fires on an explicit `undefined` argument, so `fakes(undefined)`
@@ -129,6 +130,10 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
     expect(f.client.createWorkspace).toHaveBeenCalledWith('https://wb.test', TOKEN, TEAM_ID, { name: 'Integration' });
     await invoke('team.updateWorkspace', { url: 'https://wb.test', workspaceId: WS_ID, defaultRole: 'none' });
     expect(f.client.updateWorkspace).toHaveBeenCalledWith('https://wb.test', TOKEN, WS_ID, { defaultRole: 'none' });
+    await invoke('team.updateWorkspace', { url: 'https://wb.test', workspaceId: WS_ID, recordDesktopActivity: true });
+    expect(f.client.updateWorkspace).toHaveBeenLastCalledWith('https://wb.test', TOKEN, WS_ID, {
+      recordDesktopActivity: true,
+    });
     expect(
       await invoke('team.setAccess', { url: 'https://wb.test', workspaceId: WS_ID, userId: USER_ID, role: 'editor' }),
     ).toEqual({ ok: true, value: { done: true } });

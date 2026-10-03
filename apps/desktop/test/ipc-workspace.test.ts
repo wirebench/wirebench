@@ -81,6 +81,7 @@ const TEAM_WORKSPACE: TeamWorkspaceWire = {
   myRole: 'editor',
   source: 'default',
   createdAt: '2026-09-25T00:00:00.000Z',
+  recordDesktopActivity: false,
 };
 
 const PROJECT: ProjectWire = {

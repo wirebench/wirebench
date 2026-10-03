@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
+import { SYSTEM_SOURCE } from '../../../src/context.js';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { pkceChallenge } from '../../../src/identity/tokens.js';
 import { describeDb } from '../../helpers/database.js';
@@ -77,10 +78,14 @@ describeDb('seats on Community (licensing spec §3.4, §13.1)', () => {
     };
     let attached = false;
     await expect(
-      createInvitation(env, { email: 'team@example.com', serverAdmin: false, createdBy: admin.user.id }, () => {
-        attached = true;
-        return Promise.resolve();
-      }),
+      createInvitation(
+        env,
+        { email: 'team@example.com', serverAdmin: false, createdBy: admin.user.id, source: SYSTEM_SOURCE },
+        () => {
+          attached = true;
+          return Promise.resolve();
+        },
+      ),
     ).rejects.toMatchObject({ code: 'licensing-seat-limit' });
     expect(attached).toBe(false);
   });

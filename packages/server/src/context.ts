@@ -1,5 +1,15 @@
-import type { FastifyBaseLogger, FastifyInstance, preHandlerAsyncHookHandler } from 'fastify';
-import type { Edition, Feature, GitCli, HooksMeta, LicenseState } from '@wirebench/engine';
+import { isIP } from 'node:net';
+import type { FastifyBaseLogger, FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import type {
+  AuditAction,
+  AuditDetails,
+  AuditTargetKind,
+  Edition,
+  Feature,
+  GitCli,
+  HooksMeta,
+  LicenseState,
+} from '@wirebench/engine';
 import type { ServerConfig } from './config.js';
 import { requireFeature } from './licensing/gate.js';
 import type { RepoStore } from './repos/repo-store.js';
@@ -102,11 +112,40 @@ export function permissiveLicense(): LicenseService {
   };
 }
 
+/** Who did it (audit-log spec §2, plan ruling 1). `email` is copied at event time, so a renamed account still reads. */
+export type AuditActorInput =
+  | { readonly kind: 'user'; readonly userId: string; readonly email: string; readonly tokenId?: string }
+  | { readonly kind: 'ci-token'; readonly tokenId: string; readonly workspaceId: string }
+  | { readonly kind: 'system' }
+  | { readonly kind: 'anonymous' };
+
+/** The request facts a fire site has; a function without a request receives one of these (plan ruling 3). */
+export interface AuditSource {
+  readonly actor: AuditActorInput;
+  readonly ip?: string;
+  readonly userAgent?: string;
+}
+
+/** One event before it has an id and a time (audit-log spec §3.1). `details` is flat; the hook bounds it. */
+export interface AuditInput extends AuditSource {
+  readonly action: AuditAction;
+  readonly target: { readonly kind: AuditTargetKind; readonly id?: string };
+  readonly workspaceId?: string;
+  readonly teamId?: string;
+  readonly details?: AuditDetails;
+}
+
+/** Runs inside the caller's transaction and is awaited (R1): a throw fails the action. */
+export type AuditHook = (tx: Querier, event: AuditInput) => Promise<void>;
+
+export const SYSTEM_SOURCE: AuditSource = { actor: { kind: 'system' } };
+export const ANONYMOUS_SOURCE: AuditSource = { actor: { kind: 'anonymous' } };
+
 /**
  * What a later module adds to an earlier module's work. Modules push onto these lists in
  * `register()`. There are two kinds:
  *
- * - **Hooks** (`invitationAccepted`; teams-access spec §3.4, R1) run inside the caller's transaction
+ * - **Hooks** (`invitationAccepted` (teams-access §3.4) and `audit` (audit-log §3.1)) run inside the caller's transaction
  *   and are awaited. Their writes commit with the caller's, and a throw rolls the caller back.
  * - **Announcements** (`headMoved`, `accessChanged`, `sessionEnded`; live-updates spec §3.2, R3;
  *   `captureReceived`, `hooksChanged`; webhook-capture spec §3.6; `licenseChanged`; licensing spec §3.9) run through {@link announce} after
@@ -116,6 +155,7 @@ export function permissiveLicense(): LicenseService {
  */
 export interface ServerHooks {
   readonly invitationAccepted: InvitationAcceptedHook[];
+  readonly audit: AuditHook[];
   readonly headMoved: Announcement<HeadMoved>[];
   readonly accessChanged: Announcement<AccessChanged>[];
   readonly sessionEnded: Announcement<SessionEnded>[];
@@ -131,6 +171,7 @@ export interface ServerHooks {
 export function serverHooks(): ServerHooks {
   return {
     invitationAccepted: [],
+    audit: [],
     headMoved: [],
     accessChanged: [],
     sessionEnded: [],
@@ -147,6 +188,49 @@ export async function runInvitationAccepted(
   accepted: InvitationAccepted,
 ): Promise<void> {
   for (const hook of hooks.invitationAccepted) await hook(tx, accepted);
+}
+
+/** Records one event through every audit hook, in order, inside `tx`; the first throw propagates (audit-log §3.1). */
+export async function recordAudit(hooks: ServerHooks, tx: Querier, event: AuditInput): Promise<void> {
+  for (const hook of hooks.audit) await hook(tx, event);
+}
+
+/**
+ * `raw` as a value Postgres `inet` accepts, or undefined. Behind a trusted proxy `request.ip` is whatever
+ * the client wrote in `X-Forwarded-For`, so a junk value must not fail the audited action: an IPv6 zone
+ * (`%eth0`) and the port of an IPv4 `a.b.c.d:port` are dropped, and anything still not an address is unknown.
+ */
+export function auditIp(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  let value = raw.trim();
+  const zone = value.indexOf('%');
+  if (zone !== -1 && value.includes(':')) value = value.slice(0, zone);
+  const v4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(value);
+  if (v4WithPort !== null) value = v4WithPort[1]!;
+  return isIP(value) !== 0 ? value : undefined;
+}
+
+/**
+ * The actor and request facts for a fire site in a route (plan ruling 1): a signed-in user first, then
+ * a CI token, then anonymous. `request.ip` honours `trustProxy` and passes through {@link auditIp}; the
+ * user agent is bounded, never parsed.
+ */
+export function auditSource(request: FastifyRequest): AuditSource {
+  const header = request.headers['user-agent'];
+  const userAgent = typeof header === 'string' ? header.slice(0, 512) : undefined;
+  const ip = auditIp(request.ip);
+  const base = { ...(ip !== undefined ? { ip } : {}), ...(userAgent !== undefined ? { userAgent } : {}) };
+  if (request.caller !== undefined) {
+    const { id, email, tokenId } = request.caller;
+    return { ...base, actor: { kind: 'user', userId: id, email, tokenId } };
+  }
+  if (request.ciCaller !== undefined) {
+    return {
+      ...base,
+      actor: { kind: 'ci-token', tokenId: request.ciCaller.tokenId, workspaceId: request.ciCaller.workspaceId },
+    };
+  }
+  return { ...base, actor: { kind: 'anonymous' } };
 }
 
 const ANNOUNCEMENT_FAILED = 'an announcement listener failed';
@@ -215,7 +299,14 @@ export interface ServerContext {
 
 export interface ServerModule {
   readonly name:
-    'identity' | 'licensing' | 'teams-access' | 'server-sync' | 'webhook-capture' | 'ci-tokens' | 'live-updates';
+    | 'identity'
+    | 'licensing'
+    | 'teams-access'
+    | 'server-sync'
+    | 'webhook-capture'
+    | 'ci-tokens'
+    | 'live-updates'
+    | 'audit-log';
   /**
    * The module's `NNNN_name.sql` files, merged with the host's in version order (`serve.ts`
    * `allMigrations`). By convention `packages/server/migrations/<module>/` (e.g.

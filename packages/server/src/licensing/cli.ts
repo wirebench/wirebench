@@ -6,7 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import { isWirebenchError, type LicenseState } from '@wirebench/engine';
 import type { ServerCommand } from '../args.js';
-import type { LicenseService } from '../context.js';
+import { recordAudit, SYSTEM_SOURCE, type LicenseChanged, type LicenseService, type ServerHooks } from '../context.js';
 import { ExitCode, type ServerIo } from '../io.js';
 import { installLicense, removeLicense, type LicenseEnv } from './service.js';
 
@@ -29,7 +29,7 @@ export function describeLicense(state: LicenseState): string {
 
 export async function runLicenseCommand(
   command: LicenseCommand,
-  env: LicenseEnv & { readonly license: LicenseService },
+  env: LicenseEnv & { readonly license: LicenseService; readonly hooks: ServerHooks },
   io: ServerIo,
 ): Promise<number> {
   switch (command.command) {
@@ -44,8 +44,9 @@ export async function runLicenseCommand(
         io.stderr.write(`cannot read ${command.file}: ${error instanceof Error ? error.message : String(error)}\n`);
         return ExitCode.Config;
       }
+      let changed: LicenseChanged;
       try {
-        await installLicense(env, text, null);
+        changed = await installLicense(env, text, null);
       } catch (error) {
         // Invalid input, as a usage error is: exit 2 (§3.7).
         if (isWirebenchError(error) && error.code === 'licensing-invalid') {
@@ -54,11 +55,25 @@ export async function runLicenseCommand(
         }
         throw error;
       }
+      await recordAudit(env.hooks, env.db, {
+        ...SYSTEM_SOURCE,
+        action: 'license.installed',
+        target: { kind: 'license', ...(changed.licenseId !== undefined ? { id: changed.licenseId } : {}) },
+        details: { edition: changed.edition ?? null, via: 'cli' },
+      });
       io.stdout.write(describeLicense(await env.license.state()));
       return ExitCode.Ok;
     }
     case 'admin-license-remove': {
       const changed = await removeLicense(env, null);
+      if (changed !== undefined) {
+        await recordAudit(env.hooks, env.db, {
+          ...SYSTEM_SOURCE,
+          action: 'license.removed',
+          target: { kind: 'license', ...(changed.licenseId !== undefined ? { id: changed.licenseId } : {}) },
+          details: { via: 'cli' },
+        });
+      }
       io.stdout.write(
         changed === undefined
           ? 'No license was installed.\n'

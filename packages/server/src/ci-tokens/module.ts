@@ -26,7 +26,7 @@ export function ciTokensModule(options: CiTokensOptions = {}): ServerModule {
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
       ctx.meta.addCapability('ci-tokens');
       app.bearerFallbacks.push(ciBearer({ db: ctx.db, now }));
-      ciRoutes({ db: ctx.db, now })(app);
+      ciRoutes({ db: ctx.db, now, hooks: ctx.hooks })(app);
     },
   };
 }

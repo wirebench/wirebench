@@ -26,6 +26,7 @@ import type { EngineService } from '../engine-service.js';
 import { generateOptionsFrom } from '../generate-options.js';
 import type {
   AuthConfig,
+  DesktopAuditEvent,
   OAuth2Auth,
   RestBody,
   SendAuth,
@@ -232,6 +233,14 @@ export interface RequestChannelDeps {
    * tests, which then get one of their own per registration.
    */
   readonly registry?: ExchangeRegistry;
+  /**
+   * Told of each send and each finished run the audit log keeps (desktop audit events spec §2.2):
+   * the reporter's queue in the app. Omitted in tests that don't care. `workspaceId` is
+   * {@link auditWorkspace} as it was when the send or run started.
+   */
+  readonly audit?: (event: DesktopAuditEvent, workspaceId: string | undefined) => void;
+  /** The server workspace audit events are queued for now; read when a send or run starts. */
+  readonly auditWorkspace?: () => string | undefined;
 }
 
 /**
@@ -269,6 +278,8 @@ export function toSendDeps(
     ...(deps.scripts !== undefined ? { scripts: deps.scripts } : {}),
     ...(deps.onScriptsRan !== undefined ? { onScriptsRan: deps.onScriptsRan } : {}),
     ...(deps.adHocScopes !== undefined ? { adHocScopes: deps.adHocScopes } : {}),
+    ...(deps.audit !== undefined ? { audit: deps.audit } : {}),
+    ...(deps.auditWorkspace !== undefined ? { auditWorkspace: deps.auditWorkspace } : {}),
   };
 }
 

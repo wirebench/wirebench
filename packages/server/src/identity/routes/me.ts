@@ -7,7 +7,7 @@ import {
   type PasswordChangeRequest,
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
-import { announce } from '../../context.js';
+import { announce, auditSource, recordAudit } from '../../context.js';
 import { jsonSchema } from '../../schema.js';
 import type { IdentityEnv } from '../env.js';
 import { invalidCredentials, methodDisabled, notFound, passwordTooShort, unauthenticated } from '../errors.js';
@@ -52,6 +52,12 @@ export const meRoutes =
         await env.ctx.db.transaction(async (tx) => {
           await repo.upsertCredential(tx, caller.id, hash, now);
           await repo.revokeTokensOfUser(tx, caller.id, now, caller.tokenId); // every *other* device (§3.1)
+          await recordAudit(env.ctx.hooks, tx, {
+            ...auditSource(request),
+            action: 'auth.password_changed',
+            target: { kind: 'user', id: caller.id },
+            details: { via: 'self' },
+          });
         });
         // The device that changed the password keeps its sockets, as it keeps its token.
         announce(env.ctx.hooks.sessionEnded, { userId: caller.id, exceptTokenId: caller.tokenId }, request.log);
@@ -85,7 +91,15 @@ export const meRoutes =
         const { id } = request.params as { id: string };
         const owned = (await repo.tokensOfUser(env.ctx.db, caller.id)).some((token) => token.id === id);
         if (!owned) throw notFound('Device');
-        await repo.revokeToken(env.ctx.db, id, env.now());
+        await env.ctx.db.transaction(async (tx) => {
+          await repo.revokeToken(tx, id, env.now());
+          await recordAudit(env.ctx.hooks, tx, {
+            ...auditSource(request),
+            action: 'auth.signed_out',
+            target: { kind: 'user', id: caller.id },
+            details: { tokenId: id },
+          });
+        });
         announce(env.ctx.hooks.sessionEnded, { tokenId: id }, request.log);
         return reply.code(204).send();
       },

@@ -2,8 +2,8 @@
  * The client's sync state for a workspace shared through Wirebench Server (server-sync spec §4.2),
  * under `<userData>/workspaces/<id>/server/`:
  *
- * - `state.yaml`: the base head, the head the last fetch saw, `behind`, the role, the identity and
- *   `lastSyncAt`;
+ * - `state.yaml`: the base head, the head the last fetch saw, `behind`, the role, whether the
+ *   workspace records desktop activity, the identity and `lastSyncAt`;
  * - `base/`: the tree as of `base.head`, file for file and byte for byte;
  * - `pending/NNNN.yaml`: the local commits not yet pushed, oldest first, each holding the full
  *   content of every path it changed, so replaying them over any base is well defined;
@@ -59,6 +59,8 @@ export interface ServerStateDoc {
   readonly behind?: number;
   /** The caller's role, as the last fetch reported it. */
   readonly role?: WorkspaceRole;
+  /** Whether the workspace records desktop activity, as the last fetch reported it; absent reads as false. */
+  readonly recordDesktopActivity?: boolean;
   /** Local display only; the server attributes commits to the signed-in user (§3.1). */
   readonly identity?: { readonly name: string; readonly email: string };
   readonly lastSyncAt?: string;
@@ -106,6 +108,7 @@ const stateDocSchema = z.object({
   knownHead: headSchema.optional(),
   behind: z.number().int().min(0).optional(),
   role: workspaceRoleSchema.optional(),
+  recordDesktopActivity: z.boolean().optional(),
   identity: z.object({ name: z.string().min(1), email: z.string().min(1) }).optional(),
   lastSyncAt: z.string().optional(),
 });
@@ -243,11 +246,25 @@ function toDoc(parsed: z.infer<typeof stateDocSchema>): ServerStateDoc {
     ...(parsed.knownHead !== undefined ? { knownHead: parsed.knownHead } : {}),
     ...(parsed.behind !== undefined ? { behind: parsed.behind } : {}),
     ...(parsed.role !== undefined ? { role: parsed.role } : {}),
+    ...(parsed.recordDesktopActivity !== undefined ? { recordDesktopActivity: parsed.recordDesktopActivity } : {}),
     ...(parsed.identity !== undefined
       ? { identity: { name: parsed.identity.name, email: parsed.identity.email } }
       : {}),
     ...(parsed.lastSyncAt !== undefined ? { lastSyncAt: parsed.lastSyncAt } : {}),
   };
+}
+
+/**
+ * The last fetched head's `recordDesktopActivity` under `dir` (`<workspaceDir>/server`), read without
+ * touching anything: false when there is no state yet, or it cannot be read.
+ */
+export async function readRecordDesktopActivity(dir: string): Promise<boolean> {
+  try {
+    const parsed = stateDocSchema.safeParse(parseYaml(await readFile(join(dir, STATE_FILE), 'utf8')));
+    return parsed.success && parsed.data.recordDesktopActivity === true;
+  } catch {
+    return false;
+  }
 }
 
 export class ServerState {

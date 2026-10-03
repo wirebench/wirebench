@@ -24,7 +24,7 @@ const hook = (n: number, newest: number | null): CatchUrlWire => ({
   createdAt: '2026-09-24T12:00:00.000Z',
 });
 const shared = (workspaceId = WS): WorkspaceWire =>
-  workspaceWire({ share: { kind: 'server', managed: true, server: { url: SERVER, workspaceId } } });
+  workspaceWire({ share: { kind: 'server', managed: true, server: { url: SERVER, workspaceId, recording: false } } });
 const ok = <T>(value: T) => ({ ok: true as const, value });
 
 function api(hooks: readonly CatchUrlWire[], overrides: Partial<WirebenchApi['hooks']> = {}) {

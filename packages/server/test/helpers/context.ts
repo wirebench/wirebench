@@ -1,6 +1,15 @@
-import { GitCli, findGit } from '@wirebench/engine';
+import { GitCli, detectInText, findGit } from '@wirebench/engine';
 import { loadConfig } from '../../src/config.js';
-import { MetaRegistry, permissiveLicense, serverHooks, type Database, type ServerContext } from '../../src/context.js';
+import {
+  MetaRegistry,
+  permissiveLicense,
+  serverHooks,
+  type AuditInput,
+  type Database,
+  type Querier,
+  type ServerContext,
+  type ServerHooks,
+} from '../../src/context.js';
 import type { RepoStore } from '../../src/repos/repo-store.js';
 
 /** A database whose every query succeeds with no rows; `failing` flips `select 1` to a rejection. */
@@ -44,4 +53,35 @@ export async function testContext(
     license: permissiveLicense(),
     ...rest,
   };
+}
+
+/** Wirebench's own token (`identity/tokens.ts` `TOKEN_PREFIX`) and license shapes, which the credential rules do not know. */
+const WIREBENCH_SHAPES: readonly RegExp[] = [/wbs_[A-Za-z0-9_-]{20,}/, /wbl1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/];
+
+/**
+ * Every audit row, serialised, scanned with the engine's secret rules (`detectInText`, the patterns the
+ * secret-scanning spec defines) plus the two shapes above. Ids and commit hashes pass: the engine flags
+ * high entropy only under a secret-sounding name, and a body name must be one of `SECRET_BODY_KEYS` exactly.
+ */
+export async function expectNoSecretsInAudit(db: Querier): Promise<void> {
+  const rows = await db.query<Record<string, unknown>>('select actor_email, user_agent, details from audit_events');
+  for (const row of rows.rows) {
+    const text = JSON.stringify(row);
+    // `tokenId` is the device-token row's id, never the token (§3.5: only its hash is stored); the engine's
+    // entropy rule flags any high-entropy value under a name containing "token", so the id is dropped for that scan.
+    const scanned = JSON.stringify(row, (key, value: unknown) => (key === 'tokenId' ? undefined : value));
+    if (detectInText(scanned).length > 0 || WIREBENCH_SHAPES.some((shape) => shape.test(text))) {
+      throw new Error(`audit row carries a secret-shaped value: ${text}`);
+    }
+  }
+}
+
+/** Pushes a hook that keeps every event; `events` is what a test asserts on. */
+export function recordingAudit(hooks: ServerHooks): AuditInput[] {
+  const events: AuditInput[] = [];
+  hooks.audit.push((_tx, event) => {
+    events.push(event);
+    return Promise.resolve();
+  });
+  return events;
 }

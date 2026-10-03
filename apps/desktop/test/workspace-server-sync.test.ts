@@ -30,6 +30,8 @@ import { readTreeFiles, SERVER_STATE_DIR, ServerState } from '../src/main/sync/s
 import { SyncService } from '../src/main/sync/sync-service.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
 import type { WorkspaceServiceDeps } from '../src/main/workspace-service.js';
+import type { AuditTarget } from '../src/main/audit/reporter.js';
+import type { WorkspaceWire } from '../src/shared/wire-types.js';
 
 const SERVER_URL = 'https://wb.test';
 const HEAD = 'a'.repeat(40);
@@ -69,13 +71,16 @@ function json(status: number, body: unknown): HttpExchange {
  * A server that knows the two reads a fetch may make: `GET …/sync/head`, answering this head and
  * `role`, and `GET …/sync/log`, which is empty. Anything else is a 404.
  */
-function scriptedServer(role: 'viewer' | 'editor' = 'editor'): { sent: HttpRequest[]; client: ServerClient } {
+function scriptedServer(
+  role: 'viewer' | 'editor' = 'editor',
+  recordDesktopActivity = false,
+): { sent: HttpRequest[]; client: ServerClient } {
   const sent: HttpRequest[] = [];
   const send = (request: HttpRequest): Promise<HttpExchange> => {
     sent.push(request);
     const path = new URL(request.url).pathname;
     if (path.endsWith('/sync/head')) {
-      return Promise.resolve(json(200, { head: HEAD, commits: 1, behind: 0, role }));
+      return Promise.resolve(json(200, { head: HEAD, commits: 1, behind: 0, role, recordDesktopActivity }));
     }
     if (path.endsWith('/sync/log')) {
       return Promise.resolve(json(200, []));
@@ -142,12 +147,16 @@ function account(overrides: Partial<ServerAccount> = {}): ServerAccount {
   };
 }
 
-function newService(server: NonNullable<WorkspaceServiceDeps['server']>): WorkspaceService {
+function newService(
+  server: NonNullable<WorkspaceServiceDeps['server']>,
+  hooks?: WorkspaceServiceDeps['hooks'],
+): WorkspaceService {
   const service = new WorkspaceService({
     userDataDir: root,
     engine: new EngineService(),
     history: new HistoryService(root),
     server,
+    ...(hooks !== undefined ? { hooks } : {}),
   });
   services.push(service);
   return service;
@@ -238,6 +247,65 @@ it('reads a viewer role from the fetch into the status', async () => {
   expect(server.sent.every((request) => request.method === 'GET')).toBe(true);
 });
 
+it("keeps a fetched head's recordDesktopActivity: the audit target, the share and the stored state carry it", async () => {
+  const server = scriptedServer('editor', true);
+  const targets: { target: AuditTarget | undefined; fetched: boolean }[] = [];
+  const changed: (WorkspaceWire | null)[] = [];
+  const service = newService(
+    { client: server.client, accounts: fakeAccounts().accounts },
+    {
+      onAuditTarget: (target, fetched) => targets.push({ target, fetched }),
+      onChanged: (workspace) => changed.push(workspace),
+    },
+  );
+  const { id, dir } = await seedServerWorkspace();
+
+  await service.open(id);
+
+  const recording: AuditTarget = {
+    url: SERVER_URL,
+    workspaceId: id,
+    dir: join(dir, SERVER_STATE_DIR, 'audit-outbox'),
+    recording: true,
+  };
+  await vi.waitFor(() => expect(service.auditTarget()).toEqual(recording), WAIT);
+  expect(service.snapshot()?.share?.server).toEqual({
+    url: SERVER_URL,
+    workspaceId: id,
+    teamName: 'Payments',
+    recording: true,
+  });
+  // The renderer hears of it: a workspace change whose share records.
+  expect(changed.at(-1)?.share?.server?.recording).toBe(true);
+  expect((await new ServerState(join(dir, SERVER_STATE_DIR)).read()).recordDesktopActivity).toBe(true);
+  // Opened first (not yet recording), then the fetch that said so.
+  expect(targets[0]).toEqual({ target: { ...recording, recording: false }, fetched: false });
+  expect(targets.at(-1)).toEqual({ target: recording, fetched: true });
+
+  await service.close();
+  expect(targets.at(-1)).toEqual({ target: undefined, fetched: false });
+});
+
+it('records from the stored flag on open, before any fetch', async () => {
+  const server = scriptedServer();
+  const service = newService({ client: server.client, accounts: fakeAccounts({ loaded: false }).accounts });
+  const { id, dir } = await seedServerWorkspace();
+  await new ServerState(join(dir, SERVER_STATE_DIR)).update({ recordDesktopActivity: true });
+
+  await service.open(id);
+
+  expect(service.auditTarget()).toMatchObject({ workspaceId: id, recording: true });
+  expect(service.snapshot()?.share?.server?.recording).toBe(true);
+  expect(server.sent).toEqual([]);
+});
+
+it('a local workspace has no audit target', async () => {
+  const service = newService({ client: scriptedServer().client, accounts: fakeAccounts().accounts });
+  const created = await service.create('Local');
+  expect(created.share).toBeUndefined();
+  expect(service.auditTarget()).toBeUndefined();
+});
+
 it('takes the three sync settings for a server share, and refuses a remote or a branch', async () => {
   const server = scriptedServer();
   const service = newService({ client: server.client, accounts: fakeAccounts().accounts });
@@ -248,7 +316,7 @@ it('takes the three sync settings for a server share, and refuses a remote or a 
   expect(service.snapshot()?.share).toEqual({
     kind: 'server',
     managed: true,
-    server: { url: SERVER_URL, workspaceId: id, teamName: 'Payments' },
+    server: { url: SERVER_URL, workspaceId: id, teamName: 'Payments', recording: false },
     autoFetchSeconds: 0,
     commitOnSave: true,
     pushOnSave: true,
@@ -282,7 +350,8 @@ it('close waits for a push already in flight, so a reopen never shares the sync 
   const send = async (request: HttpRequest): Promise<HttpExchange> => {
     sent.push(request);
     const path = new URL(request.url).pathname;
-    if (path.endsWith('/sync/head')) return json(200, { head: HEAD, commits: 1, behind: 0, role: 'editor' });
+    if (path.endsWith('/sync/head'))
+      return json(200, { head: HEAD, commits: 1, behind: 0, role: 'editor', recordDesktopActivity: false });
     if (path.endsWith('/sync/commits')) {
       await pushAnswered;
       return json(201, { head: PUSHED, ids: [PUSHED] });

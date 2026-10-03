@@ -10,6 +10,13 @@ export type ServerCommand =
   | { readonly command: 'admin-license-install'; readonly file: string }
   | { readonly command: 'admin-license-show' }
   | { readonly command: 'admin-license-remove' }
+  | {
+      readonly command: 'admin-audit-export';
+      readonly from?: string;
+      readonly to?: string;
+      readonly action?: string;
+      readonly workspace?: string;
+    }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -32,6 +39,8 @@ Usage:
                                     Install a license file (replaces any installed license)
   wirebench-server admin license show
   wirebench-server admin license remove
+  wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]
+                                    Write the audit log as NDJSON to stdout
   wirebench-server --version
   wirebench-server --help
 
@@ -43,6 +52,10 @@ const OPTIONS = {
   version: { type: 'boolean' },
   check: { type: 'boolean' },
   'no-admin': { type: 'boolean' },
+  from: { type: 'string' },
+  to: { type: 'string' },
+  action: { type: 'string' },
+  workspace: { type: 'string' },
 } as const;
 
 export function parseServerArgs(argv: readonly string[]): ServerCommand {
@@ -57,6 +70,12 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   const [word, second, third, fourth] = parsed.positionals;
   if (parsed.values['no-admin'] && !(word === 'admin' && second === 'invite')) {
     throw new UsageError('--no-admin only applies to admin invite');
+  }
+  const isAuditExport = word === 'admin' && second === 'audit' && third === 'export';
+  for (const key of ['from', 'to', 'action', 'workspace'] as const) {
+    if (parsed.values[key] !== undefined && !isAuditExport) {
+      throw new UsageError(`--${key} applies to admin audit export only`);
+    }
   }
   switch (word) {
     case undefined:
@@ -78,6 +97,26 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
         case 'revoke-invitation':
           if (third === undefined) throw new UsageError('usage: wirebench-server admin revoke-invitation <id>');
           return { command: 'admin-revoke-invitation', id: third };
+        case 'audit': {
+          if (third !== 'export') {
+            throw new UsageError(
+              'usage: wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]',
+            );
+          }
+          for (const key of ['from', 'to'] as const) {
+            const value = parsed.values[key];
+            if (value !== undefined && Number.isNaN(Date.parse(value))) {
+              throw new UsageError(`--${key} must be an ISO 8601 date-time`);
+            }
+          }
+          return {
+            command: 'admin-audit-export',
+            ...(parsed.values.from !== undefined ? { from: parsed.values.from } : {}),
+            ...(parsed.values.to !== undefined ? { to: parsed.values.to } : {}),
+            ...(parsed.values.action !== undefined ? { action: parsed.values.action } : {}),
+            ...(parsed.values.workspace !== undefined ? { workspace: parsed.values.workspace } : {}),
+          };
+        }
         case 'license':
           switch (third) {
             case 'install':

@@ -57,4 +57,32 @@ describe('admin commands (§3.7)', () => {
     expect(() => parseServerArgs(['admin', 'license', 'install'])).toThrow(/admin license install <file>/);
     expect(() => parseServerArgs(['admin', 'license'])).toThrow(/install <file> \| show \| remove/);
   });
+
+  it('parses admin audit export with its four options', () => {
+    expect(parseServerArgs(['admin', 'audit', 'export'])).toEqual({ command: 'admin-audit-export' });
+    expect(
+      parseServerArgs([
+        'admin',
+        'audit',
+        'export',
+        '--from',
+        '2026-10-01T00:00:00Z',
+        '--to',
+        '2026-11-01T00:00:00Z',
+        '--action',
+        'auth.',
+        '--workspace',
+        'W1',
+      ]),
+    ).toEqual({
+      command: 'admin-audit-export',
+      from: '2026-10-01T00:00:00Z',
+      to: '2026-11-01T00:00:00Z',
+      action: 'auth.',
+      workspace: 'W1',
+    });
+    expect(() => parseServerArgs(['admin', 'audit'])).toThrow(/usage: wirebench-server admin audit export/);
+    expect(() => parseServerArgs(['admin', 'audit', 'export', '--from', 'yesterday'])).toThrow(/ISO 8601/);
+    expect(() => parseServerArgs(['admin', 'license', 'show', '--from', 'x'])).toThrow(/--from/);
+  });
 });

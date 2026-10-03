@@ -4,10 +4,11 @@ import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { Tabs, type TabItem } from '../../components/tabs.js';
 import { signedInServers, useAccountStore } from '../../state/account.js';
-import { selectedTeam, useTeamStore, type TeamTab } from '../../state/team.js';
+import { selectedTeam, teamWorkspaces, useTeamStore, type TeamTab } from '../../state/team.js';
 import { useUiStore } from '../../state/ui.js';
 import { InvitationsTab } from './invitations-tab.js';
 import { LicenseBanner } from './license-banner.js';
+import { AuditTab } from './audit-tab.js';
 import { LicenseTab } from './license-tab.js';
 import { useLicenseStore } from '../../state/license.js';
 import { MembersTab } from './members-tab.js';
@@ -44,18 +45,20 @@ export function TeamDialog() {
   }, [team?.id, team?.name]);
 
   const isAdmin = team?.myRole === 'admin';
-  const licenseTab: TabItem<TeamTab>[] = store.serverAdmin ? [{ id: 'license', label: 'License' }] : [];
-  // A server admin with no team selected still has the License tab (plan ruling 10).
-  const tabs: TabItem<TeamTab>[] =
-    team === undefined
-      ? licenseTab
-      : [
-          { id: 'members', label: 'Members' },
-          { id: 'workspaces', label: 'Workspaces' },
-          ...(isAdmin ? [{ id: 'invitations' as const, label: 'Invitations' }] : []),
-          ...licenseTab,
-        ];
-  const activeTab: TeamTab = team === undefined ? 'license' : store.tab;
+  const adminTabs: TabItem<TeamTab>[] = store.serverAdmin
+    ? [
+        { id: 'license', label: 'License' },
+        { id: 'audit', label: 'Audit' },
+      ]
+    : [];
+  // A server admin with no team selected still has the License and Audit tabs (plan rulings 10, 15).
+  const teamTabs: TabItem<TeamTab>[] = [
+    { id: 'members', label: 'Members' },
+    { id: 'workspaces', label: 'Workspaces' },
+    ...(isAdmin ? [{ id: 'invitations' as const, label: 'Invitations' }] : []),
+  ];
+  const tabs: TabItem<TeamTab>[] = team === undefined ? adminTabs : [...teamTabs, ...adminTabs];
+  const activeTab: TeamTab = team === undefined ? (store.tab === 'audit' ? 'audit' : 'license') : store.tab;
 
   const submitNew = async (): Promise<void> => {
     if (newName.trim().length === 0) return;
@@ -229,6 +232,15 @@ export function TeamDialog() {
                     {activeTab === 'workspaces' && <WorkspacesTab />}
                     {activeTab === 'invitations' && isAdmin && <InvitationsTab />}
                     {activeTab === 'license' && store.serverAdmin && url !== undefined && <LicenseTab url={url} />}
+                    {activeTab === 'audit' && store.serverAdmin && url !== undefined && (
+                      <AuditTab
+                        url={url}
+                        workspaces={teamWorkspaces(store).map((workspace) => ({
+                          id: workspace.id,
+                          name: workspace.name,
+                        }))}
+                      />
+                    )}
                   </div>
                 </div>
               )}
