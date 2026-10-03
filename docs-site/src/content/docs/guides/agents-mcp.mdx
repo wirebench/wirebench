@@ -143,7 +143,7 @@ An agent calls it like any tool:
 { "item": "Pets/pets/List pets", "environment": "local", "baseline": true }
 ~~~
 
-and, when the response has drifted, reads:
+and, when the response has drifted, reads (each value is JSON-encoded, so a string keeps its quotes):
 
 ~~~json
 {
@@ -151,9 +151,8 @@ and, when the response has drifted, reads:
   "baseline": {
     "status": "differs",
     "format": "json",
-    "changes": [{ "kind": "changed", "path": "/0/name", "expected": "Rex", "actual": "Fido" }],
     "ignored": 0,
-    "truncated": false
+    "changes": [{ "kind": "changed", "path": "/0/name", "expected": "\"Rex\"", "actual": "\"Fido\"" }]
   }
 }
 ~~~
