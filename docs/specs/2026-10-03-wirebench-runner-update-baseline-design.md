@@ -74,22 +74,22 @@ function writeGoldenFile(
 
 ## 3. Engine: update mode in a run
 
-`RunOptions.baseline` gains a mode and, for `update`, a sink built by the host the way `source` is:
+`RunOptions` gains a second, separate option beside #36's `baseline`, built by the host the way
+`baseline.source` is. The two are never set together (§4), and `baseline` is untouched:
 
 ```ts
 type BaselineSink = (item: SelectedRequest, golden: GoldenFile) => Promise<GoldenWrite>;
 
 interface RunOptions {
   // …
-  readonly baseline?:
-    | { readonly mode: 'compare'; readonly source: BaselineSource; readonly require: boolean }
-    | { readonly mode: 'update'; readonly source: BaselineSource; readonly sink: BaselineSink };
+  readonly baseline?: { readonly source: BaselineSource; readonly require: boolean }; // #36, unchanged
+  readonly updateBaseline?: { readonly source: BaselineSource; readonly sink: BaselineSink };
 }
 ```
 
-`compare` is today's `--baseline`, unchanged. In `update` mode `runRequests` handles each request
-that got a response, after its own assertions, as below. The response is never judged against the
-old golden: replacing it is the point, so no `baseline` assertion fails.
+With `updateBaseline` set, `runRequests` handles each request that got a response, after its own
+assertions, as below. The response is never judged against the old golden: replacing it is the
+point, so no `baseline` assertion fails.
 
 | Case | `baseline.status` | Written | Assertion added | Request outcome |
 |---|---|---|---|---|
@@ -108,11 +108,11 @@ old golden: replacing it is the point, so no `baseline` assertion fails.
 A request that errored before or during the send, or whose script errored, gets no baseline entry
 and is not written. Sequence steps never run in update mode (§4).
 
-**Order of checks.** The request's own assertions decide `failed` first. Then the golden is read
+**Order of checks.** The request's own assertions decide first: failed is `skipped`, errored gets no entry. Then the golden is read
 (`malformed` and `not-a-file` come from the reader), then compared. Only a golden about to be
 written is checked for a secret, then for text, then written. A matching golden is never refused.
 
-**Comparing.** Exactly as `compare` mode: `detectSnapshotFormat` and `diffSnapshot` with the
+**Comparing.** Exactly as `--baseline` compares: `detectSnapshotFormat` and `diffSnapshot` with the
 golden's ignore rules, on the full response body decoded as UTF-8. A difference only under ignored
 paths is `matched`. When either body is over 2 MB (UTF-8), the semantic diff is skipped as in #36,
 and the bodies are compared as exact text instead: equal is `matched`, anything else is `updated`.
@@ -126,10 +126,10 @@ and the bodies are compared as exact text instead: equal is `matched`, anything 
 **No text form.** A body is not text when it holds a NUL character or U+FFFD (the decoder met bytes
 that are not UTF-8). The Snapshot tab offers no snapshot for a binary body either.
 
-**Secrets.** The check is the run context's `containsKnownSecret` (`knownSecretIn` over the
-environment secrets and the OAuth2 tokens the run obtained), which `run` now passes to
-`runRequests` as it already does to `runSequences`. A body for which it returns true is refused.
-The message names no value.
+**Secrets.** The check is the run context's `containsKnownSecret`, which `wirebench run` already
+sets (`knownSecretIn` over the environment secrets and the OAuth2 tokens the run obtained). A body
+for which it returns true is refused; a context without it refuses nothing. The message names no
+value.
 
 **Result.** `RequestResult.baseline` (the #36 `BaselineReport`) gains statuses and fields:
 
@@ -142,8 +142,9 @@ readonly file?: string;      // the sidecar written, project-relative
 ```
 
 For `updated`, `changes`, `ignored` and `truncated` describe the replaced golden against the new
-one, as in #36, so a report shows what moved. The `RunSummary.baseline` of an update run is
-`{ updated, created, matched, skipped, refused }`.
+one, as in #36, so a report shows what moved. `RunSummary` gains `baselineUpdate:
+{ updated, created, matched, skipped, refused }`, set only by an update run; #36's
+`summary.baseline` is left to compare runs.
 
 ## 4. CLI
 
@@ -165,12 +166,12 @@ wirebench run <path> [selector…] [options]
 
 ## 5. Reports
 
-- **cli.** The request line gains `baseline: updated`, `baseline: created`, `baseline: unchanged`,
+- **cli.** The request line gains `baseline: updated`, `baseline: created`, `baseline: matches`,
   `(baseline not written: failed)` or `(baseline not written: not text)`; a refusal is listed under
   the request as an error with its reason. When the run updated baselines, the summary ends with:
 
   ```text
-  baseline: 3 updated, 1 created, 12 unchanged, 1 not written, 0 refused
+  baseline: 3 updated, 1 created, 12 matched, 1 not written, 0 refused
   written:
     orders/get-order.golden.yaml
     orders/list-orders.golden.yaml
@@ -179,11 +180,11 @@ wirebench run <path> [selector…] [options]
 - **junit.** A written golden adds `<system-out>baseline updated: orders/get-order.golden.yaml</system-out>`
   (or `created`). A refusal is the `<error>` of the `baseline` assertion.
 - **json.** Each request's `baseline` field carries the §3 status, `reason` and `file`; the summary
-  carries the update counts. The fields are additive and optional, so `formatVersion` stays 1.
+  carries `baselineUpdate`. The fields are additive and optional, so `formatVersion` stays 1.
 - **html.** The baseline line, the written file, and for `updated` the table of changes #36 already
   renders.
-- Everything taken from the response goes through the existing masker, as in #36. A body refused
-  for a secret is never printed.
+- Everything taken from the response goes through the existing masker, as in #36, so a body
+  refused for a secret reaches a report only as its masked exchange.
 
 ## 6. Testing
 
@@ -192,12 +193,13 @@ wirebench run <path> [selector…] [options]
   project, a request with no `*.request.yaml`, the temp file removed after a failed rename. The
   desktop's `snapshot-store` tests keep passing unchanged.
 - **Engine, run:** every row of the §3 table, an ignore-only difference staying `matched`, an
-  oversize body compared as text, a script error, and `compare` mode's existing tests unchanged.
+  oversize body compared as text, a script error, a body holding a value `containsKnownSecret`
+  knows (refused, file untouched), and the `--baseline` tests unchanged.
 - **CLI:** against a fixture project copied to a temp folder and a local HTTP server — a changed
   response rewritten (exit 0; new body, old ignore rules, new `savedAt`), a matching golden left
-  byte-for-byte unchanged, a missing golden created, a failing request not written (exit 1), a
-  response echoing an environment secret refused (exit 3, file untouched), each usage error
-  (exit 2), and a `--baseline` run after the update passing.
+  byte-for-byte unchanged, a missing golden created, a failing request not written (exit 1), each
+  usage error (exit 2), and a `--baseline` run after the update passing. (The fixture's echoing
+  endpoint answers 401, so the secret refusal is proven in the engine run tests.)
 - **Reporters:** snapshot tests of the four reporters for an update run with each status.
 
 ## 7. Documentation
