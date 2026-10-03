@@ -407,6 +407,24 @@ describe('WorkspaceService manifest operations', () => {
     // And it is no longer what `openLast` would reopen.
     expect(await newService().openLast()).toBeNull();
   }, 60_000);
+
+  it('tells the hooks a workspace was deleted, so what main keeps for it goes too', async () => {
+    const deleted: string[] = [];
+    const service = newService({
+      trash: (path) => {
+        rmSync(path, { recursive: true, force: true });
+        return Promise.resolve();
+      },
+      hooks: {
+        onDeleted: (workspaceId) => {
+          deleted.push(workspaceId);
+        },
+      },
+    });
+    const created = await service.create('Doomed');
+    await service.delete(created.id);
+    expect(deleted).toEqual([created.id]);
+  }, 60_000);
 });
 
 describe('WorkspaceService routing', () => {

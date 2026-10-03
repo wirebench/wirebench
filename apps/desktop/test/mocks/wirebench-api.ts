@@ -116,6 +116,13 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
       preflightWs: fail('request.preflightWs'),
     },
     theme: { get: vi.fn().mockResolvedValue({ ok: true, value: { os: 'dark' } }) },
+    cookies: {
+      list: vi.fn().mockResolvedValue({ ok: true, value: { cookies: [], persisted: true } }),
+      set: fail('cookies.set'),
+      remove: fail('cookies.remove'),
+      removeDomain: fail('cookies.removeDomain'),
+      clear: fail('cookies.clear'),
+    },
     globals: {
       get: fail('globals.get'),
       set: fail('globals.set'),

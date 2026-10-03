@@ -1974,6 +1974,15 @@ export const wsRequestPatchSchema = z.object({
 });
 export type WsRequestPatchWire = z.infer<typeof wsRequestPatchSchema>;
 
+/** The jar's verdict on one cookie a response set (cookie jar spec §3). */
+export const cookieJarVerdictWireSchema = z.object({
+  stored: z.boolean(),
+  reason: z
+    .enum(['deleted', 'domain-mismatch', 'domain-not-allowed', 'secure-over-http', 'too-large', 'malformed'])
+    .optional(),
+});
+export type CookieJarVerdictWire = z.infer<typeof cookieJarVerdictWireSchema>;
+
 /** One cookie a response set, as the Cookies tab shows it. */
 export const cookieWireSchema = z.object({
   name: z.string(),
@@ -1987,8 +1996,47 @@ export const cookieWireSchema = z.object({
   sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
   /** The header could not be parsed as a cookie; `name` holds the whole line. */
   malformed: z.boolean().optional(),
+  /** What the cookie jar did with it; absent when the send had no jar. */
+  jar: cookieJarVerdictWireSchema.optional(),
 });
 export type CookieWire = z.infer<typeof cookieWireSchema>;
+
+/**
+ * One cookie of the workspace jar (cookie jar spec §2.2), as the manager shows and edits it. A leaf
+ * schema mirroring the engine's `StoredCookie`; nothing here imports the engine.
+ */
+export const storedCookieWireSchema = z.object({
+  name: z.string().min(1),
+  value: z.string(),
+  domain: z.string().min(1),
+  hostOnly: z.boolean(),
+  path: z.string().min(1),
+  expiresAt: z.number().optional(),
+  secure: z.boolean(),
+  httpOnly: z.boolean(),
+  sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
+  createdAt: z.number(),
+});
+export type StoredCookieWire = z.infer<typeof storedCookieWireSchema>;
+
+/** What names one jar cookie. */
+export const cookieKeyWireSchema = z.object({ name: z.string(), domain: z.string(), path: z.string() });
+export type CookieKeyWire = z.infer<typeof cookieKeyWireSchema>;
+
+/** The whole jar of the open workspace; `persisted` is false when nothing is saved. */
+export const cookieJarStateWireSchema = z.object({
+  cookies: z.array(storedCookieWireSchema),
+  persisted: z.boolean(),
+});
+export type CookieJarStateWire = z.infer<typeof cookieJarStateWireSchema>;
+
+export const cookiesSetRequestSchema = z.object({
+  cookie: storedCookieWireSchema,
+  /** The cookie this one replaces, when its name, domain or path changed. */
+  replaces: cookieKeyWireSchema.optional(),
+});
+export const cookiesRemoveRequestSchema = z.object({ key: cookieKeyWireSchema });
+export const cookiesRemoveDomainRequestSchema = z.object({ domain: z.string().min(1) });
 
 /**
  * One row of a `text/event-stream` response, as the engine's `SseRow` parses it. Mirrors that type

@@ -243,18 +243,6 @@ describe('ProjectHost for the send host', () => {
     expect(ws.workspace().activeEnvironmentId).toBe('wdev');
   });
 
-  it("hands back a request's stored cookies whatever its send-cookies setting", async () => {
-    const { requestId } = await restProject();
-    const cookie = { name: 'sid', value: 'abc' } as never;
-    expect(host.restCookiesFor(requestId)).toBeUndefined();
-    host.rememberRestCookies(requestId, [cookie]);
-    expect(host.restCookiesFor(requestId)).toEqual([cookie]);
-    // The request's own resolution still sends none: its setting is off.
-    expect((await restSend(requestId))?.input.cookies).toBeUndefined();
-    host.rememberRestCookies(requestId, []);
-    expect(host.restCookiesFor(requestId)).toBeUndefined();
-  });
-
   it('lends no trust anchors and no identity when nothing is configured', async () => {
     expect(await host.trustAnchors()).toBeUndefined();
     expect(await host.clientIdentityFor(undefined)).toBeUndefined();

@@ -51,6 +51,8 @@ import { registerXpathChannels } from './ipc/xpath.js';
 import { registerValidateChannels } from './ipc/validate.js';
 import { registerWsiChannels } from './ipc/wsi.js';
 import { registerGlobalsChannels } from './ipc/globals.js';
+import { CookieStore } from './cookie-store.js';
+import { registerCookiesChannels } from './ipc/cookies.js';
 import { registerHistoryChannels } from './ipc/history.js';
 import { registerPreferencesChannels } from './ipc/preferences.js';
 import { registerApiChannels } from './ipc/api.js';
@@ -299,6 +301,21 @@ function applyWindowTitle(workspace: WorkspaceWire | null): void {
 /** The user's `${#Global#name}` scope, shared by every project and every window. */
 const globalProperties = new GlobalProperties(app.getPath('userData'));
 
+/**
+ * The workspace cookie jars (cookie jar spec §2): saved encrypted with the keychain, or not at all.
+ * Every change to the open workspace's jar reaches the renderer as `cookies.changed`.
+ */
+const cookieStore = new CookieStore({
+  userDataDir: app.getPath('userData'),
+  crypto: safeStorageBackend(safeStorage),
+  onChanged: (state) => {
+    broadcast(events.cookies.changed, state);
+  },
+  warn: (message) => {
+    console.warn(`[cookies] ${message}`);
+  },
+});
+
 /** Persistent request history — one jsonl file per open project under `userData`, watched for other writers. */
 const historyService = new HistoryService(app.getPath('userData'), () => preferencesService.get().ui.historyCap, {
   watch: watchHistoryFile,
@@ -419,6 +436,12 @@ const workspaceService = new WorkspaceService({
     onChanged: (workspace) => {
       broadcast(events.workspace.changed, { workspace });
       applyWindowTitle(workspace);
+      void cookieStore.switchTo(workspace?.id ?? null).catch((error: unknown) => {
+        console.warn('[cookies] switching jars failed', error instanceof Error ? error.message : String(error));
+      });
+    },
+    onDeleted: (workspaceId) => {
+      void cookieStore.deleteWorkspace(workspaceId).catch(() => undefined);
     },
     onProjectChanged: (projectId, project) => {
       secretScans.projectChanged(projectId, project);
@@ -516,6 +539,7 @@ void app.whenReady().then(() => {
       return { project: {}, global: enabledProperties(state.properties, state.disabled), system: process.env };
     },
     showSecrets: showSecretsFlag,
+    cookies: cookieStore.host(),
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),
@@ -639,6 +663,7 @@ void app.whenReady().then(() => {
   registerGlobalsChannels(globalProperties, (state) => {
     broadcast(events.globals.changed, state);
   });
+  registerCookiesChannels(cookieStore);
   registerPreferencesChannels(preferencesService, (preferences) => {
     broadcast(events.preferences.changed, { preferences });
     // Turning autosave on mid-session must pick up whatever is already outstanding, rather than
@@ -841,6 +866,9 @@ app.on('before-quit', (event) => {
   void stashed
     .then(async () => {
       await workspaceService.close();
+      // Cookies with an expiry still waiting on the debounce are written before the app goes.
+      await cookieStore.flush();
+      cookieStore.dispose();
     })
     .catch(() => undefined)
     .finally(() => {

@@ -120,19 +120,12 @@ export interface ProjectRouter {
   /** The JSON schema of the body a REST request's operation declares, for the body editor's form. */
   restBodySchema(...args: Parameters<ProjectHost['restBodySchema']>): ReturnType<ProjectHost['restBodySchema']>;
 
-  /** The cookies stored for one REST request, whatever its *send cookies* setting. */
-  restCookiesFor(...args: Parameters<ProjectHost['restCookiesFor']>): ReturnType<ProjectHost['restCookiesFor']>;
   /** What the engine runs a send of one request in: its project, folder, environment and workspace. */
   runContextFor(...args: Parameters<ProjectHost['runContextFor']>): ReturnType<ProjectHost['runContextFor']>;
   /** The WSDL-derived default `wsa:Action` of a SOAP request's operation, from the loaded definition. */
   defaultWsaActionFor(
     ...args: Parameters<ProjectHost['defaultWsaActionFor']>
   ): ReturnType<ProjectHost['defaultWsaActionFor']>;
-
-  /** Remembers what a REST response set, for the next send of that same request. */
-  rememberRestCookies(
-    ...args: Parameters<ProjectHost['rememberRestCookies']>
-  ): ReturnType<ProjectHost['rememberRestCookies']>;
 
   /** What History names a gRPC send by: the request, its API, and its folder path. */
   grpcMeta(...args: Parameters<ProjectHost['grpcMeta']>): ReturnType<ProjectHost['grpcMeta']>;

@@ -151,6 +151,10 @@ import {
   exchangesSaveRestBodyRequestSchema,
   exchangesSaveRestBodyResponseSchema,
   globalsStateSchema,
+  cookieJarStateWireSchema,
+  cookiesRemoveDomainRequestSchema,
+  cookiesRemoveRequestSchema,
+  cookiesSetRequestSchema,
   historyAppendedEventSchema,
   historyChangedEventSchema,
   historyClearResponseSchema,
@@ -863,6 +867,14 @@ export const channels = {
     remove: defineChannel('globals.remove', globalsRemoveRequestSchema, globalsStateSchema),
     setEnabled: defineChannel('globals.setEnabled', globalsSetEnabledRequestSchema, globalsStateSchema),
   },
+  /** The open workspace's cookie jar (cookie jar spec §2.2). Every channel answers with the whole jar. */
+  cookies: {
+    list: defineChannel('cookies.list', z.undefined(), cookieJarStateWireSchema),
+    set: defineChannel('cookies.set', cookiesSetRequestSchema, cookieJarStateWireSchema),
+    remove: defineChannel('cookies.remove', cookiesRemoveRequestSchema, cookieJarStateWireSchema),
+    removeDomain: defineChannel('cookies.removeDomain', cookiesRemoveDomainRequestSchema, cookieJarStateWireSchema),
+    clear: defineChannel('cookies.clear', z.undefined(), cookieJarStateWireSchema),
+  },
   theme: {
     /** The OS colour scheme right now; the renderer asks once at startup, then listens. */
     get: defineChannel('theme.get', z.undefined(), themeGetResponseSchema),
@@ -1135,6 +1147,10 @@ export const events = {
   },
   globals: {
     changed: defineEvent('globals.changed', globalsStateSchema),
+  },
+  cookies: {
+    /** The open workspace's jar changed: a send stored cookies, the manager edited, or the workspace switched. */
+    changed: defineEvent('cookies.changed', cookieJarStateWireSchema),
   },
   preferences: {
     changed: defineEvent('preferences.changed', preferencesResponseSchema),

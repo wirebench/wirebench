@@ -1,8 +1,8 @@
 // @vitest-environment node
 /**
  * The desktop's `SendHost`: each member lends one of the app's own services to the engine — the
- * project's secrets, proxy, trust anchors and keystores, the OAuth2 token cache, per-request
- * cookies, the REST contract check — and writes the HTTP Log rows a failed send and a WebSocket
+ * project's secrets, proxy, trust anchors and keystores, the OAuth2 token cache, the workspace
+ * cookie jar, the REST contract check — and writes the HTTP Log rows a failed send and a WebSocket
  * handshake produce, shaped as `ipc/request.ts` has always built them. One fake per member; no
  * network.
  */
@@ -16,7 +16,9 @@ import {
   createRestRequest,
   createWebhookCollection,
   createWebhookFolder,
+  CookieJar,
   failedRequestOf,
+  jarCookieHost,
   WirebenchError,
   type OAuth2Auth,
   type Project,
@@ -219,6 +221,12 @@ describe('desktopSendHost', () => {
       send,
     );
     expect(await host.tls!.identityFor!(undefined)).toBeUndefined();
+  });
+
+  it('lends the workspace cookie jar', async () => {
+    const cookies = jarCookieHost(new CookieJar());
+    const host = await desktopSendHost(deps({ cookies }), send);
+    expect(host.cookies).toBe(cookies);
   });
 
   it('lends the preferences as they stand', async () => {

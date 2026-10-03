@@ -162,6 +162,8 @@ export const UNSAVED_RECORD_DEBOUNCE_MS = 2_000;
 export interface WorkspaceHooks {
   /** The open workspace changed (opened, closed, renamed, a project's status moved). */
   readonly onChanged?: (workspace: WorkspaceWire | null) => void;
+  /** A workspace was deleted: what main keeps for it outside its folder (its cookies, its current values) goes too. */
+  readonly onDeleted?: (workspaceId: string) => void;
   /** One project's model changed; `null` means that host closed. */
   readonly onProjectChanged?: (projectId: string, project: ProjectWire | null) => void;
   /** Files under one project's folder changed outside the app. */
@@ -1817,6 +1819,7 @@ export class WorkspaceService implements ProjectRouter {
     }
     await trash(dir);
     await this.state.forget(id);
+    this.deps.hooks?.onDeleted?.(id);
     return await this.list();
   }
 
@@ -2978,11 +2981,6 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  restCookiesFor(...args: Parameters<ProjectRouter['restCookiesFor']>): ReturnType<ProjectRouter['restCookiesFor']> {
-    return this.hostOfEntity(args[0]).restCookiesFor(...args);
-  }
-
-  /** @inheritdoc */
   runContextFor(...args: Parameters<ProjectRouter['runContextFor']>): ReturnType<ProjectRouter['runContextFor']> {
     return this.hostOfEntity(args[0]).runContextFor(...args);
   }
@@ -2992,13 +2990,6 @@ export class WorkspaceService implements ProjectRouter {
     ...args: Parameters<ProjectRouter['defaultWsaActionFor']>
   ): ReturnType<ProjectRouter['defaultWsaActionFor']> {
     return this.hostOfEntity(args[0]).defaultWsaActionFor(...args);
-  }
-
-  /** @inheritdoc */
-  rememberRestCookies(
-    ...args: Parameters<ProjectRouter['rememberRestCookies']>
-  ): ReturnType<ProjectRouter['rememberRestCookies']> {
-    return this.hostOfEntity(args[0]).rememberRestCookies(...args);
   }
 
   /** @inheritdoc */

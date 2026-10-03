@@ -119,7 +119,6 @@ import type {
   WsApi,
   RestFolder,
   RestRequestDef,
-  Cookie,
   Attachment,
   AttachmentResolvers,
   AttachmentSource,
@@ -407,13 +406,6 @@ export class ProjectHost {
   private open: OpenProject | undefined;
   /** Parsed keystores, keyed by entry id; see {@link loadKeystoreFor} for the invalidation key. */
   private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
-  /**
-   * What each REST request's own last response set, for the session only, keyed by request id.
-   *
-   * Not a cookie jar: a request only ever sees what it set itself, so one request's send cannot
-   * change another's, and none of this reaches disk (see `rest/cookies.ts`).
-   */
-  private readonly restCookies = new Map<string, readonly Cookie[]>();
   /**
    * Loaded `.proto` sets, keyed by gRPC API id. A set is parsed once per API from its cache and
    * kept for the session — every send and every method-picker refresh reads from it — and dropped
@@ -1585,23 +1577,6 @@ export class ProjectHost {
       };
     }
     return undefined;
-  }
-
-  /**
-   * The cookies stored for this REST request, whatever its *send cookies* setting: the engine
-   * reads the setting itself, so the send host lends what is stored.
-   */
-  restCookiesFor(requestId: string): readonly Cookie[] | undefined {
-    return this.restCookies.get(requestId);
-  }
-
-  /** Remembers what a REST response set, for the next send of that same request. */
-  rememberRestCookies(requestId: string, cookies: readonly Cookie[]): void {
-    if (cookies.length === 0) {
-      this.restCookies.delete(requestId);
-      return;
-    }
-    this.restCookies.set(requestId, cookies);
   }
 
   /** The credentials configured on one gRPC API, folder or request — its own, not its chain's. */
