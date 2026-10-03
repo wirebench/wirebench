@@ -49,6 +49,8 @@ wirebench run <path> [selector…] [options]
     --timeout <ms>     Per-request timeout override.
     --sla <ms>         Default response-time ceiling for requests that declare none.
     --require-assertions  A request without assertions is an error.
+    --baseline         Compare each response with its committed golden (<slug>.golden.yaml).
+    --require-baseline With --baseline: a request without a golden is an error.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
     --no-color
 -q, --quiet | -v, --verbose
@@ -357,6 +359,17 @@ server:
 - Exit code 1 when a callback assertion failed; 3 when one could not be checked (no server variables,
   an unknown catch URL name, a refused token or an unreachable server). Exit 3 takes precedence.
 
+## Baseline
+
+`--baseline` compares each SOAP and REST response with the golden saved beside the request
+(`<slug>.golden.yaml`, written by the desktop's Snapshot tab), by meaning and with the golden's
+ignore rules. A difference fails the request (exit 1). A request without a golden is noted and
+judged on its other assertions; `--require-baseline` makes that an error (exit 3). Other protocols
+are not compared, sequences are not compared, and the runner never writes a golden.
+
+`--require-baseline` without `--baseline`, and `--baseline` with `--sequence`, are usage errors
+(exit 2).
+
 ## Reports
 
 ### `cli` (default)
@@ -376,6 +389,11 @@ stderr. `--quiet` suppresses passing lines; `--verbose` also prints each passing
 
 3 passed, 2 failed, 0 errored, 0 skipped in 0.3s
 ```
+
+With `--baseline`, a request's line also shows `baseline: matches` or `(no baseline)`, and a
+difference lists the changed paths under the request. In JUnit it is a `<failure type="baseline">`;
+in the JSON report, each request gains a `baseline` object and the summary a `baseline` object (`matched`, `differs`,
+`missing`); `formatVersion` stays 1.
 
 ### `junit=<file>`
 
@@ -457,9 +475,9 @@ A report's directory is created if missing; a report that cannot be written is e
 | Code | Meaning |
 | --- | --- |
 | 0 | Every selected request passed. |
-| 1 | At least one assertion failed; nothing errored. |
+| 1 | At least one assertion failed, or a response differs from its baseline; nothing errored. |
 | 2 | Usage or load problem: bad flag, path is no project, unknown environment or selector, invalid `assertions:`, project format too new, report not writable. Nothing was sent. |
-| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. Takes precedence over 1. |
+| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. Under `--require-baseline`, also a request with no golden, or a golden that cannot be read or is too large (over 2 MiB) to compare. Takes precedence over 1. |
 | 130 | Interrupted (`SIGINT`); reports are flushed with what ran. |
 
 An errored request outranks a failed assertion (exit 3 over 1): a pipeline that could not reach the

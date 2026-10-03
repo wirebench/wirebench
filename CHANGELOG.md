@@ -46,6 +46,8 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **`wirebench run --baseline`** compares each response with its committed golden and fails on a
+  semantic difference; `--require-baseline` makes a missing golden an error (#36).
 - **An Assertions tab on every editor.** The REST, SOAP, gRPC and WebSocket editors have an Assertions tab.
   Every editor Send checks the request's assertions and shows the result in the response pane's
   Assertions tab; callback assertions are still checked in runs and sequences only (#192).
