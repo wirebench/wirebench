@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { FastifyBaseLogger, FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type {
   AuditAction,
@@ -195,13 +196,30 @@ export async function recordAudit(hooks: ServerHooks, tx: Querier, event: AuditI
 }
 
 /**
+ * `raw` as a value Postgres `inet` accepts, or undefined. Behind a trusted proxy `request.ip` is whatever
+ * the client wrote in `X-Forwarded-For`, so a junk value must not fail the audited action: an IPv6 zone
+ * (`%eth0`) and the port of an IPv4 `a.b.c.d:port` are dropped, and anything still not an address is unknown.
+ */
+export function auditIp(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  let value = raw.trim();
+  const zone = value.indexOf('%');
+  if (zone !== -1 && value.includes(':')) value = value.slice(0, zone);
+  const v4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(value);
+  if (v4WithPort !== null) value = v4WithPort[1]!;
+  return isIP(value) !== 0 ? value : undefined;
+}
+
+/**
  * The actor and request facts for a fire site in a route (plan ruling 1): a signed-in user first, then
- * a CI token, then anonymous. `request.ip` honours `trustProxy`; the user agent is bounded, never parsed.
+ * a CI token, then anonymous. `request.ip` honours `trustProxy` and passes through {@link auditIp}; the
+ * user agent is bounded, never parsed.
  */
 export function auditSource(request: FastifyRequest): AuditSource {
   const header = request.headers['user-agent'];
   const userAgent = typeof header === 'string' ? header.slice(0, 512) : undefined;
-  const base = { ip: request.ip, ...(userAgent !== undefined ? { userAgent } : {}) };
+  const ip = auditIp(request.ip);
+  const base = { ...(ip !== undefined ? { ip } : {}), ...(userAgent !== undefined ? { userAgent } : {}) };
   if (request.caller !== undefined) {
     const { id, email, tokenId } = request.caller;
     return { ...base, actor: { kind: 'user', userId: id, email, tokenId } };
