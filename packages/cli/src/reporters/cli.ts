@@ -44,6 +44,13 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
         }
         continue;
       }
+      if (assertion.type === 'baseline' && assertion.outcome === 'failed') {
+        lines.push(assertion.label);
+        for (const change of (assertion.message ?? '').split('\n')) {
+          lines.push(`  ${change}`);
+        }
+        continue;
+      }
       if (assertion.expected !== undefined || assertion.actual !== undefined) {
         lines.push(`${assertion.label} — expected ${assertion.expected ?? ''}, actual ${assertion.actual ?? ''}`);
       } else {
@@ -90,6 +97,13 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       if (result.unasserted && result.outcome !== 'skipped') {
         parts.push('(no assertions)');
       }
+      if (result.baseline?.status === 'matched') {
+        parts.push('baseline: matches');
+      } else if (result.baseline?.status === 'missing') {
+        parts.push('(no baseline)');
+      } else if (result.baseline?.status === 'unsupported') {
+        parts.push(`(baseline not compared: ${result.protocol})`);
+      }
       if (result.scriptsOff === true) {
         parts.push('(scripts off)');
       }
@@ -103,6 +117,10 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       out.write(
         `\n${passed} passed, ${failed} failed, ${errored} errored, ${skipped} skipped in ${(durationMs / 1000).toFixed(1)}s\n`,
       );
+      if (result.summary.baseline !== undefined) {
+        const { matched, differs, missing } = result.summary.baseline;
+        out.write(`baseline: ${matched} matched, ${differs} differ, ${missing} missing\n`);
+      }
     },
   };
 }

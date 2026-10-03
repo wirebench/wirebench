@@ -24,7 +24,7 @@ export function maskDeep(value: unknown, mask: Mask): unknown {
  * is hidden as the app's log hides it.
  */
 export function maskRequestResult(result: RequestResult, mask: Mask): RequestResult {
-  const { error, exchange, transfers, scriptLog } = result;
+  const { error, exchange, transfers, scriptLog, baseline } = result;
   return {
     ...result,
     ...(scriptLog !== undefined ? { scriptLog: scriptLog.map((line) => mask(line)) } : {}),
@@ -45,6 +45,19 @@ export function maskRequestResult(result: RequestResult, mask: Mask): RequestRes
       ...(assertion.actual !== undefined ? { actual: mask(assertion.actual) } : {}),
       ...(assertion.message !== undefined ? { message: mask(assertion.message) } : {}),
     })),
+    ...(baseline?.changes !== undefined
+      ? {
+          baseline: {
+            ...baseline,
+            changes: baseline.changes.map((change) => ({
+              ...change,
+              path: mask(change.path),
+              ...(change.expected !== undefined ? { expected: mask(change.expected) } : {}),
+              ...(change.actual !== undefined ? { actual: mask(change.actual) } : {}),
+            })),
+          },
+        }
+      : {}),
     ...(error !== undefined
       ? {
           error: {

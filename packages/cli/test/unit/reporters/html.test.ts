@@ -33,4 +33,21 @@ describe('renderHtml', () => {
     expect(renderHtml(hostile, { name: 'wirebench', version: '0.0.0' })).not.toMatch(/<script/i);
   });
   it('supports a dark scheme', () => expect(html).toContain('prefers-color-scheme: dark'));
+  it('lists a baseline difference as a table of changes', () => {
+    const run = {
+      ...SAMPLE_RESULT,
+      requests: [
+        {
+          ...SAMPLE_RESULT.requests[1]!,
+          baseline: {
+            status: 'differs' as const,
+            changes: [{ kind: 'changed' as const, path: '/a', expected: '1', actual: '2' }],
+          },
+        },
+      ],
+    };
+    const out = renderHtml(run, { name: 'wirebench', version: '0.0.0' });
+    expect(out).toContain('<th>Change</th><th>Path</th><th>Expected</th><th>Actual</th>');
+    expect(out).toContain('<tr><td>changed</td><td>/a</td><td>1</td><td>2</td></tr>');
+  });
 });

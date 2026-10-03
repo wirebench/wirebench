@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { RunResult } from '@wirebench/engine';
+import type { RequestResult, RunResult } from '@wirebench/engine';
 import { parseXmlDocument, validateAgainstXsd } from '@wirebench/engine/test-helpers';
 import { describe, expect, it } from 'vitest';
 import { renderJunit } from '../../../src/reporters/junit.js';
@@ -32,6 +32,52 @@ function childrenNamed(parent: XmlElement, name: string): XmlElement[] {
   }
   return out;
 }
+
+const baselineDiffers: RequestResult = {
+  path: 'demo/diff',
+  group: 'demo',
+  name: 'diff',
+  protocol: 'rest',
+  outcome: 'failed',
+  status: 200,
+  durationMs: 5,
+  unasserted: false,
+  assertions: [
+    { type: 'baseline', label: '1 difference from the baseline', outcome: 'failed', message: 'changed /a: 1 → 2' },
+  ],
+  baseline: {
+    status: 'differs',
+    format: 'json',
+    ignored: 0,
+    changes: [{ kind: 'changed', path: '/a', expected: '1', actual: '2' }],
+  },
+};
+
+const baselineMissing: RequestResult = {
+  path: 'demo/new',
+  group: 'demo',
+  name: 'new',
+  protocol: 'rest',
+  outcome: 'passed',
+  status: 200,
+  durationMs: 5,
+  unasserted: false,
+  assertions: [],
+  baseline: { status: 'missing' },
+};
+
+const runOf = (requests: RequestResult[]): RunResult => ({
+  startedAt: '2026-10-03T10:00:00.000Z',
+  summary: {
+    total: requests.length,
+    passed: requests.filter((r) => r.outcome === 'passed').length,
+    failed: requests.filter((r) => r.outcome === 'failed').length,
+    errored: 0,
+    skipped: 0,
+    durationMs: 10,
+  },
+  requests,
+});
 
 describe('renderJunit', () => {
   const xml = renderJunit(SAMPLE_RESULT);
@@ -119,6 +165,13 @@ describe('renderJunit', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('validates a run with a baseline failure and a missing baseline against the XSD', async () => {
+    const xsd = await readFile(XSD_PATH, 'utf8');
+    const result = await validateAgainstXsd(renderJunit(runOf([baselineDiffers, baselineMissing])), xsd);
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
   it('reports an errored assertion as an error of its own type', () => {
     const result: RunResult = {
       startedAt: '2026-09-29T10:00:00.000Z',
@@ -179,5 +232,15 @@ describe('renderJunit', () => {
     expect(xml).toContain('<error type="network-error" message="Could not reach https://shop.example.test"/>');
     expect(xml.match(/<error /g)).toHaveLength(1);
     expect(xml).not.toContain('type="callback"');
+  });
+
+  it('renders a baseline difference as a failure with the change list as its body', () => {
+    expect(renderJunit(runOf([baselineDiffers]))).toContain(
+      '<failure message="1 difference from the baseline" type="baseline">changed /a: 1 → 2</failure>',
+    );
+  });
+
+  it('notes a missing baseline in system-out', () => {
+    expect(renderJunit(runOf([baselineMissing]))).toContain('<system-out>no baseline saved</system-out>');
   });
 });

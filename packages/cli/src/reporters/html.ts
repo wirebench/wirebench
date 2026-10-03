@@ -92,11 +92,27 @@ function renderSummary(result: RequestResult): string {
   );
 }
 
+/** A `--baseline` difference, one row per change (#36). */
+function renderBaseline(result: RequestResult): string {
+  const changes = result.baseline?.status === 'differs' ? (result.baseline.changes ?? []) : [];
+  if (changes.length === 0) {
+    return '';
+  }
+  const rows = changes
+    .map(
+      (c) =>
+        `<tr><td>${escapeHtml(c.kind)}</td><td>${escapeHtml(c.path)}</td><td>${escapeHtml(c.expected ?? '')}</td><td>${escapeHtml(c.actual ?? '')}</td></tr>`,
+    )
+    .join('');
+  const more = result.baseline?.truncated === true ? '<p>Only the first 100 differences are shown.</p>' : '';
+  return `<table><thead><tr><th>Change</th><th>Path</th><th>Expected</th><th>Actual</th></tr></thead><tbody>${rows}</tbody></table>${more}`;
+}
+
 function renderRequest(result: RequestResult): string {
   const open = result.outcome === 'failed' || result.outcome === 'errored' ? ' open' : '';
   return (
     `<details${open}><summary>${renderSummary(result)}</summary>` +
-    `${renderAssertions(result.assertions)}${renderTransfers(result)}${renderScriptLog(result)}${renderError(result)}${renderExchange(result)}</details>`
+    `${renderAssertions(result.assertions)}${renderBaseline(result)}${renderTransfers(result)}${renderScriptLog(result)}${renderError(result)}${renderExchange(result)}</details>`
   );
 }
 

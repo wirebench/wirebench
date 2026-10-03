@@ -27,6 +27,9 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *     - `scriptsOff`: `true` when its scripts are switched off and none ran.
  *   - A script's tests appear in `assertions[]` with `type: "script"`.
  *
+ *   - `baseline`: the `--baseline` comparison — `status`, `format?`, `changes?` (at most 100), `ignored?`,
+ *     `truncated?`, `error?`. `summary.baseline`: `{ matched, differs, missing }` when the run compared baselines.
+ *
  * An absent optional is omitted from the object entirely, never written as `null`.
  */
 export interface JsonReport {
@@ -60,11 +63,12 @@ export interface JsonReportRequest {
   readonly origin?: string;
   readonly scriptLog?: readonly string[];
   readonly scriptsOff?: true;
+  readonly baseline?: RequestResult['baseline'];
 }
 
 function toReportRequest(result: RequestResult): JsonReportRequest {
   const { path, group, name, protocol, outcome, status, durationMs, unasserted, assertions, error, exchange } = result;
-  const { sequence, transfers, origin, scriptLog, scriptsOff } = result;
+  const { sequence, transfers, origin, scriptLog, scriptsOff, baseline } = result;
   return {
     path,
     group,
@@ -75,6 +79,7 @@ function toReportRequest(result: RequestResult): JsonReportRequest {
     ...(durationMs !== undefined ? { durationMs } : {}),
     unasserted,
     assertions,
+    ...(baseline !== undefined ? { baseline } : {}),
     ...(error !== undefined ? { error } : {}),
     ...(exchange !== undefined ? { exchange } : {}),
     ...(sequence !== undefined ? { sequence } : {}),
