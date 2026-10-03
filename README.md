@@ -147,9 +147,6 @@ requires it.
 | What comes next    | [Roadmap](docs/roadmap.md) · [Project board](https://github.com/orgs/wirebench/projects/1)                                               |
 | Releasing          | [Release process](docs/release.md) — signing, Electron fuses and the opt-in update check                                                 |
 
-The design spec and implementation plan behind each feature live in [`docs/specs`](docs/specs) and
-[`docs/plans`](docs/plans).
-
 ## Roadmap
 
 Still open, in the order it is worth building — the [full roadmap](docs/roadmap.md) has the reasoning:
