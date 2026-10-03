@@ -17,7 +17,7 @@
 - **Link:** `HMAC-SHA256(key, prev_hash(32 raw bytes) ‖ seq(8 bytes, big-endian) ‖ canonical(row))`.
   - **Genesis:** `seq` 0, with `hash = HMAC-SHA256(key, "wirebench-audit-chain-genesis")`.
   - **Canonical row:** every column, in the spec's §3.2 order, written as `len:value`, where `len` is the value's length in UTF-8 bytes; a null is written as `-1:`.
-  - **Field forms:** `at` is `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, `ip` is `host(ip)` and `details` is `details::text`, all rendered by Postgres.
+  - **Field forms:** `at` is `to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`, `ip` is `abbrev(ip)` (it keeps a netmask other than /32 or /128 and prints a single host bare; ruled in fix round 1 of Task 1) and `details` is `details::text`, all rendered by Postgres.
 - **Sealer:**
   - **Batch:** 500 rows per pass.
   - **Timing:** 2 s while busy, 5 s when idle. After an unexpected error, back off from 5 s, doubling, up to 300 s. Log one `warn` when it starts failing and one `info` when it recovers.

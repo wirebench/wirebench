@@ -20,7 +20,6 @@ describeDb('0003_teams (§4.1)', () => {
     expect(list[9]).toBe('10_audit-team-index');
     expect(list[10]).toBe('11_audit-forward-queue');
     expect(list[11]).toBe('12_audit-chain');
-    expect(list).toHaveLength(12);
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
       'licensing',

@@ -204,14 +204,17 @@ export async function deleteAuditEventsBefore(db: Querier, cutoff: Date, limit: 
 
 /**
  * The select list that renders a row as the texts {@link CanonicalRow} holds, in its field order. The
- * sealer and verify both read rows through it, so the two can never disagree on a row's bytes.
+ * sealer and verify both read rows through it, so the two can never disagree on a row's bytes. It
+ * aliases `at` to its text, so a query that sorts on it must qualify the table column. `abbrev(ip)` is
+ * the `inet` output form: a netmask other than /32 or /128 is printed, so editing it breaks the link
+ * (`host(ip)` drops it), while a single host prints bare (`ip::text` would always add `/32` or `/128`).
  */
 export const CANONICAL_COLUMNS =
   `id, to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at, ` +
   'actor_kind as "actorKind", actor_user_id as "actorUserId", actor_email as "actorEmail", ' +
   'actor_token_id as "actorTokenId", actor_workspace_id as "actorWorkspaceId", action, ' +
   'target_kind as "targetKind", target_id as "targetId", workspace_id as "workspaceId", team_id as "teamId", ' +
-  'host(ip) as ip, user_agent as "userAgent", details::text as details';
+  'abbrev(ip) as ip, user_agent as "userAgent", details::text as details';
 
 /** A point in the chain: a sealed row's, the anchor's, or the head's. */
 export interface ChainLink {
@@ -274,7 +277,10 @@ export async function chainHead(db: Querier): Promise<ChainLink | undefined> {
  */
 export async function claimUnsealed(tx: Querier, limit: number): Promise<CanonicalRow[]> {
   const rows = await tx.query<CanonicalRaw>(
-    `select ${CANONICAL_COLUMNS} from audit_events where chain_seq is null order by at, id limit $1 for update skip locked`,
+    // Qualified: a bare `at` in `order by` would name CANONICAL_COLUMNS' text output, which the
+    // audit_events_unsealed (at, id) index cannot serve.
+    `select ${CANONICAL_COLUMNS} from audit_events where chain_seq is null
+     order by audit_events.at, audit_events.id limit $1 for update skip locked`,
     [limit],
   );
   return rows.rows;

@@ -64,6 +64,49 @@ describeDb('the audit chain repo (audit-chain spec §3.2, §4)', () => {
     expect(row?.details).toBe('{}');
   });
 
+  it('covers the netmask of ip, and prints a single host without one', async () => {
+    for (const [id, ip] of [
+      ['01J9ZK3V8Q00000000000000E1', '10.0.0.5'],
+      ['01J9ZK3V8Q00000000000000E2', '10.0.0.5/24'],
+      ['01J9ZK3V8Q00000000000000E3', '2001:db8::7/128'],
+      ['01J9ZK3V8Q00000000000000E4', '2001:db8::7/64'],
+    ]) {
+      await db.query(
+        `insert into audit_events (id, actor_kind, action, target_kind, ip) values ($1, 'system', 'team.created', 'team', $2)`,
+        [id, ip],
+      );
+    }
+    expect((await claimUnsealed(db, 10)).map((r) => r.ip)).toEqual([
+      '10.0.0.5',
+      '10.0.0.5/24',
+      '2001:db8::7',
+      '2001:db8::7/64',
+    ]);
+  });
+
+  it('claims through the audit_events_unsealed index, sorting on the table columns', async () => {
+    // Explains the very statement claimUnsealed sends: a bare `order by at` would sort on the
+    // CANONICAL_COLUMNS text alias, which no index serves.
+    const plan = await db.transaction(async (tx) => {
+      await tx.query('set local enable_seqscan = off');
+      await tx.query('set local enable_sort = off');
+      const explained: string[] = [];
+      await claimUnsealed(
+        {
+          query: async <R extends Record<string, unknown>>(text: string, params?: readonly unknown[]) => {
+            const rows = await tx.query<R>(`explain ${text}`, params);
+            explained.push(...rows.rows.map((r) => String(r['QUERY PLAN'])));
+            return { rows: [], rowCount: 0 };
+          },
+        },
+        500,
+      );
+      return explained.join('\n');
+    });
+    expect(plan).toContain('audit_events_unsealed');
+    expect(plan).not.toMatch(/\bSort\b/);
+  });
+
   it('has no anchor until the genesis, which keeps the first anchor', async () => {
     expect(await readAnchor(db)).toBeUndefined();
     const anchor = await insertGenesis(db, genesisHash(KEY), keyId(KEY));

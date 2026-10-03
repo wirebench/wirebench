@@ -20,7 +20,7 @@ export interface CanonicalRow {
   readonly targetId: string | null;
   readonly workspaceId: string | null;
   readonly teamId: string | null;
-  /** `host(ip)`. */
+  /** `abbrev(ip)`: the netmask is covered; a single host prints without `/32` or `/128`. */
   readonly ip: string | null;
   readonly userAgent: string | null;
   /** `details::text`, which Postgres normalises (key order, whitespace). */

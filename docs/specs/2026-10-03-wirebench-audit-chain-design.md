@@ -82,7 +82,7 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
   - `actor_kind`, `actor_user_id`, `actor_email`, `actor_token_id`, `actor_workspace_id`;
   - `action`, `target_kind`, `target_id`;
   - `workspace_id`, `team_id`;
-  - `host(ip)`, `user_agent`;
+  - `abbrev(ip)`, the `inet` output form: a single host prints without `/32` or `/128` and any other netmask is printed, so editing the netmask breaks the link (`host(ip)` drops the netmask; `ip::text` always appends it, even `/32`); `user_agent`;
   - `details::text`.
 - A null is written as `-1:`.
 - `seq` is written as 8 big-endian bytes, and `prev_hash` as its 32 raw bytes.
