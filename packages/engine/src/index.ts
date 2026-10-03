@@ -683,6 +683,8 @@ export { resolvePointer, resolveRefs, unescapePointerToken, MAX_REF_DEPTH } from
 export type { RefProblem, ResolvedDocument, ResolvedRefs, ResolveRefsOptions } from './json/schema/refs.js';
 export { sampleFromSchema, sampleXml, MAX_SAMPLE_DEPTH } from './json/schema/sample.js';
 export type { SampleOptions, SampleXmlOptions } from './json/schema/sample.js';
+export { validateJsonSchema } from './json/schema-validate.js';
+export type { JsonSchemaProblem, ValidateJsonOptions } from './json/schema-validate.js';
 export { applyJsonFormEdit, buildJsonForm, toWireSchema } from './rest/json-form.js';
 export type { JsonFormEdit, JsonFormKind, JsonFormNode, JsonFormOptions, JsonFormValueType } from './rest/json-form.js';
 export { serverUrl, HTTP_METHODS } from './rest/openapi/model.js';

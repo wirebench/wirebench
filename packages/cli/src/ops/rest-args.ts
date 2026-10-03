@@ -1,0 +1,206 @@
+/**
+ * A REST operation's tool arguments (#33 spec §3.2, revision R2): `path`, `query`, `headers` and
+ * `body`, each present only when the operation declares something for it. The loaded document's
+ * schemas are a `$ref`-inlined, possibly cyclic, graph; a node reached more than once becomes one
+ * `$defs` entry, so the published schema is a tree.
+ */
+import type { JsonSchema, JsonSchemaObject, OpenApiOperation, OpenApiParameter, RestApi } from '@wirebench/engine';
+
+export interface RestToolSchema {
+  readonly schema: JsonSchemaObject;
+  /** Required cookie parameters: the tool cannot set them, and its description says so. */
+  readonly cookies: readonly string[];
+}
+
+/** Headers the container's auth sets, lower-cased: never a tool argument. */
+export function authHeaderNames(api: RestApi): ReadonlySet<string> {
+  const names = new Set(['accept', 'content-type', 'authorization']);
+  if (api.auth?.type === 'api-key' && api.auth.in === 'header') {
+    names.add(api.auth.name.toLowerCase());
+  }
+  return names;
+}
+
+/** The JSON media type of the request body: `application/json`, or any `+json` type. */
+export function jsonMediaType(operation: OpenApiOperation): string | undefined {
+  return Object.keys(operation.requestBody?.content ?? {}).find((type) => {
+    const bare = type.split(';')[0]?.trim().toLowerCase() ?? '';
+    return bare === 'application/json' || bare.endsWith('+json');
+  });
+}
+
+function childrenOf(node: JsonSchema): JsonSchema[] {
+  return [
+    ...Object.values(node.properties ?? {}),
+    ...(node.items !== undefined ? [node.items] : []),
+    ...(typeof node.additionalProperties === 'object' ? [node.additionalProperties] : []),
+    ...(node.allOf ?? []),
+    ...(node.oneOf ?? []),
+    ...(node.anyOf ?? []),
+  ];
+}
+
+/** Writes graph nodes as a tree: a node reached twice (shared, or inside itself) as a `$defs` entry. */
+class SchemaTree {
+  private readonly seen = new Map<JsonSchema, number>();
+  private readonly names = new Map<JsonSchema, string>();
+  private readonly definitions: Record<string, JsonSchemaObject> = {};
+  private next = 1;
+
+  /** The first pass, over every root before anything is written. */
+  count(root: JsonSchema): void {
+    const stack: JsonSchema[] = [root];
+    for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+      const times = (this.seen.get(node) ?? 0) + 1;
+      this.seen.set(node, times);
+      if (times === 1) {
+        stack.push(...childrenOf(node));
+      }
+    }
+  }
+
+  write(node: JsonSchema, dropReadOnly: boolean): JsonSchemaObject {
+    return (this.seen.get(node) ?? 0) > 1
+      ? { $ref: `#/$defs/${this.defName(node, dropReadOnly)}` }
+      : this.body(node, dropReadOnly);
+  }
+
+  defs(): JsonSchemaObject | undefined {
+    return Object.keys(this.definitions).length === 0 ? undefined : this.definitions;
+  }
+
+  private defName(node: JsonSchema, dropReadOnly: boolean): string {
+    const known = this.names.get(node);
+    if (known !== undefined) {
+      return known;
+    }
+    const title = node.title?.replace(/[^A-Za-z0-9_.-]/g, '') ?? '';
+    let name = title !== '' ? title : `Schema${String(this.next++)}`;
+    for (let n = 2; name in this.definitions; n += 1) {
+      name = `${title !== '' ? title : 'Schema'}_${String(n)}`;
+    }
+    this.names.set(node, name);
+    // Taken before it is written, so a recursive reference finds it.
+    this.definitions[name] = {};
+    this.definitions[name] = this.body(node, dropReadOnly);
+    return name;
+  }
+
+  private body(node: JsonSchema, dropReadOnly: boolean): JsonSchemaObject {
+    const out: JsonSchemaObject = {};
+    const declared = node.type === undefined ? undefined : typeof node.type === 'string' ? [node.type] : [...node.type];
+    if (declared !== undefined) {
+      const types = node.nullable === true && !declared.includes('null') ? [...declared, 'null'] : declared;
+      out['type'] = types.length === 1 ? types[0] : types;
+    }
+    if (node.title !== undefined) out['title'] = node.title;
+    if (node.description !== undefined) out['description'] = node.description;
+    if (node.format !== undefined) out['format'] = node.format;
+    if (node.enum !== undefined) out['enum'] = node.nullable === true ? [...node.enum, null] : [...node.enum];
+    if (node.const !== undefined) out['const'] = node.const;
+    if (node.properties !== undefined) {
+      const kept = Object.entries(node.properties).filter(
+        ([, property]) => !(dropReadOnly && property.readOnly === true),
+      );
+      out['properties'] = Object.fromEntries(kept.map(([key, property]) => [key, this.write(property, dropReadOnly)]));
+      const names = new Set(kept.map(([key]) => key));
+      const required = (node.required ?? []).filter((key) => names.has(key));
+      if (required.length > 0) out['required'] = required;
+    } else if (node.required !== undefined && node.required.length > 0) {
+      out['required'] = [...node.required];
+    }
+    if (node.items !== undefined) out['items'] = this.write(node.items, dropReadOnly);
+    if (typeof node.additionalProperties === 'boolean') out['additionalProperties'] = node.additionalProperties;
+    else if (node.additionalProperties !== undefined)
+      out['additionalProperties'] = this.write(node.additionalProperties, dropReadOnly);
+    for (const key of ['allOf', 'oneOf', 'anyOf'] as const) {
+      const list = node[key];
+      if (list !== undefined) out[key] = list.map((member) => this.write(member, dropReadOnly));
+    }
+    return out;
+  }
+}
+
+const ANY_SCALAR: JsonSchemaObject = { type: ['string', 'number', 'integer', 'boolean'] };
+
+function parametersIn(operation: OpenApiOperation, location: OpenApiParameter['in']): OpenApiParameter[] {
+  return operation.parameters.filter((parameter) => parameter.in === location);
+}
+
+/** The tool's argument schema for one OpenAPI operation. */
+export function restToolSchema(api: RestApi, operation: OpenApiOperation): RestToolSchema {
+  const tree = new SchemaTree();
+  const excluded = authHeaderNames(api);
+  const path = parametersIn(operation, 'path');
+  for (const name of [...operation.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1] ?? '')) {
+    if (name !== '' && !path.some((parameter) => parameter.name === name)) {
+      path.push({ name, in: 'path', required: true, schema: { type: 'string' } });
+    }
+  }
+  const query = parametersIn(operation, 'query');
+  const headers = parametersIn(operation, 'header').filter((parameter) => !excluded.has(parameter.name.toLowerCase()));
+  const cookies = parametersIn(operation, 'cookie')
+    .filter((parameter) => parameter.required === true)
+    .map((parameter) => parameter.name);
+  const jsonType = jsonMediaType(operation);
+  const content = operation.requestBody?.content ?? {};
+  const bodyType = jsonType ?? Object.keys(content)[0];
+  const bodySchema = jsonType === undefined ? undefined : content[jsonType]?.schema;
+
+  for (const parameter of [...path, ...query, ...headers]) {
+    if (parameter.schema !== undefined) tree.count(parameter.schema);
+  }
+  if (bodySchema !== undefined) tree.count(bodySchema);
+
+  const section = (parameters: readonly OpenApiParameter[], allRequired: boolean): JsonSchemaObject => {
+    const required = parameters
+      .filter((parameter) => allRequired || parameter.required === true)
+      .map((parameter) => parameter.name);
+    return {
+      type: 'object',
+      properties: Object.fromEntries(
+        parameters.map((parameter) => [
+          parameter.name,
+          parameter.schema === undefined ? ANY_SCALAR : tree.write(parameter.schema, false),
+        ]),
+      ),
+      ...(required.length > 0 ? { required } : {}),
+      additionalProperties: false,
+    };
+  };
+
+  const properties: Record<string, JsonSchemaObject> = {};
+  const required: string[] = [];
+  if (path.length > 0) {
+    properties['path'] = section(path, true);
+    required.push('path');
+  }
+  if (query.length > 0) {
+    properties['query'] = section(query, false);
+    if (query.some((parameter) => parameter.required === true)) required.push('query');
+  }
+  if (headers.length > 0) {
+    properties['headers'] = section(headers, false);
+    if (headers.some((parameter) => parameter.required === true)) required.push('headers');
+  }
+  if (bodyType !== undefined) {
+    properties['body'] =
+      jsonType === undefined
+        ? { type: 'string', description: `Sent as ${bodyType}` }
+        : bodySchema === undefined
+          ? {}
+          : tree.write(bodySchema, true);
+    if (operation.requestBody?.required === true) required.push('body');
+  }
+  const defs = tree.defs();
+  return {
+    schema: {
+      type: 'object',
+      properties,
+      ...(required.length > 0 ? { required } : {}),
+      additionalProperties: false,
+      ...(defs !== undefined ? { $defs: defs } : {}),
+    },
+    cookies,
+  };
+}
