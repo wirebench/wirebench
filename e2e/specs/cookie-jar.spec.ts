@@ -100,6 +100,9 @@ test.describe('Cookie jar and current values (#44)', () => {
     await openResponseTab(page, 'Cookies');
     await page.getByTestId('rest-cookies-manage').click();
     await expect(page.getByTestId('cookie-manager')).toBeVisible();
+    // Only the active tab renders: leave the manager, then bring it back with the command.
+    await page.getByRole('tab', { name: /^Me/ }).click();
+    await expect(page.getByTestId('cookie-manager')).toHaveCount(0);
     await runCommand(page, 'Show Cookies');
     await expect(page.getByTestId('cookie-manager')).toBeVisible();
 
@@ -148,10 +151,17 @@ test.describe('Cookie jar and current values (#44)', () => {
     await expect.poll(() => seen.at(-1)?.token).toBe('session-only');
 
     await openEnvironmentsView(page);
-    await page.getByRole('tab', { name: /Workspace/ }).click();
+    await environmentRow(page, 'Workspace').click();
     await page.getByTestId('env-variable-current-reset').click();
     await expect(page.getByTestId('env-variable-current-dot')).toHaveCount(0);
     await expect(page.getByTestId('env-variable-current-reset')).toHaveCount(0);
+
+    // Reset all clears a value set again.
+    await current.fill('again');
+    await current.press('Enter');
+    await expect(page.getByTestId('env-variable-current-dot')).toHaveCount(1);
+    await page.getByTestId('env-current-reset-all').click();
+    await expect(page.getByTestId('env-variable-current-dot')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Explorer', exact: true }).click();
     await page.getByRole('tab', { name: /Echo/ }).click();
