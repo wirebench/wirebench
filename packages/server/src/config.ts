@@ -113,6 +113,7 @@ const inputSchema = z.object({
   auditForwardUrl: auditForwardUrlText.optional(),
   auditForwardToken: z.string().min(1).optional(),
   auditForwardCaFile: z.string().min(1).optional(),
+  auditChainKey: z.string().min(32, 'must be at least 32 characters').optional(),
 });
 
 type ConfigKey = keyof z.input<typeof inputSchema>;
@@ -376,6 +377,14 @@ export const CONFIG_VARIABLES: readonly ConfigVariable[] = [
     secret: false,
     description:
       'A PEM bundle added to the system roots for `syslog+tls` and `https` forwarding. Certificates are always verified.',
+  },
+  {
+    env: 'WIREBENCH_SERVER_AUDIT_CHAIN_KEY',
+    key: 'auditChainKey',
+    required: false,
+    secret: true,
+    description:
+      'Seals audit events into a keyed hash chain that `admin audit verify` checks: at least 32 characters, kept outside the database and never changed. Unset, nothing is sealed.',
   },
 ];
 

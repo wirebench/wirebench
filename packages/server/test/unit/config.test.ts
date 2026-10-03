@@ -185,6 +185,7 @@ describe('describeConfig', () => {
     expect(CONFIG_VARIABLES.map((v) => v.env).sort()).toEqual(
       [
         'WIREBENCH_SERVER_ALLOW_INSECURE_PUBLIC_URL',
+        'WIREBENCH_SERVER_AUDIT_CHAIN_KEY',
         'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE',
         'WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN',
         'WIREBENCH_SERVER_AUDIT_FORWARD_URL',
@@ -411,5 +412,41 @@ describe('audit forwarding configuration (issue #209)', () => {
       variable: URL_VAR,
       status: 'invalid',
     });
+  });
+});
+
+describe('audit chain key (issue #210)', () => {
+  const KEY_VAR = 'WIREBENCH_SERVER_AUDIT_CHAIN_KEY';
+
+  it('is undefined when unset', () => {
+    expect(loadConfig(required, '1').auditChainKey).toBeUndefined();
+  });
+
+  it('accepts a key of 32 characters or more', () => {
+    for (const key of ['k'.repeat(32), 'a much longer chain key, with spaces and ünïcödé, 0123456789']) {
+      expect(loadConfig({ ...required, [KEY_VAR]: key }, '1').auditChainKey).toBe(key);
+    }
+  });
+
+  it('refuses a shorter key without echoing it', () => {
+    const key = 'short-chain-key-31-characters!!';
+    expect(key).toHaveLength(31);
+    let caught: unknown;
+    try {
+      loadConfig({ ...required, [KEY_VAR]: key }, '1');
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ConfigError);
+    const error = caught as ConfigError;
+    expect(error.problems.map((p) => p.variable)).toEqual([KEY_VAR]);
+    expect(error.message).not.toContain(key);
+    expect(JSON.stringify(error.problems)).not.toContain('short-chain');
+    expect(describeConfig({ ...required, [KEY_VAR]: key })).toContainEqual({ variable: KEY_VAR, status: 'invalid' });
+  });
+
+  it('is documented as an optional secret', () => {
+    const variable = CONFIG_VARIABLES.find((v) => v.env === KEY_VAR);
+    expect([variable?.key, variable?.secret, variable?.required]).toEqual(['auditChainKey', true, false]);
   });
 });

@@ -1,6 +1,7 @@
 /** The append-only `audit_events` table (audit-log spec §4.2). Raw SQL over `Querier`, like every module's repo. */
 import type { AuditDetails, AuditEvent, AuditTargetKind } from '@wirebench/engine';
 import type { AuditInput, Querier } from '../context.js';
+import type { CanonicalRow } from './chain/canonical.js';
 import type { Cursor } from './cursor.js';
 
 export interface AuditRowInput extends AuditInput {
@@ -197,4 +198,98 @@ export async function deleteAuditEventsBefore(db: Querier, cutoff: Date, limit: 
     [cutoff, limit],
   );
   return result.rowCount ?? 0;
+}
+
+// ── The audit chain (issue #210, audit-chain spec §3.2, §4) ─────────────────────────────────────────
+
+/**
+ * The select list that renders a row as the texts {@link CanonicalRow} holds, in its field order. The
+ * sealer and verify both read rows through it, so the two can never disagree on a row's bytes.
+ */
+export const CANONICAL_COLUMNS =
+  `id, to_char(at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at, ` +
+  'actor_kind as "actorKind", actor_user_id as "actorUserId", actor_email as "actorEmail", ' +
+  'actor_token_id as "actorTokenId", actor_workspace_id as "actorWorkspaceId", action, ' +
+  'target_kind as "targetKind", target_id as "targetId", workspace_id as "workspaceId", team_id as "teamId", ' +
+  'host(ip) as ip, user_agent as "userAgent", details::text as details';
+
+/** A point in the chain: a sealed row's, the anchor's, or the head's. */
+export interface ChainLink {
+  readonly seq: bigint;
+  readonly hash: Buffer;
+}
+
+/** The chain's starting point, and the id of the key that built it. */
+export interface ChainAnchor extends ChainLink {
+  readonly keyId: string;
+}
+
+/** A sealed row as verify walks it. */
+export interface SealedRow extends ChainLink {
+  readonly row: CanonicalRow;
+}
+
+type CanonicalRaw = { readonly [K in keyof CanonicalRow]: string | null };
+
+// pg returns bigint columns as strings; the chain's numbers are compared and incremented as bigint.
+const seqOf = (value: string): bigint => BigInt(value);
+
+export async function readAnchor(db: Querier): Promise<ChainAnchor | undefined> {
+  const row = (
+    await db.query<{ seq: string; hash: Buffer; key_id: string }>(
+      'select seq::text as seq, hash, key_id from audit_chain_anchor',
+    )
+  ).rows[0];
+  return row === undefined ? undefined : { seq: seqOf(row.seq), hash: row.hash, keyId: row.key_id };
+}
+
+/**
+ * Inserts the genesis anchor (`seq` 0) unless an anchor exists, and returns the anchor now in place.
+ * The sealer calls it under its advisory lock, so the existing anchor wins only a race it cannot lose.
+ */
+export async function insertGenesis(tx: Querier, hash: Buffer, keyId: string): Promise<ChainAnchor> {
+  await tx.query(
+    'insert into audit_chain_anchor (seq, hash, key_id) values (0, $1, $2) on conflict (only_row) do nothing',
+    [hash, keyId],
+  );
+  const anchor = await readAnchor(tx);
+  /* c8 ignore next -- the row was just inserted or already there */
+  if (anchor === undefined) throw new Error('the audit chain anchor is missing after its insert');
+  return anchor;
+}
+
+/** The highest sealed `(seq, hash)`, or `undefined` when no row is sealed (the head is then the anchor). */
+export async function chainHead(db: Querier): Promise<ChainLink | undefined> {
+  const row = (
+    await db.query<{ seq: string; hash: Buffer }>(
+      'select chain_seq::text as seq, chain_hash as hash from audit_events where chain_seq is not null order by chain_seq desc limit 1',
+    )
+  ).rows[0];
+  return row === undefined ? undefined : { seq: seqOf(row.seq), hash: row.hash };
+}
+
+/**
+ * Claims up to `limit` unsealed rows in sealing order, `(at, id)`. Call it inside the sealing
+ * transaction: the rows stay locked until it ends, and rows not yet committed are invisible to it.
+ */
+export async function claimUnsealed(tx: Querier, limit: number): Promise<CanonicalRow[]> {
+  const rows = await tx.query<CanonicalRaw>(
+    `select ${CANONICAL_COLUMNS} from audit_events where chain_seq is null order by at, id limit $1 for update skip locked`,
+    [limit],
+  );
+  return rows.rows;
+}
+
+export async function sealRow(tx: Querier, id: string, seq: bigint, hash: Buffer): Promise<void> {
+  await tx.query('update audit_events set chain_seq = $2, chain_hash = $3 where id = $1', [id, seq.toString(), hash]);
+}
+
+/** Sealed rows with a sequence number above `afterSeq`, in chain order, for verify's walk. */
+export async function sealedPage(db: Querier, afterSeq: bigint, limit: number): Promise<SealedRow[]> {
+  const rows = await db.query<CanonicalRaw & { chainSeq: string; chainHash: Buffer }>(
+    `select ${CANONICAL_COLUMNS}, chain_seq::text as "chainSeq", chain_hash as "chainHash" from audit_events
+     where chain_seq > $1 order by chain_seq limit $2`,
+    [afterSeq.toString(), limit],
+  );
+  return rows.rows.map(({ chainSeq, chainHash, ...row }) => ({ seq: seqOf(chainSeq), hash: chainHash, row }));
 }
