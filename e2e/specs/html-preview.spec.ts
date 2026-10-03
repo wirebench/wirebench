@@ -92,7 +92,8 @@ test.describe('HTML preview (#48)', () => {
     // The inline script and onload set the frame's title, not the app window's: neither ran. Read it
     // through the frame's DOM; a sandboxed srcdoc frame is not listed in page.frames() by its URL.
     await expect(frame.locator('title')).toHaveCount(1);
-    await expect(frame.locator('title')).toHaveText('Original title');
+    // textContent, not toHaveText: a <title> is never rendered, so its innerText is empty.
+    expect(await frame.locator('title').textContent()).toBe('Original title');
     // The only request the server ever saw is the send itself.
     expect(seen).toEqual(['GET /page']);
   });
