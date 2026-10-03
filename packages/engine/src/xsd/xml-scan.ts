@@ -61,7 +61,7 @@ const NAME_CHAR_RE = /[^\s/>]/;
 const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 
 /** Decodes the five predefined XML entities plus numeric character references. */
-function decodeEntities(raw: string): string {
+export function decodeEntities(raw: string): string {
   return raw.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (match, body: string) => {
     if (body === 'amp') return '&';
     if (body === 'lt') return '<';

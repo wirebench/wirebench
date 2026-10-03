@@ -258,8 +258,8 @@ function absolute(ctx: Ctx, range: TextRange): TextRange {
   return ctx.offset === 0 ? range : { start: range.start + ctx.offset, end: range.end + ctx.offset };
 }
 
-/** The unconsumed source children of one element, claimed by name as particles are walked. */
-class Pool {
+/** The unconsumed source children of one element, claimed by name as particles are walked (the JSON bridge reads with it too). */
+export class Pool {
   private readonly used: boolean[];
 
   constructor(readonly children: readonly ScannedElement[]) {
