@@ -90,6 +90,24 @@ describe('WorkspacesTab (teams-access §3.5)', () => {
     await vi.waitFor(() => expect(deleteWorkspace).toHaveBeenCalledWith({ url: URL_, workspaceId: 'W1' }));
   });
 
+  it('an admin switches desktop recording on; everyone else only reads that it is on', async () => {
+    const updateWorkspace = ok({ workspace: workspace({ myRole: 'admin', recordDesktopActivity: true }) });
+    await openWith([workspace({ myRole: 'admin', source: 'grant' })], { updateWorkspace });
+    fireEvent.click(screen.getByLabelText('Record desktop activity'));
+    await vi.waitFor(() =>
+      expect(updateWorkspace).toHaveBeenCalledWith({ url: URL_, workspaceId: 'W1', recordDesktopActivity: true }),
+    );
+    cleanup();
+    useTeamStore.getState().reset();
+    await openWith([workspace({ recordDesktopActivity: true })]);
+    expect(screen.queryByLabelText('Record desktop activity')).toBeNull();
+    expect(screen.getByTestId('workspace-recorded-W1').textContent).toBe('Desktop activity is recorded');
+    cleanup();
+    useTeamStore.getState().reset();
+    await openWith([workspace()]);
+    expect(screen.queryByTestId('workspace-recorded-W1')).toBeNull();
+  });
+
   it('the access panel shows effective roles; grants set and clear, admins are fixed', async () => {
     const access = ok({
       entries: [

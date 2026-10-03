@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { StatusBar } from '../../src/renderer/shell/status-bar.js';
 import { useExchangesStore } from '../../src/renderer/state/exchanges.js';
 import { useProblemsStore } from '../../src/renderer/state/problems.js';
+import { useWorkspaceStore } from '../../src/renderer/state/workspace.js';
+import { workspaceWire } from '../helpers/workspace-wire.js';
 import { useUiStore } from '../../src/renderer/state/ui.js';
 import { logExchange, makeExchange, makeWsHandshakeEntry } from '../mocks/exchange-fixtures.js';
 
@@ -27,6 +29,28 @@ describe('StatusBar', () => {
   it('says nothing has been sent yet', () => {
     render(<StatusBar />);
     expect(screen.getByText('no requests sent')).toBeDefined();
+  });
+
+  it('shows Recorded only while the server share records desktop activity', () => {
+    const share = (recording: boolean) =>
+      workspaceWire({
+        share: { kind: 'server', managed: true, server: { url: 'https://wb.test', workspaceId: 'W1', recording } },
+      });
+    useWorkspaceStore.setState({ workspace: share(false) });
+    render(<StatusBar />);
+    expect(screen.queryByTestId('status-bar-recorded')).toBeNull();
+    cleanup();
+    useWorkspaceStore.setState({ workspace: share(true) });
+    render(<StatusBar />);
+    const item = screen.getByTestId('status-bar-recorded');
+    expect(item.textContent).toBe('Recorded');
+    expect(item.getAttribute('title')).toBe(
+      "Requests and test runs in this workspace are recorded in the team server's audit log.",
+    );
+    expect(item.getAttribute('aria-label')).toBe(
+      "Recorded. Requests and test runs in this workspace are recorded in the team server's audit log.",
+    );
+    useWorkspaceStore.setState({ workspace: null });
   });
 
   it('summarises the last exchange', () => {

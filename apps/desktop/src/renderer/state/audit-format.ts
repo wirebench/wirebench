@@ -46,7 +46,14 @@ export const ACTION_GROUP_LABELS: Record<ActionGroup, string> = {
   desktop: 'Desktop activity',
 };
 
+/** Action words that read better than the mechanical rewrite of the identifier. */
+const ACTION_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  'desktop.recording_changed': 'Desktop recording changed',
+};
+
 export function actionLabel(action: string): string {
+  const override = ACTION_LABEL_OVERRIDES[action];
+  if (override !== undefined) return override;
   const words = (action.split('.')[1] ?? action).replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

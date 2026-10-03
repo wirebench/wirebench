@@ -58,7 +58,11 @@ export interface TeamStore extends TeamState {
   readonly createWorkspace: (name: string, defaultRole?: DefaultRoleWire) => Promise<boolean>;
   readonly updateWorkspace: (
     workspaceId: string,
-    patch: { readonly name?: string; readonly defaultRole?: DefaultRoleWire },
+    patch: {
+      readonly name?: string;
+      readonly defaultRole?: DefaultRoleWire;
+      readonly recordDesktopActivity?: boolean;
+    },
   ) => Promise<boolean>;
   readonly deleteWorkspace: (workspaceId: string) => Promise<boolean>;
   readonly openAccess: (workspaceId: string) => Promise<void>;

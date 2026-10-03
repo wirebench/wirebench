@@ -37,4 +37,15 @@ describe('audit labels and ranges (audit-log spec §3.6)', () => {
     expect(targetLabel({ target: { kind: 'team', id: 'T1' }, details: { name: 'Billing' } })).toBe('Team Billing');
     expect(targetLabel({ target: { kind: 'server', id: null }, details: {} })).toBe('This server');
   });
+
+  it('desktop events read as words and a workspace target names the workspace', () => {
+    expect(ACTION_GROUP_LABELS['desktop']).toBe('Desktop activity');
+    expect(actionLabel('desktop.request_sent')).toBe('Request sent');
+    expect(actionLabel('desktop.test_run_finished')).toBe('Test run finished');
+    expect(actionLabel('desktop.events_dropped')).toBe('Events dropped');
+    expect(actionLabel('desktop.recording_changed')).toBe('Desktop recording changed');
+    expect(targetLabel({ target: { kind: 'workspace', id: 'W1' }, details: { name: 'Integration' } })).toBe(
+      'Workspace Integration',
+    );
+  });
 });

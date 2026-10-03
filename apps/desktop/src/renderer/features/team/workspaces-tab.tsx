@@ -54,8 +54,19 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
           {roleWithSource(workspace.myRole, workspace.source)}
         </div>
       </div>
-      {isAdmin && (
+      {isAdmin ? (
         <>
+          <label className="flex items-center gap-1 text-xs text-fg-muted whitespace-nowrap">
+            <input
+              type="checkbox"
+              data-testid={`workspace-record-${workspace.id}`}
+              checked={workspace.recordDesktopActivity}
+              onChange={(event) => {
+                void updateWorkspace(workspace.id, { recordDesktopActivity: event.target.checked });
+              }}
+            />
+            Record desktop activity
+          </label>
           <select
             data-testid={`workspace-default-${workspace.id}`}
             aria-label={`Default role in ${workspace.name}`}
@@ -79,6 +90,12 @@ function WorkspaceRow({ workspace, onDelete }: WorkspaceRowProps) {
             Delete
           </Button>
         </>
+      ) : (
+        workspace.recordDesktopActivity && (
+          <span data-testid={`workspace-recorded-${workspace.id}`} className="text-xs text-fg-subtle">
+            Desktop activity is recorded
+          </span>
+        )
       )}
     </li>
   );
