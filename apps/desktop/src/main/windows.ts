@@ -9,6 +9,7 @@ import {
   APP_SCHEME_HOST,
   CONTENT_SECURITY_POLICY,
   MAIN_WINDOW_WEB_PREFERENCES,
+  denySubframeNavigation,
   isExternalUrlAllowed,
 } from './security.js';
 
@@ -71,6 +72,8 @@ export function createMainWindow(): BrowserWindow {
   win.webContents.on('will-navigate', (event) => {
     event.preventDefault();
   });
+
+  win.webContents.on('will-frame-navigate', denySubframeNavigation);
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isExternalUrlAllowed(url)) {

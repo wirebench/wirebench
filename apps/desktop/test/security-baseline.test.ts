@@ -10,7 +10,9 @@ import {
   CONTENT_SECURITY_POLICY,
   MAIN_WINDOW_WEB_PREFERENCES,
   isExternalUrlAllowed,
+  denySubframeNavigation,
 } from '../src/main/security.js';
+import { HTML_PREVIEW_CSP } from '../src/shared/html-preview-csp.js';
 
 describe('security baseline', () => {
   it('locks down BrowserWindow webPreferences', () => {
@@ -51,6 +53,33 @@ describe('security baseline', () => {
         "supportFetchAPI": true,
       }
     `);
+  });
+
+  it('keeps the HTML preview offline and inert', () => {
+    expect(HTML_PREVIEW_CSP).toMatchInlineSnapshot(
+      `"default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'"`,
+    );
+  });
+
+  it('denies every subframe navigation and leaves the main frame to will-navigate', () => {
+    const navigation = (isMainFrame: boolean) => {
+      let prevented = false;
+      return {
+        isMainFrame,
+        preventDefault: () => {
+          prevented = true;
+        },
+        get prevented() {
+          return prevented;
+        },
+      };
+    };
+    const sub = navigation(false);
+    denySubframeNavigation(sub);
+    expect(sub.prevented).toBe(true);
+    const main = navigation(true);
+    denySubframeNavigation(main);
+    expect(main.prevented).toBe(false);
   });
 });
 
