@@ -239,6 +239,59 @@ describe('AuditReporter', () => {
     expect(await files()).toEqual([]);
   });
 
+  it('an event is counted as dropped when recording goes off while the accounts load', async () => {
+    let release: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { reporter } = setup(undefined, undefined, undefined, ready);
+    const pending = reporter.enqueue(ev(1), 'w1');
+    reporter.setTarget({ url: 'https://s.example', workspaceId: 'w1', dir, recording: false, role: undefined });
+    release();
+    await pending;
+    expect(await files()).toEqual([]);
+    expect(await outboxFor(dir).dropped()).toBe(1);
+  });
+
+  it('dispose during the accounts wait queues nothing', async () => {
+    let release: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { reporter } = setup(undefined, undefined, undefined, ready);
+    const pending = reporter.enqueue(ev(1), 'w1');
+    reporter.dispose();
+    release();
+    await pending;
+    expect(await files()).toEqual([]);
+    expect(await outboxFor(dir).dropped()).toBe(0);
+  });
+
+  it('a 403 stop survives a recording flip that keeps the same role', async () => {
+    let calls = 0;
+    const { reporter } = setup(() => {
+      calls++;
+      return Promise.reject(new WirebenchError('sync-forbidden', 'no', { details: { status: 403 } }));
+    });
+    const target = (recording: boolean) => ({
+      url: 'https://s.example',
+      workspaceId: 'w1',
+      dir,
+      recording,
+      role: 'viewer' as const,
+    });
+    reporter.setTarget(target(true));
+    await reporter.enqueue(ev(1), 'w1');
+    await reporter.flush();
+    expect(calls).toBe(1);
+    reporter.setTarget(target(false));
+    reporter.setTarget(target(true));
+    await reporter.enqueue(ev(2), 'w1');
+    await reporter.flush();
+    expect(calls).toBe(1);
+    expect(await files()).toEqual([]);
+  });
+
   it('with the accounts loaded and none known, the event is only counted as dropped', async () => {
     const { batches, reporter } = setup(undefined, undefined, () => []);
     await reporter.enqueue(ev(1), 'w1');

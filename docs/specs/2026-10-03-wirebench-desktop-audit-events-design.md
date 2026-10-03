@@ -108,7 +108,7 @@ The URL is the one actually sent, after variables. For a REST send that failed, 
 - The server answers `409 audit-desktop-recording-off` when the workspace no longer records, and
   `403` or `404` when the workspace is closed to the person. The desktop then deletes its outbox for
   that workspace. A `409` stop ends when a fetch says the workspace records; a `403` or `404` stop
-  lasts until the person's role in the workspace changes, or another workspace or server is opened.
+  lasts until the person's role in the workspace changes, the workspace is reopened, or the desktop restarts.
 - A `400` means the batch can never be accepted: the desktop drops it and counts its events as
   dropped. A `429` (the route's rate limit) is a back-off like a network failure, the files kept; when its
   `Retry-After` (seconds or an HTTP date) is longer than the back-off the retry waits that long,

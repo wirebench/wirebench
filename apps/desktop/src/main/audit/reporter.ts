@@ -133,6 +133,14 @@ export class AuditReporter {
       this.serverOff !== undefined ||
       workspaceId !== target.workspaceId
     ) {
+      // Same outbox, but it stopped recording meanwhile: the gap is counted so the trail shows it.
+      if (!this.disposed && this.outbox === outbox) {
+        try {
+          await outbox.addDropped(1);
+        } catch {
+          return;
+        }
+      }
       return;
     }
     try {

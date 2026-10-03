@@ -142,7 +142,7 @@ before and after for the two changes that need more than a rename. The package's
   **Record desktop activity** for a workspace: the app then reports each request sent and each test-suite
   run to the server's log (the masked URL and a few details, never headers or bodies), keeps them in a
   queue while offline, and shows **Recorded** in the status bar. Delivery honours `Retry-After`, stops
-  for good on a `403` or `404` until the person's role changes, and the switch appears only on servers
+  on a `403` or `404` until the person's role in the workspace changes, the workspace is reopened, or the desktop restarts, and the switch appears only on servers
   that support it.
   Enterprise servers can also forward every audit event to one collector, as RFC 5424 syslog over TCP or
   TLS or as JSON batches over HTTPS (`WIREBENCH_SERVER_AUDIT_FORWARD_URL`, with an optional token and CA

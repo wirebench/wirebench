@@ -46,11 +46,15 @@ export function registerTeamChannels(deps: TeamChannelDeps): void {
 
   registerHandler(channels.team.list, (r) =>
     withToken(deps, r.url, async (url, token) => {
-      const [teams, me, meta] = await Promise.all([c.listTeams(url, token), c.me(url, token), c.meta(url)]);
+      const [teams, me, meta] = await Promise.all([
+        c.listTeams(url, token),
+        c.me(url, token),
+        c.meta(url).catch(() => undefined),
+      ]);
       return {
         teams,
         serverAdmin: me.user.serverAdmin,
-        desktopActivity: meta.capabilities.includes(DESKTOP_ACTIVITY_CAPABILITY),
+        desktopActivity: meta?.capabilities.includes(DESKTOP_ACTIVITY_CAPABILITY) === true,
       };
     }),
   );

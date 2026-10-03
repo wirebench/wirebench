@@ -103,6 +103,16 @@ describe('team.* channels (teams-access §3.5, §5.2)', () => {
     });
   });
 
+  it('team.list still answers, with desktopActivity false, when GET /meta fails', async () => {
+    const f = fakes();
+    f.client.meta.mockRejectedValue(new Error('down'));
+    registerTeamChannels(f);
+    expect(await invoke('team.list', { url: 'https://wb.test' })).toMatchObject({
+      ok: true,
+      value: { teams: [TEAM], desktopActivity: false },
+    });
+  });
+
   it('with no token it answers account-signed-out and never calls the server', async () => {
     const f = fakes(undefined);
     registerTeamChannels(f);
