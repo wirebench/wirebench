@@ -106,7 +106,16 @@ describeDb('GET /audit and /audit/export (audit-log spec §3.4)', () => {
     expect(new Set(lines.map((l) => l.id)).size).toBe(1005);
     for (let i = 1; i < lines.length; i++) expect(lines[i]!.at >= lines[i - 1]!.at).toBe(true);
     const exported = (await get('/audit?action=audit.exported')).json<Page>().events[0]!;
-    expect(exported.details).toMatchObject({ action: 'hook.cleared', count: 1005 });
+    expect(exported.details).toEqual({
+      from: null,
+      to: null,
+      action: 'hook.cleared',
+      workspaceId: null,
+      actorUserId: null,
+      targetKind: null,
+      targetId: null,
+      count: 1005,
+    });
     expect(exported.actor.email).toBe('root@example.com');
   });
 

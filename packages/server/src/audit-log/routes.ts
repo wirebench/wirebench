@@ -90,21 +90,32 @@ export function requireAuditScope(db: Querier): preHandlerAsyncHookHandler {
     if (caller.serverAdmin) return;
     const { teamId } = request.query as { readonly teamId?: string };
     if (teamId === undefined) throw teamRequired();
-    if ((await teamsRepo.teamById(db, teamId)) === undefined) throw teamNotFound();
-    const role = await teamsRepo.memberRole(db, teamId, caller.id);
-    if (role === undefined) throw teamNotFound();
+    const role = await teamsRepo.teamMemberRole(db, teamId, caller.id);
+    if (role === undefined || role === null) throw teamNotFound();
     if (role !== 'admin') throw teamsForbidden();
   };
 }
 
-/** `teamId` rides on the event when the export was team-scoped, so it shows in that team's own log. */
+/**
+ * `teamId` rides on the event when the export was team-scoped, so it shows in that team's own log.
+ * Every other filter is in `details` (null when absent), so a narrowed export never reads as wider.
+ */
 export function exportedEvent(source: AuditSource, query: AuditExportQuery, count: number): AuditInput {
   return {
     ...source,
     ...(query.teamId !== undefined ? { teamId: query.teamId } : {}),
     action: 'audit.exported',
     target: { kind: 'server' },
-    details: { from: query.from ?? null, to: query.to ?? null, action: query.action ?? null, count },
+    details: {
+      from: query.from ?? null,
+      to: query.to ?? null,
+      action: query.action ?? null,
+      workspaceId: query.workspaceId ?? null,
+      actorUserId: query.actorUserId ?? null,
+      targetKind: query.targetKind ?? null,
+      targetId: query.targetId ?? null,
+      count,
+    },
   };
 }
 

@@ -20,11 +20,15 @@ describeDb('team-scoped audit reads (issue #208)', () => {
 
   const get = (url: string, user = adminA) =>
     h.app.inject({ method: 'GET', url: `/api/v1${url}`, headers: user.headers });
+  // Whole, distinct milliseconds: the page cursor keeps milliseconds, so SQL `now()` (microseconds)
+  // would let rows sharing a millisecond fall between two pages.
+  const base = Date.parse('2026-10-03T12:00:00Z');
+  let seeded = 0;
   const seedEvent = (id: string, action: string, team: string | null, workspace: string | null, actor: string) =>
     h.db.query(
       `insert into audit_events (id, at, actor_kind, actor_user_id, action, target_kind, team_id, workspace_id)
-       values ($1, now(), 'user', $5, $2, 'team', $3, $4)`,
-      [id, action, team, workspace, actor],
+       values ($1, $6, 'user', $5, $2, 'team', $3, $4)`,
+      [id, action, team, workspace, actor, new Date(base - ++seeded * 1000)],
     );
 
   beforeAll(async () => {
@@ -129,5 +133,28 @@ describeDb('team-scoped audit reads (issue #208)', () => {
       `select team_id from audit_events where action = 'audit.exported'`,
     );
     expect(row.rows[0]!.team_id).toBe(teamA);
+  });
+
+  it('a narrowed export records every filter it was given, and null for the rest', async () => {
+    const res = await get(
+      `/audit/export?teamId=${teamA}&workspaceId=${wsA}&actorUserId=${adminA.user.id}&targetKind=team&targetId=T9`,
+    );
+    expect(res.statusCode).toBe(200);
+    const details = async () =>
+      (
+        await h.db.query<{ details: Record<string, unknown> }>(
+          `select details from audit_events where action = 'audit.exported' and details->>'targetId' = 'T9'`,
+        )
+      ).rows[0]?.details;
+    await expect.poll(details).toEqual({
+      from: null,
+      to: null,
+      action: null,
+      workspaceId: wsA,
+      actorUserId: adminA.user.id,
+      targetKind: 'team',
+      targetId: 'T9',
+      count: 0,
+    });
   });
 });
