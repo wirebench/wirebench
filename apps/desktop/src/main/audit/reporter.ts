@@ -167,6 +167,7 @@ export class AuditReporter {
           await outbox.addDropped(items.length);
           continue;
         }
+        // Anything else, a 429 rate limit and a 5xx included, keeps the files and backs off.
         return code !== undefined && (OFFLINE_CODES.has(code) || code === 'server-unreachable') ? 'offline' : 'failed';
       }
       await outbox.remove(items.map((i) => i.name));

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { DESKTOP_EVENTS_RATE } from '../../../src/audit-log/desktop-routes.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
 import { describeDb } from '../../helpers/database.js';
 import { seedCiToken } from '../../helpers/hooks.js';
@@ -89,7 +90,7 @@ describeDb('POST /workspaces/:id/audit/desktop-events (#211)', () => {
     expect(await rows()).toHaveLength(0);
   });
 
-  it('a body that does not match, or 101 events, is a 400 and writes nothing', async () => {
+  it('a body that does not match, 101 events, or a dropped count over a million, is a 400 and writes nothing', async () => {
     await setRecording(true);
     for (const body of [
       {},
@@ -98,6 +99,7 @@ describeDb('POST /workspaces/:id/audit/desktop-events (#211)', () => {
       { events: [{ action: 'auth.signed_in', details: {} }] },
       { events: [SENT], extra: true },
       { events: Array.from({ length: 101 }, () => SENT) },
+      { events: [], dropped: 1_000_001 },
     ]) {
       expect((await call(h, viewer, 'POST', url, body)).status).toBe(400);
     }
@@ -150,5 +152,28 @@ describeDb('POST /workspaces/:id/audit/desktop-events (#211)', () => {
     });
     expect(res.statusCode).toBe(403);
     expect((await rows()).length).toBe(before);
+  });
+
+  it('past 120 batches at once a caller gets 429 with Retry-After; others are unaffected; a second later one more goes', async () => {
+    await setRecording(true);
+    h.clock.set(new Date('2026-09-24T13:00:00.000Z'));
+    for (let i = 0; i < DESKTOP_EVENTS_RATE.capacity; i++) {
+      expect((await call(h, admin, 'POST', url, { events: [], dropped: 1 })).status).toBe(204);
+    }
+    const before = (await rows()).length;
+    const refused = await h.app.inject({
+      method: 'POST',
+      url: `/api/v1${url}`,
+      headers: admin.headers,
+      payload: { events: [SENT] },
+    });
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json<{ code: string }>().code).toBe('audit-desktop-rate-limited');
+    expect(refused.headers['retry-after']).toBe('1');
+    expect((await rows()).length).toBe(before);
+    expect((await call(h, viewer, 'POST', url, { events: [SENT] })).status).toBe(204);
+    h.clock.advance(1000);
+    expect((await call(h, admin, 'POST', url, { events: [SENT] })).status).toBe(204);
+    expect((await call(h, admin, 'POST', url, { events: [SENT] })).status).toBe(429);
   });
 });

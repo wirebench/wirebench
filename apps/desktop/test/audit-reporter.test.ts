@@ -142,6 +142,24 @@ describe('AuditReporter', () => {
     expect(batches.length).toBeGreaterThan(2);
   });
 
+  it('a 429 is a back-off, not a refusal: the files stay and the send is retried', async () => {
+    let limited = true;
+    const { clock, batches, reporter } = setup(() =>
+      limited
+        ? Promise.reject(new WirebenchError('audit-desktop-rate-limited', 'slow down', { details: { status: 429 } }))
+        : Promise.resolve(),
+    );
+    await reporter.enqueue(ev(1));
+    await reporter.flush();
+    expect(await files()).toHaveLength(1);
+    expect(await new AuditOutbox(dir).dropped()).toBe(0);
+    expect(clock.pending).toEqual([5000]);
+    limited = false;
+    await clock.fireNext();
+    expect(batches.map((b) => b.events.length)).toEqual([1, 1]);
+    expect(await files()).toEqual([]);
+  });
+
   it('signed out keeps the files and waits for onSignedIn', async () => {
     let token = undefined as string | undefined;
     const { clock, batches, reporter } = setup(undefined, () => token);

@@ -9,7 +9,7 @@ import type { ServerContext, ServerModule } from '../context.js';
 import type { SetTimer } from '../hooks/env.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
-import { desktopRoutes } from './desktop-routes.js';
+import { desktopEventsLimiter, desktopRoutes } from './desktop-routes.js';
 import { auditHook } from './hook.js';
 import { licenseListener } from './license-listener.js';
 import { deleteAuditEventsBefore } from './repo.js';
@@ -34,7 +34,7 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
       ctx.hooks.licenseChanged.push(licenseListener({ db: ctx.db, hooks: ctx.hooks, log: ctx.log }));
       ctx.meta.addCapability('audit-log');
       auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
-      desktopRoutes({ db: ctx.db, hooks: ctx.hooks })(app);
+      desktopRoutes({ db: ctx.db, hooks: ctx.hooks, limiter: desktopEventsLimiter(now) })(app);
       const sweeper = new CaptureSweeper({
         db: ctx.db,
         maxAgeDays: ctx.config.auditMaxAgeDays,

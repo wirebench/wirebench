@@ -170,6 +170,8 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
       expect(desktopAuditBatchSchema.safeParse({ events: [] }).success).toBe(false);
       expect(desktopAuditBatchSchema.parse({ events: [], dropped: 3 })).toEqual({ events: [], dropped: 3 });
       expect(desktopAuditBatchSchema.safeParse({ events: [], dropped: 0 }).success).toBe(false);
+      expect(desktopAuditBatchSchema.safeParse({ events: [], dropped: 1_000_000 }).success).toBe(true);
+      expect(desktopAuditBatchSchema.safeParse({ events: [], dropped: 1_000_001 }).success).toBe(false);
     });
   });
 });

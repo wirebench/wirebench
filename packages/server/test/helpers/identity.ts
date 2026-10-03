@@ -1,15 +1,11 @@
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { GitCli } from '@wirebench/engine';
-import { AUDIT_LOG_MIGRATIONS_DIR } from '../../src/audit-log/module.js';
-import { CI_TOKENS_MIGRATIONS_DIR } from '../../src/ci-tokens/module.js';
 import { loadConfig } from '../../src/config.js';
 import type { ServerHooks, ServerModule } from '../../src/context.js';
 import { migrate } from '../../src/db/migrate.js';
-import { HOOKS_MIGRATIONS_DIR, SIGNATURES_MIGRATIONS_DIR } from '../../src/hooks/module.js';
+import { BUILTIN_MODULES } from '../../src/modules.js';
 import { identityModule } from '../../src/identity/module.js';
-import { LICENSING_MIGRATIONS_DIR } from '../../src/licensing/module.js';
-import { TEAMS_MIGRATIONS_DIR } from '../../src/teams/module.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
 import { hashPassword } from '../../src/identity/passwords.js';
 import * as repo from '../../src/identity/repo.js';
@@ -37,35 +33,6 @@ export interface IdentityHarness {
   readonly repos: RepoStore;
   readonly dataDir: string;
   close(): Promise<void>;
-}
-
-/**
- * Migration versions are checked for contiguity across modules, and teams-access owns 0003 and 0009.
- * A harness that loads it without the modules between (webhook capture 0004 to 0005, CI tokens 0006,
- * licensing 0007, audit log 0008) would have a gap, so their folders are added as migration-only modules.
- */
-const BETWEEN_TEAMS_MIGRATIONS = [
-  HOOKS_MIGRATIONS_DIR,
-  SIGNATURES_MIGRATIONS_DIR,
-  CI_TOKENS_MIGRATIONS_DIR,
-  LICENSING_MIGRATIONS_DIR,
-  AUDIT_LOG_MIGRATIONS_DIR,
-];
-
-function withTeamsPadding(modules: readonly ServerModule[]): readonly ServerModule[] {
-  const dirs = new Set(
-    modules.flatMap((m) => (typeof m.migrationsDir === 'string' ? [m.migrationsDir] : [...(m.migrationsDir ?? [])])),
-  );
-  if (!dirs.has(TEAMS_MIGRATIONS_DIR)) return modules;
-  const missing = BETWEEN_TEAMS_MIGRATIONS.filter((dir) => !dirs.has(dir));
-  return [
-    ...modules,
-    ...missing.map((migrationsDir): ServerModule => ({
-      name: 'teams-access',
-      migrationsDir,
-      register: () => Promise.resolve(),
-    })),
-  ];
 }
 
 export const OIDC_ENV = {
@@ -118,7 +85,9 @@ export async function identityHarness(
   });
   const extra = typeof options.modules === 'function' ? options.modules(clock) : (options.modules ?? []);
   const modules = [identity, ...extra];
-  await migrate(db, await allMigrations(withTeamsPadding(modules)));
+  // Every built-in module's migrations, whichever modules this suite registers: versions are checked for
+  // contiguity across modules, so a partial set would leave a gap. Only `modules` get routes and hooks.
+  await migrate(db, await allMigrations(BUILTIN_MODULES));
   await RepoStore.prepare(dataDir);
   const repos = new RepoStore({ git: options.git ?? testGit(join(dataDir, NO_HOOKS_DIR)), dataDir });
   // R13: ctx.git (and the commit store's ctx.git.withPlumbing()) gets the same hermetic client as the

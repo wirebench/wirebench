@@ -204,7 +204,7 @@ export type DesktopAuditEvent = z.infer<typeof desktopAuditEventSchema>;
 export const desktopAuditBatchSchema = z
   .strictObject({
     events: z.array(desktopAuditEventSchema).max(DESKTOP_AUDIT_LIMITS.maxBatch),
-    dropped: z.number().int().min(1).optional(),
+    dropped: z.number().int().min(1).max(1_000_000).optional(),
   })
   .refine((batch) => batch.events.length > 0 || batch.dropped !== undefined, {
     message: 'a batch carries events or a dropped count',
