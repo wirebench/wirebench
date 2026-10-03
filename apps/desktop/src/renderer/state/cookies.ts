@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { CookieJarStateWire, CookieKeyWire, StoredCookieWire } from '../../shared/wire-types.js';
+import { showToast } from '../components/toast.js';
 import { ipc } from './ipc-client.js';
 
 /**
@@ -40,6 +41,8 @@ export const useCookiesStore = create<CookiesStore>((set) => ({
     const result = await ipc().cookies.set({ cookie, ...(replaces !== undefined ? { replaces } : {}) });
     if (result.ok) {
       set({ cookies: result.value.cookies, persisted: result.value.persisted });
+    } else {
+      showToast(`Could not save the cookie: ${result.error.message}`);
     }
   },
 
@@ -47,6 +50,8 @@ export const useCookiesStore = create<CookiesStore>((set) => ({
     const result = await ipc().cookies.remove({ key });
     if (result.ok) {
       set({ cookies: result.value.cookies, persisted: result.value.persisted });
+    } else {
+      showToast(`Could not delete the cookie: ${result.error.message}`);
     }
   },
 
@@ -54,6 +59,8 @@ export const useCookiesStore = create<CookiesStore>((set) => ({
     const result = await ipc().cookies.removeDomain({ domain });
     if (result.ok) {
       set({ cookies: result.value.cookies, persisted: result.value.persisted });
+    } else {
+      showToast(`Could not delete the cookies: ${result.error.message}`);
     }
   },
 
@@ -61,6 +68,8 @@ export const useCookiesStore = create<CookiesStore>((set) => ({
     const result = await ipc().cookies.clear(undefined);
     if (result.ok) {
       set({ cookies: result.value.cookies, persisted: result.value.persisted });
+    } else {
+      showToast(`Could not clear the cookies: ${result.error.message}`);
     }
   },
 }));

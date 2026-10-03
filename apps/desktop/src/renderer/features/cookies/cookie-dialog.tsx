@@ -26,6 +26,11 @@ type FieldErrors = Partial<Record<FieldName, string>>;
 const MAX_COOKIE_BYTES = 4096;
 
 /** Mirrors the wire schema, so a refusal shows on its field before anything is sent. */
+/** The value check alone, for the in-place edit; the same rules as the dialog's Value field. */
+export function cookieValueError(name: string, value: string): string | undefined {
+  return validate({ name, value, domain: 'x', path: '/', expires: '' }).value;
+}
+
 function validate(fields: {
   readonly name: string;
   readonly value: string;
@@ -136,7 +141,7 @@ export interface CookieDialogProps {
   readonly onSave: (cookie: StoredCookieWire, replaces: CookieKeyWire | undefined) => void;
 }
 
-/** **Edit cookie** and **Add cookie** (cookie jar spec §3): everything but the value, which edits in place. */
+/** **Edit cookie** and **Add cookie** (cookie jar spec §3). Add needs the value, so the dialog shows it; a row also edits it in place. */
 export function CookieDialog({ open, cookie, onOpenChange, onSave }: CookieDialogProps) {
   const [name, setName] = useState(cookie?.name ?? '');
   const [value, setValue] = useState(cookie?.value ?? '');
@@ -157,7 +162,11 @@ export function CookieDialog({ open, cookie, onOpenChange, onSave }: CookieDialo
     if (Object.keys(found).length > 0) {
       return;
     }
-    const expiresAt = fromLocalInput(expires);
+    // The field holds minutes only: an untouched field keeps the exact expiry it was opened with.
+    const expiresAt =
+      cookie?.expiresAt !== undefined && expires === toLocalInput(cookie.expiresAt)
+        ? cookie.expiresAt
+        : fromLocalInput(expires);
     const next: StoredCookieWire = {
       name: nextName,
       value,

@@ -3,8 +3,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { CookieManager } from '../../src/renderer/features/cookies/cookie-manager.js';
 import { useCookiesStore } from '../../src/renderer/state/cookies.js';
+import { showToast } from '../../src/renderer/components/toast.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
 import type { CookieJarStateWire, StoredCookieWire } from '../../src/shared/wire-types.js';
+
+vi.mock('../../src/renderer/components/toast.js', () => ({ showToast: vi.fn() }));
 
 const NOW = Date.parse('2026-10-03T12:00:00Z');
 
@@ -222,5 +225,119 @@ describe('CookieManager', () => {
     fireEvent.click(screen.getByTestId('cookie-dialog-save'));
     expect(screen.getByTestId('cookie-error-domain')).toBeTruthy();
     expect(set).not.toHaveBeenCalled();
+  });
+
+  it('keeps the expiry to the second when the Expires field is left alone', async () => {
+    const exact = NOW + 3_600_000 + 37_000;
+    const jar: CookieJarStateWire = { cookies: [stored('sid', 'api.test', { expiresAt: exact })], persisted: true };
+    const set = answering(jar);
+    mount(jar, { set });
+    await rows(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit sid' }));
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'v2' } });
+    fireEvent.click(screen.getByTestId('cookie-dialog-save'));
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith({ cookie: { ...jar.cookies[0], value: 'v2' } });
+    });
+  });
+
+  it('sends nothing when the dialog is cancelled', async () => {
+    const set = answering(JAR);
+    mount(JAR, { set });
+    await rows(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit lang' }));
+    fireEvent.change(screen.getByLabelText('Path'), { target: { value: '/v2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('cookie-dialog')).toBeNull();
+    });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it('reverts an inline value on Escape and commits it on blur', async () => {
+    const set = answering(JAR);
+    mount(JAR, { set });
+    await rows(3);
+    fireEvent.click(screen.getByTestId('cookie-show-values'));
+    const value = screen.getByLabelText<HTMLInputElement>('Value of sid');
+    fireEvent.change(value, { target: { value: 'nope' } });
+    fireEvent.keyDown(value, { key: 'Escape' });
+    expect(value.value).toBe('sid-secret');
+    expect(set).not.toHaveBeenCalled();
+    fireEvent.change(value, { target: { value: 'kept' } });
+    fireEvent.blur(value);
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith({ cookie: { ...JAR.cookies[0], value: 'kept' } });
+    });
+  });
+
+  it('refuses an invalid inline value, reverts the draft and says why', async () => {
+    const set = answering(JAR);
+    mount(JAR, { set });
+    await rows(3);
+    fireEvent.click(screen.getByTestId('cookie-show-values'));
+    const value = screen.getByLabelText<HTMLInputElement>('Value of sid');
+    fireEvent.change(value, { target: { value: 'a;b' } });
+    fireEvent.keyDown(value, { key: 'Enter' });
+    expect(set).not.toHaveBeenCalled();
+    expect(value.value).toBe('sid-secret');
+    expect(screen.getByRole('alert').textContent).toContain('semicolon');
+  });
+});
+
+describe('cookies store failures', () => {
+  it('says so when main refuses a change', async () => {
+    const set = vi.fn().mockResolvedValue({ ok: false, error: { code: 'invalid', message: 'refused' } });
+    installWirebenchApi({ cookies: { set } });
+    await useCookiesStore.getState().set(stored('a', 'api.test'));
+    expect(showToast).toHaveBeenCalledWith('Could not save the cookie: refused');
+  });
+});
+
+describe('CookieManager virtualisation', () => {
+  const many = (count: number): CookieJarStateWire => ({
+    cookies: Array.from({ length: count }, (_, index) => stored(`c${String(index).padStart(4, '0')}`, 'api.test')),
+    persisted: true,
+  });
+
+  function mockSize(): () => void {
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth');
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 800,
+      bottom: 400,
+      width: 800,
+      height: 400,
+      toJSON: () => ({}),
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 400 });
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 800 });
+    return () => {
+      rect.mockRestore();
+      if (height) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'offsetHeight');
+      if (width) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', width);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'offsetWidth');
+    };
+  }
+
+  it('renders every row at 500 cookies and a window of them at 501', async () => {
+    const restore = mockSize();
+    try {
+      mount(many(500));
+      await rows(500);
+      cleanup();
+      mount(many(501));
+      await waitFor(() => {
+        expect(screen.getAllByTestId('cookie-row').length).toBeGreaterThan(0);
+      });
+      expect(screen.getAllByTestId('cookie-row').length).toBeLessThan(501);
+    } finally {
+      restore();
+    }
   });
 });

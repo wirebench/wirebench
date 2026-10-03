@@ -9,13 +9,14 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '../../components/button.js';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
-import { KV_INPUT_CLASS, useCommittedDraft } from '../../components/kv-table.js';
+import { KV_INPUT_CLASS } from '../../components/kv-table.js';
 import { subscribeToCookies, useCookiesStore } from '../../state/cookies.js';
 import type { StoredCookieWire } from '../../../shared/wire-types.js';
-import { CookieDialog } from './cookie-dialog.js';
+import { CookieDialog, cookieValueError } from './cookie-dialog.js';
 
 const VIRTUALISE_ABOVE = 500;
 const ROW_HEIGHT = 32;
+const GROUP_HEIGHT = 28;
 const MASK = '••••••';
 
 /** "Session", or the expiry as a local date and time. */
@@ -65,7 +66,24 @@ function CookieRow({
   readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
-  const valueField = useCommittedDraft(cookie.value, onCommitValue);
+  const [valueError, setValueError] = useState<string | undefined>(undefined);
+  const [draft, setDraft] = useState(cookie.value);
+  useEffect(() => {
+    setDraft(cookie.value);
+  }, [cookie.value]);
+  // Enter or blur commits, Escape reverts (as the other tables do); an invalid value reverts with a reason.
+  const commit = (): void => {
+    if (draft === cookie.value) {
+      return;
+    }
+    const error = cookieValueError(cookie.name, draft);
+    setValueError(error);
+    if (error === undefined) {
+      onCommitValue(draft);
+    } else {
+      setDraft(cookie.value);
+    }
+  };
   return (
     <tr
       data-testid="cookie-row"
@@ -89,12 +107,33 @@ function CookieRow({
             aria-label={`Value of ${cookie.name}`}
             data-testid="cookie-value"
             className={KV_INPUT_CLASS}
-            {...valueField}
+            value={draft}
+            aria-invalid={valueError !== undefined}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setValueError(undefined);
+            }}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                commit();
+              }
+              if (event.key === 'Escape') {
+                setDraft(cookie.value);
+                setValueError(undefined);
+                event.stopPropagation();
+              }
+            }}
           />
         ) : (
           <span data-testid="cookie-value-masked" className="font-mono text-fg-muted">
             {MASK}
           </span>
+        )}
+        {showValues && valueError !== undefined && (
+          <p role="alert" className="px-2 text-xs text-status-danger">
+            {valueError}
+          </p>
         )}
       </td>
       <td className="px-2 py-1 font-mono break-words text-fg-muted">{cookie.path}</td>
@@ -128,11 +167,11 @@ export function CookieManager() {
   useEffect(() => subscribeToCookies(), []);
 
   const rows = rowsOf(cookies);
-  const virtualised = rows.length > VIRTUALISE_ABOVE;
+  const virtualised = cookies.length > VIRTUALISE_ABOVE;
   const virtualizer = useVirtualizer({
     count: virtualised ? rows.length : 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: (index) => (rows[index]?.kind === 'group' ? GROUP_HEIGHT : ROW_HEIGHT),
     overscan: 20,
   });
   const items = virtualizer.getVirtualItems();
@@ -222,7 +261,12 @@ export function CookieManager() {
               {paddingTop > 0 && <tr aria-hidden="true" style={{ height: paddingTop }} />}
               {visible.map((row) =>
                 row.kind === 'group' ? (
-                  <tr key={rowKey(row)} data-testid="cookie-domain-group" className="bg-surface-raised">
+                  <tr
+                    key={rowKey(row)}
+                    data-testid="cookie-domain-group"
+                    className="bg-surface-raised"
+                    style={{ height: GROUP_HEIGHT }}
+                  >
                     <th scope="colgroup" colSpan={7} className="px-2 py-1 text-left text-xs font-medium text-fg-muted">
                       <div className="flex items-center justify-between gap-2">
                         <span>{`${row.domain} · ${String(row.count)}`}</span>
