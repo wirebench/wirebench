@@ -108,6 +108,12 @@ A workspace admin can turn on **Record desktop activity** for a workspace: the a
 request sent and each test-suite run (`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no
 headers or bodies.
 
+With `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` set (32 or more characters, kept outside the database, never
+rotated), a background sealer links events into a keyed hash chain and logs `audit chain sealed to
+<seq>:<hex>` after each pass. `wirebench-server admin audit verify [--head <seq>:<hex>] [--json]` finds
+edited, missing or reordered events (exit 0 intact, 1 broken, 2 no or wrong key). See the guide's _Tamper
+evidence_ section for what it does not detect.
+
 On an Enterprise server, `WIREBENCH_SERVER_AUDIT_FORWARD_URL` forwards every audit event to one collector as
 RFC 5424 syslog over TCP or TLS (`syslog+tcp://`, `syslog+tls://`) or as JSON batches over HTTPS, with an
 optional bearer token and CA bundle. Delivery is at least once (for syslog, a batch counts as delivered once it is in the OS socket buffer; see the guide): de-duplicate on the event `id`.

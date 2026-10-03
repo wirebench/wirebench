@@ -4,7 +4,7 @@
 -- the id of the key that built the chain, and head_seq, the highest sequence number ever sealed, so a
 -- chain whose rows were removed from outside resumes past the gap instead of reusing numbers. mac is a
 -- keyed MAC over (seq, hash, head_seq), set by every write of the row, so the anchor cannot be moved or
--- its head_seq lowered without the key. From here on no migration may rewrite audit_events rows.
+-- its head_seq lowered without the key. Migration rule: from here on no migration may update sealed audit_events rows.
 alter table audit_events add column chain_seq bigint, add column chain_hash bytea;
 create unique index audit_events_chain_seq on audit_events (chain_seq) where chain_seq is not null;
 create index audit_events_unsealed on audit_events (at, id) where chain_seq is null;

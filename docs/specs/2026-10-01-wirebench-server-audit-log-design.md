@@ -58,7 +58,7 @@ reviewer. A compliance team points their collector at the export endpoint once a
 - Desktop-side events (what the app sent where): added in the second slice, see
   `docs/specs/2026-10-03-wirebench-desktop-audit-events-design.md`.
 - Team-scoped readers: added later, see `docs/plans/2026-10-03-wirebench-team-audit-reads-plan.md`.
-- Syslog or HTTP push (added later, see `docs/plans/2026-10-03-wirebench-audit-forwarding-plan.md`), alerting on events, signing or hash-chaining the log.
+- Syslog or HTTP push (added later, see `docs/plans/2026-10-03-wirebench-audit-forwarding-plan.md`), alerting on events, signing the log, and hash-chaining it (added later, see `docs/specs/2026-10-03-wirebench-audit-chain-design.md`).
 - Recording reads: who looked at what is not recorded, except the export itself.
 
 ## 2. Concept model
@@ -116,6 +116,7 @@ list, only for routes.
 | `ci_token.created`, `ci_token.revoked` | ci-tokens | ci-token; `workspaceId` | `name` |
 | `license.installed`, `license.removed` | the `licenseChanged` announcement (licensing §3.9) | license | `edition`, `licenseId` |
 | `audit.exported` | this module | server | `from`, `to`, `count` |
+| `audit.verified` | this module: `admin audit verify`, actor `system` | server | `checked`, `firstSeq`, `lastSeq`, `unsealed`, `result`, `brokenSeq?` |
 
 Not events: a capture arriving at a catch URL (high volume, already stored as a capture), a sync fetch,
 a live socket opening, a `lastUsedAt` touch, any read except the export.
