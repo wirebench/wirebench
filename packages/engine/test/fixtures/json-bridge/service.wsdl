@@ -180,6 +180,27 @@
           </xs:sequence>
         </xs:complexType>
       </xs:element>
+      <xs:element name="Shelf">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:choice maxOccurs="unbounded">
+              <xs:element name="box" type="tns:Box"/>
+              <xs:element name="tag" type="xs:string"/>
+            </xs:choice>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:complexType name="Box">
+        <xs:sequence>
+          <xs:element name="lid" type="tns:Lid" minOccurs="0"/>
+          <xs:element name="label" type="xs:string" minOccurs="0"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Lid"><xs:sequence><xs:element name="hinge" type="tns:Hinge"/></xs:sequence></xs:complexType>
+      <xs:complexType name="Hinge"><xs:sequence><xs:element name="pin" type="tns:Pin"/></xs:sequence></xs:complexType>
+      <xs:complexType name="Pin"><xs:sequence><xs:element name="head" type="tns:Head"/></xs:sequence></xs:complexType>
+      <xs:complexType name="Head"><xs:sequence><xs:element name="cap" type="tns:Cap"/></xs:sequence></xs:complexType>
+      <xs:complexType name="Cap"><xs:sequence><xs:element name="leaf" type="xs:string"/></xs:sequence></xs:complexType>
       <xs:element name="OrderResult">
         <xs:complexType>
           <xs:sequence>

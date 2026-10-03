@@ -178,3 +178,70 @@ describe('xmlFromJson and jsonFromXml', () => {
     expect(notes).toEqual([expect.stringContaining('id')]);
   });
 });
+
+/** A box nested six levels under `Shelf`, past the form's depth cut. */
+const deepBox = (leaf: string) => ({ lid: { hinge: { pin: { head: { cap: { leaf } } } } } });
+
+describe('a repeating choice', () => {
+  it('round-trips interleaved branches in document order', () => {
+    for (const value of [
+      { '#choice': [{ box: { label: 'a' } }, { tag: 'b' }, { box: { label: 'c' } }] },
+      { '#choice': [{ tag: '1' }, { box: { label: 'x' } }, { tag: '2' }] },
+    ]) {
+      const { back, notes } = roundTrip('Shelf', value);
+      expect(back).toEqual(value);
+      expect(notes).toEqual([]);
+    }
+  });
+
+  it('reads the items in document order', () => {
+    const xml =
+      '<s:Shelf xmlns:s="urn:wb:bridge"><s:tag>1</s:tag><s:box><s:label>x</s:label></s:box>' +
+      '<s:tag>2</s:tag></s:Shelf>';
+    expect(jsonFromXml(wsdl.schemaSet, element('Shelf'), xml).value).toEqual({
+      '#choice': [{ tag: '1' }, { box: { label: 'x' } }, { tag: '2' }],
+    });
+  });
+
+  it('writes a later item nested below the depth cut', () => {
+    const value = {
+      '#choice': [{ box: { label: 't' } }, { tag: 'b' }, { box: deepBox('deep') }, { box: deepBox('deeper') }],
+    };
+    const { xml, back, notes } = roundTrip('Shelf', value);
+    expect(xml).toContain('>deep<');
+    expect(xml).toContain('>deeper<');
+    expect(back).toEqual(value);
+    expect(notes).toEqual([]);
+  });
+});
+
+describe('prefixes', () => {
+  it('never invents a prefix already bound around the fragment, below the depth cut either', () => {
+    const value = { '#choice': [{ box: deepBox('deep') }] };
+    const written = xmlFromJson(wsdl.schemaSet, element('Shelf'), value, { prefixes: { 'urn:elsewhere': 'ns1' } });
+    expect(written.problems).toEqual([]);
+    expect(written.xml).not.toContain('xmlns:ns1=');
+    expect(written.xml).toContain('>deep<');
+    const back = jsonFromXml(wsdl.schemaSet, element('Shelf'), written.xml, { inScope: { ns1: 'urn:elsewhere' } });
+    expect(back.value).toEqual(value);
+  });
+});
+
+describe('what cannot be written', () => {
+  it('refuses a value nested deeper than the bridge expands', () => {
+    const written = xmlFromJson(wsdl.schemaSet, element('Root'), tree(400));
+    expect(written.problems).toEqual([expect.stringContaining('levels')]);
+    expect(written.xml).toBe('');
+  });
+
+  it('refuses a fragment with a bare ampersand or a stray less-than', () => {
+    const base = { code: 'a1', small: 1, hex: 'FF', at: '2026-10-03T10:00:00Z', token: 't' };
+    for (const free of ['<a>Tom & Jerry</a>', 'Tom & Jerry', 'a < b', '<a>x &nbsp; y</a>']) {
+      const written = xmlFromJson(wsdl.schemaSet, element('Tagged'), { ...base, free });
+      expect(written.problems, free).toEqual([expect.stringContaining('free')]);
+    }
+    for (const free of ['Tom &amp; Jerry &#38; &#x26;', '<a><![CDATA[a & b < c]]></a>', '<!-- a & b --><a/>']) {
+      expect(xmlFromJson(wsdl.schemaSet, element('Tagged'), { ...base, free }).problems, free).toEqual([]);
+    }
+  });
+});

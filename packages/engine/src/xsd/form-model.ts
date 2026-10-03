@@ -208,11 +208,16 @@ class NameScope {
       this.byUri.set(uri, prefix);
     }
     this.fresh = new PrefixTable({});
+    // A prefix bound around the form is never invented again for another namespace.
+    for (const prefix of Object.values(prefixes)) {
+      this.fresh.reserve(prefix);
+    }
   }
 
   /** Records the prefixes an element declares, so its subtree can reuse them. */
   declare(declarations: Readonly<Record<string, string>>): void {
     for (const [prefix, uri] of Object.entries(declarations)) {
+      this.fresh.reserve(prefix);
       if (!this.byUri.has(uri)) {
         this.byUri.set(uri, prefix);
       }
@@ -800,6 +805,19 @@ export function buildFormForType(
     abstract: false,
     source: { location: '<synthetic>' },
   };
+  return buildFormForDecl(schemaSet, decl, xml, options);
+}
+
+/**
+ * Builds the form tree for any element declaration, a local one included: what
+ * the JSON bridge expands where a form was cut at its depth limit.
+ */
+export function buildFormForDecl(
+  schemaSet: SchemaSet,
+  decl: ElementDecl,
+  xml?: string,
+  options?: BuildFormOptions,
+): FormNode {
   const scanned = xml !== undefined ? scanXml(xml, options?.inScope ?? {}) : undefined;
   const ctx: Ctx = {
     set: schemaSet,

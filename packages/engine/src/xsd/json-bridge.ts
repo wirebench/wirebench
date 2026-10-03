@@ -11,7 +11,7 @@ import { qnameEquals, qnameToString } from '../wsdl/qname.js';
 import { NS } from '../xml/namespaces.js';
 import { parseXmlDetailed } from '../xml/parse.js';
 import { prefixForNamespace } from '../xml/prefixes.js';
-import { applyForm, buildForm, buildFormForType, Pool } from './form-model.js';
+import { applyForm, buildForm, buildFormForDecl, buildFormForType, Pool } from './form-model.js';
 import type { FormNode } from './form-model.js';
 import type {
   ComplexType,
@@ -756,7 +756,10 @@ export interface XmlFromJsonResult {
   readonly problems: readonly string[];
 }
 
-/** How many times the form is rebuilt to reach below its depth cut (spec revision R8). */
+/**
+ * How many times one path through a value may be expanded below the form's depth cut (spec revision
+ * R8), each expansion five levels deep. A value nested deeper is refused, never cut short.
+ */
 export const MAX_FILL_ROUNDS = 64;
 
 type JsonObject = Readonly<Record<string, unknown>>;
@@ -827,17 +830,51 @@ function rootDecl(set: SchemaSet, target: BridgeTarget): ElementDecl | undefined
   return set.substitutionsFor(decl.name).find((candidate) => !candidate.abstract) ?? decl;
 }
 
+const ENTITY_OR_REFERENCE = /^&(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9a-fA-F]+);/;
+const MARKUP_START = /^<[A-Za-z_:/!?]/;
+
+/**
+ * What the parser lets through that is not well formed: a `&` that starts no predefined entity or
+ * character reference, and a `<` that starts no markup. CDATA sections, comments and processing
+ * instructions are skipped, since both are literal there.
+ */
+function fragmentLexicalProblem(text: string): string | undefined {
+  const outside = text.replace(/<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>/g, '');
+  for (let at = outside.indexOf('&'); at !== -1; at = outside.indexOf('&', at + 1)) {
+    if (!ENTITY_OR_REFERENCE.test(outside.slice(at))) {
+      return `an unescaped "&" (write &amp;) at "${outside.slice(at, at + 12)}"`;
+    }
+  }
+  for (let at = outside.indexOf('<'); at !== -1; at = outside.indexOf('<', at + 1)) {
+    if (!MARKUP_START.test(outside.slice(at))) {
+      return `an unescaped "<" (write &lt;) at "${outside.slice(at, at + 12)}"`;
+    }
+  }
+  return undefined;
+}
+
 /** Fills one form tree from a JSON value, as the desktop's form edits would. */
 class Filler {
-  /** Values that reach below a recursion cut; another round writes them. */
-  pending = 0;
   readonly notes: string[] = [];
   readonly problems: string[] = [];
+  /** Namespace URI → prefix bound at the root: around the fragment, or declared on the root. */
+  private readonly known: Record<string, string>;
+  /** Prefix → namespace URI an expansion had to declare; hoisted to the root. */
+  readonly declared: Record<string, string> = {};
+  /** Expansions below the depth cut on the path being filled. */
+  private expansions = 0;
 
   constructor(
     private readonly set: SchemaSet,
     private readonly inScope: Readonly<Record<string, string>>,
-  ) {}
+    prefixes: Readonly<Record<string, string>>,
+    rootNamespaces: Readonly<Record<string, string>>,
+  ) {
+    this.known = { ...prefixes };
+    for (const [prefix, uri] of Object.entries(rootNamespaces)) {
+      this.known[uri] ??= prefix;
+    }
+  }
 
   element(node: FormNode, decl: ElementDecl, value: unknown, where: string): FormNode {
     if (value === undefined) {
@@ -875,18 +912,9 @@ class Filler {
       };
     }
     if (node.truncated === true) {
-      const deeper =
-        fields['#text'] !== undefined ||
-        shape.members.some((member) => memberKeys(member).some((key) => fields[key] !== undefined));
-      if (deeper) {
-        this.pending += 1;
-      }
-      return { ...node, present: true, children: attributes };
+      return this.expand(node, decl, value, where);
     }
-    // Leftovers (`/~`) are what an earlier round wrote under `#any`: the JSON writes them again.
-    const particles = node.children.filter(
-      (child) => child.kind !== 'attribute' && !child.id.startsWith(`${node.id}/~`),
-    );
+    const particles = node.children.filter((child) => child.kind !== 'attribute');
     const text =
       shape.content.mixed && fields['#text'] !== undefined
         ? [verbatim(`${node.id}/t`, escapeText(lexical(fields['#text'])))]
@@ -896,6 +924,32 @@ class Filler {
       present: true,
       children: [...attributes, ...text, ...this.members(particles, shape.members, fields, where)],
     };
+  }
+
+  /**
+   * An element the form cut at its depth limit, built again from its declaration with the same
+   * prefixes, so the value reaches as deep as it goes. Each item of a repeat, and each branch of a
+   * repeating choice, is expanded on its own.
+   */
+  private expand(node: FormNode, decl: ElementDecl, value: unknown, where: string): FormNode {
+    if (this.expansions >= MAX_FILL_ROUNDS) {
+      this.problems.push(
+        `${where}: nested more than ${String(MAX_FILL_ROUNDS)} times the form's depth limit (5 levels); it cannot be written`,
+      );
+      return absent(node);
+    }
+    const fresh = buildFormForDecl(this.set, decl, undefined, { prefixes: this.known });
+    const { namespaces, ...rest } = fresh;
+    for (const [prefix, uri] of Object.entries(namespaces ?? {})) {
+      this.declared[prefix] = uri;
+      this.known[uri] = prefix;
+    }
+    this.expansions += 1;
+    try {
+      return this.element({ ...rest, id: node.id }, decl, value, where);
+    } finally {
+      this.expansions -= 1;
+    }
   }
 
   /** An `anyType` element's content: text alone as its text, markup inserted as written. */
@@ -1046,8 +1100,13 @@ class Filler {
     return { ...node, present: chosen !== -1, children, choice: chosen === -1 ? {} : { selected: chosen } };
   }
 
-  /** An XML fragment is inserted as written, once a strict parser reads it whole. */
+  /** An XML fragment is inserted as written, once it passes the lexical check and a parser reads it whole. */
   private wellFormed(text: string, where: string): boolean {
+    const lexicalProblem = fragmentLexicalProblem(text);
+    if (lexicalProblem !== undefined) {
+      this.problems.push(`${where}: not well-formed XML: ${lexicalProblem}`);
+      return false;
+    }
     const declarations = Object.entries(this.inScope)
       .map(([prefix, uri]) => ` xmlns:${prefix}="${escapeAttribute(uri)}"`)
       .join('');
@@ -1067,9 +1126,10 @@ class Filler {
 
 /**
  * XML for `target` from a JSON value shaped by {@link jsonSchemaOf}: the form model is built, filled,
- * and serialised, so names, prefixes and element order are the desktop form's. When the value reaches
- * below the form's depth cut, the form is built again from the XML written so far, one level deeper
- * each round, up to {@link MAX_FILL_ROUNDS}. Written with no indentation, so text values stay exact.
+ * and serialised, so names, prefixes and element order are the desktop form's. Where the value reaches
+ * below the form's depth cut, that element is built again from its declaration and filled in turn
+ * (spec revision R8), up to {@link MAX_FILL_ROUNDS} times along one path; deeper is a problem.
+ * Written with no indentation, so text values stay exact.
  */
 export function xmlFromJson(
   schemaSet: SchemaSet,
@@ -1082,36 +1142,19 @@ export function xmlFromJson(
     const name = 'element' in target ? qnameToString(target.element) : '';
     return { xml: '', notes: [], problems: [`no element ${name} in the schema`] };
   }
-  const formOptions = {
-    ...(options.prefixes !== undefined ? { prefixes: options.prefixes } : {}),
-    ...(options.inScope !== undefined ? { inScope: options.inScope } : {}),
-  };
-  let xml: string | undefined;
-  let notes: readonly string[] = [];
-  for (let round = 0; round < MAX_FILL_ROUNDS; round += 1) {
-    const form =
-      'element' in target
-        ? buildForm(schemaSet, target.element, xml, formOptions)
-        : buildFormForType(schemaSet, target.name, target.type, xml, formOptions);
-    const filler = new Filler(schemaSet, options.inScope ?? {});
-    const filled = filler.element(form, decl, value, form.label);
-    if (filler.problems.length > 0) {
-      return { xml: '', notes: filler.notes, problems: filler.problems };
-    }
-    xml = applyForm(filled, { indent: '' });
-    notes = filler.notes;
-    if (filler.pending === 0) {
-      return { xml, notes, problems: [] };
-    }
+  const formOptions = options.prefixes !== undefined ? { prefixes: options.prefixes } : {};
+  const form =
+    'element' in target
+      ? buildForm(schemaSet, target.element, undefined, formOptions)
+      : buildFormForType(schemaSet, target.name, target.type, undefined, formOptions);
+  const filler = new Filler(schemaSet, options.inScope ?? {}, options.prefixes ?? {}, form.namespaces ?? {});
+  const filled = filler.element(form, decl, value, form.label);
+  if (filler.problems.length > 0) {
+    return { xml: '', notes: filler.notes, problems: filler.problems };
   }
-  return {
-    xml: xml ?? '',
-    notes: [
-      ...notes,
-      `the arguments nest more than ${String(MAX_FILL_ROUNDS)} levels below the form's depth limit; the deepest were left out`,
-    ],
-    problems: [],
-  };
+  const namespaces = { ...filled.namespaces, ...filler.declared };
+  const root = Object.keys(namespaces).length > 0 ? { ...filled, namespaces } : filled;
+  return { xml: applyForm(root, { indent: '' }), notes: filler.notes, problems: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -1236,7 +1279,14 @@ class Reader {
         case 'any':
           break;
         case 'choice': {
-          const branch = member.branches.find((candidate) => pool.has(namesOf(candidate)));
+          // The branch of the next unclaimed child, in document order, that any branch can claim.
+          const next = pool
+            .leftovers()
+            .find((child) => namesOf(member.branches.flat()).some((name) => sameName(name, child)));
+          const branch =
+            next === undefined
+              ? undefined
+              : member.branches.find((candidate) => namesOf(candidate).some((name) => sameName(name, next)));
           if (branch !== undefined) {
             this.members(branch, pool, out, where);
           }
