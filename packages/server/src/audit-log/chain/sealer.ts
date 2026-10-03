@@ -21,21 +21,16 @@ import {
   type ChainLink,
 } from '../repo.js';
 import { genesisHash, keyId, link } from './canonical.js';
+import { tryLockChain } from './lock.js';
 
 export const SEAL_BATCH = 500;
 /** The next pass while the last one sealed something. */
 export const SEAL_BUSY_MS = 2_000;
-/** The next pass when nothing was unsealed, another instance held the lock, or the key was refused. */
+/** The next pass when nothing was unsealed, the chain lock was held (another pass or a retention batch), or the key was refused. */
 export const SEAL_IDLE_MS = 5_000;
 /** The first wait after a failure; it doubles up to {@link SEAL_BACKOFF_MAX_MS}. */
 export const SEAL_BACKOFF_MIN_MS = 5_000;
 export const SEAL_BACKOFF_MAX_MS = 300_000;
-/**
- * The transaction-scoped advisory lock every sealer takes first (the ASCII of "wbaudcha"). It serialises
- * passes across server instances, and retention's batches (`deleteSealedBefore`, which waits for it)
- * against passes, since a batch moves the anchor a pass reads. Inserts never take it.
- */
-export const AUDIT_CHAIN_LOCK_ID = 0x7762617564636861n;
 
 export interface SealerDeps {
   readonly db: Database;
@@ -161,10 +156,7 @@ export class AuditSealer {
 
   /** The pass's transaction: §3.2 steps 1 to 6; the caller's commit is step 7. */
   private async seal(tx: Querier): Promise<Sealing> {
-    const lock = await tx.query<{ locked: boolean }>('select pg_try_advisory_xact_lock($1::bigint) as locked', [
-      AUDIT_CHAIN_LOCK_ID.toString(),
-    ]);
-    if (lock.rows[0]?.locked !== true) return { kind: 'busy-elsewhere' };
+    if (!(await tryLockChain(tx))) return { kind: 'busy-elsewhere' };
     const anchor = (await readAnchor(tx)) ?? (await insertGenesis(tx, genesisHash(this.deps.key), this.keyId));
     // Before any row is touched: a wrong key must not extend the chain with links verify would reject.
     if (anchor.keyId !== this.keyId) return { kind: 'wrong-key', chainKeyId: anchor.keyId };

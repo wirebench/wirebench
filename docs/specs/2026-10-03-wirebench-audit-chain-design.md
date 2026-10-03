@@ -66,7 +66,7 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 
 **Each pass is one transaction:**
 
-1. `select pg_try_advisory_xact_lock(<audit chain lock id>)`. If another instance holds the lock, the pass ends as `busy-elsewhere` and the sealer tries again at the idle delay.
+1. `select pg_try_advisory_xact_lock(<audit chain lock class>, hashtext(current_schema()))`. The lock is per schema, so servers on different schemas of one database never share it. If another instance's pass or a retention batch holds the lock, the pass ends as `busy-elsewhere` and the sealer tries again at the idle delay.
 2. Read the anchor; if there is none, insert the genesis anchor with this key's id.
 3. Check the key. If the anchor's key id differs from this key's id, refuse to seal. Log one `error` (`audit chain key does not match the chain's key id <id>`), re-arm at the idle delay, and log again only after the key changes and fails again. Inserts are never affected.
 4. The head is the highest sealed row's `(chain_seq, chain_hash)`, or the anchor's `(seq, hash)` when nothing is sealed. The next sequence number is `max(head.seq, anchor.head_seq) + 1`, linked to the head's hash. So after sealed rows were deleted from outside (the newest, or all of them), sealing resumes past the gap and never reuses a number.
@@ -99,8 +99,10 @@ Make any edit, deletion or reordering of audit rows detectable, as auditors ask,
 
 **With the key set:**
 - The sweeper deletes only sealed rows, and only from the oldest end of the chain, so the kept chain stays gapless.
-- On each batch it finds `S`, the highest sequence number whose row and every row before it are older than the cutoff: `S = (min chain_seq where at >= cutoff) − 1`, or `max(chain_seq)` when no sealed row is that new.
-- It deletes `chain_seq <= least(S, anchor.seq + 1000)`, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)`. The key id and `head_seq` stay.
+- Each batch is one transaction that first tries the chain's lock (§3.2 step 1, the same per-schema lock). If a sealing pass holds it, the batch deletes nothing and the sweep resumes at its next run, so a long backlog sweep never starves the sealer.
+- The batch takes the first **1000** sealed rows after `anchor.seq`, in `chain_seq` order. The limit counts rows, not sequence numbers, so sequence numbers already missing past the anchor never stall retention.
+- Within that window it finds `S`, the highest sequence number whose row and every row before it are older than the cutoff: `S` is just before the first row with `at >= cutoff`, or the window's last row when none is that new. A row whose `at` equals the cutoff is kept. Rows outside the window are not read.
+- It deletes the window's rows up to `S`, oldest first. In the same transaction it moves the anchor to the last deleted row's `(seq, hash)`. The key id and `head_seq` stay.
 - Unsealed rows past the cutoff stay until they are sealed.
 - A row that commits late with an old `at` can hold back deletion of the rows sealed after it until it, too, is past the cutoff. That costs a little extra storage, never a gap.
 
@@ -211,7 +213,7 @@ Existing rows start unsealed. With a key set they are sealed oldest first on the
     - after sweeping, verify is intact from the new anchor;
     - an unsealed old row is not deleted;
     - a late old row holds back deletion without a gap.
-- **Concurrency:** a burst of audited actions in parallel transactions completes while the sealer runs, and no action waits on the sealer's lock. The sealer's lock is advisory and taken only by sealers.
+- **Concurrency:** a burst of audited actions in parallel transactions completes while the sealer runs, and no action waits on the sealer's lock. The chain's lock is advisory and taken only by sealer passes and retention batches.
 - The migration-list test covers `12_audit-chain`.
 
 ## 8. Commands

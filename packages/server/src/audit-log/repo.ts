@@ -2,7 +2,7 @@
 import type { AuditDetails, AuditEvent, AuditTargetKind } from '@wirebench/engine';
 import type { AuditInput, Database, Querier } from '../context.js';
 import type { CanonicalRow } from './chain/canonical.js';
-import { AUDIT_CHAIN_LOCK_ID } from './chain/sealer.js';
+import { tryLockChain } from './chain/lock.js';
 import type { Cursor } from './cursor.js';
 
 export interface AuditRowInput extends AuditInput {
@@ -312,48 +312,37 @@ export async function sealedPage(db: Querier, afterSeq: bigint, limit: number): 
 
 /**
  * Retention with a chain key (audit-chain spec §3.3): deletes sealed rows from the oldest end of the
- * chain only, so the kept chain stays gapless and verifies from the moved anchor. `S` is the highest
- * seq whose row and every row before it are older than `cutoff`; up to `limit` rows past the anchor, to
- * `S`, go in one transaction that moves the anchor to the last deleted row's `(seq, hash)`, keeping
- * its key id and `head_seq`. Unsealed rows are never touched: they go once sealed and past the cutoff.
- * A late row (sealed after rows with a newer `at`) holds back the rows sealed after it while those
- * newer rows are kept: a little extra storage, never a gap.
+ * chain only, so the kept chain stays gapless and verifies from the moved anchor. A batch reads the
+ * first `limit` sealed rows after the anchor, in seq order, and deletes them up to the first one not
+ * older than `cutoff` (`S`, found within that window only); the anchor moves to the last deleted row's
+ * `(seq, hash)` in the same transaction, keeping its key id and `head_seq`. The limit counts rows, not
+ * seqs, so seqs already missing past the anchor (rows deleted while the key was unset) never stall it.
+ * Unsealed rows are never touched: they go once sealed and past the cutoff. A late row (sealed after a
+ * row with a newer `at`) waits behind that row: a little extra storage, never a gap.
  *
- * It takes the sealer's advisory lock, waiting for it, so a sealing pass (which reads the head and the
- * anchor) and a batch (which moves the anchor) never interleave; a pass that finds it held ends
- * `busy-elsewhere` and tries again. Returns how many rows went: 0 with no anchor or nothing to delete.
+ * It only tries the chain's lock: while a sealing pass holds it, the batch deletes nothing and the sweep
+ * resumes next time, so a long backlog sweep never starves the sealer. Returns how many rows went: 0
+ * with the lock busy, no anchor, or nothing to delete.
  */
 export async function deleteSealedBefore(db: Database, cutoff: Date, limit: number): Promise<number> {
   return db.transaction(async (tx) => {
-    await tx.query('select pg_advisory_xact_lock($1::bigint)', [AUDIT_CHAIN_LOCK_ID.toString()]);
+    if (!(await tryLockChain(tx))) return 0;
     const anchor = await readAnchor(tx);
     if (anchor === undefined) return 0;
-    const s = (
-      await tx.query<{ s: string | null }>(
-        `select coalesce(
-           (select min(chain_seq) - 1 from audit_events where chain_seq is not null and at >= $1),
-           (select max(chain_seq) from audit_events where chain_seq is not null)
-         )::text as s`,
-        [cutoff],
-      )
-    ).rows[0]?.s;
-    if (s === null || s === undefined) return 0;
-    const byLimit = anchor.seq + BigInt(limit);
-    const bound = seqOf(s) < byLimit ? seqOf(s) : byLimit;
-    if (bound <= anchor.seq) return 0;
-    const deleted = await tx.query<{ seq: string; hash: Buffer }>(
-      `delete from audit_events where chain_seq > $1 and chain_seq <= $2
-       returning chain_seq::text as seq, chain_hash as hash`,
-      [anchor.seq.toString(), bound.toString()],
+    const window = await tx.query<{ seq: string; hash: Buffer; young: boolean }>(
+      `select chain_seq::text as seq, chain_hash as hash, at >= $2 as young from audit_events
+       where chain_seq > $1 order by chain_seq limit $3`,
+      [anchor.seq.toString(), cutoff, limit],
     );
-    // The last deleted row is the new anchor: on an intact chain it is the row at `bound`.
-    let last: ChainLink | undefined;
-    for (const row of deleted.rows) {
-      const seq = seqOf(row.seq);
-      if (last === undefined || seq > last.seq) last = { seq, hash: row.hash };
-    }
+    const firstYoung = window.rows.findIndex((row) => row.young);
+    const last = (firstYoung === -1 ? window.rows : window.rows.slice(0, firstYoung)).at(-1);
     if (last === undefined) return 0;
-    await tx.query('update audit_chain_anchor set seq = $1, hash = $2', [last.seq.toString(), last.hash]);
-    return deleted.rows.length;
+    // Under the lock nothing is sealed meanwhile, so this range holds exactly the window's old prefix.
+    const deleted = await tx.query('delete from audit_events where chain_seq > $1 and chain_seq <= $2', [
+      anchor.seq.toString(),
+      last.seq,
+    ]);
+    await tx.query('update audit_chain_anchor set seq = $1, hash = $2', [last.seq, last.hash]);
+    return deleted.rowCount ?? 0;
   });
 }

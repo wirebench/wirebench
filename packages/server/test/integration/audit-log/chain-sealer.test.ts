@@ -8,7 +8,6 @@ import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
 import {
-  AUDIT_CHAIN_LOCK_ID,
   AuditSealer,
   backoff,
   SEAL_BACKOFF_MAX_MS,
@@ -23,7 +22,7 @@ import { insertGenesis, readAnchor, sealedPage, type ChainLink } from '../../../
 import type { AuditInput, Database, Querier } from '../../../src/context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
-import { describeDb, oneChainTestFileAtATime, testDatabase } from '../../helpers/database.js';
+import { describeDb, testDatabase } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
 import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call } from '../../helpers/teams.js';
@@ -87,9 +86,6 @@ function gated(db: Database, after: RegExp) {
   };
   return { db: wrapped, entered, release: () => release() };
 }
-
-// Advisory locks are database-wide; the files that take the chain's lock must not run side by side.
-oneChainTestFileAtATime();
 
 describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
@@ -155,8 +151,6 @@ describeDb('the audit chain sealer (audit-chain spec §3.2)', () => {
     expect(SEAL_BUSY_MS).toBe(2_000);
     expect(SEAL_IDLE_MS).toBe(5_000);
     expect([1, 2, 3, 7, 8, 30].map(backoff)).toEqual([5_000, 10_000, 20_000, 300_000, 300_000, SEAL_BACKOFF_MAX_MS]);
-    expect(typeof AUDIT_CHAIN_LOCK_ID).toBe('bigint');
-    expect(AUDIT_CHAIN_LOCK_ID < 2n ** 63n).toBe(true);
   });
 
   describe('a pass', () => {

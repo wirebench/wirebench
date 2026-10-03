@@ -7,13 +7,14 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { genesisHash, keyId, link } from '../../../src/audit-log/chain/canonical.js';
-import { AUDIT_CHAIN_LOCK_ID, AuditSealer, type SealPass } from '../../../src/audit-log/chain/sealer.js';
+import { AUDIT_CHAIN_LOCK_CLASS, tryLockChain } from '../../../src/audit-log/chain/lock.js';
+import { AuditSealer, type SealPass } from '../../../src/audit-log/chain/sealer.js';
 import { auditLogModule } from '../../../src/audit-log/module.js';
 import { deleteSealedBefore, insertGenesis, readAnchor, sealedPage } from '../../../src/audit-log/repo.js';
 import type { Database, Querier } from '../../../src/context.js';
 import { loadMigrations, migrate, MIGRATIONS_DIR } from '../../../src/db/migrate.js';
 import { SWEEP_INTERVAL_MS } from '../../../src/hooks/sweep.js';
-import { describeDb, oneChainTestFileAtATime, testDatabase } from '../../helpers/database.js';
+import { describeDb, testDatabase } from '../../helpers/database.js';
 import { licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { manualTimers } from '../../helpers/timers.js';
 
@@ -73,9 +74,6 @@ function gated(db: Database, after: RegExp) {
   };
   return { db: wrapped, entered, release: () => release() };
 }
-
-// Advisory locks are database-wide; the files that take the chain's lock must not run side by side.
-oneChainTestFileAtATime();
 
 describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
   let db: Awaited<ReturnType<typeof testDatabase>>;
@@ -261,34 +259,25 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect(await walk()).toEqual([5]);
   });
 
-  it('a batch waits for a sealing pass holding the lock, then runs on what it committed', async () => {
+  it('a batch skips while a sealing pass holds the lock, deleting nothing; the next batch runs', async () => {
     for (let n = 1; n <= 3; n++) await insert(t(n));
     expect(await seal()).toBe(3);
     for (let n = 4; n <= 6; n++) await insert(t(n));
     const held = gated(db, /for update skip locked/);
     const pass = sealer({ db: held.db }).runOnce();
     await held.entered;
-    let batchDone = false;
-    const batch = deleteSealedBefore(db, cutoff(10), 1000).then((n) => {
-      batchDone = true;
-      return n;
-    });
-    // The batch waits on the advisory lock while the pass is mid-transaction.
-    await vi.waitFor(
-      async () => {
-        const waiting = await db.query(
-          `select 1 from pg_locks where locktype = 'advisory' and not granted and classid::text = $1 and objid::text = $2`,
-          [(AUDIT_CHAIN_LOCK_ID >> 32n).toString(), (AUDIT_CHAIN_LOCK_ID & 0xffffffffn).toString()],
-        );
-        expect(waiting.rows).toHaveLength(1);
-      },
-      { timeout: 5_000, interval: 20 },
+    // The pass holds the chain lock, keyed by this schema, mid-transaction.
+    const granted = await db.query(
+      `select 1 from pg_locks where locktype = 'advisory' and granted and objsubid = 2
+         and classid::bigint = $1 and objid::bigint = hashtext(current_schema())::oid::bigint`,
+      [AUDIT_CHAIN_LOCK_CLASS],
     );
-    expect(batchDone).toBe(false);
+    expect(granted.rows).toHaveLength(1);
+    expect(await deleteSealedBefore(db, cutoff(10), 1000)).toBe(0);
+    expect((await rows()).map(([, seq]) => seq)).toEqual([1, 2, 3, null, null, null]);
     held.release();
     expect((await pass).sealed).toBe(3);
-    // It ran after the pass committed, so it saw all six sealed rows.
-    expect(await batch).toBe(6);
+    expect(await deleteSealedBefore(db, cutoff(10), 1000)).toBe(6);
     expect(await readAnchor(db)).toMatchObject({ seq: 6n, headSeq: 6n });
     await insert(t(20));
     expect(await seal()).toBe(1);
@@ -299,7 +288,7 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     for (let n = 1; n <= 3; n++) await insert(t(n));
     expect(await seal()).toBe(3);
     await insert(t(4));
-    const held = gated(db, /pg_advisory_xact_lock/);
+    const held = gated(db, /pg_try_advisory_xact_lock/);
     const batch = deleteSealedBefore(held.db, cutoff(2), 1000);
     await held.entered;
     expect(await sealer().runOnce()).toMatchObject({ outcome: 'busy-elsewhere', sealed: 0 });
@@ -310,24 +299,71 @@ describeDb('retention with a chain key (audit-chain spec §3.3)', () => {
     expect(await walk()).toEqual([3, 4]);
   });
 
+  it('the lock is per schema: a pass holding it here does not hold it for another schema of the database', async () => {
+    const other = await testDatabase();
+    try {
+      const held = gated(db, /pg_try_advisory_xact_lock/);
+      const pass = sealer({ db: held.db }).runOnce();
+      await held.entered;
+      expect(await db.transaction((tx) => tryLockChain(tx))).toBe(false);
+      expect(await other.transaction((tx) => tryLockChain(tx))).toBe(true);
+      held.release();
+      await pass;
+    } finally {
+      await other.close();
+    }
+  });
+
   it('sealer passes and retention batches racing on separate clients leave a gapless, verifying chain', async () => {
+    // Sealing goes in (at, id) order, so the 18 rows at 0 to 5 s take seqs 1 to 18 and those at 6 to 9 s the rest.
     for (let n = 1; n <= 30; n++) await insert(t(n % 10));
     const s = sealer({ batchSize: 4 });
     const outcomes: SealPass['outcome'][] = [];
-    let deleted = 0;
-    for (let round = 0; round < 60; round++) {
-      const [pass, batch] = await Promise.all([s.runOnce(), deleteSealedBefore(db, cutoff(5), 3)]);
+    for (let round = 0; round < 20; round++) {
+      const [pass] = await Promise.all([s.runOnce(), deleteSealedBefore(db, cutoff(5), 3)]);
       outcomes.push(pass.outcome);
-      deleted += batch;
-      if (pass.outcome === 'idle' && batch === 0) break;
     }
     expect(outcomes).not.toContain('failed');
-    expect(outcomes).toContain('idle');
-    const anchor = await readAnchor(db);
-    expect(anchor?.headSeq).toBe(30n);
-    expect(anchor?.seq).toBe(BigInt(deleted));
-    expect(await walk()).toEqual(Array.from({ length: 30 - deleted }, (_, i) => deleted + i + 1));
+    // Then a closing pass and sweep, one at a time, settle whatever the race left.
+    while ((await seal()) > 0);
+    while ((await deleteSealedBefore(db, cutoff(5), 3)) > 0);
+    expect(await readAnchor(db)).toMatchObject({ seq: 18n, headSeq: 30n });
+    expect(await walk()).toEqual(Array.from({ length: 12 }, (_, i) => i + 19));
     expect((await rows()).every(([, seq]) => seq !== null)).toBe(true);
+  });
+
+  it('keeps a row whose at equals the cutoff exactly', async () => {
+    await insert(t(1));
+    const atCutoff = await insert(t(2));
+    expect(await seal()).toBe(2);
+    expect(await deleteSealedBefore(db, new Date(t(2)), 1000)).toBe(1);
+    expect(await rows()).toEqual([[atCutoff, 2]]);
+  });
+
+  it('counts the limit in rows: more than limit seqs missing past the anchor never stall it', async () => {
+    for (let n = 1; n <= 10; n++) await insert(t(n));
+    await insert(t(30));
+    expect(await seal()).toBe(11);
+    // Seqs 1 to 7 deleted while the key was unset: a gap wider than the batch limit of 3.
+    await db.query('delete from audit_events where chain_seq <= 7');
+    const before = await hashes();
+    expect(await deleteSealedBefore(db, cutoff(20), 3)).toBe(3);
+    expect(await readAnchor(db)).toMatchObject({ seq: 10n, hash: before.get(10n) });
+    expect(await walk()).toEqual([11]);
+    expect(await deleteSealedBefore(db, cutoff(20), 3)).toBe(0);
+  });
+
+  it('a young row deleted from outside just above old rows leaves its gap visible above the anchor', async () => {
+    for (let n = 1; n <= 3; n++) await insert(t(n));
+    await insert(t(8));
+    await insert(t(9));
+    expect(await seal()).toBe(5);
+    await db.query('delete from audit_events where chain_seq = 4');
+    const before = await hashes();
+    expect(await deleteSealedBefore(db, cutoff(5), 1000)).toBe(3);
+    // The anchor stops at the last old row, below the gap, so a walk still finds seq 4 missing.
+    expect(await readAnchor(db)).toMatchObject({ seq: 3n, hash: before.get(3n) });
+    expect((await sealedPage(db, 3n, 10)).map((row) => row.seq)).toEqual([5n]);
   });
 });
 

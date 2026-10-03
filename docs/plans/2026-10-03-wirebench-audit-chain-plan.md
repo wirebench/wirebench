@@ -21,14 +21,15 @@
 - **Sealer:**
   - **Batch:** 500 rows per pass.
   - **Timing:** 2 s while busy, 5 s when idle. After an unexpected error, back off from 5 s, doubling, up to 300 s. Log one `warn` when it starts failing and one `info` when it recovers.
-  - **Lock:** each pass is one transaction that starts with `pg_try_advisory_xact_lock`, using one constant lock id exported from the sealer module.
+  - **Lock:** each pass is one transaction that starts with `tryLockChain` from `chain/lock.ts`: `pg_try_advisory_xact_lock(<const int4>, hashtext(current_schema()))`, so the lock is per schema (ruled in fix round 1 of Task 3).
   - **Claim:** `where chain_seq is null order by at, id limit 500 for update skip locked`.
   - **Head:** the highest sealed row's `(seq, hash)`, or the anchor's when nothing is sealed. The next seq is `max(head.seq, anchor.head_seq) + 1`, linked to the head's hash. A pass that seals anything sets `anchor.head_seq` to the new head seq in the same transaction (ruled in fix round 1 of Task 2).
   - **Wrong key:** refuse to seal, logging one `error` per distinct key.
   - **Head log line:** `audit chain sealed to <seq>:<hex>` at `info`, with `{ sealed: n }`.
   - **Shutdown:** stop from `onClose`, before the sweeper, finishing the pass under way.
 - **Retention with a key:**
-  - It deletes only sealed rows, with `chain_seq <= least(S, anchor.seq + 1000)`, where `S = (min chain_seq where at >= cutoff) − 1`, or `max(chain_seq)` when no sealed row is that new.
+  - It deletes only sealed rows: of the first 1000 sealed rows after `anchor.seq` in seq order (the limit counts rows, not seqs), those before the first with `at >= cutoff`. It reads no row outside that window.
+  - Each batch is one transaction that starts with `tryLockChain`; while a sealing pass holds the lock, the batch deletes nothing and returns 0 (ruled in fix round 1 of Task 3).
   - It moves the anchor in the same transaction, keeping its key id and `head_seq`.
   - Unsealed rows are never deleted.
 - **Retention without a key:** unchanged.
