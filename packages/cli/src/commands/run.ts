@@ -7,6 +7,7 @@ import {
   isWirebenchError,
   loadProject,
   loadWorkspace,
+  readGoldenFile,
   RequestScripting,
   runRequests,
   secretNeedsOf,
@@ -265,6 +266,15 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
             bail: args.bail,
             ...(args.slaMs !== undefined ? { defaultSlaMs: args.slaMs } : {}),
             requireAssertions: args.requireAssertions,
+            ...(args.baseline
+              ? {
+                  baseline: {
+                    // Read from the folder the project was loaded from; nothing is written (#36).
+                    source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
+                    require: args.requireBaseline,
+                  },
+                }
+              : {}),
             onRequestDone: (request) => output.onRequestDone(request),
             captures: captures.source,
             onCallbackWaiting,

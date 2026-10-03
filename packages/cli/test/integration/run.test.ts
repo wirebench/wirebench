@@ -304,3 +304,88 @@ describe('wirebench run — a project inside a workspace', () => {
     expect(code).toBe(0);
   });
 });
+
+describe('wirebench run --baseline', () => {
+  const GOLDEN = join('apis', 'demo', 'requests', 'ok.golden.yaml');
+
+  async function copyWithGolden(body?: string): Promise<string> {
+    const dir = await tempDir();
+    await cp(FIXTURE, dir, { recursive: true });
+    if (body !== undefined) {
+      await writeFile(join(dir, GOLDEN), `savedAt: '2026-10-03T10:00:00.000Z'\nignore: []\nbody: '${body}'\n`);
+    }
+    return dir;
+  }
+
+  it('passes when the response matches its golden', async () => {
+    const dir = await copyWithGolden('{"ok": true}');
+    const { code, stdout } = await runCli(['run', dir, 'demo/ok', '-e', 'local', ...vars(), '--baseline']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('baseline: matches');
+  });
+
+  it('exits 1 on a difference and reports it in JUnit and JSON', async () => {
+    const dir = await copyWithGolden('{"ok": false}');
+    const out = await tempDir();
+    const junit = join(out, 'r.xml');
+    const json = join(out, 'r.json');
+    const { code, stdout } = await runCli([
+      'run',
+      dir,
+      'demo/ok',
+      '-e',
+      'local',
+      ...vars(),
+      '--baseline',
+      '--reporter',
+      'cli',
+      '--reporter',
+      `junit=${junit}`,
+      '--reporter',
+      `json=${json}`,
+    ]);
+    expect(code).toBe(1);
+    expect(stdout).toContain('1 difference from the baseline');
+    expect(stdout).toContain('changed /ok: false → true');
+    expect(await readFile(junit, 'utf8')).toContain(
+      '<failure message="1 difference from the baseline" type="baseline">',
+    );
+    const report = JSON.parse(await readFile(json, 'utf8')) as {
+      formatVersion: number;
+      requests: { baseline: unknown }[];
+      summary: { baseline: unknown };
+    };
+    expect(report.formatVersion).toBe(1);
+    expect(report.requests[0]?.baseline).toMatchObject({ status: 'differs', format: 'json' });
+    expect(report.summary.baseline).toEqual({ matched: 0, differs: 1, missing: 0 });
+  });
+
+  it('exits 3 when a golden is missing under --require-baseline', async () => {
+    const dir = await copyWithGolden();
+    const { code, stdout } = await runCli([
+      'run',
+      dir,
+      'demo/ok',
+      '-e',
+      'local',
+      ...vars(),
+      '--baseline',
+      '--require-baseline',
+    ]);
+    expect(code).toBe(3);
+    expect(stdout).toContain('baseline-missing');
+  });
+
+  it('exits 2 for --require-baseline without --baseline, sending nothing', async () => {
+    const { code } = await runCli(['run', FIXTURE, '-e', 'local', ...vars(), '--require-baseline']);
+    expect(code).toBe(2);
+    expect(demo.requests).toHaveLength(0);
+  });
+
+  it('does not write into the project', async () => {
+    const dir = await copyWithGolden('{"ok": false}');
+    const tree = await hashTree(dir);
+    await runCli(['run', dir, 'demo/ok', '-e', 'local', ...vars(), '--baseline']);
+    expect(await hashTree(dir)).toEqual(tree);
+  });
+});

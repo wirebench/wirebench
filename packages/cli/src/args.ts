@@ -26,6 +26,8 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --timeout <ms>     Per-request timeout override.
     --sla <ms>         Default response-time ceiling for requests that declare none.
     --require-assertions  A request without assertions is an error.
+    --baseline         Compare each response with its committed golden (<slug>.golden.yaml).
+    --require-baseline With --baseline: a request without a golden is an error.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
     --no-color
 -q, --quiet | -v, --verbose
@@ -56,6 +58,8 @@ export interface RunArgs {
   readonly timeoutMs?: number;
   readonly slaMs?: number;
   readonly requireAssertions: boolean;
+  readonly baseline: boolean;
+  readonly requireBaseline: boolean;
   readonly insecure: boolean;
   readonly color: boolean;
   readonly quiet: boolean;
@@ -145,6 +149,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         timeout: { type: 'string' },
         sla: { type: 'string' },
         'require-assertions': { type: 'boolean' },
+        baseline: { type: 'boolean' },
+        'require-baseline': { type: 'boolean' },
         insecure: { type: 'boolean' },
         'no-color': { type: 'boolean' },
         quiet: { type: 'boolean', short: 'q' },
@@ -191,6 +197,14 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       throw new UsageError('wirebench run <path> [selector…] [options]: <path> is required');
     }
     refuseMixed(selectors);
+    const baseline = values.baseline ?? false;
+    const requireBaseline = values['require-baseline'] ?? false;
+    if (requireBaseline && !baseline) {
+      throw new UsageError('--require-baseline needs --baseline');
+    }
+    if (baseline && sequences.length > 0) {
+      throw new UsageError('--baseline cannot be combined with --sequence: sequence steps are not compared');
+    }
     const vars = parseVars(values.var);
     const reporterSpecs = values.reporter ?? [];
     const reporters: readonly ReporterSpec[] =
@@ -207,6 +221,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       ...(values.timeout !== undefined ? { timeoutMs: parsePositiveInt(values.timeout, 'timeout') } : {}),
       ...(values.sla !== undefined ? { slaMs: parsePositiveInt(values.sla, 'sla') } : {}),
       requireAssertions: values['require-assertions'] ?? false,
+      baseline,
+      requireBaseline,
       insecure: values.insecure ?? false,
       color: !values['no-color'],
       quiet: values.quiet ?? false,
