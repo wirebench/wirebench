@@ -42,6 +42,8 @@ export class CurrentValuesStore {
   private readonly workspaces = new Map<string, Map<string, ScopeEntry>>();
   private currentId = NO_WORKSPACE;
   private globals: Readonly<Record<string, string>> = {};
+  /** The last snapshot of each open project, replayed into a workspace map when the workspace switches. */
+  private readonly projects = new Map<string, ProjectWire>();
 
   constructor(private readonly onChanged: (state: CurrentValuesStateWire) => void = () => undefined) {}
 
@@ -51,6 +53,13 @@ export class CurrentValuesStore {
     const switched = id !== this.currentId;
     this.currentId = id;
     let changed = this.reconcile({ scope: 'global' }, this.globals);
+    if (switched) {
+      // Projects announce themselves before their workspace does (and while none is current), so
+      // the map this workspace now reads has not seen their snapshots yet.
+      for (const [projectId, project] of this.projects) {
+        changed = this.reconcileProject(projectId, project) || changed;
+      }
+    }
     if (workspace !== null) {
       changed = this.reconcile({ scope: 'workspace' }, workspace.properties) || changed;
       const live = new Set<string>();
@@ -70,8 +79,16 @@ export class CurrentValuesStore {
   /** One project's model changed. `null` (its host closed) keeps its values for when it opens again. */
   syncProject(projectId: string, project: ProjectWire | null): void {
     if (project === null) {
+      this.projects.delete(projectId);
       return;
     }
+    this.projects.set(projectId, project);
+    if (this.reconcileProject(projectId, project)) {
+      this.announce();
+    }
+  }
+
+  private reconcileProject(projectId: string, project: ProjectWire): boolean {
     let changed = this.reconcile({ scope: 'project', projectId }, project.properties);
     const live = new Set<string>();
     for (const environment of project.environments) {
@@ -83,9 +100,7 @@ export class CurrentValuesStore {
       this.dropWhere(
         (key) => key.scope === 'projectEnvironment' && key.projectId === projectId && !live.has(scopeKeyString(key)),
       ) || changed;
-    if (changed) {
-      this.announce();
-    }
+    return changed;
   }
 
   /** The globals changed; every workspace's global scope reads them. */
@@ -100,6 +115,8 @@ export class CurrentValuesStore {
   forgetWorkspace(workspaceId: string): void {
     this.workspaces.delete(workspaceId);
     if (workspaceId === this.currentId) {
+      // Announcing reads the current map, which would otherwise be created empty for the dead id.
+      this.currentId = NO_WORKSPACE;
       this.announce();
     }
   }

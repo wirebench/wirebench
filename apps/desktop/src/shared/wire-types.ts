@@ -3966,8 +3966,8 @@ export type CurrentValuesStateWire = z.infer<typeof currentValuesStateWireSchema
 
 export const currentValuesSetRequestSchema = z.object({
   key: scopeKeyWireSchema,
-  name: z.string().min(1),
-  value: z.string(),
+  name: z.string().min(1).max(65536),
+  value: z.string().max(65536),
 });
 /** `name` omitted resets the whole scope. */
 export const currentValuesResetRequestSchema = z.object({ key: scopeKeyWireSchema, name: z.string().optional() });

@@ -66,4 +66,17 @@ describe('registerCurrentValuesChannels', () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('current-value-unknown');
   });
+
+  it('refuses a current value for a project the workspace does not have', async () => {
+    const store = new CurrentValuesStore();
+    store.syncWorkspace({ id: 'w1', properties: {}, environments: [] } as unknown as WorkspaceWire);
+    registerCurrentValuesChannels(store);
+    const result = await invoke(channels.currentValues.set.name, {
+      key: { scope: 'project', projectId: 'ghost' },
+      name: 'x',
+      value: 'y',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('current-value-unknown');
+  });
 });

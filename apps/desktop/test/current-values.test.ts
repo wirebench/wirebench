@@ -115,4 +115,29 @@ describe('CurrentValuesStore', () => {
     store.syncWorkspace(workspace({ org: 'acme' }));
     expect(store.overlaysFor('p2')).toEqual({ global: { who: 'you' } });
   });
+
+  it('reconciles a project that synced before its workspace did, in the workspace that then opens', () => {
+    const store = new CurrentValuesStore();
+    store.syncWorkspace(null);
+    store.syncProject('p1', project({ tenant: 't' }, [{ id: 'pe1', properties: { user: 'u' } }]));
+    store.syncWorkspace(workspace({ org: 'acme' }, [], 'w1'));
+    expect(store.set({ scope: 'project', projectId: 'p1' }, 'tenant', 'beta').scopes).toHaveLength(1);
+    const env: ScopeKeyWire = { scope: 'projectEnvironment', projectId: 'p1', environmentId: 'pe1' };
+    expect(store.set(env, 'user', 'bob').scopes).toHaveLength(2);
+
+    // Switching away and back keeps them, and a second workspace gets the project's scopes too.
+    store.syncWorkspace(workspace({ org: 'other' }, [], 'w2'));
+    expect(store.state()).toEqual({ scopes: [] });
+    expect(store.set({ scope: 'project', projectId: 'p1' }, 'tenant', 'gamma').scopes).toHaveLength(1);
+    store.syncWorkspace(workspace({ org: 'acme' }, [], 'w1'));
+    expect(store.overlaysFor('p1').project).toEqual({ tenant: 'beta' });
+  });
+
+  it('does not create a map for a workspace that was just forgotten', () => {
+    const store = new CurrentValuesStore();
+    store.syncWorkspace(workspace({ a: '1' }, [], 'w1'));
+    store.forgetWorkspace('w1');
+    expect(store.state()).toEqual({ scopes: [] });
+    expect(() => store.set(WORKSPACE, 'a', 'x')).toThrow(/no committed value/);
+  });
 });
