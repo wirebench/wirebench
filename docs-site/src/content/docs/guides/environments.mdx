@@ -73,6 +73,23 @@ absent — a reference to it falls through to the next scope in the precedence c
 unresolved if nothing else defines it) — while its value stays saved. This is the quickest way to
 try a request without a variable, or to keep a rarely used value around without deleting it.
 
+## Current values
+
+Every variables table — Globals, Workspace, a project and each environment — has a **Current**
+column beside **Value**. A current value replaces the committed value for this session only: it is
+never written to the project, the workspace or the keychain, and it is gone when you quit.
+
+- An empty Current cell shows the committed value as a placeholder; that value applies.
+- Type into the cell and press <kbd>Enter</kbd> to set a current value. The variable's name gets a
+  dot, and every send, preview and the code panel use the current value.
+- Empty the cell, or enter the committed value, to go back to it. The reset button in a row resets
+  that variable; **Reset current values** in the column header resets the whole table.
+- A disabled variable stays absent; its current value does not apply.
+- A current value may itself contain `${...}`, which is expanded like any other value.
+- Rename a variable and its current value follows; delete it and the current value goes too.
+- A secret's Current cell is masked like its Value until you show secrets.
+- `wirebench run --var` still wins over both.
+
 ## Endpoint overrides
 
 An environment's page also has an **Endpoints** table, one row per SOAP interface and REST or gRPC

@@ -193,6 +193,8 @@ lives beside it (§4).
   the session only, and re-sends the ones whose domain and path match when its _send cookies_ setting is on (off by
   default). The Cookies tab shows what was received and, on the request side, a greyed `Cookie` header shows what
   will be sent. Nothing about cookies reaches the project folder.
+  _Resolved by_ `docs/specs/2026-10-03-wirebench-cookie-jar-and-current-values-design.md` (#44): a workspace-wide
+  jar with a manager replaces the per-request cookies; nothing reaches the project folder still holds.
 - **Save response** to a file (bytes as received, decoded), and _Copy_ for body, headers and the status line.
 - **Errors** are the existing `HttpError` codes with their existing readable messages in Problems: DNS, refused,
   timeout, TLS, untrusted certificate (with the endpoint's trust action), too large, too many redirects.
@@ -824,6 +826,7 @@ untouched).
    reach from there, exactly as `fontoxpath` does.
 4. Cookie jar: **per-request session cookies only, no jar**; a workspace-wide session jar with a manager is a
    follow-up.
+   _Resolved by_ `docs/specs/2026-10-03-wirebench-cookie-jar-and-current-values-design.md` (#44).
 5. HTML preview of a response: **not in v1** — it needs a sandboxed frame and a CSP decision that deserves its own
    security review; Pretty and Raw show the markup.
 6. OpenAPI 2.0: **refused with a clear message**; a converter step is a follow-up if asked for.

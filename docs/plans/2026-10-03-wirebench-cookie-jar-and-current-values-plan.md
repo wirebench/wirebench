@@ -5438,4 +5438,6 @@ Deviations from the spec, and choices it left open:
 10. **Committing an empty Current cell** (or the committed value) resets it.
 11. **A standalone project** (no workspace) gets current values for globals only; `setCurrentValues` is wired by `WorkspaceService`.
 12. **The status-bar environment switcher** shows no values, so it is unchanged; previews resolve in main and get the overlays.
-
+13. **Inherited rows (D1).** An inherited row shows the committed value in Value and the override in Current.
+14. **No secure storage at load (D2).** An existing cookie file is left untouched and the jar is session-only.
+15. **Evicted right after storing (D3).** A cookie evicted right after being stored still gets the verdict `stored`.

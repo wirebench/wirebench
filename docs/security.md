@@ -519,6 +519,44 @@ What this does not change: a script someone else wrote runs when you send its re
 request already sends what it says to where it says. The rules above make sure the script gains
 nothing a declarative request could not already do, beyond CPU and memory within its limits.
 
+## The cookie jar
+
+Responses' cookies are kept in a jar per workspace (#44,
+`docs/specs/2026-10-03-wirebench-cookie-jar-and-current-values-design.md`):
+
+- **At rest.** Cookies with an expiry are written to `cookies/<workspace id>.json` in the app's data
+  folder, encrypted with the OS keychain (`safeStorage`); without it nothing is written. Session cookies
+  never reach disk. The jar never reaches the project folder, a shared workspace's git tree or the server.
+  A file from a newer version is left untouched and the jar runs in memory; a corrupt file is set aside
+  as `.corrupt`. Tests: `apps/desktop/test/cookie-store.test.ts`.
+- **Opt-in sending.** Jar cookies go out only from REST requests with *Send cookies* on (off by
+  default), only to a matching domain and path, and `Secure` cookies only over https. An http response
+  cannot set or overwrite a `Secure` cookie. Tests: `packages/engine/test/unit/rest/cookie-jar.test.ts`.
+- **Per hop.** The jar is matched again for every redirect hop, and a cross-origin hop already drops a
+  hand-set `Cookie`, so a redirect to another host gets only that host's cookies. Tests:
+  `packages/engine/test/integration/run/rest-exchange.test.ts`.
+- **Domain rules.** A response's `Domain` must domain-match the request host; a `Domain` that is an IP
+  address or a single label is refused unless it equals the host.
+- **Bounded.** 4 KB per cookie, 50 per domain, 3,000 in all; past that, the cookie expiring soonest goes first, session cookies last.
+- **Masking.** `Cookie` and `Set-Cookie` stay redacted in History and logs; the cookie manager masks
+  values until asked.
+- **Residual risk: no public-suffix list.** A server under `a.example.co.uk` can set `Domain=co.uk`, and
+  that cookie then reaches every `*.co.uk` host a request with *Send cookies* on is sent to. Accepted:
+  the jar holds your own test traffic, sending is opt-in per request, and a public-suffix list is a
+  large, moving dependency.
+- **Headless.** `wirebench run`, `call` and `mcp` keep their jar in memory only.
+
+## Current values never touch disk
+
+A variable's current value (#44) is a session-only override of its committed value:
+
+- **Memory only.** Current values live in the main process. They are never written to the project,
+  the workspace, the keychain, History, the server or a shared workspace, and are gone on quit. Tests:
+  `apps/desktop/test/current-values.test.ts`.
+- **User input, not response data.** A current value is typed by the user and expands like a
+  committed value; ADR-0015's boundary (a response value is data, never a template) is unchanged.
+- **Masked like the value.** A secret's Current cell is masked while secrets are hidden.
+
 ## Catch URLs take anyone's request
 
 A catch URL (webhook capture) is the one Wirebench Server route that needs no account, so its secret
