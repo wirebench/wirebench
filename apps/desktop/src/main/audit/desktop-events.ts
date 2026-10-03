@@ -90,7 +90,7 @@ export function runFinishedEvent(
     action: 'desktop.run_finished',
     details: {
       sequenceId: result.sequenceId,
-      name: result.name.slice(0, 256),
+      sequenceName: result.name.slice(0, 256),
       outcome: cancelled ? 'cancelled' : result.outcome,
       ...counts,
       durationMs: Math.max(0, now.getTime() - new Date(startedAt).getTime()),

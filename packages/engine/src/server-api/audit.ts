@@ -180,7 +180,8 @@ export type DesktopRequestSentDetails = z.infer<typeof desktopRequestSentDetails
 /** One finished sequence run: the engine's `SequenceOutcome` values, plus `cancelled`. */
 export const desktopRunFinishedDetailsSchema = z.strictObject({
   sequenceId: z.string().min(1).max(128),
-  name: z.string().max(256),
+  /** The test suite's name; `sequenceName`, so it is never read as the workspace's `name`. */
+  sequenceName: z.string().max(256),
   outcome: z.enum(['passed', 'failed', 'errored', 'skipped', 'cancelled']),
   passed: z.number().int().min(0),
   failed: z.number().int().min(0),

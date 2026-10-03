@@ -95,7 +95,7 @@ describe('runFinishedEvent', () => {
       action: 'desktop.run_finished',
       details: {
         sequenceId: 'seq1',
-        name: 'Smoke',
+        sequenceName: 'Smoke',
         outcome: 'failed',
         passed: 2,
         failed: 1,

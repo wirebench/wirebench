@@ -298,7 +298,7 @@ describe('SequenceRunner', () => {
       action: 'desktop.run_finished',
       details: {
         sequenceId: 'S1',
-        name: 'Checkout',
+        sequenceName: 'Checkout',
         outcome: 'passed',
         passed: 2,
         failed: 0,

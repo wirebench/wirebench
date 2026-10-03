@@ -26,7 +26,7 @@ const RUN = {
   action: 'desktop.run_finished',
   details: {
     sequenceId: 'seq-1',
-    name: 'Smoke',
+    sequenceName: 'Smoke',
     outcome: 'passed',
     passed: 3,
     failed: 0,

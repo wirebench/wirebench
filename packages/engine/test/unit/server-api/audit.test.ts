@@ -90,7 +90,7 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
     };
     const RUN = {
       sequenceId: '01J9ZK3V8Q00000000000000S1',
-      name: 'Checkout flow',
+      sequenceName: 'Checkout flow',
       outcome: 'passed',
       passed: 3,
       failed: 0,
@@ -142,6 +142,10 @@ describe('audit wire shapes (audit-log spec §3.4, §5.2)', () => {
     it('refuses unknown keys, an oversized url, too many hosts, and an unknown action', () => {
       expect(desktopAuditBatchSchema.safeParse({ events: [requestEvent({ ...SENT, body: 'x' })] }).success).toBe(false);
       expect(desktopAuditBatchSchema.safeParse({ events: [runEvent({ ...RUN, extra: 1 })] }).success).toBe(false);
+      const { sequenceName, ...unnamed } = RUN;
+      expect(
+        desktopAuditBatchSchema.safeParse({ events: [runEvent({ ...unnamed, name: sequenceName })] }).success,
+      ).toBe(false);
       expect(
         desktopAuditBatchSchema.safeParse({ events: [requestEvent({ ...SENT, url: 'h'.repeat(2049) })] }).success,
       ).toBe(false);
