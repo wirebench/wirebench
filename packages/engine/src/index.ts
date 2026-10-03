@@ -320,6 +320,8 @@ export { buildEmptyRequest, buildSampleRequest } from './soap/request-builder.js
 export type { GeneratedRequest, OperationRef, RequestBuildInput, RequestBuildOptions } from './soap/request-builder.js';
 export { buildRequestForm } from './soap/form-request.js';
 export type { RequestForm } from './soap/form-request.js';
+export { envelopeFromJson, faultDetailJson, jsonFromEnvelope, operationJsonSchema } from './soap/json-operation.js';
+export type { JsonEnvelope, OperationSchema } from './soap/json-operation.js';
 export { isSoapFault, parseFault } from './soap/fault.js';
 export type { FaultReason, SoapFault } from './soap/fault.js';
 export { recreateRequest } from './soap/recreate.js';

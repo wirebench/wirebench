@@ -353,3 +353,8 @@ The decisions above stand; these correct facts.
   branch's required keys (or at least one of its keys when none is required) and forbids every other
   branch's keys. When the choice is optional, or a branch can be empty, one more option forbids every
   branch key.
+- **R10 — R8's mechanism changed: an element cut at the depth limit is rebuilt in place.** The bridge
+  does not build the form again from its own XML in rounds. When the arguments reach an element the
+  form cut at its depth limit, that element is rebuilt in place from its declaration
+  (`buildFormForDecl`) and filled per item, so every value is reached. Nesting beyond 64 expansions
+  along one path (`MAX_FILL_ROUNDS`) is a problem that refuses the call, never a silent truncation.
