@@ -114,7 +114,7 @@ git diff -- '*.golden.yaml'
 
 A golden that differs is replaced, keeping its ignore rules; a missing one is created; one that
 still matches is left as it is. The run lists each file it wrote. Nothing is written for a request
-whose own assertions fail. A response that holds a secret value, a golden file that cannot be read,
-a golden path that is a link or a folder, and a body with no text form (binary) are refused: the request errors (exit code 3) and the
-file is left alone. `--update-baseline` cannot be combined with `--baseline`, `--require-baseline`
+whose own assertions fail, or whose body has no text form (binary). A response that holds a secret
+value, a golden file that cannot be read, and a golden path that is a link or a folder are refused: the request errors
+(exit code 3) and the file is left alone. `--update-baseline` cannot be combined with `--baseline`, `--require-baseline`
 or `--sequence`.

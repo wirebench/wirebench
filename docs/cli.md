@@ -382,10 +382,11 @@ still matches is left as it is. It is the only flag that writes to the project, 
 nothing but `<slug>.golden.yaml` files. Review the result with `git diff -- '*.golden.yaml'` before
 committing.
 
-A request whose own assertions fail is not written, and fails the run (exit 1). A refusal errors the
+A request whose own assertions fail is not written, and fails the run (exit 1). A body with no text
+form (binary) is not written either; the request's outcome is unchanged. A refusal errors the
 request (exit 3) and leaves the file alone: a response that holds a secret value, a golden that is
-malformed, a golden path that is not a regular file, a request file that is not on disk, a body with
-no text form (binary), or a write that fails. `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence` is a usage
+malformed, a golden path that is not a regular file, a request file that is not on disk, or a write
+that fails. `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence` is a usage
 error (exit 2).
 
 The summary ends with the counts and the files it wrote:
