@@ -29,6 +29,13 @@ describe('maskAuditUrl', () => {
     expect(masked).toContain('keep=1');
   });
 
+  it('masks the userinfo password of a URL that does not parse, keeping the user', () => {
+    const masked = maskAuditUrl('https://ada:hunter2@bad host:99999/x?keep=1');
+    expect(masked).toBe('https://ada:<redacted>@bad host:99999/x?keep=1');
+    expect(maskAuditUrl('https://ada:p@ss@bad host/x')).toBe('https://ada:<redacted>@bad host/x');
+    expect(maskAuditUrl('https://ada@bad host/x')).toBe('https://ada@bad host/x');
+  });
+
   it('matches a recorded secret before redactUrl re-encodes it', () => {
     recordSecretValue('a b+c');
     const masked = maskAuditUrl('https://a.example/p?q=a b+c');

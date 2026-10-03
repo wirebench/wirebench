@@ -27,6 +27,17 @@ function maskQueryText(text: string): string {
   });
 }
 
+/**
+ * For a URL `new URL` cannot parse: a password in its userinfo becomes the marker. The authority runs
+ * to the first `/`, `?` or `#`, and the userinfo to its last `@`, as a parser would read them.
+ */
+function maskUserinfoText(text: string): string {
+  return text.replace(/\/\/([^/?#]*)@/, (whole, userinfo: string) => {
+    const colon = userinfo.indexOf(':');
+    return colon < 0 ? whole : `//${userinfo.slice(0, colon)}:<redacted>@`;
+  });
+}
+
 /** Cuts `text` at `max`, before a redaction marker the cut would split. */
 function cutWhole(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -43,7 +54,8 @@ function cutWhole(text: string, max: number): string {
 /**
  * The URL as it may leave the machine: credentials masked whatever the show-secrets toggle says. The
  * session secrets are masked before `redactUrl` (it re-encodes, which could hide one from the masker)
- * and again after it.
+ * and again after it. A URL that does not parse gets the same masking by text: sensitive query values
+ * and a userinfo password.
  */
 export function maskAuditUrl(url: string): string {
   let parsable = true;
@@ -53,7 +65,9 @@ export function maskAuditUrl(url: string): string {
     parsable = false;
   }
   const first = redactSecretValues(url);
-  const masked = redactSecretValues(parsable ? redactUrl(first, { show: false }) : maskQueryText(first));
+  const masked = redactSecretValues(
+    parsable ? redactUrl(first, { show: false }) : maskUserinfoText(maskQueryText(first)),
+  );
   return cutWhole(masked, DESKTOP_AUDIT_LIMITS.maxUrlLength);
 }
 
