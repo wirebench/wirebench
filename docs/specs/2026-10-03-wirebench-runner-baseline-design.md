@@ -31,7 +31,10 @@ ran before them), gRPC and WebSocket (they have no golden), MCP.
 ## 1. Engine: one golden reader
 
 Today only the desktop reads `<slug>.golden.yaml` (`apps/desktop/src/main/snapshot-store.ts`). The
-reader moves into `@wirebench/engine/snapshot` so the CLI and the desktop read the file one way.
+reader moves into the engine, `packages/engine/src/snapshot/golden-file.ts`, exported from the main
+`@wirebench/engine` entry so the CLI and the desktop read the file one way. It is **not** exported
+from the `@wirebench/engine/snapshot` subpath: the renderer imports that subpath, and it must stay
+free of `node:fs`.
 
 ```ts
 interface GoldenFile { contentType?: string; savedAt: string; ignore: readonly string[]; body: string }
@@ -81,7 +84,7 @@ assertions:
 | Golden differs | `differs` | `baseline` failed: "N differences from the baseline" | failed, unless already errored |
 | No golden | `missing` | none, unless `require` | unchanged; with `require`: errored, `baseline-missing` |
 | Sidecar unreadable | `unreadable` | `baseline` errored, with the reason | errored |
-| Either body over 2 MB | `too-large` | `baseline` errored: "too large to compare semantically" | errored |
+| Either body over 2 MB (UTF-8) | `too-large` | `baseline` errored: "too large to compare semantically" | errored |
 | gRPC / WebSocket request | `unsupported` | none | unchanged |
 | Sequence step | — | none; the check does not run | unchanged |
 
@@ -90,9 +93,10 @@ A request that errored before or during the send gets no baseline entry.
 **Comparing.**
 - The full response body is decoded as UTF-8. The engine keeps a capped exchange for reports, but
   the comparison never uses it.
-- The format is the golden's `contentType` when it has one, then `detectSnapshotFormat` on the
-  response, the same rule as the Snapshot tab.
-- `diffSnapshot(golden.body, body, { format, ignore: golden.ignore })`. A parse failure falls back
+- The format is `detectSnapshotFormat(golden.body, golden.contentType ?? <response content-type>)`,
+  the same call the Snapshot tab makes.
+- `diffSnapshot(golden.body, body, { format, ignore: parseIgnoreRules(golden.ignore.join('\n')) })`,
+  again as the tab does. A parse failure falls back
   to text and sets `error`, as in #34; the run reports it with the differences.
 
 **Result.** `RequestResult` gains:
@@ -108,9 +112,10 @@ readonly baseline?: {
 };
 ```
 
-The failed assertion's `expected` is the golden's `savedAt`. Its `actual` lists the first 20
-changes, one per line, as `kind path: expected → actual`; each value is already capped at 200
-characters by `diffSnapshot`. The same text appears in every reporter.
+The assertion carries no `expected` or `actual`. A failed one's `message` lists the first 20
+changes, one per line: `changed <path>: <expected> → <actual>`, `added <path>: <actual>` or
+`removed <path>: <expected>`; each value is already capped at 200 characters by `diffSnapshot`. An
+errored one's `message` says why. The same text appears in every reporter.
 
 **Secrets.** Golden bodies are committed and hold no secret, but a response can echo one. The
 `baseline` field and the assertion text go through the existing masker (`reporters/mask.ts`) like
@@ -124,7 +129,8 @@ wirebench run <path> [selector…] [options]
     --require-baseline   With --baseline: a request without a golden is an error.
 ```
 
-- `--require-baseline` without `--baseline` is a usage error (exit 2).
+- `--require-baseline` without `--baseline` is a usage error (exit 2), and so is `--baseline` with
+  `--sequence` (sequence steps are not compared).
 - `commands/run.ts` builds the `BaselineSource` from the project folder and `readGoldenFile`.
 - Exit codes keep their meaning: a difference is a failed assertion (1); a missing golden under
   `--require-baseline`, an unreadable sidecar and an oversize body are errors (3), which take
@@ -133,9 +139,10 @@ wirebench run <path> [selector…] [options]
 
 ## 4. Reports
 
-- **cli.** Under each request, one line: `baseline: matches`, `baseline: N differences`,
-  `baseline: none saved` or `baseline: not compared (gRPC)`. On a difference, the change list is
-  expanded below it, as other failures are.
+- **cli.** The request line gains `baseline: matches`, `(no baseline)` or
+  `(baseline not compared: grpc)`. A difference is listed under the request like other failures:
+  the label, then one change per line. When the run compared baselines, a second summary line reads
+  `baseline: N matched, N differ, N missing`.
 - **junit.** No new element. A difference is the `<failure>` of the `baseline` assertion: the
   message is "N differences from the baseline" and the body is the change list. An errored check is
   an `<error>`. A missing golden adds `<system-out>no baseline saved</system-out>`.
