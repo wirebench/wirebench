@@ -10,6 +10,8 @@ import type { SetTimer } from '../hooks/env.js';
 import { CaptureSweeper } from '../hooks/sweep.js';
 import { realTimer } from '../live/module.js';
 import { desktopEventsLimiter, desktopRoutes } from './desktop-routes.js';
+import { AuditForwarder } from './forward/forwarder.js';
+import { sinkFromConfig } from './forward/sink.js';
 import { auditHook } from './hook.js';
 import { licenseListener } from './license-listener.js';
 import { deleteAuditEventsBefore } from './repo.js';
@@ -28,9 +30,10 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
   return {
     name: 'audit-log',
     migrationsDir: AUDIT_LOG_MIGRATIONS_DIR,
-    // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      ctx.hooks.audit.push(auditHook(now, { forward: Boolean(ctx.config.auditForwardUrl) }));
+      // Built first: a CA file that cannot be read refuses the start (ConfigError) before anything is wired.
+      const sink = await sinkFromConfig(ctx.config);
+      ctx.hooks.audit.push(auditHook(now, { forward: sink !== undefined }));
       ctx.hooks.licenseChanged.push(licenseListener({ db: ctx.db, hooks: ctx.hooks, log: ctx.log }));
       ctx.meta.addCapability('audit-log');
       auditRoutes({ db: ctx.db, hooks: ctx.hooks, license: () => ctx.license })(app);
@@ -45,8 +48,18 @@ export function auditLogModule(options: AuditLogOptions = {}): ServerModule {
         label: 'audit sweep',
       });
       sweeper.start();
-      // Before `startServer` drains and closes the pool (host spec §3.7): a batch under way finishes.
-      app.addHook('onClose', () => sweeper.stop());
+      const forwarder =
+        sink === undefined
+          ? undefined
+          : new AuditForwarder({ db: ctx.db, sink, license: () => ctx.license, now, setTimer, log: ctx.log });
+      forwarder?.start();
+      // Before `startServer` drains and closes the pool (host spec §3.7): a sweep or a forward batch under
+      // way finishes (or rolls back, leaving its events queued), and only then is the sink closed.
+      app.addHook('onClose', async () => {
+        await sweeper.stop();
+        await forwarder?.stop();
+        await sink?.close();
+      });
     },
   };
 }

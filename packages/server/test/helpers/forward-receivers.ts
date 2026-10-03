@@ -115,12 +115,13 @@ export interface HttpReceiver {
 }
 
 /**
- * An HTTP listener, or HTTPS when `tls` is given. `answer` writes the response; a handler that never
- * ends it makes the request hang.
+ * An HTTP listener, or HTTPS when `tls` is given; on `port`, or one the OS picks. `answer` writes the
+ * response; a handler that never ends it makes the request hang.
  */
 export async function httpReceiver(
   answer: (res: ServerResponse, request: RecordedRequest) => void = (res) => res.writeHead(204).end(),
   tls?: TlsIdentity,
+  port?: number,
 ): Promise<HttpReceiver> {
   const requests: RecordedRequest[] = [];
   const sockets: Socket[] = [];
@@ -142,6 +143,6 @@ export async function httpReceiver(
     tls === undefined ? createHttpServer(handler) : createHttpsServer({ cert: tls.certPem, key: tls.keyPem }, handler);
   server.on('connection', (socket: Socket) => sockets.push(socket));
   server.on('secureConnection', (socket: Socket) => sockets.push(socket));
-  const port = await listen(server);
-  return { port, requests, close: () => closeServer(server, sockets) };
+  const bound = await listen(server, port);
+  return { port: bound, requests, close: () => closeServer(server, sockets) };
 }
