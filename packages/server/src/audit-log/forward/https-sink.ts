@@ -98,7 +98,7 @@ export class HttpsSink implements ForwardSink {
         },
       );
       const timer = setTimeout(() => {
-        fail(`audit forward to ${host} timed out after ${this.timeoutMs} ms`);
+        fail(`audit forward to ${host} did not answer within the ${this.timeoutMs} ms deadline`);
         req.destroy();
       }, timeoutMs);
       req.on('error', (error: NodeJS.ErrnoException) => {

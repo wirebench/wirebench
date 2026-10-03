@@ -10,7 +10,6 @@ import { ConfigError, type ServerConfig } from '../../config.js';
 import { FORWARD_TIMEOUT_MS, type ForwardSink } from './forwarder.js';
 import { HttpsSink } from './https-sink.js';
 import { SyslogSink } from './syslog-sink.js';
-import { reason } from './trust.js';
 
 const CA_VARIABLE = 'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE';
 
@@ -43,7 +42,9 @@ async function readCa(path: string): Promise<string> {
   try {
     pem = await readFile(path, 'utf8');
   } catch (error) {
-    throw new ConfigError([{ variable: CA_VARIABLE, message: `could not be read: ${reason(error)}` }]);
+    throw new ConfigError([
+      { variable: CA_VARIABLE, message: `could not be read (${(error as NodeJS.ErrnoException).code ?? 'error'})` },
+    ]);
   }
   if (splitPemBundle(pem).length === 0)
     throw new ConfigError([{ variable: CA_VARIABLE, message: 'holds no PEM certificate' }]);

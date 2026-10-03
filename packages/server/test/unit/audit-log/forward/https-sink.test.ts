@@ -77,7 +77,7 @@ describe('HttpsSink', () => {
     const receiver = track(await httpReceiver(() => undefined));
     const sink = track(new HttpsSink({ url: `http://127.0.0.1:${receiver.port}/`, timeoutMs: 200 }));
     const started = Date.now();
-    await expect(sink.send([auditEvent()])).rejects.toThrow(/timed out/);
+    await expect(sink.send([auditEvent()])).rejects.toThrow(/did not answer within the/);
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
@@ -89,7 +89,7 @@ describe('HttpsSink', () => {
       }),
     );
     const sink = track(new HttpsSink({ url: `http://127.0.0.1:${receiver.port}/`, timeoutMs: 200 }));
-    await expect(sink.send([auditEvent()])).rejects.toThrow(/timed out/);
+    await expect(sink.send([auditEvent()])).rejects.toThrow(/did not answer within the/);
   });
 
   it('rejects when nothing listens on the port', async () => {

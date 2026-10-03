@@ -280,6 +280,7 @@ describeDb('audit forwarding from a running server (issue #209)', () => {
           { variable: 'WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE', message: expect.stringContaining(message) as string },
         ]);
         expect(JSON.stringify(problems) + String(error)).not.toContain('CA-FILE-CONTENTS-MARKER');
+        expect(JSON.stringify(problems) + String(error)).not.toContain(file);
       }
     },
     TEST_TIMEOUT_MS,

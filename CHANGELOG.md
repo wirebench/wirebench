@@ -135,7 +135,7 @@ before and after for the two changes that need more than a rename. The package's
   queue while offline, and shows **Recorded** in the status bar.
   Enterprise servers can also forward every audit event to one collector, as RFC 5424 syslog over TCP or
   TLS or as JSON batches over HTTPS (`WIREBENCH_SERVER_AUDIT_FORWARD_URL`, with an optional token and CA
-  bundle), at least once. See
+  bundle), at least once (for syslog, a batch counts as delivered once it is in the OS socket buffer). See
   [Audit log](https://wirebench.github.io/wirebench/docs/guides/server-audit-log/).
 
 - **Sequences.** A sequence sends saved SOAP, REST, gRPC and WebSocket requests one after another (a

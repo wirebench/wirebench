@@ -164,7 +164,7 @@ An Enterprise server can push every audit event to one collector as it is record
 
 A token or a CA file without the URL, or a combination listed above, is a configuration error at start-up. So is a CA file that cannot be read or holds no certificate: the server does not start.
 
-Every event is queued in the same transaction that records it. The forwarder sends the oldest 100 queued events at a time, and removes them from the queue only after the collector accepts them.
+Events are queued, in the same transaction that records them, only while `WIREBENCH_SERVER_AUDIT_FORWARD_URL` is set in the process that records them, so events from before forwarding was turned on are never sent. Rows queued earlier stay after the URL is unset until retention removes them, and go out (to whatever destination is then set) if it is set again. `wirebench-server admin …` commands record audit events too, so they need the same forward variables in their environment. The forwarder sends the oldest 100 queued events at a time, and removes them from the queue only after the collector accepts them.
 
 **Syslog** (RFC 5424 over TCP or TLS, RFC 6587 octet-counting framing, one connection reused between batches) carries one message per event:
 
