@@ -142,8 +142,15 @@ describe('REST through openExchange', () => {
       const sent = await open(restItem('/cookies/hop', { sendCookies: true, followRedirects: true }), {}, { cookies })
         .result;
       expect(JSON.parse(sent.subject.bodyText)).toEqual({ cookie: 'hop=1' });
+      // No Path attribute: the default path is the directory of the hop that set it (`/cookies/hop`),
+      // not that of the final URL (`/cookies/deep/read`), so the stored path tells the hops apart.
       expect(jar.list(Date.now())).toEqual([
-        expect.objectContaining({ name: 'hop', domain: new URL(server.url).hostname, hostOnly: true, path: '/' }),
+        expect.objectContaining({
+          name: 'hop',
+          domain: new URL(server.url).hostname,
+          hostOnly: true,
+          path: '/cookies',
+        }),
       ]);
     });
 

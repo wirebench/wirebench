@@ -76,7 +76,8 @@ export interface RestSendInput {
   readonly defaultHeaders?: Readonly<Record<string, string>>;
   /** Credentials, already resolved to values. */
   readonly auth?: SendAuth;
-  /** Cookies to send back, already matched against the URL. Kept for the engine's API; a run sends through `jar`. */
+  /** Cookies to send back, already matched against the URL. Kept for the engine's API; a run sends through `jar`.
+   * Exclusive with `jar`: when a jar is present this list is ignored. */
   readonly cookies?: readonly Cookie[];
   /**
    * The cookie jar this send stores into and, when `send` is set, reads from (cookie jar spec
@@ -254,7 +255,7 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
   });
 
-  const cookies = cookieHeader(input.cookies ?? []);
+  const cookies = input.jar === undefined ? cookieHeader(input.cookies ?? []) : undefined;
   const merged = mergeRequestHeaders({
     defaults: input.defaultHeaders ?? {},
     computed: {
