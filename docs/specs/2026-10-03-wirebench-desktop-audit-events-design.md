@@ -44,6 +44,9 @@ workspace to the team server, and the events appear in the audit log beside the 
   same transaction and announces `accessChanged`, so connected desktops fetch again.
 - `TeamWorkspace` carries `recordDesktopActivity`. The sync head response carries it too, so a desktop
   learns a change on its next fetch without another request (the head is already polled).
+- The server lists the `desktop-activity` capability in `GET /api/v1/meta`. The *Record desktop
+  activity* switch and the "Desktop activity is recorded" note are shown only on a server that lists
+  it, so an older server never offers a setting it would ignore.
 
 ### 2.2 What a desktop reports
 
@@ -58,7 +61,7 @@ said `recordDesktopActivity: true`.
     `null`), `outcome` (`ok` or `failed`), `durationMs`, `environment` (name or `null`),
     `requestId`, `requestName`, `sentAt` (the desktop's clock, ISO 8601).
 - **`desktop.run_finished`**, one per test-suite run that ends, including cancelled ones and runs
-  that break off (reported as `errored`, with the steps reached).
+  that break off (reported as `errored`, or `cancelled` when the person had stopped the run, with the steps reached).
   - Details: `sequenceId`, `sequenceName`, `outcome`, `passed`, `failed`, `errored`, `skipped`, `durationMs`,
     `hosts` (distinct origins the steps reached, at most 64), `environment` (as it was when the run
     started), `startedAt`, `sentAt`. The suite's name is `sequenceName`, never `name`: the Audit tab
@@ -69,7 +72,7 @@ said `recordDesktopActivity: true`.
 
 ### 2.3 Masking the URL
 
-The URL is the one actually sent, after variables. Before it leaves the send path the desktop:
+The URL is the one actually sent, after variables. For a REST send that failed, that includes the auth query parameters applied, as for a successful one. Before it leaves the send path the desktop:
 
 1. Applies the session secret masker (`redactSecretValues`), so any resolved credential that appears
    in a path or a query value is masked before `redactUrl` re-encodes the URL (which could hide it from
@@ -88,22 +91,28 @@ The URL is the one actually sent, after variables. Before it leaves the send pat
   `POST /api/v1/workspaces/:id/audit/desktop-events`.
 - An event belongs to the workspace open when its send or run started; the reporter refuses one for
   any other workspace, so a run that ends after its workspace closed is not credited to the next.
+- An event recorded before the account list has loaded waits for it, so it is not counted as dropped
+  at startup.
 - Each outbox entry is stamped with its owner: the user id of the account the desktop has on that
   server (the last one known while signed out). With no account ever known, the event is only counted
   as dropped. A drain sends only the signed-in account's own entries and drops and counts the others,
   so events queued by one person never go out as another who signs in later. The stamp stays in the
   outbox; the batch on the wire is unchanged.
 - The reporter sends shortly after an event is queued, after each successful sync fetch, and after
-  sign-in. On a network failure it backs off (from 5 s doubling to 5 min) and keeps the files.
-  Signed out, it keeps the files until sign-in.
+  sign-in. A fetch sends at once, but does not cut a back-off short. On a network failure it backs off
+  (from 5 s doubling to 5 min) and keeps the files. Signed out, it keeps the files until sign-in.
 - The outbox holds at most 5000 events. Past that the oldest are dropped and their count travels with
-  the next batch as `dropped`; the server records `desktop.events_dropped` with `{ count }`, so a gap
+  the next batch as `dropped`, at most 1,000,000 in one batch and the rest in the next, so nothing is
+  discarded; the server records `desktop.events_dropped` with `{ count }`, so a gap
   in the trail is itself on the record.
 - The server answers `409 audit-desktop-recording-off` when the workspace no longer records, and
   `403` or `404` when the workspace is closed to the person. The desktop then deletes its outbox for
-  that workspace and stops recording until a fetch says it records.
+  that workspace. A `409` stop ends when a fetch says the workspace records; a `403` or `404` stop
+  lasts until the person's role in the workspace changes, or another workspace or server is opened.
 - A `400` means the batch can never be accepted: the desktop drops it and counts its events as
-  dropped. A `429` (the route's rate limit) is a back-off like a network failure, the files kept.
+  dropped. A `429` (the route's rate limit) is a back-off like a network failure, the files kept; when its
+  `Retry-After` (seconds or an HTTP date) is longer than the back-off the retry waits that long,
+  capped at 5 min like the back-off.
 - Delivery is at least once: a batch the server wrote but whose answer was lost is sent again, so an
   event can appear twice.
 - A desktop never decides the actor, the time or the workspace's team; the server does.
@@ -158,3 +167,14 @@ switch to admins and the state to everyone.
 - The route has a per-user rate limit and `dropped` an upper bound (§2.5).
 - §2.3 states the masking order and the fallback for a URL that does not parse; §2.4 states how 400,
   403, 404 and 429 are handled, and that delivery is at least once.
+
+### 2026-10-03, from #213
+
+- A `403` or `404` stop lasts until the role changes, not until the next fetch (§2.4); a `429` is
+  retried after its `Retry-After` when that is longer than the back-off; a fetch no longer cuts a
+  back-off short.
+- `dropped` travels at most 1,000,000 to a batch, the rest in the next (§2.4).
+- An event recorded before the account list has loaded waits for it (§2.4).
+- A run that breaks off after it was cancelled is reported as `cancelled` (§2.2); a failed REST send
+  reports its URL with the auth query parameters applied, masked, like a successful one (§2.3).
+- The setting's switch needs the `desktop-activity` capability from `GET /meta` (§2.1).
