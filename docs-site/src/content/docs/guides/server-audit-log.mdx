@@ -1,11 +1,12 @@
 ---
 title: Audit log
-description: What Wirebench Server records about who did what, how long it keeps it, and how a server admin reads or exports it.
+description: What Wirebench Server records about who did what, how long it keeps it, and how server admins and team admins read or export it.
 ---
 
 Wirebench Server records who did what, on the server and, when a workspace turns it on, in the desktop app. Recording is on for every edition. Reading and exporting the log
 in the app or over the API needs the Enterprise edition (see
-[Editions and licenses](/wirebench/docs/guides/server-licensing/)), and only server admins can do either.
+[Editions and licenses](/wirebench/docs/guides/server-licensing/)). Server admins can read everything; a team
+admin can read their own team's events (see _Who can read it_, below).
 The `wirebench-server admin audit export` console command, below, works on any edition, for whoever can
 run it against the server's database.
 
@@ -91,10 +92,31 @@ lost, the app sends that batch again and its events can appear twice. Events que
 was signed in are sent only as that person: if someone else signs in to the same server, they are
 discarded and counted instead.
 
+## Who can read it
+
+- **Server admins** read every event, with any filter, or none.
+- **Team admins** read the events of the teams they administer, one team at a time, and nothing else.
+  They choose the team in **Account: Manage teams**; the Audit tab shows that team's events and exports
+  only those.
+- A plain team member, a CI token and anyone not signed in cannot read the log.
+
+Events that belong to no team stay with server admins. Sign-ins, password changes, user accounts, the
+server itself, the license and the CI tokens that carry no team are never shown to a team admin.
+
+Over the API, `GET /audit` and `GET /audit/export` take a `teamId`. A server admin may leave it out. Anyone
+else must name a team they administer, and the read is pinned to that team, whatever other filters they add:
+
+- no `teamId`: `403 audit-team-required`;
+- a team that does not exist, or that they are not on: `404 teams-team-not-found`;
+- a team they are on but do not administer: `403 teams-forbidden`.
+
+A team admin's export is recorded as `audit.exported` on their own team, so it shows in that team's log.
+
 ## Reading the log
 
 A server admin on an Enterprise server opens **Account: Manage teams** and chooses the **Audit** tab. It
-works with no team selected.
+works with no team selected. A team admin sees the **Audit** tab once they select a team they administer,
+and it lists that team's events only.
 
 - **Range** picks the last 24 hours, 7 days, 30 days, or all time.
 - **Kind** picks one group from the table above, `desktop` included.

@@ -95,8 +95,8 @@ nobody signed out and nothing locked. See the docs site's _Editions and licenses
 
 The server records who did what: sign-ins and failed sign-ins, users, teams, workspace roles, pushes,
 team-secret changes, catch URLs, CI tokens and license changes. Recording is on for every edition. Server
-admins read it in the app's Audit tab, which needs an Enterprise license; the console export works on any
-edition:
+admins read it in the app's Audit tab, and team admins read their own team's events there, which needs an
+Enterprise license; the console export works on any edition:
 
     docker compose -f packages/server/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
 
