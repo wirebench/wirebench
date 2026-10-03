@@ -3,11 +3,11 @@ title: Audit log
 description: What Wirebench Server records about who did what, how long it keeps it, and how a server admin reads or exports it.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
-
 Wirebench Server records who did what. Recording is on for every edition. Reading and exporting the log
-needs the Enterprise edition (see [Editions and licenses](/wirebench/docs/guides/server-licensing/)), and
-only server admins can do either.
+in the app or over the API needs the Enterprise edition (see
+[Editions and licenses](/wirebench/docs/guides/server-licensing/)), and only server admins can do either.
+The `wirebench-server admin audit export` console command, below, works on any edition, for whoever can
+run it against the server's database.
 
 An event says who did it, what they did, which target it touched, when, and from where. Events are never
 edited and no route deletes one. The only way an event leaves is retention, below.
@@ -62,11 +62,12 @@ On the machine that runs the server, the same export is a command:
 wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]
 ```
 
-It writes to standard output. `--action` is one action name, such as `team.deleted`, or a group followed by
-a dot, such as `secret.`. A nightly copy for an archive can be one `cron` line:
+It writes to standard output. `--from` is inclusive and `--to` exclusive. `--action` is one action name,
+such as `team.deleted`, or a group followed by a dot, such as `secret.`. A nightly copy for an archive can
+be one `cron` line, which takes exactly the previous day, so two runs never overlap:
 
 ```bash
-15 2 * * * docker compose -f /srv/wirebench/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from "$(date -u -d yesterday +\%Y-\%m-\%dT00:00:00Z)" >> /var/archive/wirebench-audit.ndjson
+15 2 * * * docker compose -f /srv/wirebench/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from "$(date -u -d yesterday +\%Y-\%m-\%dT00:00:00Z)" --to "$(date -u +\%Y-\%m-\%dT00:00:00Z)" >> /var/archive/wirebench-audit.ndjson
 ```
 
 An export is itself recorded as `audit.exported`, once the whole export has been written. An export that
@@ -88,28 +89,19 @@ The log holds personal data, under the same retention as everything else.
 - The address an event came from is an IP address.
 - A failed sign-in keeps the email that was typed, lower-cased, so that repeated attempts are readable.
 
-To answer a request to erase one person, export the log first, then purge that person's events. The
-operator runs this in the database, with the person's user id:
+To answer a request to erase one person, export the log first, then purge that person's events. A person
+appears in an event as its actor, as its target (a `user` target holds the user id), or by email in the
+details of an invitation, an invitation revoked, a new account or a failed sign-in (`emailLower`). The
+operator runs this in the database, with the person's user id as `$1` and their email, lower-cased, as `$2`:
 
 ```sql
-delete from audit_events where actor_user_id = $1;
+delete from audit_events
+ where actor_user_id = $1
+    or (target_kind = 'user' and target_id = $1)
+    or details->>'emailLower' = $2;
 ```
 
 Nothing in the server removes events one person at a time, so this is a deliberate step by the operator.
-
-<Aside>
-For a guarantee that holds in the database itself, take the permission away from the role the server
-connects as. Run these two statements as the database owner, with that role's name:
-
-```sql
-revoke update on audit_events from wirebench_app;
-revoke delete on audit_events from wirebench_app;
-```
-
-The server's own retention sweep is a delete, so it stops working after the second statement, and old
-events stay until the operator removes them.
-
-</Aside>
 
 ## Related
 

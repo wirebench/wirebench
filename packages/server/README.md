@@ -94,10 +94,11 @@ nobody signed out and nothing locked. See the docs site's _Editions and licenses
 ## Audit log
 
 The server records who did what: sign-ins and failed sign-ins, users, teams, workspace roles, pushes,
-team-secret changes, catch URLs, CI tokens and license changes. Recording is on for every edition; reading
-needs an Enterprise license. Server admins read it in the app's Audit tab or export it:
+team-secret changes, catch URLs, CI tokens and license changes. Recording is on for every edition. Server
+admins read it in the app's Audit tab, which needs an Enterprise license; the console export works on any
+edition:
 
-    docker compose -f packages/server/compose.yaml exec server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
+    docker compose -f packages/server/compose.yaml exec -T server node /app/dist/bin.js admin audit export --from 2026-10-01T00:00:00Z > audit.ndjson
 
 Events older than `WIREBENCH_SERVER_AUDIT_MAX_AGE_DAYS` (default 365) are deleted. See the docs site's
 _Audit log_ guide for what each event carries and how to handle personal data.
