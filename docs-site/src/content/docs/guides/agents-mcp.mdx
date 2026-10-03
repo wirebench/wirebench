@@ -130,12 +130,12 @@ The result gains a `baseline` field:
 | `matched` | The response matches; `ignored` counts the differences the ignore rules hid. |
 | `differs` | `changes` lists each `kind` (`changed`, `added`, `removed`), `path`, `expected` and `actual`, the first 100; `truncated` says there were more. The send's `outcome` is `failed`. |
 | `missing` | No baseline saved for this request. The send is judged on its own assertions. |
-| `unreadable`, `too-large` | The golden could not be read, or a body is over 2 MB. The send errors. |
+| `unreadable`, `too-large` | The golden could not be read, or a body is over 2 MB. The send errors (exit 3 from `wirebench send`). |
 | `unsupported` | A WebSocket request: there is no golden to compare. |
 
 A `body` override can be combined with it: the saved request's golden still applies, so you can
 change a request and check that the response did not change. Secret values the send resolved are
-masked in `changes`.
+masked across the whole result, `changes` included.
 
 An agent calls it like any tool:
 

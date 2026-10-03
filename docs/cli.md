@@ -543,9 +543,12 @@ Details that are easy to get wrong:
   machine's network reaches, through `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`. The desktop limits an
   import to project roots and files the user picked; this does not. A WSDL import takes
   `cacheDefinitions` from the project's own settings, not from the desktop's preferences.
-- **`send`.** `--baseline` also compares the response body with the golden saved beside the request
+- **`send --baseline`.** The response body is compared with the golden saved beside the request
   (`<slug>.golden.yaml`), honouring its ignore rules. A difference is a failed `baseline` assertion
-  (exit 1); no golden prints `baseline: no baseline saved` and does not fail. `--body` (or `--body-file`) replaces the saved SOAP envelope, or the saved raw or JSON
+  (exit 1). No golden prints `baseline: no baseline saved` and does not fail. An unreadable or
+  oversize (over 2 MB) golden is an error (exit 3). A WebSocket request is not compared. It combines
+  with `--body` / `--body-file`, and the saved request's golden still applies.
+- **`send`.** `--body` (or `--body-file`) replaces the saved SOAP envelope, or the saved raw or JSON
   body of a REST request, for this send only; nothing is saved. It is sent as written, so a `${…}`
   placeholder in it is refused with `invalid-input`. The saved request's own body still expands
   placeholders as usual. Secrets come only from `WIREBENCH_SECRET_<NAME>` variables, and only the ones
