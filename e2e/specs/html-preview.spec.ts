@@ -89,11 +89,10 @@ test.describe('HTML preview (#48)', () => {
     await expect(frame.locator('h1[data-marker="static"]')).toHaveText('Preview content');
     expect(page.url()).toBe(appUrl);
     expect(await page.title()).toBe(appTitle);
-    // The inline script and onload set the frame's title, not the app window's: neither ran.
-    const child = page.frames().find((candidate) => candidate.url() === 'about:srcdoc');
-    expect(child, 'the preview frame is still the srcdoc document').toBeDefined();
-    expect(child!.url()).toBe('about:srcdoc');
-    expect(await child!.title()).toBe('Original title');
+    // The inline script and onload set the frame's title, not the app window's: neither ran. Read it
+    // through the frame's DOM; a sandboxed srcdoc frame is not listed in page.frames() by its URL.
+    await expect(frame.locator('title')).toHaveCount(1);
+    await expect(frame.locator('title')).toHaveText('Original title');
     // The only request the server ever saw is the send itself.
     expect(seen).toEqual(['GET /page']);
   });
