@@ -50,4 +50,17 @@ describe('renderHtml', () => {
     expect(out).toContain('<th>Change</th><th>Path</th><th>Expected</th><th>Actual</th>');
     expect(out).toContain('<tr><td>changed</td><td>/a</td><td>1</td><td>2</td></tr>');
   });
+  it('says so for a missing and an unsupported baseline', () => {
+    const base = SAMPLE_RESULT.requests[1]!;
+    const run = {
+      ...SAMPLE_RESULT,
+      requests: [
+        { ...base, baseline: { status: 'missing' as const } },
+        { ...base, protocol: '<b>x' as never, baseline: { status: 'unsupported' as const } },
+      ],
+    };
+    const out = renderHtml(run, { name: 'wirebench', version: '0.0.0' });
+    expect(out).toContain('<p>No baseline saved.</p>');
+    expect(out).toContain('<p>Baseline not compared (&lt;b&gt;x).</p>');
+  });
 });

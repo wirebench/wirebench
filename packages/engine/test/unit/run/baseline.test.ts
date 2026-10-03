@@ -98,5 +98,7 @@ describe('checkBaseline', () => {
     const check = checkBaseline(present('{"a":1}', [], 'application/json'), subject('{oops'), false);
     expect(check.report.status).toBe('differs');
     expect(check.report.error).toBeDefined();
+    expect(check.assertion?.message?.split('\n')[0]).toBe(`compared as text: ${check.report.error}`);
+    expect(check.assertion?.message?.split('\n').length).toBeGreaterThan(1);
   });
 });

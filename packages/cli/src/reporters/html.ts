@@ -94,6 +94,12 @@ function renderSummary(result: RequestResult): string {
 
 /** A `--baseline` difference, one row per change (#36). */
 function renderBaseline(result: RequestResult): string {
+  if (result.baseline?.status === 'missing') {
+    return '<p>No baseline saved.</p>';
+  }
+  if (result.baseline?.status === 'unsupported') {
+    return `<p>Baseline not compared (${escapeHtml(result.protocol)}).</p>`;
+  }
   const changes = result.baseline?.status === 'differs' ? (result.baseline.changes ?? []) : [];
   if (changes.length === 0) {
     return '';

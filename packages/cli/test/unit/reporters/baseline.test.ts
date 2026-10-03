@@ -54,6 +54,42 @@ describe('baseline in reports', () => {
     expect(text).toContain('      changed /token: s3cret-value → x\n');
   });
 
+  it('cli: prints the compared-as-text note as the first line under the label', () => {
+    const noted: RequestResult = {
+      ...differs,
+      assertions: [
+        {
+          type: 'baseline',
+          label: '1 difference from the baseline',
+          outcome: 'failed',
+          message: 'compared as text: Unexpected token o\nchanged /: a → b',
+        },
+      ],
+    };
+    const text = cliText(noted);
+    expect(text).toContain('      compared as text: Unexpected token o\n      changed /: a → b\n');
+  });
+
+  it('cli: onRunDone prints the baseline summary line', async () => {
+    const out = new PassThrough();
+    let text = '';
+    out.on('data', (chunk: Buffer) => (text += chunk.toString()));
+    await createCliReporter(out, { color: false, quiet: false, verbose: false }).onRunDone?.({
+      startedAt: 's',
+      summary: {
+        total: 3,
+        passed: 1,
+        failed: 1,
+        errored: 0,
+        skipped: 0,
+        durationMs: 3,
+        baseline: { matched: 1, differs: 1, missing: 1 },
+      },
+      requests: [matched, differs, missing],
+    });
+    expect(text).toContain('baseline: 1 matched, 1 differ, 1 missing\n');
+  });
+
   it('cli: marks a match and a missing golden on the request line', () => {
     expect(cliText(matched)).toContain('baseline: matches');
     expect(cliText(missing)).toContain('(no baseline)');

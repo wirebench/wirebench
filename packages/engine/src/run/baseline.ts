@@ -98,6 +98,8 @@ export function checkBaseline(golden: GoldenRead, subject: AssertionSubject, req
   const count = diff.changes.length;
   const lines = diff.changes.slice(0, BASELINE_MESSAGE_CHANGES).map(changeLine);
   if (count > BASELINE_MESSAGE_CHANGES) lines.push(`… and ${count - BASELINE_MESSAGE_CHANGES} more`);
+  // Every reporter prints the message, so the fallback note reaches them all (and the masker).
+  if (diff.error !== undefined) lines.unshift(`compared as text: ${diff.error}`);
   return {
     report: {
       status: 'differs',
