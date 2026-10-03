@@ -119,12 +119,12 @@ wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baselin
 ```
 
 - `--baseline` sets the op's `baseline` input. It is allowed with `--body` and `--body-file`.
-- Human output: after the assertions, one line — `baseline: matches (N ignored)`,
-  `baseline: no baseline saved`, `baseline: not compared (websocket)`, or, on a difference,
-  `baseline: N differences` followed by one change per line in the `run` reporter's form
-  (`changed <path>: <expected> → <actual>`, `added <path>: <actual>`, `removed <path>: <expected>`),
-  the first 20, then `… and N more`. An unreadable or oversize golden prints the errored assertion's
-  message.
+- Human output: the `baseline` assertion prints with the others — `ok   matches the baseline (N
+  ignored)`, or an errored line for an unreadable or oversize golden. A failed one prints its label,
+  then one change per line, indented, in the `run` reporter's form (`changed <path>: <expected> →
+  <actual>`, `added <path>: <actual>`, `removed <path>: <expected>`), the first 20, then `… and N
+  more`. A case with no assertion adds one line: `baseline: no baseline saved` or
+  `baseline: not compared (websocket)`.
 - `--json` prints the `SendResult` with its `baseline` field.
 - Exit codes follow `outcome`, as today: 0 passed (a missing golden included), 1 a difference or
   another failed assertion, 3 errored.
