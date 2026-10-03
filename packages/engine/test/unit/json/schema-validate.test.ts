@@ -255,3 +255,34 @@ describe('redactValues', () => {
     expect(validateJsonSchema(value, tree).at(-1)?.message).toBe('validation stopped at nesting depth 256');
   });
 });
+
+describe('uncheckedPatterns', () => {
+  // A lookahead: refused as unsafe without being slow itself.
+  const unsafe = '^(?=A)A$';
+
+  it('reports a pattern it does not run by default', () => {
+    expect(validateJsonSchema('X', { type: 'string', pattern: unsafe })).toEqual([
+      { path: '', keyword: 'pattern', message: 'pattern not checked: unsafe for evaluation' },
+    ]);
+  });
+
+  it("'pass' reports nothing for an unsafe pattern, a too-long value or an unsafe patternProperties key", () => {
+    const options = { uncheckedPatterns: 'pass' } as const;
+    expect(validateJsonSchema('X', { type: 'string', pattern: unsafe }, options)).toEqual([]);
+    expect(validateJsonSchema('a'.repeat(5_000), { type: 'string', pattern: '^[a-z]+$' }, options)).toEqual([]);
+    expect(validateJsonSchema({ k: 1 }, { type: 'object', patternProperties: { [unsafe]: {} } }, options)).toEqual([]);
+  });
+
+  it("'pass' keeps a real violation past many unchecked patterns, and lets a combinator branch pass", () => {
+    const options = { uncheckedPatterns: 'pass' } as const;
+    const schema = {
+      type: 'object',
+      properties: { codes: { type: 'array', items: { type: 'string', pattern: unsafe } }, n: { type: 'integer' } },
+    };
+    expect(validateJsonSchema({ codes: Array<string>(25).fill('X'), n: 'oops' }, schema, options)).toEqual([
+      expect.objectContaining({ path: '/n', keyword: 'type' }),
+    ]);
+    const either = { anyOf: [{ type: 'string', pattern: unsafe }, { type: 'integer' }] };
+    expect(validateJsonSchema('ABC', either, options)).toEqual([]);
+  });
+});

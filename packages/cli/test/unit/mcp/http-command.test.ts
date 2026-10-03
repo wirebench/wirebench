@@ -4,7 +4,9 @@ import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mcpCommand } from '../../../src/commands/mcp.js';
 import { ExitCode } from '../../../src/exit-codes.js';
-import { removeTempDirs, soapProject } from '../ops/helpers.js';
+import { runOp } from '../../../src/ops/context.js';
+import { importOp } from '../../../src/ops/import.js';
+import { emptyProject, manyOperationsOpenApi, removeTempDirs, soapProject } from '../ops/helpers.js';
 
 afterEach(removeTempDirs);
 
@@ -137,6 +139,86 @@ describe('wirebench mcp --http', () => {
     } finally {
       await stop();
     }
+    expect(await done).toBe(ExitCode.Ok);
+    expect(stdout.text()).toBe('');
+  });
+});
+
+describe('wirebench mcp and the contract tools', () => {
+  it('writes the contract tool count after the serving line, on stderr', async () => {
+    const fixture = await soapProject();
+    const stdout = capture();
+    const stderr = capture();
+    const { done, stop } = serving(
+      { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
+      { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: 'abc123def456ghi789' } },
+    );
+    try {
+      await until(() => stderr.text().includes('contract tools'));
+      expect(stderr.text()).toMatch(/wirebench mcp: serving .+\nwirebench mcp: 1 contract tools\n/);
+    } finally {
+      await stop();
+    }
+    expect(await done).toBe(ExitCode.Ok);
+    expect(stdout.text()).toBe('');
+  });
+
+  it('writes no count line with --tools none', async () => {
+    const fixture = await soapProject();
+    const stdout = capture();
+    const stderr = capture();
+    const { done, stop } = serving(
+      { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0, tools: [] },
+      { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: 'abc123def456ghi789' } },
+    );
+    try {
+      await until(() => stderr.text().includes('serving'));
+    } finally {
+      await stop();
+    }
+    expect(await done).toBe(ExitCode.Ok);
+    expect(stderr.text()).not.toContain('contract tools');
+  });
+
+  it('refuses to start above the cap with exit 2, naming --tools, before serving', async () => {
+    const fixture = await emptyProject();
+    await runOp(importOp, { source: await manyOperationsOpenApi(130) }, fixture.base());
+    const stdout = capture();
+    const stderr = capture();
+    const code = await mcpCommand(
+      { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, httpPort: 0 },
+      { stdout: stdout.stream, stderr: stderr.stream, env: { WIREBENCH_MCP_TOKEN: 'abc123def456ghi789' } },
+    );
+    expect(code).toBe(ExitCode.Usage);
+    expect(stderr.text()).toMatch(/^too-many-tools: 130 contract operations .*--tools/);
+    expect(stderr.text()).not.toContain('serving');
+    expect(stdout.text()).toBe('');
+  });
+
+  it('refuses an unknown --tools name with exit 2', async () => {
+    const fixture = await soapProject();
+    const stderr = capture();
+    const code = await mcpCommand(
+      { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir, tools: ['Nope'] },
+      { stdout: capture().stream, stderr: stderr.stream, env: {} },
+    );
+    expect(code).toBe(ExitCode.Usage);
+    expect(stderr.text()).toMatch(/^container-not-found: /);
+  });
+
+  it('in stdio mode writes the count line to stderr and nothing to stdout', async () => {
+    const fixture = await soapProject();
+    const stdin = new PassThrough();
+    const stdout = capture();
+    const stderr = capture();
+    const done = mcpCommand(
+      { ...ARGS, project: fixture.dir, historyDir: fixture.historyDir },
+      { stdout: stdout.stream, stderr: stderr.stream, env: {} },
+      { stdin },
+    );
+    await until(() => stderr.text().includes('contract tools'));
+    expect(stderr.text()).toMatch(/on stdio \(write off, send off\)\nwirebench mcp: 1 contract tools\n/);
+    stdin.end();
     expect(await done).toBe(ExitCode.Ok);
     expect(stdout.text()).toBe('');
   });

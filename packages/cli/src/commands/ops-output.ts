@@ -32,6 +32,9 @@ function operationsText(result: OperationsResult): string {
     const detail =
       row.kind === 'soap' ? (row.soapAction ?? '') : row.kind === 'rest' ? (row.operationId ?? '') : row.url;
     out.push(detail.length > 0 ? `${row.ref}  (${detail})` : row.ref);
+    if (row.kind !== 'websocket' && row.tool !== undefined) {
+      out.push(`  tool: ${row.tool}`);
+    }
     out.push(...row.items.map((item) => `  ${item}`));
   }
   out.push(...result.notes.map((note) => `note: ${note}`));

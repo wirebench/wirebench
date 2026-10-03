@@ -294,3 +294,30 @@ paths:
   );
   return file;
 }
+
+/** An OpenAPI file with `count` GET endpoints (`opN`), title `Many`: more than the tool cap allows. */
+export async function manyOperationsOpenApi(count: number): Promise<string> {
+  const paths = Array.from(
+    { length: count },
+    (_, index) => `  /r${String(index)}:
+    get:
+      operationId: op${String(index)}
+      responses:
+        '200':
+          description: ok
+`,
+  ).join('');
+  const file = join(await tempDir(), 'many.openapi.yaml');
+  await writeFile(
+    file,
+    `openapi: 3.0.3
+info:
+  title: Many
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:9
+paths:
+${paths}`,
+  );
+  return file;
+}

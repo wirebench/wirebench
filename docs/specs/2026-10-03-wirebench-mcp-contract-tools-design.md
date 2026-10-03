@@ -347,3 +347,14 @@ The decisions above stand; these correct facts.
   expanding a complex element past `maxDepth` (5) unless the source document goes that deep. The bridge
   builds the form, fills it, and when the arguments reach below a cut it builds the form again from the
   XML it wrote, one level deeper each round, up to 64 rounds.
+- **R9 — A choice maps to joined properties and an `allOf`, not a bare `oneOf`.** A `choice` does not
+  become a `oneOf` of whole objects: its branch properties join the parent object's `properties`, and
+  the object gains `allOf: [{ oneOf: [...] }]` with one option per branch. Each option requires that
+  branch's required keys (or at least one of its keys when none is required) and forbids every other
+  branch's keys. When the choice is optional, or a branch can be empty, one more option forbids every
+  branch key.
+- **R10 — R8's mechanism changed: an element cut at the depth limit is rebuilt in place.** The bridge
+  does not build the form again from its own XML in rounds. When the arguments reach an element the
+  form cut at its depth limit, that element is rebuilt in place from its declaration
+  (`buildFormForDecl`) and filled per item, so every value is reached. Nesting beyond 64 expansions
+  along one path (`MAX_FILL_ROUNDS`) is a problem that refuses the call, never a silent truncation.

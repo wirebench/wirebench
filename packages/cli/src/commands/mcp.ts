@@ -1,6 +1,7 @@
 /**
- * `wirebench mcp` (spec §4): the ops as MCP tools over stdio. The project is checked before the
- * server starts, so a wrong `--project` fails in the terminal rather than in every tool call.
+ * `wirebench mcp` (spec §4): the ops, and each contract operation (#33), as MCP tools over stdio or
+ * `--http`. The project and the contract tool count are checked before the server starts, so a wrong
+ * `--project` or a set over the cap fails in the terminal rather than in every tool call.
  * Only protocol frames go to stdout; the startup line and every warning go to stderr.
  */
 import { format } from 'node:util';
@@ -9,6 +10,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { McpArgs } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
+import { startContractTools } from '../mcp/contract-tools.js';
+import type { ContractToolsHost } from '../mcp/contract-tools.js';
 import { InvalidTokenError, resolveToken, startHttpServer, TOKEN_VARIABLE } from '../mcp/http.js';
 import { createMcpServer } from '../mcp/server.js';
 import type { OpsBase } from '../ops/context.js';
@@ -96,6 +99,14 @@ function stopped(stop: AbortSignal | undefined): Promise<void> {
   });
 }
 
+/** `wirebench mcp: <n> contract tools`, after the serving line, when there are any. */
+function writeToolCount(io: Pick<CliIo, 'stderr'>, host: ContractToolsHost): void {
+  const count = host.current().tools.length;
+  if (count > 0) {
+    io.stderr.write(`wirebench mcp: ${String(count)} contract tools\n`);
+  }
+}
+
 /**
  * Serves Streamable HTTP until `stop` aborts (SIGINT or SIGTERM when none is given). The generated
  * token is printed once, to stderr: stdout stays free of it, and no later line repeats it.
@@ -105,6 +116,7 @@ async function serveHttp(
   base: OpsBase,
   io: Pick<CliIo, 'stderr' | 'env'>,
   stop: AbortSignal | undefined,
+  host: ContractToolsHost,
 ): Promise<ExitCode> {
   let resolved;
   try {
@@ -122,7 +134,7 @@ async function serveHttp(
     running = await startHttpServer({
       port,
       token,
-      createServer: () => createMcpServer(base, cliVersion()),
+      createServer: () => createMcpServer(base, cliVersion(), host),
       log: (line) => io.stderr.write(`${line}\n`),
     });
   } catch (error) {
@@ -130,6 +142,7 @@ async function serveHttp(
     return ExitCode.RunError;
   }
   io.stderr.write(`wirebench mcp: serving ${base.projectDir} at ${running.url} (${describeGates(base)})\n`);
+  writeToolCount(io, host);
   if (generated) {
     io.stderr.write(`bearer token (set ${TOKEN_VARIABLE} to choose your own): ${token}\n`);
   }
@@ -152,29 +165,47 @@ export async function mcpCommand(args: McpArgs, io: CliIo, options: McpCommandOp
   if (refused !== undefined) {
     return refused;
   }
-  if (args.httpPort !== undefined) {
-    return await serveHttp(args.httpPort, base, io, options.stop);
-  }
-  const restoreConsole = keepConsoleOffStdout(io);
+  let host: ContractToolsHost;
   try {
-    const server = createMcpServer(base, cliVersion());
-    // Serving ends when stdin does, or when the transport closes itself (the SDK's stdio transport
-    // does so for a line over 10 MiB). Calls still in flight at that point are dropped, as MCP's
-    // shutdown semantics allow.
-    const ended = new Promise<void>((resolve) => {
-      stdin.once('end', resolve);
-      stdin.once('close', resolve);
-      server.server.onclose = resolve;
-    });
-    server.server.onerror = (error) => {
-      io.stderr.write(`mcp: ${error.message}\n`);
-    };
-    await server.connect(new StdioServerTransport(stdin as Readable, io.stdout as Writable));
-    io.stderr.write(`wirebench mcp: serving ${base.projectDir} on stdio (${describeGates(base)})\n`);
-    await ended;
-    await server.close();
-    return ExitCode.Ok;
+    // Above the cap, or with an unknown --tools name, nothing is served (spec §2.1): exit 2.
+    host = await startContractTools(base, args.tools !== undefined ? { containers: args.tools } : {});
+  } catch (error) {
+    const failure = toOpsError(error);
+    io.stderr.write(`${failure.code}: ${failure.message}\n`);
+    return exitCodeForError(failure);
+  }
+  try {
+    if (args.httpPort !== undefined) {
+      return await serveHttp(args.httpPort, base, io, options.stop, host);
+    }
+    const restoreConsole = keepConsoleOffStdout(io);
+    try {
+      const server = createMcpServer(base, cliVersion(), host);
+      // Serving ends when stdin does, or when the transport closes itself (the SDK's stdio transport
+      // does so for a line over 10 MiB). Calls still in flight at that point are dropped, as MCP's
+      // shutdown semantics allow.
+      const ended = new Promise<void>((resolve) => {
+        stdin.once('end', resolve);
+        stdin.once('close', resolve);
+        const unsubscribe = server.server.onclose;
+        server.server.onclose = () => {
+          unsubscribe?.();
+          resolve();
+        };
+      });
+      server.server.onerror = (error) => {
+        io.stderr.write(`mcp: ${error.message}\n`);
+      };
+      await server.connect(new StdioServerTransport(stdin as Readable, io.stdout as Writable));
+      io.stderr.write(`wirebench mcp: serving ${base.projectDir} on stdio (${describeGates(base)})\n`);
+      writeToolCount(io, host);
+      await ended;
+      await server.close();
+      return ExitCode.Ok;
+    } finally {
+      restoreConsole();
+    }
   } finally {
-    restoreConsole();
+    host.close();
   }
 }

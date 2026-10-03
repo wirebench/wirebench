@@ -52,7 +52,7 @@ is picked up.
 | 2 | Documentation site, with a switching guide and a published benchmark | Both | S tooling, M content | user guide and switching guide done; benchmark open | A release that people can install but cannot learn sends every question to the issue tracker. The benchmark turns the performance budgets into an argument. |
 | 3 | CLI runner: assertions, JUnit and JSON reports, CI recipes, baseline mode | Ent | M | **runner on `main`** (S1–S6); **CI recipes (#31) shipped, pending the first publishing release** (image + npm; see `docs/release.md#before-the-first-publishing-release`); gRPC unary and OAuth2 client credentials (S7, #30) and `--baseline` (#36) open | "Runs in CI" is a procurement checkbox every other client already ticks. The baseline mode — compare each response with a committed golden file — is the one runner feature none of them has. |
 | — | Shared workspaces, git-native | Ent | L | **shipped in 2.1.0** | Done to `docs/specs/2026-09-13-wirebench-shared-workspaces-design.md` (ADR-0008): a whole workspace, environments included, as a git repository or a synced folder, with Sync and a conflict resolver in the app; one `SyncBackend` interface the server (item 15) reuses. |
-| 4 | MCP server over the engine, with CLI parity | Dev | S | **shipped 2026-09-29** (#32); contract operations as tools (#33) next | Shares the runner's engine surface, so it is cheapest right after it. It lets coding agents import, generate, send, validate and query SOAP without any AI living in the app; a second step exposes an imported contract's operations as MCP tools, which no tool does from a WSDL. |
+| 4 | MCP server over the engine, with CLI parity | Dev | S | **shipped 2026-09-29** (#32); contract operations as tools **shipped** (#33) | Shares the runner's engine surface, so it is cheapest right after it. It lets coding agents import, generate, send, validate and query SOAP without any AI living in the app; a second step, now shipped, exposes an imported contract's operations as MCP tools, which no tool does from a WSDL. |
 | 5 | Snapshot regression across environments ✚ | Both | S–M | new | Send one request to several environments at once, diff the responses semantically with ignore rules for volatile fields, commit the golden responses, and let the runner replay them. Mostly wiring over history's re-send and diff. |
 | 6 | Secrets from external managers; encrypted team secrets | Ent | M | new | A secret scope resolved at send time from a vault, a cloud secret manager, a password manager's CLI or the keychain, so nothing sensitive is on disk anywhere; team secrets encrypted to member keys in a shared workspace. The follow-up the shared-workspaces spec names. |
 | 7 | Enterprise authentication: Kerberos/SPNEGO and WS-Trust (STS-issued SAML tokens) | Ent | M + M | spec 1.1 + new | Windows-integrated auth and a security token service front most internal SOAP estates, and the same buyer asks for both. Kerberos needs a native module, so it needs an explicit ruling. |
@@ -302,10 +302,11 @@ renderer. Two extensions (item 6):
 - **MCP server** (item 4) — first step done 2026-09-29 (issue #32). `wirebench mcp` exposes import, list
   operations, generate a sample, send, validate, query with XPath and diff history over MCP from the
   pure-Node engine, over stdio or loopback HTTP, with CLI parity, so coding agents can drive Wirebench;
-  see [the CLI reference](cli.md#wirebench-mcp). Still to come, as a second step (#33): expose an imported contract's operations as MCP tools —
-  one tool per operation, its input schema derived from the XSD or JSON Schema, auth and environment taken
-  from the workspace, every call sent through the engine and recorded in history — so an agent can call a
-  legacy SOAP service without writing XML; the cloud platforms generate MCP servers from REST definitions, none from a WSDL. Later, an
+  see [the CLI reference](cli.md#wirebench-mcp). Second step done (#33): every imported operation is an MCP tool —
+  one tool per operation, its input schema derived from the XSD or the OpenAPI schemas, auth and environment
+  taken from the project, every call sent through the engine and recorded in History — so an agent can call a
+  legacy SOAP service without writing XML, and `wirebench call` does the same from a terminal; see
+  [Contract operations as tools](cli.md#contract-operations-as-tools). Later, an
   MCP request kind for testing MCP servers, decided together with gRPC (item 17),
   since both need a multi-message response record.
 - **Plugin API.** Still an idea (#82), and still after the CLI and MCP surfaces have settled: those two give

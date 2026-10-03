@@ -41,6 +41,7 @@ describe('op operations', () => {
           operation: 'Add',
           soapAction: 'urn:wirebench:calculator/Add',
           ref: 'CalculatorService/Add',
+          tool: 'calculator_service_add',
           items: [SOAP_ITEM],
         },
       ],
@@ -61,6 +62,7 @@ describe('op operations', () => {
       method: 'GET',
       path: '/pets',
       operationId: 'listPets',
+      tool: 'pets_list_pets',
       items: [await restItem(fixture.dir, 'GET', '/pets')],
     });
   });
@@ -157,6 +159,8 @@ describe('op operations', () => {
       expect.objectContaining({ kind: 'soap', ref: 'CalculatorService/Add', items: [SOAP_ITEM] }),
     ]);
     expect(result.operations[0]).not.toHaveProperty('soapAction');
+    // No definition, no tool (spec R6).
+    expect(result.operations[0]).not.toHaveProperty('tool');
   });
 
   it('lists each saved WebSocket request send takes, by its path, and leaves gRPC out', async () => {

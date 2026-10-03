@@ -30,7 +30,7 @@ export interface RequestForm {
 const ENVELOPE_NAMESPACES = new Set<string>([NS.SOAP11_ENV, NS.SOAP12_ENV]);
 
 /** Depth-first search for the `soapenv:Body` element, whichever SOAP version declares it. */
-function findBody(elements: readonly ScannedElement[]): ScannedElement | undefined {
+export function findBody(elements: readonly ScannedElement[]): ScannedElement | undefined {
   for (const element of elements) {
     if (element.localName === 'Body' && ENVELOPE_NAMESPACES.has(element.namespaceUri)) {
       return element;
@@ -49,7 +49,7 @@ function findBody(elements: readonly ScannedElement[]): ScannedElement | undefin
  * onto `soapenv:Envelope`), so the form model needs both directions: `byUri` to
  * name a new element, `byPrefix` to resolve the ones already written.
  */
-function namespacesInScope(text: string): { byUri: Record<string, string>; byPrefix: Record<string, string> } {
+export function namespacesInScope(text: string): { byUri: Record<string, string>; byPrefix: Record<string, string> } {
   const byUri: Record<string, string> = {};
   const byPrefix: Record<string, string> = {};
   const re = /xmlns:([A-Za-z_][\w.-]*)\s*=\s*"([^"]*)"/g;

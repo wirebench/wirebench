@@ -74,6 +74,9 @@ Every tool is always listed. One whose flag is off answers with an error that na
 agent can tell you what to allow. `-e local,staging` limits the environments `send` may use, and with
 `-e` a send that would use no environment is refused.
 
+Both flags apply to the contract tools below as well. Each one needs `--allow-send`, and `-e` limits
+the environments it may use in the same way, refusing a call that would use no environment.
+
 `validate` and `query` read a History entry (`historyId`), a file (`file`) or the text itself (`text`);
 pass exactly one. A `file` is any regular file of 16 MiB or less that the server process can read; any
 file in the History folder in use is refused, so read History through `historyId`. `send` also takes a `body` that replaces the saved
@@ -113,6 +116,49 @@ the response's declared `Content-Type`: a body of any other type is masked only 
 resolved for that send. Secrets come from `WIREBENCH_SECRET_<NAME>` variables in the environment the
 server was started in, and only the ones the saved request uses; no tool takes a secret as input.
 </Aside>
+
+## Contract operations as tools
+
+Besides the tools above, every imported operation is a tool of its own: each SOAP operation of an
+interface and each endpoint of an OpenAPI-backed API. The agent calls it with typed JSON arguments and
+gets the response back as JSON, so it can use a legacy SOAP service without writing XML. Each call
+needs `--allow-send`, goes through the interface's or API's endpoint, auth and secrets, and lands in
+History.
+
+A tool is named after its container and operation, in snake_case: the `Add` operation of the
+`CalculatorService` interface is `calculator_service_add`. `operations` shows each operation's tool
+name, and `wirebench call <name> --schema` prints its arguments' schema.
+
+An agent calls it like any tool:
+
+~~~json
+{ "name": "calculator_service_add", "arguments": { "environment": "local", "a": 2, "b": 3 } }
+~~~
+
+and reads:
+
+~~~json
+{
+  "tool": "calculator_service_add",
+  "operation": "CalculatorService/Add",
+  "kind": "soap",
+  "status": 200,
+  "statusText": "OK",
+  "ok": true,
+  "durationMs": 41,
+  "headers": { "content-type": "text/xml; charset=utf-8" },
+  "result": { "result": 5 },
+  "notes": [],
+  "historyId": "01K6…"
+}
+~~~
+
+A SOAP fault is a normal result with `ok: false` and a `fault`; arguments that do not fit the schema,
+or a body the XSD refuses, are refused before anything is sent.
+
+A server serves at most 128 of these tools. A larger project refuses to start until `--tools` names the
+interfaces and APIs to serve (`--tools none` serves only the tools above). The server watches the
+project, so after the agent imports a WSDL the new operations appear as tools without a restart.
 
 ## History
 
