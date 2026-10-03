@@ -59,7 +59,7 @@ const STATE_KEEPING_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /** The remote could not be reached: `offline`, and the fetch timer backs off (git and server alike). */
-const OFFLINE_CODES: ReadonlySet<string> = new Set(['git-offline', 'sync-offline']);
+export const OFFLINE_CODES: ReadonlySet<string> = new Set(['git-offline', 'sync-offline']);
 
 /** Why a viewer's push stays local (server-sync §3.4); the Sync popover shows it. */
 const VIEWER_PUSH_MESSAGE = 'You have viewer access in this workspace; changes stay on this machine.';

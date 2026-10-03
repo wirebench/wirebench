@@ -7,6 +7,7 @@
  */
 import {
   accessResponseSchema,
+  type DesktopAuditBatch,
   captureSchema,
   ciTokenCreatedSchema,
   ciTokensResponseSchema,
@@ -583,6 +584,16 @@ export class ServerClient {
       path: withQuery('/api/v1/audit', auditParams(query)),
       token,
       schema: auditPageWireSchema,
+    });
+  }
+
+  /** Sends one batch of desktop events; the server answers 204, or 409 `audit-desktop-recording-off`. */
+  async reportDesktopEvents(url: string, token: string, workspaceId: string, batch: DesktopAuditBatch): Promise<void> {
+    await this.call<unknown>(url, {
+      method: 'POST',
+      path: `${workspacePath(workspaceId)}/audit/desktop-events`,
+      token,
+      body: batch,
     });
   }
 

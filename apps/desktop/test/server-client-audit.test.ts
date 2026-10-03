@@ -88,3 +88,38 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
     expect(opened).toBe(false);
   });
 });
+
+describe('ServerClient reportDesktopEvents (desktop audit events spec §2.4)', () => {
+  const batch = { events: [], dropped: 3 };
+
+  it('POSTs the batch to the workspace route and resolves on 204', async () => {
+    const seen: { url: string; method: string; body: string; auth: string | undefined }[] = [];
+    const client = new ServerClient({
+      send: (req) => {
+        seen.push({
+          url: req.url,
+          method: req.method,
+          body: new TextDecoder().decode(req.body),
+          auth: req.headers['authorization'],
+        });
+        return Promise.resolve({ status: 204, headers: {}, body: new Uint8Array() } as never);
+      },
+    });
+    await client.reportDesktopEvents('https://s.example', 'tok', 'w 1', batch);
+    expect(seen[0]).toEqual({
+      url: 'https://s.example/api/v1/workspaces/w%201/audit/desktop-events',
+      method: 'POST',
+      body: JSON.stringify(batch),
+      auth: 'Bearer tok',
+    });
+  });
+
+  it('raises a 409 as the server code', async () => {
+    const client = new ServerClient({
+      send: () => Promise.resolve(json(409, { code: 'audit-desktop-recording-off', message: 'Recording is off.' })),
+    });
+    await expect(client.reportDesktopEvents('https://s.example', 'tok', 'w1', batch)).rejects.toMatchObject({
+      code: 'audit-desktop-recording-off',
+    });
+  });
+});
