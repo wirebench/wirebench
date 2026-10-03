@@ -143,7 +143,7 @@ them permanent:
 - **No tag exists yet**, so `release.yml` has never run. Pushing the tag is a deliberate, human
   step — see below — not something automation should do on its own.
 - **The signing and notarisation setup** described below must be in place, or the workflow
-  produces unsigned artifacts: [Windows signing](#windows-signing-signpath) and
+  produces unsigned artifacts: [Windows signing](#windows-signing-azure-artifact-signing) and
   [macOS signing and notarisation](#macos-signing-and-notarisation).
 
 `CHANGELOG.md` already carries a prepared `## [1.0.0] - 2026-09-11` section, so step 2 above is
@@ -194,12 +194,12 @@ Three things the repository can't do for itself, outside `release.yml`:
 3. Run `release.yml` by `workflow_dispatch` once and check the rehearsal (previous section) before
    pushing the first tag meant to publish.
 
-## Windows signing (SignPath)
+## Windows signing (Azure Artifact Signing)
 
-Windows builds are signed through the [SignPath Foundation](https://signpath.org/) programme for
-open-source projects. It is free. The certificate is issued to SignPath Foundation, so Windows names
-**SignPath Foundation** as the publisher. Every signing request waits for a person to approve it in
-SignPath.
+Windows builds are signed with [Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/)
+under a Public Trust certificate profile, so Windows names the validated publisher on the certificate.
+The release workflow signs in to Azure with GitHub's OpenID Connect: there is no client secret to store
+or rotate.
 
 The release workflow signs twice:
 
@@ -217,38 +217,28 @@ every signed download. The same step folds the arm64 installer into the manifest
 they are signed, so they are dropped. The updater then downloads a whole installer instead of the
 changed blocks.
 
-Until `SIGNPATH_API_TOKEN` is set, both signing jobs pass their input through unsigned.
+The Azure signing step is not wired into `release.yml` yet ([#114](https://github.com/wirebench/wirebench/issues/114)).
+Until it is, both signing jobs pass their input through unsigned.
 
 ### Setting it up
 
-1. Apply to the SignPath Foundation programme for `wirebench/wirebench`. The programme asks for the
-   project's code-signing policy, which is published at
-   <https://wirebench.github.io/wirebench/docs/help/code-signing-policy/>.
-2. In SignPath, create the project and connect it to this repository as a trusted build system
-   (GitHub Actions).
-3. Create two **artifact configurations**:
-   - **app**: a ZIP holding `win-unpacked/` and `win-arm64-unpacked/`, signing every
-     `*.exe` and `*.dll` inside (deep signing);
-   - **installers**: a ZIP holding the `*.exe` and `*.msi` installers, signing each one, and passing
-     `latest.yml` through unchanged.
-4. Create a release signing policy, with the approvers who may release.
-5. Add these to the repository settings:
+1. Create an Azure Artifact Signing account and a **Public Trust** certificate profile, and complete
+   the identity validation it asks for.
+2. Create an App Registration with a federated credential for this repository's release workflow, and
+   give it the certificate-profile signer role on the signing account.
+3. Add these repository variables (none is a secret):
 
-   | Name | Kind | Value |
-   | --- | --- | --- |
-   | `SIGNPATH_API_TOKEN` | Secret | An API token of a SignPath CI user with submitter rights |
-   | `SIGNPATH_ORGANIZATION_ID` | Secret | The SignPath organisation ID |
-   | `SIGNPATH_PROJECT_SLUG` | Variable | The project's slug |
-   | `SIGNPATH_POLICY_SLUG` | Variable | The release signing policy's slug |
-   | `SIGNPATH_APP_CONFIGURATION_SLUG` | Variable | The **app** configuration's slug |
-   | `SIGNPATH_INSTALLERS_CONFIGURATION_SLUG` | Variable | The **installers** configuration's slug |
+   | Name | Value |
+   | --- | --- |
+   | `AZURE_CLIENT_ID` | The App Registration's client ID |
+   | `AZURE_TENANT_ID` | The Microsoft Entra tenant ID |
+   | `AZURE_SUBSCRIPTION_ID` | The subscription that holds the signing account |
+   | `AZURE_SIGNING_ENDPOINT` | The signing account's regional endpoint |
+   | `AZURE_SIGNING_ACCOUNT` | The signing account's name |
+   | `AZURE_SIGNING_PROFILE` | The certificate profile's name |
 
-6. Rehearse with `gh workflow run release.yml`. Approve both requests in SignPath, then check that
-   the installer and the installed `Wirebench.exe` both show a valid signature (**Properties →
-   Digital Signatures**).
-
-A signing job waits up to five hours for its approval, inside a hosted job's six-hour limit. After
-that the run fails, and the release has to be re-run.
+4. Rehearse with `gh workflow run release.yml`, then check that the installer and the installed
+   `Wirebench.exe` both show a valid signature (**Properties → Digital Signatures**).
 
 ## macOS signing and notarisation
 
