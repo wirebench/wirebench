@@ -11,6 +11,7 @@ import {
 } from '@wirebench/engine';
 import type { FastifyInstance } from 'fastify';
 import { jsonSchema } from '../../schema.js';
+import { workspaceById } from '../../teams/repo.js';
 import { requireWorkspaceRole } from '../../teams/roles.js';
 import { whileRepositoryExists, type SyncEnv } from '../env.js';
 
@@ -34,7 +35,8 @@ export const headRoutes =
         return whileRepositoryExists(repos, workspaceId, async () => {
           const head = await env.store.head(workspaceId);
           const { commits, behind } = await env.store.counts(workspaceId, from, head);
-          return { head, commits, ...(behind !== undefined ? { behind } : {}), role, recordDesktopActivity: false };
+          const recordDesktopActivity = (await workspaceById(db, workspaceId))?.recordDesktopActivity ?? false;
+          return { head, commits, ...(behind !== undefined ? { behind } : {}), role, recordDesktopActivity };
         });
       },
     );

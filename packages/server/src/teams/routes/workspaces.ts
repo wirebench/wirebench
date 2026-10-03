@@ -38,7 +38,7 @@ export function toWorkspace(row: repo.WorkspaceRow, myRole: WorkspaceRole, sourc
     defaultRole: row.defaultRole,
     myRole,
     source,
-    recordDesktopActivity: false,
+    recordDesktopActivity: row.recordDesktopActivity,
     createdAt: row.createdAt,
   };
 }
@@ -169,6 +169,9 @@ export const workspaceRoutes =
             await repo.updateWorkspace(tx, access.workspaceId, {
               ...(name !== undefined ? { name } : {}),
               ...(body.defaultRole !== undefined ? { defaultRole: body.defaultRole } : {}),
+              ...(body.recordDesktopActivity !== undefined
+                ? { recordDesktopActivity: body.recordDesktopActivity }
+                : {}),
             });
             const source = auditSource(request);
             const scope = {
@@ -192,10 +195,22 @@ export const workspaceRoutes =
                 details: { role: body.defaultRole, previousRole: previous.defaultRole },
               });
             }
+            if (
+              body.recordDesktopActivity !== undefined &&
+              body.recordDesktopActivity !== previous.recordDesktopActivity
+            ) {
+              await recordAudit(env.ctx.hooks, tx, {
+                ...source,
+                ...scope,
+                action: 'workspace.desktop_recording_changed',
+                details: { enabled: body.recordDesktopActivity, previous: previous.recordDesktopActivity },
+              });
+            }
           })
           .catch(conflictOr);
-        // The default role moves every member on it; a rename moves no one (§3.2).
-        if (body.defaultRole !== undefined)
+        // The default role moves every member on it; a rename moves no one (§3.2). The recording flag
+        // reaches the desktops through the same nudge, so they re-read the workspace.
+        if (body.defaultRole !== undefined || body.recordDesktopActivity !== undefined)
           announce(env.ctx.hooks.accessChanged, { workspaceId: access.workspaceId }, request.log);
         return toWorkspace((await repo.workspaceById(db, access.workspaceId))!, access.role, access.source);
       },

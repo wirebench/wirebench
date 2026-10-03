@@ -68,7 +68,7 @@ export const syncHeadResponseSchema = z.object({
   /** The caller's role, so the client refreshes it on every fetch. */
   role: workspaceRoleSchema,
   /** The workspace's desktop-activity recording flag, refreshed on every fetch. */
-  recordDesktopActivity: z.boolean(),
+  recordDesktopActivity: z.boolean().default(false),
 });
 export type SyncHeadResponse = z.infer<typeof syncHeadResponseSchema>;
 

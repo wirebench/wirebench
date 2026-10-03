@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { migrate } from '../../../src/db/migrate.js';
-import { identityModule } from '../../../src/identity/module.js';
 import { BUILTIN_MODULES } from '../../../src/modules.js';
 import { allMigrations } from '../../../src/serve.js';
-import { teamsModule } from '../../../src/teams/module.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import type { IdentityHarness } from '../../helpers/identity.js';
 import { call, teamsHarness } from '../../helpers/teams.js';
@@ -15,9 +13,10 @@ describeDb('0003_teams (§4.1)', () => {
   });
   afterEach(() => db.close());
 
-  it('comes right after identity, and production runs it', async () => {
-    const list = (await allMigrations([identityModule(), teamsModule()])).map((m) => `${m.version}_${m.name}`);
-    expect(list).toEqual(['1_init', '2_identity', '3_teams']);
+  it('comes right after identity, and production runs it (0009 is teams-access again, after audit-log)', async () => {
+    const list = (await allMigrations(BUILTIN_MODULES)).map((m) => `${m.version}_${m.name}`);
+    expect(list.slice(0, 3)).toEqual(['1_init', '2_identity', '3_teams']);
+    expect(list[8]).toBe('9_desktop-recording');
     expect(BUILTIN_MODULES.map((m) => m.name)).toEqual([
       'identity',
       'licensing',
@@ -31,7 +30,7 @@ describeDb('0003_teams (§4.1)', () => {
   });
 
   it('refuses to run over a workspaces table that already has rows', async () => {
-    const all = await allMigrations([identityModule(), teamsModule()]);
+    const all = await allMigrations(BUILTIN_MODULES);
     await migrate(db, all.slice(0, 2));
     await db.query("insert into workspaces (id, name) values ('01J8ZC5Q0V7R3T9XK2M4N6P8QA', 'early')");
     await expect(migrate(db, all)).rejects.toThrow(/0003_teams needs an empty workspaces table/);

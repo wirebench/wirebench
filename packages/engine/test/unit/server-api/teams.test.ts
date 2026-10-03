@@ -54,7 +54,7 @@ describe('server-api teams schemas', () => {
       }).source,
     ).toBe('grant');
     expect(
-      teamWorkspaceSchema.safeParse({
+      teamWorkspaceSchema.parse({
         id: ID,
         name: 'Integration',
         teamId: ID,
@@ -63,8 +63,8 @@ describe('server-api teams schemas', () => {
         myRole: 'editor',
         source: 'grant',
         createdAt: '2026-09-25T10:00:00.000Z',
-      }).success,
-    ).toBe(false);
+      }).recordDesktopActivity,
+    ).toBe(false); // an older server omits the flag: it reads as off
     expect(teamWorkspaceUpdateRequestSchema.parse({ recordDesktopActivity: true })).toEqual({
       recordDesktopActivity: true,
     });

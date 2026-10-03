@@ -72,8 +72,9 @@ describe('server-api sync schemas', () => {
       syncHeadResponseSchema.parse({ head: SHA1, commits: 3, behind: 2, role: 'editor', recordDesktopActivity: true })
         .behind,
     ).toBe(2);
+    // An older server omits the flag: it reads as off.
+    expect(syncHeadResponseSchema.parse({ head: null, commits: 0, role: 'viewer' }).recordDesktopActivity).toBe(false);
     for (const bad of [
-      { head: null, commits: 0, role: 'viewer' },
       { head: null, commits: -1, role: 'viewer', recordDesktopActivity: false },
       { head: null, commits: 0, behind: 1.5, role: 'viewer', recordDesktopActivity: false },
       { head: null, commits: 0, role: 'none', recordDesktopActivity: false },

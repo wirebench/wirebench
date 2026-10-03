@@ -103,7 +103,7 @@ export const teamWorkspaceSchema = z.object({
   myRole: workspaceRoleSchema,
   source: roleSourceSchema,
   /** Whether the desktop uploads request and run metadata for this workspace to the audit log. */
-  recordDesktopActivity: z.boolean(),
+  recordDesktopActivity: z.boolean().default(false),
   createdAt: z.string(),
 });
 export type TeamWorkspace = z.infer<typeof teamWorkspaceSchema>;
