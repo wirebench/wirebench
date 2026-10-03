@@ -137,7 +137,7 @@ describe('TeamDialog (teams-access §3.5)', () => {
     await screen.findByTestId('team-name');
     expect(screen.queryByRole('tab', { name: 'License' })).toBeNull();
   });
-  it('shows an Audit tab to a server admin only, selectable even with no team', async () => {
+  it('shows an Audit tab to a server admin, selectable even with no team', async () => {
     const query = ok({ events: [] });
     installWirebenchApi({
       team: { list: ok({ teams: [], serverAdmin: true }), listWorkspaces: ok({ workspaces: [] }) },
@@ -148,10 +148,50 @@ describe('TeamDialog (teams-access §3.5)', () => {
     expect(await screen.findByTestId('audit-tab')).not.toBeNull();
     expect(query).toHaveBeenCalled();
     cleanup();
-    install('admin', {}, false);
+    install('member', {}, false);
     render(<TeamDialog />);
-    await screen.findByTestId('team-name');
+    await screen.findByRole('tab', { name: 'Members' });
     expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull();
+  });
+  it('shows a team admin the Audit tab scoped to the selected team, and not for a team they only belong to', async () => {
+    const query = ok({ events: [] });
+    const t2 = team('member', 'T2', 'Support');
+    installWirebenchApi({
+      team: {
+        list: ok({ teams: [team('admin'), t2], serverAdmin: false }),
+        listWorkspaces: ok({ workspaces: [] }),
+        members: ok({ members: [member('me', 'admin')] }),
+        invitations: ok({ invitations: [] }),
+      },
+      audit: { query, export: ok({ saved: false }) },
+    });
+    render(<TeamDialog />);
+    expect(screen.queryByRole('tab', { name: 'License' })).toBeNull();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Audit' }));
+    expect(await screen.findByTestId('audit-tab')).not.toBeNull();
+    expect((query.mock.lastCall?.[0] as { query: Record<string, unknown> }).query).toMatchObject({ teamId: 'T1' });
+    await useTeamStore.getState().selectTeam('T2');
+    await vi.waitFor(() => expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull());
+    expect(screen.queryByTestId('audit-tab')).toBeNull();
+    expect(useTeamStore.getState().tab).toBe('members');
+    await useTeamStore.getState().selectTeam('T1');
+    expect(await screen.findByRole('tab', { name: 'Audit' })).not.toBeNull();
+  });
+  it('a server admin queries the audit log without a teamId even with a team selected', async () => {
+    const query = ok({ events: [] });
+    installWirebenchApi({
+      team: {
+        list: ok({ teams: [team('admin')], serverAdmin: true }),
+        listWorkspaces: ok({ workspaces: [] }),
+        members: ok({ members: [member('me', 'admin')] }),
+        invitations: ok({ invitations: [] }),
+      },
+      audit: { query, export: ok({ saved: false }) },
+    });
+    render(<TeamDialog />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Audit' }));
+    await screen.findByTestId('audit-tab');
+    expect('teamId' in (query.mock.lastCall?.[0] as { query: Record<string, unknown> }).query).toBe(false);
   });
   it('drops the expiry banner once a renewed license is installed in the License tab', async () => {
     const grace = {

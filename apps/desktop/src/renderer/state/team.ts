@@ -191,8 +191,10 @@ export const useTeamStore = create<TeamStore>((set, get) => {
         workspaces: spaces?.workspaces ?? get().workspaces,
         teamId,
       });
-      // The License tab is a server admin's (licensing §3.8).
-      if (!list.serverAdmin && (get().tab === 'license' || get().tab === 'audit')) set({ tab: 'members' });
+      // The License tab is a server admin's (licensing §3.8); the Audit tab is also a team admin's, for their team.
+      if (!list.serverAdmin && get().tab === 'license') set({ tab: 'members' });
+      if (!list.serverAdmin && get().tab === 'audit' && selectedTeam(get())?.myRole !== 'admin')
+        set({ tab: 'members' });
       await loadTeam();
       await reloadAccess();
       set({ loading: false });
@@ -201,6 +203,8 @@ export const useTeamStore = create<TeamStore>((set, get) => {
     selectTeam: async (teamId) => {
       set({ teamId, members: [], invitations: [], access: undefined });
       if (get().tab === 'invitations' && selectedTeam(get())?.myRole !== 'admin') set({ tab: 'members' });
+      if (get().tab === 'audit' && !get().serverAdmin && selectedTeam(get())?.myRole !== 'admin')
+        set({ tab: 'members' });
       await loadTeam();
     },
 

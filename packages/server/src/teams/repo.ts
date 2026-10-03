@@ -167,6 +167,24 @@ export async function memberRole(db: Querier, teamId: string, userId: string): P
   return row?.role;
 }
 
+/**
+ * One query that tells the three answers apart: `undefined` when the team does not exist, `null`
+ * when it does but the user is not on it, and the role otherwise.
+ */
+export async function teamMemberRole(
+  db: Querier,
+  teamId: string,
+  userId: string,
+): Promise<TeamRole | null | undefined> {
+  const row = (
+    await db.query<{ role: TeamRole | null }>(
+      `select m.role from teams t left join team_members m on m.team_id = t.id and m.user_id = $2 where t.id = $1`,
+      [teamId, userId],
+    )
+  ).rows[0];
+  return row === undefined ? undefined : row.role;
+}
+
 /** `false` when the user is already on the team: the caller decides whether that is a conflict. */
 export async function insertMember(
   db: Querier,

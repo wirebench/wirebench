@@ -8,24 +8,32 @@ import { AuditDetail } from './audit-detail.js';
 import { AuditFilterBar } from './audit-filter-bar.js';
 
 /**
- * The Audit tab (audit-log spec §3.6), for server admins: filters, a keyboard grid of events, a detail
+ * The Audit tab (audit-log spec §3.6), for server admins and, scoped to one team, for that team's admins: filters, a keyboard grid of events, a detail
  * pane, *Load more* and *Export…*. Without the Enterprise feature the server answers
  * `licensing-feature-required` and only a notice is shown.
  */
 export function AuditTab({
   url,
+  teamId,
   workspaces,
 }: {
   readonly url: string;
+  /** Set for a team admin: every query and export is scoped to this team. A server admin leaves it out. */
+  readonly teamId?: string | undefined;
   readonly workspaces: readonly { id: string; name: string }[];
 }) {
   const store = useAuditStore();
   useEffect(() => {
+    useAuditStore.setState((s) => ({ filter: { ...s.filter, teamId } }));
     void useAuditStore.getState().load(url);
     return () => {
       useAuditStore.getState().reset();
     };
+    // `teamId` is handled by the effect below: a team switch reloads without resetting the filter.
   }, [url]);
+  useEffect(() => {
+    void useAuditStore.getState().setTeam(url, teamId);
+  }, [url, teamId]);
   // The tab stays mounted across a team switch: a workspace the filter bar no longer offers stops narrowing.
   const selectedWorkspace = store.filter.workspaceId;
   const staleWorkspace = selectedWorkspace !== undefined && !workspaces.some((w) => w.id === selectedWorkspace);

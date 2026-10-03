@@ -2,18 +2,32 @@ import { describe, expect, it } from 'vitest';
 import { auditHook, boundDetails } from '../../../src/audit-log/hook.js';
 import type { Querier } from '../../../src/context.js';
 
-function capturing(): { db: Querier; statements: { text: string; params: readonly unknown[] }[] } {
+/** Records every statement; a `select ... from workspaces` answers from `teams` (workspace id → team id). */
+function capturing(teams: Record<string, string> = {}): {
+  db: Querier;
+  statements: { text: string; params: readonly unknown[] }[];
+} {
   const statements: { text: string; params: readonly unknown[] }[] = [];
   return {
     statements,
     db: {
       query: (text, params = []) => {
         statements.push({ text, params });
+        if (/from workspaces/.test(text)) {
+          const team = teams[params[0] as string];
+          const rows = team === undefined ? [] : [{ team_id: team }];
+          return Promise.resolve({ rows: rows as never[], rowCount: rows.length });
+        }
         return Promise.resolve({ rows: [], rowCount: 1 });
       },
     },
   };
 }
+const inserted = (statements: { text: string; params: readonly unknown[] }[]) => {
+  const insert = statements.filter((s) => /insert into audit_events/.test(s.text));
+  expect(insert).toHaveLength(1);
+  return insert[0]!.params;
+};
 
 describe('auditHook (audit-log spec §3.1, §4.2)', () => {
   it('inserts one row with a ULID, the clock, and the actor flattened', async () => {
@@ -63,9 +77,47 @@ describe('auditHook (audit-log spec §3.1, §4.2)', () => {
       target: { kind: 'hook', id: 'H1' },
       workspaceId: 'W1',
     });
-    const p = statements[0]!.params;
+    const p = inserted(statements);
     expect(p.slice(2, 6)).toEqual(['ci-token', null, null, 'CT1']);
     expect(p[14]).toBe('W1');
+  });
+
+  it("a workspace event with no team takes the workspace's team, read through the same querier", async () => {
+    const { db, statements } = capturing({ W1: 'TEAM1' });
+    await auditHook(() => new Date())(db, {
+      actor: { kind: 'user', userId: 'U1', email: 'a@example.com' },
+      action: 'workspace.pushed',
+      target: { kind: 'workspace', id: 'W1' },
+      workspaceId: 'W1',
+    });
+    expect(statements[0]!.text).toMatch(/select team_id from workspaces/);
+    expect(statements[0]!.params).toEqual(['W1']);
+    const p = inserted(statements);
+    expect(p.slice(9, 11)).toEqual(['W1', 'TEAM1']);
+  });
+
+  it('a team the event names wins, and no lookup runs', async () => {
+    const { db, statements } = capturing({ W1: 'TEAM1' });
+    await auditHook(() => new Date())(db, {
+      actor: { kind: 'system' },
+      action: 'workspace.deleted',
+      target: { kind: 'workspace', id: 'W1' },
+      workspaceId: 'W1',
+      teamId: 'TEAM2',
+    });
+    expect(statements).toHaveLength(1);
+    expect(inserted(statements).slice(9, 11)).toEqual(['W1', 'TEAM2']);
+  });
+
+  it('a workspace whose row is gone leaves the team null', async () => {
+    const { db, statements } = capturing();
+    await auditHook(() => new Date())(db, {
+      actor: { kind: 'system' },
+      action: 'workspace.deleted',
+      target: { kind: 'workspace', id: 'GONE' },
+      workspaceId: 'GONE',
+    });
+    expect(inserted(statements).slice(9, 11)).toEqual(['GONE', null]);
   });
 
   it('bounds details at 4 KiB and marks the truncation', () => {

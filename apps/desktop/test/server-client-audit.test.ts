@@ -22,6 +22,33 @@ describe('ServerClient audit (audit-log spec §3.4, plan ruling 16)', () => {
     expect(page.next).toBe('c1');
   });
 
+  it('queryAudit and streamAuditExport carry teamId on the query string', async () => {
+    const seen: string[] = [];
+    const client = new ServerClient({
+      send: (req) => {
+        seen.push(req.url);
+        if (req.stream) req.stream.accept(200, {});
+        return Promise.resolve({
+          status: 200,
+          headers: {},
+          body: new TextEncoder().encode('{"events":[]}'),
+          streamEnd: { by: 'server' },
+        } as never);
+      },
+    });
+    await client.streamAuditExport('https://s.example', 'tok', { teamId: 'T1' }, () => () => undefined);
+    expect(seen[0]).toBe('https://s.example/api/v1/audit/export?teamId=T1');
+    seen.length = 0;
+    const c2 = new ServerClient({
+      send: (req) => {
+        seen.push(req.url);
+        return Promise.resolve(json(200, { events: [] }));
+      },
+    });
+    await c2.queryAudit('https://s.example', 'tok', { teamId: 'T1', limit: 5 });
+    expect(seen[0]).toBe('https://s.example/api/v1/audit?limit=5&teamId=T1');
+  });
+
   it('streamAuditExport hands each chunk to the sink and resolves at the end', async () => {
     const chunks: string[] = [];
     const requests: { headers: Record<string, string>; followRedirects?: boolean }[] = [];
