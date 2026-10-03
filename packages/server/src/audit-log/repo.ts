@@ -40,6 +40,13 @@ export async function insertAuditEvent(db: Querier, row: AuditRowInput): Promise
   );
 }
 
+/** The team a workspace belongs to, or `undefined` when the workspace row is gone. */
+export async function workspaceTeamId(db: Querier, workspaceId: string): Promise<string | undefined> {
+  const row = (await db.query<{ team_id: string }>('select team_id from workspaces where id = $1', [workspaceId]))
+    .rows[0];
+  return row?.team_id;
+}
+
 export interface AuditFilter {
   readonly from?: Date;
   /** Exclusive. */

@@ -5,7 +5,7 @@ import { syncModule } from '../../../src/sync/module.js';
 import { expectNoSecretsInAudit, recordingAudit } from '../../helpers/context.js';
 import { describeDb } from '../../helpers/database.js';
 import { signedInUser } from '../../helpers/identity.js';
-import { licensingHarness, testKeys } from '../../helpers/licensing.js';
+import { license, licensingHarness, testKeys } from '../../helpers/licensing.js';
 import { call, seedTeam } from '../../helpers/teams.js';
 
 type Harness = Awaited<ReturnType<typeof licensingHarness>>;
@@ -38,21 +38,26 @@ async function push(
 }
 
 describeDb('sync, webhook and CI-token fire sites (audit-log spec §3.2, plan rulings 4, 6, 7)', () => {
+  const keys = testKeys();
   let h: Harness;
   let events: AuditInput[];
   let admin: User;
+  let teamAdmin: User;
+  let teamId: string;
   let workspaceId: string;
 
   beforeAll(async () => {
     // licensingHarness brings identity, licensing, teams, webhook capture and CI tokens; sync and audit
     // are added, so the combined migrations run 0001 to 0008 with no gap.
-    h = await licensingHarness(testKeys(), {
+    h = await licensingHarness(keys, {
       env: KEY_ENV,
       extra: (clock) => [syncModule(), auditLogModule({ now: () => clock.now })],
     });
     events = recordingAudit(h.hooks);
     admin = await signedInUser(h, { email: 'root@example.com', serverAdmin: true });
-    const team = await seedTeam(h, { name: 'Payments QA', admins: [admin] });
+    teamAdmin = await signedInUser(h, { email: 'lead@example.com' });
+    const team = await seedTeam(h, { name: 'Payments QA', admins: [admin, teamAdmin] });
+    teamId = team.id;
     // Through the route, so the bare repository exists for the pushes below.
     workspaceId = (await call<{ id: string }>(h, admin, 'POST', `/teams/${team.id}/workspaces`, { name: 'W' })).body.id;
   });
@@ -134,6 +139,31 @@ describeDb('sync, webhook and CI-token fire sites (audit-log spec §3.2, plan ru
     expect(last(events, 'ci_token.revoked').details).toEqual({ name: 'gha' });
     await call(h, admin, 'DELETE', `${base}/${token.id}`);
     expect(events.length).toBe(before + 1);
+  });
+
+  it("workspace events take the workspace's team, so the team admin's scoped read shows them (#208)", async () => {
+    const rows = (
+      await h.db.query<{ action: string; team_id: string | null }>(
+        'select action, team_id from audit_events where workspace_id = $1',
+        [workspaceId],
+      )
+    ).rows;
+    for (const action of ['workspace.pushed', 'secret.shared', 'ci_token.created', 'ci_token.revoked', 'hook.created'])
+      expect(rows.filter((r) => r.action === action).length, action).toBeGreaterThan(0);
+    for (const r of rows) expect(r.team_id, r.action).toBe(teamId);
+
+    const put = await call(h, admin, 'PUT', '/license', { license: license(keys, { edition: 'enterprise' }) });
+    expect(put.status).toBe(200);
+    const page = await call<{ events: { action: string; teamId: string | null }[] }>(
+      h,
+      teamAdmin,
+      'GET',
+      `/audit?teamId=${teamId}&limit=200`,
+    );
+    expect(page.status).toBe(200);
+    const actions = page.body.events.map((e) => e.action);
+    expect(actions).toEqual(expect.arrayContaining(['workspace.pushed', 'ci_token.created', 'hook.created']));
+    for (const e of page.body.events) expect(e.teamId).toBe(teamId);
   });
 
   it('writes no secret-shaped value and never a pushed value', async () => {

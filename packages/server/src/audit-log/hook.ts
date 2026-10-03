@@ -6,7 +6,7 @@
 import { AUDIT_LIMITS, type AuditDetails } from '@wirebench/engine';
 import type { AuditHook, AuditInput, Querier } from '../context.js';
 import { newId } from '../identity/tokens.js';
-import { insertAuditEvent } from './repo.js';
+import { insertAuditEvent, workspaceTeamId } from './repo.js';
 
 const size = (value: AuditDetails): number => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
@@ -34,7 +34,21 @@ export function boundDetails(details: AuditDetails | undefined): AuditDetails {
   return cut;
 }
 
+/**
+ * An event that names a workspace but no team takes the workspace's team (issue #208), read with the
+ * caller's querier so it sees the same transaction. Workspaces never change team. When the row is
+ * already gone, the team stays null.
+ */
 export function auditHook(now: () => Date): AuditHook {
-  return (tx: Querier, event: AuditInput) =>
-    insertAuditEvent(tx, { ...event, id: newId(), at: now(), details: boundDetails(event.details) });
+  return async (tx: Querier, event: AuditInput) => {
+    const teamId =
+      event.teamId ?? (event.workspaceId !== undefined ? await workspaceTeamId(tx, event.workspaceId) : undefined);
+    await insertAuditEvent(tx, {
+      ...event,
+      ...(teamId !== undefined ? { teamId } : {}),
+      id: newId(),
+      at: now(),
+      details: boundDetails(event.details),
+    });
+  };
 }
