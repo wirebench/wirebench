@@ -162,6 +162,7 @@ describe('the MCP server', () => {
 
     expect((await call(client, 'generate', {})).isError).toBe(true);
   });
+
   it('returns a baseline difference as a normal send result, not an error', async () => {
     const fixture = await restProject();
     const pets = await startServer(() => ({ headers: { 'Content-Type': 'application/json' }, body: '{"ok": true}' }));

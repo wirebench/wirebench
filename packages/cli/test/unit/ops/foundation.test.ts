@@ -256,6 +256,18 @@ describe('redactAssertions', () => {
     expect(redacted[1]).toMatchObject({ actual: REDACTED_MARKER });
   });
 
+  it('leaves a baseline result unpaired, so a later match result still pairs with its own assertion', () => {
+    const assertions: StepAssertion[] = [{ type: 'match', language: 'jsonpath', expression: '$.name', equals: 'Fido' }];
+    const results: AssertionResult[] = [
+      { type: 'baseline', label: 'differs from the baseline', outcome: 'failed' },
+      { type: 'match', label: 'match $.name', outcome: 'failed', expected: 'Fido', actual: 'Rex' },
+    ];
+
+    const redacted = redactAssertions(results, assertions);
+
+    expect(redacted[1]).toMatchObject({ actual: 'Rex' });
+  });
+
   it("masks the value a callback reason quotes for a sensitive header or a secret key's path", () => {
     const message =
       `matched cap-1, but header Set-Cookie: expected "a=1", got "a=${SECRET}"; ` +

@@ -175,8 +175,8 @@ function actualOf(result: AssertionResult, own: StepAssertion | undefined, actua
  * Assertion results as an op returns them (spec §2.2): URLs in every text redacted by pattern, and
  * the value a header or `match` assertion read shown as the marker when it is a credential — a
  * sensitive header, or a JSONPath/XPath whose last name is a secret key. `assertions` are the
- * request's own, in order: the run reports the immediate ones first, then callbacks, then script tests; a `baseline` result
- * (#218) is the run's own and pairs with none.
+ * request's own, in order: the run reports the immediate ones first, then callbacks, then script
+ * tests; a `baseline` result (#218) is the run's own and pairs with none.
  */
 export function redactAssertions(
   results: readonly AssertionResult[],

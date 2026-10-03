@@ -8,12 +8,13 @@ import {
   loadProject,
   REDACTED_MARKER,
 } from '@wirebench/engine';
+import type { RequestResult } from '@wirebench/engine';
 import { startTestWsServer } from '@wirebench/engine/test-helpers';
 import type { TestWsServer } from '@wirebench/engine/test-helpers';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { MAX_STORED_CHARS } from '../../../src/ops/history-entry.js';
-import { sendOp } from '../../../src/ops/send.js';
+import { maskedBaseline, sendOp } from '../../../src/ops/send.js';
 import {
   addEnvironment,
   emptyProject,
@@ -804,5 +805,42 @@ describe('op send on a WebSocket request', () => {
     await expect(runOp(sendOp, { item: 'Chat/Echo', body: 'hi' }, fixture.base())).rejects.toMatchObject({
       code: 'invalid-input',
     });
+  });
+});
+
+describe('maskedBaseline', () => {
+  it('masks every string of the comparison: changes, error, and the baseline assertion', () => {
+    const mask = (text: string): string => text.replaceAll('hunter2', '<masked>');
+    const result = {
+      baseline: {
+        status: 'differs',
+        format: 'json',
+        ignored: 0,
+        error: 'cannot read hunter2',
+        changes: [{ kind: 'changed', path: '/echo', expected: '"hunter2"', actual: '"hunter2!"' }],
+      },
+      assertions: [
+        { type: 'status', label: 'status hunter2', outcome: 'passed' },
+        { type: 'baseline', label: 'hunter2 differs', outcome: 'failed', message: 'changed /echo: "hunter2"' },
+      ],
+    } as unknown as RequestResult;
+
+    const masked = maskedBaseline(result, mask);
+
+    expect(masked.baseline).toEqual({
+      status: 'differs',
+      format: 'json',
+      ignored: 0,
+      error: 'cannot read <masked>',
+      changes: [{ kind: 'changed', path: '/echo', expected: '"<masked>"', actual: '"<masked>!"' }],
+    });
+    expect(masked.assertions[1]).toMatchObject({ label: '<masked> differs', message: 'changed /echo: "<masked>"' });
+    expect(masked.assertions[0]).toMatchObject({ label: 'status hunter2' });
+  });
+
+  it('returns a result without a baseline untouched', () => {
+    const result = { assertions: [] } as unknown as RequestResult;
+
+    expect(maskedBaseline(result, () => 'x')).toBe(result);
   });
 });

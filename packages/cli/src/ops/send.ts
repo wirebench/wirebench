@@ -290,7 +290,7 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
  * The golden comparison and its assertion with every secret the send resolved masked (spec §4): a
  * response can echo a secret, and the changes carry response values.
  */
-function maskedBaseline(result: RequestResult, mask: (text: string) => string): RequestResult {
+export function maskedBaseline(result: RequestResult, mask: (text: string) => string): RequestResult {
   const { baseline } = result;
   if (baseline === undefined) {
     return result;
