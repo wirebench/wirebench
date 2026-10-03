@@ -23,6 +23,8 @@ export const FORWARD_BACKOFF_MIN_MS = 5_000;
 export const FORWARD_BACKOFF_MAX_MS = 300_000;
 /** How often a server without the `audit-log` feature checks again. */
 export const FORWARD_UNLICENSED_MS = 60_000;
+/** A sink's bound on a connect, a syslog batch's write, or a whole HTTPS request. */
+export const FORWARD_TIMEOUT_MS = 10_000;
 
 /** Where events go: syslog or HTTPS. `send` resolves once the destination has accepted every event. */
 export interface ForwardSink {
