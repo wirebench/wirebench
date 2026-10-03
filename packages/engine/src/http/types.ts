@@ -61,6 +61,12 @@ export interface HttpRequest {
    * `undefined` leaves the response buffered exactly as without one.
    */
   readonly stream?: HttpStreamHook;
+  /**
+   * The cookie jar, hop by hop (cookie jar spec §1.4). Every attempt's `Cookie` header is what
+   * `header` answers for that attempt's URL, given the hand-set one; every response, a redirect's
+   * included, is reported to `received` with its own URL. Absent: headers go out as given.
+   */
+  readonly cookies?: HttpCookieHook;
 }
 
 /** What {@link HttpRequest.originCredentials} names: the credential headers and query parameters. */
@@ -80,6 +86,14 @@ export interface HttpStreamSink {
 export interface HttpStreamHook {
   /** Called once with the final (non-redirect) response; returning a sink switches to streaming. */
   accept(status: number, headers: Readonly<Record<string, string>>): HttpStreamSink | undefined;
+}
+
+/** How a send carries and stores cookies per hop; see {@link HttpRequest.cookies}. */
+export interface HttpCookieHook {
+  /** The `Cookie` header for a request to `url`; `handSet` is the one the request sets itself, if any. */
+  header(url: string, handSet: string | undefined): string | undefined;
+  /** What a response to `url` set, as its raw headers. */
+  received(url: string, rawHeaders: readonly (readonly [string, string])[]): void;
 }
 
 /**

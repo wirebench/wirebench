@@ -221,22 +221,6 @@ describe('desktopSendHost', () => {
     expect(await host.tls!.identityFor!(undefined)).toBeUndefined();
   });
 
-  it('keeps cookies per request', async () => {
-    const stored = new Map<string, unknown>();
-    const restCookiesFor = vi.fn((requestId: string) => stored.get(requestId));
-    const rememberRestCookies = vi.fn((requestId: string, cookies: readonly unknown[]) => {
-      stored.set(requestId, cookies);
-    });
-    const host = await desktopSendHost(deps({ project: project({ restCookiesFor, rememberRestCookies }) }), send);
-    const item = restItem();
-    expect(host.cookies!.cookiesFor(item)).toBeUndefined();
-    const cookie = { name: 'sid', value: 'abc' };
-    host.cookies!.remember(item, [cookie] as never);
-    expect(rememberRestCookies).toHaveBeenCalledWith('r1', [cookie]);
-    expect(host.cookies!.cookiesFor(item)).toEqual([cookie]);
-    expect(restCookiesFor).toHaveBeenCalledWith('r1');
-  });
-
   it('lends the preferences as they stand', async () => {
     const preferences = { http: { socketTimeoutMs: 1234 } } as never;
     const host = await desktopSendHost(deps({ preferences: () => preferences }), send);

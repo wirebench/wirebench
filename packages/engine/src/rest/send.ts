@@ -11,7 +11,14 @@
 
 import { WirebenchError } from '../errors.js';
 import { sendWithAuth } from '../http/auth/apply.js';
-import type { HttpExchange, HttpRequest, HttpStreamSink, ProxyOptions, TlsOptions } from '../http/types.js';
+import type {
+  HttpCookieHook,
+  HttpExchange,
+  HttpRequest,
+  HttpStreamSink,
+  ProxyOptions,
+  TlsOptions,
+} from '../http/types.js';
 import type { AuthSummary, SendAuth } from '../http/auth/send-auth.js';
 import type { SignatureScheme } from '../http/webhook-signature.js';
 import { signWebhook } from '../http/webhook-signature.js';
@@ -19,6 +26,8 @@ import { applyAuth } from '../http/auth/apply-auth.js';
 import type { AppliedAuth } from '../http/auth/apply-auth.js';
 import { encodeRestBody } from './body.js';
 import type { FileResolver } from './body.js';
+import type { CookieJarHost, CookieVerdict } from '../http/cookies.js';
+import { mergeCookieHeader } from './cookie-jar.js';
 import { cookieHeader } from './cookies.js';
 import type { KeyValueEntry, RestBody, RestMethod } from './model.js';
 import type { BodyLanguage, Cookie } from './response.js';
@@ -67,8 +76,14 @@ export interface RestSendInput {
   readonly defaultHeaders?: Readonly<Record<string, string>>;
   /** Credentials, already resolved to values. */
   readonly auth?: SendAuth;
-  /** Cookies to send back, already matched against the URL (`rest/cookies.ts`). */
+  /** Cookies to send back, already matched against the URL. Kept for the engine's API; a run sends through `jar`. */
   readonly cookies?: readonly Cookie[];
+  /**
+   * The cookie jar this send stores into and, when `send` is set, reads from (cookie jar spec
+   * §1.4). Each hop of a redirect is matched and stored against its own URL. A hand-set `Cookie`
+   * header goes first and wins on the same name.
+   */
+  readonly jar?: { readonly host: CookieJarHost; readonly send: boolean };
   readonly tls?: TlsOptions;
   readonly proxy?: ProxyOptions;
   /** How a multipart file part or a binary body is read. */
@@ -121,6 +136,8 @@ export interface RestExchange extends HttpExchange {
   /** Set when the declared charset could not be honoured and UTF-8 was used instead. */
   readonly decodeNote?: string;
   readonly cookies: readonly Cookie[];
+  /** The jar's verdict on each of `cookies`, in order; present when the send had a jar. */
+  readonly cookieVerdicts?: readonly CookieVerdict[];
   /** True when a redirect turned the request into a `GET`, which the HTTP log calls out. */
   readonly methodChanged: boolean;
   /** What authentication did, when credentials needed a round trip of their own. */
@@ -254,6 +271,19 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
   const onStream = input.onStream;
   const sseState = onStream !== undefined ? createSseState() : undefined;
 
+  // The jar stores every hop's cookies whatever the setting; it is read only when `send` is on.
+  const jar = input.jar;
+  const received: { verdicts?: readonly CookieVerdict[] } = {};
+  const cookieHook: HttpCookieHook | undefined =
+    jar === undefined
+      ? undefined
+      : {
+          header: (url, handSet) => (jar.send ? mergeCookieHeader(jar.host.cookiesFor(url), handSet) : handSet),
+          received: (url, rawHeaders) => {
+            received.verdicts = jar.host.remember(url, parseSetCookie(rawHeaders));
+          },
+        };
+
   const httpRequest: HttpRequest = {
     url: composed.url,
     method: methodFor(request.method),
@@ -272,6 +302,7 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
     ...(input.proxy !== undefined ? { proxy: input.proxy } : {}),
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
     ...(sseState !== undefined && onStream !== undefined ? { stream: sseState.hook(onStream) } : {}),
+    ...(cookieHook !== undefined ? { cookies: cookieHook } : {}),
   };
 
   // Basic and NTLM may need a round trip of their own; every other scheme is already in `headers`.
@@ -279,6 +310,8 @@ export async function sendRest(input: RestSendInput): Promise<RestExchange> {
   return {
     ...decodeRestResponse(authenticated.http, methodFor(request.method), sseState),
     ...(authenticated.auth !== undefined ? { auth: authenticated.auth } : {}),
+    // The last hop reported is the final response, whose cookies `cookies` lists.
+    ...(received.verdicts !== undefined ? { cookieVerdicts: received.verdicts } : {}),
     durationMs: authenticated.durationMs,
   };
 }

@@ -3,14 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  CookieJar,
   createApi,
   createProject,
   createRestRequest,
   createWebhookCollection,
   DEFAULT_PREFERENCES,
+  jarCookieHost,
   restItemFor,
 } from '../../../src/index.js';
-import type { Cookie, Project, RestRequestDef } from '../../../src/index.js';
+import type { CookieJarHost, Project, RestRequestDef } from '../../../src/index.js';
 import type { ExchangeOptions } from '../../../src/run/exchange.js';
 import type { SendHost } from '../../../src/run/host.js';
 import { openExchange } from '../../../src/run/open.js';
@@ -97,18 +99,58 @@ describe('REST through openExchange', () => {
     );
   });
 
-  it('sends the stored cookies only when the request asks, and remembers new ones', async () => {
-    const remembered: (readonly Cookie[])[] = [];
-    const cookies = {
-      cookiesFor: () => [{ name: 'a', value: '1' }],
-      remember: (_item: unknown, list: readonly Cookie[]) => remembered.push(list),
+  describe('the cookie jar', () => {
+    const jarHost = (): { jar: CookieJar; cookies: CookieJarHost } => {
+      const jar = new CookieJar();
+      return { jar, cookies: jarCookieHost(jar) };
     };
-    const off = await open(restItem('/cookies/read'), {}, { cookies }).result;
-    expect(off.subject.bodyText).not.toContain('a=1');
-    const on = await open(restItem('/cookies/read', { sendCookies: true }), {}, { cookies }).result;
-    expect(on.subject.bodyText).toContain('a=1');
-    await open(restItem('/cookies/set'), {}, { cookies }).result;
-    expect(remembered.at(-1)).toHaveLength(2);
+
+    it('stores what a response sets whatever the setting, and sends it only when the request asks', async () => {
+      const { jar, cookies } = jarHost();
+      const set = await open(restItem('/cookies/set'), {}, { cookies }).result;
+      expect(set.exchange?.kind === 'rest' && set.exchange.rest.cookieVerdicts).toEqual([
+        { stored: true },
+        { stored: true },
+      ]);
+      expect(jar.list(Date.now()).map((cookie) => cookie.name)).toEqual(['session', 'tracking']);
+
+      const off = await open(restItem('/cookies/read'), {}, { cookies }).result;
+      expect(JSON.parse(off.subject.bodyText)).toEqual({ cookie: null });
+      // `tracking` is scoped to `/deep`, so only `session` matches `/cookies/read`.
+      const on = await open(restItem('/cookies/read', { sendCookies: true }), {}, { cookies }).result;
+      expect(JSON.parse(on.subject.bodyText)).toEqual({ cookie: 'session=abc' });
+    });
+
+    it('lets a hand-set Cookie header win on the same name', async () => {
+      const { cookies } = jarHost();
+      await open(restItem('/cookies/set'), {}, { cookies }).result;
+      const p = project(
+        server.url,
+        createRestRequest('Req', {
+          id: 'r1',
+          url: '/cookies/read',
+          settings: { sendCookies: true },
+          headers: [{ name: 'Cookie', value: 'session=mine; extra=1', enabled: true }],
+        }),
+      );
+      const sent = await open({ p, item: selectRequests(p, ['Api/Req']).selected[0]! }, {}, { cookies }).result;
+      expect(JSON.parse(sent.subject.bodyText)).toEqual({ cookie: 'session=mine; extra=1' });
+    });
+
+    it('stores each redirect hop against its own URL, and reads the jar again for the next', async () => {
+      const { jar, cookies } = jarHost();
+      const sent = await open(restItem('/cookies/hop', { sendCookies: true, followRedirects: true }), {}, { cookies })
+        .result;
+      expect(JSON.parse(sent.subject.bodyText)).toEqual({ cookie: 'hop=1' });
+      expect(jar.list(Date.now())).toEqual([
+        expect.objectContaining({ name: 'hop', domain: new URL(server.url).hostname, hostOnly: true, path: '/' }),
+      ]);
+    });
+
+    it('reports no verdicts when the host lends no jar', async () => {
+      const sent = await open(restItem('/cookies/set')).result;
+      expect(sent.exchange?.kind === 'rest' && sent.exchange.rest.cookieVerdicts).toBeUndefined();
+    });
   });
 
   it('trusts the host anchors', async () => {

@@ -103,12 +103,6 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       : {}),
     ...(tokens !== undefined ? { tokens } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
-    cookies: {
-      cookiesFor: (item) => project.restCookiesFor?.(item.request.id),
-      remember: (item, cookies) => {
-        project.rememberRestCookies?.(item.request.id, [...cookies]);
-      },
-    },
     contractFor: restContractFor(deps),
     callbackUrlFor: (item) => Promise.resolve(callbackUrlOf(deps, send, item)),
     // The project's own schema for a gRPC API, which it loads once a session, discovered or imported.
