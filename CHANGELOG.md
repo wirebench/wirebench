@@ -46,6 +46,8 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **`send` baseline check.** `send` (the MCP tool, and `wirebench send --baseline`) compares the
+  response with the request's golden and returns the differences (#218).
 - **HTML preview.** The Preview tab renders an HTML response or webhook capture as a static page in a
   sandboxed frame: no scripts, forms, navigation or network (#48).
 - **`wirebench run --baseline`** compares each response with its committed golden and fails on a
