@@ -9,6 +9,8 @@ import type { Interface, Project, SoapRequestDef } from '../../../src/project/mo
 import { definitionCacheDir } from '../../../src/project/paths.js';
 import { requestFileLocation } from '../../../src/project/request-location.js';
 import type { SelectedRequest } from '../../../src/protocols.js';
+import { REDACTED_MARKER } from '../../../src/redact/index.js';
+import { createSecretMasker } from '../../../src/redact/literal.js';
 import { readGoldenFile } from '../../../src/snapshot/golden-file.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
@@ -351,6 +353,34 @@ describe('runRequests with a baseline', () => {
     const [only] = (await runRequests(all(project), contextFor(project), baseline(project))).requests;
     expect(only?.outcome).toBe('errored');
     expect(only?.baseline?.status).toBe('differs');
+  });
+
+  it('reports a change whose cut value hides every prefix of a secret once masked', async () => {
+    const secret = 'Zq7-k9Vw!x2P';
+    // JSON.stringify adds a leading quote, so the secret starts at character 195 of the reported
+    // value, and the 200-character cap cuts it after its first four characters.
+    const long = `${'a'.repeat(194)}${secret}${'b'.repeat(40)}`;
+    const project = makeProject([], [restRequest('bs', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-bs', golden(`{"labelled": "${long}"}`));
+    const [only] = (await runRequests(all(project), contextFor(project), baseline(project))).requests;
+    expect(only?.baseline?.status).toBe('differs');
+    const assertion = only?.assertions.find((a) => a.type === 'baseline');
+    const raw = [
+      ...(only?.baseline?.changes ?? []).flatMap((change) => [change.expected ?? '', change.actual ?? '']),
+      assertion?.message ?? '',
+    ];
+    // The proof: the raw report holds a cut prefix of the secret, never the whole of it.
+    expect(raw.some((text) => text.includes(`${secret.slice(0, 4)}…`))).toBe(true);
+    expect(raw.some((text) => text.includes(secret))).toBe(false);
+
+    const mask = createSecretMasker([secret]);
+    const masked = raw.map(mask);
+    for (const text of masked) {
+      for (let length = 2; length <= secret.length; length += 1) {
+        expect(text).not.toContain(secret.slice(0, length));
+      }
+    }
+    expect(masked.some((text) => text.includes(`${REDACTED_MARKER}…`))).toBe(true);
   });
 
   it('leaves results without baseline fields when not asked', async () => {
