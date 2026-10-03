@@ -88,3 +88,17 @@ review changes to it in a pull request like any other project file. See
 
 Renaming or moving a request leaves its golden behind: the Snapshot tab then shows **No snapshot
 saved**, and you save it again (or rename the file by hand).
+
+## In CI
+
+Commit each `<name>.golden.yaml` with the project, then add `--baseline` to the pipeline's run:
+
+```bash
+wirebench run ./project --env staging --baseline --reporter junit=reports/wirebench.xml
+```
+
+Each SOAP and REST response is compared with its golden, by meaning, with the golden's ignore rules.
+A difference fails the request (exit code 1), and the report lists each changed path. A request
+without a golden is noted and judged on its other assertions; add `--require-baseline` to make that
+an error (exit code 3). The runner never writes a golden: save and update goldens in the Snapshot
+tab. Sequences are not compared.

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -7,6 +7,9 @@ import { importWsdl } from '../../../src/soap/import.js';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_REQUEST_PROPERTIES, FORMAT_VERSION } from '../../../src/project/model.js';
 import type { Interface, Project, SoapRequestDef } from '../../../src/project/model.js';
 import { definitionCacheDir } from '../../../src/project/paths.js';
+import { requestFileLocation } from '../../../src/project/request-location.js';
+import type { SelectedRequest } from '../../../src/protocols.js';
+import { readGoldenFile } from '../../../src/snapshot/golden-file.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
@@ -268,5 +271,92 @@ describe('runRequests', () => {
       expect(only?.assertions[0]?.outcome).toBe('errored');
       expect(only?.assertions[0]?.message).toContain('not cached');
     });
+  });
+});
+
+describe('runRequests with a baseline', () => {
+  /** Writes `<slug>.request.yaml` (existence only) and, when given, the golden beside it. */
+  function saveGolden(project: Project, requestId: string, golden?: string): void {
+    const location = requestFileLocation(project, requestId)!;
+    const folder = join(dir, ...location.dir.split('/'));
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, `${location.slug}.request.yaml`), 'x\n');
+    if (golden !== undefined) writeFileSync(join(folder, `${location.slug}.golden.yaml`), golden);
+  }
+
+  const baseline = (project: Project, require = false) => ({
+    baseline: { source: (item: SelectedRequest) => readGoldenFile(dir, project, item.request.id), require },
+  });
+
+  // `/text-plain-json` always answers {"labelled":"text/plain"}.
+  const golden = (body: string, ignore = '[]'): string => `savedAt: s\nignore: ${ignore}\nbody: '${body}'\n`;
+
+  it('passes a matching response and counts it', async () => {
+    const project = makeProject([], [restRequest('bm', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-bm', golden('{"labelled": "text/plain"}'));
+    const result = await runRequests(all(project), contextFor(project), baseline(project));
+    const [only] = result.requests;
+    expect(only?.outcome).toBe('passed');
+    expect(only?.baseline?.status).toBe('matched');
+    expect(only?.assertions.at(-1)).toMatchObject({ type: 'baseline', outcome: 'passed' });
+    expect(result.summary.baseline).toEqual({ matched: 1, differs: 0, missing: 0 });
+  });
+
+  it('fails a different response and keeps its exchange', async () => {
+    const project = makeProject([], [restRequest('bd', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-bd', golden('{"labelled": "other"}'));
+    const [only] = (await runRequests(all(project), contextFor(project), baseline(project))).requests;
+    expect(only?.outcome).toBe('failed');
+    expect(only?.baseline?.status).toBe('differs');
+    expect(only?.exchange).toBeDefined();
+  });
+
+  it('honours the golden ignore rules', async () => {
+    const project = makeProject([], [restRequest('bi', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-bi', golden('{"labelled": "other"}', '["/labelled"]'));
+    const [only] = (await runRequests(all(project), contextFor(project), baseline(project))).requests;
+    expect(only?.outcome).toBe('passed');
+    expect(only?.baseline).toMatchObject({ status: 'matched', ignored: 1 });
+  });
+
+  it('notes a missing golden, and errors it under require', async () => {
+    const project = makeProject([], [restRequest('bn', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-bn');
+    const loose = (await runRequests(all(project), contextFor(project), baseline(project))).requests[0];
+    expect(loose?.outcome).toBe('passed');
+    expect(loose?.baseline).toEqual({ status: 'missing' });
+    const strict = (await runRequests(all(project), contextFor(project), baseline(project, true))).requests[0];
+    expect(strict?.outcome).toBe('errored');
+    expect(strict?.error?.code).toBe('baseline-missing');
+  });
+
+  it('errors an unreadable golden', async () => {
+    const project = makeProject([], [restRequest('bu', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-bu', 'savedAt: [\n');
+    const [only] = (await runRequests(all(project), contextFor(project), baseline(project))).requests;
+    expect(only?.outcome).toBe('errored');
+    expect(only?.baseline?.status).toBe('unreadable');
+  });
+
+  it('adds nothing for a request that errored on send', async () => {
+    const project = makeProject([soapRequest('bx', 0, await deadUrl(), OK_SOAP)]);
+    const [only] = (await runRequests(all(project), contextFor(project), baseline(project))).requests;
+    expect(only?.outcome).toBe('errored');
+    expect(only?.baseline).toBeUndefined();
+  });
+
+  it('keeps an already errored outcome errored when the baseline differs', async () => {
+    const project = makeProject([], [restRequest('be', 0, '/text-plain-json', [{ type: 'schema' }])]);
+    saveGolden(project, 'rest-be', golden('{"labelled": "other"}'));
+    const [only] = (await runRequests(all(project), contextFor(project), baseline(project))).requests;
+    expect(only?.outcome).toBe('errored');
+    expect(only?.baseline?.status).toBe('differs');
+  });
+
+  it('leaves results without baseline fields when not asked', async () => {
+    const project = makeProject([], [restRequest('bo', 0, '/text-plain-json', OK_REST)]);
+    const result = await runRequests(all(project), contextFor(project));
+    expect(result.summary.baseline).toBeUndefined();
+    expect(result.requests[0]?.baseline).toBeUndefined();
   });
 });

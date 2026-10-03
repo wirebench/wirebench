@@ -13,10 +13,11 @@ function assertionMessage(assertion: AssertionResult): string {
 }
 
 function renderSystemOut(result: RequestResult): string {
+  const notes = result.baseline?.status === 'missing' ? 'no baseline saved' : undefined;
   if (result.exchange === undefined) {
-    return '';
+    return notes === undefined ? '' : `<system-out>${escapeXml(notes)}</system-out>`;
   }
-  const text = `${result.exchange.request}\n\n${result.exchange.response}`;
+  const text = `${result.exchange.request}\n\n${result.exchange.response}${notes !== undefined ? `\n\n${notes}` : ''}`;
   return `<system-out>${escapeXml(text)}</system-out>`;
 }
 
@@ -25,6 +26,13 @@ function renderTestcase(result: RequestResult): string {
   const body: string[] = [];
   const errors: string[] = [];
   for (const assertion of result.assertions) {
+    if (assertion.type === 'baseline' && assertion.outcome === 'failed') {
+      // The change list is the failure's body, one change per line (#36).
+      body.push(
+        `<failure${attr('message', assertion.label)}${attr('type', 'baseline')}>${escapeXml(assertion.message ?? '')}</failure>`,
+      );
+      continue;
+    }
     if (assertion.outcome === 'failed') {
       body.push(`<failure${attr('message', assertionMessage(assertion))}${attr('type', assertion.type)}/>`);
     } else if (assertion.outcome === 'errored' && result.error === undefined) {
