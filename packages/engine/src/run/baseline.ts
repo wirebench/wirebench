@@ -19,7 +19,21 @@ export const BASELINE_MESSAGE_CHANGES = 20;
 /** The protocols a golden can be saved for. */
 export const BASELINE_PROTOCOLS: ReadonlySet<string> = new Set(['soap', 'rest']);
 
-export type BaselineStatus = 'matched' | 'differs' | 'missing' | 'unreadable' | 'too-large' | 'unsupported';
+export type BaselineStatus =
+  | 'matched'
+  | 'differs'
+  | 'missing'
+  | 'unreadable'
+  | 'too-large'
+  | 'unsupported'
+  // `--update-baseline` (#217)
+  | 'updated'
+  | 'created'
+  | 'skipped'
+  | 'refused';
+
+/** Why an update did not write: `skipped` for `failed` and `not-text`, `refused` for the rest. */
+export type BaselineReason = 'failed' | 'not-text' | 'secret' | 'malformed' | 'not-a-file' | 'unsaved' | 'write-failed';
 
 export interface BaselineReport {
   readonly status: BaselineStatus;
@@ -28,6 +42,9 @@ export interface BaselineReport {
   readonly ignored?: number;
   readonly truncated?: boolean;
   readonly error?: string;
+  readonly reason?: BaselineReason;
+  /** The sidecar `--update-baseline` wrote, project-relative. */
+  readonly file?: string;
 }
 
 export interface BaselineCheck {
@@ -39,13 +56,13 @@ export interface BaselineCheck {
 
 const encoder = new TextEncoder();
 
-function tooLarge(text: string): boolean {
+export function tooLarge(text: string): boolean {
   // A UTF-16 code unit is at most 3 UTF-8 bytes, so only a borderline string needs encoding.
   if (text.length > BASELINE_MAX_BYTES) return true;
   return text.length * 3 > BASELINE_MAX_BYTES && encoder.encode(text).length > BASELINE_MAX_BYTES;
 }
 
-function contentTypeOf(subject: AssertionSubject): string | undefined {
+export function contentTypeOf(subject: AssertionSubject): string | undefined {
   return subject.headers?.find(([name]) => name.toLowerCase() === 'content-type')?.[1];
 }
 
