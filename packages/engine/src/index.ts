@@ -882,6 +882,8 @@ export { KEYSTORES_PATH, MANIFEST_PATH, authDocument, projectFiles } from './pro
 export type { ProjectFiles } from './project/serialize.js';
 export { requestFileLocation } from './project/request-location.js';
 export type { RequestFileLocation } from './project/request-location.js';
+export { BASELINE_MAX_BYTES, checkBaseline } from './run/baseline.js';
+export type { BaselineCheck, BaselineReport, BaselineStatus } from './run/baseline.js';
 export { readGoldenFile } from './snapshot/golden-file.js';
 export type { GoldenFile, GoldenRead } from './snapshot/golden-file.js';
 export { loadProject } from './project/load.js';

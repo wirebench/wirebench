@@ -16,11 +16,14 @@ import { featureDisabled } from '../protocol/registry.js';
 import type { ProtocolRegistry } from '../protocol/registry.js';
 import { defaultRegistry } from '../protocols.js';
 import type { SelectedRequest, SentExchange } from '../protocols.js';
+import type { GoldenRead } from '../snapshot/golden-file.js';
 import { scriptProperties } from '../script/props.js';
 import { activeScripts, type RequestScripting, type ScriptedRequest } from '../script/request-scripts.js';
 import type { RequestScripts } from '../script/model.js';
 import { SecretPlaceholders } from '../script/send.js';
 import type { TransferResult } from '../sequence/run.js';
+import { BASELINE_PROTOCOLS, checkBaseline } from './baseline.js';
+import type { BaselineCheck, BaselineReport } from './baseline.js';
 import { scopesFor } from './context.js';
 import type { RunContext } from './context.js';
 import type { SendHost } from './host.js';
@@ -41,6 +44,9 @@ export type { LiveEvent, SentExchange } from '../protocols.js';
 
 export type RequestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
 
+/** Reads the golden saved for a selected request (#36); the host knows where the project is saved. */
+export type BaselineSource = (item: SelectedRequest) => Promise<GoldenRead>;
+
 /** What happened to one selected request. */
 export interface RequestResult {
   readonly path: string;
@@ -52,6 +58,8 @@ export interface RequestResult {
   readonly status?: number;
   readonly durationMs?: number;
   readonly assertions: readonly AssertionResult[];
+  /** The `--baseline` comparison (#36); absent when not asked for, or when the send failed. */
+  readonly baseline?: BaselineReport;
   /** Set when errored before or during the send. */
   readonly error?: {
     readonly code: string;
@@ -81,6 +89,8 @@ export interface RunSummary {
   readonly errored: number;
   readonly skipped: number;
   readonly durationMs: number;
+  /** Set when the run compared baselines (#36). */
+  readonly baseline?: { readonly matched: number; readonly differs: number; readonly missing: number };
 }
 
 export interface RunResult {
@@ -94,6 +104,8 @@ export interface RunOptions {
   readonly bail?: boolean;
   readonly defaultSlaMs?: number;
   readonly requireAssertions?: boolean;
+  /** Compare each response with its golden (#36). Sequence steps never are. */
+  readonly baseline?: { readonly source: BaselineSource; readonly require: boolean };
   readonly onRequestDone?: (result: RequestResult) => void;
   /** Where callback assertions read captures (callback-assertion §2.2). Absent: they error, and the run goes on. */
   readonly captures?: CaptureSource;
@@ -349,6 +361,18 @@ export async function checkRunScripts(
   return errors;
 }
 
+/** The `--baseline` check for one sent request: `unsupported` for a protocol without goldens. */
+async function baselineOf(
+  item: SelectedRequest,
+  subject: AssertionSubject,
+  baseline: NonNullable<RunOptions['baseline']>,
+): Promise<BaselineCheck> {
+  if (!BASELINE_PROTOCOLS.has(item.kind)) {
+    return { report: { status: 'unsupported' } };
+  }
+  return checkBaseline(await baseline.source(item), subject, baseline.require);
+}
+
 /** Runs one request; a throw anywhere on the way becomes an errored result, never a stopped run. */
 async function runOne(
   item: SelectedRequest,
@@ -379,8 +403,11 @@ async function runOne(
       own,
       options.defaultSlaMs !== undefined ? { defaultSlaMs: options.defaultSlaMs } : {},
     );
-    const assertions = [...immediate, ...callbacks, ...scriptAssertions(script?.tests ?? [])];
-    const outcome = script?.error !== undefined ? 'errored' : outcomeOf(assertions);
+    const checked = [...immediate, ...callbacks, ...scriptAssertions(script?.tests ?? [])];
+    const compared = options.baseline === undefined ? undefined : await baselineOf(item, subject, options.baseline);
+    const assertions = compared?.assertion !== undefined ? [...checked, compared.assertion] : checked;
+    const error = script?.error ?? compared?.error;
+    const outcome = error !== undefined ? 'errored' : outcomeOf(assertions);
     return {
       sent,
       result: {
@@ -389,8 +416,10 @@ async function runOne(
         status: subject.status,
         durationMs: subject.durationMs,
         assertions,
+        // The synthetic baseline assertion does not count: --require-assertions keeps its meaning.
         unasserted: own.length === 0 && (script?.tests.length ?? 0) === 0,
-        ...(script?.error !== undefined ? { error: script.error } : {}),
+        ...(error !== undefined ? { error } : {}),
+        ...(compared !== undefined ? { baseline: compared.report } : {}),
         ...scriptReport(script, sent.scriptsOff === true),
         ...(outcome !== 'passed'
           ? { exchange: { request: capped(raw.rawRequest), response: capped(raw.rawResponse) } }
@@ -475,6 +504,8 @@ export async function runRequests(
     }
   }
   const count = (outcome: RequestOutcome): number => results.filter((r) => r.outcome === outcome).length;
+  const baselineCount = (status: BaselineReport['status']): number =>
+    results.filter((r) => r.baseline?.status === status).length;
   // Inside a workspace the environment a run names is the workspace's.
   const environments = context.workspace?.workspace.environments ?? context.project.environments;
   const environment = environments.find((e) => e.id === context.environmentId)?.name;
@@ -488,6 +519,15 @@ export async function runRequests(
       errored: count('errored'),
       skipped: count('skipped'),
       durationMs: Math.round(performance.now() - started),
+      ...(options.baseline !== undefined
+        ? {
+            baseline: {
+              matched: baselineCount('matched'),
+              differs: baselineCount('differs'),
+              missing: baselineCount('missing'),
+            },
+          }
+        : {}),
     },
     requests: results,
   };
