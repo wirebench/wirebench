@@ -41,7 +41,7 @@ Two alternatives were rejected:
 
 ## 1. The preview document
 
-A pure function in a new file, `features/rest-editor/response/html-preview.ts`:
+A pure function in a new file, `features/rest-editor/response/html-preview.tsx` (beside the component of §2):
 
 ```ts
 /** `html` with the preview policy declared before anything the server sent. */
@@ -146,13 +146,13 @@ These are what the preview exists to show, and none of them can reach the networ
 
 ## 5. Testing
 
-- **Unit** (`html-preview.test.ts`):
+- **Unit** (`test/renderer/html-preview.test.tsx`):
   - `previewDocument` puts the two meta tags first and leaves the body byte-for-byte unchanged after
     them.
 - **Unit** (`security-baseline.test.ts`):
   - an inline snapshot of `HTML_PREVIEW_CSP`;
   - `denySubframeNavigation` prevents a subframe navigation and allows a main-frame one.
-- **Renderer** (`body-view.test.tsx`):
+- **Renderer** (`test/renderer/html-preview.test.tsx`, and one case in `capture-viewer.test.tsx`):
   - Preview on an `html` body renders the frame, with `sandbox` exactly `""` and the note shown.
   - An image body still renders `<img>`.
   - Any other body still renders the hex dump.
