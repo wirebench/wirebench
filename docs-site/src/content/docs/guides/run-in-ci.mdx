@@ -105,14 +105,14 @@ WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
   npx --yes @wirebench/cli@3.0.0 run ./project --env staging --baseline --reporter junit=reports/wirebench.xml
 ```
 
-`--baseline` also compares each response with its committed golden; see
-[Snapshot regression](/wirebench/docs/guides/snapshot-regression/#in-ci).
-
 Works on any runner that already has Node 24 — the same package the GitHub Action installs under
 the hood, with no other setup.
 
 </TabItem>
 </Tabs>
+
+`--baseline` also compares each response with its committed golden; see
+[Snapshot regression](/wirebench/docs/guides/snapshot-regression/#in-ci).
 
 ## Secret tokens
 
@@ -153,8 +153,8 @@ Every recipe above is the same CLI underneath, so the outcome is identical which
   [CLI reference](https://github.com/wirebench/wirebench/blob/main/docs/cli.md) for the full
   exit-code table.
 - `--baseline` adds a comparison with each request's committed golden: a difference exits `1`, and
-  under `--require-baseline` a request with no golden, or one whose golden cannot be read or is too
-  large to compare, exits `3`.
+  a golden that cannot be read or is too large (over 2 MiB) to compare exits `3`. Under
+  `--require-baseline`, a request with no golden exits `3` too.
 - `--reporter junit=<file>` writes a JUnit file naming the request and the assertion that
   failed, for the CI system's own test view.
 - Nothing prints a secret's value: it's masked wherever it could appear — headers, URLs, bodies,

@@ -363,9 +363,10 @@ server:
 
 `--baseline` compares each SOAP and REST response with the golden saved beside the request
 (`<slug>.golden.yaml`, written by the desktop's Snapshot tab), by meaning and with the golden's
-ignore rules. A difference fails the request (exit 1). A request without a golden is noted and
-judged on its other assertions; `--require-baseline` makes that an error (exit 3). Other protocols
-are not compared, sequences are not compared, and the runner never writes a golden.
+ignore rules. A difference fails the request (exit 1). A golden that cannot be read, or is too large
+(over 2 MiB) to compare, is an error (exit 3). A request without a golden is noted and judged on its
+other assertions; `--require-baseline` makes that an error too (exit 3). Other protocols are not
+compared, sequences are not compared, and the runner never writes a golden.
 
 `--require-baseline` without `--baseline`, and `--baseline` with `--sequence`, are usage errors
 (exit 2).
@@ -390,10 +391,11 @@ stderr. `--quiet` suppresses passing lines; `--verbose` also prints each passing
 3 passed, 2 failed, 0 errored, 0 skipped in 0.3s
 ```
 
-With `--baseline`, a request's line also shows `baseline: matches` or `(no baseline)`, and a
-difference lists the changed paths under the request. In JUnit it is a `<failure type="baseline">`;
-in the JSON report, each request gains a `baseline` object and the summary a `baseline` object (`matched`, `differs`,
-`missing`); `formatVersion` stays 1.
+With `--baseline`, a request's line also shows `baseline: matches`, `(no baseline)` or
+`(baseline not compared: <protocol>)`, and a difference lists the changed paths under the request.
+In JUnit it is a `<failure type="baseline">`. In the JSON report, each request gains a `baseline`
+object. The summary gains one too, with the counts `matched`, `differs` and `missing`;
+`formatVersion` stays 1.
 
 ### `junit=<file>`
 
@@ -477,7 +479,7 @@ A report's directory is created if missing; a report that cannot be written is e
 | 0 | Every selected request passed. |
 | 1 | At least one assertion failed, or a response differs from its baseline; nothing errored. |
 | 2 | Usage or load problem: bad flag, path is no project, unknown environment or selector, invalid `assertions:`, project format too new, report not writable. Nothing was sent. |
-| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. Under `--require-baseline`, also a request with no golden, or a golden that cannot be read or is too large (over 2 MiB) to compare. Takes precedence over 1. |
+| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. With `--baseline`, a golden that cannot be read or is too large (over 2 MiB) to compare; under `--require-baseline`, also a request with no golden. Takes precedence over 1. |
 | 130 | Interrupted (`SIGINT`); reports are flushed with what ran. |
 
 An errored request outranks a failed assertion (exit 3 over 1): a pipeline that could not reach the
