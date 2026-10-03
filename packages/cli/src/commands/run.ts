@@ -13,10 +13,12 @@ import {
   secretNeedsOf,
   selectRequests,
   workspaceProjectDir,
+  writeGoldenFile,
 } from '@wirebench/engine';
 import type {
   CallbackWaiting,
   Environment,
+  GoldenFile,
   Project,
   RunContext,
   RunResult,
@@ -272,6 +274,16 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
                     // Read from the folder the project was loaded from; nothing is written (#36).
                     source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
                     require: args.requireBaseline,
+                  },
+                }
+              : {}),
+            ...(args.updateBaseline
+              ? {
+                  updateBaseline: {
+                    // The runner's one write (#217): golden sidecars beside the requests, nothing else.
+                    source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
+                    sink: (item: SelectedRequest, golden: GoldenFile) =>
+                      writeGoldenFile(args.path, project, item.request.id, golden),
                   },
                 }
               : {}),
