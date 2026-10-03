@@ -593,6 +593,46 @@ describe('op send with baseline', () => {
     expect(result.outcome).toBe('passed');
     expect(result).not.toHaveProperty('baseline');
   });
+
+  it('masks a secret the response echoes, in the changes and in the assertion message', async () => {
+    const fixture = await restProject();
+    const pets = await server((request) => ({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: request.headers['x-api-key'] }),
+    }));
+    await addEnvironment(fixture.dir, 'local', { Pets: pets.url });
+    await updateRestRequest(fixture.dir, 'GET', '/pets', (request) => ({
+      ...request,
+      headers: [...request.headers, { name: 'X-Api-Key', value: '${secret:petsKey}', enabled: true }],
+    }));
+    const item = await restItem(fixture.dir, 'GET', '/pets');
+    await writeGolden(fixture.dir, item, { body: '{"key": "old"}' });
+
+    const result = await runOp(
+      sendOp,
+      { item, environment: 'local', baseline: true },
+      fixture.base({ env: { WIREBENCH_SECRET_PETSKEY: SECRET } }),
+    );
+
+    expect(result.baseline?.status).toBe('differs');
+    expect(result.baseline?.changes?.[0]?.path).toBe('/key');
+    expect(JSON.stringify(result.baseline)).not.toContain(SECRET);
+    expect(JSON.stringify(result.assertions)).not.toContain(SECRET);
+  });
+
+  it("keeps the request's own assertions redacted as before, beside the baseline result", async () => {
+    const { fixture, item } = await petsSend({ token: SECRET, name: 'Rex' });
+    await updateRestRequest(fixture.dir, 'GET', '/pets', (request) => ({
+      ...request,
+      assertions: [{ type: 'match', language: 'jsonpath', expression: '$.token', equals: 'something-else' }],
+    }));
+    await writeGolden(fixture.dir, item, { body: '{"token": "x", "name": "Rex"}' });
+
+    const result = await runOp(sendOp, { item, environment: 'local', baseline: true }, fixture.base());
+
+    expect(result.assertions.map((assertion) => assertion.type)).toEqual(['match', 'baseline']);
+    expect(result.assertions[0]).toMatchObject({ outcome: 'failed', actual: REDACTED_MARKER });
+  });
 });
 
 describe('op send on a WebSocket request', () => {

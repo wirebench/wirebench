@@ -13,9 +13,12 @@ import {
   CALCULATOR_WSDL,
   emptyProject,
   removeTempDirs,
+  restItem,
+  restProject,
   SOAP_ITEM,
   soapProject,
   startServer,
+  writeGolden,
 } from '../ops/helpers.js';
 import type { TestServer } from '../ops/helpers.js';
 
@@ -158,6 +161,20 @@ describe('the MCP server', () => {
     expect((sent.json as { historyId?: string }).historyId).toMatch(/^[0-9A-Z]{26}$/);
 
     expect((await call(client, 'generate', {})).isError).toBe(true);
+  });
+  it('returns a baseline difference as a normal send result, not an error', async () => {
+    const fixture = await restProject();
+    const pets = await startServer(() => ({ headers: { 'Content-Type': 'application/json' }, body: '{"ok": true}' }));
+    closers.push(() => pets.close());
+    await addEnvironment(fixture.dir, 'local', { Pets: pets.url });
+    const item = await restItem(fixture.dir, 'GET', '/pets');
+    await writeGolden(fixture.dir, item, { body: '{"ok": false}' });
+    const client = await connect(fixture.base());
+
+    const sent = await call(client, 'send', { item, environment: 'local', baseline: true });
+
+    expect(sent.isError).toBe(false);
+    expect(sent.json).toMatchObject({ outcome: 'failed', baseline: { status: 'differs' } });
   });
 });
 
