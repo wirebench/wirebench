@@ -664,6 +664,7 @@ void app.whenReady().then(() => {
     },
     projectDirs: openProjectDirs,
     picks: dialogPicks,
+    history: historyService,
     // Every read goes to the live workspace, so a second environment of the same name in one
     // import sees the first one and is given a free name.
     variablesPorts: (projectId) => ({

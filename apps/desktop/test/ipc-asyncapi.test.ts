@@ -186,6 +186,7 @@ beforeEach(async () => {
     projectDirs: () => [projectDir],
     picks: new DialogPicks(),
     variablesPorts: unused,
+    history: { open: unused, recordImportedRest: unused },
   };
   registerApiChannels(deps);
 });

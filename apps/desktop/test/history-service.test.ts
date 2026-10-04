@@ -362,6 +362,90 @@ describe('HistoryService when another writer holds the History lock', () => {
   });
 });
 
+describe('HistoryService.recordImportedRest', () => {
+  let userDataDir: string;
+
+  beforeEach(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'wirebench-history-import-'));
+  });
+
+  afterEach(async () => {
+    await rm(userDataDir, { recursive: true, force: true });
+  });
+
+  /** One recorded exchange carrying a credential in every place a capture can hold one. */
+  const RECORDED = {
+    requestId: 'r1',
+    requestName: 'POST /login',
+    apiName: 'api.example.com',
+    at: '2026-10-01T10:00:00.000Z',
+    durationMs: 42,
+    method: 'POST',
+    url: 'https://api.example.com/login?token=qtok-123&limit=5',
+    requestHeaders: [
+      { name: 'Authorization', value: 'Bearer abc-secret' },
+      { name: 'Cookie', value: 'sid=cookie-in' },
+      { name: 'Content-Type', value: 'application/json' },
+    ],
+    requestBody: '{"user":"ann","password":"hunter2-pw"}',
+    status: 200,
+    statusText: 'OK',
+    responseHeaders: [
+      { name: 'Set-Cookie', value: 'sid=cookie-out; HttpOnly' },
+      { name: 'Content-Type', value: 'application/json; charset=utf-8' },
+    ],
+    responseBody: '{"ok":true,"access_token":"atok-456"}',
+    tags: ['imported:har'],
+  } as const;
+
+  it('records an imported exchange at its recorded time, tagged', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const entry = await history.recordImportedRest('proj-1', RECORDED);
+
+    expect(entry).toMatchObject({
+      kind: 'rest',
+      at: '2026-10-01T10:00:00.000Z',
+      method: 'POST',
+      status: 200,
+      ok: true,
+      durationMs: 42,
+      requestId: 'r1',
+      requestName: 'POST /login',
+      interfaceName: 'api.example.com',
+      tags: ['imported:har'],
+    });
+    expect(entry?.request.envelopeXml).toContain('"user":"ann"');
+    expect(entry?.response?.envelopeXml).toContain('"ok":true');
+    expect(history.list({ projectId: 'proj-1' }).entries).toHaveLength(1);
+  });
+
+  it('writes no recorded credential to the History file', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const entry = await history.recordImportedRest('proj-1', RECORDED);
+    const onDisk = await readFile(historyFilePath(userDataDir, 'proj-1'), 'utf8');
+
+    for (const text of [JSON.stringify(entry), onDisk]) {
+      expect(text).not.toContain('abc-secret');
+      expect(text).not.toContain('cookie-in');
+      expect(text).not.toContain('cookie-out');
+      expect(text).not.toContain('qtok-123');
+      expect(text).not.toContain('hunter2-pw');
+      expect(text).not.toContain('atok-456');
+    }
+    expect(entry?.endpoint).toContain('limit=5');
+  });
+
+  it('answers undefined when the project History is not open', async () => {
+    const history = new HistoryService(userDataDir);
+
+    expect(await history.recordImportedRest('proj-1', RECORDED)).toBeUndefined();
+  });
+});
+
 /**
  * The second lock on the door finding 1 opened: a project's id is its own `wirebench.yaml`'s,
  * and a linked project keeps it, so `historyFilePath` must never turn one into a path that

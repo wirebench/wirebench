@@ -8,9 +8,11 @@
  * for a location the API's own manifest lists, so the channel can never be turned into a read of an
  * arbitrary file.
  */
+import { readFileSync } from 'node:fs';
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WirebenchError } from '@wirebench/engine';
 import { DialogPicks } from '../src/main/dialog-picks.js';
@@ -218,6 +220,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
     projectDirs: () => [],
     picks: new DialogPicks(),
     variablesPorts: () => fakeVariablesPorts().ports,
+    history: { open: vi.fn().mockResolvedValue(undefined), recordImportedRest: vi.fn().mockResolvedValue(undefined) },
     ...overrides,
   };
   registerApiChannels(deps);
@@ -725,6 +728,75 @@ describe("api.importPostman and the collection's variables", () => {
       target: { newProjectName: 'Pets' },
       source: { kind: 'text', text: COLLECTION_WITH_VARIABLES },
     });
+
+    expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
+  });
+});
+
+/** The crafted capture the engine's HAR tests use: two origins, six recorded exchanges. */
+const SESSION_HAR = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/har/crafted/session.har'),
+  'utf8',
+);
+
+type HarResponse = {
+  projectId: string;
+  apiIds: string[];
+  summary: { apis: number; historyRecorded: number };
+  reportText: string;
+};
+
+describe('api.importHar', () => {
+  it('adds one API per origin and writes each recorded exchange to History, tagged', async () => {
+    const recordImportedRest = vi.fn().mockResolvedValue({ id: 'h' });
+    const open = vi.fn().mockResolvedValue(undefined);
+    const { addApi } = setup({ history: { open, recordImportedRest } });
+
+    const response = await value<HarResponse>('api.importHar', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: SESSION_HAR },
+      responses: 'history',
+    });
+
+    expect(response.apiIds).toHaveLength(2);
+    expect(addApi).toHaveBeenCalledTimes(2);
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ documents: [], source: 'inline:har', cache: false });
+    expect(open).toHaveBeenCalledWith('p1');
+    expect(recordImportedRest).toHaveBeenCalledTimes(6);
+    expect(recordImportedRest.mock.calls[0]?.[0]).toBe('p1');
+    expect(recordImportedRest.mock.calls[0]?.[1]).toMatchObject({ tags: ['imported:har'] });
+    expect(response.summary.historyRecorded).toBe(6);
+    expect(sender.send).toHaveBeenCalledWith('history.changed', { projectId: 'p1' });
+  });
+
+  it('writes nothing to History by default', async () => {
+    const recordImportedRest = vi.fn();
+    setup({ history: { open: vi.fn(), recordImportedRest } });
+
+    const response = await value<HarResponse>('api.importHar', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: SESSION_HAR },
+    });
+
+    expect(recordImportedRest).not.toHaveBeenCalled();
+    expect(response.summary.historyRecorded).toBe(0);
+  });
+
+  it('refuses a capture with nothing left to import, before creating a project', async () => {
+    const { deps } = setup();
+    const empty = JSON.stringify({ log: { version: '1.2', creator: { name: 'x', version: '1' }, entries: [] } });
+
+    expect(
+      await failure('api.importHar', { target: { newProjectName: 'Cap' }, source: { kind: 'text', text: empty } }),
+    ).toMatchObject({ code: 'har-nothing-to-import' });
+    expect(deps.addProject).not.toHaveBeenCalled();
+  });
+
+  it('takes back a project it created when placing an API fails', async () => {
+    const { deps, addApi } = setup();
+    addApi.mockRejectedValueOnce(new WirebenchError('project-save-failed', 'disk full'));
+
+    await failure('api.importHar', { target: { newProjectName: 'Cap' }, source: { kind: 'text', text: SESSION_HAR } });
 
     expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
   });

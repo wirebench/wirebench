@@ -3741,6 +3741,62 @@ export const apiImportPostmanResponseSchema = z.object({
 });
 export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
 
+/** Request payload for `api.importHar`: a browser capture, read as REST APIs. */
+export const apiImportHarRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: postmanSourceSchema,
+  /** Keep images, fonts, scripts and stylesheets as requests too. */
+  includeStaticAssets: z.boolean().default(false),
+  /** What becomes of the recorded responses: nothing, History entries, or saved examples. */
+  responses: z.enum(['drop', 'history', 'examples']).default('drop'),
+});
+export type ApiImportHarRequest = z.infer<typeof apiImportHarRequestSchema>;
+
+const apiImportHarResponseObject = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  /** One API per origin the capture called, in the order they were first seen. */
+  apiIds: z.array(z.string()).readonly(),
+  summary: z.object({
+    entries: z.number(),
+    kept: z.number(),
+    requests: z.number(),
+    apis: z.number(),
+    statuses: z.record(z.string(), z.number()),
+    /** How many recorded exchanges were written to History; zero unless `responses` was `history`. */
+    historyRecorded: z.number(),
+  }),
+  warnings: z.array(z.string()).readonly(),
+  notes: z.array(z.string()).readonly(),
+  /** The import report as plain text, for the copy button; empty when there is nothing to say. */
+  reportText: z.string(),
+});
+/**
+ * Spelled out as an interface rather than `z.infer`, so the IPC channel registry's inferred type
+ * names it instead of expanding a whole project; the annotation below keeps the two in step.
+ */
+export interface ApiImportHarResponse {
+  projectId: string;
+  project: ProjectWire;
+  apiIds: readonly string[];
+  summary: {
+    entries: number;
+    kept: number;
+    requests: number;
+    apis: number;
+    statuses: Record<string, number>;
+    historyRecorded: number;
+  };
+  warnings: readonly string[];
+  notes: readonly string[];
+  reportText: string;
+}
+/**
+ * Response payload for `api.importHar`. Annotated with its named type so the IPC channel registry's
+ * inferred type stays serialisable.
+ */
+export const apiImportHarResponseSchema: z.ZodType<ApiImportHarResponse> = apiImportHarResponseObject;
+
 /** Request payload for `api.importPostmanEnvironment` and `api.importPostmanGlobals`. */
 export const apiImportPostmanVariablesRequestSchema = z.object({ source: postmanSourceSchema });
 export type ApiImportPostmanVariablesRequest = z.infer<typeof apiImportPostmanVariablesRequestSchema>;
