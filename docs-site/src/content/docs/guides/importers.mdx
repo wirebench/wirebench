@@ -214,28 +214,39 @@ and body.
 **Skipped.** CORS preflight requests, static assets (unless ticked), and entries whose URL is not
 `http:` or `https:` are left out. The notes count each kind.
 
-The summary counts the APIs and requests, how many of the capture's entries were kept, and how many
-History records were written or that examples were saved. **Things to look at**, **Notes** and
+The summary counts the APIs and requests, how many of the capture's entries were kept, the response
+statuses seen (for example `200 ×3, 404 ×1`), and how many History records were written or that
+examples were saved. **Things to look at**, **Notes** and
 **Copy report** work as they do for a legacy project. When History's per-project limit is reached,
 the warnings say how many older entries were dropped to make room, or how many recorded exchanges did
 not fit. An exchange with no valid time is not written to History, and a warning counts it.
 
 ### Limits
 
-- **Recorded credentials are never imported.**
+- **Recorded credentials are never imported.** A name looks like a credential when, ignoring case,
+  `_` and `-`, it contains `token`, `secret`, `password`, `passwd`, `apikey`, `auth`, `session`,
+  `csrf`, `xsrf` or `signature` (or `subscriptionkey`, `accesskey`, `privatekey`), or is exactly
+  `key` or `sig`. So `X-Auth-Token`, `X-CSRF-Token`, `Ocp-Apim-Subscription-Key`, `client_secret`
+  and `accessToken` all count.
   - The `Authorization` and `Cookie` headers are dropped. A Bearer or Basic `Authorization` header
     sets the request's auth type, with no token or password (Basic keeps the user name), and a
-    warning asks you to set the credential. Other credential headers, such as `X-Api-Key`, are
-    dropped with the same warning.
-  - Query parameters and body fields with credential-looking names, such as `password`, `token` or
-    `api_key`, are imported with an empty value, and a warning names them.
-  - In a saved example, credential headers and the values under credential-looking keys in the body
-    are masked, and `Set-Cookie` is dropped; the notes say which examples were masked.
+    warning asks you to set the credential. An `Authorization` header with any other scheme, or one
+    that cannot be read, imports as auth **none**, and a warning says so.
+  - With no `Authorization` header, an `X-Api-Key` header makes the request's auth **API key**, in a
+    header of the recorded name, with no value: set the key on the request or API.
+  - Every other header with a credential-looking name is dropped, with the same warning.
+  - Query parameters, form fields, multipart text parts and JSON keys at any depth with a
+    credential-looking name are imported with an empty value, and a warning names them.
+  - In a saved example, headers with a credential-looking name, and the values under such keys in a
+    JSON or form body, are masked, and `Set-Cookie` is dropped; the notes say which examples were
+    masked.
 - **Cookies are dropped.** The [cookie jar](/wirebench/docs/guides/rest-client/#cookies) handles
   them at send time.
 - **Binary bodies.** A binary response body is left out of its example. A multipart file part
   arrives without its file, to pick on the request.
-- **Size.** A capture larger than 100 MB is refused.
+- **Size.** A picked file larger than 100 MB is refused, and so is pasted or dropped text longer
+  than about 50 MB (50 million characters). A saved example's body is cut at 256 KB, the same cap
+  History uses, and a note says which.
 - **Nothing to import.** A capture with no HTTP requests left after the skips is refused, and no
   project is created.
 
