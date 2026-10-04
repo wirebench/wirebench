@@ -720,7 +720,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             ? ipc().api.importPostmanEnvironment
             : ipc().api.importPostmanGlobals;
       const res = await call({
-        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        source:
+          source.kind === 'file'
+            ? { kind: 'file', path: source.path }
+            : // A dropped `.http` environment file says which file it was: the private one's values are secrets.
+              {
+                kind: 'text',
+                text: source.text,
+                ...(kind === 'http-env' && source.location !== undefined ? { location: source.location } : {}),
+              },
       });
       if (!res.ok) {
         setImportError(res.error.message);
@@ -780,7 +788,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     try {
       const res = await ipc().api.importHttpFile({
         target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
-        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        // A dropped file's name goes along, so the API is named after it as a picked file's is.
+        source:
+          source.kind === 'file'
+            ? { kind: 'file', path: source.path }
+            : {
+                kind: 'text',
+                text: source.text,
+                ...(source.location !== undefined ? { location: source.location } : {}),
+              },
         // Only when the checkbox was offered and is ticked: a failed inspection, or a submit before
         // it answered, offered nothing to bring along.
         includeEnvironments: source.kind === 'file' && httpEnvNames.length > 0 && httpIncludeEnvs,

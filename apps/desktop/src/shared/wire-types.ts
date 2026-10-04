@@ -3684,10 +3684,18 @@ export const apiImportWebhooksResponseSchema = z.object({
 });
 export type ApiImportWebhooksResponse = z.infer<typeof apiImportWebhooksResponseSchema>;
 
-/** Source for Postman collection import: file path or pasted JSON text. */
+/**
+ * Source for Postman collection import: file path or pasted JSON text. A dropped file is text too,
+ * with `location` `dropped:<file name>` as for {@link importSourceSchema}; only the file name is
+ * read from it, never a path.
+ */
 export const postmanSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('file'), path: z.string().max(MAX_IMPORT_LOCATION_CHARS) }),
-  z.object({ kind: z.literal('text'), text: z.string().max(MAX_IMPORT_TEXT_CHARS) }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string().max(MAX_IMPORT_TEXT_CHARS),
+    location: z.string().max(MAX_IMPORT_LOCATION_CHARS).optional(),
+  }),
 ]);
 export type PostmanSourceWire = z.infer<typeof postmanSourceSchema>;
 
@@ -3867,7 +3875,8 @@ export type ApiImportHttpFileResponseInSync = AssertTrue<
 
 /**
  * Request payload for `api.importHttpEnv`: a `.http` environment file on its own, applied to the
- * workspace. A picked file brings its public or private partner beside it; text is the public file.
+ * workspace. A picked file brings its public or private partner beside it; text is the public file,
+ * unless it was dropped from a file named `http-client.private.env.json`.
  */
 export const apiImportHttpEnvRequestSchema = z.object({ source: postmanSourceSchema });
 export type ApiImportHttpEnvRequest = z.infer<typeof apiImportHttpEnvRequestSchema>;

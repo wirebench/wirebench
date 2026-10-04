@@ -460,3 +460,81 @@ describe('importHttpFile body files, review round 2', () => {
     }
   });
 });
+
+describe('mapHttpFile, final review', () => {
+  const run = ' '.repeat(100_000);
+
+  it('maps hostile lines in under 200 ms each', () => {
+    const inputs = [
+      `GET https://x/${'a'.repeat(100_000)}`,
+      `GET https://{{${run}x y`,
+      `@a = {{${run}x y\n\nGET https://x/a`,
+      `GET https://x/a\nX: {{$processEnv${run}x y`,
+      `GET https://x/a\nX: {{a.response.${run}x y`,
+      `@a = ${'b:'.repeat(50_000)}@\n\nGET https://x/a`,
+      `@a = http://${'b'.repeat(100_000)}\n\nGET https://x/a`,
+      `POST https://x/a\nContent-Type: application/json\n\n{"a"${run}x y`,
+      `POST https://x/a\n\n{"password":${run}x y`,
+      `# @timeout 1${run}x y\nGET https://x/a`,
+    ];
+    for (const input of inputs) {
+      const started = performance.now();
+      mapText(input);
+      expect(performance.now() - started, input.slice(0, 30)).toBeLessThan(200);
+    }
+  });
+
+  it('notes a line among the headers that is not a header', () => {
+    const m = mapText('GET https://x.example.com/a\nAccept: a\nnot a header');
+    expect(m.report.notes).toContain('GET /a: line 3 among the headers is not a header and was ignored.');
+  });
+
+  it('keeps a response handler written straight after the headers', () => {
+    const m = mapText('GET https://x.example.com/a\nAccept: a\n> {%\nclient.global.set("t", response.body.t);\n%}');
+    expect(m.scripts.map((script) => script.source)).toEqual(['client.global.set("t", response.body.t);']);
+    expect(m.scripts[0]?.path).toMatch(/handler\.js$/);
+  });
+
+  it('blanks a JSON-looking body with no Content-Type in place when it does not parse after the rewrite', () => {
+    const m = mapText('POST https://x.example.com/a\n\n{"password": "LEAK3", "n": {{n}}}');
+    expect(m.rest.requests[0]?.body).toEqual({ kind: 'raw', language: 'text', text: '{"password": "", "n": ${n}}' });
+    expect(m.report.warnings).toContain(
+      'POST /a: the recorded value of password was not imported; set it on the request.',
+    );
+    const list = mapText('POST https://x.example.com/a\n\n  [{"token": "LEAK4", "x": {{x}}}]');
+    expect(list.rest.requests[0]?.body).toMatchObject({ text: '  [{"token": "", "x": ${x}}]' });
+    const prose = mapText('POST https://x.example.com/a\n\nsee "password": "kept" here');
+    expect(prose.rest.requests[0]?.body).toMatchObject({ text: 'see "password": "kept" here' });
+    expect(JSON.stringify([m, list])).not.toMatch(/LEAK/);
+  });
+});
+
+describe('importHttpFile body files, final review', () => {
+  it('does not look for an absolute or escaping body file, and says it was not checked', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wb-http-'));
+    try {
+      const path = join(dir, 'a.http');
+      await writeFile(
+        path,
+        [
+          'POST https://x.example.com/a\n\n< /no/such/abs.bin',
+          'POST https://x.example.com/b\n\n< ../escape.bin',
+          'POST https://x.example.com/c\n\n< ./sub/../../escape2.bin',
+          'POST https://x.example.com/d\n\n< ./sub/../inside.bin',
+        ].join('\n\n###\n'),
+      );
+      const mapped = await importHttpFile({ kind: 'file', path });
+      expect(mapped.report.notes).toEqual(
+        expect.arrayContaining([
+          "The body file /no/such/abs.bin (line 1) is outside the .http file's folder and was not checked.",
+          "The body file ../escape.bin (line 6) is outside the .http file's folder and was not checked.",
+          "The body file ./sub/../../escape2.bin (line 11) is outside the .http file's folder and was not checked.",
+          `The body file ${join(dir, 'inside.bin')} (line 16) was not found.`,
+        ]),
+      );
+      expect(mapped.report.notes.filter((n) => n.includes('was not found'))).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -301,11 +301,80 @@ describe('detectImportFormat: .http files and environment files', () => {
     );
   });
 
-  it('needs a separator or a second request line to call text a .http file', () => {
-    expect(detectImportFormat({ text: '# a note\nGET https://example.com' }).kind).toBe('unknown');
+  it('calls text a .http file when its first request line has a written method', () => {
+    expect(detectImportFormat({ text: '# a note\nGET https://example.com' }).kind).toBe('http-file');
+    // A bare first URL needs a request with a written method after a `###`, as the parser reads it.
     expect(detectImportFormat({ text: '// c\nhttps://example.com/a\n\nGET https://example.com/b' }).kind).toBe(
+      'unknown',
+    );
+    expect(detectImportFormat({ text: '// c\nhttps://example.com/a\n\n###\nGET https://example.com/b' }).kind).toBe(
       'http-file',
     );
+  });
+
+  it('recognises the common shapes of a .http file', () => {
+    const shapes = [
+      '@host = https://example.com\n\n### One\nGET {{host}}/a\n\n### Two\nPOST {{host}}/b\nContent-Type: application/json\n\n{"x":1}',
+      '@host = https://example.com\n@token = abc\nGET {{host}}/x',
+      'GET {{host}}/x',
+      'WEBSOCKET wss://example.com/ws',
+      'WEBSOCKET ws://example.com/ws',
+      'TRACE https://example.com/a',
+      'CONNECT https://example.com:443',
+      '// a comment\n# another\n\nDELETE https://example.com/a/1 HTTP/1.1',
+      '### Named\nPATCH https://example.com/a',
+    ];
+    for (const text of shapes) {
+      expect(detectImportFormat({ text }), text).toEqual({
+        kind: 'http-file',
+        label: '.http file',
+        confidence: 'probable',
+      });
+    }
+  });
+
+  it('does not take YAML, Markdown or prose for a .http file', () => {
+    const others = [
+      'GET: https://example.com/a\nPOST: https://example.com/b',
+      '# API\n\nUse GET https://example.com/a to list.\n\n### Create\nPOST https://example.com/a',
+      '```http\nGET https://example.com/a\n```',
+      '- GET https://example.com/a\n- POST https://example.com/b',
+      'GET requests are cached.\n\n###\nGET https://example.com/a',
+      'get https://example.com/a',
+      'GET example.com/a',
+      '@host = https://example.com\nsome prose',
+    ];
+    for (const text of others) {
+      expect(detectImportFormat({ text }).kind, text).not.toBe('http-file');
+    }
+  });
+
+  it('detects a .http file in linear time on a hostile line', () => {
+    const run = ' '.repeat(100_000);
+    const started = performance.now();
+    detectImportFormat({ text: `GET${run}x y` });
+    detectImportFormat({ text: `@a${run}x y\nGET https://x` });
+    detectImportFormat({ text: `https://x\n###\nGET${run}x\u2028y` });
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
+  it('lets a file name that settles the format win over text that only probably shows another', () => {
+    expect(detectImportFormat({ text: '{"dev":{"host":"h"}}', filename: 'api.http' })).toEqual({
+      kind: 'http-file',
+      label: '.http file',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ text: 'message Foo {\n}', filename: 'calls.rest' }).kind).toBe('http-file');
+    expect(detectImportFormat({ text: '{"dev":{"host":"h"}}', filename: 'http-client.env.json' })).toEqual({
+      kind: 'http-env',
+      label: 'HTTP client environment file',
+      confidence: 'definite',
+    });
+    expect(
+      detectImportFormat({ text: 'GET https://example.com/a', filename: 'HTTP-CLIENT.PRIVATE.ENV.JSON' }).kind,
+    ).toBe('http-env');
+    // Content that settles a format still wins.
+    expect(detectImportFormat({ text: '{"openapi":"3.1.0"}', filename: 'api.http' }).kind).toBe('openapi');
   });
 
   it('does not take a bare list of URLs for a .http file', () => {

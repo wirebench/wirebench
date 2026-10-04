@@ -13,7 +13,6 @@ import type { ImportReport } from '../report.js';
 import { ReportBuilder } from '../report.js';
 import type { ImportedScriptFile } from '../scripts.js';
 import { importedScriptPath } from '../scripts.js';
-import { rewriteMustache } from '../templates.js';
 import type { ImportedVariableSet } from '../variables.js';
 import { VariableSetBuilder } from '../variables.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
@@ -25,6 +24,16 @@ import type { KeyValueEntry, RestApi, RestBody, RestRequestDef, RestRequestSetti
 import { NO_BODY, createApi, createRestRequest, entry } from '../../rest/model.js';
 import { splitQuery } from '../../rest/url.js';
 import type { HttpFileRequest, ParsedHttpFile } from '../../rest/http-file/parse.js';
+import type { HttpRewriteContext } from '../../rest/http-file/values.js';
+import {
+  REFERENCE,
+  USERINFO,
+  looksLikeBareAuthority,
+  newRewriteContext,
+  referencesOnly,
+  rewriteHttpValue,
+  stripUserinfo,
+} from '../../rest/http-file/values.js';
 
 export interface MappedHttpFile {
   readonly rest: RestApi;
@@ -47,34 +56,13 @@ export interface MapHttpFileOptions {
   readonly firstOrder?: number;
 }
 
-interface RewriteContext {
-  readonly dynamic: Set<string>;
-  readonly chained: Set<string>;
-}
-
-const PROCESS_ENV = /\{\{\s*\$processEnv\s+([A-Za-z_]\w*)\s*\}\}/g;
-const CHAINING = /\{\{\s*[\w-]+\.(?:response|request)\.[^{}]*\}\}/g;
-/**
- * One reference: a `${…}` property, or a `{{…}}` kept as written (request chaining, a dynamic
- * variable). Either names a value held elsewhere, so neither is a literal to keep out of the project.
- */
-const REFERENCE = String.raw`(?:\$\{[^{}]+\}|\{\{[^{}]*\}\})`;
-/** A value made of references and nothing else. */
-const REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:${REFERENCE}\s*)+$`);
 const AUTH_REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:Bearer|Basic)\s+(?:${REFERENCE}\s*)+$`, 'i');
 /**
- * A URL's `scheme://` and the user info up to the last `@` before the path, as a URL parser cuts
- * it; the user info may hold references, and an `@` of its own.
+ * A `{{name}}` written straight after `scheme://`: the variable holds the URL's authority. The
+ * scheme is only looked behind for: an unanchored `[a-z][\w+.-]*` would rescan a long word from
+ * each of its letters.
  */
-const USERINFO = new RegExp(String.raw`^([a-z][\w+.-]*://)((?:${REFERENCE}|[^/?#{}])*)@`, 'i');
-/** The same without a scheme, for a variable that holds a URL's authority (`u:pw@host`). */
-const BARE_USERINFO = new RegExp(String.raw`^()((?:${REFERENCE}|[^/?#{}\s])*)@`);
-/** A value that looks like `user:password@host`: user info with a password, and no scheme. */
-const BARE_AUTHORITY = /^[^/?#\s:@]*:[^/?#\s]*@[^/?#\s]/;
-/** A `{{name}}` written straight after `scheme://`: the variable holds the URL's authority. */
-const AUTHORITY_VARIABLE = /[a-z][\w+.-]*:\/\/\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/gi;
-/** User info made of references, with at most one `:` between them. */
-const USERINFO_REFERENCES = new RegExp(String.raw`^(?:${REFERENCE})+(?::(?:${REFERENCE})+)?$`);
+const AUTHORITY_VARIABLE = /(?<=[a-z\d+.-]):\/\/\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/gi;
 const ORIGIN = /^https?:\/\/[^/?#]+/i;
 const LEADING_REFERENCE = /^\$\{[^{}]+\}/;
 const ANY_ORIGIN = /^[a-z][\w+.-]*:\/\/[^/?#]*/i;
@@ -82,44 +70,11 @@ const TIMEOUT = /^(\d+)\s*(ms|s|m)?$/i;
 /** A `"key": value` pair whose value is a string, number or boolean, for blanking JSON in place. */
 const JSON_PAIR = /"((?:[^"\\\n]|\\.)*)"(\s*:\s*)("(?:[^"\\\n]|\\.)*"|-?\d[\w.+-]*|true|false)/g;
 
-/** Rewrites a .http value: $processEnv → ${#System#X}, request chaining kept as written (and reported), then {{x}} → ${x}. */
-function rewriteValue(text: string, ctx: RewriteContext): string {
-  const kept: string[] = [];
-  const shielded = text
-    .replace(PROCESS_ENV, (_m, name: string) => `\u0000S${name}\u0000`)
-    .replace(CHAINING, (m) => {
-      ctx.chained.add(m);
-      kept.push(m);
-      return `\u0000C${kept.length - 1}\u0000`;
-    });
-  return rewriteMustache(shielded, ctx.dynamic)
-    .replace(/\u0000S(\w+)\u0000/g, (_m, name: string) => `\${#System#${name}}`)
-    .replace(/\u0000C(\d+)\u0000/g, (_m, i: string) => kept[Number(i)] ?? '');
-}
-
-function referencesOnly(value: string): boolean {
-  return REFERENCES_ONLY.test(value);
-}
-
 /** `value` unless it is a literal credential under a credential-looking `name`; then `''`, with `name` added to `blanked`. */
 function blankIfLiteral(name: string, value: string, blanked: Set<string>): string {
   if (value === '' || !isCredentialName(name) || referencesOnly(value)) return value;
   blanked.add(name);
   return '';
-}
-
-/**
- * `url` without literal user info. User info made only of references stays; otherwise it is cut,
- * and its user name (the part before `:`) handed back so the caller can set Basic auth.
- */
-function stripUserinfo(url: string, bare = false): { url: string; stripped: boolean; username?: string } {
-  const match = (bare ? BARE_USERINFO : USERINFO).exec(url);
-  if (!match) return { url, stripped: false };
-  const [whole, scheme = '', userinfo = ''] = match;
-  if (USERINFO_REFERENCES.test(userinfo)) return { url, stripped: false };
-  const colon = userinfo.indexOf(':');
-  const username = colon === -1 ? userinfo : userinfo.slice(0, colon);
-  return { url: scheme + url.slice(whole.length), stripped: true, ...(username !== '' ? { username } : {}) };
 }
 
 /**
@@ -268,17 +223,15 @@ function blankJson(value: unknown, found: Set<string>): unknown {
 /**
  * A JSON body with its literal credential values blanked. Every `"key": value` pair is blanked in
  * place first, which keeps the formatting and catches a repeated key; when the text then parses,
- * a credential key holding an object or array is blanked too, and only that re-serialises. With
- * `parsedOnly`, text that does not parse is returned as it was.
+ * a credential key holding an object or array is blanked too, and only that re-serialises.
  */
-function blankJsonText(text: string, blanked: Set<string>, parsedOnly = false): string {
+function blankJsonText(text: string, blanked: Set<string>): string {
   let parseable = true;
   try {
     JSON.parse(text);
   } catch {
     parseable = false;
   }
-  if (!parseable && parsedOnly) return text;
   const inPlace = text.replace(JSON_PAIR, (match, key: string, sep: string, value: string) => {
     const bare = value.startsWith('"') ? value.slice(1, -1) : value;
     if (blankIfLiteral(key, bare, blanked) === bare) return match;
@@ -358,13 +311,20 @@ function blankMultipartText(text: string, contentType: string, blanked: Set<stri
   return out.join('\n');
 }
 
-/** Text with literal credentials blanked by its `Content-Type`; without one, JSON that parses is blanked. */
+/**
+ * Text with literal credentials blanked by its `Content-Type`. Without one, text that opens like
+ * JSON (`{` or `[`) is blanked as JSON, in place when it does not parse (a rewritten `${n}` breaks
+ * it), and text that does not is kept as written.
+ */
 function blankText(text: string, contentType: string | undefined, blanked: Set<string>): string {
   const mime = contentType?.toLowerCase() ?? '';
   if (mime.includes('json')) return blankJsonText(text, blanked);
   if (mime.includes('x-www-form-urlencoded')) return blankFormText(text, blanked);
   if (mime.startsWith('multipart/') && contentType !== undefined) return blankMultipartText(text, contentType, blanked);
-  if (contentType === undefined) return blankJsonText(text, blanked, true);
+  if (contentType === undefined) {
+    const first = text.trimStart().charAt(0);
+    return first === '{' || first === '[' ? blankJsonText(text, blanked) : text;
+  }
   return text;
 }
 
@@ -377,7 +337,7 @@ function mapBody(
   request: HttpFileRequest,
   contentType: string | undefined,
   options: MapHttpFileOptions,
-  ctx: RewriteContext,
+  ctx: HttpRewriteContext,
   label: string,
   report: ReportBuilder,
   blanked: Set<string>,
@@ -385,7 +345,7 @@ function mapBody(
   const body = request.body;
   if (body === undefined) return NO_BODY;
   if (body.kind === 'file') {
-    const rel = rewriteValue(body.path, ctx);
+    const rel = rewriteHttpValue(body.path, ctx);
     const absolute = /^(?:[A-Za-z]:)?[\\/]/.test(rel);
     if (options.fileDir === undefined && !absolute) {
       report.warn(
@@ -395,7 +355,7 @@ function mapBody(
     const path = options.fileDir === undefined ? rel : resolvePath(options.fileDir, rel);
     return { kind: 'binary', source: { kind: 'path', path }, contentType: contentType ?? 'application/octet-stream' };
   }
-  const text = rewriteValue(body.text, ctx);
+  const text = rewriteHttpValue(body.text, ctx);
   const mime = contentType?.toLowerCase() ?? '';
   if (mime.includes('json')) return { kind: 'raw', language: 'json', text: blankJsonText(text, blanked) };
   if (mime.includes('xml')) return { kind: 'raw', language: 'xml', text };
@@ -441,7 +401,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
   const newId = options.newId ?? generateId;
   const firstOrder = options.firstOrder ?? 0;
   const report = new ReportBuilder();
-  const ctx: RewriteContext = { dynamic: new Set(), chained: new Set() };
+  const ctx = newRewriteContext();
 
   const properties = new VariableSetBuilder('Project properties', report);
   const seen = new Set<string>();
@@ -451,7 +411,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
     for (const match of request.url.matchAll(AUTHORITY_VARIABLE)) authorities.add(match[1] ?? '');
   }
   for (const variable of parsed.variables) {
-    const raw = rewriteValue(variable.value, ctx);
+    const raw = rewriteHttpValue(variable.value, ctx);
     const first = !seen.has(variable.name);
     seen.add(variable.name);
     // No literal credential in a project file: one under a credential-looking name goes to the
@@ -462,7 +422,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
       continue;
     }
     const bare =
-      !USERINFO.test(raw) && ((authorities.has(variable.name) && raw.includes('@')) || BARE_AUTHORITY.test(raw));
+      looksLikeBareAuthority(raw) || (!USERINFO.test(raw) && authorities.has(variable.name) && raw.includes('@'));
     const { url: value, stripped } = stripUserinfo(raw, bare);
     if (stripped && first) {
       report.warn(`Project properties: the credential in the URL of "${variable.name}" was not imported.`);
@@ -479,7 +439,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
   const scriptDir = restSlug.toLowerCase();
   const urls = new Map<HttpFileRequest, ReturnType<typeof splitUrl> & { stripped: boolean; username?: string }>();
   for (const request of parsed.requests) {
-    const { url, ...userinfo } = stripUserinfo(rewriteValue(request.url, ctx));
+    const { url, ...userinfo } = stripUserinfo(rewriteHttpValue(request.url, ctx));
     urls.set(request, { ...splitUrl(url), ...userinfo });
   }
 
@@ -521,7 +481,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
     const label = name;
     const blanked = new Set<string>();
     const query = rawQuery.map((q) => entry(q.name, blankIfLiteral(q.name, q.value, blanked)));
-    const rewritten = request.headers.map((h) => ({ name: h.name, value: rewriteValue(h.value, ctx) }));
+    const rewritten = request.headers.map((h) => ({ name: h.name, value: rewriteHttpValue(h.value, ctx) }));
     const mapped = headersAndAuth(rewritten, label, report, blanked);
     const { headers } = mapped;
     let { auth } = mapped;
@@ -543,6 +503,9 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
       report.note(`${label}: the response handler was saved to ${path} and is never run.`);
     }
     if (request.redirects > 0) report.note(`${label}: ${request.redirects} output redirect line(s) were ignored.`);
+    for (const line of request.ignoredLines) {
+      report.note(`${label}: line ${line} among the headers is not a header and was ignored.`);
+    }
 
     if (request.method === 'WEBSOCKET') {
       for (const directive of request.directives) {
@@ -550,7 +513,7 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
       }
       let content: string | undefined;
       if (request.body?.kind === 'inline') {
-        content = blankText(rewriteValue(request.body.text, ctx), headerValue(headers, 'content-type'), blanked);
+        content = blankText(rewriteHttpValue(request.body.text, ctx), headerValue(headers, 'content-type'), blanked);
       }
       if (request.body?.kind === 'file')
         report.note(`${label}: the message file ${request.body.path} was not imported.`);

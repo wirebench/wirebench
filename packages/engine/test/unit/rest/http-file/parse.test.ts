@@ -90,4 +90,74 @@ describe('parseHttpFile', () => {
     const result = parseHttpFile('Content-Type: application/json\nGET https://x/a');
     expect(result.requests.map((r) => r.url)).toEqual(['https://x/a']);
   });
+
+  describe('hostile lines', () => {
+    const run = ' '.repeat(100_000);
+    // `\u2028` is whitespace to `\s` but not matched by `.`, the pair that made `\s*(.*)$` quadratic.
+    const tails = ['x y', 'x\u2028y'];
+    const shapes: [string, (tail: string) => string][] = [
+      ['a file variable', (tail) => `@a =${run}${tail}`],
+      ['a file variable with the run before =', (tail) => `@a${run}${tail}`],
+      ['a @name comment', (tail) => `# @name${run}${tail}`],
+      ['a directive comment', (tail) => `# @timeout${run}${tail}`],
+      ['a request line', (tail) => `GET${run}${tail}`],
+      ['a header', (tail) => `GET https://x\nAccept:${run}${tail}`],
+      ['a query continuation', (tail) => `GET https://x\n${run}${tail}`],
+      ['a handler opening', (tail) => `GET https://x\n\n> {%${run}${tail}`],
+      ['a one-line handler', (tail) => `GET https://x\n\n> {%${run}${tail} %}${run}${tail}`],
+      ['a handler file', (tail) => `GET https://x\n\n>${run}${tail}`],
+      ['a redirect', (tail) => `GET https://x\n\n>>${run}${tail}`],
+      ['a body file', (tail) => `GET https://x\n\n<${run}${tail}`],
+      ['a body file after the headers', (tail) => `GET https://x\nA: b\n<${run}${tail}`],
+    ];
+    for (const [shape, text] of shapes) {
+      for (const tail of tails) {
+        it(`parses ${shape} with a long space run before ${JSON.stringify(tail)} in under 200 ms`, () => {
+          const input = text(tail);
+          const started = performance.now();
+          parseHttpFile(input);
+          expect(performance.now() - started).toBeLessThan(200);
+        });
+      }
+    }
+  });
+
+  it('reads a response handler that follows the headers with no blank line', () => {
+    const [request] = parseHttpFile(
+      'GET https://x\nAccept: a\n> {%\nclient.global.set("t", response.body.t);\n%}',
+    ).requests;
+    expect(request?.headers).toEqual([{ name: 'Accept', value: 'a' }]);
+    expect(request?.handlers).toEqual([{ kind: 'inline', text: 'client.global.set("t", response.body.t);' }]);
+    expect(request?.ignoredLines).toEqual([]);
+  });
+
+  it('reads a body file that follows the headers with no blank line', () => {
+    const [request] = parseHttpFile('POST https://x\nContent-Type: application/json\n< ./body.json').requests;
+    expect(request?.body).toEqual({ kind: 'file', path: './body.json' });
+    expect(request?.headers).toEqual([{ name: 'Content-Type', value: 'application/json' }]);
+  });
+
+  it('reads a one-line handler, a handler file and a redirect that follow the headers', () => {
+    expect(parseHttpFile('GET https://x\nA: b\n> {% client.log(1); %}').requests[0]?.handlers).toEqual([
+      { kind: 'inline', text: 'client.log(1);' },
+    ]);
+    expect(parseHttpFile('GET https://x\nA: b\n> ./after.js').requests[0]?.handlers).toEqual([
+      { kind: 'file', text: './after.js' },
+    ]);
+    expect(parseHttpFile('GET https://x\nA: b\n>> out.json').requests[0]?.redirects).toBe(1);
+  });
+
+  it('records a line among the headers that is not a header, rather than dropping it silently', () => {
+    const [request] = parseHttpFile('GET https://x\nAccept: a\nnot a header\nB: c').requests;
+    expect(request?.headers.map((h) => h.name)).toEqual(['Accept', 'B']);
+    expect(request?.ignoredLines).toEqual([3]);
+  });
+
+  it('keeps a directive only when whitespace or the end of the line follows its name', () => {
+    expect(parseHttpFile('# @timeout 5\nGET https://x').requests[0]?.directives).toEqual([
+      { name: 'timeout', value: '5' },
+    ]);
+    expect(parseHttpFile('# @no-redirect\nGET https://x').requests[0]?.directives).toEqual([{ name: 'no-redirect' }]);
+    expect(parseHttpFile('# @foo!bar\nGET https://x').requests[0]?.directives).toEqual([]);
+  });
 });

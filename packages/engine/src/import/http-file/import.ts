@@ -3,7 +3,7 @@
  */
 
 import { readFile, stat } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { HttpFileError } from '../../errors.js';
 import type { IdGenerator } from '../../project/model.js';
 import type { ParsedHttpFile } from '../../rest/http-file/parse.js';
@@ -50,13 +50,31 @@ async function readSource(path: string): Promise<string> {
 /** Requests whose `< file` body is not used: the message file is not imported, the others are skipped. */
 const UNMAPPED_BODY_FILE: ReadonlySet<string> = new Set(['WEBSOCKET', 'GRAPHQL', 'GRPC']);
 
-/** A note for each `< file` body that is not beside the `.http` file; a path holding a template is not checked. */
+/**
+ * A note for each `< file` body that is not beside the `.http` file. Only a relative path that
+ * stays inside the file's folder, judged lexically, is looked for; an absolute or escaping path is
+ * noted as not checked and never touched, and a path holding a template is not checked.
+ */
 async function missingBodyFiles(parsed: ParsedHttpFile, fileDir: string): Promise<string[]> {
   const notes: string[] = [];
   for (const request of parsed.requests) {
     const body = request.body;
     if (body?.kind !== 'file' || body.path.includes('{{') || UNMAPPED_BODY_FILE.has(request.method)) continue;
     const path = resolve(fileDir, body.path);
+    const rel = relative(fileDir, path);
+    const inside =
+      !isAbsolute(body.path) &&
+      !/^(?:[A-Za-z]:)?[\\/]/.test(body.path) &&
+      rel !== '' &&
+      rel !== '..' &&
+      !rel.startsWith(`..${sep}`) &&
+      !isAbsolute(rel);
+    if (!inside) {
+      notes.push(
+        `The body file ${body.path} (line ${request.line}) is outside the .http file's folder and was not checked.`,
+      );
+      continue;
+    }
     try {
       await stat(path);
     } catch {

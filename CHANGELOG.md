@@ -35,6 +35,12 @@ All notable changes to this project are documented here. The format follows
 - **Project format 7.** Response examples are saved with the project, so the project format is now 7:
   an older Wirebench cannot open a project saved by this one.
 
+### Fixed
+
+- **Imported legacy-project scripts.** Importing a legacy SOAP project no longer overwrites a script
+  that already exists under `imported-scripts/`: a clash is saved as `-2`, `-3`, … and the import
+  report says so (#64).
+
 ## [3.1.0] - 2026-10-04
 
 The first release since 2.2.1, carrying both the 3.0 and 3.1 milestones; there is no 3.0.0. The major

@@ -1088,4 +1088,43 @@ describe('the .http channels', () => {
     expect(response.summary.environments.map((environment) => environment.name)).toEqual(['local']);
     expect(fake.environments).toEqual([{ name: 'local', properties: { host: 'http://localhost' }, disabled: [] }]);
   });
+
+  it('api.importHttpEnv reads text dropped from the private file as private, whatever its case', async () => {
+    const { fake } = setupPicked();
+
+    const res = await invoke('api.importHttpEnv', {
+      source: {
+        kind: 'text',
+        text: '{"dev": {"password": "pw", "host": "h"}}',
+        location: 'dropped:HTTP-Client.Private.Env.json',
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(JSON.stringify(res)).not.toContain('pw');
+    expect(fake.environments).toEqual([
+      { name: 'dev', properties: { password: '${secret:sec_1}', host: '${secret:sec_2}' }, disabled: [] },
+    ]);
+  });
+
+  it('api.importHttpEnv reads text dropped from any other file as the public file', async () => {
+    const { fake } = setupPicked();
+
+    await value('api.importHttpEnv', {
+      source: { kind: 'text', text: '{"dev": {"host": "h"}}', location: 'dropped:http-client.env.json' },
+    });
+
+    expect(fake.environments).toEqual([{ name: 'dev', properties: { host: 'h' }, disabled: [] }]);
+  });
+
+  it('api.importHttpFile names the API after a dropped file', async () => {
+    const { addApi } = setupPicked();
+
+    await value('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: 'GET https://example.com/a', location: 'dropped:orders.HTTP' },
+    });
+
+    expect(addApi.mock.calls[0]?.[1]).toMatchObject({ api: { name: 'orders' }, source: 'inline:http' });
+  });
 });

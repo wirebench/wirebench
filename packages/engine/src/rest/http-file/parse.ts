@@ -40,6 +40,8 @@ export interface HttpFileRequest {
   readonly handlers: readonly { readonly kind: 'inline' | 'file'; readonly text: string }[];
   readonly redirects: number;
   readonly directives: readonly { readonly name: string; readonly value?: string }[];
+  /** 1-based numbers of the lines among the headers that were not headers, and were ignored. */
+  readonly ignoredLines: readonly number[];
 }
 
 export interface ParsedHttpFile {
@@ -59,17 +61,30 @@ interface Draft {
   handlers: { kind: 'inline' | 'file'; text: string }[];
   redirects: number;
   directives: { name: string; value?: string }[];
+  ignoredLines: number[];
 }
 
 type State = 'between' | 'headers' | 'body' | 'handler';
 
-const VARIABLE = /^@([A-Za-z_][\w.-]*)\s*=\s*(.*)$/;
+/*
+ * No pattern here puts a whitespace run next to `(.*)$`: `\s` matches U+2028, `.` does not, and
+ * the pair backtracks quadratically on a long run of spaces before one. Each takes the name with a
+ * regex and the rest of the line with `slice()`, or matches `.` across everything (`s`).
+ */
+const VARIABLE = /^@([A-Za-z_][\w.-]*)\s*=/;
 const NAME_COMMENT = /^(?:#|\/\/)\s*@name\s+(\S+)/;
-const DIRECTIVE_COMMENT = /^(?:#|\/\/)\s*@([\w-]+)(?:\s+(.*))?$/;
+const DIRECTIVE_COMMENT = /^(?:#|\/\/)\s*@([\w-]+)/;
 const METHOD_PREFIX = /^([A-Z]+)\s+/;
 const BARE_URL_START = /^(?:https?:\/\/|wss?:\/\/|\{\{)/;
 const HTTP_VERSION = /^HTTP\/[\d.]+$/;
-const HEADER = /^([^:\s]+):\s*(.*)$/;
+const HEADER = /^([^:\s]+):/;
+/** A handler, redirect or body-file line, which may follow the headers without a blank line. */
+const BODY_MARKER = /^(?:>>|>\s|>\{%|<\s)/;
+const HANDLER_OPEN = /^>\s*\{%\s*$/;
+const HANDLER_ONE_LINE = /^>\s*\{%(.*)%\}\s*$/s;
+const HANDLER_FILE = /^>\s+(\S+)\s*$/;
+const REDIRECT = /^>>!?\s/;
+const BODY_FILE = /^<\s+(\S+)\s*$/;
 
 /**
  * Splits a request line into method, URL and optional version without regex backtracking, so a
@@ -120,6 +135,7 @@ function finish(draft: Draft): HttpFileRequest {
     handlers: draft.handlers,
     redirects: draft.redirects,
     directives: draft.directives,
+    ignoredLines: draft.ignoredLines,
   };
 }
 
@@ -158,7 +174,7 @@ export function parseHttpFile(text: string): ParsedHttpFile {
     if (state === 'between') {
       const variable = VARIABLE.exec(line);
       if (variable) {
-        variables.push({ name: variable[1] ?? '', value: (variable[2] ?? '').trim(), line: i + 1 });
+        variables.push({ name: variable[1] ?? '', value: line.slice(variable[0].length).trim(), line: i + 1 });
         continue;
       }
       const named = NAME_COMMENT.exec(line);
@@ -167,12 +183,10 @@ export function parseHttpFile(text: string): ParsedHttpFile {
         continue;
       }
       const directive = DIRECTIVE_COMMENT.exec(line);
-      if (directive) {
-        const value = directive[2]?.trim();
-        pendingDirectives.push({
-          name: directive[1] ?? '',
-          ...(value !== undefined && value !== '' ? { value } : {}),
-        });
+      const after = directive ? line.slice(directive[0].length) : '';
+      if (directive && (after === '' || /^\s/.test(after))) {
+        const value = after.trim();
+        pendingDirectives.push({ name: directive[1] ?? '', ...(value !== '' ? { value } : {}) });
         continue;
       }
       if (line.trim() === '' || line.startsWith('#') || line.startsWith('//')) continue;
@@ -193,6 +207,7 @@ export function parseHttpFile(text: string): ParsedHttpFile {
         handlers: [],
         redirects: 0,
         directives: pendingDirectives,
+        ignoredLines: [],
       };
       pendingName = undefined;
       pendingDirectives = [];
@@ -209,11 +224,19 @@ export function parseHttpFile(text: string): ParsedHttpFile {
       }
       const header = HEADER.exec(line);
       if (header) {
-        draft.headers.push({ name: header[1] ?? '', value: (header[2] ?? '').trim() });
+        draft.headers.push({ name: header[1] ?? '', value: line.slice(header[0].length).trim() });
         continue;
       }
-      if (line.trim() === '') state = 'body';
-      continue;
+      if (line.trim() === '') {
+        state = 'body';
+        continue;
+      }
+      if (!BODY_MARKER.test(line)) {
+        draft.ignoredLines.push(i + 1);
+        continue;
+      }
+      // A handler, redirect or `< file` straight after the headers: the body state reads it.
+      state = 'body';
     }
 
     if (state === 'handler') {
@@ -228,26 +251,26 @@ export function parseHttpFile(text: string): ParsedHttpFile {
     }
 
     // state === 'body'
-    if (/^>\s*\{%\s*$/.test(line)) {
+    if (HANDLER_OPEN.test(line)) {
       handlerLines = [];
       state = 'handler';
       continue;
     }
-    const oneLine = /^>\s*\{%(.*)%\}\s*$/.exec(line);
+    const oneLine = HANDLER_ONE_LINE.exec(line);
     if (oneLine) {
       draft.handlers.push({ kind: 'inline', text: (oneLine[1] ?? '').trim() });
       continue;
     }
-    const handlerFile = /^>\s+(\S+)\s*$/.exec(line);
+    const handlerFile = HANDLER_FILE.exec(line);
     if (handlerFile) {
       draft.handlers.push({ kind: 'file', text: handlerFile[1] ?? '' });
       continue;
     }
-    if (/^>>!?\s/.test(line)) {
+    if (REDIRECT.test(line)) {
       draft.redirects += 1;
       continue;
     }
-    const bodyFile = /^<\s+(\S+)\s*$/.exec(line);
+    const bodyFile = BODY_FILE.exec(line);
     if (bodyFile && draft.bodyFile === undefined && draft.bodyLines.every((l) => l.trim() === '')) {
       draft.bodyFile = bodyFile[1];
       continue;

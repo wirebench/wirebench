@@ -81,7 +81,10 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'import-detect.ts', to: 'rest/postman/parse.ts', until: 'phase 7' },
   { from: 'import-detect.ts', to: 'rest/har/parse.ts', until: 'phase 7' },
   { from: 'import-detect.ts', to: 'soap/legacy-project/format.ts', until: 'phase 7' },
-  { from: 'import/http-file/map.ts', to: 'rest/', until: 'phase 7' },
+  { from: 'import/http-file/map.ts', to: 'rest/model.ts', until: 'phase 7' },
+  { from: 'import/http-file/map.ts', to: 'rest/url.ts', until: 'phase 7' },
+  { from: 'import/http-file/map.ts', to: 'rest/http-file/parse.ts', typeOnly: true, until: 'phase 7' },
+  { from: 'import/http-file/map.ts', to: 'rest/http-file/values.ts', until: 'phase 7' },
   { from: 'import/http-file/map.ts', to: 'ws/model.ts', until: 'phase 7' },
   { from: 'import/http-file/import.ts', to: 'rest/http-file/parse.ts', until: 'phase 7' },
 ]);

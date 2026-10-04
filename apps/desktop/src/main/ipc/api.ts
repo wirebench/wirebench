@@ -286,6 +286,24 @@ function sharedNamesOf(text: string): string[] {
   return typeof shared === 'object' && shared !== null && !Array.isArray(shared) ? Object.keys(shared) : [];
 }
 
+/** How the import dialog marks text that came from a dropped file: `dropped:<file name>`. */
+const DROPPED_PREFIX = 'dropped:';
+
+/**
+ * The file name a dropped file's text came from, read from its `dropped:<name>` location, or
+ * `undefined` for pasted text. Only the last path segment is kept: a drop names no folder.
+ */
+function droppedFileName(source: PostmanSourceWire): string | undefined {
+  if (source.kind !== 'text' || source.location?.startsWith(DROPPED_PREFIX) !== true) return undefined;
+  const name = source.location.slice(DROPPED_PREFIX.length).split(/[\\/]/).at(-1)?.trim() ?? '';
+  return name === '' ? undefined : name;
+}
+
+/** True for the private `.http` environment file's name, in any case. */
+function isPrivateHttpEnvName(name: string): boolean {
+  return name.toLowerCase() === HTTP_PRIVATE_ENV_FILE;
+}
+
 /** Registers the `api.*` IPC channels. */
 export function registerApiChannels(deps: ApiChannelDeps): void {
   const { router } = deps;
@@ -765,7 +783,13 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
    */
   registerHandler(channels.api.importHttpFile, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
-    const mapped = await importHttpFile(checkedSource);
+    // A dropped file names its API after the file, as a picked one does; pasted text has no name.
+    const droppedName = droppedFileName(request.source)?.replace(/\.(?:http|rest)$/i, '');
+    const mapped = await importHttpFile(
+      checkedSource.kind === 'text' && droppedName !== undefined && droppedName !== ''
+        ? { ...checkedSource, name: droppedName }
+        : checkedSource,
+    );
     const [publicText, privateText] =
       request.includeEnvironments && checkedSource.kind === 'file'
         ? await readHttpEnvCompanions(checkedSource.path)
@@ -859,17 +883,21 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   /**
    * `.http` environment files on their own, applied to the open workspace: environments under a free
    * name (never activated), `$shared` into workspace properties, private values into the secret
-   * store. A picked file brings its partner from beside it; pasted text is read as the public file.
+   * store. A picked file brings its partner from beside it; pasted text is read as the public file,
+   * and dropped text as the file it was dropped from.
    */
   registerHandler(channels.api.importHttpEnv, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     let publicText: string | undefined;
     let privateText: string | undefined;
     if (checkedSource.kind === 'text') {
-      publicText = checkedSource.text;
+      // Dropped from the private file, the text is private: its values must become secrets.
+      const dropped = droppedFileName(request.source);
+      if (dropped !== undefined && isPrivateHttpEnvName(dropped)) privateText = checkedSource.text;
+      else publicText = checkedSource.text;
     } else {
       const picked = await readHttpEnvText(checkedSource.path);
-      if (basename(checkedSource.path) === HTTP_PRIVATE_ENV_FILE) {
+      if (isPrivateHttpEnvName(basename(checkedSource.path))) {
         privateText = picked;
         [publicText] = await readHttpEnvCompanions(checkedSource.path, [HTTP_ENV_FILE]);
       } else {

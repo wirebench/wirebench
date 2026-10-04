@@ -256,4 +256,39 @@ describe('Import dialog — HTTP client environment file', () => {
     );
     expect(await screen.findByTestId('import-variables-summary')).toBeTruthy();
   });
+
+  it('sends a dropped file with its name, so main can tell the private file apart', async () => {
+    installWirebenchApi({ api: { importHttpEnv } });
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="http-env" />);
+    const text = '{"dev":{"password":"pw"}}';
+    fireEvent.drop(screen.getByText(/^Drop an /), {
+      dataTransfer: { files: [new File([text], 'http-client.private.env.json')] },
+    });
+    expect(await screen.findByText('Loaded: http-client.private.env.json')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('import-submit'));
+    await waitFor(() =>
+      expect(importHttpEnv).toHaveBeenCalledWith({
+        source: { kind: 'text', text, location: 'dropped:http-client.private.env.json' },
+      }),
+    );
+  });
+});
+
+describe('Import dialog — dropped .http file', () => {
+  it('sends the dropped file name, so the API is named after the file', async () => {
+    installWirebenchApi({ api: { inspectHttpFile, importHttpFile } });
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="http-file" />);
+    const text = 'GET https://example.com/a';
+    fireEvent.drop(screen.getByText(/^Drop an /), { dataTransfer: { files: [new File([text], 'orders.http')] } });
+    expect(await screen.findByText('Loaded: orders.http')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('import-submit'));
+    await waitFor(() =>
+      expect(importHttpFile).toHaveBeenCalledWith({
+        target: { projectId: 'proj-1' },
+        source: { kind: 'text', text, location: 'dropped:orders.http' },
+        includeEnvironments: false,
+      }),
+    );
+    expect(inspectHttpFile).not.toHaveBeenCalled();
+  });
 });

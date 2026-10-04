@@ -17,22 +17,22 @@ Credentials do not come across. Response handlers are kept as text and never run
 summary lists each of these, so you know what to set up before the first send.
 
 To run the import, see [`.http` files](/wirebench/docs/guides/importers/#http-files) in the
-importers guide. It takes a picked file or pasted text.
+importers guide. It takes a picked or dropped file, or pasted text.
 
 ## What carries over
 
 | In the `.http` file | In Wirebench | More |
 | --- | --- | --- |
-| The file | A REST API named after the file, without its `.http` or `.rest` extension. Pasted text has no file name, so its API is named "Imported requests" | [REST](/wirebench/docs/guides/rest-client/) |
+| The file | A REST API named after the file, picked or dropped, without its `.http` or `.rest` extension. Pasted text has no file name, so its API is named "Imported requests" | [REST](/wirebench/docs/guides/rest-client/) |
 | A line starting with `###` | The end of one request and the start of the next. Text after `###` names the next request | |
 | `# @name x` or `// @name x` before a request | The request's name, which wins over the `###` text. A request with neither is named like `GET /pets` | |
 | Other `#` and `//` lines | Ignored | |
 | `@name = value`, before or between requests | A project property. When a name is defined twice, the first value is kept and the notes say so. A name the project already has keeps its value | [Environments and properties](/wirebench/docs/guides/environments/) |
 | A request line, `[METHOD] URL [HTTP/x.y]` | A request with that method and URL. The method defaults to `GET`. The query string becomes rows in the **Params** table | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
 | Indented lines starting with `?` or `&` straight below the request line | More of the URL's query | |
-| Header lines, up to the first blank line | Rows in the **Headers** table | |
-| A body after the blank line | A body chosen by its `Content-Type`: JSON and XML become a raw body in that language, `application/x-www-form-urlencoded` becomes a form body, anything else (or no `Content-Type`) a raw text body. A multipart body is kept as raw text with its `Content-Type`, and the notes say so | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
-| A body of `< ./path` | A binary body pointing at that file, resolved against the `.http` file's folder. The file is not copied. A file that is not there gets a note. Pasted text has no folder, so the path stays as written and a warning asks you to check it | |
+| Header lines, up to the first blank line | Rows in the **Headers** table. A response handler, output redirect or `< ./path` body may follow them without a blank line. Any other line among them is ignored, and the notes give its line number | |
+| A body after the blank line | A body chosen by its `Content-Type`: JSON and XML become a raw body in that language, `application/x-www-form-urlencoded` becomes a form body, anything else (or no `Content-Type`) a raw text body. Credential-looking values are emptied in a body with no `Content-Type` that starts with `{` or `[`, as in a JSON one. A multipart body is kept as raw text with its `Content-Type`, and the notes say so | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
+| A body of `< ./path` | A binary body pointing at that file, resolved against the `.http` file's folder. The file is not copied. A file that is not there gets a note. An absolute path, or one that leaves the `.http` file's folder, is not looked for, and a note says it was not checked. Pasted or dropped text has no folder, so the path stays as written and a warning asks you to check it | |
 | Every request starting with the same origin, or the same leading `{{var}}` | The API's **Base URL**. Request URLs become paths relative to it | [REST](/wirebench/docs/guides/rest-client/#create-an-api-and-a-request) |
 | `# @no-redirect` | The request's **Follow redirects** setting switched off | |
 | `# @timeout N` | The request's timeout. `N` may end in `ms`, `s` or `m`; a bare number below 1000 is seconds, and any other bare number is milliseconds | |
@@ -47,14 +47,15 @@ When you pick a `.http` file, Wirebench looks beside it for `http-client.env.jso
 `http-client.private.env.json`, and for nothing else. When either is there, the dialog offers
 **Also import N environments found beside the file**, ticked by default. You can also import an
 environment file on its own, as the **HTTP client environment file** format; a picked file then
-brings its public or private partner from beside it.
+brings its public or private partner from beside it. A dropped file is read by its name, so a
+dropped `http-client.private.env.json` is private; pasted JSON is read as the public file.
 
 | In the environment files | In Wirebench | More |
 | --- | --- | --- |
 | Each top-level key other than `$shared` | A workspace environment. A name the workspace already uses is imported as "dev 2", "dev 3" and so on. The imported environment is **never made active** | [Environments and properties](/wirebench/docs/guides/environments/) |
-| A string, number or boolean value | A variable of that environment | |
+| A string, number or boolean value | A variable of that environment, with `{{name}}` and `{{$processEnv NAME}}` rewritten as in the `.http` file. A user name and password in a URL are cut from it, with a warning | |
 | Any value in `http-client.private.env.json` | A secret in the [secret store](/wirebench/docs/guides/secrets/). When both files set the same name, the private value wins | [Secrets](/wirebench/docs/guides/secrets/) |
-| A literal value in `http-client.env.json` whose name looks like a credential | A secret too, so it never reaches a workspace file. The notes say which | [Secrets](/wirebench/docs/guides/secrets/) |
+| A value in `http-client.env.json` whose name looks like a credential | A secret too, so it never reaches a workspace file, unless the value is made only of `{{variables}}`. The notes say which | [Secrets](/wirebench/docs/guides/secrets/) |
 | `$shared` | Project properties of the target project, which an environment variable of the same name outranks. A name the `.http` file's own `@variables` set keeps the file's value. Imported on their own, the files put `$shared` into workspace properties instead | |
 
 ## What does not carry over
