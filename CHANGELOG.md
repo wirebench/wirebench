@@ -6,7 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-This release is 3.0.0. The major version is `@wirebench/engine`'s public exports: the names that
+## [3.1.0] - 2026-10-04
+
+The first release since 2.2.1, carrying both the 3.0 and 3.1 milestones; there is no 3.0.0. The major
+version is `@wirebench/engine`'s public exports: the names that
 dated from the SOAP-only engine are renamed, and what the new protocol registry replaces is removed,
 with no deprecated aliases. Existing projects and workspaces open unchanged, and the `wirebench`
 command line keeps its flags and report shape; the behaviour changes this release does make are listed
@@ -40,7 +43,7 @@ modules themselves do not change the project folder format.
   `resolveExchange` and `SendHost` are added, with the types around them (`ExchangeHandle`,
   `ExchangeOptions`, `SendFailure`). The desktop, the command line and MCP all send through them.
 
-[`packages/engine/README.md`](packages/engine/README.md#migrating-to-30) has the full tables and a
+[`packages/engine/README.md`](packages/engine/README.md#migrating-to-31) has the full tables and a
 before and after for the two changes that need more than a rename. The package's subpaths (`./xml`,
 `./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) are unchanged.
 
@@ -946,7 +949,8 @@ contract, send it with whatever the service demands, and read the answer.
 - English only.
 
 <!-- 1.0.0 was never published; its tag and draft release were withdrawn in favour of 1.1.0. The links resolve once `v1.1.0` is pushed (see docs/release.md). -->
-[Unreleased]: https://github.com/wirebench/wirebench/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/wirebench/wirebench/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/wirebench/wirebench/compare/v2.2.1...v3.1.0
 [2.2.1]: https://github.com/wirebench/wirebench/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/wirebench/wirebench/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/wirebench/wirebench/compare/v2.1.0...v2.1.1

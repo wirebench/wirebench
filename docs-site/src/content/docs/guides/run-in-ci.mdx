@@ -21,7 +21,7 @@ a report could show it.
 <TabItem label="GitHub Actions">
 
 ```yaml
-- uses: wirebench/wirebench/action@v3.0.0
+- uses: wirebench/wirebench/action@v3.1.0
   with:
     project: ./api-tests
     env: staging
@@ -48,7 +48,7 @@ containing shell metacharacters can't be reinterpreted as source.
 | `junit` / `json` / `html` | — | `--reporter junit=…` etc. |
 | `bail`, `require-assertions`, `insecure` | `false` | the flags |
 | `timeout`, `sla` | — | `--timeout`, `--sla` |
-| `version` | this action's own ref when it is a version tag (e.g. `v3.0.0` → `3.0.0`), else `latest` | `@wirebench/cli` version run via `npx` |
+| `version` | this action's own ref when it is a version tag (e.g. `v3.1.0` → `3.1.0`), else `latest` | `@wirebench/cli` version run via `npx` |
 | `node-version` | `24` | `actions/setup-node` |
 
 See the [action's own README](https://github.com/wirebench/wirebench/blob/main/action/README.md)
@@ -59,12 +59,12 @@ for the full reference.
 
 ```yaml
 include:
-  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v3.0.0/templates/gitlab/wirebench.gitlab-ci.yml
+  - remote: https://raw.githubusercontent.com/wirebench/wirebench/v3.1.0/templates/gitlab/wirebench.gitlab-ci.yml
 
 api-tests:
   extends: .wirebench-run
   variables:
-    WIREBENCH_VERSION: '3.0.0'
+    WIREBENCH_VERSION: '3.1.0'
     WIREBENCH_PROJECT: api-tests
     WIREBENCH_ENV: staging
 ```
@@ -89,7 +89,7 @@ the CLI unchanged.
 ```bash
 docker run --rm -v "$PWD:/work" \
   -e WIREBENCH_SECRET_BILLING_PASSWORD \
-  ghcr.io/wirebench/wirebench-cli:3.0.0 run ./project --env staging --reporter junit=reports/wirebench.xml
+  ghcr.io/wirebench/wirebench-cli:3.1.0 run ./project --env staging --reporter junit=reports/wirebench.xml
 ```
 
 The image is published for `linux/amd64` and `linux/arm64`. It runs as the non-root `node` user
@@ -102,7 +102,7 @@ follows the image reference directly — mount the project under `/work` and pas
 
 ```bash
 WIREBENCH_SECRET_BILLING_PASSWORD="$BILLING_PASSWORD" \
-  npx --yes @wirebench/cli@3.0.0 run ./project --env staging --baseline --reporter junit=reports/wirebench.xml
+  npx --yes @wirebench/cli@3.1.0 run ./project --env staging --baseline --reporter junit=reports/wirebench.xml
 ```
 
 Works on any runner that already has Node 24 — the same package the GitHub Action installs under
@@ -122,7 +122,7 @@ through a property counts too. `wirebench secrets list` names the variable for e
 selected requests use, with `secret "billing_key"` as its purpose and whether it's set:
 
 ```bash
-npx --yes @wirebench/cli@3.0.0 secrets list ./project --env staging
+npx --yes @wirebench/cli@3.1.0 secrets list ./project --env staging
 ```
 
 It takes `--var` like `run` does. Pass it the same ones: a token that only a `--var` property
