@@ -668,7 +668,8 @@ void app.whenReady().then(() => {
     // import sees the first one and is given a free name.
     variablesPorts: (projectId) => ({
       workspace: {
-        environmentNames: () => (workspaceService.snapshot()?.environments ?? []).map((environment) => environment.name),
+        environmentNames: () =>
+          (workspaceService.snapshot()?.environments ?? []).map((environment) => environment.name),
         addEnvironment: async (name, properties, disabled) => {
           const { createdEnvironmentId } = await workspaceService.mutate({ kind: 'add-workspace-environment', name });
           if (createdEnvironmentId === undefined) {

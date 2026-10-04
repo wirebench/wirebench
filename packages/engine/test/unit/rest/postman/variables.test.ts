@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PostmanError } from '../../../../src/errors.js';
 import * as engine from '../../../../src/index.js';
-import { importPostmanVariables, isPostmanVariables, parsePostmanVariablesText } from '../../../../src/rest/postman/variables.js';
+import {
+  importPostmanVariables,
+  isPostmanVariables,
+  parsePostmanVariablesText,
+} from '../../../../src/rest/postman/variables.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (name: string) =>
@@ -22,27 +26,40 @@ describe('parsePostmanVariablesText — environment', () => {
   });
 
   it('keeps plain values, rewrites {{x}} and honours enabled', () => {
-    expect(byName.get('baseUrl')).toEqual({ name: 'baseUrl', value: 'https://staging.example.com', enabled: true, secret: false });
+    expect(byName.get('baseUrl')).toEqual({
+      name: 'baseUrl',
+      value: 'https://staging.example.com',
+      enabled: true,
+      secret: false,
+    });
     expect(byName.get('legacy')).toEqual({ name: 'legacy', value: '${baseUrl}/v0', enabled: false, secret: false });
     expect(byName.get('retries')).toMatchObject({ value: '3', enabled: true });
   });
 
   it('carries a secret value only in secretValue', () => {
-    expect(byName.get('apiToken')).toEqual({ name: 'apiToken', value: '', enabled: true, secret: true, secretValue: 's3cr3t' });
+    expect(byName.get('apiToken')).toEqual({
+      name: 'apiToken',
+      value: '',
+      enabled: true,
+      secret: true,
+      secretValue: 's3cr3t',
+    });
     expect(byName.get('emptySecret')).toEqual({ name: 'emptySecret', value: '', enabled: true, secret: true });
   });
 
   it('reports what it skipped, kept as written, or noticed', () => {
     expect(byName.has('nested')).toBe(false);
-    expect(plan.report.warnings).toEqual(expect.arrayContaining([
-      'Staging: "nested" has a value that is not text, a number or true/false, so it was skipped.',
-      'Staging: a variable with no name was skipped.',
-      'Dynamic variables are kept as written and not expanded: $guid',
-      expect.stringContaining('sessionToken'),
-    ]));
-    expect(plan.report.notes).toEqual(expect.arrayContaining([
-      'Staging: "baseUrl" is defined more than once; the first value was kept.',
-    ]));
+    expect(plan.report.warnings).toEqual(
+      expect.arrayContaining([
+        'Staging: "nested" has a value that is not text, a number or true/false, so it was skipped.',
+        'Staging: a variable with no name was skipped.',
+        'Dynamic variables are kept as written and not expanded: $guid',
+        expect.stringContaining('sessionToken'),
+      ]),
+    );
+    expect(plan.report.notes).toEqual(
+      expect.arrayContaining(['Staging: "baseUrl" is defined more than once; the first value was kept.']),
+    );
   });
 });
 

@@ -63,7 +63,9 @@ export function parsePostmanVariablesText(text: string): ImportedVariables {
     }
     const type = raw['type'];
     if (type !== undefined && type !== 'default' && type !== 'secret' && type !== 'text') {
-      report.note(`${name}: "${key}" has the unknown type "${typeof type === 'string' ? type : typeof type}" and was imported as a plain variable.`);
+      report.note(
+        `${name}: "${key}" has the unknown type "${typeof type === 'string' ? type : typeof type}" and was imported as a plain variable.`,
+      );
     }
     const enabled = raw['enabled'] !== false;
     if (type === 'secret') {

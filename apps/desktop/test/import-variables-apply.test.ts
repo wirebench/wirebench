@@ -184,7 +184,9 @@ describe('applyImportedVariables', () => {
   it('treats an inherited Object member name as free when merging', async () => {
     const { ports, globals } = fakePorts();
     const result = await applyImportedVariables(
-      plan({ globals: { name: 'Globals', variables: [{ name: 'toString', value: 't', enabled: true, secret: false }] } }),
+      plan({
+        globals: { name: 'Globals', variables: [{ name: 'toString', value: 't', enabled: true, secret: false }] },
+      }),
       ports,
     );
     expect(result.globals).toEqual({ added: 1, skipped: [] });

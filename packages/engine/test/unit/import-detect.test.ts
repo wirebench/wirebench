@@ -113,7 +113,9 @@ paths: {}
   });
 
   it('detects Postman environment and globals exports from content, before collections', () => {
-    expect(detectImportFormat({ text: '{"name":"Staging","values":[],"_postman_variable_scope":"environment"}' })).toEqual({
+    expect(
+      detectImportFormat({ text: '{"name":"Staging","values":[],"_postman_variable_scope":"environment"}' }),
+    ).toEqual({
       kind: 'postman-environment',
       label: 'Postman environment',
       confidence: 'definite',

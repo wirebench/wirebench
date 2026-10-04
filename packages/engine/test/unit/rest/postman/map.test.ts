@@ -225,7 +225,16 @@ describe('Postman entity mapping (map.ts)', () => {
         { key: 'tenant', value: '{{org}}-eu' },
         { key: 'off', value: 'x', disabled: true },
       ],
-      item: [{ name: 'Users', variable: [{ key: 'tenant', value: 'other' }, { key: 'page', value: 1 }], item: [] }],
+      item: [
+        {
+          name: 'Users',
+          variable: [
+            { key: 'tenant', value: 'other' },
+            { key: 'page', value: 1 },
+          ],
+          item: [],
+        },
+      ],
     });
     expect(mapped.projectProperties.name).toBe('Project properties');
     expect(mapped.projectProperties.variables).toEqual([
@@ -288,7 +297,11 @@ describe('Postman entity mapping (map.ts)', () => {
       item: [],
     });
     expect(mapped.summary.warnings).toEqual(
-      expect.arrayContaining([expect.stringContaining('look like credentials but are not marked secret, so their values were imported as plain text: authToken.')]),
+      expect.arrayContaining([
+        expect.stringContaining(
+          'look like credentials but are not marked secret, so their values were imported as plain text: authToken.',
+        ),
+      ]),
     );
   });
 });
