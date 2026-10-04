@@ -266,3 +266,18 @@ describe('detectImportFormat: AsyncAPI', () => {
     expect(detectImportFormat({ text: 'x:\n  asyncapi: 2.6.0\n  : [' }).kind).not.toBe('asyncapi');
   });
 });
+
+describe('detectImportFormat HAR', () => {
+  it('detects HAR from content and from the .har extension', () => {
+    expect(detectImportFormat({ text: '{"log":{"version":"1.2","entries":[]}}' })).toEqual({
+      kind: 'har',
+      label: 'HAR 1.2',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ filename: 'session.har' })).toEqual({
+      kind: 'har',
+      label: 'HAR',
+      confidence: 'probable',
+    });
+  });
+});

@@ -78,6 +78,7 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'secrets/scan/walk.ts', to: 'ws/model.ts', typeOnly: true, until: 'phase 3' },
   { from: 'secrets/scan/apply.ts', to: 'rest/model.ts', typeOnly: true, until: 'phase 3' },
   { from: 'import-detect.ts', to: 'rest/postman/parse.ts', until: 'phase 7' },
+  { from: 'import-detect.ts', to: 'rest/har/parse.ts', until: 'phase 7' },
   { from: 'import-detect.ts', to: 'soap/legacy-project/format.ts', until: 'phase 7' },
 ]);
 

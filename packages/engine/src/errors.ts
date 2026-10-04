@@ -111,6 +111,14 @@ export class PostmanError extends WirebenchError {
   }
 }
 
+/** Thrown when a HAR capture cannot be read, or is not one. */
+export class HarError extends WirebenchError {
+  constructor(code: string, message: string, options?: WirebenchErrorOptions) {
+    super(code, message, options);
+    this.name = 'HarError';
+  }
+}
+
 /** Thrown when a legacy single-XML SOAP project file cannot be read, or is not one. */
 export class LegacyProjectError extends WirebenchError {
   constructor(code: string, message: string, options?: WirebenchErrorOptions) {

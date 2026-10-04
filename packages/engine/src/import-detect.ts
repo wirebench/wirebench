@@ -1,11 +1,12 @@
 /**
- * Format detection for API definition imports: WSDL, OpenAPI / Swagger, Postman Collections,
+ * Format detection for API definition imports: WSDL, OpenAPI / Swagger, Postman Collections, HAR captures,
  * AsyncAPI, Protocol Buffers (`.proto`) and legacy single-XML SOAP projects.
  *
  * Inspects document text, file names, or URLs to classify definition formats before or during import.
  */
 
 import { parse as parseYamlDocument } from 'yaml';
+import { isHar } from './rest/har/parse.js';
 import { isPostmanCollection, isPostmanVariables } from './rest/postman/parse.js';
 import { looksLikeLegacyProject } from './soap/legacy-project/format.js';
 
@@ -15,6 +16,7 @@ export type ImportFormatKind =
   | 'postman'
   | 'postman-environment'
   | 'postman-globals'
+  | 'har'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project'
@@ -123,6 +125,11 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     }
 
     if (didParse && isRecord(parsed)) {
+      if (isHar(parsed)) {
+        const version = String((parsed['log'] as Record<string, unknown>)['version']);
+        return { kind: 'har', label: `HAR ${version}`, confidence: 'definite' };
+      }
+
       const variables = isPostmanVariables(parsed);
       if (variables !== undefined) {
         const scopeKnown = typeof parsed['_postman_variable_scope'] === 'string';
@@ -211,6 +218,7 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     ) {
       return { kind: 'wsdl', label: 'WSDL / SOAP', confidence: 'probable' };
     }
+    if (target.endsWith('.har')) return { kind: 'har', label: 'HAR', confidence: 'probable' };
     if (target.endsWith('.postman_environment.json')) {
       return { kind: 'postman-environment', label: 'Postman environment', confidence: 'probable' };
     }
