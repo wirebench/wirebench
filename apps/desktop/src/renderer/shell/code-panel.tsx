@@ -10,6 +10,7 @@ import { Button } from '../components/button.js';
 import { showToast } from '../components/toast.js';
 import { ImportCurlDialog } from '../features/request-editor/import-curl-dialog.js';
 import { useEditorsStore } from '../state/editors.js';
+import { useCurrentValuesStore } from '../state/current-values.js';
 import { useGlobalsStore } from '../state/globals.js';
 import { ipc } from '../state/ipc-client.js';
 import { grpcDraftPatch, restDraftPatch, useProjectStore, wsDraftPatch } from '../state/project.js';
@@ -120,6 +121,7 @@ export function CodePanel() {
     draft === undefined ? undefined : state.interfaces[draft.interfaceId]?.endpoints,
   );
   const globalProperties = useGlobalsStore((state) => state.properties);
+  const currentValues = useCurrentValuesStore((state) => state.byScope);
   const [generated, setGenerated] = useState<Generated | undefined>(undefined);
   // The panel owns its own dialog instance (rather than reusing the request editor's) because it
   // must be able to follow an explorer-selected request whose editor tab is not mounted at all.
@@ -141,6 +143,7 @@ export function CodePanel() {
     environments,
     interfaceEndpoints,
     globalProperties,
+    currentValues,
   ]);
 
   // The same, for a REST request: its own fields plus the API's base URL, which the command resolves.
@@ -165,6 +168,7 @@ export function CodePanel() {
     restApiBaseUrl,
     activeEnvironmentId,
     environments,
+    currentValues,
   ]);
 
   // And for a gRPC request: its own fields plus the API's target, which the command names.
@@ -184,6 +188,7 @@ export function CodePanel() {
     grpcApiTarget,
     activeEnvironmentId,
     environments,
+    currentValues,
   ]);
 
   // And for a WebSocket request: its own fields plus the API's server URL, which the command dials.
@@ -199,6 +204,7 @@ export function CodePanel() {
     wsApiUrl,
     activeEnvironmentId,
     environments,
+    currentValues,
   ]);
 
   // Answers can land out of order (a slow first call, a fast second); only the newest may win.

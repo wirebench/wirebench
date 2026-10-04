@@ -77,6 +77,13 @@ links do not navigate, and nothing the page points at is fetched — inline styl
 HTML still opens in Pretty; switch to Preview when you want to see it rendered. Webhook captures
 preview the same way.
 
+Cookies a response sets go into the workspace's cookie jar, hop by hop through redirects. A request
+sends the jar's matching cookies only when its **Send cookies** setting (Settings tab) is on; it is
+off by default. A `Cookie` header you set by hand still goes out, and wins over a jar cookie of the
+same name. The response's **Cookies** tab says, for each `Set-Cookie`, whether it was stored,
+deleted from the jar, or ignored and why (a domain the host does not match, a `Secure` cookie over
+http, a cookie over 4 KB).
+
 A request with an unresolved `{path}` placeholder or a property expansion that doesn't resolve is
 refused before anything reaches the server, and the response pane says why.
 
@@ -106,8 +113,8 @@ so far, as one JSON document.
   within 32 MB of event data. History keeps the first 400 and the last 100, within 1 MB, and says
   how many rows it did not keep. The Events tab's count is always the true total, including
   anything let go.
-- Cookies a stream's `Set-Cookie` headers set are remembered once the stream ends, as for any other
-  response.
+- Cookies a stream's `Set-Cookie` headers set go into the jar as soon as the headers arrive, as for
+  any other response.
 - History and the HTTP Log keep the stream as a multi-message exchange; its HAR export and cURL command work as they do for any other response — *Copy as cURL* adds `-N`
   when the request's enabled `Accept` header asks for `text/event-stream`. Re-sending a streamed
   row from the HTTP Log is refused; see [HTTP Log](/wirebench/docs/guides/http-log/).
@@ -224,8 +231,25 @@ host (a redirect, or another environment) is re-sent from the request instead. C
 the response and the request — see
 [Re-send a REST request](/wirebench/docs/guides/history/#re-send-a-rest-request).
 
+## Cookies
+
+**View → Show Cookies**, **Cookies…** in the Environments view, or **Manage cookies** on a
+response's Cookies tab opens the workspace's cookie jar in a tab. Cookies are grouped by domain;
+values stay masked until you choose **Show values**. You can add a cookie, edit one, delete one or a
+whole domain, or **Clear all** after confirming.
+
+- Each workspace has its own jar. Opening another workspace switches jars.
+- Cookies with an expiry are kept across restarts, encrypted with the system keychain. Session
+  cookies (no `Expires` or `Max-Age`) last until you quit. When the system has no secure storage,
+  nothing is written and the tab says so.
+- The jar never reaches the project folder, a shared workspace's repository or a Wirebench server.
+- A domain may hold 50 cookies and the jar 3,000; past that, the cookie expiring soonest is dropped first, session cookies last.
+- `wirebench run` keeps a jar for the run only; see [Run in CI](/wirebench/docs/guides/run-in-ci/).
+
 ## Limits
 
+- The jar has no public-suffix list, so a server can set a cookie for a whole registry domain such
+  as `co.uk`. It is sent only from requests with **Send cookies** on.
 - The Query tab evaluates XPath 3.1 or JSONPath against JSON bodies; it does not query XML or
   binary responses.
 

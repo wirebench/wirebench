@@ -1,8 +1,8 @@
 /**
  * The desktop's `SendHost` (spec §3.1): what the engine borrows from the app for one send. Each
  * member is the app's own service — the project's secret getter, its proxy and trust preferences,
- * the request's or the global client keystore, the WS-Security keystores, the session's OAuth2 token cache, the per-request
- * cookies, the REST contract check, a callback's URL from History, a gRPC API's schema — and the
+ * the request's or the global client keystore, the WS-Security keystores, the session's OAuth2 token cache, the workspace
+ * cookie jar, the REST contract check, a callback's URL from History, a gRPC API's schema — and the
  * two HTTP Log rows the desktop writes while a send is under way: a failure row, and a WebSocket
  * handshake's row.
  *
@@ -14,6 +14,7 @@ import { failedRequestOf, findWebhookRequest, SIGNING_PSEUDO_REF_PREFIX } from '
 import type {
   AttemptedRequest,
   ClientIdentity,
+  CookieJarHost,
   GetSecret,
   OAuth2Auth,
   Preferences,
@@ -54,6 +55,8 @@ export interface DesktopSendDeps {
   readonly showSecrets?: { get(): boolean };
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
   readonly onExchange?: (entry: LogEntryWire) => void;
+  /** The open workspace's cookie jar (cookie jar spec §2), asked for once at the start of each send; absent in tests that never send cookies. */
+  readonly cookies?: () => CookieJarHost;
 }
 
 export interface DesktopSend {
@@ -77,6 +80,8 @@ export interface DesktopSend {
 export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend): Promise<SendHost> {
   const { project } = deps;
   const { projectId } = send;
+  // Bound before any await: a workspace switch while this send runs must not move it to another jar.
+  const cookies = deps.cookies?.();
   const bundle = projectId === undefined ? undefined : await project.trustAnchorsFor?.(projectId);
   const anchors = [...(bundle ?? []), ...extraTrustAnchors()];
   const preferences = deps.preferences?.();
@@ -103,12 +108,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       : {}),
     ...(tokens !== undefined ? { tokens } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
-    cookies: {
-      cookiesFor: (item) => project.restCookiesFor?.(item.request.id),
-      remember: (item, cookies) => {
-        project.rememberRestCookies?.(item.request.id, [...cookies]);
-      },
-    },
+    ...(cookies !== undefined ? { cookies } : {}),
     contractFor: restContractFor(deps),
     callbackUrlFor: (item) => Promise.resolve(callbackUrlOf(deps, send, item)),
     // The project's own schema for a gRPC API, which it loads once a session, discovered or imported.

@@ -15,6 +15,7 @@ import {
 import type { WorkspaceProjectRef } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 import { EngineService } from '../src/main/engine-service.js';
+import { CurrentValuesStore } from '../src/main/current-values.js';
 import { HistoryService } from '../src/main/history-service.js';
 import { ProjectHost } from '../src/main/project-host.js';
 import { WorkspaceService } from '../src/main/workspace-service.js';
@@ -406,6 +407,57 @@ describe('WorkspaceService manifest operations', () => {
     expect(service.snapshot()).toBeNull();
     // And it is no longer what `openLast` would reopen.
     expect(await newService().openLast()).toBeNull();
+  }, 60_000);
+
+  it('tells the hooks a workspace was deleted, so what main keeps for it goes too', async () => {
+    const deleted: string[] = [];
+    const service = newService({
+      trash: (path) => {
+        rmSync(path, { recursive: true, force: true });
+        return Promise.resolve();
+      },
+      hooks: {
+        onDeleted: (workspaceId) => {
+          deleted.push(workspaceId);
+        },
+      },
+    });
+    const created = await service.create('Doomed');
+    await service.delete(created.id);
+    expect(deleted).toEqual([created.id]);
+  }, 60_000);
+});
+
+describe('WorkspaceService current values', () => {
+  it('lets a project current value be set after a workspace opens, and hands it to a send', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Values');
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const seeded = new ProjectHost(new EngineService());
+    const project = await seeded.create({ dir: workspaceProjectDir(dir, 'pets'), name: 'Pets' });
+    await seeded.mutate({ kind: 'set-project-property', name: 'tenant', value: 'alpha' });
+    await seeded.save();
+    await seeded.close();
+    await registerProjects(dir, [{ id: project.id, slug: 'pets', source: 'internal' }]);
+
+    // Wired through the hooks as index.ts does: `close()` announces no workspace first, and the
+    // hosts' first project snapshots arrive before the workspace's own.
+    const currentValues = new CurrentValuesStore();
+    const service = newService({
+      currentValues,
+      hooks: {
+        onChanged: (workspace) => currentValues.syncWorkspace(workspace),
+        onDeleted: (workspaceId) => currentValues.forgetWorkspace(workspaceId),
+        onProjectChanged: (projectId, changed) => currentValues.syncProject(projectId, changed),
+      },
+    });
+    await service.open(created.id);
+
+    currentValues.set({ scope: 'project', projectId: project.id }, 'tenant', 'beta');
+    const context = service.hostFor(project.id).runContextFor('any');
+    expect(context?.current).toEqual({ project: { tenant: 'beta' } });
+    await service.close();
   }, 60_000);
 });
 

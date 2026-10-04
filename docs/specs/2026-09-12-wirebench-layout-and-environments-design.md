@@ -188,6 +188,8 @@ Conventions specific to this feature: UI copy says *Environments*, *Globals*, *W
 ## 12. Open questions (resolved 2026-09-12: the bold text in each line is the decision)
 
 1. Postman's *Initial value* / *Current value* split: **not now** — it needs a session-only value store in main and a further format decision; a later spec if wanted.
+   _Resolved by_ `docs/specs/2026-10-03-wirebench-cookie-jar-and-current-values-design.md` (#44): current values
+   are a session-only store in main, with no format change.
 2. Per-variable *enabled* checkbox: **now** (owner's decision, 2026-09-12) — stored as a `disabled` name list, formats bumped as in Assumption 1.
 3. The freed `Mod+Alt+B` goes to the code slide-over: **yes**.
 4. Selecting a project row: **opens the project tab immediately as a normal pinned tab** (owner's decision, 2026-09-12); *Settings…* on the context menu does the same.

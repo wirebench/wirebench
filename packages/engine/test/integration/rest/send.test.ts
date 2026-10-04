@@ -7,6 +7,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HttpError, WirebenchError } from '../../../src/errors.js';
+import { CookieJar, jarCookieHost } from '../../../src/rest/cookie-jar.js';
 import { entry } from '../../../src/rest/model.js';
 import { sendRest } from '../../../src/rest/send.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
@@ -322,5 +323,28 @@ describe('failures', () => {
 
     expect(error).toBeInstanceOf(HttpError);
     expect(['connection-refused', 'network']).toContain(error.code);
+  });
+});
+
+describe('the legacy cookie list beside a jar', () => {
+  const legacy = [{ name: 'legacy', value: '1' }];
+
+  it('is sent as given when there is no jar', async () => {
+    const sent = await sendRest(input({ request: { url: '/cookies/read' }, cookies: legacy }));
+    expect(JSON.parse(sent.text)).toEqual({ cookie: 'legacy=1' });
+  });
+
+  it('is ignored when a jar is present, whether or not the jar is read', async () => {
+    const jar = new CookieJar();
+    jar.store(`${server.url}/`, [{ name: 'jar', value: '2' }], Date.now());
+    for (const [send, cookie] of [
+      [true, 'jar=2'],
+      [false, null],
+    ] as const) {
+      const sent = await sendRest(
+        input({ request: { url: '/cookies/read' }, cookies: legacy, jar: { host: jarCookieHost(jar), send } }),
+      );
+      expect(JSON.parse(sent.text)).toEqual({ cookie });
+    }
   });
 });

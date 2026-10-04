@@ -14,6 +14,7 @@ import { Breadcrumb } from '../../components/breadcrumb.js';
 import { Tabs } from '../../components/tabs.js';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
+import { useCurrentValuesStore } from '../../state/current-values.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -104,6 +105,7 @@ export function WsEditor({ requestId }: WsEditorProps) {
   const disconnectWs = useExchangesStore((state) => state.disconnectWs);
   const preferences = usePreferencesStore((state) => state.preferences);
   const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const currentValues = useCurrentValuesStore((state) => state.byScope);
   const selectedMessageId = useWsSelectionStore((state) => state.selected[requestId]);
   const selectMessage = useWsSelectionStore((state) => state.select);
   const layout = useEditorLayout(requestId);
@@ -136,7 +138,7 @@ export function WsEditor({ requestId }: WsEditorProps) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [requestId, apiUrl, requestUrl, queryKey, activeEnvironment]);
+  }, [requestId, apiUrl, requestUrl, queryKey, activeEnvironment, currentValues]);
 
   const stage = useCallback(
     (patch: WsRequestPatchWire) => {

@@ -231,8 +231,10 @@ wirebench run ./shop -e staging --sequence checkout --reporter junit=reports/che
   (`sequence-origin-from-response`) or put a line break into a header or URL (`sequence-value-invalid`).
 - A transfer marked `secret: true`, or one whose value contains a secret the run already resolved, is masked in
   every report from the moment it is lifted, and no report carries its value at all.
-- There is no cookie jar: a login's cookie reaches a later step only through a `cookie` transfer, sent as
-  `Cookie: sid=${#Sequence#sid}`.
+- Each `wirebench run` keeps one cookie jar in memory, shared by every request, sequence step and iteration of
+  the run; `wirebench call` keeps one per call, and `wirebench mcp` one for the server's lifetime. A REST request
+  with `sendCookies: true` sends the cookies earlier responses in that run set. Nothing is written to disk. A
+  `cookie` transfer (`Cookie: sid=${#Sequence#sid}`) still works, and is how a cookie reaches a non-REST step.
 
 Each step is reported as a request of the run: grouped by its sequence (one JUnit test suite per sequence),
 named `<sequence>/<n>. <step>`.

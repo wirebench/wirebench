@@ -1,10 +1,12 @@
 import { join } from 'node:path';
 import {
   checkRunScripts,
+  CookieJar,
   createScriptChecker,
   createScriptSandbox,
   createSecretMasker,
   isWirebenchError,
+  jarCookieHost,
   loadProject,
   loadWorkspace,
   readGoldenFile,
@@ -234,6 +236,8 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
       env: io.env,
       // An OAuth2 token, and a sequence value that is (or holds) a secret: every mask built after this hides it.
       onSecretValue: (value) => tokens.add(value),
+      // One jar for the whole run: every request, sequence step and iteration shares it.
+      cookies: jarCookieHost(new CookieJar()),
     }),
     ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
     insecure: args.insecure,

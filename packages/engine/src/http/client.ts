@@ -6,6 +6,7 @@ import { invalidUrlError, toHttpError, tooManyRedirectsError } from './errors.js
 import { buildRawRequest, buildRawResponse } from './raw-capture.js';
 import { TimingTracker } from './timings.js';
 import type {
+  HttpCookieHook,
   HttpExchange,
   HttpRequest,
   HttpStreamSink,
@@ -237,6 +238,21 @@ function scopeCredentialsToOrigin(
   return { headers: scoped, url: changed ? url : toUrl };
 }
 
+/** `headers` with its `Cookie` header replaced by what `hook` sends to `url`, given the hand-set one. */
+function withJarCookies(headers: Record<string, string>, hook: HttpCookieHook, url: URL): Record<string, string> {
+  let handSet: string | undefined;
+  const rest: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === 'cookie') {
+      handSet = value;
+    } else {
+      rest[name] = value;
+    }
+  }
+  const cookie = hook.header(url.toString(), handSet);
+  return cookie === undefined ? rest : { ...rest, Cookie: cookie };
+}
+
 /** Joins undici's raw header shape (string | string[] per name) into our lower-cased map. */
 function joinHeaders(raw: Record<string, string | string[] | undefined>): {
   headers: Record<string, string>;
@@ -418,19 +434,26 @@ export async function sendHttp(
     let currentMethod: HttpRequest['method'] = req.method;
     let currentBody = req.body;
     let currentHeaders: Record<string, string> = { ...req.headers };
+    // What the last attempt sent: with a cookie hook, its `Cookie` header is the jar's.
+    let sentHeaders: Readonly<Record<string, string>> = req.headers;
     let result: PhysicalResult | undefined;
 
     for (let attempt = 0; attempt <= maxRedirects; attempt++) {
       // Tells the tracker which origin the TLS events it is about to see belong to.
       tracker.setOrigin(currentUrl.origin);
+      // The jar is matched afresh for every hop's URL (cookie jar spec §1.4). `currentHeaders` holds
+      // only the hand-set `Cookie`, which a cross-origin hop has already dropped.
+      const attemptHeaders =
+        req.cookies === undefined ? currentHeaders : withJarCookies(currentHeaders, req.cookies, currentUrl);
+      sentHeaders = attemptHeaders;
       const finalHeaders = buildFinalHeaders(
-        { ...req, headers: currentHeaders, method: currentMethod },
+        { ...req, headers: attemptHeaders, method: currentMethod },
         currentUrl,
         currentBody,
       );
       lastAttempt = failedRequestFor(currentUrl.toString(), currentMethod, finalHeaders, currentBody);
       const rawRequest = buildRawRequest(
-        { ...req, url: currentUrl.toString(), method: currentMethod, headers: currentHeaders },
+        { ...req, url: currentUrl.toString(), method: currentMethod, headers: attemptHeaders },
         finalHeaders,
         currentBody,
       );
@@ -444,7 +467,7 @@ export async function sendHttp(
         response = await tracker.captureRequestFor(() =>
           undiciRequest(currentUrl, {
             method: currentMethod,
-            headers: currentHeaders,
+            headers: attemptHeaders,
             ...(currentBody !== undefined ? { body: currentBody } : {}),
             dispatcher,
             signal: combinedSignal ?? null,
@@ -465,6 +488,8 @@ export async function sendHttp(
 
       tracker.markHeaders();
       const { headers, rawHeaders } = joinHeaders(response.headers);
+      // Every hop's Set-Cookie is stored against that hop's URL, before a redirect is followed.
+      req.cookies?.received(currentUrl.toString(), rawHeaders);
 
       const isRedirect =
         req.followRedirects && REDIRECT_STATUSES.has(response.statusCode) && headers['location'] !== undefined;
@@ -600,7 +625,11 @@ export async function sendHttp(
     );
     const timings = tracker.finish();
     return {
-      request: { url: result.finalUrl, method: result.finalMethod, headers: req.headers },
+      request: {
+        url: result.finalUrl,
+        method: result.finalMethod,
+        headers: req.cookies === undefined ? req.headers : sentHeaders,
+      },
       status: result.status,
       statusText: statusText(result.status),
       headers: result.headers,

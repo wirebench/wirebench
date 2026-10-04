@@ -49,6 +49,7 @@ export const AUDIT_ACTIONS = [
   'license.installed',
   'license.removed',
   'audit.exported',
+  'audit.verified',
   'workspace.desktop_recording_changed',
   'desktop.request_sent',
   'desktop.run_finished',

@@ -5,6 +5,7 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
+import { CookieJar, jarCookieHost } from '@wirebench/engine';
 import type { OpArgs, OpName } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
@@ -38,6 +39,8 @@ export function opsBaseFor(
     gates: options.gates,
     origin: options.origin,
     warn: (line) => io.stderr.write(`warning: ${line}\n`),
+    // One jar per process: a `call` sends once, an MCP server shares it across its tools.
+    cookies: jarCookieHost(new CookieJar()),
   };
 }
 

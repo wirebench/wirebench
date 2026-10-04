@@ -2,6 +2,7 @@
  * One core, two faces (spec §2): each capability is an {@link Op}, run through {@link runOp} by a
  * CLI verb and by an MCP tool alike, so the input check and the redaction are the same for both.
  */
+import type { CookieJarHost } from '@wirebench/engine';
 import type { z } from 'zod';
 import { secretValuesIn } from '../env-secrets.js';
 import { OpsError, toOpsError } from './errors.js';
@@ -29,6 +30,11 @@ export interface OpsBase {
   readonly origin: 'cli' | 'mcp';
   /** A warning for the person running the process: stderr, never stdout. */
   readonly warn: (line: string) => void;
+  /**
+   * The cookie jar this process's REST sends share (cookie jar spec §4): one per `wirebench call`,
+   * one per MCP server for its lifetime. In memory only. Absent: no jar.
+   */
+  readonly cookies?: CookieJarHost;
 }
 
 /** One call's context: the base, plus every secret value the call resolved, for the redaction step. */
