@@ -66,8 +66,36 @@ type State = 'between' | 'headers' | 'body' | 'handler';
 const VARIABLE = /^@([A-Za-z_][\w.-]*)\s*=\s*(.*)$/;
 const NAME_COMMENT = /^(?:#|\/\/)\s*@name\s+(\S+)/;
 const DIRECTIVE_COMMENT = /^(?:#|\/\/)\s*@([\w-]+)(?:\s+(.*))?$/;
-const REQUEST_LINE = /^(?:([A-Z]+)\s+)?(.+?)(?:\s+(HTTP\/[\d.]+))?\s*$/;
+const METHOD_PREFIX = /^([A-Z]+)\s+/;
+const BARE_URL_START = /^(?:https?:\/\/|wss?:\/\/|\{\{)/;
+const HTTP_VERSION = /^HTTP\/[\d.]+$/;
 const HEADER = /^([^:\s]+):\s*(.*)$/;
+
+/**
+ * Splits a request line into method, URL and optional version without regex backtracking, so a
+ * long whitespace run cannot stall the parser. A line with no known method must look like a URL.
+ */
+function parseRequestLine(raw: string): { method: string; url: string; httpVersion: string | undefined } | undefined {
+  const line = raw.trim();
+  const prefix = METHOD_PREFIX.exec(line);
+  let method = 'GET';
+  let rest = line;
+  if (prefix && HTTP_FILE_METHODS.has(prefix[1] ?? '')) {
+    method = prefix[1] ?? 'GET';
+    rest = line.slice(prefix[0].length).trim();
+  } else if (!BARE_URL_START.test(line)) {
+    return undefined;
+  }
+  if (rest === '') return undefined;
+  let cut = rest.length - 1;
+  while (cut >= 0 && !/\s/.test(rest.charAt(cut))) cut -= 1;
+  const token = rest.slice(cut + 1);
+  if (cut > 0 && HTTP_VERSION.test(token)) {
+    const url = rest.slice(0, cut).trim();
+    if (url !== '') return { method, url, httpVersion: token };
+  }
+  return { method, url: rest, httpVersion: undefined };
+}
 
 function finish(draft: Draft): HttpFileRequest {
   let start = 0;
@@ -148,18 +176,17 @@ export function parseHttpFile(text: string): ParsedHttpFile {
         continue;
       }
       if (line.trim() === '' || line.startsWith('#') || line.startsWith('//')) continue;
-      const match = REQUEST_LINE.exec(line.trim());
-      if (!match) continue;
+      const parsedLine = parseRequestLine(line);
+      if (!parsedLine) continue;
       if (requests.length >= MAX_REQUESTS) {
         throw new HttpFileError('http-file-too-many', 'The file holds more than 5,000 requests');
       }
-      const known = match[1] !== undefined && HTTP_FILE_METHODS.has(match[1]);
       draft = {
         name: pendingName,
         line: i + 1,
-        method: known ? (match[1] ?? 'GET') : 'GET',
-        url: known ? (match[2] ?? '') : line.trim(),
-        httpVersion: known ? match[3] : undefined,
+        method: parsedLine.method,
+        url: parsedLine.url,
+        httpVersion: parsedLine.httpVersion,
         headers: [],
         bodyLines: [],
         bodyFile: undefined,

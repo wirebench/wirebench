@@ -66,4 +66,28 @@ describe('parseHttpFile', () => {
       HttpFileError,
     );
   });
+
+  it('parses a line with a very long whitespace run in linear time', () => {
+    const started = performance.now();
+    const result = parseHttpFile(`GET a${' '.repeat(100_000)}b`);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]?.method).toBe('GET');
+  });
+
+  it('keeps a space inside the URL and still splits off the version', () => {
+    expect(parseHttpFile('GET https://x/a b HTTP/1.1').requests[0]).toMatchObject({
+      url: 'https://x/a b',
+      httpVersion: 'HTTP/1.1',
+    });
+  });
+
+  it('does not treat a lowercase word as a method', () => {
+    expect(parseHttpFile('get https://x/a').requests).toHaveLength(0);
+  });
+
+  it('skips junk lines that are neither a method line nor a URL', () => {
+    const result = parseHttpFile('Content-Type: application/json\nGET https://x/a');
+    expect(result.requests.map((r) => r.url)).toEqual(['https://x/a']);
+  });
 });
