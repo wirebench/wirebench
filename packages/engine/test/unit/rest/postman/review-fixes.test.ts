@@ -40,18 +40,15 @@ describe('Postman importer review fixes', () => {
     expect(api.requests[0]?.url).toBe('/users');
   });
 
-  it('3: warns about collection and item variables that are not imported', () => {
-    const { summary } = importDoc({
+  it('3: imports collection and folder variables as properties, not the base URL', () => {
+    const mapped = importDoc({
       variable: [
         { key: 'baseUrl', value: 'https://a' },
         { key: 'token', value: 't' },
       ],
       item: [{ name: 'F', variable: [{ key: 'folderVar', value: '1' }], item: [] }],
     });
-    const w = summary.warnings?.find((x) => x.includes('token'));
-    expect(w).toBeDefined();
-    expect(w).toContain('folderVar');
-    expect(w).not.toContain('baseUrl');
+    expect(mapped.projectProperties.variables.map((v) => v.name)).toEqual(['token', 'folderVar']);
   });
 
   it('4: embeds GraphQL variables as an object and adds a JSON content type', () => {
@@ -193,8 +190,20 @@ describe('Postman importer review fixes', () => {
     expect(summary.warnings?.some((w) => /re-enter/i.test(w))).toBe(true);
   });
 
-  it('7: translates variables inside variable values', () => {
-    const parsed = parsePostmanCollection({ info, item: [], variable: [{ key: 'url', value: '{{host}}/v1' }] });
-    expect(parsed.variable?.[0]?.value).toBe('${host}/v1');
+  it('7: translates variables inside variable values, once', () => {
+    const mapped = importDoc({ item: [], variable: [{ key: 'url', value: '{{host}}/v1' }] });
+    expect(mapped.projectProperties.variables[0]?.value).toBe('${host}/v1');
+  });
+
+  it('6: reports dynamic names from requests, variables and the base URL in one warning', () => {
+    const { summary } = importDoc({
+      variable: [
+        { key: 'baseUrl', value: 'https://a/{{$randomInt}}' },
+        { key: 'stamp', value: '{{$timestamp}}' },
+      ],
+      item: [{ name: 'R', request: { method: 'GET', url: '/x/{{$guid}}' } }],
+    });
+    const lines = (summary.warnings ?? []).filter((w) => w.startsWith('Dynamic variables'));
+    expect(lines).toEqual(['Dynamic variables are kept as written and not expanded: $guid, $randomInt, $timestamp']);
   });
 });

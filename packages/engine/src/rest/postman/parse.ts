@@ -6,6 +6,7 @@
  */
 
 import { PostmanError } from '../../errors.js';
+import { rewriteMustache } from '../../import/templates.js';
 import type {
   PostmanAuth,
   PostmanAuthAttribute,
@@ -57,17 +58,12 @@ function tv(ctx: ParseContext, text: string): string {
 /**
  * Translates Postman's `{{var}}` variable interpolation to Wirebench's `${var}` format.
  *
- * A literal `${` already in the text is escaped to `$${` first so it stays literal. Names of
- * dynamic variables (`{{$guid}}`) are added to `dynamic` when given; they are translated anyway.
+ * A literal `${` already in the text is escaped to `$${` first so it stays literal. Dynamic
+ * variables (`{{$guid}}`) have no equivalent: they are kept as written and their names are added to
+ * `dynamic` when given.
  */
 export function translatePostmanVariables(text: string, dynamic?: Set<string>): string {
-  return text
-    .replace(/\$\{/g, () => '$${')
-    .replace(/\{\{\s*([^{}]*?)\s*\}\}/g, (match, name: string) => {
-      if (name.length === 0) return match;
-      if (name.startsWith('$')) dynamic?.add(name);
-      return `\${${name}}`;
-    });
+  return rewriteMustache(text, dynamic);
 }
 
 /** Normalizes Postman's `:param` path segment syntax to Wirebench's `{param}` format. */
@@ -99,6 +95,19 @@ export function isPostmanCollection(root: unknown): boolean {
     return true;
   }
   return typeof info['name'] === 'string' && Array.isArray(root['item']);
+}
+
+/**
+ * Whether `root` is a Postman environment or globals export, and which. Kept here, beside
+ * {@link isPostmanCollection}, because format detection runs in the renderer and must not pull in
+ * the file-reading or project-building modules.
+ */
+export function isPostmanVariables(root: unknown): 'environment' | 'globals' | undefined {
+  if (!isRecord(root) || !Array.isArray(root['values'])) return undefined;
+  const scope = root['_postman_variable_scope'];
+  if (scope === 'globals') return 'globals';
+  if (scope === 'environment') return 'environment';
+  return scope === undefined && typeof root['name'] === 'string' ? 'environment' : undefined;
 }
 
 /**
@@ -149,18 +158,13 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
   const rawItems = Array.isArray(doc['item']) ? doc['item'] : [];
   const item = parseItems(rawItems, ctx, 1);
   const auth = isRecord(doc['auth']) ? parseAuth(doc['auth'], ctx) : undefined;
-  const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable'], ctx) : undefined;
+  const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable']) : undefined;
   const event = parseEvents(doc);
 
   const warnings: string[] = [];
   if (ctx.skippedItems > 0) {
     warnings.push(
       `${itemCount(ctx.skippedItems)} without a request ${ctx.skippedItems === 1 ? 'was' : 'were'} skipped`,
-    );
-  }
-  if (ctx.dynamic.size > 0) {
-    warnings.push(
-      `Dynamic variables are not generated and must be defined as properties: ${[...ctx.dynamic].sort().join(', ')}`,
     );
   }
 
@@ -171,6 +175,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
     ...(auth !== undefined ? { auth } : {}),
     ...(variable !== undefined ? { variable } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
+    ...(ctx.dynamic.size > 0 ? { dynamicVariables: [...ctx.dynamic] } : {}),
   };
 }
 
@@ -218,7 +223,7 @@ function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem 
   const name = tv(ctx, asString(raw['name']) ?? 'Request');
   const description = extractDescription(raw['description']);
   const auth = isRecord(raw['auth']) ? parseAuth(raw['auth'], ctx) : undefined;
-  const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable'], ctx) : undefined;
+  const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable']) : undefined;
   const event = parseEvents(raw);
 
   if (Array.isArray(raw['item'])) {
@@ -580,7 +585,7 @@ function asVariableValue(value: unknown): string | number | boolean | null | und
   return undefined;
 }
 
-function parseVariables(raw: readonly unknown[], ctx: ParseContext): readonly PostmanVariable[] {
+function parseVariables(raw: readonly unknown[]): readonly PostmanVariable[] {
   const vars: PostmanVariable[] = [];
   for (const v of raw) {
     if (!isRecord(v)) continue;
@@ -589,10 +594,11 @@ function parseVariables(raw: readonly unknown[], ctx: ParseContext): readonly Po
       const varType = asString(v['type']);
       const desc = extractDescription(v['description']);
       const rawVal = asVariableValue(v['value']);
-      const val = typeof rawVal === 'string' ? tv(ctx, rawVal) : rawVal;
+      // The value stays as written: the mapper translates it, so a `${` in it is escaped once.
       vars.push({
         key,
-        ...(val !== undefined ? { value: val } : {}),
+        ...(rawVal !== undefined ? { value: rawVal } : {}),
+        ...(asBoolean(v['disabled']) === true ? { disabled: true } : {}),
         ...(varType !== undefined ? { type: varType } : {}),
         ...(desc !== undefined ? { description: desc } : {}),
       });

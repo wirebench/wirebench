@@ -40,6 +40,8 @@ import {
   apiImportOpenApiResponseSchema,
   apiImportPostmanRequestSchema,
   apiImportPostmanResponseSchema,
+  apiImportPostmanVariablesRequestSchema,
+  apiImportPostmanVariablesResponseSchema,
   apiImportProtoRequestSchema,
   apiImportProtoResponseSchema,
   apiGrpcDefinitionResponseSchema,
@@ -686,6 +688,16 @@ export const channels = {
   api: {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
     importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
+    importPostmanEnvironment: defineChannel(
+      'api.importPostmanEnvironment',
+      apiImportPostmanVariablesRequestSchema,
+      apiImportPostmanVariablesResponseSchema,
+    ),
+    importPostmanGlobals: defineChannel(
+      'api.importPostmanGlobals',
+      apiImportPostmanVariablesRequestSchema,
+      apiImportPostmanVariablesResponseSchema,
+    ),
     importAsyncApi: defineChannel(
       'api.importAsyncApi',
       apiImportAsyncApiRequestSchema,

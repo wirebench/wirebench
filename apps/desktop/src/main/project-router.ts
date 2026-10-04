@@ -68,6 +68,11 @@ export interface ProjectRouter {
     projectId: string,
     ...args: Parameters<ProjectHost['importLegacyProject']>
   ): ReturnType<ProjectHost['importLegacyProject']>;
+  /** Adds the imported properties the addressed project does not have yet; existing names keep their value. */
+  importProperties(
+    projectId: string,
+    ...args: Parameters<ProjectHost['importProperties']>
+  ): ReturnType<ProjectHost['importProperties']>;
   /**
    * Places an imported OpenAPI-described API in the addressed project, caching its documents.
    * `api.importOpenApi` carries the same target union `project.addInterface` does.

@@ -15,6 +15,7 @@ smaller one.
 | WSDL (SOAP) | Import dialog | URL, file or pasted XML |
 | OpenAPI / Swagger | Import dialog | URL, file or pasted YAML/JSON |
 | Postman Collection | Import dialog | File or pasted JSON |
+| Postman environment or globals | Import dialog | File or pasted JSON |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -31,18 +32,21 @@ smaller one.
    **Server**, asks a running server to describe itself instead of reading a document.
 
 3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
-   Collection**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
+   Collection**, **Postman environment**, **Postman globals**, **WSDL (SOAP)**, **Protocol Buffers
+   (gRPC)**, or **Legacy SOAP project**. With
    auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
 
-4. Pick **Into project** — an open project, or **New project "…"**.
+4. Pick **Into project** — an open project, or **New project "…"**. Postman environments and
+   globals land in the workspace, so the dialog does not ask.
 
 5. Choose **Import**.
 
 </Steps>
 
 <Aside type="tip" title="Dedicated commands">
-**Import OpenAPI…** (<kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>) and **Import Postman Collection…**
-open the same dialog pinned to that format. **Import Legacy SOAP Project…**, from the command
+**Import OpenAPI…** (<kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>), **Import Postman Collection…**,
+**Import Postman Environment…** and **Import Postman Globals…** open the same dialog pinned to that
+format. **Import Legacy SOAP Project…**, from the command
 palette, pins it to the legacy format.
 </Aside>
 
@@ -127,13 +131,51 @@ Wirebench imports Postman Collection format v2.0 and v2.1 JSON — the app label
 </Steps>
 
 What arrives: the collection's requests and folders, with a default authentication scheme noted if
-the collection declares one. Below the counts, the summary lists what the collection could not bring
-across, such as scripts, variable values and credentials. **Copy report** copies that list as text.
+the collection declares one. Collection and folder variables become project properties; the summary
+counts them and names any the project already had, which keep their values. Below the counts, the
+summary lists what the collection could not bring across, such as scripts and credentials. **Copy report** copies that list as text.
 See [From Postman collections](/wirebench/docs/switching/postman/) for every mapping.
 
 <Aside type="note">
 Postman import by URL is not supported. Download the collection file, or paste its JSON, instead.
 </Aside>
+
+## Postman environments and globals
+
+An environment export (`*.postman_environment.json`) becomes a workspace
+[environment](/wirebench/docs/guides/environments/). A globals export (`*.postman_globals.json`)
+merges into the workspace's Globals. Auto-detect recognizes both, from the content or the file name.
+
+<Steps>
+
+1. Open **Import…** and pick **Postman environment** or **Postman globals**, or run **Import Postman
+   Environment…** or **Import Postman Globals…**.
+
+2. Provide the export on the **File** or **Paste** tab. There is no project to pick.
+
+3. Choose **Import**.
+
+</Steps>
+
+The summary names each environment created and how many variables it holds, how many globals were
+added, and how many secrets were stored. **Things to look at**, **Notes** and **Copy report** work
+as they do for a legacy project.
+
+- **Name clashes.** An environment whose name the workspace already uses (ignoring case) is imported
+  as "Staging 2", "Staging 3" and so on, and the notes say so. A global that already exists keeps its
+  value; the summary lists the names it left alone. Nothing that exists is overwritten.
+- **Never activated.** The imported environment is added, not switched to. The active environment
+  stays as it was.
+- **Secrets.** A `secret`-typed value is written to the [secret store](/wirebench/docs/guides/secrets/),
+  and the variable becomes a `${secret:…}` reference to it. An existing secret is never overwritten.
+  A secret the export carried no value for arrives as an empty property with nothing in the store, and
+  a warning asks you to set it in Environments.
+- **Disabled variables** come across switched off.
+- **`{{name}}` in a value** becomes `${name}`. Dynamic variables such as `{{$guid}}` are kept as
+  written, and one warning names them, since nothing generates their values.
+- **Not accepted.** The bulk data-dump JSON (its `collections` and `environments` lists), or any
+  JSON that is not one environment or globals export. Export the environments one by one instead.
+  A data-dump zip archive is not opened; it is reported as not valid JSON.
 
 ## cURL commands
 

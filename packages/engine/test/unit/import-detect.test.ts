@@ -112,6 +112,31 @@ paths: {}
     expect(detected.confidence).toBe('definite');
   });
 
+  it('detects Postman environment and globals exports from content, before collections', () => {
+    expect(
+      detectImportFormat({ text: '{"name":"Staging","values":[],"_postman_variable_scope":"environment"}' }),
+    ).toEqual({
+      kind: 'postman-environment',
+      label: 'Postman environment',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ text: '{"values":[],"_postman_variable_scope":"globals"}' })).toEqual({
+      kind: 'postman-globals',
+      label: 'Postman globals',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ text: '{"name":"e","values":[]}' })).toEqual({
+      kind: 'postman-environment',
+      label: 'Postman environment',
+      confidence: 'probable',
+    });
+  });
+
+  it('detects Postman environment and globals exports from file names', () => {
+    expect(detectImportFormat({ filename: 'Staging.postman_environment.json' }).kind).toBe('postman-environment');
+    expect(detectImportFormat({ filename: 'workspace.postman_globals.json' }).kind).toBe('postman-globals');
+  });
+
   it('detects Postman Collection from filename', () => {
     const detected = detectImportFormat({ filename: 'my_api.postman_collection.json' });
     expect(detected.kind).toBe('postman');

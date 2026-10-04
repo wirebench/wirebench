@@ -3683,6 +3683,8 @@ export const postmanImportSummarySchema = z.object({
   requests: z.number(),
   auth: z.string().optional(),
   warnings: z.array(z.string()).readonly().optional(),
+  /** How many collection variables became project properties. */
+  projectProperties: z.number().optional(),
 });
 export type PostmanImportSummaryWire = z.infer<typeof postmanImportSummarySchema>;
 
@@ -3695,14 +3697,45 @@ export const apiImportPostmanRequestSchema = z.object({
 });
 export type ApiImportPostmanRequest = z.infer<typeof apiImportPostmanRequestSchema>;
 
+/** How many names a merge added, and the ones it left alone because they already existed. */
+const mergeOutcomeSchema = z.object({ added: z.number(), skipped: z.array(z.string()).readonly() });
+
+/** What an import of variables did: environments created, properties merged, secrets stored. */
+export const importVariablesSummarySchema = z.object({
+  environments: z
+    .array(z.object({ name: z.string(), renamedFrom: z.string().optional(), variables: z.number() }))
+    .readonly(),
+  globals: mergeOutcomeSchema.optional(),
+  workspaceProperties: mergeOutcomeSchema.optional(),
+  projectProperties: mergeOutcomeSchema.optional(),
+  secretsStored: z.number(),
+  warnings: z.array(z.string()).readonly(),
+  notes: z.array(z.string()).readonly(),
+});
+export type ImportVariablesSummaryWire = z.infer<typeof importVariablesSummarySchema>;
+
 /** Response payload for `api.importPostman`. */
 export const apiImportPostmanResponseSchema = z.object({
   projectId: z.string(),
   project: projectWireSchema,
   apiId: z.string(),
   summary: postmanImportSummarySchema,
+  /** What became of the collection's variables; absent when it had none. */
+  variables: importVariablesSummarySchema.optional(),
 });
 export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
+
+/** Request payload for `api.importPostmanEnvironment` and `api.importPostmanGlobals`. */
+export const apiImportPostmanVariablesRequestSchema = z.object({ source: postmanSourceSchema });
+export type ApiImportPostmanVariablesRequest = z.infer<typeof apiImportPostmanVariablesRequestSchema>;
+
+/** Response payload for `api.importPostmanEnvironment` and `api.importPostmanGlobals`. */
+export const apiImportPostmanVariablesResponseSchema = z.object({
+  summary: importVariablesSummarySchema,
+  /** The import report as plain text, for the copy button; empty when there is nothing to say. */
+  reportText: z.string(),
+});
+export type ApiImportPostmanVariablesResponse = z.infer<typeof apiImportPostmanVariablesResponseSchema>;
 
 /**
  * Where a gRPC API's schema comes from. `folder` and `files` are paths the user picked in a native

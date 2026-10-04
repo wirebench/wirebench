@@ -23,6 +23,14 @@ const ADDED = [
   'takenContainerSlugs',
   'unsupportedOf',
   'grpcStatusNames',
+  'rewriteMustache',
+  'ReportBuilder',
+  'uniqueName',
+  'formatImportReport',
+  'VariableSetBuilder',
+  'credentialLookingNames',
+  'warnCredentialLookingNames',
+  'importedScriptPath',
 ] as const;
 
 /** 2.x name, 3.0 name. */

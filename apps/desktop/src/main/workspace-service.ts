@@ -2888,6 +2888,13 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostFor(projectId).addInterface(input);
   }
 
+  /** @inheritdoc */
+  importProperties(
+    ...[projectId, properties, disabled]: Parameters<ProjectRouter['importProperties']>
+  ): ReturnType<ProjectRouter['importProperties']> {
+    return this.hostFor(projectId).importProperties(properties, disabled);
+  }
+
   importLegacyProject(
     ...[projectId, input]: Parameters<ProjectRouter['importLegacyProject']>
   ): ReturnType<ProjectRouter['importLegacyProject']> {

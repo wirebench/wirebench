@@ -216,4 +216,92 @@ describe('Postman entity mapping (map.ts)', () => {
     expect(summary.warnings).toBeDefined();
     expect(summary.warnings?.some((w) => w.includes('digest'))).toBe(true);
   });
+
+  it('turns collection and folder variables into project properties, base URL excluded', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Pets' },
+      variable: [
+        { key: 'baseUrl', value: 'https://pets.example.com' },
+        { key: 'tenant', value: '{{org}}-eu' },
+        { key: 'off', value: 'x', disabled: true },
+      ],
+      item: [
+        {
+          name: 'Users',
+          variable: [
+            { key: 'tenant', value: 'other' },
+            { key: 'page', value: 1 },
+          ],
+          item: [],
+        },
+      ],
+    });
+    expect(mapped.projectProperties.name).toBe('Project properties');
+    expect(mapped.projectProperties.variables).toEqual([
+      { name: 'tenant', value: '${org}-eu', enabled: true, secret: false },
+      { name: 'off', value: 'x', enabled: false, secret: false },
+      { name: 'page', value: '1', enabled: true, secret: false },
+    ]);
+    expect(mapped.summary.projectProperties).toBe(3);
+    expect(mapped.summary.warnings ?? []).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('were not imported')]),
+    );
+    expect(mapped.summary.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('"tenant" is defined more than once (folder "Users")')]),
+    );
+  });
+
+  it('reports dynamic names and skips object values in variables', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Pets' },
+      variable: [
+        { key: 'id', value: '{{$guid}}' },
+        { key: 'blob', value: {} as unknown as string },
+      ],
+      item: [],
+    });
+    expect(mapped.projectProperties.variables.map((v) => v.name)).toEqual(['id']);
+    expect(mapped.summary.warnings).toEqual(
+      expect.arrayContaining([
+        'Dynamic variables are kept as written and not expanded: $guid',
+        'Variable "blob" has a value that is not text and was skipped.',
+      ]),
+    );
+  });
+
+  it('imports a secret-typed collection variable as a project secret, its value kept out of the text', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Pets' },
+      variable: [
+        { key: 'apiKey', value: 's3cr3t', type: 'secret' },
+        { key: 'emptySecret', value: '', type: 'secret' },
+      ],
+      item: [],
+    });
+    expect(mapped.projectProperties.variables).toEqual([
+      { name: 'apiKey', value: '', enabled: true, secret: true, secretValue: 's3cr3t' },
+      { name: 'emptySecret', value: '', enabled: true, secret: true },
+    ]);
+    expect(mapped.summary.warnings ?? []).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('look like credentials')]),
+    );
+  });
+
+  it('warns when a plain collection variable looks like a credential', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Pets' },
+      variable: [
+        { key: 'authToken', value: 'abc' },
+        { key: 'tenant', value: 'eu' },
+      ],
+      item: [],
+    });
+    expect(mapped.summary.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'look like credentials but are not marked secret, so their values were imported as plain text: authToken.',
+        ),
+      ]),
+    );
+  });
 });

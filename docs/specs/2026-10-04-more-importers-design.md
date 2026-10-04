@@ -274,16 +274,21 @@ with **probable** confidence.
 **Errors** (`PostmanError` codes):
 
 - `postman-not-variables`
-- `postman-invalid-json`
+- `postman-malformed`, for text that is not valid JSON (the code the collection importer already
+  uses)
 - `postman-too-large`, with the 50 MB limit the collection importer already uses
-- `postman-data-dump`, for a bulk data-dump archive, or for JSON with top-level `collections` and
-  `environments` arrays. Its message asks for the environments to be exported one by one.
+- `postman-data-dump`, for the bulk-export JSON: top-level `collections` and `environments` arrays.
+  Its message asks for the environments to be exported one by one. Only that JSON is recognised; a
+  data-dump zip archive is not opened and fails as "not valid JSON" (`postman-malformed`).
 
 **Collection variables.** `apiFromPostmanCollection` gains a `projectProperties` set:
 
 - every collection-level variable except the one used as the base URL
 - then every folder-level variable, depth-first
 - `disabled: true` adds the name to `disabledProperties`
+- `type: "secret"` makes the property a secret (§3.5): its value goes to the secret store, and a
+  secret with no value arrives empty. A plain variable whose name looks like a credential gets the
+  same warning as in an environment export
 
 This removes the warning "Collection and folder variables were not imported…".
 
@@ -697,7 +702,7 @@ Each PR is green on its own, updates its docs, and ticks its box on #64.
 ## 12. Out of scope
 
 - Postman's per-variable "current value" versus "initial value": the export carries one `value`.
-- Postman bulk data dumps. They are refused (§4.3).
+- Postman bulk data dumps. The bulk-export JSON is refused (§4.3); a zip archive is not opened.
 - Postman collection saved responses as examples. This is a follow-up issue that the §3.7 model
   makes cheap.
 - Creating or editing a response example by hand.

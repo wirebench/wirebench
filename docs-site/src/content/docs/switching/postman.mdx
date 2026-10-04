@@ -10,7 +10,8 @@ A Postman collection becomes **one REST API** in the project you choose:
 - requests become requests;
 - `{{variables}}` become Wirebench properties.
 
-Variable values and credentials do not come across. Pre-request and test scripts do, switched off
+Collection variables come across as project properties, and environment and globals exports have
+their own import. Credentials do not come across. Pre-request and test scripts do, switched off
 until someone has read them. The import summary lists each of these, so you know what to set up before
 the first send.
 
@@ -28,6 +29,8 @@ the importers guide. It takes Collection v2.0 and v2.1 JSON, from a file or past
 | Folders, nested, with their descriptions | Folders, nested the same way | |
 | Requests: method, URL and description | Requests. A request saved as a bare URL string is a GET | |
 | `{{name}}` anywhere in a name, URL, header, query, body or auth field | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| Collection and folder variables, other than the base URL | Project properties. A secret-typed variable becomes a secret in the secret store. A name the project already has keeps its value; the summary lists it | [Environments and properties](/wirebench/docs/guides/environments/) |
+| Environment and globals exports | **Import…** → Postman environment / Postman globals. An environment becomes a workspace environment (renamed when the name is taken, never made active); globals merge into Globals; secret-typed values go to the secret store | [Importers](/wirebench/docs/guides/importers/#postman-environments-and-globals) |
 | `:id` path segments and their values | `{id}` in the URL, with a row in the **Path parameters** table | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
 | Query parameters and headers, including disabled ones | Rows in the **Params** and **Headers** tables. Disabled rows stay off | |
 | A raw body (JSON, XML, text…) | A raw body in the same language | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
@@ -59,14 +62,12 @@ See [Authentication](/wirebench/docs/guides/auth/) for each scheme's fields.
 | In Postman | What happens | What to do |
 | --- | --- | --- |
 | Passwords, tokens, API key values, client secrets | Never copied. The summary counts the auth configurations that need one | Enter each on its **Auth** tab. Wirebench stores it encrypted outside the project |
-| Collection and folder variables, other than the base URL | Not imported. The summary names them; their values are lost | Define each as a project property or an environment variable, with the same name |
-| Dynamic variables such as `{{$guid}}` or `{{$timestamp}}` | Translated to `${$guid}`, but nothing generates a value. The summary names them | Define each as a property |
+| Dynamic variables such as `{{$guid}}` or `{{$timestamp}}` | Kept as written, and nothing generates a value. One warning in the summary names them all | Replace each with a property, or with a value a script sets |
 | Pre-request and test scripts | Imported as each request's [scripts](/wirebench/docs/guides/scripts/#postman-scripts): the collection's, the folders' and the request's own, in order, run through a `pm` layer. **Switched off** until switched on. The summary counts them and names the requests that call something the layer does not support | Read them, then **Switch on** (per request) or **Switch on scripts…** (for an API or folder). Rewrite a call the layer does not support, such as `pm.sendRequest`; a value one request passes to another can also be a [sequence](/wirebench/docs/guides/sequences/) transfer |
 | OAuth 2.0 password or implicit grants | Auth set to none. The summary names the grant | Pick a supported grant on the **Auth** tab, or set the token as Bearer |
 | Other auth types (Digest, AWS Signature, Hawk, OAuth 1.0, Akamai, JWT…) | Auth set to none. The summary names the type | Set the request's auth by hand, or send the header yourself |
 | Items that are neither a folder nor a request | Skipped. The summary counts them | Nothing: there was no request to import |
 | Saved responses and examples | Not imported, and not reported | Send the request to get a live response |
-| Environment and globals exports | Not accepted: the dialog asks for a collection | Recreate them as [environments](/wirebench/docs/guides/environments/) |
 | Collections by URL | Not supported | Download the file, or paste its JSON |
 
 <Aside type="caution" title="Credentials typed as headers">
@@ -84,7 +85,9 @@ to the **Auth** tab, where it is stored as a secret.
 2. Enter the passwords, tokens and keys it counts, on each **Auth** tab. See
    [Secrets](/wirebench/docs/guides/secrets/).
 
-3. Define the variables it names as properties or environment variables. See
+3. Import the collection's environments and globals with **Import…** → **Postman environment** or
+   **Postman globals**. Then only the names the summary still lists need defining, as properties or
+   environment variables. See
    [Environments and properties](/wirebench/docs/guides/environments/).
 
 4. Check the API's **Base URL**, then send one request to confirm the setup.

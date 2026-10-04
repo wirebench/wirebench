@@ -126,6 +126,63 @@ async function failure(channel: string, payload: unknown): Promise<{ code?: stri
   return result.error as { code?: string };
 }
 
+type VariablesPorts = ReturnType<ApiChannelDeps['variablesPorts']>;
+
+/**
+ * In-memory ports for the variable importers: what each save received, so a test can assert on it.
+ * `project` is present only when `withProject` is, as main gives one only for a collection import.
+ */
+function fakeVariablesPorts(withProject?: { readonly fail?: boolean }): {
+  readonly ports: VariablesPorts;
+  readonly environments: { name: string; properties: Record<string, string>; disabled: readonly string[] }[];
+  readonly projectMerges: { properties: Record<string, string>; disabled: readonly string[] }[];
+  readonly deletedSecrets: string[];
+} {
+  const environments: { name: string; properties: Record<string, string>; disabled: readonly string[] }[] = [];
+  const projectMerges: { properties: Record<string, string>; disabled: readonly string[] }[] = [];
+  const deletedSecrets: string[] = [];
+  let secrets = 0;
+  const ports: VariablesPorts = {
+    workspace: {
+      environmentNames: () => environments.map((environment) => environment.name),
+      addEnvironment: (name, properties, disabled) => {
+        environments.push({ name, properties, disabled });
+        return Promise.resolve();
+      },
+      removeEnvironment: (name) => {
+        const index = environments.findIndex((environment) => environment.name === name);
+        if (index !== -1) environments.splice(index, 1);
+        return Promise.resolve();
+      },
+      propertyNames: () => [],
+      mergeProperties: () => Promise.resolve(),
+    },
+    globals: { get: () => ({ properties: {}, disabled: [] }), merge: () => Promise.resolve() },
+    ...(withProject !== undefined
+      ? {
+          project: {
+            propertyNames: () => [],
+            merge: (properties: Record<string, string>, disabled: readonly string[]) => {
+              if (withProject.fail === true) {
+                return Promise.reject(new Error('disk full'));
+              }
+              projectMerges.push({ properties, disabled });
+              return Promise.resolve();
+            },
+          },
+        }
+      : {}),
+    secrets: {
+      set: () => Promise.resolve(`sec_${++secrets}`),
+      delete: (ref) => {
+        deletedSecrets.push(ref);
+        return Promise.resolve(true);
+      },
+    },
+  };
+  return { ports, environments, projectMerges, deletedSecrets };
+}
+
 /** Registers the channels over stubs, returning the stubs so a test can assert against them. */
 function setup(overrides: Partial<ApiChannelDeps> = {}): {
   readonly deps: ApiChannelDeps;
@@ -160,6 +217,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
     removeProject: vi.fn().mockResolvedValue(undefined),
     projectDirs: () => [],
     picks: new DialogPicks(),
+    variablesPorts: () => fakeVariablesPorts().ports,
     ...overrides,
   };
   registerApiChannels(deps);
@@ -545,5 +603,129 @@ describe('api.grpcFields', () => {
     });
 
     expect(response).toEqual({ fields: [] });
+  });
+});
+
+const ENVIRONMENT_EXPORT =
+  '{"name":"Staging","values":[{"key":"a","value":"1"}],"_postman_variable_scope":"environment"}';
+const GLOBALS_EXPORT = '{"name":"Globals","values":[{"key":"g","value":"2"}],"_postman_variable_scope":"globals"}';
+
+describe('api.importPostmanEnvironment and api.importPostmanGlobals', () => {
+  it('api.importPostmanEnvironment applies the plan and returns the summary and report text', async () => {
+    const fake = fakeVariablesPorts();
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    setup({ variablesPorts });
+
+    const res = await invoke('api.importPostmanEnvironment', { source: { kind: 'text', text: ENVIRONMENT_EXPORT } });
+
+    expect(fake.environments).toEqual([{ name: 'Staging', properties: { a: '1' }, disabled: [] }]);
+    expect(variablesPorts).toHaveBeenCalledWith(undefined);
+    expect(res).toMatchObject({
+      ok: true,
+      value: { summary: { environments: [{ name: 'Staging', variables: 1 }], secretsStored: 0 }, reportText: '' },
+    });
+  });
+
+  it('api.importPostmanGlobals refuses an environment export', async () => {
+    const fake = fakeVariablesPorts();
+    setup({ variablesPorts: () => fake.ports });
+
+    const res = await invoke('api.importPostmanGlobals', {
+      source: { kind: 'text', text: '{"name":"S","values":[],"_postman_variable_scope":"environment"}' },
+    });
+
+    expect(res).toMatchObject({ ok: false, error: { code: 'postman-not-globals' } });
+    expect(fake.environments).toEqual([]);
+  });
+
+  it('api.importPostmanEnvironment refuses a globals export', async () => {
+    setup();
+
+    expect(
+      await failure('api.importPostmanEnvironment', { source: { kind: 'text', text: GLOBALS_EXPORT } }),
+    ).toMatchObject({ code: 'postman-not-environment' });
+  });
+
+  it('api.importPostmanGlobals merges a globals export into Globals', async () => {
+    const merged: Record<string, string>[] = [];
+    const fake = fakeVariablesPorts();
+    setup({
+      variablesPorts: () => ({
+        ...fake.ports,
+        globals: {
+          get: () => ({ properties: {}, disabled: [] }),
+          merge: (properties) => {
+            merged.push(properties);
+            return Promise.resolve();
+          },
+        },
+      }),
+    });
+
+    const response = await value<{ summary: { globals?: { added: number } } }>('api.importPostmanGlobals', {
+      source: { kind: 'text', text: GLOBALS_EXPORT },
+    });
+
+    expect(merged).toEqual([{ g: '2' }]);
+    expect(response.summary.globals).toEqual({ added: 1, skipped: [] });
+  });
+
+  it('refuses a file the user neither picked nor keeps in a project, before reading it', async () => {
+    const fake = fakeVariablesPorts();
+    setup({ variablesPorts: () => fake.ports });
+
+    expect(
+      await failure('api.importPostmanEnvironment', { source: { kind: 'file', path: '/etc/staging.json' } }),
+    ).toMatchObject({ code: 'import-path-refused' });
+    expect(fake.environments).toEqual([]);
+  });
+});
+
+const COLLECTION_WITH_VARIABLES = JSON.stringify({
+  info: { name: 'Pets', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+  item: [],
+  variable: [{ key: 'tenant', value: 'acme' }],
+});
+
+describe("api.importPostman and the collection's variables", () => {
+  it("adds the collection's variables to the target project as project properties", async () => {
+    const fake = fakeVariablesPorts({});
+    const variablesPorts = vi.fn().mockReturnValue(fake.ports);
+    setup({ variablesPorts });
+
+    const response = await value<{
+      summary: { projectProperties?: number };
+      variables?: { projectProperties?: { added: number } };
+    }>('api.importPostman', { target: { projectId: 'p1' }, source: { kind: 'text', text: COLLECTION_WITH_VARIABLES } });
+
+    expect(variablesPorts).toHaveBeenCalledWith('p1');
+    expect(fake.projectMerges).toEqual([{ properties: { tenant: 'acme' }, disabled: [] }]);
+    expect(response.summary.projectProperties).toBe(1);
+    expect(response.variables?.projectProperties).toEqual({ added: 1, skipped: [] });
+  });
+
+  it('answers without a variables summary when the collection has no variables', async () => {
+    const variablesPorts = vi.fn();
+    setup({ variablesPorts });
+
+    const response = await value<{ variables?: unknown }>('api.importPostman', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: JSON.stringify({ ...JSON.parse(COLLECTION_WITH_VARIABLES), variable: [] }) },
+    });
+
+    expect(variablesPorts).not.toHaveBeenCalled();
+    expect(response.variables).toBeUndefined();
+  });
+
+  it('takes back a project it created when saving the properties fails', async () => {
+    const fake = fakeVariablesPorts({ fail: true });
+    const { deps } = setup({ variablesPorts: () => fake.ports });
+
+    await failure('api.importPostman', {
+      target: { newProjectName: 'Pets' },
+      source: { kind: 'text', text: COLLECTION_WITH_VARIABLES },
+    });
+
+    expect(deps.removeProject).toHaveBeenCalledWith('p-new', { deleteFiles: true });
   });
 });

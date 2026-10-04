@@ -9,7 +9,13 @@
 
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { importPostmanCollection, webhookItemsOf, WirebenchError } from '@wirebench/engine';
+import {
+  formatImportReport,
+  importPostmanCollection,
+  importPostmanVariables,
+  webhookItemsOf,
+  WirebenchError,
+} from '@wirebench/engine';
 import type {
   AsyncApiOpRef,
   AsyncApiUpdatePlan,
@@ -24,6 +30,7 @@ import type {
   AsyncApiUpdatePlanWire,
   DefinitionAuthWire,
   OpenApiSourceWire,
+  PostmanSourceWire,
   RestUpdatePlanWire,
   RestUpdateSourceWire,
   WebhookItemWire,
@@ -38,6 +45,8 @@ import { resolve } from 'node:path';
 import type { ProtoSourceWire } from '../../shared/wire-types.js';
 import { toAuthConfigWire } from '../project-wire.js';
 import type { ProjectRouter } from '../project-router.js';
+import { applyImportedVariables } from '../import-variables-apply.js';
+import type { VariablesApplyPorts } from '../import-variables-apply.js';
 import { emitEvent } from './events.js';
 import { registerHandler } from './register.js';
 
@@ -80,6 +89,11 @@ export interface ApiChannelDeps {
   readonly projectDirs: () => readonly string[];
   /** The session's dialog memory: proof a `file` source was picked by the user, not named. */
   readonly picks: ReadPicks;
+  /**
+   * Where imported variables are saved: the open workspace, Globals and the secret store, plus the
+   * project with `projectId` when one is given (a collection's variables become its properties).
+   */
+  readonly variablesPorts: (projectId: string | undefined) => VariablesApplyPorts;
 }
 
 /** The engine's source shape. A `file` path becomes a `file:` URL here, where the platform is known. */
@@ -206,6 +220,20 @@ async function checkedProtoSource(
 /** Registers the `api.*` IPC channels. */
 export function registerApiChannels(deps: ApiChannelDeps): void {
   const { router } = deps;
+
+  /** A Postman source with its `file` path checked for containment or a dialog pick before it is read. */
+  const checkedPostmanSource = async (
+    source: PostmanSourceWire,
+  ): Promise<{ readonly kind: 'file'; readonly path: string } | { readonly kind: 'text'; readonly text: string }> => {
+    if (source.kind === 'text') {
+      return { kind: 'text', text: source.text };
+    }
+    const checked = await checkedImportSource(deps.projectDirs(), deps.picks, { kind: 'file', path: source.path });
+    if (checked.kind !== 'file') {
+      throw new WirebenchError('invalid-argument', 'Expected a file source');
+    }
+    return { kind: 'file', path: checked.path };
+  };
 
   registerHandler(channels.api.importOpenApi, async (request, sender) => {
     // A `file` source is a read at a renderer-named path, answered before any project is created,
@@ -510,21 +538,7 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   });
 
   registerHandler(channels.api.importPostman, async (request) => {
-    let checkedSource:
-      { readonly kind: 'file'; readonly path: string } | { readonly kind: 'text'; readonly text: string };
-    if (request.source.kind === 'file') {
-      const checked = await checkedImportSource(deps.projectDirs(), deps.picks, {
-        kind: 'file',
-        path: request.source.path,
-      });
-      if (checked.kind !== 'file') {
-        throw new WirebenchError('invalid-argument', 'Expected a file source');
-      }
-      checkedSource = { kind: 'file', path: checked.path };
-    } else {
-      checkedSource = { kind: 'text', text: request.source.text };
-    }
-
+    const checkedSource = await checkedPostmanSource(request.source);
     const imported = await importPostmanCollection(checkedSource, {
       ...(request.name !== undefined ? { name: request.name } : {}),
       ...(request.baseUrl !== undefined ? { baseUrl: request.baseUrl } : {}),
@@ -538,20 +552,59 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
       cache: false,
     };
 
+    // The collection's own variables become properties of the project the API landed in; a name
+    // the project already has keeps its value.
+    const placeIn = async (projectId: string) => {
+      const added = await router.addApi(projectId, place);
+      const variables =
+        imported.projectProperties.variables.length > 0
+          ? await applyImportedVariables(
+              { environments: [], projectProperties: imported.projectProperties, report: { warnings: [], notes: [] } },
+              deps.variablesPorts(projectId),
+            )
+          : undefined;
+      return { ...added, projectId, summary: imported.summary, ...(variables !== undefined ? { variables } : {}) };
+    };
+
     if ('projectId' in request.target) {
-      const added = await router.addApi(request.target.projectId, place);
-      return { ...added, projectId: request.target.projectId, summary: imported.summary };
+      return await placeIn(request.target.projectId);
     }
 
     const { projectId } = await deps.addProject(request.target.newProjectName);
     try {
-      const added = await router.addApi(projectId, place);
-      return { ...added, projectId, summary: imported.summary };
+      return await placeIn(projectId);
     } catch (error) {
       await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
       throw error;
     }
   });
+
+  /**
+   * A Postman environment or globals export, applied to the open workspace: an environment under a
+   * free name (never activated), globals merged into Globals, secret values into the secret store.
+   * Each channel refuses the other's export rather than guessing what the user meant.
+   */
+  const importPostmanVariablesFrom = async (source: PostmanSourceWire, want: 'environment' | 'globals') => {
+    const plan = await importPostmanVariables(await checkedPostmanSource(source));
+    const isGlobals = plan.globals !== undefined;
+    if (want === 'globals' && !isGlobals) {
+      throw new WirebenchError(
+        'postman-not-globals',
+        'This is an environment export; import it as a Postman environment',
+      );
+    }
+    if (want === 'environment' && isGlobals) {
+      throw new WirebenchError('postman-not-environment', 'This is a globals export; import it as Postman globals');
+    }
+    const summary = await applyImportedVariables(plan, deps.variablesPorts(undefined));
+    return { summary, reportText: formatImportReport({ warnings: summary.warnings, notes: summary.notes }) };
+  };
+  registerHandler(channels.api.importPostmanEnvironment, async (request) =>
+    importPostmanVariablesFrom(request.source, 'environment'),
+  );
+  registerHandler(channels.api.importPostmanGlobals, async (request) =>
+    importPostmanVariablesFrom(request.source, 'globals'),
+  );
 
   registerHandler(channels.api.importProto, async (request, sender) => {
     const protoImports = deps.protoImports;

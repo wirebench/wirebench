@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Postman environments and globals.** **Import…** reads Postman environment and globals exports
+  (**Import Postman Environment…**, **Import Postman Globals…**). An environment becomes a workspace
+  environment, renamed when the name is taken and never made active; globals merge into Globals.
+  Secret-typed values go to the secret store, and nothing that already exists is overwritten. A
+  Postman collection's own variables now arrive as project properties instead of being dropped (#64).
+
 ## [3.1.0] - 2026-10-04
 
 The first release since 2.2.1, carrying both the 3.0 and 3.1 milestones; there is no 3.0.0. The major
