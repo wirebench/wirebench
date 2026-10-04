@@ -646,6 +646,11 @@ void app.whenReady().then(() => {
     picks: dialogPicks,
     ensureWorkspaceEnvironments: async (names) => await workspaceService.ensureEnvironments(names),
   });
+  /** A Globals change, told to every window and to the current-values overlay. */
+  const onGlobalsChanged = (state: ReturnType<GlobalProperties['get']>): void => {
+    broadcast(events.globals.changed, state);
+    currentValues.syncGlobals(state);
+  };
   registerApiChannels({
     router: workspaceService,
     imports: openApiImports,
@@ -659,6 +664,54 @@ void app.whenReady().then(() => {
     },
     projectDirs: openProjectDirs,
     picks: dialogPicks,
+    // Every read goes to the live workspace, so a second environment of the same name in one
+    // import sees the first one and is given a free name.
+    variablesPorts: (projectId) => ({
+      workspace: {
+        environmentNames: () => (workspaceService.snapshot()?.environments ?? []).map((environment) => environment.name),
+        addEnvironment: async (name, properties, disabled) => {
+          const { createdEnvironmentId } = await workspaceService.mutate({ kind: 'add-workspace-environment', name });
+          if (createdEnvironmentId === undefined) {
+            throw new WirebenchError('import-failed', `Could not add the environment "${name}"`);
+          }
+          await workspaceService.mutate({
+            kind: 'update-workspace-environment',
+            environmentId: createdEnvironmentId,
+            patch: { properties, disabled: [...disabled] },
+          });
+        },
+        propertyNames: () => Object.keys(workspaceService.snapshot()?.properties ?? {}),
+        mergeProperties: async (properties, disabled) => {
+          for (const [name, value] of Object.entries(properties)) {
+            await workspaceService.mutate({ kind: 'set-workspace-property', name, value });
+          }
+          for (const name of disabled) {
+            await workspaceService.mutate({ kind: 'set-workspace-property-enabled', name, enabled: false });
+          }
+        },
+      },
+      globals: {
+        get: () => globalProperties.get(),
+        merge: async (properties, disabled) => {
+          let state = await globalProperties.replaceAll({ ...globalProperties.get().properties, ...properties });
+          for (const name of disabled) {
+            state = await globalProperties.setEnabled(name, false);
+          }
+          onGlobalsChanged(state);
+        },
+      },
+      ...(projectId !== undefined
+        ? {
+            project: {
+              propertyNames: () => Object.keys(workspaceService.hostFor(projectId).model()?.properties ?? {}),
+              merge: async (properties, disabled) => {
+                await workspaceService.importProperties(projectId, properties, disabled);
+              },
+            },
+          }
+        : {}),
+      secrets: teamSecretStore,
+    }),
   });
   // The launch-time reopen of the last workspace. It waits for preferences (every host folds
   // them into its send defaults, and a workspace opened before the load would hold the
@@ -676,10 +729,7 @@ void app.whenReady().then(() => {
       shell.showItemInFolder(dir);
     },
   });
-  registerGlobalsChannels(globalProperties, (state) => {
-    broadcast(events.globals.changed, state);
-    currentValues.syncGlobals(state);
-  });
+  registerGlobalsChannels(globalProperties, onGlobalsChanged);
   registerCurrentValuesChannels(currentValues);
   registerCookiesChannels(cookieStore);
   registerPreferencesChannels(preferencesService, (preferences) => {
