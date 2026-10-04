@@ -73,15 +73,15 @@ For Intune, Configuration Manager, Group Policy or a script, Windows releases co
 
 | Installer | Installs | Silent install | Updates |
 | --- | --- | --- | --- |
-| `…-windows-x64.msi`, `…-windows-arm64.msi` | For every user on the machine, in Program Files. Needs administrator rights | `msiexec /i Wirebench-2.2.0-windows-x64.msi /qn` | Not by itself: deploy the new version's MSI, which replaces the old one |
-| `…-windows-x64-setup.exe`, `…-windows-arm64-setup.exe` | For the current user by default | `Wirebench-2.2.0-windows-x64-setup.exe /S` | **Check for Updates…** in the app |
+| `…-windows-x64.msi`, `…-windows-arm64.msi` | For every user on the machine, in Program Files. Needs administrator rights | `msiexec /i Wirebench-3.1.0-windows-x64.msi /qn` | Not by itself: deploy the new version's MSI, which replaces the old one |
+| `…-windows-x64-setup.exe`, `…-windows-arm64-setup.exe` | For the current user by default | `Wirebench-3.1.0-windows-x64-setup.exe /S` | **Check for Updates…** in the app |
 
 The setup `.exe` takes these flags too:
 - `/allusers` installs for every user, and needs administrator rights;
 - `/currentuser` installs for the current user;
 - `/D=C:\Tools\Wirebench` sets the install folder. It must come last, and the path is not quoted.
 
-To remove the app silently, run `msiexec /x Wirebench-2.2.0-windows-x64.msi /qn` for the MSI, or
+To remove the app silently, run `msiexec /x Wirebench-3.1.0-windows-x64.msi /qn` for the MSI, or
 `"Uninstall Wirebench.exe" /S` from the install folder for the setup `.exe`.
 
 On macOS, deploy the `.dmg`'s app bundle or the `.zip` with your management tool. On Linux, use the
@@ -95,7 +95,7 @@ records of the commit and workflow that produced each file. Check a file with th
 [GitHub CLI](https://cli.github.com/):
 
 ```bash
-gh attestation verify Wirebench-2.2.0-windows-x64.msi --repo wirebench/wirebench
+gh attestation verify Wirebench-3.1.0-windows-x64.msi --repo wirebench/wirebench
 ```
 
 A file that anyone other than the release workflow built or changed fails the check.

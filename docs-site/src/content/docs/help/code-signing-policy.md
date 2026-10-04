@@ -21,7 +21,7 @@ signing key or client secret is stored in the repository or on a developer's mac
 - **What the workflow checks first:** a release is built only after the project's full check suite
   (`pnpm check`) passes.
 
-Windows signing is being set up. Releases up to and including 2.2.1 ship unsigned Windows
+Windows signing is being set up. Releases up to and including 3.1.0 ship unsigned Windows
 installers, so Windows names an unknown publisher when they run.
 
 ## Team roles

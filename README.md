@@ -49,7 +49,7 @@ and keep everything as plain files in git.
 | **Collaboration**          | Shared workspaces over git or a synced folder, with in-app Sync and a conflict resolver; encrypted team secrets                                                                                               |
 | **Migration**              | Import of legacy single-file SOAP projects — interfaces, endpoints, saved requests, properties and environments — with a report of everything not carried over                                                |
 
-Some of the above is on `main` and arrives with the next release; the [changelog](CHANGELOG.md) says which.
+All of the above is in 3.1.0; the [changelog](CHANGELOG.md) says which release brought each.
 
 <table>
   <tr>
@@ -154,8 +154,6 @@ Open work is tracked as issues in [milestones](https://github.com/wirebench/wire
 
 | Milestone                                                                                | Still open                                                                                                                                                                                                                     |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [3.0 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) | Nothing: shipped in 3.1.0                                                                                                                                                                                                      |
-| [3.1 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3)      | Nothing: shipped in 3.1.0                                                                                                                                                                                                      |
 | [3.2 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4)             | Server audit log ([#198](https://github.com/wirebench/wirebench/issues/198)), license binding, secrets from external managers, Kerberos/SPNEGO and WS-Trust, WS-Security debugger, managed preferences, portable Windows build |
 | [4.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | Contract diff ([#56](https://github.com/wirebench/wirebench/issues/56)), mock services and a recording proxy, more importers and exporters, a published project-file schema, multi-window                                      |
 | [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6)              | GraphQL, test suites and data-driven runs, JKS keystores, WS-ReliableMessaging, a plugin API, localisation                                                                                                                     |
