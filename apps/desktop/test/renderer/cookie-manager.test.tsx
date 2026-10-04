@@ -353,12 +353,25 @@ describe('CookieManager virtualisation', () => {
     };
   }
 
-  it('renders every row at 500 cookies and a window of them at 501', async () => {
+  // Rendering 500 real rows takes seconds under coverage instrumentation, so this one gets room.
+  it('renders every row at 500 cookies', async () => {
     const restore = mockSize();
     try {
       mount(many(500));
-      await rows(500);
-      cleanup();
+      await waitFor(
+        () => {
+          expect(screen.getAllByTestId('cookie-row')).toHaveLength(500);
+        },
+        { timeout: 20_000 },
+      );
+    } finally {
+      restore();
+    }
+  }, 30_000);
+
+  it('renders a window of the rows at 501 cookies', async () => {
+    const restore = mockSize();
+    try {
       mount(many(501));
       await waitFor(() => {
         expect(screen.getAllByTestId('cookie-row').length).toBeGreaterThan(0);
