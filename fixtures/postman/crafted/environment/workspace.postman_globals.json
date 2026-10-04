@@ -1,0 +1,9 @@
+{
+  "id": "5b1f0000-0000-4000-8000-000000000002",
+  "name": "Globals",
+  "values": [
+    { "key": "tenant", "value": "acme", "type": "default", "enabled": true },
+    { "key": "signingKey", "value": "k", "type": "secret", "enabled": true }
+  ],
+  "_postman_variable_scope": "globals"
+}

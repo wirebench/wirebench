@@ -6,3 +6,4 @@ export * from './model.js';
 export * from './parse.js';
 export * from './map.js';
 export * from './import.js';
+export * from './variables.js';

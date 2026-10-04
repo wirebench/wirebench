@@ -25,15 +25,8 @@ function tooLarge(): PostmanError {
   );
 }
 
-/**
- * Reads, parses, and maps a Postman Collection (v2.0 or v2.1) into a Wirebench REST API.
- *
- * @throws PostmanError when the file cannot be read, the JSON is malformed, or the shape is not a Postman collection.
- */
-export async function importPostmanCollection(
-  source: PostmanSource,
-  options: ImportPostmanOptions = {},
-): Promise<MappedPostmanApi> {
+/** Reads a Postman export from a file or text, enforcing the size limit. */
+export async function readPostmanSource(source: PostmanSource): Promise<string> {
   let text: string;
   if (source.kind === 'text') {
     if (source.text.length > MAX_POSTMAN_INPUT_BYTES) throw tooLarge();
@@ -58,7 +51,19 @@ export async function importPostmanCollection(
   } else {
     throw new PostmanError('postman-source-invalid', 'Invalid Postman source provided');
   }
+  return text;
+}
 
+/**
+ * Reads, parses, and maps a Postman Collection (v2.0 or v2.1) into a Wirebench REST API.
+ *
+ * @throws PostmanError when the file cannot be read, the JSON is malformed, or the shape is not a Postman collection.
+ */
+export async function importPostmanCollection(
+  source: PostmanSource,
+  options: ImportPostmanOptions = {},
+): Promise<MappedPostmanApi> {
+  const text = await readPostmanSource(source);
   const collection: PostmanCollection = parsePostmanCollectionText(text);
   return apiFromPostmanCollection(collection, options);
 }

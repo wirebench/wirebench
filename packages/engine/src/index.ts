@@ -733,10 +733,13 @@ export type {
 export {
   apiFromPostmanCollection,
   importPostmanCollection,
+  importPostmanVariables,
   isPostmanCollection,
+  isPostmanVariables,
   normalizePostmanPath,
   parsePostmanCollection,
   parsePostmanCollectionText,
+  parsePostmanVariablesText,
   translatePostmanVariables,
 } from './rest/postman/index.js';
 // Import helpers shared by every importer.
