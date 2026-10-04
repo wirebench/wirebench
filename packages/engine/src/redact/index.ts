@@ -253,17 +253,19 @@ function isFormType(contentType: string): boolean {
   return mediaTypeOf(contentType) === 'application/x-www-form-urlencoded';
 }
 
+/** The default body-key test: one of {@link SECRET_BODY_KEYS}, any case. */
+function isSecretBodyKey(key: string): boolean {
+  return SECRET_BODY_KEY_SET.has(key.toLowerCase());
+}
+
 /** A copy with every secret-keyed value replaced whole — a nested object or array under one too. */
-function maskJson(value: unknown): unknown {
+function maskJson(value: unknown, isSecret: (key: string) => boolean): unknown {
   if (Array.isArray(value)) {
-    return value.map(maskJson);
+    return value.map((item) => maskJson(item, isSecret));
   }
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
-      Object.entries(value).map(([key, inner]) => [
-        key,
-        SECRET_BODY_KEY_SET.has(key.toLowerCase()) ? REDACTED : maskJson(inner),
-      ]),
+      Object.entries(value).map(([key, inner]) => [key, isSecret(key) ? REDACTED : maskJson(inner, isSecret)]),
     );
   }
   return value;
@@ -275,7 +277,7 @@ function indentOf(text: string): number | undefined {
   return match?.[1]?.length;
 }
 
-function maskFormPair(pair: string): string {
+function maskFormPair(pair: string, isSecret: (key: string) => boolean): string {
   const eq = pair.indexOf('=');
   const rawKey = eq < 0 ? pair : pair.slice(0, eq);
   let key: string;
@@ -284,17 +286,23 @@ function maskFormPair(pair: string): string {
   } catch {
     key = rawKey;
   }
-  return SECRET_BODY_KEY_SET.has(key.toLowerCase()) ? `${rawKey}=${encodeURIComponent(REDACTED)}` : pair;
+  return isSecret(key) ? `${rawKey}=${encodeURIComponent(REDACTED)}` : pair;
 }
 
 /**
  * Masks secret-keyed values in a JSON (`application/json`, `+json`) or urlencoded form body;
- * anything else, or JSON that does not parse, is returned as is.
+ * anything else, or JSON that does not parse, is returned as is. `isSecretKey` replaces the
+ * {@link SECRET_BODY_KEYS} test — an importer passes its wider one; the live send never does.
  */
-export function redactStructuredBody(text: string, contentType: string | undefined, opts?: { show?: boolean }): string {
+export function redactStructuredBody(
+  text: string,
+  contentType: string | undefined,
+  opts?: { show?: boolean; isSecretKey?: (key: string) => boolean },
+): string {
   if (opts?.show === true || contentType === undefined) {
     return text;
   }
+  const isSecret = opts?.isSecretKey ?? isSecretBodyKey;
   if (isJsonType(contentType)) {
     let parsed: unknown;
     try {
@@ -302,10 +310,13 @@ export function redactStructuredBody(text: string, contentType: string | undefin
     } catch {
       return text;
     }
-    return JSON.stringify(maskJson(parsed), null, indentOf(text));
+    return JSON.stringify(maskJson(parsed, isSecret), null, indentOf(text));
   }
   if (isFormType(contentType)) {
-    return text.split('&').map(maskFormPair).join('&');
+    return text
+      .split('&')
+      .map((pair) => maskFormPair(pair, isSecret))
+      .join('&');
   }
   return text;
 }

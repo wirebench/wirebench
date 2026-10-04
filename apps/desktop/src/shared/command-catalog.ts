@@ -296,6 +296,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'REST: Import Postman Globals…',
     category: 'Definition',
   },
+  'rest.importHar': {
+    id: 'rest.importHar',
+    label: 'REST: Import HAR…',
+    category: 'Definition',
+  },
   'rest.newApi': {
     id: 'rest.newApi',
     label: 'REST: New API',

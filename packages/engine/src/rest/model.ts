@@ -184,6 +184,29 @@ export interface RestRequestDef {
   readonly signing?: WebhookSigning;
   /** Pre-request and post-response scripts, in files beside the request (#63). */
   readonly scripts?: RequestScripts;
+  /** Responses kept with the request, imported or saved by hand (#64). Absent when there are none. */
+  readonly examples?: readonly RestResponseExample[];
+}
+
+/** One recorded response kept beside a request: what came back, never what to assert. */
+export interface RestResponseExample {
+  readonly id: string;
+  readonly name: string;
+  readonly status: number;
+  readonly statusText: string;
+  readonly headers: readonly KeyValueEntry[];
+  readonly contentType?: string;
+  /** The body text; on disk it lives in `<slug>.examples/<id>.body.<ext>`. */
+  readonly body?: string;
+}
+
+/** The extension an example's body file takes from its content type, so it opens as what it is. */
+export function exampleBodyExtension(contentType: string | undefined): 'json' | 'xml' | 'html' | 'txt' {
+  const type = (contentType ?? '').toLowerCase();
+  if (/json/.test(type)) return 'json';
+  if (/xml/.test(type)) return 'xml';
+  if (/html/.test(type)) return 'html';
+  return 'txt';
 }
 
 /** A request's link to an operation of its API's definition. */

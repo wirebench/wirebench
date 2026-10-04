@@ -144,3 +144,12 @@ build has saved. The 5 → 6 migration is a stamp, proved by a version-5 fixture
 request file records, so a hand-edited name cannot point outside the request's directory. Save treats a script file
 beside a known request as managed, like a body file, so renaming a request moves its scripts and removing a script
 removes its file.
+
+**Update (2026-10-04, response examples): `formatVersion: 7`.** A REST request file may carry an `examples` list
+(#64): saved responses, each with a status, headers and a body, the body in a file beside the request at
+`<slug>.examples/<id>.body.<ext>`. This is the additive case again: an older build would drop the key and, on its next
+save, delete the example files as unmanaged. So it bumps the version, and an older build refuses a project this build
+has saved. The 6 → 7 migration is a stamp; a file with no `examples` reads as it did. The loader opens an example's
+body only from its own request's `<slug>.examples/` directory, named from the request's slug and the example's id,
+so a hand-edited path cannot point elsewhere. Save treats the `<id>.body.<ext>` files in that directory as managed,
+so renaming a request moves its examples and removing an example removes its file.

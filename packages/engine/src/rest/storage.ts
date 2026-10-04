@@ -33,6 +33,7 @@ import {
   REQUEST_SUFFIX,
   REQUESTS_DIR,
   restBodyFileName,
+  restExamplesDirName,
   WEBHOOKS_DIR,
 } from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
@@ -51,8 +52,8 @@ import type { ProtocolStorage } from '../protocol/module.js';
 import type { HookLink, WebhookSigning } from '../webhooks/model.js';
 import { toSignatureScheme } from '../http/webhook-signature.js';
 import { apiFileSchema, restRequestFileSchema } from './files.js';
-import { RAW_LANGUAGE_EXTENSIONS } from './model.js';
-import type { RestApi, RestBody, RestRequestDef, RestRequestSettings } from './model.js';
+import { exampleBodyExtension, RAW_LANGUAGE_EXTENSIONS } from './model.js';
+import type { RestApi, RestBody, RestRequestDef, RestRequestSettings, RestResponseExample } from './model.js';
 
 /** A parsed `signing` key as the model holds it. */
 export function signingOf(parsed: WebhookSigningFile): WebhookSigning {
@@ -120,6 +121,89 @@ async function loadBody(
 /** The `body` field of a parsed REST request document. */
 type RestRequestFileBody = ReturnType<typeof restRequestFileSchema.parse>['body'];
 
+/** The `examples` field of a parsed REST request document. */
+type RestRequestFileExamples = NonNullable<ReturnType<typeof restRequestFileSchema.parse>['examples']>;
+
+/** Where one example's body is written, relative to its request's directory: `<slug>.examples/<id>.body.<ext>`. */
+function exampleFile(slug: string, id: string, contentType: string | undefined): string {
+  const dir = restExamplesDirName(slug);
+  assertPathSegment(dir);
+  assertPathSegment(id);
+  return `${dir}/${id}.body.${exampleBodyExtension(contentType)}`;
+}
+
+/**
+ * True when `file` is exactly `<slug>.examples/<id>.body.<ext>`: this example's own file in its own
+ * request's examples folder, both parts safe path segments.
+ */
+function isOwnExampleFile(file: string, slug: string, id: string): boolean {
+  const [folder, name, ...rest] = file.split('/');
+  if (rest.length > 0 || folder !== restExamplesDirName(slug) || name === undefined) {
+    return false;
+  }
+  if (!name.startsWith(`${id}.body.`) || !/^[A-Za-z0-9]+$/.test(name.slice(`${id}.body.`.length))) {
+    return false;
+  }
+  try {
+    assertPathSegment(folder);
+    assertPathSegment(name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A request's response examples as loaded, each body read from the file its entry names. The name
+ * comes from the request file, which a pull or an import may have written, so it is read only when
+ * it is the example's own file in the request's own `<slug>.examples/`: anything else would let a
+ * save copy some other file into this one. Such an entry, and a missing file, are problems, and the
+ * example loads without a body.
+ */
+async function loadExamples(
+  fs: FsLike,
+  root: string,
+  dir: string,
+  slug: string,
+  documents: RestRequestFileExamples,
+  requestName: string,
+  problems: ProjectProblem[],
+): Promise<RestResponseExample[]> {
+  const examples: RestResponseExample[] = [];
+  for (const { file, ...document } of documents) {
+    let body: string | undefined;
+    if (file !== undefined && !isOwnExampleFile(file, slug, document.id)) {
+      problems.push({
+        code: 'example-file-invalid',
+        message: `Request "${requestName}" names ${JSON.stringify(file)} for example "${document.name}", which is not that example's file; loaded without a body`,
+        file: `${dir}/${slug}${REQUEST_SUFFIX}`,
+      });
+    } else if (file !== undefined) {
+      const relative = `${dir}/${file}`;
+      const text = await readFileIfExists(fs, abs(root, relative));
+      if (text === undefined) {
+        problems.push({
+          code: 'missing-body',
+          message: `Request "${requestName}" has no file for example "${document.name}"; loaded without a body`,
+          file: relative,
+        });
+      } else {
+        body = text.toString('utf8');
+      }
+    }
+    examples.push({
+      id: document.id,
+      name: document.name,
+      status: document.status,
+      statusText: document.statusText,
+      headers: keyValueEntries(document.headers),
+      ...optional('contentType', document.contentType),
+      ...optional('body', body),
+    });
+  }
+  return examples;
+}
+
 /** Reads a REST request and its raw body file. */
 export function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): RequestReader<RestRequestDef> {
   return async (dir, fileName, unclaimed) => {
@@ -158,6 +242,9 @@ export function restRequestReader(fs: FsLike, root: string, problems: ProjectPro
       ...(parsed.hook !== undefined ? { hook: exact<HookLink>(parsed.hook) } : {}),
       ...(parsed.signing !== undefined ? { signing: signingOf(parsed.signing) } : {}),
       ...(scripts !== undefined ? { scripts } : {}),
+      ...(parsed.examples !== undefined
+        ? { examples: await loadExamples(fs, root, dir, slug, parsed.examples, parsed.name, problems) }
+        : {}),
     };
   };
 }
@@ -253,6 +340,13 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
     hook: request.hook === undefined ? undefined : { ...request.hook },
     signing: signingDocument(request.signing),
     scripts: scriptsDocument(request.scripts, request.slug).document,
+    examples: request.examples?.map(({ body, headers, ...rest }) =>
+      compact({
+        ...rest,
+        headers: headers.length > 0 ? keyValueDocuments(headers) : undefined,
+        file: body === undefined ? undefined : exampleFile(request.slug, rest.id, rest.contentType),
+      }),
+    ),
   });
 }
 
@@ -264,6 +358,24 @@ export const writeRestRequest: RequestWriter<RestRequestDef> = (files, dir, requ
     files.set(`${dir}/${body.file[0]}`, body.file[1]);
   }
   writeScriptFiles(files, dir, request.scripts, request.slug);
+  const ids = new Set<string>();
+  for (const example of request.examples ?? []) {
+    // Two examples with one id would share one body file, the second silently replacing the first.
+    // Lower-cased, because macOS and Windows file systems usually ignore case.
+    if (ids.has(example.id.toLowerCase())) {
+      throw new ProjectError(
+        'duplicate-slug',
+        `Request "${request.name}" has two examples with the id "${example.id}"`,
+        {
+          details: { file: `${dir}/${restExamplesDirName(request.slug)}` },
+        },
+      );
+    }
+    ids.add(example.id.toLowerCase());
+    if (example.body !== undefined) {
+      files.set(`${dir}/${exampleFile(request.slug, example.id, example.contentType)}`, example.body);
+    }
+  }
 };
 
 /** Every file one REST API occupies, keyed by path relative to the project root. */

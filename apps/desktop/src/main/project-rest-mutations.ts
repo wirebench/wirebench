@@ -682,6 +682,8 @@ export function applyRestRequestPatch(
     ...(request.contract !== undefined ? { contract: request.contract } : {}),
     // Same for a webhook collection item's link back to the OpenAPI entry it came from.
     ...(request.hook !== undefined ? { hook: request.hook } : {}),
+    // Recorded responses are not part of a patch: only `remove-rest-example` changes them.
+    ...(request.examples !== undefined ? { examples: request.examples } : {}),
     // Webhook items only (`updateRestRequest` refuses it elsewhere); `null` returns to inherit.
     ...(patch.signing === null
       ? {}
@@ -733,6 +735,30 @@ export function removeRestRequest(project: Project, requestId: string): RestMuta
   return { project: nextProject };
 }
 
+/**
+ * Removes one recorded response from a REST request; the last one going drops the field, as a
+ * request that never had any. Its body file is the save's to remove, as a managed file.
+ */
+export function removeRestExample(project: Project, requestId: string, exampleId: string): RestMutationResult {
+  let removed = false;
+  const apply = (container: Container): Container => ({
+    ...container,
+    requests: container.requests.map((candidate) => {
+      if (candidate.id !== requestId) return candidate;
+      const { examples = [], ...rest } = candidate;
+      const kept = examples.filter((example) => example.id !== exampleId);
+      removed = kept.length < examples.length;
+      return kept.length > 0 ? { ...rest, examples: kept } : rest;
+    }),
+    folders: container.folders.map((folder) => ({ ...folder, ...apply(folder) })),
+  });
+  const next = withRestTreeOwning(project, requestId, 'request', (owner) => ({ ...owner, ...apply(owner) }));
+  if (!removed) {
+    notFound('example', exampleId);
+  }
+  return { project: next };
+}
+
 /** Duplicates a REST request beside the original, named `<name> copy`. */
 export function cloneRestRequest(project: Project, requestId: string): RestMutationResult {
   let createdId = '';
@@ -765,6 +791,8 @@ export function cloneRestRequest(project: Project, requestId: string): RestMutat
       ...(original.scripts !== undefined ? { scripts: original.scripts } : {}),
       // A clone signs like its original; only `hook` is deliberately dropped.
       ...(original.signing !== undefined ? { signing: original.signing } : {}),
+      // Its recorded responses too: their body files are written under the copy's own slug.
+      ...(original.examples !== undefined ? { examples: original.examples } : {}),
     };
     createdId = withAssertions.id;
     const requests = [...container.requests];

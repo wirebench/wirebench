@@ -469,6 +469,19 @@ function toRestRequestWire(request: RestRequestDef, apiId: string, folderId: str
     ...(request.orphaned === true ? { orphaned: true } : {}),
     ...(request.hook !== undefined ? { hook: request.hook } : {}),
     ...(request.signing !== undefined ? { signing: request.signing } : {}),
+    ...(request.examples !== undefined
+      ? {
+          examples: request.examples.map((example) => ({
+            id: example.id,
+            name: example.name,
+            status: example.status,
+            statusText: example.statusText,
+            headers: toKeyValueWires(example.headers),
+            ...(example.contentType !== undefined ? { contentType: example.contentType } : {}),
+            ...(example.body !== undefined ? { body: example.body } : {}),
+          })),
+        }
+      : {}),
   };
 }
 

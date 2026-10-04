@@ -63,8 +63,8 @@ function webhookProject(): Project {
 }
 
 describe('the webhooks/ tree', () => {
-  it('is format 6', () => {
-    expect(FORMAT_VERSION).toBe(6);
+  it('is saved at format 7', () => {
+    expect(FORMAT_VERSION).toBe(7);
   });
 
   it('writes webhooks.yaml and a request tree beside it', () => {

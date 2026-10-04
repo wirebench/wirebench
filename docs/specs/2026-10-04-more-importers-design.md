@@ -220,7 +220,8 @@ Older files load with no examples.
 
 **Redaction.** Example headers are written with the HAR exporter's redaction. Secret-bearing
 headers are masked, and `Set-Cookie` and `Cookie` are dropped. A body is stored as it was
-recorded.
+recorded, except that the values under credential-looking keys of a JSON or form body (the
+redaction's secret body keys, such as `access_token` or `password`) are masked.
 
 **UI.** The REST response pane gets an **Examples** menu when the request has any. Choosing one
 shows it read-only in the response viewer, marked as an example, with **Delete example**.
@@ -371,10 +372,10 @@ The dialog asks once per import, under **Recorded responses**. The default is **
 - `requestId` is the deduplicated saved request
 - `tags: ['imported:har']`
 
-The headers on both sides go through the HAR exporter's redaction before they are written. A body
-encoded as base64 is decoded when its MIME type is textual, and otherwise left out and noted.
-Bodies are subject to History's existing size limits. Entries are written in time order with the
-existing `appendHistory`, so diff and resend (#42) work against them.
+The headers on both sides go through the live send's History redaction before they are written. A
+body encoded as base64 is decoded when its MIME type is textual, and otherwise left out and noted.
+Bodies are subject to History's existing size limits. Entries are written in time order, in one
+batch append for the whole capture, so diff and resend (#42) work against them.
 
 **Save as examples.** Each saved request gets one `RestResponseExample` (§3.7) per distinct
 response status among its entries:

@@ -362,6 +362,157 @@ describe('HistoryService when another writer holds the History lock', () => {
   });
 });
 
+describe('HistoryService.recordImportedRest', () => {
+  let userDataDir: string;
+
+  beforeEach(async () => {
+    userDataDir = await mkdtemp(join(tmpdir(), 'wirebench-history-import-'));
+  });
+
+  afterEach(async () => {
+    await rm(userDataDir, { recursive: true, force: true });
+  });
+
+  /** One recorded exchange carrying a credential in every place a capture can hold one. */
+  const RECORDED = {
+    requestId: 'r1',
+    requestName: 'POST /login',
+    apiName: 'api.example.com',
+    at: '2026-10-01T10:00:00.000Z',
+    durationMs: 42,
+    method: 'POST',
+    url: 'https://api.example.com/login?token=qtok-123&limit=5',
+    requestHeaders: [
+      { name: 'Authorization', value: 'Bearer abc-secret' },
+      { name: 'Cookie', value: 'sid=cookie-in' },
+      { name: 'Content-Type', value: 'application/json' },
+    ],
+    requestBody: '{"user":"ann","password":"hunter2-pw"}',
+    status: 200,
+    statusText: 'OK',
+    responseHeaders: [
+      { name: 'Set-Cookie', value: 'sid=cookie-out; HttpOnly' },
+      { name: 'Content-Type', value: 'application/json; charset=utf-8' },
+    ],
+    responseBody: '{"ok":true,"access_token":"atok-456"}',
+    tags: ['imported:har'],
+  } as const;
+
+  it('records an imported exchange at its recorded time, tagged', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const entry = await history.recordImportedRest('proj-1', RECORDED);
+
+    expect(entry).toMatchObject({
+      kind: 'rest',
+      at: '2026-10-01T10:00:00.000Z',
+      method: 'POST',
+      status: 200,
+      ok: true,
+      durationMs: 42,
+      requestId: 'r1',
+      requestName: 'POST /login',
+      interfaceName: 'api.example.com',
+      tags: ['imported:har'],
+    });
+    expect(entry?.request.envelopeXml).toContain('"user":"ann"');
+    expect(entry?.response?.envelopeXml).toContain('"ok":true');
+    expect(history.list({ projectId: 'proj-1' }).entries).toHaveLength(1);
+  });
+
+  it('writes no recorded credential to the History file', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const entry = await history.recordImportedRest('proj-1', RECORDED);
+    const onDisk = await readFile(historyFilePath(userDataDir, 'proj-1'), 'utf8');
+
+    for (const text of [JSON.stringify(entry), onDisk]) {
+      expect(text).not.toContain('abc-secret');
+      expect(text).not.toContain('cookie-in');
+      expect(text).not.toContain('cookie-out');
+      expect(text).not.toContain('qtok-123');
+      expect(text).not.toContain('hunter2-pw');
+      expect(text).not.toContain('atok-456');
+    }
+    expect(entry?.endpoint).toContain('limit=5');
+  });
+
+  it('answers undefined when the project History is not open', async () => {
+    const history = new HistoryService(userDataDir);
+
+    expect(await history.recordImportedRest('proj-1', RECORDED)).toBeUndefined();
+  });
+
+  it('masks an XML body the way a live SOAP entry is masked', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+    const xml = {
+      ...RECORDED,
+      requestHeaders: [{ name: 'Content-Type', value: 'application/soap+xml; charset=utf-8' }],
+      requestBody: '<Envelope><wsse:Password>xml-secret-in</wsse:Password></Envelope>',
+      responseHeaders: [{ name: 'Content-Type', value: 'text/xml' }],
+      responseBody: '<Result><Password>xml-secret-out</Password><name>ann</name></Result>',
+    };
+
+    const entry = await history.recordImportedRest('proj-1', xml);
+    const onDisk = await readFile(historyFilePath(userDataDir, 'proj-1'), 'utf8');
+
+    for (const text of [JSON.stringify(entry), onDisk]) {
+      expect(text).not.toContain('xml-secret-in');
+      expect(text).not.toContain('xml-secret-out');
+    }
+    expect(entry?.response?.envelopeXml).toContain('<name>ann</name>');
+  });
+
+  it('stores the recorded time in UTC, whatever offset the capture wrote it in', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const entry = await history.recordImportedRest('proj-1', { ...RECORDED, at: '2026-10-01T12:00:00.000+02:00' });
+
+    expect(entry?.at).toBe('2026-10-01T10:00:00.000Z');
+  });
+
+  it('writes a batch, skipping and counting exchanges with no valid time', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const outcome = await history.recordImportedRestBatch('proj-1', [
+      RECORDED,
+      { ...RECORDED, requestId: 'r2', at: '' },
+      { ...RECORDED, requestId: 'r3', at: 'yesterday-ish' },
+      { ...RECORDED, requestId: 'r4', at: '2026-10-01T10:00:01.000Z' },
+    ]);
+
+    expect(outcome).toEqual({ recorded: 2, invalidTime: 2, droppedOlder: 0, droppedImported: 0 });
+    expect(history.list({ projectId: 'proj-1' }).entries.map((entry) => entry.requestId)).toEqual(['r4', 'r1']);
+  });
+
+  it('says how many older entries the cap dropped to make room for a batch', async () => {
+    const history = new HistoryService(userDataDir, () => 3);
+    await history.open('proj-1');
+    await history.recordImportedRest('proj-1', { ...RECORDED, requestId: 'old-1' });
+    await history.recordImportedRest('proj-1', { ...RECORDED, requestId: 'old-2' });
+
+    const outcome = await history.recordImportedRestBatch('proj-1', [
+      { ...RECORDED, requestId: 'n1' },
+      { ...RECORDED, requestId: 'n2' },
+      { ...RECORDED, requestId: 'n3' },
+      { ...RECORDED, requestId: 'n4' },
+    ]);
+
+    expect(outcome).toEqual({ recorded: 3, invalidTime: 0, droppedOlder: 2, droppedImported: 1 });
+    expect(
+      history
+        .list({ projectId: 'proj-1' })
+        .entries.map((entry) => entry.requestId)
+        .sort(),
+    ).toEqual(['n2', 'n3', 'n4']);
+  });
+});
+
 /**
  * The second lock on the door finding 1 opened: a project's id is its own `wirebench.yaml`'s,
  * and a linked project keeps it, so `historyFilePath` must never turn one into a path that

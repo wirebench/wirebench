@@ -38,6 +38,8 @@ import {
   apiImportWebhooksResponseSchema,
   apiImportOpenApiRequestSchema,
   apiImportOpenApiResponseSchema,
+  apiImportHarRequestSchema,
+  apiImportHarResponseSchema,
   apiImportPostmanRequestSchema,
   apiImportPostmanResponseSchema,
   apiImportPostmanVariablesRequestSchema,
@@ -688,6 +690,7 @@ export const channels = {
   api: {
     importOpenApi: defineChannel('api.importOpenApi', apiImportOpenApiRequestSchema, apiImportOpenApiResponseSchema),
     importPostman: defineChannel('api.importPostman', apiImportPostmanRequestSchema, apiImportPostmanResponseSchema),
+    importHar: defineChannel('api.importHar', apiImportHarRequestSchema, apiImportHarResponseSchema),
     importPostmanEnvironment: defineChannel(
       'api.importPostmanEnvironment',
       apiImportPostmanVariablesRequestSchema,

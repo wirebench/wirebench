@@ -301,6 +301,8 @@ export interface ProjectStore extends ProjectSnapshot {
   readonly removeRestRequest: (requestId: string) => Promise<void>;
   /** Copies a REST request beside the original; returns the copy's id. */
   readonly cloneRestRequest: (requestId: string) => Promise<string>;
+  /** Deletes one of a REST request's recorded responses; its body file goes on the next save. */
+  readonly removeRestExample: (requestId: string, exampleId: string) => Promise<void>;
   /**
    * Moves an API, a folder or a REST request to `index` inside `parentId` (the API's root when
    * absent). What a drag-and-drop in the explorer commits.
@@ -1836,6 +1838,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         throw new Error('clone-rest-request did not return a request id');
       }
       return createdId;
+    },
+
+    removeRestExample: async (requestId, exampleId) => {
+      await mutateEntity(requestId, { kind: 'remove-rest-example', requestId, exampleId });
     },
 
     moveNode: async (nodeId, parentId, index) => {

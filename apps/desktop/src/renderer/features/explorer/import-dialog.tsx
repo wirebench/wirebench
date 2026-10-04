@@ -8,6 +8,7 @@
  * - WSDL 1.1 / 2.0 (SOAP XML)
  * - Protocol Buffers `.proto` files (gRPC)
  * - Legacy single-XML SOAP projects (a whole project: interfaces, requests, environments)
+ * - HAR 1.1 / 1.2 captures (recorded traffic), as one REST API per origin
  *
  * Provides URL, File (with drag-and-drop), and Paste input sources,
  * automatic format detection with manual override, target project selection,
@@ -20,6 +21,8 @@ import { X, Sparkles } from 'lucide-react';
 import { detectImportFormat, type DetectedImportFormat, type ImportFormatKind } from '@wirebench/engine/detect';
 import type {
   ApiAsyncApiServersRequest,
+  ApiImportHarRequest,
+  ApiImportHarResponse,
   ApiImportOpenApiResponse,
   AsyncApiImportSummaryWire,
   AuthConfigWire,
@@ -147,7 +150,8 @@ export type UnifiedImportResult =
     }
   | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire }
   | { readonly kind: 'legacy'; readonly report: LegacyImportReportWire; readonly reportText: string }
-  | { readonly kind: 'variables'; readonly summary: ImportVariablesSummaryWire; readonly reportText: string };
+  | { readonly kind: 'variables'; readonly summary: ImportVariablesSummaryWire; readonly reportText: string }
+  | { readonly kind: 'har'; readonly value: ApiImportHarResponse; readonly responses: HarResponses };
 
 /**
  * Formats that land in the workspace, not in a project: a Postman environment becomes a workspace
@@ -155,12 +159,20 @@ export type UnifiedImportResult =
  */
 const WORKSPACE_ONLY = new Set<ImportDialogFormat | ImportFormatKind>(['postman-environment', 'postman-globals']);
 
-/** The formats read from a Postman export file, which start on the File tab. */
+/** The formats read from a Postman export file. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
   'postman',
   'postman-environment',
   'postman-globals',
 ]);
+
+/** The formats that start on the File tab: an export or a capture is a file on disk. */
+const FILE_FIRST = new Set<ImportDialogFormat | ImportFormatKind>([...POSTMAN_FORMATS, 'har', 'legacy-soap-project']);
+
+/** The formats with nothing to fetch from a URL, so no URL tab: a variables export and a HAR capture. */
+const NO_URL = new Set<ImportDialogFormat | ImportFormatKind>([...WORKSPACE_ONLY, 'har']);
+
+type HarResponses = ApiImportHarRequest['responses'];
 
 export interface ImportDialogProps {
   readonly open: boolean;
@@ -171,9 +183,7 @@ export interface ImportDialogProps {
 export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: ImportDialogProps) {
   const storeFormat = useUiStore((state) => state.importDialogFormat);
   const initialFmt = propFormat ?? storeFormat ?? 'auto';
-  const [tab, setTab] = useState<SourceTab>(
-    POSTMAN_FORMATS.has(initialFmt) || initialFmt === 'legacy-soap-project' ? 'file' : 'url',
-  );
+  const [tab, setTab] = useState<SourceTab>(FILE_FIRST.has(initialFmt) ? 'file' : 'url');
   const [format, setFormat] = useState<ImportDialogFormat>(initialFmt);
   const [url, setUrl] = useState('');
   const [filePath, setFilePath] = useState('');
@@ -211,6 +221,10 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   }, []);
   const [useForRequests, setUseForRequests] = useState(false);
 
+  // HAR: keep images, scripts and the like as requests too, and what becomes of the recorded responses.
+  const [harIncludeStatic, setHarIncludeStatic] = useState(false);
+  const [harResponses, setHarResponses] = useState<HarResponses>('drop');
+
   // OpenAPI and AsyncAPI by URL: the credentials the document is fetched with, as references.
   const [definitionAuth, setDefinitionAuth] = useState<AuthConfigWire>(NO_DEFINITION_AUTH);
   const definitionAuthFlushRef = useRef<(() => Promise<AuthConfigWire | undefined>) | undefined>(undefined);
@@ -246,7 +260,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setTarget(selected ?? only ?? NEW_PROJECT);
     const fmt = propFormat ?? useUiStore.getState().importDialogFormat ?? 'auto';
     setFormat(fmt);
-    if (POSTMAN_FORMATS.has(fmt) || fmt === 'legacy-soap-project') {
+    if (FILE_FIRST.has(fmt)) {
       setTab('file');
     }
   }, [open, propFormat]);
@@ -390,6 +404,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setWsServer('');
     setServersNeedAuth(false);
     setDefinitionAuth(NO_DEFINITION_AUTH);
+    setHarIncludeStatic(false);
+    setHarResponses('drop');
   }, []);
 
   function buildSource(): ImportSourceWire | undefined {
@@ -423,28 +439,30 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           ? [{ name: 'Postman Collection', extensions: ['json'] }]
           : WORKSPACE_ONLY.has(effectiveFormat)
             ? [{ name: 'Postman export', extensions: ['json'] }]
-            : effectiveFormat === 'proto'
-              ? [
-                  { name: 'Protocol Buffers', extensions: ['proto'] },
-                  { name: 'All Files', extensions: ['*'] },
-                ]
-              : effectiveFormat === 'openapi'
+            : effectiveFormat === 'har'
+              ? [{ name: 'HAR', extensions: ['har', 'json'] }]
+              : effectiveFormat === 'proto'
                 ? [
-                    { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+                    { name: 'Protocol Buffers', extensions: ['proto'] },
                     { name: 'All Files', extensions: ['*'] },
                   ]
-                : effectiveFormat === 'asyncapi'
+                : effectiveFormat === 'openapi'
                   ? [
-                      { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                      { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
                       { name: 'All Files', extensions: ['*'] },
                     ]
-                  : [
-                      {
-                        name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                        extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                      },
-                      { name: 'All Files', extensions: ['*'] },
-                    ];
+                  : effectiveFormat === 'asyncapi'
+                    ? [
+                        { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                        { name: 'All Files', extensions: ['*'] },
+                      ]
+                    : [
+                        {
+                          name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                          extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+                        },
+                        { name: 'All Files', extensions: ['*'] },
+                      ];
     const title =
       effectiveFormat === 'legacy-soap-project'
         ? 'Import Legacy SOAP Project'
@@ -454,13 +472,15 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
             ? 'Import Postman Environment'
             : effectiveFormat === 'postman-globals'
               ? 'Import Postman Globals'
-              : effectiveFormat === 'proto'
-                ? 'Import .proto'
-                : effectiveFormat === 'openapi'
-                  ? 'Import OpenAPI Specification'
-                  : effectiveFormat === 'asyncapi'
-                    ? 'Import AsyncAPI Document'
-                    : 'Import Definition';
+              : effectiveFormat === 'har'
+                ? 'Import HAR'
+                : effectiveFormat === 'proto'
+                  ? 'Import .proto'
+                  : effectiveFormat === 'openapi'
+                    ? 'Import OpenAPI Specification'
+                    : effectiveFormat === 'asyncapi'
+                      ? 'Import AsyncAPI Document'
+                      : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -504,7 +524,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
         ? 'Imported Collection'
         : format === 'proto' || effectiveFormat === 'proto'
           ? 'Imported gRPC API'
-          : 'Imported API';
+          : format === 'har' || effectiveFormat === 'har'
+            ? 'Imported traffic'
+            : 'Imported API';
 
   const sourceName = nameFromSource(previewSource, defaultName);
   const newProjectName = name.trim().length > 0 ? name.trim() : sourceName;
@@ -631,6 +653,37 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * A HAR capture becomes one REST API per origin it called, in the chosen project; main reads it,
+   * places the APIs and, when asked, writes the recorded exchanges to History.
+   */
+  async function importHar(source: ImportSourceWire): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('Import from a URL is not supported for HAR files. Pick the file or paste its JSON.');
+      return;
+    }
+    setImporting(true);
+    const chosen = openProjects.some((project) => project.id === target) ? target : NEW_PROJECT;
+    try {
+      const res = await ipc().api.importHar({
+        target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
+        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+        includeStaticAssets: harIncludeStatic,
+        responses: harResponses,
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      getExplorerTree()?.open(`proj:${res.value.projectId}`);
+      setResult({ kind: 'har', value: res.value, responses: harResponses });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
@@ -645,14 +698,22 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       if (tab === 'url') {
         setUrlError('Enter a valid URL');
       } else if (tab === 'file') {
-        setImportError(POSTMAN_FORMATS.has(effectiveFormat) ? 'Pick a .json file to import' : 'Pick a file to import');
+        setImportError(
+          POSTMAN_FORMATS.has(effectiveFormat)
+            ? 'Pick a .json file to import'
+            : effectiveFormat === 'har'
+              ? 'Pick a .har file to import'
+              : 'Pick a file to import',
+        );
       } else {
         setImportError(
           effectiveFormat === 'postman'
             ? 'Paste a .json collection to import'
             : POSTMAN_FORMATS.has(effectiveFormat)
               ? 'Paste the exported .json to import'
-              : 'Paste a definition to import',
+              : effectiveFormat === 'har'
+                ? 'Paste the HAR JSON to import'
+                : 'Paste a definition to import',
         );
       }
       return;
@@ -665,6 +726,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
 
     if (effectiveFormat === 'legacy-soap-project') {
       await importLegacyProject(source);
+      return;
+    }
+
+    if (effectiveFormat === 'har') {
+      await importHar(source);
       return;
     }
 
@@ -933,7 +999,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                               ? 'Import Postman Environment'
                               : format === 'postman-globals'
                                 ? 'Import Postman Globals'
-                                : 'Import API or Service'}
+                                : format === 'har'
+                                  ? 'Import HAR'
+                                  : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -961,8 +1029,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       if (next !== 'proto' && tab === 'server') {
                         setTab('url');
                       }
-                      // A Postman environment or globals export has no URL tab.
-                      if (WORKSPACE_ONLY.has(next) && tab === 'url') {
+                      // A Postman environment or globals export, or a HAR capture, has no URL tab.
+                      if (NO_URL.has(next) && tab === 'url') {
                         setTab('file');
                       }
                     }}
@@ -974,6 +1042,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <option value="postman">Postman Collection</option>
                     <option value="postman-environment">Postman environment</option>
                     <option value="postman-globals">Postman globals</option>
+                    <option value="har">HAR (recorded traffic)</option>
                     <option value="wsdl">WSDL (SOAP)</option>
                     <option value="proto">Protocol Buffers (gRPC)</option>
                     <option value="legacy-soap-project">Legacy SOAP project</option>
@@ -1002,9 +1071,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 */}
                 <Tabs
                   label="Import source"
-                  items={
-                    isProto || tab === 'server' ? PROTO_TABS : WORKSPACE_ONLY.has(effectiveFormat) ? FILE_TABS : TABS
-                  }
+                  items={isProto || tab === 'server' ? PROTO_TABS : NO_URL.has(effectiveFormat) ? FILE_TABS : TABS}
                   active={tab}
                   onSelect={setTab}
                 />
@@ -1396,6 +1463,42 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 </label>
               )}
 
+              {effectiveFormat === 'har' && (
+                <>
+                  <label className="mt-2 flex items-center gap-2 text-sm text-fg-subtle">
+                    <input
+                      type="checkbox"
+                      data-testid="import-har-include-static"
+                      checked={harIncludeStatic}
+                      onChange={(e) => setHarIncludeStatic(e.target.checked)}
+                    />
+                    Include static assets
+                  </label>
+                  <fieldset className="mt-2 flex flex-col gap-1">
+                    <legend className="text-sm text-fg-subtle">Recorded responses</legend>
+                    {(
+                      [
+                        ['drop', 'Don’t keep'],
+                        ['history', 'Record into History'],
+                        ['examples', 'Save as examples'],
+                      ] as const satisfies readonly (readonly [HarResponses, string])[]
+                    ).map(([value, label]) => (
+                      <label key={value} className="flex items-center gap-2 text-sm text-fg-default">
+                        <input
+                          type="radio"
+                          name="import-har-responses"
+                          data-testid={`import-har-responses-${value}`}
+                          value={value}
+                          checked={harResponses === value}
+                          onChange={() => setHarResponses(value)}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </fieldset>
+                </>
+              )}
+
               {progress !== undefined && (
                 <p data-testid="import-openapi-progress" className="mt-3 truncate text-sm text-fg-subtle">
                   {progress}
@@ -1495,7 +1598,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
                   ? 'import-legacy-summary'
                   : result.kind === 'variables'
                     ? 'import-variables-summary'
-                    : 'import-summary'
+                    : result.kind === 'har'
+                      ? 'import-har-summary'
+                      : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -1650,6 +1755,8 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
       {result.kind === 'legacy' && <LegacySummary report={result.report} reportText={result.reportText} />}
 
       {result.kind === 'variables' && <VariablesSummary summary={result.summary} reportText={result.reportText} />}
+
+      {result.kind === 'har' && <HarSummary value={result.value} responses={result.responses} />}
 
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
@@ -1825,6 +1932,45 @@ function VariablesSummary({
         notes={summary.notes}
         reportText={reportText}
         testId="import-variables-summary"
+      />
+    </>
+  );
+}
+
+/**
+ * What a HAR import made: the APIs and requests, how many entries were kept, the response statuses
+ * seen (all a "Don't keep" import leaves of them), then where the recorded responses went, and the
+ * report.
+ */
+function HarSummary({ value, responses }: { readonly value: ApiImportHarResponse; readonly responses: HarResponses }) {
+  const { summary } = value;
+  const statuses = Object.entries(summary.statuses)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([status, count]) => `${status} ×${String(count)}`);
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+        <p data-testid="import-har-counts">
+          {plural(summary.apis, 'API')}, {plural(summary.requests, 'request')}
+        </p>
+        <p className="mt-1 text-xs text-fg-subtle">
+          {String(summary.kept)} of {plural(summary.entries, 'entry', 'entries')} kept
+        </p>
+        {statuses.length > 0 && (
+          <p data-testid="import-har-statuses" className="mt-1 text-xs text-fg-subtle">
+            Statuses seen: {statuses.join(', ')}
+          </p>
+        )}
+        {responses === 'history' && (
+          <p className="mt-1 text-xs text-fg-subtle">{plural(summary.historyRecorded, 'History record')}</p>
+        )}
+        {responses === 'examples' && <p className="mt-1 text-xs text-fg-subtle">Recorded responses: examples saved</p>}
+      </div>
+      <ImportReportView
+        warnings={value.warnings}
+        notes={value.notes}
+        reportText={value.reportText}
+        testId="import-har-summary"
       />
     </>
   );

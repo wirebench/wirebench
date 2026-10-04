@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import {
   formatImportReport,
+  importHar,
   importPostmanCollection,
   importPostmanVariables,
   webhookItemsOf,
@@ -44,6 +45,7 @@ import { allowsReadPath, checkedImportSource } from '../path-access.js';
 import { resolve } from 'node:path';
 import type { ProtoSourceWire } from '../../shared/wire-types.js';
 import { toAuthConfigWire } from '../project-wire.js';
+import type { HistoryService, ImportedHistoryOutcome } from '../history-service.js';
 import type { ProjectRouter } from '../project-router.js';
 import { applyImportedVariables } from '../import-variables-apply.js';
 import type { VariablesApplyPorts } from '../import-variables-apply.js';
@@ -94,6 +96,44 @@ export interface ApiChannelDeps {
    * project with `projectId` when one is given (a collection's variables become its properties).
    */
   readonly variablesPorts: (projectId: string | undefined) => VariablesApplyPorts;
+  /** Where a HAR import's recorded exchanges are written, when it asks for them in History. */
+  readonly history: Pick<HistoryService, 'open' | 'recordImportedRestBatch'>;
+  /** Tells every window a project's History changed under it: an import wrote entries. */
+  readonly onHistoryChanged: (projectId: string) => void;
+}
+
+/** `count` with the noun that fits it: `1 entry`, `2 entries`. */
+function counted(count: number, one: string, many: string): string {
+  return `${String(count)} ${count === 1 ? one : many}`;
+}
+
+/** The report lines a HAR import's History write earns: what it skipped, and what the cap dropped. */
+function historyOutcomeWarnings(outcome: ImportedHistoryOutcome): string[] {
+  const warnings: string[] = [];
+  if (outcome.invalidTime > 0) {
+    warnings.push(
+      `${counted(outcome.invalidTime, 'recorded exchange', 'recorded exchanges')} had no valid time and ${
+        outcome.invalidTime === 1 ? 'was' : 'were'
+      } not written to History.`,
+    );
+  }
+  if (outcome.droppedOlder > 0) {
+    warnings.push(
+      `History keeps a limited number of entries per project: ${counted(
+        outcome.droppedOlder,
+        'older History entry was',
+        'older History entries were',
+      )} dropped to make room for the import.`,
+    );
+  }
+  if (outcome.droppedImported > 0) {
+    warnings.push(
+      `${counted(outcome.droppedImported, 'recorded exchange', 'recorded exchanges')}, the earliest, did not fit under History's per-project limit and ${
+        outcome.droppedImported === 1 ? 'was' : 'were'
+      } not written.`,
+    );
+  }
+  return warnings;
 }
 
 /** The engine's source shape. A `file` path becomes a `file:` URL here, where the platform is known. */
@@ -564,6 +604,85 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
             )
           : undefined;
       return { ...added, projectId, summary: imported.summary, ...(variables !== undefined ? { variables } : {}) };
+    };
+
+    if ('projectId' in request.target) {
+      return await placeIn(request.target.projectId);
+    }
+
+    const { projectId } = await deps.addProject(request.target.newProjectName);
+    try {
+      return await placeIn(projectId);
+    } catch (error) {
+      await deps.removeProject(projectId, { deleteFiles: true }).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  /**
+   * A HAR capture: one REST API per origin it called, placed in the target project. With
+   * `responses: 'history'` each recorded exchange is written to that project's History at the time
+   * it was recorded, redacted as a live send's entry is. A project created for the import is taken
+   * back when anything after it fails.
+   */
+  registerHandler(channels.api.importHar, async (request) => {
+    const checkedSource = await checkedPostmanSource(request.source);
+    const mapped = await importHar(checkedSource, {
+      includeStaticAssets: request.includeStaticAssets,
+      responses: request.responses,
+    });
+    if (mapped.apis.length === 0) {
+      throw new WirebenchError(
+        'har-nothing-to-import',
+        'No HTTP requests were left to import after skipping preflights and static assets',
+      );
+    }
+    const source = checkedSource.kind === 'file' ? checkedSource.path : 'inline:har';
+
+    const placeIn = async (projectId: string) => {
+      let project: Awaited<ReturnType<typeof router.addApi>>['project'] | undefined;
+      for (const api of mapped.apis) {
+        ({ project } = await router.addApi(projectId, {
+          api,
+          documents: [],
+          source,
+          declaredVersion: 'har',
+          cache: false,
+        }));
+      }
+      if (project === undefined) {
+        throw new WirebenchError('internal-error', 'The HAR import placed no API');
+      }
+      let historyRecorded = 0;
+      const historyWarnings: string[] = [];
+      if (request.responses === 'history' && mapped.exchanges.length > 0) {
+        await deps.history.open(projectId);
+        const names = new Map(
+          mapped.apis.flatMap((api) =>
+            api.requests.map((restRequest) => [restRequest.id, { request: restRequest.name, api: api.name }] as const),
+          ),
+        );
+        const records = mapped.exchanges.flatMap((exchange) => {
+          const name = names.get(exchange.requestId);
+          return name === undefined
+            ? []
+            : [{ ...exchange, requestName: name.request, apiName: name.api, tags: ['imported:har'] }];
+        });
+        // One write for the whole capture, rotated against the cap as a live send's entry is.
+        const outcome = await deps.history.recordImportedRestBatch(projectId, records);
+        historyRecorded = outcome.recorded;
+        historyWarnings.push(...historyOutcomeWarnings(outcome));
+        if (historyRecorded > 0) deps.onHistoryChanged(projectId);
+      }
+      const report = { warnings: [...mapped.report.warnings, ...historyWarnings], notes: mapped.report.notes };
+      return {
+        projectId,
+        project,
+        apiIds: mapped.apis.map((api) => api.id),
+        summary: { ...mapped.summary, historyRecorded },
+        ...report,
+        reportText: formatImportReport(report),
+      };
     };
 
     if ('projectId' in request.target) {

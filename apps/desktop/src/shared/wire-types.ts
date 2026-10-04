@@ -1652,6 +1652,18 @@ export const webhookCollectionWireSchema = z.object({
 });
 export type WebhookCollectionWire = z.infer<typeof webhookCollectionWireSchema>;
 
+/** A response kept beside a REST request (#64): what came back once, shown read-only, never sent. */
+export const restResponseExampleWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.number(),
+  statusText: z.string(),
+  headers: z.array(keyValueWireSchema),
+  contentType: z.string().optional(),
+  body: z.string().optional(),
+});
+export type RestResponseExampleWire = z.infer<typeof restResponseExampleWireSchema>;
+
 /** One REST request as the renderer sees it. */
 export const restRequestWireSchema = z.object({
   kind: z.literal('rest'),
@@ -1679,6 +1691,8 @@ export const restRequestWireSchema = z.object({
   hook: hookLinkWireSchema.optional(),
   /** Webhook items only: overrides the inherited signing. */
   signing: webhookSigningWireSchema.optional(),
+  /** Recorded responses; absent when there are none. Only `remove-rest-example` changes them. */
+  examples: z.array(restResponseExampleWireSchema).optional(),
 });
 export type RestRequestWire = z.infer<typeof restRequestWireSchema>;
 
@@ -2969,6 +2983,8 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-rest-request'), requestId: z.string(), patch: restRequestPatchSchema }),
   z.object({ kind: z.literal('remove-rest-request'), requestId: z.string() }),
   z.object({ kind: z.literal('clone-rest-request'), requestId: z.string() }),
+  /** Deletes one recorded response; its body file goes on the next save. */
+  z.object({ kind: z.literal('remove-rest-example'), requestId: z.string(), exampleId: z.string() }),
   /** Creates the project's webhook collection if it does not have one yet. A no-op once it does. */
   z.object({ kind: z.literal('ensure-webhooks') }),
   z.object({
@@ -3724,6 +3740,71 @@ export const apiImportPostmanResponseSchema = z.object({
   variables: importVariablesSummarySchema.optional(),
 });
 export type ApiImportPostmanResponse = z.infer<typeof apiImportPostmanResponseSchema>;
+
+/** Request payload for `api.importHar`: a browser capture, read as REST APIs. */
+export const apiImportHarRequestSchema = z.object({
+  target: projectAddInterfaceTargetSchema,
+  source: postmanSourceSchema,
+  /** Keep images, fonts, scripts and stylesheets as requests too. */
+  includeStaticAssets: z.boolean().default(false),
+  /** What becomes of the recorded responses: nothing, History entries, or saved examples. */
+  responses: z.enum(['drop', 'history', 'examples']).default('drop'),
+});
+export type ApiImportHarRequest = z.infer<typeof apiImportHarRequestSchema>;
+
+const apiImportHarResponseObject = z.object({
+  projectId: z.string(),
+  project: projectWireSchema,
+  /** One API per origin the capture called, in the order they were first seen. */
+  apiIds: z.array(z.string()).readonly(),
+  summary: z.object({
+    entries: z.number(),
+    kept: z.number(),
+    requests: z.number(),
+    apis: z.number(),
+    statuses: z.record(z.string(), z.number()),
+    /** How many recorded exchanges were written to History; zero unless `responses` was `history`. */
+    historyRecorded: z.number(),
+  }),
+  warnings: z.array(z.string()).readonly(),
+  notes: z.array(z.string()).readonly(),
+  /** The import report as plain text, for the copy button; empty when there is nothing to say. */
+  reportText: z.string(),
+});
+/**
+ * Spelled out as an interface rather than `z.infer`, so the IPC channel registry's inferred type
+ * names it instead of expanding a whole project. The type-equality check after it fails to compile
+ * when the interface and the schema drift apart in either direction.
+ */
+export interface ApiImportHarResponse {
+  projectId: string;
+  project: ProjectWire;
+  apiIds: readonly string[];
+  summary: {
+    entries: number;
+    kept: number;
+    requests: number;
+    apis: number;
+    statuses: Record<string, number>;
+    historyRecorded: number;
+  };
+  warnings: readonly string[];
+  notes: readonly string[];
+  reportText: string;
+}
+/**
+ * Response payload for `api.importHar`. Annotated with its named type so the IPC channel registry's
+ * inferred type stays serialisable.
+ */
+export const apiImportHarResponseSchema: z.ZodType<ApiImportHarResponse> = apiImportHarResponseObject;
+
+/** Resolves to `true` only when `A` and `B` are the same type. */
+type TypesEqual<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+/** Compiles only when given `true`. */
+type AssertTrue<T extends true> = T;
+export type ApiImportHarResponseInSync = AssertTrue<
+  TypesEqual<z.infer<typeof apiImportHarResponseObject>, ApiImportHarResponse>
+>;
 
 /** Request payload for `api.importPostmanEnvironment` and `api.importPostmanGlobals`. */
 export const apiImportPostmanVariablesRequestSchema = z.object({ source: postmanSourceSchema });

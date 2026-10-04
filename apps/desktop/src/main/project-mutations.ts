@@ -92,6 +92,7 @@ import {
   moveNode,
   removeApi,
   removeFolder,
+  removeRestExample,
   removeRestRequest,
   toEngineAuthConfig,
   updateApi,
@@ -841,6 +842,9 @@ export async function applyChange(
 
     case 'clone-rest-request':
       return cloneRestRequest(project, change.requestId);
+
+    case 'remove-rest-example':
+      return removeRestExample(project, change.requestId, change.exampleId);
 
     case 'ensure-webhooks':
       return ensureWebhooks(project, deps.workspaceProperties);

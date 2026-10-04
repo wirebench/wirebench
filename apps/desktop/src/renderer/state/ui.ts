@@ -60,6 +60,7 @@ export type ImportDialogFormat =
   | 'postman'
   | 'postman-environment'
   | 'postman-globals'
+  | 'har'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project';

@@ -207,6 +207,8 @@ beforeEach(async () => {
     projectDirs: () => [projectDir],
     picks: new DialogPicks(),
     variablesPorts: unused,
+    history: { open: unused, recordImportedRestBatch: unused },
+    onHistoryChanged: unused,
   };
   registerApiChannels(deps);
 });

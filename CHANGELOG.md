@@ -13,6 +13,19 @@ All notable changes to this project are documented here. The format follows
   environment, renamed when the name is taken and never made active; globals merge into Globals.
   Secret-typed values go to the secret store, and nothing that already exists is overwritten. A
   Postman collection's own variables now arrive as project properties instead of being dropped (#64).
+- **HAR import.** **Import…** reads HAR 1.1 and 1.2 captures (**Import HAR…**): one REST API per
+  origin, one request per method, path and set of query names. CORS preflights, non-HTTP URLs and,
+  unless **Include static assets** is ticked, static assets are skipped. Recorded responses can be
+  left out, written to History at the time they were recorded, or saved as examples. Recorded
+  credentials and cookies are never imported (#64).
+- **Response examples.** A REST request can keep recorded responses as examples, up to 5 from a HAR
+  import, one per status. The response pane's **Examples** menu shows one read-only under a banner,
+  and **Delete example** removes it (#64).
+
+### Changed
+
+- **Project format 7.** Response examples are saved with the project, so the project format is now 7:
+  an older Wirebench cannot open a project saved by this one.
 
 ## [3.1.0] - 2026-10-04
 

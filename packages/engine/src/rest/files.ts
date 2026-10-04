@@ -100,6 +100,23 @@ export const restRequestFileSchema = z.looseObject({
   /** Only under `webhooks/`; refused elsewhere by the loader. */
   signing: webhookSigningSchema.optional(),
   scripts: scriptsSchema.optional(),
+  /**
+   * Recorded responses (format 7, #64). A body is not inline: `file` names it under the request's
+   * `<slug>.examples/` directory, validated segment by segment before it is read.
+   */
+  examples: z
+    .array(
+      z.looseObject({
+        id: nonEmpty,
+        name: z.string(),
+        status: z.number().int(),
+        statusText: z.string().default(''),
+        headers: z.array(keyValueEntrySchema).default([]),
+        contentType: z.string().optional(),
+        file: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 /** `apis/<slug>/api.yaml`. */

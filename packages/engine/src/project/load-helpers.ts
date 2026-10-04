@@ -17,6 +17,7 @@ import type { FsLike } from './fs.js';
 import { readFileIfExists, readdirIfExists } from './fs.js';
 import type { ProjectProblem } from './load.js';
 import type { AuthConfig, DefinitionAuth } from './model.js';
+import { isExamplesDir } from './managed-files.js';
 import { FOLDER_FILE, MAX_FOLDER_DEPTH, REQUEST_SUFFIX } from './paths.js';
 import { parseFile, restFolderFileSchema } from './schema-parts.js';
 import type { KeyValueEntryFile, scriptsSchema } from './schema-parts.js';
@@ -179,7 +180,8 @@ export type RequestReader<R> = (dir: string, fileName: string, unclaimed: Set<st
  * the ones that do have a file, and given a file of its own on the next save — because a folder
  * someone created with `mkdir` in a checked-out project is a folder, not a fault. A directory
  * deeper than {@link MAX_FOLDER_DEPTH} becomes a problem and is skipped whole, so nothing is ever
- * written to a path that might not open on Windows.
+ * written to a path that might not open on Windows. A request's `<slug>.examples/` directory is
+ * not a folder ({@link isExamplesDir}): its request's reader reads the files in it.
  */
 export async function loadFolderContents<R extends { readonly order: number; readonly name: string }>(
   fs: FsLike,
@@ -192,6 +194,11 @@ export async function loadFolderContents<R extends { readonly order: number; rea
 ): Promise<FolderContents<R>> {
   const entries = await readdirIfExists(fs, abs(root, dir));
   const unclaimed = new Set(entries.filter((e) => e.isFile && e.name !== FOLDER_FILE).map((e) => e.name));
+  const requestSlugs = new Set(
+    entries
+      .filter((e) => e.isFile && e.name.endsWith(REQUEST_SUFFIX))
+      .map((e) => e.name.slice(0, -REQUEST_SUFFIX.length)),
+  );
   const requests: R[] = [];
   const folders: FolderNode<R>[] = [];
 
@@ -200,7 +207,7 @@ export async function loadFolderContents<R extends { readonly order: number; rea
       requests.push(await readRequest(dir, entry.name, unclaimed));
       continue;
     }
-    if (!entry.isDirectory) {
+    if (!entry.isDirectory || (await isExamplesDir(fs, root, dir, entry.name, requestSlugs))) {
       continue;
     }
     const childDir = `${dir}/${entry.name}`;

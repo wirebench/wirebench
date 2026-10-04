@@ -265,6 +265,13 @@ export interface HistoryListQuery {
 export interface HistoryFile {
   /** Appends one entry (serialised, rotated against the configured cap) and updates the cache. */
   append(entry: HistoryEntry): Promise<void>;
+  /**
+   * Appends `entries` in order under one lock with one write, rotated against the cap exactly as
+   * that many `append` calls would be. Says how many entries the cap dropped: ones the file already
+   * held (`droppedOlder`), and the batch's own oldest when it alone is larger than the cap
+   * (`droppedNew`).
+   */
+  appendMany(entries: readonly HistoryEntry[]): Promise<{ readonly droppedOlder: number; readonly droppedNew: number }>;
   /** Newest-first entries matching `query`, most recent (or most recent before `before`) first. */
   list(query?: HistoryListQuery): HistoryEntry[];
   get(id: string): HistoryEntry | undefined;
@@ -524,23 +531,38 @@ export async function openHistory(file: string, options: HistoryOptions = {}): P
     seen = await signatureOf(file);
   };
 
+  const appendMany = (
+    entries: readonly HistoryEntry[],
+  ): Promise<{ readonly droppedOlder: number; readonly droppedNew: number }> => {
+    if (entries.length === 0) {
+      return Promise.resolve({ droppedOlder: 0, droppedNew: 0 });
+    }
+    return enqueue(() =>
+      withLock(file, options.lock, async () => {
+        await reload();
+        const held = cache.length;
+        cache = cache.concat(entries);
+        const dropped = Math.max(0, cache.length - cap);
+        if (dropped > 0) {
+          cache = cache.slice(dropped);
+        }
+        await write(serialise(cache));
+        const droppedOlder = Math.min(dropped, held);
+        return { droppedOlder, droppedNew: dropped - droppedOlder };
+      }),
+    );
+  };
+
   return {
     get problems() {
       return problems;
     },
 
-    append(entry) {
-      return enqueue(() =>
-        withLock(file, options.lock, async () => {
-          await reload();
-          cache.push(entry);
-          if (cache.length > cap) {
-            cache = cache.slice(cache.length - cap);
-          }
-          await write(serialise(cache));
-        }),
-      );
+    async append(entry) {
+      await appendMany([entry]);
     },
+
+    appendMany,
 
     list(query) {
       const needle = query?.query ?? '';
