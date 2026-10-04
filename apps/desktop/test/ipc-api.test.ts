@@ -216,7 +216,7 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
       grpcFields: vi.fn(),
       grpcRefresh: vi.fn(),
       grpcSample: vi.fn(),
-      writeImportedScripts: vi.fn().mockResolvedValue({ written: [], renamed: [] }),
+      writeImportedScripts: vi.fn().mockResolvedValue({ written: [], renamed: [], skipped: [] }),
       importWsApi: vi.fn().mockResolvedValue({ project: PROJECT, apiId: 'ws-1' }),
     },
     imports: { run, cancel: vi.fn().mockReturnValue({ cancelled: true }), readOpenApi: vi.fn() },
@@ -905,6 +905,11 @@ describe('the .http channels', () => {
 
   it('api.importHttpFile places both APIs, writes the scripts, and imports the environments beside it', async () => {
     const { addApi, deps, fake, variablesPorts } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockResolvedValueOnce({
+      written: ['imported-scripts/api/createpet.handler.js'],
+      renamed: [],
+      skipped: [],
+    });
 
     const res = await invoke('api.importHttpFile', {
       target: { projectId: 'p1' },
@@ -965,6 +970,7 @@ describe('the .http channels', () => {
       renamed: [
         { from: 'imported-scripts/api/createpet.handler.js', to: 'imported-scripts/api/createpet-2.handler.js' },
       ],
+      skipped: [],
     });
 
     const response = await value<{ notes: string[]; reportText: string }>('api.importHttpFile', {
@@ -976,6 +982,43 @@ describe('the .http channels', () => {
       'A script already existed at imported-scripts/api/createpet.handler.js, so this one was saved as imported-scripts/api/createpet-2.handler.js.';
     expect(response.notes).toContain(note);
     expect(response.reportText).toContain(note);
+  });
+
+  it('api.importHttpFile counts only the scripts it wrote, and warns about one it skipped', async () => {
+    const { deps } = setupPicked();
+    vi.mocked(deps.router.writeImportedScripts).mockResolvedValueOnce({
+      written: [],
+      renamed: [],
+      skipped: ['imported-scripts/api/createpet.handler.js'],
+    });
+
+    const response = await value<{ counts: { scripts: number }; warnings: string[] }>('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'api.http') },
+    });
+
+    expect(response.counts.scripts).toBe(0);
+    expect(response.warnings).toContain(
+      'The script imported-scripts/api/createpet.handler.js would have been saved outside imported-scripts/ and was not written.',
+    );
+  });
+
+  it("api.importHttpFile names the private file for a private $shared value the file's @variable outranks", async () => {
+    await writeFile(join(dir, 'http-client.private.env.json'), '{ "$shared": { "user": "shh" } }');
+    await writeFile(join(dir, 'http-client.env.json'), '{ "$shared": { "host": "h" } }');
+    setupPicked();
+
+    const response = await value<{ notes: string[] }>('api.importHttpFile', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'api.http') },
+    });
+
+    expect(response.notes).toContain(
+      'Project properties: "user" is defined more than once (http-client.private.env.json); the first value was kept.',
+    );
+    expect(response.notes).toContain(
+      'Project properties: "host" is defined more than once (http-client.env.json); the first value was kept.',
+    );
   });
 
   it('api.importHttpFile takes back a project it created when writing the scripts fails', async () => {

@@ -117,7 +117,18 @@ export async function checkedCompanionPaths(
       refuse(name, 'is a symbolic link and is not followed');
     }
     // A linked folder between the anchor's folder and the file would leave it without the leaf being a link.
-    const [baseReal, parentReal] = await Promise.all([realpath(base), realpath(dirname(target))]);
+    let baseReal: string;
+    let parentReal: string;
+    try {
+      [baseReal, parentReal] = await Promise.all([realpath(base), realpath(dirname(target))]);
+    } catch (error) {
+      // The folder went away since the `lstat`: the companion is as missing as one never there.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw new WirebenchError('import-path-refused', `"${name}" could not be checked and was not read`, {
+        details: { path: name },
+        cause: error,
+      });
+    }
     if (!isInsideReal(baseReal, parentReal)) {
       refuse(name, `is reached through a symbolic link and is not followed`);
     }

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -66,6 +66,25 @@ describe('ProjectHost.importLegacyProject', () => {
     await host.mutate({ kind: 'set-project-property', name: 'extra', value: '1' });
     await host.save({ reason: 'test' });
     expect(existsSync(afterLoad)).toBe(true);
+  });
+
+  it('leaves a script already in imported-scripts/ alone and reports where the new one went', async () => {
+    await mkdir(join(projectDir, 'imported-scripts'), { recursive: true });
+    await writeFile(join(projectDir, 'imported-scripts', 'afterLoadScript.groovy'), 'mine');
+    const legacy = await readLegacySoapProject({ kind: 'file', path: join(fixtures, 'full.xml') });
+
+    const { report } = await host.importLegacyProject({ project: legacy });
+
+    expect(await readFile(join(projectDir, 'imported-scripts', 'afterLoadScript.groovy'), 'utf8')).toBe('mine');
+    expect(await readFile(join(projectDir, 'imported-scripts', 'afterLoadScript-2.groovy'), 'utf8')).toBe(
+      "log.info('project loaded')\n// second line",
+    );
+    expect(report.items).toContainEqual({
+      severity: 'info',
+      path: '',
+      message:
+        'A script already existed at imported-scripts/afterLoadScript.groovy, so this one was saved as imported-scripts/afterLoadScript-2.groovy.',
+    });
   });
 
   it('never writes a password into the project folder', async () => {

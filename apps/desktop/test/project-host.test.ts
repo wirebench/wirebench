@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -33,6 +33,19 @@ vi.mock('../src/main/rename-dir.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/main/rename-dir.js')>();
   return { ...actual, moveDir: vi.fn(actual.moveDir) };
 });
+
+/** Whether this platform lets the test create a symlink (Windows without the privilege does not). */
+const canSymlink = ((): boolean => {
+  const probe = mkdtempSync(join(tmpdir(), 'wirebench-symlink-probe-'));
+  try {
+    symlinkSync(join(probe, 'target'), join(probe, 'link'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
 
 let server: TestSoapServer | undefined;
 let root: string | undefined;
@@ -1342,6 +1355,7 @@ describe('ProjectHost.writeImportedScripts', () => {
     expect(first).toEqual({
       written: ['imported-scripts/api/login-2.handler.js', 'imported-scripts/api/other.js'],
       renamed: [{ from: 'imported-scripts/api/login.handler.js', to: 'imported-scripts/api/login-2.handler.js' }],
+      skipped: [],
     });
     expect(second.renamed).toEqual([
       { from: 'imported-scripts/api/login.handler.js', to: 'imported-scripts/api/login-3.handler.js' },
@@ -1359,9 +1373,43 @@ describe('ProjectHost.writeImportedScripts', () => {
       { path: 'apis/evil.js', source: 'x' },
     ]);
 
-    expect(result).toEqual({ written: [], renamed: [] });
+    expect(result).toEqual({
+      written: [],
+      renamed: [],
+      skipped: ['imported-scripts/../escaped.js', 'apis/evil.js'],
+    });
     expect(existsSync(join(dir, 'apis', 'evil.js'))).toBe(false);
     expect(existsSync(join(dir, 'escaped.js'))).toBe(false);
+    await service.close();
+  });
+});
+
+describe('ProjectHost.writeImportedScripts and a linked imported-scripts folder', () => {
+  it.skipIf(!canSymlink)('refuses to write through it, and writes nothing outside the project', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'Linked Project');
+    await service.create({ dir, name: 'Linked Project' });
+    const outside = tempDir('outside');
+    symlinkSync(outside, join(dir, 'imported-scripts'));
+
+    await expect(
+      service.writeImportedScripts([{ path: 'imported-scripts/api/a.js', source: 'x' }]),
+    ).rejects.toMatchObject({ code: 'import-path-refused' });
+
+    expect(readdirSync(outside)).toEqual([]);
+    await service.close();
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it('refuses when imported-scripts is a file rather than a folder', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'File Project');
+    await service.create({ dir, name: 'File Project' });
+    await writeFile(join(dir, 'imported-scripts'), 'not a folder');
+
+    await expect(
+      service.writeImportedScripts([{ path: 'imported-scripts/api/a.js', source: 'x' }]),
+    ).rejects.toMatchObject({ code: 'import-path-refused' });
     await service.close();
   });
 });

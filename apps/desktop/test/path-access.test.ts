@@ -6,7 +6,23 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// The real `realpath`, wrapped so one test can make a folder vanish between the `lstat` and it.
+const realpathSpy = vi.hoisted(() => ({ fail: false }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    realpath: (...args: Parameters<typeof actual.realpath>) => {
+      if (realpathSpy.fail) {
+        realpathSpy.fail = false;
+        return Promise.reject(Object.assign(new Error('ENOENT: gone'), { code: 'ENOENT' }));
+      }
+      return actual.realpath(...args);
+    },
+  };
+});
 import { checkedCompanionPaths } from '../src/main/path-access.js';
 
 const made: string[] = [];
@@ -94,6 +110,16 @@ describe('checkedCompanionPaths', () => {
         'http-client.env.json',
         'http-client.private.env.json',
       ]),
+    ).toEqual([]);
+  });
+
+  it('drops a companion whose folder vanishes mid-check, rather than letting the fs error escape', async () => {
+    const dir = tmp();
+    write(dir, 'api.http');
+    write(dir, 'http-client.env.json');
+    realpathSpy.fail = true;
+    expect(
+      await checkedCompanionPaths([], { hasRead: () => true }, join(dir, 'api.http'), ['http-client.env.json']),
     ).toEqual([]);
   });
 });

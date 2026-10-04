@@ -280,6 +280,12 @@ async function readHttpEnvText(path: string): Promise<string> {
   return await readFile(path, 'utf8');
 }
 
+/** The `$shared` names of an environment file that `parseHttpEnvFiles` has already accepted. */
+function sharedNamesOf(text: string): string[] {
+  const shared = (JSON.parse(text) as Record<string, unknown>)['$shared'];
+  return typeof shared === 'object' && shared !== null && !Array.isArray(shared) ? Object.keys(shared) : [];
+}
+
 /** Registers the `api.*` IPC channels. */
 export function registerApiChannels(deps: ApiChannelDeps): void {
   const { router } = deps;
@@ -760,20 +766,24 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
   registerHandler(channels.api.importHttpFile, async (request) => {
     const checkedSource = await checkedPostmanSource(request.source);
     const mapped = await importHttpFile(checkedSource);
-    const env =
+    const [publicText, privateText] =
       request.includeEnvironments && checkedSource.kind === 'file'
-        ? await readHttpEnvCompanions(checkedSource.path).then(([publicText, privateText]) =>
-            publicText === undefined && privateText === undefined
-              ? undefined
-              : parseHttpEnvFiles(publicText, privateText, 'project'),
-          )
-        : undefined;
+        ? await readHttpEnvCompanions(checkedSource.path)
+        : [undefined, undefined];
+    const env =
+      publicText === undefined && privateText === undefined
+        ? undefined
+        : parseHttpEnvFiles(publicText, privateText, 'project');
+    // Which `$shared` names came from the private file, so a clash note names the file it lost from.
+    const privateShared = new Set(privateText === undefined ? [] : sharedNamesOf(privateText));
 
     // `@variables` first, so a name the file sets wins over the environment files' `$shared` one.
     const mergeReport = new ReportBuilder();
     const properties = new VariableSetBuilder('Project properties', mergeReport);
     for (const variable of mapped.projectProperties.variables) properties.add(variable);
-    for (const variable of env?.projectProperties?.variables ?? []) properties.add(variable, 'http-client.env.json');
+    for (const variable of env?.projectProperties?.variables ?? []) {
+      properties.add(variable, privateShared.has(variable.name) ? HTTP_PRIVATE_ENV_FILE : HTTP_ENV_FILE);
+    }
     const merged = mergeReport.build();
     const plan: ImportedVariables = {
       environments: env?.environments ?? [],
@@ -799,10 +809,18 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
         apiIds.push(apiId);
       }
       const scriptNotes: string[] = [];
+      const scriptWarnings: string[] = [];
+      let scriptsWritten = 0;
       if (mapped.scripts.length > 0) {
-        const { renamed } = await router.writeImportedScripts(projectId, mapped.scripts);
+        const { written, renamed, skipped } = await router.writeImportedScripts(projectId, mapped.scripts);
+        scriptsWritten = written.length;
         for (const { from, to } of renamed) {
           scriptNotes.push(`A script already existed at ${from}, so this one was saved as ${to}.`);
+        }
+        for (const path of skipped) {
+          scriptWarnings.push(
+            `The script ${path} would have been saved outside imported-scripts/ and was not written.`,
+          );
         }
       }
       const variables =
@@ -811,14 +829,14 @@ export function registerApiChannels(deps: ApiChannelDeps): void {
           : undefined;
       // The apply result repeats the plan's own report, so the env and merge lines come from it.
       const report = {
-        warnings: [...mapped.report.warnings, ...(variables?.warnings ?? [])],
+        warnings: [...mapped.report.warnings, ...scriptWarnings, ...(variables?.warnings ?? [])],
         notes: [...mapped.report.notes, ...scriptNotes, ...(variables?.notes ?? [])],
       };
       return {
         projectId,
         project,
         apiIds,
-        counts: { ...mapped.counts, scripts: mapped.scripts.length },
+        counts: { ...mapped.counts, scripts: scriptsWritten },
         ...(variables !== undefined ? { variables } : {}),
         ...report,
         reportText: formatImportReport(report),
