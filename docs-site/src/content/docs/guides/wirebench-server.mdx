@@ -120,6 +120,7 @@ with the variable's name and the rule it broke, never the value.
 | `WIREBENCH_SERVER_AUDIT_FORWARD_URL` | no | — | Forward every audit event (Enterprise): `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…` (`http://` only on a loopback host). Unset, nothing is forwarded. |
 | `WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN` | no | — | Sent as `Authorization: Bearer …` with each HTTPS batch. Refused with a syslog URL. Never logged. |
 | `WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE` | no | — | A PEM bundle added to the system roots for `syslog+tls` and `https` forwarding. Certificates are always verified. |
+| `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` | no | — | Seals audit events into a keyed hash chain that `admin audit verify` checks: at least 32 bytes, kept outside the database and never changed. Unset, nothing is sealed. Never logged. |
 {/* config:end */}
 {/* prettier-ignore-end */}
 

@@ -17,6 +17,12 @@ export type ServerCommand =
       readonly action?: string;
       readonly workspace?: string;
     }
+  | {
+      readonly command: 'admin-audit-verify';
+      /** A head copied from the `audit chain sealed to <seq>:<hex>` log line. */
+      readonly head?: { readonly seq: bigint; readonly hash: string };
+      readonly json: boolean;
+    }
   | { readonly command: 'help' }
   | { readonly command: 'version' };
 
@@ -41,6 +47,8 @@ Usage:
   wirebench-server admin license remove
   wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]
                                     Write the audit log as NDJSON to stdout
+  wirebench-server admin audit verify [--head <seq>:<hex>] [--json]
+                                    Check the audit log's chain; exit 1 when a link is broken
   wirebench-server --version
   wirebench-server --help
 
@@ -56,7 +64,26 @@ const OPTIONS = {
   to: { type: 'string' },
   action: { type: 'string' },
   workspace: { type: 'string' },
+  head: { type: 'string' },
+  json: { type: 'boolean' },
 } as const;
+
+const AUDIT_USAGE =
+  'usage: wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]' +
+  ' | verify [--head <seq>:<hex>] [--json]';
+
+/** `<seq>:<hex>`, as the sealer logs a head: a sequence number from 1 and a 32-byte hash in hex. */
+const HEAD = /^([1-9][0-9]{0,18}):([0-9a-fA-F]{64})$/;
+const MAX_SEQ = 2n ** 63n - 1n;
+
+function parseHead(value: string): { seq: bigint; hash: string } {
+  const match = HEAD.exec(value);
+  if (match !== null) {
+    const seq = BigInt(match[1]!);
+    if (seq <= MAX_SEQ) return { seq, hash: match[2]!.toLowerCase() };
+  }
+  throw new UsageError('--head must be <seq>:<hex>, as in the "audit chain sealed to" log line');
+}
 
 export function parseServerArgs(argv: readonly string[]): ServerCommand {
   let parsed: ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>;
@@ -75,6 +102,12 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
   for (const key of ['from', 'to', 'action', 'workspace'] as const) {
     if (parsed.values[key] !== undefined && !isAuditExport) {
       throw new UsageError(`--${key} applies to admin audit export only`);
+    }
+  }
+  const isAuditVerify = word === 'admin' && second === 'audit' && third === 'verify';
+  for (const key of ['head', 'json'] as const) {
+    if (parsed.values[key] !== undefined && !isAuditVerify) {
+      throw new UsageError(`--${key} applies to admin audit verify only`);
     }
   }
   switch (word) {
@@ -98,11 +131,14 @@ export function parseServerArgs(argv: readonly string[]): ServerCommand {
           if (third === undefined) throw new UsageError('usage: wirebench-server admin revoke-invitation <id>');
           return { command: 'admin-revoke-invitation', id: third };
         case 'audit': {
-          if (third !== 'export') {
-            throw new UsageError(
-              'usage: wirebench-server admin audit export [--from <iso>] [--to <iso>] [--action <name or group.>] [--workspace <id>]',
-            );
+          if (third === 'verify') {
+            return {
+              command: 'admin-audit-verify',
+              ...(parsed.values.head !== undefined ? { head: parseHead(parsed.values.head) } : {}),
+              json: parsed.values.json === true,
+            };
           }
+          if (third !== 'export') throw new UsageError(AUDIT_USAGE);
           for (const key of ['from', 'to'] as const) {
             const value = parsed.values[key];
             if (value !== undefined && Number.isNaN(Date.parse(value))) {
