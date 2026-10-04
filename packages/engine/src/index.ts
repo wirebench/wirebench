@@ -143,6 +143,7 @@ export {
   OpenApiError,
   AsyncApiError,
   PostmanError,
+  HarError,
   LegacyProjectError,
   ProtoError,
   GrpcError,
@@ -744,8 +745,18 @@ export {
   translatePostmanVariables,
 } from './rest/postman/index.js';
 // HAR: reading browser captures (HAR 1.1 and 1.2).
-export { MAX_HAR_INPUT_BYTES, isHar, parseHarText } from './rest/har/index.js';
-export type { HarEntryIn, HarLogIn, HarNameValue, HarPostData } from './rest/har/index.js';
+export { MAX_HAR_INPUT_BYTES, importHar, isHar, mapHar, parseHarText } from './rest/har/index.js';
+export type {
+  HarEntryIn,
+  HarLogIn,
+  HarNameValue,
+  HarPostData,
+  HarRecordedExchange,
+  HarResponseMode,
+  HarSource,
+  MapHarOptions,
+  MappedHar,
+} from './rest/har/index.js';
 // Import helpers shared by every importer.
 export {
   formatImportReport,
