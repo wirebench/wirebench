@@ -410,6 +410,18 @@ export function registerRequestCommands(): void {
       useUiStore.getState().openImportDialog('har');
     },
   });
+  registerCommand({
+    ...catalogEntry('rest.importHttpFile'),
+    run: () => {
+      useUiStore.getState().openImportDialog('http-file');
+    },
+  });
+  registerCommand({
+    ...catalogEntry('workspace.importHttpEnv'),
+    run: () => {
+      useUiStore.getState().openImportDialog('http-env');
+    },
+  });
   // The attachments inspector's two toolbar actions, reachable without opening the strip. Both
   // go through `attachmentActions`, so the palette and the inspector cannot drift apart.
   registerCommand({

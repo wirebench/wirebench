@@ -70,6 +70,7 @@ export default defineConfig({
             { label: 'From a legacy SOAP project', slug: 'switching/legacy-soap-project' },
             { label: 'From OpenAPI and Swagger', slug: 'switching/openapi' },
             { label: 'From cURL commands', slug: 'switching/curl' },
+            { label: 'From .http files', slug: 'switching/http-files' },
           ],
         },
         {
