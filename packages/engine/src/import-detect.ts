@@ -67,11 +67,12 @@ const PROTO_KEYWORD_REGEX =
   /^\s*(?:package\s+[\w.]+\s*;|import\s+"[^"]+\.proto"\s*;|service\s+\w+\s*\{|message\s+\w+\s*\{)/m;
 /**
  * A `.http` request line with its method written out: the method, then a target that is an absolute
- * http(s) or ws(s) URL or starts with a `{{variable}}`. Anchored, with no repeat next to another
- * that matches the same characters, so a long line costs one pass.
+ * http(s) or ws(s) URL or starts with a `{{variable}}`, and nothing after it but an optional HTTP
+ * version — so a sentence that happens to start with a method and a URL is not one. Anchored at both
+ * ends, and each repeat is followed by a different character class, so a long line costs one pass.
  */
 const HTTP_METHOD_LINE =
-  /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE|CONNECT|WEBSOCKET|GRAPHQL|GRPC)[ \t]+(?:https?:\/\/|wss?:\/\/|\{\{)\S/;
+  /^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE|CONNECT|WEBSOCKET|GRAPHQL|GRPC)[ \t]+(?:https?:\/\/|wss?:\/\/|\{\{)\S*(?:[ \t]+HTTP\/[\d.]+)?$/;
 /** A request line with the method left out, which the parser reads as GET. */
 const HTTP_BARE_URL_LINE = /^(?:https?|wss?):\/\/\S/;
 /** A `@name = value` file variable, which may come before the first request. */

@@ -343,6 +343,8 @@ describe('detectImportFormat: .http files and environment files', () => {
       'get https://example.com/a',
       'GET example.com/a',
       '@host = https://example.com\nsome prose',
+      'GET https://api.example.com/users returns users.',
+      'GET https://example.com is how you fetch.',
     ];
     for (const text of others) {
       expect(detectImportFormat({ text }).kind, text).not.toBe('http-file');
