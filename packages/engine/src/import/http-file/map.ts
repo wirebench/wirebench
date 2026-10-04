@@ -54,15 +54,24 @@ interface RewriteContext {
 
 const PROCESS_ENV = /\{\{\s*\$processEnv\s+([A-Za-z_]\w*)\s*\}\}/g;
 const CHAINING = /\{\{\s*[\w-]+\.(?:response|request)\.[^{}]*\}\}/g;
-/** A value made of `${…}` references and nothing else: no literal to keep out of the project. */
-const REFERENCES_ONLY = /^\s*(?:\$\{[^{}]+\}\s*)+$/;
-const AUTH_REFERENCES_ONLY = /^\s*(?:Bearer|Basic)\s+(?:\$\{[^{}]+\}\s*)+$/i;
+/**
+ * One reference: a `${…}` property, or a `{{…}}` kept as written (request chaining, a dynamic
+ * variable). Either names a value held elsewhere, so neither is a literal to keep out of the project.
+ */
+const REFERENCE = String.raw`(?:\$\{[^{}]+\}|\{\{[^{}]*\}\})`;
+/** A value made of references and nothing else. */
+const REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:${REFERENCE}\s*)+$`);
+const AUTH_REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:Bearer|Basic)\s+(?:${REFERENCE}\s*)+$`, 'i');
+/** A URL's `scheme://` and the user info before its `@`, which may hold references. */
+const USERINFO = new RegExp(String.raw`^([a-z][\w+.-]*://)((?:${REFERENCE}|[^/?#@{}])*)@`, 'i');
+/** User info made of references, with at most one `:` between them. */
+const USERINFO_REFERENCES = new RegExp(String.raw`^(?:${REFERENCE})+(?::(?:${REFERENCE})+)?$`);
 const ORIGIN = /^https?:\/\/[^/?#]+/i;
 const LEADING_REFERENCE = /^\$\{[^{}]+\}/;
 const ANY_ORIGIN = /^[a-z][\w+.-]*:\/\/[^/?#]*/i;
 const TIMEOUT = /^(\d+)\s*(ms|s|m)?$/i;
-/** A `"key": "value"` pair, for blanking credentials in a JSON body that does not parse. */
-const JSON_STRING_PAIR = /"((?:[^"\\\n]|\\.)*)"(\s*:\s*)"((?:[^"\\\n]|\\.)*)"/g;
+/** A `"key": value` pair whose value is a string, number or boolean, for blanking JSON in place. */
+const JSON_PAIR = /"((?:[^"\\\n]|\\.)*)"(\s*:\s*)("(?:[^"\\\n]|\\.)*"|-?\d[\w.+-]*|true|false)/g;
 
 /** Rewrites a .http value: $processEnv → ${#System#X}, request chaining kept as written (and reported), then {{x}} → ${x}. */
 function rewriteValue(text: string, ctx: RewriteContext): string {
@@ -88,6 +97,20 @@ function blankIfLiteral(name: string, value: string, blanked: Set<string>): stri
   if (value === '' || !isCredentialName(name) || referencesOnly(value)) return value;
   blanked.add(name);
   return '';
+}
+
+/**
+ * `url` without literal user info. User info made only of references stays; otherwise it is cut,
+ * and its user name (the part before `:`) handed back so the caller can set Basic auth.
+ */
+function stripUserinfo(url: string): { url: string; stripped: boolean; username?: string } {
+  const match = USERINFO.exec(url);
+  if (!match) return { url, stripped: false };
+  const [whole, scheme = '', userinfo = ''] = match;
+  if (USERINFO_REFERENCES.test(userinfo)) return { url, stripped: false };
+  const colon = userinfo.indexOf(':');
+  const username = colon === -1 ? userinfo : userinfo.slice(0, colon);
+  return { url: scheme + url.slice(whole.length), stripped: true, ...(username !== '' ? { username } : {}) };
 }
 
 /**
@@ -234,25 +257,106 @@ function blankJson(value: unknown, found: Set<string>): unknown {
 }
 
 /**
- * A JSON body with its literal credential values blanked, re-serialised only when one was. A body
- * that does not parse (an unquoted `${n}`, say) has its `"key": "value"` string pairs blanked in
- * place instead.
+ * A JSON body with its literal credential values blanked. Every `"key": value` pair is blanked in
+ * place first, which keeps the formatting and catches a repeated key; when the text then parses,
+ * a credential key holding an object or array is blanked too, and only that re-serialises. With
+ * `parsedOnly`, text that does not parse is returned as it was.
  */
-function blankJsonText(text: string, blanked: Set<string>): string {
-  let parsed: unknown;
+function blankJsonText(text: string, blanked: Set<string>, parsedOnly = false): string {
+  let parseable = true;
   try {
-    parsed = JSON.parse(text);
+    JSON.parse(text);
   } catch {
-    return text.replace(JSON_STRING_PAIR, (match, key: string, sep: string, value: string) => {
-      if (blankIfLiteral(key, value, blanked) === value) return match;
-      return `"${key}"${sep}""`;
-    });
+    parseable = false;
   }
+  if (!parseable && parsedOnly) return text;
+  const inPlace = text.replace(JSON_PAIR, (match, key: string, sep: string, value: string) => {
+    const bare = value.startsWith('"') ? value.slice(1, -1) : value;
+    if (blankIfLiteral(key, bare, blanked) === bare) return match;
+    return `"${key}"${sep}""`;
+  });
+  if (!parseable) return inPlace;
   const found = new Set<string>();
-  const out = blankJson(parsed, found);
-  if (found.size === 0) return text;
+  const out = blankJson(JSON.parse(inPlace), found);
+  if (found.size === 0) return inPlace;
   for (const key of found) blanked.add(key);
   return JSON.stringify(out, null, /\n( +)\S/.exec(text)?.[1]?.length);
+}
+
+/** A form-encoded text with literal credential values blanked in place, keeping the rest as written. */
+function blankFormText(text: string, blanked: Set<string>): string {
+  return text
+    .split('&')
+    .map((pair) => {
+      const equals = pair.indexOf('=');
+      if (equals === -1) return pair;
+      const name = pair.slice(0, equals);
+      let decoded = name;
+      try {
+        decoded = decodeURIComponent(name.replace(/\+/g, ' '));
+      } catch {
+        // a malformed escape: test the name as written
+      }
+      const value = pair.slice(equals + 1);
+      return blankIfLiteral(decoded, value, blanked) === value ? pair : `${name}=`;
+    })
+    .join('&');
+}
+
+/**
+ * A multipart body with the value of each literal credential text part blanked: a part whose
+ * `name` looks like a credential and that has no `filename`. Everything else stays as written.
+ */
+function blankMultipartText(text: string, contentType: string, blanked: Set<string>): string {
+  const boundary = /boundary="?([^";]+)"?/i.exec(contentType)?.[1]?.trim();
+  if (boundary === undefined || boundary === '') return text;
+  const delimiter = `--${boundary}`;
+  const lines = text.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? '';
+    out.push(line);
+    i += 1;
+    if (line.trim() !== delimiter) continue;
+    let name: string | undefined;
+    let file = false;
+    while (i < lines.length && (lines[i] ?? '').trim() !== '') {
+      const header = lines[i] ?? '';
+      if (/^content-disposition:/i.test(header)) {
+        name = /[;\s]name="([^"]*)"/i.exec(header)?.[1];
+        file = /[;\s]filename\*?=/i.test(header);
+      }
+      out.push(header);
+      i += 1;
+    }
+    if (i < lines.length) {
+      out.push(lines[i] ?? '');
+      i += 1;
+    }
+    const value: string[] = [];
+    while (i < lines.length && !(lines[i] ?? '').trim().startsWith(delimiter)) {
+      value.push(lines[i] ?? '');
+      i += 1;
+    }
+    const joined = value.join('\n').trim();
+    if (name !== undefined && !file && blankIfLiteral(name, joined, blanked) !== joined) {
+      out.push('');
+    } else {
+      out.push(...value);
+    }
+  }
+  return out.join('\n');
+}
+
+/** Text with literal credentials blanked by its `Content-Type`; without one, JSON that parses is blanked. */
+function blankText(text: string, contentType: string | undefined, blanked: Set<string>): string {
+  const mime = contentType?.toLowerCase() ?? '';
+  if (mime.includes('json')) return blankJsonText(text, blanked);
+  if (mime.includes('x-www-form-urlencoded')) return blankFormText(text, blanked);
+  if (mime.startsWith('multipart/') && contentType !== undefined) return blankMultipartText(text, contentType, blanked);
+  if (contentType === undefined) return blankJsonText(text, blanked, true);
+  return text;
 }
 
 function headerValue(headers: readonly KeyValueEntry[], name: string): string | undefined {
@@ -293,7 +397,12 @@ function mapBody(
     };
   }
   if (mime.startsWith('multipart/')) report.note(`${label}: the multipart body was kept as raw text.`);
-  return { kind: 'raw', language: 'text', ...(contentType !== undefined ? { contentType } : {}), text };
+  return {
+    kind: 'raw',
+    language: 'text',
+    ...(contentType !== undefined ? { contentType } : {}),
+    text: blankText(text, contentType, blanked),
+  };
 }
 
 /** The settings the directives ask for; any directive without an equivalent is noted. */
@@ -326,21 +435,38 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
   const ctx: RewriteContext = { dynamic: new Set(), chained: new Set() };
 
   const properties = new VariableSetBuilder('Project properties', report);
+  const seen = new Set<string>();
+  const secrets: string[] = [];
   for (const variable of parsed.variables) {
-    const value = rewriteValue(variable.value, ctx);
-    // No literal credential in a project file: one under a credential-looking name goes to the secret store.
-    const secret = value !== '' && isCredentialName(variable.name) && !referencesOnly(value);
-    properties.add(
-      secret
-        ? { name: variable.name, value: '', enabled: true, secret: true, secretValue: value }
-        : { name: variable.name, value, enabled: true, secret: false },
+    const raw = rewriteValue(variable.value, ctx);
+    const first = !seen.has(variable.name);
+    seen.add(variable.name);
+    // No literal credential in a project file: one under a credential-looking name goes to the
+    // secret store whole; any other value loses literal user info from a URL.
+    if (raw !== '' && isCredentialName(variable.name) && !referencesOnly(raw)) {
+      if (first) secrets.push(variable.name);
+      properties.add({ name: variable.name, value: '', enabled: true, secret: true, secretValue: raw });
+      continue;
+    }
+    const { url: value, stripped } = stripUserinfo(raw);
+    if (stripped && first) {
+      report.warn(`Project properties: the credential in the URL of "${variable.name}" was not imported.`);
+    }
+    properties.add({ name: variable.name, value, enabled: true, secret: false });
+  }
+  if (secrets.length > 0) {
+    report.note(
+      `Project properties: ${secrets.join(', ')} look like credentials; their values were stored as secrets.`,
     );
   }
 
   const restSlug = slugify(options.name);
   const scriptDir = restSlug.toLowerCase();
-  const urls = new Map<HttpFileRequest, ReturnType<typeof splitUrl>>();
-  for (const request of parsed.requests) urls.set(request, splitUrl(rewriteValue(request.url, ctx)));
+  const urls = new Map<HttpFileRequest, ReturnType<typeof splitUrl> & { stripped: boolean; username?: string }>();
+  for (const request of parsed.requests) {
+    const { url, ...userinfo } = stripUserinfo(rewriteValue(request.url, ctx));
+    urls.set(request, { ...splitUrl(url), ...userinfo });
+  }
 
   const restRequests = parsed.requests.filter(
     (r) => r.method !== 'WEBSOCKET' && r.method !== 'GRAPHQL' && r.method !== 'GRPC',
@@ -370,13 +496,27 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
       skipped += 1;
       continue;
     }
-    const { path: url, query: rawQuery } = urls.get(request) ?? { path: '', query: [] };
+    const {
+      path: url,
+      query: rawQuery,
+      stripped,
+      username,
+    } = urls.get(request) ?? { path: '', query: [], stripped: false };
     const name = request.name ?? `${request.method} ${pathOf(url)}`;
     const label = name;
     const blanked = new Set<string>();
     const query = rawQuery.map((q) => entry(q.name, blankIfLiteral(q.name, q.value, blanked)));
     const rewritten = request.headers.map((h) => ({ name: h.name, value: rewriteValue(h.value, ctx) }));
-    const { headers, auth } = headersAndAuth(rewritten, label, report, blanked);
+    const mapped = headersAndAuth(rewritten, label, report, blanked);
+    const { headers } = mapped;
+    let { auth } = mapped;
+    if (stripped) {
+      report.warn(`${label}: the credential in the URL was not imported; set it on the request.`);
+      // An Authorization header, kept or not, already says how the request authenticates.
+      if (!rewritten.some((h) => h.name.toLowerCase() === 'authorization')) {
+        auth = { type: 'basic', ...(username !== undefined ? { username } : {}) };
+      }
+    }
 
     for (const handler of request.handlers) {
       if (handler.kind === 'file') {
@@ -394,7 +534,9 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
         report.note(`${label}: the "@${directive.name}" directive has no Wirebench equivalent and was ignored.`);
       }
       let content: string | undefined;
-      if (request.body?.kind === 'inline') content = rewriteValue(request.body.text, ctx);
+      if (request.body?.kind === 'inline') {
+        content = blankText(rewriteValue(request.body.text, ctx), headerValue(headers, 'content-type'), blanked);
+      }
       if (request.body?.kind === 'file')
         report.note(`${label}: the message file ${request.body.path} was not imported.`);
       const slug = uniqueSlug(name, wsSlugs);

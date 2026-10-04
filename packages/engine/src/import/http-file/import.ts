@@ -6,6 +6,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { HttpFileError } from '../../errors.js';
 import type { IdGenerator } from '../../project/model.js';
+import type { ParsedHttpFile } from '../../rest/http-file/parse.js';
 import type { MappedHttpFile } from './map.js';
 import { mapHttpFile } from './map.js';
 import { MAX_HTTP_FILE_BYTES, parseHttpFile } from '../../rest/http-file/parse.js';
@@ -46,6 +47,22 @@ async function readSource(path: string): Promise<string> {
   }
 }
 
+/** A note for each `< file` body that is not beside the `.http` file; a path holding a template is not checked. */
+async function missingBodyFiles(parsed: ParsedHttpFile, fileDir: string): Promise<string[]> {
+  const notes: string[] = [];
+  for (const request of parsed.requests) {
+    const body = request.body;
+    if (body?.kind !== 'file' || body.path.includes('{{')) continue;
+    const path = resolve(fileDir, body.path);
+    try {
+      await stat(path);
+    } catch {
+      notes.push(`The body file ${path} (line ${request.line}) was not found.`);
+    }
+  }
+  return notes;
+}
+
 /**
  * Reads, parses and maps a `.http` or `.rest` file. A file's API is named after it and its
  * `< file` bodies resolve beside it; text has no directory, so those stay relative.
@@ -61,10 +78,10 @@ export async function importHttpFile(
     return mapHttpFile(parseHttpFile(source.text), { ...options, name: source.name ?? 'Imported requests' });
   }
   const path = resolve(source.path);
-  const text = await readSource(path);
-  return mapHttpFile(parseHttpFile(text), {
-    ...options,
-    name: basename(path).replace(/\.(http|rest)$/i, ''),
-    fileDir: dirname(path),
-  });
+  const parsed = parseHttpFile(await readSource(path));
+  const fileDir = dirname(path);
+  const mapped = mapHttpFile(parsed, { ...options, name: basename(path).replace(/\.(http|rest)$/i, ''), fileDir });
+  const missing = await missingBodyFiles(parsed, fileDir);
+  if (missing.length === 0) return mapped;
+  return { ...mapped, report: { ...mapped.report, notes: [...mapped.report.notes, ...missing] } };
 }

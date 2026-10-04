@@ -304,3 +304,120 @@ describe('importHttpFile', () => {
     expect(error).toMatchObject({ code: 'http-file-read-failed' });
   });
 });
+
+describe('mapHttpFile credentials, review round 1', () => {
+  it('strips literal user info from a URL into Basic auth, and keeps user info made of references', () => {
+    const m = mapText('GET https://ann:pw7@x.example.com/a\n\n###\nGET https://ann:pw7@x.example.com/b');
+    expect(m.rest.baseUrl).toBe('https://x.example.com');
+    expect(m.rest.servers).toEqual([{ url: 'https://x.example.com' }]);
+    expect(m.rest.requests[0]?.auth).toEqual({ type: 'basic', username: 'ann' });
+    expect(m.report.warnings).toContain('GET /a: the credential in the URL was not imported; set it on the request.');
+    const bearer = mapText('GET https://ann:pw7@x.example.com/a\nAuthorization: Bearer {{t}}');
+    expect(bearer.rest.requests[0]?.auth).toEqual({ type: 'inherit' });
+    const refs = mapText('GET https://{{u}}:{{p}}@x.example.com/a\n\n###\nGET https://y.example.com/');
+    expect(refs.rest.requests[0]?.url).toBe('https://${u}:${p}@x.example.com/a');
+    expect(JSON.stringify([m, bearer])).not.toContain('pw7');
+  });
+
+  it('strips literal user info from a URL-valued @variable', () => {
+    const m = mapText('@host = wss://u:pw8@x.example.com\n\nWEBSOCKET {{host}}/ws');
+    expect(m.projectProperties.variables[0]?.value).toBe('wss://x.example.com');
+    expect(m.report.warnings).toContain('Project properties: the credential in the URL of "host" was not imported.');
+    expect(JSON.stringify(m)).not.toContain('pw8');
+  });
+
+  it('blanks literal credentials in a WebSocket message, with or without a Content-Type', () => {
+    const m = mapText(
+      'WEBSOCKET wss://x.example.com/ws\n\n{"token": "pw9", "op": "hi"}\n\n###\nWEBSOCKET wss://x.example.com/f\nContent-Type: application/x-www-form-urlencoded\n\nop=hi&password=pw10',
+    );
+    const [json, form] = m.websocket?.requests ?? [];
+    expect(json?.messages[0]?.content).toBe('{"token": "", "op": "hi"}');
+    expect(form?.messages[0]?.content).toBe('op=hi&password=');
+    expect(m.report.warnings).toContain(
+      'WEBSOCKET /ws: the recorded value of token was not imported; set it on the request.',
+    );
+    expect(JSON.stringify(m)).not.toMatch(/pw9|pw10/);
+  });
+
+  it('blanks literal credential text parts of a multipart body and keeps the rest raw', () => {
+    const body = [
+      '--B',
+      'Content-Disposition: form-data; name="user"',
+      '',
+      'ann',
+      '--B',
+      'Content-Disposition: form-data; name="password"',
+      '',
+      'pw11',
+      '--B',
+      'Content-Disposition: form-data; name="apiKey"',
+      '',
+      '{{key}}',
+      '--B--',
+    ];
+    const m = mapText(
+      ['POST https://x.example.com/a', 'Content-Type: multipart/form-data; boundary=B', '', ...body].join('\n'),
+    );
+    const expected = [...body];
+    expected[7] = '';
+    expected[11] = '${key}';
+    expect(m.rest.requests[0]?.body).toMatchObject({ kind: 'raw', text: expected.join('\n') });
+    expect(m.report.warnings).toContain(
+      'POST /a: the recorded value of password was not imported; set it on the request.',
+    );
+    expect(JSON.stringify(m)).not.toContain('pw11');
+  });
+
+  it('treats request chaining and dynamic variables as references', () => {
+    const m = mapText(
+      'GET https://x.example.com/a\nAuthorization: Bearer {{login.response.body.token}}\nX-Session: {{login.response.headers.X-Session}}\nX-Nonce-Token: {{$uuid}}',
+    );
+    const request = m.rest.requests[0];
+    expect(request?.auth).toEqual({ type: 'inherit' });
+    expect(request?.headers).toEqual([
+      entry('Authorization', 'Bearer {{login.response.body.token}}'),
+      entry('X-Session', '{{login.response.headers.X-Session}}'),
+      entry('X-Nonce-Token', '{{$uuid}}'),
+    ]);
+  });
+
+  it('blanks duplicate JSON keys, bare literals, and JSON bodies without a Content-Type', () => {
+    const dup = mapText(
+      'POST https://x.example.com/a\nContent-Type: application/json\n\n{"password":"LEAK1","password":""}',
+    );
+    expect(dup.rest.requests[0]?.body).toMatchObject({ text: '{"password":"","password":""}' });
+    const bare = mapText(
+      'POST https://x.example.com/a\nContent-Type: application/json\n\n{"pin": 1, "secret": 4242, "count": {{n}}}',
+    );
+    expect(bare.rest.requests[0]?.body).toMatchObject({ text: '{"pin": 1, "secret": "", "count": ${n}}' });
+    const untyped = mapText('POST https://x.example.com/a\n\n{"password": "LEAK2"}');
+    expect(untyped.rest.requests[0]?.body).toEqual({ kind: 'raw', language: 'text', text: '{"password": ""}' });
+    expect(JSON.stringify([dup, bare, untyped])).not.toMatch(/LEAK|4242/);
+  });
+
+  it('notes the @variables that went to the secret store', () => {
+    const m = mapText('@apiToken = pw12\n@password = pw13\n\nGET https://x.example.com/a');
+    expect(m.report.notes).toContain(
+      'Project properties: apiToken, password look like credentials; their values were stored as secrets.',
+    );
+  });
+});
+
+describe('importHttpFile body files', () => {
+  it('notes a body file that does not exist', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wb-http-'));
+    try {
+      const path = join(dir, 'a.http');
+      await writeFile(join(dir, 'here.bin'), 'x');
+      await writeFile(
+        path,
+        'POST https://x.example.com/a\n\n< ./here.bin\n\n###\nPOST https://x.example.com/b\n\n< ./gone.bin',
+      );
+      const mapped = await importHttpFile({ kind: 'file', path });
+      expect(mapped.report.notes).toContain(`The body file ${join(dir, 'gone.bin')} (line 6) was not found.`);
+      expect(mapped.report.notes.filter((n) => n.includes('was not found'))).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
