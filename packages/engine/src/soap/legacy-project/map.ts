@@ -20,6 +20,7 @@ import { slugify, uniqueSlug } from '../../project/paths.js';
 import type { SoapOperationSummary } from '../types.js';
 import { DEFAULT_WSA_CONFIG } from '../../wsa/model.js';
 import { qnameToString } from '../../wsdl/qname.js';
+import { IMPORTED_SCRIPTS_DIR } from '../../import/scripts.js';
 import { rewriteProjectRefsToEnv } from './env-refs.js';
 import type { LegacyCall, LegacyInterface, LegacyOperation, LegacyProject, LegacyScript } from './model.js';
 
@@ -110,8 +111,7 @@ export interface MappedLegacyProject {
   readonly report: LegacyImportReport;
 }
 
-/** The folder imported scripts are written to. Nothing in Wirebench reads it. */
-export const IMPORTED_SCRIPTS_DIR = 'imported-scripts';
+export { IMPORTED_SCRIPTS_DIR };
 
 const PATH_SEPARATOR = ' › ';
 

@@ -740,7 +740,23 @@ export {
   translatePostmanVariables,
 } from './rest/postman/index.js';
 // Import helpers shared by every importer.
-export { rewriteMustache } from './import/index.js';
+export {
+  formatImportReport,
+  importedScriptPath,
+  credentialLookingNames,
+  ReportBuilder,
+  rewriteMustache,
+  uniqueName,
+  VariableSetBuilder,
+  warnCredentialLookingNames,
+} from './import/index.js';
+export type {
+  ImportedScriptFile,
+  ImportedVariable,
+  ImportedVariableSet,
+  ImportedVariables,
+  ImportReport,
+} from './import/index.js';
 export type {
   ImportPostmanOptions,
   MapPostmanOptions,
