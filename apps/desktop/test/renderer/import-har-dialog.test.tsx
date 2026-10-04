@@ -26,7 +26,14 @@ const project: ProjectWire = {
 
 const importHar = vi.fn();
 
-function harResponse(overrides: { historyRecorded?: number; warnings?: string[]; notes?: string[] } = {}) {
+function harResponse(
+  overrides: {
+    historyRecorded?: number;
+    statuses?: Record<string, number>;
+    warnings?: string[];
+    notes?: string[];
+  } = {},
+) {
   return {
     ok: true,
     value: {
@@ -103,6 +110,15 @@ describe('Import dialog — HAR', () => {
     expect(screen.getByTestId('import-har-summary-warnings').textContent).toContain('Authorization');
     expect(screen.getByTestId('import-har-summary-notes').textContent).toContain('preflight');
     expect(screen.getByTestId('import-har-summary-copy-report')).toBeTruthy();
+  });
+
+  it('shows the status counts seen when responses are not kept', async () => {
+    importHar.mockResolvedValue(harResponse({ statuses: { '404': 1, '200': 3, '500': 2 } }));
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="har" />);
+    fireEvent.change(screen.getByTestId('import-file-input'), { target: { value: '/work/session.har' } });
+    fireEvent.click(screen.getByTestId('import-submit'));
+    const statuses = await screen.findByTestId('import-har-statuses');
+    expect(statuses.textContent).toBe('Statuses seen: 200 ×3, 404 ×1, 500 ×2');
   });
 
   it('shows the refusal main answers with', async () => {

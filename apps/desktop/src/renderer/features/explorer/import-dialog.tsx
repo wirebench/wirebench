@@ -1938,11 +1938,15 @@ function VariablesSummary({
 }
 
 /**
- * What a HAR import made: the APIs and requests, how many entries were kept, then where the recorded
- * responses went, and the report.
+ * What a HAR import made: the APIs and requests, how many entries were kept, the response statuses
+ * seen (all a "Don't keep" import leaves of them), then where the recorded responses went, and the
+ * report.
  */
 function HarSummary({ value, responses }: { readonly value: ApiImportHarResponse; readonly responses: HarResponses }) {
   const { summary } = value;
+  const statuses = Object.entries(summary.statuses)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([status, count]) => `${status} ×${String(count)}`);
   return (
     <>
       <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
@@ -1952,6 +1956,11 @@ function HarSummary({ value, responses }: { readonly value: ApiImportHarResponse
         <p className="mt-1 text-xs text-fg-subtle">
           {String(summary.kept)} of {plural(summary.entries, 'entry', 'entries')} kept
         </p>
+        {statuses.length > 0 && (
+          <p data-testid="import-har-statuses" className="mt-1 text-xs text-fg-subtle">
+            Statuses seen: {statuses.join(', ')}
+          </p>
+        )}
         {responses === 'history' && (
           <p className="mt-1 text-xs text-fg-subtle">{plural(summary.historyRecorded, 'History record')}</p>
         )}
