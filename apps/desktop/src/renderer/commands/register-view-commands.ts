@@ -1,5 +1,6 @@
 import type { CommandId } from '@shared/commands.js';
 import { catalogEntry } from '@shared/command-catalog.js';
+import { openCookiesTab } from '../features/cookies/cookie-actions.js';
 import { registerCommand } from '../lib/commands.js';
 import { cycleTheme } from '../lib/theme-actions.js';
 import type { RequestViewType, ResponseViewType } from '../state/editors.js';
@@ -89,6 +90,12 @@ export function registerViewCommands(openPalette: (mode: 'commands' | 'quick-ope
     ...catalogEntry('view.showWss'),
     run: () => {
       ui().showSidebarView('wss');
+    },
+  });
+  registerCommand({
+    ...catalogEntry('view.showCookies'),
+    run: () => {
+      openCookiesTab();
     },
   });
   registerCommand({

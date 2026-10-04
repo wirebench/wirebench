@@ -60,7 +60,8 @@ export interface EditorTab {
     | 'ws-api'
     | 'env-compare'
     | 'catch-url'
-    | 'sequence';
+    | 'sequence'
+    | 'cookies';
   readonly title: string;
   /** Set when `kind` is `'request'`: the request draft this tab edits. */
   readonly requestId?: string;

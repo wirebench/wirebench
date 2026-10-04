@@ -31,6 +31,7 @@ import type {
   RestBody,
   SendAuth,
   GetSecret,
+  CookieJarHost,
   PropertyScopes,
   UnresolvedRef,
   WsSessionMaterial,
@@ -119,14 +120,12 @@ export type RequestChannelProject = Pick<
       | 'projectSnapshot'
       // Read by *Send to environments…* to name and validate the environments asked for.
       | 'sendEnvironments'
-      | 'rememberRestCookies'
       | 'restMeta'
       // What the send host (send/host.ts) lends the engine: the trust anchors, the client identity,
-      // the WS-Security keystores, the stored cookies, and the project and environment a send runs in.
+      // the WS-Security keystores, and the project and environment a send runs in.
       | 'trustAnchorsFor'
       | 'clientIdentityFor'
       | 'keystoreFor'
-      | 'restCookiesFor'
       | 'runContextFor'
       // The default `wsa:Action` of a SOAP request's operation, from the definition loaded in memory.
       | 'defaultWsaActionFor'
@@ -167,6 +166,8 @@ export interface RequestChannelDeps {
   readonly adHocScopes?: () => PropertyScopes;
   /** The session "show secrets" flag; omitted defaults every send to redacted. */
   readonly showSecrets?: { get(): boolean };
+  /** The open workspace's cookie jar, asked for once at the start of every REST send (cookie jar spec §2). */
+  readonly cookies?: () => CookieJarHost;
   /** Records every completed/failed send to the open project's history. Omitted in tests that don't care. */
   readonly history?: HistoryService;
   /** Called with the entry a recorded send produced, so main can broadcast `history.appended`. */
@@ -273,6 +274,7 @@ export function toSendDeps(
       : {}),
     ...(deps.onHistoryAppended !== undefined ? { onHistoryAppended: deps.onHistoryAppended } : {}),
     ...(deps.showSecrets !== undefined ? { showSecrets: deps.showSecrets } : {}),
+    ...(deps.cookies !== undefined ? { cookies: deps.cookies } : {}),
     ...(deps.onSendFailed !== undefined ? { onSendFailed: deps.onSendFailed } : {}),
     ...(deps.onExchange !== undefined ? { onExchange: deps.onExchange } : {}),
     ...(deps.scripts !== undefined ? { scripts: deps.scripts } : {}),

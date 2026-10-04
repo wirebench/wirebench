@@ -12,6 +12,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { RestResponsePane } from '../../src/renderer/features/rest-editor/response/response-pane.js';
 import { hexLines } from '../../src/renderer/features/rest-editor/response/body-view.js';
 import { statusToneClass } from '../../src/renderer/features/rest-editor/response/status-line.js';
+import { useEditorsStore } from '../../src/renderer/state/editors.js';
 import { usePreferencesStore } from '../../src/renderer/state/preferences.js';
 import { DEFAULT_PREFERENCES_WIRE } from '../../src/renderer/state/preferences-defaults.js';
 import { installWirebenchApi } from '../mocks/wirebench-api.js';
@@ -207,6 +208,27 @@ describe('RestResponsePane', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Redirects' }));
     expect(screen.getByText('This request was not redirected.')).toBeTruthy();
+  });
+
+  it('notes what the cookie jar did with each cookie, and links to the manager', () => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+    mount(
+      makeRestExchange({
+        cookies: [
+          { name: 'session', value: 'abc', jar: { stored: true } },
+          { name: 'far', value: '1', domain: 'other.test', jar: { stored: false, reason: 'domain-mismatch' } },
+          { name: 'old', value: '', maxAge: 0, jar: { stored: false, reason: 'deleted' } },
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /Cookies/ }));
+    expect(screen.getAllByTestId('rest-cookie-jar').map((cell) => cell.textContent)).toEqual([
+      'stored',
+      'ignored: the domain does not match the host',
+      'deleted from the jar',
+    ]);
+    fireEvent.click(screen.getByTestId('rest-cookies-manage'));
+    expect(useEditorsStore.getState().activeId).toBe('cookies');
   });
 
   it('lists the redirect hops and what the request finally arrived as', () => {

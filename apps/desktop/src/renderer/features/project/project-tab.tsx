@@ -10,6 +10,7 @@ import { useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
 import { workspaceActions } from '../workspace/workspace-actions.js';
 import { SaveIndicator } from './save-indicator.js';
+import { currentColumn, useCurrentValues } from '../../state/current-values.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from '../environments/variables-table.js';
 import type { ProjectSettingsPatchWire } from '../../../shared/wire-types.js';
 
@@ -36,6 +37,9 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
   const workspaceDisabled = useWorkspaceStore((state) => state.workspace?.disabled ?? []);
   const globalsProperties = useGlobalsStore((state) => state.properties);
   const globalsDisabled = useGlobalsStore((state) => state.disabled);
+  const current = useCurrentValues({ scope: 'project', projectId });
+  const workspaceCurrent = useCurrentValues({ scope: 'workspace' });
+  const globalsCurrent = useCurrentValues({ scope: 'global' });
 
   if (project === undefined) {
     return <p className="p-4 text-sm text-fg-subtle">This project is no longer in the workspace.</p>;
@@ -46,8 +50,8 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
   };
 
   const inherited: readonly InheritedScope[] = [
-    { label: 'Workspace', properties: workspaceProperties, disabled: workspaceDisabled },
-    { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled },
+    { label: 'Workspace', properties: workspaceProperties, disabled: workspaceDisabled, current: workspaceCurrent },
+    { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled, current: globalsCurrent },
   ];
 
   const propertiesTarget: VariablesTableTarget = {
@@ -56,6 +60,7 @@ export function ProjectTab({ projectId }: ProjectTabProps) {
     inherited,
     properties: project.properties,
     disabled: project.disabledProperties,
+    current: currentColumn({ scope: 'project', projectId }, current),
     onSet: (name, value) => {
       void setProjectProperty(projectId, name, value);
     },

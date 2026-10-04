@@ -532,8 +532,24 @@ export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } 
 export type { AppliedAuth } from './http/auth/apply-auth.js';
 export { applySoapAuth } from './soap/auth.js';
 export type { SoapAppliedAuth } from './soap/auth.js';
-export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
-export type { CookieMatchOptions } from './rest/cookies.js';
+export { cookieHeader, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
+export {
+  CookieJar,
+  cookiesToSend,
+  jarCookieHost,
+  MAX_COOKIE_BYTES,
+  MAX_COOKIES,
+  MAX_COOKIES_PER_DOMAIN,
+  mergeCookieHeader,
+} from './rest/cookie-jar.js';
+export type {
+  CookieJarHost,
+  CookieKey,
+  CookieMatchOptions,
+  CookieRejection,
+  CookieVerdict,
+  StoredCookie,
+} from './rest/cookie-jar.js';
 export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
 export type { BodyLanguage, Cookie, DecodedText, PrettyBody } from './rest/response.js';
 export {

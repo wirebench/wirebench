@@ -76,6 +76,7 @@ import type { WebContents } from 'electron';
 import type { RecordsReadPicks, RecordsWritePicks, ReadPicks } from './dialog-picks.js';
 import { pickFolder, pickFolderToWrite } from './native-dialogs.js';
 import type { EngineService } from './engine-service.js';
+import type { CurrentValuesStore } from './current-values.js';
 import type { GlobalProperties } from './global-properties.js';
 import type { HistoryService } from './history-service.js';
 import type { PreferencesService } from './preferences.js';
@@ -162,6 +163,8 @@ export const UNSAVED_RECORD_DEBOUNCE_MS = 2_000;
 export interface WorkspaceHooks {
   /** The open workspace changed (opened, closed, renamed, a project's status moved). */
   readonly onChanged?: (workspace: WorkspaceWire | null) => void;
+  /** A workspace was deleted: what main keeps for it outside its folder (its cookies, its current values) goes too. */
+  readonly onDeleted?: (workspaceId: string) => void;
   /** One project's model changed; `null` means that host closed. */
   readonly onProjectChanged?: (projectId: string, project: ProjectWire | null) => void;
   /** Files under one project's folder changed outside the app. */
@@ -258,6 +261,8 @@ export interface WorkspaceServiceDeps {
    * have unreviewed findings. Omitted in tests that never scan (nothing is held).
    */
   readonly secretScans?: Pick<SecretScanSessions, 'findings' | 'onChange'>;
+  /** The session's current values, which every host's sends and previews read. Omitted in tests. */
+  readonly currentValues?: Pick<CurrentValuesStore, 'overlaysFor'>;
   /**
    * Team secrets for the open shared workspace (team-secrets spec): attached on open, told about
    * every pull, and asked to decide vault conflicts. Omitted in tests that never share secrets.
@@ -1015,6 +1020,8 @@ export class WorkspaceService implements ProjectRouter {
       const open = this.current;
       return open === undefined ? undefined : { workspace: open.workspace, projectSlug: entry.ref.slug };
     });
+    // Read afresh on every resolution, like the workspace context, so a value typed a moment ago applies.
+    host.setCurrentValues(() => this.deps.currentValues?.overlaysFor(entry.projectId));
     try {
       const record = await this.unsaved?.readProject(entry.ref.id);
       const project = await host.openProject(
@@ -1817,6 +1824,7 @@ export class WorkspaceService implements ProjectRouter {
     }
     await trash(dir);
     await this.state.forget(id);
+    this.deps.hooks?.onDeleted?.(id);
     return await this.list();
   }
 
@@ -2978,11 +2986,6 @@ export class WorkspaceService implements ProjectRouter {
   }
 
   /** @inheritdoc */
-  restCookiesFor(...args: Parameters<ProjectRouter['restCookiesFor']>): ReturnType<ProjectRouter['restCookiesFor']> {
-    return this.hostOfEntity(args[0]).restCookiesFor(...args);
-  }
-
-  /** @inheritdoc */
   runContextFor(...args: Parameters<ProjectRouter['runContextFor']>): ReturnType<ProjectRouter['runContextFor']> {
     return this.hostOfEntity(args[0]).runContextFor(...args);
   }
@@ -2992,13 +2995,6 @@ export class WorkspaceService implements ProjectRouter {
     ...args: Parameters<ProjectRouter['defaultWsaActionFor']>
   ): ReturnType<ProjectRouter['defaultWsaActionFor']> {
     return this.hostOfEntity(args[0]).defaultWsaActionFor(...args);
-  }
-
-  /** @inheritdoc */
-  rememberRestCookies(
-    ...args: Parameters<ProjectRouter['rememberRestCookies']>
-  ): ReturnType<ProjectRouter['rememberRestCookies']> {
-    return this.hostOfEntity(args[0]).rememberRestCookies(...args);
   }
 
   /** @inheritdoc */

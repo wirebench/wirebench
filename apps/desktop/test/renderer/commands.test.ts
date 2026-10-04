@@ -370,3 +370,23 @@ describe('request action commands', () => {
     expect(useUiStore.getState().slideOver).toMatchObject({ open: true });
   });
 });
+
+describe('view.showCookies', () => {
+  beforeEach(() => {
+    installWirebenchApi();
+    resetCommands();
+    registerShellCommands(vi.fn());
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+  });
+
+  afterEach(() => {
+    useEditorsStore.setState({ tabs: [], activeId: undefined });
+  });
+
+  it('opens the one Cookies tab of the window', async () => {
+    await runCommand('view.showCookies', context);
+    await runCommand('view.showCookies', context);
+    expect(useEditorsStore.getState().tabs).toEqual([{ id: 'cookies', kind: 'cookies', title: 'Cookies' }]);
+    expect(useEditorsStore.getState().activeId).toBe('cookies');
+  });
+});

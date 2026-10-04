@@ -243,18 +243,6 @@ describe('ProjectHost for the send host', () => {
     expect(ws.workspace().activeEnvironmentId).toBe('wdev');
   });
 
-  it("hands back a request's stored cookies whatever its send-cookies setting", async () => {
-    const { requestId } = await restProject();
-    const cookie = { name: 'sid', value: 'abc' } as never;
-    expect(host.restCookiesFor(requestId)).toBeUndefined();
-    host.rememberRestCookies(requestId, [cookie]);
-    expect(host.restCookiesFor(requestId)).toEqual([cookie]);
-    // The request's own resolution still sends none: its setting is off.
-    expect((await restSend(requestId))?.input.cookies).toBeUndefined();
-    host.rememberRestCookies(requestId, []);
-    expect(host.restCookiesFor(requestId)).toBeUndefined();
-  });
-
   it('lends no trust anchors and no identity when nothing is configured', async () => {
     expect(await host.trustAnchors()).toBeUndefined();
     expect(await host.clientIdentityFor(undefined)).toBeUndefined();
@@ -280,5 +268,17 @@ describe('ProjectHost.runContextFor with global properties', () => {
     } finally {
       await withGlobals.close();
     }
+  });
+});
+
+describe('ProjectHost with current values', () => {
+  it('lays the session current values over committed ones, for a send and for the scopes', async () => {
+    const { requestId, dev, test } = await restProject();
+    const current = { projectEnvironments: { [dev]: { tenant: 'mine' }, [test]: { tenant: 'theirs' } } };
+    host.setCurrentValues(() => current);
+    expect(target(await restSend(requestId))).toBe('https://dev.example/pets/mine');
+    expect(target(await restSend(requestId, test))).toBe('https://test.example/pets/theirs');
+    expect(host.scopesFor().env).toEqual({ tenant: 'mine' });
+    expect(host.runContextFor(requestId)?.current).toEqual(current);
   });
 });

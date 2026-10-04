@@ -17,6 +17,7 @@ import { showToast } from '../../components/toast.js';
 import { Tabs } from '../../components/tabs.js';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
+import { useCurrentValuesStore } from '../../state/current-values.js';
 import { useExchangesStore } from '../../state/exchanges.js';
 import { ipc } from '../../state/ipc-client.js';
 import { usePreferencesStore } from '../../state/preferences.js';
@@ -108,6 +109,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
   const halfCloseGrpc = useExchangesStore((state) => state.halfCloseGrpc);
   const preferences = usePreferencesStore((state) => state.preferences);
   const activeEnvironment = useWorkspaceStore((state) => state.workspace?.activeEnvironmentId);
+  const currentValues = useCurrentValuesStore((state) => state.byScope);
   const layout = useEditorLayout(requestId);
   const [tab, setTab] = useState<TabId>('message');
   const [resolved, setResolved] = useState<{ target?: string | undefined; source?: string | undefined }>({});
@@ -133,7 +135,7 @@ export function GrpcEditor({ requestId }: GrpcEditorProps) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [requestId, target, activeEnvironment]);
+  }, [requestId, target, activeEnvironment, currentValues]);
 
   const stage = useCallback(
     (patch: GrpcRequestPatchWire) => {

@@ -496,3 +496,48 @@ describe('toRestExchangeSummary — an API key in the query', () => {
     expect(rawRequestLine(summary)).toBe('GET /calc?key=secret123 HTTP/1.1');
   });
 });
+
+describe('toRestExchangeSummary — the cookie jar verdicts', () => {
+  function withCookies(extra: Record<string, unknown>): RestExchange {
+    return {
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      rawHeaders: [],
+      body: new Uint8Array(),
+      rawBody: new Uint8Array(),
+      rawRequest: Buffer.from('GET / HTTP/1.1\r\nHost: example.test\r\n\r\n', 'latin1'),
+      rawResponse: Buffer.from('HTTP/1.1 200 OK\r\n\r\n', 'latin1'),
+      truncated: false,
+      httpVersion: '1.1',
+      timings: {},
+      redirects: [],
+      request: { url: 'http://example.test/', method: 'GET', headers: {} },
+      text: '',
+      language: 'text',
+      cookies: [
+        { name: 'sid', value: '1' },
+        { name: 'far', value: '2', domain: 'other.test' },
+      ],
+      methodChanged: false,
+      ...extra,
+    } as unknown as RestExchange;
+  }
+
+  it("marks each cookie with the jar's verdict", () => {
+    const summary = toRestExchangeSummary(
+      withCookies({ cookieVerdicts: [{ stored: true }, { stored: false, reason: 'domain-mismatch' }] }),
+      's1',
+      { method: 'GET' },
+    );
+    expect(summary.cookies.map((cookie) => cookie.jar)).toEqual([
+      { stored: true },
+      { stored: false, reason: 'domain-mismatch' },
+    ]);
+  });
+
+  it('marks nothing when the send had no jar', () => {
+    const summary = toRestExchangeSummary(withCookies({}), 's1', { method: 'GET' });
+    expect(summary.cookies.map((cookie) => cookie.jar)).toEqual([undefined, undefined]);
+  });
+});

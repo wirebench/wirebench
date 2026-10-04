@@ -3,14 +3,8 @@
  * the negative cases here matter more than the positive ones.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  cookieHeader,
-  cookiesToSend,
-  defaultPath,
-  domainMatches,
-  isExpired,
-  pathMatches,
-} from '../../../src/rest/cookies.js';
+import { cookieHeader, defaultPath, domainMatches, isExpired, pathMatches } from '../../../src/rest/cookies.js';
+import { cookiesToSend } from '../../../src/rest/cookie-jar.js';
 import type { Cookie } from '../../../src/rest/response.js';
 
 const NOW = new Date('2026-09-13T12:00:00Z');
