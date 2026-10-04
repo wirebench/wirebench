@@ -80,25 +80,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** True when `text` opens with a request line and has a `###` separator or a second request line. */
+/** True when `text` opens with a request line, has a `###` separator or a second request line, and names a method. */
 function looksLikeHttpFile(text: string): boolean {
   const lines = text.split(/\r?\n/).map((line) => line.trim());
   const requests = lines.filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith('//'));
   const first = requests[0];
   if (first === undefined || !HTTP_REQUEST_LINE.test(first)) return false;
-  return lines.some((line) => line.startsWith('###')) || requests.filter((l) => HTTP_REQUEST_LINE.test(l)).length >= 2;
+  const requestLines = requests.filter((l) => HTTP_REQUEST_LINE.test(l));
+  if (!requestLines.some((l) => !/^https?:/.test(l))) return false; // a bare list of URLs is not a request file
+  return lines.some((line) => line.startsWith('###')) || requestLines.length >= 2;
 }
 
 /** `{ "<env>": { "<name>": scalar } }` with at least one environment. */
 function looksLikeHttpEnv(parsed: Record<string, unknown>): boolean {
   const sets = Object.values(parsed);
+  const isScalar = (v: unknown): boolean => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
   return (
     sets.length > 0 &&
-    sets.every(
-      (set) =>
-        isRecord(set) &&
-        Object.values(set).every((v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'),
-    )
+    sets.every((set) => isRecord(set) && Object.values(set).every(isScalar)) &&
+    sets.some((set) => isRecord(set) && Object.keys(set).length > 0)
   );
 }
 
@@ -138,11 +138,13 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     // 3. Try JSON or YAML parsing once (avoiding duplicate parsing work)
     let parsed: unknown;
     let didParse = false;
+    let parsedAsJson = false;
 
     if (text.startsWith('{') || text.startsWith('[')) {
       try {
         parsed = JSON.parse(text);
         didParse = true;
+        parsedAsJson = true;
       } catch {
         // Fall through to YAML parse or regex
       }
@@ -212,7 +214,7 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
       }
 
       // Last of the JSON checks: any record of scalar records could be an environment file
-      if (looksLikeHttpEnv(parsed)) return { ...HTTP_ENV_FORMAT, confidence: 'probable' };
+      if (parsedAsJson && looksLikeHttpEnv(parsed)) return { ...HTTP_ENV_FORMAT, confidence: 'probable' };
     }
 
     // 4. Pattern matching fallback on raw text

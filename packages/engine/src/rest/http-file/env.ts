@@ -43,6 +43,18 @@ function secretOf(name: string, value: Scalar): ImportedVariable {
   return { name, value: '', enabled: true, secret: true, secretValue: String(value) };
 }
 
+/** A public value: a credential-named literal becomes a secret (with a note), anything else stays plain. */
+function publicVariable(where: string, key: string, value: Scalar, report: ReportBuilder): ImportedVariable {
+  const text = String(value);
+  if (isCredentialName(key) && text.length > 0 && !text.includes('{{')) {
+    report.note(
+      `${where}: "${key}" looks like a credential, so its public value was imported as a secret rather than plain text.`,
+    );
+    return secretOf(key, value);
+  }
+  return { name: key, value: rewriteMustache(text), enabled: true, secret: false };
+}
+
 /**
  * The environments of a public and a private `.http` environment file. A private value is always
  * a secret and wins over a public one of the same name; a credential-named public literal is
@@ -85,15 +97,7 @@ export function parseHttpEnvFiles(
           continue;
         }
         if (privateNames.has(key)) continue;
-        const text = String(value);
-        if (isCredentialName(key) && text.length > 0 && !text.includes('{{')) {
-          report.note(
-            `${env}: "${key}" looks like a credential, so its public value was imported as a secret rather than plain text.`,
-          );
-          builder.add(secretOf(key, value));
-        } else {
-          builder.add({ name: key, value: rewriteMustache(text), enabled: true, secret: false });
-        }
+        builder.add(publicVariable(env, key, value, report));
       }
     }
     return builder.build();
@@ -107,15 +111,22 @@ export function parseHttpEnvFiles(
   if (shared.some(isRecord)) {
     const label = sharedTarget === 'project' ? 'Project properties' : 'Workspace properties';
     const builder = new VariableSetBuilder(label, report);
-    for (const [index, block] of shared.entries()) {
-      if (!isRecord(block)) continue;
-      for (const [key, value] of Object.entries(block)) {
+    const privateShared = isRecord(shared[1]) ? shared[1] : {};
+    const privateNames = new Set<string>();
+    for (const [key, value] of Object.entries(privateShared)) {
+      if (!isScalar(value)) {
+        report.note(`${SHARED}: "${key}" is a settings object, not a variable, and was skipped.`);
+        continue;
+      }
+      privateNames.add(key);
+      builder.add(secretOf(key, value));
+    }
+    if (isRecord(shared[0])) {
+      for (const [key, value] of Object.entries(shared[0])) {
         if (!isScalar(value)) {
           report.note(`${SHARED}: "${key}" is a settings object, not a variable, and was skipped.`);
-        } else if (index === 1) {
-          builder.add(secretOf(key, value));
-        } else {
-          builder.add({ name: key, value: rewriteMustache(String(value)), enabled: true, secret: false });
+        } else if (!privateNames.has(key)) {
+          builder.add(publicVariable(SHARED, key, value, report));
         }
       }
     }

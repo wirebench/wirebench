@@ -308,6 +308,10 @@ describe('detectImportFormat: .http files and environment files', () => {
     );
   });
 
+  it('does not take a bare list of URLs for a .http file', () => {
+    expect(detectImportFormat({ text: 'https://example.com/a\n\n###\nhttps://example.com/b' }).kind).toBe('unknown');
+  });
+
   it('detects an environment file by its shape, last and as probable', () => {
     expect(detectImportFormat({ text: '{"dev":{"host":"h","port":1},"prod":{}}' })).toEqual({
       kind: 'http-env',
@@ -316,5 +320,7 @@ describe('detectImportFormat: .http files and environment files', () => {
     });
     expect(detectImportFormat({ text: '{"dev":{"a":{"b":1}}}' }).kind).toBe('unknown');
     expect(detectImportFormat({ text: '{}' }).kind).toBe('unknown');
+    expect(detectImportFormat({ text: '{"a":{}}' }).kind).toBe('unknown');
+    expect(detectImportFormat({ text: 'server:\n  host: x\n  port: 1' }).kind).toBe('unknown');
   });
 });

@@ -57,6 +57,26 @@ describe('parseHttpEnvFiles', () => {
     expect(plan.report.warnings.join('\n')).not.toContain('apiKey');
   });
 
+  it('applies the credential rule and private precedence to $shared', () => {
+    const plan = parseHttpEnvFiles(
+      '{"$shared":{"apiKey":"abc","host":"h","token":"pub"}}',
+      '{"$shared":{"token":"priv","password":"pw"}}',
+      'project',
+    );
+    const shared = new Map(plan.projectProperties!.variables.map((v) => [v.name, v]));
+    expect(shared.get('apiKey')).toEqual({
+      name: 'apiKey',
+      value: '',
+      enabled: true,
+      secret: true,
+      secretValue: 'abc',
+    });
+    expect(shared.get('token')).toEqual({ name: 'token', value: '', enabled: true, secret: true, secretValue: 'priv' });
+    expect(shared.get('password')?.secretValue).toBe('pw');
+    expect(shared.get('host')?.secret).toBe(false);
+    expect(plan.report.notes).toEqual(expect.arrayContaining([expect.stringContaining('$shared: "apiKey"')]));
+  });
+
   it('reads environments that only the private file has', () => {
     const plan = parseHttpEnvFiles('{"dev":{}}', '{"stage":{"password":"p"}}', 'project');
     expect(plan.environments.map((e) => e.name)).toEqual(['dev', 'stage']);
