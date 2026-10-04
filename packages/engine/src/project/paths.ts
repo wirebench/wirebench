@@ -302,6 +302,18 @@ export function restBodyFileName(requestSlug: string, extension: string): string
   return `${requestSlug}.body.${extension}`;
 }
 
+/** Suffix of a request's response-examples directory ({@link restExamplesDirName}). */
+export const EXAMPLES_SUFFIX = '.examples';
+
+/**
+ * The directory a REST request's response examples live in, beside its request file:
+ * `<slug>.examples/`, one `<id>.body.<ext>` per example (#64). The loader skips it as a folder and
+ * a save manages it with the request, so a rename moves it and a delete takes it.
+ */
+export function restExamplesDirName(requestSlug: string): string {
+  return `${requestSlug}${EXAMPLES_SUFFIX}`;
+}
+
 /** Absolute path of an environment file. */
 export function environmentFile(root: string, environmentSlug: string): string {
   return join(root, ENVIRONMENTS_DIR, `${environmentSlug}.yaml`);

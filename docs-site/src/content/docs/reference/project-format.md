@@ -28,6 +28,7 @@ my-service/
     requests/
       <Request>.request.yaml  # kind: rest, method, url, path params, query, headers, body, auth
       <Request>.body.json     # a raw body, in a file of its own language (.json/.xml/.txt/…)
+      <Request>.examples/     # the request's response examples, one <id>.body.<ext> each (format 7)
       <Request>.pre.ts        # the request's scripts, as for SOAP (.js when imported from Postman)
       <Request>.golden.yaml   # the request's snapshot, when one is saved (SOAP requests have one too)
       <Folder>/folder.yaml    # a folder's own name, order and inherited auth

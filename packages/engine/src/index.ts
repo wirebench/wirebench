@@ -480,6 +480,7 @@ export {
   createFolder,
   createRestRequest,
   entry,
+  exampleBodyExtension,
   folderRequests,
 } from './rest/model.js';
 export {
@@ -832,6 +833,7 @@ export type {
   RestRequestDef,
   RestContractLink,
   RestRequestSettings,
+  RestResponseExample,
   RestServer,
 } from './rest/model.js';
 export {

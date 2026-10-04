@@ -33,6 +33,7 @@ import {
   REQUEST_SUFFIX,
   REQUESTS_DIR,
   restBodyFileName,
+  restExamplesDirName,
   WEBHOOKS_DIR,
 } from '../project/paths.js';
 import { assertSupportedKind, parseFile } from '../project/schema-parts.js';
@@ -51,8 +52,8 @@ import type { ProtocolStorage } from '../protocol/module.js';
 import type { HookLink, WebhookSigning } from '../webhooks/model.js';
 import { toSignatureScheme } from '../http/webhook-signature.js';
 import { apiFileSchema, restRequestFileSchema } from './files.js';
-import { RAW_LANGUAGE_EXTENSIONS } from './model.js';
-import type { RestApi, RestBody, RestRequestDef, RestRequestSettings } from './model.js';
+import { exampleBodyExtension, RAW_LANGUAGE_EXTENSIONS } from './model.js';
+import type { RestApi, RestBody, RestRequestDef, RestRequestSettings, RestResponseExample } from './model.js';
 
 /** A parsed `signing` key as the model holds it. */
 export function signingOf(parsed: WebhookSigningFile): WebhookSigning {
@@ -120,6 +121,62 @@ async function loadBody(
 /** The `body` field of a parsed REST request document. */
 type RestRequestFileBody = ReturnType<typeof restRequestFileSchema.parse>['body'];
 
+/** The `examples` field of a parsed REST request document. */
+type RestRequestFileExamples = NonNullable<ReturnType<typeof restRequestFileSchema.parse>['examples']>;
+
+/** Where one example's body is written, relative to its request's directory: `<slug>.examples/<id>.body.<ext>`. */
+function exampleFile(slug: string, id: string, contentType: string | undefined): string {
+  const dir = restExamplesDirName(slug);
+  assertPathSegment(dir);
+  assertPathSegment(id);
+  return `${dir}/${id}.body.${exampleBodyExtension(contentType)}`;
+}
+
+/**
+ * A request's response examples as loaded, each body read from the file its entry names. The name
+ * comes from the request file, so each of its `/` parts is checked as a path segment first, as a raw
+ * body's is; a missing file is a problem and loads the example without a body.
+ */
+async function loadExamples(
+  fs: FsLike,
+  root: string,
+  dir: string,
+  documents: RestRequestFileExamples,
+  requestName: string,
+  problems: ProjectProblem[],
+): Promise<RestResponseExample[]> {
+  const examples: RestResponseExample[] = [];
+  for (const { file, ...document } of documents) {
+    let body: string | undefined;
+    if (file !== undefined) {
+      for (const part of file.split('/')) {
+        assertPathSegment(part);
+      }
+      const relative = `${dir}/${file}`;
+      const text = await readFileIfExists(fs, abs(root, relative));
+      if (text === undefined) {
+        problems.push({
+          code: 'missing-body',
+          message: `Request "${requestName}" has no file for example "${document.name}"; loaded without a body`,
+          file: relative,
+        });
+      } else {
+        body = text.toString('utf8');
+      }
+    }
+    examples.push({
+      id: document.id,
+      name: document.name,
+      status: document.status,
+      statusText: document.statusText,
+      headers: keyValueEntries(document.headers),
+      ...optional('contentType', document.contentType),
+      ...optional('body', body),
+    });
+  }
+  return examples;
+}
+
 /** Reads a REST request and its raw body file. */
 export function restRequestReader(fs: FsLike, root: string, problems: ProjectProblem[]): RequestReader<RestRequestDef> {
   return async (dir, fileName, unclaimed) => {
@@ -158,6 +215,9 @@ export function restRequestReader(fs: FsLike, root: string, problems: ProjectPro
       ...(parsed.hook !== undefined ? { hook: exact<HookLink>(parsed.hook) } : {}),
       ...(parsed.signing !== undefined ? { signing: signingOf(parsed.signing) } : {}),
       ...(scripts !== undefined ? { scripts } : {}),
+      ...(parsed.examples !== undefined
+        ? { examples: await loadExamples(fs, root, dir, parsed.examples, parsed.name, problems) }
+        : {}),
     };
   };
 }
@@ -253,6 +313,13 @@ function restRequestDocument(request: RestRequestDef): Record<string, unknown> {
     hook: request.hook === undefined ? undefined : { ...request.hook },
     signing: signingDocument(request.signing),
     scripts: scriptsDocument(request.scripts, request.slug).document,
+    examples: request.examples?.map(({ body, headers, ...rest }) =>
+      compact({
+        ...rest,
+        headers: headers.length > 0 ? keyValueDocuments(headers) : undefined,
+        file: body === undefined ? undefined : exampleFile(request.slug, rest.id, rest.contentType),
+      }),
+    ),
   });
 }
 
@@ -264,6 +331,11 @@ export const writeRestRequest: RequestWriter<RestRequestDef> = (files, dir, requ
     files.set(`${dir}/${body.file[0]}`, body.file[1]);
   }
   writeScriptFiles(files, dir, request.scripts, request.slug);
+  for (const example of request.examples ?? []) {
+    if (example.body !== undefined) {
+      files.set(`${dir}/${exampleFile(request.slug, example.id, example.contentType)}`, example.body);
+    }
+  }
 };
 
 /** Every file one REST API occupies, keyed by path relative to the project root. */

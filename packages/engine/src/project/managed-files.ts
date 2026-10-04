@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { isScriptFileOf } from '../script/model.js';
 import type { FsLike } from './fs.js';
 import { readFileIfExists, readdirIfExists } from './fs.js';
-import { API_FILE, APIS_DIR, FOLDER_FILE, REQUEST_SUFFIX, REQUESTS_DIR } from './paths.js';
+import { API_FILE, APIS_DIR, EXAMPLES_SUFFIX, FOLDER_FILE, REQUEST_SUFFIX, REQUESTS_DIR } from './paths.js';
 
 /** The absolute path of a `/`-separated path relative to the project root. */
 export function toAbsolute(root: string, relative: string): string {
@@ -45,6 +45,8 @@ export function isWsMessageSibling(name: string, requestSlug: string): boolean {
  * - `<slug>.msg-<message-slug>.<ext>` — one WebSocket saved message, one file per message
  *   ({@link isWsMessageSibling}).
  * - `<slug>.pre.ts`, `<slug>.post.ts`, `<slug>.pre.js`, `<slug>.post.js` — a request's scripts (#63).
+ * - every `<id>.body.<ext>` in `<slug>.examples/` — a REST request's response examples (#64); the
+ *   directory is the request's, not a folder, so it is never walked as one.
  *
  * Claiming only a sibling of a *known* request slug (rather than every file matching either
  * pattern) means a hand-placed file — notes, a `.body.json` or `.msg-x.txt` with no matching
@@ -84,11 +86,25 @@ export async function listApiTreeFiles(fs: FsLike, root: string, dir: string): P
     }
   }
   for (const entry of entries) {
-    if (entry.isDirectory) {
-      managed.push(...(await listApiTreeFiles(fs, root, `${dir}/${entry.name}`)));
+    if (!entry.isDirectory) {
+      continue;
     }
+    const examplesOf = entry.name.endsWith(EXAMPLES_SUFFIX) ? entry.name.slice(0, -EXAMPLES_SUFFIX.length) : undefined;
+    if (examplesOf !== undefined && requestSlugs.has(examplesOf)) {
+      managed.push(...(await listExampleFiles(fs, root, `${dir}/${entry.name}`)));
+      continue;
+    }
+    managed.push(...(await listApiTreeFiles(fs, root, `${dir}/${entry.name}`)));
   }
   return managed;
+}
+
+/** The example body files (`<id>.body.<ext>`) of one `<slug>.examples/`; anything else in it is foreign. */
+async function listExampleFiles(fs: FsLike, root: string, dir: string): Promise<string[]> {
+  const entries = await readdirIfExists(fs, toAbsolute(root, dir));
+  return entries
+    .filter((entry) => entry.isFile && /^.+\.body\.[A-Za-z0-9]+$/.test(entry.name))
+    .map((entry) => `${dir}/${entry.name}`);
 }
 
 /** The managed files of one `apis/<slug>/`: its `api.yaml` when it is there, and its request tree. */
