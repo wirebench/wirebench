@@ -129,28 +129,14 @@ Two consequences worth knowing:
 3. Tag and push:
 
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v3.1.0
+   git push origin v3.1.0
    ```
 
-### Before the *first* release
-
-The source lives at `https://github.com/wirebench/wirebench` and `repository` in
-`apps/desktop/package.json` points there; it is what the update feed is derived from
-(`githubFeedFrom`). Two things remain before `v1.0.0` is tagged, because the tag is what makes
-them permanent:
-
-- **No tag exists yet**, so `release.yml` has never run. Pushing the tag is a deliberate, human
-  step — see below — not something automation should do on its own.
-- **The signing and notarisation setup** described below must be in place, or the workflow
-  produces unsigned artifacts: [Windows signing](#windows-signing-azure-artifact-signing) and
-  [macOS signing and notarisation](#macos-signing-and-notarisation).
-
-`CHANGELOG.md` already carries a prepared `## [1.0.0] - 2026-09-11` section, so step 2 above is
-done for the first release; check the date still matches the day you tag.
+### After the tag
 
 The workflow runs `pnpm check`, packages on all three runners, uploads the artifacts and
-creates a **draft** release (a tag containing `-`, such as `v1.0.0-rc.1`, is marked as a
+creates a **draft** release (a tag containing `-`, such as `v3.1.0-rc.1`, is marked as a
 pre-release). Review the draft, install one artifact per OS, then publish it by hand.
 
 ## Publishing the CLI: image and npm
@@ -171,28 +157,22 @@ The same tag that triggers the desktop packaging jobs also runs two more jobs in
 
 | Tag | Image tags on `ghcr.io/wirebench/wirebench-cli` | npm dist-tag |
 | --- | --- | --- |
-| `v3.0.0` | `3.0.0`, `3.0`, `latest` | `3.0.0` under `latest` |
-| `v3.0.0-rc.1` (pre-release, contains `-`) | `3.0.0-rc.1` only | `3.0.0-rc.1` under `next`, never `latest` |
+| `v3.1.0` | `3.1.0`, `3.1`, `latest` | `3.1.0` under `latest` |
+| `v3.1.0-rc.1` (pre-release, contains `-`) | `3.1.0-rc.1` only | `3.1.0-rc.1` under `next`, never `latest` |
 
 ### Rehearsal
 
 A `workflow_dispatch` run of `release.yml` exercises both jobs without a tag: `image` builds the
 image but skips the GHCR login and the push, and `npm` builds the packages and runs `pnpm
 pack:check` instead of `pnpm publish`. Nothing is pushed or published from a `workflow_dispatch`
-run or a PR — only a push of a `v*` tag does that. Run it once, from the Actions tab, before the
-first tag that is meant to publish.
+run or a PR — only a push of a `v*` tag does that. Run it from the Actions tab after a change to
+`release.yml`, before the next tag.
 
-### Before the first publishing release
+### Publishing setup
 
-Three things the repository can't do for itself, outside `release.yml`:
-
-1. Create (or confirm) the `wirebench` npm organisation, and register `release.yml` as a trusted
-   publisher for both `@wirebench/engine` and `@wirebench/cli` — or add an `NPM_TOKEN` secret if
-   trusted publishing isn't set up yet.
-2. After the first image push, make `ghcr.io/wirebench/wirebench-cli` **public** and link it to
-   this repository — a GHCR package starts private.
-3. Run `release.yml` by `workflow_dispatch` once and check the rehearsal (previous section) before
-   pushing the first tag meant to publish.
+Done for 3.1.0, the first release that published: the `wirebench` npm organisation has `release.yml`
+registered as a trusted publisher for `@wirebench/engine` and `@wirebench/cli`. A GHCR package starts
+private, so a new image name needs making **public** and linking to this repository after its first push.
 
 ## Windows signing (Azure Artifact Signing)
 
