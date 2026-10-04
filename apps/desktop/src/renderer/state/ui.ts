@@ -53,7 +53,16 @@ export interface SecretTokenDialogTarget {
 }
 
 /** The UI store: the persisted layout plus the actions the shell and commands drive it with. */
-export type ImportDialogFormat = 'auto' | 'openapi' | 'asyncapi' | 'postman' | 'wsdl' | 'proto' | 'legacy-soap-project';
+export type ImportDialogFormat =
+  | 'auto'
+  | 'openapi'
+  | 'asyncapi'
+  | 'postman'
+  | 'postman-environment'
+  | 'postman-globals'
+  | 'wsdl'
+  | 'proto'
+  | 'legacy-soap-project';
 
 export interface UiStore extends UiSnapshot {
   /** The explorer's current selection, if any. Transient — never persisted. */

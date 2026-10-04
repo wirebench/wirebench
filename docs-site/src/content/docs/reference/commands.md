@@ -50,6 +50,8 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Import Legacy SOAP Project… | — | — |
 | REST: Import OpenAPI… | <kbd>⌘⇧I</kbd> | <kbd>Ctrl+Shift+I</kbd> |
 | REST: Import Postman Collection… | — | — |
+| REST: Import Postman Environment… | — | — |
+| REST: Import Postman Globals… | — | — |
 | gRPC: Import .proto… | — | — |
 
 ## Project

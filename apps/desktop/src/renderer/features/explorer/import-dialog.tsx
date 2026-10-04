@@ -27,6 +27,7 @@ import type {
   GrpcReflectionVersionWire,
   ImportProblemWire,
   ImportSourceWire,
+  ImportVariablesSummaryWire,
   LegacyImportReportWire,
   OpenApiImportSummaryWire,
   OpenApiSourceWire,
@@ -45,6 +46,7 @@ import { useProblemsStore } from '../../state/problems.js';
 import { useProjectStore } from '../../state/project.js';
 import { useUiStore, type ImportDialogFormat } from '../../state/ui.js';
 import { getExplorerTree } from './explorer-api.js';
+import { CopyReport, ImportReportView, ReportItems } from './import-report.js';
 
 export type SourceTab = 'url' | 'file' | 'paste' | 'server';
 
@@ -134,9 +136,28 @@ export type UnifiedImportResult =
       readonly webhookGroup?: ApiImportOpenApiResponse['webhookGroup'];
     }
   | { readonly kind: 'asyncapi'; readonly apiId: string; readonly summary: AsyncApiImportSummaryWire }
-  | { readonly kind: 'postman'; readonly apiId: string; readonly summary: PostmanImportSummaryWire }
+  | {
+      readonly kind: 'postman';
+      readonly apiId: string;
+      readonly summary: PostmanImportSummaryWire;
+      readonly variables?: ImportVariablesSummaryWire;
+    }
   | { readonly kind: 'proto'; readonly apiId: string; readonly summary: ProtoImportSummaryWire }
-  | { readonly kind: 'legacy'; readonly report: LegacyImportReportWire; readonly reportText: string };
+  | { readonly kind: 'legacy'; readonly report: LegacyImportReportWire; readonly reportText: string }
+  | { readonly kind: 'variables'; readonly summary: ImportVariablesSummaryWire; readonly reportText: string };
+
+/**
+ * Formats that land in the workspace, not in a project: a Postman environment becomes a workspace
+ * environment and Postman globals merge into Globals, so the dialog asks for no target project.
+ */
+const WORKSPACE_ONLY = new Set<ImportFormatKind>(['postman-environment', 'postman-globals']);
+
+/** The formats read from a Postman export file, which start on the File tab. */
+const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
+  'postman',
+  'postman-environment',
+  'postman-globals',
+]);
 
 export interface ImportDialogProps {
   readonly open: boolean;
@@ -148,7 +169,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const storeFormat = useUiStore((state) => state.importDialogFormat);
   const initialFmt = propFormat ?? storeFormat ?? 'auto';
   const [tab, setTab] = useState<SourceTab>(
-    initialFmt === 'postman' || initialFmt === 'legacy-soap-project' ? 'file' : 'url',
+    POSTMAN_FORMATS.has(initialFmt) || initialFmt === 'legacy-soap-project' ? 'file' : 'url',
   );
   const [format, setFormat] = useState<ImportDialogFormat>(initialFmt);
   const [url, setUrl] = useState('');
@@ -222,7 +243,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setTarget(selected ?? only ?? NEW_PROJECT);
     const fmt = propFormat ?? useUiStore.getState().importDialogFormat ?? 'auto';
     setFormat(fmt);
-    if (fmt === 'postman' || fmt === 'legacy-soap-project') {
+    if (POSTMAN_FORMATS.has(fmt) || fmt === 'legacy-soap-project') {
       setTab('file');
     }
   }, [open, propFormat]);
@@ -397,40 +418,46 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           ]
         : effectiveFormat === 'postman'
           ? [{ name: 'Postman Collection', extensions: ['json'] }]
-          : effectiveFormat === 'proto'
-            ? [
-                { name: 'Protocol Buffers', extensions: ['proto'] },
-                { name: 'All Files', extensions: ['*'] },
-              ]
-            : effectiveFormat === 'openapi'
+          : WORKSPACE_ONLY.has(effectiveFormat)
+            ? [{ name: 'Postman export', extensions: ['json'] }]
+            : effectiveFormat === 'proto'
               ? [
-                  { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
+                  { name: 'Protocol Buffers', extensions: ['proto'] },
                   { name: 'All Files', extensions: ['*'] },
                 ]
-              : effectiveFormat === 'asyncapi'
+              : effectiveFormat === 'openapi'
                 ? [
-                    { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                    { name: 'OpenAPI Specification', extensions: ['json', 'yaml', 'yml'] },
                     { name: 'All Files', extensions: ['*'] },
                   ]
-                : [
-                    {
-                      name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
-                      extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
-                    },
-                    { name: 'All Files', extensions: ['*'] },
-                  ];
+                : effectiveFormat === 'asyncapi'
+                  ? [
+                      { name: 'AsyncAPI Document', extensions: ['json', 'yaml', 'yml'] },
+                      { name: 'All Files', extensions: ['*'] },
+                    ]
+                  : [
+                      {
+                        name: 'API Definitions (*.json, *.yaml, *.yml, *.wsdl, *.xml)',
+                        extensions: ['json', 'yaml', 'yml', 'wsdl', 'xml'],
+                      },
+                      { name: 'All Files', extensions: ['*'] },
+                    ];
     const title =
       effectiveFormat === 'legacy-soap-project'
         ? 'Import Legacy SOAP Project'
         : effectiveFormat === 'postman'
           ? 'Import Postman Collection'
-          : effectiveFormat === 'proto'
-            ? 'Import .proto'
-            : effectiveFormat === 'openapi'
-              ? 'Import OpenAPI Specification'
-              : effectiveFormat === 'asyncapi'
-                ? 'Import AsyncAPI Document'
-                : 'Import Definition';
+          : effectiveFormat === 'postman-environment'
+            ? 'Import Postman Environment'
+            : effectiveFormat === 'postman-globals'
+              ? 'Import Postman Globals'
+              : effectiveFormat === 'proto'
+                ? 'Import .proto'
+                : effectiveFormat === 'openapi'
+                  ? 'Import OpenAPI Specification'
+                  : effectiveFormat === 'asyncapi'
+                    ? 'Import AsyncAPI Document'
+                    : 'Import Definition';
     const res = await ipc().dialogs.openFile({ title, filters });
     if (res.ok && res.value.path !== undefined) {
       setDropped(undefined);
@@ -571,6 +598,36 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     }
   }
 
+  /**
+   * A Postman environment or globals export lands in the workspace: main reads it, stores its
+   * secrets and answers with what it made. There is no project to pick and nothing to cancel.
+   */
+  async function importVariables(
+    kind: 'postman-environment' | 'postman-globals',
+    source: ImportSourceWire,
+  ): Promise<void> {
+    if (source.kind === 'url') {
+      setImportError('Import from a URL is not supported for Postman exports. Pick the file or paste its JSON.');
+      return;
+    }
+    setImporting(true);
+    try {
+      const call = kind === 'postman-environment' ? ipc().api.importPostmanEnvironment : ipc().api.importPostmanGlobals;
+      const res = await call({
+        source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
+      });
+      if (!res.ok) {
+        setImportError(res.error.message);
+        return;
+      }
+      setResult({ kind: 'variables', summary: res.value.summary, reportText: res.value.reportText });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function onImport(): Promise<void> {
     if (importing) {
       return;
@@ -585,12 +642,17 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       if (tab === 'url') {
         setUrlError('Enter a valid URL');
       } else if (tab === 'file') {
-        setImportError(effectiveFormat === 'postman' ? 'Pick a .json file to import' : 'Pick a file to import');
+        setImportError(POSTMAN_FORMATS.has(effectiveFormat) ? 'Pick a .json file to import' : 'Pick a file to import');
       } else {
         setImportError(
           effectiveFormat === 'postman' ? 'Paste a .json collection to import' : 'Paste a definition to import',
         );
       }
+      return;
+    }
+
+    if (effectiveFormat === 'postman-environment' || effectiveFormat === 'postman-globals') {
+      await importVariables(effectiveFormat, source);
       return;
     }
 
@@ -781,6 +843,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
           kind: 'postman',
           apiId: res.value.apiId,
           summary: res.value.summary,
+          ...(res.value.variables !== undefined ? { variables: res.value.variables } : {}),
         });
       }
     } catch (error) {
@@ -859,7 +922,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                           ? 'Import .proto'
                           : format === 'legacy-soap-project'
                             ? 'Import Legacy SOAP Project'
-                            : 'Import API or Service'}
+                            : format === 'postman-environment'
+                              ? 'Import Postman Environment'
+                              : format === 'postman-globals'
+                                ? 'Import Postman Globals'
+                                : 'Import API or Service'}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button type="button" aria-label="Close" className="text-fg-subtle hover:text-fg-default">
@@ -894,6 +961,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                     <option value="openapi">OpenAPI / Swagger</option>
                     <option value="asyncapi">AsyncAPI (WebSocket)</option>
                     <option value="postman">Postman Collection</option>
+                    <option value="postman-environment">Postman environment</option>
+                    <option value="postman-globals">Postman globals</option>
                     <option value="wsdl">WSDL (SOAP)</option>
                     <option value="proto">Protocol Buffers (gRPC)</option>
                     <option value="legacy-soap-project">Legacy SOAP project</option>
@@ -1128,36 +1197,38 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 )}
               </div>
 
-              {/* Target Project Selection */}
-              <div className="mt-3 flex items-center gap-2">
-                <label className="text-sm text-fg-subtle" htmlFor="import-target-project">
-                  Into project
-                </label>
-                <select
-                  id="import-target-project"
-                  data-testid={
-                    format === 'postman'
-                      ? 'import-postman-target-project'
-                      : format === 'openapi'
-                        ? 'import-openapi-target-project'
-                        : 'import-target-project'
-                  }
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  className="min-w-0 flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
-                >
-                  {openProjects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
+              {/* Target Project Selection: a workspace-only format has no project to land in */}
+              {!WORKSPACE_ONLY.has(effectiveFormat) && (
+                <div className="mt-3 flex items-center gap-2">
+                  <label className="text-sm text-fg-subtle" htmlFor="import-target-project">
+                    Into project
+                  </label>
+                  <select
+                    id="import-target-project"
+                    data-testid={
+                      format === 'postman'
+                        ? 'import-postman-target-project'
+                        : format === 'openapi'
+                          ? 'import-openapi-target-project'
+                          : 'import-target-project'
+                    }
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                    className="min-w-0 flex-1 rounded border border-hairline-strong bg-surface-base px-2 py-1.5 text-sm text-fg-default outline-none focus:ring-1 focus:ring-accent"
+                  >
+                    {openProjects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                    <option value={NEW_PROJECT}>
+                      {effectiveFormat === 'legacy-soap-project' && name.trim() === ''
+                        ? 'New project, named as in the file'
+                        : `New project “${newProjectName}”`}
                     </option>
-                  ))}
-                  <option value={NEW_PROJECT}>
-                    {effectiveFormat === 'legacy-soap-project' && name.trim() === ''
-                      ? 'New project, named as in the file'
-                      : `New project “${newProjectName}”`}
-                  </option>
-                </select>
-              </div>
+                  </select>
+                </div>
+              )}
 
               {effectiveFormat === 'legacy-soap-project' && target === NEW_PROJECT && (
                 <div className="mt-2 flex flex-col gap-1">
@@ -1409,7 +1480,9 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
                 ? 'import-proto-summary'
                 : result.kind === 'legacy'
                   ? 'import-legacy-summary'
-                  : 'import-summary'
+                  : result.kind === 'variables'
+                    ? 'import-variables-summary'
+                    : 'import-summary'
       }
       className="mt-3 flex flex-col gap-3"
     >
@@ -1526,6 +1599,14 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
               Default authentication: <span className="font-medium text-fg-default">{result.summary.auth}</span>
             </p>
           )}
+          {result.variables?.projectProperties !== undefined && (
+            <MergeLine
+              outcome={result.variables.projectProperties}
+              word="project property"
+              many="project properties"
+              testId="import-postman-project-properties"
+            />
+          )}
         </div>
       )}
 
@@ -1554,6 +1635,8 @@ function UnifiedSummary({ result, onDone }: { readonly result: UnifiedImportResu
       )}
 
       {result.kind === 'legacy' && <LegacySummary report={result.report} reportText={result.reportText} />}
+
+      {result.kind === 'variables' && <VariablesSummary summary={result.summary} reportText={result.reportText} />}
 
       {result.kind === 'wsdl' && (
         <div className="rounded border border-hairline-strong p-2">
@@ -1660,7 +1743,6 @@ function LegacySummary({
   const { counts } = report;
   const warnings = report.items.filter((item) => item.severity === 'warning');
   const notes = report.items.filter((item) => item.severity === 'info');
-  const plural = (n: number, word: string, many = `${word}s`): string => `${String(n)} ${n === 1 ? word : many}`;
   return (
     <>
       <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
@@ -1673,78 +1755,108 @@ function LegacySummary({
           {counts.scripts > 0 ? `, ${plural(counts.scripts, 'script')} kept in imported-scripts/` : ''}.
         </p>
       </div>
-      {warnings.length > 0 && (
-        <div className="rounded border border-hairline-strong p-2">
-          <p className="text-sm text-status-warning">{plural(warnings.length, 'thing')} to look at</p>
-          <ReportItems items={warnings} testId="import-legacy-warnings" />
-        </div>
-      )}
-      {notes.length > 0 && (
-        <div className="rounded border border-hairline-strong p-2">
-          <p className="text-sm text-fg-default">{plural(notes.length, 'note')}</p>
-          <ReportItems items={notes} testId="import-legacy-notes" />
-        </div>
-      )}
-      <CopyReport text={reportText} testId="import-legacy-copy-report" />
+      <ImportReportView warnings={warnings} notes={notes} reportText={reportText} testId="import-legacy" />
     </>
   );
 }
+
+/**
+ * What a Postman environment or globals import made: each environment (and the name it was
+ * renamed from), what merged into Globals and properties, the secrets stored, then the report.
+ */
+function VariablesSummary({
+  summary,
+  reportText,
+}: {
+  readonly summary: ImportVariablesSummaryWire;
+  readonly reportText: string;
+}) {
+  return (
+    <>
+      <div className="rounded border border-hairline-strong p-3 text-sm text-fg-default">
+        {summary.environments.length > 0 && (
+          <ul data-testid="import-variables-environments" className="flex flex-col gap-0.5">
+            {summary.environments.map((environment) => (
+              <li key={environment.name}>
+                {environment.name} ({plural(environment.variables, 'variable')})
+                {environment.renamedFrom !== undefined && (
+                  <span className="text-xs text-fg-subtle"> — was {environment.renamedFrom}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {summary.globals !== undefined && (
+          <MergeLine outcome={summary.globals} word="global" testId="import-variables-globals" />
+        )}
+        {summary.workspaceProperties !== undefined && (
+          <MergeLine
+            outcome={summary.workspaceProperties}
+            word="workspace property"
+            many="workspace properties"
+            testId="import-variables-workspace-properties"
+          />
+        )}
+        {summary.projectProperties !== undefined && (
+          <MergeLine
+            outcome={summary.projectProperties}
+            word="project property"
+            many="project properties"
+            testId="import-variables-project-properties"
+          />
+        )}
+        <p className="mt-1 text-xs text-fg-subtle">{plural(summary.secretsStored, 'secret')} stored</p>
+      </div>
+      <ImportReportView
+        warnings={summary.warnings}
+        notes={summary.notes}
+        reportText={reportText}
+        testId="import-variables-summary"
+      />
+    </>
+  );
+}
+
+/** "N things added", then the names that already existed and so kept their values. */
+function MergeLine({
+  outcome,
+  word,
+  many,
+  testId,
+}: {
+  readonly outcome: { readonly added: number; readonly skipped: readonly string[] };
+  readonly word: string;
+  readonly many?: string;
+  readonly testId: string;
+}) {
+  return (
+    <p data-testid={testId} className="mt-1 text-sm">
+      {plural(outcome.added, word, many)} added
+      {outcome.skipped.length > 0 && (
+        <span className="text-xs text-fg-subtle">
+          ; already defined, so left as they were: {outcome.skipped.join(', ')}
+        </span>
+      )}
+    </p>
+  );
+}
+
+const plural = (n: number, word: string, many = `${word}s`): string => `${String(n)} ${n === 1 ? word : many}`;
 
 /**
  * What a Postman import did not bring across: scripts, variables, credentials to re-enter,
  * unsupported auth. The engine words each line; the report copies them under the collection name.
  */
 function PostmanWarnings({ name, warnings }: { readonly name: string; readonly warnings: readonly string[] }) {
-  const items = warnings.map((message) => ({ path: '', message }));
   const count = `${String(warnings.length)} ${warnings.length === 1 ? 'thing' : 'things'}`;
   const reportText = [`Postman collection "${name}"`, ...warnings.map((w) => `- ${w}`)].join('\n');
   return (
     <>
       <div className="rounded border border-hairline-strong p-2">
         <p className="text-sm text-status-warning">{count} to look at</p>
-        <ReportItems items={items} testId="import-postman-warnings" />
+        <ReportItems items={warnings} testId="import-postman-warnings" />
       </div>
       <CopyReport text={reportText} testId="import-postman-copy-report" />
     </>
-  );
-}
-
-/** One line per report item, its path first when it has one. */
-function ReportItems({
-  items,
-  testId,
-}: {
-  readonly items: readonly { readonly path: string; readonly message: string }[];
-  readonly testId: string;
-}) {
-  return (
-    <ul data-testid={testId} className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto text-xs text-fg-subtle">
-      {items.map((item, index) => (
-        <li key={index}>
-          {item.path !== '' && <span className="text-fg-default">{item.path}</span>}
-          {item.path !== '' && ' — '}
-          {item.message}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** Puts an import report on the clipboard, for a ticket or a migration checklist. */
-function CopyReport({ text, testId }: { readonly text: string; readonly testId: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex justify-start">
-      <button
-        type="button"
-        data-testid={testId}
-        className="text-xs text-accent underline"
-        onClick={() => {
-          void navigator.clipboard.writeText(text).then(() => setCopied(true));
-        }}
-      >
-        {copied ? 'Copied' : 'Copy report'}
-      </button>
-    </div>
   );
 }

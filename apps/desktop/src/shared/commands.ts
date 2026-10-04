@@ -58,6 +58,8 @@ export const COMMAND_IDS = [
   'rest.getToken',
   'rest.importOpenApi',
   'rest.importPostman',
+  'rest.importPostmanEnvironment',
+  'rest.importPostmanGlobals',
   'rest.newApi',
   'rest.newFolder',
   'rest.newRequest',
