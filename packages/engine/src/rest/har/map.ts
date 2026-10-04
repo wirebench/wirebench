@@ -6,18 +6,13 @@
  * Not browser-safe (`Buffer`): format detection imports `parse.ts` only, never this module.
  */
 
+import { isCredentialName } from '../../import/credentials.js';
 import type { ImportReport } from '../../import/report.js';
 import { ReportBuilder } from '../../import/report.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { uniqueSlug } from '../../project/paths.js';
-import {
-  REDACTED_MARKER,
-  SECRET_BODY_KEYS,
-  isSensitiveHeaderName,
-  isSensitiveQueryParam,
-  redactStructuredBody,
-} from '../../redact/index.js';
+import { REDACTED_MARKER, redactStructuredBody } from '../../redact/index.js';
 import type { RawLanguage, RestApi, RestBody, RestRequestDef, RestResponseExample } from '../model.js';
 import { NO_BODY, createApi, createRestRequest, entry } from '../model.js';
 import type { HarEntryIn, HarLogIn, HarNameValue, HarPostData } from './model.js';
@@ -85,6 +80,8 @@ const DROPPED_HEADERS = new Set([
 const DROPPED_EXAMPLE_HEADERS = new Set(['set-cookie', 'cookie']);
 const TEXTUAL = /^(text\/|application\/(json|xml|[\w.+-]+\+(json|xml)|x-www-form-urlencoded|javascript))/i;
 const MAX_EXAMPLES = 5;
+/** An example body's cap, in characters: the one History puts on a recorded body. */
+const MAX_EXAMPLE_BODY_CHARS = 256 * 1024;
 
 function isStatic(e: HarEntryIn, url: URL): boolean {
   return (
@@ -150,12 +147,6 @@ function authFrom(headers: readonly HarNameValue[], label: string, report: Repor
   return { type: 'none' };
 }
 
-const SECRET_BODY_KEY_SET = new Set(SECRET_BODY_KEYS);
-
-function isSecretBodyKey(name: string): boolean {
-  return SECRET_BODY_KEY_SET.has(name.toLowerCase());
-}
-
 /**
  * A copy of a parsed JSON body with every secret-keyed value blanked (a nested object or array
  * under one too), adding each key it blanks to `blanked`.
@@ -165,7 +156,7 @@ function blankJson(value: unknown, blanked: Set<string>): unknown {
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value).map(([key, inner]) => {
-        if (!isSecretBodyKey(key)) return [key, blankJson(inner, blanked)];
+        if (!isCredentialName(key)) return [key, blankJson(inner, blanked)];
         blanked.add(key);
         return [key, ''];
       }),
@@ -189,23 +180,23 @@ function blankJsonText(text: string, blanked: Set<string>): string {
   return JSON.stringify(out, null, /\n( +)\S/.exec(text)?.[1]?.length);
 }
 
-/** `value`, or `''` when `name` is a secret body key (and `name` is added to `blanked`). */
+/** `value`, or `''` when `name` looks like a credential (and `name` is added to `blanked`). */
 function blankIfSecret(name: string, value: string, blanked: Set<string>): string {
-  if (!isSecretBodyKey(name) || value === '') return value;
+  if (!isCredentialName(name) || value === '') return value;
   blanked.add(name);
   return '';
 }
 
 /**
- * The headers a saved request keeps. Any other credential header (`Proxy-Authorization`,
- * `X-Api-Key`, whose shape {@link authFrom} keeps) is dropped with a warning, so no literal secret
- * is saved.
+ * The headers a saved request keeps. Any other header whose name looks like a credential
+ * (`Proxy-Authorization`, `X-Auth-Token`, `X-Api-Key`, whose shape {@link authFrom} keeps) is
+ * dropped with a warning, so no literal secret is saved.
  */
 function requestHeaders(headers: readonly HarNameValue[], label: string, report: ReportBuilder): HarNameValue[] {
   return headers.filter((h) => {
     const lower = h.name.toLowerCase();
     if (h.name.startsWith(':') || DROPPED_HEADERS.has(lower)) return false;
-    if (isSensitiveHeaderName(lower)) {
+    if (isCredentialName(lower)) {
       if (lower !== 'set-cookie') {
         report.warn(`${label}: the recorded ${h.name} credential was not imported; set it on the request or API.`);
       }
@@ -216,8 +207,9 @@ function requestHeaders(headers: readonly HarNameValue[], label: string, report:
 }
 
 /**
- * The request body. Secret-keyed form fields, multipart text parts and JSON values are blanked,
- * each name added to `blanked`; any other body is kept as recorded.
+ * The request body. Form fields, multipart text parts and JSON values (at any depth) whose name
+ * looks like a credential are blanked, each name added to `blanked`; any other body is kept as
+ * recorded.
  */
 function mapPostData(
   post: HarPostData | undefined,
@@ -266,13 +258,17 @@ function mapPostData(
   };
 }
 
+const ENCODED_MARKER = encodeURIComponent(REDACTED_MARKER);
+
+/** How many masked values `text` holds: the marker as written in JSON, or percent-encoded in a form. */
 function markers(text: string): number {
-  return text.split(REDACTED_MARKER).length - 1;
+  return text.split(REDACTED_MARKER).length + text.split(ENCODED_MARKER).length - 2;
 }
 
 /**
- * A recorded response as an example. Cookies are dropped, and credential headers and secret-keyed
- * body values are masked the way the HAR export masks them, so no literal credential is saved.
+ * A recorded response as an example. Cookies are dropped; headers and JSON or form body values
+ * whose name looks like a credential are masked, so no literal credential is saved. A body over
+ * History's 256 KB cap is cut to it, after masking, so the JSON still parsed while it was masked.
  */
 function exampleOf(e: HarEntryIn, id: string, label: string, report: ReportBuilder): RestResponseExample {
   const { content } = e.response;
@@ -280,7 +276,7 @@ function exampleOf(e: HarEntryIn, id: string, label: string, report: ReportBuild
   const headers = e.response.headers
     .filter((h) => !DROPPED_EXAMPLE_HEADERS.has(h.name.toLowerCase()))
     .map((h) => {
-      if (!isSensitiveHeaderName(h.name)) return entry(h.name, h.value);
+      if (!isCredentialName(h.name)) return entry(h.name, h.value);
       masked = true;
       return entry(h.name, REDACTED_MARKER);
     });
@@ -289,7 +285,9 @@ function exampleOf(e: HarEntryIn, id: string, label: string, report: ReportBuild
     report.note(`${label}: a binary response body was left out of the example.`);
   }
   if (body !== undefined) {
-    const redacted = redactStructuredBody(body, content.mimeType !== '' ? content.mimeType : undefined);
+    const redacted = redactStructuredBody(body, content.mimeType !== '' ? content.mimeType : undefined, {
+      isSecretKey: isCredentialName,
+    });
     // Re-serialising may reformat JSON, so the redacted text replaces the body only when it masked something.
     if (markers(redacted) > markers(body)) {
       body = redacted;
@@ -297,6 +295,10 @@ function exampleOf(e: HarEntryIn, id: string, label: string, report: ReportBuild
     }
   }
   if (masked) report.note(`${label}: credentials in a recorded response were masked in its example.`);
+  if (body !== undefined && body.length > MAX_EXAMPLE_BODY_CHARS) {
+    body = body.slice(0, MAX_EXAMPLE_BODY_CHARS);
+    report.note(`${label}: a ${e.response.status} example body was larger than 256 KB and was cut.`);
+  }
   return {
     id,
     name: `${e.response.status} ${e.response.statusText} — recorded ${e.startedDateTime.slice(0, 10)}`,
@@ -384,7 +386,7 @@ export function mapHar(log: HarLogIn, options: MapHarOptions = {}): MappedHar {
       const slug = uniqueSlug(label, draft.slugs);
       const blanked = new Set<string>();
       const query = e.request.queryString.map((q) => {
-        if (!isSensitiveQueryParam(q.name) || q.value === '') return entry(q.name, q.value);
+        if (!isCredentialName(q.name) || q.value === '') return entry(q.name, q.value);
         blanked.add(q.name);
         return entry(q.name, '');
       });

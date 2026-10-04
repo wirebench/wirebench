@@ -761,6 +761,7 @@ export type {
 export {
   formatImportReport,
   importedScriptPath,
+  isCredentialName,
   credentialLookingNames,
   ReportBuilder,
   rewriteMustache,

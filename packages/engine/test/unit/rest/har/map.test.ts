@@ -233,14 +233,14 @@ describe('mapHar', () => {
           method: 'POST',
           postData: {
             mimeType: 'application/json',
-            text: '{\n  "user": "a",\n  "auth": { "Password": "hunter2" }\n}',
+            text: '{\n  "user": "a",\n  "profile": { "Password": "hunter2" }\n}',
           },
         },
       }),
     );
     expect(json.apis[0]!.requests[0]!.body).toMatchObject({
       kind: 'raw',
-      text: '{\n  "user": "a",\n  "auth": {\n    "Password": ""\n  }\n}',
+      text: '{\n  "user": "a",\n  "profile": {\n    "Password": ""\n  }\n}',
     });
     expect(JSON.stringify(json.apis)).not.toContain('hunter2');
   });
@@ -300,6 +300,195 @@ describe('mapHar', () => {
     expect(multipart.report.notes).toContain(
       'POST /x: the file part "photo" (rex.png) has no file attached; pick it on the request.',
     );
+  });
+
+  describe('credential-looking names', () => {
+    it('drops request headers whose name looks like a credential, with a warning', () => {
+      const mapped = mapHar(
+        oneEntry({
+          request: {
+            headers: [
+              { name: 'X-Auth-Token', value: 'hdr-auth-1' },
+              { name: 'X-CSRF-Token', value: 'hdr-csrf-2' },
+              { name: 'Ocp-Apim-Subscription-Key', value: 'hdr-sub-3' },
+              { name: 'Accept', value: 'application/json' },
+            ],
+          },
+        }),
+      );
+      expect(mapped.apis[0]!.requests[0]!.headers).toEqual([entry('Accept', 'application/json')]);
+      expect(mapped.report.warnings).toEqual([
+        'GET /x: the recorded X-Auth-Token credential was not imported; set it on the request or API.',
+        'GET /x: the recorded X-CSRF-Token credential was not imported; set it on the request or API.',
+        'GET /x: the recorded Ocp-Apim-Subscription-Key credential was not imported; set it on the request or API.',
+      ]);
+      expect(JSON.stringify(mapped.apis)).not.toMatch(/hdr-auth-1|hdr-csrf-2|hdr-sub-3/);
+    });
+
+    it('blanks query values whose name looks like a credential', () => {
+      const mapped = mapHar(
+        oneEntry({
+          request: {
+            url: 'https://api.example.com/x?password=q-pw-1&client_secret=q-cs-2&session=q-ss-3&limit=10',
+            queryString: [
+              { name: 'password', value: 'q-pw-1' },
+              { name: 'client_secret', value: 'q-cs-2' },
+              { name: 'session', value: 'q-ss-3' },
+              { name: 'limit', value: '10' },
+            ],
+          },
+        }),
+      );
+      expect(mapped.apis[0]!.requests[0]!.query).toEqual([
+        entry('password', ''),
+        entry('client_secret', ''),
+        entry('session', ''),
+        entry('limit', '10'),
+      ]);
+      expect(mapped.report.warnings).toEqual([
+        'GET /x: the recorded value of password, client_secret, session was not imported; set it on the request.',
+      ]);
+      expect(JSON.stringify(mapped.apis)).not.toMatch(/q-pw-1|q-cs-2|q-ss-3/);
+    });
+
+    it('blanks form fields whose name looks like a credential', () => {
+      const mapped = mapHar(
+        oneEntry({
+          request: {
+            method: 'POST',
+            postData: { mimeType: 'application/x-www-form-urlencoded', text: 'name=Rex&accessToken=f-at-1' },
+          },
+        }),
+      );
+      expect(mapped.apis[0]!.requests[0]!.body).toEqual({
+        kind: 'form',
+        fields: [entry('name', 'Rex'), entry('accessToken', '')],
+      });
+      expect(mapped.report.warnings).toEqual([
+        'POST /x: the recorded value of accessToken was not imported; set it on the request.',
+      ]);
+      expect(JSON.stringify(mapped.apis)).not.toContain('f-at-1');
+    });
+
+    it('blanks multipart text parts whose name looks like a credential', () => {
+      const mapped = mapHar(
+        oneEntry({
+          request: {
+            method: 'POST',
+            postData: {
+              mimeType: 'multipart/form-data; boundary=x',
+              params: [
+                { name: 'name', value: 'Rex' },
+                { name: 'clientSecret', value: 'm-cs-1' },
+              ],
+            },
+          },
+        }),
+      );
+      expect(mapped.apis[0]!.requests[0]!.body).toEqual({
+        kind: 'multipart',
+        parts: [
+          { kind: 'text', name: 'name', value: 'Rex', enabled: true },
+          { kind: 'text', name: 'clientSecret', value: '', enabled: true },
+        ],
+      });
+      expect(JSON.stringify(mapped.apis)).not.toContain('m-cs-1');
+    });
+
+    it('blanks camelCase JSON keys that look like credentials, at any depth', () => {
+      const mapped = mapHar(
+        oneEntry({
+          request: {
+            method: 'POST',
+            postData: {
+              mimeType: 'application/json',
+              text: '{"name":"Rex","accessToken":"j-at-1","nested":{"items":[{"clientSecret":"j-cs-2","limit":5}]}}',
+            },
+          },
+        }),
+      );
+      const body = mapped.apis[0]!.requests[0]!.body;
+      expect(body.kind).toBe('raw');
+      expect(JSON.parse((body as { text: string }).text)).toEqual({
+        name: 'Rex',
+        accessToken: '',
+        nested: { items: [{ clientSecret: '', limit: 5 }] },
+      });
+      expect(mapped.report.warnings).toEqual([
+        'POST /x: the recorded value of accessToken, clientSecret was not imported; set it on the request.',
+      ]);
+      expect(JSON.stringify(mapped.apis)).not.toMatch(/j-at-1|j-cs-2/);
+    });
+
+    it('masks example response headers whose name looks like a credential', () => {
+      const mapped = mapHar(
+        oneEntry({
+          response: {
+            headers: [
+              { name: 'X-Auth-Token', value: 'rh-at-1' },
+              { name: 'X-CSRF-Token', value: 'rh-csrf-2' },
+              { name: 'Content-Type', value: 'application/json' },
+            ],
+          },
+        }),
+        { responses: 'examples' },
+      );
+      expect(mapped.apis[0]!.requests[0]!.examples![0]!.headers).toEqual([
+        entry('X-Auth-Token', REDACTED_MARKER),
+        entry('X-CSRF-Token', REDACTED_MARKER),
+        entry('Content-Type', 'application/json'),
+      ]);
+      expect(JSON.stringify(mapped.apis)).not.toMatch(/rh-at-1|rh-csrf-2/);
+    });
+
+    it('masks example JSON and form bodies under credential-looking keys', () => {
+      const json = mapHar(
+        oneEntry({
+          response: {
+            content: {
+              mimeType: 'application/json',
+              text: '{"accessToken":"eb-at-1","refreshToken":"eb-rt-2","name":"Rex"}',
+            },
+          },
+        }),
+        { responses: 'examples' },
+      );
+      const jsonBody = json.apis[0]!.requests[0]!.examples![0]!.body!;
+      expect(JSON.parse(jsonBody)).toEqual({
+        accessToken: REDACTED_MARKER,
+        refreshToken: REDACTED_MARKER,
+        name: 'Rex',
+      });
+      expect(JSON.stringify(json.apis)).not.toMatch(/eb-at-1|eb-rt-2/);
+
+      const form = mapHar(
+        oneEntry({
+          response: {
+            content: { mimeType: 'application/x-www-form-urlencoded', text: 'name=Rex&sessionId=ef-ss-1' },
+          },
+        }),
+        { responses: 'examples' },
+      );
+      const formBody = form.apis[0]!.requests[0]!.examples![0]!.body!;
+      expect(formBody).toContain('name=Rex');
+      expect(JSON.stringify(form.apis)).not.toContain('ef-ss-1');
+    });
+  });
+
+  it('cuts an example body larger than 256 KB, with a note', () => {
+    const big = 'x'.repeat(256 * 1024 + 10);
+    const mapped = mapHar(oneEntry({ response: { content: { mimeType: 'text/plain', text: big } } }), {
+      responses: 'examples',
+    });
+    const body = mapped.apis[0]!.requests[0]!.examples![0]!.body!;
+    expect(body).toHaveLength(256 * 1024);
+    expect(mapped.report.notes).toContain('GET /x: a 200 example body was larger than 256 KB and was cut.');
+
+    const small = mapHar(oneEntry({ response: { content: { mimeType: 'text/plain', text: 'ok' } } }), {
+      responses: 'examples',
+    });
+    expect(small.apis[0]!.requests[0]!.examples![0]!.body).toBe('ok');
+    expect(small.report.notes.some((n) => n.includes('256 KB'))).toBe(false);
   });
 
   it('includes static assets when asked', () => {
