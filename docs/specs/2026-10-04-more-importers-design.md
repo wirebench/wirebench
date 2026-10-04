@@ -45,7 +45,7 @@ importer:
 
 - I import my Postman "Staging" environment. A workspace environment "Staging" appears with every
   variable. Its secret token is in the secret store, and the environment shows
-  `${secret:staging_apiToken}`.
+  a `${secret:…}` reference to it.
 - I save a HAR from my browser's network panel and import it. I get one REST API per host, with
   the static assets left out. I choose to keep the recorded responses as examples, so each request
   shows what the server answered when I recorded it.
@@ -124,7 +124,8 @@ at**, **Notes** and **Copy report**.
 
 The new module `packages/engine/src/import/templates.ts` holds `rewriteMustache(text)`, extracted
 from the Postman collection importer. It turns `{{x}}` into `${x}` and leaves every `{{$…}}`
-dynamic variable exactly as written. It returns the rewritten text and the dynamic names it saw,
+dynamic variable exactly as written. This changes the collection importer, which today turns
+`{{$guid}}` into `${$guid}`, a reference that never resolves. It returns the rewritten text and the dynamic names it saw,
 for the report.
 
 The Postman, `.http` and OpenCollection importers all use it. `.http` adds its own
@@ -155,19 +156,17 @@ The new module `apps/desktop/src/main/import-variables-apply.ts` takes an `Impor
 
 1. **Name.** A name already used by a workspace environment (case-insensitive) gets " 2",
    " 3" and so on.
-2. **Secrets.** Every secret gets a store name built from `<envSlug>_<variable>`:
-   - Characters outside `[A-Za-z0-9_]` become `_`.
-   - A leading digit gets a `_` in front.
-   - A name already in the store gets `_2`, `_3` and so on. An existing secret is never
-     overwritten.
+2. **Secrets.** The secret store generates its own reference for each value
+   (`SecretStore.set(value, { label })`), so callers cannot pick a name and an existing secret can
+   never be overwritten. The label is `<environment name>/<variable>`.
 3. **Secret values.** The value is written with the store's `set`, and the property becomes
-   `${secret:<storeName>}`.
+   `${secret:<generated ref>}`.
 4. **Secrets without a value.** A secret with no value (empty, or not carried by the source) gets
-   the property `${secret:<storeName>}` and no store entry. The report lists it as needing a value.
+   an empty property and no store entry. The report lists it as needing a value.
 5. **Saving.** The environment is added and saved. The active environment is never changed.
 
 **Globals** merge into `main/global-properties.ts`. An existing name keeps its value. Disabled
-names join `disabled`. Secrets follow step 2, with the prefix `globals`.
+names join `disabled`. Secrets follow step 2, with the label prefix `Globals`.
 
 **Project properties** merge into the target project in the same way.
 
@@ -215,7 +214,8 @@ interface RestResponseExample {
 
 **Storage** (`rest/storage.ts`, ADR-0003). The `*.request.yaml` file gains an `examples:` list.
 Each body is written to `<slug>.examples/<id>.body.<ext>` beside the request file. The field is
-additive, so it bumps the request format version, following the rule in `project/schema.ts`.
+additive, so it bumps the project `FORMAT_VERSION` (`project/model.ts`) from 6, which shipped in
+3.1.0, to 7.
 Older files load with no examples.
 
 **Redaction.** Example headers are written with the HAR exporter's redaction. Secret-bearing
@@ -453,7 +453,9 @@ importer's base-URL inference.
 **Imported with a `.http` file.** When the picked `.http` file has either env file beside it, the
 dialog shows **Also import N environments found beside the file**, ticked by default. Main reads
 the env files from that folder, and only those two names. They go through the same path-access
-check as the picked file.
+check as the picked file. A pick vouches only for its exact path, so these reads go through a new
+path-access rule, `checkedCompanionPaths`: exact relative names beside a picked file, no symbolic
+links, nothing outside its folder. ADR-0005 gains a paragraph recording it.
 
 **Imported on its own.** An env file can also be picked directly as the **HTTP client
 environment file** format. It then targets the workspace only. When a private file sits beside
@@ -485,8 +487,8 @@ version.
 **Single file.** The root document carries an inline `items:` tree. It works from **File** and
 from **Paste**.
 
-**Directory.** The user picks either the root `opencollection.yml` or the folder that holds it.
-Main walks the folder:
+**Directory.** The user picks the root `opencollection.yml` (there is no folder picker). Main
+walks the folder that holds it, under the same companion-file rule as `.http` env files (§6.3):
 
 - **Folders.** A subfolder is a folder. Its `folder.yml`, if present, holds the folder's
   `info`, request defaults and docs.
