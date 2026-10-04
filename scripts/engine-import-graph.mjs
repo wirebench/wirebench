@@ -47,7 +47,8 @@ export const GROUP_FOLDERS = Object.freeze({
  *
  * Two kinds, told apart by `until`: the two files that are what they are (`protocols.ts`,
  * `index.ts`); and the project model, History, the loader and the writer, which hold protocol
- * types until the phases of #184 that split them.
+ * types until the phases of #184 that split them. Format detection and the `.http` importer, which
+ * turns one file into a REST and a WebSocket API, wait for phase 7, which decides import's API.
  *
  * The spec's table also names `project/save.ts`; it imports no protocol folder, so it has no entry
  * here, and an entry nothing uses fails the check.
@@ -80,6 +81,9 @@ export const CORE_EXCEPTIONS = Object.freeze([
   { from: 'import-detect.ts', to: 'rest/postman/parse.ts', until: 'phase 7' },
   { from: 'import-detect.ts', to: 'rest/har/parse.ts', until: 'phase 7' },
   { from: 'import-detect.ts', to: 'soap/legacy-project/format.ts', until: 'phase 7' },
+  { from: 'import/http-file/map.ts', to: 'rest/', until: 'phase 7' },
+  { from: 'import/http-file/map.ts', to: 'ws/model.ts', until: 'phase 7' },
+  { from: 'import/http-file/import.ts', to: 'rest/http-file/parse.ts', until: 'phase 7' },
 ]);
 
 /**
