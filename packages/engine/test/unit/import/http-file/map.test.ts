@@ -421,3 +421,42 @@ describe('importHttpFile body files', () => {
     }
   });
 });
+
+describe('mapHttpFile credentials, review round 2', () => {
+  it('cuts user info at the last @ before the path', () => {
+    const m = mapText('GET https://ann:p@SECRET1@x.example.com/a\n\n###\nGET https://ann:p@SECRET1@x.example.com/b');
+    expect(m.rest.baseUrl).toBe('https://x.example.com');
+    expect(m.rest.requests[0]?.auth).toEqual({ type: 'basic', username: 'ann' });
+    expect(JSON.stringify(m)).not.toContain('SECRET1');
+  });
+
+  it('strips user info from a scheme-less authority @variable', () => {
+    const m = mapText(
+      '@host = u:SECRET4@x.example.com\n@site = ann@x.example.com\n@mail = bob@example.com\n\nGET https://{{site}}/a\n\n###\nGET https://{{host}}/b',
+    );
+    expect(m.projectProperties.variables.map((v) => v.value)).toEqual([
+      'x.example.com',
+      'x.example.com',
+      'bob@example.com',
+    ]);
+    expect(m.report.warnings).toContain('Project properties: the credential in the URL of "host" was not imported.');
+    expect(JSON.stringify(m)).not.toContain('SECRET4');
+  });
+});
+
+describe('importHttpFile body files, review round 2', () => {
+  it('checks the body files of mapped REST requests only', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wb-http-'));
+    try {
+      const path = join(dir, 'a.http');
+      await writeFile(
+        path,
+        'WEBSOCKET wss://x.example.com/ws\n\n< ./m.json\n\n###\nGRAPHQL https://x.example.com/g\n\n< ./q.graphql',
+      );
+      const mapped = await importHttpFile({ kind: 'file', path });
+      expect(mapped.report.notes.filter((n) => n.includes('was not found'))).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

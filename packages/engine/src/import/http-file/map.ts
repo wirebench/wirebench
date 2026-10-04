@@ -62,8 +62,17 @@ const REFERENCE = String.raw`(?:\$\{[^{}]+\}|\{\{[^{}]*\}\})`;
 /** A value made of references and nothing else. */
 const REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:${REFERENCE}\s*)+$`);
 const AUTH_REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:Bearer|Basic)\s+(?:${REFERENCE}\s*)+$`, 'i');
-/** A URL's `scheme://` and the user info before its `@`, which may hold references. */
-const USERINFO = new RegExp(String.raw`^([a-z][\w+.-]*://)((?:${REFERENCE}|[^/?#@{}])*)@`, 'i');
+/**
+ * A URL's `scheme://` and the user info up to the last `@` before the path, as a URL parser cuts
+ * it; the user info may hold references, and an `@` of its own.
+ */
+const USERINFO = new RegExp(String.raw`^([a-z][\w+.-]*://)((?:${REFERENCE}|[^/?#{}])*)@`, 'i');
+/** The same without a scheme, for a variable that holds a URL's authority (`u:pw@host`). */
+const BARE_USERINFO = new RegExp(String.raw`^()((?:${REFERENCE}|[^/?#{}\s])*)@`);
+/** A value that looks like `user:password@host`: user info with a password, and no scheme. */
+const BARE_AUTHORITY = /^[^/?#\s:@]*:[^/?#\s]*@[^/?#\s]/;
+/** A `{{name}}` written straight after `scheme://`: the variable holds the URL's authority. */
+const AUTHORITY_VARIABLE = /[a-z][\w+.-]*:\/\/\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/gi;
 /** User info made of references, with at most one `:` between them. */
 const USERINFO_REFERENCES = new RegExp(String.raw`^(?:${REFERENCE})+(?::(?:${REFERENCE})+)?$`);
 const ORIGIN = /^https?:\/\/[^/?#]+/i;
@@ -103,8 +112,8 @@ function blankIfLiteral(name: string, value: string, blanked: Set<string>): stri
  * `url` without literal user info. User info made only of references stays; otherwise it is cut,
  * and its user name (the part before `:`) handed back so the caller can set Basic auth.
  */
-function stripUserinfo(url: string): { url: string; stripped: boolean; username?: string } {
-  const match = USERINFO.exec(url);
+function stripUserinfo(url: string, bare = false): { url: string; stripped: boolean; username?: string } {
+  const match = (bare ? BARE_USERINFO : USERINFO).exec(url);
   if (!match) return { url, stripped: false };
   const [whole, scheme = '', userinfo = ''] = match;
   if (USERINFO_REFERENCES.test(userinfo)) return { url, stripped: false };
@@ -437,6 +446,10 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
   const properties = new VariableSetBuilder('Project properties', report);
   const seen = new Set<string>();
   const secrets: string[] = [];
+  const authorities = new Set<string>();
+  for (const request of parsed.requests) {
+    for (const match of request.url.matchAll(AUTHORITY_VARIABLE)) authorities.add(match[1] ?? '');
+  }
   for (const variable of parsed.variables) {
     const raw = rewriteValue(variable.value, ctx);
     const first = !seen.has(variable.name);
@@ -448,7 +461,9 @@ export function mapHttpFile(parsed: ParsedHttpFile, options: MapHttpFileOptions)
       properties.add({ name: variable.name, value: '', enabled: true, secret: true, secretValue: raw });
       continue;
     }
-    const { url: value, stripped } = stripUserinfo(raw);
+    const bare =
+      !USERINFO.test(raw) && ((authorities.has(variable.name) && raw.includes('@')) || BARE_AUTHORITY.test(raw));
+    const { url: value, stripped } = stripUserinfo(raw, bare);
     if (stripped && first) {
       report.warn(`Project properties: the credential in the URL of "${variable.name}" was not imported.`);
     }

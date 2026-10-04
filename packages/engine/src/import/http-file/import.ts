@@ -47,12 +47,15 @@ async function readSource(path: string): Promise<string> {
   }
 }
 
+/** Requests whose `< file` body is not used: the message file is not imported, the others are skipped. */
+const UNMAPPED_BODY_FILE: ReadonlySet<string> = new Set(['WEBSOCKET', 'GRAPHQL', 'GRPC']);
+
 /** A note for each `< file` body that is not beside the `.http` file; a path holding a template is not checked. */
 async function missingBodyFiles(parsed: ParsedHttpFile, fileDir: string): Promise<string[]> {
   const notes: string[] = [];
   for (const request of parsed.requests) {
     const body = request.body;
-    if (body?.kind !== 'file' || body.path.includes('{{')) continue;
+    if (body?.kind !== 'file' || body.path.includes('{{') || UNMAPPED_BODY_FILE.has(request.method)) continue;
     const path = resolve(fileDir, body.path);
     try {
       await stat(path);
