@@ -1,6 +1,7 @@
 import { REQUEST_PROPERTIES } from './helpers/wire-defaults.js';
 import { describe, expect, it } from 'vitest';
 import {
+  createApi,
   createInterface,
   createProject,
   createRequest,
@@ -9,8 +10,10 @@ import {
   createWebhookFolder,
   createWsApi,
   createWsRequest,
+  entry,
 } from '@wirebench/engine';
 import type { Interface, Project } from '@wirebench/engine';
+import { restRequestWireSchema } from '../src/shared/wire-types.js';
 import type { InterfaceSummary } from '../src/shared/wire-types.js';
 import {
   clarkLocalName,
@@ -241,6 +244,41 @@ describe('project-wire', () => {
         hook: { kind: 'webhook', name: 'payment.succeeded' },
       }),
     );
+  });
+});
+
+describe('REST response examples on the wire', () => {
+  it("carries a request's examples to the renderer, and the wire schema keeps them", () => {
+    const examples = [
+      {
+        id: 'e1',
+        name: '200 OK — recorded 2026-10-04',
+        status: 200,
+        statusText: 'OK',
+        headers: [entry('Content-Type', 'application/json')],
+        contentType: 'application/json',
+        body: '{"id":1}',
+      },
+      { id: 'e2', name: '404 Not Found', status: 404, statusText: 'Not Found', headers: [] },
+    ];
+    const project: Project = {
+      ...createProject('Demo', { id: 'p1' }),
+      apis: [
+        createApi('Pets', {
+          id: 'api-1',
+          requests: [
+            { ...createRestRequest('Get pet', { id: 'r1' }), examples },
+            createRestRequest('List pets', { id: 'r2' }),
+          ],
+        }),
+      ],
+    };
+    const wire = toProjectWire(project, { dir: '/tmp/demo', dirty: false, problems: [], runtime: new Map() });
+    const withExamples = wire.restRequests.find((request) => request.id === 'r1')!;
+
+    expect(withExamples.examples).toEqual(examples.map((example) => ({ ...example, headers: [...example.headers] })));
+    expect(restRequestWireSchema.parse(withExamples).examples).toEqual(withExamples.examples);
+    expect(wire.restRequests.find((request) => request.id === 'r2')).not.toHaveProperty('examples');
   });
 });
 

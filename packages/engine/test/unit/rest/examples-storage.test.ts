@@ -223,6 +223,23 @@ describe('response examples on disk', () => {
     expect((await readdir(join(dir, REQUESTS))).sort()).toEqual(['other.request.yaml']);
   });
 
+  it("removes a deleted example's body file and keeps the others", async () => {
+    const both: readonly RestResponseExample[] = [
+      EXAMPLES[0]!,
+      { ...EXAMPLES[1]!, contentType: 'text/plain', body: 'gone' },
+    ];
+    const request = { ...getPet(), examples: both };
+    await saveProject(petsProject([request]), dir);
+
+    const result = await saveProject(petsProject([{ ...request, examples: [both[0]!] }]), dir);
+
+    expect(result.removed).toEqual([`${REQUESTS}/get-pet.examples/01J0EXAMPLE0000000000000002.body.txt`]);
+    expect(await listTree(join(dir, REQUESTS))).toEqual([
+      'get-pet.examples/01J0EXAMPLE0000000000000001.body.json',
+      'get-pet.request.yaml',
+    ]);
+  });
+
   it('leaves a foreign file in an examples folder alone, and the folder with it', async () => {
     await saveProject(petsProject([getPet()]), dir);
     await mkdir(join(dir, REQUESTS, 'get-pet.examples'), { recursive: true });

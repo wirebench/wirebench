@@ -14,6 +14,7 @@ import { Button } from '../../../components/button.js';
 import { showToast } from '../../../components/toast.js';
 import { Tabs } from '../../../components/tabs.js';
 import { ipc } from '../../../state/ipc-client.js';
+import { useProjectStore } from '../../../state/project.js';
 import type { RestExchangeState } from '../../../state/exchanges.js';
 import { SslInspector } from '../../request-editor/inspectors/ssl-inspector.js';
 import { QueryView } from '../../request-editor/views/lazy-views.js';
@@ -24,6 +25,7 @@ import { CookiesView } from './cookies-view.js';
 import { RedirectsView } from './redirects-view.js';
 import { ResponseHeadersView } from './headers-view.js';
 import { StatusLine } from './status-line.js';
+import { ExampleResponse, ExamplesMenu } from './examples-menu.js';
 import { SnapshotPanel } from '../../snapshot/snapshot-panel.js';
 import { AssertionResults, assertionResultsBadge } from '../../assertions/assertion-results.js';
 import { hasScriptResults, ScriptResults, scriptResultsBadge } from '../../scripts/script-results.js';
@@ -69,6 +71,16 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
       setTab('body');
     }
   }, [revealPending]);
+  // The example on show, and the send it was chosen over: a new send has a new id, so starting
+  // one puts the live response back without an effect having to notice.
+  const examples = useProjectStore((store) => store.restRequests[requestId]?.examples);
+  const removeRestExample = useProjectStore((store) => store.removeRestExample);
+  const [shown, setShown] = useState<{ readonly exampleId: string; readonly sendId: string | undefined }>();
+  const shownExample =
+    shown !== undefined && shown.sendId === state?.sendId
+      ? examples?.find((example) => example.id === shown.exampleId)
+      : undefined;
+
   const activeTab: TabId = isStream ? (tab === 'body' ? 'events' : tab) : tab === 'events' ? 'body' : tab;
 
   // Built once per set of rows, not on every render of a pane that re-renders per event.
@@ -119,7 +131,13 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
             live={live}
           />
         </div>
-        {exchange !== undefined && (
+        <ExamplesMenu
+          examples={examples ?? []}
+          onShow={(exampleId) => {
+            setShown({ exampleId, sendId: state?.sendId });
+          }}
+        />
+        {exchange !== undefined && shownExample === undefined && (
           <Button
             variant="secondary"
             data-testid="rest-response-save"
@@ -142,7 +160,25 @@ export function RestResponsePane({ state, requestId }: RestResponsePaneProps) {
         )}
       </div>
 
-      {live !== undefined ? (
+      {shownExample !== undefined ? (
+        <ExampleResponse
+          example={shownExample}
+          onClose={() => {
+            setShown(undefined);
+          }}
+          onDelete={() => {
+            const exampleId = shownExample.id;
+            void removeRestExample(requestId, exampleId).then(
+              () => {
+                setShown(undefined);
+              },
+              (error: unknown) => {
+                showToast(error instanceof Error ? error.message : String(error));
+              },
+            );
+          }}
+        />
+      ) : live !== undefined ? (
         <>
           <Tabs label="Response tabs" items={items} active={liveTab} onSelect={setTab} />
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

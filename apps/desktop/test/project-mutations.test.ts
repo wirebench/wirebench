@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createInterface, createProject, createRequest, isWirebenchError } from '@wirebench/engine';
-import type { Interface, Project } from '@wirebench/engine';
+import {
+  createApi,
+  createInterface,
+  createProject,
+  createRequest,
+  createRestRequest,
+  isWirebenchError,
+} from '@wirebench/engine';
+import type { Interface, Project, RestResponseExample } from '@wirebench/engine';
 import { addRequest, applyChange, contentTypeForPath, projectNameFromDir } from '../src/main/project-mutations.js';
 import type { AddAttachmentFile, MutationDeps } from '../src/main/project-mutations.js';
+import { findRestRequest } from '../src/main/project-rest-mutations.js';
 import { findRequest } from '../src/main/project-wire.js';
 
 const BINDING = '{http://tempuri.org/}CalculatorSoap';
@@ -494,6 +502,66 @@ describe('applyChange attachments', () => {
     await expect(
       applyChange(build(), { kind: 'add-attachment', requestId: 'req-1', path: '/a.png', copyToCache: true }, deps),
     ).rejects.toThrow(/attachment/i);
+  });
+});
+
+describe('response examples on a REST request', () => {
+  const example = (id: string): RestResponseExample => ({
+    id,
+    name: `${id} — recorded 2026-10-04`,
+    status: 200,
+    statusText: 'OK',
+    headers: [],
+    contentType: 'application/json',
+    body: '{"id":1}',
+  });
+
+  const projectWithExamples: Project = {
+    ...createProject('Pets', { id: 'p1' }),
+    apis: [
+      createApi('Pets', {
+        id: 'api-1',
+        requests: [{ ...createRestRequest('Get pet', { id: 'r1' }), examples: [example('e1'), example('e2')] }],
+      }),
+    ],
+  };
+
+  it('remove-rest-example deletes one example and leaves the others', async () => {
+    const { project: next } = await applyChange(
+      projectWithExamples,
+      { kind: 'remove-rest-example', requestId: 'r1', exampleId: 'e1' },
+      deps,
+    );
+    expect(findRestRequest(next, 'r1')?.examples?.map((e) => e.id)).toEqual(['e2']);
+  });
+
+  it('remove-rest-example drops the field once the last example goes', async () => {
+    let project = projectWithExamples;
+    for (const exampleId of ['e1', 'e2']) {
+      ({ project } = await applyChange(project, { kind: 'remove-rest-example', requestId: 'r1', exampleId }, deps));
+    }
+    expect(findRestRequest(project, 'r1')).not.toHaveProperty('examples');
+  });
+
+  it('remove-rest-example refuses an unknown example or request', async () => {
+    await expect(
+      applyChange(projectWithExamples, { kind: 'remove-rest-example', requestId: 'r1', exampleId: 'nope' }, deps),
+    ).rejects.toSatisfy((error: unknown) => isWirebenchError(error) && error.code === 'project-entity-not-found');
+    await expect(
+      applyChange(projectWithExamples, { kind: 'remove-rest-example', requestId: 'nope', exampleId: 'e1' }, deps),
+    ).rejects.toSatisfy((error: unknown) => isWirebenchError(error) && error.code === 'project-entity-not-found');
+  });
+
+  it('an edit to the request keeps its examples, and a clone carries them', async () => {
+    const { project: edited } = await applyChange(
+      projectWithExamples,
+      { kind: 'update-rest-request', requestId: 'r1', patch: { name: 'Fetch pet', url: '/pets/2' } },
+      deps,
+    );
+    expect(findRestRequest(edited, 'r1')?.examples?.map((e) => e.id)).toEqual(['e1', 'e2']);
+
+    const cloned = await applyChange(edited, { kind: 'clone-rest-request', requestId: 'r1' }, deps);
+    expect(findRestRequest(cloned.project, cloned.createdId!)?.examples?.map((e) => e.id)).toEqual(['e1', 'e2']);
   });
 });
 

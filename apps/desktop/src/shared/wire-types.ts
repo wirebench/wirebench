@@ -1652,6 +1652,18 @@ export const webhookCollectionWireSchema = z.object({
 });
 export type WebhookCollectionWire = z.infer<typeof webhookCollectionWireSchema>;
 
+/** A response kept beside a REST request (#64): what came back once, shown read-only, never sent. */
+export const restResponseExampleWireSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.number(),
+  statusText: z.string(),
+  headers: z.array(keyValueWireSchema),
+  contentType: z.string().optional(),
+  body: z.string().optional(),
+});
+export type RestResponseExampleWire = z.infer<typeof restResponseExampleWireSchema>;
+
 /** One REST request as the renderer sees it. */
 export const restRequestWireSchema = z.object({
   kind: z.literal('rest'),
@@ -1679,6 +1691,8 @@ export const restRequestWireSchema = z.object({
   hook: hookLinkWireSchema.optional(),
   /** Webhook items only: overrides the inherited signing. */
   signing: webhookSigningWireSchema.optional(),
+  /** Recorded responses; absent when there are none. Only `remove-rest-example` changes them. */
+  examples: z.array(restResponseExampleWireSchema).optional(),
 });
 export type RestRequestWire = z.infer<typeof restRequestWireSchema>;
 
@@ -2969,6 +2983,8 @@ export const projectChangeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('update-rest-request'), requestId: z.string(), patch: restRequestPatchSchema }),
   z.object({ kind: z.literal('remove-rest-request'), requestId: z.string() }),
   z.object({ kind: z.literal('clone-rest-request'), requestId: z.string() }),
+  /** Deletes one recorded response; its body file goes on the next save. */
+  z.object({ kind: z.literal('remove-rest-example'), requestId: z.string(), exampleId: z.string() }),
   /** Creates the project's webhook collection if it does not have one yet. A no-op once it does. */
   z.object({ kind: z.literal('ensure-webhooks') }),
   z.object({
