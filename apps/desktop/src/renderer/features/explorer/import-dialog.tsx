@@ -59,6 +59,9 @@ const TABS = [
   { id: 'paste', label: 'Paste' },
 ] as const satisfies readonly { id: SourceTab; label: string }[];
 
+/** A Postman environment or globals export is a file or pasted JSON; there is no URL to fetch. */
+const FILE_TABS = TABS.filter((item) => item.id !== 'url');
+
 /**
  * gRPC has a fifth way in that the other formats do not: a running server, asked to describe itself
  * over server reflection. It is offered only when the format is gRPC — auto-detection reads a
@@ -150,7 +153,7 @@ export type UnifiedImportResult =
  * Formats that land in the workspace, not in a project: a Postman environment becomes a workspace
  * environment and Postman globals merge into Globals, so the dialog asks for no target project.
  */
-const WORKSPACE_ONLY = new Set<ImportFormatKind>(['postman-environment', 'postman-globals']);
+const WORKSPACE_ONLY = new Set<ImportDialogFormat | ImportFormatKind>(['postman-environment', 'postman-globals']);
 
 /** The formats read from a Postman export file, which start on the File tab. */
 const POSTMAN_FORMATS = new Set<ImportDialogFormat | ImportFormatKind>([
@@ -645,7 +648,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
         setImportError(POSTMAN_FORMATS.has(effectiveFormat) ? 'Pick a .json file to import' : 'Pick a file to import');
       } else {
         setImportError(
-          effectiveFormat === 'postman' ? 'Paste a .json collection to import' : 'Paste a definition to import',
+          effectiveFormat === 'postman'
+            ? 'Paste a .json collection to import'
+            : POSTMAN_FORMATS.has(effectiveFormat)
+              ? 'Paste the exported .json to import'
+              : 'Paste a definition to import',
         );
       }
       return;
@@ -954,6 +961,10 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                       if (next !== 'proto' && tab === 'server') {
                         setTab('url');
                       }
+                      // A Postman environment or globals export has no URL tab.
+                      if (WORKSPACE_ONLY.has(next) && tab === 'url') {
+                        setTab('file');
+                      }
                     }}
                     className="rounded border border-hairline-strong bg-surface-base px-2 py-1 text-xs text-fg-default outline-none focus:ring-1 focus:ring-accent"
                   >
@@ -991,7 +1002,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                 */}
                 <Tabs
                   label="Import source"
-                  items={isProto || tab === 'server' ? PROTO_TABS : TABS}
+                  items={
+                    isProto || tab === 'server' ? PROTO_TABS : WORKSPACE_ONLY.has(effectiveFormat) ? FILE_TABS : TABS
+                  }
                   active={tab}
                   onSelect={setTab}
                 />

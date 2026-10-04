@@ -76,4 +76,19 @@ describe('Import dialog — Postman environment', () => {
     expect(summary.textContent).toContain('2 globals added');
     expect(summary.textContent).toContain('host');
   });
+
+  it('offers no URL tab, since an export is a file or pasted JSON', () => {
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="postman-environment" />);
+    expect(screen.queryByRole('tab', { name: 'URL' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'File' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Paste' })).toBeTruthy();
+  });
+
+  it('asks for the exported JSON when nothing was pasted', async () => {
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="postman-globals" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Paste' }));
+    fireEvent.click(screen.getByTestId('import-submit'));
+    expect((await screen.findByRole('alert')).textContent).toBe('Paste the exported .json to import');
+    expect(importPostmanGlobals).not.toHaveBeenCalled();
+  });
 });

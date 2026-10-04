@@ -168,7 +168,8 @@ as they do for a legacy project.
   stays as it was.
 - **Secrets.** A `secret`-typed value is written to the [secret store](/wirebench/docs/guides/secrets/),
   and the variable becomes a `${secret:…}` reference to it. An existing secret is never overwritten.
-  A secret the export carried no value for gets the reference alone, and a warning asks you to set it.
+  A secret the export carried no value for arrives as an empty property with nothing in the store, and
+  a warning asks you to set it in Environments.
 - **Disabled variables** come across switched off.
 - **`{{name}}` in a value** becomes `${name}`. Dynamic variables such as `{{$guid}}` are kept as
   written, and one warning names them, since nothing generates their values.
