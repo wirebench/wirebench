@@ -37,6 +37,26 @@ export function isWsMessageSibling(name: string, requestSlug: string): boolean {
 }
 
 /**
+ * True when the directory `name` inside `dir` is a request's `<slug>.examples/`: named after a
+ * request slug present in `dir`, and holding no `folder.yaml` and no `*.request.yaml`. A slug may
+ * contain a dot and a folder's slug is uniqued apart from its requests', so a real folder can carry
+ * that name; one that holds a folder file or a request is walked as the folder it is.
+ */
+export async function isExamplesDir(
+  fs: FsLike,
+  root: string,
+  dir: string,
+  name: string,
+  requestSlugs: ReadonlySet<string>,
+): Promise<boolean> {
+  if (!name.endsWith(EXAMPLES_SUFFIX) || !requestSlugs.has(name.slice(0, -EXAMPLES_SUFFIX.length))) {
+    return false;
+  }
+  const entries = await readdirIfExists(fs, toAbsolute(root, `${dir}/${name}`));
+  return !entries.some((entry) => entry.isFile && (entry.name === FOLDER_FILE || entry.name.endsWith(REQUEST_SUFFIX)));
+}
+
+/**
  * Lists the managed files inside one directory of an API's request tree: its `folder.yaml`, every
  * `*.request.yaml`, and two conventions of per-request sibling file, each claimed only when it
  * belongs to a request slug actually present in this directory:
@@ -46,7 +66,7 @@ export function isWsMessageSibling(name: string, requestSlug: string): boolean {
  *   ({@link isWsMessageSibling}).
  * - `<slug>.pre.ts`, `<slug>.post.ts`, `<slug>.pre.js`, `<slug>.post.js` — a request's scripts (#63).
  * - every `<id>.body.<ext>` in `<slug>.examples/` — a REST request's response examples (#64); the
- *   directory is the request's, not a folder, so it is never walked as one.
+ *   directory is the request's, not a folder, so it is not walked as one ({@link isExamplesDir}).
  *
  * Claiming only a sibling of a *known* request slug (rather than every file matching either
  * pattern) means a hand-placed file — notes, a `.body.json` or `.msg-x.txt` with no matching
@@ -89,8 +109,7 @@ export async function listApiTreeFiles(fs: FsLike, root: string, dir: string): P
     if (!entry.isDirectory) {
       continue;
     }
-    const examplesOf = entry.name.endsWith(EXAMPLES_SUFFIX) ? entry.name.slice(0, -EXAMPLES_SUFFIX.length) : undefined;
-    if (examplesOf !== undefined && requestSlugs.has(examplesOf)) {
+    if (await isExamplesDir(fs, root, dir, entry.name, requestSlugs)) {
       managed.push(...(await listExampleFiles(fs, root, `${dir}/${entry.name}`)));
       continue;
     }

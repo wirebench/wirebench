@@ -60,6 +60,11 @@ export interface ProjectProblem {
     | 'missing-api-file'
     /** A raw body whose sibling file is gone; the request loads with an empty body. */
     | 'missing-body'
+    /**
+     * A REST response example whose `file` is not `<slug>.examples/<id>.body.<ext>` of its own
+     * request; the example loads without a body, and nothing outside that folder is read (#64).
+     */
+    | 'example-file-invalid'
     /** A folder nested deeper than {@link MAX_FOLDER_DEPTH}; it and everything below it is skipped. */
     | 'folder-too-deep'
     /** An API and an interface sharing a slug, which would make an endpoint override ambiguous. */

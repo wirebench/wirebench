@@ -11,7 +11,7 @@ import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { saveProject } from '../../../src/project/save.js';
 import { projectFiles } from '../../../src/project/serialize.js';
-import { createApi, createRestRequest, entry, exampleBodyExtension } from '../../../src/rest/model.js';
+import { createApi, createFolder, createRestRequest, entry, exampleBodyExtension } from '../../../src/rest/model.js';
 import type { RestRequestDef, RestResponseExample } from '../../../src/rest/model.js';
 import { listTree, tempProjectDir } from '../project/fixture.js';
 
@@ -122,16 +122,80 @@ describe('response examples on disk', () => {
     ]);
   });
 
-  it('refuses an example file named outside the request directory', async () => {
-    await saveProject(petsProject([getPet()]), dir);
+  it.each([
+    ['outside the request directory', '../../../../outside.txt'],
+    ["into another request's examples folder", 'other.examples/01J0EXAMPLE0000000000000001.body.json'],
+    ['into a subfolder', 'Drafts/01J0EXAMPLE0000000000000001.body.json'],
+    ["under another example's id", 'get-pet.examples/01J0EXAMPLE0000000000000009.body.json'],
+  ])('loads an example whose file points %s without a body, and says so', async (_, file) => {
+    await saveProject(petsProject([getPet(), createRestRequest('Other', { id: 'R2', slug: 'other' })]), dir);
+    // A file the entry must never be read from, whichever of these it names.
+    for (const target of ['other.examples', 'Drafts', 'get-pet.examples']) {
+      await mkdir(join(dir, REQUESTS, target), { recursive: true });
+    }
+    for (const target of [
+      'other.examples/01J0EXAMPLE0000000000000001.body.json',
+      'Drafts/01J0EXAMPLE0000000000000001.body.json',
+      'get-pet.examples/01J0EXAMPLE0000000000000009.body.json',
+    ]) {
+      await writeFile(join(dir, REQUESTS, target), 'not this example');
+    }
     const requestFile = join(dir, REQUESTS, 'get-pet.request.yaml');
     const text = await readFile(requestFile, 'utf8');
     await writeFile(
       requestFile,
-      text.replace('file: get-pet.examples/01J0EXAMPLE0000000000000001.body.json', 'file: ../../../../outside.txt'),
+      text.replace('file: get-pet.examples/01J0EXAMPLE0000000000000001.body.json', `file: ${file}`),
     );
 
-    await expect(loadProject(dir)).rejects.toMatchObject({ code: 'project-path-invalid' });
+    const { project, problems } = await loadProject(dir);
+
+    const request = project.apis[0]!.requests.find((r) => r.id === 'R1')!;
+    expect(request.examples![0]!.body).toBeUndefined();
+    expect(problems).toContainEqual(
+      expect.objectContaining({ code: 'example-file-invalid', file: 'apis/pets/requests/get-pet.request.yaml' }),
+    );
+  });
+
+  it('refuses to write two examples with the same id, which would share one body file', () => {
+    const request = getPet();
+    const twice = { ...request, examples: [EXAMPLES[0]!, { ...EXAMPLES[0]!, name: 'again', body: '{"id":2}' }] };
+
+    expect(() => projectFiles(petsProject([twice]))).toThrow(expect.objectContaining({ code: 'duplicate-slug' }));
+  });
+
+  it('walks a folder named like an examples folder as a folder when it holds requests', async () => {
+    const inner = createRestRequest('Inner', {
+      id: 'R3',
+      slug: 'inner',
+      method: 'POST',
+      body: { kind: 'raw', language: 'json', text: '{}' },
+    });
+    // The request has no examples, so nothing of its own is written into the folder that shares the name.
+    const project = petsProject([{ ...getPet(), examples: [] }]);
+    const api = project.apis[0]!;
+    const withFolder: Project = {
+      ...project,
+      apis: [
+        {
+          ...api,
+          folders: [createFolder('get-pet.examples', { id: 'F1', slug: 'get-pet.examples', requests: [inner] })],
+        },
+      ],
+    };
+    await saveProject(withFolder, dir);
+
+    const { project: loaded, problems } = await loadProject(dir);
+    expect(problems).toEqual([]);
+    expect(loaded.apis[0]!.folders.map((folder) => folder.slug)).toEqual(['get-pet.examples']);
+    expect(loaded.apis[0]!.folders[0]!.requests.map((r) => r.id)).toEqual(['R3']);
+
+    const result = await saveProject(loaded, dir);
+    expect(result.removed).toEqual([]);
+    expect(await listTree(join(dir, REQUESTS, 'get-pet.examples'))).toEqual([
+      'folder.yaml',
+      'inner.body.json',
+      'inner.request.yaml',
+    ]);
   });
 
   it('moves the examples folder with a renamed request', async () => {

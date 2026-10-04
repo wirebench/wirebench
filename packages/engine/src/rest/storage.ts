@@ -133,14 +133,38 @@ function exampleFile(slug: string, id: string, contentType: string | undefined):
 }
 
 /**
+ * True when `file` is exactly `<slug>.examples/<id>.body.<ext>`: this example's own file in its own
+ * request's examples folder, both parts safe path segments.
+ */
+function isOwnExampleFile(file: string, slug: string, id: string): boolean {
+  const [folder, name, ...rest] = file.split('/');
+  if (rest.length > 0 || folder !== restExamplesDirName(slug) || name === undefined) {
+    return false;
+  }
+  if (!name.startsWith(`${id}.body.`) || !/^[A-Za-z0-9]+$/.test(name.slice(`${id}.body.`.length))) {
+    return false;
+  }
+  try {
+    assertPathSegment(folder);
+    assertPathSegment(name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * A request's response examples as loaded, each body read from the file its entry names. The name
- * comes from the request file, so each of its `/` parts is checked as a path segment first, as a raw
- * body's is; a missing file is a problem and loads the example without a body.
+ * comes from the request file, which a pull or an import may have written, so it is read only when
+ * it is the example's own file in the request's own `<slug>.examples/`: anything else would let a
+ * save copy some other file into this one. Such an entry, and a missing file, are problems, and the
+ * example loads without a body.
  */
 async function loadExamples(
   fs: FsLike,
   root: string,
   dir: string,
+  slug: string,
   documents: RestRequestFileExamples,
   requestName: string,
   problems: ProjectProblem[],
@@ -148,10 +172,13 @@ async function loadExamples(
   const examples: RestResponseExample[] = [];
   for (const { file, ...document } of documents) {
     let body: string | undefined;
-    if (file !== undefined) {
-      for (const part of file.split('/')) {
-        assertPathSegment(part);
-      }
+    if (file !== undefined && !isOwnExampleFile(file, slug, document.id)) {
+      problems.push({
+        code: 'example-file-invalid',
+        message: `Request "${requestName}" names ${JSON.stringify(file)} for example "${document.name}", which is not that example's file; loaded without a body`,
+        file: `${dir}/${slug}${REQUEST_SUFFIX}`,
+      });
+    } else if (file !== undefined) {
       const relative = `${dir}/${file}`;
       const text = await readFileIfExists(fs, abs(root, relative));
       if (text === undefined) {
@@ -216,7 +243,7 @@ export function restRequestReader(fs: FsLike, root: string, problems: ProjectPro
       ...(parsed.signing !== undefined ? { signing: signingOf(parsed.signing) } : {}),
       ...(scripts !== undefined ? { scripts } : {}),
       ...(parsed.examples !== undefined
-        ? { examples: await loadExamples(fs, root, dir, parsed.examples, parsed.name, problems) }
+        ? { examples: await loadExamples(fs, root, dir, slug, parsed.examples, parsed.name, problems) }
         : {}),
     };
   };
@@ -331,7 +358,20 @@ export const writeRestRequest: RequestWriter<RestRequestDef> = (files, dir, requ
     files.set(`${dir}/${body.file[0]}`, body.file[1]);
   }
   writeScriptFiles(files, dir, request.scripts, request.slug);
+  const ids = new Set<string>();
   for (const example of request.examples ?? []) {
+    // Two examples with one id would share one body file, the second silently replacing the first.
+    // Lower-cased, because macOS and Windows file systems usually ignore case.
+    if (ids.has(example.id.toLowerCase())) {
+      throw new ProjectError(
+        'duplicate-slug',
+        `Request "${request.name}" has two examples with the id "${example.id}"`,
+        {
+          details: { file: `${dir}/${restExamplesDirName(request.slug)}` },
+        },
+      );
+    }
+    ids.add(example.id.toLowerCase());
     if (example.body !== undefined) {
       files.set(`${dir}/${exampleFile(request.slug, example.id, example.contentType)}`, example.body);
     }
