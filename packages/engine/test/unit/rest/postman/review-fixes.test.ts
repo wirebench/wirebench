@@ -194,4 +194,16 @@ describe('Postman importer review fixes', () => {
     const mapped = importDoc({ item: [], variable: [{ key: 'url', value: '{{host}}/v1' }] });
     expect(mapped.projectProperties.variables[0]?.value).toBe('${host}/v1');
   });
+
+  it('6: reports dynamic names from requests, variables and the base URL in one warning', () => {
+    const { summary } = importDoc({
+      variable: [
+        { key: 'baseUrl', value: 'https://a/{{$randomInt}}' },
+        { key: 'stamp', value: '{{$timestamp}}' },
+      ],
+      item: [{ name: 'R', request: { method: 'GET', url: '/x/{{$guid}}' } }],
+    });
+    const lines = (summary.warnings ?? []).filter((w) => w.startsWith('Dynamic variables'));
+    expect(lines).toEqual(['Dynamic variables are kept as written and not expanded: $guid, $randomInt, $timestamp']);
+  });
 });

@@ -154,11 +154,6 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
       `${itemCount(ctx.skippedItems)} without a request ${ctx.skippedItems === 1 ? 'was' : 'were'} skipped`,
     );
   }
-  if (ctx.dynamic.size > 0) {
-    warnings.push(
-      `Dynamic variables are kept as written and not expanded: ${[...ctx.dynamic].sort().join(', ')}`,
-    );
-  }
 
   return {
     info,
@@ -167,6 +162,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
     ...(auth !== undefined ? { auth } : {}),
     ...(variable !== undefined ? { variable } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
+    ...(ctx.dynamic.size > 0 ? { dynamicVariables: [...ctx.dynamic] } : {}),
   };
 }
 

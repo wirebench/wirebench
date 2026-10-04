@@ -128,6 +128,8 @@ export interface PostmanCollection {
   readonly variable?: readonly PostmanVariable[];
   /** Problems found while parsing that the import summary should report. */
   readonly warnings?: readonly string[];
+  /** Dynamic variable names (`{{$guid}}`) met while parsing; the mapper reports them with its own. */
+  readonly dynamicVariables?: readonly string[];
 }
 
 /** Summary of what the Postman import produced, for the import summary display. */

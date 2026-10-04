@@ -84,12 +84,15 @@ export function apiFromPostmanCollection(
   const newId = options.newId ?? generateId;
   const name = options.name?.trim() || collection.info.name || 'Imported Collection';
 
+  // Every dynamic name, from parsing and from the variables and base URL below, is reported once.
+  const dynamic = new Set<string>(collection.dynamicVariables);
+
   // Determine base URL: options.baseUrl -> collection variable baseUrl/base_url -> inferred from first request -> empty
   let baseUrl = options.baseUrl?.trim();
   if (baseUrl === undefined || baseUrl === '') {
     const baseVar = collection.variable?.find((v) => isBaseUrlKey(v.key));
     if (baseVar?.value !== undefined && String(baseVar.value).trim().length > 0) {
-      baseUrl = translatePostmanVariables(String(baseVar.value).trim());
+      baseUrl = translatePostmanVariables(String(baseVar.value).trim(), dynamic);
     } else {
       baseUrl = inferBaseUrl(collection.item, 1);
     }
@@ -97,7 +100,6 @@ export function apiFromPostmanCollection(
 
   const warnings: string[] = [...(collection.warnings ?? [])];
   const variableReport = new ReportBuilder();
-  const dynamic = new Set<string>();
   const properties = new VariableSetBuilder('Project properties', variableReport);
   const addVariables = (vars: readonly PostmanVariable[] | undefined, where: string | undefined): void => {
     for (const v of vars ?? []) {
@@ -206,7 +208,7 @@ export function apiFromPostmanCollection(
     warnings.push(`The scripts of "${path}" call what Wirebench does not run: ${[...calls].sort().join(', ')}`);
   }
   if (dynamic.size > 0) {
-    variableReport.warn(`Dynamic variables are kept as written and not expanded: ${[...dynamic].sort().join(', ')}`);
+    warnings.push(`Dynamic variables are kept as written and not expanded: ${[...dynamic].sort().join(', ')}`);
   }
   const variableResult = variableReport.build();
   warnings.push(...variableResult.warnings, ...variableResult.notes);
