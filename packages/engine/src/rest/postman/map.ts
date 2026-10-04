@@ -7,6 +7,9 @@
  */
 
 import { PostmanError } from '../../errors.js';
+import { ReportBuilder } from '../../import/report.js';
+import type { ImportedVariableSet } from '../../import/variables.js';
+import { VariableSetBuilder } from '../../import/variables.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { slugify, uniqueSlug } from '../../project/paths.js';
@@ -33,8 +36,9 @@ import type {
   PostmanQueryParam,
   PostmanRequest,
   PostmanUrl,
+  PostmanVariable,
 } from './model.js';
-import { MAX_POSTMAN_DEPTH } from './parse.js';
+import { MAX_POSTMAN_DEPTH, translatePostmanVariables } from './parse.js';
 import type { RequestScripts } from '../../script/model.js';
 
 /** Matches a leading `${baseUrl}` / `${base_url}` reference in any letter case. */
@@ -65,6 +69,8 @@ export interface MapPostmanOptions {
 
 export interface MappedPostmanApi {
   readonly api: RestApi;
+  /** The collection's and folders' variables, for the project's properties. */
+  readonly projectProperties: ImportedVariableSet;
   readonly summary: PostmanImportSummary;
 }
 
@@ -83,16 +89,37 @@ export function apiFromPostmanCollection(
   if (baseUrl === undefined || baseUrl === '') {
     const baseVar = collection.variable?.find((v) => isBaseUrlKey(v.key));
     if (baseVar?.value !== undefined && String(baseVar.value).trim().length > 0) {
-      baseUrl = String(baseVar.value).trim();
+      baseUrl = translatePostmanVariables(String(baseVar.value).trim());
     } else {
       baseUrl = inferBaseUrl(collection.item, 1);
     }
   }
 
   const warnings: string[] = [...(collection.warnings ?? [])];
-  const unmappedVariables = new Set<string>(
-    (collection.variable ?? []).map((v) => v.key).filter((key) => !isBaseUrlKey(key)),
-  );
+  const variableReport = new ReportBuilder();
+  const dynamic = new Set<string>();
+  const properties = new VariableSetBuilder('Project properties', variableReport);
+  const addVariables = (vars: readonly PostmanVariable[] | undefined, where: string | undefined): void => {
+    for (const v of vars ?? []) {
+      if (where === undefined && isBaseUrlKey(v.key)) continue;
+      const raw: unknown = v.value;
+      const text =
+        raw === undefined || raw === null
+          ? ''
+          : typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean'
+            ? String(raw)
+            : undefined;
+      if (text === undefined) {
+        variableReport.warn(`Variable "${v.key}" has a value that is not text and was skipped.`);
+        continue;
+      }
+      properties.add(
+        { name: v.key, value: translatePostmanVariables(text, dynamic), enabled: v.disabled !== true, secret: false },
+        where,
+      );
+    }
+  };
+  addVariables(collection.variable, undefined);
   const credentialCount = { value: hasCredentials(collection.auth) ? 1 : 0 };
   const servers: RestServer[] = baseUrl !== '' ? [{ url: baseUrl, description: 'Collection Base URL' }] : [];
 
@@ -120,7 +147,7 @@ export function apiFromPostmanCollection(
     const requestSlugs = new Set<string>();
 
     for (const item of items) {
-      for (const v of item.variable ?? []) unmappedVariables.add(v.key);
+      addVariables(item.variable, `folder "${item.name}"`);
       if (hasCredentials(item.auth)) credentialCount.value += 1;
       if (typeof item.request === 'object' && hasCredentials(item.request.auth)) credentialCount.value += 1;
       if (Array.isArray(item.item)) {
@@ -178,11 +205,11 @@ export function apiFromPostmanCollection(
   for (const [path, calls] of unsupported) {
     warnings.push(`The scripts of "${path}" call what Wirebench does not run: ${[...calls].sort().join(', ')}`);
   }
-  if (unmappedVariables.size > 0) {
-    warnings.push(
-      `Collection and folder variables were not imported; define them as properties: ${[...unmappedVariables].sort().join(', ')}`,
-    );
+  if (dynamic.size > 0) {
+    variableReport.warn(`Dynamic variables are kept as written and not expanded: ${[...dynamic].sort().join(', ')}`);
   }
+  const variableResult = variableReport.build();
+  warnings.push(...variableResult.warnings, ...variableResult.notes);
   if (credentialCount.value > 0) {
     warnings.push(
       `Credentials are not copied from the collection; re-enter them for ${credentialCount.value} auth ${credentialCount.value === 1 ? 'configuration' : 'configurations'}`,
@@ -207,10 +234,11 @@ export function apiFromPostmanCollection(
     folders: folderCount,
     requests: requestCount,
     ...(apiAuth !== undefined ? { auth: apiAuth.type } : {}),
+    projectProperties: properties.size,
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 
-  return { api, summary };
+  return { api, projectProperties: properties.build(), summary };
 }
 
 function mapRequest(

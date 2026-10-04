@@ -145,7 +145,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
   const rawItems = Array.isArray(doc['item']) ? doc['item'] : [];
   const item = parseItems(rawItems, ctx, 1);
   const auth = isRecord(doc['auth']) ? parseAuth(doc['auth'], ctx) : undefined;
-  const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable'], ctx) : undefined;
+  const variable = Array.isArray(doc['variable']) ? parseVariables(doc['variable']) : undefined;
   const event = parseEvents(doc);
 
   const warnings: string[] = [];
@@ -214,7 +214,7 @@ function parseItem(raw: Record_, ctx: ParseContext, depth: number): PostmanItem 
   const name = tv(ctx, asString(raw['name']) ?? 'Request');
   const description = extractDescription(raw['description']);
   const auth = isRecord(raw['auth']) ? parseAuth(raw['auth'], ctx) : undefined;
-  const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable'], ctx) : undefined;
+  const variable = Array.isArray(raw['variable']) ? parseVariables(raw['variable']) : undefined;
   const event = parseEvents(raw);
 
   if (Array.isArray(raw['item'])) {
@@ -576,7 +576,7 @@ function asVariableValue(value: unknown): string | number | boolean | null | und
   return undefined;
 }
 
-function parseVariables(raw: readonly unknown[], ctx: ParseContext): readonly PostmanVariable[] {
+function parseVariables(raw: readonly unknown[]): readonly PostmanVariable[] {
   const vars: PostmanVariable[] = [];
   for (const v of raw) {
     if (!isRecord(v)) continue;
@@ -585,10 +585,11 @@ function parseVariables(raw: readonly unknown[], ctx: ParseContext): readonly Po
       const varType = asString(v['type']);
       const desc = extractDescription(v['description']);
       const rawVal = asVariableValue(v['value']);
-      const val = typeof rawVal === 'string' ? tv(ctx, rawVal) : rawVal;
+      // The value stays as written: the mapper translates it, so a `${` in it is escaped once.
       vars.push({
         key,
-        ...(val !== undefined ? { value: val } : {}),
+        ...(rawVal !== undefined ? { value: rawVal } : {}),
+        ...(asBoolean(v['disabled']) === true ? { disabled: true } : {}),
         ...(varType !== undefined ? { type: varType } : {}),
         ...(desc !== undefined ? { description: desc } : {}),
       });

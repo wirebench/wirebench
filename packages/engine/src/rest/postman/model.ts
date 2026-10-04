@@ -20,6 +20,7 @@ export interface PostmanVariable {
   readonly value?: string | number | boolean | null;
   readonly type?: string;
   readonly description?: string;
+  readonly disabled?: boolean;
 }
 
 export interface PostmanAuthAttribute {
@@ -136,5 +137,7 @@ export interface PostmanImportSummary {
   readonly folders: number;
   readonly requests: number;
   readonly auth?: AuthConfig['type'];
+  /** How many collection and folder variables became project properties. */
+  readonly projectProperties: number;
   readonly warnings?: readonly string[];
 }
