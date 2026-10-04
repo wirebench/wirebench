@@ -7,10 +7,19 @@
 
 import { parse as parseYamlDocument } from 'yaml';
 import { isPostmanCollection } from './rest/postman/parse.js';
+import { isPostmanVariables } from './rest/postman/variables.js';
 import { looksLikeLegacyProject } from './soap/legacy-project/format.js';
 
 export type ImportFormatKind =
-  'openapi' | 'asyncapi' | 'postman' | 'wsdl' | 'proto' | 'legacy-soap-project' | 'unknown';
+  | 'openapi'
+  | 'asyncapi'
+  | 'postman'
+  | 'postman-environment'
+  | 'postman-globals'
+  | 'wsdl'
+  | 'proto'
+  | 'legacy-soap-project'
+  | 'unknown';
 
 export interface DetectedImportFormat {
   readonly kind: ImportFormatKind;
@@ -115,6 +124,18 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     }
 
     if (didParse && isRecord(parsed)) {
+      const variables = isPostmanVariables(parsed);
+      if (variables !== undefined) {
+        const scopeKnown = typeof parsed['_postman_variable_scope'] === 'string';
+        return variables === 'globals'
+          ? { kind: 'postman-globals', label: 'Postman globals', confidence: 'definite' }
+          : {
+              kind: 'postman-environment',
+              label: 'Postman environment',
+              confidence: scopeKnown ? 'definite' : 'probable',
+            };
+      }
+
       if (isPostmanCollection(parsed)) {
         const info = isRecord(parsed['info']) ? parsed['info'] : undefined;
         const schema = typeof info?.['schema'] === 'string' ? info['schema'] : undefined;
@@ -190,6 +211,12 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
       target.endsWith('.wsdl.xml')
     ) {
       return { kind: 'wsdl', label: 'WSDL / SOAP', confidence: 'probable' };
+    }
+    if (target.endsWith('.postman_environment.json')) {
+      return { kind: 'postman-environment', label: 'Postman environment', confidence: 'probable' };
+    }
+    if (target.endsWith('.postman_globals.json')) {
+      return { kind: 'postman-globals', label: 'Postman globals', confidence: 'probable' };
     }
     if (target.includes('postman_collection') || target.endsWith('.postman.json')) {
       return { kind: 'postman', label: 'Postman Collection', confidence: 'probable' };
