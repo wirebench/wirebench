@@ -204,6 +204,18 @@ describe('CookieStore — edits', () => {
     expect(changes.length).toBeGreaterThanOrEqual(6);
     expect(changes.at(-1)).toEqual({ cookies: [], persisted: true });
   });
+
+  it('keeps the original when a renamed cookie is refused', async () => {
+    const s = store();
+    await s.switchTo('w1');
+    s.host().remember('https://api.test/login', LOGIN);
+    const sid = s.state().cookies.find((cookie) => cookie.name === 'sid')!;
+
+    expect(() => s.set({ ...sid, name: 'a\u0001b' }, { name: 'sid', domain: 'api.test', path: '/' })).toThrow(
+      RangeError,
+    );
+    expect(names(s.state())).toContain('sid');
+  });
 });
 
 describe('CookieStore — no secure storage at load', () => {

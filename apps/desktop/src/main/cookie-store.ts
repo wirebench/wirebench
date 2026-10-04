@@ -159,13 +159,19 @@ export class CookieStore {
     };
   }
 
-  /** Stores `cookie`, first removing `replaces` when its identity changed (spec §3). */
+  /**
+   * Stores `cookie`, then removes `replaces` when its identity changed (spec §3). Storing first means
+   * a cookie the jar refuses leaves the original in place.
+   */
   set(cookie: StoredCookie, replaces?: CookieKey): CookieJarState {
     const { jar } = this.current();
-    if (replaces !== undefined) {
+    jar.set(cookie, this.now());
+    if (
+      replaces !== undefined &&
+      (replaces.name !== cookie.name || replaces.domain !== cookie.domain || replaces.path !== cookie.path)
+    ) {
       jar.remove(replaces);
     }
-    jar.set(cookie, this.now());
     return this.changed(this.currentId);
   }
 

@@ -2011,7 +2011,7 @@ export const storedCookieWireSchema = z
     name: z
       .string()
       .min(1)
-      .regex(/^[^;=\s]+$/),
+      .regex(/^[^;=\s\u0000-\u001f\u007f]+$/),
     value: z.string().regex(/^[^;\r\n\0]*$/),
     domain: z.string().min(1),
     hostOnly: z.boolean(),
