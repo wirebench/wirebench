@@ -289,7 +289,7 @@ look at**, **Notes** and **Copy report** work as they do for a legacy project.
   beside it; pasted JSON is read as the public file.
 - **Response handlers** written inline are saved as text under `imported-scripts/` and never run.
 - **Credentials** are never imported as plain text, under the same rule as
-  [HAR captures](#limits): a literal `Authorization` header sets the auth type without its
+  [HAR captures](#har-captures): a literal `Authorization` header sets the auth type without its
   credential, and other credential-looking values are dropped or emptied.
 - **Limits.** A file larger than 10 MB, or with more than 5,000 requests, is refused.
 

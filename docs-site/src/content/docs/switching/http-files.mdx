@@ -77,7 +77,8 @@ brings its public or private partner from beside it.
 
 <Aside type="caution" title="Companion files are read only as they are">
 Only `http-client.env.json` and `http-client.private.env.json` in the picked file's own folder are
-read. If either is a symbolic link, the import is refused rather than following it.
+read. If either is a symbolic link, or cannot be read for another reason, the environment files are
+not read and the dialog says why under the file. The requests still import.
 </Aside>
 
 ## Limits

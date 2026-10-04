@@ -146,6 +146,11 @@ describe('Import dialog — .http file', () => {
     fireEvent.change(screen.getByTestId('import-file-input'), { target: { value: '/work/api.http' } });
     fireEvent.click(screen.getByTestId('import-submit'));
     const summary = await screen.findByTestId('import-http-summary');
+    expect(importHttpFile).toHaveBeenCalledWith({
+      target: { projectId: 'proj-1' },
+      source: { kind: 'file', path: '/work/api.http' },
+      includeEnvironments: false,
+    });
     expect(screen.getByTestId('import-http-counts').textContent).toBe(
       '3 requests, 1 WebSocket request, 1 skipped, 2 handlers kept in imported-scripts/',
     );
@@ -158,6 +163,54 @@ describe('Import dialog — .http file', () => {
     expect(screen.getByTestId('import-http-summary-notes').textContent).toContain('handler');
     expect(screen.getByTestId('import-http-summary-copy-report')).toBeTruthy();
   });
+
+  it('asks for no environments when none were found beside the file', async () => {
+    installWirebenchApi({ api: { inspectHttpFile, importHttpFile } });
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="http-file" />);
+    fireEvent.change(screen.getByTestId('import-file-input'), { target: { value: '/work/api.http' } });
+    await waitFor(() => expect(inspectHttpFile).toHaveBeenCalledWith({ path: '/work/api.http' }));
+    expect(screen.queryByTestId('import-http-include-envs')).toBeNull();
+    fireEvent.click(screen.getByTestId('import-submit'));
+    await waitFor(() =>
+      expect(importHttpFile).toHaveBeenCalledWith({
+        target: { projectId: 'proj-1' },
+        source: { kind: 'file', path: '/work/api.http' },
+        includeEnvironments: false,
+      }),
+    );
+  });
+
+  it.each([
+    [
+      'refused',
+      () =>
+        inspectHttpFile.mockResolvedValue({
+          ok: false,
+          error: { code: 'import-path-refused', message: 'http-client.env.json is a symbolic link' },
+        }),
+    ],
+    ['rejected', () => inspectHttpFile.mockRejectedValue(new Error('http-client.env.json is a symbolic link'))],
+  ])(
+    'says why the environment files were not read when the inspection is %s, and imports without them',
+    async (_label, arrange) => {
+      arrange();
+      installWirebenchApi({ api: { inspectHttpFile, importHttpFile } });
+      render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="http-file" />);
+      fireEvent.change(screen.getByTestId('import-file-input'), { target: { value: '/work/api.http' } });
+      expect((await screen.findByTestId('import-http-envs-error')).textContent).toBe(
+        'The environment files beside it were not read: http-client.env.json is a symbolic link',
+      );
+      expect(screen.queryByTestId('import-http-include-envs')).toBeNull();
+      fireEvent.click(screen.getByTestId('import-submit'));
+      await waitFor(() =>
+        expect(importHttpFile).toHaveBeenCalledWith({
+          target: { projectId: 'proj-1' },
+          source: { kind: 'file', path: '/work/api.http' },
+          includeEnvironments: false,
+        }),
+      );
+    },
+  );
 
   it('shows the refusal main answers with', async () => {
     importHttpFile.mockResolvedValue({
@@ -190,5 +243,17 @@ describe('Import dialog — HTTP client environment file', () => {
     const summary = await screen.findByTestId('import-variables-summary');
     expect(summary.textContent).toContain('dev (2 variables)');
     expect(summary.textContent).toContain('1 secret stored');
+  });
+
+  it('sends pasted JSON as the environment file text', async () => {
+    installWirebenchApi({ api: { importHttpEnv } });
+    render(<ImportDialog open onOpenChange={vi.fn()} initialFormat="http-env" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Paste' }));
+    fireEvent.change(screen.getByTestId('import-paste'), { target: { value: '{"dev":{"host":"x"}}' } });
+    fireEvent.click(screen.getByTestId('import-submit'));
+    await waitFor(() =>
+      expect(importHttpEnv).toHaveBeenCalledWith({ source: { kind: 'text', text: '{"dev":{"host":"x"}}' } }),
+    );
+    expect(await screen.findByTestId('import-variables-summary')).toBeTruthy();
   });
 });

@@ -246,6 +246,8 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   // .http: the environments found beside the picked file, and whether to bring them along.
   const [httpEnvNames, setHttpEnvNames] = useState<readonly string[]>([]);
   const [httpIncludeEnvs, setHttpIncludeEnvs] = useState(true);
+  // Why the environment files beside the picked file could not be read; the requests still import.
+  const [httpEnvsError, setHttpEnvsError] = useState<string | undefined>(undefined);
 
   // OpenAPI and AsyncAPI by URL: the credentials the document is fetched with, as references.
   const [definitionAuth, setDefinitionAuth] = useState<AuthConfigWire>(NO_DEFINITION_AUTH);
@@ -391,6 +393,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   useEffect(() => {
     setHttpEnvNames([]);
     setHttpIncludeEnvs(true);
+    setHttpEnvsError(undefined);
     if (httpFilePath === '') {
       return;
     }
@@ -399,9 +402,13 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       void ipc()
         .api.inspectHttpFile({ path: httpFilePath })
         .then((res) => {
-          if (current && res.ok) setHttpEnvNames(res.value.environments);
+          if (!current) return; // A newer path has its own inspection under way.
+          if (res.ok) setHttpEnvNames(res.value.environments);
+          else setHttpEnvsError(res.error.message);
         })
-        .catch(() => undefined); // Import reports what is wrong with the file.
+        .catch((error: unknown) => {
+          if (current) setHttpEnvsError(error instanceof Error ? error.message : String(error));
+        });
     }, 200);
     return () => {
       current = false;
@@ -459,6 +466,7 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
     setHarResponses('drop');
     setHttpEnvNames([]);
     setHttpIncludeEnvs(true);
+    setHttpEnvsError(undefined);
   }, []);
 
   function buildSource(): ImportSourceWire | undefined {
@@ -773,7 +781,9 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
       const res = await ipc().api.importHttpFile({
         target: chosen === NEW_PROJECT ? { newProjectName } : { projectId: chosen },
         source: source.kind === 'file' ? { kind: 'file', path: source.path } : { kind: 'text', text: source.text },
-        includeEnvironments: source.kind === 'file' && httpIncludeEnvs,
+        // Only when the checkbox was offered and is ticked: a failed inspection, or a submit before
+        // it answered, offered nothing to bring along.
+        includeEnvironments: source.kind === 'file' && httpEnvNames.length > 0 && httpIncludeEnvs,
       });
       if (!res.ok) {
         setImportError(res.error.message);
@@ -1636,6 +1646,11 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
                   />
                   {`Also import ${String(httpEnvNames.length)} environment${httpEnvNames.length === 1 ? '' : 's'} found beside the file (${httpEnvNames.join(', ')})`}
                 </label>
+              )}
+              {effectiveFormat === 'http-file' && tab === 'file' && httpEnvsError !== undefined && (
+                <p data-testid="import-http-envs-error" className="mt-2 text-xs text-fg-subtle">
+                  The environment files beside it were not read: {httpEnvsError}
+                </p>
               )}
 
               {progress !== undefined && (
