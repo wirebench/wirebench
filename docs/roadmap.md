@@ -80,11 +80,11 @@ the [project board](https://github.com/orgs/wirebench/projects/1) and in one of 
 [milestones](https://github.com/wirebench/wirebench/milestones). This page stays the argument for the order;
 the issues are where the work is tracked, and each one carries its own "done when" checklist and the issues
 it waits for. The milestones carry no dates, for the reason the legend gives. The version numbers are
-intentions, and they were renumbered on 2026-09-30: 3.0.0 is the release that renames the engine's public
-exports (#184, [ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)), so the milestone that
-held that number moved. 4.0 is a major because mock stubs are a new file kind, which is the kind of one-way
+intentions, and they were renumbered on 2026-09-30: the major that renames the engine's public
+exports (#184, [ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)) took 3.0, so the milestone that
+held that number moved. The 3.0 and 3.1 milestones ship together as 3.1.0, the first release after 2.2.1; there is no 3.0.0 tag. 4.0 is a major because mock stubs are a new file kind, which is the kind of one-way
 door 2.0 was. No issue sits in an earlier milestone than one it is blocked by. An item that has shipped
-but sits under a later milestone is already in 3.0.0 — the WebSocket request kind (#98, item 17), for one,
+but sits under a later milestone is already in 3.1.0 — the WebSocket request kind (#98, item 17), for one,
 sits under 4.0; the milestone records where it was planned, not the release it arrived in.
 
 | Milestone | Roadmap items | Issues |
@@ -306,7 +306,7 @@ renderer. Two extensions (item 6):
   MCP request kind for testing MCP servers, decided together with gRPC (item 17),
   since both need a multi-message response record.
 - **Plugin API.** Still an idea (#82), and still after the CLI and MCP surfaces have settled: those two give
-  extensibility without committing to an internal API for years. Its groundwork has started (#184): in 3.0.0 every
+  extensibility without committing to an internal API for years. Its groundwork has started (#184): in 3.1.0 every
   built-in protocol is a module behind one interface, held in a registry with feature switches
   ([ADR-0017](adr/0017-a-protocol-is-a-module-behind-one-interface.md)). That interface is for the engine's own
   modules and may change in any release. Whether any of it becomes a public plugin API is decided at the end of
@@ -467,7 +467,7 @@ ISO 27001 report once there is a company to audit.
 - **Every protocol.** GraphQL when asked; MQTT, Kafka and JMS are a different buyer with a different tool
   budget, and so are the messaging layers that ride on WebSocket (Socket.IO, STOMP, MQTT over WebSocket).
   Raw WebSocket and Server-Sent Events are in: see [Streaming](#streaming-server-sent-events-websocket-and-graphql-subscriptions).
-- **A plugin API before the CLI and MCP surfaces are stable.** The protocol modules of 3.0.0 (#184) are groundwork
+- **A plugin API before the CLI and MCP surfaces are stable.** The protocol modules of 3.1.0 (#184) are groundwork
   inside the engine, not a plugin API: nothing loads third-party code, and the module interface carries no
   stability promise.
 

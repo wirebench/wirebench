@@ -45,7 +45,7 @@ inputs:
   version:
     description: >-
       @wirebench/cli version to run. Defaults to this action's own ref when it is a version tag
-      (e.g. a `uses: wirebench/wirebench/action@v3.0.0` pin resolves to `3.0.0`), else `latest`.
+      (e.g. a `uses: wirebench/wirebench/action@v3.1.0` pin resolves to `3.1.0`), else `latest`.
     required: false
   node-version:
     description: Node.js version to set up before running (this replaces the caller job's Node for later steps).

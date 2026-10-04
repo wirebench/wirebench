@@ -106,7 +106,7 @@ No service to hand? Try `http://www.dneonline.com/calculator.asmx?WSDL`.
 exit codes, and JUnit or JSON reports — as a GitHub Action, a GitLab template, a container image or plain `npx`:
 
 ```yaml
-- uses: wirebench/wirebench/action@v3.0.0
+- uses: wirebench/wirebench/action@v3.1.0
   with:
     project: ./api-tests
     env: staging
@@ -152,13 +152,13 @@ requires it.
 Open work is tracked as issues in [milestones](https://github.com/wirebench/wirebench/milestones) and on the
 [project board](https://github.com/orgs/wirebench/projects/1); the [full roadmap](docs/roadmap.md) argues the order.
 
-| Milestone                                                                                | Still open                                                                                                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [3.0 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) | Windows code signing ([#114](https://github.com/wirebench/wirebench/issues/114)), runner `--baseline` mode ([#36](https://github.com/wirebench/wirebench/issues/36)), contract operations as MCP tools ([#33](https://github.com/wirebench/wirebench/issues/33)) |
-| [3.1 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3)      | Persistent cookie jar ([#44](https://github.com/wirebench/wirebench/issues/44)), HTML response preview ([#48](https://github.com/wirebench/wirebench/issues/48))                                                                                                 |
-| [3.2 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4)             | Server audit log ([#198](https://github.com/wirebench/wirebench/issues/198)), license binding, secrets from external managers, Kerberos/SPNEGO and WS-Trust, WS-Security debugger, managed preferences, portable Windows build                                   |
-| [4.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | Contract diff ([#56](https://github.com/wirebench/wirebench/issues/56)), mock services and a recording proxy, more importers and exporters, a published project-file schema, multi-window                                                                        |
-| [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6)              | GraphQL, test suites and data-driven runs, JKS keystores, WS-ReliableMessaging, a plugin API, localisation                                                                                                                                                       |
+| Milestone                                                                                | Still open                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [3.0 — Runs in CI, driven by agents](https://github.com/wirebench/wirebench/milestone/2) | Nothing: shipped in 3.1.0                                                                                                                                                                                                      |
+| [3.1 — REST and gRPC daily use](https://github.com/wirebench/wirebench/milestone/3)      | Nothing: shipped in 3.1.0                                                                                                                                                                                                      |
+| [3.2 — Enterprise trust](https://github.com/wirebench/wirebench/milestone/4)             | Server audit log ([#198](https://github.com/wirebench/wirebench/issues/198)), license binding, secrets from external managers, Kerberos/SPNEGO and WS-Trust, WS-Security debugger, managed preferences, portable Windows build |
+| [4.0 — Contracts, mocks and testing](https://github.com/wirebench/wirebench/milestone/5) | Contract diff ([#56](https://github.com/wirebench/wirebench/issues/56)), mock services and a recording proxy, more importers and exporters, a published project-file schema, multi-window                                      |
+| [Later — demand-driven](https://github.com/wirebench/wirebench/milestone/6)              | GraphQL, test suites and data-driven runs, JKS keystores, WS-ReliableMessaging, a plugin API, localisation                                                                                                                     |
 
 Server editions shipped on `main`: Community, Team and Enterprise, decided by a signed offline license file
 ([ADR-0018](docs/adr/0018-licensing-is-a-product-boundary.md)).

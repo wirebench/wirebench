@@ -1,16 +1,16 @@
 # @wirebench/engine
 
-`@wirebench/engine` is an internal dependency of [`@wirebench/cli`](https://github.com/wirebench/wirebench/tree/main/packages/cli) and is published so the CLI can depend on a versioned package rather than a workspace link. It has no stability promise of its own: a major release may rename or remove exports, as 3.0 did, and the exports tagged `@internal` may change in any release. See the [Wirebench repository](https://github.com/wirebench/wirebench) for usage, documentation, and issue tracking.
+`@wirebench/engine` is an internal dependency of [`@wirebench/cli`](https://github.com/wirebench/wirebench/tree/main/packages/cli) and is published so the CLI can depend on a versioned package rather than a workspace link. It has no stability promise of its own: a major release may rename or remove exports, as 3.1 did, and the exports tagged `@internal` may change in any release. See the [Wirebench repository](https://github.com/wirebench/wirebench) for usage, documentation, and issue tracking.
 
-## Migrating to 3.0
+## Migrating to 3.1
 
-3.0 puts every protocol behind one interface ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). The main entry's exports changed; nothing was kept as a deprecated alias. The subpaths (`./xml`, `./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) did not change.
+3.1 puts every protocol behind one interface ([ADR-0017](https://github.com/wirebench/wirebench/blob/main/docs/adr/0017-a-protocol-is-a-module-behind-one-interface.md)). The main entry's exports changed; nothing was kept as a deprecated alias. The subpaths (`./xml`, `./rest`, `./json`, `./grpc`, `./asyncapi`, `./snapshot`, `./detect`) did not change.
 
 ### Renamed
 
 These names read as every protocol's and were WSDL's and SOAP's. Signatures are unchanged.
 
-| 2.x                     | 3.0                        |
+| 2.x                     | 3.1                        |
 | ----------------------- | -------------------------- |
 | `importDefinition`      | `importWsdl`               |
 | `ImportSource`          | `WsdlImportSource`         |
@@ -44,7 +44,7 @@ if (operation !== undefined) {
 ```
 
 ```ts
-// 3.0
+// 3.1
 import { generateSoapRequest, importWsdl } from '@wirebench/engine';
 import type { WsdlImportResult } from '@wirebench/engine';
 
@@ -89,7 +89,7 @@ for (const item of selected) {
 ```
 
 ```ts
-// 3.0
+// 3.1
 import { createRunSender, selectRequests } from '@wirebench/engine';
 
 const { selected } = selectRequests(project, ['Orders/List orders']);
@@ -111,7 +111,7 @@ const sent = await module.run.send(item, scope);
 ```
 
 ```ts
-// 3.0
+// 3.1
 import { openExchange } from '@wirebench/engine';
 
 const context = { project, projectDir, overrides: {}, host: { getSecret, proxyFor, tokens } };

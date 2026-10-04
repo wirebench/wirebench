@@ -3,12 +3,12 @@
 # Usage:
 #
 #   include:
-#     - remote: https://raw.githubusercontent.com/wirebench/wirebench/v3.0.0/templates/gitlab/wirebench.gitlab-ci.yml
+#     - remote: https://raw.githubusercontent.com/wirebench/wirebench/v3.1.0/templates/gitlab/wirebench.gitlab-ci.yml
 #
 #   api-tests:
 #     extends: .wirebench-run
 #     variables:
-#       WIREBENCH_VERSION: '3.0.0'
+#       WIREBENCH_VERSION: '3.1.0'
 #       WIREBENCH_PROJECT: api-tests
 #       WIREBENCH_ENV: staging
 #

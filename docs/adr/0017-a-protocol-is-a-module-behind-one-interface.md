@@ -125,7 +125,7 @@ interface may change in any release. Phase 7 decides what of it is promised.
 - A project written by a later build, holding a kind this build does not know, opens with that container shown as a
   problem and the rest usable. Before, it did not open. A request file of a kind its container's module does not accept
   still refuses the project.
-- The engine's public exports broke once, for 3.0.0: the SOAP-era names that read as every protocol's were renamed, and
+- The engine's public exports broke once, for 3.1.0: the SOAP-era names that read as every protocol's were renamed, and
   what the registry replaces was removed, with no aliases. `packages/engine/README.md` has the tables.
 - The modules are stored with their types erased. A request handed to the wrong module is a programming error and
   throws; the compiler does not catch it.
