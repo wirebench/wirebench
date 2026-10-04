@@ -761,6 +761,7 @@ export type {
 // .http files: parsing request files, and mapping them to REST and WebSocket APIs.
 export { HTTP_FILE_METHODS, MAX_HTTP_FILE_BYTES, parseHttpFile } from './rest/http-file/index.js';
 export type { HttpFileRequest, ParsedHttpFile } from './rest/http-file/index.js';
+export { HTTP_ENV_FILE, HTTP_PRIVATE_ENV_FILE, parseHttpEnvFiles } from './rest/http-file/env.js';
 export { importHttpFile } from './import/http-file/import.js';
 export type { HttpFileSource, ImportHttpFileOptions } from './import/http-file/import.js';
 export { mapHttpFile } from './import/http-file/map.js';

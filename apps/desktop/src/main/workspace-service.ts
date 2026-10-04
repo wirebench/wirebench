@@ -2895,6 +2895,20 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostFor(projectId).importProperties(properties, disabled);
   }
 
+  /** @inheritdoc */
+  writeImportedScripts(
+    ...[projectId, scripts]: Parameters<ProjectRouter['writeImportedScripts']>
+  ): ReturnType<ProjectRouter['writeImportedScripts']> {
+    return this.hostFor(projectId).writeImportedScripts(scripts);
+  }
+
+  /** @inheritdoc */
+  importWsApi(
+    ...[projectId, input]: Parameters<ProjectRouter['importWsApi']>
+  ): ReturnType<ProjectRouter['importWsApi']> {
+    return this.hostFor(projectId).importWsApi(input);
+  }
+
   importLegacyProject(
     ...[projectId, input]: Parameters<ProjectRouter['importLegacyProject']>
   ): ReturnType<ProjectRouter['importLegacyProject']> {

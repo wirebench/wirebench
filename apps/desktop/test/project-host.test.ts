@@ -7,6 +7,7 @@ import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDefaultFetchDocument,
+  createWsApi,
   DEFAULT_PREFERENCES,
   importOpenApi,
   loadProject,
@@ -1314,6 +1315,73 @@ describe('ProjectHost.authFor', () => {
       username: 'from-default-endpoint',
     });
 
+    await service.close();
+  });
+});
+
+describe('ProjectHost.writeImportedScripts', () => {
+  it('leaves an existing script untouched and saves the new one beside it under -2, -3', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'Scripts Project');
+    await service.create({ dir, name: 'Scripts Project' });
+    const existing = join(dir, 'imported-scripts', 'api', 'login.handler.js');
+    await mkdir(join(dir, 'imported-scripts', 'api'), { recursive: true });
+    await writeFile(existing, 'kept');
+
+    const first = await service.writeImportedScripts([
+      { path: 'imported-scripts/api/login.handler.js', source: 'new one' },
+      { path: 'imported-scripts/api/other.js', source: 'other' },
+    ]);
+    const second = await service.writeImportedScripts([
+      { path: 'imported-scripts/api/login.handler.js', source: 'newer one' },
+    ]);
+
+    expect(await readFile(existing, 'utf8')).toBe('kept');
+    expect(await readFile(join(dir, 'imported-scripts', 'api', 'login-2.handler.js'), 'utf8')).toBe('new one');
+    expect(await readFile(join(dir, 'imported-scripts', 'api', 'login-3.handler.js'), 'utf8')).toBe('newer one');
+    expect(first).toEqual({
+      written: ['imported-scripts/api/login-2.handler.js', 'imported-scripts/api/other.js'],
+      renamed: [{ from: 'imported-scripts/api/login.handler.js', to: 'imported-scripts/api/login-2.handler.js' }],
+    });
+    expect(second.renamed).toEqual([
+      { from: 'imported-scripts/api/login.handler.js', to: 'imported-scripts/api/login-3.handler.js' },
+    ]);
+    await service.close();
+  });
+
+  it('refuses a path outside imported-scripts/', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'Escape Project');
+    await service.create({ dir, name: 'Escape Project' });
+
+    const result = await service.writeImportedScripts([
+      { path: 'imported-scripts/../escaped.js', source: 'x' },
+      { path: 'apis/evil.js', source: 'x' },
+    ]);
+
+    expect(result).toEqual({ written: [], renamed: [] });
+    expect(existsSync(join(dir, 'apis', 'evil.js'))).toBe(false);
+    expect(existsSync(join(dir, 'escaped.js'))).toBe(false);
+    await service.close();
+  });
+});
+
+describe('ProjectHost.importWsApi', () => {
+  it('places a mapped WebSocket API with no definition, under a free slug, and saves', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'Ws Project');
+    await service.create({ dir, name: 'Ws Project' });
+
+    const first = await service.importWsApi({ api: createWsApi('Chat', { url: 'wss://chat.test' }) });
+    const second = await service.importWsApi({ api: createWsApi('Chat', { url: 'wss://chat.test' }) });
+
+    const apis = second.project.wsApis;
+    expect(apis.map((api) => [api.id, api.slug, api.order])).toEqual([
+      [first.apiId, 'Chat', 0],
+      [second.apiId, 'Chat-2', 1],
+    ]);
+    expect(apis.every((api) => api.definition === undefined)).toBe(true);
+    expect(service.snapshot()?.dirty).toBe(false);
     await service.close();
   });
 });
