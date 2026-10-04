@@ -281,3 +281,40 @@ describe('detectImportFormat HAR', () => {
     });
   });
 });
+
+describe('detectImportFormat: .http files and environment files', () => {
+  it('detects .http files and their environment files', () => {
+    expect(detectImportFormat({ filename: 'http-client.env.json' })).toEqual({
+      kind: 'http-env',
+      label: 'HTTP client environment file',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ filename: 'dir/http-client.private.env.json' }).kind).toBe('http-env');
+    expect(detectImportFormat({ filename: 'api.http' })).toEqual({
+      kind: 'http-file',
+      label: '.http file',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ filename: 'api.rest' }).kind).toBe('http-file');
+    expect(detectImportFormat({ text: 'GET https://example.com\n\n###\nPOST https://example.com/a' }).kind).toBe(
+      'http-file',
+    );
+  });
+
+  it('needs a separator or a second request line to call text a .http file', () => {
+    expect(detectImportFormat({ text: '# a note\nGET https://example.com' }).kind).toBe('unknown');
+    expect(detectImportFormat({ text: '// c\nhttps://example.com/a\n\nGET https://example.com/b' }).kind).toBe(
+      'http-file',
+    );
+  });
+
+  it('detects an environment file by its shape, last and as probable', () => {
+    expect(detectImportFormat({ text: '{"dev":{"host":"h","port":1},"prod":{}}' })).toEqual({
+      kind: 'http-env',
+      label: 'HTTP client environment file',
+      confidence: 'probable',
+    });
+    expect(detectImportFormat({ text: '{"dev":{"a":{"b":1}}}' }).kind).toBe('unknown');
+    expect(detectImportFormat({ text: '{}' }).kind).toBe('unknown');
+  });
+});

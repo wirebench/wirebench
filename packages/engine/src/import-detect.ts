@@ -17,6 +17,8 @@ export type ImportFormatKind =
   | 'postman-environment'
   | 'postman-globals'
   | 'har'
+  | 'http-file'
+  | 'http-env'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project'
@@ -63,10 +65,41 @@ export function stripLeadingProtoComments(text: string): string {
 }
 const PROTO_KEYWORD_REGEX =
   /^\s*(?:package\s+[\w.]+\s*;|import\s+"[^"]+\.proto"\s*;|service\s+\w+\s*\{|message\s+\w+\s*\{)/m;
+/** The first request line of a `.http` file: an optional method, then an absolute URL. */
+const HTTP_REQUEST_LINE = /^(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|WEBSOCKET|GRAPHQL)\s+)?https?:\/\/\S+/;
+const HTTP_ENV_FILES = ['http-client.env.json', 'http-client.private.env.json'];
+const HTTP_ENV_FORMAT: DetectedImportFormat = {
+  kind: 'http-env',
+  label: 'HTTP client environment file',
+  confidence: 'definite',
+};
+
 const WSDL_NS_REGEX = /xmlns(?::[a-zA-Z0-9_-]+)?=["']http:\/\/(?:schemas\.xmlsoap\.org\/wsdl|www\.w3\.org\/ns\/wsdl)/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** True when `text` opens with a request line and has a `###` separator or a second request line. */
+function looksLikeHttpFile(text: string): boolean {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const requests = lines.filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith('//'));
+  const first = requests[0];
+  if (first === undefined || !HTTP_REQUEST_LINE.test(first)) return false;
+  return lines.some((line) => line.startsWith('###')) || requests.filter((l) => HTTP_REQUEST_LINE.test(l)).length >= 2;
+}
+
+/** `{ "<env>": { "<name>": scalar } }` with at least one environment. */
+function looksLikeHttpEnv(parsed: Record<string, unknown>): boolean {
+  const sets = Object.values(parsed);
+  return (
+    sets.length > 0 &&
+    sets.every(
+      (set) =>
+        isRecord(set) &&
+        Object.values(set).every((v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'),
+    )
+  );
 }
 
 /**
@@ -177,9 +210,15 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
           confidence: 'definite',
         };
       }
+
+      // Last of the JSON checks: any record of scalar records could be an environment file
+      if (looksLikeHttpEnv(parsed)) return { ...HTTP_ENV_FORMAT, confidence: 'probable' };
     }
 
     // 4. Pattern matching fallback on raw text
+    if (looksLikeHttpFile(text)) {
+      return { kind: 'http-file', label: '.http file', confidence: 'probable' };
+    }
     if (/^asyncapi\s*:\s*['"]?[23]\./m.test(text)) {
       return { kind: 'asyncapi', label: 'AsyncAPI', confidence: 'probable' };
     }
@@ -207,6 +246,12 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
 
   if (candidate !== undefined) {
     const target = candidate.toLowerCase();
+    if (HTTP_ENV_FILES.some((name) => target === name || target.endsWith(`/${name}`) || target.endsWith(`\\${name}`))) {
+      return HTTP_ENV_FORMAT;
+    }
+    if (target.endsWith('.http') || target.endsWith('.rest')) {
+      return { kind: 'http-file', label: '.http file', confidence: 'definite' };
+    }
     if (target.endsWith('.proto')) {
       return { kind: 'proto', label: 'Protocol Buffers', confidence: 'probable' };
     }
