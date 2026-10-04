@@ -98,6 +98,19 @@ export function isPostmanCollection(root: unknown): boolean {
 }
 
 /**
+ * Whether `root` is a Postman environment or globals export, and which. Kept here, beside
+ * {@link isPostmanCollection}, because format detection runs in the renderer and must not pull in
+ * the file-reading or project-building modules.
+ */
+export function isPostmanVariables(root: unknown): 'environment' | 'globals' | undefined {
+  if (!isRecord(root) || !Array.isArray(root['values'])) return undefined;
+  const scope = root['_postman_variable_scope'];
+  if (scope === 'globals') return 'globals';
+  if (scope === 'environment') return 'environment';
+  return scope === undefined && typeof root['name'] === 'string' ? 'environment' : undefined;
+}
+
+/**
  * Parses JSON text as a Postman Collection.
  *
  * @throws PostmanError `postman-malformed` if invalid JSON, or `postman-not-a-collection`.

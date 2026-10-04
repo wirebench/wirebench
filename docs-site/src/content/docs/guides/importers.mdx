@@ -173,8 +173,9 @@ as they do for a legacy project.
 - **Disabled variables** come across switched off.
 - **`{{name}}` in a value** becomes `${name}`. Dynamic variables such as `{{$guid}}` are kept as
   written, and one warning names them, since nothing generates their values.
-- **Not accepted.** A bulk data-dump archive, or any JSON that is not one environment or globals
-  export. Export the environments one by one instead.
+- **Not accepted.** The bulk data-dump JSON (its `collections` and `environments` lists), or any
+  JSON that is not one environment or globals export. Export the environments one by one instead.
+  A data-dump zip archive is not opened; it is reported as not valid JSON.
 
 ## cURL commands
 

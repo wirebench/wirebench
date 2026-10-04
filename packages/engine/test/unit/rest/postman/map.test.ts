@@ -259,4 +259,36 @@ describe('Postman entity mapping (map.ts)', () => {
       ]),
     );
   });
+
+  it('imports a secret-typed collection variable as a project secret, its value kept out of the text', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Pets' },
+      variable: [
+        { key: 'apiKey', value: 's3cr3t', type: 'secret' },
+        { key: 'emptySecret', value: '', type: 'secret' },
+      ],
+      item: [],
+    });
+    expect(mapped.projectProperties.variables).toEqual([
+      { name: 'apiKey', value: '', enabled: true, secret: true, secretValue: 's3cr3t' },
+      { name: 'emptySecret', value: '', enabled: true, secret: true },
+    ]);
+    expect(mapped.summary.warnings ?? []).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('look like credentials')]),
+    );
+  });
+
+  it('warns when a plain collection variable looks like a credential', () => {
+    const mapped = apiFromPostmanCollection({
+      info: { name: 'Pets' },
+      variable: [
+        { key: 'authToken', value: 'abc' },
+        { key: 'tenant', value: 'eu' },
+      ],
+      item: [],
+    });
+    expect(mapped.summary.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('look like credentials but are not marked secret, so their values were imported as plain text: authToken.')]),
+    );
+  });
 });

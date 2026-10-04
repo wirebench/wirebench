@@ -6,8 +6,7 @@
  */
 
 import { parse as parseYamlDocument } from 'yaml';
-import { isPostmanCollection } from './rest/postman/parse.js';
-import { isPostmanVariables } from './rest/postman/variables.js';
+import { isPostmanCollection, isPostmanVariables } from './rest/postman/parse.js';
 import { looksLikeLegacyProject } from './soap/legacy-project/format.js';
 
 export type ImportFormatKind =

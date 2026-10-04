@@ -122,4 +122,11 @@ describe('ProjectHost.importProperties', () => {
     expect(reopened.properties).toMatchObject({ keep: 'mine', fresh: 'f', off: 'o' });
     expect(reopened.disabledProperties).toEqual(['off']);
   });
+
+  it('treats names an Object inherits as free', async () => {
+    const project = await host.importProperties({ constructor: 'c' }, ['constructor', 'toString']);
+    expect(Object.hasOwn(project.properties, 'constructor')).toBe(true);
+    expect(project.properties['constructor']).toBe('c');
+    expect(project.disabledProperties).toEqual(['constructor']);
+  });
 });

@@ -149,6 +149,11 @@ function fakeVariablesPorts(withProject?: { readonly fail?: boolean }): {
         environments.push({ name, properties, disabled });
         return Promise.resolve();
       },
+      removeEnvironment: (name) => {
+        const index = environments.findIndex((environment) => environment.name === name);
+        if (index !== -1) environments.splice(index, 1);
+        return Promise.resolve();
+      },
       propertyNames: () => [],
       mergeProperties: () => Promise.resolve(),
     },

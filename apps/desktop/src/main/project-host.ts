@@ -2636,8 +2636,10 @@ export class ProjectHost {
     disabled: readonly string[],
   ): Promise<ProjectWire> {
     const open = this.require();
-    const fresh = Object.fromEntries(Object.entries(properties).filter(([name]) => !(name in open.project.properties)));
-    const freshDisabled = disabled.filter((name) => name in fresh);
+    const fresh = Object.fromEntries(
+      Object.entries(properties).filter(([name]) => !Object.hasOwn(open.project.properties, name)),
+    );
+    const freshDisabled = disabled.filter((name) => Object.hasOwn(fresh, name));
     open.project = {
       ...open.project,
       properties: { ...open.project.properties, ...fresh },

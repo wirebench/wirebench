@@ -29,7 +29,7 @@ the importers guide. It takes Collection v2.0 and v2.1 JSON, from a file or past
 | Folders, nested, with their descriptions | Folders, nested the same way | |
 | Requests: method, URL and description | Requests. A request saved as a bare URL string is a GET | |
 | `{{name}}` anywhere in a name, URL, header, query, body or auth field | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/docs/reference/property-syntax/) |
-| Collection and folder variables, other than the base URL | Project properties. A name the project already has keeps its value; the summary lists it | [Environments and properties](/wirebench/docs/guides/environments/) |
+| Collection and folder variables, other than the base URL | Project properties. A secret-typed variable becomes a secret in the secret store. A name the project already has keeps its value; the summary lists it | [Environments and properties](/wirebench/docs/guides/environments/) |
 | Environment and globals exports | **Import…** → Postman environment / Postman globals. An environment becomes a workspace environment (renamed when the name is taken, never made active); globals merge into Globals; secret-typed values go to the secret store | [Importers](/wirebench/docs/guides/importers/#postman-environments-and-globals) |
 | `:id` path segments and their values | `{id}` in the URL, with a row in the **Path parameters** table | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
 | Query parameters and headers, including disabled ones | Rows in the **Params** and **Headers** tables. Disabled rows stay off | |

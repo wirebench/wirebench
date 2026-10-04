@@ -9,7 +9,7 @@
 import { PostmanError } from '../../errors.js';
 import { ReportBuilder } from '../../import/report.js';
 import type { ImportedVariableSet } from '../../import/variables.js';
-import { VariableSetBuilder } from '../../import/variables.js';
+import { VariableSetBuilder, warnCredentialLookingNames } from '../../import/variables.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { slugify, uniqueSlug } from '../../project/paths.js';
@@ -115,8 +115,11 @@ export function apiFromPostmanCollection(
         variableReport.warn(`Variable "${v.key}" has a value that is not text and was skipped.`);
         continue;
       }
+      const enabled = v.disabled !== true;
       properties.add(
-        { name: v.key, value: translatePostmanVariables(text, dynamic), enabled: v.disabled !== true, secret: false },
+        v.type === 'secret'
+          ? { name: v.key, value: '', enabled, secret: true, ...(text !== '' ? { secretValue: text } : {}) }
+          : { name: v.key, value: translatePostmanVariables(text, dynamic), enabled, secret: false },
         where,
       );
     }
@@ -210,6 +213,8 @@ export function apiFromPostmanCollection(
   if (dynamic.size > 0) {
     warnings.push(`Dynamic variables are kept as written and not expanded: ${[...dynamic].sort().join(', ')}`);
   }
+  const projectProperties = properties.build();
+  warnCredentialLookingNames(variableReport, [projectProperties]);
   const variableResult = variableReport.build();
   warnings.push(...variableResult.warnings, ...variableResult.notes);
   if (credentialCount.value > 0) {
@@ -240,7 +245,7 @@ export function apiFromPostmanCollection(
     ...(warnings.length > 0 ? { warnings } : {}),
   };
 
-  return { api, projectProperties: properties.build(), summary };
+  return { api, projectProperties, summary };
 }
 
 function mapRequest(

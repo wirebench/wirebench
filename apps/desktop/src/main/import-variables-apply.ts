@@ -2,9 +2,13 @@
 /**
  * Applies an importer's variable plan (engine `ImportedVariables`, spec §3.5): workspace
  * environments under a free name; Globals, workspace and project properties without touching an
- * existing name; secret values into the secret store behind a fresh `${secret:ref}`. Every
- * secret this call wrote is deleted again if any save fails, so a failed import leaves nothing
- * behind. The active environment is never changed.
+ * existing name; secret values into the secret store behind a fresh `${secret:ref}`. The
+ * active environment is never changed.
+ *
+ * When a save fails, this call undoes what it can before rethrowing: every environment it added
+ * is removed and every secret it wrote is deleted (both best effort). Globals, workspace
+ * properties and project properties merges that had already saved are not undone; they only
+ * ever added names that did not exist before.
  */
 import type { ImportedVariable, ImportedVariables, ImportedVariableSet } from '@wirebench/engine';
 import { uniqueName } from '@wirebench/engine';
@@ -13,6 +17,7 @@ export interface VariablesApplyPorts {
   readonly workspace: {
     environmentNames(): readonly string[];
     addEnvironment(name: string, properties: Record<string, string>, disabled: readonly string[]): Promise<void>;
+    removeEnvironment(name: string): Promise<void>;
     propertyNames(): readonly string[];
     mergeProperties(properties: Record<string, string>, disabled: readonly string[]): Promise<void>;
   };
@@ -52,6 +57,7 @@ export async function applyImportedVariables(
   ports: VariablesApplyPorts,
 ): Promise<VariablesApplyResult> {
   const written: string[] = [];
+  const addedEnvironments: string[] = [];
   const warnings: string[] = [...plan.report.warnings];
   const notes: string[] = [...plan.report.notes];
 
@@ -67,7 +73,8 @@ export async function applyImportedVariables(
   };
 
   const resolveSet = async (owner: string, variables: readonly ImportedVariable[]) => {
-    const properties: Record<string, string> = {};
+    // Null prototype, so a variable named `__proto__` is kept as an own key, not swallowed.
+    const properties = Object.create(null) as Record<string, string>;
     const disabled: string[] = [];
     for (const v of variables) {
       properties[v.name] = await valueOf(owner, v);
@@ -103,6 +110,7 @@ export async function applyImportedVariables(
       }
       const { properties, disabled } = await resolveSet(name, env.variables);
       await ports.workspace.addEnvironment(name, properties, disabled);
+      addedEnvironments.push(name);
       environments.push({
         name,
         ...(name !== env.name ? { renamedFrom: env.name } : {}),
@@ -140,6 +148,9 @@ export async function applyImportedVariables(
       notes,
     };
   } catch (error) {
+    for (const name of addedEnvironments.reverse()) {
+      await ports.workspace.removeEnvironment(name).catch(() => undefined);
+    }
     await Promise.all(written.map((ref) => ports.secrets.delete(ref).catch(() => false)));
     throw error;
   }

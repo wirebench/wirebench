@@ -9,17 +9,13 @@ import type { ImportedVariables } from '../../import/variables.js';
 import { VariableSetBuilder, warnCredentialLookingNames } from '../../import/variables.js';
 import type { PostmanSource } from './import.js';
 import { readPostmanSource } from './import.js';
+import { isPostmanVariables } from './parse.js';
+
+// Lives in parse.ts so import-detect (bundled into the renderer) never reaches import.ts or map.ts.
+export { isPostmanVariables };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function isPostmanVariables(root: unknown): 'environment' | 'globals' | undefined {
-  if (!isRecord(root) || !Array.isArray(root['values'])) return undefined;
-  const scope = root['_postman_variable_scope'];
-  if (scope === 'globals') return 'globals';
-  if (scope === 'environment') return 'environment';
-  return scope === undefined && typeof root['name'] === 'string' ? 'environment' : undefined;
 }
 
 function scalarText(value: unknown): string | undefined {
