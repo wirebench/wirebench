@@ -1,12 +1,12 @@
 ---
 title: Importing APIs
-description: Bring a WSDL, OpenAPI document, Postman collection, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
-`curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+HAR capture of recorded traffic, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
 requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
 smaller one.
 
@@ -16,6 +16,7 @@ smaller one.
 | OpenAPI / Swagger | Import dialog | URL, file or pasted YAML/JSON |
 | Postman Collection | Import dialog | File or pasted JSON |
 | Postman environment or globals | Import dialog | File or pasted JSON |
+| HAR (recorded traffic) | Import dialog | File or pasted JSON |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -32,8 +33,8 @@ smaller one.
    **Server**, asks a running server to describe itself instead of reading a document.
 
 3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
-   Collection**, **Postman environment**, **Postman globals**, **WSDL (SOAP)**, **Protocol Buffers
-   (gRPC)**, or **Legacy SOAP project**. With
+   Collection**, **Postman environment**, **Postman globals**, **HAR (recorded traffic)**, **WSDL
+   (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
    auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
 
 4. Pick **Into project** — an open project, or **New project "…"**. Postman environments and
@@ -45,8 +46,8 @@ smaller one.
 
 <Aside type="tip" title="Dedicated commands">
 **Import OpenAPI…** (<kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>), **Import Postman Collection…**,
-**Import Postman Environment…** and **Import Postman Globals…** open the same dialog pinned to that
-format. **Import Legacy SOAP Project…**, from the command
+**Import Postman Environment…**, **Import Postman Globals…** and **Import HAR…** open the same
+dialog pinned to that format. **Import Legacy SOAP Project…**, from the command
 palette, pins it to the legacy format.
 </Aside>
 
@@ -176,6 +177,67 @@ as they do for a legacy project.
 - **Not accepted.** The bulk data-dump JSON (its `collections` and `environments` lists), or any
   JSON that is not one environment or globals export. Export the environments one by one instead.
   A data-dump zip archive is not opened; it is reported as not valid JSON.
+
+## HAR captures
+
+A HAR file is a recording of HTTP traffic, as a browser's developer tools or a proxy saves it.
+Wirebench reads HAR 1.1 and 1.2 and turns the calls in it into REST requests. Auto-detect recognizes
+a capture from its content or a `.har` file name.
+
+<Steps>
+
+1. Open **Import…** and pick **HAR (recorded traffic)**, or run **Import HAR…**.
+
+2. Provide the capture on the **File** or **Paste** tab. There is no URL tab.
+
+3. Leave **Include static assets** unticked to skip images, fonts, scripts, stylesheets and media,
+   or tick it to keep them as requests too.
+
+4. Under **Recorded responses**, choose what becomes of the responses in the capture:
+   - **Don't keep** (the default): only the requests are imported.
+   - **Record into History**: each recorded exchange is written to the project's
+     [History](/wirebench/docs/guides/history/) at the time it was recorded, not the time of the
+     import, and redacted the way a live send's entry is.
+   - **Save as examples**: up to 5 responses are kept beside each request, one per status code,
+     and shown from the response pane's [Examples](/wirebench/docs/guides/rest-client/#examples)
+     menu.
+
+5. Choose the target project and **Import**.
+
+</Steps>
+
+**Grouping.** Each origin (scheme, host and port) the capture called becomes one API, named after its
+host, with the origin as its base URL. Calls with the same method, path and query parameter names are
+one request, named like `GET /pets`; the first recording of it gives the request its headers, query
+and body.
+
+**Skipped.** CORS preflight requests, static assets (unless ticked), and entries whose URL is not
+`http:` or `https:` are left out. The notes count each kind.
+
+The summary counts the APIs and requests, how many of the capture's entries were kept, and how many
+History records were written or that examples were saved. **Things to look at**, **Notes** and
+**Copy report** work as they do for a legacy project. When History's per-project limit is reached,
+the warnings say how many older entries were dropped to make room, or how many recorded exchanges did
+not fit. An exchange with no valid time is not written to History, and a warning counts it.
+
+### Limits
+
+- **Recorded credentials are never imported.**
+  - The `Authorization` and `Cookie` headers are dropped. A Bearer or Basic `Authorization` header
+    sets the request's auth type, with no token or password (Basic keeps the user name), and a
+    warning asks you to set the credential. Other credential headers, such as `X-Api-Key`, are
+    dropped with the same warning.
+  - Query parameters and body fields with credential-looking names, such as `password`, `token` or
+    `api_key`, are imported with an empty value, and a warning names them.
+  - In a saved example, credential headers and the values under credential-looking keys in the body
+    are masked, and `Set-Cookie` is dropped; the notes say which examples were masked.
+- **Cookies are dropped.** The [cookie jar](/wirebench/docs/guides/rest-client/#cookies) handles
+  them at send time.
+- **Binary bodies.** A binary response body is left out of its example. A multipart file part
+  arrives without its file, to pick on the request.
+- **Size.** A capture larger than 100 MB is refused.
+- **Nothing to import.** A capture with no HTTP requests left after the skips is refused, and no
+  project is created.
 
 ## cURL commands
 
