@@ -37,6 +37,8 @@ export const HELP_TEXT = `wirebench run <path> [selector…] [options]
     --require-assertions  A request without assertions is an error.
     --baseline         Compare each response with its committed golden (<slug>.golden.yaml).
     --require-baseline With --baseline: a request without a golden is an error.
+    --update-baseline  Save each changed response as its golden, keeping its ignore rules.
+                       The only flag that writes to the project.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
     --no-color
 -q, --quiet | -v, --verbose
@@ -69,6 +71,7 @@ export interface RunArgs {
   readonly requireAssertions: boolean;
   readonly baseline: boolean;
   readonly requireBaseline: boolean;
+  readonly updateBaseline: boolean;
   readonly insecure: boolean;
   readonly color: boolean;
   readonly quiet: boolean;
@@ -161,6 +164,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
         'require-assertions': { type: 'boolean' },
         baseline: { type: 'boolean' },
         'require-baseline': { type: 'boolean' },
+        'update-baseline': { type: 'boolean' },
         insecure: { type: 'boolean' },
         'no-color': { type: 'boolean' },
         quiet: { type: 'boolean', short: 'q' },
@@ -209,6 +213,13 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     refuseMixed(selectors);
     const baseline = values.baseline ?? false;
     const requireBaseline = values['require-baseline'] ?? false;
+    const updateBaseline = values['update-baseline'] ?? false;
+    if (updateBaseline && (baseline || requireBaseline)) {
+      throw new UsageError('--update-baseline cannot be combined with --baseline or --require-baseline');
+    }
+    if (updateBaseline && sequences.length > 0) {
+      throw new UsageError('--update-baseline cannot be combined with --sequence: sequence steps have no golden');
+    }
     if (requireBaseline && !baseline) {
       throw new UsageError('--require-baseline needs --baseline');
     }
@@ -233,6 +244,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       requireAssertions: values['require-assertions'] ?? false,
       baseline,
       requireBaseline,
+      updateBaseline,
       insecure: values.insecure ?? false,
       color: !values['no-color'],
       quiet: values.quiet ?? false,

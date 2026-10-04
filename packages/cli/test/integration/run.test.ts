@@ -389,3 +389,63 @@ describe('wirebench run --baseline', () => {
     expect(await hashTree(dir)).toEqual(tree);
   });
 });
+
+describe('wirebench run --update-baseline', () => {
+  const GOLDEN = join('apis', 'demo', 'requests', 'ok.golden.yaml');
+  const BROKEN = join('apis', 'demo', 'requests', 'broken.golden.yaml');
+
+  async function copyWithGolden(body?: string, ignore = '[]'): Promise<string> {
+    const dir = await tempDir();
+    await cp(FIXTURE, dir, { recursive: true });
+    if (body !== undefined) {
+      await writeFile(join(dir, GOLDEN), `savedAt: '2026-10-03T10:00:00.000Z'\nignore: ${ignore}\nbody: '${body}'\n`);
+    }
+    return dir;
+  }
+
+  it('rewrites a changed golden, keeping its ignore rules, and lists it', async () => {
+    const dir = await copyWithGolden('{"ok": false}', '["/other"]');
+    const { code, stdout } = await runCli(['run', dir, 'demo/ok', '-e', 'local', ...vars(), '--update-baseline']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('baseline: updated');
+    expect(stdout).toContain('written:\n  apis/demo/requests/ok.golden.yaml\n');
+    const text = await readFile(join(dir, GOLDEN), 'utf8');
+    expect(text).toContain('- /other');
+    expect(text).not.toContain('2026-10-03T10:00:00.000Z');
+    // The new golden passes a compare run.
+    const again = await runCli(['run', dir, 'demo/ok', '-e', 'local', ...vars(), '--baseline']);
+    expect(again.code).toBe(0);
+  });
+
+  it('leaves a matching golden byte-for-byte alone', async () => {
+    const dir = await copyWithGolden('{"ok": true}');
+    const before = await readFile(join(dir, GOLDEN), 'utf8');
+    const { code, stdout } = await runCli(['run', dir, 'demo/ok', '-e', 'local', ...vars(), '--update-baseline']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('baseline: matches');
+    expect(await readFile(join(dir, GOLDEN), 'utf8')).toBe(before);
+  });
+
+  it('creates a missing golden', async () => {
+    const dir = await copyWithGolden();
+    const { code, stdout } = await runCli(['run', dir, 'demo/ok', '-e', 'local', ...vars(), '--update-baseline']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('baseline: created');
+    expect(await readFile(join(dir, GOLDEN), 'utf8')).toContain('body:');
+  });
+
+  it('writes nothing for a failing request and exits 1', async () => {
+    const dir = await copyWithGolden();
+    const { code, stdout } = await runCli(['run', dir, 'demo/broken', '-e', 'local', ...vars(), '--update-baseline']);
+    expect(code).toBe(1);
+    expect(stdout).toContain('(baseline not written: failed)');
+    await expect(readFile(join(dir, BROKEN), 'utf8')).rejects.toThrow();
+  });
+
+  it('exits 2 with --baseline, sending nothing', async () => {
+    const sent = demo.requests.length;
+    const { code } = await runCli(['run', FIXTURE, '-e', 'local', ...vars(), '--update-baseline', '--baseline']);
+    expect(code).toBe(2);
+    expect(demo.requests).toHaveLength(sent);
+  });
+});

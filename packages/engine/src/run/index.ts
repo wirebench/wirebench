@@ -15,6 +15,7 @@ export {
   scriptReport,
 } from './run.js';
 export type {
+  BaselineSink,
   BaselineSource,
   RequestOutcome,
   RequestResult,

@@ -51,6 +51,8 @@ wirebench run <path> [selector…] [options]
     --require-assertions  A request without assertions is an error.
     --baseline         Compare each response with its committed golden (<slug>.golden.yaml).
     --require-baseline With --baseline: a request without a golden is an error.
+    --update-baseline  Save each changed response as its golden, keeping its ignore rules.
+                       The only flag that writes to the project.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
     --no-color
 -q, --quiet | -v, --verbose
@@ -369,10 +371,34 @@ server:
 ignore rules. A difference fails the request (exit 1). A golden that cannot be read, or is too large
 (over 2 MiB) to compare, is an error (exit 3). A request without a golden is noted and judged on its
 other assertions; `--require-baseline` makes that an error too (exit 3). Other protocols are not
-compared, sequences are not compared, and the runner never writes a golden.
+compared, and sequences are not compared.
 
 `--require-baseline` without `--baseline`, and `--baseline` with `--sequence`, are usage errors
 (exit 2).
+
+### Updating goldens
+
+`--update-baseline` saves each SOAP and REST response as its request's golden instead of comparing
+it: a golden that differs is replaced, keeping its ignore rules; a missing one is created; one that
+still matches is left as it is. It is the only flag that writes to the project, and it writes
+nothing but `<slug>.golden.yaml` files. Review the result with `git diff -- '*.golden.yaml'` before
+committing.
+
+A request whose own assertions fail is not written, and fails the run (exit 1). A body with no text
+form (binary) is not written either; the request's outcome is unchanged. A refusal errors the
+request (exit 3) and leaves the file alone: a response that holds a secret value, a golden that is
+malformed, a golden path that is not a regular file, a request file that is not on disk, or a write
+that fails. `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence` is a usage
+error (exit 2).
+
+The summary ends with the counts and the files it wrote:
+
+```
+baseline: 1 updated, 1 created, 3 matched, 0 not written, 0 refused
+written:
+  requests/get-order.golden.yaml
+  requests/create-order.golden.yaml
+```
 
 ## Reports
 
@@ -481,8 +507,8 @@ A report's directory is created if missing; a report that cannot be written is e
 | --- | --- |
 | 0 | Every selected request passed. |
 | 1 | At least one assertion failed, or a response differs from its baseline; nothing errored. |
-| 2 | Usage or load problem: bad flag, path is no project, unknown environment or selector, invalid `assertions:`, project format too new, report not writable. Nothing was sent. |
-| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. With `--baseline`, a golden that cannot be read or is too large (over 2 MiB) to compare; under `--require-baseline`, also a request with no golden. Takes precedence over 1. |
+| 2 | Usage or load problem: bad flag, path is no project, unknown environment or selector, `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence`, invalid `assertions:`, project format too new, report not writable. Nothing was sent. |
+| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. With `--baseline`, a golden that cannot be read or is too large (over 2 MiB) to compare; under `--require-baseline`, also a request with no golden. With `--update-baseline`, a golden that was refused (a secret in the response, a malformed golden, a golden path that is not a file, a request file not saved on disk) or could not be written. Takes precedence over 1. |
 | 130 | Interrupted (`SIGINT`); reports are flushed with what ran. |
 
 An errored request outranks a failed assertion (exit 3 over 1): a pipeline that could not reach the

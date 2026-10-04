@@ -29,6 +29,9 @@ import type { AssertionResult, RequestResult, RunResult } from '@wirebench/engin
  *
  *   - `baseline`: the `--baseline` comparison — `status`, `format?`, `changes?` (at most 100), `ignored?`,
  *     `truncated?`, `error?`. `summary.baseline`: `{ matched, differs, missing }` when the run compared baselines.
+ *     With `--update-baseline` (#217) the same field carries `status` `updated`, `created`, `matched`, `skipped`,
+ *     `refused` or `unsupported`, a `reason?` and the written `file?`; `summary.baselineUpdate` is
+ *     `{ updated, created, matched, skipped, refused }`.
  *
  * An absent optional is omitted from the object entirely, never written as `null`.
  */

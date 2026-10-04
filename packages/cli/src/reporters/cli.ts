@@ -103,6 +103,10 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
         parts.push('(no baseline)');
       } else if (result.baseline?.status === 'unsupported') {
         parts.push(`(baseline not compared: ${result.protocol})`);
+      } else if (result.baseline?.status === 'updated' || result.baseline?.status === 'created') {
+        parts.push(`baseline: ${result.baseline.status}`);
+      } else if (result.baseline?.status === 'skipped') {
+        parts.push(`(baseline not written: ${result.baseline.reason === 'not-text' ? 'not text' : 'failed'})`);
       }
       if (result.scriptsOff === true) {
         parts.push('(scripts off)');
@@ -120,6 +124,20 @@ export function createCliReporter(out: NodeJS.WritableStream, options: CliReport
       if (result.summary.baseline !== undefined) {
         const { matched, differs, missing } = result.summary.baseline;
         out.write(`baseline: ${matched} matched, ${differs} differ, ${missing} missing\n`);
+      }
+      if (result.summary.baselineUpdate !== undefined) {
+        const { updated, created, matched, skipped, refused } = result.summary.baselineUpdate;
+        out.write(
+          `baseline: ${updated} updated, ${created} created, ${matched} matched, ${skipped} not written, ${refused} refused\n`,
+        );
+        const written = result.requests.flatMap((r) =>
+          (r.baseline?.status === 'updated' || r.baseline?.status === 'created') && r.baseline.file !== undefined
+            ? [r.baseline.file]
+            : [],
+        );
+        if (written.length > 0) {
+          out.write(`written:\n${written.map((file) => `  ${file}\n`).join('')}`);
+        }
       }
     },
   };

@@ -46,6 +46,8 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **`wirebench run --update-baseline`** saves each changed response as its request's golden, keeping
+  its ignore rules, and lists the files it wrote (#217).
 - **Cookie jar.** Cookies responses set go into a jar per workspace, kept across restarts (encrypted
   with the system keychain) except session cookies. A REST request with *Send cookies* on sends the
   matching ones, per redirect hop. **View → Show Cookies** opens a manager to view, add, edit and
