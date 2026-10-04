@@ -76,8 +76,10 @@ try a request without a variable, or to keep a rarely used value around without 
 ## Current values
 
 Every variables table — Globals, Workspace, a project and each environment — has a **Current**
-column beside **Value**. A current value replaces the committed value for this session only: it is
-never written to the project, the workspace or the keychain, and it is gone when you quit.
+column beside **Value**. A current value replaces the committed value for this session only: the store
+is never written to the project, the workspace or the keychain, and it is gone when you quit. A
+request that is sent records what it sent, in History and the HTTP Log, as it would for a committed
+value: keep credentials in `${secret:…}` references.
 
 - An empty Current cell shows the committed value as a placeholder; that value applies.
 - Type into the cell and press <kbd>Enter</kbd> to set a current value. The variable's name gets a
@@ -88,7 +90,7 @@ never written to the project, the workspace or the keychain, and it is gone when
 - A current value may itself contain `${...}`, which is expanded like any other value.
 - Rename a variable and its current value follows; delete it and the current value goes too.
 - A secret's Current cell is masked like its Value until you show secrets.
-- `wirebench run --var` still wins over both.
+- Current values don't exist on the command line; `--var` plays that part.
 
 ## Endpoint overrides
 

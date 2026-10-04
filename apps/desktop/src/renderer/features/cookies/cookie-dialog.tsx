@@ -68,13 +68,15 @@ function Field({
   error,
   type = 'text',
   placeholder,
+  autoComplete,
 }: {
   readonly error?: string | undefined;
   readonly label: string;
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly type?: string;
-  readonly placeholder?: string;
+  readonly placeholder?: string | undefined;
+  readonly autoComplete?: string;
 }) {
   const id = useId();
   return (
@@ -89,6 +91,7 @@ function Field({
         className={KV_INPUT_CLASS}
         value={value}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         aria-invalid={error !== undefined}
         aria-describedby={error === undefined ? undefined : `${id}-error`}
         onChange={(event) => {
@@ -139,12 +142,16 @@ export interface CookieDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   /** `replaces` names the edited cookie when its name, domain or path changed. */
   readonly onSave: (cookie: StoredCookieWire, replaces: CookieKeyWire | undefined) => void;
+  /** The manager's Show values toggle. Off, the Value field is masked and never holds the stored value. */
+  readonly showValues?: boolean;
 }
 
 /** **Edit cookie** and **Add cookie** (cookie jar spec §3). Add needs the value, so the dialog shows it; a row also edits it in place. */
-export function CookieDialog({ open, cookie, onOpenChange, onSave }: CookieDialogProps) {
+export function CookieDialog({ open, cookie, onOpenChange, onSave, showValues = false }: CookieDialogProps) {
   const [name, setName] = useState(cookie?.name ?? '');
-  const [value, setValue] = useState(cookie?.value ?? '');
+  // Masked, the field is write-only like a masked Current cell: it starts empty, so the stored value
+  // never lands in the DOM, and leaving it empty keeps the stored value.
+  const [value, setValue] = useState(showValues ? (cookie?.value ?? '') : '');
   const [domain, setDomain] = useState(cookie?.domain ?? '');
   const [path, setPath] = useState(cookie?.path ?? '/');
   const [expires, setExpires] = useState(cookie?.expiresAt === undefined ? '' : toLocalInput(cookie.expiresAt));
@@ -157,7 +164,8 @@ export function CookieDialog({ open, cookie, onOpenChange, onSave }: CookieDialo
     const nextName = name.trim();
     const nextDomain = domain.trim().replace(/^\./, '').toLowerCase();
     const nextPath = path.trim() === '' ? '/' : path.trim();
-    const found = validate({ name: nextName, value, domain: nextDomain, path: nextPath, expires });
+    const nextValue = !showValues && value === '' ? (cookie?.value ?? '') : value;
+    const found = validate({ name: nextName, value: nextValue, domain: nextDomain, path: nextPath, expires });
     setErrors(found);
     if (Object.keys(found).length > 0) {
       return;
@@ -169,7 +177,7 @@ export function CookieDialog({ open, cookie, onOpenChange, onSave }: CookieDialo
         : fromLocalInput(expires);
     const next: StoredCookieWire = {
       name: nextName,
-      value,
+      value: nextValue,
       domain: nextDomain,
       hostOnly,
       path: nextPath,
@@ -200,7 +208,15 @@ export function CookieDialog({ open, cookie, onOpenChange, onSave }: CookieDialo
           </Dialog.Title>
           <div className="mt-3 grid grid-cols-[6rem_1fr] items-center gap-2 text-sm">
             <Field label="Name" error={errors.name} value={name} onChange={setName} />
-            <Field label="Value" error={errors.value} value={value} onChange={setValue} />
+            <Field
+              label="Value"
+              error={errors.value}
+              value={value}
+              onChange={setValue}
+              type={showValues ? 'text' : 'password'}
+              placeholder={!showValues && cookie !== undefined ? 'Leave blank to keep' : undefined}
+              autoComplete="off"
+            />
             <Field
               label="Domain"
               error={errors.domain}

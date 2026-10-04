@@ -221,7 +221,7 @@ describe('plaintext credentials never validate', () => {
 
 describe('toSendDeps', () => {
   it('lends the workspace cookie jar to every send, and none when the channel has none', () => {
-    const cookies = { cookiesFor: () => [], remember: () => [] };
+    const cookies = () => ({ cookiesFor: () => [], remember: () => [] });
     const project = stubProject(seeded({ envelopeXml: '<a/>' }));
     expect(toSendDeps(new EngineService(), { project, cookies }).cookies).toBe(cookies);
     expect(toSendDeps(new EngineService(), { project }).cookies).toBeUndefined();

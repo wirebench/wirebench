@@ -312,3 +312,47 @@ describe('CookieStore — failures and races', () => {
     expect(existsSync(fileOf('w1'))).toBe(false);
   });
 });
+
+describe('CookieStore — hardening', () => {
+  it('does not throw out of remember when the change broadcast throws', async () => {
+    const warn = vi.fn();
+    const s = store({
+      warn,
+      onChanged: () => {
+        throw new Error('ipc-invalid-event');
+      },
+    });
+    await s.switchTo('w1');
+    let verdicts: unknown;
+    expect(() => {
+      verdicts = s.host().remember('https://api.test/', [{ name: 'sid', value: '1', path: '/' }]);
+    }).not.toThrow();
+    expect(verdicts).toEqual([{ stored: true }]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ipc-invalid-event'));
+    expect(names(s.state())).toEqual(['sid']);
+  });
+
+  it('binds one send to the jar that was open when it started, across a workspace switch', async () => {
+    const s = store();
+    await s.switchTo('w1');
+    const send = s.host();
+    s.host().remember('https://api.test/', [{ name: 'in-w1', value: '1', path: '/' }]);
+    await s.switchTo('w2');
+    expect(send.cookiesFor('https://api.test/').map((cookie) => cookie.name)).toEqual(['in-w1']);
+    send.remember('https://api.test/', [{ name: 'late', value: '1', path: '/' }]);
+    expect(names(s.state())).toEqual([]);
+    await s.switchTo('w1');
+    expect(names(s.state())).toEqual(['in-w1', 'late']);
+  });
+
+  it('arms no timer after dispose', async () => {
+    const s = store({ debounceMs: 10 });
+    await s.switchTo('w1');
+    s.dispose();
+    s.host().remember('https://api.test/login', LOGIN);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(existsSync(fileOf('w1'))).toBe(false);
+    await s.flush();
+    expect(existsSync(fileOf('w1'))).toBe(true);
+  });
+});

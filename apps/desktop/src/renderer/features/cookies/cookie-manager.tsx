@@ -226,7 +226,7 @@ export function CookieManager() {
 
       {!persisted && (
         <p data-testid="cookie-persistence-note" role="note" className="text-sm text-status-warning">
-          Cookies are kept for this session only: this system has no secure storage.
+          Cookies are kept for this session only.
         </p>
       )}
 
@@ -309,6 +309,7 @@ export function CookieManager() {
         <CookieDialog
           open
           cookie={editing.cookie}
+          showValues={showValues}
           onOpenChange={(open) => {
             if (!open) {
               setEditing(undefined);

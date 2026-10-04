@@ -224,9 +224,20 @@ describe('desktopSendHost', () => {
   });
 
   it('lends the workspace cookie jar', async () => {
-    const cookies = jarCookieHost(new CookieJar());
+    const jar = jarCookieHost(new CookieJar());
+    const cookies = vi.fn(() => jar);
     const host = await desktopSendHost(deps({ cookies }), send);
-    expect(host.cookies).toBe(cookies);
+    expect(host.cookies).toBe(jar);
+    expect(cookies).toHaveBeenCalledOnce();
+  });
+
+  it('asks for the jar again at the start of each send, so each binds to the workspace open then', async () => {
+    const first = jarCookieHost(new CookieJar());
+    const second = jarCookieHost(new CookieJar());
+    const cookies = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const sendDeps = deps({ cookies });
+    expect((await desktopSendHost(sendDeps, send)).cookies).toBe(first);
+    expect((await desktopSendHost(sendDeps, send)).cookies).toBe(second);
   });
 
   it('lends the preferences as they stand', async () => {

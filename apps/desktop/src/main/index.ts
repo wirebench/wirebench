@@ -555,7 +555,7 @@ void app.whenReady().then(() => {
       return { project: {}, global, system: process.env };
     },
     showSecrets: showSecretsFlag,
-    cookies: cookieStore.host(),
+    cookies: () => cookieStore.host(),
     history: historyService,
     onHistoryAppended: (entry) => broadcast(events.history.appended, { entry }),
     onSendFailed: (failure) => broadcast(events.exchange.failed, { failure }),

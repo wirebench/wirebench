@@ -374,3 +374,39 @@ describe('CookieJar.set — the manager keeps the jar bounded', () => {
     expect(jar.list(NOW)).toHaveLength(MAX_COOKIES);
   });
 });
+
+describe('CookieJar — what the wire schema would refuse', () => {
+  it.each([
+    ['a name with whitespace', cookie('my token')],
+    ['a name with a tab', cookie('a\tb')],
+    ['a name with a semicolon', cookie('a;b')],
+    ['a name with an equals sign', cookie('a=b')],
+    ['a name with a control character', cookie('a\u0001b')],
+    ['a value with a semicolon', cookie('sid', { value: 'a;b' })],
+    ['a value with a line feed', cookie('sid', { value: 'a\nb' })],
+    ['a value with a carriage return', cookie('sid', { value: 'a\rb' })],
+    ['a value with a NUL', cookie('sid', { value: 'a\0b' })],
+  ])('refuses %s as malformed and stores nothing', (_label, bad) => {
+    const jar = new CookieJar();
+    expect(jar.store('https://api.example.test/', [bad], NOW)).toEqual([{ stored: false, reason: 'malformed' }]);
+    expect(jar.list(NOW)).toEqual([]);
+  });
+
+  it('refuses to set such a cookie by hand too', () => {
+    const jar = new CookieJar();
+    const stored: StoredCookie = {
+      name: 'my token',
+      value: 'x',
+      domain: 'api.example.test',
+      hostOnly: true,
+      path: '/',
+      secure: false,
+      httpOnly: false,
+      createdAt: NOW,
+    };
+    expect(() => {
+      jar.set(stored, NOW);
+    }).toThrow(/name/);
+    expect(jar.list(NOW)).toEqual([]);
+  });
+});

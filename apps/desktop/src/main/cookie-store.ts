@@ -102,6 +102,8 @@ export class CookieStore {
   private currentId = NO_WORKSPACE;
   /** Switches run one after another, so a load never races the flush before it. */
   private switching: Promise<void> = Promise.resolve();
+  /** Set by `dispose()`: after it no write timer is armed again. */
+  private disposed = false;
 
   constructor(private readonly options: CookieStoreOptions) {
     this.entries.set(NO_WORKSPACE, sessionOnly());
@@ -130,13 +132,17 @@ export class CookieStore {
     return next;
   }
 
-  /** What `SendHost.cookies` is: the jar of whichever workspace is open when a send reads or stores. */
+  /**
+   * What `SendHost.cookies` is, bound to the jar of the workspace open *now*: call it once at the start
+   * of a send, so a switch mid-send neither reads from nor stores into another workspace's jar.
+   */
   host(): CookieJarHost {
+    const id = this.currentId;
+    const { jar } = this.current();
     return {
-      cookiesFor: (url) => this.current().jar.cookiesFor(url, this.now()),
+      cookiesFor: (url) => jar.cookiesFor(url, this.now()),
       remember: (url, cookies) => {
-        const id = this.currentId;
-        const verdicts = this.current().jar.store(url, cookies, this.now());
+        const verdicts = jar.store(url, cookies, this.now());
         if (cookies.length > 0) {
           this.changed(id);
         }
@@ -190,6 +196,7 @@ export class CookieStore {
 
   /** Cancels every pending debounced write. Call after the quit-time flush. */
   dispose(): void {
+    this.disposed = true;
     for (const entry of this.entries.values()) {
       if (entry.timer !== undefined) {
         clearTimeout(entry.timer);
@@ -246,16 +253,21 @@ export class CookieStore {
     return `Saving the cookies failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
+  /** Tells the renderer. A broadcast that fails is a warning: it must not fail the send or the edit that caused it. */
   private announce(): CookieJarState {
     const state = this.state();
-    this.options.onChanged?.(state);
+    try {
+      this.options.onChanged?.(state);
+    } catch (error) {
+      this.warn(`Announcing the cookie change failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return state;
   }
 
   /** After any change to `id`'s jar: announce it if open, and schedule a write when what is saved changed. */
   private changed(id: string): CookieJarState {
     const entry = this.entries.get(id);
-    if (entry !== undefined && entry.persistable && this.options.crypto.available) {
+    if (!this.disposed && entry !== undefined && entry.persistable && this.options.crypto.available) {
       if (JSON.stringify(entry.jar.persistent(this.now())) !== entry.saved) {
         if (entry.timer !== undefined) {
           clearTimeout(entry.timer);

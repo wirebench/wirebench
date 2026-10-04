@@ -534,6 +534,7 @@ Responses' cookies are kept in a jar per workspace (#44,
   cannot set or overwrite a `Secure` cookie. Tests: `packages/engine/test/unit/rest/cookie-jar.test.ts`.
 - **Per hop.** The jar is matched again for every redirect hop, and a cross-origin hop already drops a
   hand-set `Cookie`, so a redirect to another host gets only that host's cookies. Tests:
+  `packages/engine/test/integration/rest/redirects.test.ts` (a cross-origin hop) and
   `packages/engine/test/integration/run/rest-exchange.test.ts`.
 - **Domain rules.** A response's `Domain` must domain-match the request host; a `Domain` that is an IP
   address or a single label is refused unless it equals the host.
@@ -546,13 +547,16 @@ Responses' cookies are kept in a jar per workspace (#44,
   large, moving dependency.
 - **Headless.** `wirebench run`, `call` and `mcp` keep their jar in memory only.
 
-## Current values never touch disk
+## Current values are kept in memory only
 
 A variable's current value (#44) is a session-only override of its committed value:
 
-- **Memory only.** Current values live in the main process. They are never written to the project,
-  the workspace, the keychain, History, the server or a shared workspace, and are gone on quit. Tests:
+- **The store is memory only.** The current-value store lives in the main process. It is never written
+  to the project, the workspace, the keychain or the server, is never shared, and is gone on quit. Tests:
   `apps/desktop/test/current-values.test.ts`.
+- **A send records what was sent.** A request that uses a current value expands it like a committed
+  value, so History, the HTTP Log and HAR export record the expanded value just as they would a
+  committed one. Keep credentials in `${secret:…}` references, which those records redact, not in a current value.
 - **User input, not response data.** A current value is typed by the user and expands like a
   committed value; ADR-0015's boundary (a response value is data, never a template) is unchanged.
 - **Masked like the value.** A secret's Current cell is masked while secrets are hidden.

@@ -197,8 +197,7 @@ workspace's jar backs `SendHost.cookies` in `send/host.ts`.
 - **What is saved.** Only `jar.persistent(now)`, encrypted as one blob with `safeStorage`, the
   backend `secrets.ts` uses.
 - **No encryption.** When `safeStorage.isEncryptionAvailable()` is false, nothing is persisted and
-  the jar is session-only. The manager says so: "Cookies are kept for this session only: this
-  system has no secure storage." Cookies are never written in plain text.
+  the jar is session-only. The manager says so: "Cookies are kept for this session only." Cookies are never written in plain text.
 - **Writes.**
   - Writes are atomic: a temp file, then rename, as `global-properties.ts` does.
   - They are debounced to 1 s after the last change, and flushed on workspace switch and on

@@ -55,8 +55,8 @@ export interface DesktopSendDeps {
   readonly showSecrets?: { get(): boolean };
   readonly onSendFailed?: (failure: FailedExchangeWire) => void;
   readonly onExchange?: (entry: LogEntryWire) => void;
-  /** The open workspace's cookie jar (cookie jar spec §2); absent in tests that never send cookies. */
-  readonly cookies?: CookieJarHost;
+  /** The open workspace's cookie jar (cookie jar spec §2), asked for once at the start of each send; absent in tests that never send cookies. */
+  readonly cookies?: () => CookieJarHost;
 }
 
 export interface DesktopSend {
@@ -80,6 +80,8 @@ export interface DesktopSend {
 export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend): Promise<SendHost> {
   const { project } = deps;
   const { projectId } = send;
+  // Bound before any await: a workspace switch while this send runs must not move it to another jar.
+  const cookies = deps.cookies?.();
   const bundle = projectId === undefined ? undefined : await project.trustAnchorsFor?.(projectId);
   const anchors = [...(bundle ?? []), ...extraTrustAnchors()];
   const preferences = deps.preferences?.();
@@ -106,7 +108,7 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
       : {}),
     ...(tokens !== undefined ? { tokens } : {}),
     ...(preferences !== undefined ? { preferences } : {}),
-    ...(deps.cookies !== undefined ? { cookies: deps.cookies } : {}),
+    ...(cookies !== undefined ? { cookies } : {}),
     contractFor: restContractFor(deps),
     callbackUrlFor: (item) => Promise.resolve(callbackUrlOf(deps, send, item)),
     // The project's own schema for a gRPC API, which it loads once a session, discovered or imported.

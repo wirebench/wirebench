@@ -43,6 +43,10 @@ function idOf(key: CookieKey): string {
   return `${key.domain}\n${key.path}\n${key.name}`;
 }
 
+/** The desktop wire schema's rules: nothing that would break the `Cookie` header a cookie is sent in. */
+const BAD_NAME = /[;=\s\u0000-\u001f\u007f]/;
+const BAD_VALUE = /[;\r\n\0]/;
+
 function rejected(reason: CookieRejection): CookieVerdict {
   return { stored: false, reason };
 }
@@ -151,6 +155,14 @@ export class CookieJar {
    * Secure rules are skipped (it picks its own domain), but the jar's size limits still hold.
    */
   set(cookie: StoredCookie, now: number = Date.now()): void {
+    if (cookie.name === '' || BAD_NAME.test(cookie.name)) {
+      throw new RangeError(
+        'A cookie name is not empty and has no whitespace, control character, semicolon or equals sign.',
+      );
+    }
+    if (BAD_VALUE.test(cookie.value)) {
+      throw new RangeError('A cookie value has no semicolon, line break or NUL.');
+    }
     this.cookies.set(idOf(cookie), cookie);
     this.enforceLimits(cookie.domain, now);
   }
@@ -182,7 +194,7 @@ export class CookieJar {
   }
 
   private storeOne(cookie: Cookie, target: URL, now: number): CookieVerdict {
-    if (cookie.malformed === true || cookie.name === '') {
+    if (cookie.malformed === true || cookie.name === '' || BAD_NAME.test(cookie.name) || BAD_VALUE.test(cookie.value)) {
       return rejected('malformed');
     }
     if (encoder.encode(cookie.name).length + encoder.encode(cookie.value).length > MAX_COOKIE_BYTES) {

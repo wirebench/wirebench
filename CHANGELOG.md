@@ -52,7 +52,8 @@ before and after for the two changes that need more than a rename. The package's
   delete them, and the response's Cookies tab says what was stored or ignored. `wirebench run`
   keeps a jar for the run (#44).
 - **Current values.** Every variables table has a **Current** column: a session-only value that
-  replaces the committed one for sends and previews, and is never written anywhere (#44).
+  replaces the committed one for sends and previews. The store is memory only; a request that is
+  sent records what it sent, as for a committed value, so keep credentials in `${secret:…}` (#44).
 - **HTML preview.** The Preview tab renders an HTML response or webhook capture as a static page in a
   sandboxed frame: no scripts, forms, navigation or network (#48).
 - **`wirebench run --baseline`** compares each response with its committed golden and fails on a
@@ -302,6 +303,9 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Changed
 
+- **Requests share the workspace cookie jar.** The per-request cookie memory is gone: every REST
+  request now reads from and stores into the workspace jar. The *Send cookies* inherited default now
+  shows off, matching what is sent (#44).
 - **A WebSocket assertion reads a received message that is JSON as its value, not its text.** (#192)
 
   ```text

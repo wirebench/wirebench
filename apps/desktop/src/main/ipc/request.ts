@@ -166,8 +166,8 @@ export interface RequestChannelDeps {
   readonly adHocScopes?: () => PropertyScopes;
   /** The session "show secrets" flag; omitted defaults every send to redacted. */
   readonly showSecrets?: { get(): boolean };
-  /** The open workspace's cookie jar, lent to every REST send (cookie jar spec §2). */
-  readonly cookies?: CookieJarHost;
+  /** The open workspace's cookie jar, asked for once at the start of every REST send (cookie jar spec §2). */
+  readonly cookies?: () => CookieJarHost;
   /** Records every completed/failed send to the open project's history. Omitted in tests that don't care. */
   readonly history?: HistoryService;
   /** Called with the entry a recorded send produced, so main can broadcast `history.appended`. */

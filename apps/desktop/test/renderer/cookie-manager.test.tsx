@@ -129,13 +129,41 @@ describe('CookieManager', () => {
   it('says when cookies are kept for this session only, and what an empty jar means', async () => {
     mount({ cookies: [], persisted: false });
     await waitFor(() => {
-      expect(screen.getByTestId('cookie-persistence-note').textContent).toBe(
-        'Cookies are kept for this session only: this system has no secure storage.',
-      );
+      expect(screen.getByTestId('cookie-persistence-note').textContent).toBe('Cookies are kept for this session only.');
     });
     expect(screen.getByTestId('cookie-empty').textContent).toBe(
       'No cookies yet. Responses store cookies here; a request sends them when its Send cookies setting is on.',
     );
+  });
+
+  it('masks the Value field while Show values is off, never holding the stored value, and keeps it when left blank', async () => {
+    const set = answering(JAR);
+    mount(JAR, { set });
+    await rows(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit lang' }));
+    const field = screen.getByLabelText<HTMLInputElement>('Value');
+    expect(field.type).toBe('password');
+    expect(field.value).toBe('');
+    expect(field.placeholder).toBe('Leave blank to keep');
+    expect(screen.getByTestId('cookie-dialog').innerHTML).not.toContain(JAR.cookies[1]?.value ?? 'x');
+    fireEvent.change(screen.getByLabelText('Path'), { target: { value: '/v2' } });
+    fireEvent.click(screen.getByTestId('cookie-dialog-save'));
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith({
+        cookie: { ...JAR.cookies[1], path: '/v2' },
+        replaces: { name: 'lang', domain: 'api.test', path: '/' },
+      });
+    });
+  });
+
+  it('shows the stored value in the Value field while Show values is on', async () => {
+    mount(JAR);
+    await rows(3);
+    fireEvent.click(screen.getByTestId('cookie-show-values'));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit lang' }));
+    const field = screen.getByLabelText<HTMLInputElement>('Value');
+    expect(field.type).toBe('text');
+    expect(field.value).toBe(JAR.cookies[1]?.value);
   });
 
   it('follows cookies.changed, so a send updates the tab live', async () => {
