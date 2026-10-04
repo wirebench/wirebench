@@ -116,13 +116,13 @@ describe('mapHar', () => {
     expect(JSON.stringify(mapped.apis)).not.toContain(basic);
   });
 
-  it('drops other credential headers from the request with a warning', () => {
+  it('drops Proxy-Authorization; X-Api-Key becomes value-free API-key auth', () => {
     const mapped = mapHar(
       oneEntry({
         request: {
           headers: [
             { name: 'Proxy-Authorization', value: 'Basic cHJveHk6cHc=' },
-            { name: 'X-Api-Key', value: 'k-123' },
+            { name: 'x-api-key', value: 'k-123' },
             { name: 'Accept', value: '*/*' },
           ],
         },
@@ -130,12 +130,118 @@ describe('mapHar', () => {
     );
     const request = mapped.apis[0]!.requests[0]!;
     expect(request.headers).toEqual([entry('Accept', '*/*')]);
-    expect(request.auth).toEqual({ type: 'inherit' });
+    expect(request.auth).toEqual({ type: 'api-key', in: 'header', name: 'x-api-key' });
     expect(mapped.report.warnings).toEqual([
       'GET /x: the recorded Proxy-Authorization credential was not imported; set it on the request or API.',
-      'GET /x: the recorded X-Api-Key credential was not imported; set it on the request or API.',
+      'GET /x: the recorded x-api-key credential was not imported; set it on the request or API.',
     ]);
     expect(JSON.stringify(mapped.apis)).not.toMatch(/cHJveHk6cHc=|k-123/);
+  });
+
+  it('keeps Authorization over X-Api-Key for the auth', () => {
+    const mapped = mapHar(
+      oneEntry({
+        request: {
+          headers: [
+            { name: 'X-Api-Key', value: 'k-123' },
+            { name: 'Authorization', value: 'Bearer t' },
+          ],
+        },
+      }),
+    );
+    expect(mapped.apis[0]!.requests[0]!.auth).toEqual({ type: 'bearer' });
+  });
+
+  it('imports an unsupported Authorization scheme as none with a warning', () => {
+    const mapped = mapHar(
+      oneEntry({ request: { headers: [{ name: 'Authorization', value: 'Digest username="a", response="abc"' }] } }),
+    );
+    expect(mapped.apis[0]!.requests[0]!.auth).toEqual({ type: 'none' });
+    expect(mapped.report.warnings).toEqual([
+      'GET /x: Digest authentication is not supported and was imported as none.',
+    ]);
+    expect(JSON.stringify(mapped.apis)).not.toContain('response=');
+  });
+
+  it('keeps no user name from a malformed Basic value', () => {
+    const noColon = Buffer.from('alice').toString('base64');
+    const binary = Buffer.from([0x01, 0x02, 0x3a, 0x03]).toString('base64');
+    for (const value of [`Basic ${noColon}`, `Basic ${binary}`, 'Basic']) {
+      const mapped = mapHar(oneEntry({ request: { headers: [{ name: 'Authorization', value }] } }));
+      expect(mapped.apis[0]!.requests[0]!.auth).toEqual({ type: 'basic' });
+    }
+  });
+
+  it('blanks credential query values and keeps their names', () => {
+    const mapped = mapHar(
+      oneEntry({
+        request: {
+          url: 'https://api.example.com/x?key=k-123&page=2&access_token=tok-9',
+          queryString: [
+            { name: 'key', value: 'k-123' },
+            { name: 'page', value: '2' },
+            { name: 'access_token', value: 'tok-9' },
+          ],
+        },
+      }),
+    );
+    expect(mapped.apis[0]!.requests[0]!.query).toEqual([
+      entry('key', ''),
+      entry('page', '2'),
+      entry('access_token', ''),
+    ]);
+    expect(mapped.report.warnings).toEqual([
+      'GET /x: the recorded value of key, access_token was not imported; set it on the request.',
+    ]);
+    const saved = JSON.stringify(mapped.apis);
+    expect(saved).not.toContain('k-123');
+    expect(saved).not.toContain('tok-9');
+  });
+
+  it('blanks secret-keyed form fields and JSON values in the request body', () => {
+    const form = mapHar(
+      oneEntry({
+        request: {
+          method: 'POST',
+          postData: { mimeType: 'application/x-www-form-urlencoded', text: 'user=a&password=hunter2' },
+        },
+      }),
+    );
+    expect(form.apis[0]!.requests[0]!.body).toEqual({
+      kind: 'form',
+      fields: [entry('user', 'a'), entry('password', '')],
+    });
+    expect(form.report.warnings).toEqual([
+      'POST /x: the recorded value of password was not imported; set it on the request.',
+    ]);
+    expect(JSON.stringify(form.apis)).not.toContain('hunter2');
+
+    const json = mapHar(
+      oneEntry({
+        request: {
+          method: 'POST',
+          postData: {
+            mimeType: 'application/json',
+            text: '{\n  "user": "a",\n  "auth": { "Password": "hunter2" }\n}',
+          },
+        },
+      }),
+    );
+    expect(json.apis[0]!.requests[0]!.body).toMatchObject({
+      kind: 'raw',
+      text: '{\n  "user": "a",\n  "auth": {\n    "Password": ""\n  }\n}',
+    });
+    expect(JSON.stringify(json.apis)).not.toContain('hunter2');
+  });
+
+  it('keeps a JSON body with no secret, or one that does not parse, exactly as recorded', () => {
+    for (const text of ['{ "name" :  "Rex" }', '{"password": "x"']) {
+      const mapped = mapHar(
+        oneEntry({ request: { method: 'POST', postData: { mimeType: 'application/json', text } } }),
+      );
+      expect(mapped.apis[0]!.requests[0]!.body).toMatchObject({ kind: 'raw', text });
+      expect(mapped.report.warnings).toEqual([]);
+    }
   });
 
   it('maps JSON and form bodies', () => {

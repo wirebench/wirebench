@@ -220,7 +220,8 @@ Older files load with no examples.
 
 **Redaction.** Example headers are written with the HAR exporter's redaction. Secret-bearing
 headers are masked, and `Set-Cookie` and `Cookie` are dropped. A body is stored as it was
-recorded.
+recorded, except that the values under credential-looking keys of a JSON or form body (the
+redaction's secret body keys, such as `access_token` or `password`) are masked.
 
 **UI.** The REST response pane gets an **Examples** menu when the request has any. Choosing one
 shows it read-only in the response viewer, marked as an example, with **Delete example**.

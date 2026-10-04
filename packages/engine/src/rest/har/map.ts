@@ -11,7 +11,13 @@ import { ReportBuilder } from '../../import/report.js';
 import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { uniqueSlug } from '../../project/paths.js';
-import { REDACTED_MARKER, isSensitiveHeaderName, redactStructuredBody } from '../../redact/index.js';
+import {
+  REDACTED_MARKER,
+  SECRET_BODY_KEYS,
+  isSensitiveHeaderName,
+  isSensitiveQueryParam,
+  redactStructuredBody,
+} from '../../redact/index.js';
 import type { RawLanguage, RestApi, RestBody, RestRequestDef, RestResponseExample } from '../model.js';
 import { NO_BODY, createApi, createRestRequest, entry } from '../model.js';
 import type { HarEntryIn, HarLogIn, HarNameValue, HarPostData } from './model.js';
@@ -106,22 +112,88 @@ function bodyText(content: HarEntryIn['response']['content']): string | undefine
   return TEXTUAL.test(content.mimeType) ? Buffer.from(content.text, 'base64').toString('utf8') : undefined;
 }
 
-function authFrom(headers: readonly HarNameValue[], label: string, report: ReportBuilder): AuthConfig {
-  const value = headers.find((h) => h.name.toLowerCase() === 'authorization')?.value;
-  if (value === undefined) return { type: 'inherit' };
-  report.warn(`${label}: the recorded Authorization credential was not imported; set it on the request or API.`);
-  const [scheme, rest = ''] = value.trim().split(/\s+/, 2);
-  if (scheme?.toLowerCase() === 'bearer') return { type: 'bearer' };
-  if (scheme?.toLowerCase() === 'basic') {
-    const username = Buffer.from(rest, 'base64').toString('utf8').split(':')[0] ?? '';
-    return { type: 'basic', ...(username !== '' ? { username } : {}) };
-  }
-  return { type: 'inherit' };
+/** The user name of a Basic credential, when the value decodes to printable `user:password` text. */
+function basicUsername(encoded: string): string | undefined {
+  const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+  if (!decoded.includes(':') || /[\u0000-\u001f\u007f\ufffd]/.test(decoded)) return undefined;
+  const username = decoded.slice(0, decoded.indexOf(':'));
+  return username !== '' ? username : undefined;
 }
 
 /**
- * The headers a saved request keeps. A credential header the auth editor does not model
- * (`Proxy-Authorization`, `X-Api-Key`) is dropped with a warning, so no literal secret is saved.
+ * The request's auth, without its secret: Bearer and Basic from `Authorization` (Basic keeps its
+ * user name), any other scheme as `none`; with no `Authorization`, an `X-Api-Key` header becomes
+ * API-key auth under the name it was recorded with.
+ */
+function authFrom(headers: readonly HarNameValue[], label: string, report: ReportBuilder): AuthConfig {
+  const value = headers.find((h) => h.name.toLowerCase() === 'authorization')?.value;
+  if (value === undefined) {
+    const apiKey = headers.find((h) => h.name.toLowerCase() === 'x-api-key');
+    return apiKey !== undefined ? { type: 'api-key', in: 'header', name: apiKey.name } : { type: 'inherit' };
+  }
+  const [scheme = '', rest = ''] = value.trim().split(/\s+/, 2);
+  if (scheme.toLowerCase() === 'bearer' || scheme.toLowerCase() === 'basic') {
+    report.warn(`${label}: the recorded Authorization credential was not imported; set it on the request or API.`);
+  }
+  if (scheme.toLowerCase() === 'bearer') return { type: 'bearer' };
+  if (scheme.toLowerCase() === 'basic') {
+    const username = basicUsername(rest);
+    return { type: 'basic', ...(username !== undefined ? { username } : {}) };
+  }
+  report.warn(`${label}: ${scheme} authentication is not supported and was imported as none.`);
+  return { type: 'none' };
+}
+
+const SECRET_BODY_KEY_SET = new Set(SECRET_BODY_KEYS);
+
+function isSecretBodyKey(name: string): boolean {
+  return SECRET_BODY_KEY_SET.has(name.toLowerCase());
+}
+
+/**
+ * A copy of a parsed JSON body with every secret-keyed value blanked (a nested object or array
+ * under one too), adding each key it blanks to `blanked`.
+ */
+function blankJson(value: unknown, blanked: Set<string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => blankJson(item, blanked));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) => {
+        if (!isSecretBodyKey(key)) return [key, blankJson(inner, blanked)];
+        blanked.add(key);
+        return [key, ''];
+      }),
+    );
+  }
+  return value;
+}
+
+/** A JSON body with its secret-keyed values blanked; the text as recorded when none matched or it does not parse. */
+function blankJsonText(text: string, blanked: Set<string>): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  const found = new Set<string>();
+  const out = blankJson(parsed, found);
+  if (found.size === 0) return text;
+  for (const key of found) blanked.add(key);
+  return JSON.stringify(out, null, /\n( +)\S/.exec(text)?.[1]?.length);
+}
+
+/** `value`, or `''` when `name` is a secret body key (and `name` is added to `blanked`). */
+function blankIfSecret(name: string, value: string, blanked: Set<string>): string {
+  if (!isSecretBodyKey(name) || value === '') return value;
+  blanked.add(name);
+  return '';
+}
+
+/**
+ * The headers a saved request keeps. Any other credential header (`Proxy-Authorization`,
+ * `X-Api-Key`, whose shape {@link authFrom} keeps) is dropped with a warning, so no literal secret
+ * is saved.
  */
 function requestHeaders(headers: readonly HarNameValue[], label: string, report: ReportBuilder): HarNameValue[] {
   return headers.filter((h) => {
@@ -137,14 +209,23 @@ function requestHeaders(headers: readonly HarNameValue[], label: string, report:
   });
 }
 
-function mapPostData(post: HarPostData | undefined, label: string, report: ReportBuilder): RestBody {
+/**
+ * The request body. Secret-keyed form fields, multipart text parts and JSON values are blanked,
+ * each name added to `blanked`; any other body is kept as recorded.
+ */
+function mapPostData(
+  post: HarPostData | undefined,
+  label: string,
+  report: ReportBuilder,
+  blanked: Set<string>,
+): RestBody {
   if (post === undefined || (post.text === undefined && post.params === undefined)) return NO_BODY;
   const mime = post.mimeType.toLowerCase();
   if (mime.includes('x-www-form-urlencoded')) {
     const pairs = post.params?.map((p) => [p.name, p.value ?? ''] as const) ?? [
       ...new URLSearchParams(post.text ?? ''),
     ];
-    return { kind: 'form', fields: pairs.map(([n, v]) => entry(n, v)) };
+    return { kind: 'form', fields: pairs.map(([n, v]) => entry(n, blankIfSecret(n, v, blanked))) };
   }
   if (mime.startsWith('multipart/form-data') && post.params !== undefined) {
     return {
@@ -152,7 +233,8 @@ function mapPostData(post: HarPostData | undefined, label: string, report: Repor
       parts: post.params.map((p) => {
         const contentType = p.contentType !== undefined ? { contentType: p.contentType } : {};
         if (p.fileName === undefined) {
-          return { kind: 'text' as const, name: p.name, value: p.value ?? '', enabled: true, ...contentType };
+          const value = blankIfSecret(p.name, p.value ?? '', blanked);
+          return { kind: 'text' as const, name: p.name, value, enabled: true, ...contentType };
         }
         report.note(
           `${label}: the file part "${p.name}" (${p.fileName}) has no file attached; pick it on the request.`,
@@ -169,11 +251,12 @@ function mapPostData(post: HarPostData | undefined, label: string, report: Repor
     };
   }
   const language: RawLanguage = mime.includes('json') ? 'json' : mime.includes('xml') ? 'xml' : 'text';
+  const text = post.text ?? '';
   return {
     kind: 'raw',
     language,
     ...(post.mimeType !== '' ? { contentType: post.mimeType } : {}),
-    text: post.text ?? '',
+    text: language === 'json' ? blankJsonText(text, blanked) : text,
   };
 }
 
@@ -293,15 +376,27 @@ export function mapHar(log: HarLogIn, options: MapHarOptions = {}): MappedHar {
     let request = draft.requests.get(key);
     if (request === undefined) {
       const slug = uniqueSlug(label, draft.slugs);
+      const blanked = new Set<string>();
+      const query = e.request.queryString.map((q) => {
+        if (!isSensitiveQueryParam(q.name) || q.value === '') return entry(q.name, q.value);
+        blanked.add(q.name);
+        return entry(q.name, '');
+      });
+      const body = mapPostData(e.request.postData, label, report, blanked);
+      if (blanked.size > 0) {
+        report.warn(
+          `${label}: the recorded value of ${[...blanked].join(', ')} was not imported; set it on the request.`,
+        );
+      }
       request = createRestRequest(label, {
         newId,
         order: draft.requests.size,
         slug,
         method,
         url: url.pathname,
-        query: e.request.queryString.map((q) => entry(q.name, q.value)),
+        query,
         headers: requestHeaders(e.request.headers, label, report).map((h) => entry(h.name, h.value)),
-        body: mapPostData(e.request.postData, label, report),
+        body,
         auth: authFrom(e.request.headers, label, report),
       });
       draft.requests.set(key, request);
