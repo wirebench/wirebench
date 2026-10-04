@@ -404,6 +404,26 @@ describe('mapHar', () => {
     expect(mapped.exchanges.map((x) => x.at)).toEqual(['2026-10-04T10:00:01.000Z', '2026-10-04T10:00:02.000Z']);
   });
 
+  it('sorts exchanges by the instant they started, whatever offset they were written in', () => {
+    const base = oneEntry({}).entries[0]!;
+    const entries = [
+      { ...base, startedDateTime: '2026-10-04T10:30:00.000Z' },
+      // 09:00 UTC, though it reads as later than 10:30 as text.
+      { ...base, startedDateTime: '2026-10-04T11:00:00.000+02:00' },
+      { ...base, startedDateTime: '' },
+      { ...base, startedDateTime: 'not a time' },
+      { ...base, startedDateTime: '2026-10-04T10:00:00.000Z' },
+    ];
+    const mapped = mapHar({ version: '1.2', skippedMalformed: 0, entries }, { responses: 'history' });
+    expect(mapped.exchanges.map((x) => x.at)).toEqual([
+      '2026-10-04T11:00:00.000+02:00',
+      '2026-10-04T10:00:00.000Z',
+      '2026-10-04T10:30:00.000Z',
+      '',
+      'not a time',
+    ]);
+  });
+
   it('decodes a textual base64 body', () => {
     const userinfo = mapHar(log, { responses: 'examples' }).apis[1]!.requests[0]!;
     expect(userinfo.examples?.[0]?.body).toBe('hello');

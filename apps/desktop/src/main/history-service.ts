@@ -394,6 +394,18 @@ export interface RecordImportedRestInput {
   readonly tags: readonly string[];
 }
 
+/** What `HistoryService.recordImportedRestBatch` wrote, and what it could not. */
+export interface ImportedHistoryOutcome {
+  /** Entries written and still in the file after the cap. */
+  readonly recorded: number;
+  /** Exchanges skipped because the capture gave them no valid time. */
+  readonly invalidTime: number;
+  /** Entries the project already held that the cap dropped to make room. */
+  readonly droppedOlder: number;
+  /** Imported entries that did not fit under the cap at all: the batch's oldest. */
+  readonly droppedImported: number;
+}
+
 /** Headers a recorded exchange keeps out of History altogether: the cookie jar's, not the request's. */
 const IMPORT_DROPPED_HEADERS = new Set(['cookie', 'set-cookie']);
 
@@ -407,24 +419,54 @@ function contentTypeOf(pairs: readonly { readonly name: string; readonly value: 
   return pairs.find((pair) => pair.name.toLowerCase() === 'content-type')?.value;
 }
 
+/** True for an XML media type: `text/xml`, `application/xml`, or any `+xml` suffix. */
+function isXmlType(contentType: string | undefined): boolean {
+  const media = contentType?.split(';')[0]?.trim().toLowerCase() ?? '';
+  return media.endsWith('/xml') || media.endsWith('+xml');
+}
+
+/**
+ * A captured body with its credentials masked: an XML body as a live SOAP entry's is, a JSON or form
+ * body by its secret keys. Either way every secret value recorded this session is masked too.
+ */
+function redactedCapturedBody(text: string, contentType: string | undefined): string {
+  return isXmlType(contentType)
+    ? redactXml(text, { show: false })
+    : redactStructuredBody(text, contentType, { show: false });
+}
+
+/** A recorded time as UTC ISO 8601, or `undefined` when it is not a time at all. */
+function recordedInstant(at: string): string | undefined {
+  const time = new Date(at);
+  return Number.isNaN(time.getTime()) ? undefined : time.toISOString();
+}
+
 /**
  * Builds one REST `HistoryEntry` from an exchange an imported capture recorded, through
  * {@link buildRestHistoryEntry} so the header and URL redaction is the one a live send gets.
  *
  * A live send's bodies come from a request whose credentials are references; a capture's are
- * whatever the browser saw, so secret-keyed JSON and form values are masked here first. The
+ * whatever the browser saw, so their credentials are masked here first. `at` is normalised to UTC
+ * so an entry sorts against live ones; `undefined` when the capture's time is not a time. The
  * exchange summary is synthesized from what the capture kept: no timings, TLS or raw bytes beyond
  * the response body, which sizes the entry.
  */
-export function buildImportedRestHistoryEntry(projectId: string, record: RecordImportedRestInput): HistoryEntry {
+export function buildImportedRestHistoryEntry(
+  projectId: string,
+  record: RecordImportedRestInput,
+): HistoryEntry | undefined {
+  const at = recordedInstant(record.at);
+  if (at === undefined) {
+    return undefined;
+  }
   const requestHeaders = withoutCookies(record.requestHeaders);
   const responseHeaders = withoutCookies(record.responseHeaders);
   const responseType = contentTypeOf(responseHeaders);
-  const requestBody = redactStructuredBody(record.requestBody, contentTypeOf(requestHeaders), { show: false });
-  const responseText = redactStructuredBody(record.responseBody ?? '', responseType, { show: false });
+  const requestBody = redactedCapturedBody(record.requestBody, contentTypeOf(requestHeaders));
+  const responseText = redactedCapturedBody(record.responseBody ?? '', responseType);
   const responseBase64 = Buffer.from(responseText, 'utf8').toString('base64');
   const exchange: RestExchangeSummary = {
-    sendId: `imported:${record.requestId}:${record.at}`,
+    sendId: `imported:${record.requestId}:${at}`,
     durationMs: record.durationMs,
     url: record.url,
     method: record.method,
@@ -444,7 +486,7 @@ export function buildImportedRestHistoryEntry(projectId: string, record: RecordI
       rawResponseBase64: responseBase64,
       truncated: false,
       httpVersion: '1.1',
-      timings: { startedAt: record.at, totalMs: record.durationMs },
+      timings: { startedAt: at, totalMs: record.durationMs },
       redirects: [],
       request: {
         url: record.url,
@@ -466,7 +508,7 @@ export function buildImportedRestHistoryEntry(projectId: string, record: RecordI
     exchange,
     durationMs: record.durationMs,
     tags: record.tags,
-    at: record.at,
+    at,
   });
 }
 
@@ -741,15 +783,54 @@ export class HistoryService {
 
   /**
    * Appends one exchange an imported capture recorded, at the time it was recorded, returning the
-   * wire shape it wrote; `undefined` when the project's file is not open or was busy.
+   * wire shape it wrote; `undefined` when the project's file is not open, was busy, or the
+   * exchange has no valid time.
    */
   async recordImportedRest(projectId: string, record: RecordImportedRestInput): Promise<HistoryEntryWire | undefined> {
     const file = this.files.get(projectId);
-    if (file === undefined) {
+    const entry = buildImportedRestHistoryEntry(projectId, record);
+    if (file === undefined || entry === undefined) {
       return undefined;
     }
-    const entry = buildImportedRestHistoryEntry(projectId, record);
     return (await this.appendOrSkip(projectId, file, entry)) ? toHistoryEntryWire(entry) : undefined;
+  }
+
+  /**
+   * Appends every exchange an imported capture recorded with one write, rotated against the cap as
+   * a live send's entry is. Exchanges with no valid time are skipped and counted; a busy file skips
+   * the whole batch, as it skips a send's entry.
+   */
+  async recordImportedRestBatch(
+    projectId: string,
+    records: readonly RecordImportedRestInput[],
+  ): Promise<ImportedHistoryOutcome> {
+    const entries: HistoryEntry[] = [];
+    let invalidTime = 0;
+    for (const record of records) {
+      const entry = buildImportedRestHistoryEntry(projectId, record);
+      if (entry === undefined) {
+        invalidTime += 1;
+      } else {
+        entries.push(entry);
+      }
+    }
+    const nothing = { recorded: 0, invalidTime, droppedOlder: 0, droppedImported: 0 };
+    const file = this.files.get(projectId);
+    if (file === undefined || entries.length === 0) {
+      return nothing;
+    }
+    try {
+      const { droppedOlder, droppedNew } = await file.appendMany(entries);
+      return { recorded: entries.length - droppedNew, invalidTime, droppedOlder, droppedImported: droppedNew };
+    } catch (error) {
+      if (error instanceof ProjectError && error.code === 'history-busy') {
+        console.warn(
+          `[history] project "${projectId}": ${String(entries.length)} imported entries were skipped because the History file was busy`,
+        );
+        return nothing;
+      }
+      throw error;
+    }
   }
 
   /**

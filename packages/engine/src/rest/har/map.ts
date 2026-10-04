@@ -467,7 +467,17 @@ export function mapHar(log: HarLogIn, options: MapHarOptions = {}): MappedHar {
       }),
     }),
   );
-  exchanges.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  // By instant, not by text: a capture may write its times with an offset. One with no valid time
+  // sorts last; the sort is stable, so those keep file order.
+  const instant = (at: string): number => {
+    const time = Date.parse(at);
+    return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+  };
+  exchanges.sort((a, b) => {
+    const left = instant(a.at);
+    const right = instant(b.at);
+    return left === right ? 0 : left < right ? -1 : 1;
+  });
 
   return {
     apis,

@@ -2,6 +2,8 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { appendHistory, openHistory } from '../../../src/project/history.js';
+import { nodeFs } from '../../../src/project/fs.js';
+import type { FsLike } from '../../../src/project/fs.js';
 import type { HistoryEntry } from '../../../src/project/history.js';
 import { tempProjectDir } from './fixture.js';
 
@@ -128,6 +130,42 @@ describe('appendHistory / openHistory', () => {
     // Reopening re-reads the rotated file, so the cap survives a process restart too.
     const reopened = await openHistory(file, { cap: 5 });
     expect(reopened.count()).toBe(5);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('appendMany writes a batch with one file write, and says how many older entries the cap dropped', async () => {
+    const dir = await tempProjectDir();
+    const file = join(dir, 'history.jsonl');
+    let writes = 0;
+    const fs: FsLike = {
+      ...nodeFs,
+      async rename(from, to) {
+        writes += 1;
+        await nodeFs.rename(from, to);
+      },
+    };
+    const handle = await openHistory(file, { cap: 5, fs });
+    const older = [makeEntry(), makeEntry(), makeEntry()];
+    for (const entry of older) await handle.append(entry);
+    writes = 0;
+    const batch = [makeEntry(), makeEntry(), makeEntry()];
+
+    expect(await handle.appendMany(batch)).toEqual({ droppedOlder: 1, droppedNew: 0 });
+    expect(writes).toBe(1);
+    expect(handle.list().map((e) => e.id)).toEqual([...older.slice(1), ...batch].reverse().map((e) => e.id));
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('appendMany keeps the newest of a batch larger than the cap, as one-by-one appends would', async () => {
+    const dir = await tempProjectDir();
+    const file = join(dir, 'history.jsonl');
+    const handle = await openHistory(file, { cap: 2 });
+    await handle.append(makeEntry());
+    const batch = [makeEntry(), makeEntry(), makeEntry()];
+
+    expect(await handle.appendMany(batch)).toEqual({ droppedOlder: 1, droppedNew: 1 });
+    expect(handle.list().map((e) => e.id)).toEqual([batch[2]!.id, batch[1]!.id]);
+    expect(await handle.appendMany([])).toEqual({ droppedOlder: 0, droppedNew: 0 });
     await rm(dir, { recursive: true, force: true });
   });
 

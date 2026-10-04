@@ -3773,7 +3773,8 @@ const apiImportHarResponseObject = z.object({
 });
 /**
  * Spelled out as an interface rather than `z.infer`, so the IPC channel registry's inferred type
- * names it instead of expanding a whole project; the annotation below keeps the two in step.
+ * names it instead of expanding a whole project. The type-equality check after it fails to compile
+ * when the interface and the schema drift apart in either direction.
  */
 export interface ApiImportHarResponse {
   projectId: string;
@@ -3796,6 +3797,14 @@ export interface ApiImportHarResponse {
  * inferred type stays serialisable.
  */
 export const apiImportHarResponseSchema: z.ZodType<ApiImportHarResponse> = apiImportHarResponseObject;
+
+/** Resolves to `true` only when `A` and `B` are the same type. */
+type TypesEqual<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+/** Compiles only when given `true`. */
+type AssertTrue<T extends true> = T;
+export type ApiImportHarResponseInSync = AssertTrue<
+  TypesEqual<z.infer<typeof apiImportHarResponseObject>, ApiImportHarResponse>
+>;
 
 /** Request payload for `api.importPostmanEnvironment` and `api.importPostmanGlobals`. */
 export const apiImportPostmanVariablesRequestSchema = z.object({ source: postmanSourceSchema });

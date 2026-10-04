@@ -186,6 +186,9 @@ function fakeVariablesPorts(withProject?: { readonly fail?: boolean }): {
 }
 
 /** Registers the channels over stubs, returning the stubs so a test can assert against them. */
+/** What a History batch answers when it wrote nothing. */
+const NOTHING_RECORDED = { recorded: 0, invalidTime: 0, droppedOlder: 0, droppedImported: 0 };
+
 function setup(overrides: Partial<ApiChannelDeps> = {}): {
   readonly deps: ApiChannelDeps;
   readonly addApi: ReturnType<typeof vi.fn>;
@@ -220,7 +223,11 @@ function setup(overrides: Partial<ApiChannelDeps> = {}): {
     projectDirs: () => [],
     picks: new DialogPicks(),
     variablesPorts: () => fakeVariablesPorts().ports,
-    history: { open: vi.fn().mockResolvedValue(undefined), recordImportedRest: vi.fn().mockResolvedValue(undefined) },
+    history: {
+      open: vi.fn().mockResolvedValue(undefined),
+      recordImportedRestBatch: vi.fn().mockResolvedValue(NOTHING_RECORDED),
+    },
+    onHistoryChanged: vi.fn(),
     ...overrides,
   };
   registerApiChannels(deps);
@@ -747,10 +754,11 @@ type HarResponse = {
 };
 
 describe('api.importHar', () => {
-  it('adds one API per origin and writes each recorded exchange to History, tagged', async () => {
-    const recordImportedRest = vi.fn().mockResolvedValue({ id: 'h' });
+  it('adds one API per origin and writes the recorded exchanges to History in one batch, tagged', async () => {
+    const recordImportedRestBatch = vi.fn().mockResolvedValue({ ...NOTHING_RECORDED, recorded: 6 });
     const open = vi.fn().mockResolvedValue(undefined);
-    const { addApi } = setup({ history: { open, recordImportedRest } });
+    const onHistoryChanged = vi.fn();
+    const { addApi } = setup({ history: { open, recordImportedRestBatch }, onHistoryChanged });
 
     const response = await value<HarResponse>('api.importHar', {
       target: { projectId: 'p1' },
@@ -762,26 +770,67 @@ describe('api.importHar', () => {
     expect(addApi).toHaveBeenCalledTimes(2);
     expect(addApi.mock.calls[0]?.[1]).toMatchObject({ documents: [], source: 'inline:har', cache: false });
     expect(open).toHaveBeenCalledWith('p1');
-    expect(recordImportedRest).toHaveBeenCalledTimes(6);
-    expect(recordImportedRest.mock.calls[0]?.[0]).toBe('p1');
-    expect(recordImportedRest.mock.calls[0]?.[1]).toMatchObject({ tags: ['imported:har'] });
+    expect(recordImportedRestBatch).toHaveBeenCalledTimes(1);
+    expect(recordImportedRestBatch.mock.calls[0]?.[0]).toBe('p1');
+    const records = recordImportedRestBatch.mock.calls[0]?.[1] as { tags: string[] }[];
+    expect(records).toHaveLength(6);
+    expect(records.every((record) => record.tags.join() === 'imported:har')).toBe(true);
     expect(response.summary.historyRecorded).toBe(6);
-    expect(sender.send).toHaveBeenCalledWith('history.changed', { projectId: 'p1' });
+    expect(onHistoryChanged).toHaveBeenCalledWith('p1');
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+
+  it('reports exchanges with no valid time, and what the History cap dropped', async () => {
+    const recordImportedRestBatch = vi
+      .fn()
+      .mockResolvedValue({ recorded: 3, invalidTime: 2, droppedOlder: 4, droppedImported: 1 });
+    setup({ history: { open: vi.fn(), recordImportedRestBatch } });
+
+    const response = await value<HarResponse & { warnings: string[] }>('api.importHar', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: SESSION_HAR },
+      responses: 'history',
+    });
+
+    expect(response.warnings).toEqual(
+      expect.arrayContaining([
+        '2 recorded exchanges had no valid time and were not written to History.',
+        'History keeps a limited number of entries per project: 4 older History entries were dropped to make room for the import.',
+        "1 recorded exchange, the earliest, did not fit under History's per-project limit and was not written.",
+      ]),
+    );
+    expect(response.reportText).toContain('2 recorded exchanges had no valid time');
+  });
+
+  it('tells no window History changed when nothing was recorded', async () => {
+    const onHistoryChanged = vi.fn();
+    setup({
+      history: { open: vi.fn(), recordImportedRestBatch: vi.fn().mockResolvedValue(NOTHING_RECORDED) },
+      onHistoryChanged,
+    });
+
+    const response = await value<HarResponse>('api.importHar', {
+      target: { projectId: 'p1' },
+      source: { kind: 'text', text: SESSION_HAR },
+      responses: 'history',
+    });
+
+    expect(response.summary.historyRecorded).toBe(0);
+    expect(onHistoryChanged).not.toHaveBeenCalled();
   });
 
   it('writes nothing to History by default', async () => {
-    const recordImportedRest = vi.fn();
-    setup({ history: { open: vi.fn(), recordImportedRest } });
+    const recordImportedRestBatch = vi.fn();
+    setup({ history: { open: vi.fn(), recordImportedRestBatch } });
 
     const response = await value<HarResponse>('api.importHar', {
       target: { projectId: 'p1' },
       source: { kind: 'text', text: SESSION_HAR },
     });
 
-    expect(recordImportedRest).not.toHaveBeenCalled();
+    expect(recordImportedRestBatch).not.toHaveBeenCalled();
     expect(response.summary.historyRecorded).toBe(0);
   });
-
   it('refuses a capture with nothing left to import, before creating a project', async () => {
     const { deps } = setup();
     const empty = JSON.stringify({ log: { version: '1.2', creator: { name: 'x', version: '1' }, entries: [] } });

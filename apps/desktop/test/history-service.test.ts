@@ -444,6 +444,73 @@ describe('HistoryService.recordImportedRest', () => {
 
     expect(await history.recordImportedRest('proj-1', RECORDED)).toBeUndefined();
   });
+
+  it('masks an XML body the way a live SOAP entry is masked', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+    const xml = {
+      ...RECORDED,
+      requestHeaders: [{ name: 'Content-Type', value: 'application/soap+xml; charset=utf-8' }],
+      requestBody: '<Envelope><wsse:Password>xml-secret-in</wsse:Password></Envelope>',
+      responseHeaders: [{ name: 'Content-Type', value: 'text/xml' }],
+      responseBody: '<Result><Password>xml-secret-out</Password><name>ann</name></Result>',
+    };
+
+    const entry = await history.recordImportedRest('proj-1', xml);
+    const onDisk = await readFile(historyFilePath(userDataDir, 'proj-1'), 'utf8');
+
+    for (const text of [JSON.stringify(entry), onDisk]) {
+      expect(text).not.toContain('xml-secret-in');
+      expect(text).not.toContain('xml-secret-out');
+    }
+    expect(entry?.response?.envelopeXml).toContain('<name>ann</name>');
+  });
+
+  it('stores the recorded time in UTC, whatever offset the capture wrote it in', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const entry = await history.recordImportedRest('proj-1', { ...RECORDED, at: '2026-10-01T12:00:00.000+02:00' });
+
+    expect(entry?.at).toBe('2026-10-01T10:00:00.000Z');
+  });
+
+  it('writes a batch, skipping and counting exchanges with no valid time', async () => {
+    const history = new HistoryService(userDataDir);
+    await history.open('proj-1');
+
+    const outcome = await history.recordImportedRestBatch('proj-1', [
+      RECORDED,
+      { ...RECORDED, requestId: 'r2', at: '' },
+      { ...RECORDED, requestId: 'r3', at: 'yesterday-ish' },
+      { ...RECORDED, requestId: 'r4', at: '2026-10-01T10:00:01.000Z' },
+    ]);
+
+    expect(outcome).toEqual({ recorded: 2, invalidTime: 2, droppedOlder: 0, droppedImported: 0 });
+    expect(history.list({ projectId: 'proj-1' }).entries.map((entry) => entry.requestId)).toEqual(['r4', 'r1']);
+  });
+
+  it('says how many older entries the cap dropped to make room for a batch', async () => {
+    const history = new HistoryService(userDataDir, () => 3);
+    await history.open('proj-1');
+    await history.recordImportedRest('proj-1', { ...RECORDED, requestId: 'old-1' });
+    await history.recordImportedRest('proj-1', { ...RECORDED, requestId: 'old-2' });
+
+    const outcome = await history.recordImportedRestBatch('proj-1', [
+      { ...RECORDED, requestId: 'n1' },
+      { ...RECORDED, requestId: 'n2' },
+      { ...RECORDED, requestId: 'n3' },
+      { ...RECORDED, requestId: 'n4' },
+    ]);
+
+    expect(outcome).toEqual({ recorded: 3, invalidTime: 0, droppedOlder: 2, droppedImported: 1 });
+    expect(
+      history
+        .list({ projectId: 'proj-1' })
+        .entries.map((entry) => entry.requestId)
+        .sort(),
+    ).toEqual(['n2', 'n3', 'n4']);
+  });
 });
 
 /**
