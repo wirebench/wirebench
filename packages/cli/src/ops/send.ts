@@ -19,14 +19,18 @@ import {
   redactUrl,
   RequestScripting,
   runRequests,
+  readGoldenFile,
   secretNeedsOf,
 } from '@wirebench/engine';
 import type {
   AssertionResult,
+  BaselineReport,
   CaptureSource,
   LocatedSecretNeed,
   RequestResult,
   RunContext,
+  RunOptions,
+  SelectedRequest,
   SentExchange,
   SentRequest,
   WsFrame,
@@ -48,7 +52,7 @@ import type { SendableItem } from './items.js';
 import { historyFileFor } from './paths.js';
 import { environmentFor, openProject } from './project.js';
 import type { OpenedProject } from './project.js';
-import { redactAssertions, redactBody, redactUrlsInText } from './redact.js';
+import { redactAssertions, redactBaseline, redactBody, redactUrlsInText } from './redact.js';
 
 export interface SendResult {
   readonly item: string;
@@ -74,6 +78,8 @@ export interface SendResult {
   readonly frames?: readonly WsFrame[];
   readonly framesTruncated?: boolean;
   readonly assertions: readonly AssertionResult[];
+  /** `baseline: true` only: the comparison with the golden saved beside the request, masked (#218). */
+  readonly baseline?: BaselineReport;
   readonly error?: { readonly code: string; readonly message: string };
   /** The History entry written; absent when History could not be written (a warning says why). */
   readonly historyId?: string;
@@ -98,6 +104,13 @@ const input = z.object({
       'Send this envelope (SOAP) or raw body (REST) instead of the saved one; nothing is saved. ' +
         'Not for a WebSocket request, which sends its saved messages. ' +
         "It is sent as written: ${…} placeholders are refused. The saved request's own body still expands as usual.",
+    ),
+  baseline: z
+    .boolean()
+    .optional()
+    .describe(
+      'Also compare the response body with the golden saved beside the request (<slug>.golden.yaml), ' +
+        "by meaning, honouring the golden's ignore rules. A difference fails the send.",
     ),
 });
 
@@ -185,6 +198,8 @@ export interface SendAndRecordInput {
   readonly refuse?: (result: RequestResult) => OpsError | undefined;
   /** A temporary request's History names (#33). */
   readonly adHoc?: HistoryEntryInput['adHoc'];
+  /** `send`'s golden comparison (#218); a contract tool's call never sets it. */
+  readonly baseline?: RunOptions['baseline'];
 }
 
 /**
@@ -223,6 +238,7 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
     const seen: { sent?: SentRequest } = {};
     const run = await runRequests([item], runContext, {
       ...(input.captures !== undefined ? { captures: input.captures } : {}),
+      ...(input.baseline !== undefined ? { baseline: input.baseline } : {}),
       onSent: (_item, sent) => {
         seen.sent = sent;
       },
@@ -276,7 +292,11 @@ function commonOf(
   item: SendableItem,
   result: RequestResult,
   historyId: string | undefined,
-): Pick<SendResult, 'item' | 'kind' | 'outcome' | 'unasserted' | 'durationMs' | 'assertions' | 'error' | 'historyId'> {
+): Pick<
+  SendResult,
+  'item' | 'kind' | 'outcome' | 'unasserted' | 'durationMs' | 'assertions' | 'baseline' | 'error' | 'historyId'
+> {
+  const baseline = result.baseline === undefined ? undefined : redactBaseline(result.baseline);
   return {
     item: item.path,
     kind: item.kind,
@@ -287,7 +307,9 @@ function commonOf(
     assertions: redactAssertions(
       result.assertions,
       'assertions' in item.request ? (item.request.assertions ?? []) : [],
+      baseline,
     ),
+    ...(baseline !== undefined ? { baseline } : {}),
     ...(result.error !== undefined
       ? { error: { code: result.error.code, message: redactUrlsInText(result.error.message) } }
       : {}),
@@ -363,7 +385,8 @@ export const sendOp = defineOp({
     "records the send in the desktop's History. A WebSocket request sends its saved messages, waits for a " +
     'reply after the last one, closes, and returns the frames; a session with no reply before the timeout ' +
     'fails with timeout, with no frames and no History. Needs --allow-send; --env limits the environments ' +
-    'it may use.',
+    'it may use. With baseline: true it also compares the response with the golden saved beside the request: ' +
+    'a difference fails the send, and a request with no golden reports baseline status missing.',
   input,
   async run(value, context): Promise<SendResult> {
     if (!context.gates.send) {
@@ -394,6 +417,15 @@ export const sendOp = defineOp({
         tokens,
         scripting: new RequestScripting({ sandbox, checker, onSecretValue: (secret) => tokens.add(secret) }),
         captures: captures.source,
+        ...(value.baseline === true
+          ? {
+              baseline: {
+                source: (selected: SelectedRequest) =>
+                  readGoldenFile(context.projectDir, opened.project, selected.request.id),
+                require: false,
+              },
+            }
+          : {}),
         before: async (runContext) => {
           const [scriptError] = await checkRunScripts([item], runContext);
           if (scriptError !== undefined) {

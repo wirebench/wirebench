@@ -46,6 +46,8 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **`send` baseline check.** `send` (the MCP tool, and `wirebench send --baseline`) compares the
+  response with the request's golden and returns the differences (#218).
 - **`wirebench run --update-baseline`** saves each changed response as its request's golden, keeping
   its ignore rules, and lists the files it wrote (#217).
 - **Cookie jar.** Cookies responses set go into a jar per workspace, kept across restarts (encrypted

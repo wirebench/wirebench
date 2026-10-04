@@ -65,7 +65,7 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
 wirebench import <source> [--name <name>]
 wirebench operations [<interface-or-api>]
 wirebench generate <operation> [--optional all|required]
-wirebench send <item> [-e <env>] [--body <text> | --body-file <file>]
+wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline]
 wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema]
 wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
 wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]
@@ -556,7 +556,7 @@ to [`wirebench mcp`](#wirebench-mcp).
 | `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
 | `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) and saved WebSocket requests (API, URL), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. Each SOAP and REST row also carries `tool`, the name of the operation's tool (see [Contract operations as tools](#contract-operations-as-tools)), when its definition is readable. |
 | `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
-| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
+| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>] [--baseline]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
 | `wirebench call <operation> [--args <json\|@file>] [-e <env>] [--schema]` | Calls one operation of an imported contract with JSON arguments, as its MCP tool does: builds the request a new request of the operation would be, sends it under the interface's or API's endpoint, auth and `WIREBENCH_SECRET_*` secrets, records it in History tagged `cli`, and prints the response (`--json`: the result as JSON, the same object the tool returns). `<operation>` is the `operations` reference or the tool name. `--args` takes JSON or `@<file>`; `--schema` prints the arguments' JSON Schema and sends nothing. A response is exit 0, a SOAP fault or a 4xx/5xx included. |
 | `wirebench validate <history-id\|file> [--operation <ref>] [--direction request\|response] [--status <n>]` | Validates a SOAP message against the WSDL's XSD and SOAP rules (line and column), or a REST response body against its OpenAPI response schema (JSON path and keyword). |
 | `wirebench query <expression> <history-id\|file> [--namespace <prefix>=<uri>]… [--direction request\|response]` | XPath 3.1 on XML (the document's own prefixes are known), JSONPath on JSON; one result per line. |
@@ -571,6 +571,11 @@ Details that are easy to get wrong:
   machine's network reaches, through `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`. The desktop limits an
   import to project roots and files the user picked; this does not. A WSDL import takes
   `cacheDefinitions` from the project's own settings, not from the desktop's preferences.
+- **`send --baseline`.** The response body is compared with the golden saved beside the request
+  (`<slug>.golden.yaml`), honouring its ignore rules. A difference is a failed `baseline` assertion
+  (exit 1). No golden prints `baseline: no baseline saved` and does not fail. An unreadable or
+  oversize (over 2 MB) golden is an error (exit 3). A WebSocket request is not compared. It combines
+  with `--body` / `--body-file`, and the saved request's golden still applies.
 - **`send`.** `--body` (or `--body-file`) replaces the saved SOAP envelope, or the saved raw or JSON
   body of a REST request, for this send only; nothing is saved. It is sent as written, so a `${…}`
   placeholder in it is refused with `invalid-input`. The saved request's own body still expands
