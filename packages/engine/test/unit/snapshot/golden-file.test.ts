@@ -1,12 +1,23 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import type { Stats } from 'node:fs';
+import * as fsp from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProject } from '../../../src/project/model.js';
 import type { Project } from '../../../src/project/model.js';
 import { requestFileLocation } from '../../../src/project/request-location.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import { readGoldenFile } from '../../../src/snapshot/golden-file.js';
+
+// Pass-through wrappers, so a test can step in between the module's `lstat` and its `open`.
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, lstat: vi.fn(actual.lstat), open: vi.fn(actual.open) };
+});
+
+const actualFs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
 
 let dir: string;
 let project: Project;
@@ -27,9 +38,23 @@ beforeEach(() => {
   writeFileSync(join(folder, `${slug}.request.yaml`), 'name: Get one\n');
 });
 
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(() => {
+  vi.mocked(fsp.lstat).mockReset().mockImplementation(actualFs.lstat);
+  vi.mocked(fsp.open).mockReset().mockImplementation(actualFs.open);
+  rmSync(dir, { recursive: true, force: true });
+});
 
-const golden = (text: string): void => writeFileSync(join(folder, `${slug}.golden.yaml`), text);
+const sidecar = (): string => join(folder, `${slug}.golden.yaml`);
+const golden = (text: string): void => writeFileSync(sidecar(), text);
+
+/** `lstat` sees the regular file now at the sidecar, then `swap` replaces it before the read opens it. */
+function swapAfterLstat(swap: () => void): void {
+  vi.mocked(fsp.lstat as (path: string) => Promise<Stats>).mockImplementationOnce(() => {
+    const stats = lstatSync(sidecar());
+    swap();
+    return Promise.resolve(stats);
+  });
+}
 
 describe('readGoldenFile', () => {
   it('reads a present golden', async () => {
@@ -90,4 +115,61 @@ describe('readGoldenFile', () => {
       rmSync(outside, { recursive: true, force: true });
     }
   });
+
+  it('refuses a sidecar swapped for an outside link after the lstat check', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'wb-golden-out-'));
+    try {
+      const target = join(outside, 'secret.yaml');
+      writeFileSync(target, 'savedAt: s\nignore: []\nbody: outside\n');
+      golden('savedAt: s\nignore: []\nbody: x\n');
+      swapAfterLstat(() => {
+        rmSync(sidecar());
+        symlinkSync(target, sidecar());
+      });
+      const read = await readGoldenFile(dir, project, 'r1');
+      expect(read).toEqual({ status: 'unreadable', reason: 'not-a-file' });
+      expect(JSON.stringify(read)).not.toContain('outside');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a handle whose identity differs from the lstat result', async () => {
+    golden('savedAt: s\nignore: []\nbody: x\n');
+    vi.mocked(fsp.open).mockImplementationOnce(async (...args: Parameters<typeof fsp.open>) => {
+      const handle = await actualFs.open(...args);
+      const stat = handle.stat.bind(handle);
+      handle.stat = (async () => {
+        const stats = await stat();
+        stats.ino += 1;
+        return stats;
+      }) as typeof handle.stat;
+      return handle;
+    });
+    expect(await readGoldenFile(dir, project, 'r1')).toEqual({ status: 'unreadable', reason: 'not-a-file' });
+  });
+
+  it('is none when the sidecar vanishes between the lstat check and the open', async () => {
+    golden('savedAt: s\nignore: []\nbody: x\n');
+    swapAfterLstat(() => rmSync(sidecar()));
+    expect(await readGoldenFile(dir, project, 'r1')).toEqual({ status: 'none' });
+  });
+
+  it.skipIf(process.platform === 'win32')('does not hang on a FIFO at the sidecar', { timeout: 5000 }, async () => {
+    execFileSync('mkfifo', [sidecar()]);
+    expect(await readGoldenFile(dir, project, 'r1')).toEqual({ status: 'unreadable', reason: 'not-a-file' });
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'does not hang on a FIFO swapped in after the lstat check',
+    { timeout: 5000 },
+    async () => {
+      golden('savedAt: s\nignore: []\nbody: x\n');
+      swapAfterLstat(() => {
+        rmSync(sidecar());
+        execFileSync('mkfifo', [sidecar()]);
+      });
+      expect(await readGoldenFile(dir, project, 'r1')).toEqual({ status: 'unreadable', reason: 'not-a-file' });
+    },
+  );
 });

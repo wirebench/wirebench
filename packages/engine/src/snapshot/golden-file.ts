@@ -9,8 +9,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { lstat, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { constants, existsSync } from 'node:fs';
+import { lstat, open, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { Document, parse as parseYamlText } from 'yaml';
 import { z } from 'zod';
@@ -37,6 +37,11 @@ const goldenFileSchema = z.object({
 });
 
 const NONE: GoldenRead = { status: 'none' };
+const NOT_A_FILE: GoldenRead = { status: 'unreadable', reason: 'not-a-file' };
+const MALFORMED: GoldenRead = { status: 'unreadable', reason: 'malformed' };
+
+/** Read-only, never through a link, never blocking on a FIFO; Windows defines neither extra flag. */
+const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
 
 /** `path` with `realpath` resolved through whatever prefix of it exists, so a symlink cannot hide an escape. */
 async function realpathOfPrefix(path: string): Promise<string> {
@@ -85,26 +90,44 @@ async function sidecarOf(
 /**
  * The golden saved for `requestId` in the project saved at `projectDir`. `none` when the request
  * has no file location, its folder leaves the project, its `*.request.yaml` is not on disk, or no
- * sidecar exists. The sidecar's own name is checked with `lstat` and never followed.
+ * sidecar exists. The sidecar's own name is checked with `lstat`, never followed, and read through
+ * the one handle that was checked.
  */
 export async function readGoldenFile(projectDir: string, project: Project, requestId: string): Promise<GoldenRead> {
   const sidecar = await sidecarOf(projectDir, project, requestId);
   if (sidecar === undefined) return NONE;
   const file = sidecar.file;
+  let checked;
   try {
-    if (!(await lstat(file)).isFile()) return { status: 'unreadable', reason: 'not-a-file' };
+    checked = await lstat(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return NONE;
     throw error;
   }
+  if (!checked.isFile()) return NOT_A_FILE;
 
+  // The path may change after the lstat: open it without following a link, then check the handle
+  // is the file lstat saw. Where O_NOFOLLOW is missing (Windows), a followed link fails that check.
+  let handle;
+  try {
+    handle = await open(file, OPEN_FLAGS);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return NONE;
+    if (code === 'ELOOP') return NOT_A_FILE;
+    return MALFORMED;
+  }
   let parsed;
   try {
-    parsed = goldenFileSchema.safeParse(parseYamlText(await readFile(file, 'utf8')));
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.dev !== checked.dev || opened.ino !== checked.ino) return NOT_A_FILE;
+    parsed = goldenFileSchema.safeParse(parseYamlText(await handle.readFile('utf8')));
   } catch {
-    return { status: 'unreadable', reason: 'malformed' };
+    return MALFORMED;
+  } finally {
+    await handle.close();
   }
-  if (!parsed.success) return { status: 'unreadable', reason: 'malformed' };
+  if (!parsed.success) return MALFORMED;
   const { contentType, savedAt, ignore, body } = parsed.data;
   return {
     status: 'present',
