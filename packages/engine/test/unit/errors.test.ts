@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   HarError,
+  HttpFileError,
   HttpError,
   ProjectError,
   SchemaError,
@@ -40,6 +41,7 @@ describe('subclasses', () => {
     [SchemaError, 'SchemaError'],
     [HttpError, 'HttpError'],
     [HarError, 'HarError'],
+    [HttpFileError, 'HttpFileError'],
     [WssError, 'WssError'],
     [ProjectError, 'ProjectError'],
     [ValidationError, 'ValidationError'],

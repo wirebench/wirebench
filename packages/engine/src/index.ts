@@ -144,6 +144,7 @@ export {
   AsyncApiError,
   PostmanError,
   HarError,
+  HttpFileError,
   LegacyProjectError,
   ProtoError,
   GrpcError,
@@ -757,6 +758,9 @@ export type {
   MapHarOptions,
   MappedHar,
 } from './rest/har/index.js';
+// .http files: parsing request files.
+export { HTTP_FILE_METHODS, MAX_HTTP_FILE_BYTES, parseHttpFile } from './rest/http-file/index.js';
+export type { HttpFileRequest, ParsedHttpFile } from './rest/http-file/index.js';
 // Import helpers shared by every importer.
 export {
   formatImportReport,
