@@ -163,6 +163,17 @@ describe('mapHar', () => {
     expect(JSON.stringify(mapped.apis)).not.toContain('response=');
   });
 
+  it('never names a scheme-less or empty Authorization value in the report', () => {
+    for (const value of ['abc123token', '', 'tok/en+=']) {
+      const mapped = mapHar(oneEntry({ request: { headers: [{ name: 'Authorization', value }] } }));
+      expect(mapped.apis[0]!.requests[0]!.auth).toEqual({ type: 'none' });
+      expect(mapped.report.warnings).toEqual([
+        'GET /x: the Authorization header has an unrecognised form and was imported as none.',
+      ]);
+      if (value !== '') expect(JSON.stringify(mapped.report)).not.toContain(value);
+    }
+  });
+
   it('keeps no user name from a malformed Basic value', () => {
     const noColon = Buffer.from('alice').toString('base64');
     const binary = Buffer.from([0x01, 0x02, 0x3a, 0x03]).toString('base64');

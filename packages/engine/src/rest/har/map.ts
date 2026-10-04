@@ -140,7 +140,13 @@ function authFrom(headers: readonly HarNameValue[], label: string, report: Repor
     const username = basicUsername(rest);
     return { type: 'basic', ...(username !== undefined ? { username } : {}) };
   }
-  report.warn(`${label}: ${scheme} authentication is not supported and was imported as none.`);
+  // Name the scheme only when the value is clearly `<scheme> <credentials>`; a scheme-less value
+  // would otherwise put the credential itself into the report.
+  if (/^[A-Za-z][\w-]*$/.test(scheme) && rest !== '') {
+    report.warn(`${label}: ${scheme} authentication is not supported and was imported as none.`);
+  } else {
+    report.warn(`${label}: the Authorization header has an unrecognised form and was imported as none.`);
+  }
   return { type: 'none' };
 }
 
