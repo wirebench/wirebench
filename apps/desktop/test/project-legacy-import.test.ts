@@ -108,3 +108,18 @@ describe('ProjectHost.importLegacyProject', () => {
     });
   });
 });
+
+describe('ProjectHost.importProperties', () => {
+  it('keeps an existing value, adds a new one, honours disabled and saves', async () => {
+    await host.mutate({ kind: 'set-project-property', name: 'keep', value: 'mine' });
+    const project = await host.importProperties({ keep: 'theirs', fresh: 'f', off: 'o' }, ['off', 'keep']);
+    expect(project.properties).toMatchObject({ keep: 'mine', fresh: 'f', off: 'o' });
+    expect(project.disabledProperties).toEqual(['off']);
+
+    await host.close();
+    host = new ProjectHost(new EngineService());
+    const reopened = await host.openProject(projectDir);
+    expect(reopened.properties).toMatchObject({ keep: 'mine', fresh: 'f', off: 'o' });
+    expect(reopened.disabledProperties).toEqual(['off']);
+  });
+});

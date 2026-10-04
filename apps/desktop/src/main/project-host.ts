@@ -2630,6 +2630,24 @@ export class ProjectHost {
     };
   }
 
+  /** Adds the properties whose names the project does not have yet (imports never overwrite), then saves. */
+  async importProperties(
+    properties: Readonly<Record<string, string>>,
+    disabled: readonly string[],
+  ): Promise<ProjectWire> {
+    const open = this.require();
+    const fresh = Object.fromEntries(Object.entries(properties).filter(([name]) => !(name in open.project.properties)));
+    const freshDisabled = disabled.filter((name) => name in fresh);
+    open.project = {
+      ...open.project,
+      properties: { ...open.project.properties, ...fresh },
+      disabledProperties: [...new Set([...open.project.disabledProperties, ...freshDisabled])].sort(),
+    };
+    open.dirty = true;
+    await this.save({ reason: 'import' });
+    return this.snapshot() as ProjectWire;
+  }
+
   /** The open project's interface with `interfaceId`, or a `not-found` error. */
   private requireInterface(interfaceId: string): Interface {
     const open = this.require();
