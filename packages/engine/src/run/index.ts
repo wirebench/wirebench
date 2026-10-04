@@ -1,6 +1,8 @@
 export { findStepRequest, selectRequests } from './select.js';
 export type { SelectedRequest, StepRequestLookup } from './select.js';
 export { scopesFor } from './context.js';
+export { overlayCurrent, withCurrentValues } from './current-values.js';
+export type { CurrentValues } from './current-values.js';
 export type { AttemptedRequest, ClientIdentity, SendFailure, SendHost } from './host.js';
 export type { RunContext, RunWorkspace } from './context.js';
 export {
@@ -13,6 +15,7 @@ export {
   scriptReport,
 } from './run.js';
 export type {
+  BaselineSink,
   BaselineSource,
   RequestOutcome,
   RequestResult,

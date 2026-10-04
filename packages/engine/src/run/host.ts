@@ -2,7 +2,7 @@
  * What a host lends the engine for one send (spec §3.1). Only the secret getter is required.
  * Where any other member is absent, the send behaves as the command line's does.
  */
-import type { Cookie } from '../http/cookies.js';
+import type { CookieJarHost } from '../http/cookies.js';
 import type { ProxyOptions } from '../http/types.js';
 import type { Keystore } from '../keystore/index.js';
 import type { Preferences } from '../project/preferences.js';
@@ -76,12 +76,12 @@ export interface SendHost {
     /** A row the host logs that is not the send's result (the WebSocket handshake). */
     onExchange?(item: SelectedBase, exchange: unknown): void;
   };
-  readonly cookies?: {
-    /** The cookies stored for this request. They are sent only when its `sendCookies` setting is on. */
-    cookiesFor(item: SelectedBase): readonly Cookie[] | undefined;
-    /** Replaces the stored cookies; an empty list forgets them. */
-    remember(item: SelectedBase, cookies: readonly Cookie[]): void;
-  };
+  /**
+   * The cookie jar (cookie jar spec §1.4): every REST send stores what each response sets, redirect
+   * hops included, and a request whose `sendCookies` setting is on carries what matches each hop's
+   * URL. Absent: nothing is stored or sent.
+   */
+  readonly cookies?: CookieJarHost;
   /** The response checked against the request's contract. Absent: nothing is checked.
    * A rejection means nothing was checked: the send still succeeds, without a contract.
    * `sent` is the protocol's input as it went out, which the operation is looked up from. */

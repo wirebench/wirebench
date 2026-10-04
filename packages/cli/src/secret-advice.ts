@@ -40,3 +40,13 @@ export function knownSecretIn(value: string, known: Iterable<string>): boolean {
   }
   return false;
 }
+
+/**
+ * A `containsKnownSecret` that detects exactly what `masker` would mask: the secret itself and its
+ * percent-, form-, XML- and JSON-escaped forms and `Basic <base64>` credentials. A text the masker
+ * would change must not be written into a committed golden. `masker` is called afresh per check, so
+ * it sees secrets and tokens added since the run began.
+ */
+export function maskerDetects(masker: () => (text: string) => string): (value: string) => boolean {
+  return (value) => masker()(value) !== value;
+}

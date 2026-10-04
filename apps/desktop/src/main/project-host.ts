@@ -83,6 +83,8 @@ import {
   DESCRIPTORS_FILE,
   descriptorSetBytes,
   expand,
+  overlayCurrent,
+  withCurrentValues,
   protoSetFromDescriptorSet,
   readGrpcDefinitionCache,
   reconcileGrpcApi,
@@ -90,6 +92,7 @@ import {
 } from '@wirebench/engine';
 import type {
   AuthConfig,
+  CurrentValues,
   LegacyImportReport,
   LegacyProject,
   ResolvedLegacyInterface,
@@ -119,7 +122,6 @@ import type {
   WsApi,
   RestFolder,
   RestRequestDef,
-  Cookie,
   Attachment,
   AttachmentResolvers,
   AttachmentSource,
@@ -408,13 +410,6 @@ export class ProjectHost {
   /** Parsed keystores, keyed by entry id; see {@link loadKeystoreFor} for the invalidation key. */
   private readonly keystoreCache = new Map<string, { key: string; keystore: Keystore }>();
   /**
-   * What each REST request's own last response set, for the session only, keyed by request id.
-   *
-   * Not a cookie jar: a request only ever sees what it set itself, so one request's send cannot
-   * change another's, and none of this reaches disk (see `rest/cookies.ts`).
-   */
-  private readonly restCookies = new Map<string, readonly Cookie[]>();
-  /**
    * Loaded `.proto` sets, keyed by gRPC API id. A set is parsed once per API from its cache and
    * kept for the session — every send and every method-picker refresh reads from it — and dropped
    * when the API is removed or re-imported.
@@ -447,6 +442,12 @@ export class ProjectHost {
    * context the host behaves exactly as it did before workspaces existed.
    */
   private workspaceContext: WorkspaceContext | undefined;
+
+  /**
+   * The session's current values for this host's project, read afresh on every resolution (cookie
+   * jar spec §5.2). Set by `WorkspaceService`; absent for a standalone project and in tests.
+   */
+  private currentValues: (() => CurrentValues | undefined) | undefined;
 
   constructor(
     private readonly engine: EngineService,
@@ -485,6 +486,11 @@ export class ProjectHost {
    */
   setWorkspaceContext(context: WorkspaceContext | undefined): void {
     this.workspaceContext = context;
+  }
+
+  /** Tells this host where its project's current values come from; `undefined` drops them. */
+  setCurrentValues(source: (() => CurrentValues | undefined) | undefined): void {
+    this.currentValues = source;
   }
 
   /**
@@ -564,6 +570,7 @@ export class ProjectHost {
         readonly environmentId?: string;
         readonly workspace?: RunWorkspace;
         readonly globals: PropertyMap;
+        readonly current?: CurrentValues;
       }
     | undefined {
     if (this.open === undefined || !this.knowsEnvironment(this.open.project, envId)) {
@@ -571,6 +578,7 @@ export class ProjectHost {
     }
     const { project, dir } = this.open;
     const workspace = this.workspaceContextFor(envId);
+    const current = this.currentValues?.();
     const environmentId =
       workspace === undefined ? (envId ?? project.activeEnvironmentId) : workspace.workspace.activeEnvironmentId;
     return {
@@ -579,6 +587,7 @@ export class ProjectHost {
       ...(environmentId !== undefined ? { environmentId } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       globals: this.enabledGlobals(),
+      ...(current !== undefined ? { current } : {}),
     };
   }
 
@@ -811,22 +820,31 @@ export class ProjectHost {
    */
   scopesFor(envId?: string): PropertyScopes {
     const globals = this.enabledGlobals();
+    const current = this.currentValues?.();
     if (this.open === undefined) {
-      return { project: {}, global: globals, system: process.env };
+      return { project: {}, global: overlayCurrent(globals, current?.global), system: process.env };
     }
     const context = this.workspaceContextFor(envId);
+    const laid = withCurrentValues(
+      {
+        project: this.open.project,
+        ...(context !== undefined ? { workspace: context.workspace } : {}),
+        globals,
+      },
+      current,
+    );
     if (context !== undefined) {
       // Inside a workspace the active environment is the *workspace's*, and the project
       // manifest's own `activeEnvironmentId` is deliberately not read (spec §3.3) — so `envId`
       // names a workspace environment here, resolved without changing the active one.
       return resolveWorkspaceScopes({
-        workspace: context.workspace,
-        project: this.open.project,
-        globals,
+        workspace: laid.workspace ?? context.workspace,
+        project: laid.project,
+        globals: laid.globals,
         system: process.env,
       });
     }
-    return resolveScopes(this.open.project, envId ?? this.open.project.activeEnvironmentId, globals, process.env);
+    return resolveScopes(laid.project, envId ?? this.open.project.activeEnvironmentId, laid.globals, process.env);
   }
 
   /** The enabled global properties, the `${#Global#…}` scope every send of this project reads. */
@@ -1585,23 +1603,6 @@ export class ProjectHost {
       };
     }
     return undefined;
-  }
-
-  /**
-   * The cookies stored for this REST request, whatever its *send cookies* setting: the engine
-   * reads the setting itself, so the send host lends what is stored.
-   */
-  restCookiesFor(requestId: string): readonly Cookie[] | undefined {
-    return this.restCookies.get(requestId);
-  }
-
-  /** Remembers what a REST response set, for the next send of that same request. */
-  rememberRestCookies(requestId: string, cookies: readonly Cookie[]): void {
-    if (cookies.length === 0) {
-      this.restCookies.delete(requestId);
-      return;
-    }
-    this.restCookies.set(requestId, cookies);
   }
 
   /** The credentials configured on one gRPC API, folder or request — its own, not its chain's. */

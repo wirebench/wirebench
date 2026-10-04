@@ -45,6 +45,7 @@
    with a clear run error rather than opening a browser.
 9. **The runner never writes to the project.** No history entry, no `.wirebench/local.yaml`, no
    migration written back. It reads a project and writes only the report files it was asked for.
+   Exception (#217): `--update-baseline` writes `<slug>.golden.yaml` sidecars, and nothing else.
 10. **One project per invocation** (owner, 2026-09-18). A pipeline that covers several projects calls
    the runner once per project; a workspace-wide run is out of scope.
 11. **Offline and account-free.** No login, no telemetry, no network call other than the requests

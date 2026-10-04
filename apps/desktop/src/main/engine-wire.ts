@@ -360,7 +360,10 @@ export function toRestExchangeSummary(
     text: exchange.text,
     language: exchange.language,
     ...(exchange.decodeNote !== undefined ? { decodeNote: exchange.decodeNote } : {}),
-    cookies: exchange.cookies.map((cookie) => ({ ...cookie })),
+    cookies: exchange.cookies.map((cookie, index) => {
+      const verdict = exchange.cookieVerdicts?.[index];
+      return { ...cookie, ...(verdict !== undefined ? { jar: { ...verdict } } : {}) };
+    }),
     methodChanged: exchange.methodChanged,
     problems: [],
     ...(exchange.auth !== undefined

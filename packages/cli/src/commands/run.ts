@@ -1,10 +1,12 @@
 import { join } from 'node:path';
 import {
   checkRunScripts,
+  CookieJar,
   createScriptChecker,
   createScriptSandbox,
   createSecretMasker,
   isWirebenchError,
+  jarCookieHost,
   loadProject,
   loadWorkspace,
   readGoldenFile,
@@ -13,10 +15,12 @@ import {
   secretNeedsOf,
   selectRequests,
   workspaceProjectDir,
+  writeGoldenFile,
 } from '@wirebench/engine';
 import type {
   CallbackWaiting,
   Environment,
+  GoldenFile,
   Project,
   RunContext,
   RunResult,
@@ -34,7 +38,7 @@ import { pickEnvironment } from '../ops/environment.js';
 import { OpsError } from '../ops/errors.js';
 import { cliSendHost } from '../send-host.js';
 import { proxyFromEnv } from '../proxy-env.js';
-import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
+import { explainMissingSecret, maskerDetects } from '../secret-advice.js';
 import { captureSourceFromEnv } from '../server-captures.js';
 import { createCliReporter } from '../reporters/cli.js';
 import { renderHtml } from '../reporters/html.js';
@@ -232,11 +236,13 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
       env: io.env,
       // An OAuth2 token, and a sequence value that is (or holds) a secret: every mask built after this hides it.
       onSecretValue: (value) => tokens.add(value),
+      // One jar for the whole run: every request, sequence step and iteration shares it.
+      cookies: jarCookieHost(new CookieJar()),
     }),
     ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
     insecure: args.insecure,
     signal: controller.signal,
-    containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
+    containsKnownSecret: maskerDetects(maskNow),
     scripting: new RequestScripting({ sandbox, checker, onSecretValue: (value) => tokens.add(value) }),
   };
   let result: RunResult;
@@ -258,7 +264,7 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
             ...(args.slaMs !== undefined ? { slaMs: args.slaMs } : {}),
             signal: controller.signal,
             onStepDone: (step) => output.onRequestDone(step),
-            containsKnownSecret: (value) => knownSecretIn(value, [...secrets.values(), ...tokens]),
+            containsKnownSecret: maskerDetects(maskNow),
             captures: captures.source,
             onCallbackWaiting,
           })
@@ -272,6 +278,16 @@ export async function runCommand(args: RunArgs, io: CliIo): Promise<ExitCode> {
                     // Read from the folder the project was loaded from; nothing is written (#36).
                     source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
                     require: args.requireBaseline,
+                  },
+                }
+              : {}),
+            ...(args.updateBaseline
+              ? {
+                  updateBaseline: {
+                    // The runner's one write (#217): golden sidecars beside the requests, nothing else.
+                    source: (item: SelectedRequest) => readGoldenFile(args.path, project, item.request.id),
+                    sink: (item: SelectedRequest, golden: GoldenFile) =>
+                      writeGoldenFile(args.path, project, item.request.id, golden),
                   },
                 }
               : {}),

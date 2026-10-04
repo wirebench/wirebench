@@ -12,6 +12,8 @@ import type { RequestScripting } from '../script/request-scripts.js';
 import type { SecretPlaceholders } from '../script/send.js';
 import { resolveWorkspaceScopes, withActiveEnvironment } from '../workspace/environments.js';
 import type { Workspace } from '../workspace/model.js';
+import type { CurrentValues } from './current-values.js';
+import { withCurrentValues } from './current-values.js';
 import type { SendHost } from './host.js';
 import type { SelectedRequest } from './select.js';
 
@@ -44,6 +46,11 @@ export interface RunContext {
   readonly overrides: PropertyMap;
   /** The host's global properties, the `${#Global#…}` scope. Absent: none. */
   readonly globals?: PropertyMap;
+  /**
+   * The session's current values (cookie jar spec §5.2), each laid over the committed values of its
+   * own scope. `overrides` still win over them. Typed by the user, never response-derived.
+   */
+  readonly current?: CurrentValues;
   /** What the host lends each send: secrets, proxy, TLS, tokens, preferences (spec §3.1). */
   readonly host: SendHost;
   readonly timeoutMs?: number;
@@ -86,13 +93,20 @@ export interface RunContext {
 
 /** The property scopes a request of this run expands against, secrets not yet added. */
 export function scopesFor(context: RunContext): PropertyScopes {
-  const { project, environmentId, workspace } = context;
-  const globals = context.globals ?? {};
+  const { environmentId } = context;
+  const { project, workspace, globals } = withCurrentValues(
+    {
+      project: context.project,
+      ...(context.workspace !== undefined ? { workspace: context.workspace.workspace } : {}),
+      globals: context.globals ?? {},
+    },
+    context.current,
+  );
   const scopes =
     workspace === undefined
       ? resolveScopes(project, environmentId, globals, process.env)
       : resolveWorkspaceScopes({
-          workspace: withActiveEnvironment(workspace.workspace, environmentId),
+          workspace: withActiveEnvironment(workspace, environmentId),
           project,
           globals,
           system: process.env,

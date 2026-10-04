@@ -41,6 +41,7 @@ database, one data directory; run it behind TLS. Design: `docs/specs/2026-09-24-
 | `WIREBENCH_SERVER_AUDIT_FORWARD_URL` | no | — | Forward every audit event (Enterprise): `syslog+tcp://host:port`, `syslog+tls://host:port` or `https://…` (`http://` only on a loopback host). Unset, nothing is forwarded. |
 | `WIREBENCH_SERVER_AUDIT_FORWARD_TOKEN` | no | — | Sent as `Authorization: Bearer …` with each HTTPS batch. Refused with a syslog URL. Never logged. |
 | `WIREBENCH_SERVER_AUDIT_FORWARD_CA_FILE` | no | — | A PEM bundle added to the system roots for `syslog+tls` and `https` forwarding. Certificates are always verified. |
+| `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` | no | — | Seals audit events into a keyed hash chain that `admin audit verify` checks: at least 32 bytes, kept outside the database and never changed. Unset, nothing is sealed. Never logged. |
 <!-- config:end -->
 <!-- prettier-ignore-end -->
 
@@ -106,6 +107,13 @@ Enterprise license; the console export works on any edition:
 A workspace admin can turn on **Record desktop activity** for a workspace: the app then reports each
 request sent and each test-suite run (`POST /api/v1/workspaces/:id/audit/desktop-events`), URL masked, no
 headers or bodies.
+
+With `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` set (at least 32 bytes, kept outside the database, never rotated,
+and the same on every instance that shares the database), a background sealer links events into a keyed
+hash chain and logs `audit chain sealed to <seq>:<hex>` after each pass. `wirebench-server admin audit
+verify [--head <seq>:<hex>] [--json]` finds edited, missing or reordered events (exit 0 intact, 1 broken, 2
+no or wrong key). Retention stops at a tampered row or a gap and logs an error. See the guide's _Tamper
+evidence_ section for what it does not detect.
 
 On an Enterprise server, `WIREBENCH_SERVER_AUDIT_FORWARD_URL` forwards every audit event to one collector as
 RFC 5424 syslog over TCP or TLS (`syslog+tcp://`, `syslog+tls://`) or as JSON batches over HTTPS, with an

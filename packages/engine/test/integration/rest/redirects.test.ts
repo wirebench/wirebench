@@ -9,6 +9,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sendRest } from '../../../src/rest/send.js';
 import type { RestSendInput } from '../../../src/rest/send.js';
+import { CookieJar, jarCookieHost } from '../../../src/rest/cookie-jar.js';
 import type { SendAuth } from '../../../src/http/auth/send-auth.js';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
 
@@ -160,6 +161,32 @@ describe('credentials across a redirect', () => {
     );
 
     expect(JSON.parse(exchange.text)).toEqual({ cookie: null });
+  });
+});
+
+describe('cookies across a redirect, with a jar', () => {
+  it('sends neither the hand-set Cookie nor the jar to another host', async () => {
+    // Cookies ignore ports, so the second origin is reached as `localhost`: a different host from
+    // the jar cookie's `127.0.0.1`, which is what makes it another site.
+    const otherHost = `http://localhost:${new URL(other.url).port}`;
+    const hop = await startTestRestServer({ redirectOrigins: [otherHost] });
+    try {
+      const jar = new CookieJar();
+      jar.store(`${hop.url}/`, [{ name: 'jar', value: '1' }], Date.now());
+      const sent = await sendRest({
+        ...input({
+          url: `/redirect/302?to=${encodeURIComponent(`${otherHost}/cookies/read`)}`,
+          headers: [{ name: 'Cookie', value: 'hand=1', enabled: true }],
+        }),
+        baseUrl: hop.url,
+        jar: { host: jarCookieHost(jar), send: true },
+      });
+
+      expect(sent.redirects).toHaveLength(1);
+      expect(JSON.parse(sent.text)).toEqual({ cookie: null });
+    } finally {
+      await hop.close();
+    }
   });
 });
 

@@ -30,6 +30,7 @@ Windows and Linux). The first shortcut listed for a command can be changed in
 | Show Search | <kbd>⌘⇧S</kbd> | <kbd>Ctrl+Shift+S</kbd> |
 | Show History | <kbd>⌘⇧Y</kbd> | <kbd>Ctrl+Shift+Y</kbd> |
 | Show WS-Security | — | — |
+| Show Cookies | — | — |
 | Show Settings | <kbd>⌘,</kbd> | <kbd>Ctrl+,</kbd> |
 | Cycle Theme (Dark, Light, System) | — | — |
 | Request: XML View | — | — |

@@ -1,18 +1,16 @@
 /**
  * Reads and writes a request's golden response: a `<slug>.golden.yaml` sidecar in the request's
  * own folder. The sidecar lives outside the project model, so saving the project never touches it
- * and no format bump is needed; the body is a YAML block scalar so a golden diffs well in git
- * (double-quoted only when a block scalar would not read back the same).
+ * and no format bump is needed. The sidecar text and the atomic write live in the engine
+ * (`writeGoldenFile`); this store adds containment checks, per-request ordering and its own errors.
  */
 
-import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { lstat, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { Document, parse as parseYamlText } from 'yaml';
-import { readGoldenFile, requestFileLocation, WirebenchError } from '@wirebench/engine';
-import type { Project } from '@wirebench/engine';
-import type { SnapshotReadResponse, SnapshotWire } from '../shared/wire-types.js';
+import { readGoldenFile, requestFileLocation, WirebenchError, writeGoldenFile } from '@wirebench/engine';
+import type { GoldenWrite, Project } from '@wirebench/engine';
+import type { SnapshotReadResponse } from '../shared/wire-types.js';
 import { isInsideReal, realpathOfPrefix } from './path-containment.js';
 
 /** The saved project that holds a request: its model and the folder it was saved to. */
@@ -67,21 +65,24 @@ export class SnapshotStore {
     ignore: readonly string[];
   }): Promise<{ savedAt: string }> {
     return this.serial(input.requestId, async () => {
-      const sidecar = await this.require(input.requestId);
+      await this.require(input.requestId);
+      // `require` has found the saved project, so the lookup cannot miss here.
+      const saved = this.lookup(input.requestId)!;
       const savedAt = new Date().toISOString();
-      await writeSidecar(sidecar.file, {
+      const written = await writeGoldenFile(saved.dir, saved.project, input.requestId, {
         ...(input.contentType !== undefined ? { contentType: input.contentType } : {}),
         savedAt,
-        ignore: [...input.ignore],
+        ignore: input.ignore,
         body: input.body,
       });
+      refuseUnwritten(input.requestId, written);
       return { savedAt };
     });
   }
 
   setIgnore({ requestId, ignore }: { requestId: string; ignore: readonly string[] }): Promise<{ savedAt: string }> {
     return this.serial(requestId, async () => {
-      const sidecar = await this.require(requestId);
+      await this.require(requestId);
       const saved = this.lookup(requestId);
       const read = saved === undefined ? undefined : await readGoldenFile(saved.dir, saved.project, requestId);
       if (read?.status !== 'present') {
@@ -91,7 +92,7 @@ export class SnapshotStore {
       }
       const current = read.golden;
       // `savedAt` records when the body was captured; changing the ignore rules does not recapture it.
-      await writeSidecar(sidecar.file, { ...current, ignore: [...ignore] });
+      refuseUnwritten(requestId, await writeGoldenFile(saved!.dir, saved!.project, requestId, { ...current, ignore }));
       return { savedAt: current.savedAt };
     });
   }
@@ -189,35 +190,15 @@ function refuseNonFile(requestId: string, sidecar: SidecarPath): void {
   }
 }
 
-/**
- * `snapshot` as sidecar text, the body as a block scalar. A block scalar cannot hold every string
- * — a whitespace-only body such as `"  \n"` reads back differently — so the text is parsed back,
- * and a body that does not survive is written double-quoted instead, which holds any string.
- */
-function sidecarText(snapshot: SnapshotWire): string {
-  const doc = new Document(snapshot, { sortMapEntries: true });
-  const body = doc.get('body', true) as { type?: string } | undefined;
-  if (body === undefined) {
-    return doc.toString({ lineWidth: 0 });
+/** Maps an engine refusal to the store's own errors; the `require()` pre-check makes it rare. */
+function refuseUnwritten(requestId: string, written: GoldenWrite): void {
+  if (written.status === 'written') return;
+  if (written.reason === 'not-a-file') {
+    throw new WirebenchError('snapshot-not-a-file', 'The snapshot file for this request is not a regular file', {
+      details: { requestId },
+    });
   }
-  body.type = 'BLOCK_LITERAL';
-  const text = doc.toString({ lineWidth: 0 });
-  if ((parseYamlText(text) as { body?: unknown }).body === snapshot.body) {
-    return text;
-  }
-  body.type = 'QUOTE_DOUBLE';
-  return doc.toString({ lineWidth: 0 });
-}
-
-/** Writes `snapshot` to `file` atomically: a uniquely named temp file, then a rename over it. */
-async function writeSidecar(file: string, snapshot: SnapshotWire): Promise<void> {
-  const text = sidecarText(snapshot);
-  const temp = `${file}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temp, text, 'utf8');
-    await rename(temp, file);
-  } catch (error) {
-    await rm(temp, { force: true });
-    throw error;
-  }
+  throw new WirebenchError('snapshot-unsaved', 'Save the project to keep a snapshot beside this request', {
+    details: { requestId },
+  });
 }

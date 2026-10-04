@@ -263,6 +263,27 @@ describe('run --baseline', () => {
   });
 });
 
+describe('run --update-baseline', () => {
+  it('defaults off and turns on', () => {
+    expect(parseCliArgs(['run', 'p'])).toMatchObject({ updateBaseline: false });
+    expect(parseCliArgs(['run', 'p', '--update-baseline'])).toMatchObject({ updateBaseline: true, baseline: false });
+  });
+
+  it('refuses it with --baseline or --require-baseline', () => {
+    for (const other of ['--baseline', '--require-baseline']) {
+      expect(() => parseCliArgs(['run', 'p', '--update-baseline', other])).toThrow(
+        '--update-baseline cannot be combined with --baseline or --require-baseline',
+      );
+    }
+  });
+
+  it('refuses it with --sequence', () => {
+    expect(() => parseCliArgs(['run', 'p', '--update-baseline', '--sequence', 's'])).toThrow(
+      '--update-baseline cannot be combined with --sequence',
+    );
+  });
+});
+
 describe('parseCliArgs — mcp --tools', () => {
   it('reads a list of containers, and none', () => {
     expect(parseCliArgs(['mcp', '--tools', 'Pets, CalculatorService'])).toMatchObject({
