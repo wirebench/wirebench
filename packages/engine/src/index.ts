@@ -532,8 +532,24 @@ export { applyAuth, missingSecretRef, resolveAuthChain, resolveAuthChainIndex } 
 export type { AppliedAuth } from './http/auth/apply-auth.js';
 export { applySoapAuth } from './soap/auth.js';
 export type { SoapAppliedAuth } from './soap/auth.js';
-export { cookieHeader, cookiesToSend, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
-export type { CookieMatchOptions } from './rest/cookies.js';
+export { cookieHeader, defaultPath, domainMatches, isExpired, pathMatches } from './rest/cookies.js';
+export {
+  CookieJar,
+  cookiesToSend,
+  jarCookieHost,
+  MAX_COOKIE_BYTES,
+  MAX_COOKIES,
+  MAX_COOKIES_PER_DOMAIN,
+  mergeCookieHeader,
+} from './rest/cookie-jar.js';
+export type {
+  CookieJarHost,
+  CookieKey,
+  CookieMatchOptions,
+  CookieRejection,
+  CookieVerdict,
+  StoredCookie,
+} from './rest/cookie-jar.js';
 export { decodeResponseText, detectLanguage, parseSetCookie, prettyBody } from './rest/response.js';
 export type { BodyLanguage, Cookie, DecodedText, PrettyBody } from './rest/response.js';
 export {
@@ -906,8 +922,10 @@ export { requestFileLocation } from './project/request-location.js';
 export type { RequestFileLocation } from './project/request-location.js';
 export { BASELINE_MAX_BYTES, checkBaseline } from './run/baseline.js';
 export type { BaselineCheck, BaselineReport, BaselineStatus } from './run/baseline.js';
-export { readGoldenFile } from './snapshot/golden-file.js';
-export type { GoldenFile, GoldenRead } from './snapshot/golden-file.js';
+export type { BaselineReason } from './run/baseline.js';
+export type { BaselineUpdatePlan, SinkOutcome } from './run/baseline-update.js';
+export { readGoldenFile, writeGoldenFile } from './snapshot/golden-file.js';
+export type { GoldenFile, GoldenRead, GoldenWrite } from './snapshot/golden-file.js';
 export { loadProject } from './project/load.js';
 export type { LoadProjectOptions, LoadResult, ProjectProblem } from './project/load.js';
 export { saveProject } from './project/save.js';

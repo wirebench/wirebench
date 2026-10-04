@@ -1,13 +1,11 @@
 /**
- * Which of a response's cookies go back out on the next send of the same request.
+ * RFC 6265 matching for the cookie jar (`rest/cookie-jar.ts`): domain-match and path-match (§5.1.3,
+ * §5.1.4), expiry (§5.3), and the `Cookie` header (§5.4).
  *
- * Wirebench keeps no cookie jar: a request remembers what its own last response set, for the
- * session only, and sends the matching ones when its *send cookies* setting is on. That is a
- * deliberate limit rather than an unfinished one — a shared jar makes one request's send depend on
- * another's, which is exactly what makes a saved request stop being reproducible — and nothing here
- * ever reaches disk.
- *
- * Matching follows RFC 6265 §5.1.3 and §5.1.4 (domain-match and path-match) and §5.3 (expiry).
+ * Every REST send stores what its responses set in a jar: the open workspace's in the app, the run's
+ * on the command line. A request sends the jar's matching cookies only when its *Send cookies*
+ * setting is on, which is off by default, so a saved request stays reproducible unless it opts in.
+ * The app saves only cookies with an expiry, encrypted; session cookies never reach disk.
  */
 
 import type { Cookie } from './response.js';
@@ -57,52 +55,6 @@ export function isExpired(cookie: Cookie, now: Date, setAt?: Date): boolean {
   }
   const expires = new Date(cookie.expires);
   return !Number.isNaN(expires.getTime()) && expires.getTime() <= now.getTime();
-}
-
-/** Options for {@link cookiesToSend}. */
-export interface CookieMatchOptions {
-  /** When the cookies were received, for a `Max-Age` that is relative to that moment. */
-  readonly setAt?: Date;
-}
-
-/**
- * The cookies of `cookies` that a request to `url` should carry at `now`.
- *
- * A cookie with no `Domain` is host-only, so it goes back only to the host that set it — which, for
- * a per-request memory, is the host it was sent from unless the URL changed. `Secure` cookies never
- * travel over plain HTTP, malformed lines are never sent at all, and an expired cookie is dropped
- * rather than sent and rejected.
- */
-export function cookiesToSend(
-  cookies: readonly Cookie[],
-  url: string,
-  now: Date = new Date(),
-  options: CookieMatchOptions = {},
-): Cookie[] {
-  let target: URL;
-  try {
-    target = new URL(url);
-  } catch {
-    return [];
-  }
-  const secureContext = target.protocol === 'https:';
-  const requestPath = target.pathname === '' ? '/' : target.pathname;
-
-  return cookies.filter((cookie) => {
-    if (cookie.malformed === true || cookie.name === '') {
-      return false;
-    }
-    if (cookie.secure === true && !secureContext) {
-      return false;
-    }
-    if (isExpired(cookie, now, options.setAt)) {
-      return false;
-    }
-    if (cookie.domain !== undefined && !domainMatches(target.hostname, cookie.domain)) {
-      return false;
-    }
-    return pathMatches(requestPath, cookie.path ?? defaultPath(requestPath));
-  });
 }
 
 /**

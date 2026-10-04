@@ -8,7 +8,14 @@ import type { IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createProject, loadProject, saveProject, selectRequests, upsertEnvironment } from '@wirebench/engine';
+import {
+  createProject,
+  loadProject,
+  requestFileLocation,
+  saveProject,
+  selectRequests,
+  upsertEnvironment,
+} from '@wirebench/engine';
 import type { Project, RestFolder, RestRequestDef } from '@wirebench/engine';
 import { runOp } from '../../../src/ops/context.js';
 import type { OpsBase } from '../../../src/ops/context.js';
@@ -318,6 +325,39 @@ servers:
   - url: http://127.0.0.1:9
 paths:
 ${paths}`,
+  );
+  return file;
+}
+
+/**
+ * Writes the golden sidecar the desktop's Snapshot tab would save beside the saved request at `item`
+ * (its path as `operations` lists it). JSON is YAML, so no YAML dependency is needed here.
+ *
+ * @returns the sidecar's path
+ */
+export async function writeGolden(
+  dir: string,
+  item: string,
+  golden: { readonly body: string; readonly ignore?: readonly string[]; readonly contentType?: string },
+): Promise<string> {
+  const { project } = await loadProject(dir);
+  const found = selectRequests(project, []).selected.find((selected) => selected.path === item);
+  if (found === undefined) {
+    throw new Error(`no request at ${item}`);
+  }
+  const location = requestFileLocation(project, found.request.id);
+  if (location === undefined) {
+    throw new Error(`no file location for ${item}`);
+  }
+  const file = join(dir, ...location.dir.split('/'), `${location.slug}.golden.yaml`);
+  await writeFile(
+    file,
+    JSON.stringify({
+      savedAt: '2026-10-03T10:00:00.000Z',
+      ignore: golden.ignore ?? [],
+      body: golden.body,
+      ...(golden.contentType !== undefined ? { contentType: golden.contentType } : {}),
+    }),
   );
   return file;
 }

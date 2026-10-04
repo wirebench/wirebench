@@ -117,7 +117,6 @@ export async function resolveRest(selected: RestSelected, context: RunContext): 
   const { api, request } = selected;
   const scopes = scopesFor(context);
   const callbackUrl = isWebhookItem(selected) ? await context.host.callbackUrlFor?.(selected) : undefined;
-  const cookies = request.settings.sendCookies === true ? context.host.cookies?.cookiesFor(selected) : undefined;
   const unexpanded = toRestSendInput({
     request: {
       method: request.method,
@@ -131,7 +130,6 @@ export async function resolveRest(selected: RestSelected, context: RunContext): 
     baseUrl: callbackUrl !== undefined ? '' : baseUrlFor(context, api),
     projectSettings: context.project.settings,
     ...(context.host.preferences !== undefined ? { preferences: context.host.preferences } : {}),
-    ...(cookies !== undefined ? { cookies } : {}),
     resolveFile: restFileResolver(context),
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
@@ -373,6 +371,10 @@ async function connectAndSend(
     exchange = await sendRest({
       ...connected,
       signal: controller.signal,
+      // Not part of `connected`, which History and the log keep: the jar is the host's, per send.
+      ...(context.host.cookies !== undefined
+        ? { jar: { host: context.host.cookies, send: selected.request.settings.sendCookies === true } }
+        : {}),
       // Only a live send parses an event stream; any other keeps the buffered body.
       ...(live
         ? {
@@ -389,8 +391,6 @@ async function connectAndSend(
     throw error;
   }
   dropRefusedToken(context, connected.auth, exchange.status === 401);
-  // As the app does after every send: what the response set replaces what was stored, and none forgets it.
-  context.host.cookies?.remember(selected, exchange.cookies);
   // The request has gone out: a contract check that rejects checked nothing, and fails nothing.
   const contract = await context.host.contractFor?.(selected, exchange, connected).catch(() => undefined);
   return {

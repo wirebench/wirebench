@@ -100,5 +100,24 @@ wirebench run ./project --env staging --baseline --reporter junit=reports/wirebe
 Each SOAP and REST response is compared with its golden, by meaning, with the golden's ignore rules.
 A difference fails the request (exit code 1), and the report lists each changed path. A request
 without a golden is noted and judged on its other assertions; add `--require-baseline` to make that
-an error (exit code 3). The runner never writes a golden: save and update goldens in the Snapshot
-tab. Sequences are not compared.
+an error (exit code 3). Ignore rules are edited in the Snapshot tab. Sequences are not compared.
+
+Agents get the same check over MCP: `send` with `baseline: true`, described in
+[Agents (MCP)](/wirebench/docs/guides/agents-mcp/).
+
+### Refreshing goldens after an intended change
+
+When a service changes on purpose, refresh every golden it affects in one run, then review and
+commit the result:
+
+```bash
+wirebench run ./project --env staging --update-baseline
+git diff -- '*.golden.yaml'
+```
+
+A golden that differs is replaced, keeping its ignore rules; a missing one is created; one that
+still matches is left as it is. The run lists each file it wrote. Nothing is written for a request
+whose own assertions fail, or whose body has no text form (binary). A response that holds a secret
+value, a golden file that cannot be read, and a golden path that is a link or a folder are refused: the request errors
+(exit code 3) and the file is left alone. `--update-baseline` cannot be combined with `--baseline`, `--require-baseline`
+or `--sequence`.

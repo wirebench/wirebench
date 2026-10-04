@@ -147,6 +147,8 @@ function headerMap(request: IncomingMessage): Record<string, string> {
  * - `/latin1` — `café` as ISO-8859-1, declared
  * - `/cookies/set` — two `Set-Cookie` headers
  * - `/cookies/read` — the `Cookie` header it received, as JSON
+ * - `/cookies/hop` — a 302 to `/cookies/deep/read` that sets `hop=1`, with no Path, on the way
+ * - `/cookies/deep/read` — like `/cookies/read`, one directory down
  * - `/big-json/<megabytes>` — a well-formed JSON body of about that size
  * - `/oauth2/authorize` — redirects to `redirect_uri` with a code, validating `state` and PKCE
  * - `/oauth2/token` — the token endpoint: client credentials, code exchange and refresh
@@ -416,8 +418,14 @@ export async function startTestRestServer(options: TestRestServerOptions = {}): 
         return;
       }
 
-      if (path === '/cookies/read') {
+      if (path === '/cookies/read' || path === '/cookies/deep/read') {
         sendJson(response, 200, { cookie: request.headers.cookie ?? null });
+        return;
+      }
+
+      if (path === '/cookies/hop') {
+        response.writeHead(302, { location: `${selfOrigin}/cookies/deep/read`, 'set-cookie': 'hop=1' });
+        response.end();
         return;
       }
 

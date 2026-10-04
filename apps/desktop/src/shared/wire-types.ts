@@ -1974,6 +1974,15 @@ export const wsRequestPatchSchema = z.object({
 });
 export type WsRequestPatchWire = z.infer<typeof wsRequestPatchSchema>;
 
+/** The jar's verdict on one cookie a response set (cookie jar spec §3). */
+export const cookieJarVerdictWireSchema = z.object({
+  stored: z.boolean(),
+  reason: z
+    .enum(['deleted', 'domain-mismatch', 'domain-not-allowed', 'secure-over-http', 'too-large', 'malformed'])
+    .optional(),
+});
+export type CookieJarVerdictWire = z.infer<typeof cookieJarVerdictWireSchema>;
+
 /** One cookie a response set, as the Cookies tab shows it. */
 export const cookieWireSchema = z.object({
   name: z.string(),
@@ -1987,8 +1996,55 @@ export const cookieWireSchema = z.object({
   sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
   /** The header could not be parsed as a cookie; `name` holds the whole line. */
   malformed: z.boolean().optional(),
+  /** What the cookie jar did with it; absent when the send had no jar. */
+  jar: cookieJarVerdictWireSchema.optional(),
 });
 export type CookieWire = z.infer<typeof cookieWireSchema>;
+
+/**
+ * One cookie of the workspace jar (cookie jar spec §2.2), as the manager shows and edits it. A leaf
+ * schema mirroring the engine's `StoredCookie`; nothing here imports the engine.
+ */
+export const storedCookieWireSchema = z
+  .object({
+    // Nothing that would break the `Cookie` header it is sent in: no separator, `=` or whitespace.
+    name: z
+      .string()
+      .min(1)
+      .regex(/^[^;=\s\u0000-\u001f\u007f]+$/),
+    value: z.string().regex(/^[^;\r\n\0]*$/),
+    domain: z.string().min(1),
+    hostOnly: z.boolean(),
+    path: z.string().startsWith('/'),
+    expiresAt: z.number().optional(),
+    secure: z.boolean(),
+    httpOnly: z.boolean(),
+    sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
+    createdAt: z.number(),
+  })
+  .refine((cookie) => new TextEncoder().encode(cookie.name + cookie.value).length <= 4096, {
+    message: 'A cookie, name and value together, is at most 4096 bytes',
+  });
+export type StoredCookieWire = z.infer<typeof storedCookieWireSchema>;
+
+/** What names one jar cookie. */
+export const cookieKeyWireSchema = z.object({ name: z.string(), domain: z.string(), path: z.string() });
+export type CookieKeyWire = z.infer<typeof cookieKeyWireSchema>;
+
+/** The whole jar of the open workspace; `persisted` is false when nothing is saved. */
+export const cookieJarStateWireSchema = z.object({
+  cookies: z.array(storedCookieWireSchema),
+  persisted: z.boolean(),
+});
+export type CookieJarStateWire = z.infer<typeof cookieJarStateWireSchema>;
+
+export const cookiesSetRequestSchema = z.object({
+  cookie: storedCookieWireSchema,
+  /** The cookie this one replaces, when its name, domain or path changed. */
+  replaces: cookieKeyWireSchema.optional(),
+});
+export const cookiesRemoveRequestSchema = z.object({ key: cookieKeyWireSchema });
+export const cookiesRemoveDomainRequestSchema = z.object({ domain: z.string().min(1) });
 
 /**
  * One row of a `text/event-stream` response, as the engine's `SseRow` parses it. Mirrors that type
@@ -3891,6 +3947,30 @@ export const globalsRemoveRequestSchema = z.object({ name: z.string() });
 
 /** Request payload for `globals.setEnabled`. */
 export const globalsSetEnabledRequestSchema = z.object({ name: z.string(), enabled: z.boolean() });
+
+/** Which committed variables a current value overrides (cookie jar spec §5.1). */
+export const scopeKeyWireSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('global') }),
+  z.object({ scope: z.literal('workspace') }),
+  z.object({ scope: z.literal('workspaceEnvironment'), environmentId: z.string() }),
+  z.object({ scope: z.literal('project'), projectId: z.string() }),
+  z.object({ scope: z.literal('projectEnvironment'), projectId: z.string(), environmentId: z.string() }),
+]);
+export type ScopeKeyWire = z.infer<typeof scopeKeyWireSchema>;
+
+/** The open workspace's current values, one entry per scope that has any. Session only. */
+export const currentValuesStateWireSchema = z.object({
+  scopes: z.array(z.object({ key: scopeKeyWireSchema, values: z.record(z.string(), z.string()) })),
+});
+export type CurrentValuesStateWire = z.infer<typeof currentValuesStateWireSchema>;
+
+export const currentValuesSetRequestSchema = z.object({
+  key: scopeKeyWireSchema,
+  name: z.string().min(1).max(65536),
+  value: z.string().max(65536),
+});
+/** `name` omitted resets the whole scope. */
+export const currentValuesResetRequestSchema = z.object({ key: scopeKeyWireSchema, name: z.string().optional() });
 
 // ---------------------------------------------------------------------------
 // Secrets (Task 23): keychain-backed store. There is deliberately no `secrets.get`

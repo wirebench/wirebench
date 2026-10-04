@@ -89,6 +89,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Show WS-Security',
     category: 'View',
   },
+  'view.showCookies': {
+    id: 'view.showCookies',
+    label: 'Show Cookies',
+    category: 'View',
+  },
   'view.showSettings': {
     id: 'view.showSettings',
     label: 'Show Settings',

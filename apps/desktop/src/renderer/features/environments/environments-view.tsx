@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
-import { Check, Globe, Layers, PanelLeftClose, Plus } from 'lucide-react';
+import { Check, Cookie, Globe, Layers, PanelLeftClose, Plus } from 'lucide-react';
 import { ConfirmDialog } from '../../components/confirm-dialog.js';
 import { IconButton } from '../../components/icon-button.js';
+import { openCookiesTab } from '../cookies/cookie-actions.js';
 import { useEditorsStore } from '../../state/editors.js';
 import { useUiStore } from '../../state/ui.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -274,6 +275,9 @@ export function EnvironmentsView() {
           }}
         >
           <Plus size={14} aria-hidden="true" />
+        </IconButton>
+        <IconButton label="Cookies…" data-testid="environments-cookies" onClick={openCookiesTab}>
+          <Cookie size={14} aria-hidden="true" />
         </IconButton>
         <IconButton label="Collapse sidebar" onClick={collapseSidebar}>
           <PanelLeftClose size={14} aria-hidden="true" />

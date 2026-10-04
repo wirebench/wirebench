@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -11,13 +11,16 @@ import { requestFileLocation } from '../../../src/project/request-location.js';
 import type { SelectedRequest } from '../../../src/protocols.js';
 import { REDACTED_MARKER } from '../../../src/redact/index.js';
 import { createSecretMasker } from '../../../src/redact/literal.js';
-import { readGoldenFile } from '../../../src/snapshot/golden-file.js';
+import { readGoldenFile, writeGoldenFile, type GoldenFile } from '../../../src/snapshot/golden-file.js';
 import { createApi, createRestRequest } from '../../../src/rest/model.js';
 import type { RestRequestDef } from '../../../src/rest/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import { runRequests } from '../../../src/run/run.js';
 import type { RequestResult } from '../../../src/run/run.js';
 import { selectRequests } from '../../../src/run/select.js';
+import { createScriptChecker } from '../../../src/script/check/host.js';
+import { RequestScripting } from '../../../src/script/request-scripts.js';
+import { createScriptSandbox } from '../../../src/script/sandbox/host.js';
 import { testHost } from '../../helpers/send-host.js';
 import { normalizeWsa } from '../../../src/wsa/model.js';
 import { startTestRestServer, startTestSoapServer } from '../../helpers/index.js';
@@ -388,5 +391,143 @@ describe('runRequests with a baseline', () => {
     const result = await runRequests(all(project), contextFor(project));
     expect(result.summary.baseline).toBeUndefined();
     expect(result.requests[0]?.baseline).toBeUndefined();
+  });
+});
+
+describe('runRequests updating baselines', () => {
+  /** Writes `<slug>.request.yaml` (existence only) and, when given, the golden beside it; returns the golden's path. */
+  function saveGolden(project: Project, requestId: string, golden?: string): string {
+    const location = requestFileLocation(project, requestId)!;
+    const folder = join(dir, ...location.dir.split('/'));
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, `${location.slug}.request.yaml`), 'x\n');
+    const file = join(folder, `${location.slug}.golden.yaml`);
+    if (golden !== undefined) writeFileSync(file, golden);
+    return file;
+  }
+
+  const update = (project: Project) => ({
+    updateBaseline: {
+      source: (item: SelectedRequest) => readGoldenFile(dir, project, item.request.id),
+      sink: (item: SelectedRequest, golden: GoldenFile) => writeGoldenFile(dir, project, item.request.id, golden),
+    },
+  });
+
+  // `/text-plain-json` always answers {"labelled":"text/plain"}.
+  const golden = (body: string, ignore = '[]'): string => `savedAt: s\nignore: ${ignore}\nbody: '${body}'\n`;
+
+  it('rewrites a differing golden, keeping its ignore rules', async () => {
+    const project = makeProject([], [restRequest('uu', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-uu', golden('{"labelled": "other", "x": 1}', '["/x"]'));
+    const result = await runRequests(all(project), contextFor(project), update(project));
+    const [only] = result.requests;
+    expect(only?.outcome).toBe('passed');
+    expect(only?.baseline?.status).toBe('updated');
+    expect(only?.baseline?.file).toMatch(/\.golden\.yaml$/);
+    expect(only?.assertions.at(-1)).toMatchObject({ type: 'baseline', label: 'baseline updated', outcome: 'passed' });
+    const read = await readGoldenFile(dir, project, 'rest-uu');
+    expect(read.status === 'present' && read.golden.ignore).toEqual(['/x']);
+    expect(read.status === 'present' && read.golden.savedAt).not.toBe('s');
+    expect(read.status === 'present' && JSON.parse(read.golden.body)).toEqual({ labelled: 'text/plain' });
+    expect(result.summary.baselineUpdate).toEqual({ updated: 1, created: 0, matched: 0, skipped: 0, refused: 0 });
+    expect(result.summary.baseline).toBeUndefined();
+  });
+
+  it('leaves a matching golden byte-for-byte alone', async () => {
+    const project = makeProject([], [restRequest('um', 0, '/text-plain-json', OK_REST)]);
+    const file = saveGolden(project, 'rest-um', golden('{"labelled": "text/plain"}'));
+    const before = readFileSync(file, 'utf8');
+    const [only] = (await runRequests(all(project), contextFor(project), update(project))).requests;
+    expect(only?.baseline?.status).toBe('matched');
+    expect(readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('creates a missing golden', async () => {
+    const project = makeProject([], [restRequest('uc', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-uc');
+    const [only] = (await runRequests(all(project), contextFor(project), update(project))).requests;
+    expect(only?.baseline?.status).toBe('created');
+    expect((await readGoldenFile(dir, project, 'rest-uc')).status).toBe('present');
+  });
+
+  it('does not write for a request whose own assertions failed', async () => {
+    const project = makeProject([], [restRequest('uf', 0, '/text-plain-json', [{ type: 'status', equals: 418 }])]);
+    saveGolden(project, 'rest-uf');
+    const [only] = (await runRequests(all(project), contextFor(project), update(project))).requests;
+    expect(only?.outcome).toBe('failed');
+    expect(only?.baseline).toEqual({ status: 'skipped', reason: 'failed' });
+    expect((await readGoldenFile(dir, project, 'rest-uf')).status).toBe('none');
+  });
+
+  it('refuses a body holding a known secret and errors the request', async () => {
+    const project = makeProject([], [restRequest('us', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-us');
+    const context = contextFor(project, { containsKnownSecret: (value) => value.includes('text/plain') });
+    const [only] = (await runRequests(all(project), context, update(project))).requests;
+    expect(only?.outcome).toBe('errored');
+    expect(only?.baseline).toEqual({ status: 'refused', reason: 'secret' });
+    expect((await readGoldenFile(dir, project, 'rest-us')).status).toBe('none');
+  });
+
+  it('refuses a malformed golden and leaves it as it was', async () => {
+    const project = makeProject([], [restRequest('ub', 0, '/text-plain-json', OK_REST)]);
+    const file = saveGolden(project, 'rest-ub', 'savedAt: [\n');
+    const [only] = (await runRequests(all(project), contextFor(project), update(project))).requests;
+    expect(only?.outcome).toBe('errored');
+    expect(only?.baseline).toEqual({ status: 'refused', reason: 'malformed' });
+    expect(readFileSync(file, 'utf8')).toBe('savedAt: [\n');
+  });
+
+  it('errors the request when the sink throws', async () => {
+    const project = makeProject([], [restRequest('ue', 0, '/text-plain-json', OK_REST)]);
+    saveGolden(project, 'rest-ue');
+    const [only] = (
+      await runRequests(all(project), contextFor(project), {
+        updateBaseline: {
+          source: (item: SelectedRequest) => readGoldenFile(dir, project, item.request.id),
+          sink: () => Promise.reject(new Error('disk full')),
+        },
+      })
+    ).requests;
+    expect(only?.outcome).toBe('errored');
+    expect(only?.baseline).toEqual({ status: 'refused', reason: 'write-failed' });
+  });
+
+  it(
+    'writes nothing for a request whose post-response script errored, though it got a 200',
+    { timeout: 30_000 },
+    async () => {
+      const sandbox = createScriptSandbox();
+      const checker = createScriptChecker();
+      try {
+        const base = restRequest('ur', 0, '/text-plain-json', OK_REST);
+        const project = makeProject(
+          [],
+          [
+            {
+              ...base,
+              scripts: { api: 'wirebench', enabled: true, secrets: [], post: { text: "throw new Error('late');\n" } },
+            },
+          ],
+        );
+        const file = saveGolden(project, 'rest-ur');
+        const context = contextFor(project, { scripting: new RequestScripting({ sandbox, checker }) });
+        const [only] = (await runRequests(all(project), context, update(project))).requests;
+        expect(only?.outcome).toBe('errored');
+        expect(only?.error?.code).toBe('script-error');
+        expect(only?.baseline).toBeUndefined();
+        expect(existsSync(file)).toBe(false);
+      } finally {
+        await sandbox.dispose();
+        await checker.dispose();
+      }
+    },
+  );
+
+  it('adds nothing for a request that errored on send', async () => {
+    const project = makeProject([soapRequest('ux', 0, await deadUrl(), OK_SOAP)]);
+    const [only] = (await runRequests(all(project), contextFor(project), update(project))).requests;
+    expect(only?.outcome).toBe('errored');
+    expect(only?.baseline).toBeUndefined();
   });
 });

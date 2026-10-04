@@ -100,9 +100,20 @@ function renderBaseline(result: RequestResult): string {
   if (result.baseline?.status === 'unsupported') {
     return `<p>Baseline not compared (${escapeHtml(result.protocol)}).</p>`;
   }
-  const changes = result.baseline?.status === 'differs' ? (result.baseline.changes ?? []) : [];
+  if (result.baseline?.status === 'created') {
+    return `<p>Baseline created: ${escapeHtml(result.baseline.file ?? '')}</p>`;
+  }
+  if (result.baseline?.status === 'skipped') {
+    return `<p>Baseline not written (${escapeHtml(result.baseline.reason === 'not-text' ? 'not text' : 'failed')}).</p>`;
+  }
+  const written =
+    result.baseline?.status === 'updated' ? `<p>Baseline updated: ${escapeHtml(result.baseline.file ?? '')}</p>` : '';
+  const changes =
+    result.baseline?.status === 'differs' || result.baseline?.status === 'updated'
+      ? (result.baseline.changes ?? [])
+      : [];
   if (changes.length === 0) {
-    return '';
+    return written;
   }
   const rows = changes
     .map(
@@ -111,7 +122,7 @@ function renderBaseline(result: RequestResult): string {
     )
     .join('');
   const more = result.baseline?.truncated === true ? '<p>Only the first 100 differences are shown.</p>' : '';
-  return `<table><thead><tr><th>Change</th><th>Path</th><th>Expected</th><th>Actual</th></tr></thead><tbody>${rows}</tbody></table>${more}`;
+  return `${written}<table><thead><tr><th>Change</th><th>Path</th><th>Expected</th><th>Actual</th></tr></thead><tbody>${rows}</tbody></table>${more}`;
 }
 
 function renderRequest(result: RequestResult): string {

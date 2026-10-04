@@ -70,6 +70,19 @@ describe('ProjectTab', () => {
     cleanup();
   });
 
+  it('binds the Current column to the project scope', async () => {
+    const set = vi.fn().mockResolvedValue({ ok: true, value: { scopes: [] } });
+    installWirebenchApi({ currentValues: { set } });
+    useProjectStore.setState({ projects: { p1: project() } });
+    renderTab();
+    const cell = screen.getByLabelText<HTMLInputElement>('Current value of host');
+    fireEvent.change(cell, { target: { value: 'mine' } });
+    fireEvent.keyDown(cell, { key: 'Enter' });
+    await waitFor(() => {
+      expect(set).toHaveBeenCalledWith({ key: { scope: 'project', projectId: 'p1' }, name: 'host', value: 'mine' });
+    });
+  });
+
   it('says the project is no longer in the workspace when it is gone', () => {
     renderTab();
     expect(screen.getByText('This project is no longer in the workspace.')).toBeTruthy();

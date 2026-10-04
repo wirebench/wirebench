@@ -117,6 +117,46 @@ resolved for that send. Secrets come from `WIREBENCH_SECRET_<NAME>` variables in
 server was started in, and only the ones the saved request uses; no tool takes a secret as input.
 </Aside>
 
+## Check a response against its golden
+
+Pass `baseline: true` to `send` to compare the response with the golden response saved beside the
+request in the Snapshot tab. The comparison is by meaning and honours the golden's ignore rules, as
+`wirebench run --baseline` does in CI.
+
+The result gains a `baseline` field:
+
+| `status` | Meaning |
+| --- | --- |
+| `matched` | The response matches; `ignored` counts the differences the ignore rules hid. |
+| `differs` | `changes` lists each `kind` (`changed`, `added`, `removed`), `path`, `expected` and `actual`, the first 100; `truncated` says there were more. The send's `outcome` is `failed`. |
+| `missing` | No baseline saved for this request. The send is judged on its own assertions. |
+| `unreadable`, `too-large` | The golden could not be read, or a body is over 2 MB. The send errors (exit 3 from `wirebench send`). |
+| `unsupported` | A WebSocket request: there is no golden to compare. |
+
+A `body` override can be combined with it: the saved request's golden still applies, so you can
+change a request and check that the response did not change. Secret values the send resolved are
+masked across the whole result, `changes` included.
+
+An agent calls it like any tool:
+
+~~~json
+{ "item": "Pets/pets/List pets", "environment": "local", "baseline": true }
+~~~
+
+and, when the response has drifted, reads (each value is JSON-encoded, so a string keeps its quotes):
+
+~~~json
+{
+  "outcome": "failed",
+  "baseline": {
+    "status": "differs",
+    "format": "json",
+    "ignored": 0,
+    "changes": [{ "kind": "changed", "path": "/0/name", "expected": "\"Rex\"", "actual": "\"Fido\"" }]
+  }
+}
+~~~
+
 ## Contract operations as tools
 
 Besides the tools above, every imported operation is a tool of its own: each SOAP operation of an

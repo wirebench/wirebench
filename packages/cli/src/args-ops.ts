@@ -52,7 +52,7 @@ const USAGE: Readonly<Record<OpName, string>> = {
   import: 'wirebench import <source> [--name <name>]',
   operations: 'wirebench operations [<interface-or-api>]',
   generate: 'wirebench generate <operation> [--optional all|required]',
-  send: 'wirebench send <item> [-e <env>] [--body <text> | --body-file <file>]',
+  send: 'wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline]',
   validate: 'wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]',
   query: 'wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]',
   history_list: 'wirebench history list [--item <text>] [--limit <n>]',
@@ -125,7 +125,7 @@ const VERB_FLAGS: Readonly<Record<OpName, readonly string[]>> = {
   import: [...COMMON, 'name'],
   operations: COMMON,
   generate: [...COMMON, 'optional'],
-  send: [...COMMON, 'env', 'body', 'body-file', 'history-dir'],
+  send: [...COMMON, 'env', 'body', 'body-file', 'baseline', 'history-dir'],
   validate: [...COMMON, 'operation', 'direction', 'status', 'history-dir'],
   query: [...COMMON, 'namespace', 'direction', 'history-dir'],
   history_list: [...COMMON, 'item', 'limit', 'history-dir'],
@@ -139,7 +139,7 @@ wirebench operations [<interface-or-api>] [--project <dir>]
                        references generate and validate take and the saved requests send takes.
 wirebench generate <operation> [--optional all|required] [--project <dir>]
                        Prints a sample request: a SOAP envelope, or a REST method, path and JSON body.
-wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--project <dir>]
+wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline] [--project <dir>]
                        Sends a saved SOAP, REST or WebSocket request as run does, prints the response
                        (a WebSocket session's frames) and the assertion results, and records it in the
                        desktop's History.
@@ -183,7 +183,9 @@ Lists the project's SOAP operations (interface, binding, operation, SOAP action)
 <item>                 A saved request path as operations lists it, or its name when only one has it.
 -e, --env <name>       The environment; required when the project defines any.
 --body, --body-file    Send this envelope or body instead of the saved one. Nothing is saved.
-Secrets come from WIREBENCH_SECRET_<NAME> variables, as for run. Exit 1 when an assertion failed.`,
+--baseline             Also compare the response with the golden saved beside the request
+                       (<slug>.golden.yaml); a difference fails the send.
+Secrets come from WIREBENCH_SECRET_<NAME> variables, as for run. Exit 1 when an assertion or the baseline failed.`,
   validate: `${USAGE.validate} [--project <dir>] [--history-dir <dir>] [--json]
 
 <history-id|file>      A file when one exists at that path, else a History id.
@@ -371,7 +373,12 @@ export function parseOpVerb(word: string, rest: readonly string[], values: Optio
       }
       return {
         ...common,
-        input: { item: one(op, args), ...opt('environment', str(values, 'env')), ...opt('body', body) },
+        input: {
+          item: one(op, args),
+          ...opt('environment', str(values, 'env')),
+          ...opt('body', body),
+          ...(values['baseline'] === true ? { baseline: true } : {}),
+        },
         ...(bodyFile !== undefined ? { bodyFile } : {}),
       };
     }

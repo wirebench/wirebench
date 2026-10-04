@@ -26,6 +26,7 @@ edited and no route deletes one. The only way an event leaves is retention, belo
 | CI tokens    | A token created or revoked                                                                        |
 | License      | A license installed or removed                                                                    |
 | Exports      | Each export of the audit log itself                                                               |
+| Verification | Each run of `admin audit verify`, with its result (see _Tamper evidence_)                         |
 | Desktop      | Requests sent and test-suite runs in a workspace that records them, and a gap in that trail       |
 
 A push and a license change are recorded right after they complete. Everything else is recorded in the
@@ -155,6 +156,119 @@ be one `cron` line, which takes exactly the previous day, so two runs never over
 
 An export is itself recorded as `audit.exported`, once the whole export has been written. An export that
 the reader abandons halfway leaves no event.
+
+## Tamper evidence
+
+An audit log is only worth showing an auditor if edits to it show. Wirebench Server can link its events
+into a keyed hash chain, so that a changed, removed or reordered event is found by a command. It is on for
+every edition, needs no license, and is off until you set a key.
+
+**Turning it on.** Set `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` to a secret of at least 32 bytes (counted in
+UTF-8), kept outside the database, for example in the same secret store as the other server secrets. Keep
+it: rotation is not supported, a changed key is refused, and without the key old events can no longer be
+verified. Every server instance on one database must have the same key: an instance without it keeps the
+sealed events instead of retiring them (see _Retention with the chain_ below).
+
+**Sealing.** A background sealer links each committed event to the one before it, with an HMAC-SHA256 that
+uses the key, up to 500 events a pass, oldest first. After a pass that sealed a full 500 it passes again at
+once, so a backlog drains as fast as the database allows; after a smaller pass it waits 2 seconds, and 5
+seconds when there was nothing to seal. Events recorded before the key was set are sealed the same way on
+the first passes. An event is unprotected from the moment it commits until the pass that seals it:
+normally under 5 seconds. While a backlog lasts (the first passes over an existing table, or after the
+sealer could not run), new events wait behind it and stay unsealed longer. After each pass that sealed
+something the server logs the new head:
+
+```
+audit chain sealed to 18342:9f1c0b7e…
+```
+
+That line is the copy of the chain's end that does not live in the database. Keep the server's logs
+somewhere the database's admins cannot edit.
+
+**Verify.** On the machine that runs the server, with the key in the environment:
+
+```bash
+wirebench-server admin audit verify [--head <seq>:<hex>] [--json]
+```
+
+```
+checked 18342 sealed rows, seq 1 to 18342; 3 unsealed
+head 18342 matches
+intact
+```
+
+- `--head` takes a head copied from the log line, `18342:9f1c0b7e…`. The chain must hold that sequence
+  number with exactly that hash.
+- `--json` prints the summary as one JSON object: `checked`, `firstSeq`, `lastSeq`, `unsealed` and
+  `result` (`intact` or `broken`). When broken, it adds `brokenSeq` and a `broken` object: `seq`, `id` (the
+  event at fault, when there is one), `reason` and `message`, the line the plain output prints after
+  `broken:`. With `--head` on an intact chain, it adds a `head` object: `seq` and `olderThanKeptChain`, true
+  when retention has already moved past that head.
+- Exit codes: `0` intact, `1` broken, `2` no key set or the wrong one.
+
+Verify stops at the first broken link and says why:
+
+| Reason                         | Meaning                                                                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| `edited`                       | An event no longer matches its hash                                                      |
+| `missing`                      | A sequence number is skipped, or the chain ends below the highest one ever sealed        |
+| `out of order`                 | A sequence number repeats or goes backwards                                              |
+| `anchor edited`                | The chain's starting point fails its check                                               |
+| `head <seq> not found`         | `--head` names a sequence number the chain no longer has: newer events were removed      |
+| `head <seq> does not match`    | `--head` names a sequence number that has a different hash                               |
+
+Unsealed events are counted and never treated as broken. A run is recorded as `audit.verified`, with the
+counts and the result.
+
+The exit code `1` means a broken chain, but an unexpected error in the command can also end with `1`.
+A script should read `result` in the `--json` output and not rely on the exit code alone.
+
+**What it detects.** With the database but not the key, someone cannot get past verify by:
+
+- editing, deleting or reordering sealed events;
+- deleting the oldest events or moving the chain's starting point (the _anchor_): the anchor is keyed, so
+  a moved one fails its check;
+- deleting the anchor while events stay sealed: the sealer never starts a new chain over sealed events,
+  and verify reports the first one as `edited`;
+- backdating events so that retention deletes them: retention checks each event's link before deleting
+  it, so it stops at an edited event and the edit stays for verify to find;
+- deleting the newest events: the anchor remembers the highest sequence number ever sealed, and `--head`
+  checks a head taken from the log.
+
+**What it does not detect.**
+
+- Someone who has both the database and the key. They can rewrite the whole chain.
+- Events inserted or edited before they are sealed. The chain proves that nothing changed after sealing,
+  not who wrote an event: a row inserted straight into the table is sealed like any other.
+- Rolling the anchor and the events back to an earlier genuine state, when retention has not run since.
+  Only a `--head` taken from the log afterwards catches this. A sequence number that appears twice in the
+  head log lines is a sign of it.
+- Clearing the seals of every event, editing events and deleting the anchor. The sealer then starts a new
+  chain and seals every event afresh, so verify reports it intact. Only a `--head` taken from the log
+  catches it, and the head log then shows sequence numbers sealed twice.
+- Deleting every event and the anchor together. Verify then reports an empty chain; only a `--head` taken
+  from the log catches it.
+- An edited key id in the anchor. It looks exactly like a wrong key. If you are sure the key is right,
+  treat `wrong key` as tampering.
+
+**Retention with the chain.** Retention deletes only sealed events, oldest first, and moves the anchor
+to the last one it deleted, so the kept chain stays verifiable. It checks each event's link before
+deleting it and never trusts an event's time alone. At an edited event or a missing sequence number it
+stops: nothing from there on is deleted, and the server logs one error per sequence number:
+
+```
+audit chain retention stopped at seq 18342: run wirebench-server admin audit verify
+```
+
+Run verify when you see it. While the break is there, the events from that point on are kept past the
+age limit. An
+unsealed event past the age limit waits until it is sealed. A retention batch is skipped while a sealing
+pass runs, and tried again at the next sweep. It also stops just before an event the forwarder is sending
+at that moment, and takes the rest at the next sweep.
+
+With the key unset on a database that already holds a chain, retention deletes only unsealed events past
+the age limit and keeps every sealed one, so the chain never gets a gap. The table then grows until the key
+is set again. On a database that never had a chain, retention without the key deletes by age as before.
 
 ## Forwarding
 

@@ -51,8 +51,10 @@ For example, a login step with a transfer `token` from `$.access_token` lets the
 - Mark a transfer **Secret** when it is a credential. From the moment it is lifted it is masked in the
   HTTP Log, History and every report, and the run panel shows it only as `(secret)`. A value that
   contains a credential Wirebench already knows is treated as secret even when it is not marked.
-- Wirebench keeps no shared cookie jar, so a cookie from one step reaches the next only through a
-  **Cookie** transfer: `Cookie: sid=${#Sequence#sid}`.
+- REST steps share the run's cookie jar (the workspace's jar in the app), so a REST step with
+  **Send cookies** on sends what an earlier step's response set. A **Cookie** transfer
+  (`Cookie: sid=${#Sequence#sid}`) is for an explicit move, and is the way to carry a cookie into a
+  SOAP, gRPC or WebSocket step.
 - `${#Sequence#name}` must be written out in full. The short form `${name}` never reads a sequence
   value, so a response can never replace a property a request already uses.
 - Outside a run, a single send in the app reads the values its project's scripts kept this session

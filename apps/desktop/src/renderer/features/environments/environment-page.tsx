@@ -3,6 +3,8 @@ import { EndpointsTable } from './endpoints-table.js';
 import type { EnvironmentTarget } from './environment-actions.js';
 import { queueEnvironmentPatch } from './environment-queue.js';
 import { VariablesTable, type InheritedScope, type VariablesTableTarget } from './variables-table.js';
+import { currentColumn, useCurrentValues } from '../../state/current-values.js';
+import type { ScopeKeyWire } from '../../../shared/wire-types.js';
 import { useGlobalsStore } from '../../state/globals.js';
 import { selectEnvironment, useProjectStore } from '../../state/project.js';
 import { useWorkspaceStore } from '../../state/workspace.js';
@@ -152,12 +154,14 @@ function GlobalsPage() {
   const set = useGlobalsStore((state) => state.set);
   const remove = useGlobalsStore((state) => state.remove);
   const setEnabled = useGlobalsStore((state) => state.setEnabled);
+  const current = useCurrentValues({ scope: 'global' });
 
   const target: VariablesTableTarget = {
     label: 'Globals variables',
     scopeLabel: 'Globals',
     properties,
     disabled,
+    current: currentColumn({ scope: 'global' }, current),
     onSet: (name, value) => {
       void set(name, value);
     },
@@ -191,11 +195,16 @@ function WorkspacePage() {
   const setWorkspacePropertyEnabled = useWorkspaceStore((state) => state.setWorkspacePropertyEnabled);
   const globalsProperties = useGlobalsStore((state) => state.properties);
   const globalsDisabled = useGlobalsStore((state) => state.disabled);
+  const current = useCurrentValues({ scope: 'workspace' });
+  const globalsCurrent = useCurrentValues({ scope: 'global' });
 
   const target: VariablesTableTarget = {
     label: 'Workspace variables',
     scopeLabel: 'Workspace',
-    inherited: [{ label: 'Globals', properties: globalsProperties, disabled: globalsDisabled }],
+    inherited: [
+      { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled, current: globalsCurrent },
+    ],
+    current: currentColumn({ scope: 'workspace' }, current),
     properties,
     disabled,
     onSet: (name, value) => {
@@ -230,6 +239,16 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
   const workspaceEnvironment = workspace?.environments.find((candidate) => candidate.id === environmentId);
   const projectEnvironment = useProjectStore((state) => selectEnvironment(state, environmentId));
   const projectId = useProjectStore((state) => state.projectOf[environmentId]);
+  const environmentKey: ScopeKeyWire | undefined =
+    workspaceEnvironment !== undefined
+      ? { scope: 'workspaceEnvironment', environmentId }
+      : projectId !== undefined
+        ? { scope: 'projectEnvironment', projectId, environmentId }
+        : undefined;
+  const environmentCurrent = useCurrentValues(environmentKey);
+  const projectCurrent = useCurrentValues(projectId === undefined ? undefined : { scope: 'project', projectId });
+  const workspaceCurrent = useCurrentValues({ scope: 'workspace' });
+  const globalsCurrent = useCurrentValues({ scope: 'global' });
   const projectActiveId = useProjectStore((state) =>
     projectId === undefined ? undefined : state.projects[projectId]?.activeEnvironmentId,
   );
@@ -270,10 +289,16 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
             label: owningProjectName ?? 'This project',
             properties: projectProperties ?? {},
             disabled: projectDisabled ?? [],
+            current: projectCurrent,
           },
         ]),
-    { label: 'Workspace', properties: workspace?.properties ?? {}, disabled: workspace?.disabled ?? [] },
-    { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled },
+    {
+      label: 'Workspace',
+      properties: workspace?.properties ?? {},
+      disabled: workspace?.disabled ?? [],
+      current: workspaceCurrent,
+    },
+    { label: 'Globals', properties: globalsProperties, disabled: globalsDisabled, current: globalsCurrent },
   ];
 
   const target: VariablesTableTarget = isWorkspaceScoped
@@ -283,6 +308,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         inherited,
         properties: environment.properties,
         disabled: environment.disabled,
+        ...(environmentKey !== undefined ? { current: currentColumn(environmentKey, environmentCurrent) } : {}),
         onSet: (name, value) => {
           void queueEnvironmentPatch(environmentId, (current) => ({
             properties: { ...current.properties, [name]: value },
@@ -342,6 +368,7 @@ function EnvironmentScopePage({ environmentId }: { readonly environmentId: strin
         // can write `disabled` at all) — so the table refuses renaming a disabled variable rather
         // than silently re-enabling it.
         renameDisabledUnsupported: true,
+        ...(environmentKey !== undefined ? { current: currentColumn(environmentKey, environmentCurrent) } : {}),
         onSet: (name, value) => {
           if (projectId === undefined) {
             return;

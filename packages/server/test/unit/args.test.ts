@@ -85,4 +85,31 @@ describe('admin commands (§3.7)', () => {
     expect(() => parseServerArgs(['admin', 'audit', 'export', '--from', 'yesterday'])).toThrow(/ISO 8601/);
     expect(() => parseServerArgs(['admin', 'license', 'show', '--from', 'x'])).toThrow(/--from/);
   });
+
+  it('parses admin audit verify with --head and --json, and names the flag on a bad head', () => {
+    const hex = 'ab'.repeat(32);
+    expect(parseServerArgs(['admin', 'audit', 'verify'])).toEqual({ command: 'admin-audit-verify', json: false });
+    expect(parseServerArgs(['admin', 'audit', 'verify', '--json', '--head', `42:${hex.toUpperCase()}`])).toEqual({
+      command: 'admin-audit-verify',
+      head: { seq: 42n, hash: hex },
+      json: true,
+    });
+    for (const bad of [
+      '42',
+      `0:${hex}`,
+      `-1:${hex}`,
+      `42:${hex.slice(2)}`,
+      `42:${'zz'.repeat(32)}`,
+      `9223372036854775808:${hex}`,
+    ]) {
+      expect(() => parseServerArgs(['admin', 'audit', 'verify', `--head=${bad}`])).toThrow(
+        /--head must be <seq>:<hex>/,
+      );
+    }
+    expect(() => parseServerArgs(['admin', 'audit', 'export', '--json'])).toThrow(
+      /--json applies to admin audit verify only/,
+    );
+    expect(() => parseServerArgs(['admin', 'audit', 'verify', '--from', '2026-10-01T00:00:00Z'])).toThrow(/--from/);
+    expect(() => parseServerArgs(['admin', 'audit', 'frobnicate'])).toThrow(/\| verify \[--head <seq>:<hex>\]/);
+  });
 });

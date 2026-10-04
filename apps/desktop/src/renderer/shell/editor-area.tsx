@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CookieManager } from '../features/cookies/cookie-manager.js';
 import { EnvironmentPage } from '../features/environments/environment-page.js';
 import { targetFromId } from '../features/environments/environment-actions.js';
 import { ChangedOnDiskBanner } from '../features/project/changed-on-disk-banner.js';
@@ -573,6 +574,8 @@ export function EditorArea() {
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading…</p>}>
             <CatchUrlTab key={activeTab.hookId} hookId={activeTab.hookId} />
           </Suspense>
+        ) : activeTab.kind === 'cookies' ? (
+          <CookieManager />
         ) : activeTab.requestId !== undefined ? (
           <Suspense fallback={<p className="p-4 text-sm text-fg-subtle">Loading editor…</p>}>
             <RequestEditor requestId={activeTab.requestId} />

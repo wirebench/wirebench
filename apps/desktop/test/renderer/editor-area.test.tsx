@@ -155,3 +155,18 @@ describe('EditorArea — a WebSocket request tab', () => {
     expect(screen.getByRole('region', { name: 'Request Lobby' })).toBeTruthy();
   });
 });
+
+describe('EditorArea — the Cookies tab', () => {
+  afterEach(() => {
+    cleanup();
+    useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
+  });
+
+  it('shows the cookie manager', async () => {
+    installWirebenchApi();
+    useEditorsStore.setState({ tabs: [], activeId: undefined, formViewTypes: {} });
+    useEditorsStore.getState().open({ id: 'cookies', kind: 'cookies', title: 'Cookies' });
+    render(<EditorArea />);
+    expect(await screen.findByTestId('cookie-manager')).toBeTruthy();
+  });
+});

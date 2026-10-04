@@ -51,6 +51,8 @@ wirebench run <path> [selector…] [options]
     --require-assertions  A request without assertions is an error.
     --baseline         Compare each response with its committed golden (<slug>.golden.yaml).
     --require-baseline With --baseline: a request without a golden is an error.
+    --update-baseline  Save each changed response as its golden, keeping its ignore rules.
+                       The only flag that writes to the project.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
     --no-color
 -q, --quiet | -v, --verbose
@@ -63,7 +65,7 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
 wirebench import <source> [--name <name>]
 wirebench operations [<interface-or-api>]
 wirebench generate <operation> [--optional all|required]
-wirebench send <item> [-e <env>] [--body <text> | --body-file <file>]
+wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline]
 wirebench call <operation> [--args <json|@file>] [-e <env>] [--schema]
 wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]
 wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]
@@ -229,8 +231,10 @@ wirebench run ./shop -e staging --sequence checkout --reporter junit=reports/che
   (`sequence-origin-from-response`) or put a line break into a header or URL (`sequence-value-invalid`).
 - A transfer marked `secret: true`, or one whose value contains a secret the run already resolved, is masked in
   every report from the moment it is lifted, and no report carries its value at all.
-- There is no cookie jar: a login's cookie reaches a later step only through a `cookie` transfer, sent as
-  `Cookie: sid=${#Sequence#sid}`.
+- Each `wirebench run` keeps one cookie jar in memory, shared by every request, sequence step and iteration of
+  the run; `wirebench call` keeps one per call, and `wirebench mcp` one for the server's lifetime. A REST request
+  with `sendCookies: true` sends the cookies earlier responses in that run set. Nothing is written to disk. A
+  `cookie` transfer (`Cookie: sid=${#Sequence#sid}`) still works, and is how a cookie reaches a non-REST step.
 
 Each step is reported as a request of the run: grouped by its sequence (one JUnit test suite per sequence),
 named `<sequence>/<n>. <step>`.
@@ -367,10 +371,34 @@ server:
 ignore rules. A difference fails the request (exit 1). A golden that cannot be read, or is too large
 (over 2 MiB) to compare, is an error (exit 3). A request without a golden is noted and judged on its
 other assertions; `--require-baseline` makes that an error too (exit 3). Other protocols are not
-compared, sequences are not compared, and the runner never writes a golden.
+compared, and sequences are not compared.
 
 `--require-baseline` without `--baseline`, and `--baseline` with `--sequence`, are usage errors
 (exit 2).
+
+### Updating goldens
+
+`--update-baseline` saves each SOAP and REST response as its request's golden instead of comparing
+it: a golden that differs is replaced, keeping its ignore rules; a missing one is created; one that
+still matches is left as it is. It is the only flag that writes to the project, and it writes
+nothing but `<slug>.golden.yaml` files. Review the result with `git diff -- '*.golden.yaml'` before
+committing.
+
+A request whose own assertions fail is not written, and fails the run (exit 1). A body with no text
+form (binary) is not written either; the request's outcome is unchanged. A refusal errors the
+request (exit 3) and leaves the file alone: a response that holds a secret value, a golden that is
+malformed, a golden path that is not a regular file, a request file that is not on disk, or a write
+that fails. `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence` is a usage
+error (exit 2).
+
+The summary ends with the counts and the files it wrote:
+
+```
+baseline: 1 updated, 1 created, 3 matched, 0 not written, 0 refused
+written:
+  requests/get-order.golden.yaml
+  requests/create-order.golden.yaml
+```
 
 ## Reports
 
@@ -479,8 +507,8 @@ A report's directory is created if missing; a report that cannot be written is e
 | --- | --- |
 | 0 | Every selected request passed. |
 | 1 | At least one assertion failed, or a response differs from its baseline; nothing errored. |
-| 2 | Usage or load problem: bad flag, path is no project, unknown environment or selector, invalid `assertions:`, project format too new, report not writable. Nothing was sent. |
-| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. With `--baseline`, a golden that cannot be read or is too large (over 2 MiB) to compare; under `--require-baseline`, also a request with no golden. Takes precedence over 1. |
+| 2 | Usage or load problem: bad flag, path is no project, unknown environment or selector, `--update-baseline` with `--baseline`, `--require-baseline` or `--sequence`, invalid `assertions:`, project format too new, report not writable. Nothing was sent. |
+| 3 | At least one request errored: unresolved `${…}`, missing secret, network or TLS failure, unsupported auth grant, expression that does not compile. With `--baseline`, a golden that cannot be read or is too large (over 2 MiB) to compare; under `--require-baseline`, also a request with no golden. With `--update-baseline`, a golden that was refused (a secret in the response, a malformed golden, a golden path that is not a file, a request file not saved on disk) or could not be written. Takes precedence over 1. |
 | 130 | Interrupted (`SIGINT`); reports are flushed with what ran. |
 
 An errored request outranks a failed assertion (exit 3 over 1): a pipeline that could not reach the
@@ -528,7 +556,7 @@ to [`wirebench mcp`](#wirebench-mcp).
 | `wirebench import <source> [--name <name>]` | Adds a WSDL or an OpenAPI document to the project, as the desktop's import does: the definition is cached when the project's settings cache definitions, and each operation gets a `Request 1`. |
 | `wirebench operations [<interface-or-api>]` | Lists SOAP operations (interface, binding, operation, SOAP action), REST endpoints (API, method, path, operationId) and saved WebSocket requests (API, URL), with the reference `generate` and `validate` take and the saved requests `send` takes. gRPC items are in the project but not listed. Each SOAP and REST row also carries `tool`, the name of the operation's tool (see [Contract operations as tools](#contract-operations-as-tools)), when its definition is readable. |
 | `wirebench generate <operation> [--optional all\|required]` | Prints a sample request: a SOAP envelope built from the XSD, or a REST method, path, headers and JSON body. Nothing is saved. |
-| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
+| `wirebench send <item> [-e <env>] [--body <text> \| --body-file <file>] [--baseline]` | Sends one saved SOAP, REST or WebSocket request as `run` sends it (environment, `WIREBENCH_SECRET_*` secrets, scripts, assertions, callback captures), prints the redacted response and the assertion results, and records the send in History, tagged `cli`. |
 | `wirebench call <operation> [--args <json\|@file>] [-e <env>] [--schema]` | Calls one operation of an imported contract with JSON arguments, as its MCP tool does: builds the request a new request of the operation would be, sends it under the interface's or API's endpoint, auth and `WIREBENCH_SECRET_*` secrets, records it in History tagged `cli`, and prints the response (`--json`: the result as JSON, the same object the tool returns). `<operation>` is the `operations` reference or the tool name. `--args` takes JSON or `@<file>`; `--schema` prints the arguments' JSON Schema and sends nothing. A response is exit 0, a SOAP fault or a 4xx/5xx included. |
 | `wirebench validate <history-id\|file> [--operation <ref>] [--direction request\|response] [--status <n>]` | Validates a SOAP message against the WSDL's XSD and SOAP rules (line and column), or a REST response body against its OpenAPI response schema (JSON path and keyword). |
 | `wirebench query <expression> <history-id\|file> [--namespace <prefix>=<uri>]… [--direction request\|response]` | XPath 3.1 on XML (the document's own prefixes are known), JSONPath on JSON; one result per line. |
@@ -543,6 +571,11 @@ Details that are easy to get wrong:
   machine's network reaches, through `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`. The desktop limits an
   import to project roots and files the user picked; this does not. A WSDL import takes
   `cacheDefinitions` from the project's own settings, not from the desktop's preferences.
+- **`send --baseline`.** The response body is compared with the golden saved beside the request
+  (`<slug>.golden.yaml`), honouring its ignore rules. A difference is a failed `baseline` assertion
+  (exit 1). No golden prints `baseline: no baseline saved` and does not fail. An unreadable or
+  oversize (over 2 MB) golden is an error (exit 3). A WebSocket request is not compared. It combines
+  with `--body` / `--body-file`, and the saved request's golden still applies.
 - **`send`.** `--body` (or `--body-file`) replaces the saved SOAP envelope, or the saved raw or JSON
   body of a REST request, for this send only; nothing is saved. It is sent as written, so a `${…}`
   placeholder in it is refused with `invalid-input`. The saved request's own body still expands

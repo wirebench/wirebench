@@ -46,6 +46,18 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Added
 
+- **`send` baseline check.** `send` (the MCP tool, and `wirebench send --baseline`) compares the
+  response with the request's golden and returns the differences (#218).
+- **`wirebench run --update-baseline`** saves each changed response as its request's golden, keeping
+  its ignore rules, and lists the files it wrote (#217).
+- **Cookie jar.** Cookies responses set go into a jar per workspace, kept across restarts (encrypted
+  with the system keychain) except session cookies. A REST request with *Send cookies* on sends the
+  matching ones, per redirect hop. **View → Show Cookies** opens a manager to view, add, edit and
+  delete them, and the response's Cookies tab says what was stored or ignored. `wirebench run`
+  keeps a jar for the run (#44).
+- **Current values.** Every variables table has a **Current** column: a session-only value that
+  replaces the committed one for sends and previews. The store is memory only; a request that is
+  sent records what it sent, as for a committed value, so keep credentials in `${secret:…}` (#44).
 - **HTML preview.** The Preview tab renders an HTML response or webhook capture as a static page in a
   sandboxed frame: no scripts, forms, navigation or network (#48).
 - **`wirebench run --baseline`** compares each response with its committed golden and fails on a
@@ -148,7 +160,11 @@ before and after for the two changes that need more than a rename. The package's
   that support it.
   Enterprise servers can also forward every audit event to one collector, as RFC 5424 syslog over TCP or
   TLS or as JSON batches over HTTPS (`WIREBENCH_SERVER_AUDIT_FORWARD_URL`, with an optional token and CA
-  bundle), at least once (for syslog, a batch counts as delivered once it is in the OS socket buffer). See
+  bundle), at least once (for syslog, a batch counts as delivered once it is in the OS socket buffer).
+  Setting `WIREBENCH_SERVER_AUDIT_CHAIN_KEY` makes the log tamper-evident: events are sealed into a keyed
+  hash chain a few seconds after they are recorded, and `wirebench-server admin audit verify` finds
+  edited, deleted or reordered events, and the removal of the newest ones with a head from the server log.
+  See
   [Audit log](https://wirebench.github.io/wirebench/docs/guides/server-audit-log/).
 
 - **Sequences.** A sequence sends saved SOAP, REST, gRPC and WebSocket requests one after another (a
@@ -295,6 +311,9 @@ before and after for the two changes that need more than a rename. The package's
 
 ### Changed
 
+- **Requests share the workspace cookie jar.** The per-request cookie memory is gone: every REST
+  request now reads from and stores into the workspace jar. The *Send cookies* inherited default now
+  shows off, matching what is sent (#44).
 - **A WebSocket assertion reads a received message that is JSON as its value, not its text.** (#192)
 
   ```text

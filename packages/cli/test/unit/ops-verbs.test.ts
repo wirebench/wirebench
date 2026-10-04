@@ -12,12 +12,14 @@ import {
   CALCULATOR_WSDL,
   emptyProject,
   removeTempDirs,
+  restItem,
   restProject,
   SOAP_ITEM,
   soapProject,
   startServer,
   tempDir,
   updateProject,
+  writeGolden,
 } from './ops/helpers.js';
 import type { TestServer } from './ops/helpers.js';
 
@@ -139,6 +141,61 @@ describe('the op verbs', () => {
     expect(unmatched.stdout).toMatch(/^invalid {2}Pets\//);
   });
 
+  it('compares with the golden on --baseline: exit 0 matched or missing, 1 differs, 3 unreadable', async () => {
+    const fixture = await restProject();
+    let body = '{"ok": true}';
+    server = await startServer(() => ({ headers: { 'Content-Type': 'application/json' }, body }));
+    await addEnvironment(fixture.dir, 'local', { Pets: server.url });
+    const item = await restItem(fixture.dir, 'GET', '/pets');
+    const where = ['--project', fixture.dir, '--history-dir', fixture.historyDir];
+
+    const missing = await cli(['send', item, '-e', 'local', '--baseline', ...where]);
+    expect(missing.code).toBe(ExitCode.Ok);
+    expect(missing.stdout).toContain('  baseline: no baseline saved\n');
+
+    const file = await writeGolden(fixture.dir, item, { body: '{"ok": true}' });
+    const matched = await cli(['send', item, '-e', 'local', '--baseline', ...where]);
+    expect(matched.code).toBe(ExitCode.Ok);
+    expect(matched.stdout).toContain('ok   matches the baseline');
+
+    body = '{"ok": false}';
+    const differs = await cli(['send', item, '-e', 'local', '--baseline', ...where]);
+    expect(differs.code).toBe(ExitCode.AssertionFailed);
+    expect(differs.stdout).toContain('  FAIL 1 difference from the baseline\n    changed /ok: true → false\n');
+
+    const json = await cli(['send', item, '-e', 'local', '--baseline', '--json', ...where]);
+    expect(JSON.parse(json.stdout)).toMatchObject({ outcome: 'failed', baseline: { status: 'differs' } });
+
+    const overridden = await cli(['send', item, '-e', 'local', '--baseline', '--body', '{}', ...where]);
+    expect(overridden.code).toBe(ExitCode.AssertionFailed);
+
+    await writeFile(file, 'body: [unclosed');
+    const unreadable = await cli(['send', item, '-e', 'local', '--baseline', ...where]);
+    expect(unreadable.code).toBe(ExitCode.RunError);
+    expect(unreadable.stdout).toContain('malformed');
+  });
+
+  it('prints a WebSocket send as not compared', () => {
+    const text = formatHuman('send', {
+      item: 'Chat/Echo',
+      kind: 'websocket',
+      outcome: 'passed',
+      unasserted: true,
+      method: 'GET',
+      url: 'ws://localhost/echo',
+      status: 101,
+      statusText: 'Switching Protocols',
+      durationMs: 3,
+      headers: {},
+      body: '[]',
+      bodyTruncated: false,
+      frames: [],
+      assertions: [],
+      baseline: { status: 'unsupported' },
+    });
+    expect(text).toContain('  baseline: not compared (websocket)\n');
+  });
+
   it('exits 2 with the code on stderr for a refused call, and prints verb help', async () => {
     const fixture = await soapProject();
     const missing = await cli(['send', 'Nope', '--project', fixture.dir, '--history-dir', fixture.historyDir]);
@@ -148,6 +205,7 @@ describe('the op verbs', () => {
     const help = await cli(['send', '--help']);
     expect(help.code).toBe(ExitCode.Ok);
     expect(help.stdout).toContain('wirebench send <item>');
+    expect(help.stdout).toContain('--baseline');
     expect((await cli(['--help'])).stdout).toContain('wirebench history list');
   });
 });
