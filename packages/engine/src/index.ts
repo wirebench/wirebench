@@ -739,6 +739,8 @@ export {
   parsePostmanCollectionText,
   translatePostmanVariables,
 } from './rest/postman/index.js';
+// Import helpers shared by every importer.
+export { rewriteMustache } from './import/index.js';
 export type {
   ImportPostmanOptions,
   MapPostmanOptions,

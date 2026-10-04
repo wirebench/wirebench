@@ -6,6 +6,7 @@
  */
 
 import { PostmanError } from '../../errors.js';
+import { rewriteMustache } from '../../import/templates.js';
 import type {
   PostmanAuth,
   PostmanAuthAttribute,
@@ -57,17 +58,12 @@ function tv(ctx: ParseContext, text: string): string {
 /**
  * Translates Postman's `{{var}}` variable interpolation to Wirebench's `${var}` format.
  *
- * A literal `${` already in the text is escaped to `$${` first so it stays literal. Names of
- * dynamic variables (`{{$guid}}`) are added to `dynamic` when given; they are translated anyway.
+ * A literal `${` already in the text is escaped to `$${` first so it stays literal. Dynamic
+ * variables (`{{$guid}}`) have no equivalent: they are kept as written and their names are added to
+ * `dynamic` when given.
  */
 export function translatePostmanVariables(text: string, dynamic?: Set<string>): string {
-  return text
-    .replace(/\$\{/g, () => '$${')
-    .replace(/\{\{\s*([^{}]*?)\s*\}\}/g, (match, name: string) => {
-      if (name.length === 0) return match;
-      if (name.startsWith('$')) dynamic?.add(name);
-      return `\${${name}}`;
-    });
+  return rewriteMustache(text, dynamic);
 }
 
 /** Normalizes Postman's `:param` path segment syntax to Wirebench's `{param}` format. */
@@ -160,7 +156,7 @@ export function parsePostmanCollection(root: unknown): PostmanCollection {
   }
   if (ctx.dynamic.size > 0) {
     warnings.push(
-      `Dynamic variables are not generated and must be defined as properties: ${[...ctx.dynamic].sort().join(', ')}`,
+      `Dynamic variables are kept as written and not expanded: ${[...ctx.dynamic].sort().join(', ')}`,
     );
   }
 

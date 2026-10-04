@@ -23,6 +23,7 @@ const ADDED = [
   'takenContainerSlugs',
   'unsupportedOf',
   'grpcStatusNames',
+  'rewriteMustache',
 ] as const;
 
 /** 2.x name, 3.0 name. */
