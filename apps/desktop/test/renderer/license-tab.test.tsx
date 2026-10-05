@@ -53,6 +53,7 @@ describe('LicenseTab (licensing spec §3.8)', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     render(<LicenseTab url={URL_} />);
     expect((await screen.findByTestId('license-server-id')).textContent).toBe(SERVER);
+    expect(document.querySelector('dl dt')?.textContent).toBe('Server id');
     fireEvent.click(screen.getByTestId('license-copy-server-id'));
     expect(writeText).toHaveBeenCalledWith(SERVER);
   });

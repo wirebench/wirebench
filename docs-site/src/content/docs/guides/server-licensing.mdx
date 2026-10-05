@@ -92,13 +92,13 @@ The tab's status reads *No license installed*, *Active*, *Expired, in its grace 
 The license is signed. The server checks the signature against a public key built into the server, so
 the check works offline. The server never contacts anyone about its license and sends no usage report.
 
-A license may carry a `serverId`. If it does and it differs from this server's id, the license is not
+A license may carry a `serverId`; in the license payload the field is `serverId`, a lowercase UUID. If it does and it differs from this server's id, the license is not
 valid, with the reason `wrong-server`. The message names both ids: *This license was issued for server
-&lt;license id&gt;. This server is &lt;server id&gt;. Ask for a license issued for this server.* Install refuses
+&lt;the id in the license&gt;. This server is &lt;server id&gt;. Ask for a license issued for this server.* Install refuses
 such a file, so it never replaces a working license. A license without a `serverId` works on any server,
 so every license issued before this field existed stays valid.
 
-A bound license needs Wirebench Server 3.2 or later. An older server does not know the field and
+A bound license needs Wirebench 3.2 or later. An older server does not know the field and
 reports the license as malformed.
 
 The id lives in the database, so a copy of the database carries it. A staging server built from a copy

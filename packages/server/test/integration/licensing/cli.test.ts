@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { runAdmin } from '../../../src/identity/cli.js';
 import * as identityRepo from '../../../src/identity/repo.js';
 import { newId } from '../../../src/identity/tokens.js';
+import { MISSING_SERVER_ID } from '../../../src/licensing/repo.js';
 import { main } from '../../../src/main.js';
 import { describeDb, testDatabase } from '../../helpers/database.js';
 import { mkTempDir, removeTempDir } from '../../helpers/git.js';
@@ -130,5 +131,20 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     expect(
       await runAdmin({ command: 'admin-invite', email: 'sixth@example.com', serverAdmin: false }, io().io, options),
     ).toBe(0);
+  });
+
+  it('a missing server_identity row is one stderr line, not a stack trace', async () => {
+    await db.query('delete from server_identity');
+    const out = io();
+    const code = await runAdmin({ command: 'admin-license-show' }, out.io, options);
+    expect(code).not.toBe(0);
+    expect(out.stderr()).toBe(`${MISSING_SERVER_ID}\n`);
+    expect(out.stderr()).not.toContain('    at ');
+  });
+
+  it('audit export still runs with the server_identity row deleted', async () => {
+    await db.query('delete from server_identity');
+    const exported = io();
+    expect(await runAdmin({ command: 'admin-audit-export' }, exported.io, options)).toBe(0);
   });
 });
