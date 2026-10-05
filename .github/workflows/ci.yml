@@ -38,6 +38,9 @@ jobs:
       # and the test suites (`pnpm check:tests`). Line endings, the one thing Prettier could
       # catch per OS, are pinned by `.gitattributes`.
       - run: ${{ matrix.os == 'ubuntu-latest' && 'pnpm check' || 'pnpm check:tests' }}
+        # Type-aware ESLint over the whole tree has outgrown Node's default heap (about 4 GB).
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
 
   # The jobs below do not wait for `check`: each fails on its own, and serialising them behind
   # the slowest check runner only stretched the wall-clock — a red `check` never made a green
