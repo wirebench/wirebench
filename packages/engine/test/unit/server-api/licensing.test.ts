@@ -18,6 +18,28 @@ const PAYLOAD = {
   expiresAt: '2027-09-01T00:00:00Z',
 };
 
+const SERVER = '0b6f3c2e-5d1a-4c7e-9f3b-2a8d4e6c1f90';
+
+describe('the server binding (license-binding spec §3.2)', () => {
+  it('accepts a lowercase serverId and its absence', () => {
+    expect(licensePayloadSchema.safeParse({ ...PAYLOAD, serverId: SERVER }).success).toBe(true);
+    expect(licensePayloadSchema.safeParse(PAYLOAD).success).toBe(true);
+  });
+  it.each(['not-a-uuid', SERVER.toUpperCase(), ''])('rejects serverId %j', (serverId) => {
+    expect(licensePayloadSchema.safeParse({ ...PAYLOAD, serverId }).success).toBe(false);
+  });
+  it('carries serverId on the state', () => {
+    const state = {
+      edition: 'community',
+      status: 'none',
+      seats: { used: 0, limit: 5 },
+      features: [],
+      serverId: SERVER,
+    };
+    expect(licenseStateSchema.parse(state)).toEqual(state);
+  });
+});
+
 describe('licensing wire shapes (licensing spec §3.1, §3.3)', () => {
   it('fixes the product terms', () => {
     expect(COMMUNITY_SEATS).toBe(5);
@@ -35,7 +57,7 @@ describe('licensing wire shapes (licensing spec §3.1, §3.3)', () => {
   });
 
   it.each([
-    ['an unknown key', { ...PAYLOAD, serverId: 'x' }],
+    ['an unknown key', { ...PAYLOAD, bogus: 'x' }],
     ['community as an edition', { ...PAYLOAD, edition: 'community' }],
     ['zero seats', { ...PAYLOAD, seats: 0 }],
     ['fractional seats', { ...PAYLOAD, seats: 1.5 }],

@@ -52,6 +52,7 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
       status: 'none',
       seats: { used: 2, limit: 5 },
       features: [],
+      serverId: expect.any(String) as string,
     });
     expect((await call<{ edition: string }>(h, undefined, 'GET', '/meta')).body.edition).toBe('community');
   });

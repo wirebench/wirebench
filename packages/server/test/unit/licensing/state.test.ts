@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { grantedFeatures, licenseState } from '../../../src/licensing/state.js';
 import { license, PAYLOAD, testKeys } from '../../helpers/licensing.js';
 
+const SERVER = '0b6f3c2e-5d1a-4c7e-9f3b-2a8d4e6c1f90';
 const keys = testKeys();
 const other = testKeys();
 const at = (iso: string) => new Date(iso);
 const state = (stored: string | undefined, now: string, used = 3) =>
-  licenseState(stored, [keys.publicKey], at(now), used);
+  licenseState(stored, [keys.publicKey], at(now), used, SERVER);
 
 describe('licenseState (licensing spec §3.3)', () => {
   it('is Community with 5 seats and status none when nothing is stored', () => {
@@ -15,13 +16,25 @@ describe('licenseState (licensing spec §3.3)', () => {
       status: 'none',
       seats: { used: 3, limit: 5 },
       features: [],
+      serverId: SERVER,
     });
   });
 
   it('is Community and invalid, with the reason, when the stored text fails verification', () => {
-    const s = licenseState(license(other), [keys.publicKey], at('2026-09-24T12:00:00Z'), 3);
+    const s = licenseState(license(other), [keys.publicKey], at('2026-09-24T12:00:00Z'), 3, SERVER);
     expect(s).toMatchObject({ edition: 'community', status: 'invalid', reason: 'bad-signature', seats: { limit: 5 } });
     expect(s.message).toBeTypeOf('string');
+    expect(s.serverId).toBe(SERVER);
+  });
+
+  it('is invalid with wrong-server when the license names another server', () => {
+    const bound = license(keys, { serverId: '11111111-2222-4333-8444-555555555555' });
+    expect(state(bound, '2026-09-24T12:00:00Z')).toMatchObject({
+      edition: 'community',
+      status: 'invalid',
+      reason: 'wrong-server',
+      serverId: SERVER,
+    });
   });
 
   it('is the license edition and seats while active', () => {
@@ -35,6 +48,7 @@ describe('licenseState (licensing spec §3.3)', () => {
       issuedAt: PAYLOAD.issuedAt,
       expiresAt: PAYLOAD.expiresAt,
       graceUntil: '2027-10-01T00:00:00.000Z',
+      serverId: SERVER,
     });
   });
 
@@ -56,6 +70,7 @@ describe('licenseState (licensing spec §3.3)', () => {
       licenseId: PAYLOAD.id,
       expiresAt: PAYLOAD.expiresAt,
       features: [],
+      serverId: SERVER,
     });
   });
 

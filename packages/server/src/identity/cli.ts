@@ -33,6 +33,7 @@ export async function runAdmin(
   let env: InvitationEnv;
   let db: ReturnType<typeof createDatabase>;
   let publicKeys: readonly KeyObject[];
+  let serverId: string;
   try {
     const config = loadConfig(io.env, packageVersion());
     delete process.env.WIREBENCH_SERVER_DATABASE_URL;
@@ -42,12 +43,13 @@ export async function runAdmin(
     const hooks = serverHooks();
     // Events the CLI records are queued like the server's, for the running server to forward.
     hooks.audit.push(auditHook(now, { forward: Boolean(config.auditForwardUrl) }));
+    serverId = ''; // Task 2 reads the minted id
     env = {
       ctx: {
         db,
         config,
         hooks,
-        license: createLicenseService({ db, publicKeys, now }),
+        license: createLicenseService({ db, publicKeys, now, serverId }),
       },
       settings: identitySettings(config),
       now,
@@ -111,7 +113,7 @@ export async function runAdmin(
       case 'admin-license-remove':
         return await runLicenseCommand(
           command,
-          { db, publicKeys, now: env.now, license: env.ctx.license, hooks: env.ctx.hooks },
+          { db, publicKeys, now: env.now, serverId, license: env.ctx.license, hooks: env.ctx.hooks },
           io,
         );
       case 'admin-audit-export':

@@ -30,12 +30,14 @@ export function licensingModule(options: LicensingOptions = {}): ServerModule {
     migrationsDir: LICENSING_MIGRATIONS_DIR,
     // eslint-disable-next-line @typescript-eslint/require-await -- ServerModule.register is async
     async register(app: FastifyInstance, ctx: ServerContext): Promise<void> {
-      const service = createLicenseService({ db: ctx.db, publicKeys, now });
+      const serverId = ''; // Task 2 reads the minted id
+      const service = createLicenseService({ db: ctx.db, publicKeys, now, serverId });
       ctx.license = service;
       licenseRoutes({
         db: ctx.db,
         publicKeys,
         now,
+        serverId,
         service,
         hooks: ctx.hooks,
         limiter: new RateLimiter({ capacity: 10, refillPerMs: 10 / 60_000, now: () => now().getTime() }),
