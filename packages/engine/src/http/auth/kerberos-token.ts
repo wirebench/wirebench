@@ -99,13 +99,21 @@ function waitAborted(spn: string): HttpError {
 
 /**
  * Runs one native call within `wait`. A call that loses to the timer or the signal is abandoned: its
- * late result is dropped, and it counts against the cap until it settles.
+ * late result is dropped, and it counts against the cap until it settles. `capped` is false for
+ * `verify`: it runs after the request was answered, so refusing it would tell the user to retry a
+ * request the server already ran.
  */
-function bounded<T>(provider: KerberosProvider, spn: string, call: () => Promise<T>, wait: KerberosWait): Promise<T> {
+function bounded<T>(
+  provider: KerberosProvider,
+  spn: string,
+  call: () => Promise<T>,
+  wait: KerberosWait,
+  capped = true,
+): Promise<T> {
   if (wait.signal?.aborted === true) return Promise.reject(waitAborted(spn));
   if (wait.timeoutMs !== undefined && wait.timeoutMs <= 0) return Promise.reject(waitTimedOut(spn));
   const stuck = abandoned.get(provider) ?? 0;
-  if (stuck >= MAX_ABANDONED) {
+  if (capped && stuck >= MAX_ABANDONED) {
     return Promise.reject(
       new HttpError(
         'kerberos-failed',
@@ -210,7 +218,13 @@ export async function startKerberosContext(
       spn: target,
       async verify(replyToken, wait) {
         try {
-          await bounded(provider, target, () => client.step(Buffer.from(replyToken).toString('base64')), waitOf(wait));
+          await bounded(
+            provider,
+            target,
+            () => client.step(Buffer.from(replyToken).toString('base64')),
+            waitOf(wait),
+            false,
+          );
         } catch (error) {
           if (error instanceof HttpError) throw error;
           throw new HttpError(

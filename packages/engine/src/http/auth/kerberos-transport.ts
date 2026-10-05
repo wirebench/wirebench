@@ -27,6 +27,8 @@ export interface KerberosHandshakeResult {
 }
 
 const EMPTY_BODY = new Uint8Array(0);
+/** Verifying a reply that is already in is local work; a near-zero timer must not fail a send the server answered. */
+const VERIFY_FLOOR_MS = 1000;
 
 /** True when any challenge in the header is `Negotiate`, with or without a token. */
 export function offersNegotiate(header: string | undefined): boolean {
@@ -51,8 +53,8 @@ export async function kerberosHandshake(
   const startedAt = now();
   const remaining = (): number => request.timeoutMs - (now() - startedAt);
   // The token wait spends the same budget as the legs, and the send's Cancel stops it (#267).
-  const wait = (floor = false) => ({
-    timeoutMs: floor ? Math.max(1, remaining()) : remaining(),
+  const wait = (floorMs = 0) => ({
+    timeoutMs: floorMs > 0 ? Math.max(floorMs, remaining()) : remaining(),
     ...(request.signal !== undefined ? { signal: request.signal } : {}),
   });
   const spnWanted = kerberosField(auth.spn) ?? defaultSpn(request.url);
@@ -98,7 +100,7 @@ export async function kerberosHandshake(
       });
     }
     const reply = negotiateToken(headerValue(final.headers, 'www-authenticate'));
-    if (reply !== undefined) await context.verify(reply, wait(true));
+    if (reply !== undefined) await context.verify(reply, wait(VERIFY_FLOOR_MS));
     return { http: final, attempts: 2, challenged: true, durationMs, spn: context.spn };
   } finally {
     if (ownDispatcher !== undefined) await ownDispatcher.close().catch(() => undefined);

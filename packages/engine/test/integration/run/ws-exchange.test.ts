@@ -577,19 +577,19 @@ describe('WebSocket through openExchange', () => {
       const port = (silent.address() as { port: number }).port;
       const provider = fakeKerberos({ hang: 'init' });
       configureKerberos(provider);
-      setTimeout(() => provider.release(), 200);
+      setTimeout(() => provider.release(), 600);
       const started = Date.now();
       const handle = open(
         build('/echo', {
           serverUrl: `ws://127.0.0.1:${String(port)}`,
           auth: { type: 'kerberos' },
-          settings: { handshakeTimeoutMs: 300 },
+          settings: { handshakeTimeoutMs: 1000 },
         }),
       );
       // A handshake that never completes settles as a status-0 exchange, not a rejection.
       await expect(handle.result).resolves.toMatchObject({ subject: { protocol: 'websocket', status: 0 } });
-      // Token ~200 ms + the ~100 ms left; without the reduction the upgrade would wait 300 ms more (~500 ms).
-      expect(Date.now() - started).toBeLessThan(430);
+      // Token ~600 ms + the ~400 ms left; without the reduction the upgrade would wait 1000 ms more (~1600 ms).
+      expect(Date.now() - started).toBeLessThan(1300);
     } finally {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => silent.close(() => resolve()));

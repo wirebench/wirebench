@@ -245,6 +245,20 @@ describe('the token wait (#267)', () => {
     await expect(pending).resolves.toBeInstanceOf(Uint8Array);
   });
 
+  it('still verifies a reply while two earlier calls are abandoned (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    const made = startKerberosContext('HTTP/svc', {}, { provider });
+    provider.release();
+    const context = await made;
+    for (let i = 0; i < 2; i += 1) {
+      await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 10 })).rejects.toMatchObject({
+        code: 'timeout',
+      });
+    }
+    await expect(context.verify(new Uint8Array([1]), { timeoutMs: 1000 })).resolves.toBeUndefined();
+    provider.release();
+  });
+
   it('counts an abandoned call that later fails as ended, with no unhandled rejection', async () => {
     const provider = fakeKerberos({ hang: 'init' });
     await expect(kerberosToken('HTTP/svc', {}, { provider, timeoutMs: 10 })).rejects.toMatchObject({ code: 'timeout' });
