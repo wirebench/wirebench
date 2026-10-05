@@ -5,18 +5,11 @@
  */
 
 import { HttpFileError } from '../../errors.js';
-import { isCredentialName } from '../../import/credentials.js';
 import { ReportBuilder } from '../../import/report.js';
 import type { ImportedVariable, ImportedVariables } from '../../import/variables.js';
-import { VariableSetBuilder, warnCredentialLookingNames } from '../../import/variables.js';
+import { credentialSafeVariable, VariableSetBuilder, warnCredentialLookingNames } from '../../import/variables.js';
 import type { HttpRewriteContext } from './values.js';
-import {
-  looksLikeBareAuthority,
-  newRewriteContext,
-  referencesOnly,
-  rewriteHttpValue,
-  stripUserinfo,
-} from './values.js';
+import { newRewriteContext, rewriteHttpValue } from './values.js';
 
 export const HTTP_ENV_FILE = 'http-client.env.json';
 export const HTTP_PRIVATE_ENV_FILE = 'http-client.private.env.json';
@@ -67,16 +60,14 @@ function publicVariable(
   ctx: HttpRewriteContext,
   report: ReportBuilder,
 ): ImportedVariable {
-  const text = rewriteHttpValue(String(value), ctx);
-  if (isCredentialName(key) && text !== '' && !referencesOnly(text)) {
+  const { variable, madeSecret, userinfoCut } = credentialSafeVariable(key, rewriteHttpValue(String(value), ctx));
+  if (madeSecret) {
     report.note(
       `${where}: "${key}" looks like a credential, so its public value was imported as a secret rather than plain text.`,
     );
-    return secretOf(key, text);
   }
-  const { url, stripped } = stripUserinfo(text, looksLikeBareAuthority(text));
-  if (stripped) report.warn(`${where}: the credential in the URL of "${key}" was not imported.`);
-  return { name: key, value: url, enabled: true, secret: false };
+  if (userinfoCut) report.warn(`${where}: the credential in the URL of "${key}" was not imported.`);
+  return variable;
 }
 
 /**

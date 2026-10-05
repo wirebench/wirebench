@@ -1,5 +1,8 @@
 /** What the OpenCollection reader hands the mapper: the documents as typed shapes, nothing interpreted. */
 
+/** The most text one collection may hold, a single document or a directory's files together (spec §7.1). */
+export const MAX_OPENCOLLECTION_BYTES = 50 * 1024 * 1024;
+
 export interface OcInfo {
   readonly name: string;
   readonly type?: string;

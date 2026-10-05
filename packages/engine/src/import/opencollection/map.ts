@@ -15,6 +15,7 @@ import { ReportBuilder } from '../report.js';
 import type { ImportedScriptFile } from '../scripts.js';
 import { colonPathParams, rewriteMustache } from '../templates.js';
 import type { ImportedVariables } from '../variables.js';
+import { warnCredentialLookingNames } from '../variables.js';
 import { stripUserinfo } from '../values.js';
 import type { KeyValueEntry } from '../../http/entries.js';
 import { entry } from '../../http/entries.js';
@@ -36,9 +37,18 @@ import type {
 } from '../../rest/model.js';
 import { NO_BODY, createApi, createFolder, createRestRequest } from '../../rest/model.js';
 import { splitQueryKeepingReferences } from '../../rest/url.js';
+import type { Assertion } from '../../assert/model.js';
+import { mapOcAssertion } from './assertions.js';
 import type { MappedOcAuth } from './auth.js';
 import { mapOcAuth } from './auth.js';
 import type { OcCollection, OcItem, OcKeyValue } from './model.js';
+import {
+  mapOcEnvironments,
+  mapOcProjectVariables,
+  mapOcScripts,
+  reportOcConfigExtras,
+  reportOcRequestVariables,
+} from './variables.js';
 
 export interface MappedOpenCollection {
   /** Absent when the collection has no HTTP or GraphQL item. */
@@ -184,6 +194,8 @@ class Mapper {
   grpcFolders = 0;
   wsRequests = 0;
   wsFolders = 0;
+  assertions = 0;
+  assertionsSkipped = 0;
   /** The `.proto` files the gRPC items name. */
   readonly protoFiles = new Set<string>();
   /** The first gRPC item's target, which the API takes. */
@@ -526,6 +538,7 @@ class Mapper {
       );
     }
     const examples = this.examples(item.examples ?? [], label);
+    const assertions = this.assertionsOf(item, label);
     return {
       ...createRestRequest(label, {
         newId: this.newId,
@@ -540,8 +553,29 @@ class Mapper {
         auth,
         settings: this.settings(item.settings, label),
       }),
+      assertions,
       ...(examples.length > 0 ? { examples } : {}),
     };
+  }
+
+  /** The request's assertions that have a Wirebench equivalent; each one left out is counted and reported. */
+  private assertionsOf(item: OcItem, label: string): Assertion[] {
+    const out: Assertion[] = [];
+    for (const a of item.runtime?.assertions ?? []) {
+      const mapped = mapOcAssertion(a);
+      if (mapped !== undefined) {
+        out.push(mapped);
+        this.assertions += 1;
+      } else if (a.disabled === true) {
+        this.report.note(`${label}: a disabled assertion was skipped.`);
+      } else {
+        this.assertionsSkipped += 1;
+        this.report.warn(
+          `${label}: the assertion "${a.expression} ${a.operator} ${a.value ?? ''}" has no Wirebench equivalent and was not imported.`,
+        );
+      }
+    }
+    return out;
   }
 
   /** A body file path, rewritten and resolved against the collection folder when there is one. */
@@ -777,6 +811,16 @@ export function mapOpenCollection(
           folders: wsWalk.folders,
           requests: wsWalk.requests,
         });
+  // Variable lines go to the variable plan's own report, which the desktop repeats when it applies
+  // the plan; every other line goes to the mapping report, so none appears twice.
+  const variableReport = new ReportBuilder();
+  const environments = mapOcEnvironments(collection.environments, variableReport, mapper.dynamic);
+  const projectProperties = mapOcProjectVariables(collection, variableReport, mapper.dynamic);
+  warnCredentialLookingNames(variableReport, [...environments, ...(projectProperties ? [projectProperties] : [])]);
+  reportOcRequestVariables(collection.items, mapper.report);
+  reportOcConfigExtras(collection, mapper.report);
+  const apiSlug = (rest ?? grpc ?? websocket)?.slug.toLowerCase() ?? 'collection';
+  const scripts = mapOcScripts(collection, apiSlug, name, mapper.report);
   if (grpc !== undefined && mapper.protoFiles.size === 0) {
     mapper.report.note(`${grpc.name}: needs a definition: import its .proto or use server reflection.`);
   }
@@ -790,13 +834,17 @@ export function mapOpenCollection(
     ...(grpc !== undefined ? { grpc } : {}),
     ...(websocket !== undefined ? { websocket } : {}),
     protoFiles: [...mapper.protoFiles],
-    variables: { environments: [], report: { warnings: [], notes: [] } },
-    scripts: [],
+    variables: {
+      environments,
+      ...(projectProperties !== undefined ? { projectProperties } : {}),
+      report: variableReport.build(),
+    },
+    scripts,
     counts: {
       requests: mapper.requests + mapper.grpcRequests + mapper.wsRequests,
       folders: mapper.folders + mapper.grpcFolders + mapper.wsFolders,
-      assertions: 0,
-      assertionsSkipped: 0,
+      assertions: mapper.assertions,
+      assertionsSkipped: mapper.assertionsSkipped,
     },
     report: mapper.report.build(),
   };

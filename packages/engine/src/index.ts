@@ -770,11 +770,17 @@ export type { MapHttpFileOptions, MappedHttpFile } from './import/http-file/map.
 // OpenCollection: reading a single document or a directory into typed shapes, and mapping them.
 export {
   isOpenCollection,
+  MAX_OPENCOLLECTION_BYTES,
+  mapOcAssertion,
   mapOcAuth,
+  mapOcEnvironments,
   mapOcOAuth2,
+  mapOcProjectVariables,
   mapOpenCollection,
   parseOpenCollection,
 } from './import/opencollection/index.js';
+export { importOpenCollection } from './import/opencollection/import.js';
+export type { OpenCollectionSource } from './import/opencollection/import.js';
 export type {
   MapOpenCollectionOptions,
   MappedOcAuth,
