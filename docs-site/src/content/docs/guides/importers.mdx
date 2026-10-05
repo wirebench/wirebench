@@ -241,7 +241,8 @@ not fit. An exchange with no valid time is not written to History, and a warning
   - Every other header with a credential-looking name is dropped, with the same warning.
   - Query parameters, form fields, multipart text parts, JSON keys at any depth and XML elements
     and attributes with a credential-looking name are imported with an empty value, and a warning
-    names them.
+    names them. A JSON body keeps the formatting it was recorded with, and is blanked even when it
+    does not parse. A value made only of `{{variables}}` or `${…}` references is kept.
   - In a saved example, headers with a credential-looking name, the values under such keys in a
     JSON or form body, and such elements and attributes in an XML body, are masked, and
     `Set-Cookie` is dropped; the notes say which examples were masked. An XML body shows the
