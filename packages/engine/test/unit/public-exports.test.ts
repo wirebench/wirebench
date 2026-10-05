@@ -32,6 +32,12 @@ const ADDED = [
   'warnCredentialLookingNames',
   'importedScriptPath',
   'SAML_TOKEN_PART',
+  'argvFor',
+  'parseSourceOutput',
+  'toolOf',
+  'secretSourceError',
+  'withSource',
+  'TOOL_INSTALL_PAGES',
 ] as const;
 
 /** 2.x name, 3.0 name. */
