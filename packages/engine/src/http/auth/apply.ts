@@ -4,6 +4,7 @@
  * Basic can be preemptive or answer a 401 challenge; NTLMv2 needs three legs on one connection.
  * Both are transport concerns rather than protocol ones, so this module owns them for every
  * protocol: the SOAP send and the REST send call it instead of each implementing the same flow.
+ * Kerberos (Negotiate) is a transport concern too: see `kerberos-transport.ts`.
  *
  * Every scheme that needs no round trip — a bearer token, an API key, an OAuth2 access token — is
  * applied by its own protocol layer as a plain header or query value and never reaches here.
@@ -15,6 +16,7 @@ import { headerValue } from '../headers.js';
 import type { HttpExchange, HttpRequest } from '../types.js';
 import type { AuthSummary, SendAuth } from './send-auth.js';
 import { basicAuthorization, isBasicChallenge } from './basic.js';
+import { kerberosHandshake } from './kerberos-transport.js';
 import { ntlmHandshake } from './ntlm-transport.js';
 
 /** Options for {@link sendWithAuth}: the same hooks `sendHttp` takes, for tests. */
@@ -50,6 +52,7 @@ export async function sendWithAuth(
   const callerAuthorization = headerValue(request.headers, 'authorization') !== undefined;
   const basicAuth = auth?.type === 'basic' && !callerAuthorization ? auth : undefined;
   const ntlmAuth = auth?.type === 'ntlm' && !callerAuthorization ? auth : undefined;
+  const kerberosAuth = auth?.type === 'kerberos' && !callerAuthorization ? auth : undefined;
 
   const headers: Record<string, string> = { ...request.headers };
   if (basicAuth?.preemptive === true) {
@@ -63,6 +66,7 @@ export async function sendWithAuth(
   let durationMs: number;
   let challenged = false;
   let attempts: 1 | 2 | 3 = 1;
+  let spn: string | undefined;
 
   if (ntlmAuth !== undefined) {
     // NTLM owns the whole exchange: three legs on one connection, its own dispatcher.
@@ -74,6 +78,17 @@ export async function sendWithAuth(
     durationMs = handshake.durationMs;
     challenged = handshake.challenged;
     attempts = handshake.attempts;
+  } else if (kerberosAuth !== undefined) {
+    // Kerberos owns its exchange too: at most two legs on one connection, its own dispatcher.
+    const handshake = await kerberosHandshake(firstRequest, kerberosAuth, {
+      ...(options?.now !== undefined ? { now: options.now } : {}),
+      ...(options?.dispatcher !== undefined ? { dispatcher: options.dispatcher } : {}),
+    });
+    http = handshake.http;
+    durationMs = handshake.durationMs;
+    challenged = handshake.challenged;
+    attempts = handshake.attempts;
+    spn = handshake.spn;
   } else {
     http = await sendHttp(firstRequest, options);
     durationMs = http.timings.totalMs;
@@ -100,6 +115,6 @@ export async function sendWithAuth(
   return {
     http,
     durationMs,
-    ...(auth !== undefined ? { auth: { scheme: auth.type, challenged, attempts } } : {}),
+    ...(auth !== undefined ? { auth: { scheme: auth.type, challenged, attempts, ...(spn !== undefined ? { spn } : {}) } } : {}),
   };
 }
