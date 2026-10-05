@@ -198,7 +198,8 @@ describe('WebSocket through openExchange', () => {
   });
 
   it('puts a preemptive Negotiate token on the upgrade for Kerberos', async () => {
-    configureKerberos(fakeKerberos());
+    const provider = fakeKerberos();
+    configureKerberos(provider);
     const before = server.handshakes.length;
     const handle = open(build('/echo', { auth: { type: 'kerberos' } }));
     await handle.push({ text: 'a' });
@@ -206,6 +207,7 @@ describe('WebSocket through openExchange', () => {
     expect(server.handshakes.at(-1)?.headers.authorization).toBe(
       `Negotiate ${Buffer.from('ap-req').toString('base64')}`,
     );
+    expect(provider.inits).toHaveLength(1);
     handle.close(1000, 'done');
     await handle.result;
   });

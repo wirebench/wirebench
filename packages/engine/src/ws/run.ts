@@ -165,7 +165,7 @@ function attemptedOf(input: WsCallInput): AttemptedRequest {
  * session opens with.
  *
  * @throws WirebenchError `secret-missing` | `auth-grant-unsupported` | `keystore-missing` |
- * `ws-auth-unsupported` | `ws-bad-url`
+ * `ws-auth-unsupported` | `ws-bad-url` | `kerberos-*` when Kerberos cannot make a token
  */
 async function connectWs(
   selected: WsSelected,

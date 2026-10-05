@@ -114,6 +114,14 @@ describe('kerberosToken and negotiateBearer', () => {
   });
 });
 
+describe('defaultSpn with a bad URL', () => {
+  it('fails as kerberos-unknown-spn rather than a TypeError', () => {
+    expect(() => defaultSpn('not a url')).toThrow(
+      expect.objectContaining({ code: 'kerberos-unknown-spn', details: { url: 'not a url' } }),
+    );
+  });
+});
+
 describe('withNegotiate', () => {
   it('turns Kerberos into one preemptive Negotiate bearer', async () => {
     await expect(

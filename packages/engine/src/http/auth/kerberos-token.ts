@@ -50,7 +50,15 @@ export function normaliseSpn(spn: string, platform: NodeJS.Platform): string {
 
 /** `HTTP` plus the URL's hostname, without the port: what Windows asks for by default. */
 export function defaultSpn(url: string): string {
-  return `HTTP@${new URL(url).hostname}`;
+  try {
+    return `HTTP@${new URL(url).hostname}`;
+  } catch (error) {
+    throw new HttpError(
+      'kerberos-unknown-spn',
+      `Cannot derive a Kerberos service principal from ${url}; set one explicitly.`,
+      { cause: error, details: { url } },
+    );
+  }
 }
 
 export async function startKerberosContext(

@@ -291,7 +291,8 @@ function connectOptions(input: GrpcSendInput, target: GrpcTarget): http2.SecureC
  *
  * @throws HttpError for a connection, DNS, TLS or abort failure, with the HTTP transport's codes;
  * GrpcError `grpc-target-invalid`, `grpc-auth-unsupported`, `grpc-stream-malformed`,
- * `grpc-encoding-unsupported`, `grpc-message-too-large`, `grpc-stream-closed`
+ * `grpc-encoding-unsupported`, `grpc-message-too-large`, `grpc-stream-closed`; HttpError `kerberos-*` when Kerberos
+ * cannot make a token
  */
 export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
   const target = parseGrpcTarget(input.target, input.tls);
@@ -301,6 +302,7 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
   // One token per call, at call start: an HTTP/2 stream has no 401 to wait for.
   const callAuth = await withNegotiate(input.auth, `${target.tls ? 'https' : 'http'}://${target.authority}`);
   const requestHeaders = buildGrpcHeaders(
+    // `callAuth === undefined` exists for exactOptionalPropertyTypes: spreading it would set `auth: undefined`.
     callAuth === input.auth || callAuth === undefined ? input : { ...input, auth: callAuth },
     target,
   );
