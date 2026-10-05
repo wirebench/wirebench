@@ -1385,7 +1385,6 @@ export const projectProblemSchema = z.object({
 });
 export type ProjectProblemWire = z.infer<typeof projectProblemSchema>;
 
-/** The whole open project, as mirrored by the renderer. Always a complete replacement. */
 /** The five X.509 token profile forms a key can be referenced by. */
 const X509_KEY_IDENTIFIERS = [
   'BinarySecurityToken',
@@ -2886,6 +2885,7 @@ export type SequenceWaitingEvent = z.infer<typeof sequenceWaitingEventSchema>;
 export const logExportHarResponseSchema = z.object({ saved: z.boolean(), path: z.string().optional() });
 export type LogExportHarResponse = z.infer<typeof logExportHarResponseSchema>;
 
+/** The whole open project, as mirrored by the renderer. Always a complete replacement. */
 export const projectWireSchema = z.object({
   id: z.string(),
   name: z.string(),

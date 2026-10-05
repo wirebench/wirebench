@@ -44,8 +44,10 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
   if (entry.kind === 'timestamp') {
     return entry;
   }
-  // issued-token and saml-token: the editor writes whole entries, and the engine schema
-  // validates them where they are stored; undefined optionals are dropped by the schema parse.
+  // issued-token and saml-token: passed on as the editor wrote them. Only the wire schema has
+  // checked their shape; nothing checks them against the engine schema — on the stored path either,
+  // where `toWssOutgoingRef` stores entries unvalidated and `toWssEntry` passes one that fails the
+  // engine schema through as an unknown kind. A bad entry is refused when it is applied.
   return entry as unknown as WssEntry;
 }
 
