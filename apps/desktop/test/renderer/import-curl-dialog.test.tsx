@@ -68,10 +68,23 @@ describe('ImportCurlDialog', () => {
     expect(preview.textContent).toContain('Authorization');
     expect(preview.textContent).toContain('file');
     expect(preview.textContent).toContain('Basic, as “ada”');
+    expect(preview.textContent).not.toContain('Kerberos');
     expect(preview.textContent).not.toContain('SOAPAction');
     expect(preview.textContent).not.toContain('hunter2');
     expect(preview.textContent).not.toContain('tok');
     expect(screen.queryByRole('list', { name: 'Import problems' })).toBeNull();
+  });
+
+  it('previews a --negotiate REST import as Kerberos, as the import saves it', async () => {
+    installWirebenchApi();
+    render(<ImportCurlDialog open onOpenChange={vi.fn()} target={{ kind: 'rest', apiId: 'api-1' }} />);
+
+    await userEvent.click(screen.getByLabelText('cURL command'));
+    await userEvent.paste("curl --negotiate -u 'ada:' https://api.test/pets");
+
+    const preview = screen.getByTestId('import-curl-preview');
+    expect(preview.textContent).toContain('Kerberos, as “ada”');
+    expect(preview.textContent).not.toContain('Basic');
   });
 
   it('imports through request.importCurl and opens the new request', async () => {

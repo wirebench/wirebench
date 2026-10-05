@@ -29,6 +29,7 @@ describe('authTypeLabel', () => {
   it('names every scheme, and passes an unknown one through', () => {
     expect(authTypeLabel('api-key')).toBe('API key');
     expect(authTypeLabel('oauth2')).toBe('OAuth2');
+    expect(authTypeLabel('kerberos')).toBe('Kerberos');
     expect(authTypeLabel('something-new')).toBe('something-new');
   });
 });
@@ -68,6 +69,13 @@ describe('RestAuthTab', () => {
     await userEvent.selectOptions(screen.getByLabelText('Request authentication type'), 'bearer');
 
     expect(onChange).toHaveBeenCalledWith({ type: 'bearer' });
+  });
+
+  it('offers only the schemes it is given', () => {
+    render(<RestAuthTab requestId="r1" auth={{ type: 'inherit' }} types={['none', 'basic']} onChange={vi.fn()} />);
+
+    const options = [...screen.getByLabelText('Request authentication type').querySelectorAll('option')];
+    expect(options.map((option) => option.textContent)).toEqual(['Inherit', 'None', 'Basic']);
   });
 
   it('goes back to inheriting rather than to nothing', async () => {

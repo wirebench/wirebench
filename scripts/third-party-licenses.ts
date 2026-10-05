@@ -9,8 +9,9 @@
  * installer's resources (`extraResources` in `apps/desktop/electron-builder.yml`).
  *
  * What counts as "ships":
- *   * `apps/desktop`'s `dependencies` and `packages/engine`'s `dependencies`, transitively —
- *     these are resolved at runtime from `node_modules` inside the asar.
+ *   * `apps/desktop`'s `dependencies` and `packages/engine`'s `dependencies` and
+ *     `optionalDependencies` (the Kerberos binding), transitively — these are resolved at runtime
+ *     from `node_modules` inside the asar.
  *   * `packages/server`'s `dependencies`, transitively — the container image ships them.
  *   * {@link BUNDLED_DEV_DEPENDENCIES}, transitively. They sit in `devDependencies` because
  *     electron-vite bundles them rather than resolving them at runtime, but their code (React,
@@ -68,6 +69,7 @@ interface PackageManifest {
   readonly license?: string | { readonly type?: string };
   readonly licenses?: readonly { readonly type?: string }[];
   readonly dependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
 }
 
 /** One package as it appears in the generated file. */
@@ -144,7 +146,9 @@ async function readNotice(dir: string): Promise<{ file: string; text: string } |
 }
 
 /** Walks the dependency graph from `roots`, collecting every distributed package exactly once. */
-async function collect(roots: readonly { name: string; from: string }[]): Promise<readonly LicensedPackage[]> {
+export async function collect(
+  roots: readonly { name: string; from: string; optional?: boolean }[],
+): Promise<readonly LicensedPackage[]> {
   const found = new Map<string, LicensedPackage>();
   const seen = new Set<string>();
   const queue = [...roots];
@@ -157,6 +161,10 @@ async function collect(roots: readonly { name: string; from: string }[]): Promis
     }
     const dir = await findPackageDir(job.name, job.from);
     if (dir === undefined) {
+      // An optional dependency may legitimately be absent (a platform it does not install on).
+      if (job.optional === true) {
+        continue;
+      }
       throw new Error(`Cannot resolve "${job.name}" from ${job.from}; run \`pnpm install\` first`);
     }
     if (seen.has(dir)) {
@@ -171,6 +179,9 @@ async function collect(roots: readonly { name: string; from: string }[]): Promis
     }
     for (const dependency of Object.keys(manifest.dependencies ?? {})) {
       queue.push({ name: dependency, from: dir });
+    }
+    for (const dependency of Object.keys(manifest.optionalDependencies ?? {})) {
+      queue.push({ name: dependency, from: dir, optional: true });
     }
     if (OWN_PACKAGES.has(job.name)) {
       continue;
@@ -246,7 +257,10 @@ export async function renderThirdPartyLicenses(): Promise<string> {
   }
   const roots = [
     ...Object.keys(desktop.dependencies ?? {}).map((name) => ({ name, from: desktopDir })),
-    ...Object.keys(engine.dependencies ?? {}).map((name) => ({ name, from: engineDir })),
+    ...Object.keys({ ...engine.dependencies, ...engine.optionalDependencies }).map((name) => ({
+      name,
+      from: engineDir,
+    })),
     ...Object.keys(server.dependencies ?? {}).map((name) => ({ name, from: serverDir })),
     ...BUNDLED_DEV_DEPENDENCIES.map((name) => ({ name, from: desktopDir })),
   ];

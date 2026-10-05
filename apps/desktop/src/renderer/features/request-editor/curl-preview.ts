@@ -23,6 +23,8 @@ export interface CurlPreview {
   readonly bodyKind: 'multipart' | 'form' | 'file' | 'JSON' | 'raw' | undefined;
   /** The `-u` username, for Basic auth. Never the password. */
   readonly basicUsername: string | undefined;
+  /** `--negotiate`: a REST import makes the `-u` user a Kerberos account instead of Basic auth. */
+  readonly negotiate: boolean;
   /** Things the real import will drop, named the same way `fromCurl` names them. */
   readonly problems: readonly string[];
 }
@@ -111,6 +113,7 @@ export function previewCurl(text: string, target: 'soap' | 'rest' = 'soap'): Cur
     method,
     bodyKind: dataInQuery ? undefined : bodyKind,
     basicUsername,
+    negotiate: has(text, '--negotiate'),
     problems,
   };
 }

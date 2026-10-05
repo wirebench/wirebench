@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
+import { WEBHOOK_AUTH_TYPES } from '../../components/auth-fields.js';
 import { Tabs } from '../../components/tabs.js';
 import { shortcutFor } from '../../lib/keybindings.js';
 import { detectPlatform } from '../../lib/platform.js';
@@ -39,6 +40,7 @@ import { restSendBlocked, setRestSendBlocked } from './send-blocked.js';
 import { SettingsTab } from './settings-tab.js';
 import { SigningTab } from './signing-tab.js';
 import { inheritedSigningOf } from '../webhook-items/signing.js';
+import { isWebhookApiId } from '../webhook-items/webhook-api-id.js';
 import { RestResponsePane } from './response/response-pane.js';
 import { UrlBar } from './url-bar.js';
 import { SendToEnvironmentsButton } from '../multi-env/send-to-environments-button.js';
@@ -48,11 +50,6 @@ import { REQUEST_KINDS } from '../assertions/assertion-table.js';
 
 /** The two webhook-target error codes `request.preflightRest` refuses a webhook item's send with. */
 const WEBHOOK_TARGET_ERROR_CODES = new Set(['webhook-target-missing', 'webhook-target-invalid']);
-
-/** Whether a REST request id names a webhook item rather than an ordinary REST request. */
-function isWebhookRequest(apiId: string | undefined): boolean {
-  return apiId?.startsWith('webhooks:') === true;
-}
 
 const SEPARATOR = 'bg-hairline transition-colors hover:bg-accent-muted focus-visible:bg-accent';
 
@@ -97,7 +94,7 @@ interface PreflightState {
 /** One REST request's editor. */
 export function RestEditor({ requestId }: RestEditorProps) {
   const request = useProjectStore((state) => state.restRequests[requestId]);
-  const isWebhookItem = isWebhookRequest(request?.apiId);
+  const isWebhookItem = isWebhookApiId(request?.apiId);
   const api = useProjectStore((state) => selectApiOf(state, requestId));
   const webhookCollection = useProjectStore((state) => {
     const projectId = state.projectOf[requestId];
@@ -267,6 +264,7 @@ export function RestEditor({ requestId }: RestEditorProps) {
             requestId={requestId}
             auth={request.auth}
             inheritedFrom={inheritedFrom}
+            {...(isWebhookItem ? { types: WEBHOOK_AUTH_TYPES } : {})}
             onChange={(auth: AuthConfigWire) => {
               stage({ auth });
             }}

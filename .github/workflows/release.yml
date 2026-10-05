@@ -130,6 +130,14 @@ jobs:
           done
           pnpm ${{ matrix.script }}
 
+      - name: Check the vendored Kerberos bindings
+        run: |
+          if [ "${{ matrix.os }}" = macos-latest ]; then
+            node scripts/check-kerberos-vendor.ts darwin apps/desktop/release/mac*/Wirebench.app/Contents/Resources
+          else
+            node scripts/check-kerberos-vendor.ts linux apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -317,7 +325,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # `--dir` stops after packing: the unpacked apps, fuses already flipped by afterPack.
-      - run: pnpm build && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
+      - run: pnpm build && node scripts/vendor-kerberos.ts win32 && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
+      - run: node scripts/check-kerberos-vendor.ts win32 apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
       - uses: actions/upload-artifact@v7
         id: upload
         with:
@@ -386,6 +395,22 @@ jobs:
         with:
           name: win-app
           path: apps/desktop/prepackaged
+      - name: Is SignPath configured?
+        id: signpath
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: echo "enabled=$([ -n "$TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      # SignPath signs only what its app configuration lists; a binding it skipped would ship unsigned.
+      - name: Check the Kerberos binding is signed
+        if: steps.signpath.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          foreach ($app in 'win-unpacked', 'win-arm64-unpacked') {
+            $path = "apps/desktop/prepackaged/$app/resources/kerberos/win32-x64/kerberos.node"
+            $sig = Get-AuthenticodeSignature $path
+            Write-Output "${path}: $($sig.Status)"
+            if ($sig.Status -ne 'Valid') { exit 1 }
+          }
       # One run per architecture: `--prepackaged` takes a single app. Each run writes a latest.yml
       # naming only its own installer, so arm64 builds into a directory of its own and is folded
       # into the x64 manifest below.

@@ -1,0 +1,13 @@
+{
+  "version": "7.0.0",
+  "napi": 9,
+  "url": "https://github.com/mongodb-js/kerberos/releases/download/v{version}/kerberos-v{version}-napi-v{napi}-{prebuild}.tar.gz",
+  "entry": "build/Release/kerberos.node",
+  "prebuilds": {
+    "darwin-arm64": "a5587d6744fae4daa3f569156866a5d9d62004a431c0cb79c46010f62219c18f",
+    "darwin-x64": "a5587d6744fae4daa3f569156866a5d9d62004a431c0cb79c46010f62219c18f",
+    "linux-arm64": "3fc5d80d7085e601004107c910185c51d4a5d71733bbd58b43cf4e974096c2b0",
+    "linux-x64": "97613f37eeb336f61c19763959dae6245657b11ff0f725a4c3d276ba6ebf135d",
+    "win32-x64": "86ab38f3a3463fcf35ab458faa3ecd9fa510dfdc260c682869ca8327b6728515"
+  }
+}

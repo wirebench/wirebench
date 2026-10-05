@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { AuthFields } from '../../components/auth-fields.js';
+import { AuthFields, WEBHOOK_AUTH_TYPES } from '../../components/auth-fields.js';
 import { Button } from '../../components/button.js';
 import { OAuth2StatusPanel } from '../rest-editor/oauth2-status.js';
 import { PropertyHighlightInput } from '../rest-editor/property-highlight-input.js';
@@ -250,6 +250,7 @@ export function WebhookSettingsDialog() {
               <div className="mt-4">
                 <AuthFields
                   scope="Webhooks"
+                  types={WEBHOOK_AUTH_TYPES}
                   auth={auth}
                   onChange={(next) => {
                     setAuth(next ?? undefined);
