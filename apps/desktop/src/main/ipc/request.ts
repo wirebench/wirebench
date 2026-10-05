@@ -43,6 +43,7 @@ import type {
 import type { ProjectRouter } from '../project-router.js';
 import { isSecretTokenRef, resolveAuthConfig, resolveSoapAuth } from '../secret-resolver.js';
 import type { HistoryService } from '../history-service.js';
+import type { IssuedTokensService } from '../issued-tokens.js';
 import type { OAuth2Service } from '../oauth2.js';
 import type { PreferencesService } from '../preferences.js';
 import { isInsideReal, realpathOfPrefix } from '../path-containment.js';
@@ -205,6 +206,11 @@ export interface RequestChannelDeps {
     // by a send through the engine, which forgets a token the server refused.
     Partial<Pick<OAuth2Service, 'status' | 'clear'>>;
   /**
+   * The session's issued SAML tokens (WS-Trust), which every send borrows and logs its token
+   * service exchanges through. Omitted in tests, where each run fetches its own.
+   */
+  readonly issuedTokens?: Pick<IssuedTokensService, 'source'>;
+  /**
    * Resolves one keychain reference, for the client secret and the remembered refresh token an
    * OAuth2 token request needs. The engine service resolves every *other* reference itself; this is
    * only for the material the token request consumes before a send exists.
@@ -266,6 +272,7 @@ export function toSendDeps(
           },
         }
       : {}),
+    ...(deps.issuedTokens !== undefined ? { issuedTokens: deps.issuedTokens } : {}),
     ...(deps.getSecret !== undefined ? { getSecret: deps.getSecret } : {}),
     ...(deps.secretsFor !== undefined ? { secretsFor: deps.secretsFor } : {}),
     ...(preferences !== undefined ? { preferences: () => preferences.get() } : {}),

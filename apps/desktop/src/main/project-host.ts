@@ -89,6 +89,9 @@ import {
   readGrpcDefinitionCache,
   reconcileGrpcApi,
   reflectProtoSet,
+  soapIssuedTokenKeyTarget,
+  soapIssuedTokenTarget,
+  soapItemFor,
 } from '@wirebench/engine';
 import type {
   AuthConfig,
@@ -159,13 +162,18 @@ import {
   WssError,
 } from '@wirebench/engine';
 import type {
+  IssuedTokenSource,
   Keystore,
   KeystoreDef,
+  ProxyOptions,
+  RunContext,
+  SendHost,
   SoapSendWss,
   WssContext,
   WssEntry,
   WsaConfig,
   WssIncomingConfig,
+  WssIssuedTokenEntry,
   WssOutgoingConfig,
 } from '@wirebench/engine';
 import { MAX_DROPPED_ATTACHMENT_BYTES } from '../shared/wire-types.js';
@@ -209,6 +217,8 @@ import type { RestContractTarget } from './rest-contract.js';
 import { findGrpcFolder, findGrpcRequest, grpcApiOwning, locateGrpcRequest } from './project-grpc-mutations.js';
 import { findWsRequest, locateWsRequest, wsApiOwning } from './project-ws-mutations.js';
 import type { SecretStore } from './secrets.js';
+import type { ResolvedIssuedToken } from './issued-tokens.js';
+import { extraTrustAnchors } from './send/host.js';
 import { allowsReadPath } from './path-access.js';
 import {
   addRequest,
@@ -451,6 +461,13 @@ export class ProjectHost {
    */
   private currentValues: (() => CurrentValues | undefined) | undefined;
 
+  /**
+   * The session's issued-token cache, which the WS-Security preview only ever peeks at. Set by
+   * `WorkspaceService`; absent for a standalone project and in tests, where a preview shows every
+   * issued token as its placeholder.
+   */
+  private issuedTokens: IssuedTokenSource | undefined;
+
   constructor(
     private readonly engine: EngineService,
     private readonly hooks: ProjectHostHooks = {},
@@ -493,6 +510,11 @@ export class ProjectHost {
   /** Tells this host where its project's current values come from; `undefined` drops them. */
   setCurrentValues(source: (() => CurrentValues | undefined) | undefined): void {
     this.currentValues = source;
+  }
+
+  /** Tells this host which issued-token cache its WS-Security preview peeks at; `undefined` drops it. */
+  setIssuedTokens(source: IssuedTokenSource | undefined): void {
+    this.issuedTokens = source;
   }
 
   /**
@@ -2298,9 +2320,169 @@ export class ProjectHost {
         details: { requestId },
       });
     }
-    return await applyOutgoingWss(this.envelopeFor(requestId, envelopeXml), wss.outgoing, wss.ctx, {
+    const { config, ctx } = this.previewIssuedTokens(requestId, wss.outgoing, wss.ctx);
+    return await applyOutgoingWss(this.envelopeFor(requestId, envelopeXml), config, ctx, {
       ...(wss.requestProperties !== undefined ? { requestProperties: wss.requestProperties } : {}),
     });
+  }
+
+  /**
+   * The configuration and context a preview applies, so that it never contacts a token service
+   * (spec §4.1): an issued token the session has cached for this request is placed as a send would
+   * place it, and any other becomes a placeholder assertion naming the service it comes from at send.
+   * The caller redacts the result, so a cached assertion's signature is masked unless secrets show.
+   */
+  private previewIssuedTokens(
+    requestId: string,
+    config: WssOutgoingConfig,
+    ctx: WssContext,
+  ): { config: WssOutgoingConfig; ctx: WssContext } {
+    if (!config.entries.some((entry) => entry.kind === 'issued-token')) {
+      return { config, ctx };
+    }
+    const target = this.issuedTokenKeyTarget(requestId);
+    const peek = (entry: WssIssuedTokenEntry) =>
+      target === undefined ? undefined : this.issuedTokens?.peek(entry, target);
+    const entries = config.entries.map((entry): WssEntry => {
+      if (entry.kind !== 'issued-token' || peek(entry) !== undefined) return entry;
+      return {
+        kind: 'saml-token',
+        source: 'xml',
+        xml:
+          '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_preview">' +
+          `<!-- issued token: fetched from ${this.stsHostOf(entry)} at send --></saml2:Assertion>`,
+        expandProperties: false,
+      };
+    });
+    return {
+      config: { ...config, entries },
+      // Only cached tokens reach `get`: the placed one keeps its attached reference and proof key,
+      // so a signature over it previews as the send signs it.
+      ctx: createWssContext({
+        ...ctx,
+        issuedTokens: {
+          get: (entry) => {
+            const token = peek(entry);
+            return token === undefined
+              ? Promise.reject(new WssError('ws-trust-unavailable', 'Issued tokens are not fetched for a preview.'))
+              : Promise.resolve(token);
+          },
+          peek,
+        },
+      }),
+    };
+  }
+
+  /** The host of an issued-token entry's expanded STS URL, for the preview's placeholder. */
+  private stsHostOf(entry: WssIssuedTokenEntry): string {
+    try {
+      const expanded = expand(entry.stsUrl, this.scopesFor()).text;
+      // It goes inside an XML comment, which may not hold `--` (a punycode host has one).
+      return new URL(expanded).hostname.split('--').join('- -');
+    } catch {
+      return 'the token service';
+    }
+  }
+
+  /**
+   * The cache-key half of the target a send of `requestId` fetches its issued tokens with: its
+   * endpoint and expansion, built by the engine as the send builds them. `undefined` when the request
+   * resolves no endpoint, so nothing can have been cached for it.
+   */
+  private issuedTokenKeyTarget(requestId: string): ReturnType<typeof soapIssuedTokenKeyTarget> | undefined {
+    const located = this.issuedTokenContext(requestId, { getSecret: () => Promise.resolve(undefined) });
+    if (located === undefined) return undefined;
+    try {
+      return soapIssuedTokenKeyTarget(located.selected, located.context);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** A send of `requestId` as the engine sees one, with `host` lent: `undefined` for no such request. */
+  private issuedTokenContext(
+    requestId: string,
+    host: SendHost,
+  ): { selected: NonNullable<ReturnType<typeof soapItemFor>>; context: RunContext } | undefined {
+    const located = this.runContextFor(requestId);
+    const selected = located === undefined ? undefined : soapItemFor(located.project, requestId);
+    if (located === undefined || selected === undefined) return undefined;
+    return { selected, context: { ...located, overrides: {}, host } };
+  }
+
+  /**
+   * One issued-token entry of an outgoing configuration, with the target and dependencies a send of
+   * `requestId` (or, when absent, of the first request that selects the configuration) fetches its
+   * token with: the request's endpoint and the active environment's expansion, mutual TLS from the
+   * entry's own keystore with the preferred trust anchors, the app's proxy, and the keystores and
+   * secrets the editor's WS-Security reads. The engine builds the target, as it does for a send, so
+   * a token fetched here is the one a send finds.
+   *
+   * @throws WirebenchError `unknown-project` | `wss-config-missing` | `not-found` (no such request, or
+   * the entry is not an issued token) | `ws-trust-no-request` | `endpoint-unresolved` | `keystore-missing`
+   */
+  async issuedTokenTarget(
+    projectId: string,
+    configId: string,
+    entryIndex: number,
+    requestId?: string,
+  ): Promise<ResolvedIssuedToken> {
+    const open = this.open;
+    if (open === undefined || open.project.id !== projectId) {
+      throw new WirebenchError('unknown-project', `No open project with id "${projectId}"`, { details: { projectId } });
+    }
+    const config = this.wssOutgoingConfig(configId);
+    if (config === undefined) {
+      throw new WirebenchError('wss-config-missing', 'The project has no such outgoing WS-Security configuration.', {
+        details: { configId },
+      });
+    }
+    const entry = config.entries[entryIndex];
+    if (entry?.kind !== 'issued-token') {
+      throw new WirebenchError('not-found', 'That entry of the configuration is not an issued token.', {
+        details: { configId, entryIndex },
+      });
+    }
+    const chosen = requestId ?? this.firstRequestSelecting(open.project, configId);
+    if (chosen === undefined) {
+      throw new WirebenchError('ws-trust-no-request', 'Select this configuration on a request first.', {
+        details: { configId },
+      });
+    }
+    const anchors = [...((await this.trustAnchors()) ?? []), ...extraTrustAnchors()];
+    const located = this.issuedTokenContext(chosen, {
+      getSecret: async (ref) => await this.secrets?.get(ref),
+      proxyFor: async (url) => {
+        const proxy = await this.proxyFor(url);
+        return proxy === undefined ? undefined : withoutUndefinedProxy(proxy);
+      },
+      tls: {
+        ...(anchors.length > 0 ? { anchors } : {}),
+        identityFor: async (keystoreId) => {
+          const identity = await this.clientIdentityFor(keystoreId);
+          return identity?.cert === undefined || identity.key === undefined
+            ? undefined
+            : { cert: identity.cert, key: identity.key };
+        },
+      },
+      keystoreFor: async (keystoreId) => await this.keystoreFor(keystoreId),
+    });
+    if (located === undefined) {
+      throw new WirebenchError('not-found', `No SOAP request with id "${chosen}"`, { details: { requestId: chosen } });
+    }
+    const { target, ctx } = await soapIssuedTokenTarget(located.selected, located.context, entry);
+    return { entry, target, deps: { ctx } };
+  }
+
+  /** The first SOAP request, in project order, whose outgoing WS-Security is `configId`. */
+  private firstRequestSelecting(project: Project, configId: string): string | undefined {
+    for (const iface of project.interfaces) {
+      for (const operation of iface.operations) {
+        const request = operation.requests.find((candidate) => candidate.wssOutgoingRef === configId);
+        if (request !== undefined) return request.id;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -3814,4 +3996,15 @@ function restPathWithin(
     }
   }
   return undefined;
+}
+
+/**
+ * The engine's proxy shape from the wire's: the keys whose value came over as `undefined` are
+ * dropped, since the wire allows present-and-undefined fields and the engine
+ * (`exactOptionalPropertyTypes`) does not.
+ */
+function withoutUndefinedProxy(proxy: ProxyOptionsWire): ProxyOptions {
+  return Object.fromEntries(
+    Object.entries(proxy).filter(([, value]) => value !== undefined),
+  ) as unknown as ProxyOptions;
 }

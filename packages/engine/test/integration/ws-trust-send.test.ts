@@ -12,6 +12,7 @@ import type { RunContext } from '../../src/run/context.js';
 import { createIssuedTokenSource } from '../../src/run/issued-token.js';
 import { runRequests } from '../../src/run/run.js';
 import { selectRequests } from '../../src/run/select.js';
+import { soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from '../../src/soap/run.js';
 import type { Project } from '../../src/project/model.js';
 import type { WssIssuedTokenEntry } from '../../src/wss/model.js';
 import { projectWithWss } from '../helpers/fixtures.js';
@@ -190,5 +191,25 @@ describe('runRequests with an issued SAML token', () => {
     );
     const result = await runRequests(requestsOf(project, 1), contextFor(project));
     expect(JSON.stringify(result)).toContain('kerberos-unavailable');
+  });
+});
+
+describe('soapIssuedTokenTarget', () => {
+  it('builds the target a send uses, so a token fetched outside a send is the one the send finds', async () => {
+    sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+    const entry = entryFor(sts.url);
+    const project = projectFor(entry);
+    const context = contextFor(project);
+    const [one] = selectRequests(project, []).selected;
+    const selected = soapItemFor(project, one!.request.id)!;
+    const issuedTokens = createIssuedTokenSource();
+    const { target, ctx } = await soapIssuedTokenTarget(selected, context, entry);
+    expect(target.endpointUrl).toBe(service.url);
+    expect(target.tls?.ca).toEqual([sts.caPem]);
+    await issuedTokens.get(entry, target, { ctx });
+    expect(issuedTokens.peek(entry, soapIssuedTokenKeyTarget(selected, context))).toBeDefined();
+    await runRequests(requestsOf(project, 1), contextFor(project, { issuedTokens }));
+    expect(sts.requests).toHaveLength(1);
+    expect(service.bodies[0]).toContain('ID="_fixture-2.0"');
   });
 });

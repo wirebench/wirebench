@@ -72,7 +72,7 @@ import { parseWsdlBundle } from '../wsdl/merge.js';
 import type { WsdlDefinition } from '../wsdl/model.js';
 import type { DefinitionBundle } from '../wsdl/resolver.js';
 import { createWssContext } from '../wss/model.js';
-import type { WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
+import type { WssContext, WssIncomingConfig, WssOutgoingConfig } from '../wss/model.js';
 import { buildSchemaSet } from '../xsd/schema-set.js';
 import type { SchemaSet } from '../xsd/schema-set.js';
 
@@ -158,6 +158,81 @@ function expandOrRefuse(text: string, scopes: PropertyScopes, what: string): str
   return result.text;
 }
 
+/** How an issued-token entry's STS URL, AppliesTo and Claims expand: refusing what nothing resolves. */
+function issuedExpand(scopes: PropertyScopes): (text: string) => string {
+  return (text) => expandOrRefuse(text, scopes, 'WS-Security issued token');
+}
+
+/** The STS's own TLS (mutual TLS from the entry's keystore), proxy and limits; never the endpoint's. */
+async function issuedTargetFor(
+  context: RunContext,
+  endpointUrl: string,
+  expandText: (text: string) => string,
+  entry: WssIssuedTokenEntry,
+): Promise<IssuedTokenTarget> {
+  const tls = await tlsFor(context, entry.tlsKeystoreRef, false);
+  return {
+    endpointUrl,
+    expand: expandText,
+    ...(tls !== undefined ? { tls } : {}),
+    ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
+    ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  };
+}
+
+/** The keystores, secrets, expansion and project files a send's WS-Security reads through. */
+function baseWssContext(context: RunContext, scopes: PropertyScopes): WssContext {
+  return createWssContext({
+    keystores: (ref) => keystoreFor(context, ref),
+    secrets: (ref) => requiredSecret(ref, context.host.getSecret),
+    expand: (text) => expandOrRefuse(text, scopes, 'WS-Security SAML token'),
+    projectFile: async (path) => {
+      const absolute = await insideProject(context, path, 'saml-token-file-missing', path);
+      try {
+        return await readFile(absolute, 'utf8');
+      } catch (cause) {
+        throw new WssError('saml-token-file-missing', `The SAML token file "${path}" could not be read.`, {
+          details: { file: path },
+          cause,
+        });
+      }
+    },
+  });
+}
+
+/**
+ * The target a send of `selected` hands the token source for an issued-token entry, without the
+ * connection half: its endpoint and expansion only. That is all a token's cache key reads, so a
+ * host can peek at the token a send would use (a preview) without loading a keystore.
+ *
+ * @throws WirebenchError `endpoint-unresolved`
+ */
+export function soapIssuedTokenKeyTarget(selected: SoapSelected, context: RunContext): IssuedTokenTarget {
+  return { endpointUrl: requiredEndpoint(selected, context).url, expand: issuedExpand(scopesFor(context)) };
+}
+
+/**
+ * What a send of `selected` hands the token source for one issued-token entry, built outside a
+ * send: the target (its endpoint, expansion, the entry's own mutual TLS and the proxy) and the
+ * WS-Security context the token request reads its credential through. A host's token status, fetch
+ * and clear use it, so they key and fetch exactly as the send does.
+ *
+ * @throws WirebenchError `endpoint-unresolved` | `keystore-missing`
+ */
+export async function soapIssuedTokenTarget(
+  selected: SoapSelected,
+  context: RunContext,
+  entry: WssIssuedTokenEntry,
+): Promise<{ readonly target: IssuedTokenTarget; readonly ctx: WssContext }> {
+  const scopes = scopesFor(context);
+  const endpointUrl = requiredEndpoint(selected, context).url;
+  return {
+    target: await issuedTargetFor(context, endpointUrl, issuedExpand(scopes), entry),
+    ctx: baseWssContext(context, scopes),
+  };
+}
+
 /** The app's `wssFor`: a selected configuration the project no longer has refuses the send. */
 function wssFor(
   selected: SoapSelected,
@@ -194,40 +269,15 @@ function wssFor(
   const { properties } = request;
   const used: IssuedToken[] = [];
   const source = issuedTokenSourceOf(context);
-  const expandText = (text: string): string => expandOrRefuse(text, scopes, 'WS-Security issued token');
-  /** The STS's own TLS (mutual TLS from the entry's keystore), proxy and limits; never the endpoint's. */
-  const targetFor = async (entry: WssIssuedTokenEntry): Promise<IssuedTokenTarget> => {
-    const tls = await tlsFor(context, entry.tlsKeystoreRef, false);
-    return {
-      endpointUrl,
-      expand: expandText,
-      ...(tls !== undefined ? { tls } : {}),
-      ...(context.host.proxyFor !== undefined ? { proxy: context.host.proxyFor } : {}),
-      ...(context.timeoutMs !== undefined ? { timeoutMs: context.timeoutMs } : {}),
-      ...(context.signal !== undefined ? { signal: context.signal } : {}),
-    };
-  };
-  const base = createWssContext({
-    keystores: (ref) => keystoreFor(context, ref),
-    secrets: (ref) => requiredSecret(ref, context.host.getSecret),
-    expand: (text) => expandOrRefuse(text, scopes, 'WS-Security SAML token'),
-    projectFile: async (path) => {
-      const absolute = await insideProject(context, path, 'saml-token-file-missing', path);
-      try {
-        return await readFile(absolute, 'utf8');
-      } catch (cause) {
-        throw new WssError('saml-token-file-missing', `The SAML token file "${path}" could not be read.`, {
-          details: { file: path },
-          cause,
-        });
-      }
-    },
-  });
+  const expandText = issuedExpand(scopes);
+  const base = baseWssContext(context, scopes);
   const ctx = createWssContext({
     ...base,
     issuedTokens: {
       get: async (entry) => {
-        const token = await source.get(entry, await targetFor(entry), { ctx: base });
+        const token = await source.get(entry, await issuedTargetFor(context, endpointUrl, expandText, entry), {
+          ctx: base,
+        });
         used.push(token);
         return token;
       },

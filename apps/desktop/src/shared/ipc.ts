@@ -78,6 +78,8 @@ import {
   requestSendGrpcRequestSchema,
   oauth2OwnerRequestSchema,
   oauth2StatusSchema,
+  issuedTokenLocatorSchema,
+  issuedTokenStatusSchema,
   requestPreflightRestRequestSchema,
   requestSendRestRequestSchema,
   requestSendToEnvironmentsRequestSchema,
@@ -587,6 +589,16 @@ export const channels = {
     status: defineChannel('oauth2.status', oauth2OwnerRequestSchema, oauth2StatusSchema),
     clearToken: defineChannel('oauth2.clearToken', oauth2OwnerRequestSchema, oauth2StatusSchema),
     cancel: defineChannel('oauth2.cancel', oauth2OwnerRequestSchema.partial(), requestCancelResponseSchema),
+  },
+  /**
+   * The session's issued SAML tokens (WS-Trust), one entry of an outgoing WS-Security configuration
+   * at a time. Main reads the entry and the request it is fetched for from the model; the assertion
+   * comes back only when the session shows secrets.
+   */
+  issuedTokens: {
+    status: defineChannel('issuedTokens.status', issuedTokenLocatorSchema, issuedTokenStatusSchema),
+    fetch: defineChannel('issuedTokens.fetch', issuedTokenLocatorSchema, issuedTokenStatusSchema),
+    clear: defineChannel('issuedTokens.clear', issuedTokenLocatorSchema, issuedTokenStatusSchema),
   },
   /**
    * Accounts on Wirebench Server. A password crosses exactly once, in `signInLocal` or

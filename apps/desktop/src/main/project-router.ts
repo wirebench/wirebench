@@ -178,6 +178,10 @@ export interface ProjectRouter {
   previewOutgoingWss(
     ...args: Parameters<ProjectHost['previewOutgoingWss']>
   ): ReturnType<ProjectHost['previewOutgoingWss']>;
+  /** Routed by its first argument, the project id (the entry it names is not an entity of its own). */
+  issuedTokenTarget(
+    ...args: Parameters<ProjectHost['issuedTokenTarget']>
+  ): ReturnType<ProjectHost['issuedTokenTarget']>;
   insertWssEntry(...args: Parameters<ProjectHost['insertWssEntry']>): ReturnType<ProjectHost['insertWssEntry']>;
   removeOutgoingWssFrom(
     ...args: Parameters<ProjectHost['removeOutgoingWssFrom']>
