@@ -16,6 +16,8 @@ import type {
   WsdlImportSource,
 } from './types.js';
 import { readDefinitionCache, writeDefinitionCache } from '../wsdl/cache.js';
+import type { KerberosSendAuth } from '../http/auth/kerberos-token.js';
+import { createHttpFetchDocument } from '../http/document-fetch.js';
 import { createDefaultFetchDocument } from '../http/fetch-document.js';
 import { parseWsdlBundle } from '../wsdl/merge.js';
 import type { DefinitionBundle, DefinitionSource, FetchDocument } from '../wsdl/resolver.js';
@@ -60,6 +62,16 @@ function withBasicAuth(fetchDocument: FetchDocument, auth: { username: string; p
     const bytes = new Uint8Array(await response.arrayBuffer());
     return { location: response.url, bytes, text: new TextDecoder('utf-8').decode(bytes) };
   };
+}
+
+/**
+ * Kerberos for a WSDL fetch goes through the origin-scoped document fetcher, so a token reaches only
+ * the WSDL's own origin; `file:` locations and inline sources fall back to `base`.
+ */
+function kerberosFetch(base: FetchDocument, auth: KerberosSendAuth, location: string): FetchDocument {
+  if (!/^https?:/i.test(location)) return base;
+  const web = createHttpFetchDocument({ auth, authOrigin: new URL(location).origin });
+  return (target, signal) => (/^https?:/i.test(target) ? web(target, signal) : base(target, signal));
 }
 
 /** Resolves from the network, honoring the optional abort signal. */
@@ -162,8 +174,14 @@ async function resolveWithCache(
 export async function importWsdl(source: WsdlImportSource, options?: WsdlImportOptions): Promise<WsdlImportResult> {
   const signal = options?.signal;
   const baseFetch = options?.fetchDocument ?? createDefaultFetchDocument();
-  const fetchDocument = options?.auth !== undefined ? withBasicAuth(baseFetch, options.auth) : baseFetch;
   const definitionSource = toDefinitionSource(source);
+  const auth = options?.auth;
+  const fetchDocument =
+    auth === undefined
+      ? baseFetch
+      : 'type' in auth
+        ? kerberosFetch(baseFetch, auth, definitionSource.location)
+        : withBasicAuth(baseFetch, auth);
 
   options?.onProgress?.({ phase: 'fetch', location: definitionSource.location });
   const cacheProblems: WsdlImportProblem[] = [];
