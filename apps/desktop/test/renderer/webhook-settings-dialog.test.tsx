@@ -76,6 +76,7 @@ afterEach(() => {
 
 describe('WebhookSettingsDialog', () => {
   it('shows the collection target and saves a picked catch URL', async () => {
+    installWirebenchApi();
     seed();
     useWebhooksStore.setState({
       server: SERVER,
@@ -96,6 +97,7 @@ describe('WebhookSettingsDialog', () => {
   });
 
   it('sends an auth key only when the Auth block was actually touched', async () => {
+    installWirebenchApi();
     seed();
     render(<WebhookSettingsDialog />);
     act(() => useWebhookItemsDialogs.getState().openSettings('p1'));

@@ -452,6 +452,7 @@ describe('ImportOpenApiDialog — a document behind authentication', () => {
       'Basic',
       'Bearer token',
       'API key',
+      'Kerberos',
     ]);
     expect(types.value).toBe('none');
 

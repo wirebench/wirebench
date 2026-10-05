@@ -46,7 +46,16 @@ describe('AuthFields', () => {
 
     const options = () =>
       [...screen.getByLabelText(/authentication type/).querySelectorAll('option')].map((option) => option.textContent);
-    expect(options()).toEqual(['Not configured', 'None', 'Basic', 'NTLM', 'Bearer token', 'API key', 'OAuth2']);
+    expect(options()).toEqual([
+      'Not configured',
+      'None',
+      'Basic',
+      'NTLM',
+      'Bearer token',
+      'API key',
+      'OAuth2',
+      'Kerberos',
+    ]);
 
     rerender(<AuthFields scope="Request" inheritable auth={undefined} onChange={vi.fn()} />);
     expect(options()?.[0]).toBe('Inherit');
@@ -59,7 +68,16 @@ describe('AuthFields', () => {
     const options = [...screen.getByLabelText(/authentication type/).querySelectorAll('option')].map(
       (option) => option.textContent,
     );
-    expect(options).toEqual(['Not configured', 'None', 'Basic', 'NTLM', 'Bearer token', 'API key', 'OAuth2']);
+    expect(options).toEqual([
+      'Not configured',
+      'None',
+      'Basic',
+      'NTLM',
+      'Bearer token',
+      'API key',
+      'OAuth2',
+      'Kerberos',
+    ]);
   });
 
   it('passes the six SOAP schemes through and maps inherit to null', () => {
