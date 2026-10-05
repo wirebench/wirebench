@@ -29,6 +29,9 @@ export function stubWirebenchApi(overrides: ApiOverrides = {}): WirebenchApi {
 
   const defaults: Record<string, unknown> = {
     app: { version: fail('app.version'), registerMenu: vi.fn().mockResolvedValue({ ok: true, value: { items: 0 } }) },
+    auth: {
+      kerberosAvailability: vi.fn().mockResolvedValue({ ok: true, value: { available: true, platform: 'linux' } }),
+    },
     account: {
       list: vi.fn().mockResolvedValue({ ok: true, value: { servers: [] } }),
       probe: fail('account.probe'),
