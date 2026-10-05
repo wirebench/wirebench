@@ -94,7 +94,9 @@ both still work in a packaged build; if either ever stops, that spec is where it
 
 `Resources/kerberos/<platform>-<arch>/kerberos.node` ships through `extraResources`, outside the
 asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. macOS gets one
-universal file in both architecture folders, which is why `mac.x64ArchFiles` names it.
+universal file in both architecture folders. `@electron/universal` already skips identical fat
+Mach-O files, so `mac.x64ArchFiles` naming it is a backstop for the day the prebuild stops being
+universal.
 
 ## Electron fuses
 
@@ -220,8 +222,9 @@ changed blocks.
 The Azure signing step is not wired into `release.yml` yet ([#114](https://github.com/wirebench/wirebench/issues/114)).
 Until it is, both signing jobs pass their input through unsigned.
 
-The signing configuration for the app must include `resources/kerberos/**/*.node`, so the binding is
-signed with `Wirebench.exe`. That is a one-time change on the signing service's side.
+The SignPath app configuration referenced by `vars.SIGNPATH_APP_CONFIGURATION_SLUG` must include
+`**/*.node`, so the Kerberos binding is signed with `Wirebench.exe`. That is a one-time change on
+SignPath's side, and `win-installers` fails the release when the signed binding is not valid.
 
 ### Setting it up
 

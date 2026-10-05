@@ -8,10 +8,10 @@
  *   node scripts/check-kerberos-vendor.ts <platform> <resources dir>...
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const PIN_FILE = join(dirname(fileURLToPath(import.meta.url)), 'kerberos-prebuilds.json');
 
@@ -43,7 +43,7 @@ export function checkKerberosVendor(options: {
   return problems;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] !== undefined && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) {
   const [platform = process.platform, ...dirs] = process.argv.slice(2);
   const problems = checkKerberosVendor({ platform, resourcesDirs: dirs, loadHost: true });
   for (const problem of problems) console.error(`kerberos vendor: ${problem}`);

@@ -78,8 +78,9 @@ mac:
     - target: zip
       arch: [universal, x64, arm64]
   icon: resources/icon.png
-  # The Kerberos binding is one universal (fat) file, the same in the x64 and arm64 builds; the
-  # universal merge refuses identical Mach-O files it is not told about.
+  # A backstop. The Kerberos binding is one universal (fat) file, the same in the x64 and arm64
+  # builds, and @electron/universal already skips identical fat Mach-O files; this only matters if
+  # the prebuild ever stops being universal.
   x64ArchFiles: Contents/Resources/kerberos/**
   hardenedRuntime: true
   gatekeeperAssess: false

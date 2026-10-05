@@ -146,7 +146,9 @@ async function readNotice(dir: string): Promise<{ file: string; text: string } |
 }
 
 /** Walks the dependency graph from `roots`, collecting every distributed package exactly once. */
-async function collect(roots: readonly { name: string; from: string }[]): Promise<readonly LicensedPackage[]> {
+export async function collect(
+  roots: readonly { name: string; from: string; optional?: boolean }[],
+): Promise<readonly LicensedPackage[]> {
   const found = new Map<string, LicensedPackage>();
   const seen = new Set<string>();
   const queue = [...roots];
@@ -159,6 +161,10 @@ async function collect(roots: readonly { name: string; from: string }[]): Promis
     }
     const dir = await findPackageDir(job.name, job.from);
     if (dir === undefined) {
+      // An optional dependency may legitimately be absent (a platform it does not install on).
+      if (job.optional === true) {
+        continue;
+      }
       throw new Error(`Cannot resolve "${job.name}" from ${job.from}; run \`pnpm install\` first`);
     }
     if (seen.has(dir)) {
@@ -171,8 +177,11 @@ async function collect(roots: readonly { name: string; from: string }[]): Promis
     if (manifest === undefined) {
       continue;
     }
-    for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })) {
+    for (const dependency of Object.keys(manifest.dependencies ?? {})) {
       queue.push({ name: dependency, from: dir });
+    }
+    for (const dependency of Object.keys(manifest.optionalDependencies ?? {})) {
+      queue.push({ name: dependency, from: dir, optional: true });
     }
     if (OWN_PACKAGES.has(job.name)) {
       continue;
