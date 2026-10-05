@@ -53,6 +53,48 @@ describe('Kerberos in AuthFields', () => {
     expect(onChange).toHaveBeenCalledWith({ type: 'kerberos' });
   });
 
+  it('off Windows, shows an inherited Windows account and offers to clear it, keeping spn and principal', async () => {
+    availability({ available: true, platform: 'darwin' });
+    const onChange = vi.fn();
+    render(
+      <AuthFields
+        scope="API"
+        auth={{
+          type: 'kerberos',
+          spn: 'HTTP/svc',
+          principal: 'ada@EXAMPLE.TEST',
+          username: 'ada',
+          domain: 'CORP',
+          passwordRef: 'ref-p',
+        }}
+        onChange={onChange}
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText('This configuration names a Windows account, which macOS and Linux refuse.'),
+      ).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Clear account' }));
+    expect(onChange).toHaveBeenCalledWith({ type: 'kerberos', spn: 'HTTP/svc', principal: 'ada@EXAMPLE.TEST' });
+  });
+
+  it('shows no account note off Windows when no account is named, nor on Windows when one is', async () => {
+    availability({ available: true, platform: 'linux' });
+    const { unmount } = render(
+      <AuthFields scope="API" auth={{ type: 'kerberos', spn: 'HTTP/svc' }} onChange={vi.fn()} />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('API principal')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Clear account' })).toBeNull();
+    unmount();
+
+    resetKerberosAvailability();
+    availability({ available: true, platform: 'win32' });
+    render(<AuthFields scope="API" auth={{ type: 'kerberos', username: 'ada' }} onChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Use another account')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Clear account' })).toBeNull();
+  });
+
   it('settles to unavailable, with a reason, when the IPC call rejects', async () => {
     installWirebenchApi({ auth: { kerberosAvailability: vi.fn().mockRejectedValue(new Error('boom')) } });
     render(<AuthFields scope="API" auth={{ type: 'kerberos' }} onChange={vi.fn()} />);

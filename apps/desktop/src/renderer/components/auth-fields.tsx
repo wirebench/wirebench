@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Button } from './button.js';
 import { SecretField } from './secret-field.js';
 import { useKerberosAvailability } from '../lib/use-kerberos-availability.js';
 import { ipc } from '../state/ipc-client.js';
@@ -324,6 +325,28 @@ export function AuthFields({
           {text('spn', 'SPN', 'HTTP/<host of the request>')}
           <p className="text-xs text-fg-subtle">Leave empty unless the service is registered under another name.</p>
           {kerberos !== undefined && kerberos.platform !== 'win32' && text('principal', 'Principal', 'user@REALM')}
+          {kerberos !== undefined &&
+            kerberos.platform !== 'win32' &&
+            (auth.username !== undefined || auth.passwordRef !== undefined || auth.domain !== undefined) && (
+              // An account made on Windows, which this platform cannot use: every send would be refused,
+              // and the fields that name it are Windows-only, so say so and offer the way out here.
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-fg-subtle">
+                  This configuration names a Windows account, which macOS and Linux refuse.
+                </p>
+                <Button
+                  onClick={() => {
+                    onChange({
+                      type: 'kerberos',
+                      ...(auth.spn !== undefined ? { spn: auth.spn } : {}),
+                      ...(auth.principal !== undefined ? { principal: auth.principal } : {}),
+                    });
+                  }}
+                >
+                  Clear account
+                </Button>
+              </div>
+            )}
           {kerberos?.platform === 'win32' && (
             <details open={auth.username !== undefined}>
               <summary className="text-xs">Use another account</summary>
