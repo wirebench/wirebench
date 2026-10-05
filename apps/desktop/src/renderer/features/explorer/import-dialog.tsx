@@ -247,6 +247,14 @@ export function ImportDialog({ open, onOpenChange, initialFormat: propFormat }: 
   const [authMode, setAuthMode] = useState<'none' | 'basic' | 'kerberos'>('none');
   const [spn, setSpn] = useState('');
   const kerberosAvailability = useKerberosAvailability();
+  // Kerberos can be picked before availability is known; once main says it is unavailable, a
+  // Kerberos choice could only fail, so it falls back to no authentication.
+  const kerberosUnavailable = kerberosAvailability?.available === false;
+  useEffect(() => {
+    if (kerberosUnavailable) {
+      setAuthMode((mode) => (mode === 'kerberos' ? 'none' : mode));
+    }
+  }, [kerberosUnavailable]);
   const [username, setUsername] = useState('');
   const [passwordRef, setPasswordRef] = useState<string | undefined>(undefined);
   const passwordFlushRef = useRef<(() => Promise<string | undefined>) | undefined>(undefined);

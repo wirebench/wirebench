@@ -25,6 +25,12 @@ describe('the Kerberos note on the status line', () => {
     expect(screen.queryByTestId('auth-challenge-note')).toBeNull();
   });
 
+  it('shows no Kerberos note for a 401 that offered no Negotiate (challenged, but one attempt)', () => {
+    const exchange = makeExchange({ auth: { scheme: 'kerberos', challenged: true, attempts: 1, spn: 'HTTP/svc' } });
+    render(<ResponseStatus exchange={exchange} />);
+    expect(screen.queryByTestId('auth-challenge-note')).toBeNull();
+  });
+
   it('keeps the existing note for other schemes', () => {
     const exchange = makeExchange({ auth: { scheme: 'basic', challenged: true, attempts: 2 } });
     render(<ResponseStatus exchange={exchange} />);

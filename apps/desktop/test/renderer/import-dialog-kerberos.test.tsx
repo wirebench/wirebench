@@ -90,6 +90,33 @@ describe('the import dialog with Kerberos', () => {
     expect(screen.getByText('No Kerberos library here.')).toBeTruthy();
   });
 
+  it('falls back to no authentication when Kerberos turns out to be unavailable after it was picked', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    installWirebenchApi({
+      project: { addInterface: vi.fn() },
+      auth: {
+        kerberosAvailability: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+        ),
+      },
+      definition: { cancelImport: vi.fn().mockResolvedValue({ ok: true, value: { cancelled: true } }) },
+    });
+    render(<ImportDialog open onOpenChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('WSDL URL'), { target: { value: 'http://example.test/service.wsdl' } });
+    fireEvent.change(screen.getByLabelText('Definition authentication'), { target: { value: 'kerberos' } });
+    expect(screen.getByLabelText<HTMLSelectElement>('Definition authentication').value).toBe('kerberos');
+
+    answer({ ok: true, value: { available: false, reason: 'No Kerberos library here.', platform: 'linux' } });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText<HTMLSelectElement>('Definition authentication').value).toBe('none'),
+    );
+    expect(screen.queryByLabelText('Definition SPN')).toBeNull();
+  });
+
   it('keeps Basic working through the same select', () => {
     stub({ available: true, platform: 'linux' });
     render(<ImportDialog open onOpenChange={vi.fn()} />);

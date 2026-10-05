@@ -89,8 +89,10 @@ export function ResponseStatus({ exchange, error }: ResponseStatusProps) {
         </span>
       )}
       {exchange.auth?.scheme === 'kerberos'
-        ? // An unchallenged Kerberos send carried no token, so there is nothing to claim then.
-          exchange.auth.challenged && (
+        ? // A token went out only after a Negotiate challenge, which is the second attempt: an
+          // unchallenged send, or a 401 that offered no Negotiate (one attempt), carried none.
+          exchange.auth.challenged &&
+          exchange.auth.attempts === 2 && (
             <span data-testid="auth-challenge-note" className="text-fg-subtle">
               {' · '}
               Authenticated with Kerberos
