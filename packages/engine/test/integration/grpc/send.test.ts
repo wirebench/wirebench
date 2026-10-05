@@ -95,6 +95,41 @@ describe('sendGrpc', () => {
     expect(provider.inits).toHaveLength(1);
   });
 
+  it('fails a hung Kerberos token with timeout within the deadline (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    const before = server.calls.length;
+    const started = Date.now();
+    await expect(sendGrpc(input({ auth: { type: 'kerberos' }, timeoutMs: 200 }))).rejects.toMatchObject({
+      code: 'timeout',
+      details: { stage: 'kerberos' },
+    });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(server.calls.length).toBe(before);
+    provider.release();
+  });
+
+  it('stops a hung Kerberos token on the caller signal (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    const controller = new AbortController();
+    const pending = sendGrpc(input({ auth: { type: 'kerberos' }, signal: controller.signal }));
+    setTimeout(() => controller.abort(), 20);
+    await expect(pending).rejects.toMatchObject({ code: 'aborted' });
+    provider.release();
+  });
+
+  it('sends what is left of the deadline after the token (#267)', async () => {
+    const provider = fakeKerberos({ hang: 'init' });
+    configureKerberos(provider);
+    setTimeout(() => provider.release(), 150);
+    const exchange = await sendGrpc(input({ auth: { type: 'kerberos' }, timeoutMs: 5000 }));
+    expect(exchange.status).toBe(0);
+    const sent = Number.parseInt(exchange.request.headers['grpc-timeout']!, 10);
+    expect(sent).toBeLessThanOrEqual(4860);
+    expect(sent).toBeGreaterThan(0);
+  });
+
   it('reads every message of a server stream', async () => {
     const exchange = await sendGrpc(
       input({
