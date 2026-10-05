@@ -122,6 +122,22 @@ const oauth2AuthSchema = refuseSecretValues(
 );
 
 /**
+ * Kerberos over HTTP Negotiate (#40). No secret by default: the OS's own ticket is used. The account
+ * fields are Windows-only and refused at send time elsewhere; the password is only ever a reference.
+ */
+export const kerberosAuthSchema = refuseSecretValues(
+  z.looseObject({
+    type: z.literal('kerberos'),
+    spn: z.string().optional(),
+    principal: z.string().optional(),
+    username: z.string().optional(),
+    domain: z.string().optional(),
+    passwordRef: z.string().optional(),
+    passwordEnv: envName,
+  }),
+);
+
+/**
  * Authentication as persisted anywhere a project configures it. `endpointAuthSchema` is one arm,
  * so a file written before the REST client — which only ever held `none`/`basic`/`ntlm` — parses
  * unchanged. `inherit` is accepted here and rejected by the SOAP schemas that reuse
@@ -133,6 +149,7 @@ export const authConfigSchema = z.union([
   bearerAuthSchema,
   apiKeyAuthSchema,
   oauth2AuthSchema,
+  kerberosAuthSchema,
 ]);
 
 /**
@@ -143,7 +160,13 @@ export const authConfigSchema = z.union([
  * and widening its enum would let its looser object shape swallow token configs before the
  * stricter arms see them.
  */
-export const soapOwnerAuthSchema = z.union([endpointAuthSchema, bearerAuthSchema, apiKeyAuthSchema, oauth2AuthSchema]);
+export const soapOwnerAuthSchema = z.union([
+  endpointAuthSchema,
+  bearerAuthSchema,
+  apiKeyAuthSchema,
+  oauth2AuthSchema,
+  kerberosAuthSchema,
+]);
 
 /**
  * A definition's fetch credentials: Basic, Bearer or API key, each as references only. The Basic arm
@@ -156,6 +179,7 @@ export const definitionAuthSchema = z.union([
   }),
   bearerAuthSchema,
   apiKeyAuthSchema,
+  kerberosAuthSchema,
 ]);
 
 /** Where a file's bytes live: the project's content-addressed cache, or a path on disk. */

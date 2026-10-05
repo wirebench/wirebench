@@ -153,6 +153,20 @@ export async function resolveAuthConfig(
     }
     case 'oauth2':
       return options.accessToken === undefined ? undefined : { type: 'oauth2', accessToken: options.accessToken };
+    case 'kerberos': {
+      const password =
+        auth.username !== undefined && auth.passwordRef !== undefined
+          ? await requireSecret(auth.passwordRef, getSecret)
+          : undefined;
+      return {
+        type: 'kerberos',
+        ...(auth.spn !== undefined ? { spn: auth.spn } : {}),
+        ...(auth.principal !== undefined ? { principal: auth.principal } : {}),
+        ...(auth.username !== undefined ? { username: auth.username } : {}),
+        ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+        ...(password !== undefined ? { password } : {}),
+      };
+    }
     default:
       return undefined;
   }

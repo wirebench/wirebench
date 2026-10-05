@@ -36,10 +36,11 @@ export type { WsaConfig, WsaConfigPatch, WsaMustUnderstand, WsaVersion } from '.
  * gRPC request (#63), the project's webhook collection under `webhooks/`, `hook` on a request, `signing` on the
  * collection, its folders and its items, the `callback` assertion kind (callback-assertion spec §2.1), and `assertions` on a WebSocket request (#192).
  * 6 shipped in 3.1.0. 7 added `examples` on a REST request: recorded responses kept beside it (#64).
+ * 8 added Kerberos auth (`type: kerberos`), so an older build refuses such a project as too new.
  * All are additive; this format does not round-trip unknown keys, so an older build would delete them on
  * its next save (see `schema.ts` and ADR-0003) — and would meanwhile send a request without its scripts.
  */
-export const FORMAT_VERSION = 7;
+export const FORMAT_VERSION = 8;
 
 /** A flat, ordered map of property name to value (project- or environment-scoped). */
 export type PropertyMap = Readonly<Record<string, string>>;
@@ -51,7 +52,7 @@ export type PropertyMap = Readonly<Record<string, string>>;
  * which walks its folder chain up to its API. A SOAP interface, endpoint or request uses
  * {@link EndpointAuth}, the subset without it.
  */
-export type AuthType = 'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2';
+export type AuthType = 'inherit' | 'none' | 'basic' | 'ntlm' | 'bearer' | 'api-key' | 'oauth2' | 'kerberos';
 
 /** How a request or endpoint authenticates. Passwords are always `secretRef`s, never values. */
 export interface EndpointAuth {
@@ -132,13 +133,24 @@ export interface OAuth2Auth {
   readonly refreshTokenRef?: string;
 }
 
+/** Kerberos over HTTP Negotiate (#40): the OS ticket by default; the account fields are Windows-only. */
+export interface KerberosAuth {
+  readonly type: 'kerberos';
+  readonly spn?: string;
+  readonly principal?: string;
+  readonly username?: string;
+  readonly domain?: string;
+  readonly passwordRef?: string;
+  readonly passwordEnv?: string;
+}
+
 /**
  * Authentication as configured anywhere in a project. A discriminated union on `type`, of which
  * {@link EndpointAuth} — the `none`/`basic`/`ntlm` member SOAP has always had — is one arm, so a
  * SOAP endpoint's credentials are already an `AuthConfig` and the same editor serves both
  * protocols.
  */
-export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth;
+export type AuthConfig = InheritAuth | EndpointAuth | BearerAuth | ApiKeyAuth | OAuth2Auth | KerberosAuth;
 
 /**
  * What a SOAP interface, endpoint or request may hold: every {@link AuthConfig} arm except
@@ -151,7 +163,7 @@ export type SoapOwnerAuth = Exclude<AuthConfig, InheritAuth>;
  * How a definition document is fetched: Basic, a bearer token or an API key. Secrets are keychain
  * references, as everywhere else. Separate from the API's own `auth`, which is what its requests send.
  */
-export type DefinitionAuth = (EndpointAuth & { readonly type: 'basic' }) | BearerAuth | ApiKeyAuth;
+export type DefinitionAuth = (EndpointAuth & { readonly type: 'basic' }) | BearerAuth | ApiKeyAuth | KerberosAuth;
 
 /** The OAuth2 fields a freshly configured entry starts with. */
 export const DEFAULT_OAUTH2_AUTH: OAuth2Auth = Object.freeze({

@@ -770,7 +770,7 @@ export type EndpointSourceWire = z.infer<typeof endpointSourceSchema>;
 export const requestAuthSourceSchema = z.object({
   /** `api` and `folder` are the REST chain's links; the rest are a SOAP request's. */
   source: z.enum(['request', 'endpoint', 'interface', 'folder', 'api', 'none']),
-  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  type: z.enum(['none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
   username: z.string().optional(),
   preemptive: z.boolean().optional(),
   /** Name of the endpoint the credentials came from, when `source` is `'endpoint'`. */
@@ -818,7 +818,7 @@ export type RequestPreflightResponse = z.infer<typeof requestPreflightResponseSc
 
 /** What authentication did during a send; mirrors the engine's `AuthSummary`. */
 export const authSummaryWireSchema = z.object({
-  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  scheme: z.enum(['basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
   challenged: z.boolean(),
   attempts: z.union([z.literal(1), z.literal(2), z.literal(3)]),
 });

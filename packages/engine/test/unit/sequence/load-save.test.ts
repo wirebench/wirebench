@@ -35,7 +35,7 @@ describe('sequences in a project folder', () => {
     expect(await listTree(dir)).toEqual(
       expect.arrayContaining(['sequences/Checkout.sequence.yaml', 'sequences/Refund.sequence.yaml']),
     );
-    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain('formatVersion: 7');
+    expect(await readFile(join(dir, 'wirebench.yaml'), 'utf8')).toContain('formatVersion: 8');
 
     const { project, problems } = await loadProject(dir);
     expect(problems).toEqual([]);
