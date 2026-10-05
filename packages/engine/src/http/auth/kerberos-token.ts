@@ -39,6 +39,11 @@ export interface KerberosContext {
   verify(replyToken: Uint8Array): Promise<void>;
 }
 
+/** A Kerberos field as set or not: a blank or whitespace-only value counts as unset. */
+export function kerberosField(value: string | undefined): string | undefined {
+  return value === undefined || value.trim() === '' ? undefined : value;
+}
+
 /** `HTTP/host`, `HTTP@host` or a bare host, in the form this platform's API wants. */
 export function normaliseSpn(spn: string, platform: NodeJS.Platform): string {
   const trimmed = spn.trim();
@@ -69,8 +74,12 @@ export async function startKerberosContext(
   const platform = options.platform ?? process.platform;
   const provider = options.provider ?? kerberosProvider();
   const target = normaliseSpn(spn, platform);
+  const principal = kerberosField(credentials.principal);
+  const username = kerberosField(credentials.username);
+  const domain = kerberosField(credentials.domain);
+  const password = kerberosField(credentials.password);
 
-  if (platform !== 'win32' && (credentials.username !== undefined || credentials.password !== undefined)) {
+  if (platform !== 'win32' && (username !== undefined || password !== undefined)) {
     throw new HttpError(
       'kerberos-explicit-credentials-unsupported',
       'Explicit Kerberos credentials are Windows-only. Run `kinit user@REALM` and leave username and password empty.',
@@ -85,10 +94,10 @@ export async function startKerberosContext(
   try {
     const client = await provider.initClient({
       spn: target,
-      ...(credentials.principal !== undefined && platform !== 'win32' ? { principal: credentials.principal } : {}),
-      ...(credentials.username !== undefined ? { user: credentials.username } : {}),
-      ...(credentials.domain !== undefined ? { domain: credentials.domain } : {}),
-      ...(credentials.password !== undefined ? { password: credentials.password } : {}),
+      ...(principal !== undefined && platform !== 'win32' ? { principal } : {}),
+      ...(username !== undefined ? { user: username } : {}),
+      ...(domain !== undefined ? { domain } : {}),
+      ...(password !== undefined ? { password } : {}),
     });
     const first = await client.step('');
     return {
@@ -128,7 +137,7 @@ export async function negotiateBearer(
   url: string,
   options?: KerberosOptions,
 ): Promise<{ readonly type: 'bearer'; readonly scheme: 'Negotiate'; readonly token: string }> {
-  const token = await kerberosToken(auth.spn ?? defaultSpn(url), auth, options);
+  const token = await kerberosToken(kerberosField(auth.spn) ?? defaultSpn(url), auth, options);
   return { type: 'bearer', scheme: 'Negotiate', token: Buffer.from(token).toString('base64') };
 }
 

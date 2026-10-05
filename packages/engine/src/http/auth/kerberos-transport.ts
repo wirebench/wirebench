@@ -15,7 +15,7 @@ import { HttpError } from '../../errors.js';
 import { createSingleConnectionDispatcher, sendHttp } from '../client.js';
 import { headerValue } from '../headers.js';
 import type { HttpExchange, HttpRequest } from '../types.js';
-import { defaultSpn, startKerberosContext, type KerberosSendAuth } from './kerberos-token.js';
+import { defaultSpn, kerberosField, startKerberosContext, type KerberosSendAuth } from './kerberos-token.js';
 
 export interface KerberosHandshakeResult {
   readonly http: HttpExchange;
@@ -50,7 +50,7 @@ export async function kerberosHandshake(
   const now = options.now ?? Date.now;
   const startedAt = now();
   const remaining = (): number => request.timeoutMs - (now() - startedAt);
-  const spnWanted = auth.spn ?? defaultSpn(request.url);
+  const spnWanted = kerberosField(auth.spn) ?? defaultSpn(request.url);
 
   let ownDispatcher: Dispatcher | undefined;
   let dispatcher = options.dispatcher;

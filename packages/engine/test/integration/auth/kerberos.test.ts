@@ -78,6 +78,17 @@ describe('Kerberos over HTTP Negotiate', () => {
     expect(server.requests[0]?.authorization).toBe(`Negotiate ${TOKEN}`);
   });
 
+  it('takes a blank SPN as the default one', async () => {
+    const provider = fakeKerberos();
+    configureKerberos(provider);
+    server = await startNegotiateServer({ expectedToken: TOKEN, reply: REPLY });
+    const result = await sendWithAuth(post(server.url), { type: 'kerberos', spn: '' });
+    expect(result.http.status).toBe(200);
+    expect(provider.inits.map((init) => init.spn)).toEqual([
+      process.platform === 'win32' ? 'HTTP/127.0.0.1' : 'HTTP@127.0.0.1',
+    ]);
+  });
+
   it('lets a caller-supplied Authorization header win', async () => {
     const provider = fakeKerberos();
     configureKerberos(provider);

@@ -7,6 +7,7 @@
 import { WirebenchError } from '../errors.js';
 import { isEndpointAuth } from '../project/endpoints.js';
 import type { AuthConfig, SoapOwnerAuth, EndpointAuth } from '../project/model.js';
+import { kerberosField } from '../http/auth/kerberos-token.js';
 import type { SendAuth } from '../http/auth/send-auth.js';
 import { secretPseudoRef } from './secret-token.js';
 
@@ -154,16 +155,21 @@ export async function resolveAuthConfig(
     case 'oauth2':
       return options.accessToken === undefined ? undefined : { type: 'oauth2', accessToken: options.accessToken };
     case 'kerberos': {
-      const password =
-        auth.username !== undefined && auth.passwordRef !== undefined
+      const spn = kerberosField(auth.spn);
+      const principal = kerberosField(auth.principal);
+      const username = kerberosField(auth.username);
+      const domain = kerberosField(auth.domain);
+      const resolved =
+        username !== undefined && auth.passwordRef !== undefined
           ? await requireSecret(auth.passwordRef, getSecret)
           : undefined;
+      const password = kerberosField(resolved);
       return {
         type: 'kerberos',
-        ...(auth.spn !== undefined ? { spn: auth.spn } : {}),
-        ...(auth.principal !== undefined ? { principal: auth.principal } : {}),
-        ...(auth.username !== undefined ? { username: auth.username } : {}),
-        ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+        ...(spn !== undefined ? { spn } : {}),
+        ...(principal !== undefined ? { principal } : {}),
+        ...(username !== undefined ? { username } : {}),
+        ...(domain !== undefined ? { domain } : {}),
         ...(password !== undefined ? { password } : {}),
       };
     }

@@ -24,6 +24,21 @@ describe('kerberos resolution', () => {
     });
   });
 
+  it('drops blank fields, and reads no password for a blank username', async () => {
+    const read: string[] = [];
+    const getSecret = (ref: string) => {
+      read.push(ref);
+      return Promise.resolve('p');
+    };
+    await expect(
+      resolveAuthConfig(
+        { type: 'kerberos', spn: '', principal: ' ', username: '  ', domain: '', passwordRef: 'r' },
+        getSecret,
+      ),
+    ).resolves.toEqual({ type: 'kerberos' });
+    expect(read).toEqual([]);
+  });
+
   it('fails a dangling reference as secret-missing', async () => {
     await expect(
       resolveAuthConfig({ type: 'kerberos', username: 'u', passwordRef: 'gone' }, secrets({})),

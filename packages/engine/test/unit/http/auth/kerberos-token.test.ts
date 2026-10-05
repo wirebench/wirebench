@@ -117,6 +117,26 @@ describe('kerberosToken and negotiateBearer', () => {
   });
 });
 
+describe('blank Kerberos fields', () => {
+  it('a blank username or password on linux is unset, not refused', async () => {
+    const provider = fakeKerberos();
+    await startKerberosContext('svc', { username: '', password: ' ', principal: '' }, { provider, platform: 'linux' });
+    expect(provider.inits).toEqual([{ spn: 'HTTP@svc' }]);
+  });
+
+  it('a blank account on Windows passes nothing', async () => {
+    const provider = fakeKerberos();
+    await startKerberosContext('svc', { username: ' ', domain: '', password: '' }, { provider, platform: 'win32' });
+    expect(provider.inits).toEqual([{ spn: 'HTTP/svc' }]);
+  });
+
+  it("negotiateBearer takes a blank SPN as the URL's default", async () => {
+    const provider = fakeKerberos();
+    await negotiateBearer({ type: 'kerberos', spn: ' ' }, 'https://svc.corp/a', { provider, platform: 'linux' });
+    expect(provider.inits.map((init) => init.spn)).toEqual(['HTTP@svc.corp']);
+  });
+});
+
 describe('defaultSpn with a bad URL', () => {
   it('fails as kerberos-unknown-spn rather than a TypeError', () => {
     expect(() => defaultSpn('not a url')).toThrow(
