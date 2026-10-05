@@ -73,8 +73,8 @@ authentication uses.
 
 Kerberos failures keep their own codes: `kerberos-no-credentials` (no ticket), `kerberos-unknown-spn`,
 `kerberos-clock-skew` and `kerberos-failed`. `wirebench run` and the MCP server can use the Kerberos
-credential wherever the Kerberos component loads. In the desktop app the option says it needs
-Kerberos support until the app's own Kerberos support ships.
+credential wherever the Kerberos component loads. Where it does not load, the desktop app shows the
+reason under the Kerberos credential, as it does for Kerberos request authentication.
 
 ## Bearer or public key
 
