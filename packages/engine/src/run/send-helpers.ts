@@ -211,7 +211,7 @@ export async function authFor(
  * Tells the host each credential a resolved auth puts on the wire, in the form it travels there,
  * so a server that echoes one back has it masked: an API key's value, a bearer or OAuth2 access
  * token, and Basic's `base64(user:password)`. A password is never reported bare — people choose
- * them, so one is often ordinary text — and NTLM's password never travels at all.
+ * them, so one is often ordinary text — and the NTLM and Kerberos passwords never travel at all.
  */
 export function reportedAuth(auth: SendAuth | undefined, context: RunContext): SendAuth | undefined {
   const report = context.host.onSecretValue;
@@ -228,10 +228,6 @@ export function reportedAuth(auth: SendAuth | undefined, context: RunContext): S
       break;
     case 'basic':
       report(Buffer.from(`${auth.username}:${auth.password}`, 'utf-8').toString('base64'));
-      break;
-    case 'kerberos':
-      // The password never travels (SSPI uses it locally), but a server echoing it back is still masked.
-      if (auth.password !== undefined) report(auth.password);
       break;
     default:
       break;
