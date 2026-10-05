@@ -32,6 +32,20 @@ sudo kadmin.local -q "ktadd -k $KRB_DIR/alice.keytab alice@$REALM"
 sudo kadmin.local -q "ktadd -k $KRB_DIR/http.keytab HTTP/localhost@$REALM"
 sudo chown "$(id -u)" "$KRB_DIR"/*.keytab
 sudo systemctl restart krb5-kdc
+# Smoke test: a realm that cannot issue alice a ticket fails this step, not the tests after it.
+# Its own cache, so the tests start with none; a few tries while the KDC comes up.
+export KRB5_CONFIG="$KRB_DIR/krb5.conf"
+for attempt in 1 2 3 4 5; do
+  if KRB5CCNAME="FILE:$KRB_DIR/smoke-ccache" kinit -kt "$KRB_DIR/alice.keytab" "alice@$REALM"; then
+    break
+  fi
+  if [ "$attempt" -eq 5 ]; then
+    echo "kinit as alice@$REALM failed: the throwaway realm is broken" >&2
+    exit 1
+  fi
+  sleep 1
+done
+KRB5CCNAME="FILE:$KRB_DIR/smoke-ccache" kdestroy
 {
   echo "KRB5_CONFIG=$KRB_DIR/krb5.conf"
   echo "KRB5_KTNAME=$KRB_DIR/http.keytab"

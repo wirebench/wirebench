@@ -37,7 +37,7 @@ describeKerberos('Kerberos against a real KDC', () => {
         () => response.writeHead(401).end(),
       );
     });
-    await new Promise<void>((resolve) => server?.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) => server?.listen(0, 'localhost', resolve));
     url = `http://localhost:${(server.address() as AddressInfo).port}/svc`;
   });
 
@@ -62,11 +62,13 @@ describeKerberos('Kerberos against a real KDC', () => {
   });
 
   it('names an SPN the KDC does not know', async () => {
-    await expect(sendWithAuth(get(), { type: 'kerberos', spn: 'HTTP/nowhere.invalid' })).rejects.toMatchObject({
+    // Dotless, so it maps to the default realm and the KDC answers "not found in Kerberos database".
+    await expect(sendWithAuth(get(), { type: 'kerberos', spn: 'HTTP/nowhere' })).rejects.toMatchObject({
       code: 'kerberos-unknown-spn',
     });
   });
 
+  // Must stay last: it destroys the ticket every test above relies on.
   it('says there is no ticket after kdestroy', async () => {
     execFileSync('kdestroy');
     await expect(sendWithAuth(get(), { type: 'kerberos' })).rejects.toMatchObject({ code: 'kerberos-no-credentials' });
