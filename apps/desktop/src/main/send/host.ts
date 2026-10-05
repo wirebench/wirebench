@@ -143,8 +143,12 @@ export async function desktopSendHost(deps: DesktopSendDeps, send: DesktopSend):
  * The getter `tokenSecrets` builds in `ipc/request.ts`: the send's own project's. A webhook signing
  * pseudo-ref (a node that names only a CI variable) is never looked up (R7): the desktop reads a
  * signing secret from the keychain by `secretRef` alone, so such a node refuses rather than signs.
+ * Exported for the issued-token panel, whose Fetch now must read secrets exactly as a send does.
  */
-function desktopSecrets(deps: DesktopSendDeps, projectId: string | undefined): GetSecret {
+export function desktopSecrets(
+  deps: Pick<DesktopSendDeps, 'secretsFor' | 'getSecret'>,
+  projectId: string | undefined,
+): GetSecret {
   const getSecret = deps.secretsFor?.(projectId) ?? ((ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined));
   return (ref) => (ref.startsWith(SIGNING_PSEUDO_REF_PREFIX) ? Promise.resolve(undefined) : getSecret(ref));
 }
@@ -216,6 +220,9 @@ export function stsLogEntry(
   const { show } = opts;
   const wire = toHttpExchangeWire(http, { show });
   const body = redactBody(wire.bodyBase64, show);
+  // A compressed body's bytes are not text the redaction reads, in the raw response as in the raw
+  // body; the redacted, decoded body stands in for them under the response's own head.
+  const compressed = wire.rawBodyBase64 !== wire.bodyBase64;
   return {
     kind: 'exchange',
     ...(opts.requestId !== undefined ? { requestId: opts.requestId } : {}),
@@ -228,12 +235,21 @@ export function stsLogEntry(
         // A compressed body's bytes are not text the redaction reads, so the decoded, redacted body
         // stands in for them rather than the assertion crossing the bridge compressed.
         rawBodyBase64: show ? wire.rawBodyBase64 : body,
+        rawResponseBase64: show || !compressed ? wire.rawResponseBase64 : withBody(wire.rawResponseBase64, body),
       },
       problems: [],
       auxiliary: 'sts',
       ...(opts.causedBy !== undefined ? { causedBy: opts.causedBy } : {}),
     },
   };
+}
+
+/** Raw response bytes with their body replaced by `body` (both base64); the head is kept as it is. */
+function withBody(rawBase64: string, body: string): string {
+  const raw = Buffer.from(rawBase64, 'base64');
+  const end = raw.indexOf('\r\n\r\n');
+  const head = end < 0 ? raw : raw.subarray(0, end + 4);
+  return Buffer.concat([head, Buffer.from(body, 'base64')]).toString('base64');
 }
 
 /** A token service's reply body, its XML secrets and recorded values masked unless `show`. */

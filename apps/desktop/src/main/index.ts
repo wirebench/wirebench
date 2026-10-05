@@ -75,7 +75,7 @@ import {
 import { registerOAuth2Channels } from './ipc/oauth2.js';
 import { registerIssuedTokenChannels } from './ipc/issued-tokens.js';
 import { IssuedTokensService, type ResolvedIssuedToken } from './issued-tokens.js';
-import { stsLogEntry } from './send/host.js';
+import { desktopSecrets, stsLogEntry } from './send/host.js';
 import { ExchangeRegistry } from './send/exchange.js';
 import { OAuth2Service } from './oauth2.js';
 import { registerAccountChannels, toAccountWire } from './ipc/account.js';
@@ -196,17 +196,23 @@ const issuedTokensService: IssuedTokensService = new IssuedTokensService(
       locator.configId,
       locator.entryIndex,
       locator.requestId,
+      // The getter a send of the project reads through: team secrets and `${secret:…}` refs resolve too.
+      desktopSecrets({ secretsFor }, locator.projectId),
     );
     return {
       ...resolved,
       deps: {
         ...resolved.deps,
         onExchange: (http) => {
-          const entry = stsLogEntry(http, {
-            show: showSecretsFlag.get(),
-            ...(locator.requestId !== undefined ? { requestId: locator.requestId } : {}),
-          });
-          broadcast(events.exchange.logged, { entry });
+          try {
+            const entry = stsLogEntry(http, {
+              show: showSecretsFlag.get(),
+              ...(locator.requestId !== undefined ? { requestId: locator.requestId } : {}),
+            });
+            broadcast(events.exchange.logged, { entry });
+          } catch {
+            // A broadcast that fails never becomes the token's lastError, as a send's STS row.
+          }
         },
       },
     };

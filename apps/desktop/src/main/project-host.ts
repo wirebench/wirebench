@@ -162,6 +162,7 @@ import {
   WssError,
 } from '@wirebench/engine';
 import type {
+  GetSecret,
   IssuedTokenSource,
   Keystore,
   KeystoreDef,
@@ -2426,6 +2427,8 @@ export class ProjectHost {
     configId: string,
     entryIndex: number,
     requestId?: string,
+    /** The getter a send of this project resolves secrets through; the keychain alone when absent. */
+    getSecret?: GetSecret,
   ): Promise<ResolvedIssuedToken> {
     const open = this.open;
     if (open === undefined || open.project.id !== projectId) {
@@ -2449,9 +2452,14 @@ export class ProjectHost {
         details: { configId },
       });
     }
+    if (requestId !== undefined && findRequest(open.project, requestId)?.request.wssOutgoingRef !== configId) {
+      throw new WirebenchError('ws-trust-no-request', 'This request does not select this configuration.', {
+        details: { configId, requestId },
+      });
+    }
     const anchors = [...((await this.trustAnchors()) ?? []), ...extraTrustAnchors()];
     const located = this.issuedTokenContext(chosen, {
-      getSecret: async (ref) => await this.secrets?.get(ref),
+      getSecret: getSecret ?? (async (ref) => await this.secrets?.get(ref)),
       proxyFor: async (url) => {
         const proxy = await this.proxyFor(url);
         return proxy === undefined ? undefined : withoutUndefinedProxy(proxy);

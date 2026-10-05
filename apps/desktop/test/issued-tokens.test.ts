@@ -28,6 +28,8 @@ const { registerIssuedTokenChannels } = await import('../src/main/ipc/issued-tok
 const { EngineService } = await import('../src/main/engine-service.js');
 const { ProjectHost } = await import('../src/main/project-host.js');
 const { addWssOutgoing } = await import('../src/main/project-wss-mutations.js');
+const { desktopSecrets } = await import('../src/main/send/host.js');
+const { recordSecretValue } = await import('../src/main/redact.js');
 
 const ASSERTION =
   '<saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion" ID="_issued" Version="2.0"' +
@@ -88,6 +90,15 @@ describe('IssuedTokensService', () => {
       state: 'none',
       lastError: 'The token service answered a fault: denied',
     });
+  });
+
+  it('masks recorded secret values in lastError unless secrets show', async () => {
+    recordSecretValue('pw-quoted-by-the-fault');
+    const tokens = service(() => Promise.reject(new Error('denied for pw-quoted-by-the-fault')));
+    const hidden = await tokens.fetch(locator, false);
+    expect(hidden.lastError).toContain('denied for');
+    expect(hidden.lastError).not.toContain('pw-quoted-by-the-fault');
+    expect((await tokens.status(locator, true)).lastError).toBe('denied for pw-quoted-by-the-fault');
   });
 
   it('fetches anew on Fetch now even while a token is cached', async () => {
@@ -210,6 +221,26 @@ describe('ProjectHost.issuedTokenTarget', () => {
   it('uses the request the caller names', async () => {
     const { host, configId, projectId } = await open((id) => [id, id]);
     expect((await host.issuedTokenTarget(projectId, configId, 1, 'r2')).target.endpointUrl).toBe('https://svc.test/2');
+  });
+
+  it('refuses a named request that does not select the configuration', async () => {
+    const { host, configId, projectId } = await open((id) => [undefined, id]);
+    await expect(host.issuedTokenTarget(projectId, configId, 1, 'r1')).rejects.toMatchObject({
+      code: 'ws-trust-no-request',
+    });
+  });
+
+  it("resolves secrets through the send's getter, so a ref only it knows works for Fetch now", async () => {
+    const { host, configId, projectId } = await open((id) => [id]);
+    const sendGetter = desktopSecrets(
+      { secretsFor: () => (ref) => Promise.resolve(ref === 'team:sts-password' ? 'from-team' : undefined) },
+      projectId,
+    );
+    const resolved = await host.issuedTokenTarget(projectId, configId, 1, undefined, sendGetter);
+    expect(await resolved.deps.ctx.secrets('team:sts-password')).toBe('from-team');
+    // The keychain alone does not know it: without the send's getter the ref refuses.
+    const keychainOnly = await host.issuedTokenTarget(projectId, configId, 1);
+    await expect(keychainOnly.deps.ctx.secrets('team:sts-password')).rejects.toMatchObject({ code: 'secret-missing' });
   });
 
   it('refuses an entry that is not an issued token', async () => {

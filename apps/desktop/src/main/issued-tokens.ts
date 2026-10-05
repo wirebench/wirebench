@@ -6,7 +6,7 @@
  */
 import { createIssuedTokenSource } from '@wirebench/engine';
 import type { IssuedTokenSource, IssuedTokenTarget, TrustDeps, WssIssuedTokenEntry } from '@wirebench/engine';
-import { recordSecretValue } from './redact.js';
+import { recordSecretValue, redactSecretText } from './redact.js';
 import type { IssuedTokenStatusWire } from '../shared/wire-types.js';
 
 /** One issued-token entry of an outgoing configuration, and the request it is fetched for. */
@@ -59,6 +59,9 @@ export class IssuedTokensService {
     // The engine's status, plus the assertion itself when the session shows secrets.
     const status = this.source.status(entry, target);
     const token = showSecrets ? this.source.peek(entry, target) : undefined;
-    return { ...status, ...(token !== undefined ? { assertion: token.assertionXml } : {}) };
+    // A fault may quote what was sent: every recorded secret value is masked unless secrets show.
+    const lastError =
+      status.lastError === undefined ? {} : { lastError: redactSecretText(status.lastError, { show: showSecrets }) };
+    return { ...status, ...lastError, ...(token !== undefined ? { assertion: token.assertionXml } : {}) };
   }
 }

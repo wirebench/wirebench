@@ -4,6 +4,7 @@
  * `causedBy`, redacted like any SOAP row (an assertion's signature value is masked), and only when
  * the token service was actually asked — a cached token makes no row.
  */
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import { createIssuedTokenSource, createWssContext } from '@wirebench/engine';
 import type { HttpExchange, IssuedToken, IssuedTokenTarget, WssIssuedTokenEntry } from '@wirebench/engine';
@@ -71,7 +72,7 @@ function issued(): IssuedToken {
   };
 }
 
-async function hostWith(show = false) {
+async function hostWith(show = false, exchange: HttpExchange = fakeExchange, onRow?: (row: LogEntryWire) => void) {
   const rows: LogEntryWire[] = [];
   const asked: HttpExchange[] = [];
   const request = vi.fn(
@@ -80,7 +81,7 @@ async function hostWith(show = false) {
       _target: IssuedTokenTarget,
       deps: { onExchange?: (exchange: HttpExchange) => void },
     ) => {
-      deps.onExchange?.(fakeExchange);
+      deps.onExchange?.(exchange);
       return Promise.resolve(issued());
     },
   );
@@ -93,7 +94,7 @@ async function hostWith(show = false) {
     service: {} as DesktopSendDeps['service'],
     issuedTokens,
     showSecrets: { get: () => show },
-    onExchange: (row) => rows.push(row),
+    onExchange: onRow ?? ((row) => rows.push(row)),
   };
   const host = await desktopSendHost(deps, send);
   const trustDeps = { ctx: createWssContext(), onExchange: (exchange: HttpExchange) => asked.push(exchange) };
@@ -141,6 +142,48 @@ describe('the STS log row', () => {
     await host.issuedTokens!.get(entry, target, trustDeps);
     expect(request).toHaveBeenCalledTimes(1);
     expect(rows).toHaveLength(1);
+  });
+
+  it("masks the RST's wsse:Password in the raw request", async () => {
+    const rst =
+      '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Header><wsse:Security xmlns:wsse=' +
+      '"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><wsse:UsernameToken>' +
+      '<wsse:Username>alice</wsse:Username><wsse:Password>hunter2-sts</wsse:Password></wsse:UsernameToken>' +
+      '</wsse:Security></s:Header><s:Body/></s:Envelope>';
+    const { host, rows, trustDeps } = await hostWith(false, {
+      ...fakeExchange,
+      rawRequest: bytes(`POST /issue HTTP/1.1\r\nhost: sts.test\r\ncontent-type: application/soap+xml\r\n\r\n${rst}`),
+    });
+    await host.issuedTokens!.get(entry, target, trustDeps);
+    const row = rows[0]!;
+    if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
+    const raw = textOf(row.exchange.http.rawRequestBase64);
+    expect(raw).toContain('<wsse:Username>alice</wsse:Username>');
+    expect(raw).not.toContain('hunter2-sts');
+  });
+
+  it('replaces a compressed raw response body with the redacted one', async () => {
+    const gzipped = gzipSync(Buffer.from(RSTR, 'utf8'));
+    const head = 'HTTP/1.1 200 OK\r\ncontent-type: application/soap+xml\r\ncontent-encoding: gzip\r\n\r\n';
+    const { host, rows, trustDeps } = await hostWith(false, {
+      ...fakeExchange,
+      rawBody: new Uint8Array(gzipped),
+      rawResponse: new Uint8Array(Buffer.concat([Buffer.from(head, 'latin1'), gzipped])),
+    });
+    await host.issuedTokens!.get(entry, target, trustDeps);
+    const row = rows[0]!;
+    if (row.kind !== 'exchange' || !('http' in row.exchange)) throw new Error('not an exchange row');
+    const raw = textOf(row.exchange.http.rawResponseBase64);
+    expect(raw.startsWith(head)).toBe(true);
+    expect(raw).toContain('&lt;redacted&gt;');
+    expect(raw).not.toContain(SIGNATURE_VALUE);
+  });
+
+  it('leaves the send intact when the row cannot be written', async () => {
+    const { host, trustDeps } = await hostWith(false, fakeExchange, () => {
+      throw new Error('broadcast failed');
+    });
+    await expect(host.issuedTokens!.get(entry, target, trustDeps)).resolves.toMatchObject({ assertionXml: ASSERTION });
   });
 
   it('lends no issued-token source without the service', async () => {
