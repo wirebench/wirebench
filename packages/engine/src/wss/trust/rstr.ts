@@ -65,12 +65,44 @@ function dateOf(text: string | null | undefined): Date | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+
+/**
+ * Serialises `element` on its own. Every namespace declaration in scope at the element (declared
+ * on an ancestor, nearest wins) is copied onto the serialised root unless the root declares that
+ * prefix itself, so prefixes that only appear inside attribute values (`xsi:type="xs:string"`)
+ * keep their declaration. A clone is serialised; the response document is left untouched.
+ * Exclusive canonicalisation omits declarations that are not visibly used, so a signed token still
+ * verifies.
+ */
+function serializeStandalone(element: Element): string {
+  const clone = element.cloneNode(true) as Element;
+  const inherited = new Map<string, string>();
+  for (let node = element.parentNode; node !== null && node.nodeType === 1; node = node.parentNode) {
+    const attributes = (node as Element).attributes;
+    for (let i = 0; i < attributes.length; i += 1) {
+      const attribute = attributes.item(i);
+      if (attribute === null) continue;
+      const prefix =
+        attribute.name === 'xmlns' ? '' : attribute.name.startsWith('xmlns:') ? attribute.name.slice(6) : undefined;
+      if (prefix === undefined || inherited.has(prefix) || attribute.value === '') continue;
+      inherited.set(prefix, attribute.value);
+    }
+  }
+  for (const [prefix, uri] of inherited) {
+    const name = prefix === '' ? 'xmlns' : `xmlns:${prefix}`;
+    if (!clone.hasAttribute(name)) clone.setAttributeNS(XMLNS_NS, name, uri);
+  }
+  return serializeXml(clone);
+}
+
 /** @throws WssError `ws-trust-sts-fault` | `ws-trust-response-invalid` | `ws-trust-symmetric-key-unsupported` */
 export function parseRstr(body: string, status: number): ParsedRstr {
   let doc;
   try {
     doc = parseXml(body, { location: 'ws-trust' });
   } catch {
+    if (status >= 200 && status < 300) throw invalid('the body is not XML');
     throw new WssError(
       'ws-trust-sts-fault',
       `The token service answered ${String(status)} with a body that is not XML.`,
@@ -105,8 +137,19 @@ export function parseRstr(body: string, status: number): ParsedRstr {
   const requested = trustChild(response, 'RequestedSecurityToken');
   const tokenElement = requested === undefined ? undefined : onlyElementChild(requested);
   if (tokenElement === undefined) throw invalid('RequestedSecurityToken does not hold exactly one token');
-  const assertionXml = serializeXml(tokenElement);
-  const read = readAssertion(assertionXml);
+  const assertionXml = serializeStandalone(tokenElement);
+  let read;
+  try {
+    read = readAssertion(assertionXml);
+  } catch (cause) {
+    throw new WssError(
+      'ws-trust-response-invalid',
+      "The token service's answer is not a token: the token is not a SAML assertion.",
+      {
+        cause,
+      },
+    );
+  }
   const attached = trustChild(response, 'RequestedAttachedReference');
   const attachedStr = attached === undefined ? undefined : onlyElementChild(attached);
   const lifetime = trustChild(response, 'Lifetime');
@@ -118,7 +161,7 @@ export function parseRstr(body: string, status: number): ParsedRstr {
   return {
     assertionXml,
     ...(read.id !== undefined ? { assertionId: read.id } : {}),
-    ...(attachedStr !== undefined ? { attachedReferenceXml: serializeXml(attachedStr) } : {}),
+    ...(attachedStr !== undefined ? { attachedReferenceXml: serializeStandalone(attachedStr) } : {}),
     samlVersion: read.version,
     ...(expiresAt !== undefined ? { expiresAt } : {}),
   };
