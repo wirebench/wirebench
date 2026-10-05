@@ -974,12 +974,15 @@ export const endpointAuthSchema = z.object({
 export type EndpointAuthWire = z.infer<typeof endpointAuthSchema>;
 
 /**
- * Authentication as it crosses the bridge: the same seven schemes the engine models, with every
+ * Authentication as it crosses the bridge: the same eight schemes the engine models, with every
  * credential a `secretRef`. There is no channel that returns a secret *value* (ADR-0004), so a
  * renderer can configure a token it can never read back.
  */
 export const authConfigWireSchema = z.object({
-  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']),
+  type: z.enum(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']),
+  /** Kerberos: the service principal, and the ticket-cache principal to pick. */
+  spn: z.string().optional(),
+  principal: z.string().optional(),
   username: z.string().optional(),
   passwordRef: z.string().optional(),
   /** The committed name CI reads this secret under; the desktop never edits it, only preserves it. */
@@ -3305,6 +3308,16 @@ export const definitionAuthWireSchema = z.discriminatedUnion('type', [
       name: z.string().min(1),
       in: z.enum(['header', 'query']),
       valueRef: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('kerberos'),
+      spn: z.string().optional(),
+      principal: z.string().optional(),
+      username: z.string().optional(),
+      domain: z.string().optional(),
+      passwordRef: z.string().optional(),
     })
     .strict(),
 ]);
