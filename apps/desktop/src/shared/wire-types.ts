@@ -1386,6 +1386,15 @@ export const projectProblemSchema = z.object({
 export type ProjectProblemWire = z.infer<typeof projectProblemSchema>;
 
 /** The whole open project, as mirrored by the renderer. Always a complete replacement. */
+/** The five X.509 token profile forms a key can be referenced by. */
+const X509_KEY_IDENTIFIERS = [
+  'BinarySecurityToken',
+  'IssuerSerial',
+  'SubjectKeyIdentifier',
+  'X509KeyIdentifier',
+  'Thumbprint',
+] as const;
+
 /**
  * One entry of an outgoing WS-Security configuration, as the renderer edits it. A password is
  * only ever a `passwordRef`: the value itself lives in the secret store and is resolved in main.
@@ -1412,37 +1421,92 @@ export const wssEntryWireSchema = z.discriminatedUnion('kind', [
     alias: z.string().optional(),
     /** A `secretRef` for the private key's passphrase; never the passphrase itself. */
     keyPasswordRef: z.string().optional(),
-    keyIdentifierType: z.enum([
-      'BinarySecurityToken',
-      'IssuerSerial',
-      'SubjectKeyIdentifier',
-      'X509KeyIdentifier',
-      'Thumbprint',
-      'saml-token',
-    ]),
+    keyIdentifierType: z.enum([...X509_KEY_IDENTIFIERS, 'saml-token']),
     signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']),
     digestAlgorithm: z.enum(['sha256', 'sha1']),
     canonicalization: z.literal('exc-c14n'),
     useSingleCertificate: z.boolean(),
-    parts: z.array(z.object({ name: z.string(), namespace: z.string(), encode: z.enum(['Content', 'Element']) })),
+    parts: z.array(
+      z.object({
+        name: z.string(),
+        namespace: z.string(),
+        encode: z.enum(['Content', 'Element']),
+        /** Covers the nearest earlier SAML token through the STR-Transform. */
+        token: z.literal(true).optional(),
+      }),
+    ),
   }),
   z.object({
     kind: z.literal('encryption'),
     /** The `wss/keystores.yaml` registry id holding the *recipient's* certificate. */
     keystoreRef: z.string(),
     alias: z.string().optional(),
-    keyIdentifierType: z.enum([
-      'BinarySecurityToken',
-      'IssuerSerial',
-      'SubjectKeyIdentifier',
-      'X509KeyIdentifier',
-      'Thumbprint',
-    ]),
+    keyIdentifierType: z.enum(X509_KEY_IDENTIFIERS),
     symmetricAlgorithm: z.enum(['aes128-cbc', 'aes256-cbc', 'aes128-gcm', 'aes256-gcm']),
     keyTransportAlgorithm: z.enum(['rsa-oaep', 'rsa-1_5']),
     embedKey: z.boolean(),
     encryptSymmetricKey: z.boolean(),
     parts: z.array(z.object({ name: z.string(), namespace: z.string(), encode: z.enum(['Content', 'Element']) })),
+  }),
+  z.object({
+    kind: z.literal('issued-token'),
+    stsUrl: z.string(),
+    soapVersion: z.enum(['1.1', '1.2']),
+    trustVersion: z.enum(['1.3', '2005-02']),
+    appliesTo: z.string().optional(),
+    tokenType: z.enum(['1.1', '2.0']),
+    keyType: z.enum(['bearer', 'public-key']),
+    proofKeystoreRef: z.string().optional(),
+    proofAlias: z.string().optional(),
+    credential: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('username'), username: z.string(), passwordRef: z.string().optional() }),
+      z.object({
+        kind: z.literal('certificate'),
+        keystoreRef: z.string(),
+        alias: z.string().optional(),
+        keyPasswordRef: z.string().optional(),
+      }),
+      z.object({
+        kind: z.literal('kerberos'),
+        spn: z.string(),
+        principal: z.string().optional(),
+        username: z.string().optional(),
+        domain: z.string().optional(),
+        passwordRef: z.string().optional(),
+      }),
+    ]),
+    requestedLifetimeSeconds: z.number().int().nonnegative(),
+    claims: z.string().optional(),
+    tlsKeystoreRef: z.string().optional(),
+  }),
+  /** One object for both SAML sources: the outer union is discriminated by `kind` alone. */
+  z.object({
+    kind: z.literal('saml-token'),
+    source: z.enum(['form', 'xml']),
+    version: z.enum(['1.1', '2.0']).optional(),
+    issuer: z.string().optional(),
+    subject: z.string().optional(),
+    subjectFormat: z.string().optional(),
+    confirmation: z.enum(['bearer', 'holder-of-key', 'sender-vouches']).optional(),
+    audience: z.string().optional(),
+    lifetimeSeconds: z.number().int().positive().optional(),
+    authnContext: z.string().optional(),
+    attributes: z
+      .array(z.object({ name: z.string(), nameFormat: z.string().optional(), values: z.array(z.string()) }))
+      .optional(),
+    sign: z
+      .object({
+        keystoreRef: z.string(),
+        alias: z.string().optional(),
+        keyPasswordRef: z.string().optional(),
+        signatureAlgorithm: z.enum(['rsa-sha256', 'rsa-sha1']),
+      })
+      .optional(),
+    proofKeystoreRef: z.string().optional(),
+    proofAlias: z.string().optional(),
+    xml: z.string().optional(),
+    file: z.string().optional(),
+    expandProperties: z.boolean().optional(),
   }),
 ]);
 export type WssEntryWire = z.infer<typeof wssEntryWireSchema>;

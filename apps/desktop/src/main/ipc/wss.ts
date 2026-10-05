@@ -29,9 +29,10 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
     return { ...rest, ...(ref !== undefined ? { passwordRef: ref } : {}) };
   }
   if (entry.kind === 'signature') {
-    const { alias, keyPasswordRef, ...rest } = entry;
+    const { alias, keyPasswordRef, parts, ...rest } = entry;
     return {
       ...rest,
+      parts: parts.map(({ token, ...part }) => ({ ...part, ...(token === true ? { token } : {}) })),
       ...(alias !== undefined ? { alias } : {}),
       ...(keyPasswordRef !== undefined ? { keyPasswordRef } : {}),
     };
@@ -40,7 +41,12 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
     const { alias, ...rest } = entry;
     return { ...rest, ...(alias !== undefined ? { alias } : {}) };
   }
-  return entry;
+  if (entry.kind === 'timestamp') {
+    return entry;
+  }
+  // issued-token and saml-token: the editor writes whole entries, and the engine schema
+  // validates them where they are stored; undefined optionals are dropped by the schema parse.
+  return entry as unknown as WssEntry;
 }
 
 /** Registers the `wss.*` channels. */

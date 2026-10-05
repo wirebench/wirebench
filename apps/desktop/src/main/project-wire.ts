@@ -329,15 +329,12 @@ function toWssOutgoingWire(ref: WssRef): WssOutgoingWire {
     ...(config.defaultPasswordRef !== undefined ? { defaultPasswordRef: config.defaultPasswordRef } : {}),
     ...(config.actor !== undefined ? { actor: config.actor } : {}),
     mustUnderstand: config.mustUnderstand,
-    // issued-token and saml-token entries have no wire form until the editor learns them.
-    entries: config.entries
-      .filter((entry) => entry.kind !== 'issued-token' && entry.kind !== 'saml-token')
-      .map(toWssEntryWire),
+    entries: config.entries.map(toWssEntryWire),
   };
 }
 
 /** One entry on the wire, field by field. */
-function toWssEntryWire(entry: Exclude<WssEntry, { kind: 'issued-token' | 'saml-token' }>): WssEntryWire {
+function toWssEntryWire(entry: WssEntry): WssEntryWire {
   if (entry.kind === 'timestamp') {
     return {
       kind: 'timestamp',
@@ -366,8 +363,18 @@ function toWssEntryWire(entry: Exclude<WssEntry, { kind: 'issued-token' | 'saml-
       digestAlgorithm: entry.digestAlgorithm,
       canonicalization: 'exc-c14n',
       useSingleCertificate: entry.useSingleCertificate,
-      parts: entry.parts.map((part) => ({ name: part.name, namespace: part.namespace, encode: part.encode })),
+      parts: entry.parts.map((part) => ({
+        name: part.name,
+        namespace: part.namespace,
+        encode: part.encode,
+        ...(part.token === true ? { token: true as const } : {}),
+      })),
     };
+  }
+  if (entry.kind === 'issued-token' || entry.kind === 'saml-token') {
+    // The engine model and the wire schema share these two kinds field for field; the editor
+    // owns their optional keys, so they pass through as they are stored.
+    return structuredClone(entry) as WssEntryWire;
   }
   return {
     kind: 'encryption',

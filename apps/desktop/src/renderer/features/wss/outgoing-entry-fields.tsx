@@ -264,6 +264,59 @@ export function useKeystoreAliases(keystoreRef: string): readonly KeystoreAliasW
   return aliases;
 }
 
+/** A keystore select plus, once one is chosen, its alias select ("Default" = the config's default alias). */
+export function KeystorePicker(props: {
+  readonly label: string;
+  readonly keystoreRef: string | undefined;
+  readonly alias: string | undefined;
+  readonly onChange: (keystoreRef: string | undefined, alias: string | undefined) => void;
+}) {
+  const keystores = useProjectStore((state) => state.keystores);
+  const aliases = useKeystoreAliases(props.keystoreRef ?? '');
+  return (
+    <>
+      <label className="flex items-center gap-1 text-xs text-fg-subtle">
+        <span className="w-24 shrink-0">{props.label}</span>
+        <select
+          aria-label={props.label}
+          className={WSS_FIELD_CLASS}
+          value={props.keystoreRef ?? ''}
+          onChange={(event) => {
+            props.onChange(event.target.value === '' ? undefined : event.target.value, undefined);
+          }}
+        >
+          <option value="">None</option>
+          {keystores.map((keystore) => (
+            <option key={keystore.id} value={keystore.id}>
+              {keystore.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {props.keystoreRef !== undefined && (
+        <label className="flex items-center gap-1 text-xs text-fg-subtle">
+          <span className="w-24 shrink-0">{`${props.label} alias`}</span>
+          <select
+            aria-label={`${props.label} alias`}
+            className={WSS_FIELD_CLASS}
+            value={props.alias ?? ''}
+            onChange={(event) => {
+              props.onChange(props.keystoreRef, event.target.value === '' ? undefined : event.target.value);
+            }}
+          >
+            <option value="">Default</option>
+            {aliases.map((alias) => (
+              <option key={alias.alias} value={alias.alias}>
+                {alias.alias}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </>
+  );
+}
+
 export function SignatureFields({ entry, onChange }: SignatureFieldsProps) {
   const keystores = useProjectStore((state) => state.keystores);
   const aliases = useKeystoreAliases(entry.keystoreRef);

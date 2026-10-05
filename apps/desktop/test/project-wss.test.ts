@@ -4,7 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createProject } from '@wirebench/engine';
+import { createProject, toWssOutgoingConfig } from '@wirebench/engine';
+import { wssEntryWireSchema, type WssEntryWire } from '../src/shared/wire-types.js';
 import { EngineService } from '../src/main/engine-service.js';
 import {
   addWssIncoming,
@@ -189,6 +190,78 @@ describe('ProjectHost WS-Security', () => {
     expect(snapshot?.requests[0]?.wssOutgoingRef).toBeDefined();
     // The password itself never reaches the wire, only its reference.
     expect(JSON.stringify(snapshot?.wssOutgoing)).not.toContain('hunter2');
+  });
+
+  it('carries issued-token, saml-token and the SamlToken part across engine -> wire -> engine unchanged', async () => {
+    const dir = tempDir('proj');
+    const service = newService();
+    await service.create({ dir, name: 'Demo' });
+    const added = await service.mutate({ kind: 'add-wss-outgoing', name: 'Tokens' });
+    const configId = added.createdWssOutgoingId as string;
+    const entries: WssEntryWire[] = [
+      {
+        kind: 'issued-token',
+        stsUrl: 'https://sts.example/issue',
+        soapVersion: '1.2',
+        trustVersion: '1.3',
+        appliesTo: 'urn:svc',
+        tokenType: '2.0',
+        keyType: 'public-key',
+        proofKeystoreRef: 'ks1',
+        proofAlias: 'proof',
+        credential: { kind: 'username', username: 'bob', passwordRef: 'secret:pw' },
+        requestedLifetimeSeconds: 600,
+        claims: '<wst:Claims/>',
+        tlsKeystoreRef: 'ks2',
+      },
+      {
+        kind: 'saml-token',
+        source: 'form',
+        version: '2.0',
+        issuer: 'urn:i',
+        subject: 'alice',
+        subjectFormat: 'urn:fmt',
+        confirmation: 'holder-of-key',
+        audience: 'urn:aud',
+        lifetimeSeconds: 300,
+        authnContext: 'urn:ctx',
+        attributes: [{ name: 'role', nameFormat: 'urn:nf', values: ['a', 'b'] }],
+        sign: { keystoreRef: 'ks1', alias: 'k', keyPasswordRef: 'secret:kp', signatureAlgorithm: 'rsa-sha1' },
+        proofKeystoreRef: 'ks1',
+        proofAlias: 'proof',
+      },
+      { kind: 'saml-token', source: 'xml', xml: '<saml2:Assertion/>', expandProperties: true },
+      { kind: 'saml-token', source: 'xml', file: 'tokens/a.xml', expandProperties: false },
+      {
+        kind: 'signature',
+        keystoreRef: 'ks1',
+        keyIdentifierType: 'saml-token',
+        signatureAlgorithm: 'rsa-sha256',
+        digestAlgorithm: 'sha256',
+        canonicalization: 'exc-c14n',
+        useSingleCertificate: true,
+        parts: [
+          { name: 'Body', namespace: 'http://schemas.xmlsoap.org/soap/envelope/', encode: 'Content' },
+          { name: 'SamlToken', namespace: '', encode: 'Element', token: true },
+        ],
+      },
+    ];
+    const first = await service.mutate({ kind: 'update-wss-outgoing', configId, patch: { entries } });
+    const openOf = () => (service as unknown as { open: { project: Project } }).open.project;
+    const stored = toWssOutgoingConfig(openOf().wss.outgoing[0] as never).entries;
+
+    const wire = first.project.wssOutgoing[0]?.entries ?? [];
+    expect(wire).toHaveLength(entries.length);
+    for (const entry of wire) {
+      expect(wssEntryWireSchema.safeParse(entry).success).toBe(true);
+    }
+    expect(wire).toEqual(stored);
+
+    // And back: the renderer sends the mirrored entries again.
+    await service.mutate({ kind: 'update-wss-outgoing', configId, patch: { entries: [...wire] } });
+    const reread = toWssOutgoingConfig(openOf().wss.outgoing[0] as never).entries;
+    expect(reread).toEqual(stored);
+    expect(reread).toMatchObject(entries);
   });
 
   it('builds the send-time WS-Security input, resolving the password inside main', async () => {
