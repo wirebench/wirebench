@@ -139,6 +139,11 @@ describe('THIRD-PARTY-LICENSES.md', () => {
     expect(committed).not.toContain('| UNKNOWN |');
   });
 
+  it('attributes the engine optional dependencies', async () => {
+    const rendered = await renderThirdPartyLicenses();
+    expect(rendered).toMatch(/^## kerberos@7\.0\.0|\| kerberos \|/m);
+  });
+
   it('attributes the server image dependencies', async () => {
     const rendered = await renderThirdPartyLicenses();
     for (const name of ['fastify', 'pg', 'openid-client', 'jose', 'oauth4webapi']) {

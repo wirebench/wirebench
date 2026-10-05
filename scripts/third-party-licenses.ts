@@ -9,8 +9,9 @@
  * installer's resources (`extraResources` in `apps/desktop/electron-builder.yml`).
  *
  * What counts as "ships":
- *   * `apps/desktop`'s `dependencies` and `packages/engine`'s `dependencies`, transitively —
- *     these are resolved at runtime from `node_modules` inside the asar.
+ *   * `apps/desktop`'s `dependencies` and `packages/engine`'s `dependencies` and
+ *     `optionalDependencies` (the Kerberos binding), transitively — these are resolved at runtime
+ *     from `node_modules` inside the asar.
  *   * `packages/server`'s `dependencies`, transitively — the container image ships them.
  *   * {@link BUNDLED_DEV_DEPENDENCIES}, transitively. They sit in `devDependencies` because
  *     electron-vite bundles them rather than resolving them at runtime, but their code (React,
@@ -68,6 +69,7 @@ interface PackageManifest {
   readonly license?: string | { readonly type?: string };
   readonly licenses?: readonly { readonly type?: string }[];
   readonly dependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
 }
 
 /** One package as it appears in the generated file. */
@@ -169,7 +171,7 @@ async function collect(roots: readonly { name: string; from: string }[]): Promis
     if (manifest === undefined) {
       continue;
     }
-    for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+    for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })) {
       queue.push({ name: dependency, from: dir });
     }
     if (OWN_PACKAGES.has(job.name)) {
@@ -246,7 +248,10 @@ export async function renderThirdPartyLicenses(): Promise<string> {
   }
   const roots = [
     ...Object.keys(desktop.dependencies ?? {}).map((name) => ({ name, from: desktopDir })),
-    ...Object.keys(engine.dependencies ?? {}).map((name) => ({ name, from: engineDir })),
+    ...Object.keys({ ...engine.dependencies, ...engine.optionalDependencies }).map((name) => ({
+      name,
+      from: engineDir,
+    })),
     ...Object.keys(server.dependencies ?? {}).map((name) => ({ name, from: serverDir })),
     ...BUNDLED_DEV_DEPENDENCIES.map((name) => ({ name, from: desktopDir })),
   ];

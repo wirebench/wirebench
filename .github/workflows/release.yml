@@ -130,6 +130,14 @@ jobs:
           done
           pnpm ${{ matrix.script }}
 
+      - name: Check the vendored Kerberos bindings
+        run: |
+          if [ "${{ matrix.os }}" = macos-latest ]; then
+            node scripts/check-kerberos-vendor.ts darwin apps/desktop/release/mac*/Wirebench.app/Contents/Resources
+          else
+            node scripts/check-kerberos-vendor.ts linux apps/desktop/release/linux-unpacked/resources apps/desktop/release/linux-arm64-unpacked/resources
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -317,7 +325,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # `--dir` stops after packing: the unpacked apps, fuses already flipped by afterPack.
-      - run: pnpm build && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
+      - run: pnpm build && node scripts/vendor-kerberos.ts win32 && pnpm --filter @wirebench/desktop exec electron-builder --win --dir --x64 --arm64 --publish never
+      - run: node scripts/check-kerberos-vendor.ts win32 apps/desktop/release/win-unpacked/resources apps/desktop/release/win-arm64-unpacked/resources
       - uses: actions/upload-artifact@v7
         id: upload
         with:

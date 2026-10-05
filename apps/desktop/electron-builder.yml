@@ -28,6 +28,10 @@ files:
   # The engine is a workspace package: its checkout carries sources, tests and a coverage
   # report that the built `dist/` does not need and that nothing at runtime resolves.
   - '!**/node_modules/@wirebench/engine/{src,test,coverage,node_modules}/**'
+  # The engine's optional `kerberos` dependency would otherwise be packed with the binding that
+  # happened to be installed on the runner, in the wrong architecture for half the builds. The app
+  # loads the vendored copy under `Resources/kerberos/` and never this one.
+  - '!**/node_modules/kerberos/**'
 
 # Flips the Electron fuses on the packed binary (see `scripts/fuses.ts`), before signing. The
 # entry lives inside this package because electron-builder refuses hook paths that resolve
@@ -36,16 +40,21 @@ afterPack: after-pack.ts
 
 # The generated third-party attribution file, alongside the app's own LICENSE obligations.
 # Regenerated and verified by `pnpm licenses:third-party [--check]`.
+# `kerberos/` is vendored by `scripts/vendor-kerberos.ts`, one binding per architecture (ADR-0019);
+# it sits outside the asar so the OS loader can map it, and it is signed with the app.
 extraResources:
   - from: ../../THIRD-PARTY-LICENSES.md
     to: THIRD-PARTY-LICENSES.md
+  - from: build-resources/kerberos
+    to: kerberos
 
 asar: true
 asarUnpack:
   - '**/node_modules/xmllint-wasm/**'
 
-# pnpm's store is already exactly what should ship, and Wirebench has no native modules to
-# rebuild — running npm against a symlinked tree only risks flattening it.
+# pnpm's store is already exactly what should ship. The one native module, the Kerberos binding, is
+# vendored per architecture instead of rebuilt (ADR-0019); running npm against a symlinked tree only
+# risks flattening it.
 npmRebuild: false
 
 # Update metadata (`latest*.yml`) is generated for GitHub Releases; nothing is ever published
@@ -69,6 +78,9 @@ mac:
     - target: zip
       arch: [universal, x64, arm64]
   icon: resources/icon.png
+  # The Kerberos binding is one universal (fat) file, the same in the x64 and arm64 builds; the
+  # universal merge refuses identical Mach-O files it is not told about.
+  x64ArchFiles: Contents/Resources/kerberos/**
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: resources/entitlements.mac.plist
