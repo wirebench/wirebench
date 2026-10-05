@@ -140,7 +140,7 @@ build here rather than going stale silently.
 | SC-KT2 | **Cancel stops the wait** (Kerberos deadline spec) — Cancel during a token wait returns at once on SOAP, REST, WebSocket, gRPC and definition fetches | `packages/engine/test/integration/auth/kerberos.test.ts`, `packages/engine/test/integration/run/ws-exchange.test.ts`, `packages/engine/test/integration/grpc/send.test.ts`, `packages/engine/test/integration/http/document-fetch-kerberos.test.ts` | Met |
 | SC-KT3 | **Token inside the timeout** (Kerberos deadline spec) — the WebSocket upgrade and gRPC calls never exceed their configured timeout, token included | `packages/engine/test/integration/run/ws-exchange.test.ts`, `packages/engine/test/integration/grpc/send.test.ts` | Met |
 | SC-KT4 | **Abandoned calls capped** (Kerberos deadline spec) — with 2 abandoned token calls still running, a new one fails at once with `kerberos-failed`, and works again once they end | `packages/engine/test/unit/http/auth/kerberos-token.test.ts` | Met |
-| SC-KT5 | **No options, no change** (Kerberos deadline spec) — a caller that passes neither `signal` nor `timeoutMs` behaves exactly as before | `packages/engine/test/unit/http/auth/kerberos-token.test.ts` | Met |
+| SC-KT5 | **No options, no change** (Kerberos deadline spec) — while no earlier calls are still abandoned, a caller that passes neither `signal` nor `timeoutMs` behaves exactly as before | `packages/engine/test/unit/http/auth/kerberos-token.test.ts` | Met |
 
 ## Shared workspaces (docs/specs/2026-09-13-wirebench-shared-workspaces-design.md §13)
 

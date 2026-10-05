@@ -114,7 +114,8 @@ async function bounded<T>(
 
 - **Before starting:** an already-aborted signal rejects with `aborted` and never touches the provider. A
   limit of 0 or less rejects with `timeout` without touching it. While the provider has 2 or more abandoned
-  calls (D4), the call is refused.
+  calls (D4), a new token request (init plus the first step) is refused; `verify` is not, because it runs
+  after the request was answered.
 - **While waiting:** the helper races the call against a timer and the signal. The first to finish wins. The
   timer and the signal listener are always removed when it settles.
 - **Timeout:** `new HttpError('timeout', 'Timed out waiting for a Kerberos ticket for <spn>.', { details: { spn, stage: 'kerberos' } })`.
@@ -126,7 +127,7 @@ async function bounded<T>(
 
 | Path | Limit passed to the seam | Signal | After the token |
 | --- | --- | --- | --- |
-| SOAP/REST, `kerberosHandshake` | `remaining()` for the context; `Math.max(1, remaining())` for `verify`, as the legs | `request.signal` | leg 2 runs with `Math.max(1, remaining())` as today |
+| SOAP/REST, `kerberosHandshake` | `remaining()` for the context; `Math.max(1000, remaining())` for `verify`, so a reply that is already in is not failed by a near-zero timer | `request.signal` | leg 2 runs with `Math.max(1, remaining())` as today |
 | WebSocket, `connectWs` | the handshake timeout | `connectWs`'s `signal` | the session's handshake timeout is reduced by the time the token took, so the token and the upgrade together never exceed it |
 | gRPC, `sendGrpc` | `input.timeoutMs` | `input.signal` | the deadline timer and the `grpc-timeout` header use what is left of `input.timeoutMs` |
 | Definition fetch, each hop | `TIMEOUT_MS` | the fetch's `signal` | the hop's fetch runs with what is left of `TIMEOUT_MS` |
@@ -144,8 +145,9 @@ async function bounded<T>(
   `kerberos-token.ts`. That makes it work the same for the real provider and for test fakes.
 - **Counting.** A call that loses its race adds 1. The count goes down when the abandoned native promise
   settles, whether it succeeds or fails.
-- **The cap.** `MAX_ABANDONED = 2`. With 2 abandoned calls still running, a new bounded call fails before
-  touching the provider with:
+- **The cap.** `MAX_ABANDONED = 2`. With 2 abandoned calls still running, a new token request (init plus the
+  first step) fails before touching the provider; `verify` is never refused, since the request it belongs to
+  was already answered. The refusal is:
 
   ```ts
   new HttpError(
@@ -224,7 +226,7 @@ KDC that was slow, rather than seeing an unexplained 401.
 - **SC-KT3.** The WebSocket upgrade and gRPC calls never exceed their configured timeout, token included.
 - **SC-KT4.** With 2 abandoned token calls still running, a new send fails at once with `kerberos-failed`, and
   sends work again once those calls end.
-- **SC-KT5.** A caller that passes no options behaves exactly as before.
+- **SC-KT5.** While no earlier calls are still abandoned, a caller that passes no options behaves exactly as before.
 
 ## Docs
 
