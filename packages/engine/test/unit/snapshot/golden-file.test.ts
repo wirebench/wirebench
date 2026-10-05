@@ -141,7 +141,8 @@ describe('readGoldenFile', () => {
       const stat = handle.stat.bind(handle);
       handle.stat = (async () => {
         const stats = await stat();
-        stats.ino += 1;
+        // NTFS file indexes can exceed 2^53, where `ino + 1` rounds back to `ino`; pick a value that differs.
+        stats.ino = stats.ino === 1 ? 2 : 1;
         return stats;
       }) as typeof handle.stat;
       return handle;
