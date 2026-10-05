@@ -10,9 +10,10 @@
  */
 
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readTarGz } from './lib/tar.ts';
 
 interface PinFile {
@@ -118,7 +119,7 @@ export function tarEntry(name: string, data: Buffer): Buffer {
   return Buffer.concat([header, data, Buffer.alloc((512 - (data.length % 512)) % 512)]);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] !== undefined && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) {
   const requested = process.argv[2] ?? process.platform;
   if (requested !== 'darwin' && requested !== 'linux' && requested !== 'win32') {
     console.error(`kerberos: unsupported platform "${requested}"; use darwin, linux or win32.`);

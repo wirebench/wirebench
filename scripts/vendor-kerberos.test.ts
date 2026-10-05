@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { download, tarEntry, vendorKerberos } from './vendor-kerberos.ts';
@@ -128,5 +130,19 @@ describe('download', () => {
     }) as typeof fetch;
     await expect(download('https://example.test/a', { fetchFn, delaysMs: [0, 0] })).rejects.toThrow(/HTTP 429/);
     expect(calls).toBe(3);
+  });
+});
+
+describe('vendor-kerberos run as a command', () => {
+  // A symlinked path to the script (a linked checkout, a package manager's shim) is still the script.
+  it.skipIf(process.platform === 'win32')('runs its command through a symlinked path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'krb-link-'));
+    const link = join(dir, 'vendor-kerberos.ts');
+    await symlink(fileURLToPath(new URL('./vendor-kerberos.ts', import.meta.url)), link);
+
+    const run = spawnSync(process.execPath, [link, 'plan9'], { encoding: 'utf8' });
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('kerberos: unsupported platform "plan9"');
   });
 });
