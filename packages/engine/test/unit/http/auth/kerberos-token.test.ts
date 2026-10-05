@@ -121,6 +121,14 @@ describe('kerberosToken and negotiateBearer', () => {
 });
 
 describe('blank Kerberos fields', () => {
+  it('refuses a blank SPN as kerberos-unknown-spn before asking the provider', async () => {
+    const provider = fakeKerberos();
+    await expect(startKerberosContext(' ', {}, { provider, platform: 'linux' })).rejects.toMatchObject({
+      code: 'kerberos-unknown-spn',
+    });
+    expect(provider.inits).toEqual([]);
+  });
+
   it('a blank username or password on linux is unset, not refused', async () => {
     const provider = fakeKerberos();
     await startKerberosContext('svc', { username: '', password: ' ', principal: '' }, { provider, platform: 'linux' });

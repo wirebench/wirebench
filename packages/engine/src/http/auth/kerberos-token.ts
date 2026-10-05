@@ -77,6 +77,11 @@ export async function startKerberosContext(
   options: KerberosOptions = {},
 ): Promise<KerberosContext> {
   const platform = options.platform ?? process.platform;
+  if (kerberosField(spn) === undefined) {
+    throw new HttpError('kerberos-unknown-spn', 'A Kerberos service principal is blank; set one, or leave it unset.', {
+      details: { spn },
+    });
+  }
   const provider = options.provider ?? kerberosProvider();
   const target = normaliseSpn(spn, platform);
   const principal = kerberosField(credentials.principal);
