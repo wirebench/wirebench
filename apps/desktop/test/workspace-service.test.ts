@@ -783,6 +783,51 @@ describe('active environment: machine-local, via local.yaml', () => {
     await service.close();
   });
 
+  it('setActiveEnvironment keeps the secret-source fields of local.yaml, set or cleared', async () => {
+    const bootstrap = newService();
+    const created = await bootstrap.create('Envs');
+    const { createdEnvironmentId } = await bootstrap.mutate({ kind: 'add-workspace-environment', name: 'dev' });
+    await bootstrap.close();
+    const dir = workspaceDir(root, created.id);
+    const approval = { hash: 'ab'.repeat(32), mapping: { a: { kind: 'gcp', secret: 's' } } };
+    const overrides = { a: { kind: 'none' as const } };
+    await writeFile(
+      join(dir, 'local.yaml'),
+      [
+        'version: 2',
+        'secretSources:',
+        '  a:',
+        '    kind: none',
+        'secretSourcesApproved:',
+        `  hash: ${approval.hash}`,
+        '  mapping:',
+        '    a:',
+        '      kind: gcp',
+        '      secret: s',
+        '',
+      ].join('\n'),
+    );
+
+    const service = newService();
+    await service.open(created.id);
+    await service.setActiveEnvironment(createdEnvironmentId as string);
+    expect(await loadLocalState(dir)).toEqual({
+      version: 2,
+      activeEnvironmentId: createdEnvironmentId,
+      secretSources: overrides,
+      secretSourcesApproved: approval,
+    });
+
+    await service.setActiveEnvironment(null);
+    expect(await loadLocalState(dir)).toEqual({
+      version: 2,
+      secretSources: overrides,
+      secretSourcesApproved: approval,
+    });
+
+    await service.close();
+  });
+
   it('reopening the workspace restores the active environment from local.yaml', async () => {
     const bootstrap = newService();
     const created = await bootstrap.create('Envs');
