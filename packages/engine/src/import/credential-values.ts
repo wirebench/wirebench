@@ -13,15 +13,22 @@ import type { ReportBuilder } from './report.js';
 import { REFERENCE, referencesOnly, stripUserinfo } from './values.js';
 
 const AUTH_REFERENCES_ONLY = new RegExp(String.raw`^\s*(?:Bearer|Basic)\s+(?:${REFERENCE}\s*)+$`, 'i');
-/**
- * A JSON string, for blanking JSON in place. The closing quote is optional, so the first attempt at
- * a quote always matches and an unterminated string full of escapes is read once, not once per
- * backtrack. The `: value` after a key is scanned by hand (see {@link blankJsonPairs}), so no
- * whitespace run is ever matched twice.
- */
-const JSON_STRING = /"((?:[^"\\\n]|\\.)*)("?)/g;
-/** A JSON value a key may be blanked for (a string, number or boolean), matched where it starts. */
-const JSON_SCALAR = /"(?:[^"\\\n]|\\.)*"|-?\d[\w.+-]*|true|false/y;
+/** A JSON number or boolean a key may be blanked for, matched where it starts; strings are scanned by hand. */
+const JSON_BARE_SCALAR = /-?\d[\w.+-]*|true|false/y;
+
+/** The end (past the closing quote) of the JSON string opening at `start`, or -1 when it is not closed on its line. */
+function jsonStringEnd(text: string, start: number): number {
+  for (let i = start + 1; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === '"') return i + 1;
+    if (char === '\n') return -1;
+    if (char === '\\') {
+      if (text[i + 1] === '\n') return -1;
+      i += 1;
+    }
+  }
+  return -1;
+}
 
 function isJsonSpace(char: string | undefined): boolean {
   return char === ' ' || char === '\t' || char === '\r' || char === '\n';
@@ -31,22 +38,38 @@ function isJsonSpace(char: string | undefined): boolean {
 function blankJsonPairs(text: string, blanked: Set<string>): string {
   let out = '';
   let copied = 0;
-  JSON_STRING.lastIndex = 0;
-  for (let m = JSON_STRING.exec(text); m !== null; m = JSON_STRING.exec(text)) {
-    const key = m[1] ?? '';
-    if (m[2] !== '"') continue;
-    let i = JSON_STRING.lastIndex;
+  // Hand-scanned rather than matched: each character is looked at a bounded number of times, so
+  // no input (an unterminated string full of escapes, a long whitespace run) can make it slow.
+  for (let open = text.indexOf('"'); open !== -1;) {
+    const keyEnd = jsonStringEnd(text, open);
+    if (keyEnd === -1) {
+      // Not closed on its line: what follows on that line is inside the string.
+      const lineEnd = text.indexOf('\n', open);
+      if (lineEnd === -1) break;
+      open = text.indexOf('"', lineEnd);
+      continue;
+    }
+    const key = text.slice(open + 1, keyEnd - 1);
+    open = text.indexOf('"', keyEnd);
+    let i = keyEnd;
     while (isJsonSpace(text[i])) i += 1;
     if (text[i] !== ':') continue;
     i += 1;
     while (isJsonSpace(text[i])) i += 1;
-    JSON_SCALAR.lastIndex = i;
-    const scalar = JSON_SCALAR.exec(text);
-    if (scalar === null) continue;
-    const value = scalar[0];
+    let value: string;
+    if (text[i] === '"') {
+      const close = jsonStringEnd(text, i);
+      if (close === -1) continue;
+      value = text.slice(i, close);
+    } else {
+      JSON_BARE_SCALAR.lastIndex = i;
+      const scalar = JSON_BARE_SCALAR.exec(text);
+      if (scalar === null) continue;
+      value = scalar[0];
+    }
     const bare = value.startsWith('"') ? value.slice(1, -1) : value;
     const end = i + value.length;
-    JSON_STRING.lastIndex = end;
+    open = text.indexOf('"', end);
     if (blankIfLiteral(key, bare, blanked) === bare) continue;
     out += `${text.slice(copied, i)}""`;
     copied = end;
