@@ -258,10 +258,13 @@ ${item('Body', '        - { expression: res.body.data.token, operator: eq, value
 ${item('Header', '        - { expression: res.headers.authorization, operator: contains, value: "LIT-HEAD-2" }\n')}
 ${item('Indexed', '        - { expression: "res.body.tokens[0]", operator: eq, value: "LIT-IDX-3" }\n')}
 ${item('Ref', '        - { expression: res.body.token, operator: eq, value: "{{tok}}" }\n')}
+${item('Off', '        - { expression: res.body.password, operator: eq, value: "LIT-OFF-4", disabled: true }\n')}
 `);
     const serialised = JSON.stringify(m);
-    for (const literal of ['LIT-BODY-1', 'LIT-HEAD-2', 'LIT-IDX-3']) expect(serialised).not.toContain(literal);
-    expect(m.counts).toMatchObject({ assertions: 1, assertionsSkipped: 3 });
+    for (const literal of ['LIT-BODY-1', 'LIT-HEAD-2', 'LIT-IDX-3', 'LIT-OFF-4']) {
+      expect(serialised).not.toContain(literal);
+    }
+    expect(m.counts).toMatchObject({ assertions: 1, assertionsSkipped: 4 });
     expect(m.report.warnings).toContain(
       'Body: the assertion on res.body.data.token compares a recorded credential and was not imported.',
     );

@@ -579,8 +579,9 @@ class Mapper {
     const out: Assertion[] = [];
     for (const a of item.runtime?.assertions ?? []) {
       const credential = isCredentialName(assertionTarget(a.expression));
-      // A recorded credential is not written to the request file as an expected value.
-      if (credential && a.disabled !== true && a.value !== undefined && a.value !== '') {
+      // A recorded credential is not written to the request file as an expected value, even on a
+      // disabled assertion: disabled ones are written too.
+      if (credential && a.value !== undefined && a.value !== '') {
         if (!referencesOnly(rewriteMustache(a.value))) {
           this.assertionsSkipped += 1;
           this.report.warn(
