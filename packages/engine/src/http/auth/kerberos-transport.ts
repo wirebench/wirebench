@@ -50,6 +50,11 @@ export async function kerberosHandshake(
   const now = options.now ?? Date.now;
   const startedAt = now();
   const remaining = (): number => request.timeoutMs - (now() - startedAt);
+  // The token wait spends the same budget as the legs, and the send's Cancel stops it (#267).
+  const wait = () => ({
+    timeoutMs: remaining(),
+    ...(request.signal !== undefined ? { signal: request.signal } : {}),
+  });
   const spnWanted = kerberosField(auth.spn) ?? defaultSpn(request.url);
 
   let ownDispatcher: Dispatcher | undefined;
@@ -80,8 +85,8 @@ export async function kerberosHandshake(
     }
     if (remaining() <= 0) return { http: first, attempts: 1, challenged: true, durationMs, spn: spnWanted };
 
-    const context = await startKerberosContext(spnWanted, auth);
-    // A slow KDC or SSPI call can spend the budget; report leg 1's 401 rather than send leg 2 into a certain timeout.
+    const context = await startKerberosContext(spnWanted, auth, wait());
+    // A token that lands exactly at the limit leaves nothing for leg 2; report leg 1's 401.
     if (remaining() <= 0) return { http: first, attempts: 1, challenged: true, durationMs, spn: context.spn };
     const final = await leg({
       ...request.headers,
@@ -93,7 +98,7 @@ export async function kerberosHandshake(
       });
     }
     const reply = negotiateToken(headerValue(final.headers, 'www-authenticate'));
-    if (reply !== undefined) await context.verify(reply);
+    if (reply !== undefined) await context.verify(reply, wait());
     return { http: final, attempts: 2, challenged: true, durationMs, spn: context.spn };
   } finally {
     if (ownDispatcher !== undefined) await ownDispatcher.close().catch(() => undefined);
