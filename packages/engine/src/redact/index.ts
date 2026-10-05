@@ -196,6 +196,124 @@ function isPasswordDigest(openTag: string): boolean {
   return value !== undefined && value.endsWith('#PasswordDigest');
 }
 
+/** Open tags of the token containers whose secrets are masked (any prefix). */
+const TOKEN_OPEN_RE = /<(?:[\w-]+:)?(Assertion|EncryptedAssertion|RequestedProofToken)\b/g;
+/** Values inside a token that make it usable: its signature, or its ciphertext. */
+const TOKEN_SECRET_RE = /<((?:[\w-]+:)?(?:SignatureValue|CipherValue))\b/g;
+/** A BinarySecurityToken's open tag start; the ValueType is tested on the whole tag afterwards. */
+const BST_OPEN_RE = /<((?:[\w-]+:)?BinarySecurityToken)\b/g;
+
+/** The local name of the tag text between `<` and `>` (no leading `/`), and whether it closes. */
+function tagNameOf(tag: string): { closing: boolean; name: string } {
+  const closing = tag.startsWith('/');
+  let start = closing ? 1 : 0;
+  let end = start;
+  while (end < tag.length && !' \t\r\n/'.includes(tag.charAt(end))) {
+    if (tag.charAt(end) === ':') {
+      start = end + 1;
+    }
+    end += 1;
+  }
+  return { closing, name: tag.slice(start, end) };
+}
+
+/**
+ * The index just past the element whose open tag ended at `from`, counting nested elements of
+ * the same local name; -1 when it never closes. One forward pass: each step moves past a tag.
+ */
+function closeOf(text: string, from: number, name: string): number {
+  let depth = 1;
+  let at = from;
+  for (;;) {
+    const lt = text.indexOf('<', at);
+    if (lt === -1) {
+      return -1;
+    }
+    const gt = text.indexOf('>', lt);
+    if (gt === -1) {
+      return -1;
+    }
+    const tag = tagNameOf(text.slice(lt + 1, gt));
+    if (tag.name === name) {
+      if (tag.closing) {
+        depth -= 1;
+        if (depth === 0) {
+          return gt + 1;
+        }
+      } else if (text.charAt(gt - 1) !== '/') {
+        depth += 1;
+      }
+    }
+    at = gt + 1;
+  }
+}
+
+/**
+ * `text` with the content of every element matched by `openRe` replaced by the marker. The open
+ * tag is the match plus everything up to the next `>`; `accept` can veto one by its whole tag. The
+ * content runs to the first matching close tag, and the scan resumes past it.
+ */
+function maskElements(text: string, openRe: RegExp, accept: (openTag: string) => boolean): string {
+  const open = new RegExp(openRe.source, 'g');
+  let out = '';
+  let from = 0;
+  for (;;) {
+    open.lastIndex = from;
+    const found = open.exec(text);
+    if (found === null) {
+      break;
+    }
+    const tagEnd = text.indexOf('>', found.index);
+    if (tagEnd === -1) {
+      break;
+    }
+    const openTag = text.slice(found.index, tagEnd + 1);
+    if (!accept(openTag) || text.charAt(tagEnd - 1) === '/') {
+      out += text.slice(from, tagEnd + 1);
+      from = tagEnd + 1;
+      continue;
+    }
+    const closeTag = `</${found[1] ?? ''}>`;
+    const closeAt = text.indexOf(closeTag, tagEnd + 1);
+    if (closeAt === -1) {
+      break;
+    }
+    out += `${text.slice(from, tagEnd + 1)}${REDACTED_XML_MARKER}${closeTag}`;
+    from = closeAt + closeTag.length;
+  }
+  return out + text.slice(from);
+}
+
+/**
+ * Masks what makes a security token usable while keeping it readable: the signature and
+ * ciphertext inside SAML assertions and proof tokens, and the whole content of a Kerberos
+ * `BinarySecurityToken`. X.509 tokens are public and stay. Forward scans only, never a
+ * backtracking regex: responses are untrusted.
+ */
+export function redactSecurityTokens(text: string): string {
+  let out = '';
+  let from = 0;
+  const open = new RegExp(TOKEN_OPEN_RE.source, 'g');
+  for (;;) {
+    open.lastIndex = from;
+    const found = open.exec(text);
+    if (found === null) {
+      break;
+    }
+    const tagEnd = text.indexOf('>', found.index);
+    if (tagEnd === -1) {
+      break;
+    }
+    const end = closeOf(text, tagEnd + 1, found[1] ?? 'Assertion');
+    if (end === -1) {
+      break;
+    }
+    out += text.slice(from, found.index) + maskElements(text.slice(found.index, end), TOKEN_SECRET_RE, () => true);
+    from = end;
+  }
+  return maskElements(out + text.slice(from), BST_OPEN_RE, (tag) => tag.includes('Kerberosv5_AP_REQ'));
+}
+
 /**
  * Masks the text content of `wsse:Password` elements (any namespace prefix) in raw XML — except
  * a `#PasswordDigest` value, which is a hash, not a secret, and must reach the wire intact. The
@@ -232,7 +350,7 @@ export function redactXml(text: string, opts?: { show?: boolean }): string {
     out += `${text.slice(from, tagEnd + 1)}${content}${closed[0]}`;
     from = closed.index + closed[0].length;
   }
-  return out + text.slice(from);
+  return redactSecurityTokens(out + text.slice(from));
 }
 
 /** Body keys whose values are masked in JSON and form bodies, compared case-insensitively. */

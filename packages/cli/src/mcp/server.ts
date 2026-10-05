@@ -26,7 +26,8 @@ export const SERVER_INSTRUCTIONS =
   '--allow-write to allow them. Secrets come from the environment the server was started in, and a ' +
   'resolved secret is masked wherever it appears in a result. Other values are redacted by pattern: ' +
   'credential headers, URL credentials and credential-named URL parameters, the WS-Security Password, ' +
-  'and values under secret-looking JSON or form keys. A value outside those patterns is returned as it is.';
+  'SAML token signatures and Kerberos tokens, and values under secret-looking JSON or form keys. A value ' +
+  'outside those patterns is returned as it is.';
 
 function resultOf(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
