@@ -180,6 +180,65 @@ describe('ProjectHost', () => {
     expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
   });
 
+  it('drops a blank SPN rather than saving or sending it', async () => {
+    const dir = join(tempDir('project'), 'Blank SPN Project');
+    const engine = new EngineService();
+    const seen: unknown[] = [];
+    const original = engine.importForProject.bind(engine);
+    vi.spyOn(engine, 'importForProject').mockImplementation((input, hooks) => {
+      seen.push(input.auth);
+      return original(withoutAuth(input), hooks);
+    });
+    const service = new ProjectHost(engine, {});
+
+    await service.create({ dir, name: 'Blank SPN Project' });
+    const { project, interfaceId } = await service.addInterface({
+      source: { kind: 'url', url: server!.wsdlUrl },
+      auth: { type: 'kerberos', spn: '   ' },
+      useForRequests: true,
+    });
+
+    expect(seen[0]).toEqual({ type: 'kerberos' });
+    expect(project.interfaces.find((i) => i.id === interfaceId)?.auth).toEqual({ type: 'kerberos' });
+  });
+
+  // Off Windows an explicit Kerberos account is refused by the engine whatever its password, so a
+  // reopen must not read the keychain for it (nor fail when the secret is not on this machine).
+  it.skipIf(process.platform === 'win32')(
+    'hydrates a Kerberos interface naming a Windows account without reading its password, off Windows',
+    async () => {
+      const dir = join(tempDir('project'), 'Windows Account Project');
+      const getSecret = vi.fn<(ref: string) => Promise<string | undefined>>(() => Promise.resolve(undefined));
+      const secrets = { get: getSecret };
+      const service = new ProjectHost(new EngineService(getSecret), {}, undefined, undefined, secrets);
+      await service.create({ dir, name: 'Windows Account Project' });
+      const { interfaceId } = await service.addInterface({ source: { kind: 'url', url: server!.wsdlUrl } });
+      await service.mutate({
+        kind: 'update-interface-auth',
+        interfaceId,
+        auth: { type: 'kerberos', spn: 'HTTP/svc', username: 'ada', domain: 'CORP', passwordRef: 'sec_missing' },
+      });
+      await service.save();
+      await service.close();
+
+      const engine = new EngineService(getSecret);
+      const hydrated: unknown[] = [];
+      const original = engine.importForProject.bind(engine);
+      vi.spyOn(engine, 'importForProject').mockImplementation((input, hooks) => {
+        hydrated.push(input.auth);
+        return original(input, hooks);
+      });
+      getSecret.mockClear();
+      const reopened = new ProjectHost(engine, {}, undefined, undefined, secrets);
+      await reopened.openProject(dir);
+      await reopened.whenHydrated();
+
+      expect(getSecret).not.toHaveBeenCalled();
+      expect(hydrated[0]).toEqual({ type: 'kerberos', spn: 'HTTP/svc', username: 'ada', domain: 'CORP' });
+      expect(reopened.snapshot()?.interfaces[0]?.hydration).toBe('ready');
+    },
+  );
+
   it("persists a REST API definition's auth to disk and carries it through a reopen", async () => {
     const dir = join(tempDir('project'), 'Pets Project');
     const service = newService();

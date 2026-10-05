@@ -13,6 +13,7 @@ import {
   WirebenchError,
 } from '@wirebench/engine';
 import type { GenerateOptions, WsdlImportProgress, WsdlImportResult, WsdlImportSource, QName } from '@wirebench/engine';
+import { kerberosImportAuth } from './kerberos-import-auth.js';
 import { secretMissingMessage } from './secret-resolver.js';
 import type { FetchDocument, KerberosSendAuth } from '@wirebench/engine';
 import {
@@ -136,7 +137,7 @@ export class EngineService {
     const wireAuth = request.options?.auth;
     let auth: { readonly username: string; readonly password: string } | KerberosSendAuth | undefined;
     if (wireAuth !== undefined && 'type' in wireAuth) {
-      auth = { type: 'kerberos', ...(wireAuth.spn !== undefined ? { spn: wireAuth.spn } : {}) };
+      auth = kerberosImportAuth(wireAuth.spn);
     } else if (wireAuth !== undefined) {
       const password = await this.getSecret?.(wireAuth.passwordRef);
       if (password === undefined) {

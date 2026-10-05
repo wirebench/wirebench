@@ -202,6 +202,7 @@ import type { GlobalProperties } from './global-properties.js';
 import type { PreferencesService } from './preferences.js';
 import type { PreflightResult } from './expansion-preflight.js';
 import { preflightRequest } from './expansion-preflight.js';
+import { kerberosImportAuth, withoutPasswordRef } from './kerberos-import-auth.js';
 import { resolveAuthConfig, resolveEndpointAuth } from './secret-resolver.js';
 import { findRestFolder, findRestRequest, mapFolder, restApiOwning, takenApiSlugs } from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
@@ -2450,7 +2451,7 @@ export class ProjectHost {
       input.auth === undefined
         ? undefined
         : 'type' in input.auth
-          ? { type: 'kerberos', ...(input.auth.spn !== undefined ? { spn: input.auth.spn } : {}) }
+          ? kerberosImportAuth(input.auth.spn)
           : await this.basicImportAuth({
               type: 'basic',
               username: input.auth.username,
@@ -2495,11 +2496,11 @@ export class ProjectHost {
     }
 
     const endpoints = endpointsFrom(summary);
-    const savedAuth: EndpointAuth | AuthConfig | undefined =
+    const savedAuth: SoapOwnerAuth | undefined =
       input.useForRequests !== true || input.auth === undefined
         ? undefined
         : 'type' in input.auth
-          ? { type: 'kerberos', ...(input.auth.spn !== undefined ? { spn: input.auth.spn } : {}) }
+          ? kerberosImportAuth(input.auth.spn)
           : { type: 'basic', username: input.auth.username, passwordRef: input.auth.passwordRef, preemptive: true };
     const iface: Interface = {
       ...createInterface(summary.name, {
@@ -2860,14 +2861,16 @@ export class ProjectHost {
 
   /**
    * What an interface's own auth resolves to for re-fetching its WSDL: Basic credentials, or a
-   * Kerberos auth (the engine resolves the keychain secret only when a username is set). Any other
+   * Kerberos auth (its keychain secret is read only on Windows, and only when a username is set:
+   * elsewhere an explicit account is refused anyway, so a reopen reads nothing for it). Any other
    * scheme resolves to no re-fetch credentials.
    */
   private async importAuthFor(
     iface: Interface,
   ): Promise<{ username: string; password: string } | KerberosSendAuth | undefined> {
     if (iface.auth?.type === 'kerberos') {
-      const resolved = await resolveAuthConfig(iface.auth, (ref) => this.getSecret(ref));
+      const auth = process.platform === 'win32' ? iface.auth : withoutPasswordRef(iface.auth);
+      const resolved = await resolveAuthConfig(auth, (ref) => this.getSecret(ref));
       return resolved?.type === 'kerberos' ? resolved : undefined;
     }
     return this.basicImportAuth(iface.auth !== undefined && isEndpointAuth(iface.auth) ? iface.auth : undefined);
