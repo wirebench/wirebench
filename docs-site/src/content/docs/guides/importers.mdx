@@ -244,7 +244,8 @@ not fit. An exchange with no valid time is not written to History, and a warning
     names them.
   - In a saved example, headers with a credential-looking name, the values under such keys in a
     JSON or form body, and such elements and attributes in an XML body, are masked, and
-    `Set-Cookie` is dropped; the notes say which examples were masked.
+    `Set-Cookie` is dropped; the notes say which examples were masked. An XML body shows the
+    marker escaped, as `&lt;redacted&gt;`, so it stays well formed, as History writes it.
 - **Cookies are dropped.** The [cookie jar](/wirebench/docs/guides/rest-client/#cookies) handles
   them at send time.
 - **Binary bodies.** A binary response body is left out of its example. A multipart file part

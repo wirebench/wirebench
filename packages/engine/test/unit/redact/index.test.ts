@@ -6,14 +6,20 @@ import {
   redactHeaderPairs,
   redactHeaders,
   REDACTED_MARKER,
+  REDACTED_XML_MARKER,
   redactRawHttp,
   redactUrl,
   redactXml,
 } from '../../../src/redact/index.js';
+import { maskRecordedResponse } from '../../../src/import/examples.js';
 
 describe('containsRedaction', () => {
   it('is true when the text contains the redaction marker', () => {
     expect(containsRedaction(`<Password>${REDACTED_MARKER}</Password>`)).toBe(true);
+  });
+
+  it('is true for the marker as XML text, which redactXml writes', () => {
+    expect(containsRedaction(`<Password>${REDACTED_XML_MARKER}</Password>`)).toBe(true);
   });
 
   it('is false for text with no redaction marker', () => {
@@ -103,11 +109,11 @@ describe('redactUrl userinfo', () => {
 describe('redactXml', () => {
   it('masks wsse:Password text content regardless of namespace prefix', () => {
     const xml = '<wsse:Password Type="...PasswordText">s3cret!</wsse:Password>';
-    expect(redactXml(xml)).toBe('<wsse:Password Type="...PasswordText"><redacted></wsse:Password>');
+    expect(redactXml(xml)).toBe('<wsse:Password Type="...PasswordText">&lt;redacted&gt;</wsse:Password>');
   });
 
   it('handles an unprefixed Password element', () => {
-    expect(redactXml('<Password>hunter2</Password>')).toBe('<Password><redacted></Password>');
+    expect(redactXml('<Password>hunter2</Password>')).toBe('<Password>&lt;redacted&gt;</Password>');
   });
 
   it('bypasses redaction when show is true', () => {
@@ -125,7 +131,7 @@ describe('redactXml', () => {
     const xml =
       '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">s3cret!</wsse:Password>';
     expect(redactXml(xml)).toBe(
-      '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText"><redacted></wsse:Password>',
+      '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">&lt;redacted&gt;</wsse:Password>',
     );
   });
 });
@@ -144,7 +150,7 @@ describe('redactRawHttp', () => {
       'POST /svc HTTP/1.1\r\nHost: x\r\nContent-Type: text/xml; charset=utf-8\r\n\r\n<wsse:Password>s3cret!</wsse:Password>';
     const result = redactRawHttp(raw);
     expect(result).not.toContain('s3cret!');
-    expect(result).toContain('<redacted>');
+    expect(result).toContain('&lt;redacted&gt;');
   });
 
   it('preserves CRLF line terminators exactly', () => {
@@ -205,15 +211,17 @@ describe('redactXml over hostile input', () => {
 
   it('pairs each open tag with the first close tag after it, as the lazy match did', () => {
     expect(redactXml('<a><Password>x</Password><wsse:Password>y</wsse:Password></a>')).toBe(
-      '<a><Password><redacted></Password><wsse:Password><redacted></wsse:Password></a>',
+      '<a><Password>&lt;redacted&gt;</Password><wsse:Password>&lt;redacted&gt;</wsse:Password></a>',
     );
     // A nested opener is swallowed into the first element's content, exactly as before.
-    expect(redactXml('<Password><Password>x</Password></Password>')).toBe('<Password><redacted></Password></Password>');
+    expect(redactXml('<Password><Password>x</Password></Password>')).toBe(
+      '<Password>&lt;redacted&gt;</Password></Password>',
+    );
   });
 
   it('leaves an unterminated element alone, and matches case-insensitively', () => {
     expect(redactXml('<Password>never closed')).toBe('<Password>never closed');
-    expect(redactXml('<PASSWORD>x</PASSWORD>')).toBe('<PASSWORD><redacted></PASSWORD>');
+    expect(redactXml('<PASSWORD>x</PASSWORD>')).toBe('<PASSWORD>&lt;redacted&gt;</PASSWORD>');
     expect(redactXml('<Passwords>x</Passwords>')).toBe('<Passwords>x</Passwords>');
   });
 });
@@ -273,5 +281,17 @@ describe('redactRawHttp — a hostile request line', () => {
     const started = performance.now();
     expect(redactRawHttp(`${line}\r\n\r\n`, { extraParams: ['key'] })).toBe(`${line}\r\n\r\n`);
     expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
+describe('one XML redaction marker', () => {
+  it('is written escaped by History and the HTTP log and by a masked example alike', () => {
+    const xml = '<Envelope><Password>hunter2</Password></Envelope>';
+    const history = redactXml(xml);
+    const example = maskRecordedResponse([], xml, 'text/xml').body;
+    expect(history).toBe(`<Envelope><Password>${REDACTED_XML_MARKER}</Password></Envelope>`);
+    expect(example).toBe(history);
+    // Escaped, the document has no element the marker would open.
+    expect(history).not.toContain(REDACTED_MARKER);
   });
 });

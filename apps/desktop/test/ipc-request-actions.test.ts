@@ -244,7 +244,7 @@ describe('request.recreate / curl / importCurl', () => {
     );
 
     const redacted = unwrap<{ command: string }>(await invoke('request.curl', { requestId: 'req-1', shell: 'posix' }));
-    expect(redacted.command).toContain('<redacted>');
+    expect(redacted.command).toContain('<wsse:Password>&lt;redacted&gt;</wsse:Password>');
     expect(redacted.command).not.toContain('s3cret');
 
     showSecrets = true;

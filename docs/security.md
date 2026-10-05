@@ -59,7 +59,9 @@ only an opaque `secretRef: "sec_…"`.
 **There is no `secrets.get` channel.** The renderer can create, replace, test-for-existence,
 delete and list (ids and labels) — it can never read a value back. Refs are resolved to values
 only in main, at the moment of use. Anything logged, exported or shown is redacted first:
-`Authorization`, `Proxy-Authorization`, WSS passwords, keystore passwords.
+`Authorization`, `Proxy-Authorization`, WSS passwords, keystore passwords. The marker is
+`<redacted>`; a masked XML element, such as a WSS password, holds it escaped as `&lt;redacted&gt;`
+so the document stays well formed.
 
 Request and response bodies are masked by key too. In JSON bodies (`application/json` and any
 `+json` type) and urlencoded form bodies, the values of `password`, `passwd`, `secret`, `token`,

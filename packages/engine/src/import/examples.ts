@@ -8,7 +8,7 @@
 
 import type { KeyValueEntry } from '../http/entries.js';
 import { entry } from '../http/entries.js';
-import { REDACTED_MARKER, redactStructuredBody } from '../redact/index.js';
+import { REDACTED_MARKER, REDACTED_XML_MARKER, redactStructuredBody } from '../redact/index.js';
 import { scanXml } from './credential-values.js';
 import { isCredentialName } from './credentials.js';
 
@@ -18,8 +18,6 @@ export const MAX_EXAMPLE_BODY_CHARS = 256 * 1024;
 /** Response headers an example never keeps: the cookie jar, not the example, owns cookies. */
 const DROPPED_EXAMPLE_HEADERS = new Set(['set-cookie', 'cookie']);
 const ENCODED_MARKER = encodeURIComponent(REDACTED_MARKER);
-/** The marker as XML text, so a masked XML body stays well formed: `&lt;redacted&gt;` reads as the marker. */
-const XML_MARKER = REDACTED_MARKER.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** True when a body is XML: its content type says so, or it names none and opens with `<`. */
 function isXmlBody(text: string, contentType: string | undefined): boolean {
@@ -47,7 +45,7 @@ export function maskRecordedResponse(
     });
   let text = body;
   if (text !== undefined && isXmlBody(text, contentType)) {
-    const redacted = scanXml(text, () => XML_MARKER);
+    const redacted = scanXml(text, () => REDACTED_XML_MARKER);
     if (redacted !== text) {
       text = redacted;
       masked = true;
