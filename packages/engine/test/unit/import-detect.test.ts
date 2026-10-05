@@ -395,3 +395,20 @@ describe('detectImportFormat: .http files and environment files', () => {
     expect(detectImportFormat({ text: 'server:\n  host: x\n  port: 1' }).kind).toBe('unknown');
   });
 });
+
+describe('OpenCollection', () => {
+  it('detects OpenCollection from content and file name', () => {
+    expect(detectImportFormat({ text: 'opencollection: "1.0.0"\ninfo:\n  name: x\n' })).toEqual({
+      kind: 'opencollection',
+      label: 'OpenCollection 1.0.0',
+      confidence: 'definite',
+    });
+    expect(detectImportFormat({ filename: 'opencollection.yml' })).toEqual({
+      kind: 'opencollection',
+      label: 'OpenCollection',
+      confidence: 'probable',
+    });
+    expect(detectImportFormat({ filename: 'dir/opencollection.yaml' }).kind).toBe('opencollection');
+    expect(detectImportFormat({ filename: 'other.yml' }).kind).toBe('openapi');
+  });
+});

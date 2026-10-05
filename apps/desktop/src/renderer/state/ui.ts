@@ -63,6 +63,7 @@ export type ImportDialogFormat =
   | 'har'
   | 'http-file'
   | 'http-env'
+  | 'opencollection'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project';

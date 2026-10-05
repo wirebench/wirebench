@@ -2909,6 +2909,13 @@ export class WorkspaceService implements ProjectRouter {
     return this.hostFor(projectId).importWsApi(input);
   }
 
+  /** @inheritdoc */
+  importGrpcApi(
+    ...[projectId, input]: Parameters<ProjectRouter['importGrpcApi']>
+  ): ReturnType<ProjectRouter['importGrpcApi']> {
+    return this.hostFor(projectId).importGrpcApi(input);
+  }
+
   importLegacyProject(
     ...[projectId, input]: Parameters<ProjectRouter['importLegacyProject']>
   ): ReturnType<ProjectRouter['importLegacyProject']> {

@@ -121,6 +121,11 @@ export const COMMAND_CATALOG: Readonly<Record<CommandId, CommandCatalogEntry>> =
     label: 'Import Legacy SOAP Project…',
     category: 'Definition',
   },
+  'definition.importOpenCollection': {
+    id: 'definition.importOpenCollection',
+    label: 'Import OpenCollection…',
+    category: 'Definition',
+  },
   'item.save': {
     id: 'item.save',
     label: 'Save',

@@ -6,6 +6,7 @@
  */
 
 import { parse as parseYamlDocument } from 'yaml';
+import { isOpenCollection } from './import/opencollection/parse.js';
 import { isHar } from './rest/har/parse.js';
 import { isPostmanCollection, isPostmanVariables } from './rest/postman/parse.js';
 import { looksLikeLegacyProject } from './soap/legacy-project/format.js';
@@ -19,6 +20,7 @@ export type ImportFormatKind =
   | 'har'
   | 'http-file'
   | 'http-env'
+  | 'opencollection'
   | 'wsdl'
   | 'proto'
   | 'legacy-soap-project'
@@ -211,6 +213,14 @@ function detectFromText(text: string): DetectedImportFormat | undefined {
       };
     }
 
+    if (isOpenCollection(parsed)) {
+      return {
+        kind: 'opencollection',
+        label: `OpenCollection ${String(parsed['opencollection'])}`,
+        confidence: 'definite',
+      };
+    }
+
     if (typeof parsed['asyncapi'] === 'string') {
       return { kind: 'asyncapi', label: `AsyncAPI ${parsed['asyncapi']}`, confidence: 'definite' };
     }
@@ -320,6 +330,9 @@ export function detectImportFormat(input: ImportDetectInput): DetectedImportForm
     }
     if (target.includes('asyncapi')) {
       return { kind: 'asyncapi', label: 'AsyncAPI', confidence: 'probable' };
+    }
+    if (/(^|[\\/])opencollection\.ya?ml$/.test(target)) {
+      return { kind: 'opencollection', label: 'OpenCollection', confidence: 'probable' };
     }
     if (
       target.includes('openapi') ||

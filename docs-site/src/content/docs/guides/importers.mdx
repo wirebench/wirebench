@@ -1,12 +1,12 @@
 ---
 title: Importing APIs
-description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
+description: Bring a WSDL, OpenAPI document, Postman collection, HAR capture, .http file, OpenCollection, cURL command, .proto file, gRPC server or legacy SOAP project into Wirebench.
 ---
 
 import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Importing turns something you already have — a WSDL, an OpenAPI document, a Postman collection, a
-HAR capture of recorded traffic, a `.http` request file, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
+HAR capture of recorded traffic, a `.http` request file, an OpenCollection, a `curl` command, a `.proto` file, a running gRPC server, or a whole legacy SOAP project — into
 requests you can run and edit in Wirebench. Most formats share one dialog; cURL has its own,
 smaller one.
 
@@ -19,6 +19,7 @@ smaller one.
 | HAR (recorded traffic) | Import dialog | File or pasted JSON |
 | .http file | Import dialog | File or pasted text |
 | HTTP client environment file | Import dialog | File or pasted JSON |
+| OpenCollection | Import dialog | File (a document, or a folder's `opencollection.yml`) or pasted YAML |
 | .proto (gRPC) | Import dialog | URL, file, pasted text, or a running server |
 | Legacy SOAP project | Import dialog | File only |
 | cURL command | Import cURL dialog | Pasted command |
@@ -36,7 +37,7 @@ smaller one.
 
 3. Leave **Format** on **Auto-detect**, or pick one explicitly: **OpenAPI / Swagger**, **Postman
    Collection**, **Postman environment**, **Postman globals**, **HAR (recorded traffic)**, **.http file**, **HTTP client
-   environment file**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
+   environment file**, **OpenCollection**, **WSDL (SOAP)**, **Protocol Buffers (gRPC)**, or **Legacy SOAP project**. With
    auto-detect, a badge shows what was recognized, for example "WSDL / SOAP" or "OpenAPI 3.1.0".
 
 4. Pick **Into project** — an open project, or **New project "…"**. Postman environments and
@@ -49,7 +50,8 @@ smaller one.
 <Aside type="tip" title="Dedicated commands">
 **Import OpenAPI…** (<kbd>⌘⇧I</kbd> / <kbd>Ctrl+Shift+I</kbd>), **Import Postman Collection…**,
 **Import Postman Environment…**, **Import Postman Globals…**, **Import HAR…**, **Import .http
-File…** and **Import HTTP Client Environments…** open the same dialog pinned to that format. **Import Legacy SOAP Project…**, from the command
+File…**, **Import HTTP Client Environments…** and **Import OpenCollection…** open the same dialog
+pinned to that format. **Import Legacy SOAP Project…**, from the command
 palette, pins it to the legacy format.
 </Aside>
 
@@ -237,11 +239,12 @@ not fit. An exchange with no valid time is not written to History, and a warning
   - With no `Authorization` header, an `X-Api-Key` header makes the request's auth **API key**, in a
     header of the recorded name, with no value: set the key on the request or API.
   - Every other header with a credential-looking name is dropped, with the same warning.
-  - Query parameters, form fields, multipart text parts and JSON keys at any depth with a
-    credential-looking name are imported with an empty value, and a warning names them.
-  - In a saved example, headers with a credential-looking name, and the values under such keys in a
-    JSON or form body, are masked, and `Set-Cookie` is dropped; the notes say which examples were
-    masked.
+  - Query parameters, form fields, multipart text parts, JSON keys at any depth and XML elements
+    and attributes with a credential-looking name are imported with an empty value, and a warning
+    names them.
+  - In a saved example, headers with a credential-looking name, the values under such keys in a
+    JSON or form body, and such elements and attributes in an XML body, are masked, and
+    `Set-Cookie` is dropped; the notes say which examples were masked.
 - **Cookies are dropped.** The [cookie jar](/wirebench/docs/guides/rest-client/#cookies) handles
   them at send time.
 - **Binary bodies.** A binary response body is left out of its example. A multipart file part
@@ -302,6 +305,56 @@ look at**, **Notes** and **Copy report** work as they do for a legacy project.
 
 See [From .http files](/wirebench/docs/switching/http-files/) for every rule, and what does not come
 across.
+
+## OpenCollection
+
+OpenCollection is an open, file-based format for API collections, kept as one YAML document or as a
+folder of them with an `opencollection.yml` at its root. Wirebench reads version 1.x: HTTP and
+GraphQL items become a REST API, gRPC items a gRPC API and WebSocket items a WebSocket API, each
+only when the collection has items of that kind. Auto-detect recognizes a document with a top-level
+`opencollection` version, or a file named `opencollection.yml` or `opencollection.yaml`.
+
+<Steps>
+
+1. Open **Import…** and pick **OpenCollection**, or run **Import OpenCollection…**.
+
+2. On the **File** tab, pick or drop a single-document collection. For a collection saved as a
+   folder, pick its `opencollection.yml`: when it holds no items itself, the files beside it are
+   read too. You can also paste a single document on the **Paste** tab. There is no URL tab.
+
+3. Choose the target project and **Import**.
+
+</Steps>
+
+The summary counts the APIs, requests and folders, the assertions mapped and not, and the scripts
+kept as text, then lists the environments and project properties added and the secrets stored.
+**Things to look at**, **Notes** and **Copy report** work as they do for a legacy project.
+
+- **Variables.** Collection and folder variables become project properties; the first definition
+  wins, and a name the project already has keeps its value. Variables on a single request are not
+  imported, and a warning names them.
+- **Environments.** Each environment, from `config.environments` or the `environments/` folder,
+  becomes a workspace environment, renamed when the name is taken and **never made active**. A
+  `secret: true` variable, and a literal value whose name looks like a credential, become secrets
+  in the [secret store](/wirebench/docs/guides/secrets/).
+- **Scripts** are saved as text under `imported-scripts/` and never run.
+- **Assertions** on the status, the response time and JSON body paths become request assertions.
+  Others are listed in the report, and so is an assertion that compares a credential-named value
+  with a literal one.
+- **Credentials** are never imported as plain text, under the same rule as
+  [HAR captures](#har-captures). A Bearer token or API key made only of `{{variables}}` is kept as
+  the header or query row it sends.
+- **gRPC definitions.** For a folder collection, the `.proto` files the gRPC items name are read
+  from beside it, without following their imports. Otherwise, or when they cannot be loaded, the
+  gRPC API has no definition yet, and the report says so.
+- **Refused.** A collection with no requests and no environments, such as one holding only
+  variables or scripts, is refused and no project is created.
+- **Limits.** A document larger than 50 MB is refused. A folder is refused past 5,000 YAML files, 64
+  levels of folders or 50 MB in total; links are not followed, and `node_modules` and `.git` are
+  skipped.
+
+See [From OpenCollection](/wirebench/docs/switching/opencollection/) for every rule, and what does
+not come across.
 
 ## cURL commands
 

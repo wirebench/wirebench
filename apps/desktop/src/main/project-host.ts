@@ -2719,6 +2719,34 @@ export class ProjectHost {
     return { project: this.snapshot() as ProjectWire, apiId: api.id };
   }
 
+  /**
+   * Places a gRPC API an importer mapped from a file that is not a contract (an OpenCollection
+   * whose `.proto` files could not be read): only the slug and the order are settled here, and it
+   * records no definition, so the user imports one or uses server reflection later. A gRPC API with
+   * a definition comes in through {@link addGrpcApi}, which also writes its cache. Saves immediately.
+   *
+   * @throws ProjectError `invalid-argument` for an API that carries a definition
+   */
+  async importGrpcApi(input: { readonly api: GrpcApi }): Promise<{ project: ProjectWire; apiId: string }> {
+    const open = this.require();
+    const project = open.project;
+    if (input.api.definition !== undefined) {
+      // A definition with no cache behind it would fail the first send.
+      throw new ProjectError('invalid-argument', 'A gRPC API with a definition is placed by addGrpcApi', {
+        details: { id: input.api.id },
+      });
+    }
+    const api: GrpcApi = {
+      ...input.api,
+      slug: uniqueSlug(input.api.name, takenApiSlugs(project)),
+      order: project.interfaces.length + project.apis.length + project.grpcApis.length + project.wsApis.length,
+    };
+    open.project = { ...project, grpcApis: [...project.grpcApis, api] };
+    open.dirty = true;
+    await this.save({ reason: 'import' });
+    return { project: this.snapshot() as ProjectWire, apiId: api.id };
+  }
+
   /** Adds the properties whose names the project does not have yet (imports never overwrite), then saves. */
   async importProperties(
     properties: Readonly<Record<string, string>>,

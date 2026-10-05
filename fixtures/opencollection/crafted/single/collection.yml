@@ -1,0 +1,111 @@
+opencollection: "1.0.0"
+info:
+  name: Pets
+config:
+  environments:
+    - name: dev
+      variables:
+        - name: baseUrl
+          value: "https://pets.example.com"
+        - name: token
+          secret: true
+        - name: region
+          value:
+            - title: eu
+              selected: true
+              value: eu-west
+            - title: us
+              value: us-east
+request:
+  variables:
+    - name: tenant
+      value: acme
+items:
+  - info:
+      name: Users
+      type: folder
+    request:
+      headers:
+        - name: X-Team
+          value: core
+      auth:
+        type: bearer
+        token: "{{token}}"
+    items:
+      - info:
+          name: Get User
+          type: http
+          seq: 2
+        http:
+          method: GET
+          url: "{{baseUrl}}/users/:id"
+          params:
+            - name: id
+              value: "1"
+              type: path
+        runtime:
+          assertions:
+            - expression: res.status
+              operator: eq
+              value: "200"
+            - expression: res.body.name
+              operator: isNotNull
+          scripts:
+            - type: tests
+              code: "test('ok', () => {});"
+      - info:
+          name: Create User
+          type: http
+          seq: 1
+        http:
+          method: POST
+          url: "{{baseUrl}}/users"
+          body:
+            - title: full
+              selected: true
+              body:
+                type: json
+                data: '{"name":"Rex"}'
+            - title: empty
+              body:
+                type: json
+                data: "{}"
+        examples:
+          - name: created
+            response:
+              status: 201
+              statusText: Created
+              headers:
+                - name: Content-Type
+                  value: application/json
+              body:
+                type: json
+                data: '{"id":1}'
+  - info:
+      name: Graph
+      type: graphql
+    graphql:
+      url: "{{baseUrl}}/graphql"
+      body:
+        query: "{ pets { id } }"
+        variables: "{}"
+  - info:
+      name: Pets gRPC
+      type: grpc
+    grpc:
+      url: "grpc://localhost:50051"
+      method: /pets.v1.Pets/Get
+      methodType: unary
+      protoFilePath: protos/pets.proto
+      message: '{"id":1}'
+  - info:
+      name: Socket
+      type: websocket
+    websocket:
+      url: "wss://pets.example.com/ws"
+      message:
+        type: json
+        data: '{"hi":true}'
+  - info:
+      name: Dashboard
+      type: app

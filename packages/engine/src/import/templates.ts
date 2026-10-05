@@ -21,3 +21,11 @@ export function rewriteMustache(text: string, seen?: Set<string>): string {
     return `\${${name}}`;
   });
 }
+
+/** A `:name` path segment, written as several formats spell a path parameter. */
+const COLON_PARAM = /(^|\/):([a-zA-Z0-9_-]+)(?=\/|\?|#|\.|$)/g;
+
+/** `path` with each `:name` segment turned into Wirebench's `{name}`. */
+export function colonPathParams(path: string): string {
+  return path.replace(COLON_PARAM, '$1{$2}');
+}

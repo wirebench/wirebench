@@ -1,0 +1,1 @@
+syntax = "proto3"; package pets.v1; message GetRequest { int32 id = 1; } message Pet { int32 id = 1; } service Pets { rpc Get(GetRequest) returns (Pet); }

@@ -3,7 +3,9 @@
  * engine never stores a secret: a secret's value travels in `secretValue` to the desktop main
  * process, which puts it in the secret store and writes only a `${secret:…}` reference.
  */
+import { isCredentialName } from './credentials.js';
 import type { ImportReport, ReportBuilder } from './report.js';
+import { looksLikeBareAuthority, referencesOnly, stripUserinfo } from './values.js';
 
 export interface ImportedVariable {
   readonly name: string;
@@ -54,6 +56,28 @@ export class VariableSetBuilder {
   build(): ImportedVariableSet {
     return { name: this.name, variables: [...this.variables] };
   }
+}
+
+/**
+ * A plain variable whose value (templates already rewritten) may not carry a literal credential
+ * into a workspace or project file: under a credential-looking name, a value that is not made of
+ * references alone becomes a secret; any other value loses literal user info from a URL. The
+ * caller words the report from `madeSecret` and `userinfoCut`.
+ */
+export function credentialSafeVariable(
+  name: string,
+  text: string,
+  enabled = true,
+): { variable: ImportedVariable; madeSecret: boolean; userinfoCut: boolean } {
+  if (isCredentialName(name) && text !== '' && !referencesOnly(text)) {
+    return {
+      variable: { name, value: '', enabled, secret: true, secretValue: text },
+      madeSecret: true,
+      userinfoCut: false,
+    };
+  }
+  const { url, stripped } = stripUserinfo(text, looksLikeBareAuthority(text));
+  return { variable: { name, value: url, enabled, secret: false }, madeSecret: false, userinfoCut: stripped };
 }
 
 export function credentialLookingNames(sets: readonly ImportedVariableSet[]): string[] {

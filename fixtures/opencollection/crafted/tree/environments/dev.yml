@@ -1,0 +1,13 @@
+name: dev
+variables:
+  - name: baseUrl
+    value: "https://pets.example.com"
+  - name: token
+    secret: true
+  - name: region
+    value:
+      - title: eu
+        selected: true
+        value: eu-west
+      - title: us
+        value: us-east

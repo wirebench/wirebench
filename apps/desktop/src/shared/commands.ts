@@ -26,6 +26,7 @@ export const COMMAND_IDS = [
   'preferences.open',
   'definition.import',
   'definition.importLegacyProject',
+  'definition.importOpenCollection',
   'item.save',
   'project.save',
   'workspace.create',

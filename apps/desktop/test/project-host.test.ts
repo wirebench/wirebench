@@ -7,6 +7,7 @@ import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createDefaultFetchDocument,
+  createGrpcApi,
   createWsApi,
   DEFAULT_PREFERENCES,
   importOpenApi,
@@ -1410,6 +1411,40 @@ describe('ProjectHost.writeImportedScripts and a linked imported-scripts folder'
     await expect(
       service.writeImportedScripts([{ path: 'imported-scripts/api/a.js', source: 'x' }]),
     ).rejects.toMatchObject({ code: 'import-path-refused' });
+    await service.close();
+  });
+});
+
+describe('ProjectHost.importGrpcApi', () => {
+  it('places a mapped gRPC API with no definition, under a free slug, and saves', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'Grpc Project');
+    await service.create({ dir, name: 'Grpc Project' });
+
+    const first = await service.importGrpcApi({ api: createGrpcApi('Pets', { target: 'localhost:50051' }) });
+    const second = await service.importGrpcApi({ api: createGrpcApi('Pets', { target: 'localhost:50051' }) });
+
+    const apis = second.project.grpcApis;
+    expect(apis.map((api) => [api.id, api.slug, api.order])).toEqual([
+      [first.apiId, 'Pets', 0],
+      [second.apiId, 'Pets-2', 1],
+    ]);
+    expect(apis.every((api) => api.definition === undefined)).toBe(true);
+    expect(service.snapshot()?.dirty).toBe(false);
+    await service.close();
+  });
+
+  it('refuses an API that carries a definition', async () => {
+    const service = newService();
+    const dir = join(tempDir('project'), 'Grpc Project');
+    await service.create({ dir, name: 'Grpc Project' });
+    const api = {
+      ...createGrpcApi('Pets'),
+      definition: { kind: 'proto' as const, source: '/x/pets.proto', cache: true, roots: ['pets.proto'] },
+    };
+
+    await expect(service.importGrpcApi({ api })).rejects.toMatchObject({ code: 'invalid-argument' });
+    expect(service.snapshot()?.grpcApis).toEqual([]);
     await service.close();
   });
 });

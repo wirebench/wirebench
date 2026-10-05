@@ -1,0 +1,250 @@
+---
+title: From OpenCollection
+description: What an OpenCollection brings into Wirebench, as one YAML document or a folder of them, what it leaves behind, and where each part lives once imported.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+OpenCollection is an open, file-based format for API collections. A collection is YAML, kept
+either as one document that holds its items inline or as a folder of documents, one file per
+request, with an `opencollection.yml` at its root. Wirebench reads version 1.x. It turns a
+collection into up to three APIs in the project you choose:
+
+- HTTP and GraphQL items become a **REST API**;
+- gRPC items become a **gRPC API**;
+- WebSocket items become a **WebSocket API**.
+
+The collection's variables become project properties and its environments become workspace
+environments. Scripts are kept as text and never run. Assertions come across when Wirebench has an
+equivalent. Credentials do not come across as plain text. The import summary lists everything that
+was left out or changed, so you know what to set up before the first send.
+
+To run the import, see [OpenCollection](/wirebench/docs/guides/importers/#opencollection) in the
+importers guide. It takes a picked or dropped file, or pasted YAML.
+
+## Steps
+
+<Steps>
+
+1. Open **Import…** and pick **OpenCollection**, or run **Import OpenCollection…** from the command
+   palette. Auto-detect also recognizes a document with a top-level `opencollection` version, or a
+   file named `opencollection.yml` or `opencollection.yaml`.
+
+2. On the **File** tab, pick the collection:
+   - for a single document, pick that file, or drop it;
+   - for a collection saved as a folder, pick its `opencollection.yml`. When it holds no items
+     itself, Wirebench reads the files beside it too. There is no folder picker. A folder's root
+     dropped or pasted on its own is refused, with a message saying to pick it from its folder.
+
+   Or paste a single document on the **Paste** tab. There is no URL tab.
+
+3. Choose the target project. A new project picked through a folder's `opencollection.yml` is
+   named after the folder.
+
+4. Choose **Import**, then read the summary.
+
+</Steps>
+
+## What carries over
+
+### The collection
+
+| In the collection | In Wirebench | More |
+| --- | --- | --- |
+| `info.name` | The name of each API. When the collection has more than one kind of item, the gRPC and WebSocket APIs add " (gRPC)" and " (WebSocket)"; the REST API keeps the plain name. A collection with no name is called "Collection" | |
+| A folder | A folder in each API that has items of its kind somewhere below it. A folder holding only gRPC items appears only in the gRPC API | |
+| Item order | `info.seq` first, lowest first. Items without one come last, in the order the document lists them or, in a folder, by file name | |
+| Collection and folder `request.auth` | The auth of each API and of the folder | [Auth](/wirebench/docs/guides/auth/) |
+| Collection and folder `request.headers` | Copied onto each HTTP and GraphQL request below them that does not set a header of the same name, and a note says which requests got them. A disabled default header is not copied. gRPC metadata and WebSocket headers do not receive them | |
+| Collection and folder `request.variables` | Project properties. The collection's come first, then each folder's in order; when a name is defined twice, the first value is kept. A name the project already has keeps its value. A disabled variable comes across switched off | [Environments and properties](/wirebench/docs/guides/environments/) |
+| `{{name}}` in a URL, header, body, variable or auth field | `${name}`. It looks the name up in the active environment first, then the project, the workspace and global properties | [Property syntax](/wirebench/docs/reference/property-syntax/) |
+| `{{$…}}` dynamic variables, such as `{{$randomInt}}` | Kept as written, and nothing generates a value. One warning names them all | |
+
+### HTTP items
+
+| In the item | In Wirebench | More |
+| --- | --- | --- |
+| `http.method` and `http.url` | The request's method and URL. The method defaults to `GET`. A `:param` path segment becomes `{param}`. The API's base URL is left empty, so each request keeps its full URL | [REST](/wirebench/docs/guides/rest-client/) |
+| A query string in the URL | Rows in the **Params** table. A query `params` entry of the same name wins | [Path and query parameters](/wirebench/docs/guides/rest-client/#path-and-query-parameters) |
+| `params` | `type: path` entries become path parameters; every other entry is a query parameter. `disabled` carries over | |
+| `headers` | Rows in the **Headers** table, `disabled` included | [Headers and auth](/wirebench/docs/guides/rest-client/#headers-and-auth) |
+| `body` of type `json`, `text` or `xml` | A raw body in that language | [Request body](/wirebench/docs/guides/rest-client/#request-body) |
+| `body` of type `sparql` | A raw text body with the content type `application/sparql-query` | |
+| `body` of type `form-urlencoded` | A form body | |
+| `body` of type `multipart-form` | A multipart body. A file part points at its file, resolved against the collection's folder; when a part lists several files, only the first is kept, with a note | |
+| `body` of type `file` | A binary body pointing at the selected file (else the first), resolved against the collection's folder. The file is not copied | |
+| A body given as a list of variants | The selected variant, else the first. A note names the others | |
+| `auth` | The request's auth: `inherit`, `none`, Basic (user name only), Bearer, API key (name and placement), NTLM (user name and domain) and OAuth 2 with the client credentials or authorization code grant. See [Credentials](#credentials) for what happens to the secrets | [Auth](/wirebench/docs/guides/auth/) |
+| `settings.timeout`, `followRedirects`, `maxRedirects`, `encodeUrl` | The matching request settings. Any other setting is ignored, with a note | |
+| `examples` with a numeric response status | [Response examples](/wirebench/docs/guides/rest-client/#examples) on the request, masked as every import masks a recorded response: credential-named headers, JSON and form body fields, and XML elements and attributes are masked, and cookies are dropped. A binary example body is left out, and a body over 256 KB is cut | |
+| `runtime.assertions` | Request assertions, when they fit the table under [Assertions](#assertions) | [Assertions](/wirebench/docs/guides/assertions/) |
+
+### GraphQL items
+
+A GraphQL item becomes an HTTP `POST` request with a raw JSON body, `{"query": …, "variables": …}`,
+and the content type `application/json`. Variables written as a string are parsed; when they do
+not parse, they are kept as a string. Each GraphQL request gets a note. URL, headers, auth and
+settings come across as for an HTTP item.
+
+### gRPC items
+
+| In the item | In Wirebench | More |
+| --- | --- | --- |
+| `grpc.url` | The API's target, taken from the first gRPC item; a later item with a different target gets a note. `grpcs://` and `https://` mean TLS. Without a port, 443 is added for TLS and 80 otherwise | [gRPC](/wirebench/docs/guides/grpc/) |
+| `grpc.method`, as `/pkg.Service/Method` or `pkg.Service/Method` | The request's service and method. An item whose method has neither form is skipped, with a warning | |
+| `methodType` | The method kind: unary, server streaming, client streaming or bidirectional. An unknown kind is imported as unary, with a note | |
+| `metadata` | The request's metadata | |
+| `message` | The request's message | |
+| `settings.timeout` | The request's timeout | |
+| `protoFilePath` | See [gRPC definitions](#grpc-definitions) | |
+
+### WebSocket items
+
+| In the item | In Wirebench | More |
+| --- | --- | --- |
+| `websocket.url` | The request's URL. Its query string becomes query rows. The API's URL is taken from the first WebSocket item | [WebSocket](/wirebench/docs/guides/websocket/) |
+| `headers` and `auth` | The request's headers and auth | |
+| `message.data` | One saved message, named "Message" | |
+| `settings.timeout` | The handshake timeout | |
+
+### Environments
+
+Environments come from `config.environments` in the root document, and in a folder collection
+also from each file under `environments/`. Each one becomes a workspace environment.
+
+- **Never activated.** The imported environment is added, not switched to.
+- **Name clashes.** A name the workspace already uses is imported as "dev 2", "dev 3" and so on. A
+  name that appears twice in the collection is numbered the same way.
+- **Secrets.** A variable marked `secret: true` becomes a secret in the
+  [secret store](/wirebench/docs/guides/secrets/), with its value when the collection has one.
+  When it has none, the variable is created empty and a warning asks you to set it. A variable whose
+  name looks like a credential and whose value is a literal becomes a secret too; a value made
+  only of `{{variables}}` is kept as plain text.
+- **Variants.** A value given as a list of variants uses the selected one, else the first.
+- **Disabled variables** come across switched off.
+
+### Scripts
+
+Every script is written as it is to `imported-scripts/` in the project folder, and never read back
+or run. That covers the collection's and each folder's `request.scripts`, each request's
+`runtime.scripts`, and script file items. A script lands at
+`imported-scripts/<api>/<owner>.<type>.js`, for example `imported-scripts/pets/get user.tests.js`.
+An existing file is never overwritten: a second import adds a number to the name. The notes list
+where each script went.
+
+### Assertions
+
+| Expression | Operator | Becomes |
+| --- | --- | --- |
+| `res.status` | `eq` or `equals`, with a three-digit status | A status assertion |
+| `res.responseTime` | `lt` or `lessThan`, with whole milliseconds | A response time assertion |
+| `res.body.<path>` | `eq` or `equals` | A JSONPath `$.<path>` match that equals the value. `true`, `false` and numbers are compared as such |
+| `res.body.<path>` | `isNull` / `isNotNull` | A JSONPath match that the path does not exist / exists |
+| `res.body.<path>` | `contains` | A JSONPath match against the value, taken literally |
+
+A disabled assertion is skipped with a note. Any other expression or operator is skipped, and a
+warning lists its expression, operator and value; the value is withheld when the target looks like
+a credential. Assertions on gRPC and WebSocket items are not
+imported; a note says so. The summary counts the assertions mapped and those that were not.
+
+## Credentials
+
+No literal credential is written into a project or workspace file.
+
+- **Auth.** A Basic, NTLM or OAuth 2 password, a client secret and a literal Bearer token or API
+  key value are not imported, and a warning asks you to set them. The auth type, the user name, the
+  domain, the API key's name and placement, and the OAuth 2 URLs, client ID and scopes come across.
+- **References are kept.** A Bearer token or API key made only of `{{variables}}` is kept as the
+  `Authorization` header or query row it sends, on each request below the owner, and a note says
+  so.
+- **Headers and metadata.** A literal `Authorization` header on an HTTP request, in gRPC metadata or
+  in WebSocket headers is not copied. A Bearer or Basic header sets the auth type with no token or
+  password (Basic keeps the user name); any other scheme imports as auth **none**. Other headers
+  whose name looks like a credential and whose value is a literal are dropped.
+- **Values.** Query and path parameters, form fields, multipart text parts, JSON bodies, GraphQL
+  variables and gRPC messages have each literal value under a credential-looking name emptied, and
+  so do text bodies and WebSocket messages that start like JSON. In XML bodies, and in text bodies
+  and WebSocket messages that start with `<`, the text of an element and the value of an attribute
+  whose name looks like a credential are emptied. One warning per request names them. SPARQL bodies
+  are kept as written.
+- **URLs.** A user name and password in a URL are cut from it, with a warning. An HTTP request with
+  no auth of its own and no `Authorization` header then gets Basic auth with that user name. The
+  OAuth 2 token and authorization URLs lose their user info the same way, and a literal query value
+  under a credential-looking name is emptied, with a warning.
+- **Assertions.** An assertion whose target looks like a credential, such as
+  `res.body.token`, is skipped when it compares a literal value, enabled or not, and a warning says
+  so without the value.
+
+## What does not carry over
+
+| In the collection | What happens | What to do |
+| --- | --- | --- |
+| A collection with no requests and no environments, such as one holding only variables or scripts | Refused. No project is created | Nothing to import |
+| A folder collection's root, dropped or pasted on its own | Refused, with a message: a document with no `items` is read as a folder's root | Pick its `opencollection.yml` on the **File** tab |
+| A collection of another major version than 1 | Refused, with a message naming the version | |
+| `App` items and unknown item types | Skipped, with a warning naming each | |
+| `runtime.variables` on a single request | Not imported. A warning names them, with the request: Wirebench has no request-level property scope | Add them as project properties, or set them from a script |
+| Object values of variables | Skipped, with a note | Set them by hand |
+| `extends`, `externalSecrets`, `dotEnvFilePath` and `clientCertificates` on an environment | Not imported, with a warning | Set the equivalent up by hand |
+| `config.proxy` and `config.clientCertificates` | Not imported, with a warning | Set the equivalent up by hand |
+| OAuth 2 with a grant other than client credentials or authorization code | Imported as auth **none**, with a warning | Choose an auth type on the **Auth** tab |
+| Any other auth type | Imported as auth **none**, with a warning | |
+| A body of another type | Left out, with a note | |
+| WebSocket `keepAliveInterval` | Ignored, with a note | |
+| A file in a folder collection that does not parse | Skipped, with a warning naming it | Fix the file and import again |
+| An OpenCollection by URL | Not supported | Download it, or paste its YAML |
+
+### gRPC definitions
+
+A gRPC API needs its `.proto` files to send. In a collection picked as a folder, Wirebench reads
+the files that the gRPC items name in `protoFilePath`, resolved against the collection's folder, and
+places the API with them as its definition. Only those files are read: an `import` in them is not
+followed to another file beside them. When a named file imports one that is not among them, or a
+file cannot be read, the API is placed with no definition and a warning gives the reason. A file
+that is not there gets a note. Only a folder collection's protos are read: the gRPC API of a
+single document, or of pasted YAML, has no definition. Each of these cases gets a note that the API
+still needs one.
+
+<Aside type="caution" title="A folder collection is read only within its folder">
+Only `.yml` and `.yaml` files under the folder that holds `opencollection.yml` are read. Symbolic
+links are not followed, and the root file and its folder must not be links themselves. The
+`node_modules` and `.git` folders are skipped. A `.proto` file is read only by a relative path that
+stays inside the collection's folder.
+</Aside>
+
+## Limits
+
+- A single document larger than 50 MB is refused, and so is pasted text longer than about 50
+  million characters.
+- A folder collection is refused when it holds more than 5,000 YAML files, nests more than 64
+  folders deep, or holds more than 50 MB of YAML in total. Walking stops, and the import is refused,
+  after 50,000 folder entries of any kind.
+- Items nested more than 64 levels deep inside one document are refused.
+
+## After importing
+
+<Steps>
+
+1. Read the summary, or choose **Copy report** to keep it as a checklist.
+
+2. Enter the passwords, tokens and keys the warnings name, on each **Auth** tab, and the values of
+   the empty secrets. See [Secrets](/wirebench/docs/guides/secrets/).
+
+3. Pick one of the imported environments to make it active. Import never switches environments for
+   you. See [Environments and properties](/wirebench/docs/guides/environments/).
+
+4. Give a gRPC API without a definition its `.proto` files, or use server reflection. See
+   [gRPC](/wirebench/docs/guides/grpc/).
+
+5. Read the scripts under `imported-scripts/`, and rewrite the ones you need as
+   [scripts](/wirebench/docs/guides/scripts/).
+
+6. Send one request to confirm the setup.
+
+</Steps>
+
+## Related
+
+- [Importing APIs](/wirebench/docs/guides/importers/): the Import dialog and every format it reads.
+- [Property expansion syntax](/wirebench/docs/reference/property-syntax/): how `${name}` resolves.
+- [Secrets](/wirebench/docs/guides/secrets/): where credentials live and why no import copies them.
