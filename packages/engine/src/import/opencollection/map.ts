@@ -381,17 +381,27 @@ class Mapper {
     let variables: unknown;
     const rawVariables = graph['variables'];
     if (typeof rawVariables === 'string' && rawVariables.trim() !== '') {
-      const rewritten = this.rewrite(rawVariables);
+      // Blanked before it is parsed: text that does not parse (an unquoted reference) would
+      // otherwise be embedded as one JSON string, which the blanking of the body never looks into.
+      const rewritten = blankJsonText(this.rewrite(rawVariables), blanked);
       try {
         variables = JSON.parse(rewritten) as unknown;
       } catch {
         variables = rewritten;
       }
     } else if (isRecord(rawVariables)) {
-      variables = rawVariables;
+      variables = this.rewriteLeaves(rawVariables);
     }
     const text = JSON.stringify({ query, ...(variables !== undefined ? { variables } : {}) });
     return { kind: 'raw', language: 'json', contentType: 'application/json', text: blankJsonText(text, blanked) };
+  }
+
+  /** A copy of a parsed value with every string in it rewritten. */
+  private rewriteLeaves(value: unknown): unknown {
+    if (typeof value === 'string') return this.rewrite(value);
+    if (Array.isArray(value)) return value.map((item) => this.rewriteLeaves(item));
+    if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, this.rewriteLeaves(v)]));
+    return value;
   }
 
   /** The REST settings the item names; any other setting is noted once. */

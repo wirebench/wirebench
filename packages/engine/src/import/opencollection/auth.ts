@@ -100,7 +100,13 @@ export function mapOcAuth(auth: unknown, where: string, report: ReportBuilder, d
       const name = text(auth, 'key');
       const value = rewrite(text(auth, 'value'));
       const mapped: AuthConfig = { type: 'api-key', name, in: placement };
-      if (value !== '' && name !== '' && referencesOnly(value)) {
+      if (value !== '' && name === '') {
+        report.warn(
+          `${where}: the API key has no name, so its value was not imported; set both on the request or API.`,
+        );
+        return { auth: mapped };
+      }
+      if (value !== '' && referencesOnly(value)) {
         const row = entry(name, value);
         return placement === 'query' ? { auth: mapped, query: row } : { auth: mapped, header: row };
       }

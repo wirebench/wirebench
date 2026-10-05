@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { headersAndAuth } from '../../../../src/import/credential-values.js';
 import { ReportBuilder } from '../../../../src/import/report.js';
 import { mapOcAuth } from '../../../../src/import/opencollection/auth.js';
 import { mapOpenCollection } from '../../../../src/import/opencollection/map.js';
@@ -524,5 +525,77 @@ describe('mapOpenCollection — bodies and settings', () => {
     const [g1, g2] = m.rest!.requests;
     expect(JSON.parse(rawText(g1!.body))).toEqual({ query: '{ a }', variables: 'not json' });
     expect(JSON.parse(rawText(g2!.body))).toEqual({ query: '{ a }', variables: { password: '', id: '${id}' } });
+  });
+});
+
+describe('mapOpenCollection — fix round 1', () => {
+  it('blanks a literal credential in GraphQL variables that do not parse', () => {
+    const { request, mapped } = only(
+      collection(`  - info: { name: G, type: graphql }
+    graphql: { url: "https://h/q", body: { query: "{ a }", variables: '{"token":"sekret123","id":{{id}}}' } }
+`),
+    );
+    expect(JSON.parse(rawText(request.body))).toEqual({ query: '{ a }', variables: '{"token":"","id":${id}}' });
+    expect(JSON.stringify(mapped)).not.toContain('sekret123');
+    expect(mapped.report.warnings).toContain('G: the recorded value of token was not imported; set it on the request.');
+  });
+
+  it('rewrites and blanks object-form GraphQL variables, collecting dynamic names', () => {
+    const { request, mapped } = only(
+      collection(`  - info: { name: G, type: graphql }
+    graphql:
+      url: "https://h/q"
+      body:
+        query: "{ a }"
+        variables: { id: "{{id}}", trace: "{{$guid}}", auth: { password: sekret456 }, list: ["{{x}}"] }
+`),
+    );
+    expect(JSON.parse(rawText(request.body))).toEqual({
+      query: '{ a }',
+      variables: { id: '${id}', trace: '{{$guid}}', auth: '', list: ['${x}'] },
+    });
+    expect(JSON.stringify(mapped)).not.toContain('sekret456');
+    expect(mapped.report.warnings).toEqual(
+      expect.arrayContaining([
+        'G: the recorded value of password, auth was not imported; set it on the request.',
+        'Dynamic variables are kept as written and not expanded: $guid',
+      ]),
+    );
+  });
+
+  it('drops a disabled literal Authorization header without changing the auth', () => {
+    const { request, mapped } = only(
+      collection(`  - info: { name: Off, type: http }
+    http:
+      method: GET
+      url: "https://h"
+      headers: [{ name: Authorization, value: "Bearer literal-tok", disabled: true }]
+`),
+    );
+    expect(request.headers).toEqual([]);
+    expect(request.auth).toEqual({ type: 'inherit' });
+    expect(mapped.report.warnings).toContain(
+      'Off: the Authorization credential was not imported; set it on the request or API.',
+    );
+    expect(JSON.stringify(mapped)).not.toContain('literal-tok');
+  });
+
+  it('keeps headersAndAuth unchanged for headers without an enabled flag', () => {
+    const report = new ReportBuilder();
+    const out = headersAndAuth([{ name: 'Authorization', value: 'Digest abc' }], 'H', report, new Set());
+    expect(out).toEqual({ headers: [], auth: { type: 'none' } });
+    expect(report.build().warnings).toEqual(['H: Digest authentication is not supported and was imported as none.']);
+    const off = headersAndAuth([{ name: 'X-Trace', value: '1', enabled: false }], 'H', report, new Set());
+    expect(off.headers).toEqual([{ name: 'X-Trace', value: '1', enabled: false }]);
+  });
+
+  it('warns about an API key with no name rather than a dropped credential', () => {
+    const report = new ReportBuilder();
+    expect(mapOcAuth({ type: 'apikey', value: '{{key}}' }, 'K', report)).toEqual({
+      auth: { type: 'api-key', name: '', in: 'header' },
+    });
+    expect(report.build().warnings).toEqual([
+      'K: the API key has no name, so its value was not imported; set both on the request or API.',
+    ]);
   });
 });

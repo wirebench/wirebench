@@ -84,6 +84,11 @@ export function headersAndAuth(
         kept.push(entry(name, value, options));
         continue;
       }
+      // A disabled header is not how the request authenticates, so it leaves the auth alone.
+      if (header.enabled === false) {
+        report.warn(`${label}: the Authorization credential was not imported; set it on the request or API.`);
+        continue;
+      }
       const trimmed = value.trim();
       const space = trimmed.search(/\s/);
       const scheme = space === -1 ? trimmed : trimmed.slice(0, space);
