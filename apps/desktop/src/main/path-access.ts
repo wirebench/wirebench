@@ -9,8 +9,9 @@
  * here means a fix to either reaches every caller at once.
  */
 
-import { lstat, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { constants } from 'node:fs';
+import { lstat, open, realpath } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { WirebenchError } from '@wirebench/engine';
 import type { ImportSourceWire } from '../shared/wire-types.js';
 import { isInsideAny, isInsideReal } from './path-containment.js';
@@ -135,4 +136,59 @@ export async function checkedCompanionPaths(
     if (info.isFile()) allowed.push(target);
   }
   return allowed;
+}
+
+/** Read-only, never through a link, never blocking on a FIFO; Windows defines neither extra flag. */
+const NO_FOLLOW_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+
+/**
+ * The bytes of the regular file at `path`, read through a handle opened without following a link
+ * and checked to be the very file an `lstat` of the path saw (same device and inode), so a file
+ * swapped for a link or another file after a check is never read in its place.
+ *
+ * @param maxBytes the most the file may hold, checked on the `lstat` and again on what was read
+ * @param tooLarge the error to throw past `maxBytes`
+ * @returns `undefined` when `path` is not, or is no longer, that regular file
+ * @throws what `tooLarge` returns, or the `lstat`, open or read error (`ENOENT` for a missing file)
+ */
+export async function readNoFollow(path: string, maxBytes: number, tooLarge: () => Error): Promise<Buffer | undefined> {
+  const seen = await lstat(path);
+  if (!seen.isFile()) return undefined;
+  if (seen.size > maxBytes) throw tooLarge();
+  const handle = await open(path, NO_FOLLOW_FLAGS).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ELOOP') return undefined;
+    throw error;
+  });
+  if (handle === undefined) return undefined;
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.dev !== seen.dev || opened.ino !== seen.ino) return undefined;
+    const bytes = await handle.readFile();
+    // The file may have grown since the `lstat`: what was read is what counts.
+    if (bytes.length > maxBytes) throw tooLarge();
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * A companion {@link checkedCompanionPaths} returned, read through {@link readNoFollow}: the check
+ * and the read are two steps, so the read holds the file to what was checked.
+ *
+ * @throws WirebenchError `import-path-refused` when the file is no longer the regular file that
+ *   was checked (swapped for a link, say); otherwise as {@link readNoFollow}
+ */
+export async function readCompanionFile(path: string, maxBytes: number, tooLarge: () => Error): Promise<Buffer> {
+  const bytes = await readNoFollow(path, maxBytes, tooLarge);
+  if (bytes === undefined) {
+    throw new WirebenchError(
+      'import-path-refused',
+      `"${basename(path)}" changed after it was checked and was not read`,
+      {
+        details: { path },
+      },
+    );
+  }
+  return bytes;
 }

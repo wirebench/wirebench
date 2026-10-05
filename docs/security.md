@@ -258,7 +258,9 @@ itself carries. A document the file lacks may be fetched over `http(s)`, but nev
 since that path comes from the imported file and not from the user. The file is parsed with DTDs refused
 outright, so there is no entity expansion. And nothing in it runs: its passwords are never written to the
 project (the report asks for them to be re-entered in the keychain), and its scripts are saved as inert text
-under `imported-scripts/`, which nothing in Wirebench reads. Implementation:
+under `imported-scripts/`, which nothing in Wirebench reads. Each script file is created exclusively, so
+a file or link already at its name, even one that appeared a moment before, is never replaced or followed;
+the script takes the next `-2`, `-3` name instead. Implementation:
 `packages/engine/src/soap/legacy-project/` and `ProjectHost.importLegacyProject`.
 
 What this deliberately does *not* prevent: a remote WSDL naming an internal `http://` host.

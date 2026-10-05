@@ -8,12 +8,11 @@
  * walk stops at {@link OC_TREE_LIMITS}. The root document and its own folder must not be links either.
  */
 
-import { constants } from 'node:fs';
-import { lstat, open, readdir, realpath } from 'node:fs/promises';
+import { lstat, readdir, realpath } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { OpenCollectionError, WirebenchError } from '@wirebench/engine';
 import type { ReadPicks } from './dialog-picks.js';
-import { checkedCompanionPaths, checkedImportSource } from './path-access.js';
+import { checkedCompanionPaths, checkedImportSource, readCompanionFile, readNoFollow } from './path-access.js';
 import { isInsideReal } from './path-containment.js';
 
 /** The limits of one directory walk. */
@@ -39,8 +38,6 @@ export const OC_TREE_LIMITS: OcTreeLimits = {
 const YAML_FILE = /\.ya?ml$/i;
 /** Folders no collection keeps its items in, and that can hold more entries than the whole cap. */
 const SKIPPED_FOLDERS = new Set(['node_modules', '.git']);
-/** Read-only, never through a link, never blocking on a FIFO; Windows defines neither extra flag. */
-const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
 
 function tooLarge(bytes: number): OpenCollectionError {
   return new OpenCollectionError('oc-too-large', `The collection is larger than ${formatBytes(bytes)}`);
@@ -56,33 +53,6 @@ function tooManyFiles(limit: number): OpenCollectionError {
 
 function posixRelative(base: string, path: string): string {
   return relative(base, path).split(sep).join('/');
-}
-
-/**
- * The bytes of the regular file `path`, opened without following a link and checked to be the file
- * `lstat` saw, so a swap between the check and the read is refused rather than followed.
- * `undefined` when it is no longer a regular file. `budget` is the most it may hold; `limit` is the
- * whole cap, for the message.
- */
-async function readRegularFile(path: string, budget: number, limit: number): Promise<Buffer | undefined> {
-  const seen = await lstat(path);
-  if (!seen.isFile()) return undefined;
-  if (seen.size > budget) throw tooLarge(limit);
-  const handle = await open(path, OPEN_FLAGS).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === 'ELOOP') return undefined;
-    throw error;
-  });
-  if (handle === undefined) return undefined;
-  try {
-    const opened = await handle.stat();
-    if (!opened.isFile() || opened.dev !== seen.dev || opened.ino !== seen.ino) return undefined;
-    const bytes = await handle.readFile();
-    // The file may have grown since the `lstat`: what was read is what counts.
-    if (bytes.length > budget) throw tooLarge(limit);
-    return bytes;
-  } finally {
-    await handle.close();
-  }
 }
 
 /**
@@ -188,7 +158,7 @@ async function walk(base: string, limits: OcTreeLimits): Promise<Map<string, str
         queue.push({ dir: path, depth: depth + 1 });
         continue;
       }
-      const read = await readRegularFile(path, limits.bytes - bytes, limits.bytes);
+      const read = await readNoFollow(path, limits.bytes - bytes, () => tooLarge(limits.bytes));
       if (read === undefined) continue;
       bytes += read.length;
       files.set(posixRelative(base, path), read.toString('utf8'));
@@ -198,12 +168,14 @@ async function walk(base: string, limits: OcTreeLimits): Promise<Map<string, str
 }
 
 /**
- * Exactly the named files beside the root (its `.proto` files), read through
- * {@link checkedCompanionPaths}: relative names only, inside the root's folder, no links. A name with
+ * Exactly the named files beside the root (its `.proto` files), checked by
+ * {@link checkedCompanionPaths} — relative names only, inside the root's folder, no links — and read
+ * through {@link readCompanionFile}, so a file swapped after its check is not read. A name with
  * nothing at it is left out, so the caller can say which were missing.
  *
  * @returns each file's text, keyed by POSIX path relative to the root's folder
- * @throws WirebenchError `import-path-refused` when the root is not readable or a name is refused
+ * @throws WirebenchError `import-path-refused` when the root is not readable, a name is refused, or
+ *   a file changed after it was checked
  * @throws OpenCollectionError `oc-too-large` when the files together pass the byte limit
  */
 export async function readCompanionTexts(
@@ -217,8 +189,7 @@ export async function readCompanionTexts(
   const texts = new Map<string, string>();
   let bytes = 0;
   for (const path of paths) {
-    const read = await readRegularFile(path, OC_TREE_LIMITS.bytes - bytes, OC_TREE_LIMITS.bytes);
-    if (read === undefined) continue;
+    const read = await readCompanionFile(path, OC_TREE_LIMITS.bytes - bytes, () => tooLarge(OC_TREE_LIMITS.bytes));
     bytes += read.length;
     texts.set(posixRelative(base, path), read.toString('utf8'));
   }

@@ -204,6 +204,7 @@ import {
   takenApiSlugs,
 } from './project-rest-mutations.js';
 import { isWebhookCollectionId } from './webhook-ids.js';
+import { writeNewFile } from './write-new-file.js';
 import {
   addWebhookGroup,
   appendWebhookItems,
@@ -2644,7 +2645,9 @@ export class ProjectHost {
    * Writes an importer's scripts under the open project's `imported-scripts/`, where nothing reads
    * them. A path that resolves outside that folder — a `..` segment, a symlink below it — is skipped
    * and reported. An existing file is never overwritten: the script goes to the first free `-2`,
-   * `-3`, … name, inserted before the first `.` of the file name, and the move is reported.
+   * `-3`, … name, inserted before the first `.` of the file name, and the move is reported. Each name
+   * is taken by an exclusive create ({@link writeNewFile}), not by a check and then a write, so a
+   * file or link that appears at a name in between is never replaced or followed.
    *
    * @returns the project-relative paths written, each `{ from, to }` a clash moved, and the paths skipped
    * @throws ProjectError `import-path-refused` when `imported-scripts` is a symbolic link or not a folder
@@ -2654,11 +2657,6 @@ export class ProjectHost {
   ): Promise<{ written: string[]; renamed: { from: string; to: string }[]; skipped: string[] }> {
     const open = this.require();
     const scriptsRoot = resolvePath(open.dir, IMPORTED_SCRIPTS_DIR);
-    const exists = (path: string) =>
-      lstat(path).then(
-        () => true,
-        () => false,
-      );
     // `isInsideAny` realpaths the root too, so a linked root would vouch for wherever it points.
     const rootInfo = await lstat(scriptsRoot).catch(() => undefined);
     if (rootInfo !== undefined && (rootInfo.isSymbolicLink() || !rootInfo.isDirectory())) {
@@ -2689,12 +2687,12 @@ export class ProjectHost {
         skipped.push(script.path);
         continue;
       }
-      for (let n = 2; await exists(target); n += 1) {
+      await mkdir(resolvePath(target, '..'), { recursive: true });
+      const data = Buffer.from(script.source, 'utf8');
+      for (let n = 2; !(await writeNewFile(target, data)); n += 1) {
         path = [...segments, `${stem}-${String(n)}${tail}`].join('/');
         target = resolvePath(open.dir, ...path.split('/'));
       }
-      await mkdir(resolvePath(target, '..'), { recursive: true });
-      await writeFileAtomic(nodeFs, target, Buffer.from(script.source, 'utf8'));
       written.push(path);
       if (path !== script.path) renamed.push({ from: script.path, to: path });
     }

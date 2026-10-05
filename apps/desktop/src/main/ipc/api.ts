@@ -8,7 +8,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import {
@@ -56,7 +55,7 @@ import type { ReadPicks } from '../dialog-picks.js';
 import { pickFolder } from '../native-dialogs.js';
 import type { OpenApiImportService } from '../openapi-import.js';
 import type { ProtoImportService } from '../proto-import.js';
-import { allowsReadPath, checkedCompanionPaths, checkedImportSource } from '../path-access.js';
+import { allowsReadPath, checkedCompanionPaths, checkedImportSource, readCompanionFile } from '../path-access.js';
 import { checkedOpenCollectionRoot, readCompanionTexts, readOpenCollectionTree } from '../opencollection-tree.js';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { ProtoSourceWire } from '../../shared/wire-types.js';
@@ -276,15 +275,23 @@ async function checkedProtoSource(
   return source;
 }
 
-/** A `.http` environment file's text, refused past the `.http` size cap rather than read whole. */
+/**
+ * A `.http` environment file's text, read through a no-follow handle and refused past the `.http`
+ * size cap rather than read whole.
+ *
+ * @throws WirebenchError `import-path-refused` when the file changed after its companion check
+ */
 async function readHttpEnvText(path: string): Promise<string> {
-  if ((await stat(path)).size > MAX_HTTP_FILE_BYTES) {
-    throw new HttpFileError(
-      'http-file-too-large',
-      `${basename(path)} is larger than ${String(MAX_HTTP_FILE_BYTES / (1024 * 1024))} MB`,
-    );
-  }
-  return await readFile(path, 'utf8');
+  const bytes = await readCompanionFile(
+    path,
+    MAX_HTTP_FILE_BYTES,
+    () =>
+      new HttpFileError(
+        'http-file-too-large',
+        `${basename(path)} is larger than ${String(MAX_HTTP_FILE_BYTES / (1024 * 1024))} MB`,
+      ),
+  );
+  return bytes.toString('utf8');
 }
 
 /** The `$shared` names of an environment file that `parseHttpEnvFiles` has already accepted. */
