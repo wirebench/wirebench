@@ -41,11 +41,16 @@ export interface WssPart {
   readonly namespace: string;
   /** `Content` signs/encrypts the element's children, `Element` the element itself. */
   readonly encode: 'Content' | 'Element';
+  /** Covers the nearest earlier SAML token through the STR-Transform; see {@link SAML_TOKEN_PART}. */
+  readonly token?: true;
 }
 
 /** How a signature's `wsse:SecurityTokenReference` points at the signing certificate. */
 export type WssKeyIdentifierType =
-  'BinarySecurityToken' | 'IssuerSerial' | 'SubjectKeyIdentifier' | 'X509KeyIdentifier' | 'Thumbprint';
+  'BinarySecurityToken' | 'IssuerSerial' | 'SubjectKeyIdentifier' | 'X509KeyIdentifier' | 'Thumbprint' | 'saml-token';
+
+/** The key identifier forms that name an X.509 certificate; an encryption entry offers only these. */
+export type WssX509KeyIdentifierType = Exclude<WssKeyIdentifierType, 'saml-token'>;
 
 /** The RSA signature algorithms this build offers. */
 export type WssSignatureAlgorithm = 'rsa-sha256' | 'rsa-sha1';
@@ -100,7 +105,7 @@ export interface WssEncryptionEntry {
   readonly keystoreRef: string;
   /** Alias inside that keystore; falls back to the configuration's `defaultAlias`. */
   readonly alias?: string;
-  readonly keyIdentifierType: WssKeyIdentifierType;
+  readonly keyIdentifierType: WssX509KeyIdentifierType;
   readonly symmetricAlgorithm: WssSymmetricAlgorithm;
   readonly keyTransportAlgorithm: WssKeyTransportAlgorithm;
   /** Embed the recipient certificate as a `wsse:BinarySecurityToken` rather than referencing one. */
@@ -115,11 +120,150 @@ export const DEFAULT_WSS_ENCRYPTION_PARTS: readonly WssPart[] = [
   { name: 'Body', namespace: NS.SOAP11_ENV, encode: 'Content' },
 ];
 
+export type SamlVersion = '1.1' | '2.0';
+export type WsTrustVersion = '1.3' | '2005-02';
+export type IssuedKeyType = 'bearer' | 'public-key';
+
+/** How the request for a token proves who is asking. */
+export type StsCredential =
+  | { readonly kind: 'username'; readonly username: string; readonly passwordRef?: string }
+  | {
+      readonly kind: 'certificate';
+      readonly keystoreRef: string;
+      readonly alias?: string;
+      readonly keyPasswordRef?: string;
+    }
+  | {
+      readonly kind: 'kerberos';
+      /** The STS's service principal: `host/sts.corp`, `HTTP@sts.corp` or a bare host (#40 normalises). */
+      readonly spn: string;
+      readonly principal?: string;
+      /** Windows only (#40 §D1). */
+      readonly username?: string;
+      readonly domain?: string;
+      readonly passwordRef?: string;
+    };
+
+/** A SAML assertion requested from a security token service over WS-Trust. */
+export interface WssIssuedTokenEntry {
+  readonly kind: 'issued-token';
+  /** STS endpoint URL; `${…}` expands. */
+  readonly stsUrl: string;
+  readonly soapVersion: '1.1' | '1.2';
+  readonly trustVersion: WsTrustVersion;
+  /** `wsp:AppliesTo` address; empty means the request's own endpoint. `${…}` expands. */
+  readonly appliesTo?: string;
+  readonly tokenType: SamlVersion;
+  readonly keyType: IssuedKeyType;
+  /** For `public-key`: the alias whose certificate goes into `wst:UseKey`; `defaultAlias` when unset. */
+  readonly proofKeystoreRef?: string;
+  readonly proofAlias?: string;
+  readonly credential: StsCredential;
+  /** Requested lifetime in seconds; `0` leaves `wst:Lifetime` out. */
+  readonly requestedLifetimeSeconds: number;
+  /** Raw `wst:Claims` XML, copied in as it is. `${…}` expands. */
+  readonly claims?: string;
+  /** Client certificate for mutual TLS to the STS. */
+  readonly tlsKeystoreRef?: string;
+}
+
+export interface SamlAttribute {
+  readonly name: string;
+  readonly nameFormat?: string;
+  readonly values: readonly string[];
+}
+
+export type SamlConfirmation = 'bearer' | 'holder-of-key' | 'sender-vouches';
+
+/** The issuer key a form assertion is signed with. */
+export interface WssSamlSigning {
+  readonly keystoreRef: string;
+  readonly alias?: string;
+  readonly keyPasswordRef?: string;
+  readonly signatureAlgorithm: WssSignatureAlgorithm;
+}
+
+/** A self-issued assertion built from fields. */
+export interface WssSamlFormEntry {
+  readonly kind: 'saml-token';
+  readonly source: 'form';
+  readonly version: SamlVersion;
+  readonly issuer: string;
+  readonly subject: string;
+  readonly subjectFormat?: string;
+  readonly confirmation: SamlConfirmation;
+  readonly audience?: string;
+  /** Seconds valid from now; `NotBefore` is backdated by {@link SAML_NOT_BEFORE_SKEW_SECONDS}. */
+  readonly lifetimeSeconds: number;
+  readonly authnContext?: string;
+  readonly attributes: readonly SamlAttribute[];
+  readonly sign?: WssSamlSigning;
+  /** For holder-of-key: the alias whose certificate goes into `SubjectConfirmationData`. */
+  readonly proofKeystoreRef?: string;
+  readonly proofAlias?: string;
+}
+
+/** A self-issued assertion supplied as XML, inline or as a project file. */
+export interface WssSamlXmlEntry {
+  readonly kind: 'saml-token';
+  readonly source: 'xml';
+  readonly xml?: string;
+  /** Project-relative; read inside the project folder only. */
+  readonly file?: string;
+  /** Expand `${…}` first; off by default because it would break a signed assertion. */
+  readonly expandProperties: boolean;
+}
+
+export type WssSamlTokenEntry = WssSamlFormEntry | WssSamlXmlEntry;
+
+/** How far a form assertion's `NotBefore` is backdated, for receivers whose clocks run behind. */
+export const SAML_NOT_BEFORE_SKEW_SECONDS = 60;
+
+/** The signature part that covers the nearest earlier SAML token, through the STR-Transform. */
+export const SAML_TOKEN_PART: WssPart = { name: 'SamlToken', namespace: '', encode: 'Element', token: true };
+
 /** One element of an outgoing WS-Security configuration, applied in configuration order. */
-export type WssEntry = WssTimestampEntry | WssUsernameTokenEntry | WssSignatureEntry | WssEncryptionEntry;
+export type WssEntry =
+  | WssTimestampEntry
+  | WssUsernameTokenEntry
+  | WssSignatureEntry
+  | WssEncryptionEntry
+  | WssIssuedTokenEntry
+  | WssSamlTokenEntry;
 
 /** Every entry kind, in the order the editor offers them. */
-export const WSS_ENTRY_KINDS = ['timestamp', 'username-token', 'signature', 'encryption'] as const;
+export const WSS_ENTRY_KINDS = [
+  'timestamp',
+  'username-token',
+  'signature',
+  'encryption',
+  'issued-token',
+  'saml-token',
+] as const;
+
+/** A token an STS issued, as cached: self-contained, never an `Element` (plan amendment 2). */
+export interface IssuedToken {
+  readonly assertionXml: string;
+  /** `ID` (2.0) or `AssertionID` (1.1); absent for an `EncryptedAssertion`. */
+  readonly assertionId?: string;
+  /** The RSTR's `RequestedAttachedReference` STR, serialised, when it had one. */
+  readonly attachedReferenceXml?: string;
+  readonly samlVersion: SamlVersion;
+  readonly keyType: IssuedKeyType;
+  readonly expiresAt?: Date;
+  /** The certificate a public-key token is bound to (what `UseKey` sent). */
+  readonly proofCertPem?: string;
+  /** Where the token came from, for the status line and the verbose line. */
+  readonly stsHost: string;
+  readonly cacheKey: string;
+}
+
+/** The issued-token source, already bound to this send's endpoint, scopes, TLS and proxy. */
+export interface BoundIssuedTokens {
+  get(entry: WssIssuedTokenEntry): Promise<IssuedToken>;
+  /** Only what is cached; never contacts the STS. */
+  peek(entry: WssIssuedTokenEntry): IssuedToken | undefined;
+}
 
 /** One `wss/outgoing/<id>.yaml` document. */
 export interface WssOutgoingConfig {
@@ -177,6 +321,12 @@ export interface WssContext {
   readonly clock: () => Date;
   readonly nonce: (bytes: number) => Uint8Array;
   readonly uuid: () => string;
+  /** Expands `${…}`; throws `unresolved-properties`. Absent: text is used as written. */
+  readonly expand?: (text: string) => string;
+  /** Reads a project-relative file inside the project folder; throws `saml-token-file-missing`. */
+  readonly projectFile?: (path: string) => Promise<string>;
+  /** Issued tokens for this send. Absent: an issued-token entry refuses with `ws-trust-unavailable`. */
+  readonly issuedTokens?: BoundIssuedTokens;
 }
 
 /**
@@ -193,5 +343,8 @@ export function createWssContext(overrides?: Partial<WssContext>): WssContext {
     clock: overrides?.clock ?? (() => new Date()),
     nonce: overrides?.nonce ?? ((bytes: number) => new Uint8Array(randomBytes(bytes))),
     uuid: overrides?.uuid ?? (() => randomUUID()),
+    ...(overrides?.expand !== undefined ? { expand: overrides.expand } : {}),
+    ...(overrides?.projectFile !== undefined ? { projectFile: overrides.projectFile } : {}),
+    ...(overrides?.issuedTokens !== undefined ? { issuedTokens: overrides.issuedTokens } : {}),
   };
 }

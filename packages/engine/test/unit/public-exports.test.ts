@@ -31,6 +31,7 @@ const ADDED = [
   'credentialLookingNames',
   'warnCredentialLookingNames',
   'importedScriptPath',
+  'SAML_TOKEN_PART',
 ] as const;
 
 /** 2.x name, 3.0 name. */

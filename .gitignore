@@ -19,3 +19,4 @@ git-worktrees/
 release
 .serena/
 packages/*/LICENSE
+!packages/engine/test/fixtures/saml/*.pem

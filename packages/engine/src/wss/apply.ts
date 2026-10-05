@@ -14,6 +14,8 @@ import type { SoapEnvelopeVersion } from '../soap/envelope.js';
 import { buildTimestamp } from './outgoing/timestamp.js';
 import { buildUsernameToken } from './outgoing/username-token.js';
 import { signEnvelope } from './outgoing/signature.js';
+import { resolveSamlToken } from './outgoing/saml.js';
+import type { PlacedSamlToken } from './outgoing/saml.js';
 import { encryptEnvelope } from './outgoing/encryption.js';
 import { selectAlias } from '../keystore/index.js';
 import {
@@ -207,6 +209,7 @@ export async function applyOutgoingWss(
   options?: ApplyOutgoingWssOptions,
 ): Promise<string> {
   const { doc, version } = parseEnvelope(envelopeXml);
+  const placed: PlacedSamlToken[] = [];
   for (const entry of config.entries) {
     // The header is re-resolved every iteration because signing re-serializes the whole
     // document (xml-crypto only speaks strings), which invalidates any element held across it.
@@ -216,8 +219,20 @@ export async function applyOutgoingWss(
     }
     const header = ensureHeader(doc, root, version);
     const security = ensureSecurity(doc, root, header, version, config);
+    if (entry.kind === 'saml-token' || entry.kind === 'issued-token') {
+      const token = await resolveSamlToken(entry, config, ctx);
+      const assertion = parseXml(token.assertionXml, { location: 'saml-token' }).documentElement;
+      if (assertion !== null) security.appendChild(doc.importNode(assertion, true));
+      placed.push(token.placed);
+      continue;
+    }
     if (entry.kind === 'signature') {
-      await signEnvelope(doc, entry, await resolveKeystoreAlias(entry, config, ctx), ctx);
+      await signEnvelope(
+        doc,
+        entry,
+        { ...(await resolveKeystoreAlias(entry, config, ctx)), placedTokens: placed },
+        ctx,
+      );
       continue;
     }
     if (entry.kind === 'encryption') {

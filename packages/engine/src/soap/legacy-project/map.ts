@@ -182,7 +182,10 @@ function reportCallLosses(call: LegacyCall, path: string, report: ReportBuilder)
     );
   }
   for (const ref of call.wssRefs) {
-    report.warning(path, `The WS-Security configuration "${ref}" was not imported.`);
+    report.warning(
+      path,
+      `The WS-Security configuration "${ref}" was not imported, including any SAML or issued-token entries.`,
+    );
   }
 }
 

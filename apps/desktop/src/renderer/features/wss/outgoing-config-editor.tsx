@@ -22,6 +22,7 @@ import {
   UsernameTokenFields,
   WSS_FIELD_CLASS,
 } from './outgoing-entry-fields.js';
+import { newSamlFormEntry, SamlTokenFields } from './saml-token-fields.js';
 import type { WssEntryWire, WssOutgoingWire } from '../../../shared/wire-types.js';
 
 /** The label each entry kind carries in the list and in the Add menu. */
@@ -30,6 +31,8 @@ const ENTRY_LABEL: Readonly<Record<WssEntryWire['kind'], string>> = {
   'username-token': 'Username Token',
   signature: 'Signature',
   encryption: 'Encryption',
+  'saml-token': 'SAML Token',
+  'issued-token': 'Issued Token (WS-Trust)',
 };
 
 /** The parts a new signature covers: the SOAP 1.1 `Body` and the WS-Security `Timestamp`. */
@@ -48,7 +51,7 @@ const DEFAULT_ENCRYPTION_PARTS = [
 ] as const;
 
 /** The kinds the Add menu can create. */
-type NewEntryKind = 'timestamp' | 'username-token' | 'signature' | 'encryption';
+type NewEntryKind = 'timestamp' | 'username-token' | 'signature' | 'encryption' | 'saml-token';
 
 /** A fresh entry of the kind the user picked from the Add menu. */
 function newEntry(kind: NewEntryKind): WssEntryWire {
@@ -69,6 +72,9 @@ function newEntry(kind: NewEntryKind): WssEntryWire {
       useSingleCertificate: true,
       parts: DEFAULT_SIGNATURE_PARTS.map((part) => ({ ...part })),
     };
+  }
+  if (kind === 'saml-token') {
+    return newSamlFormEntry();
   }
   return {
     kind: 'encryption',
@@ -142,6 +148,14 @@ function EntryRow({ entry, index, count, onChange, onMove, onRemove }: EntryProp
       {entry.kind === 'signature' && <SignatureFields entry={entry} onChange={onChange} />}
 
       {entry.kind === 'encryption' && <EncryptionFields entry={entry} onChange={onChange} />}
+
+      {entry.kind === 'saml-token' && (
+        <SamlTokenFields entry={entry} onChange={onChange} idPrefix={`e${String(index)}`} />
+      )}
+
+      {entry.kind === 'issued-token' && (
+        <p className="mt-1 text-xs text-fg-faint">Issued tokens can be edited in a later version.</p>
+      )}
     </li>
   );
 }
@@ -277,7 +291,8 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
                   kind === 'timestamp' ||
                   kind === 'username-token' ||
                   kind === 'signature' ||
-                  kind === 'encryption'
+                  kind === 'encryption' ||
+                  kind === 'saml-token'
                 ) {
                   patchEntries([...config.entries, newEntry(kind)]);
                 }
@@ -289,6 +304,7 @@ function ConfigRow({ config, onRemove }: ConfigProps) {
               <option value="username-token">Username Token</option>
               <option value="signature">Signature</option>
               <option value="encryption">Encryption</option>
+              <option value="saml-token">SAML Token</option>
             </select>
           </div>
 

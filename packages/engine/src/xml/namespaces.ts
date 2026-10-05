@@ -29,6 +29,11 @@ export const NS = {
   WSAP_2004: 'http://schemas.xmlsoap.org/ws/2004/08/addressing/policy',
   WSP: 'http://www.w3.org/ns/ws-policy',
   WSP_2004: 'http://schemas.xmlsoap.org/ws/2004/09/policy',
+  SAML1: 'urn:oasis:names:tc:SAML:1.0:assertion',
+  SAML2: 'urn:oasis:names:tc:SAML:2.0:assertion',
+  WSSE11: 'http://docs.oasis-open.org/wss/oasis-wss-wssecurity-secext-1.1.xsd',
+  WST13: 'http://docs.oasis-open.org/ws-sx/ws-trust/200512',
+  WST2005: 'http://schemas.xmlsoap.org/ws/2005/02/trust',
 } as const;
 
 /** Union of every namespace URI known to {@link NS}. */
@@ -61,4 +66,9 @@ export const PREFIX: Record<keyof typeof NS, string> = {
   WSAP_2004: 'wsap',
   WSP: 'wsp',
   WSP_2004: 'wsp',
+  SAML1: 'saml',
+  SAML2: 'saml2',
+  WSSE11: 'wsse11',
+  WST13: 'wst',
+  WST2005: 'wst',
 };

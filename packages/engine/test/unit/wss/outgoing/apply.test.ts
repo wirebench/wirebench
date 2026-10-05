@@ -136,7 +136,7 @@ describe('applyOutgoingWss', () => {
   it('rejects an entry kind this build does not know', async () => {
     // A document written by a later build: every kind this one understands is dispatched above,
     // so anything else must fail loudly rather than be silently dropped from the header.
-    const future = [{ kind: 'saml-token' } as unknown as WssEntry];
+    const future = [{ kind: 'kerberos-ticket' } as unknown as WssEntry];
     await expect(applyOutgoingWss(SOAP11, config({ entries: future }), ctx)).rejects.toMatchObject({
       code: 'wss-entry-unsupported',
     });

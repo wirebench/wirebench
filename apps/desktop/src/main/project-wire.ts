@@ -363,8 +363,18 @@ function toWssEntryWire(entry: WssEntry): WssEntryWire {
       digestAlgorithm: entry.digestAlgorithm,
       canonicalization: 'exc-c14n',
       useSingleCertificate: entry.useSingleCertificate,
-      parts: entry.parts.map((part) => ({ name: part.name, namespace: part.namespace, encode: part.encode })),
+      parts: entry.parts.map((part) => ({
+        name: part.name,
+        namespace: part.namespace,
+        encode: part.encode,
+        ...(part.token === true ? { token: true as const } : {}),
+      })),
     };
+  }
+  if (entry.kind === 'issued-token' || entry.kind === 'saml-token') {
+    // The engine model and the wire schema share these two kinds field for field; the editor
+    // owns their optional keys, so they pass through as they are stored.
+    return structuredClone(entry) as WssEntryWire;
   }
   return {
     kind: 'encryption',

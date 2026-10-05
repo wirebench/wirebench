@@ -186,9 +186,10 @@ UsernameToken rejects one today (`project/schema.ts`:117).
 - `project/schema.ts` gains `wssIssuedTokenSchema`, `wssSamlTokenSchema` and the additions to
   the signature entry. `wssOutgoingFileSchema` already keeps unknown kinds through a load and
   save, so projects stay openable both ways.
-- **No format bump.** The change only adds things. An older build opens the project, keeps the
-  new entries, and refuses to send with them (`wss-entry-unsupported`). That refusal is loud and
-  correct.
+- **No format bump.** The change only adds things. An older engine or CLI opens the project, keeps
+  the new entries, and refuses to send with them (`wss-entry-unsupported`). That refusal is loud and
+  correct. An older desktop build may misread an entry kind it does not know in the WS-Security
+  editor, so edit such a configuration only with this version or later.
 - The CLI env-secret needs (`soap/run.ts` `outgoingNeeds`) gain every new reference:
   - `passwordRef` and the certificate credential's keystore and `keyPasswordRef`;
   - `proofKeystoreRef`, `tlsKeystoreRef` and `sign.keystoreRef`.

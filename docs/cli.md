@@ -277,7 +277,10 @@ The same `…Env` sibling exists for `tokenRef`, `valueRef` and `clientSecretRef
 keystore's password in the WSS keystore registry. **WS-Security passwords have no `…Env` name in
 this release** — a username-token password, a signing-key password and a WS-Security keystore
 password are supplied only through the ref-derived variable below; `wirebench secrets list` prints
-that variable name for each of them.
+that variable name for each of them. The same holds for the secrets of a SAML or issued-token
+entry: the STS password, the STS client certificate's key password and its keystore's password,
+the SAML issuer key password and its keystore's password, and the passwords of the proof and TLS
+keystores an entry names.
 
 Resolution for a ref, in order:
 

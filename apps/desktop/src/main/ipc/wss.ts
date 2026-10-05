@@ -29,9 +29,10 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
     return { ...rest, ...(ref !== undefined ? { passwordRef: ref } : {}) };
   }
   if (entry.kind === 'signature') {
-    const { alias, keyPasswordRef, ...rest } = entry;
+    const { alias, keyPasswordRef, parts, ...rest } = entry;
     return {
       ...rest,
+      parts: parts.map(({ token, ...part }) => ({ ...part, ...(token === true ? { token } : {}) })),
       ...(alias !== undefined ? { alias } : {}),
       ...(keyPasswordRef !== undefined ? { keyPasswordRef } : {}),
     };
@@ -40,7 +41,14 @@ function toEngineEntry(entry: WssEntryWire, passwordRef?: string): WssEntry {
     const { alias, ...rest } = entry;
     return { ...rest, ...(alias !== undefined ? { alias } : {}) };
   }
-  return entry;
+  if (entry.kind === 'timestamp') {
+    return entry;
+  }
+  // issued-token and saml-token: passed on as the editor wrote them. Only the wire schema has
+  // checked their shape; nothing checks them against the engine schema — on the stored path either,
+  // where `toWssOutgoingRef` stores entries unvalidated and `toWssEntry` passes one that fails the
+  // engine schema through as an unknown kind. A bad entry is refused when it is applied.
+  return entry as unknown as WssEntry;
 }
 
 /** Registers the `wss.*` channels. */
