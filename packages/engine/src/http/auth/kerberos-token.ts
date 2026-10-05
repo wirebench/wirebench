@@ -44,13 +44,18 @@ export function kerberosField(value: string | undefined): string | undefined {
   return value === undefined || value.trim() === '' ? undefined : value;
 }
 
-/** `HTTP/host`, `HTTP@host` or a bare host, in the form this platform's API wants. */
+/**
+ * `HTTP/host`, `HTTP@host` or a bare host, in the form this platform's API wants. GSSAPI's
+ * host-based name has no realm, so off Windows `HTTP/host@REALM` loses its `@REALM`.
+ */
 export function normaliseSpn(spn: string, platform: NodeJS.Platform): string {
   const trimmed = spn.trim();
   const match = /^([^/@]+)[/@](.+)$/.exec(trimmed);
   const service = match?.[1] ?? 'HTTP';
   const host = match?.[2] ?? trimmed;
-  return platform === 'win32' ? `${service}/${host}` : `${service}@${host}`;
+  if (platform === 'win32') return `${service}/${host}`;
+  const withRealm = trimmed.includes('/') ? /^([^@]+)@[^@]*$/.exec(host) : null;
+  return `${service}@${withRealm?.[1] ?? host}`;
 }
 
 /** `HTTP` plus the URL's hostname, without the port: what Windows asks for by default. */

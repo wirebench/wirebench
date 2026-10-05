@@ -17,6 +17,9 @@ describe('normaliseSpn', () => {
     ['HTTP/svc.corp', 'darwin', 'HTTP@svc.corp'],
     ['host/sts.corp', 'linux', 'host@sts.corp'],
     ['svc.corp', 'linux', 'HTTP@svc.corp'],
+    ['HTTP/svc.corp@CORP.EXAMPLE', 'win32', 'HTTP/svc.corp@CORP.EXAMPLE'],
+    ['HTTP/svc.corp@CORP.EXAMPLE', 'linux', 'HTTP@svc.corp'],
+    ['HTTP/svc.corp@CORP.EXAMPLE', 'darwin', 'HTTP@svc.corp'],
   ] as const)('%s on %s → %s', (spn, platform, expected) => {
     expect(normaliseSpn(spn, platform)).toBe(expected);
   });
