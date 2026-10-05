@@ -27,10 +27,11 @@ export function licenseState(
   publicKeys: readonly KeyObject[],
   now: Date,
   seatsUsed: number,
+  serverId: string,
 ): LicenseState {
-  const community = { edition: 'community' as const, seats: { used: seatsUsed, limit: COMMUNITY_SEATS } };
+  const community = { edition: 'community' as const, seats: { used: seatsUsed, limit: COMMUNITY_SEATS }, serverId };
   if (stored === undefined) return { ...community, status: 'none', features: [] };
-  const verified = verifyLicense(stored, publicKeys, now);
+  const verified = verifyLicense(stored, publicKeys, now, serverId);
   // Reported rather than treated as absent, so an admin notices a key rotation they missed (§6).
   if (!verified.ok) {
     return { ...community, status: 'invalid', features: [], reason: verified.reason, message: verified.message };
@@ -50,6 +51,7 @@ export function licenseState(
     status: now.getTime() < expires ? 'active' : 'grace',
     seats: { used: seatsUsed, limit: license.seats },
     features: grantedFeatures(license),
+    serverId,
     ...facts,
   };
 }

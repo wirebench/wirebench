@@ -16,6 +16,7 @@ import { decodeXmlBytes } from '../xml/decode.js';
 import { createDefaultFetchDocument } from './fetch-document.js';
 import type { FetchDocument, FetchedDocument } from './fetch-document.js';
 import { basicAuthorization } from './auth/basic.js';
+import { negotiateBearer } from './auth/kerberos-token.js';
 import { sendHttp } from './client.js';
 import type { ProxyOptions, TlsOptions } from './types.js';
 
@@ -166,7 +167,13 @@ async function fetchHttp(
   const start = keyName === undefined ? location : withoutParam(location, keyName);
   let bare = start;
   for (let hops = 0; ; hops += 1) {
-    const { url, headers } = credentialsFor(bare, options);
+    // Kerberos makes a fresh token per same-origin hop; `credentialsFor` stays synchronous for the rest.
+    const sameOrigin = options.authOrigin !== undefined && new URL(bare).origin === options.authOrigin;
+    const hopOptions: DocumentFetchOptions =
+      options.auth?.type === 'kerberos' && sameOrigin
+        ? { ...options, auth: await negotiateBearer(options.auth, bare) }
+        : options;
+    const { url, headers } = credentialsFor(bare, hopOptions);
     const credentialsSent = url !== bare || Object.keys(headers).length > 0;
     let exchange;
     try {

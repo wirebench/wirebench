@@ -117,6 +117,9 @@ payload is never re-serialised before verification. The payload:
   a message that names the server clock.
 - `features`: optional. When present, exactly these features are granted regardless of edition. When
   absent, the edition decides (§2).
+- `serverId`: optional. A lowercase UUID, copied exactly as `wirebench-server admin license show` prints
+  it; an uppercase id is `malformed`. When present, the license verifies only on that server
+  (license-binding spec §3.2). When absent, it verifies on any server.
 
 The wire schema (`packages/engine/src/server-api/licensing.ts`, plain zod, ADR-0009) is shared with
 the desktop so it can show a parse error before sending. Unknown payload keys are refused: the format
@@ -124,9 +127,11 @@ version is what grows the payload.
 
 ### 3.2 Verification
 
-`verifyLicense(text, publicKeys, now)` is pure and returns either a `License` or a reason:
+`verifyLicense(text, publicKeys, now, serverId)` is pure and returns either a `License` or a reason:
 `malformed` (not three dot-separated parts, bad base64, payload not matching the schema),
-`bad-signature`, `not-yet-valid`. It does not look at expiry: expiry is state, not validity, so a
+`bad-signature`, `wrong-server`, `not-yet-valid`. The checks run in that order: the signature, then the
+schema and the `expiresAt`-after-`issuedAt` check, then `wrong-server` (the payload's `serverId` against
+this server's), then `not-yet-valid`. It does not look at expiry: expiry is state, not validity, so a
 license that expired yesterday verifies and is reported as `grace`.
 
 The production public key is a constant in `packages/server/src/licensing/keys.ts`. There is one key
@@ -380,7 +385,8 @@ seat refusal reaches it as a problem it shows verbatim.
 
 - **One file on many servers.** Nothing binds a license to a server. Mitigation deferred: a
   `serverId` in the payload matched against an id the server mints on first boot, with `show`
-  printing the id for the order form. Recorded as a follow-up issue, not in v1.
+  printing the id for the order form. Recorded as a follow-up issue, not in v1. Closed by
+  `docs/specs/2026-10-05-wirebench-license-binding-design.md` (#203).
 - **Clock skew.** A server with a wrong clock may see `not-yet-valid` or an early grace. The messages
   name the server time so the operator can tell.
 - **Key compromise.** A leaked private key means a new server release with a new public key and every

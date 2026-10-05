@@ -16,11 +16,19 @@ export interface LicenseEnv {
   readonly db: Querier;
   readonly publicKeys: readonly KeyObject[];
   readonly now: () => Date;
+  /** The id licenses are bound to (license-binding spec §3.1). */
+  readonly serverId: string;
 }
 
 export function createLicenseService(env: LicenseEnv): LicenseService {
   const state = async (tx: Querier = env.db) =>
-    licenseState((await repo.storedLicense(tx))?.text, env.publicKeys, env.now(), await countEnabledUsers(tx));
+    licenseState(
+      (await repo.storedLicense(tx))?.text,
+      env.publicKeys,
+      env.now(),
+      await countEnabledUsers(tx),
+      env.serverId,
+    );
   return {
     state,
     assertSeatAvailable: (tx) => assertSeatAvailable(tx, state),
@@ -38,7 +46,7 @@ export async function installLicense(
   actorUserId: string | null,
 ): Promise<LicenseChanged> {
   const trimmed = text.trim();
-  const verified = verifyLicense(trimmed, env.publicKeys, env.now());
+  const verified = verifyLicense(trimmed, env.publicKeys, env.now(), env.serverId);
   if (!verified.ok) throw licenseInvalid(verified.message);
   await repo.putLicense(env.db, {
     text: trimmed,

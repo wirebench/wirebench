@@ -4,9 +4,10 @@
  * refusal of a reference nothing resolves, a cancel, the host's proxy, the handshake told to the
  * host, and a run's open that sends the saved messages.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createProject, DEFAULT_PREFERENCES } from '../../../src/index.js';
-import type { Project } from '../../../src/project/model.js';
+import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
+import type { AuthConfig, Project } from '../../../src/project/model.js';
 import type { RunContext } from '../../../src/run/context.js';
 import type { ExchangeOptions } from '../../../src/run/exchange.js';
 import type { SendFailure, SendHost } from '../../../src/run/host.js';
@@ -18,6 +19,7 @@ import { createWsApi, createWsRequest, createWsSavedMessage } from '../../../src
 import type { WsFrame, WsHandshake, WsSavedMessage } from '../../../src/ws/model.js';
 import { effectiveWsSettings } from '../../../src/ws/run.js';
 import type { WsSelected } from '../../../src/ws/run.js';
+import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 import { testHost } from '../../helpers/send-host.js';
 import { startTestProxy } from '../../helpers/test-proxy.js';
 import { startTestWsServer } from '../../helpers/test-ws-server.js';
@@ -33,6 +35,10 @@ afterAll(async () => {
   await server.close();
 });
 
+afterEach(() => {
+  configureKerberos(undefined);
+});
+
 interface Built {
   readonly p: Project;
   readonly item: WsSelected;
@@ -45,6 +51,7 @@ function build(
     readonly messages?: readonly WsSavedMessage[];
     readonly headers?: readonly { name: string; value: string; enabled: boolean }[];
     readonly serverUrl?: string;
+    readonly auth?: AuthConfig;
   } = {},
 ): Built {
   const request = createWsRequest('Echo', {
@@ -52,6 +59,7 @@ function build(
     url: path,
     headers: extra.headers ?? [{ name: 'x-trace', value: 'abc', enabled: true }],
     messages: extra.messages ?? [],
+    ...(extra.auth !== undefined ? { auth: extra.auth } : {}),
   });
   const api = createWsApi('Chat', {
     id: 'api-chat',
@@ -187,6 +195,29 @@ describe('WebSocket through openExchange', () => {
       stage: 'prepare',
       attempted: { method: 'GET', headers: { 'x-trace': 'abc' } },
     });
+  });
+
+  it('puts a preemptive Negotiate token on the upgrade for Kerberos', async () => {
+    const provider = fakeKerberos();
+    configureKerberos(provider);
+    const before = server.handshakes.length;
+    const handle = open(build('/echo', { auth: { type: 'kerberos' } }));
+    await handle.push({ text: 'a' });
+    await until(() => server.handshakes.length > before, 'the upgrade to reach the server');
+    expect(server.handshakes.at(-1)?.headers.authorization).toBe(
+      `Negotiate ${Buffer.from('ap-req').toString('base64')}`,
+    );
+    expect(provider.inits).toHaveLength(1);
+    handle.close(1000, 'done');
+    await handle.result;
+  });
+
+  it('fails a malformed URL under Kerberos as ws-bad-url, before any token is made', async () => {
+    const provider = fakeKerberos();
+    configureKerberos(provider);
+    const handle = open(build('/echo', { serverUrl: 'not a url', auth: { type: 'kerberos' } }));
+    await expect(handle.result).rejects.toMatchObject({ code: 'ws-bad-url' });
+    expect(provider.inits).toEqual([]);
   });
 
   it('close settles the result with the transcript and the subject', async () => {

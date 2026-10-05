@@ -10,6 +10,11 @@ All notable changes to this project are documented here. The format follows
 
 - **SAML tokens in outgoing WS-Security.** Built from a form (SAML 1.1 or 2.0, optionally signed as
   issuer) or supplied as XML. Token signatures in the HTTP Log are masked (#41).
+- **License binding.** A license can be bound to one server. The server mints an id when its database
+  is first migrated, and a license that carries a different `serverId` is refused as `wrong-server`
+  with a message naming both ids. Licenses without the field keep working on any server. The id shows
+  as the first line of `wirebench-server admin license show` and as *Server id*, with a *Copy* button,
+  on the License tab (#203).
 - **Postman environments and globals.** **Import…** reads Postman environment and globals exports
   (**Import Postman Environment…**, **Import Postman Globals…**). An environment becomes a workspace
   environment, renamed when the name is taken and never made active; globals merge into Globals.
@@ -50,6 +55,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **OpenCollection proto imports.** A folder collection's gRPC API now arrives with its definition
+  when its `.proto` files import other files from the collection's folder: each import is read,
+  under the folder first and then beside the importing file. An import that is not there still
+  leaves the API with no definition, and the warning now names the import and the file that imports
+  it (#247).
 - **Imported legacy-project scripts.** Importing a legacy SOAP project no longer overwrites a script
   that already exists under `imported-scripts/`: a clash is saved as `-2`, `-3`, … and the import
   report says so (#64).

@@ -4,6 +4,7 @@
  */
 import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import type { LicensePayload } from '@wirebench/engine';
+import { AUDIT_LOG_MIGRATIONS_DIR } from '../../src/audit-log/module.js';
 import { ciTokensModule } from '../../src/ci-tokens/module.js';
 import type { ServerModule } from '../../src/context.js';
 import type { OidcProvider } from '../../src/identity/oidc.js';
@@ -43,10 +44,18 @@ export function license(keys: TestKeys, overrides: Partial<LicensePayload> = {})
   return signLicense({ ...PAYLOAD, ...overrides }, keys.privateKey);
 }
 
+/** Audit-log's 0008–0012, without its routes: licensing's 0013 cannot load across a gap. */
+const auditMigrationsOnly: ServerModule = {
+  name: 'audit-log',
+  migrationsDir: AUDIT_LOG_MIGRATIONS_DIR,
+  async register() {},
+};
+
 /**
  * Identity, then licensing with the test key, then teams, webhook capture and CI tokens, then any `extra`
- * modules, all on the harness clock. The middle three are only here for their migrations: versions are
- * checked for contiguity across modules, so 0007 cannot load without 0003 to 0006.
+ * modules, all on the harness clock. The middle three, and audit-log's migrations unless `extra` brings the
+ * module itself, are only here for their migrations: versions are checked for contiguity across modules, so
+ * 0013 cannot load without 0003 to 0012.
  */
 export function licensingHarness(
   keys: TestKeys,
@@ -64,12 +73,16 @@ export function licensingHarness(
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
     ...(options.logStream !== undefined ? { logStream: options.logStream } : {}),
     ...(options.db !== undefined ? { db: options.db } : {}),
-    modules: (clock) => [
-      licensingModule({ now: () => clock.now, publicKeys: [keys.publicKey] }),
-      teamsModule({ now: () => clock.now }),
-      hooksModule({ now: () => clock.now }),
-      ciTokensModule({ now: () => clock.now }),
-      ...(options.extra?.(clock) ?? []),
-    ],
+    modules: (clock) => {
+      const extra = options.extra?.(clock) ?? [];
+      return [
+        licensingModule({ now: () => clock.now, publicKeys: [keys.publicKey] }),
+        teamsModule({ now: () => clock.now }),
+        hooksModule({ now: () => clock.now }),
+        ciTokensModule({ now: () => clock.now }),
+        ...(extra.some((m) => m.name === 'audit-log') ? [] : [auditMigrationsOnly]),
+        ...extra,
+      ];
+    },
   });
 }

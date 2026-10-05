@@ -77,7 +77,7 @@ signature covers the assertion through the STR-Transform).
 | 7 | WS-Trust versions | WS-Trust 1.3 (`200512`) and the February 2005 draft (`2005/02`) | The draft is what older WCF stacks and ADFS `/trust/2005/` endpoints still speak |
 | 8 | The STS exchange in the HTTP Log | Its own log row, marked **STS**. Never a History row. Assertions and Kerberos tokens are masked (§5.2) | Federated failures are usually STS failures. Today an auxiliary request is invisible unless it fails, which is too little here |
 | 9 | Expired token at the service | A SOAP fault that says the token is bad drops the cached token. No automatic resend | Mirrors `dropRefusedToken` for OAuth2 |
-| 10 | Assertion bytes | Placed verbatim: the issued element is imported, never re-serialised or given a `wsu:Id` | Anything else breaks the issuer's enveloped signature |
+| 10 | Assertion bytes | Never mutated and never given a `wsu:Id`, so its exc-c14n form is unchanged. Signing re-serialises the envelope, so byte-for-byte identity is not promised (plan amendment 3) | Anything else breaks the issuer's enveloped signature |
 
 ## 3. Engine
 
@@ -261,37 +261,46 @@ The `kerberos` credential calls `kerberosToken` from `packages/engine/src/http/a
 ```ts
 export interface IssuedTokenSource {
   /** A cached, unexpired token for this key, or a fresh one from the STS. */
-  get(entry: WssIssuedTokenEntry, target: IssuedTokenTarget): Promise<IssuedToken>;
+  get(entry: WssIssuedTokenEntry, target: IssuedTokenTarget, deps: TrustDeps): Promise<IssuedToken>;
   /** Only what is cached; never contacts the STS. Preview uses this. */
   peek(entry: WssIssuedTokenEntry, target: IssuedTokenTarget): IssuedToken | undefined;
   reject(token: IssuedToken): void;
+  status(entry: WssIssuedTokenEntry, target: IssuedTokenTarget): IssuedTokenStatus;
+  clear(entry: WssIssuedTokenEntry, target: IssuedTokenTarget): void;
 }
 
 export interface IssuedToken {
-  readonly assertion: Element;              // imported verbatim, never mutated
+  readonly assertionXml: string;            // self-contained serialisation, never mutated
   readonly assertionId?: string;            // ID / AssertionID, for the STR
-  readonly attachedReference?: Element;
+  readonly attachedReferenceXml?: string;
   readonly samlVersion: SamlVersion;
   readonly keyType: IssuedKeyType;
   readonly expiresAt?: Date;
+  readonly proofCertPem?: string;
+  readonly stsHost: string;
   readonly cacheKey: string;
 }
 ```
 
-- `WssContext` gains `issuedTokens?: IssuedTokenSource`. `SendHost` gains the same member, next
-  to `tokens: RunTokenSource`. `wssFor` in `soap/run.ts` passes it through.
+- The assertion is a string, not an `Element`: signing re-parses the envelope, so a cached
+  `Element` would go stale (plan amendment 2).
+- `SendHost` gains `issuedTokens?: IssuedTokenSource`, next to `tokens: RunTokenSource`.
+  `WssContext` gains `issuedTokens?: BoundIssuedTokens` (`get(entry)` / `peek(entry)`), which
+  `wssFor` in `soap/run.ts` binds to the send's endpoint, scopes, TLS and proxy (plan amendment 1).
+  `WssContext` also gains `expand?` and `projectFile?` (plan amendment 7).
 - If the source is missing when a configuration has an issued-token entry, sending refuses with
   `ws-trust-unavailable`.
 - **The cache key** is a sha256 of: `stsUrl` (after expansion), `trustVersion`, `soapVersion`,
-  `tokenType`, `keyType`, `appliesTo` (after expansion), the proof certificate's fingerprint, the
+  `tokenType`, `keyType`, `appliesTo` (after expansion), the proof keystore and alias references, the
   credential identity, and the hash of `claims`.
-  - The credential identity is the username, the certificate fingerprint, or the SPN plus
-    principal.
+  - The credential identity is the username, the certificate keystore and alias references, or
+    the SPN plus principal. References, not fingerprints, so no keystore is loaded just to build a
+    key (plan amendment 8).
   - No secret goes into the key, so changing a password in the secret store does not invalidate a
     live token. Clear covers that case (§4.2).
 - **Refresh margin.** A token with less than 60 seconds left counts as expired. This is the same
   skew constant as `needsRefresh` for OAuth2.
-- **Headless.** `createRunIssuedTokenSource` (`run/issued-token.ts`) keeps one cache per run, the
+- **Headless.** `createIssuedTokenSource` (`run/issued-token.ts`) keeps one cache per run, the
   same way `createRunTokenSource` does.
 - **Bad token at the service.** After the send, `dropRejectedIssuedToken` looks at a SOAP fault
   whose code is `wsse:InvalidSecurityToken`, `wsse:FailedAuthentication`,
@@ -346,16 +355,17 @@ export interface IssuedToken {
 
 ### 3.7 Redaction (`redact/index.ts`)
 
-**Masked.** Each of these has its content replaced with
-`[redacted: SAML assertion, 4 312 bytes]`:
+**Masked** (plan amendment 4: readable but unusable):
 
-- `saml:Assertion`, `saml2:Assertion`, `saml2:EncryptedAssertion` and `wst:RequestedProofToken`,
-  wherever they appear;
-- a `wsse:BinarySecurityToken` whose `ValueType` ends in `Kerberosv5_AP_REQ` or `GSS_Kerberosv5_AP_REQ`.
+- the text of every `ds:SignatureValue` and `xenc:CipherValue` inside a `saml:Assertion`,
+  `saml2:Assertion`, `saml2:EncryptedAssertion` or `wst:RequestedProofToken`, wherever they
+  appear. A masked assertion cannot be replayed, because its signature is gone;
+- the whole content of a `wsse:BinarySecurityToken` whose `ValueType` ends in `Kerberosv5_AP_REQ`.
   This is #40's D8, handed to this spec.
 
-The element names and attributes stay visible, and so do `Issuer`, `NameID` and the conditions,
-which are the usual reasons a token is refused.
+Everything else in an assertion stays visible, including `Issuer`, `NameID` and the conditions,
+which are the usual reasons a token is refused. The scanner is a forward scan, never a
+backtracking regex.
 
 **Kept.** An X.509 BinarySecurityToken is public, so it stays.
 
@@ -367,19 +377,19 @@ turns up in a script log or a response echo.
 
 ### 4.1 Main process
 
-- **The service.** `apps/desktop/src/main/issued-tokens.ts` holds `IssuedTokenService`: an
-  in-memory `Map` keyed by `cacheKey`, with `get` / `peek` / `reject` / `status` / `clear`, shaped
-  like `OAuth2Service`. Two concurrent sends for the same key share one STS call (a single-flight
-  promise).
+- **The service.** `apps/desktop/src/main/issued-tokens.ts` holds `IssuedTokensService`, which
+  wraps one engine `createIssuedTokenSource()` kept for the whole session (plan amendment 5). Two
+  concurrent sends for the same key share one STS call (a single-flight promise).
 - **The bridge.** `main/send/host.ts` adapts it into `SendHost.issuedTokens`, and passes fetched
   assertions to `recordSecretValue`.
 - **The log row.** Each STS exchange is reported through `SendHost.events.onExchange`, which the
   WebSocket handshake already uses, as an HTTP Log row:
-  - marked **STS**, linked to the send that caused it;
+  - marked **STS**, linked to the send that caused it: an `exchangeSummarySchema` row with
+    `auxiliary: 'sts'` and `causedBy: <sendId>` (plan amendment 6);
   - redacted per §3.7;
   - written to the log only, never to History;
   - a cache hit makes no row.
-- **IPC.** `issuedTokens.status(configId, entryIndex)`, `issuedTokens.fetch(…)` and
+- **IPC.** `issuedTokens.status({projectId, configId, entryIndex, requestId?})`, `issuedTokens.fetch(…)` and
   `issuedTokens.clear(…)`.
   - Status reports: `expiresAt`, the SAML version, the key type, and where the token came from
     (cached or not cached, with the reason). The assertion itself is included only when
@@ -456,6 +466,8 @@ The STS row (§4.1) uses the existing log detail tabs. A failed STS call shows a
 | `saml-token-file-missing` | The XML variant's file is missing or outside the project |
 | `wss-saml-token-missing` | A `saml-token` key identifier or `SamlToken` part with no SAML entry before it |
 | `wss-proof-key-mismatch` | Holder-of-key signed with a key other than the proof key |
+| `wss-proof-key-missing` | A holder-of-key or public-key token with no proof certificate |
+| `ws-trust-no-request` | Fetch now on a configuration that no request selects |
 
 Every refusal names the configuration and the entry's position. None of them carries a secret.
 

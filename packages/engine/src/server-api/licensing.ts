@@ -25,9 +25,10 @@ export type Feature = z.infer<typeof featureSchema>;
 
 export const LICENSE_STATUSES = ['none', 'active', 'grace', 'expired', 'invalid'] as const;
 export type LicenseStatus = (typeof LICENSE_STATUSES)[number];
-export type LicenseInvalidReason = 'malformed' | 'bad-signature' | 'not-yet-valid';
+export type LicenseInvalidReason = 'malformed' | 'bad-signature' | 'not-yet-valid' | 'wrong-server';
 
 const ULID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
+const SERVER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * The signed payload. Unknown keys are refused: the format version is what grows the payload.
@@ -42,6 +43,8 @@ export const licensePayloadSchema = z.strictObject({
   issuedAt: z.iso.datetime(),
   expiresAt: z.iso.datetime(),
   features: z.array(z.string().min(1).max(64)).max(64).optional(),
+  /** The only server this license verifies on (license-binding spec §3.2). Absent: any server. */
+  serverId: z.string().regex(SERVER_ID).optional(),
 });
 export type LicensePayload = z.infer<typeof licensePayloadSchema>;
 
@@ -53,6 +56,8 @@ export const licenseStateSchema = z.object({
   seats: z.object({ used: z.number().int().nonnegative(), limit: z.number().int().positive().nullable() }),
   /** The granted set: empty on Community and Team unless the license lists features. Open strings: a newer server may grant a feature this build does not know. */
   features: z.array(z.string()),
+  /** The id licenses are bound to. Set by every server that has it; absent from older servers. */
+  serverId: z.string().optional(),
   licenseId: z.string().optional(),
   customer: z.string().optional(),
   issuedAt: z.string().optional(),

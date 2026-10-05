@@ -83,6 +83,13 @@ function authHeadersAndQuery(auth: SendAuth | undefined): {
   if (auth === undefined) {
     return { headers: {}, query: [] };
   }
+  if (auth.type === 'kerberos') {
+    throw new WsError(
+      'ws-auth-unsupported',
+      'Kerberos needs a Negotiate token made first (withNegotiate) before the session options are built.',
+      { details: { type: auth.type } },
+    );
+  }
   if (auth.type === 'ntlm') {
     throw new WsError(
       'ws-auth-unsupported',

@@ -33,6 +33,21 @@ export function isSensitiveHeaderName(name: string): boolean {
   return SENSITIVE_HEADERS.has(name.toLowerCase());
 }
 
+/** A Negotiate reply token is a credential; the challenge's other schemes and realms stay readable. */
+export function maskNegotiateTokens(value: string): string {
+  return value.replace(/(^\s*|,\s*)(Negotiate)\s+[A-Za-z0-9+/=]+/gi, '$1$2 <redacted>');
+}
+
+function isChallengeHeader(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower === 'www-authenticate' || lower === 'proxy-authenticate';
+}
+
+/** The value of a header that is not wholly masked: a challenge still has its Negotiate token masked. */
+function unmaskedValue(name: string, value: string): string {
+  return isChallengeHeader(name) ? maskNegotiateTokens(value) : value;
+}
+
 /**
  * The test every header redactor applies: a well-known credential header, or one of `extraHeaders`
  * — the name an API key was configured under, which may be anything (`Ocp-Apim-Subscription-Key`).
@@ -56,7 +71,7 @@ export function redactHeaders(
   }
   const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers)) {
-    result[name] = headerIsMasked(name, opts?.extraHeaders) ? REDACTED : value;
+    result[name] = headerIsMasked(name, opts?.extraHeaders) ? REDACTED : unmaskedValue(name, value);
   }
   return result;
 }
@@ -71,7 +86,10 @@ export function redactHeaderPairs(
   opts?: { show?: boolean; extraHeaders?: readonly string[] },
 ): [string, string][] {
   const show = opts?.show ?? false;
-  return pairs.map(([name, value]) => [name, !show && headerIsMasked(name, opts?.extraHeaders) ? REDACTED : value]);
+  return pairs.map(([name, value]) => [
+    name,
+    show ? value : headerIsMasked(name, opts?.extraHeaders) ? REDACTED : unmaskedValue(name, value),
+  ]);
 }
 
 /**
@@ -463,8 +481,9 @@ function redactHeaderLine(line: string, extraHeaders: readonly string[] | undefi
   if (idx < 0) {
     return line;
   }
-  if (!headerIsMasked(line.slice(0, idx).trim(), extraHeaders)) {
-    return line;
+  const name = line.slice(0, idx).trim();
+  if (!headerIsMasked(name, extraHeaders)) {
+    return isChallengeHeader(name) ? `${line.slice(0, idx + 1)}${maskNegotiateTokens(line.slice(idx + 1))}` : line;
   }
   return `${line.slice(0, idx + 1)} ${REDACTED}`;
 }

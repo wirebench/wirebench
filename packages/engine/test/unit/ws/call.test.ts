@@ -99,6 +99,12 @@ describe('toWsSessionOptions', () => {
     }
   });
 
+  it('Kerberos throws ws-auth-unsupported until a Negotiate token is made', () => {
+    expect(() => toWsSessionOptions(callInput(), { auth: { type: 'kerberos' } })).toThrow(
+      expect.objectContaining({ code: 'ws-auth-unsupported' }),
+    );
+  });
+
   it('carries settings.handshakeTimeoutMs, maxMessageBytes and bindAddress through', () => {
     const options = toWsSessionOptions(
       callInput({ settings: { handshakeTimeoutMs: 5000, maxMessageBytes: 1024, bindAddress: '10.0.0.1' } }),

@@ -46,3 +46,13 @@ export async function putLicense(
 export async function deleteLicense(db: Querier): Promise<boolean> {
   return ((await db.query('delete from license')).rowCount ?? 0) > 0;
 }
+
+export const MISSING_SERVER_ID =
+  'the server_identity table has no row. It holds the id licenses are bound to; restore it from a backup instead of inserting a new one.';
+
+/** The id migration 0013 minted (license-binding spec §3.1). Never re-minted: a missing row is an error. */
+export async function serverId(db: Querier): Promise<string> {
+  const row = (await db.query<{ id: string }>('select server_id::text as id from server_identity')).rows[0];
+  if (row === undefined) throw new Error(MISSING_SERVER_ID);
+  return row.id;
+}

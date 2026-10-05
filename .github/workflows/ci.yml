@@ -98,6 +98,26 @@ jobs:
       - run: pnpm --filter @wirebench/engine build
       - run: pnpm --filter @wirebench/server test
 
+  # Kerberos against a real MIT KDC (#40): the real binding and the real GSSAPI, end to end. `check`
+  # runs the same file with WIREBENCH_KERBEROS_TESTS unset (it skips, saying so); this job builds a
+  # throwaway realm and runs it for real, once, on Linux.
+  kerberos-integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y krb5-kdc krb5-admin-server krb5-user libkrb5-dev
+      - run: bash scripts/ci/kerberos-kdc.sh
+      - run: pnpm install --frozen-lockfile
+      - run: WIREBENCH_KERBEROS_TESTS=1 pnpm vitest run --project engine-integration packages/engine/test/integration/auth/kerberos-real.test.ts
+
   wss-xmlsec:
     strategy:
       # One OS's toolchain failing must not hide the other's result.
