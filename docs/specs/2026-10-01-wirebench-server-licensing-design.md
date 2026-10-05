@@ -380,7 +380,8 @@ seat refusal reaches it as a problem it shows verbatim.
 
 - **One file on many servers.** Nothing binds a license to a server. Mitigation deferred: a
   `serverId` in the payload matched against an id the server mints on first boot, with `show`
-  printing the id for the order form. Recorded as a follow-up issue, not in v1.
+  printing the id for the order form. Recorded as a follow-up issue, not in v1. Closed by
+  `docs/specs/2026-10-05-wirebench-license-binding-design.md` (#203).
 - **Clock skew.** A server with a wrong clock may see `not-yet-valid` or an early grace. The messages
   name the server time so the operator can tell.
 - **Key compromise.** A leaked private key means a new server release with a new public key and every
