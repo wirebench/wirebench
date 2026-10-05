@@ -47,6 +47,18 @@ function Row({ label, children }: { readonly label: string; readonly children: R
 }
 
 type TextKey = 'issuer' | 'subject' | 'subjectFormat' | 'audience' | 'authnContext';
+/** Fields the entry may leave out: cleared, they drop their key rather than send an empty value. */
+const OPTIONAL_TEXT: ReadonlySet<TextKey> = new Set(['subjectFormat', 'audience', 'authnContext']);
+
+/** `entry` with `key` set to `value`, or without `key` when `value` is empty and the field is optional. */
+function withText(entry: SamlEntry, key: TextKey, value: string): SamlEntry {
+  if (value !== '' || !OPTIONAL_TEXT.has(key)) {
+    return { ...entry, [key]: value };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+  const { [key]: dropped, ...rest } = entry;
+  return rest;
+}
 
 function SigningFields({
   entry,
@@ -81,6 +93,22 @@ function SigningFields({
           onChange({ ...entry, sign: { ...rest, ...(ref !== undefined ? { keyPasswordRef: ref } : {}) } });
         }}
       />
+      <Row label="Signature algorithm">
+        <select
+          aria-label="Signature algorithm"
+          className={WSS_FIELD_CLASS}
+          value={sign.signatureAlgorithm}
+          onChange={(event) => {
+            onChange({
+              ...entry,
+              sign: { ...sign, signatureAlgorithm: event.target.value as SamlSign['signatureAlgorithm'] },
+            });
+          }}
+        >
+          <option value="rsa-sha256">RSA-SHA256</option>
+          <option value="rsa-sha1">RSA-SHA1</option>
+        </select>
+      </Row>
     </>
   );
 }
@@ -117,6 +145,37 @@ function AttributeValuesInput(props: {
   );
 }
 
+/**
+ * The lifetime in seconds. The raw text stays local while it is edited (so clearing the field does
+ * not snap it to 1) and a whole number of at least one second is committed on blur.
+ */
+function LifetimeInput(props: { readonly seconds: number; readonly onCommit: (seconds: number) => void }) {
+  const shown = String(props.seconds);
+  const [text, setText] = useState(shown);
+  useEffect(() => {
+    setText(shown);
+  }, [shown]);
+  return (
+    <input
+      aria-label="Lifetime"
+      type="number"
+      min={1}
+      step={1}
+      className={WSS_FIELD_CLASS}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+      }}
+      onBlur={() => {
+        const parsed = Math.trunc(Number(text));
+        const seconds = Number.isFinite(parsed) ? Math.max(1, parsed) : 1;
+        props.onCommit(seconds);
+        setText(String(seconds));
+      }}
+    />
+  );
+}
+
 function FormFields({ entry, onChange }: Omit<Props, 'idPrefix'>) {
   const attributes = entry.attributes ?? [];
   const text = (key: TextKey, label: string) => (
@@ -126,7 +185,7 @@ function FormFields({ entry, onChange }: Omit<Props, 'idPrefix'>) {
         className={WSS_FIELD_CLASS}
         value={entry[key] ?? ''}
         onChange={(event) => {
-          onChange({ ...entry, [key]: event.target.value });
+          onChange(withText(entry, key, event.target.value));
         }}
       />
     </Row>
@@ -184,14 +243,10 @@ function FormFields({ entry, onChange }: Omit<Props, 'idPrefix'>) {
       )}
       {text('audience', 'Audience')}
       <Row label="Lifetime (s)">
-        <input
-          aria-label="Lifetime"
-          type="number"
-          min={1}
-          className={WSS_FIELD_CLASS}
-          value={entry.lifetimeSeconds ?? 300}
-          onChange={(event) => {
-            onChange({ ...entry, lifetimeSeconds: Math.max(1, Number(event.target.value) || 1) });
+        <LifetimeInput
+          seconds={entry.lifetimeSeconds ?? 300}
+          onCommit={(lifetimeSeconds) => {
+            onChange({ ...entry, lifetimeSeconds });
           }}
         />
       </Row>
@@ -218,6 +273,23 @@ function FormFields({ entry, onChange }: Omit<Props, 'idPrefix'>) {
               onChange={(event) => {
                 setAttributes(
                   attributes.map((item, at) => (at === index ? { ...item, name: event.target.value } : item)),
+                );
+              }}
+            />
+            <input
+              aria-label={`Attribute ${String(index + 1)} format`}
+              placeholder="format"
+              className={WSS_FIELD_CLASS}
+              value={attribute.nameFormat ?? ''}
+              onChange={(event) => {
+                const nameFormat = event.target.value;
+                setAttributes(
+                  attributes.map((item, at) => {
+                    if (at !== index) return item;
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
+                    const { nameFormat: dropped, ...rest } = item;
+                    return nameFormat === '' ? rest : { ...rest, nameFormat };
+                  }),
                 );
               }}
             />

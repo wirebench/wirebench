@@ -40,6 +40,11 @@ function text(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** `value`, or `undefined` when it is absent or empty: an editor that clears a field leaves no value. */
+function given(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value;
+}
+
 function keyInfo(certPem: string): string {
   return (
     `<ds:KeyInfo xmlns:ds="${NS.DS}"><ds:X509Data><ds:X509Certificate>${certificateBase64(certPem)}` +
@@ -61,22 +66,26 @@ function saml2(entry: WssSamlFormEntry, id: string, now: Date, input: BuildSamlI
     entry.confirmation === 'holder-of-key' && input.proofCertPem !== undefined
       ? `<saml2:SubjectConfirmationData xmlns:xsi="${NS.XSI}" xsi:type="saml2:KeyInfoConfirmationDataType">${keyInfo(input.proofCertPem)}</saml2:SubjectConfirmationData>`
       : `<saml2:SubjectConfirmationData NotOnOrAfter="${notOnOrAfter}"/>`;
-  const format = entry.subjectFormat !== undefined ? ` Format="${esc(entry.subjectFormat)}"` : '';
+  const subjectFormat = given(entry.subjectFormat);
+  const format = subjectFormat !== undefined ? ` Format="${esc(subjectFormat)}"` : '';
+  const audienceUri = given(entry.audience);
   const audience =
-    entry.audience !== undefined && entry.audience !== ''
-      ? `<saml2:AudienceRestriction><saml2:Audience>${text(entry.audience)}</saml2:Audience></saml2:AudienceRestriction>`
+    audienceUri !== undefined
+      ? `<saml2:AudienceRestriction><saml2:Audience>${text(audienceUri)}</saml2:Audience></saml2:AudienceRestriction>`
       : '';
   const attributes =
     entry.attributes.length === 0
       ? ''
       : `<saml2:AttributeStatement>${entry.attributes
-          .map(
-            (attribute) =>
+          .map((attribute) => {
+            const nameFormat = given(attribute.nameFormat);
+            return (
               `<saml2:Attribute Name="${esc(attribute.name)}"` +
-              `${attribute.nameFormat !== undefined ? ` NameFormat="${esc(attribute.nameFormat)}"` : ''}>` +
+              `${nameFormat !== undefined ? ` NameFormat="${esc(nameFormat)}"` : ''}>` +
               attribute.values.map((value) => `<saml2:AttributeValue>${text(value)}</saml2:AttributeValue>`).join('') +
-              `</saml2:Attribute>`,
-          )
+              `</saml2:Attribute>`
+            );
+          })
           .join('')}</saml2:AttributeStatement>`;
   return (
     `<saml2:Assertion xmlns:saml2="${NS.SAML2}" ID="${id}" Version="2.0" IssueInstant="${now.toISOString()}">` +
@@ -85,7 +94,7 @@ function saml2(entry: WssSamlFormEntry, id: string, now: Date, input: BuildSamlI
     `<saml2:SubjectConfirmation Method="${method}">${confirmationData}</saml2:SubjectConfirmation></saml2:Subject>` +
     `<saml2:Conditions NotBefore="${notBefore}" NotOnOrAfter="${notOnOrAfter}">${audience}</saml2:Conditions>` +
     `<saml2:AuthnStatement AuthnInstant="${now.toISOString()}"><saml2:AuthnContext>` +
-    `<saml2:AuthnContextClassRef>${text(entry.authnContext ?? SAML_AUTHN_CONTEXT_UNSPECIFIED)}</saml2:AuthnContextClassRef>` +
+    `<saml2:AuthnContextClassRef>${text(given(entry.authnContext) ?? SAML_AUTHN_CONTEXT_UNSPECIFIED)}</saml2:AuthnContextClassRef>` +
     `</saml2:AuthnContext></saml2:AuthnStatement>${attributes}</saml2:Assertion>`
   );
 }
@@ -95,14 +104,16 @@ function saml1(entry: WssSamlFormEntry, id: string, now: Date, input: BuildSamlI
   const method = SAML_CONFIRMATION_METHOD['1.1'][entry.confirmation];
   const proof =
     entry.confirmation === 'holder-of-key' && input.proofCertPem !== undefined ? keyInfo(input.proofCertPem) : '';
-  const format = entry.subjectFormat !== undefined ? ` Format="${esc(entry.subjectFormat)}"` : '';
+  const subjectFormat = given(entry.subjectFormat);
+  const format = subjectFormat !== undefined ? ` Format="${esc(subjectFormat)}"` : '';
   const subject =
     `<saml:Subject><saml:NameIdentifier${format}>${text(entry.subject)}</saml:NameIdentifier>` +
     `<saml:SubjectConfirmation><saml:ConfirmationMethod>${method}</saml:ConfirmationMethod>${proof}` +
     `</saml:SubjectConfirmation></saml:Subject>`;
+  const audienceUri = given(entry.audience);
   const audience =
-    entry.audience !== undefined && entry.audience !== ''
-      ? `<saml:AudienceRestrictionCondition><saml:Audience>${text(entry.audience)}</saml:Audience></saml:AudienceRestrictionCondition>`
+    audienceUri !== undefined
+      ? `<saml:AudienceRestrictionCondition><saml:Audience>${text(audienceUri)}</saml:Audience></saml:AudienceRestrictionCondition>`
       : '';
   const attributes =
     entry.attributes.length === 0
@@ -110,7 +121,7 @@ function saml1(entry: WssSamlFormEntry, id: string, now: Date, input: BuildSamlI
       : `<saml:AttributeStatement>${subject}${entry.attributes
           .map(
             (attribute) =>
-              `<saml:Attribute AttributeName="${esc(attribute.name)}" AttributeNamespace="${esc(attribute.nameFormat ?? 'urn:wirebench:attributes')}">` +
+              `<saml:Attribute AttributeName="${esc(attribute.name)}" AttributeNamespace="${esc(given(attribute.nameFormat) ?? 'urn:wirebench:attributes')}">` +
               attribute.values.map((value) => `<saml:AttributeValue>${text(value)}</saml:AttributeValue>`).join('') +
               `</saml:Attribute>`,
           )
@@ -119,7 +130,7 @@ function saml1(entry: WssSamlFormEntry, id: string, now: Date, input: BuildSamlI
     `<saml:Assertion xmlns:saml="${NS.SAML1}" MajorVersion="1" MinorVersion="1" AssertionID="${id}"` +
     ` Issuer="${esc(entry.issuer)}" IssueInstant="${now.toISOString()}">` +
     `<saml:Conditions NotBefore="${notBefore}" NotOnOrAfter="${notOnOrAfter}">${audience}</saml:Conditions>` +
-    `<saml:AuthenticationStatement AuthenticationMethod="${esc(entry.authnContext ?? SAML1_AUTHN_METHOD_UNSPECIFIED)}"` +
+    `<saml:AuthenticationStatement AuthenticationMethod="${esc(given(entry.authnContext) ?? SAML1_AUTHN_METHOD_UNSPECIFIED)}"` +
     ` AuthenticationInstant="${now.toISOString()}">${subject}</saml:AuthenticationStatement>${attributes}</saml:Assertion>`
   );
 }

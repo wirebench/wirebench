@@ -86,4 +86,79 @@ describe('SamlTokenFields', () => {
       expect.objectContaining({ attributes: [{ name: 'groups', values: ['Domain Users', 'Ops'] }] }),
     );
   });
+
+  it('picks the issuer signature algorithm', () => {
+    installWirebenchApi({});
+    const onChange = vi.fn();
+    const signing: SamlEntry = { ...formEntry, sign: { keystoreRef: 'ks1', signatureAlgorithm: 'rsa-sha256' } };
+    render(<SamlTokenFields entry={signing} onChange={onChange} idPrefix="e0" />);
+    const select = screen.getByLabelText<HTMLSelectElement>('Signature algorithm');
+    expect(select.value).toBe('rsa-sha256');
+    fireEvent.change(select, { target: { value: 'rsa-sha1' } });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ sign: { keystoreRef: 'ks1', signatureAlgorithm: 'rsa-sha1' } }),
+    );
+  });
+
+  it("edits an attribute's format and drops it when cleared", () => {
+    installWirebenchApi({});
+    const onChange = vi.fn();
+    const withAttribute: SamlEntry = { ...formEntry, attributes: [{ name: 'role', values: ['a'] }] };
+    const { rerender } = render(<SamlTokenFields entry={withAttribute} onChange={onChange} idPrefix="e0" />);
+    fireEvent.change(screen.getByLabelText('Attribute 1 format'), { target: { value: 'urn:nf' } });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attributes: [{ name: 'role', nameFormat: 'urn:nf', values: ['a'] }] }),
+    );
+    const formatted: SamlEntry = { ...formEntry, attributes: [{ name: 'role', nameFormat: 'urn:nf', values: ['a'] }] };
+    rerender(
+      <TooltipPrimitive.Provider>
+        <SamlTokenFields entry={formatted} onChange={onChange} idPrefix="e0" />
+      </TooltipPrimitive.Provider>,
+    );
+    fireEvent.change(screen.getByLabelText('Attribute 1 format'), { target: { value: '' } });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attributes: [{ name: 'role', values: ['a'] }] }),
+    );
+  });
+
+  it.each([
+    ['Subject format', 'subjectFormat'],
+    ['Audience', 'audience'],
+    ['Authentication context', 'authnContext'],
+  ] as const)('drops %s when it is cleared instead of writing an empty value', (label, key) => {
+    installWirebenchApi({});
+    const onChange = vi.fn();
+    render(<SamlTokenFields entry={{ ...formEntry, [key]: 'urn:x' }} onChange={onChange} idPrefix="e0" />);
+    fireEvent.change(screen.getByLabelText(label), { target: { value: '' } });
+    const next = onChange.mock.calls.at(-1)?.[0] as SamlEntry;
+    expect(next).not.toHaveProperty(key);
+    expect(next.issuer).toBe('urn:i');
+  });
+
+  it('keeps the lifetime text while it is edited and commits a whole number on blur', () => {
+    installWirebenchApi({});
+    const onChange = vi.fn();
+    render(<SamlTokenFields entry={formEntry} onChange={onChange} idPrefix="e0" />);
+    const input = screen.getByLabelText<HTMLInputElement>('Lifetime');
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.value).toBe('');
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '90.7' } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ lifetimeSeconds: 90 }));
+    expect(input.value).toBe('90');
+  });
+
+  it('commits a cleared or zero lifetime as one second', () => {
+    installWirebenchApi({});
+    const onChange = vi.fn();
+    render(<SamlTokenFields entry={formEntry} onChange={onChange} idPrefix="e0" />);
+    const input = screen.getByLabelText<HTMLInputElement>('Lifetime');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ lifetimeSeconds: 1 }));
+    fireEvent.change(input, { target: { value: '0.4' } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ lifetimeSeconds: 1 }));
+  });
 });

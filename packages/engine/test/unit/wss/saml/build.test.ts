@@ -47,6 +47,24 @@ describe('buildSamlAssertion', () => {
     expect(xml).toContain('<saml2:AttributeValue>ops</saml2:AttributeValue>');
   });
 
+  it('treats an empty subject format, authentication context and attribute format as unset', () => {
+    const blank = form({
+      subjectFormat: '',
+      authnContext: '',
+      attributes: [{ name: 'role', nameFormat: '', values: ['a'] }],
+    });
+    const two = buildSamlAssertion(blank, { clock, uuid });
+    expect(two).toContain('<saml2:NameID>alice</saml2:NameID>');
+    expect(two).not.toContain('Format=""');
+    expect(two).toContain(
+      '<saml2:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified</saml2:AuthnContextClassRef>',
+    );
+    const one = buildSamlAssertion({ ...blank, version: '1.1' }, { clock, uuid });
+    expect(one).toContain('<saml:NameIdentifier>alice</saml:NameIdentifier>');
+    expect(one).toContain('AuthenticationMethod="urn:oasis:names:tc:SAML:1.0:am:unspecified"');
+    expect(one).toContain('AttributeNamespace="urn:wirebench:attributes"');
+  });
+
   it('builds a SAML 1.1 assertion with AssertionID', () => {
     const xml = buildSamlAssertion(form({ version: '1.1' }), { clock, uuid });
     expect(readAssertion(xml)).toMatchObject({ version: '1.1', id: '_1b2c' });

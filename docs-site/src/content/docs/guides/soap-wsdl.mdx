@@ -80,13 +80,17 @@ to have Wirebench build the assertion, or **XML** to supply one you already have
 - **Audience**: an optional audience restriction.
 - **Lifetime (s)**: how long the assertion is valid, from now.
 - **Authentication context**: an optional context class URI.
-- **Attributes**: a name and comma-separated values per row.
+- **Attributes**: a name, an optional format URI and comma-separated values per row.
 - **Sign as issuer**: signs the assertion with an **Issuer keystore**, alias and **Issuer key
-  password** (set through the masked field), using RSA-SHA256 or RSA-SHA1. Leave it off for an
-  unsigned assertion.
+  password** (set through the masked field), using the **Signature algorithm** you pick: RSA-SHA256
+  (the default) or RSA-SHA1. Leave it off for an unsigned assertion.
+
+A cleared optional field is left out of the assertion rather than sent empty.
 
 **XML** takes the assertion inline or from a project file. **Expand properties** is off by default:
-expanding `${...}` inside a signed assertion changes the bytes the signature covers and breaks it.
+expanding `${...}` inside a signed assertion changes the bytes the signature covers and breaks it. A
+file must sit inside the project folder. With **Expand properties** on, a reference nothing resolves
+refuses the send rather than going out as written.
 
 Wirebench places a supplied assertion into the header unchanged. It never gives the assertion a
 `wsu:Id` and never edits its attributes or children, so a signature it carries stays valid. In the
