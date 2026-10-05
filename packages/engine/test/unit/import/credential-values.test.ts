@@ -101,7 +101,9 @@ describe('blankXmlText', () => {
   });
 
   it('is linear on hostile input', () => {
-    const n = 1024 * 1024;
+    // 256 KB: a quadratic scan takes seconds here, and a linear one stays well inside the bound even
+    // under the coverage run's instrumentation.
+    const n = 256 * 1024;
     for (const unit of ['<token', '<a b="', '<!--', '<![CDATA[', '<!DOCTYPE[', '<token>a<', '<<']) {
       const input = unit.repeat(Math.ceil(n / unit.length));
       expect(
