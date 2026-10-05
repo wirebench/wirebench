@@ -177,8 +177,10 @@ async function connectWs(
   const tls = await tlsFor(context, settings.sslKeystoreRef, settings.trustInvalid === true);
   const proxy = await context.host.proxyFor?.(dialledUrl(input).replace(/^ws/, 'http'));
   const auth = await authFor(wsEffectiveAuth(selected), selected.path, context, tls);
-  // A handshake is one request: Kerberos goes on preemptively as a Negotiate header.
-  const sendAuth = await withNegotiate(auth, dialledUrl(input).replace(/^ws/, 'http'));
+  // A handshake is one request: Kerberos goes on preemptively as a Negotiate header. The URL is
+  // resolved first, so a malformed one fails as ws-bad-url rather than as Kerberos's SPN error.
+  const url = resolveWsUrl(input.serverUrl, input.request.url, input.request.query);
+  const sendAuth = await withNegotiate(auth, url.replace(/^ws/, 'http'));
   return toWsSessionOptions(input, {
     ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
     ...(tls !== undefined ? { tls } : {}),

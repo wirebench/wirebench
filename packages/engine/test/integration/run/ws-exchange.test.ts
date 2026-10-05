@@ -212,6 +212,14 @@ describe('WebSocket through openExchange', () => {
     await handle.result;
   });
 
+  it('fails a malformed URL under Kerberos as ws-bad-url, before any token is made', async () => {
+    const provider = fakeKerberos();
+    configureKerberos(provider);
+    const handle = open(build('/echo', { serverUrl: 'not a url', auth: { type: 'kerberos' } }));
+    await expect(handle.result).rejects.toMatchObject({ code: 'ws-bad-url' });
+    expect(provider.inits).toEqual([]);
+  });
+
   it('close settles the result with the transcript and the subject', async () => {
     const handle = open(build('/echo'));
     await handle.push({ text: 'a' });
