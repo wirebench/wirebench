@@ -96,10 +96,12 @@ test.describe('ws-trust issued token', () => {
     await editor.getByLabel('STS URL').fill(sts.url);
     await editor.getByLabel('Credential', { exact: true }).selectOption('username');
     await editor.getByLabel('STS username').fill('alice');
-    await editor.getByRole('button', { name: 'Set…' }).click();
-    await editor.getByPlaceholder('Enter password').fill(PASSWORD);
-    await editor.getByRole('button', { name: 'Save' }).click();
-    await expect(editor.getByText('••••••••')).toBeVisible();
+    // The configuration has its own password field, so scope the STS password to the entry.
+    const entry = page.getByTestId('wss-entry-row');
+    await entry.getByRole('button', { name: 'Set…' }).click();
+    await entry.getByPlaceholder('Enter password').fill(PASSWORD);
+    await entry.getByRole('button', { name: 'Save' }).click();
+    await expect(entry.getByText('••••••••')).toBeVisible();
 
     // --- select it on Request 1 and send twice ----------------------------------------------
     await page.getByRole('tablist', { name: 'Request inspectors' }).getByRole('tab', { name: 'Auth' }).click();
