@@ -76,6 +76,7 @@ afterEach(() => {
 
 describe('WebhookSettingsDialog', () => {
   it('shows the collection target and saves a picked catch URL', async () => {
+    installWirebenchApi();
     seed();
     useWebhooksStore.setState({
       server: SERVER,
@@ -95,7 +96,17 @@ describe('WebhookSettingsDialog', () => {
     await waitFor(() => expect(updateWebhooks).toHaveBeenCalledWith('p1', { target: 'https://srv.test/hooks/abc/' }));
   });
 
+  it('does not offer Kerberos on a webhook', () => {
+    installWirebenchApi();
+    seed();
+    render(<WebhookSettingsDialog />);
+    act(() => useWebhookItemsDialogs.getState().openSettings('p1'));
+    const options = [...screen.getByLabelText('Webhooks authentication type').querySelectorAll('option')];
+    expect(options.map((option) => option.textContent)).not.toContain('Kerberos');
+  });
+
   it('sends an auth key only when the Auth block was actually touched', async () => {
+    installWirebenchApi();
     seed();
     render(<WebhookSettingsDialog />);
     act(() => useWebhookItemsDialogs.getState().openSettings('p1'));

@@ -25,6 +25,11 @@ describe('previewCurl for a REST target', () => {
     expect(previewCurl(command, 'rest').bodyKind).toBe(kind);
   });
 
+  it('marks --negotiate, which the REST import turns into Kerberos rather than Basic', () => {
+    expect(previewCurl("curl --negotiate -u 'CORP\\ada:' https://api.test", 'rest').negotiate).toBe(true);
+    expect(previewCurl("curl -u 'ada:hunter2' https://api.test", 'rest').negotiate).toBe(false);
+  });
+
   it('names the -u user and never the password, and reports no SOAP problems', () => {
     const preview = previewCurl("curl https://api.test -u 'ada:hunter2' -d @x.json", 'rest');
     expect(preview.basicUsername).toBe('ada');

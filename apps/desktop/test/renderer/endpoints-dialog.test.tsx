@@ -95,7 +95,7 @@ describe('EndpointsDialog', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0] as HTMLElement);
     const select = screen.getByLabelText('Endpoint authentication type');
     const options = [...select.querySelectorAll('option')].map((option) => option.value);
-    expect(options).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2']);
+    expect(options).toEqual(['inherit', 'none', 'basic', 'ntlm', 'bearer', 'api-key', 'oauth2', 'kerberos']);
 
     await userEvent.selectOptions(select, 'bearer');
     expect(mutate).toHaveBeenCalledWith({

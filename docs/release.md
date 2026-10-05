@@ -72,7 +72,9 @@ That is expected; only CI builds with the signing secrets produce distributable 
 
 ### pnpm specifics
 
-- `npmRebuild: false`. Wirebench has no native modules, and running npm's rebuild against
+- `npmRebuild: false`. Wirebench has one native module, the Kerberos binding, and it is vendored
+  per architecture by `scripts/vendor-kerberos.ts` rather than rebuilt
+  ([ADR-0019](adr/0019-kerberos-uses-an-optional-native-module.md)). Running npm's rebuild against
   pnpm's symlinked store is a good way to flatten a tree that was fine.
 - electron-builder resolves pnpm's symlinks itself, including the `@wirebench/engine`
   workspace link — no `node-linker=hoisted`, no `shamefully-hoist`. **Build the engine first**
@@ -89,6 +91,12 @@ from it, so it is `asarUnpack`ed into `app.asar.unpacked/`. The engine's XPath w
 (`dist/xpath/worker.js`) stays *inside* the asar — Electron's asar support covers the
 `worker_threads` a main-process `new Worker()` creates. `e2e/specs/packaged.spec.ts` proves
 both still work in a packaged build; if either ever stops, that spec is where it shows up.
+
+`Resources/kerberos/<platform>-<arch>/kerberos.node` ships through `extraResources`, outside the
+asar, and `scripts/check-kerberos-vendor.ts` checks it in every release job. macOS gets one
+universal file in both architecture folders. `@electron/universal` already skips identical fat
+Mach-O files, so `mac.x64ArchFiles` naming it is a backstop for the day the prebuild stops being
+universal.
 
 ## Electron fuses
 
@@ -138,6 +146,20 @@ Two consequences worth knowing:
 The workflow runs `pnpm check`, packages on all three runners, uploads the artifacts and
 creates a **draft** release (a tag containing `-`, such as `v3.1.0-rc.1`, is marked as a
 pre-release). Review the draft, install one artifact per OS, then publish it by hand.
+
+## Manual Kerberos check (per release candidate)
+
+CI has a real KDC on Linux but no Windows domain. On a domain-joined Windows x64 machine with the
+release candidate installed:
+
+1. An IIS site with Windows Authentication and the Kerberos-only provider (`Negotiate:Kerberos`): a
+   REST GET with auth **Kerberos** returns 200, and the SOAP status note reads "Authenticated with
+   Kerberos as HTTP/<host>".
+2. The same request with **Use another account** (a second domain user) returns 200, and the IIS log
+   shows that user.
+3. The SPN set to `HTTP/nowhere.invalid` fails with "The KDC does not know HTTP/nowhere.invalid…".
+4. On Windows on ARM, the Kerberos option is disabled and reads "Kerberos is not available on Windows
+   on ARM."
 
 ## Publishing the CLI: image and npm
 
@@ -199,6 +221,10 @@ changed blocks.
 
 The Azure signing step is not wired into `release.yml` yet ([#114](https://github.com/wirebench/wirebench/issues/114)).
 Until it is, both signing jobs pass their input through unsigned.
+
+The SignPath app configuration referenced by `vars.SIGNPATH_APP_CONFIGURATION_SLUG` must include
+`**/*.node`, so the Kerberos binding is signed with `Wirebench.exe`. That is a one-time change on
+SignPath's side, and `win-installers` fails the release when the signed binding is not valid.
 
 ### Setting it up
 

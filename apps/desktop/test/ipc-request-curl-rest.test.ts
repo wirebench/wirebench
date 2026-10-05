@@ -166,6 +166,34 @@ describe('request.curl for a REST request', () => {
     expect(getSecret).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    'exports Kerberos as --negotiate with show-secrets %s, reading no secret for it',
+    async (shown) => {
+      const getSecret = vi.fn().mockResolvedValue('pw-live');
+      handlers.clear();
+      registerRequestChannels(new EngineService(), {
+        project: project({
+          rest: resolution({
+            auth: { type: 'kerberos', username: 'alice', domain: 'CORP', passwordRef: 'sec_pw' },
+          }),
+        }),
+        adHocScopes: () => ({ project: {}, global: {}, system: {} }),
+        showSecrets: { get: () => shown },
+        getSecret,
+      });
+
+      const result = unwrap<{ command: string; notes?: string[] }>(
+        await invoke('request.curl', { requestId: 'rest-1', shell: 'posix' }),
+      );
+
+      expect(result.command).toContain("--negotiate --user 'CORP\\alice:'");
+      expect(result.command).not.toContain('pw-live');
+      expect(result.command).not.toContain('Authorization');
+      expect(result.notes?.join(' ')).toContain('Kerberos');
+      expect(getSecret).not.toHaveBeenCalled();
+    },
+  );
+
   it('resolves the credential for real when show-secrets is on', async () => {
     setup({
       rest: resolution({ auth: { type: 'bearer', tokenRef: 'sec_1' } }),
@@ -330,6 +358,26 @@ describe('request.importCurl into an API', () => {
     expect(result.basicUsername).toBe('ada');
     expect(result.passwordStored).toBeUndefined();
     expect(changes[1]).toMatchObject({ patch: { auth: { type: 'basic', username: 'ada', preemptive: true } } });
+  });
+
+  it('records --negotiate as Kerberos with the account, never Basic, and stores no password', async () => {
+    const changes: ProjectChange[] = [];
+    const stored: { value: string; label: string }[] = [];
+    setup({ changes, stored });
+
+    const result = unwrap<{ basicUsername?: string; passwordStored?: boolean }>(
+      await invoke('request.importCurl', {
+        command: `curl --negotiate --user 'CORP\\ada:' https://api.test/pets`,
+        target: { kind: 'rest', apiId: 'api-1' },
+        passwordRef: 'sec_42',
+      }),
+    );
+
+    expect(stored).toEqual([]);
+    expect(result.basicUsername).toBeUndefined();
+    expect(result.passwordStored).toBeUndefined();
+    expect(changes[1]).toMatchObject({ patch: { auth: { type: 'kerberos', username: 'ada', domain: 'CORP' } } });
+    expect(JSON.stringify(changes)).not.toContain('sec_42');
   });
 
   it('reports the flags it could not use', async () => {

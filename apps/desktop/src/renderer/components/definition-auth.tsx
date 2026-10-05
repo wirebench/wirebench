@@ -11,7 +11,13 @@ import { AuthFields } from './auth-fields.js';
 import type { AuthConfigWire, DefinitionAuthWire } from '../../shared/wire-types.js';
 
 /** The schemes a definition fetch can send, in the form's order. */
-export const DEFINITION_AUTH_TYPES: readonly AuthConfigWire['type'][] = ['none', 'basic', 'bearer', 'api-key'];
+export const DEFINITION_AUTH_TYPES: readonly AuthConfigWire['type'][] = [
+  'none',
+  'basic',
+  'bearer',
+  'api-key',
+  'kerberos',
+];
 
 /** The form's starting value: no credentials. */
 export const NO_DEFINITION_AUTH: AuthConfigWire = { type: 'none' };
@@ -41,6 +47,15 @@ export function toDefinitionAuthWire(auth: AuthConfigWire | undefined): Definiti
         ? undefined
         : { type: 'api-key', name, in: auth.in ?? 'header', valueRef: auth.valueRef };
     }
+    case 'kerberos':
+      return {
+        type: 'kerberos',
+        ...(auth.spn !== undefined ? { spn: auth.spn } : {}),
+        ...(auth.principal !== undefined ? { principal: auth.principal } : {}),
+        ...(auth.username !== undefined ? { username: auth.username } : {}),
+        ...(auth.domain !== undefined ? { domain: auth.domain } : {}),
+        ...(auth.passwordRef !== undefined ? { passwordRef: auth.passwordRef } : {}),
+      };
     default:
       return undefined;
   }

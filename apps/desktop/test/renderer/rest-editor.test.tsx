@@ -205,6 +205,14 @@ describe('RestEditor', () => {
     expect(screen.getByTestId('rest-auth-source').textContent).toContain('Inherited from Pets');
   });
 
+  it('offers Kerberos on an ordinary REST request', () => {
+    mount();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Auth' }));
+    const options = [...screen.getByLabelText('Request authentication type').querySelectorAll('option')];
+    expect(options.map((option) => option.textContent)).toContain('Kerberos');
+  });
+
   it('says so when nothing above the request configures credentials', () => {
     mount();
 
@@ -511,6 +519,14 @@ describe('RestEditor for a webhook item', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'The Webhooks target must start with http:// or https://',
     );
+  });
+
+  it('does not offer Kerberos on a webhook item', () => {
+    mount('wh-1');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Auth' }));
+    const options = [...screen.getByLabelText('Request authentication type').querySelectorAll('option')];
+    expect(options.map((option) => option.textContent)).not.toContain('Kerberos');
   });
 });
 
