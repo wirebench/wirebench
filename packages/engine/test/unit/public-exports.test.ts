@@ -44,6 +44,18 @@ const ADDED = [
   'SOURCE_STDERR_SHOWN',
   'findSourceTool',
   'runSourceTool',
+  'SECRET_SOURCE_KINDS',
+  'SECRET_SOURCE_FIELD_MAX',
+  'parseSecretSource',
+  'parseSecretSources',
+  'parseLocalSecretSources',
+  'effectiveSecretSources',
+  'serializeSecretSources',
+  'canonicalJson',
+  'secretSourcesHash',
+  'sharedTrusted',
+  'createSourceCache',
+  'sourceGetter',
 ] as const;
 
 /** 2.x name, 3.0 name. */
