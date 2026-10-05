@@ -14,6 +14,7 @@ import { pendingMigrations } from '../db/migrate.js';
 import { createDatabase } from '../db/pool.js';
 import { ExitCode, packageVersion, type ServerIo } from '../io.js';
 import { PRODUCTION_PUBLIC_KEYS } from '../licensing/keys.js';
+import { MISSING_SERVER_ID, serverId as readServerId } from '../licensing/repo.js';
 import { runLicenseCommand } from '../licensing/cli.js';
 import { createLicenseService } from '../licensing/service.js';
 import { BUILTIN_MODULES } from '../modules.js';
@@ -30,28 +31,19 @@ export async function runAdmin(
   io: ServerIo,
   options: { readonly now?: () => Date; readonly publicKeys?: readonly KeyObject[] } = {},
 ): Promise<number> {
-  let env: InvitationEnv;
+  let config: ReturnType<typeof loadConfig>;
   let db: ReturnType<typeof createDatabase>;
   let publicKeys: readonly KeyObject[];
+  let hooks: ReturnType<typeof serverHooks>;
+  const now = options.now ?? (() => new Date());
   try {
-    const config = loadConfig(io.env, packageVersion());
+    config = loadConfig(io.env, packageVersion());
     delete process.env.WIREBENCH_SERVER_DATABASE_URL;
     db = createDatabase(config.databaseUrl);
-    const now = options.now ?? (() => new Date());
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
-    const hooks = serverHooks();
+    hooks = serverHooks();
     // Events the CLI records are queued like the server's, for the running server to forward.
     hooks.audit.push(auditHook(now, { forward: Boolean(config.auditForwardUrl) }));
-    env = {
-      ctx: {
-        db,
-        config,
-        hooks,
-        license: createLicenseService({ db, publicKeys, now }),
-      },
-      settings: identitySettings(config),
-      now,
-    };
   } catch (error) {
     if (error instanceof ConfigError) {
       for (const problem of error.problems) io.stderr.write(`${problem.variable}: ${problem.message}\n`);
@@ -65,6 +57,26 @@ export async function runAdmin(
       io.stderr.write(`${pending.length} migrations are pending; run wirebench-server migrate first\n`);
       return ExitCode.Migration;
     }
+    // The audit commands need no license, so they never read the server id: export and verify are the
+    // forensics path and must work on a damaged database.
+    if (command.command === 'admin-audit-export') {
+      return await runAuditCommand(command, { db, hooks, now }, io);
+    }
+    if (command.command === 'admin-audit-verify') {
+      return await runVerifyCommand(command, { db, hooks, key: config.auditChainKey }, io);
+    }
+    // Only now: before migrations the server_identity table may not exist.
+    const serverId = await readServerId(db).catch((error: unknown) => {
+      if (error instanceof Error && error.message === MISSING_SERVER_ID) {
+        throw new StartupError(ExitCode.Migration, MISSING_SERVER_ID);
+      }
+      throw error;
+    });
+    const env: InvitationEnv = {
+      ctx: { db, config, hooks, license: createLicenseService({ db, publicKeys, now, serverId }) },
+      settings: identitySettings(config),
+      now,
+    };
     switch (command.command) {
       case 'admin-invite': {
         const created = await createInvitation(env, {
@@ -111,13 +123,9 @@ export async function runAdmin(
       case 'admin-license-remove':
         return await runLicenseCommand(
           command,
-          { db, publicKeys, now: env.now, license: env.ctx.license, hooks: env.ctx.hooks },
+          { db, publicKeys, now: env.now, serverId, license: env.ctx.license, hooks: env.ctx.hooks },
           io,
         );
-      case 'admin-audit-export':
-        return await runAuditCommand(command, { db, hooks: env.ctx.hooks, now: env.now }, io);
-      case 'admin-audit-verify':
-        return await runVerifyCommand(command, { db, hooks: env.ctx.hooks, key: env.ctx.config.auditChainKey }, io);
     }
   } catch (error) {
     if (error instanceof WirebenchError) {

@@ -6475,6 +6475,7 @@ export const licenseStateWireSchema = z.object({
   status: z.enum(['none', 'active', 'grace', 'expired', 'invalid']),
   seats: z.object({ used: z.number(), limit: z.number().nullable() }),
   features: z.array(z.string()),
+  serverId: z.string().optional(),
   licenseId: z.string().optional(),
   customer: z.string().optional(),
   issuedAt: z.string().optional(),

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **License binding.** A license can be bound to one server. The server mints an id when its database
+  is first migrated, and a license that carries a different `serverId` is refused as `wrong-server`
+  with a message naming both ids. Licenses without the field keep working on any server. The id shows
+  as the first line of `wirebench-server admin license show` and as *Server id*, with a *Copy* button,
+  on the License tab (#203).
 - **Postman environments and globals.** **Import…** reads Postman environment and globals exports
   (**Import Postman Environment…**, **Import Postman Globals…**). An environment becomes a workspace
   environment, renamed when the name is taken and never made active; globals merge into Globals.

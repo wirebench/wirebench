@@ -16,7 +16,9 @@ const LABEL = { community: 'Community', team: 'Team', enterprise: 'Enterprise' }
 
 /** What `show` prints, and `install` after it: the License tab's facts, one per line. */
 export function describeLicense(state: LicenseState): string {
-  const rows: [string, string][] = [['Edition', `${LABEL[state.edition]} (${state.status})`]];
+  const rows: [string, string][] = [];
+  if (state.serverId !== undefined) rows.push(['Server id', state.serverId]);
+  rows.push(['Edition', `${LABEL[state.edition]} (${state.status})`]);
   if (state.customer !== undefined) rows.push(['Customer', state.customer]);
   if (state.licenseId !== undefined) rows.push(['License', state.licenseId]);
   rows.push(['Seats', `${state.seats.used} of ${state.seats.limit ?? 'unlimited'}`]);
