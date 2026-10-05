@@ -51,6 +51,11 @@ All notable changes to this project are documented here. The format follows
 - **Imported legacy-project scripts.** Importing a legacy SOAP project no longer overwrites a script
   that already exists under `imported-scripts/`: a clash is saved as `-2`, `-3`, … and the import
   report says so (#64).
+- **One XML redaction marker.** History, the HTTP log and copied commands now write a masked XML
+  value, such as a WS-Security password or a secret value found in an XML body, as
+  `&lt;redacted&gt;`, as a masked XML example already did, so a redacted XML document stays well
+  formed. Other redaction keeps `<redacted>`. An XML History entry recorded before this change still
+  shows `<redacted>`, so a diff against a newer entry shows that line as changed (#252).
 
 ## [3.1.0] - 2026-10-04
 

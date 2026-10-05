@@ -241,10 +241,12 @@ not fit. An exchange with no valid time is not written to History, and a warning
   - Every other header with a credential-looking name is dropped, with the same warning.
   - Query parameters, form fields, multipart text parts, JSON keys at any depth and XML elements
     and attributes with a credential-looking name are imported with an empty value, and a warning
-    names them.
+    names them. A JSON body keeps the formatting it was recorded with, and is blanked even when it
+    does not parse. A value made only of `{{variables}}` or `${…}` references is kept.
   - In a saved example, headers with a credential-looking name, the values under such keys in a
     JSON or form body, and such elements and attributes in an XML body, are masked, and
-    `Set-Cookie` is dropped; the notes say which examples were masked.
+    `Set-Cookie` is dropped; the notes say which examples were masked. An XML body shows the
+    marker escaped, as `&lt;redacted&gt;`, so it stays well formed, as History writes it.
 - **Cookies are dropped.** The [cookie jar](/wirebench/docs/guides/rest-client/#cookies) handles
   them at send time.
 - **Binary bodies.** A binary response body is left out of its example. A multipart file part
@@ -349,9 +351,9 @@ kept as text, then lists the environments and project properties added and the s
   gRPC API has no definition yet, and the report says so.
 - **Refused.** A collection with no requests and no environments, such as one holding only
   variables or scripts, is refused and no project is created.
-- **Limits.** A document larger than 50 MB is refused. A folder is refused past 5,000 YAML files, 64
-  levels of folders or 50 MB in total; links are not followed, and `node_modules` and `.git` are
-  skipped.
+- **Limits.** A document larger than 50 MB is refused, picked or pasted. A folder is refused past
+  5,000 YAML files, 64 levels of folders or 50 MB in total. Sizes are counted in bytes of UTF-8
+  text. Links are not followed, and `node_modules` and `.git` are skipped.
 
 See [From OpenCollection](/wirebench/docs/switching/opencollection/) for every rule, and what does
 not come across.

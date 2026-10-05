@@ -132,7 +132,7 @@ describe('projectSecretGetter', () => {
     for (const value of ['fake-recorded-not-real-1', 'fake-recorded-not-real-2']) {
       expect(redactHeaders({ 'X-Plain': `k ${value}` })).toEqual({ 'X-Plain': 'k <redacted>' });
       expect(redactUrl(`https://h.test/p?k=${value}`)).not.toContain(value);
-      expect(redactXml(`<a>${value}</a>`)).toBe('<a><redacted></a>');
+      expect(redactXml(`<a>${value}</a>`)).toBe('<a>&lt;redacted&gt;</a>');
       const raw = Buffer.from(`GET / HTTP/1.1\r\nX-Plain: ${value}\r\n\r\n`).toString('base64');
       expect(Buffer.from(redactRawHttp(raw, { encoding: 'base64' }), 'base64').toString('utf8')).not.toContain(value);
       // Shown as-is while the session's show-secrets toggle is on.

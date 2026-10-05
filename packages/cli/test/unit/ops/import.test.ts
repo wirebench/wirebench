@@ -1,6 +1,13 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { apiDefinitionDir, createApi, definitionCacheDir, loadProject, saveProject } from '@wirebench/engine';
+import {
+  apiDefinitionDir,
+  createApi,
+  createWsApi,
+  definitionCacheDir,
+  loadProject,
+  saveProject,
+} from '@wirebench/engine';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runOp } from '../../../src/ops/context.js';
 import { importOp } from '../../../src/ops/import.js';
@@ -47,6 +54,21 @@ describe('op import', () => {
     const { project } = await loadProject(fixture.dir);
     expect(project.apis[0]?.definition).toMatchObject({ source: PETS_OPENAPI, cache: true, version: '3.0.3' });
     await access(apiDefinitionDir(fixture.dir, 'Pets'));
+  });
+
+  it('orders an imported API after every interface and API of any kind, past the highest order', async () => {
+    const fixture = await emptyProject();
+    // Orders 0 and 1 were deleted; a count would give the new API 2, which Chat still holds.
+    await updateProject(fixture.dir, (project) => ({
+      ...project,
+      apis: [createApi('Shop', { id: 'A1', order: 3 })],
+      wsApis: [createWsApi('Chat', { id: 'W1', order: 2 })],
+    }));
+
+    await runOp(importOp, { source: PETS_OPENAPI }, fixture.base());
+
+    const { project } = await loadProject(fixture.dir);
+    expect(project.apis.find((api) => api.name === 'Pets')?.order).toBe(4);
   });
 
   it('takes a name, and gives a second import of the same definition its own slug', async () => {

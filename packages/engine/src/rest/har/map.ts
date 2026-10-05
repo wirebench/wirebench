@@ -6,7 +6,7 @@
  * Not browser-safe (`Buffer`): format detection imports `parse.ts` only, never this module.
  */
 
-import { blankXmlText } from '../../import/credential-values.js';
+import { blankIfLiteral, blankText } from '../../import/credential-values.js';
 import { isCredentialName } from '../../import/credentials.js';
 import { MAX_EXAMPLE_BODY_CHARS, maskRecordedResponse } from '../../import/examples.js';
 import type { ImportReport } from '../../import/report.js';
@@ -145,46 +145,6 @@ function authFrom(headers: readonly HarNameValue[], label: string, report: Repor
 }
 
 /**
- * A copy of a parsed JSON body with every secret-keyed value blanked (a nested object or array
- * under one too), adding each key it blanks to `blanked`.
- */
-function blankJson(value: unknown, blanked: Set<string>): unknown {
-  if (Array.isArray(value)) return value.map((item) => blankJson(item, blanked));
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, inner]) => {
-        if (!isCredentialName(key)) return [key, blankJson(inner, blanked)];
-        blanked.add(key);
-        return [key, ''];
-      }),
-    );
-  }
-  return value;
-}
-
-/** A JSON body with its secret-keyed values blanked; the text as recorded when none matched or it does not parse. */
-function blankJsonText(text: string, blanked: Set<string>): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return text;
-  }
-  const found = new Set<string>();
-  const out = blankJson(parsed, found);
-  if (found.size === 0) return text;
-  for (const key of found) blanked.add(key);
-  return JSON.stringify(out, null, /\n( +)\S/.exec(text)?.[1]?.length);
-}
-
-/** `value`, or `''` when `name` looks like a credential (and `name` is added to `blanked`). */
-function blankIfSecret(name: string, value: string, blanked: Set<string>): string {
-  if (!isCredentialName(name) || value === '') return value;
-  blanked.add(name);
-  return '';
-}
-
-/**
  * The headers a saved request keeps. Any other header whose name looks like a credential
  * (`Proxy-Authorization`, `X-Auth-Token`, `X-Api-Key`, whose shape {@link authFrom} keeps) is
  * dropped with a warning, so no literal secret is saved.
@@ -204,9 +164,10 @@ function requestHeaders(headers: readonly HarNameValue[], label: string, report:
 }
 
 /**
- * The request body. Form fields, multipart text parts, JSON values (at any depth) and XML
- * elements and attributes whose name looks like a credential are blanked, each name added to
- * `blanked`; any other body is kept as recorded.
+ * The request body, through the credential blanking every request importer shares. Form fields,
+ * multipart text parts, JSON values (at any depth, in place, even when the JSON does not parse)
+ * and XML elements and attributes whose name looks like a credential are blanked, each name added
+ * to `blanked`, unless the value is made only of references; any other body is kept as recorded.
  */
 function mapPostData(
   post: HarPostData | undefined,
@@ -220,7 +181,7 @@ function mapPostData(
     const pairs = post.params?.map((p) => [p.name, p.value ?? ''] as const) ?? [
       ...new URLSearchParams(post.text ?? ''),
     ];
-    return { kind: 'form', fields: pairs.map(([n, v]) => entry(n, blankIfSecret(n, v, blanked))) };
+    return { kind: 'form', fields: pairs.map(([n, v]) => entry(n, blankIfLiteral(n, v, blanked))) };
   }
   if (mime.startsWith('multipart/form-data') && post.params !== undefined) {
     return {
@@ -228,7 +189,7 @@ function mapPostData(
       parts: post.params.map((p) => {
         const contentType = p.contentType !== undefined ? { contentType: p.contentType } : {};
         if (p.fileName === undefined) {
-          const value = blankIfSecret(p.name, p.value ?? '', blanked);
+          const value = blankIfLiteral(p.name, p.value ?? '', blanked);
           return { kind: 'text' as const, name: p.name, value, enabled: true, ...contentType };
         }
         report.note(
@@ -246,12 +207,11 @@ function mapPostData(
     };
   }
   const language: RawLanguage = mime.includes('json') ? 'json' : mime.includes('xml') ? 'xml' : 'text';
-  const text = post.text ?? '';
   return {
     kind: 'raw',
     language,
     ...(post.mimeType !== '' ? { contentType: post.mimeType } : {}),
-    text: language === 'json' ? blankJsonText(text, blanked) : language === 'xml' ? blankXmlText(text, blanked) : text,
+    text: blankText(post.text ?? '', post.mimeType !== '' ? post.mimeType : undefined, blanked),
   };
 }
 
@@ -364,11 +324,7 @@ export function mapHar(log: HarLogIn, options: MapHarOptions = {}): MappedHar {
     if (request === undefined) {
       const slug = uniqueSlug(label, draft.slugs);
       const blanked = new Set<string>();
-      const query = e.request.queryString.map((q) => {
-        if (!isCredentialName(q.name) || q.value === '') return entry(q.name, q.value);
-        blanked.add(q.name);
-        return entry(q.name, '');
-      });
+      const query = e.request.queryString.map((q) => entry(q.name, blankIfLiteral(q.name, q.value, blanked)));
       const body = mapPostData(e.request.postData, label, report, blanked);
       if (blanked.size > 0) {
         report.warn(

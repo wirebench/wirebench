@@ -57,7 +57,8 @@ The request itself isn't changed.
 - **Auth is applied once.** History never records auth headers, so the request's current auth adds
   them. When the request's API key travels in the query, the recorded key parameter is dropped and
   the current key is added in its place.
-- **Redacted values are filled from the request.** History stores secrets as `<redacted>`. A
+- **Redacted values are filled from the request.** History stores secrets as `<redacted>`, and
+  in an XML body as `&lt;redacted&gt;`, escaped so the body stays well formed. A
   redacted header or query value is replaced by the request's own value for that header or
   parameter, as typed (a `${secret:token}` reference, say), so it resolves the usual way. If the
   request no longer has that header or parameter, or the redacted value is in the URL's path or in

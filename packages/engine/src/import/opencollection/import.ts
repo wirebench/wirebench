@@ -33,6 +33,48 @@ function tooLarge(): OpenCollectionError {
 }
 
 /**
+ * The UTF-8 length of `text` in bytes, counted by hand rather than encoded so a long text is never
+ * copied. A surrogate pair is four bytes; a lone surrogate is three, the replacement character an
+ * encoder writes for it.
+ */
+function utf8ByteLength(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const unit = text.charCodeAt(i);
+    if (unit < 0x80) {
+      bytes += 1;
+    } else if (unit < 0x800) {
+      bytes += 2;
+    } else if (unit >= 0xd800 && unit <= 0xdbff && (text.charCodeAt(i + 1) & 0xfc00) === 0xdc00) {
+      bytes += 4;
+      i += 1;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/**
+ * Whether texts together are past {@link MAX_OPENCOLLECTION_BYTES} in UTF-8 bytes, the unit a
+ * picked file's size is measured in. A UTF-16 unit is one to three bytes, so most texts are settled
+ * by their length alone and only the rest are counted.
+ */
+function pastCap(texts: Iterable<string>): boolean {
+  const all = [...texts];
+  let units = 0;
+  for (const text of all) units += text.length;
+  if (units > MAX_OPENCOLLECTION_BYTES) return true;
+  if (units * 3 <= MAX_OPENCOLLECTION_BYTES) return false;
+  let bytes = 0;
+  for (const text of all) {
+    bytes += utf8ByteLength(text);
+    if (bytes > MAX_OPENCOLLECTION_BYTES) return true;
+  }
+  return false;
+}
+
+/**
  * One OpenCollection document's text from disk, refused past {@link MAX_OPENCOLLECTION_BYTES}
  * rather than read whole.
  *
@@ -78,13 +120,11 @@ export async function importOpenCollection(
     single = await readOpenCollectionFile(path);
     mapped = mapOpenCollection(parseOpenCollection(single), { ...options, rootDir: options.rootDir ?? dirname(path) });
   } else if (source.kind === 'text') {
-    if (source.text.length > MAX_OPENCOLLECTION_BYTES) throw tooLarge();
+    if (pastCap([source.text])) throw tooLarge();
     single = source.text;
     mapped = mapOpenCollection(parseOpenCollection(single), options);
   } else {
-    let total = source.rootText.length;
-    for (const text of source.files.values()) total += text.length;
-    if (total > MAX_OPENCOLLECTION_BYTES) throw tooLarge();
+    if (pastCap([source.rootText, ...source.files.values()])) throw tooLarge();
     mapped = mapOpenCollection(parseOpenCollection(source.rootText, source.files, source.rootKey), options);
   }
   if (mapped.counts.requests === 0 && mapped.variables.environments.length === 0) {

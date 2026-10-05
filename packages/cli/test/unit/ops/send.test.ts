@@ -7,6 +7,7 @@ import {
   createWsSavedMessage,
   loadProject,
   REDACTED_MARKER,
+  REDACTED_XML_MARKER,
 } from '@wirebench/engine';
 import { startTestWsServer } from '@wirebench/engine/test-helpers';
 import type { TestWsServer } from '@wirebench/engine/test-helpers';
@@ -250,7 +251,7 @@ describe('op send', () => {
     expect(result.assertions[0]).toMatchObject({ outcome: 'failed', actual: REDACTED_MARKER });
     // The Security element fits whole: only the Password's text is masked.
     expect(result.assertions[1]?.actual).toContain('<wsse:Username>ann</wsse:Username>');
-    expect(result.assertions[1]?.actual).toContain(`<wsse:Password>${REDACTED_MARKER}</wsse:Password>`);
+    expect(result.assertions[1]?.actual).toContain(`<wsse:Password>${REDACTED_XML_MARKER}</wsse:Password>`);
     expect(JSON.stringify(result)).not.toContain(SECRET);
   });
 

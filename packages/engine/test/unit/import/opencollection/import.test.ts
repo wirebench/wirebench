@@ -92,6 +92,19 @@ describe('importOpenCollection', () => {
       'oc-read-failed',
     );
   });
+
+  it('measures text and a folder in UTF-8 bytes, as a picked file is measured', async () => {
+    // Fewer characters than the cap, but three bytes each: past it in bytes.
+    const euros = '€'.repeat(Math.floor(MAX_OPENCOLLECTION_BYTES / 3) + 1);
+    expect(euros.length).toBeLessThan(MAX_OPENCOLLECTION_BYTES);
+    expect(await codeOf(importOpenCollection({ kind: 'text', text: euros }))).toBe('oc-too-large');
+    // Split across files, the folder form adds each file's bytes.
+    const half = euros.slice(0, Math.ceil(euros.length / 2));
+    const rest = euros.slice(half.length);
+    expect(
+      await codeOf(importOpenCollection({ kind: 'tree', rootText: half, files: new Map([['rest.yml', rest]]) })),
+    ).toBe('oc-too-large');
+  });
 });
 
 describe('importOpenCollection options', () => {

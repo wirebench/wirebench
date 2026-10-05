@@ -124,3 +124,12 @@ describe('createSecretMasker', () => {
     });
   });
 });
+
+describe('createSecretMasker with a marker', () => {
+  it('writes the given marker in place of each value, the default otherwise', () => {
+    expect(createSecretMasker(['s3cret-value'], { marker: '&lt;redacted&gt;' })('<a>s3cret-value</a>')).toBe(
+      '<a>&lt;redacted&gt;</a>',
+    );
+    expect(createSecretMasker(['s3cret-value'])('<a>s3cret-value</a>')).toBe('<a><redacted></a>');
+  });
+});

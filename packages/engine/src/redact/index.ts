@@ -10,9 +10,19 @@ const REDACTED = '<redacted>';
 /** The exact marker text every redaction helper below writes in place of a masked secret. */
 export const REDACTED_MARKER = REDACTED;
 
-/** True when `text` contains the redaction marker — i.e. it was produced by a `redact*` helper. */
+/**
+ * The marker as XML text, `&lt;redacted&gt;`: what {@link redactXml} writes, and what a masked XML
+ * example holds, so a redacted XML document stays well formed and still reads as the marker.
+ */
+export const REDACTED_XML_MARKER = '&lt;redacted&gt;';
+
+/**
+ * True when `text` contains the redaction marker, raw or as XML text — i.e. it was produced by a
+ * `redact*` helper. The raw form is also what XML History entries recorded before the escaped
+ * marker hold.
+ */
 export function containsRedaction(text: string): boolean {
-  return text.includes(REDACTED_MARKER);
+  return text.includes(REDACTED_MARKER) || text.includes(REDACTED_XML_MARKER);
 }
 
 /** Header names (case-insensitive) whose value is always masked. */
@@ -188,7 +198,8 @@ function isPasswordDigest(openTag: string): boolean {
 
 /**
  * Masks the text content of `wsse:Password` elements (any namespace prefix) in raw XML — except
- * a `#PasswordDigest` value, which is a hash, not a secret, and must reach the wire intact.
+ * a `#PasswordDigest` value, which is a hash, not a secret, and must reach the wire intact. The
+ * content becomes {@link REDACTED_XML_MARKER}, so the document stays well formed.
  */
 export function redactXml(text: string, opts?: { show?: boolean }): string {
   if (opts?.show) {
@@ -217,7 +228,7 @@ export function redactXml(text: string, opts?: { show?: boolean }): string {
       break;
     }
     const openTag = text.slice(opened.index, tagEnd + 1);
-    const content = isPasswordDigest(openTag) ? text.slice(tagEnd + 1, closed.index) : REDACTED;
+    const content = isPasswordDigest(openTag) ? text.slice(tagEnd + 1, closed.index) : REDACTED_XML_MARKER;
     out += `${text.slice(from, tagEnd + 1)}${content}${closed[0]}`;
     from = closed.index + closed[0].length;
   }

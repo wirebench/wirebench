@@ -377,7 +377,7 @@ describe('redactExchangeSummary', () => {
     };
 
     const redacted = redactExchangeSummary(summary);
-    expect(redacted.response?.envelopeXml).toContain('<redacted>');
+    expect(redacted.response?.envelopeXml).toContain('&lt;redacted&gt;');
     expect(redacted.response?.envelopeXml).not.toContain('s3cret');
 
     const shown = redactExchangeSummary(summary, { show: true });
@@ -431,7 +431,7 @@ describe('redactExchangeSummary', () => {
     };
 
     const redacted = redactExchangeSummary(summary);
-    expect(redacted.response?.fault?.detailXml).toContain('<redacted>');
+    expect(redacted.response?.fault?.detailXml).toContain('&lt;redacted&gt;');
     expect(redacted.response?.fault?.detailXml).not.toContain('s3cret');
 
     const shown = redactExchangeSummary(summary, { show: true });

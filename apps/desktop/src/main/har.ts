@@ -12,7 +12,7 @@ import type {
   WsHandshakeExchangeSummary,
 } from '../shared/wire-types.js';
 import { keyNamesOf, loggedRequestOf } from './log-curl.js';
-import { redactHeaderPairs, redactStructuredBody, redactUrl, redactXml } from './redact.js';
+import { isXmlBody, redactHeaderPairs, redactStructuredBody, redactUrl, redactXml } from './redact.js';
 
 export interface HarCreator {
   readonly name: 'Wirebench';
@@ -111,9 +111,13 @@ function headerValue(headers: Readonly<Record<string, string>>, name: string): s
   return Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
 }
 
-/** Both body passes, always masked: WS-Security elements, then JSON/form secret keys. */
+/**
+ * Both body passes, always masked: WS-Security elements, then JSON/form secret keys. A recorded
+ * secret value gets the escaped marker in an XML body and the raw one in any other.
+ */
 function redactBody(text: string, contentType: string | undefined): string {
-  return redactStructuredBody(redactXml(text, { show: false }), contentType, { show: false });
+  const xml = redactXml(text, { show: false, xml: isXmlBody(text, contentType) });
+  return redactStructuredBody(xml, contentType, { show: false });
 }
 
 /**

@@ -214,8 +214,9 @@ stays inside the collection's folder.
 
 ## Limits
 
-- A single document larger than 50 MB is refused, and so is pasted text longer than about 50
-  million characters.
+- A single document larger than 50 MB is refused, picked or pasted. Every size limit here is
+  measured in bytes of UTF-8 text, so text with many accented or non-Latin characters reaches it in
+  fewer characters.
 - A folder collection is refused when it holds more than 5,000 YAML files, nests more than 64
   folders deep, or holds more than 50 MB of YAML in total. Walking stops, and the import is refused,
   after 50,000 folder entries of any kind.

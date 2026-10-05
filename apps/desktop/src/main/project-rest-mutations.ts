@@ -34,7 +34,7 @@ import type {
   WebhookFolder,
   WebhookSigning,
 } from '@wirebench/engine';
-import { ProjectError } from '@wirebench/engine';
+import { nextApiOrder, ProjectError } from '@wirebench/engine';
 import type {
   ApiPatchWire,
   AuthConfigWire,
@@ -436,7 +436,7 @@ export function addApi(
   const api = createApi(input.name, {
     slug: uniqueSlug(input.name, takenApiSlugs(project)),
     baseUrl: input.baseUrl,
-    order: project.interfaces.length + project.apis.length,
+    order: nextApiOrder(project),
   });
   return { project: { ...project, apis: [...project.apis, api] }, createdId: api.id };
 }
@@ -490,10 +490,12 @@ export function cleanUndefined<T extends object>(value: { readonly [K in keyof T
 /** Removes an API and everything in it; the saver deletes its folder and definition cache. */
 export function removeApi(project: Project, apiId: string): RestMutationResult {
   requireApi(project, apiId);
+  // The others keep their orders: APIs of every kind share one order, so renumbering one kind would
+  // give an API an order another kind holds. A gap is harmless; `nextApiOrder` goes past the highest.
   return {
     project: {
       ...project,
-      apis: renumber(project.apis.filter((api) => api.id !== apiId)),
+      apis: project.apis.filter((api) => api.id !== apiId),
       ...(project.webhooks !== undefined ? { webhooks: unlinkWebhookSource(project.webhooks, apiId) } : {}),
     },
   };
