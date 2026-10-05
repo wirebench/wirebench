@@ -117,7 +117,10 @@ test.describe('ws-trust issued token', () => {
     expect(sts.requests).toHaveLength(1);
 
     // --- the entry's status line reads the cached token (re-open the entry to re-read it) -----
-    await page.getByRole('button', { name: 'WS-Security' }).click();
+    // Clicking the active view closes it, so only click when the section is not showing.
+    if (!(await page.getByTestId('wss-section').isVisible())) {
+      await page.getByRole('button', { name: 'WS-Security' }).click();
+    }
     await expect(page.getByTestId('wss-section')).toBeVisible();
     if (!(await editor.isVisible())) {
       await row.getByRole('button', { expanded: false }).click();

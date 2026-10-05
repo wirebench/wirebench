@@ -82,7 +82,7 @@ Under the fields, a status line reads the session's cache for the entry: `Valid 
 2.0 · bearer`, `Expired` or `No token cached`, followed by the STS host.
 
 - **Fetch now** asks the STS immediately, for the request you are editing, and shows a failure as a
-  message here.
+  toast. The error also stays on the status line, with a pointer to the STS row in the HTTP Log.
 - **Clear** drops the cached token, so the next send asks again.
 
 A token is cached for its lifetime, less a minute. Two sends that need the same token at the same
@@ -92,6 +92,20 @@ re-sends on its own.
 
 The cache lives in memory for the session. Change a password or a keystore and use **Clear**, because
 the cache does not look at secrets.
+
+## When it goes wrong
+
+A redirect from the STS is refused, not followed, so credentials never travel to an address you did
+not configure. If the service refuses a token it was sent, with `InvalidSecurityToken`,
+`FailedAuthentication`, `SecurityTokenUnavailable` or `MessageExpired`, Wirebench drops the token from
+the cache so the next send asks again.
+
+The errors you may see:
+
+- `ws-trust-insecure-transport`: a username credential with an `http:` STS address.
+- `ws-trust-sts-fault`: the STS answered with a fault; its reason is in the message and in the STS row.
+- `ws-trust-response-invalid`: the STS answered, but the response holds no usable token.
+- `kerberos-unavailable`: a Kerberos credential was sent in a build without Kerberos support.
 
 ## In the HTTP Log
 
