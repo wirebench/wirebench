@@ -85,4 +85,46 @@ describe('placing a supplied SAML assertion', () => {
       ),
     ).rejects.toMatchObject({ code: 'ws-trust-unavailable' });
   });
+
+  it('builds a form assertion through the context clock and uuid', async () => {
+    const xml = await applyOutgoingWss(
+      SOAP11,
+      config([
+        {
+          kind: 'saml-token',
+          source: 'form',
+          version: '2.0',
+          issuer: 'urn:test',
+          subject: 'alice',
+          confirmation: 'bearer',
+          lifetimeSeconds: 60,
+          attributes: [],
+        },
+      ]),
+      createWssContext({ clock: () => new Date('2026-10-05T10:00:00Z'), uuid: () => 'u1' }),
+    );
+    expect(xml).toContain('ID="_u1"');
+    expect(xml).not.toMatch(/saml2:Assertion[^>]*wsu:Id/);
+  });
+
+  it('refuses a holder-of-key form assertion that names no proof keystore', async () => {
+    await expect(
+      applyOutgoingWss(
+        SOAP11,
+        config([
+          {
+            kind: 'saml-token',
+            source: 'form',
+            version: '2.0',
+            issuer: 'urn:test',
+            subject: 'alice',
+            confirmation: 'holder-of-key',
+            lifetimeSeconds: 60,
+            attributes: [],
+          },
+        ]),
+        createWssContext(),
+      ),
+    ).rejects.toMatchObject({ code: 'wss-proof-key-missing' });
+  });
 });

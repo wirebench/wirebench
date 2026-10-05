@@ -5,6 +5,8 @@
  */
 import { WssError } from '../../errors.js';
 import { serializeXml } from '../../xml/serialize.js';
+import { selectAlias } from '../../keystore/index.js';
+import { buildSamlAssertion } from '../saml/build.js';
 import { readAssertion } from '../saml/read.js';
 import type {
   SamlConfirmation,
@@ -12,6 +14,8 @@ import type {
   WssContext,
   WssIssuedTokenEntry,
   WssOutgoingConfig,
+  WssSamlFormEntry,
+  WssSamlSigning,
   WssSamlTokenEntry,
   WssSamlXmlEntry,
 } from '../model.js';
@@ -46,6 +50,30 @@ async function xmlOf(entry: WssSamlXmlEntry, ctx: WssContext): Promise<string> {
   return entry.expandProperties && ctx.expand !== undefined ? ctx.expand(text) : text;
 }
 
+async function aliasOf(keystoreRef: string, alias: string | undefined, config: WssOutgoingConfig, ctx: WssContext) {
+  const keystore = await ctx.keystores(keystoreRef);
+  if (keystore === undefined) {
+    throw new WssError('wss-keystore-missing', 'The keystore this entry needs is not available.', {
+      details: { keystoreRef },
+    });
+  }
+  return selectAlias(keystore, alias ?? config.defaultAlias);
+}
+
+async function signingKeyOf(sign: WssSamlSigning, config: WssOutgoingConfig, ctx: WssContext) {
+  const alias = await aliasOf(sign.keystoreRef, sign.alias, config, ctx);
+  const passphrase = sign.keyPasswordRef === undefined ? undefined : await ctx.secrets(sign.keyPasswordRef);
+  return { alias, ...(passphrase !== undefined ? { passphrase } : {}) };
+}
+
+/** @throws WssError `wss-proof-key-missing` when a holder-of-key entry names no proof keystore */
+async function formProofCertOf(entry: WssSamlFormEntry, config: WssOutgoingConfig, ctx: WssContext): Promise<string> {
+  if (entry.proofKeystoreRef === undefined || entry.proofKeystoreRef === '') {
+    throw new WssError('wss-proof-key-missing', 'A holder-of-key SAML token needs a proof certificate.');
+  }
+  return (await aliasOf(entry.proofKeystoreRef, entry.proofAlias, config, ctx)).certPem;
+}
+
 /**
  * @throws WssError `saml-token-invalid` | `saml-token-file-missing` | `ws-trust-unavailable`,
  * or what the issued-token source throws
@@ -72,8 +100,24 @@ export async function resolveSamlToken(
     };
   }
   if (entry.source === 'form') {
-    void config;
-    throw new WssError('wss-entry-unsupported', 'Form SAML tokens are not supported yet.');
+    const signing = entry.sign === undefined ? undefined : await signingKeyOf(entry.sign, config, ctx);
+    const proofCertPem = entry.confirmation === 'holder-of-key' ? await formProofCertOf(entry, config, ctx) : undefined;
+    const xml = buildSamlAssertion(entry, {
+      clock: ctx.clock,
+      uuid: ctx.uuid,
+      ...(signing !== undefined ? { signing } : {}),
+      ...(proofCertPem !== undefined ? { proofCertPem } : {}),
+    });
+    const read = readAssertion(xml);
+    return {
+      assertionXml: xml,
+      placed: {
+        version: read.version,
+        ...(read.id !== undefined ? { assertionId: read.id } : {}),
+        ...(proofCertPem !== undefined ? { proofCertPem } : {}),
+        confirmation: entry.confirmation,
+      },
+    };
   }
   const read = readAssertion(await xmlOf(entry, ctx));
   return {

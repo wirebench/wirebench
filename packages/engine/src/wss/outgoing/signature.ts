@@ -94,7 +94,7 @@ function resolvePart(root: Element, part: WssPart, envelopeNs: string): Element 
 }
 
 /** The private key of `alias`, decrypted with `passphrase` when its PEM needs one. */
-function privateKeyOf(alias: KeystoreAlias, passphrase: string | undefined): KeyObject {
+export function privateKeyOf(alias: KeystoreAlias, passphrase: string | undefined): KeyObject {
   const keyPem = alias.keyPem;
   if (keyPem === undefined || keyPem === '') {
     throw new WssError('wss-signing-key-missing', `Keystore alias "${alias.alias}" has no private key to sign with.`);
