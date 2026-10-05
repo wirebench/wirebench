@@ -3,12 +3,14 @@
  * shape, metadata both ways, statuses in trailers and in headers, deadlines, cancellation,
  * compression, TLS, and the failures a server that is not gRPC produces.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { GrpcError, HttpError, ProtoError } from '../../../src/errors.js';
 import { callGrpc } from '../../../src/grpc/call.js';
 import { encodeMessage } from '../../../src/grpc/codec.js';
 import { sendGrpc, type GrpcSendInput } from '../../../src/grpc/send.js';
+import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
 import { entry } from '../../../src/rest/model.js';
+import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 import { generateServerCert, generateTestCa } from '../../helpers/test-certs.js';
 import { startTestGrpcServer, type TestGrpcServer } from '../../helpers/test-grpc-server.js';
 import { startTestRestServer, type TestRestServer } from '../../helpers/test-rest-server.js';
@@ -21,6 +23,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server.close();
+});
+
+afterEach(() => {
+  configureKerberos(undefined);
 });
 
 const SERVICE = 'wirebench.greet.Greeter';
@@ -78,6 +84,15 @@ describe('sendGrpc', () => {
     const raw = Buffer.from(exchange.rawRequest).toString('latin1');
     expect(raw.startsWith(':method: POST\r\n')).toBe(true);
     expect(Buffer.from(exchange.rawResponse).toString('latin1')).toContain('grpc-status: 0');
+  });
+
+  it('sends one preemptive Negotiate token as the authorization metadata for Kerberos', async () => {
+    const provider = fakeKerberos();
+    configureKerberos(provider);
+    const exchange = await sendGrpc(input({ auth: { type: 'kerberos' } }));
+    expect(exchange.status).toBe(0);
+    expect(server.calls.at(-1)!.headers['authorization']).toBe(`Negotiate ${Buffer.from('ap-req').toString('base64')}`);
+    expect(provider.inits).toHaveLength(1);
   });
 
   it('reads every message of a server stream', async () => {

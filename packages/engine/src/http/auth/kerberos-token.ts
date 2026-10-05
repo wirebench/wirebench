@@ -124,6 +124,17 @@ export async function negotiateBearer(
   return { type: 'bearer', scheme: 'Negotiate', token: Buffer.from(token).toString('base64') };
 }
 
+export type NegotiateBearer = { readonly type: 'bearer'; readonly scheme: 'Negotiate'; readonly token: string };
+
+/** The credential for a one-request path: Kerberos becomes a preemptive Negotiate bearer; the rest pass. */
+export async function withNegotiate<T extends { readonly type: string }>(
+  auth: T | undefined,
+  url: string,
+  options?: KerberosOptions,
+): Promise<T | NegotiateBearer | undefined> {
+  return auth?.type === 'kerberos' ? negotiateBearer(auth as unknown as KerberosSendAuth, url, options) : auth;
+}
+
 const KNOWN: readonly (readonly [RegExp, string, (spn: string) => string])[] = [
   [
     /no kerberos credentials|SEC_E_NO_CREDENTIALS|credentials cache/i,

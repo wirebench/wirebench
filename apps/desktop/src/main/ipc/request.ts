@@ -968,9 +968,12 @@ async function wsCommand(
   resolved: WsPreview,
 ): Promise<RequestCurlResponse> {
   const show = deps.showSecrets?.get() ?? false;
-  const auth = show
+  const resolvedAuth = show
     ? await resolveAuthConfig(resolved.auth, (ref) => deps.getSecret?.(ref) ?? Promise.resolve(undefined))
     : placeholderAuth(resolved.auth);
+  // A Negotiate token is made per handshake and cannot be written into a command line.
+  const kerberos = resolvedAuth?.type === 'kerberos';
+  const auth = kerberos ? undefined : resolvedAuth;
   const material: WsSessionMaterial = { ...(auth !== undefined ? { auth } : {}) };
   const options = toWsSessionOptions(resolved.input, material);
   const command = wsToCommand(options, { shell: request.shell });
@@ -978,6 +981,7 @@ async function wsCommand(
   const asTyped = resolved.unresolved.length > 0 || resolved.secretTokens;
   const notes = [
     'Proxy, CA and client certificate settings are not reconstructable in this command.',
+    ...(kerberos ? ['Kerberos is not expressible in this command; the upgrade is shown without authorization.'] : []),
     ...(asTyped ? ['Some ${…} references did not resolve; they are shown as typed.'] : []),
   ];
   return { command, notes };

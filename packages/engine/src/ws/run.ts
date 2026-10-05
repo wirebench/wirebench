@@ -9,6 +9,7 @@
 import type { AssertionSubject } from '../assert/model.js';
 import { HttpError, WsError } from '../errors.js';
 import { resolveAuthChain } from '../http/auth/apply-auth.js';
+import { withNegotiate } from '../http/auth/kerberos-token.js';
 import type { AuthConfig, Project } from '../project/model.js';
 import { DEFAULT_PREFERENCES } from '../project/preferences.js';
 import type { Preferences } from '../project/preferences.js';
@@ -176,8 +177,10 @@ async function connectWs(
   const tls = await tlsFor(context, settings.sslKeystoreRef, settings.trustInvalid === true);
   const proxy = await context.host.proxyFor?.(dialledUrl(input).replace(/^ws/, 'http'));
   const auth = await authFor(wsEffectiveAuth(selected), selected.path, context, tls);
+  // A handshake is one request: Kerberos goes on preemptively as a Negotiate header.
+  const sendAuth = await withNegotiate(auth, dialledUrl(input).replace(/^ws/, 'http'));
   return toWsSessionOptions(input, {
-    ...(auth !== undefined ? { auth } : {}),
+    ...(sendAuth !== undefined ? { auth: sendAuth } : {}),
     ...(tls !== undefined ? { tls } : {}),
     ...(proxy !== undefined ? { proxy } : {}),
     signal,

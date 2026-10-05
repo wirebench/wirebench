@@ -5,6 +5,7 @@ import {
   negotiateBearer,
   normaliseSpn,
   startKerberosContext,
+  withNegotiate,
 } from '../../../../src/http/auth/kerberos-token.js';
 import { fakeKerberos } from '../../../helpers/fake-kerberos.js';
 
@@ -110,5 +111,19 @@ describe('kerberosToken and negotiateBearer', () => {
       platform: 'linux',
     });
     expect(provider.inits.map((init) => init.spn)).toEqual(['HTTP@svc.corp', 'HTTP@alias.corp']);
+  });
+});
+
+describe('withNegotiate', () => {
+  it('turns Kerberos into one preemptive Negotiate bearer', async () => {
+    await expect(
+      withNegotiate({ type: 'kerberos' }, 'wss://svc.corp/ws', { provider: fakeKerberos(), platform: 'linux' }),
+    ).resolves.toEqual({ type: 'bearer', scheme: 'Negotiate', token: Buffer.from('ap-req').toString('base64') });
+  });
+
+  it('leaves every other scheme alone', async () => {
+    const basic = { type: 'basic', username: 'u', password: 'p', preemptive: true } as const;
+    await expect(withNegotiate(basic, 'wss://x')).resolves.toBe(basic);
+    await expect(withNegotiate(undefined, 'wss://x')).resolves.toBeUndefined();
   });
 });

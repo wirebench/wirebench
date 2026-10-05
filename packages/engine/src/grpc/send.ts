@@ -18,6 +18,7 @@ import http2 from 'node:http2';
 import type { ClientHttp2Session, ClientHttp2Stream, IncomingHttpHeaders, OutgoingHttpHeaders } from 'node:http2';
 import { gunzipSync, inflateSync } from 'node:zlib';
 import { GrpcError } from '../errors.js';
+import { withNegotiate } from '../http/auth/kerberos-token.js';
 import { toHttpError } from '../http/errors.js';
 import { captureSslInfo } from '../http/tls.js';
 import type { SslInfo, TlsSocketLike } from '../http/tls.js';
@@ -150,7 +151,7 @@ function authHeaders(auth: SendAuth | undefined): Record<string, string> {
     default:
       throw new GrpcError(
         'grpc-auth-unsupported',
-        'NTLM cannot authenticate a gRPC call; it is an HTTP/1.1 connection handshake.',
+        `${auth.type} cannot authenticate a gRPC call directly; NTLM is an HTTP/1.1 connection handshake, and Kerberos needs a Negotiate token made first.`,
         {
           details: { type: auth.type },
         },
@@ -297,7 +298,12 @@ export async function sendGrpc(input: GrpcSendInput): Promise<GrpcExchange> {
   const now = input.now ?? (() => performance.now());
   const startedAtMs = now();
   const startedAt = new Date().toISOString();
-  const requestHeaders = buildGrpcHeaders(input, target);
+  // One token per call, at call start: an HTTP/2 stream has no 401 to wait for.
+  const callAuth = await withNegotiate(input.auth, `${target.tls ? 'https' : 'http'}://${target.authority}`);
+  const requestHeaders = buildGrpcHeaders(
+    callAuth === input.auth || callAuth === undefined ? input : { ...input, auth: callAuth },
+    target,
+  );
   // What was actually sent, which in interactive mode grows after the call opens; the exchange
   // reports these rather than `input.messages` so its record and its raw bytes stay the same thing.
   const sent: Uint8Array[] = [...input.messages];
