@@ -143,19 +143,24 @@ export async function withNegotiate<T extends { readonly type: string }>(
   return auth?.type === 'kerberos' ? negotiateBearer(auth as unknown as KerberosSendAuth, url, options) : auth;
 }
 
+/**
+ * GSSAPI texts (MIT and Heimdal) and the Windows binding's, which is "InitializeSecurityContext: "
+ * plus the English FormatMessage text, not the symbolic SEC_E_* name. A localised Windows falls
+ * through to kerberos-failed, which still carries the OS text.
+ */
 const KNOWN: readonly (readonly [RegExp, string, (spn: string) => string])[] = [
   [
-    /no kerberos credentials|SEC_E_NO_CREDENTIALS|credentials cache/i,
+    /no kerberos credentials|no credentials were supplied|no credentials are available|SEC_E_NO_CREDENTIALS|credentials cache/i,
     'kerberos-no-credentials',
     () => 'No Kerberos ticket. Sign in to the domain, or run `kinit`.',
   ],
   [
-    /not found in kerberos database|S_PRINCIPAL_UNKNOWN|SEC_E_TARGET_UNKNOWN/i,
+    /not found in kerberos database|target is unknown or unreachable|target principal name is incorrect|S_PRINCIPAL_UNKNOWN|SEC_E_TARGET_UNKNOWN/i,
     'kerberos-unknown-spn',
     (spn) => `The KDC does not know ${spn}. Set the SPN to the name the service is registered under.`,
   ],
   [
-    /clock skew|TIME_SKEW|AP_ERR_SKEW/i,
+    /clock skew|clocks on the client and server machines are skewed|TIME_SKEW|AP_ERR_SKEW/i,
     'kerberos-clock-skew',
     () => "This machine's clock differs from the domain's by more than allowed.",
   ],

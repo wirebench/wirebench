@@ -69,11 +69,14 @@ describe('startKerberosContext', () => {
 
   it.each([
     ['No Kerberos credentials available (default cache: FILE:/tmp/x)', 'kerberos-no-credentials'],
-    ['SEC_E_NO_CREDENTIALS', 'kerberos-no-credentials'],
+    ['No credentials were supplied, or the credentials were unavailable or inaccessible', 'kerberos-no-credentials'],
+    ['InitializeSecurityContext: No credentials are available in the security package', 'kerberos-no-credentials'],
     ['Server not found in Kerberos database', 'kerberos-unknown-spn'],
+    ['InitializeSecurityContext: The specified target is unknown or unreachable', 'kerberos-unknown-spn'],
+    ['InitializeSecurityContext: The target principal name is incorrect.', 'kerberos-unknown-spn'],
     ['SEC_E_TARGET_UNKNOWN', 'kerberos-unknown-spn'],
     ['Clock skew too great', 'kerberos-clock-skew'],
-    ['SEC_E_TIME_SKEW', 'kerberos-clock-skew'],
+    ['InitializeSecurityContext: The clocks on the client and server machines are skewed.', 'kerberos-clock-skew'],
     ['Something else entirely', 'kerberos-failed'],
   ])('maps "%s" to %s, naming the SPN and keeping the OS text', async (osMessage, code) => {
     const provider = fakeKerberos({ initError: osMessage });
