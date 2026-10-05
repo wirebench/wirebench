@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { sendWithAuth } from '../../../src/http/auth/apply.js';
 import { configureKerberos } from '../../../src/http/auth/kerberos-native.js';
-import { kerberosHandshake } from '../../../src/http/auth/kerberos-transport.js';
 import { fakeKerberos } from '../../helpers/fake-kerberos.js';
 import { startNegotiateServer, type NegotiateServer } from '../../helpers/negotiate-server.js';
 
@@ -66,16 +65,6 @@ describe('Kerberos over HTTP Negotiate', () => {
     await expect(sendWithAuth(post(server.url), { type: 'kerberos' })).rejects.toMatchObject({
       code: 'kerberos-mutual-auth-failed',
     });
-  });
-
-  it('sends preemptively when asked: one request', async () => {
-    configureKerberos(fakeKerberos());
-    server = await startNegotiateServer({ expectedToken: TOKEN });
-    const result = await kerberosHandshake(post(server.url), { type: 'kerberos' }, { preemptive: true });
-    expect(result.attempts).toBe(1);
-    expect(result.http.status).toBe(200);
-    expect(server.requests).toHaveLength(1);
-    expect(server.requests[0]?.authorization).toBe(`Negotiate ${TOKEN}`);
   });
 
   it('takes a blank SPN as the default one', async () => {

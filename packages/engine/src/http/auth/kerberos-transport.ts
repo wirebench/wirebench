@@ -7,7 +7,7 @@
  *          `WWW-Authenticate: Negotiate <reply>` on it is verified (mutual auth)
  *
  * The token is only made once the server asks, so an unchallenged send never loads the binding.
- * `preemptive` skips leg 1: an AP-REQ stands on its own, which an NTLM message does not.
+ * The one-request paths send a preemptive token through `negotiateBearer` instead.
  */
 
 import type { Dispatcher } from 'undici';
@@ -45,7 +45,7 @@ export function negotiateToken(header: string | undefined): Uint8Array | undefin
 export async function kerberosHandshake(
   request: HttpRequest,
   auth: KerberosSendAuth,
-  options: { readonly now?: () => number; readonly dispatcher?: Dispatcher; readonly preemptive?: boolean } = {},
+  options: { readonly now?: () => number; readonly dispatcher?: Dispatcher } = {},
 ): Promise<KerberosHandshakeResult> {
   const now = options.now ?? Date.now;
   const startedAt = now();
@@ -74,23 +74,15 @@ export async function kerberosHandshake(
   };
 
   try {
-    let challenged = false;
-    let firstResponse: HttpExchange | undefined;
-    if (options.preemptive !== true) {
-      const first = await leg(request.headers);
-      if (first.status !== 401 || !offersNegotiate(headerValue(first.headers, 'www-authenticate'))) {
-        return { http: first, attempts: 1, challenged: first.status === 401, durationMs, spn: spnWanted };
-      }
-      challenged = true;
-      firstResponse = first;
-      if (remaining() <= 0) return { http: first, attempts: 1, challenged, durationMs, spn: spnWanted };
+    const first = await leg(request.headers);
+    if (first.status !== 401 || !offersNegotiate(headerValue(first.headers, 'www-authenticate'))) {
+      return { http: first, attempts: 1, challenged: first.status === 401, durationMs, spn: spnWanted };
     }
+    if (remaining() <= 0) return { http: first, attempts: 1, challenged: true, durationMs, spn: spnWanted };
 
     const context = await startKerberosContext(spnWanted, auth);
     // A slow KDC or SSPI call can spend the budget; report leg 1's 401 rather than send leg 2 into a certain timeout.
-    if (firstResponse !== undefined && remaining() <= 0) {
-      return { http: firstResponse, attempts: 1, challenged, durationMs, spn: context.spn };
-    }
+    if (remaining() <= 0) return { http: first, attempts: 1, challenged: true, durationMs, spn: context.spn };
     const final = await leg({
       ...request.headers,
       Authorization: `Negotiate ${Buffer.from(context.token).toString('base64')}`,
@@ -102,7 +94,7 @@ export async function kerberosHandshake(
     }
     const reply = negotiateToken(headerValue(final.headers, 'www-authenticate'));
     if (reply !== undefined) await context.verify(reply);
-    return { http: final, attempts: options.preemptive === true ? 1 : 2, challenged, durationMs, spn: context.spn };
+    return { http: final, attempts: 2, challenged: true, durationMs, spn: context.spn };
   } finally {
     if (ownDispatcher !== undefined) await ownDispatcher.close().catch(() => undefined);
   }
