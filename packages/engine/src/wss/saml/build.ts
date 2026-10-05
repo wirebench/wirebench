@@ -138,6 +138,7 @@ export function buildSamlAssertion(entry: WssSamlFormEntry, input: BuildSamlInpu
     publicCert: signing.alias.certPem,
     canonicalizationAlgorithm: EXC_C14N,
     signatureAlgorithm: SIGNATURE_URIS[algorithm],
+    idAttribute,
     getKeyInfoContent: () =>
       `<ds:X509Data><ds:X509Certificate>${certificateBase64(signing.alias.certPem)}</ds:X509Certificate></ds:X509Data>`,
   });

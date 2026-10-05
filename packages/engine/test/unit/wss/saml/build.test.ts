@@ -90,6 +90,13 @@ describe('buildSamlAssertion', () => {
     expect(xml.endsWith('</ds:Signature></saml:Assertion>')).toBe(true);
   });
 
+  it.each(['2.0', '1.1'] as const)("references the assertion's own id, adding no Id attribute (%s)", (version) => {
+    const xml = buildSamlAssertion({ ...signed, version }, { clock, uuid, signing: { alias } });
+    expect(xml).toContain('<ds:Reference URI="#_1b2c">');
+    const root = /^<[^>]*>/.exec(xml)?.[0] ?? '';
+    expect(root).not.toMatch(/ Id=/);
+  });
+
   it('places the issuer signature right after saml2:Issuer, as the schema requires', () => {
     const xml = buildSamlAssertion(signed, { clock, uuid, signing: { alias } });
     expect(xml.indexOf('</saml2:Issuer>')).toBeLessThan(xml.indexOf('<ds:Signature'));
