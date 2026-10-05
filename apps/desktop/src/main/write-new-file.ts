@@ -9,7 +9,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { link, rm, writeFile } from 'node:fs/promises';
+import { link, open, rm, writeFile } from 'node:fs/promises';
 
 /** Link errors that mean the file system has no hard links (FAT, some network shares), not a clash. */
 const NO_HARD_LINKS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
@@ -22,7 +22,8 @@ function codeOf(error: unknown): string | undefined {
  * Writes `data` to `path` when nothing is at that name, never replacing or following what is.
  *
  * Where the file system has no hard links, the file is created with an exclusive open (`wx`)
- * instead: still never replacing anything, though a crash mid-write could leave it short.
+ * instead: still never replacing anything. A write that fails after that open removes the file it
+ * created, so a failed import leaves no short script behind; only a crash mid-write could.
  *
  * @returns `false` when something already exists at `path`; nothing is written then
  * @throws the write or link error for anything else
@@ -41,11 +42,21 @@ export async function writeNewFile(path: string, data: Buffer): Promise<boolean>
   } finally {
     await rm(temp, { force: true }).catch(() => undefined);
   }
+  let handle;
   try {
-    await writeFile(path, data, { flag: 'wx' });
+    handle = await open(path, 'wx');
+  } catch (error) {
+    // Nothing was created, so nothing is removed: what is at the name is not this write's.
+    if (codeOf(error) === 'EEXIST') return false;
+    throw error;
+  }
+  try {
+    await handle.writeFile(data);
+    await handle.close();
     return true;
   } catch (error) {
-    if (codeOf(error) === 'EEXIST') return false;
+    await handle.close().catch(() => undefined);
+    await rm(path, { force: true }).catch(() => undefined);
     throw error;
   }
 }

@@ -4,7 +4,7 @@
  */
 import { toCurl, wsToCommand, type CurlHeader } from '@wirebench/engine';
 import type { LogEntryWire, RequestCurlResponse, WsHandshakeExchangeSummary } from '../shared/wire-types.js';
-import { redactHeaders, redactStructuredBody, redactUrl, redactXml } from './redact.js';
+import { isXmlBody, redactHeaders, redactStructuredBody, redactUrl, redactXml } from './redact.js';
 
 const TRANSPORT_HEADERS = new Set(['host', 'content-length', 'connection', 'transfer-encoding']);
 const TRUNCATED_NOTE = 'The request body was truncated in the log and is not included.';
@@ -161,7 +161,7 @@ export function curlForLogEntry(
       ? undefined
       : show
         ? logged.body
-        : redactStructuredBody(redactXml(logged.body), contentType);
+        : redactStructuredBody(redactXml(logged.body, { xml: isXmlBody(logged.body, contentType) }), contentType);
   const curlHeaders: CurlHeader[] = Object.entries(headers).map(([name, value]) => ({ name, value }));
   const acceptsEventStream = Object.entries(logged.headers).some(
     ([name, value]) => name.toLowerCase() === 'accept' && value.toLowerCase().includes('text/event-stream'),

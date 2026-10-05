@@ -150,6 +150,9 @@ describe('reading a checked file through a no-follow handle', () => {
     writeFileSync(join(dir, 'a.json'), '{"a":1}');
     expect((await readNoFollow(join(dir, 'a.json'), 64, tooLarge))?.toString('utf8')).toBe('{"a":1}');
     await expect(readNoFollow(join(dir, 'a.json'), 3, tooLarge)).rejects.toThrow('too large');
+    expect((await readNoFollow(join(dir, 'a.json'), 7, tooLarge))?.toString('utf8')).toBe('{"a":1}');
+    writeFileSync(join(dir, 'empty.json'), '');
+    expect((await readNoFollow(join(dir, 'empty.json'), 0, tooLarge))?.length).toBe(0);
     mkdirSync(join(dir, 'folder'));
     expect(await readNoFollow(join(dir, 'folder'), 64, tooLarge)).toBeUndefined();
   });

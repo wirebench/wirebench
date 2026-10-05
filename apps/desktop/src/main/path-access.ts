@@ -163,10 +163,24 @@ export async function readNoFollow(path: string, maxBytes: number, tooLarge: () 
   try {
     const opened = await handle.stat();
     if (!opened.isFile() || opened.dev !== seen.dev || opened.ino !== seen.ino) return undefined;
-    const bytes = await handle.readFile();
-    // The file may have grown since the `lstat`: what was read is what counts.
-    if (bytes.length > maxBytes) throw tooLarge();
-    return bytes;
+    if (opened.size > maxBytes) throw tooLarge();
+    // The file may still grow while it is read: never read more than one byte past the cap, so a
+    // growing file is refused without ever being buffered whole.
+    let buffer = Buffer.alloc(Math.min(opened.size, maxBytes) + 1);
+    let length = 0;
+    for (;;) {
+      if (length === buffer.length) {
+        if (length > maxBytes) throw tooLarge();
+        const grown = Buffer.alloc(Math.min(buffer.length * 2, maxBytes + 1));
+        buffer.copy(grown, 0, 0, length);
+        buffer = grown;
+      }
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    if (length > maxBytes) throw tooLarge();
+    return buffer.subarray(0, length);
   } finally {
     await handle.close();
   }

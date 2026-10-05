@@ -162,10 +162,24 @@ export function redactUrl(url: string, opts?: { show?: boolean; extraParams?: re
   return opts?.show === true ? out : maskRecorded(out);
 }
 
-/** See the engine's `redactXml`; recorded values are masked anywhere in the document too. */
-export function redactXml(text: string, opts?: { show?: boolean }): string {
+/**
+ * See the engine's `redactXml`; recorded values are masked anywhere in the document too, with the
+ * escaped marker the element rule writes. A caller that runs this pass over a body it does not know
+ * to be XML (an export that masks every body the same way) passes `xml: false`, so a recorded value
+ * in JSON or plain text keeps the raw marker.
+ */
+export function redactXml(text: string, opts?: { show?: boolean; xml?: boolean }): string {
   const out = redactXmlByElement(text, opts);
-  return opts?.show === true ? out : maskRecorded(out, true);
+  return opts?.show === true ? out : maskRecorded(out, opts?.xml !== false);
+}
+
+/**
+ * Whether a body is XML: its content type says so, or it names none and opens with `<`. For the
+ * callers that mask every body with both passes and must pick the marker.
+ */
+export function isXmlBody(text: string, contentType: string | undefined): boolean {
+  if (contentType === undefined || contentType === '') return text.trimStart().startsWith('<');
+  return contentType.toLowerCase().includes('xml');
 }
 
 /** See the engine's `redactStructuredBody`; recorded values are masked anywhere in the body too. */
