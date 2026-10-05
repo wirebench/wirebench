@@ -60,6 +60,7 @@ describe('licenseState (licensing spec §3.3)', () => {
   ])('%s → %s (%s)', (_name, now, status, edition) => {
     const s = state(license(keys), now);
     expect(s.status).toBe(status);
+    expect(s.serverId).toBe(SERVER);
     expect(s.edition).toBe(edition);
     expect(s.seats.limit).toBe(edition === 'community' ? 5 : 50);
   });

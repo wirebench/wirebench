@@ -20,6 +20,7 @@ import { BUILTIN_MODULES } from '../modules.js';
 import { allMigrations, StartupError } from '../serve.js';
 import { identitySettings, type InvitationEnv } from './env.js';
 import { createInvitation, invitationSummary, isOpen, revokeOpenInvitation } from './invitations.js';
+import { serverId as readServerId } from '../licensing/repo.js';
 import * as repo from './repo.js';
 
 type AdminCommand = Extract<ServerCommand, { command: `admin-${string}` }>;
@@ -30,30 +31,19 @@ export async function runAdmin(
   io: ServerIo,
   options: { readonly now?: () => Date; readonly publicKeys?: readonly KeyObject[] } = {},
 ): Promise<number> {
-  let env: InvitationEnv;
+  let config: ReturnType<typeof loadConfig>;
   let db: ReturnType<typeof createDatabase>;
   let publicKeys: readonly KeyObject[];
-  let serverId: string;
+  let hooks: ReturnType<typeof serverHooks>;
+  const now = options.now ?? (() => new Date());
   try {
-    const config = loadConfig(io.env, packageVersion());
+    config = loadConfig(io.env, packageVersion());
     delete process.env.WIREBENCH_SERVER_DATABASE_URL;
     db = createDatabase(config.databaseUrl);
-    const now = options.now ?? (() => new Date());
     publicKeys = options.publicKeys ?? PRODUCTION_PUBLIC_KEYS;
-    const hooks = serverHooks();
+    hooks = serverHooks();
     // Events the CLI records are queued like the server's, for the running server to forward.
     hooks.audit.push(auditHook(now, { forward: Boolean(config.auditForwardUrl) }));
-    serverId = ''; // Task 2 reads the minted id
-    env = {
-      ctx: {
-        db,
-        config,
-        hooks,
-        license: createLicenseService({ db, publicKeys, now, serverId }),
-      },
-      settings: identitySettings(config),
-      now,
-    };
   } catch (error) {
     if (error instanceof ConfigError) {
       for (const problem of error.problems) io.stderr.write(`${problem.variable}: ${problem.message}\n`);
@@ -67,6 +57,13 @@ export async function runAdmin(
       io.stderr.write(`${pending.length} migrations are pending; run wirebench-server migrate first\n`);
       return ExitCode.Migration;
     }
+    // Only now: before migrations the server_identity table may not exist.
+    const serverId = await readServerId(db);
+    const env: InvitationEnv = {
+      ctx: { db, config, hooks, license: createLicenseService({ db, publicKeys, now, serverId }) },
+      settings: identitySettings(config),
+      now,
+    };
     switch (command.command) {
       case 'admin-invite': {
         const created = await createInvitation(env, {

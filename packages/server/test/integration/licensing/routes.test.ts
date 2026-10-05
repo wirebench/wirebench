@@ -47,12 +47,13 @@ async function setUp(): Promise<{
 describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
   it('a fresh server is Community with five seats, and /meta says so', async () => {
     const { h, admin } = await setUp();
+    const id = await repo.serverId(h.db);
     expect((await call<LicenseState>(h, admin, 'GET', '/license')).body).toEqual({
       edition: 'community',
       status: 'none',
       seats: { used: 2, limit: 5 },
       features: [],
-      serverId: expect.any(String) as string,
+      serverId: id,
     });
     expect((await call<{ edition: string }>(h, undefined, 'GET', '/meta')).body.edition).toBe('community');
   });
@@ -99,6 +100,24 @@ describeDb('the license endpoints (licensing spec §3.6, §13)', () => {
       status: 'active',
     });
     expect(events).toEqual([]);
+  });
+
+  it('installs a license bound to this server and refuses one bound to another, keeping the stored one', async () => {
+    const { h, admin } = await setUp();
+    const id = await repo.serverId(h.db);
+    const bound = await call<LicenseState>(h, admin, 'PUT', '/license', { license: license(keys, { serverId: id }) });
+    expect(bound.status).toBe(200);
+    expect(bound.body.status).toBe('active');
+    const stored = (await repo.storedLicense(h.db))?.text;
+    const foreign = '11111111-2222-4333-8444-555555555555';
+    const res = await call<{ code: string; message: string }>(h, admin, 'PUT', '/license', {
+      license: license(keys, { serverId: foreign, customer: 'Other AG' }),
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('licensing-invalid');
+    expect(res.body.message).toContain(foreign);
+    expect(res.body.message).toContain(id);
+    expect((await repo.storedLicense(h.db))?.text).toBe(stored);
   });
 
   it('removes the license; the server is Community on the next request', async () => {

@@ -51,6 +51,7 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     const before = io();
     expect(await runAdmin({ command: 'admin-license-show' }, before.io, options)).toBe(0);
     expect(before.stdout()).toContain('Community (none)');
+    expect(before.stdout()).toMatch(/^Server id   [0-9a-f-]{36}\n/);
 
     const install = io();
     expect(
@@ -85,6 +86,21 @@ describeDb('wirebench-server admin license (licensing spec §3.7)', () => {
     const show = io();
     await runAdmin({ command: 'admin-license-show' }, show.io, options);
     expect(show.stdout()).toContain('Team (active)');
+  });
+
+  it('refuses a license bound to another server with exit 2', async () => {
+    const wrong = io();
+    expect(
+      await runAdmin(
+        {
+          command: 'admin-license-install',
+          file: await file('wrong.lic', license(keys, { serverId: '11111111-2222-4333-8444-555555555555' })),
+        },
+        wrong.io,
+        options,
+      ),
+    ).toBe(2);
+    expect(wrong.stderr()).toMatch(/^licensing-invalid: This license was issued for server /);
   });
 
   it('exits 2 when the file cannot be read', async () => {
