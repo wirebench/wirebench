@@ -76,7 +76,12 @@ async function locate(tool: string, options: SourceToolOptions): Promise<string>
       `${wrapper} is a script wrapper, which Wirebench does not run on Windows (it would need a shell). Map this name to another kind on this machine.`,
     );
   }
-  throw secretSourceError('secret-source-unavailable', '', '', `The ${tool} command was not found.${installHint(tool)}`);
+  throw secretSourceError(
+    'secret-source-unavailable',
+    '',
+    '',
+    `The ${tool} command was not found.${installHint(tool)}`,
+  );
 }
 
 const found = new Map<string, Promise<string>>();
@@ -120,20 +125,45 @@ export const runSourceTool: RunSourceTool = (path, args, options = {}) =>
           resolve({ stdout, stderr: shown, exitCode: 0 });
           return;
         }
-        const failure = error as NodeJS.ErrnoException & { killed?: boolean; signal?: NodeJS.Signals | null; code?: string | number };
+        const failure = error as NodeJS.ErrnoException & {
+          killed?: boolean;
+          signal?: NodeJS.Signals | null;
+          code?: string | number;
+        };
         if (failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
-          reject(secretSourceError('secret-source-failed', '', '', `The command's output passed ${String(SOURCE_STDOUT_MAX / 1024)} KiB.`));
+          reject(
+            secretSourceError(
+              'secret-source-failed',
+              '',
+              '',
+              `The command's output passed ${String(SOURCE_STDOUT_MAX / 1024)} KiB.`,
+            ),
+          );
           return;
         }
         if (failure.killed === true || (failure.signal !== null && failure.signal !== undefined)) {
-          reject(secretSourceError('secret-source-failed', '', '', `The command did not finish within ${String(timeoutMs / 1000)} s.`));
+          reject(
+            secretSourceError(
+              'secret-source-failed',
+              '',
+              '',
+              `The command did not finish within ${String(timeoutMs / 1000)} s.`,
+            ),
+          );
           return;
         }
         if (typeof failure.code === 'number') {
           resolve({ stdout, stderr: shown, exitCode: failure.code });
           return;
         }
-        reject(secretSourceError('secret-source-unavailable', '', '', `The command could not be started (${String(failure.code ?? 'error')}).`));
+        reject(
+          secretSourceError(
+            'secret-source-unavailable',
+            '',
+            '',
+            `The command could not be started (${String(failure.code ?? 'error')}).`,
+          ),
+        );
       },
     );
     child.stdin?.on('error', () => undefined);

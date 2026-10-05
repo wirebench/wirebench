@@ -4,7 +4,9 @@ import { withSource, secretSourceError } from '../../../../src/secrets/sources/e
 
 describe('argvFor', () => {
   it('builds each kind', () => {
-    expect(argvFor({ kind: 'vault', path: 'kv/app', field: 'password', mount: 'secret', namespace: 'team' }, 'linux')).toEqual({
+    expect(
+      argvFor({ kind: 'vault', path: 'kv/app', field: 'password', mount: 'secret', namespace: 'team' }, 'linux'),
+    ).toEqual({
       tool: 'vault',
       args: ['kv', 'get', '-field=password', '-mount=secret', '-namespace=team', 'kv/app'],
     });
@@ -31,7 +33,19 @@ describe('argvFor', () => {
     });
     expect(argvFor({ kind: 'azure', vault: 'team-kv', name: 'api-key' }, 'linux')).toEqual({
       tool: 'az',
-      args: ['keyvault', 'secret', 'show', '--vault-name', 'team-kv', '--name', 'api-key', '--query', 'value', '--output', 'tsv'],
+      args: [
+        'keyvault',
+        'secret',
+        'show',
+        '--vault-name',
+        'team-kv',
+        '--name',
+        'api-key',
+        '--query',
+        'value',
+        '--output',
+        'tsv',
+      ],
     });
     expect(argvFor({ kind: '1password', ref: 'op://T/S/password' }, 'linux')).toEqual({
       tool: 'op',
@@ -91,7 +105,11 @@ describe('parseSourceOutput', () => {
 
 describe('withSource', () => {
   it('fills in the name and kind and keeps the code', () => {
-    const error = withSource(secretSourceError('secret-source-failed', '', '', 'vault exited with code 2.'), 'db', 'vault');
+    const error = withSource(
+      secretSourceError('secret-source-failed', '', '', 'vault exited with code 2.'),
+      'db',
+      'vault',
+    );
     expect(error).toMatchObject({ code: 'secret-source-failed', details: { name: 'db', kind: 'vault' } });
     expect(error.message).toBe('Secret "db": vault exited with code 2.');
   });

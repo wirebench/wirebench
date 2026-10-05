@@ -46,7 +46,9 @@ describe.skipIf(process.platform === 'win32')('exec', () => {
   it('fails a tool that runs past the timeout', async () => {
     const dir = await toolDir({ gcloud: '/bin/sleep 5' });
     const env = { PATH: `${dir}:/usr/bin:/bin` };
-    await expect(runSourceTool(await findSourceTool('gcloud', { env }), [], { env, timeoutMs: 200 })).rejects.toMatchObject({
+    await expect(
+      runSourceTool(await findSourceTool('gcloud', { env }), [], { env, timeoutMs: 200 }),
+    ).rejects.toMatchObject({
       code: 'secret-source-failed',
     });
   });
@@ -91,7 +93,9 @@ describe.skipIf(process.platform === 'win32')('exec', () => {
   it('skips a directory named like the tool', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'wb-src-'));
     await mkdir(join(dir, 'op'));
-    await expect(findSourceTool('op', { env: { PATH: dir } })).rejects.toMatchObject({ code: 'secret-source-unavailable' });
+    await expect(findSourceTool('op', { env: { PATH: dir } })).rejects.toMatchObject({
+      code: 'secret-source-unavailable',
+    });
   });
 });
 

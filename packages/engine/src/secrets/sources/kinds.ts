@@ -76,7 +76,19 @@ export function argvFor(source: SecretSource, platform: NodeJS.Platform): Source
     case 'azure':
       return {
         tool,
-        args: ['keyvault', 'secret', 'show', '--vault-name', source.vault, '--name', source.name, '--query', 'value', '--output', 'tsv'],
+        args: [
+          'keyvault',
+          'secret',
+          'show',
+          '--vault-name',
+          source.vault,
+          '--name',
+          source.name,
+          '--query',
+          'value',
+          '--output',
+          'tsv',
+        ],
       };
     case '1password':
       return { tool, args: ['read', source.ref] };
@@ -108,14 +120,24 @@ export function parseSourceOutput(source: SecretSource, stdout: string): string 
   try {
     parsed = JSON.parse(value);
   } catch {
-    throw secretSourceError('secret-source-failed', '', 'aws', `The secret is not JSON, so jsonKey "${source.jsonKey}" cannot be read.`);
+    throw secretSourceError(
+      'secret-source-failed',
+      '',
+      'aws',
+      `The secret is not JSON, so jsonKey "${source.jsonKey}" cannot be read.`,
+    );
   }
   const member =
     typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) && Object.hasOwn(parsed, source.jsonKey)
       ? (parsed as Record<string, unknown>)[source.jsonKey]
       : undefined;
   if (typeof member !== 'string' || member.length === 0) {
-    throw secretSourceError('secret-source-failed', '', 'aws', `The secret has no non-empty string member "${source.jsonKey}".`);
+    throw secretSourceError(
+      'secret-source-failed',
+      '',
+      'aws',
+      `The secret has no non-empty string member "${source.jsonKey}".`,
+    );
   }
   return member;
 }
