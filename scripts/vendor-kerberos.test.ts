@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { tarEntry, vendorKerberos } from './vendor-kerberos.ts';
+import { download, tarEntry, vendorKerberos } from './vendor-kerberos.ts';
 
 /** A one-entry ustar archive, gzipped: the shape of a real prebuild tarball. */
 function tarball(content: string): Buffer {
@@ -58,5 +58,75 @@ describe('vendorKerberos', () => {
       prebuilds: Record<string, string>;
     };
     for (const value of Object.values(pins.prebuilds)) expect(value).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('refuses a platform with no pins and leaves outDir alone', async () => {
+    const outDir = await mkdtemp(join(tmpdir(), 'krb-'));
+    await writeFile(join(outDir, 'keep.txt'), 'prior');
+    await expect(
+      vendorKerberos({ platform: 'linux', outDir, pins: {}, fetchBytes: () => Promise.resolve(Buffer.alloc(0)) }),
+    ).rejects.toThrow('No pinned Kerberos prebuilds for platform linux.');
+    await expect(readFile(join(outDir, 'keep.txt'), 'utf8')).resolves.toBe('prior');
+  });
+
+  it('leaves the previous content untouched on a hash mismatch', async () => {
+    const outDir = await mkdtemp(join(tmpdir(), 'krb-'));
+    await mkdir(join(outDir, 'linux-x64'));
+    await writeFile(join(outDir, 'linux-x64', 'kerberos.node'), 'old');
+    await expect(
+      vendorKerberos({
+        platform: 'linux',
+        outDir,
+        pins: { 'linux-x64': '00' },
+        fetchBytes: () => Promise.resolve(tarball('new')),
+      }),
+    ).rejects.toThrow(/SHA-256 mismatch/);
+    await expect(readFile(join(outDir, 'linux-x64', 'kerberos.node'), 'utf8')).resolves.toBe('old');
+  });
+
+  it('refuses a tarball without the binding', async () => {
+    const bytes = gzipSync(Buffer.concat([tarEntry('build/Release/other.node', Buffer.from('x')), Buffer.alloc(1024)]));
+    const outDir = await mkdtemp(join(tmpdir(), 'krb-'));
+    await expect(
+      vendorKerberos({
+        platform: 'linux',
+        outDir,
+        pins: { 'linux-x64': sha(bytes) },
+        fetchBytes: () => Promise.resolve(bytes),
+      }),
+    ).rejects.toThrow(/build\/Release\/kerberos\.node is not in the tarball/);
+  });
+});
+
+describe('download', () => {
+  it('retries a flaky response and then succeeds', async () => {
+    const responses = [new Error('socket hang up'), new Response('', { status: 503 }), new Response('ok')];
+    let calls = 0;
+    const fetchFn = (() => {
+      const next = responses[calls++];
+      return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+    }) as typeof fetch;
+    await expect(download('https://example.test/a', { fetchFn, delaysMs: [0, 0] })).resolves.toEqual(Buffer.from('ok'));
+    expect(calls).toBe(3);
+  });
+
+  it('does not retry a 404', async () => {
+    let calls = 0;
+    const fetchFn = (() => {
+      calls += 1;
+      return Promise.resolve(new Response('', { status: 404 }));
+    }) as typeof fetch;
+    await expect(download('https://example.test/a', { fetchFn, delaysMs: [0, 0] })).rejects.toThrow(/HTTP 404/);
+    expect(calls).toBe(1);
+  });
+
+  it('gives up after three attempts', async () => {
+    let calls = 0;
+    const fetchFn = (() => {
+      calls += 1;
+      return Promise.resolve(new Response('', { status: 429 }));
+    }) as typeof fetch;
+    await expect(download('https://example.test/a', { fetchFn, delaysMs: [0, 0] })).rejects.toThrow(/HTTP 429/);
+    expect(calls).toBe(3);
   });
 });

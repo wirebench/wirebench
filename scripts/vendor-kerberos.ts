@@ -37,7 +37,9 @@ export async function vendorKerberos(options: {
   const pins = options.pins ?? file.prebuilds;
   const fetchBytes = options.fetchBytes ?? download;
   const extracted: (readonly [string, Uint8Array])[] = [];
-  for (const prebuild of Object.keys(pins).filter((name) => name.startsWith(`${options.platform}-`))) {
+  const prebuilds = Object.keys(pins).filter((name) => name.startsWith(`${options.platform}-`));
+  if (prebuilds.length === 0) throw new Error(`No pinned Kerberos prebuilds for platform ${options.platform}.`);
+  for (const prebuild of prebuilds) {
     const url = file.url
       .replaceAll('{version}', file.version)
       .replace('{napi}', String(file.napi))
@@ -63,15 +65,38 @@ export async function vendorKerberos(options: {
   return written;
 }
 
-async function download(url: string): Promise<Buffer> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120_000);
-  try {
-    const response = await fetch(url, { signal: controller.signal, headers: { 'user-agent': 'wirebench-build' } });
-    if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-    return Buffer.from(await response.arrayBuffer());
-  } finally {
-    clearTimeout(timer);
+/** Waits before the 2nd and 3rd attempt of a download. */
+const RETRY_DELAYS_MS: readonly number[] = [1000, 3000];
+
+/** A download that must not be retried: the server answered and the answer will not change. */
+class PermanentDownloadError extends Error {}
+
+/**
+ * Fetches `url` with up to three attempts. Network errors, timeouts, HTTP 5xx and 429 are retried
+ * after the given delays; any other HTTP failure is final. The hash check is the caller's job.
+ */
+export async function download(
+  url: string,
+  options: { readonly fetchFn?: typeof fetch; readonly delaysMs?: readonly number[] } = {},
+): Promise<Buffer> {
+  const fetchFn = options.fetchFn ?? fetch;
+  const delays = options.delaysMs ?? RETRY_DELAYS_MS;
+  for (let attempt = 0; ; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetchFn(url, { signal: controller.signal, headers: { 'user-agent': 'wirebench-build' } });
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      const message = `HTTP ${String(response.status)} for ${url}`;
+      if (response.status >= 500 || response.status === 429) throw new Error(message);
+      throw new PermanentDownloadError(message);
+    } catch (error) {
+      const delay = delays[attempt];
+      if (error instanceof PermanentDownloadError || delay === undefined) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -94,7 +119,12 @@ export function tarEntry(name: string, data: Buffer): Buffer {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const platform = (process.argv[2] ?? process.platform) as 'darwin' | 'linux' | 'win32';
+  const requested = process.argv[2] ?? process.platform;
+  if (requested !== 'darwin' && requested !== 'linux' && requested !== 'win32') {
+    console.error(`kerberos: unsupported platform "${requested}"; use darwin, linux or win32.`);
+    process.exit(1);
+  }
+  const platform = requested;
   const written = await vendorKerberos({ platform, outDir: DEFAULT_OUT_DIR });
   console.log(`kerberos: vendored ${written.length} binding(s) for ${platform}`);
 }
