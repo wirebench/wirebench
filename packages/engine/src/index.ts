@@ -1101,6 +1101,10 @@ export type { WsaHeaderContext } from './wsa/headers.js';
 export { defaultAction, detectWsaDefaults, summarizeWsa } from './wsa/policy-detect.js';
 export type { WsaDetection, WsaSummary } from './wsa/policy-detect.js';
 
+export { createIssuedTokenSource, issuedCacheKey, ISSUED_TOKEN_REFRESH_MARGIN_MS } from './run/issued-token.js';
+export type { IssuedTokenSource, IssuedTokenSourceOptions, IssuedTokenStatus } from './run/issued-token.js';
+export { requestIssuedToken } from './wss/trust/client.js';
+export type { IssuedTokenTarget, TrustDeps } from './wss/trust/client.js';
 export { applyOutgoingWss, removeOutgoingWss } from './wss/apply.js';
 export type { ApplyOutgoingWssOptions, WssRequestProperties } from './wss/apply.js';
 export {
