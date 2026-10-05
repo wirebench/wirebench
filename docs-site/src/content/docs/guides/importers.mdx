@@ -64,7 +64,8 @@ palette, pins it to the legacy format.
 
 2. On the URL tab, optionally turn on **Use Basic auth** and give a username and password to fetch
    the document. **Use these credentials for requests too** carries them onto the interface's
-   requests as well.
+   requests as well. **Kerberos** is offered too; its token goes only to the WSDL's own origin, never to
+   a redirect target on another origin.
 
 3. Choose the target project and **Import**.
 
@@ -85,7 +86,7 @@ Wirebench reads OpenAPI 3.0, 3.1 and 3.2, and Swagger 1.x, 2.0 and 3.x, in YAML 
    URL, file or paste.
 
 2. For a document behind authentication, fill in **Authentication** under the URL: **Basic**, a
-   **Bearer token** or an **API key** in a header or the query string. The password, token or key is
+   **Bearer token**, an **API key** in a header or the query string, or **Kerberos**. The password, token or key is
    kept in your operating system's keychain; the project only records a reference to it.
 
 3. Optionally set **Name** and **Base URL** overrides, and **Cache specification documents with the
@@ -100,7 +101,8 @@ The credentials go only to the document's own origin — its scheme, host and po
 source, a progress message or an error. A server that answers 401 or 403 is reported as needing
 authentication, or as having refused the credentials given. The fetch uses the proxy and CA bundle
 from your preferences. The same **Authentication** section appears for an AsyncAPI document by URL;
-see [AsyncAPI](/wirebench/docs/guides/asyncapi/#import-a-document).
+see [AsyncAPI](/wirebench/docs/guides/asyncapi/#import-a-document). Kerberos is offered for both
+and sends one token, to the document's own origin only.
 
 The summary shows the declared version, the API version if the document gives one, the base URL,
 and the request and folder counts. When the document declares security schemes, they're listed

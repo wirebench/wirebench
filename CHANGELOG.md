@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Kerberos authentication.** A request, an API, a SOAP interface or endpoint, and a definition
+  fetch can authenticate with your Windows sign-in or `kinit` ticket over HTTP Negotiate, with an
+  optional SPN and, on Windows, another account. Kerberos only: nothing falls back to NTLM. The
+  WebSocket upgrade and gRPC calls send it preemptively; the CLI and MCP send it too (#40).
 - **Postman environments and globals.** **Import…** reads Postman environment and globals exports
   (**Import Postman Environment…**, **Import Postman Globals…**). An environment becomes a workspace
   environment, renamed when the name is taken and never made active; globals merge into Globals.

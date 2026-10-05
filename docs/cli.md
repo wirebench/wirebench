@@ -287,6 +287,11 @@ Resolution for a ref, in order:
 
 Neither variable set → the request is `errored` with `secret-missing`, naming the variable to set.
 
+A request that authenticates with Kerberos uses the runner's own ticket cache (`kinit` on the
+runner, or the signed-in Windows account). `passwordEnv` applies to Kerberos only alongside a
+`username`, which is Windows-only. A request whose Kerberos cannot start (no binding, no ticket, an
+explicit account off Windows) is `errored` with its `kerberos-…` code, exit 3, and the run goes on.
+
 The CLI never reads the desktop's `secrets.json` and never touches a keychain — a pipeline has no
 user, so it has no keychain to read.
 
