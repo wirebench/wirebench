@@ -97,6 +97,23 @@ Wirebench places a supplied assertion into the header unchanged. It never gives 
 HTTP Log, the assertion's signature value is masked unless secrets are shown; the rest of the token
 stays readable.
 
+### Holder-of-key and signing over a token
+
+A Signature entry can refer to a SAML token and cover it. Both options sit on the Signature entry,
+and the token has to come earlier in the list.
+
+- **Key identifier: SAML token reference.** The signature's `ds:KeyInfo` points at the SAML assertion
+  with a `wsse:SecurityTokenReference` instead of naming a certificate. Use it for **holder-of-key**:
+  the signature must be made with the proof key the assertion names, so pick the keystore and alias
+  of that key. A signature made with any other key is refused by a receiver.
+- **Cover the SAML token (STR-Transform).** Adds a part that signs the assertion through a
+  `wsse:SecurityTokenReference` and the STR-Transform, without altering it: the assertion keeps no
+  `wsu:Id` and its own issuer signature stays valid. The part does not appear in the parts table; the
+  checkbox adds and removes it.
+
+**Sender vouches** is a signature by your own key over the message body and the token: keep the
+usual certificate key identifier, add the Body part and tick **Cover the SAML token (STR-Transform)**.
+
 <Aside type="note">
 WS-Addressing headers are added automatically when the imported WSDL declares
 `wsaw:UsingAddressing` — no separate configuration step. Each send gets a fresh `wsa:MessageID`.

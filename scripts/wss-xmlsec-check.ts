@@ -395,6 +395,65 @@ async function main(): Promise<void> {
       }
     }
 
+    // A signed SAML 2.0 form assertion: its own (issuer) signature is enveloped in the
+    // assertion and is checked with `--id-attr:ID`, the assertion's id attribute. xmlsec1 has no
+    // STR-Transform, so a message signature that covers a SAML token through it is NOT
+    // cross-checked here (spec section 12); only the assertion's own signature is.
+    {
+      const name = 'saml2-form-assertion-rsa-sha256';
+      const assertionXml = await applyOutgoingWss(
+        ENVELOPE,
+        {
+          id: 'xmlsec-saml',
+          name: 'xmlsec saml',
+          mustUnderstand: false,
+          entries: [
+            {
+              kind: 'saml-token',
+              source: 'form',
+              version: '2.0',
+              issuer: 'urn:wirebench:issuer',
+              subject: 'alice',
+              confirmation: 'bearer',
+              lifetimeSeconds: 300,
+              attributes: [],
+              sign: { keystoreRef: 'ks', signatureAlgorithm: 'rsa-sha256' },
+            },
+          ],
+        },
+        ctx,
+      );
+      const match = /<saml2:Assertion[\s\S]*<\/saml2:Assertion>/.exec(assertionXml);
+      if (match === null) {
+        failures += 1;
+        console.error(`FAIL ${name}\nno assertion in the output`);
+      } else {
+        const file = join(dir, `${name}.xml`);
+        await writeFile(file, match[0], 'utf8');
+        const result = spawnSync(
+          'xmlsec1',
+          [
+            '--verify',
+            ...laxArgs,
+            '--id-attr:ID',
+            'urn:oasis:names:tc:SAML:2.0:assertion:Assertion',
+            '--pubkey-cert-pem',
+            certPath,
+            '--enabled-key-data',
+            'raw-x509-cert',
+            file,
+          ],
+          { encoding: 'utf8' },
+        );
+        if (result.status === 0) {
+          console.log(`ok   ${name}`);
+        } else {
+          failures += 1;
+          console.error(`FAIL ${name}\n${result.stderr ?? ''}`);
+        }
+      }
+    }
+
     // --- decryption -----------------------------------------------------------------------
     //
     // `xmlsec1 --decrypt --privkey-pem key.pem,cert.pem <file>` is run on the envelope as this

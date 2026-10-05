@@ -167,10 +167,12 @@ the spec requires, plus 0004 through 0008 for decisions that turned out to be lo
 
 ## WS-Trust and SAML tokens (docs/specs/2026-10-05-ws-trust-saml-tokens-design.md §8)
 
-SC-WT4 and SC-WT5 ship with the first pull request (SAML placement and self-issued tokens); the
-other criteria follow with the later pull requests.
+SC-WT4 and SC-WT5 ship with the first pull request (SAML placement and self-issued tokens) and
+SC-WT3 with the second (signing with and over a token); the other criteria follow with the later
+pull requests.
 
 | Criterion | Proved by |
 |---|---|
 | **SC-WT4** A form SAML token (1.1 and 2.0), optionally signed as issuer, is placed in `wsse:Security` | `build.test.ts`, `saml-place.test.ts`, `e2e/specs/wss-saml-token.spec.ts` |
 | **SC-WT5** A supplied SAML token (inline or project file) is placed unchanged | `saml-place.test.ts` |
+| **SC-WT3** A holder-of-key or sender-vouches signature refers to the SAML token, and covers it through the STR-Transform without altering it | `signature-saml.test.ts`, `str-transform.test.ts`, `saml-preservation.test.ts`, `verify-str.test.ts` |

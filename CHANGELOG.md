@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows
 
 - **SAML tokens in outgoing WS-Security.** Built from a form (SAML 1.1 or 2.0, optionally signed as
   issuer) or supplied as XML. Token signatures in the HTTP Log are masked (#41).
+- Signatures can refer to a SAML token (holder-of-key) and cover it through the STR-Transform (#41).
 - **Postman environments and globals.** **Import…** reads Postman environment and globals exports
   (**Import Postman Environment…**, **Import Postman Globals…**). An environment becomes a workspace
   environment, renamed when the name is taken and never made active; globals merge into Globals.
