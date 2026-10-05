@@ -75,17 +75,26 @@ export async function kerberosHandshake(
 
   try {
     let challenged = false;
+    let firstResponse: HttpExchange | undefined;
     if (options.preemptive !== true) {
       const first = await leg(request.headers);
       if (first.status !== 401 || !offersNegotiate(headerValue(first.headers, 'www-authenticate'))) {
         return { http: first, attempts: 1, challenged: first.status === 401, durationMs, spn: spnWanted };
       }
       challenged = true;
+      firstResponse = first;
       if (remaining() <= 0) return { http: first, attempts: 1, challenged, durationMs, spn: spnWanted };
     }
 
     const context = await startKerberosContext(spnWanted, auth);
-    const final = await leg({ ...request.headers, Authorization: `Negotiate ${Buffer.from(context.token).toString('base64')}` });
+    // A slow KDC or SSPI call can spend the budget; report leg 1's 401 rather than send leg 2 into a certain timeout.
+    if (firstResponse !== undefined && remaining() <= 0) {
+      return { http: firstResponse, attempts: 1, challenged, durationMs, spn: context.spn };
+    }
+    const final = await leg({
+      ...request.headers,
+      Authorization: `Negotiate ${Buffer.from(context.token).toString('base64')}`,
+    });
     if (final.status === 401) {
       throw new HttpError('kerberos-rejected', `The server refused the Kerberos token for ${context.spn} (HTTP 401).`, {
         details: { spn: context.spn, status: 401 },

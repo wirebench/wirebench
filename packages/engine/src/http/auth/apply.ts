@@ -115,6 +115,8 @@ export async function sendWithAuth(
   return {
     http,
     durationMs,
-    ...(auth !== undefined ? { auth: { scheme: auth.type, challenged, attempts, ...(spn !== undefined ? { spn } : {}) } } : {}),
+    ...(auth !== undefined
+      ? { auth: { scheme: auth.type, challenged, attempts, ...(spn !== undefined ? { spn } : {}) } }
+      : {}),
   };
 }

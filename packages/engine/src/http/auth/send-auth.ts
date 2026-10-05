@@ -47,7 +47,7 @@ export interface AuthSummary {
   readonly challenged: boolean;
   /**
    * How many HTTP attempts the send made: 1 preemptive/unchallenged, 2 after a Basic
-   * challenge, 3 for a full NTLM handshake (bare, Type 1, Type 3).
+   * challenge or for the Kerberos two-leg exchange, 3 for a full NTLM handshake (bare, Type 1, Type 3).
    */
   readonly attempts: 1 | 2 | 3;
   /** The service principal Kerberos asked for, in the platform's form. Not a secret. */

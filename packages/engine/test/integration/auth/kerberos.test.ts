@@ -55,7 +55,9 @@ describe('Kerberos over HTTP Negotiate', () => {
   it('fails a second 401 as kerberos-rejected', async () => {
     configureKerberos(fakeKerberos());
     server = await startNegotiateServer({ expectedToken: TOKEN, rejectToken: true });
-    await expect(sendWithAuth(post(server.url), { type: 'kerberos' })).rejects.toMatchObject({ code: 'kerberos-rejected' });
+    await expect(sendWithAuth(post(server.url), { type: 'kerberos' })).rejects.toMatchObject({
+      code: 'kerberos-rejected',
+    });
   });
 
   it('fails a reply that does not verify as kerberos-mutual-auth-failed', async () => {
@@ -71,24 +73,51 @@ describe('Kerberos over HTTP Negotiate', () => {
     server = await startNegotiateServer({ expectedToken: TOKEN });
     const result = await kerberosHandshake(post(server.url), { type: 'kerberos' }, { preemptive: true });
     expect(result.attempts).toBe(1);
+    expect(result.http.status).toBe(200);
     expect(server.requests).toHaveLength(1);
+    expect(server.requests[0]?.authorization).toBe(`Negotiate ${TOKEN}`);
   });
 
   it('lets a caller-supplied Authorization header win', async () => {
     const provider = fakeKerberos();
     configureKerberos(provider);
     server = await startNegotiateServer({ expectedToken: TOKEN });
-    const result = await sendWithAuth({ ...post(server.url), headers: { authorization: `Negotiate ${TOKEN}` } }, { type: 'kerberos' });
+    const result = await sendWithAuth(
+      { ...post(server.url), headers: { authorization: `Negotiate ${TOKEN}` } },
+      { type: 'kerberos' },
+    );
     expect(result.http.status).toBe(200);
     expect(provider.inits).toEqual([]);
   });
 
   it('reports the 401 when the time budget is spent before leg 2', async () => {
-    configureKerberos(fakeKerberos());
+    const provider = fakeKerberos();
+    configureKerberos(provider);
     server = await startNegotiateServer({ expectedToken: TOKEN });
     let clock = 0;
     const result = await sendWithAuth(post(server.url, 1000), { type: 'kerberos' }, { now: () => (clock += 600) });
     expect(result.http.status).toBe(401);
     expect(result.auth).toMatchObject({ challenged: true, attempts: 1 });
+    expect(provider.inits).toEqual([]);
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it('reports the 401 when making the token spends the time budget', async () => {
+    const provider = fakeKerberos();
+    let clock = 0;
+    configureKerberos({
+      ...provider,
+      initClient: async (input) => {
+        const client = await provider.initClient(input);
+        clock += 2000;
+        return client;
+      },
+    });
+    server = await startNegotiateServer({ expectedToken: TOKEN });
+    const result = await sendWithAuth(post(server.url, 1000), { type: 'kerberos' }, { now: () => clock });
+    expect(result.http.status).toBe(401);
+    expect(result.auth).toMatchObject({ challenged: true, attempts: 1 });
+    expect(provider.inits).toHaveLength(1);
+    expect(server.requests).toHaveLength(1);
   });
 });
