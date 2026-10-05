@@ -80,7 +80,7 @@ describe('wirebench secrets list', () => {
     expect(code).toBe(3);
     const rows = stdout.trim().split('\n').slice(1);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatch(/^WIREBENCH_SECRET_DEMO_PASSWORD\s+missing\s+basic password for "svc"\s+demo\/secure$/);
+    expect(rows[0]).toMatch(/^WIREBENCH_SECRET_DEMO_PASSWORD\s+missing\s+—\s+basic password for "svc"\s+demo\/secure$/);
   });
 
   it('exits 0 with a set row, never printing the value', async () => {
@@ -138,7 +138,7 @@ describe('${secret:name} tokens', () => {
   it('secrets list names the variable', async () => {
     const { code, stdout } = await runCli(['secrets', 'list', dir, '-e', 'local', 'demo/secure']);
     expect(code).toBe(3);
-    expect(stdout).toMatch(/WIREBENCH_SECRET_DEMO_BASIC\s+missing\s+secret "demo_basic"\s+demo\/secure/);
+    expect(stdout).toMatch(/WIREBENCH_SECRET_DEMO_BASIC\s+missing\s+—\s+secret "demo_basic"\s+demo\/secure/);
   });
 
   it('secrets list names a variable only a --var property reaches', async () => {
@@ -160,7 +160,7 @@ describe('${secret:name} tokens', () => {
         'demo/secure',
       ]);
       expect(code).toBe(3);
-      expect(stdout).toMatch(/WIREBENCH_SECRET_VIA_VAR\s+missing\s+secret "via_var"\s+demo\/secure/);
+      expect(stdout).toMatch(/WIREBENCH_SECRET_VIA_VAR\s+missing\s+—\s+secret "via_var"\s+demo\/secure/);
     } finally {
       await rm(viaVar, { recursive: true, force: true });
     }

@@ -31,6 +31,7 @@ export function mcpBaseFor(args: McpArgs, io: Pick<CliIo, 'stderr' | 'env'>): Op
         ...(args.environments !== undefined ? { environments: args.environments } : {}),
       },
       origin: 'mcp',
+      secretSources: args.secretSources,
     },
     io,
   );

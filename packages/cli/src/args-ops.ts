@@ -3,6 +3,7 @@
  * `history list|diff`. Each becomes an {@link OpArgs}: the op's name and its input, which the op's
  * own zod schema checks when it runs, so the flags here only carry values.
  */
+import { secretSourcesOptionsFrom, type CliSecretSourcesOptions } from './source-secrets.js';
 import { UsageError } from './usage-error.js';
 
 export type OpName =
@@ -20,6 +21,7 @@ export interface OpArgs {
   readonly source?: string;
   /** `send --body-file`, read when run. */
   readonly bodyFile?: string;
+  readonly secretSources: CliSecretSourcesOptions;
 }
 
 /** The options the verbs add to the shared `parseArgs` call. */
@@ -52,7 +54,7 @@ const USAGE: Readonly<Record<OpName, string>> = {
   import: 'wirebench import <source> [--name <name>]',
   operations: 'wirebench operations [<interface-or-api>]',
   generate: 'wirebench generate <operation> [--optional all|required]',
-  send: 'wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline]',
+  send: 'wirebench send <item> [-e <env>] [--body <text> | --body-file <file>] [--baseline] [--trust-secret-sources | --trust-secret-sources-hash <hash>] [--no-secret-sources]',
   validate: 'wirebench validate <history-id|file> [--operation <ref>] [--direction request|response] [--status <n>]',
   query: 'wirebench query <expression> <history-id|file> [--namespace <prefix>=<uri>]… [--direction request|response]',
   history_list: 'wirebench history list [--item <text>] [--limit <n>]',
@@ -79,9 +81,12 @@ export interface CallArgs {
   readonly args?: string;
   readonly environment?: string;
   readonly schema: boolean;
+  readonly secretSources: CliSecretSourcesOptions;
 }
 
-const CALL_FLAGS = ['project', 'json', 'args', 'env', 'schema', 'history-dir'];
+const SECRET_SOURCE_FLAGS = ['no-secret-sources', 'trust-secret-sources', 'trust-secret-sources-hash'];
+
+const CALL_FLAGS = ['project', 'json', 'args', 'env', 'schema', 'history-dir', ...SECRET_SOURCE_FLAGS];
 
 /** @throws UsageError */
 export function parseCall(rest: readonly string[], values: OptionValues): CallArgs {
@@ -102,6 +107,7 @@ export function parseCall(rest: readonly string[], values: OptionValues): CallAr
     ...(args !== undefined ? { args } : {}),
     ...(environment !== undefined ? { environment } : {}),
     schema: values['schema'] === true,
+    secretSources: secretSourcesOptionsFrom(values),
   };
 }
 
@@ -117,15 +123,25 @@ export interface McpArgs {
   readonly httpPort?: number;
   /** `--tools a,b`: the interfaces and APIs whose operations are tools. Absent: all; `none`: `[]`. */
   readonly tools?: readonly string[];
+  readonly secretSources: CliSecretSourcesOptions;
 }
 
-const MCP_FLAGS = ['project', 'allow-write', 'allow-send', 'env', 'history-dir', 'http', 'tools'];
+const MCP_FLAGS = [
+  'project',
+  'allow-write',
+  'allow-send',
+  'env',
+  'history-dir',
+  'http',
+  'tools',
+  ...SECRET_SOURCE_FLAGS,
+];
 
 const VERB_FLAGS: Readonly<Record<OpName, readonly string[]>> = {
   import: [...COMMON, 'name'],
   operations: COMMON,
   generate: [...COMMON, 'optional'],
-  send: [...COMMON, 'env', 'body', 'body-file', 'baseline', 'history-dir'],
+  send: [...COMMON, 'env', 'body', 'body-file', 'baseline', 'history-dir', ...SECRET_SOURCE_FLAGS],
   validate: [...COMMON, 'operation', 'direction', 'status', 'history-dir'],
   query: [...COMMON, 'namespace', 'direction', 'history-dir'],
   history_list: [...COMMON, 'item', 'limit', 'history-dir'],
@@ -352,6 +368,7 @@ export function parseOpVerb(word: string, rest: readonly string[], values: Optio
     project: str(values, 'project') ?? '.',
     ...(historyDir !== undefined ? { historyDir } : {}),
     json: values['json'] === true,
+    secretSources: secretSourcesOptionsFrom(values),
   };
   const direction = opt('direction', str(values, 'direction'));
   switch (op) {
@@ -458,5 +475,6 @@ export function parseMcp(rest: readonly string[], values: OptionValues): McpArgs
     ...(environments !== undefined ? { environments } : {}),
     ...(httpPort !== undefined ? { httpPort } : {}),
     ...(tools !== undefined ? { tools } : {}),
+    secretSources: secretSourcesOptionsFrom(values),
   };
 }

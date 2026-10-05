@@ -36,7 +36,7 @@ import type {
   WsFrame,
 } from '@wirebench/engine';
 import { z } from 'zod';
-import { createEnvSecrets } from '../env-secrets.js';
+import { cliSecrets } from '../source-secrets.js';
 import { cliSendHost } from '../send-host.js';
 import { proxyFromEnv } from '../proxy-env.js';
 import { explainMissingSecret, knownSecretIn } from '../secret-advice.js';
@@ -215,9 +215,18 @@ export async function sendAndRecord(input: SendAndRecordInput): Promise<Recorded
   const { project, workspace } = opened;
   // From the saved item, never from an override: the override adds no secret to read.
   const needs = secretNeedsOf([input.needsOf ?? item], project, {}, workspace?.workspace);
-  const secrets = createEnvSecrets(needs, context.env);
   const tokens = input.tokens ?? new Set<string>();
+  let knownNow: () => string[] = () => [...tokens];
+  const secrets = cliSecrets(
+    needs,
+    context.env,
+    workspace?.workspace,
+    context.secretSources,
+    context.secretSourceCache,
+    (text) => createSecretMasker(knownNow())(text),
+  );
   const known = (): string[] => [...secrets.values(), ...tokens];
+  knownNow = known;
   const runContext: RunContext = {
     project,
     projectDir: context.projectDir,

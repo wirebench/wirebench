@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { UsageError, parseCliArgs } from '../../src/args.js';
+import { DEFAULT_CLI_SECRET_SOURCES } from '../../src/source-secrets.js';
 
 describe('parseCliArgs', () => {
+  it('parses the secret-source flags on run, secrets list, send, call and mcp', () => {
+    const parse = parseCliArgs;
+    expect(parse(['run', 'p', '--no-secret-sources'])).toMatchObject({ secretSources: { enabled: false } });
+    expect(parse(['run', 'p', '--trust-secret-sources'])).toMatchObject({ secretSources: { trust: { mode: 'any' } } });
+    expect(parse(['secrets', 'list', 'p', '--trust-secret-sources-hash', 'a'.repeat(64)])).toMatchObject({
+      secretSources: { trust: { mode: 'hash' } },
+    });
+    expect(parse(['send', 'r', '--trust-secret-sources'])).toMatchObject({ secretSources: { trust: { mode: 'any' } } });
+    expect(parse(['call', 'op', '--trust-secret-sources'])).toMatchObject({
+      secretSources: { trust: { mode: 'any' } },
+    });
+    expect(parse(['mcp', '--trust-secret-sources'])).toMatchObject({ secretSources: { trust: { mode: 'any' } } });
+    expect(() =>
+      parse(['run', 'p', '--trust-secret-sources', '--trust-secret-sources-hash', 'a'.repeat(64)]),
+    ).toThrow();
+  });
+
   it('parses a full run command', () => {
     expect(
       parseCliArgs([
@@ -102,6 +120,7 @@ describe('parseCliArgs — the op verbs', () => {
       op: 'import',
       project: 'p',
       json: false,
+      secretSources: DEFAULT_CLI_SECRET_SOURCES,
       input: { source: 'a.wsdl', name: 'Calc' },
     });
     expect(parseCliArgs(['operations', 'Pets', '--json'])).toMatchObject({
@@ -122,6 +141,7 @@ describe('parseCliArgs — the op verbs', () => {
       project: '.',
       historyDir: 'h',
       json: false,
+      secretSources: DEFAULT_CLI_SECRET_SOURCES,
       input: { item: 'Calc/Add/Request 1', environment: 'local' },
       bodyFile: 'b.xml',
     });
@@ -205,8 +225,15 @@ describe('parseCliArgs — mcp', () => {
       allowWrite: true,
       allowSend: true,
       environments: ['local', 'staging'],
+      secretSources: DEFAULT_CLI_SECRET_SOURCES,
     });
-    expect(parseCliArgs(['mcp'])).toEqual({ command: 'mcp', project: '.', allowWrite: false, allowSend: false });
+    expect(parseCliArgs(['mcp'])).toEqual({
+      command: 'mcp',
+      project: '.',
+      allowWrite: false,
+      allowSend: false,
+      secretSources: DEFAULT_CLI_SECRET_SOURCES,
+    });
     expect(parseCliArgs(['mcp', '--help'])).toEqual({ command: 'help', topic: 'mcp' });
   });
 
@@ -313,6 +340,7 @@ describe('parseCliArgs — call', () => {
       args: '{"a":1}',
       environment: 'local',
       schema: false,
+      secretSources: DEFAULT_CLI_SECRET_SOURCES,
     });
     expect(parseCliArgs(['call', 'x', '--schema', '--history-dir', 'h'])).toMatchObject({
       schema: true,

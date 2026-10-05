@@ -2,9 +2,10 @@
  * One core, two faces (spec §2): each capability is an {@link Op}, run through {@link runOp} by a
  * CLI verb and by an MCP tool alike, so the input check and the redaction are the same for both.
  */
-import type { CookieJarHost } from '@wirebench/engine';
+import type { CookieJarHost, SourceCache } from '@wirebench/engine';
 import type { z } from 'zod';
 import { secretValuesIn } from '../env-secrets.js';
+import type { CliSecretSourcesOptions } from '../source-secrets.js';
 import { OpsError, toOpsError } from './errors.js';
 import { redactError, redactResult } from './redact.js';
 
@@ -35,6 +36,10 @@ export interface OpsBase {
    * one per MCP server for its lifetime. In memory only. Absent: no jar.
    */
   readonly cookies?: CookieJarHost;
+  /** The workspace's secret sources for this process (secret sources spec D8). */
+  readonly secretSources: CliSecretSourcesOptions;
+  /** One cache for the process: a value is fetched once per run, call or MCP server. */
+  readonly secretSourceCache: SourceCache;
 }
 
 /** One call's context: the base, plus every secret value the call resolved, for the redaction step. */

@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { CookieJar, jarCookieHost } from '@wirebench/engine';
+import { CookieJar, createSourceCache, jarCookieHost } from '@wirebench/engine';
 import type { OpArgs, OpName } from '../args.js';
 import { ExitCode } from '../exit-codes.js';
 import type { CliIo } from '../main.js';
@@ -16,6 +16,7 @@ import { OPS } from '../ops/index.js';
 import { defaultHistoryDir } from '../ops/paths.js';
 import type { SendResult } from '../ops/send.js';
 import type { ValidateResult } from '../ops/validate.js';
+import type { CliSecretSourcesOptions } from '../source-secrets.js';
 import { exists } from '../workspace-lookup.js';
 import { formatHuman } from './ops-output.js';
 
@@ -26,6 +27,7 @@ export function opsBaseFor(
     readonly historyDir?: string | undefined;
     readonly gates: Gates;
     readonly origin: 'cli' | 'mcp';
+    readonly secretSources: CliSecretSourcesOptions;
   },
   io: Pick<CliIo, 'stderr' | 'env'>,
 ): OpsBase {
@@ -41,6 +43,8 @@ export function opsBaseFor(
     warn: (line) => io.stderr.write(`warning: ${line}\n`),
     // One jar per process: a `call` sends once, an MCP server shares it across its tools.
     cookies: jarCookieHost(new CookieJar()),
+    secretSources: options.secretSources,
+    secretSourceCache: createSourceCache(),
   };
 }
 
@@ -66,7 +70,16 @@ function exitCodeOf(op: OpName, result: unknown): ExitCode {
 }
 
 export async function opCommand(args: OpArgs, io: CliIo): Promise<ExitCode> {
-  const base = opsBaseFor({ project: args.project, historyDir: args.historyDir, gates: OPEN_GATES, origin: 'cli' }, io);
+  const base = opsBaseFor(
+    {
+      project: args.project,
+      historyDir: args.historyDir,
+      gates: OPEN_GATES,
+      origin: 'cli',
+      secretSources: args.secretSources,
+    },
+    io,
+  );
   let triedAsHistoryId = false;
   try {
     let input: Record<string, unknown> = { ...args.input };

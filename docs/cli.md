@@ -54,6 +54,12 @@ wirebench run <path> [selector…] [options]
     --update-baseline  Save each changed response as its golden, keeping its ignore rules.
                        The only flag that writes to the project.
     --insecure         Skip TLS verification (as the desktop's per-environment switch).
+    --no-secret-sources   Read secrets from WIREBENCH_SECRET_<NAME> only; skip the workspace's
+                          secret sources.
+    --trust-secret-sources
+                          Use the workspace's shared secret sources as they are.
+    --trust-secret-sources-hash <hash>
+                          Use them only if the mapping's hash is <hash> (secrets list prints it).
     --no-color
 -q, --quiet | -v, --verbose
 
@@ -61,6 +67,8 @@ wirebench secrets list <path> [selector… | --sequence <name>…] [-e <name>] [
                        Prints every secret the selection needs: variable name, where it is used,
                        whether it is set. Exit 0 when all are set, 3 when one is missing. Never
                        prints a value. --var as for run, so a token only a --var holds is listed.
+                       Also shows where each secret comes from, and prints the
+                       secret-sources hash.
 
 wirebench import <source> [--name <name>]
 wirebench operations [<interface-or-api>]
@@ -312,6 +320,15 @@ WIREBENCH_SECRET_DEMO_PASSWORD  missing  basic password for "svc"  demo/secure
 
 Exit 0 when every variable a run of the selection would need is set, exit 3 when at least one is
 missing.
+
+With a workspace that maps a secret to a manager, `secrets list` adds a `SOURCE` column and a hash
+line. `SOURCE` is `env` when the variable is set (it always wins), the mapping's kind (`vault`, `aws`,
+…) when a source would supply the value, `kind (untrusted)` when the run would refuse the mapping
+until it is trusted, `invalid` for an entry that does not parse, and `—` when nothing supplies it. A
+name only a source supplies has the state `mapped`, and still counts as supplied for the exit code,
+because the run itself refuses an untrusted mapping and prints the hash. The line
+`Secret sources hash: <hash>` is the value `--trust-secret-sources-hash` takes. No value is ever
+printed.
 
 `secrets list` is conservative: it lists every secret the selected requests' configuration names,
 without sending anything, so it cannot know which ones a particular run will actually ask for. A
@@ -735,6 +752,10 @@ contract tool to make.
 | `--tools <a,b\|none>` | The interfaces and APIs, by name or slug, whose operations are tools (default: all). `none` serves the eight tools above only. A name the project does not have exits 2. |
 | `--history-dir <dir>` | The folder that holds the History `.jsonl` files (default: the desktop's, see [History location](#history-location)). |
 | `--http <port>` | Streamable HTTP on `http://127.0.0.1:<port>/mcp` instead of stdio. A port from 1 to 65535, except 80: clients drop the default port from `Host` and `Origin`, so `--http 80` is refused. See below. |
+
+`wirebench mcp` also takes `--no-secret-sources`, `--trust-secret-sources` and
+`--trust-secret-sources-hash <hash>`, as for `run`, and fetches each secret-source value once for the
+server's lifetime.
 
 The gates apply to `wirebench mcp` only. Every tool is always listed, whatever the flags: a gated tool
 whose gate is off refuses, and its error names the flag that would allow it, so the agent can tell

@@ -28,6 +28,8 @@ import {
   redactError,
   redactUrlsInText,
 } from '../../../src/ops/redact.js';
+import { createSourceCache } from '@wirebench/engine';
+import { DEFAULT_CLI_SECRET_SOURCES } from '../../../src/source-secrets.js';
 
 const SECRET = 'abc123def456ghi789';
 
@@ -38,6 +40,8 @@ const base: OpsBase = {
   gates: { write: false, send: false },
   origin: 'cli',
   warn: () => undefined,
+  secretSources: DEFAULT_CLI_SECRET_SOURCES,
+  secretSourceCache: createSourceCache(),
 };
 
 const leaky = defineOp({
