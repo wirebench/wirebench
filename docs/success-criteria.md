@@ -169,7 +169,8 @@ the spec requires, plus 0004 through 0008 for decisions that turned out to be lo
 
 SC-WT4 and SC-WT5 ship with the first pull request (SAML placement and self-issued tokens),
 SC-WT3 with the second (signing with and over a token) and SC-WT1 and SC-WT2 with the third (the
-WS-Trust client and its cache). SC-WT6 is pending the Kerberos credential (#40).
+WS-Trust client and its cache), and SC-WT6 with the fourth (the Kerberos credential, through #40's
+`kerberosToken` seam).
 
 | Criterion | Proved by |
 |---|---|
@@ -178,4 +179,4 @@ WS-Trust client and its cache). SC-WT6 is pending the Kerberos credential (#40).
 | **SC-WT1** An issued token is fetched with a username over https, cached for its lifetime, and reused across sends | `ws-trust-client.test.ts`, `issued-token.test.ts`, `ws-trust-send.test.ts`, `run-sts-verbose.test.ts`, `e2e/specs/ws-trust.spec.ts` |
 | **SC-WT2** The certificate credential signs the RST | `rst.test.ts`, `ws-trust-send.test.ts` |
 | **SC-WT3** A holder-of-key or sender-vouches signature refers to the SAML token, and covers it through the STR-Transform without altering it | `signature-saml.test.ts`, `str-transform.test.ts`, `saml-preservation.test.ts`, `verify-str.test.ts` |
-| **SC-WT6** The Kerberos credential asks the token service with a ticket — *pending #40* | — |
+| **SC-WT6** The Kerberos credential asks the token service with a ticket | `rst-kerberos.test.ts`, `ws-trust-send.test.ts`, `kerberos-real.test.ts` (the `kerberos-integration` CI job: a real KDC accepts the RST's AP-REQ) |

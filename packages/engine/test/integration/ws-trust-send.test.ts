@@ -8,6 +8,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { configureKerberos } from '../../src/http/auth/kerberos-native.js';
 import type { RunContext } from '../../src/run/context.js';
 import { loadKeystore } from '../../src/keystore/index.js';
 import { createIssuedTokenSource } from '../../src/run/issued-token.js';
@@ -16,6 +17,7 @@ import { selectRequests } from '../../src/run/select.js';
 import { soapIssuedTokenKeyTarget, soapIssuedTokenTarget, soapItemFor } from '../../src/soap/run.js';
 import type { Project } from '../../src/project/model.js';
 import type { WssIssuedTokenEntry } from '../../src/wss/model.js';
+import { fakeKerberos } from '../helpers/fake-kerberos.js';
 import { projectWithWss } from '../helpers/fixtures.js';
 import { generateSigningCert, generateTestCa } from '../helpers/test-certs.js';
 import { testHost } from '../helpers/send-host.js';
@@ -281,12 +283,36 @@ describe('runRequests with an issued SAML token', () => {
     expect(service.bodies[0]).toContain('ID="_fixture-2.0"');
   });
 
-  it('refuses a Kerberos credential with kerberos-unavailable', async () => {
-    const project = projectFor(
-      entryFor('https://sts.test/', { credential: { kind: 'kerberos', spn: 'HTTP@sts.test' } }),
-    );
-    const result = await runRequests(requestsOf(project, 1), contextFor(project));
-    expect(JSON.stringify(result)).toContain('kerberos-unavailable');
+  describe('a Kerberos credential (#40 seam)', () => {
+    afterEach(() => {
+      configureKerberos(undefined);
+    });
+
+    it('asks the seam for the SPN and sends its AP-REQ as the RST BinarySecurityToken', async () => {
+      const kerberos = fakeKerberos({ token: Buffer.from([1, 2, 3]).toString('base64') });
+      configureKerberos(kerberos);
+      sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+      const project = projectFor(entryFor(sts.url, { credential: { kind: 'kerberos', spn: 'HTTP@sts.test' } }));
+      const result = await runRequests(requestsOf(project, 1), contextFor(project));
+      expect(result.summary).toMatchObject({ total: 1 });
+      expect(kerberos.inits.map((init) => init.spn)).toEqual([
+        process.platform === 'win32' ? 'HTTP/sts.test' : 'HTTP@sts.test',
+      ]);
+      const rst = sts.requests[0]?.body ?? '';
+      expect(rst).toMatch(/#GSS_Kerberosv5_AP_REQ"[^>]*>AQID<\/wsse:BinarySecurityToken>/);
+      expect(rst).not.toContain('UsernameToken');
+      expect(service.bodies[0]).toContain('ID="_fixture-2.0"');
+    });
+
+    it("passes the seam's kerberos-unavailable through and never asks the token service", async () => {
+      configureKerberos(fakeKerberos({ unavailable: 'The Kerberos component is not installed.' }));
+      sts = await startTestSts(() => ({ status: 200, body: fixture('rstrc-1.3-saml2.xml') }));
+      const project = projectFor(entryFor(sts.url, { credential: { kind: 'kerberos', spn: 'HTTP@sts.test' } }));
+      const result = await runRequests(requestsOf(project, 1), contextFor(project));
+      expect(JSON.stringify(result)).toContain('kerberos-unavailable');
+      expect(sts.requests).toHaveLength(0);
+      expect(service.bodies).toHaveLength(0);
+    });
   });
 });
 
@@ -299,7 +325,8 @@ describe('soapIssuedTokenTarget', () => {
     const [one] = selectRequests(project, []).selected;
     const selected = soapItemFor(project, one!.request.id)!;
     const issuedTokens = createIssuedTokenSource();
-    const { target, ctx } = await soapIssuedTokenTarget(selected, context, entry);
+    const { target, ctx, kerberosToken } = await soapIssuedTokenTarget(selected, context, entry);
+    expect(kerberosToken).toBeTypeOf('function');
     expect(target.endpointUrl).toBe(service.url);
     expect(target.tls?.ca).toEqual([sts.caPem]);
     await issuedTokens.get(entry, target, { ctx });

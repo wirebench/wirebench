@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createIssuedTokenSource, DEFAULT_PREFERENCES } from '@wirebench/engine';
-import type { IssuedToken } from '@wirebench/engine';
+import type { IssuedToken, requestIssuedToken } from '@wirebench/engine';
 import { startTestSoapServer, type TestSoapServer } from '@wirebench/engine/test-helpers';
 
 vi.mock('electron', () => ({ ipcMain: { handle: () => undefined } }));
@@ -82,7 +82,7 @@ describe('an issued token fetched by a desktop send', () => {
     });
     await host.mutate({ kind: 'update-request', requestId, patch: { wssOutgoingRef: configId } });
 
-    const request = vi.fn(() => Promise.resolve(issued()));
+    const request = vi.fn<typeof requestIssuedToken>(() => Promise.resolve(issued()));
     const issuedTokens = new IssuedTokensService(
       (locator) => host.issuedTokenTarget(locator.projectId, locator.configId, locator.entryIndex, locator.requestId),
       createIssuedTokenSource({ request }),
@@ -102,6 +102,10 @@ describe('an issued token fetched by a desktop send', () => {
     const locator = { projectId: located.project.id, configId, entryIndex: 0, requestId };
     expect(await issuedTokens.status(locator, false)).toMatchObject({ state: 'valid', stsHost: 'sts.test' });
     expect(request).toHaveBeenCalledTimes(1);
+    // A Kerberos credential reaches #40's seam from a send and from the panel's Fetch now alike.
+    expect(request.mock.calls[0]?.[2].kerberosToken).toBeTypeOf('function');
+    const resolved = await host.issuedTokenTarget(located.project.id, configId, 0, requestId);
+    expect(resolved.deps.kerberosToken).toBeTypeOf('function');
     await host.close();
   });
 });

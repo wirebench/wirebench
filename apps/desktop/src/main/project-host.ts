@@ -2478,8 +2478,8 @@ export class ProjectHost {
     if (located === undefined) {
       throw new WirebenchError('not-found', `No SOAP request with id "${chosen}"`, { details: { requestId: chosen } });
     }
-    const { target, ctx } = await soapIssuedTokenTarget(located.selected, located.context, entry);
-    return { entry, target, deps: { ctx } };
+    const { target, ctx, kerberosToken } = await soapIssuedTokenTarget(located.selected, located.context, entry);
+    return { entry, target, deps: { ctx, kerberosToken } };
   }
 
   /** The first SOAP request, in project order, whose outgoing WS-Security is `configId`. */

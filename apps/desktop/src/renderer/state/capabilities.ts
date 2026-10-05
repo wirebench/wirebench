@@ -11,7 +11,11 @@ export interface KerberosAvailability {
   readonly explicitCredentials: boolean;
 }
 
-/** Until the Kerberos support lands, it is unavailable everywhere; Windows would take explicit credentials. */
+/**
+ * Unavailable everywhere until the app's Kerberos support (#40's desktop half) adds the availability
+ * channel this should read; the engine already sends a WS-Trust Kerberos credential (#41). Windows
+ * takes explicit credentials.
+ */
 export function useKerberosAvailable(): KerberosAvailability {
   return { available: false, explicitCredentials: detectPlatform() === 'win' };
 }
