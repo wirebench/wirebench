@@ -16,10 +16,11 @@ register(
     }`),
 );
 const { buildSamlAssertion } = await import('../../../src/wss/saml/build.js');
-const { generateSigningCert, generateTestCa } = await import('../../helpers/test-certs.js');
+const { generateSigningCert, generateTestCa, LONG_VALIDITY_MS } = await import('../../helpers/test-certs.js');
 
-const ca = generateTestCa();
-const issuer = generateSigningCert(ca);
+// The certificate is checked in, so it must outlive the test suite by years, not a day.
+const ca = generateTestCa({ validityMs: LONG_VALIDITY_MS });
+const issuer = generateSigningCert(ca, { validityMs: LONG_VALIDITY_MS });
 const alias = { alias: 'issuer', certPem: issuer.certPem, keyPem: issuer.keyPem, chainPem: [ca.certPem] } as never;
 const here = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 for (const version of ['2.0', '1.1'] as const) {
