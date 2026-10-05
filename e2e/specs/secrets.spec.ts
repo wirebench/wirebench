@@ -87,7 +87,7 @@ test.describe('secrets', () => {
 
     await openImportDialog(page, 'wsdl');
     await page.getByTestId('import-url-input').fill(server.wsdlUrl);
-    await page.getByLabel('Use Basic auth').check();
+    await page.getByLabel('Definition authentication').selectOption('basic');
     await page.getByLabel('Username').fill('alice');
     await page.getByRole('button', { name: 'Set…' }).click();
     await page.getByPlaceholder('Enter password').fill(PASSWORD);
@@ -152,7 +152,7 @@ test.describe('secrets', () => {
 
     await openImportDialog(page, 'wsdl');
     await page.getByTestId('import-url-input').fill(server.wsdlUrl);
-    await page.getByLabel('Use Basic auth').check();
+    await page.getByLabel('Definition authentication').selectOption('basic');
     await page.getByLabel('Username').fill('alice');
     await page.getByRole('button', { name: 'Set…' }).click();
     await page.getByPlaceholder('Enter password').fill(PASSWORD);

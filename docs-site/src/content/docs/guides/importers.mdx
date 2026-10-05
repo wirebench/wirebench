@@ -62,10 +62,10 @@ palette, pins it to the legacy format.
 1. Open **Import…**, paste the WSDL URL on the **URL** tab (or pick a `.wsdl`/`.xml` file, or paste
    the XML), and leave the format on auto-detect or set it to **WSDL (SOAP)**.
 
-2. On the URL tab, optionally turn on **Use Basic auth** and give a username and password to fetch
-   the document. **Use these credentials for requests too** carries them onto the interface's
-   requests as well. **Kerberos** is offered too; its token goes only to the WSDL's own origin, never to
-   a redirect target on another origin.
+2. On the URL tab, optionally set **Definition authentication**. **Basic** asks for a username and
+   password to fetch the document. **Kerberos** uses your signed-in ticket, with an optional SPN; its
+   token goes only to the WSDL's own origin, never to a redirect target on another origin. **Use these
+   credentials for requests too** carries either onto the interface's requests as well.
 
 3. Choose the target project and **Import**.
 
