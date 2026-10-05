@@ -91,7 +91,7 @@ describe('mapOpenCollection — HTTP', () => {
 
   it('names the API after the collection and counts requests and folders', () => {
     expect(mapped.rest).toMatchObject({ name: 'Pets', baseUrl: '', servers: [] });
-    expect(mapped.counts).toEqual({ requests: 3, folders: 1, assertions: 0, assertionsSkipped: 0 });
+    expect(mapped.counts).toEqual({ requests: 5, folders: 1, assertions: 0, assertionsSkipped: 0 });
     expect(mapped.variables).toEqual({ environments: [], report: { warnings: [], notes: [] } });
   });
 

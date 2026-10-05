@@ -18,11 +18,13 @@ import type { ImportedVariables } from '../variables.js';
 import { stripUserinfo } from '../values.js';
 import type { KeyValueEntry } from '../../http/entries.js';
 import { entry } from '../../http/entries.js';
-import type { IdGenerator } from '../../project/model.js';
+import type { AuthConfig, IdGenerator } from '../../project/model.js';
 import { generateId } from '../../project/model.js';
 import { uniqueSlug } from '../../project/paths.js';
-import type { GrpcApi } from '../../grpc/model.js';
-import type { WsApi } from '../../ws/model.js';
+import type { GrpcApi, GrpcFolder, GrpcMethodKind, GrpcRequestDef } from '../../grpc/model.js';
+import { createGrpcApi, createGrpcFolder, createGrpcRequest, defaultTlsFor } from '../../grpc/model.js';
+import type { WsApi, WsFolder, WsRequestDef } from '../../ws/model.js';
+import { createWsApi, createWsFolder, createWsRequest, createWsSavedMessage } from '../../ws/model.js';
 import type {
   MultipartFormPart,
   RestApi,
@@ -79,6 +81,23 @@ const EXAMPLE_TYPES: Readonly<Record<string, string>> = {
   text: 'text/plain',
 };
 
+/** gRPC method kinds as OpenCollection and its neighbours spell them. */
+const METHOD_KINDS: Readonly<Record<string, GrpcMethodKind>> = {
+  unary: 'unary',
+  'server-streaming': 'server-streaming',
+  server_streaming: 'server-streaming',
+  serverStreaming: 'server-streaming',
+  'client-streaming': 'client-streaming',
+  client_streaming: 'client-streaming',
+  clientStreaming: 'client-streaming',
+  'bidi-streaming': 'bidi-streaming',
+  bidi_streaming: 'bidi-streaming',
+  bidiStreaming: 'bidi-streaming',
+  bidirectional: 'bidi-streaming',
+};
+const GRPC_METHOD = /^\/?([\w.]+)\/(\w+)$/;
+const ITEM_TYPES = new Set(['http', 'graphql', 'grpc', 'websocket']);
+
 function isRecord(value: unknown): value is Rec {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -127,9 +146,24 @@ const isHttp = (item: OcItem): boolean => item.info.type === 'http' && item.http
 const isGraphql = (item: OcItem): boolean => item.info.type === 'graphql' && item.graphql !== undefined;
 const isRest = (item: OcItem): boolean => isHttp(item) || isGraphql(item);
 
-/** True when `item` is a folder that holds a REST item somewhere below it. */
-function holdsRest(item: OcItem): boolean {
-  return item.items?.some((child) => isRest(child) || holdsRest(child)) ?? false;
+const isGrpc = (item: OcItem): boolean => item.info.type === 'grpc' && item.grpc !== undefined;
+const isWebsocket = (item: OcItem): boolean => item.info.type === 'websocket' && item.websocket !== undefined;
+
+/** True when `item` is a folder that holds an item `kind` accepts somewhere below it. */
+function holds(item: OcItem, kind: (item: OcItem) => boolean): boolean {
+  return item.items?.some((child) => kind(child) || holds(child, kind)) ?? false;
+}
+const holdsRest = (item: OcItem): boolean => holds(item, isRest);
+
+/** The target of a gRPC item's URL: `host:port`, and whether it is TLS. Absent when the URL names no host. */
+function grpcTarget(url: string): { target: string; tls: boolean } | undefined {
+  const match = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?([^/?#]*)/.exec(url.trim());
+  const authority = match?.[2] ?? '';
+  if (authority === '') return undefined;
+  const scheme = match?.[1]?.toLowerCase();
+  const tls = scheme === undefined ? defaultTlsFor(authority) : scheme === 'grpcs' || scheme === 'https';
+  const hasPort = /:(?:\d+|\$\{[^}]*\})$/.test(authority);
+  return { target: hasPort ? authority : `${authority}:${tls ? 443 : 80}`, tls };
 }
 
 /** What a request inherits from the folders and collection above it. */
@@ -146,6 +180,16 @@ class Mapper {
   readonly dynamic = new Set<string>();
   requests = 0;
   folders = 0;
+  grpcRequests = 0;
+  grpcFolders = 0;
+  wsRequests = 0;
+  wsFolders = 0;
+  /** The `.proto` files the gRPC items name. */
+  readonly protoFiles = new Set<string>();
+  /** The first gRPC item's target, which the API takes. */
+  grpcApiTarget: { target: string; tls: boolean } | undefined;
+  /** The first WebSocket item's URL, which the API takes. */
+  wsApiUrl: string | undefined;
 
   constructor(
     private readonly newId: IdGenerator,
@@ -212,6 +256,220 @@ class Mapper {
       this.requests += 1;
     }
     return { folders, requests };
+  }
+
+  /** A warning for each item that is none of the four request types, a folder or a script file. */
+  skipUnsupported(items: readonly OcItem[]): void {
+    for (const item of items) {
+      if (item.items !== undefined) {
+        this.skipUnsupported(item.items);
+      } else if (item.script === undefined && !ITEM_TYPES.has(item.info.type ?? '')) {
+        const type = item.info.type ?? 'unknown';
+        this.report.warn(`${item.info.name}: ${type} items are not supported and were skipped.`);
+      }
+    }
+  }
+
+  /** The folders and requests of one level for a protocol, a folder kept only when an item of it lives below. */
+  private walkProtocol<F, R>(
+    items: readonly OcItem[],
+    kind: (item: OcItem) => boolean,
+    build: {
+      folder: (
+        name: string,
+        input: { slug: string; order: number; auth?: AuthConfig; folders: F[]; requests: R[] },
+      ) => F;
+      request: (item: OcItem, slug: string, order: number) => R | undefined;
+      counted: (folders: number, requests: number) => void;
+    },
+  ): { folders: F[]; requests: R[] } {
+    const folders: F[] = [];
+    const requests: R[] = [];
+    const folderSlugs = new Set<string>();
+    const requestSlugs = new Set<string>();
+    for (const item of items) {
+      const name = item.info.name;
+      if (item.items !== undefined) {
+        if (!holds(item, kind)) continue;
+        const auth = this.auth(item.request?.auth, name);
+        const inner = this.walkProtocol(item.items, kind, build);
+        const slug = uniqueSlug(name, folderSlugs);
+        folderSlugs.add(slug);
+        folders.push(
+          build.folder(name, {
+            slug,
+            order: folders.length,
+            ...(auth.auth.type !== 'inherit' ? { auth: auth.auth } : {}),
+            folders: inner.folders,
+            requests: inner.requests,
+          }),
+        );
+        build.counted(1, 0);
+        continue;
+      }
+      if (!kind(item)) continue;
+      const slug = uniqueSlug(name, requestSlugs);
+      const request = build.request(item, slug, requests.length);
+      if (request === undefined) continue;
+      requestSlugs.add(slug);
+      requests.push(request);
+      build.counted(0, 1);
+    }
+    return { folders, requests };
+  }
+
+  walkGrpc(items: readonly OcItem[]): { folders: GrpcFolder[]; requests: GrpcRequestDef[] } {
+    return this.walkProtocol<GrpcFolder, GrpcRequestDef>(items, isGrpc, {
+      folder: (name, input) => createGrpcFolder(name, { newId: this.newId, ...input }),
+      request: (item, slug, order) => this.grpcRequest(item, slug, order),
+      counted: (folders, requests) => {
+        this.grpcFolders += folders;
+        this.grpcRequests += requests;
+      },
+    });
+  }
+
+  walkWebsocket(items: readonly OcItem[]): { folders: WsFolder[]; requests: WsRequestDef[] } {
+    return this.walkProtocol<WsFolder, WsRequestDef>(items, isWebsocket, {
+      folder: (name, input) => createWsFolder(name, { newId: this.newId, ...input }),
+      request: (item, slug, order) => this.wsRequest(item, slug, order),
+      counted: (folders, requests) => {
+        this.wsFolders += folders;
+        this.wsRequests += requests;
+      },
+    });
+  }
+
+  /** A message or frame body as text: a string as written, an object as indented JSON. */
+  private messageText(data: unknown): string {
+    if (typeof data === 'string') return data;
+    if (data === undefined || data === null) return '';
+    if (typeof data === 'object') return JSON.stringify(data, null, 2);
+    return scalar(data);
+  }
+
+  /** An item's own metadata or headers with its auth row, through the credential rule. */
+  private protocolRows(
+    raw: unknown,
+    auth: MappedOcAuth,
+    label: string,
+    blanked: Set<string>,
+  ): { rows: KeyValueEntry[]; auth: AuthConfig } {
+    const own = rows(raw).map((h) => ({
+      name: h.name,
+      value: this.rewrite(scalar(h.value)),
+      enabled: h.disabled !== true,
+    }));
+    this.noteAuthRows(auth, label, '');
+    if (auth.header !== undefined && !named(own, auth.header.name)) own.push(auth.header);
+    const mapped = headersAndAuth(own, label, this.report, blanked);
+    return { rows: mapped.headers, auth: auth.auth.type === 'inherit' ? mapped.auth : auth.auth };
+  }
+
+  private blankedWarning(label: string, blanked: Set<string>): void {
+    if (blanked.size > 0) {
+      this.report.warn(
+        `${label}: the recorded value of ${[...blanked].join(', ')} was not imported; set it on the request.`,
+      );
+    }
+  }
+
+  private grpcRequest(item: OcItem, slug: string, order: number): GrpcRequestDef | undefined {
+    const label = item.info.name;
+    const details = item.grpc ?? {};
+    const method = GRPC_METHOD.exec(str(details['method']));
+    const service = method?.[1];
+    const rpc = method?.[2];
+    if (service === undefined || rpc === undefined) {
+      this.report.warn(`${label}: the gRPC method is not service/method and the item was skipped.`);
+      return undefined;
+    }
+    const blanked = new Set<string>();
+    const rewritten = this.rewrite(str(details['url']));
+    const { url, stripped } = stripUserinfo(rewritten);
+    if (stripped) this.report.warn(`${label}: the credential in the URL was not imported; set it on the request.`);
+    const target = grpcTarget(url);
+    if (target !== undefined) {
+      if (this.grpcApiTarget === undefined) this.grpcApiTarget = target;
+      else if (target.target !== this.grpcApiTarget.target || target.tls !== this.grpcApiTarget.tls) {
+        this.report.note(
+          `${label}: its target ${target.target} differs from the API's ${this.grpcApiTarget.target}; the API's is used.`,
+        );
+      }
+    }
+    const protoFile = str(details['protoFilePath']);
+    if (protoFile !== '') this.protoFiles.add(protoFile);
+
+    const rawKind = str(details['methodType']) || str(details['methodKind']);
+    let methodKind: GrpcMethodKind = 'unary';
+    if (rawKind !== '') {
+      const known = Object.hasOwn(METHOD_KINDS, rawKind) ? METHOD_KINDS[rawKind] : undefined;
+      if (known === undefined) {
+        this.report.note(`${label}: the method type "${rawKind}" is unknown and was imported as unary.`);
+      } else {
+        methodKind = known;
+      }
+    }
+
+    const mapped = this.protocolRows(details['metadata'], this.auth(details['auth'], label), label, blanked);
+    const rawMessage = details['message'];
+    const message = blankJsonText(this.rewrite(this.messageText(rawMessage)), blanked);
+    this.blankedWarning(label, blanked);
+    const timeout = item.settings?.['timeout'];
+    return createGrpcRequest(label, {
+      newId: this.newId,
+      order,
+      slug,
+      service,
+      method: rpc,
+      methodKind,
+      metadata: mapped.rows,
+      ...(rawMessage !== undefined ? { message } : {}),
+      auth: mapped.auth,
+      settings: typeof timeout === 'number' && Number.isFinite(timeout) ? { timeoutMs: timeout } : {},
+    });
+  }
+
+  private wsRequest(item: OcItem, slug: string, order: number): WsRequestDef {
+    const label = item.info.name;
+    const details = item.websocket ?? {};
+    const blanked = new Set<string>();
+    const { url: withoutUser, stripped } = stripUserinfo(this.rewrite(str(details['url'])));
+    if (stripped) this.report.warn(`${label}: the credential in the URL was not imported; set it on the request.`);
+    const split = splitQueryKeepingReferences(withoutUser);
+    const query = split.query.map((q) => entry(q.name, blankIfLiteral(q.name, q.value, blanked)));
+    if (this.wsApiUrl === undefined) this.wsApiUrl = split.path;
+
+    const mapped = this.protocolRows(details['headers'], this.auth(details['auth'], label), label, blanked);
+    const raw = isRecord(details['message']) ? details['message'] : undefined;
+    const messages =
+      raw?.['data'] !== undefined
+        ? [
+            createWsSavedMessage('Message', {
+              newId: this.newId,
+              content: blankText(this.rewrite(this.messageText(raw['data'])), undefined, blanked),
+              format: 'text',
+            }),
+          ]
+        : [];
+    this.blankedWarning(label, blanked);
+
+    const settings = item.settings ?? {};
+    const timeout = settings['timeout'];
+    if (settings['keepAliveInterval'] !== undefined) {
+      this.report.note(`${label}: keepAliveInterval has no Wirebench equivalent and was ignored.`);
+    }
+    return createWsRequest(label, {
+      newId: this.newId,
+      order,
+      slug,
+      url: split.path,
+      query,
+      headers: mapped.rows,
+      auth: mapped.auth,
+      messages,
+      settings: typeof timeout === 'number' && Number.isFinite(timeout) ? { handshakeTimeoutMs: timeout } : {},
+    });
   }
 
   private request(item: OcItem, scope: Scope, slug: string, order: number): RestRequestDef {
@@ -475,19 +733,53 @@ export function mapOpenCollection(
   const name = collection.info.name !== '' ? collection.info.name : 'Collection';
   const rootAuth = mapper.auth(collection.request?.auth, name);
   const root = mapper.scopeBelow({ headers: [], auth: {} }, collection.request?.headers, rootAuth, name);
+  mapper.skipUnsupported(collection.items);
   const { folders, requests } = mapper.walk(collection.items, root);
+  const grpcWalk = mapper.walkGrpc(collection.items);
+  const wsWalk = mapper.walkWebsocket(collection.items);
+  const kinds = [mapper.requests, mapper.grpcRequests, mapper.wsRequests].filter((n) => n > 0).length;
+  const apiName = (suffix: string): string => (kinds > 1 ? `${name} (${suffix})` : name);
+  const newId = options.newId ?? generateId;
+  let order = options.firstOrder ?? 0;
+  const inherited = rootAuth.auth.type !== 'inherit' ? { auth: rootAuth.auth } : {};
   const rest =
     mapper.requests === 0
       ? undefined
       : createApi(name, {
-          newId: options.newId ?? generateId,
-          order: options.firstOrder ?? 0,
+          newId,
+          order: order++,
           baseUrl: '',
           servers: [],
-          ...(rootAuth.auth.type !== 'inherit' ? { auth: rootAuth.auth } : {}),
+          ...inherited,
           folders,
           requests,
         });
+  const grpc =
+    mapper.grpcRequests === 0
+      ? undefined
+      : createGrpcApi(apiName('gRPC'), {
+          newId,
+          order: order++,
+          target: mapper.grpcApiTarget?.target ?? '',
+          tls: mapper.grpcApiTarget?.tls ?? false,
+          ...inherited,
+          folders: grpcWalk.folders,
+          requests: grpcWalk.requests,
+        });
+  const websocket =
+    mapper.wsRequests === 0
+      ? undefined
+      : createWsApi(apiName('WebSocket'), {
+          newId,
+          order: order++,
+          url: mapper.wsApiUrl ?? '',
+          ...inherited,
+          folders: wsWalk.folders,
+          requests: wsWalk.requests,
+        });
+  if (grpc !== undefined && mapper.protoFiles.size === 0) {
+    mapper.report.note(`${grpc.name}: needs a definition: import its .proto or use server reflection.`);
+  }
   if (mapper.dynamic.size > 0) {
     mapper.report.warn(
       `Dynamic variables are kept as written and not expanded: ${[...mapper.dynamic].sort().join(', ')}`,
@@ -495,10 +787,17 @@ export function mapOpenCollection(
   }
   return {
     ...(rest !== undefined ? { rest } : {}),
-    protoFiles: [],
+    ...(grpc !== undefined ? { grpc } : {}),
+    ...(websocket !== undefined ? { websocket } : {}),
+    protoFiles: [...mapper.protoFiles],
     variables: { environments: [], report: { warnings: [], notes: [] } },
     scripts: [],
-    counts: { requests: mapper.requests, folders: mapper.folders, assertions: 0, assertionsSkipped: 0 },
+    counts: {
+      requests: mapper.requests + mapper.grpcRequests + mapper.wsRequests,
+      folders: mapper.folders + mapper.grpcFolders + mapper.wsFolders,
+      assertions: 0,
+      assertionsSkipped: 0,
+    },
     report: mapper.report.build(),
   };
 }
