@@ -9,7 +9,7 @@
  * arbitrary file.
  */
 import { copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1273,6 +1273,77 @@ describe('api.importOpenCollection', () => {
     expect(vi.mocked(deps.router.importGrpcApi).mock.calls[0]?.[1].api.definition).toBeUndefined();
     expect(response.notes).toContain('Pets (gRPC): protos/pets.proto was not found beside the collection.');
     expect(response.notes).toContain('Pets (gRPC): needs a definition: import its .proto or use server reflection.');
+  });
+
+  it('reads what the .proto file imports, keyed by its path in the folder, with only the named file as a root', async () => {
+    await mkdir(join(dir, 'shared'), { recursive: true });
+    await writeFile(
+      join(dir, 'shared', 'types.proto'),
+      'syntax = "proto3"; package pets.v1; message GetRequest { int32 id = 1; } message Pet { int32 id = 1; }',
+    );
+    await writeFile(
+      join(dir, 'protos', 'pets.proto'),
+      'syntax = "proto3"; package pets.v1; import "shared/types.proto"; service Pets { rpc Get(GetRequest) returns (Pet); }',
+    );
+    const { deps } = setupPicked();
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(deps.router.importGrpcApi).not.toHaveBeenCalled();
+    const grpcInput = vi.mocked(deps.router.addGrpcApi).mock.calls[0]?.[1];
+    expect(grpcInput).toMatchObject({
+      kind: 'proto',
+      roots: ['protos/pets.proto'],
+      source: join(dir, 'protos', 'pets.proto'),
+    });
+    expect(grpcInput?.kind === 'proto' ? [...grpcInput.sources.keys()] : []).toEqual([
+      'protos/pets.proto',
+      'shared/types.proto',
+    ]);
+    expect(response.warnings.filter((warning) => warning.startsWith('Pets (gRPC)'))).toEqual([]);
+  });
+
+  it('places the gRPC API with no definition, and names the import, when an imported file is missing', async () => {
+    await writeFile(
+      join(dir, 'protos', 'pets.proto'),
+      'syntax = "proto3"; package pets.v1; import "shared/gone.proto"; service Pets { rpc Get(GetRequest) returns (Pet); }',
+    );
+    const { deps } = setupPicked();
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(deps.router.addGrpcApi).not.toHaveBeenCalled();
+    expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deps.router.importGrpcApi).mock.calls[0]?.[1].api.definition).toBeUndefined();
+    expect(response.warnings).toContain(
+      "Pets (gRPC): protos/pets.proto imports shared/gone.proto, which was not found in the collection's folder.",
+    );
+    expect(response.notes).toContain('Pets (gRPC): needs a definition: import its .proto or use server reflection.');
+  });
+
+  it('refuses an import that leaves the folder, and places the gRPC API with no definition', async () => {
+    await writeFile(
+      join(dir, 'protos', 'pets.proto'),
+      'syntax = "proto3"; package pets.v1; import "../outside.proto"; service Pets { rpc Get(GetRequest) returns (Pet); }',
+    );
+    const { deps } = setupPicked();
+
+    const response = await value<OcResponse>('api.importOpenCollection', {
+      target: { projectId: 'p1' },
+      source: { kind: 'file', path: join(dir, 'opencollection.yml') },
+    });
+
+    expect(deps.router.addGrpcApi).not.toHaveBeenCalled();
+    expect(deps.router.importGrpcApi).toHaveBeenCalledTimes(1);
+    expect(
+      response.warnings.some((warning) => warning.includes('"../outside.proto", imported by protos/pets.proto')),
+    ).toBe(true);
   });
 
   it.skipIf(!canSymlink)(

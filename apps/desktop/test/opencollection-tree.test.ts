@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { OC_TREE_LIMITS, readCompanionTexts, readOpenCollectionTree } from '../src/main/opencollection-tree.js';
+import { loadProtoSet } from '@wirebench/engine';
+import { OC_TREE_LIMITS, readCompanionProtos, readOpenCollectionTree } from '../src/main/opencollection-tree.js';
 
 const TREE = resolve(dirname(fileURLToPath(import.meta.url)), '../../../fixtures/opencollection/crafted/tree');
 const PICKED = { hasRead: () => true };
@@ -155,19 +156,143 @@ describe('readOpenCollectionTree', () => {
   });
 });
 
-describe('readCompanionTexts', () => {
+describe('readCompanionProtos', () => {
+  const ROOTLESS = 'syntax = "proto3";\n';
+  /** A folder collection holding `files`, keyed by POSIX path below it. */
+  async function collection(files: Record<string, string>): Promise<{ dir: string; root: string }> {
+    const dir = await tempDir();
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
+    return { dir, root: join(dir, 'opencollection.yml') };
+  }
+  const imports = (...names: string[]) => ROOTLESS + names.map((name) => `import "${name}";\n`).join('');
+
   it('reads the named files beside the root, keyed by POSIX relative path', async () => {
-    const texts = await readCompanionTexts(join(TREE, 'opencollection.yml'), [], PICKED, ['protos/pets.proto']);
-    expect([...texts.keys()]).toEqual(['protos/pets.proto']);
-    expect(texts.get('protos/pets.proto')).toContain('service Pets');
+    const read = await readCompanionProtos(join(TREE, 'opencollection.yml'), [], PICKED, ['protos/pets.proto']);
+    expect([...read.sources.keys()]).toEqual(['protos/pets.proto']);
+    expect(read.sources.get('protos/pets.proto')).toContain('service Pets');
+    expect(read.roots).toEqual(['protos/pets.proto']);
+    expect(read.missing).toEqual([]);
   });
 
   it('leaves out a name with nothing at it', async () => {
-    const texts = await readCompanionTexts(join(TREE, 'opencollection.yml'), [], PICKED, [
+    const read = await readCompanionProtos(join(TREE, 'opencollection.yml'), [], PICKED, [
       'protos/pets.proto',
       'protos/missing.proto',
     ]);
-    expect([...texts.keys()]).toEqual(['protos/pets.proto']);
+    expect([...read.sources.keys()]).toEqual(['protos/pets.proto']);
+    expect(read.roots).toEqual(['protos/pets.proto']);
+  });
+
+  it('follows an import into a sibling folder, read relative to the root', async () => {
+    const { root } = await collection({
+      'protos/pets.proto': imports('shared/common.proto', 'google/protobuf/empty.proto'),
+      'shared/common.proto': ROOTLESS,
+    });
+    const read = await readCompanionProtos(root, [], PICKED, ['protos/pets.proto']);
+    expect([...read.sources.keys()]).toEqual(['protos/pets.proto', 'shared/common.proto']);
+    expect(read.roots).toEqual(['protos/pets.proto']);
+    expect(read.missing).toEqual([]);
+  });
+
+  it('follows imports transitively, root-relative first, and keys each by its path below the root', async () => {
+    const { root } = await collection({
+      'api/v1/service.proto': imports('api/v1/types.proto'),
+      'api/v1/types.proto': imports('common.proto'),
+      'common.proto': ROOTLESS,
+      'api/v1/common.proto': 'not this one',
+    });
+    const read = await readCompanionProtos(root, [], PICKED, ['api/v1/service.proto']);
+    expect([...read.sources.keys()]).toEqual(['api/v1/service.proto', 'api/v1/types.proto', 'common.proto']);
+    expect(read.sources.get('common.proto')).toBe(ROOTLESS);
+  });
+
+  it('falls back to an import relative to the importing file, and the loader resolves it', async () => {
+    const { root } = await collection({
+      'protos/pets.proto': ROOTLESS + 'import "types.proto";\nservice Pets { rpc Get (Pet) returns (Pet); }\n',
+      'protos/types.proto': ROOTLESS + 'message Pet { string name = 1; }\n',
+    });
+    const read = await readCompanionProtos(root, [], PICKED, ['protos/pets.proto']);
+    expect([...read.sources.keys()]).toEqual(['protos/pets.proto', 'protos/types.proto']);
+    expect(read.missing).toEqual([]);
+    expect(loadProtoSet(read.sources, { roots: read.roots }).files).toEqual([
+      'protos/pets.proto',
+      'protos/types.proto',
+    ]);
+  });
+
+  it('reads each file of a cycle once', async () => {
+    const { root } = await collection({ 'a.proto': imports('b.proto'), 'b.proto': imports('a.proto') });
+    const read = await readCompanionProtos(root, [], PICKED, ['a.proto']);
+    expect([...read.sources.keys()]).toEqual(['a.proto', 'b.proto']);
+    expect(read.roots).toEqual(['a.proto']);
+  });
+
+  it('lists an import found nowhere, with the file that imports it', async () => {
+    const { root } = await collection({ 'protos/pets.proto': imports('shared/gone.proto', 'shared/gone.proto') });
+    const read = await readCompanionProtos(root, [], PICKED, ['protos/pets.proto']);
+    expect(read.missing).toEqual([{ name: 'shared/gone.proto', importedBy: 'protos/pets.proto' }]);
+    expect([...read.sources.keys()]).toEqual(['protos/pets.proto']);
+  });
+
+  it('refuses an import that is not a plain relative path, before reading it', async () => {
+    const { dir, root } = await collection({ 'protos/pets.proto': imports('../outside.proto') });
+    // Inside the folder, `../outside.proto` from `protos/` would land on this file: it must still not be read.
+    writeFileSync(join(dir, 'outside.proto'), 'SECRET');
+    for (const name of ['../outside.proto', './outside.proto', '/etc/x.proto', 'a//b.proto', 'a\\b.proto']) {
+      writeFileSync(join(dir, 'protos', 'pets.proto'), imports(name));
+      await expect(readCompanionProtos(root, [], PICKED, ['protos/pets.proto'])).rejects.toMatchObject({
+        code: 'import-path-refused',
+        details: { path: name, importedBy: 'protos/pets.proto' },
+      });
+    }
+  });
+
+  it.skipIf(!canSymlink)('refuses an import that is a symbolic link, or reached through one', async () => {
+    const outside = await tempDir();
+    writeFileSync(join(outside, 'x.proto'), ROOTLESS);
+    const { dir, root } = await collection({ 'a.proto': imports('linked.proto') });
+    symlinkSync(join(outside, 'x.proto'), join(dir, 'linked.proto'));
+    await expect(readCompanionProtos(root, [], PICKED, ['a.proto'])).rejects.toMatchObject({
+      code: 'import-path-refused',
+    });
+
+    writeFileSync(join(dir, 'a.proto'), imports('through/x.proto'));
+    symlinkSync(outside, join(dir, 'through'));
+    await expect(readCompanionProtos(root, [], PICKED, ['a.proto'])).rejects.toMatchObject({
+      code: 'import-path-refused',
+    });
+  });
+
+  it('stops past the file, byte and entry limits, counting imported files', async () => {
+    const { root } = await collection({
+      'a.proto': imports('b.proto'),
+      'b.proto': imports('c.proto'),
+      'c.proto': ROOTLESS,
+    });
+    const limits = { files: 3, bytes: 4096, entries: 50 };
+    await expect(readCompanionProtos(root, [], PICKED, ['a.proto'], limits)).resolves.toMatchObject({
+      roots: ['a.proto'],
+    });
+    await expect(readCompanionProtos(root, [], PICKED, ['a.proto'], { ...limits, files: 2 })).rejects.toMatchObject({
+      code: 'oc-too-many-files',
+    });
+    await expect(readCompanionProtos(root, [], PICKED, ['a.proto'], { ...limits, bytes: 60 })).rejects.toMatchObject({
+      code: 'oc-too-large',
+    });
+    await expect(readCompanionProtos(root, [], PICKED, ['a.proto'], { ...limits, entries: 2 })).rejects.toMatchObject({
+      code: 'oc-too-many-files',
+    });
+  });
+
+  it('holds lookups for missing imports to the entry limit', async () => {
+    const names = Array.from({ length: 40 }, (_, index) => `gone/${String(index)}.proto`);
+    const { root } = await collection({ 'a.proto': imports(...names) });
+    await expect(
+      readCompanionProtos(root, [], PICKED, ['a.proto'], { files: 10, bytes: 4096, entries: 20 }),
+    ).rejects.toMatchObject({ code: 'oc-too-many-files' });
   });
 
   it.skipIf(!canSymlink)('refuses a name outside the root, a symbolic link, and an unpicked root', async () => {
@@ -177,16 +302,16 @@ describe('readCompanionTexts', () => {
     symlinkSync(join(outside, 'x.proto'), join(dir, 'linked.proto'));
     const root = join(dir, 'opencollection.yml');
 
-    await expect(readCompanionTexts(root, [], PICKED, ['../x.proto'])).rejects.toMatchObject({
+    await expect(readCompanionProtos(root, [], PICKED, ['../x.proto'])).rejects.toMatchObject({
       code: 'import-path-refused',
     });
-    await expect(readCompanionTexts(root, [], PICKED, [join(outside, 'x.proto')])).rejects.toMatchObject({
+    await expect(readCompanionProtos(root, [], PICKED, [join(outside, 'x.proto')])).rejects.toMatchObject({
       code: 'import-path-refused',
     });
-    await expect(readCompanionTexts(root, [], PICKED, ['linked.proto'])).rejects.toMatchObject({
+    await expect(readCompanionProtos(root, [], PICKED, ['linked.proto'])).rejects.toMatchObject({
       code: 'import-path-refused',
     });
-    await expect(readCompanionTexts(root, [], { hasRead: () => false }, ['x.proto'])).rejects.toMatchObject({
+    await expect(readCompanionProtos(root, [], { hasRead: () => false }, ['x.proto'])).rejects.toMatchObject({
       code: 'import-path-refused',
     });
   });

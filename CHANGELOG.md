@@ -48,6 +48,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **OpenCollection proto imports.** A folder collection's gRPC API now arrives with its definition
+  when its `.proto` files import other files from the collection's folder: each import is read,
+  under the folder first and then beside the importing file. An import that is not there still
+  leaves the API with no definition, and the warning now names the import and the file that imports
+  it (#247).
 - **Imported legacy-project scripts.** Importing a legacy SOAP project no longer overwrites a script
   that already exists under `imported-scripts/`: a clash is saved as `-2`, `-3`, … and the import
   report says so (#64).

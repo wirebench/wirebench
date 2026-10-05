@@ -26,6 +26,7 @@ import {
 } from '@wirebench/engine';
 import type { ImportedProto, ProtoSet, ProtoSources, TlsOptions } from '@wirebench/engine';
 import type { EngineProgressEvent, ProtoSourceWire } from '../shared/wire-types.js';
+import { protoImportsOf as importsOf } from './proto-imports-of.js';
 
 /** What one import needs beyond where to read from. */
 export interface RunProtoImportInput {
@@ -195,11 +196,6 @@ async function readFiles(paths: readonly string[]): Promise<{ sources: Map<strin
   const importedKeys = new Set([...sources.values()].flatMap(importsOf));
   const topLevel = roots.filter((key) => !importedKeys.has(key));
   return { sources, roots: topLevel.length > 0 ? topLevel : roots };
-}
-
-/** The `import "…";` targets a `.proto` names, in order. */
-function importsOf(text: string): string[] {
-  return [...text.matchAll(/^\s*import\s+(?:public\s+|weak\s+)?"([^"]+)"\s*;/gm)].map((match) => match[1]!);
 }
 
 /**
