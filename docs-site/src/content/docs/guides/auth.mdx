@@ -100,9 +100,11 @@ the same way any other Kerberos client on the machine does.
 How the token is sent depends on where it goes:
 
 - **REST and SOAP requests** use two legs on one connection. Wirebench sends the request, and only
-  after the server answers with a `Negotiate` challenge does it send the token. It then checks the
-  server's reply (mutual authentication). There is no preemptive mode for these requests. The
-  response line reads "Authenticated with Kerberos as `HTTP/host`" once a challenge succeeded.
+  after the server answers with a `Negotiate` challenge does it send the token. When the server's
+  answer carries a reply token, Wirebench verifies it (mutual authentication). There is no
+  preemptive mode for these requests. Once a challenge succeeded, a SOAP response line reads
+  "Authenticated with Kerberos as" and the SPN, in the platform's form (`HTTP/host` on Windows,
+  `HTTP@host` elsewhere); the REST status line does not change.
 - **Definition fetches** (OpenAPI, AsyncAPI, WSDL) send one preemptive token, to the definition's
   own origin only, never to a redirect target on another origin.
 - **WebSocket upgrades and gRPC calls** send one preemptive token.
